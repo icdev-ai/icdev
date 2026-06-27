@@ -340,7 +340,7 @@ def main() -> None:
 
     # Update the deck record
     cur.execute(
-        "UPDATE slides_decks SET status='completed', pptx_path=?, slide_count=?, completed_at=CURRENT_TIMESTAMP WHERE deck_id=?",
+        "UPDATE slides_decks SET status='completed', pptx_path=%s, slide_count=%s, completed_at=CURRENT_TIMESTAMP WHERE deck_id=%s",
         (pptx_path, len(slide_dicts), deck_id),
     )
     conn.commit()

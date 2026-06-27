@@ -139,7 +139,7 @@ def _get_pulse_content(
         existing = conn.execute(
             "SELECT pulse_post_id, link_type, relevance_score "
             "FROM pg_pulse_proposal_links "
-            "WHERE opportunity_id = ? AND link_type = 'content_reuse' "
+            "WHERE opportunity_id = %s AND link_type = 'content_reuse' "
             "ORDER BY relevance_score DESC LIMIT 5",
             (opp_id,),
         ).fetchall()
@@ -148,7 +148,7 @@ def _get_pulse_content(
 
         # Try to find matching Pulse articles by keyword overlap
         opp_row = conn.execute(
-            "SELECT title, description FROM proposal_opportunities WHERE id = ?", (opp_id,)
+            "SELECT title, description FROM proposal_opportunities WHERE id = %s", (opp_id,)
         ).fetchone()
         if not opp_row:
             return []
@@ -187,7 +187,7 @@ def _get_pulse_content(
                     "INSERT INTO pg_pulse_proposal_links "
                     "(id, opportunity_id, pulse_post_id, link_type, "
                     "relevance_score, created_at) "
-                    "VALUES (?, ?, ?, 'content_reuse', ?, ?)",
+                    "VALUES (%s, %s, %s, 'content_reuse', %s, %s)",
                     (
                         f"pgpl-{uuid.uuid4().hex[:10]}",
                         opp_id,
@@ -310,7 +310,7 @@ def _enrich_draft_with_kb(opp_id: str, draft_count: int) -> Dict[str, Any]:
             # Get draft responses that could benefit from KB enrichment
             drafts = conn.execute(
                 "SELECT id, section_text FROM proposal_section_drafts "
-                "WHERE opportunity_id = ? AND status = 'draft' "
+                "WHERE opportunity_id = %s AND status = 'draft' "
                 "ORDER BY created_at DESC LIMIT 20",
                 (opp_id,),
             ).fetchall()

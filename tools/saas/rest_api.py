@@ -253,7 +253,7 @@ def update_user(user_id):
         row = conn.execute(
             """SELECT id, email, display_name, role, auth_method,
                       status, created_at
-               FROM users WHERE id = ? AND tenant_id = ?""",
+               FROM users WHERE id = %s AND tenant_id = %s""",
             (user_id, g.tenant_id),
         ).fetchone()
         conn.close()
@@ -396,7 +396,7 @@ def list_api_keys():
             rows = conn.execute(
                 """SELECT id, tenant_id, user_id, key_prefix, name,
                           status, created_at, expires_at
-                   FROM api_keys WHERE tenant_id = ?
+                   FROM api_keys WHERE tenant_id = %s
                    ORDER BY created_at DESC""",
                 (g.tenant_id,),
             ).fetchall()
@@ -404,7 +404,7 @@ def list_api_keys():
             rows = conn.execute(
                 """SELECT id, tenant_id, user_id, key_prefix, name,
                           status, created_at, expires_at
-                   FROM api_keys WHERE tenant_id = ? AND user_id = ?
+                   FROM api_keys WHERE tenant_id = %s AND user_id = %s
                    ORDER BY created_at DESC""",
                 (g.tenant_id, g.user_id),
             ).fetchall()
@@ -436,7 +436,7 @@ def create_api_key():
             """INSERT INTO api_keys
                (id, tenant_id, user_id, key_hash, key_prefix, name,
                 status, created_at, expires_at)
-               VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, 'active', %s, %s)""",
             (key_id, g.tenant_id, g.user_id, key_hash, prefix, name, now, None),
         )
         conn.commit()
@@ -468,7 +468,7 @@ def revoke_api_key(key_id):
 
         # Verify ownership (admin can revoke any, others only their own)
         row = conn.execute(
-            "SELECT id, user_id FROM api_keys WHERE id = ? AND tenant_id = ?",
+            "SELECT id, user_id FROM api_keys WHERE id = %s AND tenant_id = %s",
             (key_id, g.tenant_id),
         ).fetchone()
 
@@ -481,7 +481,7 @@ def revoke_api_key(key_id):
             return _error("Cannot revoke another user's key", code="FORBIDDEN", status=403)
 
         conn.execute(
-            "UPDATE api_keys SET status = 'revoked' WHERE id = ?",
+            "UPDATE api_keys SET status = 'revoked' WHERE id = %s",
             (key_id,),
         )
         conn.commit()
@@ -932,7 +932,7 @@ def audit_history():
         rows = conn.execute(
             "SELECT id, overall_pass, total_checks, passed, failed, warned, skipped, "
             "categories_run, duration_ms, created_at FROM production_audits "
-            "ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            "ORDER BY created_at DESC LIMIT %s OFFSET %s",
             (limit, offset),
         ).fetchall()
         total = conn.execute("SELECT COUNT(*) FROM production_audits").fetchone()[0]
@@ -1080,14 +1080,14 @@ def get_project_audit(project_id):
             """SELECT id, project_id, event_type, actor, action,
                       details, classification, created_at
                FROM audit_trail
-               WHERE project_id = ?
+               WHERE project_id = %s
                ORDER BY created_at DESC
-               LIMIT ? OFFSET ?""",
+               LIMIT %s OFFSET %s""",
             (project_id, min(limit, 500), offset),
         ).fetchall()
 
         total_row = conn.execute(
-            "SELECT COUNT(*) as cnt FROM audit_trail WHERE project_id = ?",
+            "SELECT COUNT(*) as cnt FROM audit_trail WHERE project_id = %s",
             (project_id,),
         ).fetchone()
         conn.close()
@@ -1566,7 +1566,7 @@ def stream_platform_events():
                     """SELECT id, tenant_id, actor, action, resource_type,
                               resource_id, details, created_at
                        FROM audit_platform
-                       WHERE id > ? AND (tenant_id = ? OR tenant_id IS NULL)
+                       WHERE id > %s AND (tenant_id = %s OR tenant_id IS NULL)
                        ORDER BY id ASC
                        LIMIT 50""",
                     (last_id, tenant_id),
@@ -2077,7 +2077,7 @@ def get_agent(agent_id):
     try:
         conn = _agents_conn()
         row = conn.execute(
-            "SELECT * FROM agents WHERE id = ?", (agent_id,)
+            "SELECT * FROM agents WHERE id = %s", (agent_id,)
         ).fetchone()
         conn.close()
         if not row:
@@ -2101,7 +2101,7 @@ def agent_heartbeat(agent_id):
     try:
         conn = _agents_conn()
         cur = conn.execute(
-            "UPDATE agents SET last_heartbeat = CURRENT_TIMESTAMP WHERE id = ?",
+            "UPDATE agents SET last_heartbeat = CURRENT_TIMESTAMP WHERE id = %s",
             (agent_id,),
         )
         conn.commit()
@@ -2128,7 +2128,7 @@ def list_workflows():
         conn = _agents_conn()
         if project_id:
             rows = conn.execute(
-                "SELECT * FROM agent_workflows WHERE project_id = ? ORDER BY created_at DESC",
+                "SELECT * FROM agent_workflows WHERE project_id = %s ORDER BY created_at DESC",
                 (project_id,),
             ).fetchall()
         else:
@@ -2161,12 +2161,12 @@ def create_workflow():
         conn.execute(
             """INSERT INTO agent_workflows
                (id, name, project_id, status, created_by, created_at, updated_at)
-               VALUES (?, ?, ?, 'pending', ?, ?, ?)""",
+               VALUES (%s, %s, %s, 'pending', %s, %s, %s)""",
             (workflow_id, name, project_id, created_by, now, now),
         )
         conn.commit()
         row = conn.execute(
-            "SELECT * FROM agent_workflows WHERE id = ?", (workflow_id,)
+            "SELECT * FROM agent_workflows WHERE id = %s", (workflow_id,)
         ).fetchone()
         conn.close()
         return jsonify({"workflow": dict(row)}), 201
@@ -2181,7 +2181,7 @@ def get_workflow(workflow_id):
     try:
         conn = _agents_conn()
         row = conn.execute(
-            "SELECT * FROM agent_workflows WHERE id = ?", (workflow_id,)
+            "SELECT * FROM agent_workflows WHERE id = %s", (workflow_id,)
         ).fetchone()
         if not row:
             conn.close()
@@ -2191,7 +2191,7 @@ def get_workflow(workflow_id):
         # Include subtasks if the table exists
         try:
             subtask_rows = conn.execute(
-                "SELECT * FROM agent_subtasks WHERE workflow_id = ? ORDER BY created_at",
+                "SELECT * FROM agent_subtasks WHERE workflow_id = %s ORDER BY created_at",
                 (workflow_id,),
             ).fetchall()
             workflow["subtasks"] = [dict(s) for s in subtask_rows]

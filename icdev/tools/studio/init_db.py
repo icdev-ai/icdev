@@ -193,7 +193,7 @@ def _table_exists(conn, name: str) -> bool:
         ).fetchone()
     else:
         row = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=%s",
             (name,),
         ).fetchone()
     return row is not None

@@ -43,7 +43,7 @@ def _get_connection(db_path=None):
 
 def _get_project(conn, project_id):
     """Load project data."""
-    row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+    row = conn.execute("SELECT * FROM projects WHERE id = %s", (project_id,)).fetchone()
     if not row:
         raise ValueError(f"Project '{project_id}' not found.")
     return dict(row)
@@ -54,7 +54,7 @@ def _log_audit(conn, project_id, action, details=None):
     conn.execute(
         """INSERT INTO audit_trail
            (project_id, event_type, actor, action, details, classification, created_at)
-           VALUES (?, 'xacta_export', 'icdev-xacta-export', ?, ?, 'CUI', datetime('now'))""",
+           VALUES (%s, 'xacta_export', 'icdev-xacta-export', %s, %s, 'CUI', datetime('now'))""",
         (project_id, action, json.dumps(details) if details else None),
     )
     conn.commit()
@@ -90,7 +90,7 @@ def export_controls_oscal(project_id, output_dir=None, db_path=None):
     try:
         project = _get_project(conn, project_id)
         controls = conn.execute(
-            "SELECT * FROM project_controls WHERE project_id = ? ORDER BY control_id",
+            "SELECT * FROM project_controls WHERE project_id = %s ORDER BY control_id",
             (project_id,),
         ).fetchall()
 
@@ -182,7 +182,7 @@ def export_assessment_oscal(project_id, output_dir=None, db_path=None):
     try:
         project = _get_project(conn, project_id)
         assessments = conn.execute(
-            "SELECT * FROM cssp_assessments WHERE project_id = ? ORDER BY requirement_id",
+            "SELECT * FROM cssp_assessments WHERE project_id = %s ORDER BY requirement_id",
             (project_id,),
         ).fetchall()
 
@@ -280,7 +280,7 @@ def export_findings_csv(project_id, output_dir=None, db_path=None):
     conn = _get_connection(db_path)
     try:
         findings = conn.execute(
-            "SELECT * FROM stig_findings WHERE project_id = ? ORDER BY severity, finding_id",
+            "SELECT * FROM stig_findings WHERE project_id = %s ORDER BY severity, finding_id",
             (project_id,),
         ).fetchall()
 
@@ -350,7 +350,7 @@ def export_poam_csv(project_id, output_dir=None, db_path=None):
     conn = _get_connection(db_path)
     try:
         items = conn.execute(
-            "SELECT * FROM poam_items WHERE project_id = ? ORDER BY severity, weakness_id",
+            "SELECT * FROM poam_items WHERE project_id = %s ORDER BY severity, weakness_id",
             (project_id,),
         ).fetchall()
 
@@ -422,7 +422,7 @@ def export_cssp_assessment_csv(project_id, output_dir=None, db_path=None):
     conn = _get_connection(db_path)
     try:
         assessments = conn.execute(
-            "SELECT * FROM cssp_assessments WHERE project_id = ? ORDER BY functional_area, requirement_id",
+            "SELECT * FROM cssp_assessments WHERE project_id = %s ORDER BY functional_area, requirement_id",
             (project_id,),
         ).fetchall()
 
@@ -505,7 +505,7 @@ def export_evidence_package(project_id, evidence_manifest_path=None, output_dir=
 
             # Add compliance artifacts from DB
             ssp_rows = conn.execute(
-                "SELECT file_path FROM ssp_documents WHERE project_id = ? AND file_path IS NOT NULL",
+                "SELECT file_path FROM ssp_documents WHERE project_id = %s AND file_path IS NOT NULL",
                 (project_id,),
             ).fetchall()
             for row in ssp_rows:
@@ -515,7 +515,7 @@ def export_evidence_package(project_id, evidence_manifest_path=None, output_dir=
 
             # Add SBOM records
             sbom_rows = conn.execute(
-                "SELECT file_path FROM sbom_records WHERE project_id = ? AND file_path IS NOT NULL",
+                "SELECT file_path FROM sbom_records WHERE project_id = %s AND file_path IS NOT NULL",
                 (project_id,),
             ).fetchall()
             for row in sbom_rows:

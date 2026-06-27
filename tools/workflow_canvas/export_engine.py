@@ -33,7 +33,7 @@ def _slug(text: str) -> str:
 def _get_branding(entity_type: str, entity_id: str, conn) -> dict:
     try:
         row = conn.execute(
-            "SELECT * FROM wfc_branding WHERE entity_type=? AND entity_id=?",
+            "SELECT * FROM wfc_branding WHERE entity_type=%s AND entity_id=%s",
             (entity_type, entity_id),
         ).fetchone()
         return dict(row) if row else {}
@@ -200,7 +200,7 @@ def _export_docx(slides: list[dict], title: str, branding: dict) -> bytes:
 
 def export_form(form_id: str, fmt: str, conn) -> tuple[bytes, str]:
     """Return (file_bytes, filename) for a form exported in the given format."""
-    row = conn.execute("SELECT * FROM studio_forms WHERE form_id=?", (form_id,)).fetchone()
+    row = conn.execute("SELECT * FROM studio_forms WHERE form_id=%s", (form_id,)).fetchone()
     if not row:
         raise ValueError(f"Form {form_id} not found")
     form = dict(row)
@@ -225,7 +225,7 @@ def export_form(form_id: str, fmt: str, conn) -> tuple[bytes, str]:
 
 def export_workflow(workflow_id: str, fmt: str, conn) -> tuple[bytes, str]:
     """Return (file_bytes, filename) for a workflow exported in the given format."""
-    row = conn.execute("SELECT * FROM studio_workflows WHERE workflow_id=?", (workflow_id,)).fetchone()
+    row = conn.execute("SELECT * FROM studio_workflows WHERE workflow_id=%s", (workflow_id,)).fetchone()
     if not row:
         raise ValueError(f"Workflow {workflow_id} not found")
     workflow = dict(row)

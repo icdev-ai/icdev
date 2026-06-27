@@ -223,7 +223,7 @@ def _create_alert(
         """INSERT INTO llm_cost_alerts
            (id, alert_type, agent_id, model_id, function_name,
             severity, message, details_json, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
         (
             alert_id,
             alert_type,
@@ -261,7 +261,7 @@ def detect_cost_anomalies(lookback_hours: int = 24) -> dict:
                   SUM(cost_estimate_usd) as total_cost,
                   COUNT(*) as call_count
            FROM agent_token_usage
-           WHERE created_at >= ?
+           WHERE created_at >= %s
            GROUP BY agent_id""",
         (cutoff_7d,),
     ).fetchall()
@@ -272,7 +272,7 @@ def detect_cost_anomalies(lookback_hours: int = 24) -> dict:
                   SUM(cost_estimate_usd) as total_cost,
                   COUNT(*) as call_count
            FROM agent_token_usage
-           WHERE created_at >= ?
+           WHERE created_at >= %s
            GROUP BY agent_id""",
         (cutoff_recent,),
     ).fetchall()
@@ -304,7 +304,7 @@ def detect_cost_anomalies(lookback_hours: int = 24) -> dict:
         daily_rows = conn.execute(
             """SELECT DATE(created_at) as day, SUM(cost_estimate_usd) as daily_cost
                FROM agent_token_usage
-               WHERE agent_id = ? AND created_at >= ?
+               WHERE agent_id = %s AND created_at >= %s
                GROUP BY DATE(created_at)""",
             (agent, cutoff_7d),
         ).fetchall()
@@ -506,7 +506,7 @@ def recommend_optimizations() -> list[dict]:
                   COUNT(*) as calls,
                   SUM(cost_estimate_usd) as total_cost
            FROM agent_token_usage
-           WHERE created_at >= ?
+           WHERE created_at >= %s
            GROUP BY model_id""",
         (cutoff_30d,),
     ).fetchall()
@@ -538,7 +538,7 @@ def recommend_optimizations() -> list[dict]:
                    (id, recommendation_type, function_name, current_model,
                     recommended_model, estimated_savings_usd, confidence,
                     status, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     rec_id,
                     rec["recommendation_type"],
@@ -562,7 +562,7 @@ def recommend_optimizations() -> list[dict]:
                   AVG(input_tokens + output_tokens) as avg_tokens,
                   COUNT(*) as calls
            FROM agent_token_usage
-           WHERE created_at >= ?
+           WHERE created_at >= %s
            GROUP BY agent_id
            HAVING COUNT(*) >= 5""",
         (cutoff_7d,),
@@ -592,7 +592,7 @@ def recommend_optimizations() -> list[dict]:
                            (id, recommendation_type, function_name, current_model,
                             recommended_model, estimated_savings_usd, confidence,
                             status, created_at, updated_at)
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                         (
                             rec_id,
                             rec["recommendation_type"],
@@ -615,7 +615,7 @@ def recommend_optimizations() -> list[dict]:
     repeat_rows = conn.execute(
         """SELECT agent_id, model_id, input_tokens, COUNT(*) as cnt
            FROM agent_token_usage
-           WHERE created_at >= ?
+           WHERE created_at >= %s
            GROUP BY agent_id, model_id, input_tokens
            HAVING COUNT(*) >= 5""",
         (cutoff_7d,),
@@ -633,7 +633,7 @@ def recommend_optimizations() -> list[dict]:
         total_rows = conn.execute(
             """SELECT agent_id, COUNT(*) as total
                FROM agent_token_usage
-               WHERE created_at >= ?
+               WHERE created_at >= %s
                GROUP BY agent_id""",
             (cutoff_7d,),
         ).fetchall()
@@ -661,7 +661,7 @@ def recommend_optimizations() -> list[dict]:
                        (id, recommendation_type, function_name, current_model,
                         recommended_model, estimated_savings_usd, confidence,
                         status, created_at, updated_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                     (
                         rec_id,
                         rec["recommendation_type"],
@@ -694,7 +694,7 @@ def recommend_optimizations() -> list[dict]:
                           AVG(cost_usd) as avg_cost,
                           COUNT(*) as calls
                    FROM llm_chain_telemetry
-                   WHERE created_at >= ?
+                   WHERE created_at >= %s
                    GROUP BY function
                    HAVING COUNT(*) >= 3""",
                 (cutoff_30d,),
@@ -710,7 +710,7 @@ def recommend_optimizations() -> list[dict]:
                 # Detect functions with avg cost > $0.01/call that aren't using CoD yet
                 if avg_cost > 0.01 and calls >= 5:
                     mode_row = conn.execute(
-                        "SELECT DISTINCT chain_mode FROM llm_chain_telemetry WHERE function=?",
+                        "SELECT DISTINCT chain_mode FROM llm_chain_telemetry WHERE function=%s",
                         (fn,),
                     ).fetchall()
                     modes = {r[0] for r in mode_row}
@@ -731,7 +731,7 @@ def recommend_optimizations() -> list[dict]:
                                (id, recommendation_type, function_name, current_model,
                                 recommended_model, estimated_savings_usd, confidence,
                                 status, created_at, updated_at)
-                               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                             (rec_id, rec["recommendation_type"], rec["function_name"],
                              rec["current_model"], rec["recommended_model"],
                              rec["estimated_savings_usd"], rec["confidence"],
@@ -744,7 +744,7 @@ def recommend_optimizations() -> list[dict]:
             """SELECT function_name,
                       SUM(cost_estimate_usd) as total_cost
                FROM agent_token_usage
-               WHERE created_at >= ?
+               WHERE created_at >= %s
                GROUP BY function_name
                HAVING SUM(cost_estimate_usd) > 0.10 AND function_name IS NOT NULL""",
             (cutoff_30d,),
@@ -759,7 +759,7 @@ def recommend_optimizations() -> list[dict]:
             # Only recommend if no CoT telemetry exists for this function
             if has_table:
                 existing = conn.execute(
-                    "SELECT 1 FROM llm_chain_telemetry WHERE function=? LIMIT 1", (fn,)
+                    "SELECT 1 FROM llm_chain_telemetry WHERE function=%s LIMIT 1", (fn,)
                 ).fetchone()
                 if existing:
                     continue
@@ -779,7 +779,7 @@ def recommend_optimizations() -> list[dict]:
                    (id, recommendation_type, function_name, current_model,
                     recommended_model, estimated_savings_usd, confidence,
                     status, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (rec_id, rec["recommendation_type"], rec["function_name"],
                  rec["current_model"], rec["recommended_model"],
                  rec["estimated_savings_usd"], rec["confidence"],
@@ -815,7 +815,7 @@ def compare_edge_vs_cloud(function_name: str) -> dict:
                   AVG(output_tokens) as avg_out,
                   COUNT(*) as calls
            FROM agent_token_usage
-           WHERE created_at >= ?""",
+           WHERE created_at >= %s""",
         (cutoff_30d,),
     ).fetchone()
 
@@ -880,7 +880,7 @@ def get_cost_dashboard() -> dict:
 
     # This month
     month_row = conn.execute(
-        "SELECT SUM(cost_estimate_usd), COUNT(*) FROM agent_token_usage WHERE created_at >= ? AND created_at < ?",
+        "SELECT SUM(cost_estimate_usd), COUNT(*) FROM agent_token_usage WHERE created_at >= %s AND created_at < %s",
         (month_start_iso, next_month_iso),
     ).fetchone()
     month_spend = float(month_row[0] or 0) if month_row else 0.0
@@ -895,7 +895,7 @@ def get_cost_dashboard() -> dict:
                   SUM(thinking_tokens) as think_tok,
                   COUNT(*) as calls
            FROM agent_token_usage
-           WHERE created_at >= ? AND created_at < ?
+           WHERE created_at >= %s AND created_at < %s
            GROUP BY agent_id
            ORDER BY cost DESC""",
         (month_start_iso, next_month_iso),
@@ -921,7 +921,7 @@ def get_cost_dashboard() -> dict:
                   SUM(input_tokens + output_tokens) as total_tokens,
                   COUNT(*) as calls
            FROM agent_token_usage
-           WHERE created_at >= ? AND created_at < ?
+           WHERE created_at >= %s AND created_at < %s
            GROUP BY model_id
            ORDER BY cost DESC""",
         (month_start_iso, next_month_iso),
@@ -944,7 +944,7 @@ def get_cost_dashboard() -> dict:
                   SUM(cost_estimate_usd) as cost,
                   COUNT(*) as calls
            FROM agent_token_usage
-           WHERE created_at >= ?
+           WHERE created_at >= %s
            GROUP BY DATE(created_at)
            ORDER BY day""",
         ((now - timedelta(days=14)).isoformat(),),
@@ -962,7 +962,7 @@ def get_cost_dashboard() -> dict:
 
     # Budget status
     budget_rows = conn.execute(
-        "SELECT agent_id, budget_usd, spent_usd FROM agent_token_budgets WHERE month = ?",
+        "SELECT agent_id, budget_usd, spent_usd FROM agent_token_budgets WHERE month = %s",
         (month_str,),
     ).fetchall()
 
@@ -1050,8 +1050,8 @@ def acknowledge_alert(alert_id: str, acknowledged_by: str = "system") -> dict:
     now_iso = _now_iso()
     cursor = conn.execute(
         """UPDATE llm_cost_alerts
-           SET acknowledged = 1, acknowledged_by = ?, acknowledged_at = ?
-           WHERE id = ? AND acknowledged = 0""",
+           SET acknowledged = 1, acknowledged_by = %s, acknowledged_at = %s
+           WHERE id = %s AND acknowledged = 0""",
         (acknowledged_by, now_iso, alert_id),
     )
     affected = cursor.rowcount

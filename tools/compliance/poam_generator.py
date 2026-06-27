@@ -47,7 +47,7 @@ def _get_connection(db_path=None):
 
 def _get_project(conn, project_id):
     """Load project data."""
-    row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+    row = conn.execute("SELECT * FROM projects WHERE id = %s", (project_id,)).fetchone()
     if not row:
         raise ValueError(f"Project '{project_id}' not found.")
     return dict(row)
@@ -57,7 +57,7 @@ def _get_stig_findings(conn, project_id):
     """Get all open STIG findings for a project."""
     rows = conn.execute(
         """SELECT * FROM stig_findings
-           WHERE project_id = ? AND status = 'Open'
+           WHERE project_id = %s AND status = 'Open'
            ORDER BY
              CASE severity
                WHEN 'CAT1' THEN 1
@@ -73,7 +73,7 @@ def _get_stig_findings(conn, project_id):
 def _get_existing_poam_items(conn, project_id):
     """Get existing POAM items for deduplication."""
     rows = conn.execute(
-        "SELECT weakness_id FROM poam_items WHERE project_id = ?",
+        "SELECT weakness_id FROM poam_items WHERE project_id = %s",
         (project_id,),
     ).fetchall()
     return {r["weakness_id"] for r in rows}
@@ -121,7 +121,7 @@ def _log_audit_event(conn, project_id, action, details, file_path):
             """INSERT INTO audit_trail
                (project_id, event_type, actor, action, details,
                 affected_files, classification)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
             (
                 project_id,
                 "poam_generated",
@@ -338,7 +338,7 @@ def generate_poam(project_id, output_path=None, db_path=None):
                        (project_id, weakness_id, weakness_description, severity,
                         source, control_id, status, corrective_action,
                         milestone_date, responsible_party, resources_required)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                     (
                         project_id,
                         item["weakness_id"],

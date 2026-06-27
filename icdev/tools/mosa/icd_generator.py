@@ -89,7 +89,7 @@ def _get_connection(db_path=None):
 
 def _get_project(conn, project_id):
     """Load project record from database."""
-    row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+    row = conn.execute("SELECT * FROM projects WHERE id = %s", (project_id,)).fetchone()
     if not row:
         raise ValueError(f"Project '{project_id}' not found in database.")
     return dict(row)
@@ -114,7 +114,7 @@ def _log_audit_event(conn, project_id, action, details, file_path):
         conn.execute(
             """INSERT INTO audit_trail (project_id, event_type, actor, action,
                details, affected_files, classification)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
             (
                 project_id,
                 "compliance_check",
@@ -299,7 +299,7 @@ def generate_icd(conn, project_id, interface, output_dir, config):
         """INSERT INTO icd_documents (id, project_id, interface_id, interface_name,
            version, source_system, target_system, protocol, data_format, content,
            file_path, classification, status, approval_status, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
         (
             icd_id,
             project_id,
@@ -405,7 +405,7 @@ def main():
                 results.append(generate_icd(conn, args.project_id, ifc, output_dir, config))
         else:
             row = conn.execute(
-                "SELECT * FROM icd_documents WHERE id = ? AND project_id = ?", (args.interface_id, args.project_id)
+                "SELECT * FROM icd_documents WHERE id = %s AND project_id = %s", (args.interface_id, args.project_id)
             ).fetchone()
             ifc = (
                 {"name": row["interface_name"], "spec": {}, "path": ""}

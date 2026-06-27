@@ -30,7 +30,7 @@ def _load_design_from_db(design_id: str) -> dict | None:
 
         conn = get_connection(_DATA_DIR / "infra_canvas.db")
         row = conn.execute(
-            "SELECT graph_json FROM infra_designs WHERE id = ?", (design_id,)
+            "SELECT graph_json FROM infra_designs WHERE id = %s", (design_id,)
         ).fetchone()
         conn.close()
         if row:

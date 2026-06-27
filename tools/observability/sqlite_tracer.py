@@ -267,7 +267,7 @@ class SQLiteTracer(Tracer):
                             status_code, status_message,
                             attributes, events,
                             agent_id, project_id, classification)
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                         (
                             span.span_id,
                             span.trace_id,

@@ -448,7 +448,7 @@ def detect_trends(time_window_days=30, min_signals=3, db_path=None):
             """SELECT id, title, description, discovered_at, category, source,
                       source_type, community_score, metadata
                FROM innovation_signals
-               WHERE discovered_at >= ?
+               WHERE discovered_at >= %s
                ORDER BY discovered_at DESC""",
             (cutoff,),
         ).fetchall()
@@ -578,9 +578,9 @@ def detect_trends(time_window_days=30, min_signals=3, db_path=None):
                 # Calculate acceleration vs previous window
                 prev_count = conn.execute(
                     """SELECT COUNT(*) as cnt FROM innovation_signals
-                       WHERE discovered_at >= ? AND discovered_at < ?
-                         AND (category = ? OR category IS NULL)
-                         AND (title || ' ' || description) LIKE ?""",
+                       WHERE discovered_at >= %s AND discovered_at < %s
+                         AND (category = %s OR category IS NULL)
+                         AND (title || ' ' || description) LIKE %s""",
                     (prev_cutoff, cutoff, category, f"%{common_keywords[0]}%"),
                 ).fetchone()["cnt"]
                 prev_velocity = prev_count / max(time_window_days, 1)
@@ -599,7 +599,7 @@ def detect_trends(time_window_days=30, min_signals=3, db_path=None):
 
                 # Check if trend with same fingerprint already exists
                 existing = conn.execute(
-                    "SELECT id, signal_count, velocity, status FROM innovation_trends WHERE keyword_fingerprint = ?",
+                    "SELECT id, signal_count, velocity, status FROM innovation_trends WHERE keyword_fingerprint = %s",
                     (fingerprint,),
                 ).fetchone()
 
@@ -638,7 +638,7 @@ def detect_trends(time_window_days=30, min_signals=3, db_path=None):
         conn.execute(
             """UPDATE innovation_trends SET status = 'stale'
                WHERE status IN ('emerging', 'active')
-                 AND last_seen < ?""",
+                 AND last_seen < %s""",
             (stale_cutoff,),
         )
         conn.commit()
@@ -731,10 +731,10 @@ def _store_trend(conn, trend):
     if trend.get("is_update"):
         conn.execute(
             """UPDATE innovation_trends
-               SET name = ?, signal_count = ?, velocity = ?, acceleration = ?,
-                   last_seen = ?, status = ?, keywords = ?, signal_ids = ?,
-                   metadata = ?, detected_at = ?
-               WHERE id = ?""",
+               SET name = %s, signal_count = %s, velocity = %s, acceleration = %s,
+                   last_seen = %s, status = %s, keywords = %s, signal_ids = %s,
+                   metadata = %s, detected_at = %s
+               WHERE id = %s""",
             (
                 trend["name"],
                 trend["signal_count"],
@@ -755,7 +755,7 @@ def _store_trend(conn, trend):
                (id, name, category, signal_count, velocity, acceleration,
                 first_seen, last_seen, status, keyword_fingerprint,
                 keywords, signal_ids, metadata, detected_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 trend["id"],
                 trend["name"],
@@ -930,7 +930,7 @@ def get_trend_velocity(trend_id, db_path=None):
         row = conn.execute(
             """SELECT id, name, category, signal_count, velocity, acceleration,
                       first_seen, last_seen, status, keywords, signal_ids, metadata
-               FROM innovation_trends WHERE id = ?""",
+               FROM innovation_trends WHERE id = %s""",
             (trend_id,),
         ).fetchone()
 

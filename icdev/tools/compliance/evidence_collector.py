@@ -131,7 +131,7 @@ def _get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
 def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
     """Check if a table exists in the database."""
     row = conn.execute(
-        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?",
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=%s",
         (table_name,),
     ).fetchone()
     return row[0] > 0

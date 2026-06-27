@@ -377,11 +377,11 @@ def find_shared_entities(
 
         # Get graph IDs for each project
         graphs_a = conn.execute(
-            "SELECT id FROM kg_graphs WHERE project_id = ?",
+            "SELECT id FROM kg_graphs WHERE project_id = %s",
             (project_id_a,),
         ).fetchall()
         graphs_b = conn.execute(
-            "SELECT id FROM kg_graphs WHERE project_id = ?",
+            "SELECT id FROM kg_graphs WHERE project_id = %s",
             (project_id_b,),
         ).fetchall()
 
@@ -409,7 +409,7 @@ def find_shared_entities(
 
         def _count_edges(node_id: str) -> int:
             row = conn.execute(
-                "SELECT COUNT(*) as cnt FROM kg_edges WHERE source_id = ? OR target_id = ?",
+                "SELECT COUNT(*) as cnt FROM kg_edges WHERE source_id = %s OR target_id = %s",
                 (node_id, node_id),
             ).fetchone()
             return row["cnt"] if row else 0
@@ -555,11 +555,11 @@ def create_federated_view(
         total_edges = 0
         for gid in source_graph_ids:
             n_row = conn.execute(
-                "SELECT COUNT(*) as cnt FROM kg_nodes WHERE graph_id = ?",
+                "SELECT COUNT(*) as cnt FROM kg_nodes WHERE graph_id = %s",
                 (gid,),
             ).fetchone()
             e_row = conn.execute(
-                "SELECT COUNT(*) as cnt FROM kg_edges WHERE graph_id = ?",
+                "SELECT COUNT(*) as cnt FROM kg_edges WHERE graph_id = %s",
                 (gid,),
             ).fetchone()
             total_nodes += n_row["cnt"] if n_row else 0
@@ -577,12 +577,12 @@ def create_federated_view(
         )
 
         # Upsert: if a view with the same ID already exists, update it
-        existing = conn.execute("SELECT id FROM kg_graphs WHERE id = ?", (fed_id,)).fetchone()
+        existing = conn.execute("SELECT id FROM kg_graphs WHERE id = %s", (fed_id,)).fetchone()
 
         if existing:
             conn.execute(
-                "UPDATE kg_graphs SET name = ?, entity_count = ?, "
-                "edge_count = ?, metadata = ?, updated_at = ? WHERE id = ?",
+                "UPDATE kg_graphs SET name = %s, entity_count = %s, "
+                "edge_count = %s, metadata = %s, updated_at = %s WHERE id = %s",
                 (name, total_nodes, total_edges, metadata, now, fed_id),
             )
         else:
@@ -590,7 +590,7 @@ def create_federated_view(
                 "INSERT INTO kg_graphs "
                 "(id, project_id, name, description, entity_count, "
                 "edge_count, metadata, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     fed_id,
                     None,  # federated views have no single project
@@ -785,7 +785,7 @@ def store_ontology_assertions(
     try:
         _ensure_tables(conn)
         row = conn.execute(
-            "SELECT metadata FROM kg_graphs WHERE id = ?", (graph_id,)
+            "SELECT metadata FROM kg_graphs WHERE id = %s", (graph_id,)
         ).fetchone()
         if not row:
             return {"status": "error", "message": f"Graph {graph_id} not found"}
@@ -796,7 +796,7 @@ def store_ontology_assertions(
         meta["ontology_updated_at"] = _now()
 
         conn.execute(
-            "UPDATE kg_graphs SET metadata = ?, updated_at = ? WHERE id = ?",
+            "UPDATE kg_graphs SET metadata = %s, updated_at = %s WHERE id = %s",
             (json.dumps(meta), _now(), graph_id),
         )
         conn.commit()
@@ -827,7 +827,7 @@ def get_ontology_assertions(
     try:
         _ensure_tables(conn)
         row = conn.execute(
-            "SELECT metadata FROM kg_graphs WHERE id = ?", (graph_id,)
+            "SELECT metadata FROM kg_graphs WHERE id = %s", (graph_id,)
         ).fetchone()
         if not row:
             return {"status": "error", "message": f"Graph {graph_id} not found"}

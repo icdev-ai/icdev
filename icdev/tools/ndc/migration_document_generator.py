@@ -42,7 +42,7 @@ def _get_device(conn: sqlite3.Connection, device_id: str) -> Optional[Dict[str, 
         """SELECT id, vendor, model, device_type, firmware_version,
                   site, rack_location, eol_date, eos_date,
                   replacement_cost, criticality_score, downstream_count, label
-           FROM ni_devices WHERE id = ?""",
+           FROM ni_devices WHERE id = %s""",
         (device_id,),
     ).fetchone()
     return dict(row) if row else None
@@ -53,7 +53,7 @@ def _get_config_text(device_id: str) -> str:
     try:
         row = conn.execute(
             """SELECT config_text FROM ni_device_configs
-               WHERE device_id = ?
+               WHERE device_id = %s
                ORDER BY CASE config_type
                  WHEN 'running' THEN 1
                  WHEN 'startup' THEN 2
@@ -70,13 +70,13 @@ def _get_topology_for_device(device_id: str) -> Dict[str, Any]:
     conn = _nc_conn()
     try:
         row = conn.execute(
-            "SELECT topology_id FROM ni_devices WHERE id = ?", (device_id,)
+            "SELECT topology_id FROM ni_devices WHERE id = %s", (device_id,)
         ).fetchone()
         topo_id = row["topology_id"] if row else None
         if not topo_id:
             return {"nodes": [], "edges": []}
         topo = conn.execute(
-            "SELECT graph_json FROM topologies WHERE id = ?", (topo_id,)
+            "SELECT graph_json FROM topologies WHERE id = %s", (topo_id,)
         ).fetchone()
         if topo and topo["graph_json"]:
             try:

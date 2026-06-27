@@ -136,7 +136,7 @@ def _audit(
         conn.execute(
             "INSERT INTO audit_trail "
             "(id, timestamp, event_type, actor, action, details, project_id, session_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 _gen_id("aud"),
                 _now(),
@@ -335,7 +335,7 @@ def create_procurement(
     _ensure_tables(conn)
 
     existing = conn.execute(
-        "SELECT id FROM proc_procurements WHERE id = ?", (procurement_id,)
+        "SELECT id FROM proc_procurements WHERE id = %s", (procurement_id,)
     ).fetchone()
     if existing:
         return {
@@ -349,7 +349,7 @@ def create_procurement(
         INSERT INTO proc_procurements
             (id, solicitation, title, agency, contract_type, description, status,
              allocation_id, metadata, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, 'open', ?, '{}', ?, ?)
+        VALUES (%s, %s, %s, %s, %s, %s, 'open', %s, '{}', %s, %s)
         """,
         (procurement_id, solicitation, title, agency, contract_type,
          description, allocation_id, now, now),
@@ -426,7 +426,7 @@ def add_igce_line(
     _ensure_tables(conn)
 
     proc = conn.execute(
-        "SELECT id FROM proc_procurements WHERE id = ?", (procurement_id,)
+        "SELECT id FROM proc_procurements WHERE id = %s", (procurement_id,)
     ).fetchone()
     if not proc:
         return {
@@ -438,7 +438,7 @@ def add_igce_line(
     now = _now()
 
     existing = conn.execute(
-        "SELECT id FROM proc_igce_line_items WHERE procurement_id = ? AND clin = ?",
+        "SELECT id FROM proc_igce_line_items WHERE procurement_id = %s AND clin = %s",
         (procurement_id, clin),
     ).fetchone()
 
@@ -446,10 +446,10 @@ def add_igce_line(
         conn.execute(
             """
             UPDATE proc_igce_line_items
-            SET description = ?, unit = ?, quantity = ?, unit_cost = ?,
-                extended_cost = ?, basis = ?, poc = ?, equipment_category = ?,
-                notes = ?, updated_at = ?
-            WHERE id = ?
+            SET description = %s, unit = %s, quantity = %s, unit_cost = %s,
+                extended_cost = %s, basis = %s, poc = %s, equipment_category = %s,
+                notes = %s, updated_at = %s
+            WHERE id = %s
             """,
             (description, unit, quantity, unit_cost, extended_cost,
              basis, poc, equipment_category, notes, now, existing["id"]),
@@ -469,7 +469,7 @@ def add_igce_line(
                 (id, procurement_id, clin, description, unit, quantity, unit_cost,
                  extended_cost, basis, poc, equipment_category, notes, metadata,
                  created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '{}', ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, '{}', %s, %s)
             """,
             (_gen_id("igce"), procurement_id, clin, description, unit,
              quantity, unit_cost, extended_cost, basis, poc,
@@ -501,7 +501,7 @@ def list_igce(procurement_id: str) -> Dict[str, Any]:
     conn = _get_db()
     _ensure_tables(conn)
     rows = conn.execute(
-        "SELECT * FROM proc_igce_line_items WHERE procurement_id = ? ORDER BY clin",
+        "SELECT * FROM proc_igce_line_items WHERE procurement_id = %s ORDER BY clin",
         (procurement_id,),
     ).fetchall()
     total = round(sum(float(r["extended_cost"] or 0) for r in rows), 2)
@@ -548,7 +548,7 @@ def add_quote(
 
     # Verify procurement + matching IGCE line exist
     proc = conn.execute(
-        "SELECT id FROM proc_procurements WHERE id = ?", (procurement_id,)
+        "SELECT id FROM proc_procurements WHERE id = %s", (procurement_id,)
     ).fetchone()
     if not proc:
         return {
@@ -557,7 +557,7 @@ def add_quote(
         }
     igce = conn.execute(
         "SELECT id, unit_cost, quantity FROM proc_igce_line_items "
-        "WHERE procurement_id = ? AND clin = ?",
+        "WHERE procurement_id = %s AND clin = %s",
         (procurement_id, clin),
     ).fetchone()
     if not igce:
@@ -581,7 +581,7 @@ def add_quote(
                 (id, procurement_id, vendor_name, quote_ref, clin, unit_price,
                  quantity, total_price, quote_date, valid_until, status, notes,
                  metadata, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '{}', ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, '{}', %s, %s)
             """,
             (_gen_id("quote"), procurement_id, vendor_name, quote_ref, clin,
              unit_price, quantity, total_price, quote_date, valid_until,
@@ -705,7 +705,7 @@ def add_bom_line(
     _ensure_tables(conn)
     existing_quote = conn.execute(
         "SELECT id FROM proc_vendor_quotes "
-        "WHERE procurement_id = ? AND vendor_name = ? AND quote_ref = ? AND clin = ?",
+        "WHERE procurement_id = %s AND vendor_name = %s AND quote_ref = %s AND clin = %s",
         (procurement_id, vendor_name, quote_ref, clin),
     ).fetchone()
     if existing_quote:
@@ -713,9 +713,9 @@ def add_bom_line(
         conn.execute(
             """
             UPDATE proc_vendor_quotes
-            SET unit_price = ?, quantity = ?, total_price = ?, quote_date = ?,
-                valid_until = ?, status = 'submitted', notes = ?, updated_at = ?
-            WHERE id = ?
+            SET unit_price = %s, quantity = %s, total_price = %s, quote_date = %s,
+                valid_until = %s, status = 'submitted', notes = %s, updated_at = %s
+            WHERE id = %s
             """,
             (unit_price,
              quantity_override if quantity_override is not None else quantity,
@@ -809,7 +809,7 @@ def list_quotes(
 
 def _igce_map(conn, procurement_id: str) -> Dict[str, Dict[str, Any]]:
     rows = conn.execute(
-        "SELECT * FROM proc_igce_line_items WHERE procurement_id = ?",
+        "SELECT * FROM proc_igce_line_items WHERE procurement_id = %s",
         (procurement_id,),
     ).fetchall()
     return {r["clin"]: row_to_dict(r) for r in rows}
@@ -822,7 +822,7 @@ def compare_procurement(procurement_id: str) -> Dict[str, Any]:
 
     igce = _igce_map(conn, procurement_id)
     quote_rows = conn.execute(
-        "SELECT * FROM proc_vendor_quotes WHERE procurement_id = ? "
+        "SELECT * FROM proc_vendor_quotes WHERE procurement_id = %s "
         "ORDER BY clin, vendor_name",
         (procurement_id,),
     ).fetchall()
@@ -891,7 +891,7 @@ def vendor_summary(procurement_id: str) -> Dict[str, Any]:
 
     igce = _igce_map(conn, procurement_id)
     quote_rows = conn.execute(
-        "SELECT * FROM proc_vendor_quotes WHERE procurement_id = ?",
+        "SELECT * FROM proc_vendor_quotes WHERE procurement_id = %s",
         (procurement_id,),
     ).fetchall()
 
@@ -1061,7 +1061,7 @@ def set_equipment_category(igce_id: str, category: str) -> Dict[str, Any]:
     _ensure_tables(conn)
 
     existing = conn.execute(
-        "SELECT id, procurement_id, clin FROM proc_igce_line_items WHERE id = ?",
+        "SELECT id, procurement_id, clin FROM proc_igce_line_items WHERE id = %s",
         (igce_id,),
     ).fetchone()
     if not existing:
@@ -1074,8 +1074,8 @@ def set_equipment_category(igce_id: str, category: str) -> Dict[str, Any]:
     conn.execute(
         """
         UPDATE proc_igce_line_items
-        SET equipment_category = ?, updated_at = ?
-        WHERE id = ?
+        SET equipment_category = %s, updated_at = %s
+        WHERE id = %s
         """,
         (category, now, igce_id),
     )
@@ -1122,7 +1122,7 @@ def link_procurement_to_initiative(
     _ensure_tables(conn)
 
     proc = conn.execute(
-        "SELECT id, allocation_id FROM proc_procurements WHERE id = ?",
+        "SELECT id, allocation_id FROM proc_procurements WHERE id = %s",
         (procurement_id,),
     ).fetchone()
     if not proc:
@@ -1136,8 +1136,8 @@ def link_procurement_to_initiative(
     conn.execute(
         """
         UPDATE proc_procurements
-        SET allocation_id = ?, updated_at = ?
-        WHERE id = ?
+        SET allocation_id = %s, updated_at = %s
+        WHERE id = %s
         """,
         (allocation_id, now, procurement_id),
     )

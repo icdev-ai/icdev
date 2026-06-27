@@ -121,12 +121,12 @@ def run(config: Dict[str, Any], trust) -> Dict[str, Any]:
 
         # Store blueprint as JSON in challenge record
         conn.execute(
-            "UPDATE appforge_challenges SET status = 'architected' WHERE challenge_id = ?",
+            "UPDATE appforge_challenges SET status = 'architected' WHERE challenge_id = %s",
             (challenge["challenge_id"],),
         )
         # Store blueprint in a separate field or via app_path
         conn.execute(
-            "UPDATE appforge_challenges SET app_path = ? WHERE challenge_id = ?",
+            "UPDATE appforge_challenges SET app_path = %s WHERE challenge_id = %s",
             (json.dumps(blueprint), challenge["challenge_id"]),
         )
         conn.commit()

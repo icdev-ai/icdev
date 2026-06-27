@@ -709,13 +709,13 @@ def load_fundamentals(
         if as_of_date:
             row = conn.execute(
                 "SELECT * FROM ad_fundamental_metrics "
-                "WHERE ticker = ? AND as_of_date = ? LIMIT 1",
+                "WHERE ticker = %s AND as_of_date = %s LIMIT 1",
                 (ticker.upper(), as_of_date),
             ).fetchone()
         else:
             row = conn.execute(
                 "SELECT * FROM ad_fundamental_metrics "
-                "WHERE ticker = ? ORDER BY as_of_date DESC LIMIT 1",
+                "WHERE ticker = %s ORDER BY as_of_date DESC LIMIT 1",
                 (ticker.upper(),),
             ).fetchone()
         return dict(row) if row else {}
@@ -738,7 +738,7 @@ def load_population(
     try:
         if as_of_date:
             rows = conn.execute(
-                "SELECT * FROM ad_fundamental_metrics WHERE as_of_date = ? LIMIT ?",
+                "SELECT * FROM ad_fundamental_metrics WHERE as_of_date = %s LIMIT %s",
                 (as_of_date, limit),
             ).fetchall()
         else:
@@ -752,7 +752,7 @@ def load_population(
                     FROM ad_fundamental_metrics
                     GROUP BY ticker
                 ) latest ON f.ticker = latest.ticker AND f.as_of_date = latest.max_date
-                LIMIT ?
+                LIMIT %s
                 """,
                 (limit,),
             ).fetchall()
@@ -786,7 +786,7 @@ def save_quality_scores(
                 composite_quality_score, model_version,
                 classification, created_at, updated_at,
                 pe_nav_score, implied_roe, roe_gap, nav_quadrant
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'CUI // SP-CTI', ?, ?, ?, ?, ?, ?)
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'CUI // SP-CTI', %s, %s, %s, %s, %s, %s)
             ON CONFLICT(ticker, as_of_date) DO UPDATE SET
                 value_quality              = excluded.value_quality,
                 growth_quality             = excluded.growth_quality,

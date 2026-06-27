@@ -235,7 +235,7 @@ def write_verification_row(
         conn.execute(
             "INSERT INTO kanban_verifications "
             "(id, task_id, verified_at, result, reason, coherence_passed, coherence_violations) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (
                 row["id"],
                 row["task_id"],

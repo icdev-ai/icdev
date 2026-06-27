@@ -180,7 +180,7 @@ def register_asset(
             """INSERT INTO govchain_assets
                (id, asset_type, serial_number, nsn, state, custodian, location, metadata,
                 token_hash, classification, created_at, updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (
                 asset_id,
                 asset_type,
@@ -201,7 +201,7 @@ def register_asset(
         conn.execute(
             """INSERT INTO govchain_asset_transitions
                (id, asset_id, from_state, to_state, actor, reason, token_hash, classification, created_at)
-               VALUES (?,?,?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (transition_id, asset_id, None, initial_state, custodian, "Initial registration", token_hash, classification, now),
         )
         conn.commit()
@@ -232,7 +232,7 @@ def register_asset(
             conn2 = _get_db(db_path)
             try:
                 conn2.execute(
-                    "UPDATE govchain_assets SET blockchain_registry_id=?, blockchain_tx_id=? WHERE id=?",
+                    "UPDATE govchain_assets SET blockchain_registry_id=%s, blockchain_tx_id=%s WHERE id=%s",
                     (reg_id, anchor_result.get("tx_id"), asset_id),
                 )
                 conn2.commit()
@@ -273,7 +273,7 @@ def transition_state(
     conn = _get_db(db_path)
     try:
         row = conn.execute(
-            "SELECT id, asset_type, serial_number, state, custodian, classification FROM govchain_assets WHERE id=?",
+            "SELECT id, asset_type, serial_number, state, custodian, classification FROM govchain_assets WHERE id=%s",
             (asset_id,),
         ).fetchone()
     finally:
@@ -300,14 +300,14 @@ def transition_state(
     conn = _get_db(db_path)
     try:
         conn.execute(
-            "UPDATE govchain_assets SET state=?, token_hash=?, updated_at=? WHERE id=?",
+            "UPDATE govchain_assets SET state=%s, token_hash=%s, updated_at=%s WHERE id=%s",
             (new_state, token_hash, now, asset_id),
         )
         transition_id = f"txn-{uuid.uuid4().hex[:16]}"
         conn.execute(
             """INSERT INTO govchain_asset_transitions
                (id, asset_id, from_state, to_state, actor, reason, token_hash, classification, created_at)
-               VALUES (?,?,?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (transition_id, asset_id, from_state, new_state, actor, reason, token_hash, classification, now),
         )
         conn.commit()
@@ -337,7 +337,7 @@ def transition_state(
             conn2 = _get_db(db_path)
             try:
                 conn2.execute(
-                    "UPDATE govchain_asset_transitions SET blockchain_registry_id=?, blockchain_tx_id=? WHERE id=?",
+                    "UPDATE govchain_asset_transitions SET blockchain_registry_id=%s, blockchain_tx_id=%s WHERE id=%s",
                     (reg_id, anchor_result.get("tx_id"), transition_id),
                 )
                 conn2.commit()
@@ -363,12 +363,12 @@ def get_asset(asset_id: str, db_path: Path = None) -> Optional[Dict[str, Any]]:
     """Return the current state of an asset plus its full transition history."""
     conn = _get_db(db_path)
     try:
-        row = conn.execute("SELECT * FROM govchain_assets WHERE id=?", (asset_id,)).fetchone()
+        row = conn.execute("SELECT * FROM govchain_assets WHERE id=%s", (asset_id,)).fetchone()
         if not row:
             return None
 
         history = conn.execute(
-            "SELECT * FROM govchain_asset_transitions WHERE asset_id=? ORDER BY created_at ASC",
+            "SELECT * FROM govchain_asset_transitions WHERE asset_id=%s ORDER BY created_at ASC",
             (asset_id,),
         ).fetchall()
 

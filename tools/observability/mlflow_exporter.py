@@ -113,7 +113,7 @@ class MLflowExporter:
             rows = conn.execute(
                 """SELECT * FROM otel_spans
                    ORDER BY start_time ASC
-                   LIMIT ?""",
+                   LIMIT %s""",
                 (limit,),
             ).fetchall()
             conn.close()

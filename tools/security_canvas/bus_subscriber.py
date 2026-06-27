@@ -27,7 +27,7 @@ def _handle_pipeline_deployed(
         try:
             rows = conn.execute(
                 "SELECT DISTINCT design_id FROM sc_assessments "
-                "WHERE source_entity_id = ? AND design_id IS NOT NULL",
+                "WHERE source_entity_id = %s AND design_id IS NOT NULL",
                 (pipeline_id,),
             ).fetchall()
             design_ids = [
@@ -68,7 +68,7 @@ def _handle_pipeline_deployed(
                 """
                 INSERT INTO genesis_reflex_state
                     (reflex_name, enabled, next_run_at, updated_at)
-                VALUES ('audit', 1, ?, ?)
+                VALUES ('audit', 1, %s, %s)
                 ON CONFLICT(reflex_name) DO UPDATE SET
                     next_run_at = excluded.next_run_at,
                     updated_at  = excluded.updated_at

@@ -302,17 +302,17 @@ def build_sdc_kg(
     graph_id = f"sdc-kg-{_hash(graph_key)}"
 
     # Upsert graph record (idempotent rebuild)
-    existing = conn.execute("SELECT id FROM kg_graphs WHERE id = ?", (graph_id,)).fetchone()
+    existing = conn.execute("SELECT id FROM kg_graphs WHERE id = %s", (graph_id,)).fetchone()
     if existing:
-        conn.execute("DELETE FROM kg_edges WHERE graph_id = ?", (graph_id,))
-        conn.execute("DELETE FROM kg_nodes WHERE graph_id = ?", (graph_id,))
-        conn.execute("UPDATE kg_graphs SET updated_at = ? WHERE id = ?", (ts, graph_id))
+        conn.execute("DELETE FROM kg_edges WHERE graph_id = %s", (graph_id,))
+        conn.execute("DELETE FROM kg_nodes WHERE graph_id = %s", (graph_id,))
+        conn.execute("UPDATE kg_graphs SET updated_at = %s WHERE id = %s", (ts, graph_id))
     else:
         conn.execute(
             """INSERT INTO kg_graphs
                (id, project_id, name, description, entity_count, edge_count,
                 metadata, created_at, updated_at)
-               VALUES (?, ?, ?, ?, 0, 0, '{}', ?, ?)""",
+               VALUES (%s, %s, %s, %s, 0, 0, '{}', %s, %s)""",
             (
                 graph_id,
                 project_id,
@@ -327,7 +327,7 @@ def build_sdc_kg(
         conn.execute(
             """INSERT OR REPLACE INTO kg_nodes
                (id, graph_id, label, entity_type, properties, centrality, created_at)
-               VALUES (?, ?, ?, ?, ?, 0.0, ?)""",
+               VALUES (%s, %s, %s, %s, %s, 0.0, %s)""",
             (nid, graph_id, label, etype, json.dumps(props, ensure_ascii=False), ts),
         )
 
@@ -343,7 +343,7 @@ def build_sdc_kg(
             """INSERT OR REPLACE INTO kg_edges
                (id, graph_id, source_id, target_id, relationship, weight,
                 properties, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 eid,
                 graph_id,
@@ -521,7 +521,7 @@ def build_sdc_kg(
 
     # Update graph counts
     conn.execute(
-        "UPDATE kg_graphs SET entity_count = ?, edge_count = ?, updated_at = ? WHERE id = ?",
+        "UPDATE kg_graphs SET entity_count = %s, edge_count = %s, updated_at = %s WHERE id = %s",
         (node_count, edge_count, ts, graph_id),
     )
     conn.commit()
@@ -558,11 +558,11 @@ def _load_graph(
     """Return graph_id for the sdc-compliance-kg, or None if not built."""
     if project_id:
         row = conn.execute(
-            "SELECT id FROM kg_graphs WHERE name = ? AND project_id = ?",
+            "SELECT id FROM kg_graphs WHERE name = %s AND project_id = %s",
             (GRAPH_NAME, project_id),
         ).fetchone()
     else:
-        row = conn.execute("SELECT id FROM kg_graphs WHERE name = ?", (GRAPH_NAME,)).fetchone()
+        row = conn.execute("SELECT id FROM kg_graphs WHERE name = %s", (GRAPH_NAME,)).fetchone()
     return dict(row)["id"] if row else None
 
 
@@ -572,7 +572,7 @@ def _load_adj(
 ) -> Dict[str, List[Dict[str, Any]]]:
     """Load all edges as bidirectional adjacency dict {node_id: [{target, rel, weight}]}."""
     edges = conn.execute(
-        "SELECT source_id, target_id, relationship, weight, properties FROM kg_edges WHERE graph_id = ?",
+        "SELECT source_id, target_id, relationship, weight, properties FROM kg_edges WHERE graph_id = %s",
         (graph_id,),
     ).fetchall()
     adj: Dict[str, List[Dict]] = defaultdict(list)
@@ -604,7 +604,7 @@ def _node_by_label(
     row = conn.execute(
         """SELECT id, label, entity_type, properties
            FROM kg_nodes
-           WHERE graph_id = ? AND LOWER(label) LIKE ?
+           WHERE graph_id = %s AND LOWER(label) LIKE %s
            LIMIT 1""",
         (graph_id, f"%{label_fragment.lower()}%"),
     ).fetchone()
@@ -620,7 +620,7 @@ def _node_by_id(
     node_id: str,
 ) -> Optional[Dict[str, Any]]:
     row = conn.execute(
-        "SELECT id, label, entity_type, properties FROM kg_nodes WHERE id = ?",
+        "SELECT id, label, entity_type, properties FROM kg_nodes WHERE id = %s",
         (node_id,),
     ).fetchone()
     if not row:
@@ -716,9 +716,9 @@ def get_node_info(
         """SELECT e.relationship, e.weight, n.id, n.label, n.entity_type
            FROM kg_edges e
            JOIN kg_nodes n ON (
-               CASE WHEN e.source_id = ? THEN e.target_id ELSE e.source_id END = n.id
+               CASE WHEN e.source_id = %s THEN e.target_id ELSE e.source_id END = n.id
            )
-           WHERE e.graph_id = ? AND (e.source_id = ? OR e.target_id = ?)""",
+           WHERE e.graph_id = %s AND (e.source_id = %s OR e.target_id = %s)""",
         (node["id"], graph_id, node["id"], node["id"]),
     ).fetchall()
 
@@ -871,7 +871,7 @@ def get_stride_coverage(
     ctrl_rows = conn.execute(
         """SELECT n.id, n.label, n.properties
            FROM kg_edges e JOIN kg_nodes n ON e.target_id = n.id
-           WHERE e.graph_id = ? AND e.source_id = ? AND e.relationship = 'maps_to'""",
+           WHERE e.graph_id = %s AND e.source_id = %s AND e.relationship = 'maps_to'""",
         (graph_id, stride_nid),
     ).fetchall()
 
@@ -893,7 +893,7 @@ def get_stride_coverage(
         # Check which frameworks this control satisfies
         fw_rows = conn.execute(
             """SELECT n.label FROM kg_edges e JOIN kg_nodes n ON e.target_id = n.id
-               WHERE e.graph_id = ? AND e.source_id = ? AND e.relationship = 'satisfies'""",
+               WHERE e.graph_id = %s AND e.source_id = %s AND e.relationship = 'satisfies'""",
             (graph_id, d["id"]),
         ).fetchall()
         for fw_row in fw_rows:
@@ -949,7 +949,7 @@ def get_sdc_ctrl_coverage(
     ctrl_rows = conn.execute(
         """SELECT n.id, n.label, n.properties
            FROM kg_edges e JOIN kg_nodes n ON e.target_id = n.id
-           WHERE e.graph_id = ? AND e.source_id = ? AND e.relationship = 'implements'""",
+           WHERE e.graph_id = %s AND e.source_id = %s AND e.relationship = 'implements'""",
         (graph_id, sdc_nid),
     ).fetchall()
 
@@ -970,7 +970,7 @@ def get_sdc_ctrl_coverage(
         )
         fw_rows = conn.execute(
             """SELECT n.label FROM kg_edges e JOIN kg_nodes n ON e.target_id = n.id
-               WHERE e.graph_id = ? AND e.source_id = ? AND e.relationship = 'satisfies'""",
+               WHERE e.graph_id = %s AND e.source_id = %s AND e.relationship = 'satisfies'""",
             (graph_id, d["id"]),
         ).fetchall()
         for fw_row in fw_rows:

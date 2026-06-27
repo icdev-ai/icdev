@@ -92,7 +92,7 @@ def _audit(conn, action, details="", actor="cdrl_generator"):
     try:
         conn.execute(
             "INSERT INTO audit_trail (event_type, actor, action, details, session_id) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s)",
             ("hook_event_logged", actor, action, details, "cpmp"),
         )
     except Exception:
@@ -119,7 +119,7 @@ def generate_cdrl(deliverable_id, project_id=None):
     5. Update deliverable with generated_by_tool and output_path
     """
     conn = _get_db()
-    deliv = conn.execute("SELECT * FROM cpmp_deliverables WHERE id = ?", (deliverable_id,)).fetchone()
+    deliv = conn.execute("SELECT * FROM cpmp_deliverables WHERE id = %s", (deliverable_id,)).fetchone()
     if not deliv:
         conn.close()
         return {"status": "error", "message": f"Deliverable {deliverable_id} not found"}
@@ -196,7 +196,7 @@ def generate_cdrl(deliverable_id, project_id=None):
         "INSERT INTO cpmp_cdrl_generations "
         "(id, deliverable_id, contract_id, cdrl_type, generation_tool, "
         "output_path, output_hash, status, error_message, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
         (
             gen_id,
             deliverable_id,
@@ -214,7 +214,7 @@ def generate_cdrl(deliverable_id, project_id=None):
     # Update deliverable if successful
     if status == "generated":
         conn.execute(
-            "UPDATE cpmp_deliverables SET generated_by_tool = ?, updated_at = ? WHERE id = ?",
+            "UPDATE cpmp_deliverables SET generated_by_tool = %s, updated_at = %s WHERE id = %s",
             (tool_path, _now(), deliverable_id),
         )
 

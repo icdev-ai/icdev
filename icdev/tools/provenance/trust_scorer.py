@@ -36,7 +36,7 @@ def has_cross_reference(registry_id: str, source_hash: str, db_path: Path = None
     try:
         row = conn.execute(
             """SELECT COUNT(DISTINCT source_table) as cnt FROM source_citation_registry
-               WHERE source_hash = ?""",
+               WHERE source_hash = %s""",
             (source_hash,),
         ).fetchone()
         return row is not None and row["cnt"] > 1
@@ -70,7 +70,7 @@ def score_project(project_id: str, db_path: Path = None) -> dict:
     conn = get_connection(db_path=str(db_path or DB_PATH))
     try:
         rows = conn.execute(
-            "SELECT * FROM source_citation_registry WHERE project_id = ?",
+            "SELECT * FROM source_citation_registry WHERE project_id = %s",
             (project_id,),
         ).fetchall()
 
@@ -104,7 +104,7 @@ def update_all_scores(db_path: Path = None) -> dict:
         for r in rows:
             score = compute_trust_score(dict(r), db_path)
             conn.execute(
-                "UPDATE source_citation_registry SET trust_score = ? WHERE id = ?",
+                "UPDATE source_citation_registry SET trust_score = %s WHERE id = %s",
                 (score, r["id"]),
             )
             updated += 1

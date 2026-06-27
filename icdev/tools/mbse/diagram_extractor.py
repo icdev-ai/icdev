@@ -532,7 +532,7 @@ def store_extracted_elements(
                    (id, project_id, xmi_id, element_type, name, qualified_name,
                     parent_id, stereotype, description, properties,
                     diagram_type, source_file, source_hash, imported_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     elem_id,
                     project_id,
@@ -577,7 +577,7 @@ def store_extracted_elements(
                 """INSERT OR REPLACE INTO sysml_relationships
                    (project_id, source_element_id, target_element_id,
                     relationship_type, name, properties, source_file)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s)""",
                 (
                     project_id,
                     source_elem_id,
@@ -600,7 +600,7 @@ def store_extracted_elements(
                (project_id, import_type, source_file, source_hash,
                 elements_imported, relationships_imported, errors,
                 error_details, status, imported_by, imported_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 project_id,
                 "json",  # closest import_type for vision extraction
@@ -682,7 +682,7 @@ def validate_against_model(
     """
     conn = _get_connection(db_path)
     rows = conn.execute(
-        "SELECT name, element_type FROM sysml_elements WHERE project_id = ?",
+        "SELECT name, element_type FROM sysml_elements WHERE project_id = %s",
         (project_id,),
     ).fetchall()
     conn.close()

@@ -113,7 +113,7 @@ def write_todos(
                 "INSERT INTO kanban_tasks "
                 "(id, title, description, task_type, priority, status, "
                 "source_prediction_id, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     tid,
                     t["title"],
@@ -194,7 +194,7 @@ def update_todo(
     updated_fields: List[str] = []
     try:
         row = conn.execute(
-            "SELECT id FROM kanban_tasks WHERE id = ?", (task_id,)
+            "SELECT id FROM kanban_tasks WHERE id = %s", (task_id,)
         ).fetchone()
         if not row:
             return {"task_id": task_id, "updated_fields": [], "found": False}

@@ -58,7 +58,7 @@ def get_advisory(advisory_id: str) -> dict | None:
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT * FROM nc_advisories WHERE id = ?", (advisory_id,)
+            "SELECT * FROM nc_advisories WHERE id = %s", (advisory_id,)
         ).fetchone()
         return dict(row) if row else None
     finally:
@@ -75,7 +75,7 @@ def create_advisory(data: dict) -> dict:
                (id, cve_id, vendor, severity, published_date, total_devices,
                 impacted_devices, remediation_pct, data_source, hitl_status,
                 description, remediation_guidance, status, created_at, updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (
                 adv_id,
                 data.get("cve_id", ""),

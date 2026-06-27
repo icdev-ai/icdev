@@ -442,7 +442,7 @@ class AtlasCritique:
         conn = _get_db(self._db_path)
         try:
             row = conn.execute(
-                "SELECT * FROM anvil_critique_sessions WHERE id = ?",
+                "SELECT * FROM anvil_critique_sessions WHERE id = %s",
                 (session_id,),
             ).fetchone()
             if not row:
@@ -450,7 +450,7 @@ class AtlasCritique:
             result = dict(row)
             # Fetch associated findings
             findings = conn.execute(
-                "SELECT * FROM anvil_critique_findings WHERE session_id = ? ORDER BY round_number, severity",
+                "SELECT * FROM anvil_critique_findings WHERE session_id = %s ORDER BY round_number, severity",
                 (session_id,),
             ).fetchall()
             result["findings"] = [dict(f) for f in findings]
@@ -463,7 +463,7 @@ class AtlasCritique:
         conn = _get_db(self._db_path)
         try:
             rows = conn.execute(
-                "SELECT * FROM anvil_critique_sessions WHERE project_id = ? ORDER BY created_at DESC LIMIT ?",
+                "SELECT * FROM anvil_critique_sessions WHERE project_id = %s ORDER BY created_at DESC LIMIT %s",
                 (project_id, limit),
             ).fetchall()
             sessions = [dict(r) for r in rows]
@@ -504,7 +504,7 @@ class AtlasCritique:
                 """INSERT INTO anvil_critique_sessions
                    (id, project_id, workflow_id, phase_input_hash, status,
                     round_number, max_rounds, critics_assigned, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     session.id,
                     session.project_id,
@@ -537,11 +537,11 @@ class AtlasCritique:
         try:
             conn.execute(
                 """UPDATE anvil_critique_sessions
-                   SET status = ?, round_number = ?, consensus = ?,
-                       total_findings = ?, critical_count = ?,
-                       high_count = ?, medium_count = ?, low_count = ?,
-                       revision_summary = ?, completed_at = ?
-                   WHERE id = ?""",
+                   SET status = %s, round_number = %s, consensus = %s,
+                       total_findings = %s, critical_count = %s,
+                       high_count = %s, medium_count = %s, low_count = %s,
+                       revision_summary = %s, completed_at = %s
+                   WHERE id = %s""",
                 (
                     session.status,
                     session.round_number,
@@ -723,7 +723,7 @@ class AtlasCritique:
                         finding_type, severity, title, description,
                         evidence, suggested_fix, nist_controls,
                         addressed_in_revision, created_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                     (
                         f["id"],
                         f["session_id"],

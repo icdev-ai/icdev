@@ -118,7 +118,7 @@ def create_loop(
         conn.execute(
             """INSERT INTO workflow_loops
                (id, project_id, phase_name, loop_type, status, created_by, created_at)
-               VALUES (?, ?, ?, ?, 'planning', ?, ?)""",
+               VALUES (%s, %s, %s, %s, 'planning', %s, %s)""",
             (loop_id, project_id, phase_name, loop_type, created_by, now),
         )
         conn.commit()
@@ -150,7 +150,7 @@ def finalize_plan(
     """Finalize the plan for a loop, transitioning to PLANNED state."""
     conn = _get_db(db_path)
     try:
-        row = conn.execute("SELECT * FROM workflow_loops WHERE id = ?", (loop_id,)).fetchone()
+        row = conn.execute("SELECT * FROM workflow_loops WHERE id = %s", (loop_id,)).fetchone()
         if not row:
             return {"error": f"Loop {loop_id} not found"}
         if row["status"] != "planning":
@@ -163,7 +163,7 @@ def finalize_plan(
 
         # Check acceptance criteria requirement
         ac_count = conn.execute(
-            "SELECT COUNT(*) as cnt FROM workflow_acceptance_criteria WHERE loop_id = ?",
+            "SELECT COUNT(*) as cnt FROM workflow_acceptance_criteria WHERE loop_id = %s",
             (loop_id,),
         ).fetchone()["cnt"]
         min_ac = config.get("loop", {}).get("min_acceptance_criteria", 1)
@@ -174,9 +174,9 @@ def finalize_plan(
         now = now_iso()
         conn.execute(
             """UPDATE workflow_loops
-               SET status = 'planned', plan_summary = ?, task_count = ?,
-                   boundaries = ?, acceptance_criteria_count = ?, planned_at = ?
-               WHERE id = ?""",
+               SET status = 'planned', plan_summary = %s, task_count = %s,
+                   boundaries = %s, acceptance_criteria_count = %s, planned_at = %s
+               WHERE id = %s""",
             (summary, task_count, json.dumps(boundaries or []), ac_count, now, loop_id),
         )
         conn.commit()
@@ -223,7 +223,7 @@ def add_acceptance_criterion(
     """
     conn = _get_db(db_path)
     try:
-        row = conn.execute("SELECT * FROM workflow_loops WHERE id = ?", (loop_id,)).fetchone()
+        row = conn.execute("SELECT * FROM workflow_loops WHERE id = %s", (loop_id,)).fetchone()
         if not row:
             return {"error": f"Loop {loop_id} not found"}
         if row["status"] not in ("planning",):
@@ -231,7 +231,7 @@ def add_acceptance_criterion(
 
         # Get next criterion number
         max_num = conn.execute(
-            "SELECT COALESCE(MAX(criterion_number), 0) as mx FROM workflow_acceptance_criteria WHERE loop_id = ?",
+            "SELECT COALESCE(MAX(criterion_number), 0) as mx FROM workflow_acceptance_criteria WHERE loop_id = %s",
             (loop_id,),
         ).fetchone()["mx"]
 
@@ -247,7 +247,7 @@ def add_acceptance_criterion(
             """INSERT INTO workflow_acceptance_criteria
                (id, loop_id, criterion_number, given_text, when_text, then_text,
                 bdd_story_id, status, cot_config, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, 'pending', %s, %s)""",
             (crit_id, loop_id, max_num + 1, given_text, when_text, then_text, bdd_story_id or None, json.dumps(cot_config) if cot_config else None, now),
         )
         conn.commit()
@@ -267,7 +267,7 @@ def start_apply(loop_id: str, db_path: Optional[Path] = None) -> Dict[str, Any]:
     """Transition loop from PLANNED to APPLYING."""
     conn = _get_db(db_path)
     try:
-        row = conn.execute("SELECT * FROM workflow_loops WHERE id = ?", (loop_id,)).fetchone()
+        row = conn.execute("SELECT * FROM workflow_loops WHERE id = %s", (loop_id,)).fetchone()
         if not row:
             return {"error": f"Loop {loop_id} not found"}
         if row["status"] != "planned":
@@ -275,7 +275,7 @@ def start_apply(loop_id: str, db_path: Optional[Path] = None) -> Dict[str, Any]:
 
         now = now_iso()
         conn.execute(
-            "UPDATE workflow_loops SET status = 'applying', apply_started_at = ? WHERE id = ?",
+            "UPDATE workflow_loops SET status = 'applying', apply_started_at = %s WHERE id = %s",
             (now, loop_id),
         )
         conn.commit()
@@ -289,7 +289,7 @@ def complete_task(loop_id: str, db_path: Optional[Path] = None) -> Dict[str, Any
     """Increment completed task count for a loop in APPLYING state."""
     conn = _get_db(db_path)
     try:
-        row = conn.execute("SELECT * FROM workflow_loops WHERE id = ?", (loop_id,)).fetchone()
+        row = conn.execute("SELECT * FROM workflow_loops WHERE id = %s", (loop_id,)).fetchone()
         if not row:
             return {"error": f"Loop {loop_id} not found"}
         if row["status"] != "applying":
@@ -302,7 +302,7 @@ def complete_task(loop_id: str, db_path: Optional[Path] = None) -> Dict[str, Any
             status = "applied"
 
         conn.execute(
-            "UPDATE workflow_loops SET tasks_completed = ?, status = ?, apply_completed_at = ? WHERE id = ?",
+            "UPDATE workflow_loops SET tasks_completed = %s, status = %s, apply_completed_at = %s WHERE id = %s",
             (new_count, status, now if status == "applied" else row["apply_completed_at"], loop_id),
         )
         conn.commit()
@@ -324,7 +324,7 @@ def verify_criterion(
     conn = _get_db(db_path)
     try:
         row = conn.execute(
-            "SELECT * FROM workflow_acceptance_criteria WHERE id = ?",
+            "SELECT * FROM workflow_acceptance_criteria WHERE id = %s",
             (criterion_id,),
         ).fetchone()
         if not row:
@@ -332,7 +332,7 @@ def verify_criterion(
 
         now = now_iso()
         conn.execute(
-            "UPDATE workflow_acceptance_criteria SET status = ?, evidence = ?, verified_at = ? WHERE id = ?",
+            "UPDATE workflow_acceptance_criteria SET status = %s, evidence = %s, verified_at = %s WHERE id = %s",
             (status, evidence, now, criterion_id),
         )
 
@@ -343,12 +343,12 @@ def verify_criterion(
                  SUM(CASE WHEN status = 'pass' THEN 1 ELSE 0 END) as pass_ct,
                  SUM(CASE WHEN status = 'fail' THEN 1 ELSE 0 END) as fail_ct,
                  SUM(CASE WHEN status = 'skip' THEN 1 ELSE 0 END) as skip_ct
-               FROM workflow_acceptance_criteria WHERE loop_id = ?""",
+               FROM workflow_acceptance_criteria WHERE loop_id = %s""",
             (loop_id,),
         ).fetchone()
         conn.execute(
-            """UPDATE workflow_loops SET acceptance_pass_count = ?,
-               acceptance_fail_count = ?, acceptance_skip_count = ? WHERE id = ?""",
+            """UPDATE workflow_loops SET acceptance_pass_count = %s,
+               acceptance_fail_count = %s, acceptance_skip_count = %s WHERE id = %s""",
             (counts["pass_ct"] or 0, counts["fail_ct"] or 0, counts["skip_ct"] or 0, loop_id),
         )
         conn.commit()
@@ -361,7 +361,7 @@ def start_unify(loop_id: str, db_path: Optional[Path] = None) -> Dict[str, Any]:
     """Transition loop to UNIFYING state."""
     conn = _get_db(db_path)
     try:
-        row = conn.execute("SELECT * FROM workflow_loops WHERE id = ?", (loop_id,)).fetchone()
+        row = conn.execute("SELECT * FROM workflow_loops WHERE id = %s", (loop_id,)).fetchone()
         if not row:
             return {"error": f"Loop {loop_id} not found"}
         if row["status"] not in ("applied", "applying"):
@@ -369,7 +369,7 @@ def start_unify(loop_id: str, db_path: Optional[Path] = None) -> Dict[str, Any]:
 
         now = now_iso()
         conn.execute(
-            "UPDATE workflow_loops SET status = 'unifying', unify_started_at = ? WHERE id = ?",
+            "UPDATE workflow_loops SET status = 'unifying', unify_started_at = %s WHERE id = %s",
             (now, loop_id),
         )
         conn.commit()
@@ -382,7 +382,7 @@ def close_loop(loop_id: str, db_path: Optional[Path] = None) -> Dict[str, Any]:
     """Close a loop after UNIFY. Requires reconciliation record."""
     conn = _get_db(db_path)
     try:
-        row = conn.execute("SELECT * FROM workflow_loops WHERE id = ?", (loop_id,)).fetchone()
+        row = conn.execute("SELECT * FROM workflow_loops WHERE id = %s", (loop_id,)).fetchone()
         if not row:
             return {"error": f"Loop {loop_id} not found"}
         if row["status"] != "unifying":
@@ -392,7 +392,7 @@ def close_loop(loop_id: str, db_path: Optional[Path] = None) -> Dict[str, Any]:
         config = _load_config()
         require_unify = config.get("reconciliation", {}).get("require_unify", True)
         recon = conn.execute(
-            "SELECT * FROM workflow_reconciliations WHERE loop_id = ?",
+            "SELECT * FROM workflow_reconciliations WHERE loop_id = %s",
             (loop_id,),
         ).fetchone()
         if require_unify and not recon:
@@ -400,7 +400,7 @@ def close_loop(loop_id: str, db_path: Optional[Path] = None) -> Dict[str, Any]:
 
         # CoT evidence gate: if any criterion has cot_config, all criteria must have CoT evidence
         criteria = conn.execute(
-            "SELECT id, status, evidence, cot_config FROM workflow_acceptance_criteria WHERE loop_id = ?",
+            "SELECT id, status, evidence, cot_config FROM workflow_acceptance_criteria WHERE loop_id = %s",
             (loop_id,),
         ).fetchall()
         cot_required = False
@@ -424,7 +424,7 @@ def close_loop(loop_id: str, db_path: Optional[Path] = None) -> Dict[str, Any]:
 
         now = now_iso()
         conn.execute(
-            "UPDATE workflow_loops SET status = 'closed', closed_at = ? WHERE id = ?",
+            "UPDATE workflow_loops SET status = 'closed', closed_at = %s WHERE id = %s",
             (now, loop_id),
         )
         conn.commit()
@@ -443,7 +443,7 @@ def abandon_loop(loop_id: str, reason: str = "", db_path: Optional[Path] = None)
     """Abandon a loop that won't be completed."""
     conn = _get_db(db_path)
     try:
-        row = conn.execute("SELECT * FROM workflow_loops WHERE id = ?", (loop_id,)).fetchone()
+        row = conn.execute("SELECT * FROM workflow_loops WHERE id = %s", (loop_id,)).fetchone()
         if not row:
             return {"error": f"Loop {loop_id} not found"}
         if row["status"] == "closed":
@@ -451,7 +451,7 @@ def abandon_loop(loop_id: str, reason: str = "", db_path: Optional[Path] = None)
 
         now = now_iso()
         conn.execute(
-            "UPDATE workflow_loops SET status = 'abandoned', closed_at = ? WHERE id = ?",
+            "UPDATE workflow_loops SET status = 'abandoned', closed_at = %s WHERE id = %s",
             (now, loop_id),
         )
         conn.commit()
@@ -470,17 +470,17 @@ def get_loop_status(loop_id: str, db_path: Optional[Path] = None) -> Dict[str, A
     """Get full status of a workflow loop."""
     conn = _get_db(db_path)
     try:
-        row = conn.execute("SELECT * FROM workflow_loops WHERE id = ?", (loop_id,)).fetchone()
+        row = conn.execute("SELECT * FROM workflow_loops WHERE id = %s", (loop_id,)).fetchone()
         if not row:
             return {"error": f"Loop {loop_id} not found"}
 
         criteria = conn.execute(
-            "SELECT * FROM workflow_acceptance_criteria WHERE loop_id = ? ORDER BY criterion_number",
+            "SELECT * FROM workflow_acceptance_criteria WHERE loop_id = %s ORDER BY criterion_number",
             (loop_id,),
         ).fetchall()
 
         recon = conn.execute(
-            "SELECT * FROM workflow_reconciliations WHERE loop_id = ? ORDER BY reconciled_at DESC LIMIT 1",
+            "SELECT * FROM workflow_reconciliations WHERE loop_id = %s ORDER BY reconciled_at DESC LIMIT 1",
             (loop_id,),
         ).fetchone()
 

@@ -45,7 +45,7 @@ def score_all_opportunities(config: dict | None = None, db_path: str | None = No
             r = dict(r)
             # Get best goal alignment score
             aln = conn.execute(
-                "SELECT MAX(alignment_score) as best FROM mi_goal_alignments WHERE opportunity_id = ?",
+                "SELECT MAX(alignment_score) as best FROM mi_goal_alignments WHERE opportunity_id = %s",
                 (r["id"],),
             ).fetchone()
             goal_score = (aln["best"] or 0.0) if aln else 0.0
@@ -62,8 +62,8 @@ def score_all_opportunities(config: dict | None = None, db_path: str | None = No
 
             conn.execute(
                 """UPDATE mi_opportunities
-                   SET composite_score=?, goal_alignment_score=?, status='scored', updated_at=?
-                   WHERE id=?""",
+                   SET composite_score=%s, goal_alignment_score=%s, status='scored', updated_at=%s
+                   WHERE id=%s""",
                 (composite, goal_score, _now(), r["id"]),
             )
             updated += 1
@@ -161,7 +161,7 @@ def generate_strategies_for_opportunity(
 
     conn = _get_mi_conn(db_path)
     try:
-        opp = conn.execute("SELECT * FROM mi_opportunities WHERE id = ?", (opportunity_id,)).fetchone()
+        opp = conn.execute("SELECT * FROM mi_opportunities WHERE id = %s", (opportunity_id,)).fetchone()
         if not opp:
             return {"ok": False, "error": "Opportunity not found"}
         opp = dict(opp)
@@ -187,7 +187,7 @@ def generate_strategies_for_opportunity(
                     target_platform, estimated_effort_days, estimated_cost_usd,
                     risk_level, pros, cons, prerequisites,
                     recommended, status, created_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (
                     strat_id, opportunity_id, st,
                     tmpl.get("title", st.replace("_", " ").title()),
@@ -205,7 +205,7 @@ def generate_strategies_for_opportunity(
             created.append({"id": strat_id, "type": st})
 
         conn.execute(
-            "UPDATE mi_opportunities SET status='strategy_generated', updated_at=? WHERE id=?",
+            "UPDATE mi_opportunities SET status='strategy_generated', updated_at=%s WHERE id=%s",
             (_now(), opportunity_id),
         )
         conn.commit()
@@ -316,7 +316,7 @@ def build_roadmap(
                (id, name, description, horizon_years, wave_count,
                 opportunities_count, estimated_duration_months,
                 estimated_total_cost_usd, payload, status, generated_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (
                 roadmap_id, name,
                 f"Auto-generated {horizon_years}-year migration roadmap — {len(opps)} opportunities",

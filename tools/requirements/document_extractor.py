@@ -428,7 +428,7 @@ def classify_document(document_id, db_path=None):
         dict with classification result.
     """
     conn = _get_connection(db_path)
-    doc = conn.execute("SELECT * FROM intake_documents WHERE id = ?", (document_id,)).fetchone()
+    doc = conn.execute("SELECT * FROM intake_documents WHERE id = %s", (document_id,)).fetchone()
     if not doc:
         conn.close()
         raise ValueError(f"Document '{document_id}' not found.")
@@ -456,7 +456,7 @@ def classify_document(document_id, db_path=None):
 
     # Store classification in extracted_sections column
     conn.execute(
-        "UPDATE intake_documents SET extracted_sections = ? WHERE id = ?",
+        "UPDATE intake_documents SET extracted_sections = %s WHERE id = %s",
         (json.dumps(classification), document_id),
     )
     conn.commit()
@@ -720,7 +720,7 @@ def upload_document(session_id, file_path, document_type, db_path=None):
     conn = _get_connection(db_path)
 
     # Verify session exists
-    session = conn.execute("SELECT * FROM intake_sessions WHERE id = ?", (session_id,)).fetchone()
+    session = conn.execute("SELECT * FROM intake_sessions WHERE id = %s", (session_id,)).fetchone()
     if not session:
         conn.close()
         raise ValueError(f"Session '{session_id}' not found.")
@@ -773,7 +773,7 @@ def upload_document(session_id, file_path, document_type, db_path=None):
            (id, session_id, document_type, file_name, file_path, file_hash,
             file_size_bytes, mime_type, extraction_status, extracted_sections,
             extracted_requirements_count, classification, uploaded_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, 0, 'CUI', ?)""",
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'pending', %s, 0, 'CUI', %s)""",
         (
             doc_id,
             session_id,
@@ -835,7 +835,7 @@ def extract_requirements(document_id, db_path=None):
     conn = _get_connection(db_path)
 
     # Load document
-    doc = conn.execute("SELECT * FROM intake_documents WHERE id = ?", (document_id,)).fetchone()
+    doc = conn.execute("SELECT * FROM intake_documents WHERE id = %s", (document_id,)).fetchone()
     if not doc:
         conn.close()
         raise ValueError(f"Document '{document_id}' not found.")
@@ -846,7 +846,7 @@ def extract_requirements(document_id, db_path=None):
 
     # Update status to extracting
     conn.execute(
-        "UPDATE intake_documents SET extraction_status = 'extracting' WHERE id = ?",
+        "UPDATE intake_documents SET extraction_status = 'extracting' WHERE id = %s",
         (document_id,),
     )
     conn.commit()
@@ -873,7 +873,7 @@ def extract_requirements(document_id, db_path=None):
                (id, session_id, raw_text, refined_text, requirement_type,
                 priority, source_document, clarity_score,
                 gaps, acceptance_criteria, status, classification, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, 0.5, NULL, NULL, 'draft', 'CUI', ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, 0.5, NULL, NULL, 'draft', 'CUI', %s)""",
             (
                 req_id,
                 session_id,
@@ -905,18 +905,18 @@ def extract_requirements(document_id, db_path=None):
     # Update document: extraction complete
     conn.execute(
         """UPDATE intake_documents
-           SET extraction_status = 'extracted', extracted_requirements_count = ?
-           WHERE id = ?""",
+           SET extraction_status = 'extracted', extracted_requirements_count = %s
+           WHERE id = %s""",
         (len(inserted_reqs), document_id),
     )
 
     # Update session total requirement count
     total_count = conn.execute(
-        "SELECT COUNT(*) as cnt FROM intake_requirements WHERE session_id = ?",
+        "SELECT COUNT(*) as cnt FROM intake_requirements WHERE session_id = %s",
         (session_id,),
     ).fetchone()["cnt"]
     conn.execute(
-        "UPDATE intake_sessions SET total_requirements = ?, updated_at = ? WHERE id = ?",
+        "UPDATE intake_sessions SET total_requirements = %s, updated_at = %s WHERE id = %s",
         (total_count, datetime.now().isoformat(), session_id),
     )
 
@@ -958,13 +958,13 @@ def list_documents(session_id, db_path=None):
     """
     conn = _get_connection(db_path)
 
-    session = conn.execute("SELECT * FROM intake_sessions WHERE id = ?", (session_id,)).fetchone()
+    session = conn.execute("SELECT * FROM intake_sessions WHERE id = %s", (session_id,)).fetchone()
     if not session:
         conn.close()
         raise ValueError(f"Session '{session_id}' not found.")
 
     rows = conn.execute(
-        "SELECT * FROM intake_documents WHERE session_id = ? ORDER BY uploaded_at",
+        "SELECT * FROM intake_documents WHERE session_id = %s ORDER BY uploaded_at",
         (session_id,),
     ).fetchall()
     documents = [dict(r) for r in rows]

@@ -143,7 +143,7 @@ def _get_connection(db_path=None) -> sqlite3.Connection:
 def _fetch_elements(project_id: str, element_type: str, conn: sqlite3.Connection) -> List[dict]:
     """Fetch sysml_elements of a given type for a project."""
     cur = conn.execute(
-        "SELECT * FROM sysml_elements WHERE project_id = ? AND element_type = ?",
+        "SELECT * FROM sysml_elements WHERE project_id = %s AND element_type = %s",
         (project_id, element_type),
     )
     return [dict(row) for row in cur.fetchall()]
@@ -162,7 +162,7 @@ def _fetch_elements_multi(project_id: str, element_types: List[str], conn: sqlit
 def _fetch_children(parent_id: str, conn: sqlite3.Connection) -> List[dict]:
     """Fetch child elements of a given parent."""
     cur = conn.execute(
-        "SELECT * FROM sysml_elements WHERE parent_id = ?",
+        "SELECT * FROM sysml_elements WHERE parent_id = %s",
         (parent_id,),
     )
     return [dict(row) for row in cur.fetchall()]
@@ -187,7 +187,7 @@ def _fetch_relationships(
 
 def _fetch_element_by_id(element_id: str, conn: sqlite3.Connection) -> Optional[dict]:
     """Fetch a single sysml_element by id."""
-    cur = conn.execute("SELECT * FROM sysml_elements WHERE id = ?", (element_id,))
+    cur = conn.execute("SELECT * FROM sysml_elements WHERE id = %s", (element_id,))
     row = cur.fetchone()
     return dict(row) if row else None
 
@@ -217,7 +217,7 @@ def _record_mapping(
             """INSERT OR REPLACE INTO model_code_mappings
                (project_id, sysml_element_id, code_path, code_type,
                 mapping_direction, sync_status, model_hash, code_hash)
-               VALUES (?, ?, ?, ?, 'model_to_code', 'synced', ?, ?)""",
+               VALUES (%s, %s, %s, %s, 'model_to_code', 'synced', %s, %s)""",
             (project_id, sysml_element_id, code_path, code_type, None, code_hash),
         )
     except sqlite3.Error:
@@ -231,7 +231,7 @@ def _record_thread_link(project_id: str, sysml_element_id: str, code_path: str, 
             """INSERT OR IGNORE INTO digital_thread_links
                (project_id, source_type, source_id, target_type, target_id,
                 link_type, confidence, created_by)
-               VALUES (?, 'sysml_element', ?, 'code_module', ?, 'implements', 1.0,
+               VALUES (%s, 'sysml_element', %s, 'code_module', %s, 'implements', 1.0,
                        'icdev-model-code-generator')""",
             (project_id, sysml_element_id, code_path),
         )
@@ -679,7 +679,7 @@ def generate_from_blocks(project_id: str, language: str = "python", output_dir: 
             rels = _fetch_relationships(project_id, conn, source_id=block["id"])
             # Also fetch incoming generalization (where block is target)
             incoming_gen = conn.execute(
-                "SELECT * FROM sysml_relationships WHERE project_id = ? AND target_element_id = ?",
+                "SELECT * FROM sysml_relationships WHERE project_id = %s AND target_element_id = %s",
                 (project_id, block["id"]),
             ).fetchall()
             all_rels = rels + [dict(r) for r in incoming_gen]
@@ -853,7 +853,7 @@ def generate_tests_from_requirements(project_id: str, output_dir: str = None, db
         doors_reqs: List[dict] = []
         try:
             cur = conn.execute(
-                "SELECT * FROM doors_requirements WHERE project_id = ?",
+                "SELECT * FROM doors_requirements WHERE project_id = %s",
                 (project_id,),
             )
             doors_reqs = [dict(row) for row in cur.fetchall()]
@@ -917,7 +917,7 @@ def generate_tests_from_requirements(project_id: str, output_dir: str = None, db
                         """INSERT OR IGNORE INTO digital_thread_links
                            (project_id, source_type, source_id, target_type, target_id,
                             link_type, confidence, created_by)
-                           VALUES (?, ?, ?, 'test_file', ?, 'verifies', 1.0,
+                           VALUES (%s, %s, %s, 'test_file', %s, 'verifies', 1.0,
                                    'icdev-model-code-generator')""",
                         (project_id, source_type, req_id, str(filepath)),
                     )
@@ -1032,7 +1032,7 @@ def _log_audit_event(project_id: str, results: dict, db_path=None) -> None:
             conn.execute(
                 """INSERT INTO audit_trail
                    (project_id, event_type, actor, action, details, affected_files, classification)
-                   VALUES (?, 'code_from_model', 'mbse/model_code_generator', ?, ?, ?, 'CUI')""",
+                   VALUES (%s, 'code_from_model', 'mbse/model_code_generator', %s, %s, %s, 'CUI')""",
                 (
                     project_id,
                     f"Generated {total} file(s) from SysML model",

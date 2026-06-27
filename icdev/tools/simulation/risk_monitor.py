@@ -349,7 +349,7 @@ def _persist_risk_snapshot(result, risk_type, db_path=None):
             """INSERT INTO risk_monitor_history
                (id, project_id, risk_type, risk_score, severity,
                 components, alerts, calculated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 str(uuid4()),
                 result.get("project_id") or result.get("contract_id"),

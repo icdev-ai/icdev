@@ -287,7 +287,7 @@ def _persist_gap_score(design_id: str, result: dict) -> None:
                 "INSERT INTO odc_gap_scores "
                 "(id, design_id, total_techniques, covered_count, partial_count, "
                 "gap_count, overall_gap_score, by_tactic, assessed_at) "
-                "VALUES (?,?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (
                     gap_id,
                     design_id,
@@ -307,7 +307,7 @@ def _persist_gap_score(design_id: str, result: dict) -> None:
                     "INSERT INTO odc_technique_coverage "
                     "(id, design_id, technique_id, coverage_state, "
                     "signal_sources_present, signal_sources_missing, gap_score, assessed_at) "
-                    "VALUES (?,?,?,?,?,?,?,?)",
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
                     (
                         cov_id,
                         design_id,
@@ -359,7 +359,7 @@ def ingest_otel_event(design_id: str, event: dict) -> dict:
                 "INSERT INTO odc_otel_events "
                 "(design_id, trace_id, span_id, event_name, technique_id, "
                 "signal_source, attributes, received_at) "
-                "VALUES (?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
                 (
                     design_id,
                     event.get("trace_id", ""),
@@ -441,7 +441,7 @@ def verify_sdc_attack_path(design_id: str, ttp_list: list[str]) -> dict:
 
         with get_connection() as conn:
             row = conn.execute(
-                "SELECT graph_json FROM observability_designs WHERE id=?",
+                "SELECT graph_json FROM observability_designs WHERE id=%s",
                 (design_id,),
             ).fetchone()
     except Exception as exc:
@@ -526,7 +526,7 @@ def verify_sdc_attack_path(design_id: str, ttp_list: list[str]) -> dict:
             conn.execute(
                 "INSERT INTO odc_sdc_verifications "
                 "(id, design_id, ttp_list, covered_ttps, partial_ttps, gap_ttps, "
-                "coverage_pct, verified_at) VALUES (?,?,?,?,?,?,?,?)",
+                "coverage_pct, verified_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
                 (
                     verify_id,
                     design_id,

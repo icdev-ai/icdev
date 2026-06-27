@@ -58,7 +58,7 @@ def _get_project_metadata(project_id: str, db_path: Optional[Path] = None) -> Op
     try:
         conn = _get_connection(db_path)
         row = conn.execute(
-            "SELECT classification, impact_level FROM projects WHERE id = ?",
+            "SELECT classification, impact_level FROM projects WHERE id = %s",
             (project_id,),
         ).fetchone()
         conn.close()
@@ -74,7 +74,7 @@ def _get_data_categories(project_id: str, db_path: Optional[Path] = None) -> Lis
     try:
         conn = _get_connection(db_path)
         rows = conn.execute(
-            "SELECT data_category FROM data_classifications WHERE project_id = ?",
+            "SELECT data_category FROM data_classifications WHERE project_id = %s",
             (project_id,),
         ).fetchall()
         conn.close()

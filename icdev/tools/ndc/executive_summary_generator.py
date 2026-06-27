@@ -77,8 +77,8 @@ def generate_executive_summary(horizon_days: int = 365) -> Dict[str, Any]:
                   replacement_cost, annual_maintenance_cost,
                   criticality_score, downstream_count, label
            FROM ni_devices
-           WHERE (eol_date IS NOT NULL AND eol_date <= ?)
-              OR (eos_date IS NOT NULL AND eos_date <= ?)
+           WHERE (eol_date IS NOT NULL AND eol_date <= %s)
+              OR (eos_date IS NOT NULL AND eos_date <= %s)
            ORDER BY eol_date ASC""",
         (cutoff, cutoff),
     ).fetchall()

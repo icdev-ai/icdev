@@ -145,7 +145,7 @@ _AI_KEYWORDS = {
 def _session_mentions_ai(conn, session_id: str) -> bool:
     """Check if session requirements mention AI/ML keywords."""
     rows = conn.execute(
-        "SELECT raw_text FROM intake_requirements WHERE session_id = ?", (session_id,)
+        "SELECT raw_text FROM intake_requirements WHERE session_id = %s", (session_id,)
     ).fetchall()
     all_text = " ".join((r[0] if isinstance(r, (tuple, list)) else r.get("raw_text", "")) for r in rows).lower()
     return any(kw in all_text for kw in _AI_KEYWORDS)
@@ -161,7 +161,7 @@ def _seed_ai_governance_baseline(conn, project_id: str, session_id: str) -> None
         conn.execute(
             """INSERT OR IGNORE INTO ai_use_case_inventory
                (project_id, name, purpose, risk_level, created_at)
-               VALUES (?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s)""",
             (project_id, "Primary AI Capability", "Auto-detected from requirements intake", "minimal_risk", now),
         )
     except Exception:
@@ -171,7 +171,7 @@ def _seed_ai_governance_baseline(conn, project_id: str, session_id: str) -> None
         conn.execute(
             """INSERT OR IGNORE INTO framework_applicability
                (project_id, framework_id, source, detection_rule, created_at)
-               VALUES (?, ?, 'auto_detected', 'ai_keyword_intake', ?)""",
+               VALUES (%s, %s, 'auto_detected', 'ai_keyword_intake', %s)""",
             (project_id, "nist_ai_rmf", now),
         )
     except Exception:
@@ -314,7 +314,7 @@ def process_panel_turn():
     conn = _get_db()
     try:
         session = conn.execute(
-            "SELECT * FROM intake_sessions WHERE id = ?", (session_id,)
+            "SELECT * FROM intake_sessions WHERE id = %s", (session_id,)
         ).fetchone()
         if not session:
             return jsonify({"error": "Session not found"}), 404
@@ -332,7 +332,7 @@ def process_panel_turn():
 
         # Persist merged requirements
         turn_number = conn.execute(
-            "SELECT COALESCE(MAX(turn_number), 0) + 1 FROM intake_conversation WHERE session_id = ?",
+            "SELECT COALESCE(MAX(turn_number), 0) + 1 FROM intake_conversation WHERE session_id = %s",
             (session_id,),
         ).fetchone()[0]
 
@@ -342,7 +342,7 @@ def process_panel_turn():
         conn.execute(
             """INSERT INTO intake_conversation
                (session_id, turn_number, role, content, content_type, classification)
-               VALUES (?, ?, 'customer', ?, 'text', ?)""",
+               VALUES (%s, %s, 'customer', %s, 'text', %s)""",
             (session_id, turn_number, message, session_data.get("classification", "CUI")),
         )
         analyst_summary = (
@@ -353,7 +353,7 @@ def process_panel_turn():
         conn.execute(
             """INSERT INTO intake_conversation
                (session_id, turn_number, role, content, content_type, classification)
-               VALUES (?, ?, 'analyst', ?, 'text', ?)""",
+               VALUES (%s, %s, 'analyst', %s, 'text', %s)""",
             (session_id, turn_number + 1, analyst_summary, session_data.get("classification", "CUI")),
         )
         conn.commit()
@@ -421,13 +421,13 @@ def hitl_confirm(session_id):
 
         for req_id in approved_ids:
             conn.execute(
-                "UPDATE intake_requirements SET status = 'draft', updated_at = ? WHERE id = ? AND session_id = ?",
+                "UPDATE intake_requirements SET status = 'draft', updated_at = %s WHERE id = %s AND session_id = %s",
                 (now, req_id, session_id),
             )
 
         for req_id in deleted_ids:
             conn.execute(
-                "DELETE FROM intake_requirements WHERE id = ? AND session_id = ?",
+                "DELETE FROM intake_requirements WHERE id = %s AND session_id = %s",
                 (req_id, session_id),
             )
 
@@ -442,7 +442,7 @@ def hitl_confirm(session_id):
                 """INSERT INTO intake_requirements
                    (id, session_id, raw_text, requirement_type, priority,
                     acceptance_criteria, source_document, status, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, 'hitl', 'draft', ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, 'hitl', 'draft', %s)""",
                 (req_id, session_id,
                  text,
                  c.get("type", "functional"),
@@ -530,23 +530,23 @@ def get_intake_session(session_id):
     """Get session info and conversation history."""
     conn = _get_db()
     try:
-        session = conn.execute("SELECT * FROM intake_sessions WHERE id = ?", (session_id,)).fetchone()
+        session = conn.execute("SELECT * FROM intake_sessions WHERE id = %s", (session_id,)).fetchone()
         if not session:
             return jsonify({"error": "Session not found"}), 404
 
         messages = conn.execute(
             "SELECT turn_number, role, content, content_type, created_at "
-            "FROM intake_conversation WHERE session_id = ? ORDER BY turn_number",
+            "FROM intake_conversation WHERE session_id = %s ORDER BY turn_number",
             (session_id,),
         ).fetchall()
 
         req_count = conn.execute(
-            "SELECT COUNT(*) as cnt FROM intake_requirements WHERE session_id = ?",
+            "SELECT COUNT(*) as cnt FROM intake_requirements WHERE session_id = %s",
             (session_id,),
         ).fetchone()["cnt"]
 
         doc_count = conn.execute(
-            "SELECT COUNT(*) as cnt FROM intake_documents WHERE session_id = ?",
+            "SELECT COUNT(*) as cnt FROM intake_documents WHERE session_id = %s",
             (session_id,),
         ).fetchone()["cnt"]
 
@@ -575,7 +575,7 @@ def ai_boost(session_id):
     conn = _get_db()
     try:
         session = conn.execute(
-            "SELECT * FROM intake_sessions WHERE id = ?", (session_id,)
+            "SELECT * FROM intake_sessions WHERE id = %s", (session_id,)
         ).fetchone()
         if not session:
             return jsonify({"error": "Session not found"}), 404
@@ -585,7 +585,7 @@ def ai_boost(session_id):
 
         # --- Load context (with caching) ---
         existing_reqs = conn.execute(
-            "SELECT requirement_type, raw_text, acceptance_criteria FROM intake_requirements WHERE session_id = ?",
+            "SELECT requirement_type, raw_text, acceptance_criteria FROM intake_requirements WHERE session_id = %s",
             (session_id,),
         ).fetchall()
         existing_reqs = [dict(r) for r in existing_reqs]
@@ -596,7 +596,7 @@ def ai_boost(session_id):
             conversation_text = cached['conversation_text']
         else:
             conversation = conn.execute(
-                "SELECT role, content FROM intake_conversation WHERE session_id = ? ORDER BY turn_number DESC LIMIT 20",
+                "SELECT role, content FROM intake_conversation WHERE session_id = %s ORDER BY turn_number DESC LIMIT 20",
                 (session_id,),
             ).fetchall()
             conversation_text = "\n".join(
@@ -712,7 +712,7 @@ Generate only the requirements block. No preamble, no explanations."""
 
         # Get next turn number
         turn_row = conn.execute(
-            "SELECT COALESCE(MAX(turn_number), 0) + 1 FROM intake_conversation WHERE session_id = ?",
+            "SELECT COALESCE(MAX(turn_number), 0) + 1 FROM intake_conversation WHERE session_id = %s",
             (session_id,),
         ).fetchone()
         turn_number = turn_row[0] if turn_row else 1
@@ -742,7 +742,7 @@ Generate only the requirements block. No preamble, no explanations."""
                 """INSERT INTO intake_requirements
                    (id, session_id, source_turn, requirement_type, raw_text,
                     acceptance_criteria, classification, priority, status, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'deferred', ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'deferred', %s)""",
                 (req_id, session_id, turn_number, req_type, req_text,
                  criteria, classification, 'high', now),
             )
@@ -754,7 +754,7 @@ Generate only the requirements block. No preamble, no explanations."""
             conn.execute(
                 """INSERT INTO intake_conversation
                    (session_id, turn_number, role, content, content_type, classification)
-                   VALUES (?, ?, 'analyst', ?, 'text', ?)""",
+                   VALUES (%s, %s, 'analyst', %s, 'text', %s)""",
                 (session_id, turn_number, summary, classification),
             )
 
@@ -971,7 +971,7 @@ def auto_remediate_prd(session_id):
     def _write_refined(rid, original_text: str, refined: str, check: str) -> bool:
         try:
             conn.execute(
-                "UPDATE intake_requirements SET refined_text = ? WHERE id = ?",
+                "UPDATE intake_requirements SET refined_text = %s WHERE id = %s",
                 (refined, rid),
             )
             conn.commit()
@@ -1023,7 +1023,7 @@ def auto_remediate_prd(session_id):
         type_counts_existing = completeness_check.get("type_counts") or {}
         # Load session context for better LLM prompts
         session_row = conn.execute(
-            "SELECT customer_name, project_id, impact_level FROM intake_sessions WHERE id = ?",
+            "SELECT customer_name, project_id, impact_level FROM intake_sessions WHERE id = %s",
             (session_id,),
         ).fetchone()
         session_ctx = dict(session_row) if session_row else {}
@@ -1110,7 +1110,7 @@ def auto_remediate_prd(session_id):
                         """INSERT INTO intake_requirements
                            (id, session_id, requirement_type, priority, raw_text, acceptance_criteria,
                             created_at, updated_at)
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
                         (
                             new_req_id, session_id,
                             missing_type, "high" if missing_type == "security" else "medium",
@@ -1150,7 +1150,7 @@ def auto_remediate_prd(session_id):
             if rid is None:
                 continue
             row = conn.execute(
-                "SELECT id, raw_text FROM intake_requirements WHERE id = ?", (rid,)
+                "SELECT id, raw_text FROM intake_requirements WHERE id = %s", (rid,)
             ).fetchone()
             if not row:
                 continue
@@ -1176,7 +1176,7 @@ def auto_remediate_prd(session_id):
             if rid is None:
                 continue
             row = conn.execute(
-                "SELECT id, raw_text FROM intake_requirements WHERE id = ?", (rid,)
+                "SELECT id, raw_text FROM intake_requirements WHERE id = %s", (rid,)
             ).fetchone()
             if not row:
                 continue
@@ -1225,7 +1225,7 @@ def force_build(session_id):
 
     conn = _get_db()
     try:
-        session = conn.execute("SELECT * FROM intake_sessions WHERE id = ?", (session_id,)).fetchone()
+        session = conn.execute("SELECT * FROM intake_sessions WHERE id = %s", (session_id,)).fetchone()
         if not session:
             return jsonify({"error": "Session not found"}), 404
 
@@ -1233,7 +1233,7 @@ def force_build(session_id):
         readiness_score = session_data.get("readiness_score", 0) or 0
 
         req_count = conn.execute(
-            "SELECT COUNT(*) as cnt FROM intake_requirements WHERE session_id = ?",
+            "SELECT COUNT(*) as cnt FROM intake_requirements WHERE session_id = %s",
             (session_id,),
         ).fetchone()["cnt"]
 
@@ -1279,7 +1279,7 @@ def trigger_build(session_id):
 
     conn = _get_db()
     try:
-        session = conn.execute("SELECT * FROM intake_sessions WHERE id = ?", (session_id,)).fetchone()
+        session = conn.execute("SELECT * FROM intake_sessions WHERE id = %s", (session_id,)).fetchone()
         if not session:
             return jsonify({"error": "Session not found"}), 404
 
@@ -1292,7 +1292,7 @@ def trigger_build(session_id):
 
         req_rows = conn.execute(
             "SELECT id, raw_text, requirement_type, priority "
-            "FROM intake_requirements WHERE session_id = ? ORDER BY created_at",
+            "FROM intake_requirements WHERE session_id = %s ORDER BY created_at",
             (session_id,),
         ).fetchall()
         requirements = [dict(r) for r in req_rows]
@@ -1301,7 +1301,7 @@ def trigger_build(session_id):
         selected_coa = None
         try:
             coa_row = conn.execute(
-                "SELECT * FROM coa_definitions WHERE session_id = ? AND status = 'selected'",
+                "SELECT * FROM coa_definitions WHERE session_id = %s AND status = 'selected'",
                 (session_id,),
             ).fetchone()
             if coa_row:
@@ -1403,7 +1403,7 @@ def get_session_coas(session_id):
                       risk_profile, compliance_impact, status,
                       selected_by, selected_at, selection_rationale
                FROM coa_definitions
-               WHERE session_id = ?
+               WHERE session_id = %s
                ORDER BY CASE coa_type
                    WHEN 'speed' THEN 1 WHEN 'balanced' THEN 2
                    WHEN 'comprehensive' THEN 3 ELSE 4
@@ -1426,7 +1426,7 @@ def generate_session_coas(session_id):
 
     conn = _get_db()
     try:
-        session = conn.execute("SELECT * FROM intake_sessions WHERE id = ?", (session_id,)).fetchone()
+        session = conn.execute("SELECT * FROM intake_sessions WHERE id = %s", (session_id,)).fetchone()
         if not session:
             return jsonify({"error": "Session not found"}), 404
 
@@ -1441,11 +1441,11 @@ def generate_session_coas(session_id):
             conn.execute(
                 """INSERT OR IGNORE INTO projects
                    (id, name, type, classification, status, directory_path, created_at)
-                   VALUES (?, ?, 'webapp', ?, 'active', '', datetime('now'))""",
+                   VALUES (%s, %s, 'webapp', %s, 'active', '', datetime('now'))""",
                 (project_id, f"Simulation for {session_id}", DEFAULT_CLASSIFICATION),
             )
             conn.execute(
-                "UPDATE intake_sessions SET project_id = ? WHERE id = ?",
+                "UPDATE intake_sessions SET project_id = %s WHERE id = %s",
                 (project_id, session_id),
             )
             conn.commit()
@@ -1505,7 +1505,7 @@ def select_session_coa(session_id):
     try:
         now = datetime.now(timezone.utc).isoformat()
         row = conn.execute(
-            "SELECT id, session_id, coa_type, coa_name FROM coa_definitions WHERE id = ?",
+            "SELECT id, session_id, coa_type, coa_name FROM coa_definitions WHERE id = %s",
             (coa_id,),
         ).fetchone()
         if not row:
@@ -1515,13 +1515,13 @@ def select_session_coa(session_id):
             return jsonify({"error": "COA does not belong to this session"}), 400
 
         conn.execute(
-            "UPDATE coa_definitions SET status='rejected', updated_at=? "
-            "WHERE session_id=? AND id!=? AND status NOT IN ('rejected','archived')",
+            "UPDATE coa_definitions SET status='rejected', updated_at=%s "
+            "WHERE session_id=%s AND id!=%s AND status NOT IN ('rejected','archived')",
             (now, session_id, coa_id),
         )
         conn.execute(
-            "UPDATE coa_definitions SET status='selected', selected_by=?, "
-            "selected_at=?, selection_rationale=?, updated_at=? WHERE id=?",
+            "UPDATE coa_definitions SET status='selected', selected_by=%s, "
+            "selected_at=%s, selection_rationale=%s, updated_at=%s WHERE id=%s",
             (selected_by, now, rationale, now, coa_id),
         )
         conn.commit()
@@ -1546,7 +1546,7 @@ def unselect_session_coa(session_id):
     conn = _get_db()
     try:
         row = conn.execute(
-            "SELECT id, coa_name, coa_type FROM coa_definitions WHERE session_id = ? AND status = 'selected'",
+            "SELECT id, coa_name, coa_type FROM coa_definitions WHERE session_id = %s AND status = 'selected'",
             (session_id,),
         ).fetchone()
         if not row:
@@ -1557,8 +1557,8 @@ def unselect_session_coa(session_id):
         now = datetime.now(timezone.utc).isoformat()
         conn.execute(
             "UPDATE coa_definitions SET status='presented', selected_by=NULL, "
-            "selected_at=NULL, selection_rationale=NULL, updated_at=? "
-            "WHERE session_id=? AND status IN ('selected', 'rejected')",
+            "selected_at=NULL, selection_rationale=NULL, updated_at=%s "
+            "WHERE session_id=%s AND status IN ('selected', 'rejected')",
             (now, session_id),
         )
         conn.commit()
@@ -1660,7 +1660,7 @@ def _run_build_pipeline(session_id):
         time.sleep(0.3)
         try:
             req_count = conn.execute(
-                "SELECT COUNT(*) as cnt FROM intake_requirements WHERE session_id = ?",
+                "SELECT COUNT(*) as cnt FROM intake_requirements WHERE session_id = %s",
                 (session_id,),
             ).fetchone()["cnt"]
         except Exception as exc:
@@ -1680,7 +1680,7 @@ def _run_build_pipeline(session_id):
         try:
             coa_row = conn.execute(
                 "SELECT coa_name, coa_type, boundary_tier, architecture_summary "
-                "FROM coa_definitions WHERE session_id = ? AND status = 'selected'",
+                "FROM coa_definitions WHERE session_id = %s AND status = 'selected'",
                 (session_id,),
             ).fetchone()
         except Exception:
@@ -1707,7 +1707,7 @@ def _run_build_pipeline(session_id):
         _update_phase("scaffold", "running", "Creating project structure...")
         try:
             session_row = conn.execute(
-                "SELECT * FROM intake_sessions WHERE id = ?",
+                "SELECT * FROM intake_sessions WHERE id = %s",
                 (session_id,),
             ).fetchone()
             project_id = dict(session_row).get("project_id", "") if session_row else ""
@@ -1718,11 +1718,11 @@ def _run_build_pipeline(session_id):
                 conn.execute(
                     """INSERT OR IGNORE INTO projects
                        (id, name, type, classification, status, directory_path, created_at)
-                       VALUES (?, ?, 'webapp', ?, 'active', '', datetime('now'))""",
+                       VALUES (%s, %s, 'webapp', %s, 'active', '', datetime('now'))""",
                     (project_id, f"App from {session_id[:12]}", DEFAULT_CLASSIFICATION),
                 )
                 conn.execute(
-                    "UPDATE intake_sessions SET project_id = ? WHERE id = ?",
+                    "UPDATE intake_sessions SET project_id = %s WHERE id = %s",
                     (project_id, session_id),
                 )
                 conn.commit()
@@ -1838,7 +1838,7 @@ def start_build_pipeline(session_id):
 
     conn = _get_db()
     try:
-        session = conn.execute("SELECT id FROM intake_sessions WHERE id = ?", (session_id,)).fetchone()
+        session = conn.execute("SELECT id FROM intake_sessions WHERE id = %s", (session_id,)).fetchone()
         if not session:
             return jsonify({"error": "Session not found"}), 404
     finally:
@@ -1897,7 +1897,7 @@ def get_build_project(session_id):
     """Get the project ID associated with a build session."""
     conn = _get_db()
     try:
-        row = conn.execute("SELECT project_id FROM intake_sessions WHERE id = ?", (session_id,)).fetchone()
+        row = conn.execute("SELECT project_id FROM intake_sessions WHERE id = %s", (session_id,)).fetchone()
         if not row:
             return jsonify({"error": "Session not found"}), 404
         project_id = row["project_id"] or ""
@@ -1905,7 +1905,7 @@ def get_build_project(session_id):
         has_activity = False
         if project_id:
             activity_row = conn.execute(
-                "SELECT COUNT(*) as cnt FROM build_items WHERE project_id = ?",
+                "SELECT COUNT(*) as cnt FROM build_items WHERE project_id = %s",
                 (project_id,),
             ).fetchone()
             has_activity = activity_row is not None and activity_row["cnt"] > 0

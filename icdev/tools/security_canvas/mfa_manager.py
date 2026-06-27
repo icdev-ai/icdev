@@ -87,7 +87,7 @@ def enroll_mfa(username: str, account_class: str = "standard",
             """INSERT INTO zig_mfa_enrollments
                (account_id, username, account_class, authenticator, aal,
                 phishing_resistant, compliant, enrolled_at, updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
                ON CONFLICT(account_id) DO UPDATE SET
                account_class=excluded.account_class,
                authenticator=excluded.authenticator,
@@ -122,7 +122,7 @@ def challenge(account_id: str, step_up: bool = False) -> dict[str, Any]:
     try:
         _ensure_tables(conn)
         enrollment = conn.execute(
-            "SELECT authenticator, aal, account_class FROM zig_mfa_enrollments WHERE account_id=?",
+            "SELECT authenticator, aal, account_class FROM zig_mfa_enrollments WHERE account_id=%s",
             (account_id,),
         ).fetchone()
         if not enrollment:
@@ -132,7 +132,7 @@ def challenge(account_id: str, step_up: bool = False) -> dict[str, Any]:
             result = "verified" if enrollment["aal"] >= required else "fail_weak_aal"
         conn.execute(
             "INSERT INTO zig_mfa_challenges (account_id, result, authenticator, stepped_up, created_at) "
-            "VALUES (?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s)",
             (account_id, result, enrollment["authenticator"] if enrollment else "none",
              int(step_up), now),
         )

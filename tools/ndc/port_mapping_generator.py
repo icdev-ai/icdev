@@ -86,7 +86,7 @@ def _nc_conn() -> sqlite3.Connection:
 
 def _get_device(conn: sqlite3.Connection, device_id: str) -> Optional[Dict[str, Any]]:
     row = conn.execute(
-        "SELECT id, vendor, model, device_type, site, label FROM ni_devices WHERE id=?",
+        "SELECT id, vendor, model, device_type, site, label FROM ni_devices WHERE id=%s",
         (device_id,),
     ).fetchone()
     return dict(row) if row else None
@@ -95,7 +95,7 @@ def _get_device(conn: sqlite3.Connection, device_id: str) -> Optional[Dict[str, 
 def _get_config(conn: sqlite3.Connection, device_id: str) -> str:
     row = conn.execute(
         """SELECT config_text FROM ni_device_configs
-           WHERE device_id=? ORDER BY created_at DESC LIMIT 1""",
+           WHERE device_id=%s ORDER BY created_at DESC LIMIT 1""",
         (device_id,),
     ).fetchone()
     return row["config_text"] if row and row["config_text"] else ""

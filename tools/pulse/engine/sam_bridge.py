@@ -461,7 +461,7 @@ def _check_duplicate(
         # Layer 1: Exact content hash match
         try:
             row = conn.execute(
-                "SELECT id FROM pulse_sam_article_log WHERE content_hash = ?",
+                "SELECT id FROM pulse_sam_article_log WHERE content_hash = %s",
                 (content_hash_val,),
             ).fetchone()
             if row:

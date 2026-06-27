@@ -41,7 +41,7 @@ def validate_receipts(
             continue
         row = conn.execute(
             """SELECT 1 FROM ttx_api_log
-               WHERE team_id = ? AND session_id = ? AND call_id = ?""",
+               WHERE team_id = %s AND session_id = %s AND call_id = %s""",
             (team_id, session_id, call_id),
         ).fetchone()
         if row:
@@ -175,7 +175,7 @@ def score_aadc_design(design_id: str, required_checks: list[str]) -> dict[str, A
         _aadc_init()
         conn = _gc()
         row = conn.execute(
-            "SELECT graph_json, metadata_json FROM aadc_designs WHERE design_id = ?",
+            "SELECT graph_json, metadata_json FROM aadc_designs WHERE design_id = %s",
             (design_id,),
         ).fetchone()
         if not row:
@@ -256,7 +256,7 @@ def score_response(
            (response_id, team_id, inject_id,
             receipt_pts, receipt_count, judge_pts, time_bonus_pts, total_pts,
             judge_rationale_json, judged_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
         (
             response_id, team_id, inject_id,
             receipt_pts, receipt_count, judge_pts, time_bonus, total_pts,
@@ -267,7 +267,7 @@ def score_response(
 
     # Update team aggregate
     conn.execute(
-        "UPDATE ttx_teams SET total_score = total_score + ? WHERE team_id = ?",
+        "UPDATE ttx_teams SET total_score = total_score + %s WHERE team_id = %s",
         (total_pts, team_id),
     )
     conn.commit()

@@ -207,7 +207,7 @@ def _save_to_db(name: str, pid: str, name_to_id: dict) -> None:
             conn.execute("""
                 INSERT OR REPLACE INTO ndc_topologies
                   (name, source, project_id, design_json, device_map, ztp_status, created_at, updated_at)
-                VALUES (?, 'gns3', ?, ?, ?, 'pending', ?, ?)
+                VALUES (%s, 'gns3', %s, %s, %s, 'pending', %s, %s)
             """, (
                 name, pid,
                 _json.dumps(design), _json.dumps(DEVICE_MAP),

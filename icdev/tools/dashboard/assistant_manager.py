@@ -109,7 +109,7 @@ def get_or_create_context(context_id: str | None = None) -> str:
     cur = conn.cursor()
 
     if context_id:
-        cur.execute("SELECT id FROM chat_contexts WHERE id = ?", (context_id,))
+        cur.execute("SELECT id FROM chat_contexts WHERE id = %s", (context_id,))
         row = cur.fetchone()
         if row:
             return str(row[0])
@@ -120,7 +120,7 @@ def get_or_create_context(context_id: str | None = None) -> str:
     cur.execute(
         """INSERT INTO chat_contexts
                (id, user_id, title, status, classification, created_at, updated_at)
-           VALUES (?, 'widget', 'Codebase Assistant', 'active', 'CUI', ?, ?)""",
+           VALUES (%s, 'widget', 'Codebase Assistant', 'active', 'CUI', %s, %s)""",
         (new_id, now, now),
     )
     conn.commit()
@@ -311,7 +311,7 @@ def query(
     cur.execute(
         """SELECT id, answer_text, source_citations, hit_count
            FROM codebase_qa_cache
-           WHERE question_hash = ? AND scope = ?
+           WHERE question_hash = %s AND scope = %s
            LIMIT 1""",
         (q_hash, scope),
     )
@@ -321,7 +321,7 @@ def query(
         # Cache hit — increment counters and return
         now = datetime.now(timezone.utc).isoformat()
         cur.execute(
-            "UPDATE codebase_qa_cache SET hit_count = hit_count + 1, last_hit_at = ? WHERE id = ?",
+            "UPDATE codebase_qa_cache SET hit_count = hit_count + 1, last_hit_at = %s WHERE id = %s",
             (now, cache_row[0]),
         )
         conn.commit()
@@ -395,7 +395,7 @@ def query(
 
     # Determine next turn number
     cur.execute(
-        "SELECT COALESCE(MAX(turn_number), 0) FROM chat_messages WHERE context_id = ?",
+        "SELECT COALESCE(MAX(turn_number), 0) FROM chat_messages WHERE context_id = %s",
         (ctx,),
     )
     max_turn = cur.fetchone()[0]
@@ -406,7 +406,7 @@ def query(
         """INSERT INTO chat_messages
                (context_id, turn_number, role, content,
                 content_type, metadata, classification, created_at)
-           VALUES (?, ?, 'user', ?, 'text', ?, 'CUI', ?)""",
+           VALUES (%s, %s, 'user', %s, 'text', %s, 'CUI', %s)""",
         (ctx, max_turn + 1, question, meta_json, now),
     )
 
@@ -415,7 +415,7 @@ def query(
         """INSERT INTO chat_messages
                (context_id, turn_number, role, content,
                 content_type, metadata, classification, created_at)
-           VALUES (?, ?, 'assistant', ?, 'text', ?, 'CUI', ?)""",
+           VALUES (%s, %s, 'assistant', %s, 'text', %s, 'CUI', %s)""",
         (
             ctx,
             max_turn + 2,
@@ -427,14 +427,14 @@ def query(
 
     # Update context activity
     cur.execute(
-        "UPDATE chat_contexts SET message_count = message_count + 2, last_activity_at = ?, updated_at = ? WHERE id = ?",
+        "UPDATE chat_contexts SET message_count = message_count + 2, last_activity_at = %s, updated_at = %s WHERE id = %s",
         (now, now, ctx),
     )
     conn.commit()
 
     # 9. Cache promotion — if this hash has been seen enough times
     cur.execute(
-        "SELECT hit_count FROM codebase_qa_cache WHERE question_hash = ? AND scope = ?",
+        "SELECT hit_count FROM codebase_qa_cache WHERE question_hash = %s AND scope = %s",
         (q_hash, scope),
     )
     existing = cur.fetchone()
@@ -444,15 +444,15 @@ def query(
         cur.execute(
             "UPDATE codebase_qa_cache "
             "SET hit_count = hit_count + 1, "
-            "answer_text = ?, source_citations = ?, last_hit_at = ? "
-            "WHERE question_hash = ? AND scope = ?",
+            "answer_text = %s, source_citations = %s, last_hit_at = %s "
+            "WHERE question_hash = %s AND scope = %s",
             (answer, json.dumps(citations), now, q_hash, scope),
         )
     else:
         # Count how many times this hash has appeared in chat_messages
         cur.execute(
             """SELECT COUNT(*) FROM chat_messages
-               WHERE role = 'user' AND content = ?""",
+               WHERE role = 'user' AND content = %s""",
             (question,),
         )
         occurrence_count = cur.fetchone()[0]
@@ -464,7 +464,7 @@ def query(
                        (id, question_hash, scope, question_text,
                         answer_text, source_citations, hit_count,
                         created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     cache_id,
                     q_hash,
@@ -520,7 +520,7 @@ def get_suggestions(page_path: str, scope: str | None = None) -> list[str]:
         _ensure_tables(conn)
         cur = conn.cursor()
         cur.execute(
-            "SELECT file_path, symbols FROM codebase_index WHERE module = ? LIMIT 20",
+            "SELECT file_path, symbols FROM codebase_index WHERE module = %s LIMIT 20",
             (scope,),
         )
         rows = cur.fetchall()

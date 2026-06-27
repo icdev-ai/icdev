@@ -93,7 +93,7 @@ class DeckEngine:
             conn = get_connection()
             try:
                 conn.execute(
-                    "UPDATE slides_decks SET status=? WHERE deck_id=?",
+                    "UPDATE slides_decks SET status=%s WHERE deck_id=%s",
                     (phase, deck_id),
                 )
                 conn.commit()
@@ -315,7 +315,7 @@ class DeckEngine:
                     "INSERT INTO slides_decks "
                     "(title, deck_type, theme, tone, occasion, target_audience, citation_style, "
                     "output_formats, status, source_types, enable_rich_diagrams, audience_mode) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?) RETURNING deck_id",
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'running', %s, %s, %s) RETURNING deck_id",
                     (
                         req.title, req.deck_type, req.theme, req.tone,
                         req.occasion, req.target_audience, req.citation_style,
@@ -347,8 +347,8 @@ class DeckEngine:
             try:
                 now = datetime.now(timezone.utc).isoformat()
                 conn.execute(
-                    "UPDATE slides_decks SET status=?, slide_count=?, pptx_path=?, "
-                    "pdf_path=?, html_path=?, error_message=?, completed_at=? WHERE deck_id=?",
+                    "UPDATE slides_decks SET status=%s, slide_count=%s, pptx_path=%s, "
+                    "pdf_path=%s, html_path=%s, error_message=%s, completed_at=%s WHERE deck_id=%s",
                     (status, len(slides), pptx_path, pdf_path, html_path, error, now, deck_id),
                 )
                 # Persist slides
@@ -359,7 +359,7 @@ class DeckEngine:
                         "INSERT INTO slides_slides "
                         "(deck_id, position, slide_type, title, bullets, speaker_notes, citations, "
                         "image_path, image_prompt, mermaid_code, three_scene_config, excalidraw_elements) "
-                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                         (
                             deck_id, i + 1,
                             slide_data.get("slide_type", "content"),
@@ -388,7 +388,7 @@ class DeckEngine:
             conn = get_connection()
             try:
                 conn.execute(
-                    "INSERT INTO slides_audit (deck_id, action, details) VALUES (?, ?, ?)",
+                    "INSERT INTO slides_audit (deck_id, action, details) VALUES (%s, %s, %s)",
                     (deck_id, action, json.dumps(details)),
                 )
                 conn.commit()

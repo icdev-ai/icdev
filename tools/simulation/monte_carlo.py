@@ -93,7 +93,7 @@ def _log_audit(conn, project_id, action, details):
         conn.execute(
             """INSERT INTO audit_trail
                (project_id, event_type, actor, action, details, classification)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s)""",
             (
                 project_id,
                 "monte_carlo_completed",
@@ -588,7 +588,7 @@ def run_monte_carlo(scenario_id, dimension, iterations=DEFAULT_ITERATIONS, confi
     try:
         # Load scenario
         row = conn.execute(
-            "SELECT * FROM simulation_scenarios WHERE id = ?",
+            "SELECT * FROM simulation_scenarios WHERE id = %s",
             (scenario_id,),
         ).fetchone()
         if not row:
@@ -651,7 +651,7 @@ def run_monte_carlo(scenario_id, dimension, iterations=DEFAULT_ITERATIONS, confi
                 mean_value, std_deviation,
                 histogram_data, cdf_data, confidence_intervals,
                 run_duration_ms, completed_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 run_id,
                 scenario_id,
@@ -718,7 +718,7 @@ def get_run(run_id, db_path=None):
     conn = _get_connection(db_path)
     try:
         row = conn.execute(
-            "SELECT * FROM monte_carlo_runs WHERE id = ?",
+            "SELECT * FROM monte_carlo_runs WHERE id = %s",
             (run_id,),
         ).fetchone()
         if not row:
@@ -752,7 +752,7 @@ def list_runs(scenario_id, db_path=None):
         rows = conn.execute(
             "SELECT id, dimension, iterations, mean_value, std_deviation, "
             "p10_value, p50_value, p80_value, p90_value, run_duration_ms, completed_at "
-            "FROM monte_carlo_runs WHERE scenario_id = ? ORDER BY completed_at DESC",
+            "FROM monte_carlo_runs WHERE scenario_id = %s ORDER BY completed_at DESC",
             (scenario_id,),
         ).fetchall()
 

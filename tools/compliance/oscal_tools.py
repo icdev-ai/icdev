@@ -803,7 +803,7 @@ def _log_validation(project_id, artifact_type, file_path, validator_result, db_p
             """INSERT INTO oscal_validation_log
                (project_id, artifact_type, file_path, validator, valid,
                 error_count, errors, duration_ms, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 project_id,
                 artifact_type,

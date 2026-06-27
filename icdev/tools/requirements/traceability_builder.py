@@ -96,16 +96,16 @@ def _find_linked_ids(conn, project_id, source_type, source_id, target_type):
     # Forward links
     forward = conn.execute(
         """SELECT target_id FROM digital_thread_links
-           WHERE project_id = ? AND source_type = ? AND source_id = ?
-           AND target_type = ?""",
+           WHERE project_id = %s AND source_type = %s AND source_id = %s
+           AND target_type = %s""",
         (project_id, source_type, source_id, target_type),
     ).fetchall()
 
     # Reverse links
     reverse = conn.execute(
         """SELECT source_id FROM digital_thread_links
-           WHERE project_id = ? AND target_type = ? AND target_id = ?
-           AND source_type = ?""",
+           WHERE project_id = %s AND target_type = %s AND target_id = %s
+           AND source_type = %s""",
         (project_id, source_type, source_id, target_type),
     ).fetchall()
 
@@ -135,7 +135,7 @@ def _find_safe_items_for_requirement(conn, project_id, req_id):
     # Via source_requirement_ids in safe_decomposition
     rows = conn.execute(
         """SELECT id, source_requirement_ids FROM safe_decomposition
-           WHERE project_id = ?""",
+           WHERE project_id = %s""",
         (project_id,),
     ).fetchall()
 
@@ -207,7 +207,7 @@ def build_rtm(project_id, session_id=None, db_path=None):
             reqs = conn.execute(
                 """SELECT id, session_id, raw_text, requirement_type, priority, status
                    FROM intake_requirements
-                   WHERE session_id = ? AND project_id = ?
+                   WHERE session_id = %s AND project_id = %s
                    ORDER BY id""",
                 (session_id, project_id),
             ).fetchall()
@@ -215,7 +215,7 @@ def build_rtm(project_id, session_id=None, db_path=None):
             reqs = conn.execute(
                 """SELECT id, session_id, raw_text, requirement_type, priority, status
                    FROM intake_requirements
-                   WHERE project_id = ?
+                   WHERE project_id = %s
                    ORDER BY id""",
                 (project_id,),
             ).fetchall()
@@ -283,7 +283,7 @@ def build_rtm(project_id, session_id=None, db_path=None):
             for sysml_id in sysml_ids:
                 mcm_rows = conn.execute(
                     """SELECT code_path FROM model_code_mappings
-                       WHERE project_id = ? AND sysml_element_id = ?""",
+                       WHERE project_id = %s AND sysml_element_id = %s""",
                     (project_id, sysml_id),
                 ).fetchall()
                 for mcm in mcm_rows:
@@ -393,7 +393,7 @@ def build_rtm(project_id, session_id=None, db_path=None):
             # Upsert into review_traceability
             existing = conn.execute(
                 """SELECT id FROM review_traceability
-                   WHERE project_id = ? AND requirement_id = ?
+                   WHERE project_id = %s AND requirement_id = %s
                    AND requirement_type = 'intake'""",
                 (project_id, req_id),
             ).fetchone()
@@ -401,17 +401,17 @@ def build_rtm(project_id, session_id=None, db_path=None):
             if existing:
                 conn.execute(
                     """UPDATE review_traceability
-                       SET session_id = ?,
-                           sysml_element_ids = ?,
-                           code_module_ids = ?,
-                           test_file_ids = ?,
-                           compliance_control_ids = ?,
-                           uat_test_ids = ?,
-                           coverage_pct = ?,
-                           gaps = ?,
-                           last_verified = ?,
-                           updated_at = ?
-                       WHERE id = ?""",
+                       SET session_id = %s,
+                           sysml_element_ids = %s,
+                           code_module_ids = %s,
+                           test_file_ids = %s,
+                           compliance_control_ids = %s,
+                           uat_test_ids = %s,
+                           coverage_pct = %s,
+                           gaps = %s,
+                           last_verified = %s,
+                           updated_at = %s
+                       WHERE id = %s""",
                     (
                         req_session_id,
                         json.dumps(sysml_ids) if sysml_ids else None,
@@ -434,7 +434,7 @@ def build_rtm(project_id, session_id=None, db_path=None):
                         compliance_control_ids, uat_test_ids,
                         coverage_pct, gaps, last_verified, verified_by,
                         created_at, updated_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                     (
                         project_id,
                         req_session_id,
@@ -516,7 +516,7 @@ def gap_analysis(project_id, db_path=None):
                       ir.raw_text, ir.priority, ir.status
                FROM review_traceability rt
                LEFT JOIN intake_requirements ir ON ir.id = rt.requirement_id
-               WHERE rt.project_id = ?
+               WHERE rt.project_id = %s
                ORDER BY rt.coverage_pct ASC""",
             (project_id,),
         ).fetchall()

@@ -422,7 +422,7 @@ def record_experiment_result(
                 "INSERT INTO pg_quality_experiments "
                 "(id, experiment_id, hypothesis, category, pre_score, "
                 "post_score, delta, significant, sample_size, details, "
-                "created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "created_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     record_id,
                     experiment_id,

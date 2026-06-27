@@ -40,7 +40,7 @@ def _row_to_dict(row) -> dict:
 
 def _fetch_item(conn, item_id: str) -> dict:
     row = conn.execute(
-        "SELECT * FROM govlift_marketplace_items WHERE id = ?",
+        "SELECT * FROM govlift_marketplace_items WHERE id = %s",
         (item_id,),
     ).fetchone()
     return _row_to_dict(row)
@@ -59,7 +59,7 @@ def publish_template(template_id: str, author: str, description: str = "") -> di
     conn = get_connection()
     try:
         tpl_row = conn.execute(
-            "SELECT id, name FROM govlift_runbook_templates WHERE id = ?",
+            "SELECT id, name FROM govlift_runbook_templates WHERE id = %s",
             (template_id,),
         ).fetchone()
         if not tpl_row:
@@ -71,7 +71,7 @@ def publish_template(template_id: str, author: str, description: str = "") -> di
         conn.execute(
             "INSERT INTO govlift_marketplace_items "
             "(id, template_id, title, author, description, status, created_at) "
-            "VALUES (?,?,?,?,?,'submitted',?)",
+            "VALUES (%s,%s,%s,%s,%s,'submitted',%s)",
             (mp_id, template_id, tpl["name"], author, description, now),
         )
         conn.commit()
@@ -128,8 +128,8 @@ def approve_item(item_id: str, reviewer: str, notes: str = "") -> dict:
         now = _now()
         conn.execute(
             "UPDATE govlift_marketplace_items "
-            "SET status='approved', reviewed_by=?, review_notes=?, published_at=? "
-            "WHERE id=?",
+            "SET status='approved', reviewed_by=%s, review_notes=%s, published_at=%s "
+            "WHERE id=%s",
             (reviewer, notes, now, item_id),
         )
         conn.commit()
@@ -150,8 +150,8 @@ def reject_item(item_id: str, reviewer: str, notes: str = "") -> dict:
             raise ValueError(f"Marketplace item '{item_id}' not found")
         conn.execute(
             "UPDATE govlift_marketplace_items "
-            "SET status='rejected', reviewed_by=?, review_notes=? "
-            "WHERE id=?",
+            "SET status='rejected', reviewed_by=%s, review_notes=%s "
+            "WHERE id=%s",
             (reviewer, notes, item_id),
         )
         conn.commit()
@@ -175,13 +175,13 @@ def download_item(item_id: str) -> dict:
             raise ValueError("Only approved items can be downloaded")
 
         conn.execute(
-            "UPDATE govlift_marketplace_items SET downloads = downloads + 1 WHERE id = ?",
+            "UPDATE govlift_marketplace_items SET downloads = downloads + 1 WHERE id = %s",
             (item_id,),
         )
         conn.commit()
 
         tpl_row = conn.execute(
-            "SELECT * FROM govlift_runbook_templates WHERE id = ?",
+            "SELECT * FROM govlift_runbook_templates WHERE id = %s",
             (item["template_id"],),
         ).fetchone()
         tpl = _row_to_dict(tpl_row)

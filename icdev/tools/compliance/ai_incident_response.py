@@ -91,7 +91,7 @@ def log_incident(
             """INSERT INTO ai_incident_log
                (project_id, incident_type, ai_system, severity,
                 description, status, reported_by)
-               VALUES (?, ?, ?, ?, ?, 'open', ?)""",
+               VALUES (%s, %s, %s, %s, %s, 'open', %s)""",
             (project_id, incident_type, ai_system, severity, description, reported_by),
         )
         conn.commit()
@@ -102,7 +102,7 @@ def log_incident(
             conn.execute(
                 """INSERT INTO audit_trail
                    (project_id, event_type, actor, action, details, classification)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s)""",
                 (
                     project_id,
                     "ai_incident_logged",
@@ -141,7 +141,7 @@ def update_incident(
     try:
         _ensure_table(conn)
         row = conn.execute(
-            "SELECT project_id, incident_type FROM ai_incident_log WHERE id = ?",
+            "SELECT project_id, incident_type FROM ai_incident_log WHERE id = %s",
             (incident_id,),
         ).fetchone()
         if not row:
@@ -227,7 +227,7 @@ def get_incident_stats(project_id: str, db_path: Path = DB_PATH) -> Dict:
         try:
             rows = conn.execute(
                 """SELECT incident_type, COUNT(*) as cnt FROM ai_incident_log
-                   WHERE project_id = ? GROUP BY incident_type""",
+                   WHERE project_id = %s GROUP BY incident_type""",
                 (pid,),
             ).fetchall()
             type_counts = {r["incident_type"]: r["cnt"] for r in rows}

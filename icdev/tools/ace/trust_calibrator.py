@@ -109,7 +109,7 @@ def get_trust_score(role_id: str) -> float:
         # Try ace_coworkers first (canvas table — column is created_at, no updated_at)
         try:
             row = conn.execute(
-                "SELECT trust_score FROM ace_coworkers WHERE role_id = ? ORDER BY created_at DESC LIMIT 1",
+                "SELECT trust_score FROM ace_coworkers WHERE role_id = %s ORDER BY created_at DESC LIMIT 1",
                 (role_id,),
             ).fetchone()
             if row:
@@ -169,14 +169,14 @@ def record_trust_event(
         conn.execute(
             """
             INSERT INTO ace_trust_ledger (id, role_id, delta, reason, new_score, source_task_id)
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s)
             """,
             (ledger_id, role_id, delta, event_type, new_score, source_task_id),
         )
         # Best-effort update on ace_coworkers
         try:
             conn.execute(
-                "UPDATE ace_coworkers SET trust_score = ? WHERE role_id = ?",
+                "UPDATE ace_coworkers SET trust_score = %s WHERE role_id = %s",
                 (new_score, role_id),
             )
         except Exception:
@@ -241,7 +241,7 @@ def run_weekly_recalibration() -> dict[str, Any]:
             SELECT k.executor_type, k.status, k.last_failure_reason,
                    k.failure_count, k.id
               FROM kanban_tasks k
-             WHERE k.updated_at >= ?
+             WHERE k.updated_at >= %s
                AND k.executor_type LIKE 'ace_%'
              LIMIT 500
             """,

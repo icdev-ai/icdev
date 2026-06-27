@@ -220,7 +220,7 @@ def record_veto(
             """INSERT INTO agent_vetoes
                (authority_agent_id, vetoed_agent_id, task_id, workflow_id,
                 project_id, topic, veto_type, reason, evidence, status)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'active')""",
             (authority_agent_id, vetoed_agent_id, task_id, workflow_id, project_id, topic, veto_type, reason, evidence),
         )
         conn.commit()
@@ -280,7 +280,7 @@ def record_override(
     conn = _get_db(db_path)
     try:
         # Fetch current veto
-        row = conn.execute("SELECT * FROM agent_vetoes WHERE id = ?", (veto_id,)).fetchone()
+        row = conn.execute("SELECT * FROM agent_vetoes WHERE id = %s", (veto_id,)).fetchone()
 
         if not row:
             logger.error("Veto #%d not found", veto_id)
@@ -298,10 +298,10 @@ def record_override(
         conn.execute(
             """UPDATE agent_vetoes
                SET status = 'overridden',
-                   overridden_by = ?,
-                   override_justification = ?,
-                   override_approval_id = ?
-               WHERE id = ?""",
+                   overridden_by = %s,
+                   override_justification = %s,
+                   override_approval_id = %s
+               WHERE id = %s""",
             (overridden_by, justification, approval_id, veto_id),
         )
         conn.commit()

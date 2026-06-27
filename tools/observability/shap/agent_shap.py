@@ -195,7 +195,7 @@ class AgentSHAP:
         try:
             conn = get_connection(db_path=str(self._db_path))
             rows = conn.execute(
-                "SELECT * FROM otel_spans WHERE trace_id = ? ORDER BY start_time",
+                "SELECT * FROM otel_spans WHERE trace_id = %s ORDER BY start_time",
                 (trace_id,),
             ).fetchall()
             conn.close()
@@ -222,7 +222,7 @@ class AgentSHAP:
                        (trace_id, tool_name, shapley_value, coalition_size,
                         confidence_low, confidence_high, outcome_metric,
                         outcome_value, analysis_params)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                     (
                         trace_id,
                         tool_name,

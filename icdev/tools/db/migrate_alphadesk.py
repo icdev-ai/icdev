@@ -99,7 +99,7 @@ def _dest_columns_pg(conn, table: str) -> list[str]:
     """Return column names for a table from a PostgreSQL connection."""
     rows = conn.execute(
         "SELECT column_name FROM information_schema.columns "
-        "WHERE table_name = ? ORDER BY ordinal_position",
+        "WHERE table_name = %s ORDER BY ordinal_position",
         (table,),
     ).fetchall()
     return [r[0] for r in rows]
@@ -185,7 +185,7 @@ def _migrate_postgresql(source_path: Path) -> tuple[dict, list[str]]:
         # Discover destination columns via information_schema
         dst_col_rows = conn.execute(
             "SELECT column_name FROM information_schema.columns "
-            "WHERE table_name = ? ORDER BY ordinal_position",
+            "WHERE table_name = %s ORDER BY ordinal_position",
             (table,),
         ).fetchall()
         dst_cols = {r[0] for r in dst_col_rows}

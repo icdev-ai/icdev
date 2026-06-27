@@ -82,18 +82,18 @@ def _upsert_case(conn, case: dict) -> str:
     now_ts = datetime.now(timezone.utc).isoformat()
 
     row = conn.execute(
-        "SELECT id FROM sg_war_readiness_events WHERE case_id = ?",
+        "SELECT id FROM sg_war_readiness_events WHERE case_id = %s",
         (case["case_id"],),
     ).fetchone()
 
     if row:
         conn.execute(
             """UPDATE sg_war_readiness_events SET
-               label=?, conflict_name=?, year=?, start_date=?,
-               aggressor=?, defender=?, region=?, duration_days=?,
-               indicators_json=?, metadata_json=?, source='baseline_importer',
-               readiness_level=?, assessment=?
-               WHERE case_id=?""",
+               label=%s, conflict_name=%s, year=%s, start_date=%s,
+               aggressor=%s, defender=%s, region=%s, duration_days=%s,
+               indicators_json=%s, metadata_json=%s, source='baseline_importer',
+               readiness_level=%s, assessment=%s
+               WHERE case_id=%s""",
             (
                 label,
                 case["conflict_name"],
@@ -118,7 +118,7 @@ def _upsert_case(conn, case: dict) -> str:
                 aggressor, defender, region, duration_days,
                 indicators_json, metadata_json, source,
                 readiness_level, assessment, event_ts, created_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'baseline_importer',?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'baseline_importer',%s,%s,%s,%s)""",
             (
                 case["case_id"],
                 case["case_id"],

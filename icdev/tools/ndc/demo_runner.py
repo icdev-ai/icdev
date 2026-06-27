@@ -81,7 +81,7 @@ def _get_topology(conn: sqlite3.Connection) -> Dict[str, Any] | None:
 
 def _get_config(conn: sqlite3.Connection, device_id: str) -> str:
     row = conn.execute(
-        "SELECT config_text FROM ni_device_configs WHERE device_id=? ORDER BY collected_at DESC LIMIT 1",
+        "SELECT config_text FROM ni_device_configs WHERE device_id=%s ORDER BY collected_at DESC LIMIT 1",
         (device_id,),
     ).fetchone()
     return row["config_text"] if row else ""

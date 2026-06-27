@@ -383,7 +383,7 @@ def activate_technique(session_id, technique_id, db_path=None):
 
     conn = _get_connection(db_path)
     try:
-        session = conn.execute("SELECT * FROM intake_sessions WHERE id = ?", (session_id,)).fetchone()
+        session = conn.execute("SELECT * FROM intake_sessions WHERE id = %s", (session_id,)).fetchone()
         if not session:
             return {"status": "error", "error": f"Session not found: {session_id}"}
 
@@ -402,7 +402,7 @@ def activate_technique(session_id, technique_id, db_path=None):
         context["active_technique_prompt"] = tech["system_prompt"]
 
         conn.execute(
-            "UPDATE intake_sessions SET context_summary = ? WHERE id = ?",
+            "UPDATE intake_sessions SET context_summary = %s WHERE id = %s",
             (json.dumps(context), session_id),
         )
         conn.commit()
@@ -437,7 +437,7 @@ def deactivate_technique(session_id, db_path=None):
     """
     conn = _get_connection(db_path)
     try:
-        session = conn.execute("SELECT * FROM intake_sessions WHERE id = ?", (session_id,)).fetchone()
+        session = conn.execute("SELECT * FROM intake_sessions WHERE id = %s", (session_id,)).fetchone()
         if not session:
             return {"status": "error", "error": f"Session not found: {session_id}"}
 
@@ -451,7 +451,7 @@ def deactivate_technique(session_id, db_path=None):
         context.pop("active_technique_prompt", None)
 
         conn.execute(
-            "UPDATE intake_sessions SET context_summary = ? WHERE id = ?",
+            "UPDATE intake_sessions SET context_summary = %s WHERE id = %s",
             (json.dumps(context), session_id),
         )
         conn.commit()

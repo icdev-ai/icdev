@@ -222,7 +222,7 @@ class GenomeManager:
                 """INSERT INTO genome_versions
                    (id, version, content_hash, genome_data, change_type,
                     change_summary, parent_version, created_by, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     version_id,
                     new_version,
@@ -275,9 +275,9 @@ class GenomeManager:
         conn = self._get_conn()
         try:
             if version_id:
-                row = conn.execute("SELECT * FROM genome_versions WHERE id = ?", (version_id,)).fetchone()
+                row = conn.execute("SELECT * FROM genome_versions WHERE id = %s", (version_id,)).fetchone()
             elif version:
-                row = conn.execute("SELECT * FROM genome_versions WHERE version = ?", (version,)).fetchone()
+                row = conn.execute("SELECT * FROM genome_versions WHERE version = %s", (version,)).fetchone()
             else:
                 row = conn.execute("SELECT * FROM genome_versions ORDER BY created_at DESC LIMIT 1").fetchone()
 
@@ -443,7 +443,7 @@ class GenomeManager:
                           change_summary, parent_version, created_by, created_at
                    FROM genome_versions
                    ORDER BY created_at DESC
-                   LIMIT ?""",
+                   LIMIT %s""",
                 (limit,),
             ).fetchall()
             return [dict(row) for row in rows]

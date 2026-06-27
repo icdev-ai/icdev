@@ -97,16 +97,16 @@ def render_and_send_task_summary(task_id: str, recipient: str, ai_narrative: boo
     conn = get_connection()
     try:
         task = conn.execute(
-            "SELECT id, title, status, actor, created_at FROM kanban_tasks WHERE id = ?",
+            "SELECT id, title, status, actor, created_at FROM kanban_tasks WHERE id = %s",
             (task_id,),
         ).fetchone()
         events = conn.execute(
-            "SELECT event, actor, created_at FROM audit_trail WHERE resource_id = ? "
+            "SELECT event, actor, created_at FROM audit_trail WHERE resource_id = %s "
             "ORDER BY created_at DESC LIMIT 10",
             (task_id,),
         ).fetchall()
         subtasks = conn.execute(
-            "SELECT id, title, status FROM kanban_tasks WHERE parent_id = ?", (task_id,)
+            "SELECT id, title, status FROM kanban_tasks WHERE parent_id = %s", (task_id,)
         ).fetchall()
         body = render("task_summary.html", task=task, events=events, subtasks=subtasks)
         narrative = _ai_render_narrative("task summary render notification", {
@@ -132,15 +132,15 @@ def render_and_deliver_canvas_status(canvas_name: str, recipient: str, ai_narrat
     conn = get_connection()
     try:
         assessment = conn.execute(
-            "SELECT id, score, created_at FROM canvas_assessments WHERE canvas_name = ? "
+            "SELECT id, score, created_at FROM canvas_assessments WHERE canvas_name = %s "
             "ORDER BY created_at DESC LIMIT 1", (canvas_name,)
         ).fetchone()
         findings = conn.execute(
-            "SELECT id, title, severity FROM canvas_findings WHERE canvas_name = ? "
+            "SELECT id, title, severity FROM canvas_findings WHERE canvas_name = %s "
             "AND status = 'open' ORDER BY severity LIMIT 5", (canvas_name,)
         ).fetchall()
         trend = conn.execute(
-            "SELECT score, created_at FROM canvas_assessments WHERE canvas_name = ? "
+            "SELECT score, created_at FROM canvas_assessments WHERE canvas_name = %s "
             "ORDER BY created_at DESC LIMIT 7", (canvas_name,)
         ).fetchall()
         body = render("canvas_status.html", assessment=assessment, findings=findings, trend=trend)
@@ -166,13 +166,13 @@ def render_and_send_oracle_digest(lens_id: str, recipient: str, ai_narrative: bo
     try:
         predictions = conn.execute(
             "SELECT id, title, severity, confidence, outcome FROM oracle_predictions "
-            "WHERE lens_id = ? ORDER BY confidence DESC LIMIT 10", (lens_id,)
+            "WHERE lens_id = %s ORDER BY confidence DESC LIMIT 10", (lens_id,)
         ).fetchall()
         lens = conn.execute(
-            "SELECT name, horizon_days FROM oracle_lenses WHERE lens_id = ?", (lens_id,)
+            "SELECT name, horizon_days FROM oracle_lenses WHERE lens_id = %s", (lens_id,)
         ).fetchone()
         stats = conn.execute(
-            "SELECT severity, COUNT(*) as cnt FROM oracle_predictions WHERE lens_id = ? "
+            "SELECT severity, COUNT(*) as cnt FROM oracle_predictions WHERE lens_id = %s "
             "GROUP BY severity", (lens_id,)
         ).fetchall()
         body = render("oracle_digest.html", predictions=predictions, lens=lens, stats=stats)
@@ -198,15 +198,15 @@ def render_and_notify_genesis_progress(design_id: str, recipient: str, ai_narrat
     conn = get_connection()
     try:
         design = conn.execute(
-            "SELECT id, name, status, current_phase FROM genesis_designs WHERE id = ?",
+            "SELECT id, name, status, current_phase FROM genesis_designs WHERE id = %s",
             (design_id,)
         ).fetchone()
         phases = conn.execute(
             "SELECT phase, status, started_at, completed_at FROM genesis_phase_log "
-            "WHERE design_id = ? ORDER BY started_at DESC LIMIT 5", (design_id,)
+            "WHERE design_id = %s ORDER BY started_at DESC LIMIT 5", (design_id,)
         ).fetchall()
         reflexes = conn.execute(
-            "SELECT name, confidence, fired_at FROM genesis_reflexes WHERE design_id = ? "
+            "SELECT name, confidence, fired_at FROM genesis_reflexes WHERE design_id = %s "
             "ORDER BY fired_at DESC LIMIT 3", (design_id,)
         ).fetchall()
         body = render("genesis_progress.html", design=design, phases=phases, reflexes=reflexes)
@@ -234,13 +234,13 @@ def render_and_dispatch_stig_report(workload_id: str, recipient: str, ai_narrati
     try:
         checks = conn.execute(
             "SELECT check_id, check_name, severity, status FROM govlift_stig_checks "
-            "WHERE workload_id = ? ORDER BY severity LIMIT 20", (workload_id,)
+            "WHERE workload_id = %s ORDER BY severity LIMIT 20", (workload_id,)
         ).fetchall()
         workload = conn.execute(
-            "SELECT name, classification FROM govlift_workloads WHERE id = ?", (workload_id,)
+            "SELECT name, classification FROM govlift_workloads WHERE id = %s", (workload_id,)
         ).fetchone()
         summary = conn.execute(
-            "SELECT status, COUNT(*) as cnt FROM govlift_stig_checks WHERE workload_id = ? "
+            "SELECT status, COUNT(*) as cnt FROM govlift_stig_checks WHERE workload_id = %s "
             "GROUP BY status", (workload_id,)
         ).fetchall()
         body = render("stig_report.html", checks=checks, workload=workload, summary=summary)
@@ -266,15 +266,15 @@ def render_and_publish_poam_update(poam_id: str, recipient: str, ai_narrative: b
     conn = get_connection()
     try:
         poam = conn.execute(
-            "SELECT id, title, severity, status, due_date, owner FROM poam_items WHERE id = ?",
+            "SELECT id, title, severity, status, due_date, owner FROM poam_items WHERE id = %s",
             (poam_id,)
         ).fetchone()
         milestones = conn.execute(
-            "SELECT milestone_text, target_date, status FROM poam_milestones WHERE poam_id = ? "
+            "SELECT milestone_text, target_date, status FROM poam_milestones WHERE poam_id = %s "
             "ORDER BY target_date", (poam_id,)
         ).fetchall()
         evidence = conn.execute(
-            "SELECT filename, uploaded_at FROM poam_evidence WHERE poam_id = ? "
+            "SELECT filename, uploaded_at FROM poam_evidence WHERE poam_id = %s "
             "ORDER BY uploaded_at DESC LIMIT 5", (poam_id,)
         ).fetchall()
         body = render("poam_update.html", poam=poam, milestones=milestones, evidence=evidence)
@@ -303,14 +303,14 @@ def render_and_emit_agent_report(agent_id: str, recipient: str, ai_narrative: bo
     conn = get_connection()
     try:
         agent = conn.execute(
-            "SELECT id, name, status, last_heartbeat, tier FROM agents WHERE id = ?", (agent_id,)
+            "SELECT id, name, status, last_heartbeat, tier FROM agents WHERE id = %s", (agent_id,)
         ).fetchone()
         metrics = conn.execute(
-            "SELECT metric_name, value, recorded_at FROM agent_metrics WHERE agent_id = ? "
+            "SELECT metric_name, value, recorded_at FROM agent_metrics WHERE agent_id = %s "
             "ORDER BY recorded_at DESC LIMIT 10", (agent_id,)
         ).fetchall()
         errors = conn.execute(
-            "SELECT error_msg, created_at FROM agent_errors WHERE agent_id = ? "
+            "SELECT error_msg, created_at FROM agent_errors WHERE agent_id = %s "
             "ORDER BY created_at DESC LIMIT 5", (agent_id,)
         ).fetchall()
         body = render("agent_report.html", agent=agent, metrics=metrics, errors=errors)
@@ -338,17 +338,17 @@ def render_and_send_zig_pillar_update(pillar_slug: str, recipient: str, ai_narra
     try:
         scores = conn.execute(
             "SELECT pillar_slug, score, maturity_level, complete_activities, activity_count "
-            "FROM zig_maturity_scores WHERE pillar_slug = ? "
+            "FROM zig_maturity_scores WHERE pillar_slug = %s "
             "ORDER BY assessment_run_at DESC LIMIT 1", (pillar_slug,)
         ).fetchone()
         capabilities = conn.execute(
             "SELECT id, title, implementation_status, phase FROM zig_capabilities "
-            "WHERE pillar_slug = ? ORDER BY phase", (pillar_slug,)
+            "WHERE pillar_slug = %s ORDER BY phase", (pillar_slug,)
         ).fetchall()
         completions = conn.execute(
             "SELECT a.title, c.status FROM zig_activities a "
             "JOIN zig_activity_completions c ON c.activity_id = a.id "
-            "WHERE a.capability_id IN (SELECT id FROM zig_capabilities WHERE pillar_slug = ?)",
+            "WHERE a.capability_id IN (SELECT id FROM zig_capabilities WHERE pillar_slug = %s)",
             (pillar_slug,)
         ).fetchall()
         body = render("zig_pillar_update.html", scores=scores, capabilities=capabilities, completions=completions)
@@ -377,15 +377,15 @@ def render_and_deliver_aiify_scan_results(scan_id: str, recipient: str, ai_narra
     try:
         scan = conn.execute(
             "SELECT scan_id, input_ref, status, overall_ai_readiness, created_at "
-            "FROM aiify_scans WHERE scan_id = ?", (scan_id,)
+            "FROM aiify_scans WHERE scan_id = %s", (scan_id,)
         ).fetchone()
         opportunities = conn.execute(
             "SELECT o.function_name, o.pattern_type, s.composite_score, s.value_score "
             "FROM aiify_scores s JOIN aiify_opportunities o ON o.opportunity_id = s.opportunity_id "
-            "WHERE o.scan_id = ? ORDER BY s.composite_score DESC LIMIT 10", (scan_id,)
+            "WHERE o.scan_id = %s ORDER BY s.composite_score DESC LIMIT 10", (scan_id,)
         ).fetchall()
         roadmap = conn.execute(
-            "SELECT roadmap_id, phases_json FROM aiify_roadmaps WHERE scan_id = ? LIMIT 1",
+            "SELECT roadmap_id, phases_json FROM aiify_roadmaps WHERE scan_id = %s LIMIT 1",
             (scan_id,)
         ).fetchone()
         body = render("aiify_scan_results.html", scan=scan, opportunities=opportunities, roadmap=roadmap)
@@ -445,10 +445,10 @@ def render_and_send_kanban_sprint_summary(sprint_key: str, recipient: str, ai_na
     try:
         tasks = conn.execute(
             "SELECT id, title, status, actor, updated_at FROM kanban_tasks "
-            "WHERE sprint_key = ? ORDER BY status", (sprint_key,)
+            "WHERE sprint_key = %s ORDER BY status", (sprint_key,)
         ).fetchall()
         metrics = conn.execute(
-            "SELECT status, COUNT(*) as cnt FROM kanban_tasks WHERE sprint_key = ? "
+            "SELECT status, COUNT(*) as cnt FROM kanban_tasks WHERE sprint_key = %s "
             "GROUP BY status", (sprint_key,)
         ).fetchall()
         events = conn.execute(
@@ -478,14 +478,14 @@ def render_and_notify_compliance_gate(gate_id: str, project_id: str, recipient: 
     try:
         gate = conn.execute(
             "SELECT id, gate_name, status, triggered_at FROM compliance_gates "
-            "WHERE id = ? AND project_id = ?", (gate_id, project_id)
+            "WHERE id = %s AND project_id = %s", (gate_id, project_id)
         ).fetchone()
         failures = conn.execute(
-            "SELECT criterion, detail, severity FROM gate_failures WHERE gate_id = ? "
+            "SELECT criterion, detail, severity FROM gate_failures WHERE gate_id = %s "
             "ORDER BY severity", (gate_id,)
         ).fetchall()
         project = conn.execute(
-            "SELECT name, classification FROM projects WHERE id = ?", (project_id,)
+            "SELECT name, classification FROM projects WHERE id = %s", (project_id,)
         ).fetchone()
         body = render("compliance_gate.html", gate=gate, failures=failures, project=project)
         narrative = _ai_render_narrative("compliance gate render notification", {
@@ -517,17 +517,17 @@ def render_and_notify_rag_query_result(query_ref: str, recipient: str, ai_narrat
     conn = get_connection()
     try:
         query = conn.execute(
-            "SELECT id, query_text, lens, status, created_at FROM rag_queries WHERE id = ?",
+            "SELECT id, query_text, lens, status, created_at FROM rag_queries WHERE id = %s",
             (query_ref,),
         ).fetchone()
         chunks = conn.execute(
             "SELECT id, source_doc, relevance_score, excerpt FROM rag_chunks "
-            "WHERE query_id = ? ORDER BY relevance_score DESC LIMIT 10",
+            "WHERE query_id = %s ORDER BY relevance_score DESC LIMIT 10",
             (query_ref,),
         ).fetchall()
         citations = conn.execute(
             "SELECT source_doc, citation_text, confidence FROM rag_citations "
-            "WHERE query_id = ? ORDER BY confidence DESC LIMIT 5",
+            "WHERE query_id = %s ORDER BY confidence DESC LIMIT 5",
             (query_ref,),
         ).fetchall()
         top_score = round(max((float(c["relevance_score"] or 0) for c in chunks), default=0.0), 4)

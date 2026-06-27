@@ -111,25 +111,25 @@ def record_provenance(
     conn = _get_db(db_path)
     try:
         # Get version details
-        version = conn.execute("SELECT * FROM marketplace_versions WHERE id = ?", (version_id,)).fetchone()
+        version = conn.execute("SELECT * FROM marketplace_versions WHERE id = %s", (version_id,)).fetchone()
         if not version:
             raise ValueError(f"Version not found: {version_id}")
 
         # Get asset details
-        asset = conn.execute("SELECT * FROM marketplace_assets WHERE id = ?", (asset_id,)).fetchone()
+        asset = conn.execute("SELECT * FROM marketplace_assets WHERE id = %s", (asset_id,)).fetchone()
         if not asset:
             raise ValueError(f"Asset not found: {asset_id}")
 
         # Get dependencies
         deps = conn.execute(
-            "SELECT depends_on_slug, version_constraint FROM marketplace_dependencies WHERE asset_id = ?",
+            "SELECT depends_on_slug, version_constraint FROM marketplace_dependencies WHERE asset_id = %s",
             (asset_id,),
         ).fetchall()
 
         # Get scan results
         scans = conn.execute(
             """SELECT gate_name, status, findings_count
-               FROM marketplace_scan_results WHERE version_id = ?""",
+               FROM marketplace_scan_results WHERE version_id = %s""",
             (version_id,),
         ).fetchall()
 
@@ -166,7 +166,7 @@ def record_provenance(
         existing_meta = json.loads(version["metadata"]) if version["metadata"] else {}
         existing_meta["provenance"] = provenance
         conn.execute(
-            "UPDATE marketplace_versions SET metadata = ? WHERE id = ?",
+            "UPDATE marketplace_versions SET metadata = %s WHERE id = %s",
             (json.dumps(existing_meta), version_id),
         )
         conn.commit()
@@ -193,11 +193,11 @@ def get_provenance(asset_id, version_id=None, db_path=None):
     conn = _get_db(db_path)
     try:
         if version_id:
-            version = conn.execute("SELECT * FROM marketplace_versions WHERE id = ?", (version_id,)).fetchone()
+            version = conn.execute("SELECT * FROM marketplace_versions WHERE id = %s", (version_id,)).fetchone()
         else:
             version = conn.execute(
                 """SELECT * FROM marketplace_versions
-                   WHERE asset_id = ? ORDER BY created_at DESC LIMIT 1""",
+                   WHERE asset_id = %s ORDER BY created_at DESC LIMIT 1""",
                 (asset_id,),
             ).fetchone()
 
@@ -220,7 +220,7 @@ def verify_provenance(asset_id, version_id, asset_path, public_key_path=None, db
     """Verify provenance: check hash matches, signature valid."""
     conn = _get_db(db_path)
     try:
-        version = conn.execute("SELECT * FROM marketplace_versions WHERE id = ?", (version_id,)).fetchone()
+        version = conn.execute("SELECT * FROM marketplace_versions WHERE id = %s", (version_id,)).fetchone()
         if not version:
             return {"verified": False, "reason": "Version not found"}
 
@@ -257,7 +257,7 @@ def verify_provenance(asset_id, version_id, asset_path, public_key_path=None, db
 
         # Check 3: Scan results exist
         scans = conn.execute(
-            "SELECT COUNT(*) as cnt FROM marketplace_scan_results WHERE version_id = ?",
+            "SELECT COUNT(*) as cnt FROM marketplace_scan_results WHERE version_id = %s",
             (version_id,),
         ).fetchone()
         results["checks"]["scan_records"] = {
@@ -276,12 +276,12 @@ def generate_report(asset_id, db_path=None):
     """Generate a comprehensive provenance report for an asset."""
     conn = _get_db(db_path)
     try:
-        asset = conn.execute("SELECT * FROM marketplace_assets WHERE id = ?", (asset_id,)).fetchone()
+        asset = conn.execute("SELECT * FROM marketplace_assets WHERE id = %s", (asset_id,)).fetchone()
         if not asset:
             return {"error": "Asset not found"}
 
         versions = conn.execute(
-            "SELECT * FROM marketplace_versions WHERE asset_id = ? ORDER BY created_at",
+            "SELECT * FROM marketplace_versions WHERE asset_id = %s ORDER BY created_at",
             (asset_id,),
         ).fetchall()
 
@@ -301,12 +301,12 @@ def generate_report(asset_id, db_path=None):
             )
 
         deps = conn.execute(
-            "SELECT * FROM marketplace_dependencies WHERE asset_id = ?",
+            "SELECT * FROM marketplace_dependencies WHERE asset_id = %s",
             (asset_id,),
         ).fetchall()
 
         installations = conn.execute(
-            "SELECT tenant_id, status, installed_at FROM marketplace_installations WHERE asset_id = ?",
+            "SELECT tenant_id, status, installed_at FROM marketplace_installations WHERE asset_id = %s",
             (asset_id,),
         ).fetchall()
 

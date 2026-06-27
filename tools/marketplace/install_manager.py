@@ -227,7 +227,7 @@ def install_asset(asset_id, version_id, tenant_id, project_id, installed_by, ins
     conn = _get_db(db_path)
     try:
         # Fetch asset details
-        asset = conn.execute("SELECT * FROM marketplace_assets WHERE id = ?", (asset_id,)).fetchone()
+        asset = conn.execute("SELECT * FROM marketplace_assets WHERE id = %s", (asset_id,)).fetchone()
         if not asset:
             raise ValueError(f"Asset not found: {asset_id}")
 
@@ -244,7 +244,7 @@ def install_asset(asset_id, version_id, tenant_id, project_id, installed_by, ins
         # tenant's IL from the platform DB.  To allow the caller to specify,
         # we accept tenant_id and look for tenant metadata.
         tenant_row = (
-            conn.execute("SELECT * FROM tenants WHERE id = ?", (tenant_id,)).fetchone()
+            conn.execute("SELECT * FROM tenants WHERE id = %s", (tenant_id,)).fetchone()
             if _table_exists(conn, "tenants")
             else None
         )
@@ -269,7 +269,7 @@ def install_asset(asset_id, version_id, tenant_id, project_id, installed_by, ins
         # Check if already installed (UNIQUE constraint: asset_id, tenant_id, project_id)
         existing = conn.execute(
             """SELECT id, status FROM marketplace_installations
-               WHERE asset_id = ? AND tenant_id = ? AND project_id = ?""",
+               WHERE asset_id = %s AND tenant_id = %s AND project_id = %s""",
             (asset_id, tenant_id, project_id),
         ).fetchone()
         if existing:
@@ -277,7 +277,7 @@ def install_asset(asset_id, version_id, tenant_id, project_id, installed_by, ins
                 # Allow re-installation of previously uninstalled assets
                 # by removing the old record
                 conn.execute(
-                    "DELETE FROM marketplace_installations WHERE id = ?",
+                    "DELETE FROM marketplace_installations WHERE id = %s",
                     (existing["id"],),
                 )
                 conn.commit()
@@ -290,7 +290,7 @@ def install_asset(asset_id, version_id, tenant_id, project_id, installed_by, ins
 
         # Fetch version details for file_path
         version = conn.execute(
-            "SELECT * FROM marketplace_versions WHERE id = ? AND asset_id = ?",
+            "SELECT * FROM marketplace_versions WHERE id = %s AND asset_id = %s",
             (version_id, asset_id),
         ).fetchone()
         if not version:
@@ -326,7 +326,7 @@ def install_asset(asset_id, version_id, tenant_id, project_id, installed_by, ins
             """INSERT INTO marketplace_installations
                (id, asset_id, version_id, tenant_id, project_id,
                 installed_by, install_path, status, installed_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, 'active', %s, %s)""",
             (
                 installation_id,
                 asset_id,
@@ -342,7 +342,7 @@ def install_asset(asset_id, version_id, tenant_id, project_id, installed_by, ins
 
         # Increment install_count on the asset
         conn.execute(
-            "UPDATE marketplace_assets SET install_count = install_count + 1, updated_at = ? WHERE id = ?",
+            "UPDATE marketplace_assets SET install_count = install_count + 1, updated_at = %s WHERE id = %s",
             (now, asset_id),
         )
         conn.commit()
@@ -418,7 +418,7 @@ def uninstall_asset(installation_id, uninstalled_by, db_path=None):
     conn = _get_db(db_path)
     try:
         installation = conn.execute(
-            "SELECT * FROM marketplace_installations WHERE id = ?",
+            "SELECT * FROM marketplace_installations WHERE id = %s",
             (installation_id,),
         ).fetchone()
         if not installation:
@@ -430,8 +430,8 @@ def uninstall_asset(installation_id, uninstalled_by, db_path=None):
         now = _now()
         conn.execute(
             """UPDATE marketplace_installations
-               SET status = 'uninstalled', uninstalled_at = ?, updated_at = ?
-               WHERE id = ?""",
+               SET status = 'uninstalled', uninstalled_at = %s, updated_at = %s
+               WHERE id = %s""",
             (now, now, installation_id),
         )
         conn.commit()
@@ -490,7 +490,7 @@ def update_asset(installation_id, new_version_id, updated_by, db_path=None):
     try:
         # Get current installation
         installation = conn.execute(
-            "SELECT * FROM marketplace_installations WHERE id = ?",
+            "SELECT * FROM marketplace_installations WHERE id = %s",
             (installation_id,),
         ).fetchone()
         if not installation:
@@ -507,7 +507,7 @@ def update_asset(installation_id, new_version_id, updated_by, db_path=None):
 
         # Verify new version exists and belongs to the same asset
         new_version = conn.execute(
-            "SELECT * FROM marketplace_versions WHERE id = ? AND asset_id = ?",
+            "SELECT * FROM marketplace_versions WHERE id = %s AND asset_id = %s",
             (new_version_id, asset_id),
         ).fetchone()
         if not new_version:
@@ -515,7 +515,7 @@ def update_asset(installation_id, new_version_id, updated_by, db_path=None):
 
         # Get old version info for audit
         old_version = conn.execute(
-            "SELECT version FROM marketplace_versions WHERE id = ?",
+            "SELECT version FROM marketplace_versions WHERE id = %s",
             (old_version_id,),
         ).fetchone()
 
@@ -534,8 +534,8 @@ def update_asset(installation_id, new_version_id, updated_by, db_path=None):
         now = _now()
         conn.execute(
             """UPDATE marketplace_installations
-               SET version_id = ?, status = 'active', updated_at = ?
-               WHERE id = ?""",
+               SET version_id = %s, status = 'active', updated_at = %s
+               WHERE id = %s""",
             (new_version_id, now, installation_id),
         )
         conn.commit()
@@ -659,7 +659,7 @@ def check_updates(tenant_id, db_path=None):
                FROM marketplace_installations i
                JOIN marketplace_assets a ON i.asset_id = a.id
                JOIN marketplace_versions v ON i.version_id = v.id
-               WHERE i.tenant_id = ? AND i.status = 'active'
+               WHERE i.tenant_id = %s AND i.status = 'active'
                ORDER BY a.name""",
             (tenant_id,),
         ).fetchall()
@@ -677,7 +677,7 @@ def check_updates(tenant_id, db_path=None):
                 latest_version = conn.execute(
                     """SELECT id, version, changelog
                        FROM marketplace_versions
-                       WHERE asset_id = ? AND version = ? AND status = 'published'""",
+                       WHERE asset_id = %s AND version = %s AND status = 'published'""",
                     (row_dict["asset_id"], current_ver),
                 ).fetchone()
 
@@ -721,7 +721,7 @@ def check_updates(tenant_id, db_path=None):
 def _table_exists(conn, table_name):
     """Check if a table exists in the database."""
     row = conn.execute(
-        "SELECT COUNT(*) AS cnt FROM sqlite_master WHERE type='table' AND name=?",
+        "SELECT COUNT(*) AS cnt FROM sqlite_master WHERE type='table' AND name=%s",
         (table_name,),
     ).fetchone()
     return row["cnt"] > 0

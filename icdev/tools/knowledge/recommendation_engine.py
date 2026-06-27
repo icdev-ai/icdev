@@ -36,7 +36,7 @@ def _check_frequent_failures(conn, project_id: str) -> list:
     rows = conn.execute(
         """SELECT error_type, COUNT(*) as count, MAX(created_at) as last_seen
            FROM failure_log
-           WHERE project_id = ? AND created_at > datetime('now', '-7 days')
+           WHERE project_id = %s AND created_at > datetime('now', '-7 days')
            GROUP BY error_type
            HAVING COUNT(*) >= 3
            ORDER BY count DESC""",
@@ -78,7 +78,7 @@ def _check_deployment_health(conn, project_id: str) -> list:
              SUM(CASE WHEN status = 'succeeded' THEN 1 ELSE 0 END) as succeeded,
              SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed
            FROM deployments
-           WHERE project_id = ?
+           WHERE project_id = %s
              AND created_at > datetime('now', '-30 days')""",
         (project_id,),
     ).fetchone()
@@ -136,7 +136,7 @@ def _check_deployment_health(conn, project_id: str) -> list:
     # Check for deployments without health checks
     no_healthcheck = conn.execute(
         """SELECT COUNT(*) FROM deployments
-           WHERE project_id = ?
+           WHERE project_id = %s
              AND health_check_passed IS NULL
              AND created_at > datetime('now', '-30 days')""",
         (project_id,),
@@ -169,14 +169,14 @@ def _check_unresolved_failures(conn, project_id: str) -> list:
 
     unresolved = conn.execute(
         """SELECT COUNT(*) FROM failure_log
-           WHERE project_id = ? AND resolved = 0
+           WHERE project_id = %s AND resolved = 0
              AND created_at > datetime('now', '-7 days')""",
         (project_id,),
     ).fetchone()[0]
 
     old_unresolved = conn.execute(
         """SELECT COUNT(*) FROM failure_log
-           WHERE project_id = ? AND resolved = 0
+           WHERE project_id = %s AND resolved = 0
              AND created_at < datetime('now', '-7 days')""",
         (project_id,),
     ).fetchone()[0]
@@ -222,14 +222,14 @@ def _check_pattern_coverage(conn, project_id: str) -> list:
     # Failures without a matched pattern
     unmatched = conn.execute(
         """SELECT COUNT(*) FROM failure_log
-           WHERE project_id = ? AND pattern_id IS NULL
+           WHERE project_id = %s AND pattern_id IS NULL
              AND created_at > datetime('now', '-30 days')""",
         (project_id,),
     ).fetchone()[0]
 
     total_failures = conn.execute(
         """SELECT COUNT(*) FROM failure_log
-           WHERE project_id = ?
+           WHERE project_id = %s
              AND created_at > datetime('now', '-30 days')""",
         (project_id,),
     ).fetchone()[0]
@@ -292,14 +292,14 @@ def _check_alert_fatigue(conn, project_id: str) -> list:
 
     total_alerts = conn.execute(
         """SELECT COUNT(*) FROM alerts
-           WHERE project_id = ?
+           WHERE project_id = %s
              AND created_at > datetime('now', '-7 days')""",
         (project_id,),
     ).fetchone()[0]
 
     unacked_alerts = conn.execute(
         """SELECT COUNT(*) FROM alerts
-           WHERE project_id = ?
+           WHERE project_id = %s
              AND acknowledged_by IS NULL
              AND created_at > datetime('now', '-7 days')""",
         (project_id,),
@@ -335,7 +335,7 @@ def _check_self_healing_effectiveness(conn, project_id: str) -> list:
     events = conn.execute(
         """SELECT outcome, COUNT(*) as count
            FROM self_healing_events
-           WHERE project_id = ?
+           WHERE project_id = %s
              AND created_at > datetime('now', '-30 days')
            GROUP BY outcome""",
         (project_id,),

@@ -224,7 +224,7 @@ def _get_tenant_conn(tenant_id):
     conn = _get_platform_conn()
     try:
         row = conn.execute(
-            "SELECT slug, db_host, db_name FROM tenants WHERE id = ?",
+            "SELECT slug, db_host, db_name FROM tenants WHERE id = %s",
             (tenant_id,),
         ).fetchone()
         if not row:
@@ -276,7 +276,7 @@ def _auto_login_env_key():
                FROM api_keys k
                JOIN users u ON k.user_id = u.id AND k.tenant_id = u.tenant_id
                JOIN tenants t ON k.tenant_id = t.id
-               WHERE k.key_hash = ?""",
+               WHERE k.key_hash = %s""",
             (key_hash,),
         ).fetchone()
 
@@ -344,7 +344,7 @@ def _get_tenant_info(tenant_id):
             """SELECT id, name, slug, status, tier, impact_level,
                       settings, artifact_config, bedrock_config, idp_config,
                       created_at, updated_at
-               FROM tenants WHERE id = ?""",
+               FROM tenants WHERE id = %s""",
             (tenant_id,),
         ).fetchone()
         if row:
@@ -371,7 +371,7 @@ def _get_subscription(tenant_id):
         row = conn.execute(
             """SELECT id, tier, status, max_projects, max_users,
                       starts_at, ends_at, created_at
-               FROM subscriptions WHERE tenant_id = ? AND status = 'active'
+               FROM subscriptions WHERE tenant_id = %s AND status = 'active'
                ORDER BY created_at DESC LIMIT 1""",
             (tenant_id,),
         ).fetchone()
@@ -420,7 +420,7 @@ def login_post():
                FROM api_keys k
                JOIN users u ON k.user_id = u.id AND k.tenant_id = u.tenant_id
                JOIN tenants t ON k.tenant_id = t.id
-               WHERE k.key_hash = ?""",
+               WHERE k.key_hash = %s""",
             (key_hash,),
         ).fetchone()
 
@@ -456,7 +456,7 @@ def login_post():
         # Update last_used
         try:
             conn.execute(
-                "UPDATE api_keys SET last_used_at = ? WHERE id = ?",
+                "UPDATE api_keys SET last_used_at = %s WHERE id = %s",
                 (_utcnow(), row["key_id"]),
             )
             conn.commit()
@@ -526,7 +526,7 @@ def dashboard():
     try:
         rows = conn.execute(
             """SELECT event_type, action, details, recorded_at
-               FROM audit_platform WHERE tenant_id = ?
+               FROM audit_platform WHERE tenant_id = %s
                ORDER BY recorded_at DESC LIMIT 10""",
             (tenant_id,),
         ).fetchall()
@@ -667,7 +667,7 @@ def team():
         rows = conn.execute(
             """SELECT id, email, display_name, role, status,
                       last_login, auth_method, created_at
-               FROM users WHERE tenant_id = ?
+               FROM users WHERE tenant_id = %s
                ORDER BY created_at""",
             (tenant_id,),
         ).fetchall()
@@ -710,7 +710,7 @@ def profile():
         row = conn.execute(
             """SELECT id, email, display_name, role, status,
                       auth_method, last_login, created_at
-               FROM users WHERE id = ? AND tenant_id = ?""",
+               FROM users WHERE id = %s AND tenant_id = %s""",
             (user_id, tenant_id),
         ).fetchone()
         if row:
@@ -732,7 +732,7 @@ def profile():
                               department, is_department_key,
                               created_at, updated_at
                        FROM dashboard_user_llm_keys
-                       WHERE user_id = ?
+                       WHERE user_id = %s
                        ORDER BY created_at DESC""",
                     (user_id,),
                 ).fetchall()
@@ -772,7 +772,7 @@ def settings():
         rows = conn.execute(
             "SELECT id, provider, key_label, key_prefix, status, "
             "created_at, updated_at "
-            "FROM tenant_llm_keys WHERE tenant_id = ? "
+            "FROM tenant_llm_keys WHERE tenant_id = %s "
             "ORDER BY created_at DESC",
             (tenant_id,),
         ).fetchall()
@@ -817,7 +817,7 @@ def api_keys():
                       k.last_used_at, k.expires_at, u.email as owner_email
                FROM api_keys k
                JOIN users u ON k.user_id = u.id
-               WHERE k.tenant_id = ?
+               WHERE k.tenant_id = %s
                ORDER BY k.created_at DESC""",
             (tenant_id,),
         ).fetchall()
@@ -863,14 +863,14 @@ def usage():
     try:
         # Total API calls
         row = conn.execute(
-            "SELECT COUNT(*) as cnt FROM usage_records WHERE tenant_id = ?",
+            "SELECT COUNT(*) as cnt FROM usage_records WHERE tenant_id = %s",
             (tenant_id,),
         ).fetchone()
         usage_data["total_api_calls"] = row["cnt"] if row else 0
 
         # Total tokens
         row = conn.execute(
-            "SELECT COALESCE(SUM(tokens_used), 0) as total FROM usage_records WHERE tenant_id = ?",
+            "SELECT COALESCE(SUM(tokens_used), 0) as total FROM usage_records WHERE tenant_id = %s",
             (tenant_id,),
         ).fetchone()
         usage_data["total_tokens"] = row["total"] if row else 0
@@ -878,7 +878,7 @@ def usage():
         # Top endpoints
         rows = conn.execute(
             """SELECT endpoint, COUNT(*) as cnt
-               FROM usage_records WHERE tenant_id = ?
+               FROM usage_records WHERE tenant_id = %s
                GROUP BY endpoint ORDER BY cnt DESC LIMIT 10""",
             (tenant_id,),
         ).fetchall()
@@ -918,7 +918,7 @@ def audit():
     conn = _get_platform_conn()
     try:
         row = conn.execute(
-            "SELECT COUNT(*) as cnt FROM audit_platform WHERE tenant_id = ?",
+            "SELECT COUNT(*) as cnt FROM audit_platform WHERE tenant_id = %s",
             (tenant_id,),
         ).fetchone()
         total_entries = row["cnt"] if row else 0
@@ -926,8 +926,8 @@ def audit():
         rows = conn.execute(
             """SELECT id, event_type, action, details, ip_address,
                       user_agent, recorded_at
-               FROM audit_platform WHERE tenant_id = ?
-               ORDER BY recorded_at DESC LIMIT ? OFFSET ?""",
+               FROM audit_platform WHERE tenant_id = %s
+               ORDER BY recorded_at DESC LIMIT %s OFFSET %s""",
             (tenant_id, per_page, offset),
         ).fetchall()
         audit_entries = [dict(r) for r in rows]
@@ -1108,7 +1108,7 @@ def translation_detail(job_id):
     if tconn:
         try:
             try:
-                row = tconn.execute("SELECT * FROM translation_jobs WHERE id = ?", (job_id,)).fetchone()
+                row = tconn.execute("SELECT * FROM translation_jobs WHERE id = %s", (job_id,)).fetchone()
                 job = dict(row) if row else None
             except Exception:
                 pass
@@ -1119,7 +1119,7 @@ def translation_detail(job_id):
                         """SELECT unit_name, unit_kind, source_file, status,
                                   source_complexity, target_complexity,
                                   repair_count, candidate_selected
-                           FROM translation_units WHERE job_id = ?
+                           FROM translation_units WHERE job_id = %s
                            ORDER BY created_at""",
                         (job_id,),
                     ).fetchall()
@@ -1130,7 +1130,7 @@ def translation_detail(job_id):
                 try:
                     rows = tconn.execute(
                         """SELECT check_type, passed, score, findings
-                           FROM translation_validations WHERE job_id = ?""",
+                           FROM translation_validations WHERE job_id = %s""",
                         (job_id,),
                     ).fetchall()
                     validations = [dict(v) for v in rows]
@@ -1141,7 +1141,7 @@ def translation_detail(job_id):
                     rows = tconn.execute(
                         """SELECT source_import, target_import, mapping_source,
                                   confidence, domain
-                           FROM translation_dependency_mappings WHERE job_id = ?""",
+                           FROM translation_dependency_mappings WHERE job_id = %s""",
                         (job_id,),
                     ).fetchall()
                     deps = [dict(d) for d in rows]

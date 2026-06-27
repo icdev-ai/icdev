@@ -45,7 +45,7 @@ def run(config: Dict[str, Any], trust) -> Dict[str, Any]:
 
         # Mark as building
         conn.execute(
-            "UPDATE appforge_challenges SET status = 'building' WHERE challenge_id = ?",
+            "UPDATE appforge_challenges SET status = 'building' WHERE challenge_id = %s",
             (challenge["challenge_id"],),
         )
         conn.commit()
@@ -55,8 +55,8 @@ def run(config: Dict[str, Any], trust) -> Dict[str, Any]:
 
         # Update challenge record
         conn.execute(
-            "UPDATE appforge_challenges SET status = 'built', app_path = ?, app_port = ?, built_at = ? "
-            "WHERE challenge_id = ?",
+            "UPDATE appforge_challenges SET status = 'built', app_path = %s, app_port = %s, built_at = %s "
+            "WHERE challenge_id = %s",
             (str(app_dir), port, utcnow_iso(), challenge["challenge_id"]),
         )
         conn.commit()

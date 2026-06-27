@@ -297,8 +297,8 @@ class AnomalyDetector:
                 rows = conn.execute(
                     """SELECT output_similarity, combined_drift, ambiguity_score
                        FROM genesis_convergence_log
-                       WHERE reflex_name = ?
-                       ORDER BY created_at DESC LIMIT ?""",
+                       WHERE reflex_name = %s
+                       ORDER BY created_at DESC LIMIT %s""",
                     (reflex_name, AnomalyDetector._HISTORY_LIMIT),
                 ).fetchall()
             finally:
@@ -436,9 +436,9 @@ class ConvergenceGate:
         try:
             rows = conn.execute(
                 """SELECT metric_value FROM genesis_audit
-                   WHERE reflex_name = ? AND event_type = 'genesis.reflex.completed'
+                   WHERE reflex_name = %s AND event_type = 'genesis.reflex.completed'
                      AND metric_value IS NOT NULL
-                   ORDER BY created_at DESC LIMIT ?""",
+                   ORDER BY created_at DESC LIMIT %s""",
                 (reflex_name, self.window_size),
             ).fetchall()
         finally:
@@ -468,7 +468,7 @@ class ConvergenceGate:
         try:
             row = conn.execute(
                 """SELECT payload_hash FROM genesis_gkp
-                   WHERE reflex = ? ORDER BY created_at DESC LIMIT 1""",
+                   WHERE reflex = %s ORDER BY created_at DESC LIMIT 1""",
                 (reflex_name,),
             ).fetchone()
         except Exception:
@@ -535,7 +535,7 @@ class ConvergenceGate:
                     output_similarity, combined_drift, ambiguity_score,
                     converged, retrospective_triggered, details_json,
                     classification, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'CUI', ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'CUI', %s)""",
                 (
                     entry_id,
                     result["reflex_name"],

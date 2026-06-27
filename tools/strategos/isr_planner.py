@@ -54,7 +54,7 @@ def create_requirement(
             "INSERT INTO sg_isr_requirements "
             "(id, nai, collection_type, priority, theater, earliest, latest, "
             " purpose, status, created_by, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'open', %s, %s, %s)",
             (req_id, nai, collection_type, priority, theater,
              earliest or None, latest or None, purpose, created_by, now, now),
         )
@@ -163,7 +163,7 @@ def register_asset(
         conn.execute(
             "INSERT INTO sg_isr_assets "
             "(id, asset_name, asset_type, theater, collection_caps, status, notes, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, 'available', ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, 'available', %s, %s, %s)",
             (asset_id, asset_name, asset_type, theater, caps, notes, now, now),
         )
         conn.commit()

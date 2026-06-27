@@ -180,7 +180,7 @@ def verify_path(ttp_ids: Sequence[str], design_id: str = "") -> dict:
             conn.execute(
                 "INSERT INTO od_ttp_coverage"
                 " (id, ttp_id, design_id, state, sigma_match, baseline_match, detail, verified_at)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                " VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     row_id,
                     ttp_id,
@@ -196,7 +196,7 @@ def verify_path(ttp_ids: Sequence[str], design_id: str = "") -> dict:
             conn.execute(
                 "INSERT INTO od_audit"
                 " (design_id, user, action, detail, classification, created_at)"
-                " VALUES (?, ?, ?, ?, ?, ?)",
+                " VALUES (%s, %s, %s, %s, %s, %s)",
                 (
                     design_id or "",
                     "replay_verify",

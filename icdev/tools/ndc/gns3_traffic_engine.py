@@ -543,8 +543,8 @@ class GNS3TrafficEngine:
                     try:
                         conn.execute("""
                             UPDATE ndc_isp_telemetry
-                            SET latency_ms=?, loss_pct=?
-                            WHERE isp=? AND timestamp=(SELECT MAX(timestamp) FROM ndc_isp_telemetry WHERE isp=?)
+                            SET latency_ms=%s, loss_pct=%s
+                            WHERE isp=%s AND timestamp=(SELECT MAX(timestamp) FROM ndc_isp_telemetry WHERE isp=%s)
                         """, (row["avg_rtt_ms"], row["loss_pct"], isp_name, isp_name))
                     except Exception:
                         pass

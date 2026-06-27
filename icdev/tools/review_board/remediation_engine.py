@@ -220,7 +220,7 @@ def check_cooldown(category: str) -> bool:
     try:
         row = conn.execute(
             "SELECT MAX(created_at) FROM review_board_remediation_log "
-            "WHERE category = ? AND status IN ('fixed', 'verified')",
+            "WHERE category = %s AND status IN ('fixed', 'verified')",
             (category,),
         ).fetchone()
         if not row or not row[0]:
@@ -340,7 +340,7 @@ def _mark_finding_fixed(finding_id: str) -> None:
     conn = _get_connection()
     try:
         conn.execute(
-            "UPDATE review_board_findings SET fix_applied = 1 WHERE id = ?",
+            "UPDATE review_board_findings SET fix_applied = 1 WHERE id = %s",
             (finding_id,),
         )
         conn.commit()
@@ -361,7 +361,7 @@ def _log_remediation(log_id: str, finding: Dict, tier: str, result: Dict, dry_ru
                 (id, finding_id, reflex_name, category, severity, confidence,
                  tier, status, fix_description, fix_result, verification,
                  dry_run, duration_ms, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """,
             (
                 log_id,
@@ -435,7 +435,7 @@ def get_history(limit: int = 50) -> List[Dict]:
     conn = _get_connection()
     try:
         rows = conn.execute(
-            "SELECT * FROM review_board_remediation_log ORDER BY created_at DESC LIMIT ?",
+            "SELECT * FROM review_board_remediation_log ORDER BY created_at DESC LIMIT %s",
             (limit,),
         ).fetchall()
         return [dict(r) for r in rows]

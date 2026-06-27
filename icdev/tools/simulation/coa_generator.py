@@ -132,7 +132,7 @@ def _now_iso():
 def _load_requirements(conn, session_id):
     """Load intake requirements for a session, grouped by priority."""
     rows = conn.execute(
-        "SELECT * FROM intake_requirements WHERE session_id = ? ORDER BY priority",
+        "SELECT * FROM intake_requirements WHERE session_id = %s ORDER BY priority",
         (session_id,),
     ).fetchall()
     reqs = [dict(r) for r in rows]
@@ -145,7 +145,7 @@ def _load_requirements(conn, session_id):
 def _load_decomposition(conn, session_id):
     """Load SAFe decomposition items for a session."""
     rows = conn.execute(
-        "SELECT * FROM safe_decomposition WHERE session_id = ? ORDER BY level, title",
+        "SELECT * FROM safe_decomposition WHERE session_id = %s ORDER BY level, title",
         (session_id,),
     ).fetchall()
     return [dict(r) for r in rows]
@@ -154,7 +154,7 @@ def _load_decomposition(conn, session_id):
 def _load_boundary_assessments(conn, session_id):
     """Load boundary impact assessments for a session."""
     rows = conn.execute(
-        "SELECT * FROM boundary_impact_assessments WHERE session_id = ?",
+        "SELECT * FROM boundary_impact_assessments WHERE session_id = %s",
         (session_id,),
     ).fetchall()
     return [dict(r) for r in rows]
@@ -162,7 +162,7 @@ def _load_boundary_assessments(conn, session_id):
 
 def _get_session(conn, session_id):
     """Load the intake session record."""
-    row = conn.execute("SELECT * FROM intake_sessions WHERE id = ?", (session_id,)).fetchone()
+    row = conn.execute("SELECT * FROM intake_sessions WHERE id = %s", (session_id,)).fetchone()
     if not row:
         raise ValueError(f"Intake session not found: {session_id}")
     return dict(row)
@@ -557,7 +557,7 @@ def _create_simulation_for_coa(conn, coa_id, session_id, project_id, coa_type, c
         """INSERT INTO simulation_scenarios
            (id, project_id, session_id, scenario_name, scenario_type,
             base_state, modifications, status, classification, created_by, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
         (
             scenario_id,
             project_id,
@@ -624,7 +624,7 @@ def _create_simulation_for_coa(conn, coa_id, session_id, project_id, coa_type, c
                (scenario_id, dimension, metric_name, baseline_value,
                 simulated_value, delta, delta_pct, confidence, impact_tier,
                 details, calculated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 scenario_id,
                 dim["dimension"],
@@ -642,7 +642,7 @@ def _create_simulation_for_coa(conn, coa_id, session_id, project_id, coa_type, c
 
     # Update scenario status
     conn.execute(
-        "UPDATE simulation_scenarios SET status = 'completed', completed_at = ? WHERE id = ?",
+        "UPDATE simulation_scenarios SET status = 'completed', completed_at = %s WHERE id = %s",
         (now, scenario_id),
     )
 
@@ -853,7 +853,7 @@ def generate_3_coas(session_id, project_id=None, simulate=False, db_path=None):
                     architecture_summary, cost_estimate, risk_profile, timeline,
                     compliance_impact, supply_chain_impact, boundary_tier,
                     simulation_scenario_id, status, classification, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     coa_id,
                     session_id,
@@ -944,7 +944,7 @@ def generate_alternative_coa(session_id, requirement_id, project_id=None, db_pat
 
         # Load the requirement
         req_row = conn.execute(
-            "SELECT * FROM intake_requirements WHERE id = ?",
+            "SELECT * FROM intake_requirements WHERE id = %s",
             (requirement_id,),
         ).fetchone()
         if not req_row:
@@ -954,7 +954,7 @@ def generate_alternative_coa(session_id, requirement_id, project_id=None, db_pat
 
         # Load boundary assessment for this requirement
         assessment_rows = conn.execute(
-            "SELECT * FROM boundary_impact_assessments WHERE requirement_id = ?",
+            "SELECT * FROM boundary_impact_assessments WHERE requirement_id = %s",
             (requirement_id,),
         ).fetchall()
         assessments = [dict(r) for r in assessment_rows]
@@ -1081,7 +1081,7 @@ def generate_alternative_coa(session_id, requirement_id, project_id=None, db_pat
                     architecture_summary, cost_estimate, risk_profile, timeline,
                     compliance_impact, supply_chain_impact, boundary_tier,
                     status, classification, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     coa_id,
                     session_id,
@@ -1180,7 +1180,7 @@ def compare_coas(session_id, db_path=None):
         # Load all COAs for session
         rows = conn.execute(
             """SELECT * FROM coa_definitions
-               WHERE session_id = ? AND coa_type IN ('speed', 'balanced', 'comprehensive')
+               WHERE session_id = %s AND coa_type IN ('speed', 'balanced', 'comprehensive')
                ORDER BY coa_type""",
             (session_id,),
         ).fetchall()
@@ -1312,7 +1312,7 @@ def compare_coas(session_id, db_path=None):
                         """INSERT INTO coa_comparisons
                            (session_id, coa_a_id, coa_b_id, dimension,
                             coa_a_score, coa_b_score, winner, rationale, created_at)
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                         (
                             session_id,
                             cid_a,
@@ -1392,7 +1392,7 @@ def select_coa(coa_id, selected_by, rationale, db_path=None):
         now = _now_iso()
 
         # Load the COA
-        row = conn.execute("SELECT * FROM coa_definitions WHERE id = ?", (coa_id,)).fetchone()
+        row = conn.execute("SELECT * FROM coa_definitions WHERE id = %s", (coa_id,)).fetchone()
         if not row:
             raise ValueError(f"COA not found: {coa_id}")
         coa = dict(row)
@@ -1402,17 +1402,17 @@ def select_coa(coa_id, selected_by, rationale, db_path=None):
         # Reject all other COAs in same session
         conn.execute(
             """UPDATE coa_definitions
-               SET status = 'rejected', updated_at = ?
-               WHERE session_id = ? AND id != ? AND status NOT IN ('rejected', 'archived')""",
+               SET status = 'rejected', updated_at = %s
+               WHERE session_id = %s AND id != %s AND status NOT IN ('rejected', 'archived')""",
             (now, session_id, coa_id),
         )
 
         # Select this COA
         conn.execute(
             """UPDATE coa_definitions
-               SET status = 'selected', selected_by = ?, selected_at = ?,
-                   selection_rationale = ?, updated_at = ?
-               WHERE id = ?""",
+               SET status = 'selected', selected_by = %s, selected_at = %s,
+                   selection_rationale = %s, updated_at = %s
+               WHERE id = %s""",
             (selected_by, now, rationale, now, coa_id),
         )
 
@@ -1460,7 +1460,7 @@ def get_coa(coa_id, db_path=None):
     """
     conn = _get_connection(db_path)
     try:
-        row = conn.execute("SELECT * FROM coa_definitions WHERE id = ?", (coa_id,)).fetchone()
+        row = conn.execute("SELECT * FROM coa_definitions WHERE id = %s", (coa_id,)).fetchone()
         if not row:
             raise ValueError(f"COA not found: {coa_id}")
         coa = dict(row)
@@ -1505,7 +1505,7 @@ def list_coas(session_id, db_path=None):
                       selected_by, selected_at, selection_rationale,
                       mission_fit_pct, created_at, updated_at
                FROM coa_definitions
-               WHERE session_id = ?
+               WHERE session_id = %s
                ORDER BY
                    CASE coa_type
                        WHEN 'speed' THEN 1

@@ -319,11 +319,11 @@ def fetch_hardware_profiles(src_model: str, tgt_model: str) -> dict[str, Any]:
     """
     with _nc_conn() as conn:
         src = conn.execute(
-            "SELECT * FROM nc_hardware_profiles WHERE LOWER(model)=LOWER(?) OR LOWER(id)=LOWER(?)",
+            "SELECT * FROM nc_hardware_profiles WHERE LOWER(model)=LOWER(%s) OR LOWER(id)=LOWER(%s)",
             (src_model, f"hw-{src_model.lower().replace(' ','-')}"),
         ).fetchone()
         tgt = conn.execute(
-            "SELECT * FROM nc_hardware_profiles WHERE LOWER(model)=LOWER(?) OR LOWER(id)=LOWER(?)",
+            "SELECT * FROM nc_hardware_profiles WHERE LOWER(model)=LOWER(%s) OR LOWER(id)=LOWER(%s)",
             (tgt_model, f"hw-{tgt_model.lower().replace(' ','-')}"),
         ).fetchone()
 
@@ -1411,33 +1411,33 @@ def compute_readiness(
     session_id: str = compatibility
     with _mc_conn() as conn:
         session = conn.execute(
-            "SELECT * FROM mc_net_sessions WHERE id=?", (session_id,)
+            "SELECT * FROM mc_net_sessions WHERE id=%s", (session_id,)
         ).fetchone()
         if not session:
             return {"overall": 0, "error": "session not found"}
 
         port_rows = conn.execute(
             "SELECT COUNT(*) cnt, SUM(CASE WHEN status='mapped' THEN 1 ELSE 0 END) mapped "
-            "FROM mc_net_port_map WHERE session_id=?", (session_id,)
+            "FROM mc_net_port_map WHERE session_id=%s", (session_id,)
         ).fetchone()
 
         compat_rows = conn.execute(
             "SELECT COUNT(*) cnt, "
             "SUM(CASE WHEN status='fail' AND (override_reason='' OR override_reason IS NULL) THEN 1 ELSE 0 END) blocking "
-            "FROM mc_net_compat_checks WHERE session_id=?", (session_id,)
+            "FROM mc_net_compat_checks WHERE session_id=%s", (session_id,)
         ).fetchone()
 
         test_rows = conn.execute(
             "SELECT COUNT(*) cnt, SUM(CASE WHEN passed IS NOT NULL THEN 1 ELSE 0 END) executed "
-            "FROM mc_net_test_cases WHERE session_id=?", (session_id,)
+            "FROM mc_net_test_cases WHERE session_id=%s", (session_id,)
         ).fetchone()
 
         cutover_rows = conn.execute(
-            "SELECT COUNT(*) FROM mc_net_cutover_steps WHERE session_id=?", (session_id,)
+            "SELECT COUNT(*) FROM mc_net_cutover_steps WHERE session_id=%s", (session_id,)
         ).fetchone()
 
         erb_row = conn.execute(
-            "SELECT id, business_justification, risk_tier FROM mc_net_erb_metadata WHERE session_id=?",
+            "SELECT id, business_justification, risk_tier FROM mc_net_erb_metadata WHERE session_id=%s",
             (session_id,)
         ).fetchone()
 
@@ -1593,28 +1593,28 @@ def generate_erb_package(
     # --- String mode: DB-backed assembly ---
     with _mc_conn() as conn:
         session = dict(conn.execute(
-            "SELECT * FROM mc_net_sessions WHERE id=?", (session_id,)
+            "SELECT * FROM mc_net_sessions WHERE id=%s", (session_id,)
         ).fetchone() or {})
 
         port_map = [dict(r) for r in conn.execute(
-            "SELECT * FROM mc_net_port_map WHERE session_id=? ORDER BY id", (session_id,)
+            "SELECT * FROM mc_net_port_map WHERE session_id=%s ORDER BY id", (session_id,)
         ).fetchall()]
 
         compat = [dict(r) for r in conn.execute(
-            "SELECT * FROM mc_net_compat_checks WHERE session_id=? ORDER BY severity, category, check_name",
+            "SELECT * FROM mc_net_compat_checks WHERE session_id=%s ORDER BY severity, category, check_name",
             (session_id,)
         ).fetchall()]
 
         tests = [dict(r) for r in conn.execute(
-            "SELECT * FROM mc_net_test_cases WHERE session_id=? ORDER BY phase, seq_no", (session_id,)
+            "SELECT * FROM mc_net_test_cases WHERE session_id=%s ORDER BY phase, seq_no", (session_id,)
         ).fetchall()]
 
         cutover = [dict(r) for r in conn.execute(
-            "SELECT * FROM mc_net_cutover_steps WHERE session_id=? ORDER BY seq_no", (session_id,)
+            "SELECT * FROM mc_net_cutover_steps WHERE session_id=%s ORDER BY seq_no", (session_id,)
         ).fetchall()]
 
         erb_meta = dict(conn.execute(
-            "SELECT * FROM mc_net_erb_metadata WHERE session_id=?", (session_id,)
+            "SELECT * FROM mc_net_erb_metadata WHERE session_id=%s", (session_id,)
         ).fetchone() or {})
 
     # Auto-compute risk tier from compat blockers if not manually set
@@ -1783,7 +1783,7 @@ def _update_kg(session_id: str, design_id: str | None = None) -> None:
             with _mc_conn() as conn:
                 row = conn.execute(
                     "SELECT migration_designs.id FROM migration_designs "
-                    "WHERE network_session_id=?", (session_id,)
+                    "WHERE network_session_id=%s", (session_id,)
                 ).fetchone()
                 design_id = row[0] if row else None
         except Exception:
@@ -1796,7 +1796,7 @@ def _update_kg(session_id: str, design_id: str | None = None) -> None:
         with _mc_conn() as conn:
             sess = dict(conn.execute(
                 "SELECT src_model, tgt_model, src_device_name, tgt_device_name, selected_coa, topology_json "
-                "FROM mc_net_sessions WHERE id=?",
+                "FROM mc_net_sessions WHERE id=%s",
                 (session_id,)
             ).fetchone() or {})
 
@@ -1851,7 +1851,7 @@ def _update_kg(session_id: str, design_id: str | None = None) -> None:
 
         with _mc_conn() as conn:
             conn.execute(
-                "UPDATE migration_designs SET graph_json=?, updated_at=? WHERE id=?",
+                "UPDATE migration_designs SET graph_json=%s, updated_at=%s WHERE id=%s",
                 (json.dumps(graph), _now(), design_id),
             )
             conn.commit()
@@ -1923,7 +1923,7 @@ def seed_coa_questions(session_id: str) -> None:
     existing_keys: set = set()
     with _mc_conn() as conn:
         for row in conn.execute(
-            "SELECT question_key FROM mc_net_coa_questions WHERE session_id=?", (session_id,)
+            "SELECT question_key FROM mc_net_coa_questions WHERE session_id=%s", (session_id,)
         ).fetchall():
             existing_keys.add(row[0])
     for q in _DEFAULT_COA_QUESTIONS:
@@ -1934,7 +1934,7 @@ def seed_coa_questions(session_id: str) -> None:
                 """INSERT INTO mc_net_coa_questions
                    (id, session_id, question_key, question_text, default_answer, user_answer,
                     coa_a_weight, coa_b_weight, coa_c_weight)
-                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (
                     str(uuid.uuid4()),
                     session_id,
@@ -1955,7 +1955,7 @@ def get_coa_questions(session_id: str) -> list[dict]:
     seed_coa_questions(session_id)
     with _mc_conn() as conn:
         rows = conn.execute(
-            "SELECT * FROM mc_net_coa_questions WHERE session_id=? ORDER BY question_key",
+            "SELECT * FROM mc_net_coa_questions WHERE session_id=%s ORDER BY question_key",
             (session_id,),
         ).fetchall()
     return [dict(r) for r in rows]
@@ -1969,7 +1969,7 @@ def save_coa_answers(session_id: str, answers: dict[str, int | bool | None]) -> 
                 continue
             val = 1 if ans else 0 if isinstance(ans, bool) else int(ans)
             conn.execute(
-                "UPDATE mc_net_coa_questions SET user_answer=? WHERE session_id=? AND question_key=?",
+                "UPDATE mc_net_coa_questions SET user_answer=%s WHERE session_id=%s AND question_key=%s",
                 (val, session_id, key),
             )
         conn.commit()
@@ -2039,7 +2039,7 @@ def recommend_coa(session_id: str) -> dict[str, Any]:
 
     with _mc_conn() as conn:
         row = conn.execute(
-            "SELECT engineer_context, src_config_raw FROM mc_net_sessions WHERE id=?", (session_id,)
+            "SELECT engineer_context, src_config_raw FROM mc_net_sessions WHERE id=%s", (session_id,)
         ).fetchone()
     context = (row[0] if row else "") or ""
     src_config_raw = (row[1] if row else "") or ""
@@ -2096,7 +2096,7 @@ def recommend_coa(session_id: str) -> dict[str, Any]:
     # Persist recommendation
     with _mc_conn() as conn:
         conn.execute(
-            "UPDATE mc_net_sessions SET recommended_coa=?, coa_rationale=? WHERE id=?",
+            "UPDATE mc_net_sessions SET recommended_coa=%s, coa_rationale=%s WHERE id=%s",
             (recommended, rationale, session_id),
         )
         conn.commit()
@@ -2117,12 +2117,12 @@ def select_coa(session_id: str, coa: str, context: str = "") -> dict[str, Any]:
     with _mc_conn() as conn:
         if context:
             conn.execute(
-                "UPDATE mc_net_sessions SET selected_coa=?, engineer_context=? WHERE id=?",
+                "UPDATE mc_net_sessions SET selected_coa=%s, engineer_context=%s WHERE id=%s",
                 (coa, context, session_id),
             )
         else:
             conn.execute(
-                "UPDATE mc_net_sessions SET selected_coa=? WHERE id=?", (coa, session_id)
+                "UPDATE mc_net_sessions SET selected_coa=%s WHERE id=%s", (coa, session_id)
             )
         conn.commit()
     return recommend_coa(session_id)
@@ -2192,7 +2192,7 @@ def discover_neighbors(session_id: str) -> list[dict[str, Any]]:
     """Return neighbor candidates inferred from parsed config, enriched from network_canvas.db."""
     with _mc_conn() as conn:
         row = conn.execute(
-            "SELECT src_config_raw FROM mc_net_sessions WHERE id=?", (session_id,)
+            "SELECT src_config_raw FROM mc_net_sessions WHERE id=%s", (session_id,)
         ).fetchone()
     raw_config = (row[0] if row else "") or ""
     parsed = parse_source_config(raw_config) if raw_config else {}
@@ -2298,7 +2298,7 @@ def build_topology(session_id: str, refresh: bool = False) -> dict[str, Any]:
     with _mc_conn() as conn:
         row = conn.execute(
             "SELECT src_device_name, tgt_device_name, src_config_raw, src_model, tgt_model, selected_coa, "
-            "topology_json FROM mc_net_sessions WHERE id=?",
+            "topology_json FROM mc_net_sessions WHERE id=%s",
             (session_id,),
         ).fetchone()
     if not row:
@@ -2404,15 +2404,15 @@ def build_topology(session_id: str, refresh: bool = False) -> dict[str, Any]:
 
     with _mc_conn() as conn:
         conn.execute(
-            "UPDATE mc_net_sessions SET topology_json=?, topology_neighbors_json=? WHERE id=?",
+            "UPDATE mc_net_sessions SET topology_json=%s, topology_neighbors_json=%s WHERE id=%s",
             (topology_json, neighbors_json, session_id),
         )
-        conn.execute("DELETE FROM mc_net_topology_neighbors WHERE session_id=?", (session_id,))
+        conn.execute("DELETE FROM mc_net_topology_neighbors WHERE session_id=%s", (session_id,))
         for nb in neighbors:
             conn.execute(
                 "INSERT INTO mc_net_topology_neighbors "
                 "(id, session_id, neighbor_name, neighbor_ip, relationship, source_interface, is_discovered, notes) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     f"tnb-{session_id}-{uuid.uuid4().hex[:8]}",
                     session_id,
@@ -2553,7 +2553,7 @@ def load_device_config_from_db(device_id: str) -> str | None:
         with _nc_conn() as nc:
             row = nc.execute(
                 """SELECT config_text FROM ni_device_configs
-                   WHERE device_id=?
+                   WHERE device_id=%s
                    ORDER BY CASE config_type
                      WHEN 'running' THEN 1
                      WHEN 'startup' THEN 2
@@ -2777,7 +2777,7 @@ def _target_vendor_from_model(tgt_model: str) -> str:
     try:
         with _nc_conn() as nc:
             row = nc.execute(
-                "SELECT vendor FROM nc_hardware_profiles WHERE LOWER(model)=LOWER(?) OR LOWER(id)=LOWER(?) LIMIT 1",
+                "SELECT vendor FROM nc_hardware_profiles WHERE LOWER(model)=LOWER(%s) OR LOWER(id)=LOWER(%s) LIMIT 1",
                 (tgt_model, f"hw-{lowered.replace(' ', '-')}"),
             ).fetchone()
         if row:
@@ -2857,7 +2857,7 @@ def _load_config_map_questions(session_id: str) -> list[dict]:
     with _mc_conn() as mc:
         rows = mc.execute(
             "SELECT question_key, question_text, default_answer, user_answer, ai_relevance "
-            "FROM mc_net_config_questions WHERE session_id=? ORDER BY id",
+            "FROM mc_net_config_questions WHERE session_id=%s ORDER BY id",
             (session_id,),
         ).fetchall()
     return [dict(r) for r in rows]
@@ -2868,7 +2868,7 @@ def _save_config_map_questions(session_id: str, questions: list[dict]) -> None:
         for q in questions:
             mc.execute(
                 "INSERT INTO mc_net_config_questions (id, session_id, question_key, question_text, "
-                "default_answer, user_answer, ai_relevance) VALUES (?,?,?,?,?,?,?) "
+                "default_answer, user_answer, ai_relevance) VALUES (%s,%s,%s,%s,%s,%s,%s) "
                 "ON CONFLICT(session_id, question_key) DO UPDATE SET "
                 "question_text=excluded.question_text, default_answer=excluded.default_answer, "
                 "user_answer=excluded.user_answer, ai_relevance=excluded.ai_relevance",
@@ -2893,7 +2893,7 @@ def generate_config_map_questions(session_id: str) -> dict:
     try:
         with _mc_conn() as mc:
             row = mc.execute(
-                "SELECT src_model, tgt_model, src_config_raw FROM mc_net_sessions WHERE id=?",
+                "SELECT src_model, tgt_model, src_config_raw FROM mc_net_sessions WHERE id=%s",
                 (session_id,),
             ).fetchone()
         if row:
@@ -3169,10 +3169,10 @@ def propose_config_mapping(
     # Load session and port map.
     sess: dict = {}
     with _mc_conn() as mc:
-        row = mc.execute("SELECT * FROM mc_net_sessions WHERE id=?", (session_id,)).fetchone()
+        row = mc.execute("SELECT * FROM mc_net_sessions WHERE id=%s", (session_id,)).fetchone()
         if row:
             sess = dict(row)
-        port_rows = mc.execute("SELECT * FROM mc_net_port_map WHERE session_id=?", (session_id,)).fetchall()
+        port_rows = mc.execute("SELECT * FROM mc_net_port_map WHERE session_id=%s", (session_id,)).fetchall()
     port_map = {r["src_interface"]: r["tgt_interface"] for r in port_rows if r.get("src_interface") and r.get("tgt_interface")}
 
     if not sess:
@@ -3198,13 +3198,13 @@ def propose_config_mapping(
 
     # Persist proposals (replace prior auto-generated pending proposals).
     with _mc_conn() as mc:
-        mc.execute("DELETE FROM mc_net_config_map WHERE session_id=? AND status='pending'", (session_id,))
+        mc.execute("DELETE FROM mc_net_config_map WHERE session_id=%s AND status='pending'", (session_id,))
         for p in proposals:
             mc.execute(
                 "INSERT INTO mc_net_config_map (id, session_id, src_section_type, src_stanza_text, "
                 "src_lines_json, tgt_section_type, tgt_stanza_text, mapping_action, confidence, "
                 "ai_rationale, ai_question_key, status, reviewer_note, applied_to_target) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (p["id"], session_id, p["src_section_type"], p["src_stanza_text"],
                  p["src_lines_json"], p["tgt_section_type"], p["tgt_stanza_text"],
                  p["mapping_action"], p["confidence"], p["ai_rationale"],
@@ -3218,7 +3218,7 @@ def propose_config_mapping(
             with _mc_conn() as mc:
                 mc.execute(
                     "INSERT INTO mc_net_ai_sessions (id, session_id, role, message, model_used, created_at) "
-                    "VALUES (?,?,?,?,?,?)",
+                    "VALUES (%s,%s,%s,%s,%s,%s)",
                     (str(uuid.uuid4()), session_id, "assistant",
                      f"[Config mapping] generated {len(proposals)} proposals via {model}",
                      model, _now()),
@@ -3235,7 +3235,7 @@ def get_config_map(session_id: str) -> dict:
     """Return persisted mapping proposals and questions for a session."""
     with _mc_conn() as mc:
         rows = mc.execute(
-            "SELECT * FROM mc_net_config_map WHERE session_id=? ORDER BY created_at, id", (session_id,)
+            "SELECT * FROM mc_net_config_map WHERE session_id=%s ORDER BY created_at, id", (session_id,)
         ).fetchall()
     proposals = [dict(r) for r in rows]
     questions = _load_config_map_questions(session_id)
@@ -3248,8 +3248,8 @@ def decide_config_map_row(session_id: str, row_id: str, decision: str, note: str
         return {"error": "Invalid decision"}
     with _mc_conn() as mc:
         cur = mc.execute(
-            "UPDATE mc_net_config_map SET status=?, reviewer_note=?, updated_at=? "
-            "WHERE session_id=? AND id=?",
+            "UPDATE mc_net_config_map SET status=%s, reviewer_note=%s, updated_at=%s "
+            "WHERE session_id=%s AND id=%s",
             (decision, note, _now(), session_id, row_id),
         )
         mc.commit()
@@ -3263,9 +3263,9 @@ def apply_approved_config_map(session_id: str) -> dict:
     """
     with _mc_conn() as mc:
         rows = mc.execute(
-            "SELECT * FROM mc_net_config_map WHERE session_id=? ORDER BY created_at, id", (session_id,)
+            "SELECT * FROM mc_net_config_map WHERE session_id=%s ORDER BY created_at, id", (session_id,)
         ).fetchall()
-        sess_row = mc.execute("SELECT src_config_raw, tgt_model FROM mc_net_sessions WHERE id=?", (session_id,)).fetchone()
+        sess_row = mc.execute("SELECT src_config_raw, tgt_model FROM mc_net_sessions WHERE id=%s", (session_id,)).fetchone()
     if not sess_row:
         return {"error": "Session not found"}
 
@@ -3297,12 +3297,12 @@ def apply_approved_config_map(session_id: str) -> dict:
     # Mark as applied.
     with _mc_conn() as mc:
         mc.execute(
-            "UPDATE mc_net_config_map SET applied_to_target=1, updated_at=? "
-            "WHERE session_id=? AND status='approved'",
+            "UPDATE mc_net_config_map SET applied_to_target=1, updated_at=%s "
+            "WHERE session_id=%s AND status='approved'",
             (_now(), session_id),
         )
         mc.execute(
-            "UPDATE mc_net_sessions SET target_config=?, updated_at=? WHERE id=?",
+            "UPDATE mc_net_sessions SET target_config=%s, updated_at=%s WHERE id=%s",
             (target_config, _now(), session_id),
         )
         mc.commit()
@@ -3335,7 +3335,7 @@ def recommend_hardware(
                 dict(r) for r in nc.execute(
                     "SELECT id, vendor, model, device_type, throughput_gbps, rack_units, "
                     "power_typical_w, ports_json, eol_date, tags FROM nc_hardware_profiles "
-                    "WHERE device_type=? ORDER BY throughput_gbps DESC LIMIT 20",
+                    "WHERE device_type=%s ORDER BY throughput_gbps DESC LIMIT 20",
                     (dtype,),
                 ).fetchall()
             ]
@@ -3395,7 +3395,7 @@ def recommend_hardware(
             with _mc_conn() as mc:
                 mc.execute(
                     "INSERT INTO mc_net_ai_sessions (id, session_id, role, message, model_used, created_at) "
-                    "VALUES (?,?,?,?,?,?)",
+                    "VALUES (%s,%s,%s,%s,%s,%s)",
                     (str(uuid.uuid4()), session_id, "assistant",
                      f"[Hardware recommendation] {resp_text[:1000]}", model_used, _now()),
                 )
@@ -3433,13 +3433,13 @@ def ai_assist(session_id: str, engineer_prompt: str) -> dict:
         with _mc_conn() as mc:
             row = mc.execute(
                 "SELECT src_model, tgt_model, src_device_name, tgt_device_name, "
-                "src_config_raw, status FROM mc_net_sessions WHERE id=?", (session_id,)
+                "src_config_raw, status FROM mc_net_sessions WHERE id=%s", (session_id,)
             ).fetchone()
             if row:
                 sess = dict(row)
             history = [
                 dict(r) for r in mc.execute(
-                    "SELECT role, message FROM mc_net_ai_sessions WHERE session_id=? "
+                    "SELECT role, message FROM mc_net_ai_sessions WHERE session_id=%s "
                     "ORDER BY created_at DESC LIMIT 10",
                     (session_id,),
                 ).fetchall()
@@ -3513,12 +3513,12 @@ def ai_assist(session_id: str, engineer_prompt: str) -> dict:
         with _mc_conn() as mc:
             mc.execute(
                 "INSERT INTO mc_net_ai_sessions (id, session_id, role, message, model_used, created_at) "
-                "VALUES (?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s)",
                 (str(uuid.uuid4()), session_id, "engineer", engineer_prompt, "", _now()),
             )
             mc.execute(
                 "INSERT INTO mc_net_ai_sessions (id, session_id, role, message, model_used, created_at) "
-                "VALUES (?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s)",
                 (str(uuid.uuid4()), session_id, "assistant", response_text, model_used, _now()),
             )
             mc.commit()
@@ -3740,7 +3740,7 @@ def plan_protocol_migration(session_id: str, variant_overrides: dict | None = No
 
     with _mc_conn() as mc:
         sess = dict(mc.execute(
-            "SELECT src_config_raw, src_model, tgt_model FROM mc_net_sessions WHERE id=?",
+            "SELECT src_config_raw, src_model, tgt_model FROM mc_net_sessions WHERE id=%s",
             (session_id,),
         ).fetchone() or {})
 
@@ -3755,7 +3755,7 @@ def plan_protocol_migration(session_id: str, variant_overrides: dict | None = No
     try:
         with _nc_conn() as nc:
             hw = nc.execute(
-                "SELECT vendor FROM nc_hardware_profiles WHERE model=? LIMIT 1",
+                "SELECT vendor FROM nc_hardware_profiles WHERE model=%s LIMIT 1",
                 (sess.get("tgt_model", ""),),
             ).fetchone()
             if hw:
@@ -3809,7 +3809,7 @@ def plan_protocol_migration(session_id: str, variant_overrides: dict | None = No
                 "INSERT OR REPLACE INTO mc_net_protocol_plans "
                 "(id, session_id, protocol, migration_steps_json, risk_level, status, "
                 "variant, advanced_config, created_at, updated_at) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (str(uuid.uuid4()), session_id, protocol,
                  json.dumps(steps), risk, "draft",
                  variant_used, json.dumps(adv_cfg), now, now),
@@ -3835,19 +3835,19 @@ def build_parallel_timeline(session_id: str) -> list[dict]:
     try:
         with _mc_conn() as mc:
             row = mc.execute(
-                "SELECT src_config_raw, src_model, tgt_model FROM mc_net_sessions WHERE id=?",
+                "SELECT src_config_raw, src_model, tgt_model FROM mc_net_sessions WHERE id=%s",
                 (session_id,),
             ).fetchone()
             if row:
                 sess = dict(row)
             port_map = [
                 dict(r) for r in mc.execute(
-                    "SELECT optic_change FROM mc_net_port_map WHERE session_id=?", (session_id,)
+                    "SELECT optic_change FROM mc_net_port_map WHERE session_id=%s", (session_id,)
                 ).fetchall()
             ]
             compat_checks = [
                 dict(r) for r in mc.execute(
-                    "SELECT severity, status FROM mc_net_compat_checks WHERE session_id=?", (session_id,)
+                    "SELECT severity, status FROM mc_net_compat_checks WHERE session_id=%s", (session_id,)
                 ).fetchall()
             ]
     except Exception:
@@ -3949,13 +3949,13 @@ def build_parallel_timeline(session_id: str) -> list[dict]:
 
     now = _now()
     with _mc_conn() as mc:
-        mc.execute("DELETE FROM mc_net_parallel_timelines WHERE session_id=?", (session_id,))
+        mc.execute("DELETE FROM mc_net_parallel_timelines WHERE session_id=%s", (session_id,))
         for m in all_milestones:
             mc.execute(
                 "INSERT INTO mc_net_parallel_timelines "
                 "(id, session_id, milestone_name, description, days_before_cutover, "
                 "phase, duration_hours, status, created_at) "
-                "VALUES (?,?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (str(uuid.uuid4()), session_id,
                  m["milestone_name"], m.get("description", ""),
                  m["days_before_cutover"], m["phase"],
@@ -3973,7 +3973,7 @@ def _ensure_import_topology(label: str, nc_conn) -> str:
     """Return existing topology id by label, or create a new one."""
     import uuid as _uuid
     row = nc_conn.execute(
-        "SELECT id FROM topologies WHERE name = ? LIMIT 1", (label,)
+        "SELECT id FROM topologies WHERE name = %s LIMIT 1", (label,)
     ).fetchone()
     if row:
         return row["id"] if hasattr(row, "keys") else row[0]
@@ -3981,7 +3981,7 @@ def _ensure_import_topology(label: str, nc_conn) -> str:
     now = _now()
     nc_conn.execute(
         "INSERT INTO topologies (id, name, graph_json, classification, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s)",
         (topology_id, label, "{}", "CUI // SP-CTI", now, now),
     )
     nc_conn.commit()
@@ -4107,7 +4107,7 @@ def ingest_devices_topology(src_topology_id: str) -> dict:
     """
     with _nc_conn() as nc:
         row = nc.execute(
-            "SELECT id, name, graph_json FROM topologies WHERE id = ? LIMIT 1",
+            "SELECT id, name, graph_json FROM topologies WHERE id = %s LIMIT 1",
             (src_topology_id,),
         ).fetchone()
         if not row:

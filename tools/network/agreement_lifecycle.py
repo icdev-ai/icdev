@@ -324,7 +324,7 @@ def sync_to_pmc(conn_nc, agreement_id: str) -> dict:
             )
         except Exception:
             pmc.execute(
-                "INSERT OR IGNORE INTO peering_peers (id, asn, org_name, peer_type, policy, status, noc_email, classification, created_at, updated_at) VALUES (?,?,?,'public','selective','active',?,'CUI',?,?)",
+                "INSERT OR IGNORE INTO peering_peers (id, asn, org_name, peer_type, policy, status, noc_email, classification, created_at, updated_at) VALUES (%s,%s,%s,'public','selective','active',%s,'CUI',%s,%s)",
                 (peer_id, asn, a.get("peer_name", ""), a.get("noc_email", ""), now, now),
             )
         pmc.commit()

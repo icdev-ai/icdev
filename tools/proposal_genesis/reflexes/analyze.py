@@ -209,7 +209,7 @@ def _get_draft_quality(opportunity_id: str) -> Optional[Dict]:
             SELECT composite_score, grammar_score, readability_score,
                    tone_score, plagiarism_score, ai_detection_score
             FROM pg_proposal_quality_scores
-            WHERE opportunity_id = ?
+            WHERE opportunity_id = %s
             ORDER BY created_at DESC
         """,
             (opportunity_id,),
@@ -398,7 +398,7 @@ def _store_win_loss_record(opportunity_id: str, analysis: Dict) -> Optional[str]
             "(id, opportunity_id, outcome, competitor_name, "
             "competitor_strengths, our_strengths, our_weaknesses, "
             "lessons_learned, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 rec_id,
                 opportunity_id,
@@ -430,7 +430,7 @@ def _store_lessons(win_loss_id: str, lessons: List[Dict]) -> int:
                 "INSERT INTO pg_win_loss_lessons "
                 "(id, win_loss_id, category, lesson, actionable, "
                 "applied, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
                 (
                     _generate_id("pglesson"),
                     win_loss_id,
@@ -458,7 +458,7 @@ def _audit_analyze(event_type: str, opportunity_id: Optional[str], details: Dict
             "INSERT INTO pg_proposal_genesis_audit "
             "(id, event_type, reflex_name, risk_tier, opportunity_id, "
             "details, success, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 _generate_id("pgaudit"),
                 event_type,

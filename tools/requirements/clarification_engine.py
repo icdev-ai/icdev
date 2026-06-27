@@ -472,13 +472,13 @@ def analyze_requirements_clarity(
     """
     conn = _get_connection(db_path)
 
-    session = conn.execute("SELECT * FROM intake_sessions WHERE id = ?", (session_id,)).fetchone()
+    session = conn.execute("SELECT * FROM intake_sessions WHERE id = %s", (session_id,)).fetchone()
     if not session:
         conn.close()
         raise ValueError(f"Session '{session_id}' not found.")
 
     reqs = conn.execute(
-        "SELECT * FROM intake_requirements WHERE session_id = ?",
+        "SELECT * FROM intake_requirements WHERE session_id = %s",
         (session_id,),
     ).fetchall()
     reqs = [dict(r) for r in reqs]

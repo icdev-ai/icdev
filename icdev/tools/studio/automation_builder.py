@@ -347,7 +347,7 @@ def create_automation(
             """INSERT INTO studio_automations
                (automation_id, name, description, trigger_json, condition_json,
                 action_json, enabled, created_by, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, 1, %s, %s)""",
             (
                 auto_id,
                 name,
@@ -389,7 +389,7 @@ def get_automation(auto_id: str) -> dict | None:
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT * FROM studio_automations WHERE automation_id = ?",
+            "SELECT * FROM studio_automations WHERE automation_id = %s",
             (auto_id,),
         ).fetchone()
         if not row:
@@ -407,7 +407,7 @@ def toggle_automation(auto_id: str, enabled: bool) -> dict:
     conn = get_connection()
     try:
         cur = conn.execute(
-            "UPDATE studio_automations SET enabled = ? WHERE automation_id = ?",
+            "UPDATE studio_automations SET enabled = %s WHERE automation_id = %s",
             (1 if enabled else 0, auto_id),
         )
         conn.commit()
@@ -421,7 +421,7 @@ def toggle_automation(auto_id: str, enabled: bool) -> dict:
 def delete_automation(auto_id: str) -> dict:
     conn = get_connection()
     try:
-        cur = conn.execute("DELETE FROM studio_automations WHERE automation_id = ?", (auto_id,))
+        cur = conn.execute("DELETE FROM studio_automations WHERE automation_id = %s", (auto_id,))
         conn.commit()
         return {"status": "ok"} if cur.rowcount else {"status": "error", "error": "Not found"}
     finally:
@@ -448,7 +448,7 @@ def log_automation_run(
             """INSERT INTO studio_automation_runs
                (run_id, automation_id, trigger_event, status, result_json,
                 started_at, completed_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
             (run_id, automation_id, trigger_event, status, json.dumps(result or {}), now, completed),
         )
         conn.commit()

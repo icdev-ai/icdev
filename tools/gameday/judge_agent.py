@@ -455,7 +455,7 @@ def _route_to_suggested_kanban(
         conn.execute(
             """INSERT INTO kanban_tasks
                (title, description, status, priority, task_type, created_at, updated_at)
-               VALUES (?, ?, 'suggested', 'medium', 'gameday_artifact', ?, ?)""",
+               VALUES (%s, %s, 'suggested', 'medium', 'gameday_artifact', %s, %s)""",
             (title, description, now, now),
         )
         conn.commit()

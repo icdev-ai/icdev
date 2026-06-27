@@ -62,7 +62,7 @@ def seed_hitl_templates() -> None:
         try:
             for tmpl in AADC_HITL_TEMPLATES:
                 existing = conn.execute(
-                    "SELECT id FROM wf_templates WHERE name=? AND canvas_type=?",
+                    "SELECT id FROM wf_templates WHERE name=%s AND canvas_type=%s",
                     (tmpl["name"], tmpl["canvas_type"]),
                 ).fetchone()
                 if not existing:
@@ -72,7 +72,7 @@ def seed_hitl_templates() -> None:
                            (id, name, canvas_type, is_default, is_system,
                             stages_json, roles_json, approval_policy,
                             created_at, updated_at)
-                           VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                         (tid, tmpl["name"], tmpl["canvas_type"],
                          1 if tmpl["is_default"] else 0,
                          1 if tmpl["is_system"] else 0,
@@ -132,7 +132,7 @@ def maybe_create_hitl_instance(design_id: str, safety_impacting: bool,
         try:
             conn.execute(
                 "INSERT INTO aadc_workflow_links (id, design_id, wf_instance_id, status, created_at) "
-                "VALUES (?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s)",
                 (f"wfl-{uuid.uuid4().hex[:8]}", design_id, instance_id, "pending", _now()),
             )
             conn.commit()
@@ -154,7 +154,7 @@ def get_workflow_status(design_id: str) -> dict | None:
         conn = aadc_conn()
         try:
             link = conn.execute(
-                "SELECT * FROM aadc_workflow_links WHERE design_id=? ORDER BY created_at DESC LIMIT 1",
+                "SELECT * FROM aadc_workflow_links WHERE design_id=%s ORDER BY created_at DESC LIMIT 1",
                 (design_id,),
             ).fetchone()
             if not link:
@@ -169,7 +169,7 @@ def get_workflow_status(design_id: str) -> dict | None:
             conn2 = get_connection()
             try:
                 inst = conn2.execute(
-                    "SELECT * FROM wf_instances WHERE id=?",
+                    "SELECT * FROM wf_instances WHERE id=%s",
                     (link_d["wf_instance_id"],),
                 ).fetchone()
                 if inst:
@@ -256,7 +256,7 @@ def launch_to_kanban(design_id: str, design_name: str, graph_json: str,
                 conn.execute(
                     """INSERT INTO workflow_loops
                        (id, project_id, phase_name, plan_summary, created_at)
-                       VALUES (?,?,?,?,?)
+                       VALUES (%s,%s,%s,%s,%s)
                        ON CONFLICT DO NOTHING""",
                     (loop_id, project_id or design_id, "plan",
                      f"Implement AADC design: {design_name}", _now()),
@@ -280,7 +280,7 @@ def launch_to_kanban(design_id: str, design_name: str, graph_json: str,
                     tid = _cluster_task_id(design_id, cluster_name)
                     # Check if this task already exists (any non-suggested status)
                     existing = conn.execute(
-                        "SELECT status FROM kanban_tasks WHERE id=?", (tid,)
+                        "SELECT status FROM kanban_tasks WHERE id=%s", (tid,)
                     ).fetchone()
                     if existing:
                         skipped.append(tid)
@@ -290,7 +290,7 @@ def launch_to_kanban(design_id: str, design_name: str, graph_json: str,
                     conn.execute(
                         """INSERT INTO kanban_tasks
                            (id, title, description, status, task_type, priority, created_at, updated_at)
-                           VALUES (?,?,?,?,?,?,?,?)
+                           VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
                            ON CONFLICT DO NOTHING""",
                         (tid,
                          f"[AADC] Implement {cluster_name} — {design_name}",
@@ -314,7 +314,7 @@ def launch_to_kanban(design_id: str, design_name: str, graph_json: str,
                 ll_id = f"ll-{_loop_id_for_design(design_id)}"
                 conn.execute(
                     """INSERT INTO aadc_loop_links (id, design_id, loop_id, phase, created_at)
-                       VALUES (?,?,?,?,?) """,
+                       VALUES (%s,%s,%s,%s,%s) """,
                     (ll_id, design_id, loop_id, "plan", _now()),
                 )
                 conn.commit()

@@ -141,7 +141,7 @@ class EvidentlyAdapter(OpsAdapter):
                 INSERT INTO ohc_data_drift_events
                     (id, dataset_name, drift_type, drift_score, threshold, passed,
                      details_json, source_adapter, detected_at)
-                VALUES (?, ?, ?, ?, 0.3, ?, ?, 'evidently', ?)
+                VALUES (%s, %s, %s, %s, 0.3, %s, %s, 'evidently', %s)
             """, (
                 str(uuid.uuid4()), dataset_name, drift_type, drift_score,
                 1 if passed else 0,

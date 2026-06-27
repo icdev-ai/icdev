@@ -109,7 +109,7 @@ def _load_candidates(theater: str | None = None) -> list[dict]:
         if theater:
             rows = conn.execute(
                 "SELECT node_id, label, node_type, criticality, substitutability, "
-                "controlled_by, lat, lon FROM sg_supply_nodes WHERE controlled_by = ?",
+                "controlled_by, lat, lon FROM sg_supply_nodes WHERE controlled_by = %s",
                 (theater,),
             ).fetchall()
         else:

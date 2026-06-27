@@ -566,7 +566,7 @@ def _log_audit_event(
             """INSERT INTO audit_trail
                (project_id, event_type, actor, action, details,
                 affected_files, classification)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
             (
                 project_id,
                 "classification.validation",
@@ -615,7 +615,7 @@ def add_project_data_category(
         conn.execute(
             """INSERT OR REPLACE INTO data_classifications
                (project_id, data_category, subcategory, source, confidence)
-               VALUES (?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s)""",
             (project_id, norm, subcategory, source, confidence),
         )
         conn.commit()
@@ -655,7 +655,7 @@ def get_project_data_categories(
         rows = conn.execute(
             """SELECT data_category, subcategory, source, confidence, created_at
                FROM data_classifications
-               WHERE project_id = ?
+               WHERE project_id = %s
                ORDER BY created_at""",
             (project_id,),
         ).fetchall()
@@ -680,7 +680,7 @@ def _resolve_default_categories(
     try:
         conn = _get_connection(db_path)
         row = conn.execute(
-            "SELECT classification, impact_level FROM projects WHERE id = ?",
+            "SELECT classification, impact_level FROM projects WHERE id = %s",
             (project_id,),
         ).fetchone()
         conn.close()
@@ -759,7 +759,7 @@ def detect_data_categories(
         row = conn.execute(
             """SELECT id, name, description, type, classification,
                       impact_level, target_frameworks
-               FROM projects WHERE id = ?""",
+               FROM projects WHERE id = %s""",
             (project_id,),
         ).fetchone()
 
@@ -902,7 +902,7 @@ def validate_project_markings(
         recommendations: List[str] = []
 
         # Get project info
-        row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+        row = conn.execute("SELECT * FROM projects WHERE id = %s", (project_id,)).fetchone()
         if not row:
             raise ValueError(f"Project '{project_id}' not found.")
         project = dict(row)
@@ -910,7 +910,7 @@ def validate_project_markings(
         # Get assigned categories
         cat_rows = conn.execute(
             """SELECT data_category, subcategory, source, confidence
-               FROM data_classifications WHERE project_id = ?""",
+               FROM data_classifications WHERE project_id = %s""",
             (project_id,),
         ).fetchall()
 
@@ -931,7 +931,7 @@ def validate_project_markings(
                         try:
                             fw_row = conn.execute(
                                 """SELECT framework_id FROM project_framework_status
-                                   WHERE project_id = ? AND framework_id = ?""",
+                                   WHERE project_id = %s AND framework_id = %s""",
                                 (project_id, fw),
                             ).fetchone()
                             if not fw_row:

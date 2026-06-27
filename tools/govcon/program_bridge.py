@@ -104,7 +104,7 @@ def _audit(conn, action: str, details: str = "", opportunity_id: str = "") -> No
     try:
         conn.execute(
             "INSERT INTO audit_trail (id, timestamp, event_type, actor, action, details, project_id, session_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 str(uuid.uuid4()),
                 _now(),
@@ -143,7 +143,7 @@ def _ensure_tables(conn) -> None:
 # ---------------------------------------------------------------------------
 def _gather_opportunity(conn, opp_id: str) -> Dict[str, Any]:
     """Fetch opportunity details."""
-    row = conn.execute("SELECT * FROM proposal_opportunities WHERE id = ?", (opp_id,)).fetchone()
+    row = conn.execute("SELECT * FROM proposal_opportunities WHERE id = %s", (opp_id,)).fetchone()
     if not row:
         return {"data": None, "record_count": 0}
     cols = [d[0] for d in conn.execute("SELECT * FROM proposal_opportunities LIMIT 0").description]
@@ -154,7 +154,7 @@ def _gather_win_themes(conn, opp_id: str) -> Dict[str, Any]:
     """Fetch win themes and discriminators."""
     try:
         rows = conn.execute(
-            "SELECT * FROM pg_win_themes WHERE opportunity_id = ? AND status = 'active' ORDER BY priority",
+            "SELECT * FROM pg_win_themes WHERE opportunity_id = %s AND status = 'active' ORDER BY priority",
             (opp_id,),
         ).fetchall()
         cols = [d[0] for d in conn.execute("SELECT * FROM pg_win_themes LIMIT 0").description]
@@ -167,7 +167,7 @@ def _gather_key_personnel(conn, opp_id: str) -> Dict[str, Any]:
     """Extract key personnel names from proposal section drafts."""
     try:
         rows = conn.execute(
-            "SELECT draft_content FROM proposal_section_drafts WHERE opportunity_id = ?",
+            "SELECT draft_content FROM proposal_section_drafts WHERE opportunity_id = %s",
             (opp_id,),
         ).fetchall()
         names: list[str] = []
@@ -194,7 +194,7 @@ def _gather_teaming(conn, opp_id: str) -> Dict[str, Any]:
             "SELECT w.*, p.name AS partner_name, p.capabilities, p.certifications "
             "FROM pg_teaming_workshare w "
             "LEFT JOIN pg_teaming_partners p ON w.partner_id = p.id "
-            "WHERE w.opportunity_id = ?",
+            "WHERE w.opportunity_id = %s",
             (opp_id,),
         ).fetchall()
         if rows:
@@ -215,7 +215,7 @@ def _gather_teaming(conn, opp_id: str) -> Dict[str, Any]:
             rows = conn.execute(
                 "SELECT tp.* FROM pg_teaming_assessments ta "
                 "JOIN pg_teaming_partners tp ON ta.partner_id = tp.id "
-                "WHERE ta.opportunity_id = ?",
+                "WHERE ta.opportunity_id = %s",
                 (opp_id,),
             ).fetchall()
             if rows:
@@ -230,14 +230,14 @@ def _gather_pricing(conn, opp_id: str) -> Dict[str, Any]:
     """Fetch cost volumes and LCAT allocations."""
     result: Dict[str, Any] = {"volumes": [], "lcats": []}
     try:
-        rows = conn.execute("SELECT * FROM pg_cost_volumes WHERE opportunity_id = ?", (opp_id,)).fetchall()
+        rows = conn.execute("SELECT * FROM pg_cost_volumes WHERE opportunity_id = %s", (opp_id,)).fetchall()
         if rows:
             cols = [d[0] for d in conn.execute("SELECT * FROM pg_cost_volumes LIMIT 0").description]
             result["volumes"] = [dict(zip(cols, r)) for r in rows]
             # Gather LCAT allocations for each cost volume
             for vol in result["volumes"]:
                 lcat_rows = conn.execute(
-                    "SELECT * FROM pg_lcat_allocations WHERE cost_volume_id = ?",
+                    "SELECT * FROM pg_lcat_allocations WHERE cost_volume_id = %s",
                     (vol["id"],),
                 ).fetchall()
                 if lcat_rows:
@@ -254,7 +254,7 @@ def _gather_risks(conn, opp_id: str) -> Dict[str, Any]:
     try:
         rows = conn.execute(
             "SELECT * FROM pg_review_findings "
-            "WHERE opportunity_id = ? AND severity IN ('critical', 'major') "
+            "WHERE opportunity_id = %s AND severity IN ('critical', 'major') "
             "ORDER BY severity, created_at",
             (opp_id,),
         ).fetchall()
@@ -269,7 +269,7 @@ def _gather_cdrls(conn, opp_id: str) -> Dict[str, Any]:
     try:
         rows = conn.execute(
             "SELECT * FROM pg_compliance_matrix "
-            "WHERE opportunity_id = ? AND source_section = 'C' "
+            "WHERE opportunity_id = %s AND source_section = 'C' "
             "ORDER BY requirement_id",
             (opp_id,),
         ).fetchall()
@@ -283,7 +283,7 @@ def _gather_cmmc(conn, opp_id: str) -> Dict[str, Any]:
     """Fetch CMMC supply chain compliance status."""
     try:
         rows = conn.execute(
-            "SELECT * FROM pg_cmmc_supply_chain WHERE opportunity_id = ?",
+            "SELECT * FROM pg_cmmc_supply_chain WHERE opportunity_id = %s",
             (opp_id,),
         ).fetchall()
         cols = [d[0] for d in conn.execute("SELECT * FROM pg_cmmc_supply_chain LIMIT 0").description]
@@ -296,7 +296,7 @@ def _gather_bid_decisions(conn, opp_id: str) -> Dict[str, Any]:
     """Fetch bid decision rationale."""
     try:
         rows = conn.execute(
-            "SELECT * FROM pg_bid_decisions WHERE opportunity_id = ? ORDER BY created_at DESC",
+            "SELECT * FROM pg_bid_decisions WHERE opportunity_id = %s ORDER BY created_at DESC",
             (opp_id,),
         ).fetchall()
         cols = [d[0] for d in conn.execute("SELECT * FROM pg_bid_decisions LIMIT 0").description]
@@ -310,7 +310,7 @@ def _gather_drafts(conn, opp_id: str) -> Dict[str, Any]:
     try:
         rows = conn.execute(
             "SELECT * FROM proposal_section_drafts "
-            "WHERE opportunity_id = ? AND status IN ('approved', 'reviewed') "
+            "WHERE opportunity_id = %s AND status IN ('approved', 'reviewed') "
             "ORDER BY created_at",
             (opp_id,),
         ).fetchall()
@@ -704,7 +704,7 @@ def generate_bridge(opportunity_id: str) -> Dict[str, Any]:
 
     # Get next version
     existing = conn.execute(
-        "SELECT MAX(version) FROM pg_program_bridges WHERE opportunity_id = ?",
+        "SELECT MAX(version) FROM pg_program_bridges WHERE opportunity_id = %s",
         (opportunity_id,),
     ).fetchone()
     version = (existing[0] or 0) + 1 if existing and existing[0] else 1
@@ -719,7 +719,7 @@ def generate_bridge(opportunity_id: str) -> Dict[str, Any]:
     conn.execute(
         "INSERT INTO pg_program_bridges (id, opportunity_id, version, sections_populated, "
         "total_sections, data_coverage_pct, file_path, status, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
         (
             bridge_id,
             opportunity_id,
@@ -767,7 +767,7 @@ def list_bridges(limit: int = 20) -> Dict[str, Any]:
     conn = _get_db()
     _ensure_tables(conn)
     rows = conn.execute(
-        "SELECT * FROM pg_program_bridges ORDER BY created_at DESC LIMIT ?",
+        "SELECT * FROM pg_program_bridges ORDER BY created_at DESC LIMIT %s",
         (limit,),
     ).fetchall()
     cols = [d[0] for d in conn.execute("SELECT * FROM pg_program_bridges LIMIT 0").description]
@@ -780,7 +780,7 @@ def get_bridge(bridge_id: str) -> Dict[str, Any]:
     """Retrieve a specific bridge document."""
     conn = _get_db()
     _ensure_tables(conn)
-    row = conn.execute("SELECT * FROM pg_program_bridges WHERE id = ?", (bridge_id,)).fetchone()
+    row = conn.execute("SELECT * FROM pg_program_bridges WHERE id = %s", (bridge_id,)).fetchone()
     if not row:
         conn.close()
         return {"error": "Bridge not found", "bridge_id": bridge_id}

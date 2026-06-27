@@ -258,7 +258,7 @@ def start_trajectory(
                 (id, trace_id, workflow_type, source, outcome, reward,
                  step_count, dataset_id, sharegpt_json,
                  project_id, classification, created_at)
-            VALUES (?, ?, ?, ?, 'partial', 0.0, 0, '', ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, 'partial', 0.0, 0, '', %s, %s, %s, %s)
             """,
             (
                 traj_id,
@@ -308,7 +308,7 @@ def record_step(
     conn = _get_db()
     try:
         row = conn.execute(
-            "SELECT step_count FROM ft_trajectories WHERE id = ?",
+            "SELECT step_count FROM ft_trajectories WHERE id = %s",
             (session_id,),
         ).fetchone()
         if row is None:
@@ -321,7 +321,7 @@ def record_step(
             INSERT INTO ft_trajectory_steps
                 (trajectory_id, step_index, tool_name, tool_input, tool_output,
                  status, duration_ms, span_id, classification, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 session_id,
@@ -337,7 +337,7 @@ def record_step(
             ),
         )
         conn.execute(
-            "UPDATE ft_trajectories SET step_count = step_count + 1 WHERE id = ?",
+            "UPDATE ft_trajectories SET step_count = step_count + 1 WHERE id = %s",
             (session_id,),
         )
         conn.commit()
@@ -375,7 +375,7 @@ def finalize_trajectory(
     conn = _get_db()
     try:
         row = conn.execute(
-            "SELECT id, workflow_type, sharegpt_json, step_count FROM ft_trajectories WHERE id = ?",
+            "SELECT id, workflow_type, sharegpt_json, step_count FROM ft_trajectories WHERE id = %s",
             (session_id,),
         ).fetchone()
         if row is None:
@@ -398,7 +398,7 @@ def finalize_trajectory(
             SELECT trajectory_id, step_index, step_index,
                    tool_name, tool_input, tool_output, status, duration_ms, span_id
             FROM ft_trajectory_steps
-            WHERE trajectory_id = ?
+            WHERE trajectory_id = %s
             ORDER BY step_index ASC
             """,
             (session_id,),
@@ -419,8 +419,8 @@ def finalize_trajectory(
         conn.execute(
             """
             UPDATE ft_trajectories
-            SET outcome = ?, reward = ?, sharegpt_json = ?, captured_at = ?
-            WHERE id = ?
+            SET outcome = %s, reward = %s, sharegpt_json = %s, captured_at = %s
+            WHERE id = %s
             """,
             (outcome, reward, json.dumps(sgpt, ensure_ascii=False), now, session_id),
         )
@@ -530,7 +530,7 @@ def ingest_to_dataset(
     conn = _get_db()
     try:
         row = conn.execute(
-            "SELECT id, workflow_type, outcome, reward, sharegpt_json, captured_at FROM ft_trajectories WHERE id = ?",
+            "SELECT id, workflow_type, outcome, reward, sharegpt_json, captured_at FROM ft_trajectories WHERE id = %s",
             (session_id,),
         ).fetchone()
 
@@ -588,7 +588,7 @@ def ingest_to_dataset(
         content_hash = _content_hash(system_prompt + user_input + expected_output)
 
         existing = conn.execute(
-            "SELECT id FROM ft_dataset_examples WHERE content_hash = ? AND dataset_id = ?",
+            "SELECT id FROM ft_dataset_examples WHERE content_hash = %s AND dataset_id = %s",
             (content_hash, dataset_id),
         ).fetchone()
         if existing:
@@ -606,7 +606,7 @@ def ingest_to_dataset(
                 (dataset_id, system_prompt, user_input, expected_output,
                  source, content_hash, classification, project_id,
                  approved, quality_score, created_at)
-            VALUES (?, ?, ?, ?, 'imported', ?, ?, ?, 1, ?, ?)
+            VALUES (%s, %s, %s, %s, 'imported', %s, %s, %s, 1, %s, %s)
             """,
             (
                 dataset_id,
@@ -621,11 +621,11 @@ def ingest_to_dataset(
             ),
         )
         conn.execute(
-            "UPDATE ft_trajectories SET dataset_id = ? WHERE id = ?",
+            "UPDATE ft_trajectories SET dataset_id = %s WHERE id = %s",
             (dataset_id, session_id),
         )
         conn.execute(
-            "UPDATE ft_datasets SET example_count = example_count + 1, updated_at = ? WHERE id = ?",
+            "UPDATE ft_datasets SET example_count = example_count + 1, updated_at = %s WHERE id = %s",
             (now, dataset_id),
         )
         conn.commit()
@@ -687,7 +687,7 @@ def get_stats() -> Dict[str, Any]:
         exportable = conn.execute(
             """
             SELECT COUNT(*) FROM ft_trajectories
-            WHERE outcome = 'success' AND captured_at IS NOT NULL AND reward >= ?
+            WHERE outcome = 'success' AND captured_at IS NOT NULL AND reward >= %s
             """,
             (DEFAULT_MIN_REWARD,),
         ).fetchone()[0]

@@ -85,7 +85,7 @@ def _short_id(prefix: str = "task") -> str:
 
 def _table_exists(conn, name: str) -> bool:
     row = conn.execute(
-        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?", (name,)
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=%s", (name,)
     ).fetchone()
     return (row[0] if row else 0) > 0
 
@@ -159,10 +159,10 @@ def promote(
                   acceptance_criteria, story_points, t_shirt_size, wsjf_score,
                   ato_impact_tier, status
            FROM safe_decomposition
-           WHERE session_id = ?
+           WHERE session_id = %s
              AND (status IS NULL OR status != 'committed')
            ORDER BY level, wsjf_score DESC
-           LIMIT ?""",
+           LIMIT %s""",
         (session_id, limit),
     ).fetchall()
 
@@ -226,7 +226,7 @@ def promote(
                    (id, title, description, task_type, priority, status,
                     scheduled_at, created_at, updated_at,
                     source_prediction_id, dispatch_source)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (
                     task["id"],
                     task["title"],
@@ -242,7 +242,7 @@ def promote(
                 ),
             )
             conn.execute(
-                "UPDATE safe_decomposition SET status='committed' WHERE id=?",
+                "UPDATE safe_decomposition SET status='committed' WHERE id=%s",
                 (safe_id,),
             )
 
@@ -272,7 +272,7 @@ def list_promoted(session_id: str) -> dict[str, Any]:
                   kt.source_prediction_id, kt.created_at
            FROM kanban_tasks kt
            JOIN safe_decomposition sd ON kt.source_prediction_id = sd.id
-           WHERE sd.session_id = ?
+           WHERE sd.session_id = %s
            ORDER BY kt.created_at DESC""",
         (session_id,),
     ).fetchall()

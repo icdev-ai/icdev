@@ -151,7 +151,7 @@ def _log_ingestion(
         "INSERT INTO nc_ingestion_log "
         "(id, channel, file_name, file_type, file_hash, source_adapter, "
         "status, result_json, error, topology_id, project_id, user_id) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
         (log_id, channel, file_name, file_type, file_hash, source_adapter,
          status, result_json, error, topology_id, project_id, user_id),
     )
@@ -168,8 +168,8 @@ def _complete_log(
 ) -> None:
     """Mark ingestion log entry as completed/failed."""
     conn.execute(
-        "UPDATE nc_ingestion_log SET status=?, result_json=?, error=?, "
-        "completed_at=datetime('now') WHERE id=?",
+        "UPDATE nc_ingestion_log SET status=%s, result_json=%s, error=%s, "
+        "completed_at=datetime('now') WHERE id=%s",
         (status, result_json, error, log_id),
     )
     conn.commit()
@@ -288,7 +288,7 @@ def ingest_document(
     # Check dedup
     conn = _get_db(db_path)
     existing = conn.execute(
-        "SELECT id FROM nc_documents WHERE file_hash=?", (fhash,)
+        "SELECT id FROM nc_documents WHERE file_hash=%s", (fhash,)
     ).fetchone()
     if existing:
         conn.close()
@@ -336,7 +336,7 @@ def ingest_document(
             "(id, file_name, file_path, file_hash, file_size_bytes, "
             "doc_type, extracted_text, page_count, provider_used, "
             "topology_id, project_id, status) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (doc_id, p.name, str(p), fhash, file_size,
              "general", extracted_text, page_count, provider_used,
              topology_id or "", project_id, "ingested"),

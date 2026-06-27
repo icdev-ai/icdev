@@ -65,7 +65,7 @@ class TTXEngine:
             conn = get_connection()
             first_injects = conn.execute(
                 """SELECT inject_id FROM ttx_injects
-                   WHERE session_id = ? AND depends_on_slug IS NULL AND state = 'pending'""",
+                   WHERE session_id = %s AND depends_on_slug IS NULL AND state = 'pending'""",
                 (session_id,),
             ).fetchall()
             for row in first_injects:
@@ -140,7 +140,7 @@ class TTXEngine:
             """INSERT INTO ttx_responses
                (team_id, inject_id, response_text, ai_receipts_json,
                 submitted_at, time_taken_s)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s)""",
             (
                 team_id, inject_id, response_text,
                 json.dumps(receipts or []),
@@ -150,14 +150,14 @@ class TTXEngine:
         )
         conn.commit()
         row = conn.execute(
-            "SELECT response_id FROM ttx_responses WHERE team_id = ? AND inject_id = ? ORDER BY submitted_at DESC LIMIT 1",
+            "SELECT response_id FROM ttx_responses WHERE team_id = %s AND inject_id = %s ORDER BY submitted_at DESC LIMIT 1",
             (team_id, inject_id),
         ).fetchone()
         response_id = row["response_id"]
 
         # Load inject config for scoring params
         inj = conn.execute(
-            "SELECT body_md, config_json FROM ttx_injects WHERE inject_id = ?", (inject_id,)
+            "SELECT body_md, config_json FROM ttx_injects WHERE inject_id = %s", (inject_id,)
         ).fetchone()
         cfg = json.loads(inj["config_json"] or "{}") if inj else {}
         scoring = cfg.get("scoring", {})
@@ -212,7 +212,7 @@ class TTXEngine:
         conn.execute(
             """INSERT INTO ttx_api_log
                (session_id, team_id, tool_slug, endpoint, call_id, result_hash, called_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
             (
                 session_id, team_id, tool_slug, endpoint,
                 call_id, result_hash,

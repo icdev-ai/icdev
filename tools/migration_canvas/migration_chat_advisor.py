@@ -65,7 +65,7 @@ def _get_cam_conn():
 
 def _table_exists(conn, name: str) -> bool:
     try:
-        r = conn.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone()
+        r = conn.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=%s", (name,)).fetchone()
         return (r[0] if isinstance(r, (tuple, list)) else r["cnt"]) > 0
     except Exception:
         return False
@@ -253,13 +253,13 @@ def handle_status(session_id: str = "") -> dict:
             # Get phase info
             if _table_exists(conn, "mc_project_phases"):
                 phases = conn.execute(
-                    "SELECT COUNT(*) as total FROM mc_project_phases WHERE project_id = ?", (proj_id,)
+                    "SELECT COUNT(*) as total FROM mc_project_phases WHERE project_id = %s", (proj_id,)
                 ).fetchone()
                 in_progress = conn.execute(
-                    "SELECT COUNT(*) as cnt FROM mc_project_phases WHERE project_id = ? AND status = 'in_progress'", (proj_id,)
+                    "SELECT COUNT(*) as cnt FROM mc_project_phases WHERE project_id = %s AND status = 'in_progress'", (proj_id,)
                 ).fetchone()
                 completed = conn.execute(
-                    "SELECT COUNT(*) as cnt FROM mc_project_phases WHERE project_id = ? AND status = 'completed'", (proj_id,)
+                    "SELECT COUNT(*) as cnt FROM mc_project_phases WHERE project_id = %s AND status = 'completed'", (proj_id,)
                 ).fetchone()
                 total_ph = phases[0] if phases else 0
                 ip_ph = in_progress[0] if in_progress else 0
@@ -274,7 +274,7 @@ def handle_status(session_id: str = "") -> dict:
             # Refactor jobs summary
             if _table_exists(conn, "mc_refactor_jobs"):
                 rj = conn.execute(
-                    "SELECT status, COUNT(*) as cnt FROM mc_refactor_jobs WHERE project_id = ? GROUP BY status", (proj_id,)
+                    "SELECT status, COUNT(*) as cnt FROM mc_refactor_jobs WHERE project_id = %s GROUP BY status", (proj_id,)
                 ).fetchall()
                 if rj:
                     rj_summary = ", ".join(f"{r[1]} {r[0]}" for r in rj)
@@ -306,12 +306,12 @@ def handle_components(session_id: str = "") -> dict:
         if project_id:
             # Get session linked to project
             proj_row = conn.execute(
-                "SELECT mc_session_id FROM mc_projects WHERE id = ?", (project_id,)
+                "SELECT mc_session_id FROM mc_projects WHERE id = %s", (project_id,)
             ).fetchone()
             session_filter = (proj_row[0] or "") if proj_row else ""
             if session_filter:
                 rows = conn.execute(
-                    "SELECT * FROM mc_app_inventory WHERE session_id = ? ORDER BY name", (session_filter,)
+                    "SELECT * FROM mc_app_inventory WHERE session_id = %s ORDER BY name", (session_filter,)
                 ).fetchall()
             else:
                 rows = conn.execute("SELECT * FROM mc_app_inventory ORDER BY name LIMIT 20").fetchall()
@@ -570,7 +570,7 @@ def get_migration_advisory(context: dict) -> dict | None:
             return None
 
         if project_id:
-            proj = conn.execute("SELECT * FROM mc_projects WHERE id = ?", (project_id,)).fetchone()
+            proj = conn.execute("SELECT * FROM mc_projects WHERE id = %s", (project_id,)).fetchone()
         else:
             proj = conn.execute("SELECT * FROM mc_projects ORDER BY created_at DESC LIMIT 1").fetchone()
 
@@ -586,7 +586,7 @@ def get_migration_advisory(context: dict) -> dict | None:
         advisory_msg = None
         if _table_exists(conn, "mc_project_phases"):
             ip = conn.execute(
-                "SELECT title, wave_num FROM mc_project_phases WHERE project_id = ? AND status = 'in_progress' LIMIT 1",
+                "SELECT title, wave_num FROM mc_project_phases WHERE project_id = %s AND status = 'in_progress' LIMIT 1",
                 (proj_id,),
             ).fetchone()
             if ip:
@@ -598,7 +598,7 @@ def get_migration_advisory(context: dict) -> dict | None:
         # Check failed refactor jobs
         if not advisory_msg and _table_exists(conn, "mc_refactor_jobs"):
             failed = conn.execute(
-                "SELECT component_name, refactor_type FROM mc_refactor_jobs WHERE project_id = ? AND status = 'failed' LIMIT 1",
+                "SELECT component_name, refactor_type FROM mc_refactor_jobs WHERE project_id = %s AND status = 'failed' LIMIT 1",
                 (proj_id,),
             ).fetchone()
             if failed:

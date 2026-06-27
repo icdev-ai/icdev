@@ -217,12 +217,12 @@ def mi_api_opps_list():
     try:
         if status:
             rows = conn.execute(
-                "SELECT * FROM mi_opportunities WHERE status=? ORDER BY composite_score DESC LIMIT ?",
+                "SELECT * FROM mi_opportunities WHERE status=%s ORDER BY composite_score DESC LIMIT %s",
                 (status, limit),
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT * FROM mi_opportunities ORDER BY composite_score DESC LIMIT ?", (limit,)
+                "SELECT * FROM mi_opportunities ORDER BY composite_score DESC LIMIT %s", (limit,)
             ).fetchall()
         opps = [_row_to_dict(r) for r in rows]
     finally:
@@ -234,15 +234,15 @@ def mi_api_opps_list():
 def mi_api_opps_get(opp_id):
     conn = _get_conn()
     try:
-        opp = _row_to_dict(conn.execute("SELECT * FROM mi_opportunities WHERE id=?", (opp_id,)).fetchone())
+        opp = _row_to_dict(conn.execute("SELECT * FROM mi_opportunities WHERE id=%s", (opp_id,)).fetchone())
         if not opp:
             return jsonify({"error": "not found"}), 404
         strats = [_row_to_dict(r) for r in conn.execute(
-            "SELECT * FROM mi_strategies WHERE opportunity_id=? ORDER BY recommended DESC", (opp_id,)
+            "SELECT * FROM mi_strategies WHERE opportunity_id=%s ORDER BY recommended DESC", (opp_id,)
         ).fetchall()]
         aligns = [_row_to_dict(r) for r in conn.execute(
             "SELECT a.*, g.title as goal_title FROM mi_goal_alignments a "
-            "JOIN mi_goals g ON a.goal_id=g.id WHERE a.opportunity_id=?", (opp_id,)
+            "JOIN mi_goals g ON a.goal_id=g.id WHERE a.opportunity_id=%s", (opp_id,)
         ).fetchall()]
     finally:
         conn.close()
@@ -306,7 +306,7 @@ def mi_api_roadmaps_build():
 def mi_api_roadmaps_get(rm_id):
     conn = _get_conn()
     try:
-        row = _row_to_dict(conn.execute("SELECT * FROM mi_roadmaps WHERE id=?", (rm_id,)).fetchone())
+        row = _row_to_dict(conn.execute("SELECT * FROM mi_roadmaps WHERE id=%s", (rm_id,)).fetchone())
     finally:
         conn.close()
     if not row:
@@ -362,7 +362,7 @@ def mi_api_wishlist_create():
                 budget_category, current_eol_date, replacement_urgency,
                 linked_opportunity_id, linked_goal_ids, priority, status,
                 requestor, justification, tags, notes, created_at, updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (
                 item_id,
                 data["title"],
@@ -420,7 +420,7 @@ def mi_api_wishlist_update(item_id):
 def mi_api_wishlist_delete(item_id):
     conn = _get_conn()
     try:
-        conn.execute("UPDATE mi_wishlist SET status='cancelled', updated_at=? WHERE id=?", (_now(), item_id))
+        conn.execute("UPDATE mi_wishlist SET status='cancelled', updated_at=%s WHERE id=%s", (_now(), item_id))
         conn.commit()
     finally:
         conn.close()
@@ -455,7 +455,7 @@ def mi_api_budget_create():
             """INSERT INTO mi_budget_cycles
                (id, name, fiscal_year, budget_type, total_budget_usd,
                 allocated_usd, committed_usd, spent_usd, status, notes, created_at, updated_at)
-               VALUES (?,?,?,?,?,0,0,0,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,0,0,0,%s,%s,%s,%s)""",
             (
                 cycle_id, data["name"], int(data["fiscal_year"]),
                 data.get("budget_type", "annual"),
@@ -476,14 +476,14 @@ def mi_api_budget_summary(cycle_id):
     conn = _get_conn()
     try:
         cycle = _row_to_dict(conn.execute(
-            "SELECT * FROM mi_budget_cycles WHERE id=?", (cycle_id,)
+            "SELECT * FROM mi_budget_cycles WHERE id=%s", (cycle_id,)
         ).fetchone() or {})
         if not cycle:
             return jsonify({"error": "not found"}), 404
 
         fy = cycle.get("fiscal_year")
         items = [_row_to_dict(r) for r in conn.execute(
-            "SELECT * FROM mi_wishlist WHERE fiscal_year=? AND status != 'cancelled'", (fy,)
+            "SELECT * FROM mi_wishlist WHERE fiscal_year=%s AND status != 'cancelled'", (fy,)
         ).fetchall()]
 
         by_category: dict = {}
@@ -517,7 +517,7 @@ def mi_api_scans_list():
     conn = _get_conn()
     try:
         rows = conn.execute(
-            "SELECT * FROM mi_scans ORDER BY started_at DESC LIMIT ?", (limit,)
+            "SELECT * FROM mi_scans ORDER BY started_at DESC LIMIT %s", (limit,)
         ).fetchall()
         scans = [_row_to_dict(r) for r in rows]
     finally:

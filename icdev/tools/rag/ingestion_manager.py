@@ -223,7 +223,7 @@ def _log_ingestion(
            (source_type, source_id, source_table, chunks_created, chunks_skipped,
             content_hash, ingestion_mode, tenant_id, project_id, agent_id,
             correlation_id, classification)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'CUI')""",
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'CUI')""",
         (
             source_type,
             source_id,

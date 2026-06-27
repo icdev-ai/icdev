@@ -381,7 +381,7 @@ def main():
     conn = get_connection()
     c = conn.cursor()
     c.execute(
-        "INSERT INTO memory_access_log (query, results_count, search_type) VALUES (?, ?, ?)",
+        "INSERT INTO memory_access_log (query, results_count, search_type) VALUES (%s, %s, %s)",
         (args.query, min(args.limit, len(results)), search_type),
     )
     conn.commit()

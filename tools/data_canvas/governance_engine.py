@@ -21,7 +21,7 @@ def list_policies(domain_id: str | None = None) -> list:
     with get_connection() as conn:
         if domain_id:
             rows = conn.execute(
-                "SELECT * FROM dm_governance_policies WHERE applies_to IN (?, 'all') AND status='active' ORDER BY name",
+                "SELECT * FROM dm_governance_policies WHERE applies_to IN (%s, 'all') AND status='active' ORDER BY name",
                 (domain_id,),
             ).fetchall()
         else:
@@ -141,7 +141,7 @@ def compute_governance_score(domain_id: str | None = None) -> dict:
     with get_connection() as conn:
         if domain_id:
             domain_rows = conn.execute(
-                "SELECT * FROM dm_domains WHERE id=?", (domain_id,)
+                "SELECT * FROM dm_domains WHERE id=%s", (domain_id,)
             ).fetchall()
         else:
             domain_rows = conn.execute(

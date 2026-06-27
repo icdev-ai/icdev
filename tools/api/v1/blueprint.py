@@ -48,14 +48,14 @@ def _check_rate_limit(bucket_key: str, limit: int) -> tuple[bool, int, int]:
         with get_connection() as conn:
             row = conn.execute(
                 "SELECT request_count FROM gateway_rate_limits "
-                "WHERE key = ? AND window_start = ?",
+                "WHERE key = %s AND window_start = %s",
                 (bucket_key, window_start),
             ).fetchone()
 
             if row is None:
                 conn.execute(
                     "INSERT INTO gateway_rate_limits (key, window_start, request_count) "
-                    "VALUES (?, ?, 1)",
+                    "VALUES (%s, %s, 1)",
                     (bucket_key, window_start),
                 )
                 conn.commit()
@@ -67,7 +67,7 @@ def _check_rate_limit(bucket_key: str, limit: int) -> tuple[bool, int, int]:
 
             conn.execute(
                 "UPDATE gateway_rate_limits SET request_count = request_count + 1 "
-                "WHERE key = ? AND window_start = ?",
+                "WHERE key = %s AND window_start = %s",
                 (bucket_key, window_start),
             )
             conn.commit()

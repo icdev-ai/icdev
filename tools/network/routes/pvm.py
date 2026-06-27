@@ -186,7 +186,7 @@ def register_pvm_routes(bp):
                     conn.execute(
                         """INSERT INTO nc_nqe_audit_log
                            (action, advisory_id, input_text, data_source, confidence, created_at)
-                           VALUES (?,?,?,?,?,?)""",
+                           VALUES (%s,%s,%s,%s,%s,%s)""",
                         ("triage_approve", advisory_id,
                          f"HITL approve by {approved_by}", "hitl", 1.0, _now()),
                     )

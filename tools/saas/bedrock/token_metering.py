@@ -123,7 +123,7 @@ def record_token_usage(
             """INSERT INTO usage_records
                (tenant_id, user_id, endpoint, method, tokens_used,
                 status_code, duration_ms, metadata, recorded_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (tenant_id, user_id, endpoint, "BEDROCK", total_tokens, 200, 0, metadata, _utcnow()),
         )
         conn.commit()
@@ -156,9 +156,9 @@ def get_token_usage(tenant_id: str, period: str = "day") -> dict:
             """SELECT COALESCE(SUM(tokens_used), 0) as total_tokens,
                       COUNT(*) as total_requests
                FROM usage_records
-               WHERE tenant_id = ?
+               WHERE tenant_id = %s
                  AND endpoint = 'bedrock_proxy'
-                 AND recorded_at LIKE ?""",
+                 AND recorded_at LIKE %s""",
             (tenant_id, period_prefix + "%"),
         ).fetchone()
 
@@ -168,9 +168,9 @@ def get_token_usage(tenant_id: str, period: str = "day") -> dict:
         # Get breakdown from metadata
         detail_rows = conn.execute(
             """SELECT metadata FROM usage_records
-               WHERE tenant_id = ?
+               WHERE tenant_id = %s
                  AND endpoint = 'bedrock_proxy'
-                 AND recorded_at LIKE ?""",
+                 AND recorded_at LIKE %s""",
             (tenant_id, period_prefix + "%"),
         ).fetchall()
 
@@ -222,7 +222,7 @@ def check_token_budget(tenant_id: str) -> dict:
                FROM tenants t
                LEFT JOIN subscriptions s
                  ON s.tenant_id = t.id AND s.status = 'active'
-               WHERE t.id = ?""",
+               WHERE t.id = %s""",
             (tenant_id,),
         ).fetchone()
 

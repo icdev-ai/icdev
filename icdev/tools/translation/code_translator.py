@@ -431,7 +431,7 @@ def _record_unit(db_path, job_id, unit, status, translated_code, candidate):
                (id, job_id, unit_name, unit_kind, source_file,
                 source_code, translated_code, status,
                 source_hash, candidate_selected)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 unit_id,
                 job_id,

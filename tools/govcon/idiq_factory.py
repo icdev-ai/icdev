@@ -149,7 +149,7 @@ def _audit(conn, event_type, action, details):
         conn.execute(
             "INSERT INTO audit_trail "
             "(id, timestamp, event_type, actor, action, details, project_id, session_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
             (_gen_id("aud"), _now(), event_type, "idiq_factory", action, det, None, None),
         )
     except Exception:
@@ -157,7 +157,7 @@ def _audit(conn, event_type, action, details):
             conn.execute(
                 "INSERT INTO audit_trail "
                 "(project_id, event_type, actor, action, details, session_id) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s)",
                 (None, event_type, "idiq_factory", action, det, None),
             )
         except Exception:
@@ -227,7 +227,7 @@ def create_standing_team(vehicle_name, team_members, team_name=None):
     conn.execute(
         "INSERT INTO pg_standing_teams "
         "(id, vehicle_name, team_name, members, total_fte, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s, %s)",
         (team_id, vehicle_name, team_name or f"{vehicle_name} Team", json.dumps(team_members), total_fte, now, now),
     )
 
@@ -261,7 +261,7 @@ def list_standing_teams(vehicle_name=None):
 
     if vehicle_name:
         rows = conn.execute(
-            "SELECT * FROM pg_standing_teams WHERE vehicle_name = ? ORDER BY created_at DESC",
+            "SELECT * FROM pg_standing_teams WHERE vehicle_name = %s ORDER BY created_at DESC",
             (vehicle_name,),
         ).fetchall()
     else:
@@ -524,7 +524,7 @@ def track_to_capacity(vehicle_name):
 
     # Get standing teams for this vehicle
     teams = conn.execute(
-        "SELECT * FROM pg_standing_teams WHERE vehicle_name = ?",
+        "SELECT * FROM pg_standing_teams WHERE vehicle_name = %s",
         (vehicle_name,),
     ).fetchall()
 
@@ -544,7 +544,7 @@ def track_to_capacity(vehicle_name):
 
     # Get active task orders for this vehicle
     active_tos = conn.execute(
-        "SELECT * FROM pg_task_orders WHERE vehicle_name = ? AND status IN (?, ?)",
+        "SELECT * FROM pg_task_orders WHERE vehicle_name = %s AND status IN (%s, %s)",
         (vehicle_name, "in_progress", "awarded"),
     ).fetchall()
 

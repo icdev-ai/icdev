@@ -224,7 +224,7 @@ class ReviewBoardDaemon(DaemonBase):
                 INSERT INTO review_board_audit
                     (id, event_type, reflex_name, risk_tier, details, success,
                      duration_ms, metric_name, metric_value, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
                 (
                     audit_id,
@@ -297,7 +297,7 @@ class ReviewBoardDaemon(DaemonBase):
                 # Dedup: skip if same content hash exists in last 24h
                 existing = conn.execute(
                     "SELECT id FROM review_board_findings "
-                    "WHERE sha256 = ? AND created_at > datetime('now', '-24 hours')",
+                    "WHERE sha256 = %s AND created_at > datetime('now', '-24 hours')",
                     (content_hash,),
                 ).fetchone()
                 if existing:
@@ -308,7 +308,7 @@ class ReviewBoardDaemon(DaemonBase):
                         (id, reflex_name, severity, category, title, description,
                          recommendation, evidence, confidence, auto_fixable,
                          sha256, classification, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                     (
                         finding_id,

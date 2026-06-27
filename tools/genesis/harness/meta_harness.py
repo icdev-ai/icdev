@@ -178,8 +178,8 @@ def _get_error_case_heuristic_hits(reflex: str = "oracle_triage") -> dict[str, i
             """
             SELECT metadata
             FROM harness_eval
-            WHERE reflex = ?
-              AND created_at >= ?
+            WHERE reflex = %s
+              AND created_at >= %s
               AND actual_outcome IS NOT NULL
               AND (
                 (decision = 'promote' AND actual_outcome IN ('false_positive', 'unresolved'))
@@ -257,7 +257,7 @@ def _get_heal_error_types() -> dict[str, int]:
             SELECT action_taken, COUNT(*) AS cnt
             FROM self_healing_events
             WHERE outcome = 'failed'
-              AND created_at >= ?
+              AND created_at >= %s
             GROUP BY action_taken
             """,
             (cutoff,),

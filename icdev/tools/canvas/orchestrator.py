@@ -93,7 +93,7 @@ def create_project(
         conn.execute(
             """INSERT INTO canvas_projects
                (id, name, description, classification, links_json, created_at, updated_at)
-               VALUES (?, ?, ?, ?, '{}', ?, ?)""",
+               VALUES (%s, %s, %s, %s, '{}', %s, %s)""",
             (project_id, name, description, classification, now, now),
         )
         conn.commit()
@@ -109,7 +109,7 @@ def get_project(project_id: str) -> dict | None:
     try:
         cur = conn.execute(
             "SELECT id, name, description, classification, links_json, "
-            "created_at, updated_at FROM canvas_projects WHERE id = ?",
+            "created_at, updated_at FROM canvas_projects WHERE id = %s",
             (project_id,),
         )
         row = cur.fetchone()
@@ -163,7 +163,7 @@ def delete_project(project_id: str) -> bool:
     conn = get_connection()
     try:
         cur = conn.execute(
-            "DELETE FROM canvas_projects WHERE id = ?", (project_id,)
+            "DELETE FROM canvas_projects WHERE id = %s", (project_id,)
         )
         conn.commit()
         deleted = cur.rowcount > 0
@@ -184,7 +184,7 @@ def _update_links(project_id: str, links: dict) -> dict:
     conn = get_connection()
     try:
         conn.execute(
-            "UPDATE canvas_projects SET links_json = ?, updated_at = ? WHERE id = ?",
+            "UPDATE canvas_projects SET links_json = %s, updated_at = %s WHERE id = %s",
             (json.dumps(links), now, project_id),
         )
         conn.commit()
@@ -242,7 +242,7 @@ def _read_canvas_score(
         conn = get_connection(str(db_path))
         # Check table exists
         cur = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=%s",
             (table,),
         )
         if cur.fetchone() is None:

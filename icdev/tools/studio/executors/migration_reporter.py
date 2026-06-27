@@ -32,7 +32,7 @@ def _get_run_steps(run_id: str) -> list[dict]:
         try:
             rows = conn.execute(
                 "SELECT step_name, status, duration_ms, stdout, stderr "
-                "FROM studio_workflow_run_steps WHERE run_id = ? ORDER BY started_at",
+                "FROM studio_workflow_run_steps WHERE run_id = %s ORDER BY started_at",
                 (run_id,),
             ).fetchall()
             return [dict(r) for r in rows]

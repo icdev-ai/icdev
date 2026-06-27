@@ -37,7 +37,7 @@ def generate_poam_item(advisory_id: str, data: dict | None = None) -> dict:
         adv = None
         if adv_id_int is not None:
             adv = conn.execute(
-                "SELECT * FROM nc_advisories WHERE id = ?", (adv_id_int,)
+                "SELECT * FROM nc_advisories WHERE id = %s", (adv_id_int,)
             ).fetchone()
         seq = conn.execute("SELECT COUNT(*) FROM nc_poam_items").fetchone()[0] + 1
         poam_id = f"POAM-{seq:04d}"
@@ -47,7 +47,7 @@ def generate_poam_item(advisory_id: str, data: dict | None = None) -> dict:
             """INSERT INTO nc_poam_items
                (poam_id, advisory_id, weakness_name, severity,
                 scheduled_completion, status, responsible_party, resources_required)
-               VALUES (?,?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
             (
                 poam_id,
                 adv_id_int,
@@ -61,7 +61,7 @@ def generate_poam_item(advisory_id: str, data: dict | None = None) -> dict:
         )
         conn.commit()
         new_id = cur.lastrowid
-        row = conn.execute("SELECT * FROM nc_poam_items WHERE id = ?", (new_id,)).fetchone()
+        row = conn.execute("SELECT * FROM nc_poam_items WHERE id = %s", (new_id,)).fetchone()
         return dict(row)
     finally:
         conn.close()

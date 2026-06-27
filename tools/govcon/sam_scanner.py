@@ -332,16 +332,16 @@ def scan_sam_gov(config=None, naics_filter=None, notice_type_filter=None, db_pat
 
                 # Dedup by content_hash
                 existing = conn.execute(
-                    "SELECT id, content_hash FROM sam_gov_opportunities WHERE id = ?", (normalized["id"],)
+                    "SELECT id, content_hash FROM sam_gov_opportunities WHERE id = %s", (normalized["id"],)
                 ).fetchone()
 
                 if existing:
                     if existing["content_hash"] != normalized["content_hash"]:
                         # Updated opportunity
                         conn.execute(
-                            "UPDATE sam_gov_opportunities SET title=?, description=?, "
-                            "response_deadline=?, content_hash=?, last_synced=?, "
-                            "metadata=?, active=? WHERE id=?",
+                            "UPDATE sam_gov_opportunities SET title=%s, description=%s, "
+                            "response_deadline=%s, content_hash=%s, last_synced=%s, "
+                            "metadata=%s, active=%s WHERE id=%s",
                             (
                                 normalized["title"],
                                 normalized["description"],
@@ -365,7 +365,7 @@ def scan_sam_gov(config=None, naics_filter=None, notice_type_filter=None, db_pat
                         "response_deadline, description, point_of_contact, set_aside_type, "
                         "place_of_performance, attachment_urls, active, content_hash, "
                         "metadata, first_seen, last_synced, classification) "
-                        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                         (
                             normalized["id"],
                             normalized["solicitation_number"],
@@ -570,33 +570,33 @@ def get_history(db_path=None, days=30):
     # Count by notice type
     type_counts = conn.execute(
         "SELECT notice_type, COUNT(*) as count FROM sam_gov_opportunities "
-        "WHERE first_seen >= ? GROUP BY notice_type ORDER BY count DESC",
+        "WHERE first_seen >= %s GROUP BY notice_type ORDER BY count DESC",
         (cutoff,),
     ).fetchall()
 
     # Count by NAICS
     naics_counts = conn.execute(
         "SELECT naics_code, COUNT(*) as count FROM sam_gov_opportunities "
-        "WHERE first_seen >= ? GROUP BY naics_code ORDER BY count DESC",
+        "WHERE first_seen >= %s GROUP BY naics_code ORDER BY count DESC",
         (cutoff,),
     ).fetchall()
 
     # Count by agency
     agency_counts = conn.execute(
         "SELECT agency, COUNT(*) as count FROM sam_gov_opportunities "
-        "WHERE first_seen >= ? GROUP BY agency ORDER BY count DESC LIMIT 20",
+        "WHERE first_seen >= %s GROUP BY agency ORDER BY count DESC LIMIT 20",
         (cutoff,),
     ).fetchall()
 
     # Daily counts
     daily = conn.execute(
         "SELECT DATE(first_seen) as day, COUNT(*) as count FROM sam_gov_opportunities "
-        "WHERE first_seen >= ? GROUP BY DATE(first_seen) ORDER BY day",
+        "WHERE first_seen >= %s GROUP BY DATE(first_seen) ORDER BY day",
         (cutoff,),
     ).fetchall()
 
     total = conn.execute(
-        "SELECT COUNT(*) as total FROM sam_gov_opportunities WHERE first_seen >= ?", (cutoff,)
+        "SELECT COUNT(*) as total FROM sam_gov_opportunities WHERE first_seen >= %s", (cutoff,)
     ).fetchone()
 
     conn.close()
@@ -631,7 +631,7 @@ def get_stats(db_path=None):
     future = (datetime.now(timezone.utc) + timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
     upcoming = conn.execute(
         "SELECT COUNT(*) as c FROM sam_gov_opportunities "
-        "WHERE response_deadline >= ? AND response_deadline <= ? AND active='true'",
+        "WHERE response_deadline >= %s AND response_deadline <= %s AND active='true'",
         (now, future),
     ).fetchone()
 
@@ -676,7 +676,7 @@ def cross_register_to_innovation(opportunities, config=None, db_path=None):
     for opp in opportunities:
         sig_id = f"sig-sam-{opp['id'][:12]}"
         # Check for existing
-        existing = conn.execute("SELECT id FROM innovation_signals WHERE id = ?", (sig_id,)).fetchone()
+        existing = conn.execute("SELECT id FROM innovation_signals WHERE id = %s", (sig_id,)).fetchone()
         if existing:
             continue
 
@@ -707,7 +707,7 @@ def cross_register_to_innovation(opportunities, config=None, db_path=None):
                 "(id, source, source_type, title, description, url, metadata, "
                 "community_score, content_hash, discovered_at, created_at, "
                 "status, category) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (
                     sig_id,
                     "sam_gov",
@@ -765,7 +765,7 @@ def cross_register_to_creative(opportunities, config=None, db_path=None):
     registered = 0
     for opp in opportunities:
         sig_id = f"csig-sam-{opp['id'][:10]}"
-        existing = conn.execute("SELECT id FROM creative_signals WHERE id = ?", (sig_id,)).fetchone()
+        existing = conn.execute("SELECT id FROM creative_signals WHERE id = %s", (sig_id,)).fetchone()
         if existing:
             continue
 
@@ -775,7 +775,7 @@ def cross_register_to_creative(opportunities, config=None, db_path=None):
                 "(id, source, source_type, competitor_id, title, body, url, "
                 "author, rating, upvotes, sentiment, content_hash, metadata, "
                 "discovered_at, classification) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (
                     sig_id,
                     "sam_gov",
@@ -938,7 +938,7 @@ def backfill_descriptions(db_path=None, limit=50, delay=0.5):
         "WHERE description LIKE 'https://api.sam.gov%%noticedesc%%' "
         "   OR LENGTH(COALESCE(description, '')) < 200 "
         "ORDER BY posted_date DESC "
-        "LIMIT ?",
+        "LIMIT %s",
         (limit,),
     ).fetchall()
 
@@ -990,7 +990,7 @@ def backfill_descriptions(db_path=None, limit=50, delay=0.5):
         if description and len(description) > len(current_desc):
             content_hash = _content_hash(f"{opp_id}|{description[:500]}")
             conn.execute(
-                "UPDATE sam_gov_opportunities SET description = ?, content_hash = ?, last_synced = ? WHERE id = ?",
+                "UPDATE sam_gov_opportunities SET description = %s, content_hash = %s, last_synced = %s WHERE id = %s",
                 (description[:10000], content_hash, _now(), opp_id),
             )
             conn.commit()

@@ -32,7 +32,7 @@ def _now() -> str:
 
 def _table_exists(conn) -> bool:
     row = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=%s",
         (_TABLE,),
     ).fetchone()
     return row is not None
@@ -107,7 +107,7 @@ class DESAuditLogger:
                      dispatch_source, task_status, duration_ms,
                      verification_signals, queued_at, occurred_at)
                 VALUES
-                    (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     event_id,
@@ -137,7 +137,7 @@ def _query(task_id: str) -> list[dict]:
     if not _table_exists(conn):
         return []
     rows = conn.execute(
-        "SELECT * FROM des_execution_events WHERE task_id=? ORDER BY occurred_at DESC LIMIT 20",
+        "SELECT * FROM des_execution_events WHERE task_id=%s ORDER BY occurred_at DESC LIMIT 20",
         (task_id,),
     ).fetchall()
     return [dict(r) for r in rows]

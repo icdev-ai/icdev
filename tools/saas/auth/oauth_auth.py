@@ -105,7 +105,7 @@ def _find_user_by_oauth_sub(tenant_id: str, sub: str) -> Optional[dict]:
             """
             SELECT id, tenant_id, email, role, status, display_name
             FROM users
-            WHERE tenant_id = ? AND oauth_sub = ? AND status = 'active'
+            WHERE tenant_id = %s AND oauth_sub = %s AND status = 'active'
         """,
             (tenant_id, sub),
         ).fetchone()

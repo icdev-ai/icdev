@@ -49,12 +49,12 @@ def _table_exists(conn, table_name: str) -> bool:
     try:
         if getattr(conn, "_backend", "sqlite") == "postgresql":
             row = conn.execute(
-                "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = ?",
+                "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = %s",
                 (table_name,),
             ).fetchone()
             return row is not None
         row = conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=%s",
             (table_name,),
         ).fetchone()
         return row is not None
@@ -298,7 +298,7 @@ def finding_detail(finding_id):
             return jsonify({"error": "Table not found"}), 404
 
         row = conn.execute(
-            "SELECT * FROM stig_findings WHERE id = ?",
+            "SELECT * FROM stig_findings WHERE id = %s",
             (finding_id,),
         ).fetchone()
 
@@ -437,15 +437,15 @@ def assess():
             return jsonify({"error": f"Invalid status. Must be one of: {valid_statuses}"}), 400
 
         # Verify finding exists
-        row = conn.execute("SELECT id FROM stig_findings WHERE id = ?", (finding_id,)).fetchone()
+        row = conn.execute("SELECT id FROM stig_findings WHERE id = %s", (finding_id,)).fetchone()
         if not row:
             return jsonify({"error": "Finding not found"}), 404
 
         conn.execute(
             """UPDATE stig_findings
-               SET status = ?, comments = ?, assessed_by = ?,
+               SET status = %s, comments = %s, assessed_by = %s,
                    assessed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-               WHERE id = ?""",
+               WHERE id = %s""",
             (new_status, comments, assessed_by, finding_id),
         )
         conn.commit()

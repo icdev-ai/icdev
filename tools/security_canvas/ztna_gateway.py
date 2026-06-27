@@ -115,7 +115,7 @@ def broker_access(user_id: str, application: str, attestation_token: str = "",
             "INSERT INTO zig_ztna_sessions "
             "(session_id, user_id, device_id, application, decision, trust_score, mfa_verified, "
             "granted_at, expires_at, reason, source_ip, created_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (session_id, user_id, device_id, application, decision, trust_score,
              int(mfa_verified), granted_at, expires_at, reason, source_ip, now_iso),
         )
@@ -143,8 +143,8 @@ def revoke_session(session_id: str) -> dict[str, Any]:
     try:
         _ensure_tables(conn)
         conn.execute(
-            "UPDATE zig_ztna_sessions SET decision='revoked', expires_at=?, "
-            "reason='manually revoked' WHERE session_id=?",
+            "UPDATE zig_ztna_sessions SET decision='revoked', expires_at=%s, "
+            "reason='manually revoked' WHERE session_id=%s",
             (now, session_id),
         )
         conn.commit()

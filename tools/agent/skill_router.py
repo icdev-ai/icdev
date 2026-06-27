@@ -173,13 +173,13 @@ def get_agent_load(agent_id: str, db_path: Path = None) -> dict:
         queued = 0
         try:
             c.execute(
-                "SELECT COUNT(*) FROM a2a_tasks WHERE assigned_agent = ? AND status = 'working'",
+                "SELECT COUNT(*) FROM a2a_tasks WHERE assigned_agent = %s AND status = 'working'",
                 (agent_id,),
             )
             working = c.fetchone()[0]
 
             c.execute(
-                "SELECT COUNT(*) FROM a2a_tasks WHERE assigned_agent = ? AND status = 'submitted'",
+                "SELECT COUNT(*) FROM a2a_tasks WHERE assigned_agent = %s AND status = 'submitted'",
                 (agent_id,),
             )
             queued = c.fetchone()[0]
@@ -187,13 +187,13 @@ def get_agent_load(agent_id: str, db_path: Path = None) -> dict:
             # a2a_tasks table may not exist; fallback to agent_subtasks
             try:
                 c.execute(
-                    "SELECT COUNT(*) FROM agent_subtasks WHERE agent_id = ? AND status = 'working'",
+                    "SELECT COUNT(*) FROM agent_subtasks WHERE agent_id = %s AND status = 'working'",
                     (agent_id,),
                 )
                 working = c.fetchone()[0]
 
                 c.execute(
-                    "SELECT COUNT(*) FROM agent_subtasks WHERE agent_id = ? AND status = 'queued'",
+                    "SELECT COUNT(*) FROM agent_subtasks WHERE agent_id = %s AND status = 'queued'",
                     (agent_id,),
                 )
                 queued = c.fetchone()[0]
@@ -272,7 +272,7 @@ def route_skill(
                     try:
                         c = conn.cursor()
                         c.execute(
-                            "SELECT * FROM agents WHERE id = ? AND status = 'active'",
+                            "SELECT * FROM agents WHERE id = %s AND status = 'active'",
                             (redirect_agent,),
                         )
                         row = c.fetchone()

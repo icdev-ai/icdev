@@ -121,7 +121,7 @@ def check_il_compatibility(asset_id, consumer_il, db_path=None):
     conn = _get_db(db_path)
     try:
         row = conn.execute(
-            "SELECT impact_level, classification, name FROM marketplace_assets WHERE id = ?",
+            "SELECT impact_level, classification, name FROM marketplace_assets WHERE id = %s",
             (asset_id,),
         ).fetchone()
         if not row:
@@ -155,7 +155,7 @@ def check_version_compatibility(asset_id, platform_version=None, db_path=None):
     conn = _get_db(db_path)
     try:
         row = conn.execute(
-            "SELECT min_icdev_version, name, current_version FROM marketplace_assets WHERE id = ?",
+            "SELECT min_icdev_version, name, current_version FROM marketplace_assets WHERE id = %s",
             (asset_id,),
         ).fetchone()
         if not row:
@@ -203,7 +203,7 @@ def check_dependency_compatibility(asset_id, tenant_id=None, db_path=None):
     try:
         deps = conn.execute(
             """SELECT depends_on_slug, version_constraint, dependency_type
-               FROM marketplace_dependencies WHERE asset_id = ?""",
+               FROM marketplace_dependencies WHERE asset_id = %s""",
             (asset_id,),
         ).fetchall()
 
@@ -224,7 +224,7 @@ def check_dependency_compatibility(asset_id, tenant_id=None, db_path=None):
 
             # Find the dependency asset
             dep_asset = conn.execute(
-                "SELECT id, current_version, impact_level, status FROM marketplace_assets WHERE slug = ?",
+                "SELECT id, current_version, impact_level, status FROM marketplace_assets WHERE slug = %s",
                 (slug,),
             ).fetchone()
 

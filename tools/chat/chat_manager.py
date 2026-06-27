@@ -97,7 +97,7 @@ class ChatManager:
                      system_prompt, context_config, classification,
                      intake_session_id, project_id,
                      last_activity_at, created_at, updated_at)
-                VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, 'active', %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     ctx_id,
@@ -127,7 +127,7 @@ class ChatManager:
         conn = get_connection()
         try:
             row = conn.execute(
-                "SELECT * FROM chat_contexts WHERE id = ?", (context_id,)
+                "SELECT * FROM chat_contexts WHERE id = %s", (context_id,)
             ).fetchone()
             if not row:
                 return None
@@ -178,7 +178,7 @@ class ChatManager:
         conn = get_connection()
         try:
             conn.execute(
-                "UPDATE chat_contexts SET status = ?, updated_at = ? WHERE id = ?",
+                "UPDATE chat_contexts SET status = %s, updated_at = %s WHERE id = %s",
                 (status, ts, context_id),
             )
             conn.commit()
@@ -193,7 +193,7 @@ class ChatManager:
         conn = get_connection()
         try:
             conn.execute(
-                "UPDATE chat_contexts SET title = ?, updated_at = ? WHERE id = ?",
+                "UPDATE chat_contexts SET title = %s, updated_at = %s WHERE id = %s",
                 (title, ts, context_id),
             )
             conn.commit()
@@ -215,7 +215,7 @@ class ChatManager:
         conn = get_connection()
         try:
             row = conn.execute(
-                "SELECT context_config FROM chat_contexts WHERE id = ?", (context_id,)
+                "SELECT context_config FROM chat_contexts WHERE id = %s", (context_id,)
             ).fetchone()
             if not row:
                 raise ValueError(f"Context not found: {context_id!r}")
@@ -223,8 +223,8 @@ class ChatManager:
             cfg["coworker_instance_id"] = instance_id
             ts = _now()
             conn.execute(
-                "UPDATE chat_contexts SET context_config = ?, last_activity_at = ?, "
-                "updated_at = ? WHERE id = ?",
+                "UPDATE chat_contexts SET context_config = %s, last_activity_at = %s, "
+                "updated_at = %s WHERE id = %s",
                 (json.dumps(cfg), ts, ts, context_id),
             )
             conn.commit()
@@ -245,7 +245,7 @@ class ChatManager:
         conn = get_connection()
         try:
             row = conn.execute(
-                "SELECT context_config FROM chat_contexts WHERE id = ?", (context_id,)
+                "SELECT context_config FROM chat_contexts WHERE id = %s", (context_id,)
             ).fetchone()
             if not row:
                 raise ValueError(f"Context not found: {context_id!r}")
@@ -253,7 +253,7 @@ class ChatManager:
             cfg.update(updates)
             ts = _now()
             conn.execute(
-                "UPDATE chat_contexts SET context_config = ?, updated_at = ? WHERE id = ?",
+                "UPDATE chat_contexts SET context_config = %s, updated_at = %s WHERE id = %s",
                 (json.dumps(cfg), ts, context_id),
             )
             conn.commit()
@@ -292,7 +292,7 @@ class ChatManager:
             next_turn = (
                 conn.execute(
                     "SELECT COALESCE(MAX(turn_number), 0) + 1 FROM chat_messages "
-                    "WHERE context_id = ?",
+                    "WHERE context_id = %s",
                     (context_id,),
                 ).fetchone()[0]
             )
@@ -301,7 +301,7 @@ class ChatManager:
                 INSERT INTO chat_messages
                     (context_id, turn_number, role, content, content_type,
                      metadata, classification)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     context_id,
@@ -317,8 +317,8 @@ class ChatManager:
             conn.execute(
                 "UPDATE chat_contexts "
                 "SET message_count = message_count + 1, "
-                "    last_activity_at = ?, updated_at = ? "
-                "WHERE id = ?",
+                "    last_activity_at = %s, updated_at = %s "
+                "WHERE id = %s",
                 (ts, ts, context_id),
             )
             conn.commit()
@@ -341,8 +341,8 @@ class ChatManager:
             rows = conn.execute(
                 "SELECT id, turn_number, role, content, content_type, "
                 "metadata, classification, is_compressed, created_at "
-                "FROM chat_messages WHERE context_id = ? "
-                "ORDER BY turn_number LIMIT ? OFFSET ?",
+                "FROM chat_messages WHERE context_id = %s "
+                "ORDER BY turn_number LIMIT %s OFFSET %s",
                 (context_id, limit, offset),
             ).fetchall()
             result = []
@@ -368,7 +368,7 @@ class ChatManager:
             row = conn.execute(
                 "SELECT id, turn_number, role, content, content_type, "
                 "metadata, classification, is_compressed, created_at "
-                "FROM chat_messages WHERE context_id = ? "
+                "FROM chat_messages WHERE context_id = %s "
                 "ORDER BY turn_number DESC LIMIT 1",
                 (context_id,),
             ).fetchone()
@@ -410,7 +410,7 @@ def get_context(context_id: str) -> dict[str, Any] | None:
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT * FROM chat_contexts WHERE id = ?", (context_id,)
+            "SELECT * FROM chat_contexts WHERE id = %s", (context_id,)
         ).fetchone()
         if not row:
             return None
@@ -428,7 +428,7 @@ def set_coworker_instance(context_id: str, instance_id: str) -> None:
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT context_config FROM chat_contexts WHERE id = ?", (context_id,)
+            "SELECT context_config FROM chat_contexts WHERE id = %s", (context_id,)
         ).fetchone()
         if not row:
             raise ValueError(f"Context not found: {context_id!r}")
@@ -436,8 +436,8 @@ def set_coworker_instance(context_id: str, instance_id: str) -> None:
         cfg["coworker_instance_id"] = instance_id
         ts = _now()
         conn.execute(
-            "UPDATE chat_contexts SET context_config = ?, last_activity_at = ?, "
-            "updated_at = ? WHERE id = ?",
+            "UPDATE chat_contexts SET context_config = %s, last_activity_at = %s, "
+            "updated_at = %s WHERE id = %s",
             (json.dumps(cfg), ts, ts, context_id),
         )
         conn.commit()

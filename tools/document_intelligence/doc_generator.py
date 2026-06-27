@@ -516,7 +516,7 @@ def generate_document(
                 "INSERT OR IGNORE INTO dic_documents "
                 "(doc_id, collection_id, source_id, filename, content_type, provider, title, "
                 "byte_size, content_sha256, page_count, created_at, tenant_id, classification) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (doc_id, collection_id or "", doc_id, "ai_generated.md", "text/markdown",
                  "ai_generator", title, len(full_text), sha, 1, _now_utc(), tenant_id, classification),
             )
@@ -524,7 +524,7 @@ def generate_document(
                 "INSERT OR IGNORE INTO dic_versions "
                 "(version_id, doc_id, version_no, origin, status, assigned_to, review_notes, content_sha256, "
                 "created_at, created_by, tenant_id, classification) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (version_id, doc_id, 1, "ai_generated", "pending_review", None, None, sha,
                  _now_utc(), created_by, tenant_id, classification),
             )
@@ -534,7 +534,7 @@ def generate_document(
                     "INSERT OR REPLACE INTO dic_sections "
                     "(section_id, version_id, doc_id, heading, content, citations_json, status, origin, "
                     "created_at, created_by, tenant_id, classification) "
-                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                     (section_id, version_id, doc_id, sec.heading, sec.content,
                      json.dumps(sec.citations), "pending_review", "ai_generated",
                      _now_utc(), created_by, tenant_id, classification),
@@ -583,14 +583,14 @@ def regenerate_section(
         cur = conn.cursor()
         cur.execute(
             "SELECT doc_id, title FROM dic_documents WHERE doc_id = "
-            "(SELECT doc_id FROM dic_versions WHERE version_id = ? LIMIT 1)",
+            "(SELECT doc_id FROM dic_versions WHERE version_id = %s LIMIT 1)",
             (version_id,),
         )
         row = cur.fetchone()
         doc_id = row[0] if row else ""
         doc_title = (row[1] if row else "") or heading
         cur.execute(
-            "SELECT heading, content FROM dic_sections WHERE version_id = ? ORDER BY section_id",
+            "SELECT heading, content FROM dic_sections WHERE version_id = %s ORDER BY section_id",
             (version_id,),
         )
         all_sections = cur.fetchall()
@@ -692,8 +692,8 @@ def regenerate_section(
     try:
         cur = conn.cursor()
         cur.execute(
-            "UPDATE dic_sections SET content = ?, citations_json = ?, status = ?, origin = ?, "
-            "created_at = ?, created_by = ? WHERE version_id = ? AND heading = ?",
+            "UPDATE dic_sections SET content = %s, citations_json = %s, status = %s, origin = %s, "
+            "created_at = %s, created_by = %s WHERE version_id = %s AND heading = %s",
             (verified_text, json.dumps(citations), "pending_review", "ai_generated",
              _now_utc(), created_by, version_id, heading),
         )
@@ -702,12 +702,12 @@ def regenerate_section(
             cur.execute(
                 "INSERT INTO dic_sections (section_id, version_id, doc_id, heading, content, "
                 "citations_json, status, origin, created_at, created_by, tenant_id, classification) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (section_id, version_id, doc_id, heading, verified_text, json.dumps(citations),
                  "pending_review", "ai_generated", _now_utc(), created_by, tenant_id, classification),
             )
         cur.execute(
-            "SELECT heading, content FROM dic_sections WHERE version_id = ? ORDER BY section_id",
+            "SELECT heading, content FROM dic_sections WHERE version_id = %s ORDER BY section_id",
             (version_id,),
         )
         rows = cur.fetchall()
@@ -716,7 +716,7 @@ def regenerate_section(
         )
         sha = hashlib.sha256(full_text.encode()).hexdigest()
         cur.execute(
-            "UPDATE dic_versions SET content_sha256 = ? WHERE version_id = ?",
+            "UPDATE dic_versions SET content_sha256 = %s WHERE version_id = %s",
             (sha, version_id),
         )
         conn.commit()

@@ -43,7 +43,7 @@ def compute_roi(design_id: str, hourly_rate: float = 150.0) -> dict:
     conn = _canvas_conn()
     try:
         row = conn.execute(
-            "SELECT * FROM sdc_roi_metrics WHERE design_id=? LIMIT 1",
+            "SELECT * FROM sdc_roi_metrics WHERE design_id=%s LIMIT 1",
             (design_id,),
         ).fetchone()
     finally:

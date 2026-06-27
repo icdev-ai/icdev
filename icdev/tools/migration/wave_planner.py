@@ -45,7 +45,7 @@ def _conn():
 
 def _table_exists(conn, name):
     return bool(conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=%s", (name,)
     ).fetchone())
 
 

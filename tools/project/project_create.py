@@ -63,7 +63,7 @@ def _audit(event_type: str, actor: str, action: str, project_id: str = None, det
         conn.execute(
             """INSERT INTO audit_trail
                (project_id, event_type, actor, action, details, classification)
-               VALUES (?, ?, ?, ?, ?, 'CUI')""",
+               VALUES (%s, %s, %s, %s, %s, 'CUI')""",
             (project_id, event_type, actor, action, json.dumps(details) if details else None),
         )
         conn.commit()
@@ -162,8 +162,8 @@ def create_project(
                 directory_path, created_by,
                 impact_level, cloud_environment, target_frameworks,
                 ato_status, accrediting_authority)
-               VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, 'icdev-cli',
-                       ?, ?, ?, 'none', ?)""",
+               VALUES (%s, %s, %s, %s, %s, 'active', %s, %s, %s, %s, 'icdev-cli',
+                       %s, %s, %s, 'none', %s)""",
             (
                 project_id,
                 name,

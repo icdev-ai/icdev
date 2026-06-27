@@ -121,7 +121,7 @@ def register_cato_evidence(health_score: float, findings_summary: Dict) -> List[
                         (project_id, control_id, evidence_type, evidence_source,
                          evidence_path, evidence_hash, collected_at, expires_at,
                          is_fresh, status, automation_frequency)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                     (
                         "icdev",
@@ -162,7 +162,7 @@ def get_control_coverage() -> Dict[str, Any]:
                 try:
                     row = conn.execute(
                         "SELECT enabled, total_runs, total_successes FROM review_board_reflex_state "
-                        "WHERE reflex_name = ?",
+                        "WHERE reflex_name = %s",
                         (reflex,),
                     ).fetchone()
                     if row and row[0]:  # enabled

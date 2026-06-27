@@ -59,7 +59,7 @@ def _get_tickers(conn: Any, limit: int) -> List[str]:
     """Return up to ``limit`` distinct tickers from ad_signals."""
     try:
         rows = conn.execute(
-            "SELECT DISTINCT ticker FROM ad_signals LIMIT ?", (limit,)
+            "SELECT DISTINCT ticker FROM ad_signals LIMIT %s", (limit,)
         ).fetchall()
         return [
             r["ticker"] if hasattr(r, "keys") else r[0]
@@ -278,7 +278,7 @@ def run(config: Dict[str, Any], session: Any) -> Dict[str, Any]:
         try:
             conn.execute(
                 "INSERT OR REPLACE INTO ad_ticker_performance "
-                "(ticker, p1y, is_anomaly, refreshed_at) VALUES (?, ?, ?, ?)",
+                "(ticker, p1y, is_anomaly, refreshed_at) VALUES (%s, %s, %s, %s)",
                 (ticker, p1y, is_anomaly, now.isoformat()),
             )
             conn.commit()

@@ -574,7 +574,7 @@ def generate_solution_spec(signal_id, db_path=None):
     conn = _get_db(db_path)
     _ensure_solutions_table(conn)
     try:
-        signal = conn.execute("SELECT * FROM innovation_signals WHERE id = ?", (signal_id,)).fetchone()
+        signal = conn.execute("SELECT * FROM innovation_signals WHERE id = %s", (signal_id,)).fetchone()
         if not signal:
             return {"error": f"Signal not found: {signal_id}"}
         signal = dict(signal)
@@ -586,7 +586,7 @@ def generate_solution_spec(signal_id, db_path=None):
             }
 
         existing = conn.execute(
-            "SELECT id, status FROM innovation_solutions WHERE signal_id = ?", (signal_id,)
+            "SELECT id, status FROM innovation_solutions WHERE signal_id = %s", (signal_id,)
         ).fetchone()
         if existing:
             return {
@@ -655,7 +655,7 @@ def generate_solution_spec(signal_id, db_path=None):
             """INSERT INTO innovation_solutions
             (id, signal_id, spec_content, gotcha_layer, asset_type, estimated_effort,
              status, spec_quality_score, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, 'generated', ?, ?, ?)""",
+            VALUES (%s, %s, %s, %s, %s, %s, 'generated', %s, %s, %s)""",
             (sol_id, signal_id, spec_content, gotcha_layer, asset_type, effort, spec_quality_score, now, now),
         )
         conn.commit()
@@ -791,12 +791,12 @@ def get_solution_status(solution_id=None, db_path=None):
     conn = _get_db(db_path)
     _ensure_solutions_table(conn)
     try:
-        row = conn.execute("SELECT * FROM innovation_solutions WHERE id = ?", (solution_id,)).fetchone()
+        row = conn.execute("SELECT * FROM innovation_solutions WHERE id = %s", (solution_id,)).fetchone()
         if not row:
             return {"error": f"Solution not found: {solution_id}"}
         sol = dict(row)
         sig_row = conn.execute(
-            "SELECT title, source, category, community_score, url FROM innovation_signals WHERE id = ?",
+            "SELECT title, source, category, community_score, url FROM innovation_signals WHERE id = %s",
             (sol["signal_id"],),
         ).fetchone()
         sig_summary = dict(sig_row) if sig_row else {}

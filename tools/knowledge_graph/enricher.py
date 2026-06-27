@@ -189,7 +189,7 @@ def compute_centrality(
     nodes = [
         dict(r)
         for r in conn.execute(
-            "SELECT id, label, entity_type FROM kg_nodes WHERE graph_id = ?",
+            "SELECT id, label, entity_type FROM kg_nodes WHERE graph_id = %s",
             (graph_id,),
         ).fetchall()
     ]
@@ -197,7 +197,7 @@ def compute_centrality(
     edges = [
         dict(r)
         for r in conn.execute(
-            "SELECT id, source_id, target_id FROM kg_edges WHERE graph_id = ?",
+            "SELECT id, source_id, target_id FROM kg_edges WHERE graph_id = %s",
             (graph_id,),
         ).fetchall()
     ]
@@ -218,7 +218,7 @@ def compute_centrality(
 
     # Persist
     for nid, score in centrality.items():
-        conn.execute("UPDATE kg_nodes SET centrality = ? WHERE id = ?", (score, nid))
+        conn.execute("UPDATE kg_nodes SET centrality = %s WHERE id = %s", (score, nid))
     conn.commit()
 
     # Build result
@@ -280,7 +280,7 @@ def compute_embeddings(
     nodes = [
         dict(r)
         for r in conn.execute(
-            "SELECT id, label, entity_type FROM kg_nodes WHERE graph_id = ?",
+            "SELECT id, label, entity_type FROM kg_nodes WHERE graph_id = %s",
             (graph_id,),
         ).fetchall()
     ]
@@ -317,7 +317,7 @@ def compute_embeddings(
                 if embedding and isinstance(embedding, list):
                     blob = _float_list_to_blob(embedding)
                     conn.execute(
-                        "UPDATE kg_nodes SET embedding = ? WHERE id = ?",
+                        "UPDATE kg_nodes SET embedding = %s WHERE id = %s",
                         (blob, node["id"]),
                     )
                     embedded_count += 1

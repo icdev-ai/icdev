@@ -48,12 +48,12 @@ def _table_exists(conn, name):
     try:
         if getattr(conn, "_backend", "sqlite") == "postgresql":
             row = conn.execute(
-                "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = ?",
+                "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = %s",
                 (name,),
             ).fetchone()
             return row is not None
         row = conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=%s",
             (name,),
         ).fetchone()
         return row is not None
@@ -119,7 +119,7 @@ def iac_stats():
             row = conn.execute("SELECT COUNT(*) FROM stig_findings").fetchone()
             total = row[0]
             hardened_row = conn.execute(
-                "SELECT COUNT(*) FROM stig_findings WHERE status = ?",
+                "SELECT COUNT(*) FROM stig_findings WHERE status = %s",
                 ("NotAFinding",),
             ).fetchone()
             hardened = hardened_row[0]
@@ -212,7 +212,7 @@ def artifact_detail(artifact_id):
 
         row = conn.execute(
             "SELECT id, plan_id, artifact_type, file_path, description, "
-            "created_at FROM migration_artifacts WHERE id = ?",
+            "created_at FROM migration_artifacts WHERE id = %s",
             (artifact_id,),
         ).fetchone()
 

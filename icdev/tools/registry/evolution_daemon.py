@@ -182,7 +182,7 @@ class EvolutionDaemon(DaemonBase):
                 INSERT INTO evolution_audit
                     (id, event_type, reflex_name, risk_tier, details, success,
                      duration_ms, metric_name, metric_value, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
                 (
                     audit_id,
@@ -294,7 +294,7 @@ class EvolutionDaemon(DaemonBase):
                         """
                         SELECT id, child_id, behavior_type, description,
                                evidence_json, confidence
-                        FROM child_learned_behaviors WHERE id = ?
+                        FROM child_learned_behaviors WHERE id = %s
                     """,
                         (bid,),
                     ).fetchone()
@@ -335,7 +335,7 @@ class EvolutionDaemon(DaemonBase):
                         """
                         UPDATE child_learned_behaviors
                         SET evaluated = 1
-                        WHERE id = ?
+                        WHERE id = %s
                     """,
                         (bid,),
                     )

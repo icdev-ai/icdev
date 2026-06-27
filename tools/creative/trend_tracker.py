@@ -415,7 +415,7 @@ def detect_trends(days=30, min_signals=3, db_path=None):
                       keyword_fingerprint, keywords, severity,
                       first_seen, last_seen
                FROM creative_pain_points
-               WHERE last_seen >= ?
+               WHERE last_seen >= %s
                ORDER BY last_seen DESC""",
             (cutoff,),
         ).fetchall()
@@ -564,7 +564,7 @@ def detect_trends(days=30, min_signals=3, db_path=None):
                 existing = conn.execute(
                     """SELECT id, velocity, status, signal_count
                        FROM creative_trends
-                       WHERE keyword_fingerprint = ?
+                       WHERE keyword_fingerprint = %s
                        ORDER BY detected_at DESC
                        LIMIT 1""",
                     (fingerprint,),
@@ -629,7 +629,7 @@ def detect_trends(days=30, min_signals=3, db_path=None):
             """SELECT DISTINCT keyword_fingerprint
                FROM creative_trends
                WHERE status IN ('emerging', 'active')
-                 AND last_seen < ?""",
+                 AND last_seen < %s""",
             (stale_cutoff,),
         ).fetchall()
         for row in stale_candidates:
@@ -640,7 +640,7 @@ def detect_trends(days=30, min_signals=3, db_path=None):
                 # Insert a stale row to preserve history (append-only)
                 latest = conn.execute(
                     """SELECT * FROM creative_trends
-                       WHERE keyword_fingerprint = ?
+                       WHERE keyword_fingerprint = %s
                        ORDER BY detected_at DESC LIMIT 1""",
                     (fp,),
                 ).fetchone()
@@ -767,7 +767,7 @@ def _store_trend(conn, trend):
             keyword_fingerprint, keywords, velocity, acceleration,
             status, first_seen, last_seen, metadata, detected_at,
             classification)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
         (
             trend["id"],
             trend["name"],
@@ -948,7 +948,7 @@ def get_velocity(trend_id, db_path=None):
                       keyword_fingerprint, keywords, velocity, acceleration,
                       status, first_seen, last_seen, metadata, detected_at
                FROM creative_trends
-               WHERE id = ?""",
+               WHERE id = %s""",
             (trend_id,),
         ).fetchone()
 
@@ -977,7 +977,7 @@ def get_velocity(trend_id, db_path=None):
         history_rows = conn.execute(
             """SELECT velocity, acceleration, status, signal_count, detected_at
                FROM creative_trends
-               WHERE keyword_fingerprint = ?
+               WHERE keyword_fingerprint = %s
                ORDER BY detected_at ASC""",
             (fp,),
         ).fetchall()

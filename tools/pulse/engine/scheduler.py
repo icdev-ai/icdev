@@ -1278,7 +1278,7 @@ def enrich_post_with_capabilities(post_id: str) -> dict:
     # Store capabilities_referenced
     with get_connection() as conn:
         conn.execute(
-            "UPDATE pulse_posts SET capabilities_referenced = ? WHERE id = ?",
+            "UPDATE pulse_posts SET capabilities_referenced = %s WHERE id = %s",
             (json.dumps(caps_ref), post_id),
         )
 

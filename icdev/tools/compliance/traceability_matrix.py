@@ -54,7 +54,7 @@ def _get_connection(db_path=None):
 
 def _get_project(conn, project_id):
     """Load project data from the projects table."""
-    row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+    row = conn.execute("SELECT * FROM projects WHERE id = %s", (project_id,)).fetchone()
     if not row:
         raise ValueError(f"Project '{project_id}' not found.")
     return dict(row)
@@ -112,7 +112,7 @@ def _log_audit_event(conn, project_id, action, details, file_path):
             """INSERT INTO audit_trail
                (project_id, event_type, actor, action, details,
                 affected_files, classification)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
             (
                 project_id,
                 "compliance_check",

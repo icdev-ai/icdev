@@ -24,7 +24,7 @@ def analyze_circuit(conn, circuit_id_int: int) -> dict:
     """Run capacity analysis for a single circuit and persist the plan."""
     try:
         row = conn.execute(
-            "SELECT * FROM ccc_circuits WHERE id=?", (circuit_id_int,)
+            "SELECT * FROM ccc_circuits WHERE id=%s", (circuit_id_int,)
         ).fetchone()
         if not row:
             return {"error": f"circuit {circuit_id_int} not found"}
@@ -44,7 +44,7 @@ def analyze_circuit(conn, circuit_id_int: int) -> dict:
     try:
         history = conn.execute(
             "SELECT current_utilization_pct, plan_date FROM ccc_capacity_plans "
-            "WHERE circuit_id=? ORDER BY plan_date DESC LIMIT 6",
+            "WHERE circuit_id=%s ORDER BY plan_date DESC LIMIT 6",
             (circuit_id_int,),
         ).fetchall()
     except Exception:
@@ -93,7 +93,7 @@ def analyze_circuit(conn, circuit_id_int: int) -> dict:
             "INSERT INTO ccc_capacity_plans "
             "(circuit_id, plan_date, current_utilization_pct, projected_utilization_pct, "
             "months_to_saturation, recommended_action, growth_rate_pct, confidence_score) "
-            "VALUES (?,?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
             tuple(plan.values()),
         )
         conn.commit()

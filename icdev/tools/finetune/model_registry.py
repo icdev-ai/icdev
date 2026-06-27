@@ -48,7 +48,7 @@ def get_model_version(
     conn = _get_db(db_path)
     try:
         row = conn.execute(
-            "SELECT * FROM ft_model_versions WHERE id = ?",
+            "SELECT * FROM ft_model_versions WHERE id = %s",
             (model_version_id,),
         ).fetchone()
         if not row:
@@ -108,7 +108,7 @@ def update_eval_scores(
     conn = _get_db(db_path)
     try:
         row = conn.execute(
-            "SELECT id FROM ft_model_versions WHERE id = ?",
+            "SELECT id FROM ft_model_versions WHERE id = %s",
             (model_version_id,),
         ).fetchone()
         if not row:
@@ -116,9 +116,9 @@ def update_eval_scores(
 
         conn.execute(
             """UPDATE ft_model_versions
-               SET eval_bleu = ?, eval_rouge_l = ?, eval_perplexity = ?,
-                   eval_custom = ?, status = 'evaluated'
-               WHERE id = ?""",
+               SET eval_bleu = %s, eval_rouge_l = %s, eval_perplexity = %s,
+                   eval_custom = %s, status = 'evaluated'
+               WHERE id = %s""",
             (eval_bleu, eval_rouge_l, eval_perplexity, json.dumps(eval_custom or {}), model_version_id),
         )
         conn.commit()
@@ -158,7 +158,7 @@ def promote_model(
     try:
         # Validate model version exists
         mv = conn.execute(
-            "SELECT * FROM ft_model_versions WHERE id = ?",
+            "SELECT * FROM ft_model_versions WHERE id = %s",
             (model_version_id,),
         ).fetchone()
         if not mv:
@@ -173,14 +173,14 @@ def promote_model(
         # Deactivate current active model for this function
         current = conn.execute(
             """SELECT * FROM ft_active_models
-               WHERE function_name = ? AND tenant_id = ? AND project_id = ?
+               WHERE function_name = %s AND tenant_id = %s AND project_id = %s
                  AND deactivated_at IS NULL""",
             (function_name, tenant_id, project_id),
         ).fetchone()
         if current:
             previous_model = current["ollama_model_name"]
             conn.execute(
-                "UPDATE ft_active_models SET deactivated_at = ? WHERE id = ?",
+                "UPDATE ft_active_models SET deactivated_at = %s WHERE id = %s",
                 (now, current["id"]),
             )
             # Log demotion of previous model
@@ -188,7 +188,7 @@ def promote_model(
                 """INSERT INTO ft_promotion_log
                    (model_version_id, action, function_name, previous_model,
                     reason, actor, tenant_id, project_id, created_at)
-                   VALUES (?, 'demoted', ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, 'demoted', %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     current["model_version_id"],
                     function_name,
@@ -206,7 +206,7 @@ def promote_model(
             """INSERT OR REPLACE INTO ft_active_models
                (function_name, model_version_id, ollama_model_name, routing_tier,
                 activated_by, activation_reason, tenant_id, project_id, activated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 function_name,
                 model_version_id,
@@ -222,7 +222,7 @@ def promote_model(
 
         # Update model version status
         conn.execute(
-            "UPDATE ft_model_versions SET status = 'promoted' WHERE id = ?",
+            "UPDATE ft_model_versions SET status = 'promoted' WHERE id = %s",
             (model_version_id,),
         )
 
@@ -231,7 +231,7 @@ def promote_model(
             """INSERT INTO ft_promotion_log
                (model_version_id, action, function_name, previous_model,
                 eval_score_summary, reason, actor, tenant_id, project_id, created_at)
-               VALUES (?, 'promoted', ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, 'promoted', %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 model_version_id,
                 function_name,
@@ -279,7 +279,7 @@ def demote_model(
     try:
         current = conn.execute(
             """SELECT * FROM ft_active_models
-               WHERE function_name = ? AND tenant_id = ? AND project_id = ?
+               WHERE function_name = %s AND tenant_id = %s AND project_id = %s
                  AND deactivated_at IS NULL""",
             (function_name, tenant_id, project_id),
         ).fetchone()
@@ -288,13 +288,13 @@ def demote_model(
 
         now = _now()
         conn.execute(
-            "UPDATE ft_active_models SET deactivated_at = ? WHERE id = ?",
+            "UPDATE ft_active_models SET deactivated_at = %s WHERE id = %s",
             (now, current["id"]),
         )
 
         # Update model version status
         conn.execute(
-            "UPDATE ft_model_versions SET status = 'demoted' WHERE id = ?",
+            "UPDATE ft_model_versions SET status = 'demoted' WHERE id = %s",
             (current["model_version_id"],),
         )
 
@@ -303,7 +303,7 @@ def demote_model(
             """INSERT INTO ft_promotion_log
                (model_version_id, action, function_name, previous_model,
                 reason, actor, tenant_id, project_id, created_at)
-               VALUES (?, 'demoted', ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, 'demoted', %s, %s, %s, %s, %s, %s, %s)""",
             (
                 current["model_version_id"],
                 function_name,
@@ -346,7 +346,7 @@ def get_active_model(
                       mv.eval_rouge_l, mv.eval_perplexity
                FROM ft_active_models am
                JOIN ft_model_versions mv ON am.model_version_id = mv.id
-               WHERE am.function_name = ? AND am.tenant_id = ? AND am.project_id = ?
+               WHERE am.function_name = %s AND am.tenant_id = %s AND am.project_id = %s
                  AND am.deactivated_at IS NULL""",
             (function_name, tenant_id, project_id),
         ).fetchone()

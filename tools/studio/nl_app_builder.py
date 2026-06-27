@@ -429,7 +429,7 @@ def create_builder_session(description: str, *, app_name: str | None = None) -> 
             """INSERT INTO studio_workflows
                (workflow_id, name, description, template_yaml, category,
                 created_by, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 session_id,
                 f"App Builder: {app_name}",
@@ -485,7 +485,7 @@ def refine_session(
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT * FROM studio_workflows WHERE workflow_id = ?",
+            "SELECT * FROM studio_workflows WHERE workflow_id = %s",
             (session_id,),
         ).fetchone()
         if not row:
@@ -504,7 +504,7 @@ def refine_session(
                 blueprint["capabilities"][cap] = enabled
 
         conn.execute(
-            "UPDATE studio_workflows SET template_yaml = ?, updated_at = ? WHERE workflow_id = ?",
+            "UPDATE studio_workflows SET template_yaml = %s, updated_at = %s WHERE workflow_id = %s",
             (json.dumps(blueprint, default=str), _now_iso(), session_id),
         )
         conn.commit()
@@ -526,7 +526,7 @@ def execute_build(session_id: str, *, output_dir: str | None = None) -> dict:
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT * FROM studio_workflows WHERE workflow_id = ?",
+            "SELECT * FROM studio_workflows WHERE workflow_id = %s",
             (session_id,),
         ).fetchone()
         if not row:

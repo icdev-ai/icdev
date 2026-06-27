@@ -62,14 +62,14 @@ def _on_qdc_gate_executed(event_id: str, canvas_id: str, event_type: str, payloa
             if passed:
                 # Close any open finding for this gate
                 conn.execute(
-                    "UPDATE pc_compliance_findings SET status='resolved', remediated_at=? "
-                    "WHERE rule_id=? AND status='open'",
+                    "UPDATE pc_compliance_findings SET status='resolved', remediated_at=%s "
+                    "WHERE rule_id=%s AND status='open'",
                     (_now(), f"qdc.{gate_id}"),
                 )
             else:
                 # Insert open finding if none exists
                 existing = conn.execute(
-                    "SELECT id FROM pc_compliance_findings WHERE rule_id=? AND status='open'",
+                    "SELECT id FROM pc_compliance_findings WHERE rule_id=%s AND status='open'",
                     (f"qdc.{gate_id}",),
                 ).fetchone()
                 if not existing:
@@ -77,7 +77,7 @@ def _on_qdc_gate_executed(event_id: str, canvas_id: str, event_type: str, payloa
                         "INSERT INTO pc_compliance_findings "
                         "(id, pipeline_id, rule_id, framework, severity, title, description, "
                         "affected_entity, affected_type, status, created_at) "
-                        "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                         (
                             str(uuid.uuid4()),
                             pipeline_id,

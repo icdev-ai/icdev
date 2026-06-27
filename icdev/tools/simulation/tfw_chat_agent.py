@@ -214,7 +214,7 @@ def _load_canvas_type(session_id: str) -> str:
     try:
         conn = _get_db()
         row = conn.execute(
-            "SELECT canvas_type FROM nc_simulation_sessions WHERE id = ?",
+            "SELECT canvas_type FROM nc_simulation_sessions WHERE id = %s",
             (session_id,),
         ).fetchone()
         conn.close()
@@ -230,7 +230,7 @@ def _load_graph_json(session_id: str) -> dict[str, Any]:
     try:
         conn = _get_db()
         row = conn.execute(
-            "SELECT topology_id, metadata FROM nc_simulation_sessions WHERE id = ?",
+            "SELECT topology_id, metadata FROM nc_simulation_sessions WHERE id = %s",
             (session_id,),
         ).fetchone()
         if not row:
@@ -247,7 +247,7 @@ def _load_graph_json(session_id: str) -> dict[str, Any]:
         topology_id = row[0]
         if topology_id:
             trow = conn.execute(
-                "SELECT graph_json FROM topologies WHERE id = ?", (topology_id,)
+                "SELECT graph_json FROM topologies WHERE id = %s", (topology_id,)
             ).fetchone()
             if trow and trow[0]:
                 conn.close()
@@ -385,7 +385,7 @@ def _handle_diff(session_id: str, canvas_type: str, args_text: str) -> dict:
     try:
         conn = _get_db()
         row = conn.execute(
-            "SELECT topology_id, metadata FROM nc_simulation_sessions WHERE id = ?",
+            "SELECT topology_id, metadata FROM nc_simulation_sessions WHERE id = %s",
             (session_id,),
         ).fetchone()
         conn.close()
@@ -404,7 +404,7 @@ def _handle_diff(session_id: str, canvas_type: str, args_text: str) -> dict:
         if topology_id:
             conn2 = _get_db()
             trow = conn2.execute(
-                "SELECT graph_json FROM topologies WHERE id = ?", (topology_id,)
+                "SELECT graph_json FROM topologies WHERE id = %s", (topology_id,)
             ).fetchone()
             conn2.close()
             if trow and trow[0]:

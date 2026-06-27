@@ -604,7 +604,7 @@ class ATLASRedTeamScanner:
                 """INSERT INTO atlas_red_team_results
                    (id, project_id, technique, technique_name, passed,
                     tests_run, tests_passed, findings_json, scanned_at, classification)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     entry_id,
                     project_id,

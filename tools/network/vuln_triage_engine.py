@@ -104,7 +104,7 @@ def _attack_surface_stats(conn, advisory_id: int) -> tuple[float, float]:
             "SELECT AVG(criticality) AS avg_crit, "
             "SUM(CASE WHEN reachable=1 THEN 1 ELSE 0 END) AS reachable_count, "
             "COUNT(*) AS total "
-            "FROM nc_attack_surface WHERE advisory_id=?",
+            "FROM nc_attack_surface WHERE advisory_id=%s",
             (advisory_id,),
         ).fetchone()
         if row and row[2] and row[2] > 0:
@@ -165,9 +165,9 @@ def _upsert_triage_row(conn, row: dict) -> None:
            (advisory_id, priority_score, kev_exploited, asset_criticality_norm,
             network_exposure_norm, temporal_urgency, rank, rationale_json,
             status, auto_approved, approved_by, approved_at, created_at, updated_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,
-               COALESCE((SELECT created_at FROM nc_triage_queue WHERE advisory_id=?), ?),
-               ?)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+               COALESCE((SELECT created_at FROM nc_triage_queue WHERE advisory_id=%s), %s),
+               %s)""",
         (
             row["advisory_id"],
             row["priority_score"],
@@ -193,7 +193,7 @@ def _append_audit_log(conn, action: str, advisory_id: int, confidence: float = 1
         conn.execute(
             """INSERT INTO nc_nqe_audit_log
                (action, advisory_id, input_text, nql_generated, data_source, confidence, created_at)
-               VALUES (?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s)""",
             (action, advisory_id, f"triage advisory {advisory_id}", "", "pvm_triage", confidence, _now()),
         )
     except Exception as exc:
@@ -228,7 +228,7 @@ def _apply_bayesian_ranks(conn, scored_ids: list[int]) -> None:
             adv_id = int(cid) if cid.isdigit() else None
         if adv_id is not None:
             conn.execute(
-                "UPDATE nc_triage_queue SET rank=?, updated_at=? WHERE advisory_id=?",
+                "UPDATE nc_triage_queue SET rank=%s, updated_at=%s WHERE advisory_id=%s",
                 (rank, _now(), adv_id),
             )
 
@@ -344,14 +344,14 @@ def approve_advisory(advisory_id: int, approved_by: str) -> dict:
         now = _now()
         conn.execute(
             """UPDATE nc_triage_queue
-               SET status='approved', approved_by=?, approved_at=?, updated_at=?
-               WHERE advisory_id=?""",
+               SET status='approved', approved_by=%s, approved_at=%s, updated_at=%s
+               WHERE advisory_id=%s""",
             (approved_by, now, now, advisory_id),
         )
         _append_audit_log(conn, "triage_approve", advisory_id)
         conn.commit()
         row = conn.execute(
-            "SELECT * FROM nc_triage_queue WHERE advisory_id=?", (advisory_id,)
+            "SELECT * FROM nc_triage_queue WHERE advisory_id=%s", (advisory_id,)
         ).fetchone()
         return dict(row) if row else {}
     finally:
@@ -365,14 +365,14 @@ def defer_advisory(advisory_id: int, approved_by: str) -> dict:
         now = _now()
         conn.execute(
             """UPDATE nc_triage_queue
-               SET status='deferred', approved_by=?, approved_at=?, updated_at=?
-               WHERE advisory_id=?""",
+               SET status='deferred', approved_by=%s, approved_at=%s, updated_at=%s
+               WHERE advisory_id=%s""",
             (approved_by, now, now, advisory_id),
         )
         _append_audit_log(conn, "triage_approve", advisory_id, confidence=0.0)
         conn.commit()
         row = conn.execute(
-            "SELECT * FROM nc_triage_queue WHERE advisory_id=?", (advisory_id,)
+            "SELECT * FROM nc_triage_queue WHERE advisory_id=%s", (advisory_id,)
         ).fetchone()
         return dict(row) if row else {}
     finally:

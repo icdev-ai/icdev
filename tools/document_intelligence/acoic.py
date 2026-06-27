@@ -219,7 +219,7 @@ def record_drift_event(
             INSERT OR REPLACE INTO dic_drift_events
                 (event_id, source, entity, severity, detected_at, payload_json,
                  processed, tenant_id, classification)
-            VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, 0, %s, %s)
             """,
             (
                 event_id, source, entity, severity, detected_at,
@@ -255,7 +255,7 @@ def enqueue_regen(
                 (item_id, document_id, event_id, drift_source, drift_entity,
                  impact_level, impact_score, state, queued_at, updated_at,
                  tenant_id, classification)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, 'queued', %s, %s, %s, %s)
             """,
             (
                 item_id, document_id, event_id, drift_source, drift_entity,
@@ -283,14 +283,14 @@ def _set_queue_state(item_id: str, state: str, *, fragment_id: str | None = None
         _ensure_schema(conn)
         if fragment_id is not None:
             conn.cursor().execute(
-                "UPDATE dic_acoic_regen_queue SET state = ?, updated_at = ?, "
-                "ssp_fragment_id = ? WHERE item_id = ?",
+                "UPDATE dic_acoic_regen_queue SET state = %s, updated_at = %s, "
+                "ssp_fragment_id = %s WHERE item_id = %s",
                 (state, _now(), fragment_id, item_id),
             )
         else:
             conn.cursor().execute(
-                "UPDATE dic_acoic_regen_queue SET state = ?, updated_at = ? "
-                "WHERE item_id = ?",
+                "UPDATE dic_acoic_regen_queue SET state = %s, updated_at = %s "
+                "WHERE item_id = %s",
                 (state, _now(), item_id),
             )
         conn.commit()
@@ -342,7 +342,7 @@ def handle_drift(event: dict, ctx: Any = None) -> dict[str, Any]:
     conn = get_connection()
     try:
         conn.cursor().execute(
-            "UPDATE dic_drift_events SET processed = 1 WHERE event_id = ?",
+            "UPDATE dic_drift_events SET processed = 1 WHERE event_id = %s",
             (event_id,),
         )
         conn.commit()
@@ -566,7 +566,7 @@ def generate_ssp_fragment(
                  fragment_text, status, origin, ai_labeled, verified, abstained,
                  verify_reason, citations_json, cod_verdict_json, regen_item_id,
                  created_at, tenant_id, classification)
-            VALUES (?, ?, ?, ?, ?, 'pending_review', 'ai_generated', 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, 'pending_review', 'ai_generated', 1, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 fragment_id, document_id, control_id, json.dumps(frameworks),
@@ -612,7 +612,7 @@ def process_regen_item(item_id: str, control_ids: list[str] | None = None) -> di
         cur = conn.cursor()
         cur.execute(
             "SELECT document_id, event_id, tenant_id, classification "
-            "FROM dic_acoic_regen_queue WHERE item_id = ?",
+            "FROM dic_acoic_regen_queue WHERE item_id = %s",
             (item_id,),
         )
         row = cur.fetchone()
@@ -626,7 +626,7 @@ def process_regen_item(item_id: str, control_ids: list[str] | None = None) -> di
         )
         if control_ids is None and event_id:
             cur.execute(
-                "SELECT payload_json FROM dic_drift_events WHERE event_id = ?",
+                "SELECT payload_json FROM dic_drift_events WHERE event_id = %s",
                 (event_id,),
             )
             ev = cur.fetchone()
@@ -666,15 +666,15 @@ def _review_fragment(fragment_id: str, status: str, reviewed_by: str | None) -> 
         _ensure_schema(conn)
         cur = conn.cursor()
         cur.execute(
-            "UPDATE dic_ssp_fragments SET status = ?, reviewed_by = ?, reviewed_at = ? "
-            "WHERE fragment_id = ?",
+            "UPDATE dic_ssp_fragments SET status = %s, reviewed_by = %s, reviewed_at = %s "
+            "WHERE fragment_id = %s",
             (status, reviewed_by, _now(), fragment_id),
         )
         conn.commit()
         changed = cur.rowcount
         # Advance the linked queue item.
         cur.execute(
-            "SELECT regen_item_id FROM dic_ssp_fragments WHERE fragment_id = ?",
+            "SELECT regen_item_id FROM dic_ssp_fragments WHERE fragment_id = %s",
             (fragment_id,),
         )
         row = cur.fetchone()
@@ -710,7 +710,7 @@ def assign_fragment(fragment_id: str, assigned_to: str) -> dict[str, Any]:
         _ensure_schema(conn)
         cur = conn.cursor()
         cur.execute(
-            "UPDATE dic_ssp_fragments SET assigned_to = ? WHERE fragment_id = ?",
+            "UPDATE dic_ssp_fragments SET assigned_to = %s WHERE fragment_id = %s",
             (assigned_to, fragment_id),
         )
         conn.commit()

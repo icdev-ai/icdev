@@ -83,7 +83,7 @@ def create_analysis(
         conn.execute(
             "INSERT INTO sg_red_cell_analyses "
             "(id, theater, scenario, created_by, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s)",
             (analysis_id, theater, scenario, created_by, now, now),
         )
         conn.commit()
@@ -181,7 +181,7 @@ def list_analyses(theater: str = "", limit: int = 20) -> list[dict]:
         else:
             rows = conn.execute(
                 "SELECT id, theater, scenario, created_by, created_at "  # nosec B608
-                "FROM sg_red_cell_analyses ORDER BY created_at DESC LIMIT ?",
+                "FROM sg_red_cell_analyses ORDER BY created_at DESC LIMIT %s",
                 (limit,),
             ).fetchall()
         cols = ("id", "theater", "scenario", "created_by", "created_at")

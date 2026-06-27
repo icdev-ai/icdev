@@ -147,7 +147,7 @@ def _insert_demand_signal(signal: dict) -> None:
                 "(id, pain_point_text, domain_category, keywords, frequency, "
                 "velocity, sam_opportunity_ids, is_high_demand, status, "
                 "article_generated, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     signal["id"],
                     signal["pain_point_text"],
@@ -175,7 +175,7 @@ def _insert_graph_edge(edge: dict) -> None:
                 "INSERT INTO pulse_capability_graph "
                 "(id, capability_slug, capability_name, entity_type, "
                 "entity_id, relationship, confidence, metadata, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     edge["id"],
                     edge["capability_slug"],
@@ -231,7 +231,7 @@ def aggregate_demand_signals() -> dict:
                 with get_connection() as conn:
                     for item in items:
                         conn.execute(
-                            "UPDATE pulse_demand_signals SET is_high_demand = 1, frequency = ? WHERE id = ?",
+                            "UPDATE pulse_demand_signals SET is_high_demand = 1, frequency = %s WHERE id = %s",
                             (freq, item["id"]),
                         )
                     conn.commit()
@@ -320,7 +320,7 @@ def suggest_positioning_articles(limit: int = 5) -> dict:
                 "AND status != 'dismissed' "
                 "GROUP BY domain_category "
                 "ORDER BY freq DESC "
-                "LIMIT ?",
+                "LIMIT %s",
                 (limit,),
             ).fetchall()
 
@@ -390,7 +390,7 @@ def get_capability_graph(capability_slug: str | None = None) -> dict:
         with get_connection() as conn:
             if capability_slug:
                 rows = conn.execute(
-                    "SELECT * FROM pulse_capability_graph WHERE capability_slug = ? ORDER BY created_at DESC LIMIT 100",
+                    "SELECT * FROM pulse_capability_graph WHERE capability_slug = %s ORDER BY created_at DESC LIMIT 100",
                     (capability_slug,),
                 ).fetchall()
             else:

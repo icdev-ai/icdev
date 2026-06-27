@@ -502,7 +502,7 @@ def build_federation(db_path: Optional[str] = None) -> Dict[str, Any]:
                 all_classes.append((cid, domain, label, supers, cid))
 
         conn.executemany(
-            "INSERT INTO ontology_classes (id, domain, label, superclasses, canonical_id) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO ontology_classes (id, domain, label, superclasses, canonical_id) VALUES (%s, %s, %s, %s, %s)",
             all_classes,
         )
 
@@ -513,7 +513,7 @@ def build_federation(db_path: Optional[str] = None) -> Dict[str, Any]:
             for a in all_alignments
         })
         conn.executemany(
-            "INSERT INTO ontology_alignments (source, target, assertion) VALUES (?, ?, ?)",
+            "INSERT INTO ontology_alignments (source, target, assertion) VALUES (%s, %s, %s)",
             alignments_rows,
         )
 
@@ -521,7 +521,7 @@ def build_federation(db_path: Optional[str] = None) -> Dict[str, Any]:
         canon_map = _build_equivalence_map(all_alignments)
         for src, tgt in canon_map.items():
             conn.execute(
-                "UPDATE ontology_classes SET canonical_id = ? WHERE id = ?",
+                "UPDATE ontology_classes SET canonical_id = %s WHERE id = %s",
                 (tgt, src),
             )
         # Ensure every class has a canonical_id
@@ -540,7 +540,7 @@ def build_federation(db_path: Optional[str] = None) -> Dict[str, Any]:
                 p.get("description", ""),
             ))
         conn.executemany(
-            "INSERT INTO ontology_properties (id, label, domain_class, range_class, description) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO ontology_properties (id, label, domain_class, range_class, description) VALUES (%s, %s, %s, %s, %s)",
             prop_rows,
         )
 
@@ -585,13 +585,13 @@ def build_federation(db_path: Optional[str] = None) -> Dict[str, Any]:
                 closure_rows.append((sub, sup, dist))
 
         conn.executemany(
-            "INSERT INTO ontology_subclass_closure (subclass, superclass, distance) VALUES (?, ?, ?)",
+            "INSERT INTO ontology_subclass_closure (subclass, superclass, distance) VALUES (%s, %s, %s)",
             closure_rows,
         )
 
         # 7. Update metadata
         conn.execute(
-            "INSERT INTO ontology_federation_meta (key, value, updated_at) VALUES (?, ?, ?)",
+            "INSERT INTO ontology_federation_meta (key, value, updated_at) VALUES (%s, %s, %s)",
             ("last_build", _now(), _now()),
         )
         conn.commit()
@@ -828,19 +828,19 @@ def _resolve_class_alias(conn, alias: str) -> str:
     if ":" in alias:
         # Already namespaced
         row = conn.execute(
-            "SELECT id FROM ontology_classes WHERE id = ?", (alias,)
+            "SELECT id FROM ontology_classes WHERE id = %s", (alias,)
         ).fetchone()
         if row:
             return row["id"]
     # Try label match
     row = conn.execute(
-        "SELECT id FROM ontology_classes WHERE LOWER(label) = ?", (alias.lower(),)
+        "SELECT id FROM ontology_classes WHERE LOWER(label) = %s", (alias.lower(),)
     ).fetchone()
     if row:
         return row["id"]
     # Try partial match
     row = conn.execute(
-        "SELECT id FROM ontology_classes WHERE LOWER(id) LIKE ?", (f"%{alias.lower()}%",)
+        "SELECT id FROM ontology_classes WHERE LOWER(id) LIKE %s", (f"%{alias.lower()}%",)
     ).fetchone()
     if row:
         return row["id"]
@@ -851,7 +851,7 @@ def _expand_subclasses(conn, class_id: str) -> Set[str]:
     """Return the set of class IDs that are subclasses of class_id (including itself)."""
     result: Set[str] = {class_id}
     rows = conn.execute(
-        "SELECT subclass FROM ontology_subclass_closure WHERE superclass = ?", (class_id,)
+        "SELECT subclass FROM ontology_subclass_closure WHERE superclass = %s", (class_id,)
     ).fetchall()
     for r in rows:
         result.add(r["subclass"])
@@ -861,7 +861,7 @@ def _expand_subclasses(conn, class_id: str) -> Set[str]:
 def _check_classification(conn, node_id: str, classification: str) -> bool:
     """Heuristic: check if a kg_node's properties contain the classification."""
     row = conn.execute(
-        "SELECT properties FROM kg_nodes WHERE id = ?", (node_id,)
+        "SELECT properties FROM kg_nodes WHERE id = %s", (node_id,)
     ).fetchone()
     if not row:
         return False
@@ -875,13 +875,13 @@ def _check_classification(conn, node_id: str, classification: str) -> bool:
 def _find_equivalents(conn, class_id: str) -> List[str]:
     """Find all classes equivalent to class_id."""
     canon_row = conn.execute(
-        "SELECT canonical_id FROM ontology_classes WHERE id = ?", (class_id,)
+        "SELECT canonical_id FROM ontology_classes WHERE id = %s", (class_id,)
     ).fetchone()
     if not canon_row:
         return [class_id]
     canon = canon_row["canonical_id"]
     rows = conn.execute(
-        "SELECT id FROM ontology_classes WHERE canonical_id = ?", (canon,)
+        "SELECT id FROM ontology_classes WHERE canonical_id = %s", (canon,)
     ).fetchall()
     return [r["id"] for r in rows]
 
@@ -914,7 +914,7 @@ def list_classes(domain: Optional[str] = None, db_path: Optional[str] = None) ->
         _ensure_tables(conn)
         if domain:
             rows = conn.execute(
-                "SELECT id, domain, label, canonical_id FROM ontology_classes WHERE domain = ?",
+                "SELECT id, domain, label, canonical_id FROM ontology_classes WHERE domain = %s",
                 (domain,),
             ).fetchall()
         else:
@@ -978,18 +978,18 @@ def integrate_with_kg_federation(db_path: Optional[str] = None) -> Dict[str, Any
         })
 
         existing = conn.execute(
-            "SELECT id FROM kg_graphs WHERE id = ?", (unified_graph_id,)
+            "SELECT id FROM kg_graphs WHERE id = %s", (unified_graph_id,)
         ).fetchone()
 
         if existing:
             conn.execute(
-                "UPDATE kg_graphs SET metadata = ?, updated_at = ? WHERE id = ?",
+                "UPDATE kg_graphs SET metadata = %s, updated_at = %s WHERE id = %s",
                 (meta, now, unified_graph_id),
             )
         else:
             conn.execute(
                 "INSERT INTO kg_graphs (id, project_id, name, description, entity_count, edge_count, metadata, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     unified_graph_id,
                     "ontology",
@@ -1024,13 +1024,13 @@ def integrate_with_kg_federation(db_path: Optional[str] = None) -> Dict[str, Any
             "DELETE FROM kg_nodes WHERE id LIKE 'ontology:%'",
         )
         conn.executemany(
-            "INSERT OR REPLACE INTO kg_nodes (id, graph_id, label, entity_type, properties, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT OR REPLACE INTO kg_nodes (id, graph_id, label, entity_type, properties, created_at) VALUES (%s, %s, %s, %s, %s, %s)",
             node_rows,
         )
 
         # Update entity_count
         conn.execute(
-            "UPDATE kg_graphs SET entity_count = ? WHERE id = ?",
+            "UPDATE kg_graphs SET entity_count = %s WHERE id = %s",
             (len(node_rows), unified_graph_id),
         )
         conn.commit()

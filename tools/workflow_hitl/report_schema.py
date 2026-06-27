@@ -81,7 +81,7 @@ def create_custom_report_type(
                 """INSERT OR IGNORE INTO wf_report_section_defs
                    (id, report_type, section_key, section_name, description,
                     sort_order, required, source_hints, min_chunks, max_chunks, max_words)
-                   VALUES (%s,?,?,?,?,?,?,?,?,?,%s)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (
                     f"csd-{report_type[:6]}-{i:02d}",
                     report_type,

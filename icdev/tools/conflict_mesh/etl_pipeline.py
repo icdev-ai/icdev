@@ -121,7 +121,7 @@ class ETLPipeline:
             """
             INSERT INTO sg_conflict_events
                 (id, event_type, geometry, event_date, source, metadata, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT(id) DO UPDATE SET
                 event_type = excluded.event_type,
                 geometry   = excluded.geometry,

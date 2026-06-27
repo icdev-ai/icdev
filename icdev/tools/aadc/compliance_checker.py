@@ -64,7 +64,7 @@ def run_compliance_checks(project_id: str) -> dict:
         with get_connection() as conn:
             cur = conn.cursor()
             cur.execute(
-                "SELECT check_key, check_value FROM aadc_compliance WHERE project_id = ? ORDER BY created_at DESC LIMIT 30",
+                "SELECT check_key, check_value FROM aadc_compliance WHERE project_id = %s ORDER BY created_at DESC LIMIT 30",
                 (project_id,),
             )
             rows = cur.fetchall()

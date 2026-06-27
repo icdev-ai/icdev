@@ -79,7 +79,7 @@ def _ensure_table(conn):
 
 def _get_project(conn, project_id):
     """Load project data from the projects table."""
-    row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+    row = conn.execute("SELECT * FROM projects WHERE id = %s", (project_id,)).fetchone()
     if not row:
         raise ValueError(f"Project '{project_id}' not found.")
     return dict(row)
@@ -139,7 +139,7 @@ def _log_audit_event(conn, project_id, action, details, file_path=None):
             """INSERT INTO audit_trail
                (project_id, event_type, actor, action, details,
                 affected_files, classification)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
             (
                 project_id,
                 "des_assessed",
@@ -171,7 +171,7 @@ def _check_model_authority(project_id, project_dir, conn):
     """
     try:
         row = conn.execute(
-            "SELECT COUNT(*) as cnt FROM sysml_elements WHERE project_id = ?",
+            "SELECT COUNT(*) as cnt FROM sysml_elements WHERE project_id = %s",
             (project_id,),
         ).fetchone()
         element_count = row["cnt"] if row else 0
@@ -193,7 +193,7 @@ def _check_model_authority(project_id, project_dir, conn):
     try:
         import_row = conn.execute(
             """SELECT MAX(imported_at) as last_import
-               FROM model_imports WHERE project_id = ?""",
+               FROM model_imports WHERE project_id = %s""",
             (project_id,),
         ).fetchone()
         last_import_str = import_row["last_import"] if import_row else None
@@ -246,7 +246,7 @@ def _check_model_completeness(project_id, project_dir, conn):
     try:
         rows = conn.execute(
             """SELECT DISTINCT element_type FROM sysml_elements
-               WHERE project_id = ?""",
+               WHERE project_id = %s""",
             (project_id,),
         ).fetchall()
         found_types = {r["element_type"] for r in rows}
@@ -302,7 +302,7 @@ def _check_digital_thread(project_id, project_dir, conn):
     """
     try:
         total_row = conn.execute(
-            "SELECT COUNT(*) as cnt FROM sysml_elements WHERE project_id = ?",
+            "SELECT COUNT(*) as cnt FROM sysml_elements WHERE project_id = %s",
             (project_id,),
         ).fetchone()
         total_elements = total_row["cnt"] if total_row else 0
@@ -312,7 +312,7 @@ def _check_digital_thread(project_id, project_dir, conn):
     try:
         linked_row = conn.execute(
             """SELECT COUNT(DISTINCT source_id) as cnt
-               FROM digital_thread_links WHERE project_id = ?""",
+               FROM digital_thread_links WHERE project_id = %s""",
             (project_id,),
         ).fetchone()
         linked_elements = linked_row["cnt"] if linked_row else 0
@@ -362,7 +362,7 @@ def _check_model_currency(project_id, project_dir, conn):
     try:
         row = conn.execute(
             """SELECT MAX(imported_at) as last_import
-               FROM model_imports WHERE project_id = ?""",
+               FROM model_imports WHERE project_id = %s""",
             (project_id,),
         ).fetchone()
         last_import_str = row["last_import"] if row else None
@@ -435,7 +435,7 @@ def _check_data_management(project_id, project_dir, conn):
     # Check model_snapshots table
     try:
         snap_row = conn.execute(
-            "SELECT COUNT(*) as cnt FROM model_snapshots WHERE project_id = ?",
+            "SELECT COUNT(*) as cnt FROM model_snapshots WHERE project_id = %s",
             (project_id,),
         ).fetchone()
         snapshot_count = snap_row["cnt"] if snap_row else 0
@@ -485,7 +485,7 @@ def _check_model_code_sync(project_id, project_dir, conn):
     try:
         rows = conn.execute(
             """SELECT sync_status, COUNT(*) as cnt
-               FROM model_code_mappings WHERE project_id = ?
+               FROM model_code_mappings WHERE project_id = %s
                GROUP BY sync_status""",
             (project_id,),
         ).fetchall()
@@ -540,7 +540,7 @@ def _check_requirements_linked(project_id, project_dir, conn):
     """
     try:
         req_row = conn.execute(
-            "SELECT COUNT(*) as cnt FROM doors_requirements WHERE project_id = ?",
+            "SELECT COUNT(*) as cnt FROM doors_requirements WHERE project_id = %s",
             (project_id,),
         ).fetchone()
         req_count = req_row["cnt"] if req_row else 0
@@ -558,7 +558,7 @@ def _check_requirements_linked(project_id, project_dir, conn):
         linked_row = conn.execute(
             """SELECT COUNT(DISTINCT source_id) as cnt
                FROM digital_thread_links
-               WHERE project_id = ? AND source_type = 'requirement'""",
+               WHERE project_id = %s AND source_type = 'requirement'""",
             (project_id,),
         ).fetchone()
         linked_count = linked_row["cnt"] if linked_row else 0
@@ -596,7 +596,7 @@ def _check_model_based_testing(project_id, project_dir, conn):
         test_row = conn.execute(
             """SELECT COUNT(*) as cnt
                FROM digital_thread_links
-               WHERE project_id = ?
+               WHERE project_id = %s
                  AND (target_type = 'test' OR source_type = 'test'
                       OR link_type = 'verifies' OR link_type = 'verify')""",
             (project_id,),
@@ -619,7 +619,7 @@ def _check_model_based_testing(project_id, project_dir, conn):
         total_row = conn.execute(
             """SELECT COUNT(DISTINCT source_id) as cnt
                FROM digital_thread_links
-               WHERE project_id = ? AND source_type = 'requirement'""",
+               WHERE project_id = %s AND source_type = 'requirement'""",
             (project_id,),
         ).fetchone()
         total_reqs_linked = total_row["cnt"] if total_row else 0
@@ -649,7 +649,7 @@ def _check_model_compliance_mapping(project_id, project_dir, conn):
         ctrl_row = conn.execute(
             """SELECT COUNT(*) as cnt
                FROM digital_thread_links
-               WHERE project_id = ?
+               WHERE project_id = %s
                  AND (target_type = 'control' OR source_type = 'control'
                       OR link_type = 'implements_control'
                       OR link_type = 'satisfies_control')""",
@@ -691,7 +691,7 @@ def _check_pi_snapshots(project_id, project_dir, conn):
     try:
         rows = conn.execute(
             """SELECT snapshot_date FROM model_snapshots
-               WHERE project_id = ?
+               WHERE project_id = %s
                ORDER BY snapshot_date DESC""",
             (project_id,),
         ).fetchall()
@@ -900,7 +900,7 @@ def run_des_assessment(project_id, project_dir, db_path=None):
                        (project_id, requirement_id, requirement_title,
                         category, status, evidence, automation_result,
                         assessed_at, notes)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                     (
                         project_id,
                         req_id,

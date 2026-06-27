@@ -75,7 +75,7 @@ def is_claimed(issue_iid: int) -> bool:
     try:
         conn = get_connection()
         row = conn.execute(
-            "SELECT id FROM gitlab_task_claims WHERE issue_iid = ? AND status NOT IN ('failed')",
+            "SELECT id FROM gitlab_task_claims WHERE issue_iid = %s AND status NOT IN ('failed')",
             (issue_iid,),
         ).fetchone()
         conn.close()
@@ -91,7 +91,7 @@ def claim_issue(issue_iid: int, issue_url: str, icdev_tag: str, worktree_name: s
         cur = conn.execute(
             """INSERT INTO gitlab_task_claims
                (issue_iid, issue_url, icdev_tag, worktree_name, status)
-               VALUES (?, ?, ?, ?, 'claimed')""",
+               VALUES (%s, %s, %s, %s, 'claimed')""",
             (issue_iid, issue_url, icdev_tag, worktree_name),
         )
         conn.commit()
@@ -109,12 +109,12 @@ def update_claim(issue_iid: int, status: str, run_id: str = None):
         conn = get_connection()
         if run_id:
             conn.execute(
-                "UPDATE gitlab_task_claims SET status = ?, run_id = ?, completed_at = datetime('now') WHERE issue_iid = ? AND status = 'claimed'",  # noqa: E501
+                "UPDATE gitlab_task_claims SET status = %s, run_id = %s, completed_at = datetime('now') WHERE issue_iid = %s AND status = 'claimed'",  # noqa: E501
                 (status, run_id, issue_iid),
             )
         else:
             conn.execute(
-                "UPDATE gitlab_task_claims SET status = ? WHERE issue_iid = ? AND status IN ('claimed', 'processing')",
+                "UPDATE gitlab_task_claims SET status = %s WHERE issue_iid = %s AND status IN ('claimed', 'processing')",
                 (status, issue_iid),
             )
         conn.commit()

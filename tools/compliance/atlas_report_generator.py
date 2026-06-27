@@ -280,7 +280,7 @@ class ATLASReportGenerator:
         """Load project data from database."""
         conn = self._get_connection()
         try:
-            row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+            row = conn.execute("SELECT * FROM projects WHERE id = %s", (project_id,)).fetchone()
             if not row:
                 raise ValueError(f"Project '{project_id}' not found in database.")
             return dict(row)
@@ -300,7 +300,7 @@ class ATLASReportGenerator:
             try:
                 rows = conn.execute(
                     """SELECT * FROM atlas_assessments
-                       WHERE project_id = ?
+                       WHERE project_id = %s
                        ORDER BY requirement_id""",
                     (project_id,),
                 ).fetchall()
@@ -800,7 +800,7 @@ class ATLASReportGenerator:
                 """INSERT INTO audit_trail
                    (project_id, event_type, actor, action, details,
                     affected_files, classification)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s)""",
                 (
                     project_id,
                     "atlas_assessed",
@@ -882,7 +882,7 @@ class ATLASReportGenerator:
             # 6. Determine version
             report_count_row = conn.execute(
                 """SELECT COUNT(*) as cnt FROM audit_trail
-                   WHERE project_id = ? AND event_type = 'atlas_assessed'
+                   WHERE project_id = %s AND event_type = 'atlas_assessed'
                    AND action LIKE '%report%'""",
                 (project_id,),
             ).fetchone()

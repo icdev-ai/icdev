@@ -32,7 +32,7 @@ def emit_event(
         conn = get_connection()
         conn.execute(
             "INSERT INTO aadc_design_events (design_id, event_type, actor, metadata_json) "
-            "VALUES (?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s)",
             (
                 design_id,
                 event_type,

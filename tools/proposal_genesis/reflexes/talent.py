@@ -60,7 +60,7 @@ def _get_recent_signals(days: int = 30) -> List[Dict]:
             "SELECT id, competitor_name, role_title, skill_tags, "
             "location, clearance_required, scan_date "
             "FROM pg_talent_signals "
-            "WHERE scan_date >= datetime('now', ?) "
+            "WHERE scan_date >= datetime('now', %s) "
             "ORDER BY scan_date DESC "
             "LIMIT 200",
             (f"-{days} days",),
@@ -269,7 +269,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         conn.execute(
             "INSERT INTO pg_proposal_genesis_audit "
             "(id, event_type, reflex_name, risk_tier, details, success, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (
                 _generate_id("pgaudit"),
                 "talent_scan",

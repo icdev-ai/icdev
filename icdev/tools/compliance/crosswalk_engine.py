@@ -170,7 +170,7 @@ def get_baseline_from_categorization(project_id, db_path=None):
                 """SELECT confidentiality_impact, integrity_impact, availability_impact,
                           overall_categorization, baseline_selected, status
                    FROM fips199_categorizations
-                   WHERE project_id = ? AND status IN ('approved', 'draft')
+                   WHERE project_id = %s AND status IN ('approved', 'draft')
                    ORDER BY CASE status WHEN 'approved' THEN 1 ELSE 2 END,
                             categorization_date DESC
                    LIMIT 1""",
@@ -193,7 +193,7 @@ def get_baseline_from_categorization(project_id, db_path=None):
 
         # Try projects.fips199_overall
         proj = conn.execute(
-            "SELECT fips199_overall, impact_level FROM projects WHERE id = ?",
+            "SELECT fips199_overall, impact_level FROM projects WHERE id = %s",
             (project_id,),
         ).fetchone()
         if proj:
@@ -240,7 +240,7 @@ def _log_audit_event(conn, project_id, action, details):
             """INSERT INTO audit_trail
                (project_id, event_type, actor, action, details,
                 affected_files, classification)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
             (
                 project_id,
                 "compliance_check",
@@ -554,7 +554,7 @@ def compute_crosswalk_coverage(project_id, db_path=None):
         rows = conn.execute(
             """SELECT control_id, implementation_status
                FROM project_controls
-               WHERE project_id = ?""",
+               WHERE project_id = %s""",
             (project_id,),
         ).fetchall()
 
@@ -600,7 +600,7 @@ def compute_crosswalk_coverage(project_id, db_path=None):
                    (project_id, framework_id, total_controls,
                     implemented_controls, coverage_pct, gate_status,
                     last_assessed, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     project_id,
                     fw_key,
@@ -658,7 +658,7 @@ def get_gap_analysis(project_id, target_framework, baseline=None, db_path=None):
         rows = conn.execute(
             """SELECT control_id, implementation_status
                FROM project_controls
-               WHERE project_id = ?""",
+               WHERE project_id = %s""",
             (project_id,),
         ).fetchall()
 
@@ -752,7 +752,7 @@ def map_implementation_across_frameworks(project_id, control_id, db_path=None):
         row = conn.execute(
             """SELECT implementation_status
                FROM project_controls
-               WHERE project_id = ? AND control_id = ?""",
+               WHERE project_id = %s AND control_id = %s""",
             (project_id, control_upper),
         ).fetchone()
 
@@ -779,7 +779,7 @@ def map_implementation_across_frameworks(project_id, control_id, db_path=None):
                     """INSERT OR REPLACE INTO control_crosswalk
                        (nist_800_53_id, framework_id, framework_control_id,
                         mapping_type, created_at)
-                       VALUES (?, ?, ?, ?, ?)""",
+                       VALUES (%s, %s, %s, %s, %s)""",
                     (
                         control_upper,
                         fw_key,

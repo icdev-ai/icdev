@@ -129,7 +129,7 @@ def embed_unembedded(db_path=None):
                     emb = provider.embed(text)
                     blob = struct.pack(f"{len(emb)}f", *emb)
                     c.execute(
-                        "UPDATE memory_entries SET embedding = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                        "UPDATE memory_entries SET embedding = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s",
                         (blob, ids[j]),
                     )
                     embedded += 1
@@ -139,7 +139,7 @@ def embed_unembedded(db_path=None):
                 for j, emb_data in enumerate(response.data):
                     blob = struct.pack(f"{len(emb_data.embedding)}f", *emb_data.embedding)
                     c.execute(
-                        "UPDATE memory_entries SET embedding = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                        "UPDATE memory_entries SET embedding = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s",
                         (blob, ids[j]),
                     )
                     embedded += 1

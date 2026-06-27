@@ -121,7 +121,7 @@ def seed_network_canvas(tenant_id: str, _conn: Any = None) -> dict:
         _conn.execute(
             """INSERT OR IGNORE INTO topologies
                (id, name, description, graph_json, classification, created_at, updated_at)
-               VALUES (?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s)""",
             (
                 _uid("topo", 0),
                 "Demo Network — ACME Corp HQ",
@@ -230,7 +230,7 @@ def seed_security_canvas(tenant_id: str, _conn: Any = None) -> dict:
         _conn.execute(
             """INSERT OR IGNORE INTO security_designs
                (id, name, description, graph_json, classification, created_at, updated_at)
-               VALUES (?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s)""",
             (
                 _SC_DESIGN_ID,
                 "Demo Security Design — ACME Corp",
@@ -246,7 +246,7 @@ def seed_security_canvas(tenant_id: str, _conn: Any = None) -> dict:
                 """INSERT OR IGNORE INTO sc_threats
                    (id, design_id, threat_category, mitre_technique, mitre_tactic,
                     title, likelihood, impact, risk_score, status, created_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (
                     _uid("sct", i), _SC_DESIGN_ID, cat, tech, tactic,
                     title, likelihood, impact, score, "open", _NOW,
@@ -258,7 +258,7 @@ def seed_security_canvas(tenant_id: str, _conn: Any = None) -> dict:
                 """INSERT OR IGNORE INTO sc_controls
                    (id, design_id, control_family, control_id, title,
                     implementation_status, created_at)
-                   VALUES (?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s)""",
                 (_uid("scc", i), _SC_DESIGN_ID, family, ctrl_id, title, status, _NOW),
             )
 
@@ -273,7 +273,7 @@ def seed_security_canvas(tenant_id: str, _conn: Any = None) -> dict:
                 """INSERT OR IGNORE INTO sc_assessments
                    (id, design_id, assessment_type, total_threats, total_controls,
                     risk_score, posture_grade, findings_json, ran_at)
-                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (
                     _uid("sca", i), _SC_DESIGN_ID, "automated",
                     len(_SC_THREATS), len(_SC_CONTROLS),
@@ -373,7 +373,7 @@ def seed_dic_canvas(tenant_id: str, _conn: Any = None) -> dict:
                 """INSERT OR IGNORE INTO dic_collections
                    (collection_id, name, description, owner_id,
                     classification, tenant_id, created_at)
-                   VALUES (?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s)""",
                 (cid, name, desc, "demo-admin", "CUI", tenant_id, _NOW),
             )
 
@@ -384,7 +384,7 @@ def seed_dic_canvas(tenant_id: str, _conn: Any = None) -> dict:
                 """INSERT OR IGNORE INTO dic_ingest_jobs
                    (job_id, filename, collection_id, status, chunks_total,
                     chunks_done, doc_id, tenant_id, created_at, updated_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (
                     _uid("dcj", i), filename, col_ids[col_idx],
                     "completed", chunks, chunks, doc_id, tenant_id, _NOW, _NOW,
@@ -472,14 +472,14 @@ def seed_compliance_canvas(tenant_id: str, _conn: Any = None) -> dict:
             _conn.execute(
                 """INSERT OR IGNORE INTO demo_compliance_frameworks
                    (id, name, slug, description, tenant_id, created_at)
-                   VALUES (?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s)""",
                 (fid, name, slug, desc, tenant_id, _NOW),
             )
             for ci, (ctrl_title, ctrl_desc, ctrl_status) in enumerate(_CONTROL_TEMPLATE):
                 _conn.execute(
                     """INSERT OR IGNORE INTO demo_compliance_controls
                        (id, framework_id, title, description, status, tenant_id, created_at)
-                       VALUES (?,?,?,?,?,?,?)""",
+                       VALUES (%s,%s,%s,%s,%s,%s,%s)""",
                     (
                         _uid(f"dcc-{fi}", ci), fid,
                         ctrl_title, ctrl_desc, ctrl_status, tenant_id, _NOW,
@@ -604,7 +604,7 @@ def seed_agentic_canvas(tenant_id: str, _conn: Any = None) -> dict:
                    (id, name, description, domain, classification,
                     graph_json, autonomy_max, safety_impacting,
                     hitl_required, created_at, updated_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (
                     _uid("wf", i),
                     wf["name"], wf["description"], wf["domain"],
@@ -699,7 +699,7 @@ def seed_kanban_canvas(tenant_id: str, _conn: Any = None) -> dict:
                 """INSERT OR IGNORE INTO kanban_tasks
                    (id, title, description, task_type, priority, status,
                     dispatch_source, created_at, updated_at)
-                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (task_id, title, desc, ttype, priority, "backlog", "demo_seeder", _NOW, _NOW),
             )
 

@@ -74,7 +74,7 @@ def match_campaigns(beacon_hash: str) -> list[dict[str, Any]]:
         """
         SELECT substr(detected_at, 1, 10) AS day, COUNT(*) AS cnt
         FROM   sg_sigint_events
-        WHERE  beacon_hash = ?
+        WHERE  beacon_hash = %s
         GROUP  BY day
         ORDER  BY day DESC
         """,
@@ -99,7 +99,7 @@ def attribution_score(beacon_hash: str) -> float:
     conn = get_connection()
 
     occurrence_count: int = conn.execute(
-        "SELECT COUNT(*) FROM sg_sigint_events WHERE beacon_hash = ?",
+        "SELECT COUNT(*) FROM sg_sigint_events WHERE beacon_hash = %s",
         (beacon_hash,),
     ).fetchone()[0]
 
@@ -143,7 +143,7 @@ def record_event(
         INSERT INTO sg_sigint_events
             (id, beacon_hash, freq_mhz, signal_type, attribution_score,
              lat, lon, raw_iq_ref, detected_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         """,
         (
             event_id,

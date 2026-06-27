@@ -252,9 +252,9 @@ def _upsert_rows(conn, rows: list[dict], now_ts: str) -> tuple[int, int]:
                      actor1, actor2, event_code, goldstein_scale, lat, lon,
                      aoi, avg_tone, num_mentions, source_url, metadata_json)
                 VALUES
-                    (?, 'narrative_event', 'gdelt', ?, ?, ?,
-                     ?, ?, ?, ?, ?, ?,
-                     ?, ?, ?, ?, ?)
+                    (%s, 'narrative_event', 'gdelt', %s, %s, %s,
+                     %s, %s, %s, %s, %s, %s,
+                     %s, %s, %s, %s, %s)
                 """,
                 (
                     row_id,

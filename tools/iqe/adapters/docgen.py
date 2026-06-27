@@ -31,27 +31,27 @@ def search(collection: str, query: str, limit: int = 20) -> list[dict[str, Any]]
     with get_connection() as conn:
         if collection == "docgen.sessions":
             rows = conn.execute(
-                "SELECT * FROM idr_sessions WHERE lower(title) LIKE ? OR lower(status) LIKE ? OR lower(domain) LIKE ? LIMIT ?",
+                "SELECT * FROM idr_sessions WHERE lower(title) LIKE %s OR lower(status) LIKE %s OR lower(domain) LIKE %s LIMIT %s",
                 (q, q, q, limit),
             ).fetchall()
         elif collection == "docgen.uploads":
             rows = conn.execute(
-                "SELECT * FROM idr_uploads WHERE lower(filename) LIKE ? OR lower(upload_type) LIKE ? LIMIT ?",
+                "SELECT * FROM idr_uploads WHERE lower(filename) LIKE %s OR lower(upload_type) LIKE %s LIMIT %s",
                 (q, q, limit),
             ).fetchall()
         elif collection == "docgen.conflicts":
             rows = conn.execute(
-                "SELECT * FROM idr_conflicts WHERE lower(node_label) LIKE ? OR lower(conflict_type) LIKE ? LIMIT ?",
+                "SELECT * FROM idr_conflicts WHERE lower(node_label) LIKE %s OR lower(conflict_type) LIKE %s LIMIT %s",
                 (q, q, limit),
             ).fetchall()
         elif collection == "docgen.analyses":
             rows = conn.execute(
-                "SELECT * FROM idr_analyses WHERE lower(analysis_type) LIKE ? LIMIT ?",
+                "SELECT * FROM idr_analyses WHERE lower(analysis_type) LIKE %s LIMIT %s",
                 (q, limit),
             ).fetchall()
         elif collection == "docgen.artifacts":
             rows = conn.execute(
-                "SELECT * FROM idr_artifacts WHERE lower(format) LIKE ? LIMIT ?",
+                "SELECT * FROM idr_artifacts WHERE lower(format) LIKE %s LIMIT %s",
                 (q, limit),
             ).fetchall()
         else:

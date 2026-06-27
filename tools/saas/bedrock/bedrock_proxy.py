@@ -114,7 +114,7 @@ def _load_tenant_bedrock_config(tenant_id: str) -> dict:
     conn = get_platform_connection()
     try:
         row = conn.execute(
-            "SELECT bedrock_config FROM tenants WHERE id = ?",
+            "SELECT bedrock_config FROM tenants WHERE id = %s",
             (tenant_id,),
         ).fetchone()
         if not row:

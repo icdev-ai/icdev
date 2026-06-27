@@ -1732,7 +1732,7 @@ def get_workflow(workflow_id: str) -> dict | None:
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT * FROM studio_workflows WHERE workflow_id = ?",
+            "SELECT * FROM studio_workflows WHERE workflow_id = %s",
             (workflow_id,),
         ).fetchone()
         return dict(row) if row else None
@@ -1773,7 +1773,7 @@ def create_workflow(
             """INSERT INTO studio_workflows
                (workflow_id, name, description, template_yaml, category,
                 created_by, created_at, updated_at, classification)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (wf_id, name, description, template_yaml, category, created_by, now, now,
              classification),
         )
@@ -1800,7 +1800,7 @@ def save_workflow(
             """INSERT INTO studio_workflows
                (workflow_id, name, description, template_yaml, category,
                 created_by, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
             (workflow_id, name, description, template_yaml, category, created_by, now, now),
         )
         conn.commit()
@@ -1872,13 +1872,13 @@ def delete_workflow(workflow_id: str) -> dict:
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT workflow_id FROM studio_workflows WHERE workflow_id = ?",
+            "SELECT workflow_id FROM studio_workflows WHERE workflow_id = %s",
             (workflow_id,),
         ).fetchone()
         if not row:
             return {"status": "error", "error": "Workflow not found"}
         conn.execute(
-            "DELETE FROM studio_workflows WHERE workflow_id = ?",
+            "DELETE FROM studio_workflows WHERE workflow_id = %s",
             (workflow_id,),
         )
         conn.commit()

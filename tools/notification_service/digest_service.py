@@ -273,14 +273,14 @@ def send_genesis_phase_summary(design_id: str, recipient: str, ai_narrative: boo
     conn = get_connection()
     phases = conn.execute(
         "SELECT phase, status, started_at, completed_at FROM genesis_phase_log "
-        "WHERE design_id=? ORDER BY started_at", (design_id,)
+        "WHERE design_id=%s ORDER BY started_at", (design_id,)
     ).fetchall()
     design = conn.execute(
-        "SELECT name, status, current_phase FROM genesis_designs WHERE id=?", (design_id,)
+        "SELECT name, status, current_phase FROM genesis_designs WHERE id=%s", (design_id,)
     ).fetchone()
     reflexes = conn.execute(
         "SELECT name, confidence, fired_at FROM genesis_reflexes "
-        "WHERE design_id=? ORDER BY fired_at DESC LIMIT 5", (design_id,)
+        "WHERE design_id=%s ORDER BY fired_at DESC LIMIT 5", (design_id,)
     ).fetchall()
     conn.close()
     rendered = render_template(

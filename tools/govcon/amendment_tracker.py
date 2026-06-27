@@ -67,7 +67,7 @@ def _audit(conn, action, details="", actor="amendment_tracker"):
     try:
         conn.execute(
             "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (_uuid(), _now(), "govcon.amendment", actor, action, details, "govcon"),
         )
     except Exception:
@@ -128,13 +128,13 @@ def upload_amendment(opp_id, title, file_path=None, text=None, description=None,
     conn = _get_db()
     try:
         # Verify opportunity exists
-        opp = conn.execute("SELECT id, title FROM proposal_opportunities WHERE id = ?", (opp_id,)).fetchone()
+        opp = conn.execute("SELECT id, title FROM proposal_opportunities WHERE id = %s", (opp_id,)).fetchone()
         if not opp:
             return {"status": "error", "message": f"Opportunity {opp_id} not found"}
 
         # Get next version number
         row = conn.execute(
-            "SELECT MAX(version_number) as max_ver FROM proposal_amendments WHERE opportunity_id = ?",
+            "SELECT MAX(version_number) as max_ver FROM proposal_amendments WHERE opportunity_id = %s",
             (opp_id,),
         ).fetchone()
         next_version = (row["max_ver"] or 0) + 1
@@ -145,7 +145,7 @@ def upload_amendment(opp_id, title, file_path=None, text=None, description=None,
         changes_detected = 0
         if next_version > 1:
             prev = conn.execute(
-                "SELECT amendment_text FROM proposal_amendments WHERE opportunity_id = ? AND version_number = ? ",
+                "SELECT amendment_text FROM proposal_amendments WHERE opportunity_id = %s AND version_number = %s ",
                 (opp_id, next_version - 1),
             ).fetchone()
             if prev and prev["amendment_text"]:
@@ -161,7 +161,7 @@ def upload_amendment(opp_id, title, file_path=None, text=None, description=None,
             "(id, opportunity_id, version_number, title, description, amendment_date, "
             " source_type, file_path, amendment_text, diff_summary, diff_data, "
             " changes_detected, uploaded_by, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 amendment_id,
                 opp_id,
@@ -182,7 +182,7 @@ def upload_amendment(opp_id, title, file_path=None, text=None, description=None,
 
         # Update amendment_count on opportunity
         conn.execute(
-            "UPDATE proposal_opportunities SET amendment_count = ?, updated_at = ? WHERE id = ?",
+            "UPDATE proposal_opportunities SET amendment_count = %s, updated_at = %s WHERE id = %s",
             (next_version, now, opp_id),
         )
 
@@ -190,7 +190,7 @@ def upload_amendment(opp_id, title, file_path=None, text=None, description=None,
         conn.execute(
             "INSERT INTO proposal_status_history "
             "(entity_type, entity_id, old_status, new_status, changed_by, reason) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s)",
             ("amendment", amendment_id, "", "uploaded", uploaded_by or "system", f"Amendment v{next_version}: {title}"),
         )
 
@@ -267,7 +267,7 @@ def compute_diff(amendment_id):
     """
     conn = _get_db()
     try:
-        amend = conn.execute("SELECT * FROM proposal_amendments WHERE id = ?", (amendment_id,)).fetchone()
+        amend = conn.execute("SELECT * FROM proposal_amendments WHERE id = %s", (amendment_id,)).fetchone()
         if not amend:
             return {"status": "error", "message": f"Amendment {amendment_id} not found"}
 
@@ -295,7 +295,7 @@ def compute_diff(amendment_id):
             }
 
         prev = conn.execute(
-            "SELECT amendment_text FROM proposal_amendments WHERE opportunity_id = ? AND version_number = ?",
+            "SELECT amendment_text FROM proposal_amendments WHERE opportunity_id = %s AND version_number = %s",
             (amend["opportunity_id"], amend["version_number"] - 1),
         ).fetchone()
 
@@ -306,7 +306,7 @@ def compute_diff(amendment_id):
 
         # Store computed diff
         conn.execute(
-            "UPDATE proposal_amendments SET diff_data = ?, diff_summary = ?, changes_detected = ? WHERE id = ?",
+            "UPDATE proposal_amendments SET diff_data = %s, diff_summary = %s, changes_detected = %s WHERE id = %s",
             (json.dumps(result["diff_data"]), result["summary"], result["changes_detected"], amendment_id),
         )
         conn.commit()
@@ -330,7 +330,7 @@ def list_amendments(opp_id):
         rows = conn.execute(
             "SELECT id, version_number, title, description, amendment_date, "
             "source_type, diff_summary, changes_detected, uploaded_by, created_at "
-            "FROM proposal_amendments WHERE opportunity_id = ? ORDER BY version_number ASC",
+            "FROM proposal_amendments WHERE opportunity_id = %s ORDER BY version_number ASC",
             (opp_id,),
         ).fetchall()
 
@@ -373,7 +373,7 @@ def record_response(
     try:
         # Verify question exists and get opportunity_id
         q = conn.execute(
-            "SELECT id, opportunity_id, status FROM proposal_questions WHERE id = ?",
+            "SELECT id, opportunity_id, status FROM proposal_questions WHERE id = %s",
             (question_id,),
         ).fetchone()
         if not q:
@@ -387,7 +387,7 @@ def record_response(
             "INSERT INTO proposal_question_responses "
             "(id, question_id, opportunity_id, amendment_id, response_text, "
             " response_date, impacts_requirements, impact_notes, recorded_by, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 response_id,
                 question_id,
@@ -405,7 +405,7 @@ def record_response(
         # Update question status to 'answered'
         old_status = q["status"]
         conn.execute(
-            "UPDATE proposal_questions SET status = 'answered', updated_at = ? WHERE id = ?",
+            "UPDATE proposal_questions SET status = 'answered', updated_at = %s WHERE id = %s",
             (now, question_id),
         )
 
@@ -413,7 +413,7 @@ def record_response(
         conn.execute(
             "INSERT INTO proposal_status_history "
             "(entity_type, entity_id, old_status, new_status, changed_by, reason) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s)",
             (
                 "question",
                 question_id,

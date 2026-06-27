@@ -65,7 +65,7 @@ class NoOpFabricClient:
 
             conn = get_connection()
             conn.execute(
-                "INSERT INTO govchain_pending_operations (operation_type, payload_hash, status) VALUES (?, ?, ?)",
+                "INSERT INTO govchain_pending_operations (operation_type, payload_hash, status) VALUES (%s, %s, %s)",
                 (operation_type, payload_hash, "pending"),
             )
             conn.commit()

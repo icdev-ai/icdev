@@ -250,7 +250,7 @@ def _log_audit(project_path: str, files: List[str], spec: str) -> None:
         c = conn.cursor()
         c.execute(
             """INSERT INTO audit_trail (project_id, event_type, actor, action, details, affected_files, classification)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
             (
                 None,
                 "code_generated",

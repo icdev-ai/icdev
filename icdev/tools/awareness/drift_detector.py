@@ -123,7 +123,7 @@ def _latest_status_per_node_probe(
     rows = conn.execute(
         "SELECT node_id, probe_type, status, detail, probed_at "
         "FROM awareness_component_health "
-        "WHERE probed_at >= ? "
+        "WHERE probed_at >= %s "
         "ORDER BY node_id, probe_type, probed_at ASC",
         (cutoff,),
     ).fetchall()
@@ -147,9 +147,9 @@ def _recent_prediction_exists(
     try:
         row = conn.execute(
             "SELECT 1 FROM oracle_predictions "
-            "WHERE lens_name = ? AND subject_id = ? "
-            "  AND prediction_type = ? "
-            "  AND created_at >= ? "
+            "WHERE lens_name = %s AND subject_id = %s "
+            "  AND prediction_type = %s "
+            "  AND created_at >= %s "
             "LIMIT 1",
             (LENS_NAME, node_id, f"regression::{probe_type}", cutoff),
         ).fetchone()
@@ -245,7 +245,7 @@ def _write_prediction(
             "(id, lens_id, lens_name, prediction_text, confidence, "
             " created_at, subject_type, subject_id, prediction_type, "
             " severity, horizon_days, evidence_json, classification) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 pred_id,
                 "internal_awareness",
@@ -350,13 +350,13 @@ def get_stats() -> Dict[str, Any]:
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT COUNT(*) AS cnt FROM oracle_predictions WHERE lens_name = ?",
+            "SELECT COUNT(*) AS cnt FROM oracle_predictions WHERE lens_name = %s",
             (LENS_NAME,),
         ).fetchone()
         total = dict(row).get("cnt", 0) if row else 0
         rows = conn.execute(
             "SELECT severity, COUNT(*) AS cnt FROM oracle_predictions "
-            "WHERE lens_name = ? GROUP BY severity",
+            "WHERE lens_name = %s GROUP BY severity",
             (LENS_NAME,),
         ).fetchall()
         by_severity = {dict(r)["severity"]: dict(r)["cnt"] for r in rows}

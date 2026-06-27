@@ -183,7 +183,7 @@ _BASELINE_FINDINGS: dict[str, list[dict]] = {
 def _load_session(conn, session_id: str) -> dict[str, Any]:
     row = conn.execute(
         "SELECT id, canvas_type, topology_id, mode, metadata "
-        "FROM nc_simulation_sessions WHERE id = ?",
+        "FROM nc_simulation_sessions WHERE id = %s",
         (session_id,),
     ).fetchone()
     if row is None:
@@ -202,7 +202,7 @@ def _load_graph_json(conn, session: dict[str, Any]) -> dict[str, Any]:
     topology_id = session.get("topology_id")
     if topology_id:
         row = conn.execute(
-            "SELECT graph_json FROM topologies WHERE id = ?", (topology_id,)
+            "SELECT graph_json FROM topologies WHERE id = %s", (topology_id,)
         ).fetchone()
         if row and row[0]:
             try:
@@ -215,7 +215,7 @@ def _load_graph_json(conn, session: dict[str, Any]) -> dict[str, Any]:
 def _persist_poam_findings(conn, session_id: str, findings: list[dict]) -> None:
     """Persist POA&M findings to session metadata."""
     row = conn.execute(
-        "SELECT metadata FROM nc_simulation_sessions WHERE id = ?", (session_id,)
+        "SELECT metadata FROM nc_simulation_sessions WHERE id = %s", (session_id,)
     ).fetchone()
     if not row:
         return
@@ -231,7 +231,7 @@ def _persist_poam_findings(conn, session_id: str, findings: list[dict]) -> None:
             existing.append(f)
     meta["poam_findings"] = existing
     conn.execute(
-        "UPDATE nc_simulation_sessions SET metadata = ? WHERE id = ?",
+        "UPDATE nc_simulation_sessions SET metadata = %s WHERE id = %s",
         (json.dumps(meta), session_id),
     )
     conn.commit()
@@ -239,7 +239,7 @@ def _persist_poam_findings(conn, session_id: str, findings: list[dict]) -> None:
 
 def _load_persisted_findings(conn, session_id: str) -> list[dict]:
     row = conn.execute(
-        "SELECT metadata FROM nc_simulation_sessions WHERE id = ?", (session_id,)
+        "SELECT metadata FROM nc_simulation_sessions WHERE id = %s", (session_id,)
     ).fetchone()
     if not row:
         return []

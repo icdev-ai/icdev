@@ -283,11 +283,11 @@ def graph_evolution(
     _ensure_tables(conn)
 
     nodes = conn.execute(
-        "SELECT created_at FROM kg_nodes WHERE graph_id = ? ORDER BY created_at",
+        "SELECT created_at FROM kg_nodes WHERE graph_id = %s ORDER BY created_at",
         (graph_id,),
     ).fetchall()
     edges = conn.execute(
-        "SELECT created_at FROM kg_edges WHERE graph_id = ? ORDER BY created_at",
+        "SELECT created_at FROM kg_edges WHERE graph_id = %s ORDER BY created_at",
         (graph_id,),
     ).fetchall()
     conn.close()
@@ -533,25 +533,25 @@ def temporal_diff(
 
     nodes = conn.execute(
         "SELECT id, label, entity_type, centrality, created_at "
-        "FROM kg_nodes WHERE graph_id = ? AND created_at >= ? AND created_at < ? "
+        "FROM kg_nodes WHERE graph_id = %s AND created_at >= %s AND created_at < %s "
         "ORDER BY created_at",
         (graph_id, norm_a, norm_b),
     ).fetchall()
 
     edges = conn.execute(
         "SELECT id, source_id, target_id, relationship, weight, created_at "
-        "FROM kg_edges WHERE graph_id = ? AND created_at >= ? AND created_at < ? "
+        "FROM kg_edges WHERE graph_id = %s AND created_at >= %s AND created_at < %s "
         "ORDER BY created_at",
         (graph_id, norm_a, norm_b),
     ).fetchall()
 
     # Count at date_a (everything before date_a)
     count_before_nodes = conn.execute(
-        "SELECT COUNT(*) as cnt FROM kg_nodes WHERE graph_id = ? AND created_at < ?",
+        "SELECT COUNT(*) as cnt FROM kg_nodes WHERE graph_id = %s AND created_at < %s",
         (graph_id, norm_a),
     ).fetchone()["cnt"]
     count_before_edges = conn.execute(
-        "SELECT COUNT(*) as cnt FROM kg_edges WHERE graph_id = ? AND created_at < ?",
+        "SELECT COUNT(*) as cnt FROM kg_edges WHERE graph_id = %s AND created_at < %s",
         (graph_id, norm_a),
     ).fetchone()["cnt"]
 

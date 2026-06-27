@@ -650,7 +650,7 @@ def generate_all(
     engine._ensure_tables(conn)
 
     flow_row = conn.execute(
-        "SELECT * FROM nc_traffic_flows WHERE id = ?", (flow_id,)
+        "SELECT * FROM nc_traffic_flows WHERE id = %s", (flow_id,)
     ).fetchone()
     if not flow_row:
         return {"steps": [], "summary": {}}
@@ -662,7 +662,7 @@ def generate_all(
 
     # Load full node dicts from topology graph
     topo_row = conn.execute(
-        "SELECT graph_json FROM topologies WHERE id = ?", (flow["topology_id"],)
+        "SELECT graph_json FROM topologies WHERE id = %s", (flow["topology_id"],)
     ).fetchone()
     nodes_dict: dict[str, dict] = {}
     if topo_row and topo_row["graph_json"]:
@@ -772,7 +772,7 @@ def generate_all(
     # Persist persona responses to nc_step_persona_responses (best-effort)
     try:
         step_id_rows = conn.execute(
-            "SELECT id, step_number FROM nc_flow_walkthrough_steps WHERE flow_id = ?",
+            "SELECT id, step_number FROM nc_flow_walkthrough_steps WHERE flow_id = %s",
             (flow_id,),
         ).fetchall()
         step_id_by_num = {r["step_number"]: r["id"] for r in step_id_rows}
@@ -784,7 +784,7 @@ def generate_all(
                 conn.execute(
                     "INSERT OR REPLACE INTO nc_step_persona_responses"
                     " (id, step_id, persona_id, narrative, detail_json)"
-                    " VALUES (?, ?, ?, ?, ?)",
+                    " VALUES (%s, %s, %s, %s, %s)",
                     (
                         str(uuid.uuid4()),
                         s_id,

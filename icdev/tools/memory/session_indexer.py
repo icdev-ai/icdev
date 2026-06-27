@@ -100,7 +100,7 @@ def index_session_turn(
         # Refresh FTS5 if available (SQLite only)
         if _is_sqlite(conn) and _fts5_available(conn):
             conn.execute(
-                "INSERT OR REPLACE INTO memory_fts(id, content, type, tags) VALUES (?, ?, ?, ?)",
+                "INSERT OR REPLACE INTO memory_fts(id, content, type, tags) VALUES (%s, %s, %s, %s)",
                 (entry_id, content, entry_type, tags),
             )
             conn.commit()
@@ -144,9 +144,9 @@ def search_history(query: str, limit: int = 20) -> list[dict]:
                 """SELECT id, content, type, tags,
                            bm25(memory_fts) AS score
                     FROM   memory_fts
-                    WHERE  memory_fts MATCH ?
+                    WHERE  memory_fts MATCH %s
                     ORDER  BY score
-                    LIMIT  ?""",
+                    LIMIT  %s""",
                 (safe_q, limit),
             ).fetchall()
             for row in rows:

@@ -179,7 +179,7 @@ def create_session(name, vertical_slug, description=None, focus_areas=None, db_p
     try:
         # Validate vertical exists
         vert = conn.execute(
-            "SELECT id, name FROM research_verticals WHERE slug = ?",
+            "SELECT id, name FROM research_verticals WHERE slug = %s",
             (vertical_slug,),
         ).fetchone()
         if not vert:
@@ -194,7 +194,7 @@ def create_session(name, vertical_slug, description=None, focus_areas=None, db_p
                (id, name, vertical_id, vertical_name, description, focus_areas,
                 status, pipeline_stage, signal_count, challenge_count,
                 created_at, updated_at, classification)
-               VALUES (?, ?, ?, ?, ?, ?, 'created', 'SCOPE', 0, 0, ?, ?, 'CUI')""",
+               VALUES (%s, %s, %s, %s, %s, %s, 'created', 'SCOPE', 0, 0, %s, %s, 'CUI')""",
             (
                 sid,
                 name,
@@ -209,7 +209,7 @@ def create_session(name, vertical_slug, description=None, focus_areas=None, db_p
         conn.commit()
 
         # Fetch the created session
-        row = conn.execute("SELECT * FROM research_sessions WHERE id = ?", (sid,)).fetchone()
+        row = conn.execute("SELECT * FROM research_sessions WHERE id = %s", (sid,)).fetchone()
         result = dict(row)
 
         _audit(
@@ -234,7 +234,7 @@ def get_session(session_id, db_path=None):
     """
     conn = _get_db(db_path)
     try:
-        row = conn.execute("SELECT * FROM research_sessions WHERE id = ?", (session_id,)).fetchone()
+        row = conn.execute("SELECT * FROM research_sessions WHERE id = %s", (session_id,)).fetchone()
         if not row:
             return {"error": f"Session not found: {session_id}"}
         return dict(row)
@@ -302,7 +302,7 @@ def advance_stage(session_id, db_path=None):
     """
     conn = _get_db(db_path)
     try:
-        row = conn.execute("SELECT * FROM research_sessions WHERE id = ?", (session_id,)).fetchone()
+        row = conn.execute("SELECT * FROM research_sessions WHERE id = %s", (session_id,)).fetchone()
         if not row:
             return {"error": f"Session not found: {session_id}"}
 
@@ -324,14 +324,14 @@ def advance_stage(session_id, db_path=None):
 
         conn.execute(
             """UPDATE research_sessions
-               SET pipeline_stage = ?, status = ?, updated_at = ?
-               WHERE id = ?""",
+               SET pipeline_stage = %s, status = %s, updated_at = %s
+               WHERE id = %s""",
             (next_stage, next_status, now, session_id),
         )
         conn.commit()
 
         # Fetch updated session
-        updated = conn.execute("SELECT * FROM research_sessions WHERE id = ?", (session_id,)).fetchone()
+        updated = conn.execute("SELECT * FROM research_sessions WHERE id = %s", (session_id,)).fetchone()
         result = dict(updated)
 
         _audit(
@@ -368,7 +368,7 @@ def update_session_status(session_id, status, db_path=None):
 
     conn = _get_db(db_path)
     try:
-        row = conn.execute("SELECT * FROM research_sessions WHERE id = ?", (session_id,)).fetchone()
+        row = conn.execute("SELECT * FROM research_sessions WHERE id = %s", (session_id,)).fetchone()
         if not row:
             return {"error": f"Session not found: {session_id}"}
 
@@ -377,13 +377,13 @@ def update_session_status(session_id, status, db_path=None):
 
         conn.execute(
             """UPDATE research_sessions
-               SET status = ?, updated_at = ?
-               WHERE id = ?""",
+               SET status = %s, updated_at = %s
+               WHERE id = %s""",
             (status, now, session_id),
         )
         conn.commit()
 
-        updated = conn.execute("SELECT * FROM research_sessions WHERE id = ?", (session_id,)).fetchone()
+        updated = conn.execute("SELECT * FROM research_sessions WHERE id = %s", (session_id,)).fetchone()
         result = dict(updated)
 
         _audit(
@@ -415,30 +415,30 @@ def update_session_counts(session_id, db_path=None):
     """
     conn = _get_db(db_path)
     try:
-        row = conn.execute("SELECT * FROM research_sessions WHERE id = ?", (session_id,)).fetchone()
+        row = conn.execute("SELECT * FROM research_sessions WHERE id = %s", (session_id,)).fetchone()
         if not row:
             return {"error": f"Session not found: {session_id}"}
 
         signal_count = conn.execute(
-            "SELECT COUNT(*) as cnt FROM research_signals WHERE session_id = ?",
+            "SELECT COUNT(*) as cnt FROM research_signals WHERE session_id = %s",
             (session_id,),
         ).fetchone()["cnt"]
 
         challenge_count = conn.execute(
-            "SELECT COUNT(*) as cnt FROM research_challenges WHERE session_id = ?",
+            "SELECT COUNT(*) as cnt FROM research_challenges WHERE session_id = %s",
             (session_id,),
         ).fetchone()["cnt"]
 
         now = _now()
         conn.execute(
             """UPDATE research_sessions
-               SET signal_count = ?, challenge_count = ?, updated_at = ?
-               WHERE id = ?""",
+               SET signal_count = %s, challenge_count = %s, updated_at = %s
+               WHERE id = %s""",
             (signal_count, challenge_count, now, session_id),
         )
         conn.commit()
 
-        updated = conn.execute("SELECT * FROM research_sessions WHERE id = ?", (session_id,)).fetchone()
+        updated = conn.execute("SELECT * FROM research_sessions WHERE id = %s", (session_id,)).fetchone()
         result = dict(updated)
 
         _audit(
@@ -467,7 +467,7 @@ def get_session_status(session_id, db_path=None):
     """
     conn = _get_db(db_path)
     try:
-        row = conn.execute("SELECT * FROM research_sessions WHERE id = ?", (session_id,)).fetchone()
+        row = conn.execute("SELECT * FROM research_sessions WHERE id = %s", (session_id,)).fetchone()
         if not row:
             return {"error": f"Session not found: {session_id}"}
 
@@ -475,12 +475,12 @@ def get_session_status(session_id, db_path=None):
 
         # Live counts from child tables
         signal_count = conn.execute(
-            "SELECT COUNT(*) as cnt FROM research_signals WHERE session_id = ?",
+            "SELECT COUNT(*) as cnt FROM research_signals WHERE session_id = %s",
             (session_id,),
         ).fetchone()["cnt"]
 
         challenge_count = conn.execute(
-            "SELECT COUNT(*) as cnt FROM research_challenges WHERE session_id = ?",
+            "SELECT COUNT(*) as cnt FROM research_challenges WHERE session_id = %s",
             (session_id,),
         ).fetchone()["cnt"]
 

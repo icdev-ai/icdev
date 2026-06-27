@@ -111,7 +111,7 @@ def store(
             """INSERT INTO agent_memory
                (id, agent_id, project_id, memory_type, content, importance,
                 task_id, related_agent_ids, expires_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (memory_id, agent_id, project_id, memory_type, content, importance, task_id, related_ids_json, expires_at),
         )
         conn.commit()
@@ -192,7 +192,7 @@ def recall(
                 """UPDATE agent_memory
                    SET access_count = access_count + 1,
                        last_accessed_at = datetime('now')
-                   WHERE id = ?""",
+                   WHERE id = %s""",
                 (mem["id"],),
             )
         conn.commit()
@@ -327,7 +327,7 @@ def record_collaboration(
             """INSERT INTO agent_collaboration_history
                (project_id, agent_a_id, agent_b_id, collaboration_type,
                 task_id, workflow_id, outcome, lesson_learned, duration_ms)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 project_id,
                 agent_a_id,

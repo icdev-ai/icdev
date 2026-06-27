@@ -65,7 +65,7 @@ def get_all_sops(sop_type=None, approval_status=None):
 def get_sop_by_id(sop_id):
     """Return a single SOP dict or None."""
     with _get_conn() as conn:
-        row = conn.execute("SELECT * FROM mc_sops WHERE id=?", (sop_id,)).fetchone()
+        row = conn.execute("SELECT * FROM mc_sops WHERE id=%s", (sop_id,)).fetchone()
     return _sop_to_dict(row)
 
 
@@ -85,7 +85,7 @@ def create_sop(data):
                 steps, nist_controls, owner, reviewer,
                 approval_status, version, next_review_date,
                 classification, created_at, updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (
                 sop_id,
                 data.get("title", "Untitled SOP"),
@@ -120,10 +120,10 @@ def update_sop(sop_id, data):
     with _get_conn() as conn:
         conn.execute(
             """UPDATE mc_sops SET
-               title=?, sop_type=?, description=?, purpose=?, scope=?,
-               steps=?, nist_controls=?, owner=?, reviewer=?,
-               version=?, next_review_date=?, classification=?, updated_at=?
-               WHERE id=?""",
+               title=%s, sop_type=%s, description=%s, purpose=%s, scope=%s,
+               steps=%s, nist_controls=%s, owner=%s, reviewer=%s,
+               version=%s, next_review_date=%s, classification=%s, updated_at=%s
+               WHERE id=%s""",
             (
                 data.get("title", existing["title"]),
                 data.get("sop_type", existing["sop_type"]),
@@ -148,7 +148,7 @@ def update_sop(sop_id, data):
 def delete_sop(sop_id):
     """Delete a SOP. Returns True if deleted, False if not found."""
     with _get_conn() as conn:
-        cur = conn.execute("DELETE FROM mc_sops WHERE id=?", (sop_id,))
+        cur = conn.execute("DELETE FROM mc_sops WHERE id=%s", (sop_id,))
         conn.commit()
     return cur.rowcount > 0
 
@@ -160,7 +160,7 @@ def submit_sop(sop_id):
     """Submit a draft SOP for review."""
     with _get_conn() as conn:
         conn.execute(
-            "UPDATE mc_sops SET approval_status='pending_review', updated_at=? WHERE id=? AND approval_status='draft'",
+            "UPDATE mc_sops SET approval_status='pending_review', updated_at=%s WHERE id=%s AND approval_status='draft'",
             (_now(), sop_id),
         )
         conn.commit()
@@ -172,7 +172,7 @@ def approve_sop(sop_id, approved_by=""):
     now = _now()
     with _get_conn() as conn:
         conn.execute(
-            "UPDATE mc_sops SET approval_status='approved', approved_by=?, approved_at=?, updated_at=? WHERE id=?",
+            "UPDATE mc_sops SET approval_status='approved', approved_by=%s, approved_at=%s, updated_at=%s WHERE id=%s",
             (approved_by, now, now, sop_id),
         )
         conn.commit()
@@ -196,7 +196,7 @@ def reject_sop(sop_id, reason=""):
     now = _now()
     with _get_conn() as conn:
         conn.execute(
-            "UPDATE mc_sops SET approval_status='rejected', rejected_reason=?, updated_at=? WHERE id=?",
+            "UPDATE mc_sops SET approval_status='rejected', rejected_reason=%s, updated_at=%s WHERE id=%s",
             (reason, now, sop_id),
         )
         conn.commit()

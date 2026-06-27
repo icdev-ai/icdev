@@ -180,8 +180,8 @@ class _AnomalyDetector:
                 """
                 SELECT decision, confidence, actual_outcome
                   FROM harness_eval
-                 WHERE reflex = ?
-                   AND created_at >= ?
+                 WHERE reflex = %s
+                   AND created_at >= %s
                    AND actual_outcome IS NOT NULL
                 ORDER BY created_at
                 """,
@@ -295,7 +295,7 @@ def record_decision(
             """
             INSERT INTO harness_eval
                 (id, task_id, reflex, decision, confidence, metadata_json, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 row_id,
@@ -329,9 +329,9 @@ def record_outcome(
         conn.execute(
             """
             UPDATE harness_eval
-               SET actual_outcome = ?,
-                   resolved_at    = ?
-             WHERE task_id = ?
+               SET actual_outcome = %s,
+                   resolved_at    = %s
+             WHERE task_id = %s
                AND actual_outcome IS NULL
             """,
             (actual_outcome, _utcnow(), task_id),
@@ -361,8 +361,8 @@ def compute_metrics(reflex: str, window_days: int = 30) -> dict[str, Any]:
             """
             SELECT decision, confidence, actual_outcome
               FROM harness_eval
-             WHERE reflex = ?
-               AND created_at >= ?
+             WHERE reflex = %s
+               AND created_at >= %s
             """,
             (reflex, cutoff),
         ).fetchall()

@@ -116,7 +116,7 @@ def _mac_check_parent_opp(opp_id, conn):
     """Check MAC read access on the parent opportunity. Returns 403 response or None."""
     try:
         row = conn.execute(
-            "SELECT classification, compartments FROM proposal_opportunities WHERE id = ?",
+            "SELECT classification, compartments FROM proposal_opportunities WHERE id = %s",
             (opp_id,),
         ).fetchone()
         if not row:
@@ -134,7 +134,7 @@ def _record_status_change(conn, entity_type, entity_id, old_status, new_status, 
     """Insert into append-only proposal_status_history."""
     conn.execute(
         "INSERT INTO proposal_status_history (entity_type, entity_id, old_status, new_status, changed_by, reason) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s)",
         (entity_type, entity_id, old_status, new_status, changed_by, reason),
     )
 
@@ -147,7 +147,7 @@ def _section_resource_attrs(request):
         try:
             conn = _get_db()
             row = conn.execute(
-                "SELECT writer_email FROM proposal_sections WHERE id = ?", (sec_id,)
+                "SELECT writer_email FROM proposal_sections WHERE id = %s", (sec_id,)
             ).fetchone()
             conn.close()
             if row:
@@ -248,7 +248,7 @@ def create_opportunity():
                 estimated_value_low, estimated_value_high, proposal_type,
                 status, rfp_document_path, rfp_url,
                 capture_manager, proposal_manager, created_by)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'intake', ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'intake', %s, %s, %s, %s, %s)""",
             (
                 opp_id,
                 data.get("project_id"),
@@ -282,7 +282,7 @@ def get_opportunity(opp_id):
     """GET /api/proposals/opportunities/<id> — Opportunity detail + aggregate stats."""
     conn = _get_db()
     try:
-        row = conn.execute("SELECT * FROM proposal_opportunities WHERE id = ?", (opp_id,)).fetchone()
+        row = conn.execute("SELECT * FROM proposal_opportunities WHERE id = %s", (opp_id,)).fetchone()
         if not row:
             return jsonify({"error": "Opportunity not found"}), 404
         # Bell-LaPadula: no-read-up check before serving data
@@ -292,12 +292,12 @@ def get_opportunity(opp_id):
         opp = dict(row)
 
         # Aggregate stats
-        sections = conn.execute("SELECT status FROM proposal_sections WHERE opportunity_id = ?", (opp_id,)).fetchall()
+        sections = conn.execute("SELECT status FROM proposal_sections WHERE opportunity_id = %s", (opp_id,)).fetchall()
         total_sections = len(sections)
         complete_sections = sum(1 for s in sections if s["status"] in ("final", "submitted"))
 
         cm_rows = conn.execute(
-            "SELECT compliance_status FROM proposal_compliance_matrix WHERE opportunity_id = ?", (opp_id,)
+            "SELECT compliance_status FROM proposal_compliance_matrix WHERE opportunity_id = %s", (opp_id,)
         ).fetchall()
         total_cm = len(cm_rows)
         addressed = sum(1 for c in cm_rows if c["compliance_status"] not in ("not_addressed",))
@@ -306,7 +306,7 @@ def get_opportunity(opp_id):
         findings = conn.execute(
             """SELECT f.severity, f.status FROM proposal_review_findings f
                JOIN proposal_reviews r ON f.review_id = r.id
-               WHERE r.opportunity_id = ?""",
+               WHERE r.opportunity_id = %s""",
             (opp_id,),
         ).fetchall()
         open_findings = sum(1 for f in findings if f["status"] in ("open", "in_progress"))
@@ -323,7 +323,7 @@ def get_opportunity(opp_id):
 
         # Review gate status
         reviews = conn.execute(
-            "SELECT review_type, status, scheduled_date, overall_rating FROM proposal_reviews WHERE opportunity_id = ? ORDER BY created_at",  # noqa: E501
+            "SELECT review_type, status, scheduled_date, overall_rating FROM proposal_reviews WHERE opportunity_id = %s ORDER BY created_at",  # noqa: E501
             (opp_id,),
         ).fetchall()
         gate_status = {}
@@ -358,7 +358,7 @@ def update_opportunity(opp_id):
     try:
         # Bell-LaPadula: check read + write access on existing record before updating
         existing = conn.execute(
-            "SELECT classification, compartments FROM proposal_opportunities WHERE id = ?", (opp_id,)
+            "SELECT classification, compartments FROM proposal_opportunities WHERE id = %s", (opp_id,)
         ).fetchone()
         if not existing:
             return jsonify({"error": "Opportunity not found"}), 404
@@ -418,7 +418,7 @@ def get_language_config(opp_id):
     conn = _get_db()
     try:
         existing = conn.execute(
-            "SELECT classification, compartments FROM proposal_opportunities WHERE id = ?", (opp_id,)
+            "SELECT classification, compartments FROM proposal_opportunities WHERE id = %s", (opp_id,)
         ).fetchone()
         if not existing:
             return jsonify({"error": "Opportunity not found"}), 404
@@ -427,15 +427,15 @@ def get_language_config(opp_id):
             return denied
 
         glossary = conn.execute(
-            "SELECT * FROM wg_glossary WHERE scope = 'project' AND scope_id = ? AND is_active = 1 ORDER BY term_type, term",
+            "SELECT * FROM wg_glossary WHERE scope = 'project' AND scope_id = %s AND is_active = 1 ORDER BY term_type, term",
             (opp_id,),
         ).fetchall()
         taxonomy = conn.execute(
-            "SELECT * FROM proposal_taxonomy WHERE opportunity_id = ? AND is_active = 1 ORDER BY label",
+            "SELECT * FROM proposal_taxonomy WHERE opportunity_id = %s AND is_active = 1 ORDER BY label",
             (opp_id,),
         ).fetchall()
         style_guides = conn.execute(
-            "SELECT id, guide_name, version, created_at FROM wg_style_guides WHERE scope = 'project' AND scope_id = ? AND is_active = 1 ORDER BY guide_name",
+            "SELECT id, guide_name, version, created_at FROM wg_style_guides WHERE scope = 'project' AND scope_id = %s AND is_active = 1 ORDER BY guide_name",
             (opp_id,),
         ).fetchall()
         return jsonify({
@@ -463,7 +463,7 @@ def change_opportunity_status(opp_id):
         return jsonify({"error": "status is required"}), 400
     conn = _get_db()
     try:
-        row = conn.execute("SELECT status FROM proposal_opportunities WHERE id = ?", (opp_id,)).fetchone()
+        row = conn.execute("SELECT status FROM proposal_opportunities WHERE id = %s", (opp_id,)).fetchone()
         if not row:
             return jsonify({"error": "Opportunity not found"}), 404
         old_status = row["status"]
@@ -472,7 +472,7 @@ def change_opportunity_status(opp_id):
         if new_status == "submitted" and not data.get("force"):
             gold_review = conn.execute(
                 """SELECT id, overall_rating FROM proposal_reviews
-                   WHERE opportunity_id = ? AND review_type = 'gold_team'
+                   WHERE opportunity_id = %s AND review_type = 'gold_team'
                      AND status = 'completed'
                      AND overall_rating IN ('pass', 'pass_with_findings')
                    ORDER BY created_at DESC LIMIT 1""",
@@ -489,7 +489,7 @@ def change_opportunity_status(opp_id):
                 }), 409
 
         conn.execute(
-            "UPDATE proposal_opportunities SET status = ?, updated_at = ? WHERE id = ?",
+            "UPDATE proposal_opportunities SET status = %s, updated_at = %s WHERE id = %s",
             (new_status, now_iso(), opp_id),
         )
         _record_status_change(
@@ -516,7 +516,7 @@ def list_volumes(opp_id):
         if denied:
             return denied
         rows = conn.execute(
-            "SELECT * FROM proposal_volumes WHERE opportunity_id = ? ORDER BY sort_order, volume_number",
+            "SELECT * FROM proposal_volumes WHERE opportunity_id = %s ORDER BY sort_order, volume_number",
             (opp_id,),
         ).fetchall()
         return jsonify({"volumes": [dict(r) for r in rows]})
@@ -536,7 +536,7 @@ def create_volume(opp_id):
         conn.execute(
             """INSERT INTO proposal_volumes
                (id, opportunity_id, volume_number, title, description, page_limit, word_limit, sort_order)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 vol_id,
                 opp_id,
@@ -630,7 +630,7 @@ def create_section(opp_id):
                (id, volume_id, opportunity_id, parent_section_id, section_number, title,
                 description, writer, writer_email, reviewer, page_limit, word_limit,
                 priority, due_date, notes, sort_order)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 sec_id,
                 data["volume_id"],
@@ -666,7 +666,7 @@ def get_section(sec_id):
             """SELECT s.*, v.title as volume_title, v.volume_number
                FROM proposal_sections s
                LEFT JOIN proposal_volumes v ON s.volume_id = v.id
-               WHERE s.id = ?""",
+               WHERE s.id = %s""",
             (sec_id,),
         ).fetchone()
         if not row:
@@ -675,7 +675,7 @@ def get_section(sec_id):
 
         # Status history
         history = conn.execute(
-            "SELECT * FROM proposal_status_history WHERE entity_type = 'section' AND entity_id = ? ORDER BY created_at DESC",  # noqa: E501
+            "SELECT * FROM proposal_status_history WHERE entity_type = 'section' AND entity_id = %s ORDER BY created_at DESC",  # noqa: E501
             (sec_id,),
         ).fetchall()
         section["history"] = [dict(h) for h in history]
@@ -685,14 +685,14 @@ def get_section(sec_id):
             """SELECT d.*, s.title as depends_on_title, s.status as depends_on_status
                FROM proposal_section_dependencies d
                JOIN proposal_sections s ON d.depends_on_section_id = s.id
-               WHERE d.section_id = ?""",
+               WHERE d.section_id = %s""",
             (sec_id,),
         ).fetchall()
         section["dependencies"] = [dict(d) for d in deps]
 
         # Compliance items linked to this section
         cm = conn.execute(
-            "SELECT * FROM proposal_compliance_matrix WHERE proposal_section_id = ? ORDER BY sort_order",
+            "SELECT * FROM proposal_compliance_matrix WHERE proposal_section_id = %s ORDER BY sort_order",
             (sec_id,),
         ).fetchall()
         section["compliance_items"] = [dict(c) for c in cm]
@@ -701,7 +701,7 @@ def get_section(sec_id):
         findings = conn.execute(
             """SELECT f.*, r.review_type FROM proposal_review_findings f
                JOIN proposal_reviews r ON f.review_id = r.id
-               WHERE f.section_id = ? ORDER BY f.created_at DESC""",
+               WHERE f.section_id = %s ORDER BY f.created_at DESC""",
             (sec_id,),
         ).fetchall()
         section["findings"] = [dict(f) for f in findings]
@@ -768,7 +768,7 @@ def advance_section_status(sec_id):
 
     conn = _get_db()
     try:
-        row = conn.execute("SELECT status, opportunity_id FROM proposal_sections WHERE id = ?", (sec_id,)).fetchone()
+        row = conn.execute("SELECT status, opportunity_id FROM proposal_sections WHERE id = %s", (sec_id,)).fetchone()
         if not row:
             return jsonify({"error": "Section not found"}), 404
 
@@ -790,7 +790,7 @@ def advance_section_status(sec_id):
                 """SELECT d.depends_on_section_id, d.required_status, s.status as current_dep_status, s.title
                    FROM proposal_section_dependencies d
                    JOIN proposal_sections s ON d.depends_on_section_id = s.id
-                   WHERE d.section_id = ?""",
+                   WHERE d.section_id = %s""",
                 (sec_id,),
             ).fetchall()
             blocked_by = []
@@ -817,7 +817,7 @@ def advance_section_status(sec_id):
                 return jsonify({"error": "Blocked by dependencies", "blocked_by": blocked_by}), 409
 
         conn.execute(
-            "UPDATE proposal_sections SET status = ?, updated_at = ? WHERE id = ?",
+            "UPDATE proposal_sections SET status = %s, updated_at = %s WHERE id = %s",
             (new_status, now_iso(), sec_id),
         )
         _record_status_change(
@@ -840,7 +840,7 @@ def add_section_dependency(opp_id):
     conn = _get_db()
     try:
         conn.execute(
-            "INSERT INTO proposal_section_dependencies (section_id, depends_on_section_id, dependency_type, required_status) VALUES (?, ?, ?, ?)",  # noqa: E501
+            "INSERT INTO proposal_section_dependencies (section_id, depends_on_section_id, dependency_type, required_status) VALUES (%s, %s, %s, %s)",  # noqa: E501
             (
                 data["section_id"],
                 data["depends_on_section_id"],
@@ -911,7 +911,7 @@ def create_compliance_item(opp_id):
             """INSERT INTO proposal_compliance_matrix
                (id, opportunity_id, section_ref, volume_ref, requirement_text,
                 requirement_type, compliance_status, proposal_section_id, response_summary, notes, sort_order)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 cm_id,
                 opp_id,
@@ -948,7 +948,7 @@ def batch_create_compliance(opp_id):
                 """INSERT INTO proposal_compliance_matrix
                    (id, opportunity_id, section_ref, volume_ref, requirement_text,
                     requirement_type, compliance_status, proposal_section_id, sort_order)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     cm_id,
                     opp_id,
@@ -997,7 +997,7 @@ def update_compliance_item(item_id):
         # Record status change if compliance_status changed
         if "compliance_status" in data:
             old = conn.execute(
-                "SELECT compliance_status FROM proposal_compliance_matrix WHERE id = ?", (item_id,)
+                "SELECT compliance_status FROM proposal_compliance_matrix WHERE id = %s", (item_id,)
             ).fetchone()
             if old and old["compliance_status"] != data["compliance_status"]:
                 _record_status_change(
@@ -1021,12 +1021,12 @@ def compliance_gaps(opp_id):
     try:
         rows = conn.execute(
             """SELECT * FROM proposal_compliance_matrix
-               WHERE opportunity_id = ? AND compliance_status = 'not_addressed'
+               WHERE opportunity_id = %s AND compliance_status = 'not_addressed'
                ORDER BY sort_order, section_ref""",
             (opp_id,),
         ).fetchall()
         total = conn.execute(
-            "SELECT COUNT(*) FROM proposal_compliance_matrix WHERE opportunity_id = ?", (opp_id,)
+            "SELECT COUNT(*) FROM proposal_compliance_matrix WHERE opportunity_id = %s", (opp_id,)
         ).fetchone()[0]
         gaps = [dict(r) for r in rows]
         return jsonify(
@@ -1064,7 +1064,7 @@ def list_reviews(opp_id):
         # Attach finding counts per review
         for rev in reviews:
             counts = conn.execute(
-                "SELECT status, COUNT(*) as cnt FROM proposal_review_findings WHERE review_id = ? GROUP BY status",
+                "SELECT status, COUNT(*) as cnt FROM proposal_review_findings WHERE review_id = %s GROUP BY status",
                 (rev["id"],),
             ).fetchall()
             rev["finding_counts"] = {c["status"]: c["cnt"] for c in counts}
@@ -1090,7 +1090,7 @@ def schedule_review(opp_id):
             """INSERT INTO proposal_reviews
                (id, opportunity_id, review_type, status, scheduled_date,
                 lead_reviewer, participants, summary)
-               VALUES (?, ?, ?, 'scheduled', ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, 'scheduled', %s, %s, %s, %s)""",
             (
                 rev_id,
                 opp_id,
@@ -1114,7 +1114,7 @@ def update_review(rev_id):
     data = request.get_json(force=True, silent=True) or {}
     conn = _get_db()
     try:
-        old = conn.execute("SELECT status FROM proposal_reviews WHERE id = ?", (rev_id,)).fetchone()
+        old = conn.execute("SELECT status FROM proposal_reviews WHERE id = %s", (rev_id,)).fetchone()
         if not old:
             return jsonify({"error": "Review not found"}), 404
 
@@ -1149,7 +1149,7 @@ def list_findings(rev_id):
             """SELECT f.*, s.title as section_title, s.section_number
                FROM proposal_review_findings f
                LEFT JOIN proposal_sections s ON f.section_id = s.id
-               WHERE f.review_id = ?
+               WHERE f.review_id = %s
                ORDER BY CASE f.severity
                    WHEN 'critical' THEN 1 WHEN 'major' THEN 2
                    WHEN 'minor' THEN 3 ELSE 4 END, f.created_at""",
@@ -1175,7 +1175,7 @@ def add_finding(rev_id):
             """INSERT INTO proposal_review_findings
                (id, review_id, section_id, finding_type, severity, description,
                 recommendation, assigned_to)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 find_id,
                 rev_id,
@@ -1199,7 +1199,7 @@ def update_finding(find_id):
     data = request.get_json(force=True, silent=True) or {}
     conn = _get_db()
     try:
-        old = conn.execute("SELECT status FROM proposal_review_findings WHERE id = ?", (find_id,)).fetchone()
+        old = conn.execute("SELECT status FROM proposal_review_findings WHERE id = %s", (find_id,)).fetchone()
         if not old:
             return jsonify({"error": "Finding not found"}), 404
 
@@ -1237,11 +1237,11 @@ def list_assignments(rev_id):
     """GET /api/proposals/reviews/<rev_id>/assignments — List all reviewer assignments."""
     conn = _get_db()
     try:
-        rev = conn.execute("SELECT id FROM proposal_reviews WHERE id = ?", (rev_id,)).fetchone()
+        rev = conn.execute("SELECT id FROM proposal_reviews WHERE id = %s", (rev_id,)).fetchone()
         if not rev:
             return jsonify({"error": "Review not found"}), 404
         rows = conn.execute(
-            "SELECT * FROM proposal_reviewer_assignments WHERE review_id = ? ORDER BY created_at DESC",
+            "SELECT * FROM proposal_reviewer_assignments WHERE review_id = %s ORDER BY created_at DESC",
             (rev_id,),
         ).fetchall()
         return jsonify({"assignments": [dict(r) for r in rows]})
@@ -1263,7 +1263,7 @@ def assign_reviewer(rev_id):
 
     conn = _get_db()
     try:
-        rev = conn.execute("SELECT id, status FROM proposal_reviews WHERE id = ?", (rev_id,)).fetchone()
+        rev = conn.execute("SELECT id, status FROM proposal_reviews WHERE id = %s", (rev_id,)).fetchone()
         if not rev:
             return jsonify({"error": "Review not found"}), 404
 
@@ -1271,7 +1271,7 @@ def assign_reviewer(rev_id):
         conn.execute(
             """INSERT INTO proposal_reviewer_assignments
                (id, review_id, reviewer, assigned_by, status, notes, classification)
-               VALUES (?, ?, ?, ?, 'pending', ?, ?)""",
+               VALUES (%s, %s, %s, %s, 'pending', %s, %s)""",
             (asgn_id, rev_id, reviewer, assigned_by, data.get("notes"), data.get("classification", "CUI")),
         )
         _record_status_change(conn, "review", rev_id, rev["status"], rev["status"], assigned_by,
@@ -1290,7 +1290,7 @@ def accept_assignment(asgn_id):
     conn = _get_db()
     try:
         asgn = conn.execute(
-            "SELECT * FROM proposal_reviewer_assignments WHERE id = ?", (asgn_id,)
+            "SELECT * FROM proposal_reviewer_assignments WHERE id = %s", (asgn_id,)
         ).fetchone()
         if not asgn:
             return jsonify({"error": "Assignment not found"}), 404
@@ -1298,13 +1298,13 @@ def accept_assignment(asgn_id):
             return jsonify({"error": f"Cannot accept assignment in status '{asgn['status']}'"}), 409
 
         conn.execute(
-            "UPDATE proposal_reviewer_assignments SET status='accepted', accepted_at=datetime('now'), notes=? WHERE id=?",
+            "UPDATE proposal_reviewer_assignments SET status='accepted', accepted_at=datetime('now'), notes=%s WHERE id=%s",
             (data.get("notes", asgn["notes"]), asgn_id),
         )
         _record_status_change(conn, "review", asgn["review_id"], "scheduled", "in_progress",
                               asgn["reviewer"], reason=f"assignment:accepted:{asgn['reviewer']}")
         conn.execute(
-            "UPDATE proposal_reviews SET status='in_progress', started_at=datetime('now') WHERE id=? AND status='scheduled'",
+            "UPDATE proposal_reviews SET status='in_progress', started_at=datetime('now') WHERE id=%s AND status='scheduled'",
             (asgn["review_id"],),
         )
         conn.commit()
@@ -1321,7 +1321,7 @@ def reject_assignment(asgn_id):
     conn = _get_db()
     try:
         asgn = conn.execute(
-            "SELECT * FROM proposal_reviewer_assignments WHERE id = ?", (asgn_id,)
+            "SELECT * FROM proposal_reviewer_assignments WHERE id = %s", (asgn_id,)
         ).fetchone()
         if not asgn:
             return jsonify({"error": "Assignment not found"}), 404
@@ -1331,8 +1331,8 @@ def reject_assignment(asgn_id):
         reason = data.get("rejection_reason", "").strip()
         conn.execute(
             """UPDATE proposal_reviewer_assignments
-               SET status='rejected', rejected_at=datetime('now'), rejection_reason=?
-               WHERE id=?""",
+               SET status='rejected', rejected_at=datetime('now'), rejection_reason=%s
+               WHERE id=%s""",
             (reason, asgn_id),
         )
         _record_status_change(conn, "review", asgn["review_id"], asgn["status"], "scheduled",
@@ -1358,21 +1358,21 @@ def reassign_reviewer(asgn_id):
     conn = _get_db()
     try:
         asgn = conn.execute(
-            "SELECT * FROM proposal_reviewer_assignments WHERE id = ?", (asgn_id,)
+            "SELECT * FROM proposal_reviewer_assignments WHERE id = %s", (asgn_id,)
         ).fetchone()
         if not asgn:
             return jsonify({"error": "Assignment not found"}), 404
 
         # Mark old assignment as reassigned
         conn.execute(
-            "UPDATE proposal_reviewer_assignments SET status='reassigned' WHERE id=?", (asgn_id,)
+            "UPDATE proposal_reviewer_assignments SET status='reassigned' WHERE id=%s", (asgn_id,)
         )
         # Create new assignment
         new_id = _uuid()
         conn.execute(
             """INSERT INTO proposal_reviewer_assignments
                (id, review_id, reviewer, assigned_by, status, notes, classification)
-               VALUES (?, ?, ?, ?, 'pending', ?, ?)""",
+               VALUES (%s, %s, %s, %s, 'pending', %s, %s)""",
             (new_id, asgn["review_id"], new_reviewer, assigned_by,
              data.get("notes"), asgn["classification"]),
         )
@@ -1401,7 +1401,7 @@ def get_timeline(opp_id):
                       s.priority, s.sort_order, v.volume_number, v.title as volume_title
                FROM proposal_sections s
                LEFT JOIN proposal_volumes v ON s.volume_id = v.id
-               WHERE s.opportunity_id = ?
+               WHERE s.opportunity_id = %s
                ORDER BY v.sort_order, v.volume_number, s.sort_order, s.section_number""",
             (opp_id,),
         ).fetchall()
@@ -1410,13 +1410,13 @@ def get_timeline(opp_id):
         # Attach dependencies
         for item in items:
             deps = conn.execute(
-                "SELECT depends_on_section_id FROM proposal_section_dependencies WHERE section_id = ?",
+                "SELECT depends_on_section_id FROM proposal_section_dependencies WHERE section_id = %s",
                 (item["id"],),
             ).fetchall()
             item["dependencies"] = [d["depends_on_section_id"] for d in deps]
 
         # Opportunity due date
-        opp = conn.execute("SELECT due_date FROM proposal_opportunities WHERE id = ?", (opp_id,)).fetchone()
+        opp = conn.execute("SELECT due_date FROM proposal_opportunities WHERE id = %s", (opp_id,)).fetchone()
         due_date = opp["due_date"] if opp else None
 
         return jsonify({"sections": items, "due_date": due_date, "status_order": SECTION_STATUS_ORDER})
@@ -1434,7 +1434,7 @@ def get_assignment_matrix(opp_id):
                       s.writer, s.priority, v.title as volume_title
                FROM proposal_sections s
                LEFT JOIN proposal_volumes v ON s.volume_id = v.id
-               WHERE s.opportunity_id = ?
+               WHERE s.opportunity_id = %s
                ORDER BY v.sort_order, s.sort_order""",
             (opp_id,),
         ).fetchall()
@@ -1459,11 +1459,11 @@ def get_stats(opp_id):
     """GET /api/proposals/<opp_id>/stats — Aggregate stats for auto-refresh."""
     conn = _get_db()
     try:
-        opp = conn.execute("SELECT due_date FROM proposal_opportunities WHERE id = ?", (opp_id,)).fetchone()
+        opp = conn.execute("SELECT due_date FROM proposal_opportunities WHERE id = %s", (opp_id,)).fetchone()
         if not opp:
             return jsonify({"error": "Opportunity not found"}), 404
 
-        sections = conn.execute("SELECT status FROM proposal_sections WHERE opportunity_id = ?", (opp_id,)).fetchall()
+        sections = conn.execute("SELECT status FROM proposal_sections WHERE opportunity_id = %s", (opp_id,)).fetchall()
         total = len(sections)
         complete = sum(1 for s in sections if s["status"] in ("final", "submitted"))
 
@@ -1474,7 +1474,7 @@ def get_stats(opp_id):
             status_dist[st] = status_dist.get(st, 0) + 1
 
         cm = conn.execute(
-            "SELECT compliance_status FROM proposal_compliance_matrix WHERE opportunity_id = ?", (opp_id,)
+            "SELECT compliance_status FROM proposal_compliance_matrix WHERE opportunity_id = %s", (opp_id,)
         ).fetchall()
         cm_total = len(cm)
         cm_addressed = sum(1 for c in cm if c["compliance_status"] != "not_addressed")
@@ -1482,7 +1482,7 @@ def get_stats(opp_id):
         findings = conn.execute(
             """SELECT f.severity, f.status FROM proposal_review_findings f
                JOIN proposal_reviews r ON f.review_id = r.id
-               WHERE r.opportunity_id = ?""",
+               WHERE r.opportunity_id = %s""",
             (opp_id,),
         ).fetchall()
         open_findings = sum(1 for f in findings if f["status"] in ("open", "in_progress"))
@@ -1500,14 +1500,14 @@ def get_stats(opp_id):
 
         # By-volume compliance breakdown (prop-cmp-05)
         volumes = conn.execute(
-            "SELECT id, volume_number, title FROM proposal_volumes WHERE opportunity_id = ? ORDER BY volume_number",
+            "SELECT id, volume_number, title FROM proposal_volumes WHERE opportunity_id = %s ORDER BY volume_number",
             (opp_id,),
         ).fetchall()
         by_volume = []
         for vol in volumes:
             vc = conn.execute(
                 """SELECT compliance_status FROM proposal_compliance_matrix
-                   WHERE opportunity_id = ? AND volume_id = ?""",
+                   WHERE opportunity_id = %s AND volume_id = %s""",
                 (opp_id, vol["id"]),
             ).fetchall()
             vc_total = len(vc)
@@ -1549,7 +1549,7 @@ def get_status_history(entity_type, entity_id):
     conn = _get_db()
     try:
         rows = conn.execute(
-            "SELECT * FROM proposal_status_history WHERE entity_type = ? AND entity_id = ? ORDER BY created_at DESC",
+            "SELECT * FROM proposal_status_history WHERE entity_type = %s AND entity_id = %s ORDER BY created_at DESC",
             (entity_type, entity_id),
         ).fetchall()
         return jsonify({"history": [dict(r) for r in rows]})
@@ -1592,7 +1592,7 @@ def list_questions(opp_id):
     conn = _get_db()
     try:
         rows = conn.execute(
-            "SELECT * FROM proposal_questions WHERE opportunity_id = ? ORDER BY question_number, created_at",
+            "SELECT * FROM proposal_questions WHERE opportunity_id = %s ORDER BY question_number, created_at",
             (opp_id,),
         ).fetchall()
         return jsonify({"questions": [dict(r) for r in rows]})
@@ -1611,7 +1611,7 @@ def create_question(opp_id):
     try:
         # Auto-assign question_number
         max_row = conn.execute(
-            "SELECT MAX(question_number) as mx FROM proposal_questions WHERE opportunity_id = ?",
+            "SELECT MAX(question_number) as mx FROM proposal_questions WHERE opportunity_id = %s",
             (opp_id,),
         ).fetchone()
         q_num = (max_row["mx"] or 0) + 1
@@ -1619,7 +1619,7 @@ def create_question(opp_id):
             """INSERT INTO proposal_questions
                (id, opportunity_id, question_number, question_text, category, priority,
                 source, rfp_section_ref, status, ambiguity_trigger, created_by, classification)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 q_id, opp_id, q_num,
                 data["question_text"],
@@ -1644,12 +1644,12 @@ def get_question(q_id):
     """GET /api/proposals/questions/<q_id>"""
     conn = _get_db()
     try:
-        row = conn.execute("SELECT * FROM proposal_questions WHERE id = ?", (q_id,)).fetchone()
+        row = conn.execute("SELECT * FROM proposal_questions WHERE id = %s", (q_id,)).fetchone()
         if not row:
             return jsonify({"error": "Question not found"}), 404
         q = dict(row)
         responses = conn.execute(
-            "SELECT * FROM proposal_question_responses WHERE question_id = ? ORDER BY created_at",
+            "SELECT * FROM proposal_question_responses WHERE question_id = %s ORDER BY created_at",
             (q_id,),
         ).fetchall()
         q["responses"] = [dict(r) for r in responses]
@@ -1688,8 +1688,8 @@ def delete_question(q_id):
     """DELETE /api/proposals/questions/<q_id>"""
     conn = _get_db()
     try:
-        conn.execute("DELETE FROM proposal_question_responses WHERE question_id = ?", (q_id,))
-        conn.execute("DELETE FROM proposal_questions WHERE id = ?", (q_id,))
+        conn.execute("DELETE FROM proposal_question_responses WHERE question_id = %s", (q_id,))
+        conn.execute("DELETE FROM proposal_questions WHERE id = %s", (q_id,))
         conn.commit()
         return jsonify({"deleted": q_id})
     finally:
@@ -1706,7 +1706,7 @@ def create_question_response(q_id):
     """POST /api/proposals/questions/<q_id>/responses"""
     conn = _get_db()
     try:
-        q = conn.execute("SELECT opportunity_id FROM proposal_questions WHERE id = ?", (q_id,)).fetchone()
+        q = conn.execute("SELECT opportunity_id FROM proposal_questions WHERE id = %s", (q_id,)).fetchone()
         if not q:
             return jsonify({"error": "Question not found"}), 404
         data = request.get_json(force=True, silent=True) or {}
@@ -1717,7 +1717,7 @@ def create_question_response(q_id):
             """INSERT INTO proposal_question_responses
                (id, question_id, opportunity_id, amendment_id, response_text,
                 response_date, impacts_requirements, impact_notes, recorded_by, classification)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 r_id, q_id, q["opportunity_id"],
                 data.get("amendment_id"),
@@ -1731,7 +1731,7 @@ def create_question_response(q_id):
         )
         # Mark question as answered
         conn.execute(
-            "UPDATE proposal_questions SET status = 'answered', updated_at = ? WHERE id = ?",
+            "UPDATE proposal_questions SET status = 'answered', updated_at = %s WHERE id = %s",
             (now_iso(), q_id),
         )
         conn.commit()
@@ -1774,7 +1774,7 @@ def list_amendments(opp_id):
     conn = _get_db()
     try:
         rows = conn.execute(
-            "SELECT * FROM proposal_amendments WHERE opportunity_id = ? ORDER BY version_number",
+            "SELECT * FROM proposal_amendments WHERE opportunity_id = %s ORDER BY version_number",
             (opp_id,),
         ).fetchall()
         return jsonify({"amendments": [dict(r) for r in rows]})
@@ -1795,7 +1795,7 @@ def create_amendment(opp_id):
     conn = _get_db()
     try:
         max_row = conn.execute(
-            "SELECT MAX(version_number) as mx FROM proposal_amendments WHERE opportunity_id = ?",
+            "SELECT MAX(version_number) as mx FROM proposal_amendments WHERE opportunity_id = %s",
             (opp_id,),
         ).fetchone()
         ver_num = (max_row["mx"] or 0) + 1
@@ -1803,7 +1803,7 @@ def create_amendment(opp_id):
             """INSERT INTO proposal_amendments
                (id, opportunity_id, version_number, title, description, amendment_date,
                 source_type, file_path, amendment_text, diff_summary, uploaded_by, classification)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 a_id, opp_id, ver_num,
                 data["title"],
@@ -1852,7 +1852,7 @@ def delete_amendment(amend_id):
     """DELETE /api/proposals/amendments/<amend_id>"""
     conn = _get_db()
     try:
-        conn.execute("DELETE FROM proposal_amendments WHERE id = ?", (amend_id,))
+        conn.execute("DELETE FROM proposal_amendments WHERE id = %s", (amend_id,))
         conn.commit()
         return jsonify({"deleted": amend_id})
     finally:
@@ -1905,7 +1905,7 @@ def list_competitors(opp_id):
     conn = _get_db()
     try:
         rows = conn.execute(
-            "SELECT * FROM proposal_competitors WHERE opportunity_id = ? ORDER BY company_name",
+            "SELECT * FROM proposal_competitors WHERE opportunity_id = %s ORDER BY company_name",
             (opp_id,),
         ).fetchall()
         return jsonify({"competitors": [dict(r) for r in rows]})
@@ -1926,7 +1926,7 @@ def create_competitor(opp_id):
             """INSERT INTO proposal_competitors
                (id, opportunity_id, company_name, incumbent, strengths, weaknesses,
                 estimated_price, win_probability_pct, notes, classification)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (c_id, opp_id, data["company_name"],
              int(bool(data.get("incumbent", 0))),
              data.get("strengths"), data.get("weaknesses"),
@@ -1969,7 +1969,7 @@ def delete_competitor(cid):
     """DELETE /api/proposals/competitors/<cid>"""
     conn = _get_db()
     try:
-        conn.execute("DELETE FROM proposal_competitors WHERE id = ?", (cid,))
+        conn.execute("DELETE FROM proposal_competitors WHERE id = %s", (cid,))
         conn.commit()
         return jsonify({"deleted": cid})
     finally:
@@ -1982,7 +1982,7 @@ def list_teaming_partners(opp_id):
     conn = _get_db()
     try:
         rows = conn.execute(
-            "SELECT * FROM proposal_teaming_partners WHERE opportunity_id = ? ORDER BY company_name",
+            "SELECT * FROM proposal_teaming_partners WHERE opportunity_id = %s ORDER BY company_name",
             (opp_id,),
         ).fetchall()
         return jsonify({"partners": [dict(r) for r in rows]})
@@ -2006,7 +2006,7 @@ def create_teaming_partner(opp_id):
             """INSERT INTO proposal_teaming_partners
                (id, opportunity_id, company_name, role, naics, cage_code,
                 capabilities, workshare_pct, notes, classification)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (t_id, opp_id, data["company_name"], role,
              data.get("naics"), data.get("cage_code"),
              data.get("capabilities"), data.get("workshare_pct"),
@@ -2045,7 +2045,7 @@ def delete_teaming_partner(tid):
     """DELETE /api/proposals/teaming/<tid>"""
     conn = _get_db()
     try:
-        conn.execute("DELETE FROM proposal_teaming_partners WHERE id = ?", (tid,))
+        conn.execute("DELETE FROM proposal_teaming_partners WHERE id = %s", (tid,))
         conn.commit()
         return jsonify({"deleted": tid})
     finally:
@@ -2063,14 +2063,14 @@ def create_snapshot(opp_id):
     import json as _json
     conn = _get_db()
     try:
-        opp = conn.execute("SELECT * FROM proposal_opportunities WHERE id = ?", (opp_id,)).fetchone()
+        opp = conn.execute("SELECT * FROM proposal_opportunities WHERE id = %s", (opp_id,)).fetchone()
         if not opp:
             return jsonify({"error": "Opportunity not found"}), 404
         sections = conn.execute(
-            "SELECT * FROM proposal_sections WHERE opportunity_id = ?", (opp_id,)
+            "SELECT * FROM proposal_sections WHERE opportunity_id = %s", (opp_id,)
         ).fetchall()
         compliance = conn.execute(
-            "SELECT * FROM proposal_compliance_matrix WHERE opportunity_id = ?", (opp_id,)
+            "SELECT * FROM proposal_compliance_matrix WHERE opportunity_id = %s", (opp_id,)
         ).fetchall()
         snapshot = {
             "opportunity": dict(opp),
@@ -2079,7 +2079,7 @@ def create_snapshot(opp_id):
         }
         data = request.get_json(silent=True) or {}
         max_ver = conn.execute(
-            "SELECT MAX(version_number) as mx FROM proposal_versions WHERE opportunity_id = ?",
+            "SELECT MAX(version_number) as mx FROM proposal_versions WHERE opportunity_id = %s",
             (opp_id,),
         ).fetchone()
         ver_num = (max_ver["mx"] or 0) + 1
@@ -2087,7 +2087,7 @@ def create_snapshot(opp_id):
         conn.execute(
             """INSERT INTO proposal_versions
                (id, opportunity_id, version_number, label, snapshot_json, created_by, classification)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
             (v_id, opp_id, ver_num, data.get("label"), _json.dumps(snapshot),
              data.get("created_by"), data.get("classification", "CUI")),
         )
@@ -2104,7 +2104,7 @@ def list_snapshots(opp_id):
     try:
         rows = conn.execute(
             "SELECT id, opportunity_id, version_number, label, created_by, classification, created_at "
-            "FROM proposal_versions WHERE opportunity_id = ? ORDER BY version_number",
+            "FROM proposal_versions WHERE opportunity_id = %s ORDER BY version_number",
             (opp_id,),
         ).fetchall()
         return jsonify({"snapshots": [dict(r) for r in rows]})
@@ -2119,12 +2119,12 @@ def diff_snapshots(v_id):
     against = request.args.get("against")
     conn = _get_db()
     try:
-        a = conn.execute("SELECT * FROM proposal_versions WHERE id = ?", (v_id,)).fetchone()
+        a = conn.execute("SELECT * FROM proposal_versions WHERE id = %s", (v_id,)).fetchone()
         if not a:
             return jsonify({"error": "Snapshot not found"}), 404
         if not against:
             return jsonify({"error": "against query param required"}), 400
-        b = conn.execute("SELECT * FROM proposal_versions WHERE id = ?", (against,)).fetchone()
+        b = conn.execute("SELECT * FROM proposal_versions WHERE id = %s", (against,)).fetchone()
         if not b:
             return jsonify({"error": "Comparison snapshot not found"}), 404
         snap_a = _json.loads(a["snapshot_json"] or "{}")
@@ -2161,12 +2161,12 @@ def list_shred_items(opp_id):
     try:
         if status_filter:
             rows = conn.execute(
-                "SELECT * FROM proposal_shred_items WHERE opportunity_id = ? AND status = ? ORDER BY rfp_section",
+                "SELECT * FROM proposal_shred_items WHERE opportunity_id = %s AND status = %s ORDER BY rfp_section",
                 (opp_id, status_filter),
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT * FROM proposal_shred_items WHERE opportunity_id = ? ORDER BY rfp_section, statement_type",
+                "SELECT * FROM proposal_shred_items WHERE opportunity_id = %s ORDER BY rfp_section, statement_type",
                 (opp_id,),
             ).fetchall()
         return jsonify({"shred_items": [dict(r) for r in rows]})
@@ -2187,7 +2187,7 @@ def create_shred_item(opp_id):
             """INSERT INTO proposal_shred_items
                (id, opportunity_id, statement_text, statement_type, rfp_section, rfp_page,
                 section_id, writer, status, notes, classification)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (s_id, opp_id, data["statement_text"],
              data.get("statement_type", "shall"),
              data.get("rfp_section"), data.get("rfp_page"),
@@ -2229,7 +2229,7 @@ def delete_shred_item(item_id):
     """DELETE /api/proposals/shred/<item_id>"""
     conn = _get_db()
     try:
-        conn.execute("DELETE FROM proposal_shred_items WHERE id = ?", (item_id,))
+        conn.execute("DELETE FROM proposal_shred_items WHERE id = %s", (item_id,))
         conn.commit()
         return jsonify({"deleted": item_id})
     finally:
@@ -2245,7 +2245,7 @@ def update_amendment_impact(amend_id):
     conn = _get_db()
     try:
         conn.execute(
-            "UPDATE proposal_amendments SET changed_requirement_ids = ? WHERE id = ?",
+            "UPDATE proposal_amendments SET changed_requirement_ids = %s WHERE id = %s",
             (_json.dumps(req_ids), amend_id),
         )
         conn.commit()
@@ -2261,7 +2261,7 @@ def get_amendment_impact(amend_id):
     conn = _get_db()
     try:
         row = conn.execute(
-            "SELECT changed_requirement_ids, opportunity_id FROM proposal_amendments WHERE id = ?",
+            "SELECT changed_requirement_ids, opportunity_id FROM proposal_amendments WHERE id = %s",
             (amend_id,),
         ).fetchone()
         if not row:
@@ -2286,7 +2286,7 @@ def get_orphaned_requirements(opp_id):
     try:
         rows = conn.execute(
             """SELECT * FROM proposal_compliance_matrix
-               WHERE opportunity_id = ? AND section_id IS NULL
+               WHERE opportunity_id = %s AND section_id IS NULL
                  AND compliance_status != 'not_applicable'
                ORDER BY requirement_number""",
             (opp_id,),
@@ -2382,7 +2382,7 @@ def ptw_leaderboard(opp_id):
             return mac_err
         # Pull opportunity NAICS for default leaderboard filter
         opp_row = conn.execute(
-            "SELECT naics_code FROM proposal_opportunities WHERE id = ?", (opp_id,)
+            "SELECT naics_code FROM proposal_opportunities WHERE id = %s", (opp_id,)
         ).fetchone()
     finally:
         conn.close()
@@ -2455,7 +2455,7 @@ def list_blackhat_assessments(opp_id):
             return mac_err
         _ensure_blackhat_table(conn)
         rows = conn.execute(
-            "SELECT * FROM proposal_blackhat_assessments WHERE opportunity_id = ? ORDER BY created_at DESC",
+            "SELECT * FROM proposal_blackhat_assessments WHERE opportunity_id = %s ORDER BY created_at DESC",
             (opp_id,),
         ).fetchall()
         assessments = [_mask_ptw_sensitive(dict(r)) for r in rows]
@@ -2492,7 +2492,7 @@ def create_blackhat_assessment(opp_id):
                 win_strategy, differentiators, risk_factors, ptw_posture,
                 leaderboard_rank, award_count, total_award_value,
                 naics_diversity, agency_diversity, classification, created_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (
                 bh_id, opp_id, data["competitor_name"],
                 data.get("approach_hypothesis"),
@@ -2549,7 +2549,7 @@ def delete_blackhat_assessment(bh_id):
     conn = _get_db()
     try:
         _ensure_blackhat_table(conn)
-        conn.execute("DELETE FROM proposal_blackhat_assessments WHERE id = ?", (bh_id,))
+        conn.execute("DELETE FROM proposal_blackhat_assessments WHERE id = %s", (bh_id,))
         conn.commit()
         return jsonify({"deleted": bh_id})
     finally:
@@ -2605,12 +2605,12 @@ def list_annotations(sec_id):
         _ensure_annotations_table(conn)
         if status_filter in ("open", "resolved"):
             rows = conn.execute(
-                "SELECT * FROM proposal_section_annotations WHERE section_id = ? AND status = ? ORDER BY created_at ASC",
+                "SELECT * FROM proposal_section_annotations WHERE section_id = %s AND status = %s ORDER BY created_at ASC",
                 (sec_id, status_filter),
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT * FROM proposal_section_annotations WHERE section_id = ? ORDER BY created_at ASC",
+                "SELECT * FROM proposal_section_annotations WHERE section_id = %s ORDER BY created_at ASC",
                 (sec_id,),
             ).fetchall()
         return jsonify({"annotations": [_annotation_row(r) for r in rows]})
@@ -2641,7 +2641,7 @@ def create_annotation(sec_id):
         conn.execute(
             """INSERT INTO proposal_section_annotations
                (id, section_id, draft_id, selected_text, category, comment, author, status, classification, created_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (
                 ann_id,
                 sec_id,
@@ -2657,7 +2657,7 @@ def create_annotation(sec_id):
         )
         try:
             conn.execute(
-                "INSERT INTO audit_trail (id,created_at,event_type,actor,action,details,session_id) VALUES (?,?,?,?,?,?,?)",
+                "INSERT INTO audit_trail (id,created_at,event_type,actor,action,details,session_id) VALUES (%s,%s,%s,%s,%s,%s,%s)",
                 (str(uuid.uuid4()), ts, "proposals.annotation.create", body.get("author", "reviewer"),
                  "create_annotation", f"section={sec_id} category={category}", "proposals"),
             )
@@ -2665,7 +2665,7 @@ def create_annotation(sec_id):
             pass
         conn.commit()
         row = conn.execute(
-            "SELECT * FROM proposal_section_annotations WHERE id = ?", (ann_id,)
+            "SELECT * FROM proposal_section_annotations WHERE id = %s", (ann_id,)
         ).fetchone()
         return jsonify(_annotation_row(row)), 201
     finally:
@@ -2703,7 +2703,7 @@ def update_annotation(ann_id):
         )
         conn.commit()
         row = conn.execute(
-            "SELECT * FROM proposal_section_annotations WHERE id = ?", (ann_id,)
+            "SELECT * FROM proposal_section_annotations WHERE id = %s", (ann_id,)
         ).fetchone()
         if not row:
             return jsonify({"error": "Annotation not found"}), 404
@@ -2718,7 +2718,7 @@ def delete_annotation(ann_id):
     conn = _get_db()
     try:
         _ensure_annotations_table(conn)
-        conn.execute("DELETE FROM proposal_section_annotations WHERE id = ?", (ann_id,))
+        conn.execute("DELETE FROM proposal_section_annotations WHERE id = %s", (ann_id,))
         conn.commit()
         return jsonify({"deleted": ann_id})
     finally:

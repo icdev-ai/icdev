@@ -214,7 +214,7 @@ def evaluate_model(
     conn = _get_db(db_path)
     try:
         mv = conn.execute(
-            "SELECT * FROM ft_model_versions WHERE id = ?",
+            "SELECT * FROM ft_model_versions WHERE id = %s",
             (model_version_id,),
         ).fetchone()
         if not mv:
@@ -256,7 +256,7 @@ def evaluate_model(
                (id, model_version_id, eval_type, test_set_size,
                 bleu_score, rouge_l_score, perplexity,
                 pass_threshold, classification, tenant_id, project_id, evaluated_at)
-               VALUES (?, ?, 'automated', ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, 'automated', %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 eval_id,
                 model_version_id,
@@ -328,8 +328,8 @@ def _load_test_data(
         try:
             rows = conn.execute(
                 """SELECT user_input, expected_output FROM ft_dataset_examples
-                   WHERE dataset_id = ? AND approved = 1
-                   ORDER BY RANDOM() LIMIT ?""",
+                   WHERE dataset_id = %s AND approved = 1
+                   ORDER BY RANDOM() LIMIT %s""",
                 (dataset_id, 100),
             ).fetchall()
             split_idx = max(1, int(len(rows) * test_split_pct))
@@ -393,7 +393,7 @@ def get_evaluation(
     """Get a single evaluation by ID."""
     conn = _get_db(db_path)
     try:
-        row = conn.execute("SELECT * FROM ft_evaluations WHERE id = ?", (eval_id,)).fetchone()
+        row = conn.execute("SELECT * FROM ft_evaluations WHERE id = %s", (eval_id,)).fetchone()
         if not row:
             return {"success": False, "error": f"Evaluation not found: {eval_id}"}
         return {"success": True, "evaluation": dict(row)}

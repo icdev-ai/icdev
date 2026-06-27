@@ -72,7 +72,7 @@ def _get_project(conn, project_id):
     Raises:
         ValueError: If the project is not found.
     """
-    row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+    row = conn.execute("SELECT * FROM projects WHERE id = %s", (project_id,)).fetchone()
     if not row:
         raise ValueError(f"Project '{project_id}' not found.")
     return dict(row)
@@ -90,7 +90,7 @@ def _log_audit(conn, project_id, action, details=None):
     conn.execute(
         """INSERT INTO audit_trail
            (project_id, event_type, actor, action, details, classification, created_at)
-           VALUES (?, 'emass_push', 'icdev-emass-export', ?, ?, 'CUI', datetime('now'))""",
+           VALUES (%s, 'emass_push', 'icdev-emass-export', %s, %s, 'CUI', datetime('now'))""",
         (project_id, action, json.dumps(details) if details else None),
     )
     conn.commit()
@@ -263,7 +263,7 @@ def export_controls_emass(project_id, output_dir=None, db_path=None):
     try:
         _get_project(conn, project_id)
         controls = conn.execute(
-            "SELECT * FROM project_controls WHERE project_id = ? ORDER BY control_id",
+            "SELECT * FROM project_controls WHERE project_id = %s ORDER BY control_id",
             (project_id,),
         ).fetchall()
 
@@ -345,7 +345,7 @@ def export_poam_emass(project_id, output_dir=None, db_path=None):
     try:
         _get_project(conn, project_id)
         items = conn.execute(
-            "SELECT * FROM poam_items WHERE project_id = ? ORDER BY severity, weakness_id",
+            "SELECT * FROM poam_items WHERE project_id = %s ORDER BY severity, weakness_id",
             (project_id,),
         ).fetchall()
 
@@ -439,7 +439,7 @@ def export_artifacts_emass(project_id, output_dir=None, db_path=None):
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
             # --- SSP documents ---
             ssp_rows = conn.execute(
-                "SELECT file_path FROM ssp_documents WHERE project_id = ? AND file_path IS NOT NULL",
+                "SELECT file_path FROM ssp_documents WHERE project_id = %s AND file_path IS NOT NULL",
                 (project_id,),
             ).fetchall()
             for row in ssp_rows:
@@ -459,7 +459,7 @@ def export_artifacts_emass(project_id, output_dir=None, db_path=None):
 
             # --- SBOM records ---
             sbom_rows = conn.execute(
-                "SELECT file_path FROM sbom_records WHERE project_id = ? AND file_path IS NOT NULL",
+                "SELECT file_path FROM sbom_records WHERE project_id = %s AND file_path IS NOT NULL",
                 (project_id,),
             ).fetchall()
             for row in sbom_rows:
@@ -479,7 +479,7 @@ def export_artifacts_emass(project_id, output_dir=None, db_path=None):
 
             # --- STIG checklists ---
             stig_rows = conn.execute(
-                "SELECT DISTINCT stig_id, file_path FROM stig_findings WHERE project_id = ? AND file_path IS NOT NULL",
+                "SELECT DISTINCT stig_id, file_path FROM stig_findings WHERE project_id = %s AND file_path IS NOT NULL",
                 (project_id,),
             ).fetchall()
             for row in stig_rows:
@@ -583,7 +583,7 @@ def export_test_results_emass(project_id, output_dir=None, db_path=None):
 
         # Gather STIG findings as test results
         stig_findings = conn.execute(
-            "SELECT * FROM stig_findings WHERE project_id = ? ORDER BY severity, finding_id",
+            "SELECT * FROM stig_findings WHERE project_id = %s ORDER BY severity, finding_id",
             (project_id,),
         ).fetchall()
 
@@ -591,7 +591,7 @@ def export_test_results_emass(project_id, output_dir=None, db_path=None):
         vuln_scans = []
         try:
             vuln_scans = conn.execute(
-                "SELECT * FROM cssp_vuln_management WHERE project_id = ? ORDER BY scan_date DESC",
+                "SELECT * FROM cssp_vuln_management WHERE project_id = %s ORDER BY scan_date DESC",
                 (project_id,),
             ).fetchall()
         except sqlite3.OperationalError:

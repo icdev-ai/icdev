@@ -99,7 +99,7 @@ def _seed_kanban_task(conn, gap: Dict, req_id: str, now: str, results: Dict) -> 
 
     existing = conn.execute(
         "SELECT id FROM kanban_tasks "
-        "WHERE title = ? AND dispatch_source = ? AND status NOT IN ('done', 'dismissed')",
+        "WHERE title = %s AND dispatch_source = %s AND status NOT IN ('done', 'dismissed')",
         (title, _DISPATCH_SOURCE),
     ).fetchone()
     if existing:
@@ -133,7 +133,7 @@ def _seed_kanban_task(conn, gap: Dict, req_id: str, now: str, results: Dict) -> 
         INSERT INTO kanban_tasks
             (id, task_type, title, description, status, priority,
              tags, dispatch_source, created_at, updated_at)
-        VALUES (?, ?, ?, ?, 'suggested', ?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, 'suggested', %s, %s, %s, %s, %s)
         """,
         (
             task_id,

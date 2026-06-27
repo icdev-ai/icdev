@@ -1329,7 +1329,7 @@ def _persist_blueprint(blueprint: Dict[str, Any]) -> bool:
             """INSERT OR REPLACE INTO app_blueprints
                (id, app_name, classification, impact_level, capabilities,
                 agents, cloud_provider, blueprint_hash, generated_at, full_blueprint)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 blueprint.get("blueprint_id"),
                 blueprint.get("app_name"),

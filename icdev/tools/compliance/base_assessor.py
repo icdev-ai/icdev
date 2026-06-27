@@ -70,7 +70,7 @@ class BaseAssessor(ABC):
         return conn
 
     def _get_project(self, conn: sqlite3.Connection, project_id: str) -> Dict:
-        row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+        row = conn.execute("SELECT * FROM projects WHERE id = %s", (project_id,)).fetchone()
         if not row:
             raise ValueError(f"Project '{project_id}' not found.")
         return dict(row)
@@ -88,7 +88,7 @@ class BaseAssessor(ABC):
                 """INSERT INTO audit_trail
                    (project_id, event_type, actor, action, details,
                     affected_files, classification)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s)""",
                 (
                     project_id,
                     f"{self.FRAMEWORK_ID}_assessed",
@@ -184,7 +184,7 @@ class BaseAssessor(ABC):
         try:
             rows = conn.execute(
                 """SELECT control_id, implementation_status
-                   FROM project_controls WHERE project_id = ?""",
+                   FROM project_controls WHERE project_id = %s""",
                 (project_id,),
             ).fetchall()
             return {row["control_id"].upper(): row["implementation_status"] for row in rows}
@@ -368,7 +368,7 @@ class BaseAssessor(ABC):
                        (project_id, framework_id, total_controls,
                         implemented_controls, coverage_pct, gate_status,
                         last_assessed, updated_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
                     (
                         project_id,
                         self.FRAMEWORK_ID,

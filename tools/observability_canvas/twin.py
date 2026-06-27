@@ -18,14 +18,14 @@ def take_snapshot(design_id: str, label: str | None = None) -> dict:
     label = label or f"snap-{taken_at[:10]}"
     try:
         service_count = conn.execute(
-            "SELECT COUNT(*) FROM observability_nodes WHERE design_id=? AND node_type='service'", (design_id,)
+            "SELECT COUNT(*) FROM observability_nodes WHERE design_id=%s AND node_type='service'", (design_id,)
         ).fetchone()[0]
     except Exception:
         service_count = 0
     coverage_score = 0.0
     try:
         conn.execute(
-            "INSERT INTO odc_twin_snapshots (id, design_id, label, service_count, coverage_score, created_at) VALUES (?,?,?,?,?,?)",
+            "INSERT INTO odc_twin_snapshots (id, design_id, label, service_count, coverage_score, created_at) VALUES (%s,%s,%s,%s,%s,%s)",
             (snap_id, design_id, label, service_count, coverage_score, taken_at),
         )
         conn.commit()

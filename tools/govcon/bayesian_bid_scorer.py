@@ -105,7 +105,7 @@ def _audit(conn, event_type, action, details, opportunity_id=None):
         try:
             conn.execute(
                 "INSERT INTO audit_trail (created_at, event_type, actor, action, details, project_id, session_id) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
                 (
                     _now(),
                     event_type,
@@ -161,7 +161,7 @@ def compute_info_gain_weights(project_id):
     try:
         decisions = conn.execute(
             "SELECT id, opportunity_id, recommendation, confidence, scoring_dimensions "
-            "FROM pg_bid_decisions WHERE project_id = ? OR ? IS NULL "
+            "FROM pg_bid_decisions WHERE project_id = %s OR %s IS NULL "
             "ORDER BY created_at DESC",
             (project_id, project_id),
         ).fetchall()
@@ -265,7 +265,7 @@ def compute_info_gain_weights(project_id):
         conn.execute(
             "INSERT INTO pg_info_gain_weights (id, project_id, dimension, posterior_shift, "
             "discriminability, info_gain_weight, sample_size, computed_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 wid,
                 project_id or "global",
@@ -517,7 +517,7 @@ def compute_pwin(opportunity_id, factors, estimated_value=None):
         "(id, opportunity_id, pwin_score, pwin_pct, weighted_value, "
         " incumbency, crm_engagement, competitive_position, compliance_coverage, "
         " past_performance_fit, factor_breakdown, method, assessed_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
         (
             record_id,
             opportunity_id,
@@ -556,7 +556,7 @@ def get_pwin_assessment(opportunity_id):
     conn = _get_db()
     _ensure_pwin_table(conn)
     row = conn.execute(
-        "SELECT * FROM pg_pwin_assessments WHERE opportunity_id = ? ORDER BY assessed_at DESC LIMIT 1",
+        "SELECT * FROM pg_pwin_assessments WHERE opportunity_id = %s ORDER BY assessed_at DESC LIMIT 1",
         (opportunity_id,),
     ).fetchone()
     conn.close()
@@ -665,7 +665,7 @@ def calibrate_from_outcome(bid_decision_id, outcome):
     wl_id = _gen_id("wl")
     conn.execute(
         "INSERT INTO pg_win_loss_records (id, bid_decision_id, outcome, debrief_notes, recorded_at) "
-        "VALUES (?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s)",
         (wl_id, bid_decision_id, outcome, None, _now()),
     )
     _audit(

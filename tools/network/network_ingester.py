@@ -331,7 +331,7 @@ def _persist_to_topology(graph: dict, name: str, conn) -> str:
     now = datetime.now(timezone.utc).isoformat()
     conn.execute(
         "INSERT INTO topologies (id, name, graph_json, classification, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s)",
         (topology_id, name, json.dumps(graph), "CUI // SP-CTI", now, now),
     )
     conn.commit()
@@ -348,7 +348,7 @@ def _persist_to_devices(graph: dict, topology_id: str, conn) -> int:
         conn.execute(
             "INSERT INTO ni_devices (id, topology_id, node_id, label, device_type, "
             "vendor, model, firmware_version, site, properties_json, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 device_id,
                 topology_id,

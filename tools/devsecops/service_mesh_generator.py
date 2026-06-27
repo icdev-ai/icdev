@@ -126,7 +126,7 @@ def _get_profile(project_id: str) -> dict:
     try:
         conn = _get_db()
         row = conn.execute(
-            "SELECT * FROM devsecops_profiles WHERE project_id = ? ORDER BY created_at DESC LIMIT 1",
+            "SELECT * FROM devsecops_profiles WHERE project_id = %s ORDER BY created_at DESC LIMIT 1",
             (project_id,),
         ).fetchone()
         conn.close()
@@ -154,7 +154,7 @@ def _get_project_info(project_id: str) -> dict:
     try:
         conn = _get_db()
         row = conn.execute(
-            "SELECT * FROM projects WHERE project_id = ? LIMIT 1",
+            "SELECT * FROM projects WHERE project_id = %s LIMIT 1",
             (project_id,),
         ).fetchone()
         conn.close()

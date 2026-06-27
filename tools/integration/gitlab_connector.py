@@ -146,7 +146,7 @@ def configure(project_id, instance_url, gitlab_project_id, auth_secret_ref, fiel
                (id, project_id, system_type, instance_url, auth_method,
                 auth_secret_ref, sync_direction, sync_status, field_mapping,
                 filter_criteria, classification, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 connection_id,
                 project_id,
@@ -207,7 +207,7 @@ def push_to_gitlab(project_id, session_id=None, dry_run=False, db_path=None):
         row = conn.execute(
             """SELECT id, instance_url, field_mapping, filter_criteria
                FROM integration_connections
-               WHERE project_id = ? AND system_type = ? AND sync_status != 'disabled'
+               WHERE project_id = %s AND system_type = %s AND sync_status != 'disabled'
                ORDER BY created_at DESC LIMIT 1""",
             (project_id, INTEGRATION_TYPE),
         ).fetchone()
@@ -225,14 +225,14 @@ def push_to_gitlab(project_id, session_id=None, dry_run=False, db_path=None):
                 """SELECT id, level, title, description, acceptance_criteria,
                           story_points, status, parent_id
                    FROM safe_decomposition
-                   WHERE session_id = ? AND project_id = ?
+                   WHERE session_id = %s AND project_id = %s
                    ORDER BY level, title""",
                 (session_id, project_id),
             ).fetchall()
         else:
             sess = conn.execute(
                 """SELECT id FROM intake_sessions
-                   WHERE project_id = ? ORDER BY created_at DESC LIMIT 1""",
+                   WHERE project_id = %s ORDER BY created_at DESC LIMIT 1""",
                 (project_id,),
             ).fetchone()
             if not sess:
@@ -242,7 +242,7 @@ def push_to_gitlab(project_id, session_id=None, dry_run=False, db_path=None):
                 """SELECT id, level, title, description, acceptance_criteria,
                           story_points, status, parent_id
                    FROM safe_decomposition
-                   WHERE session_id = ? ORDER BY level, title""",
+                   WHERE session_id = %s ORDER BY level, title""",
                 (session_id,),
             ).fetchall()
 
@@ -273,7 +273,7 @@ def push_to_gitlab(project_id, session_id=None, dry_run=False, db_path=None):
             # Check if already mapped
             existing = conn.execute(
                 """SELECT id, external_id FROM integration_id_map
-                   WHERE connection_id = ? AND icdev_id = ? AND icdev_type = 'safe_decomposition'""",
+                   WHERE connection_id = %s AND icdev_id = %s AND icdev_type = 'safe_decomposition'""",
                 (connection_id, item_dict["id"]),
             ).fetchone()
 
@@ -303,8 +303,8 @@ def push_to_gitlab(project_id, session_id=None, dry_run=False, db_path=None):
                 detail["gitlab_id"] = existing["external_id"]
                 if not dry_run:
                     conn.execute(
-                        """UPDATE integration_id_map SET last_synced = ?, sync_status = 'synced'
-                           WHERE id = ?""",
+                        """UPDATE integration_id_map SET last_synced = %s, sync_status = 'synced'
+                           WHERE id = %s""",
                         (now, existing["id"]),
                     )
                 items_updated += 1
@@ -315,7 +315,7 @@ def push_to_gitlab(project_id, session_id=None, dry_run=False, db_path=None):
                         """INSERT INTO integration_id_map
                            (connection_id, icdev_type, icdev_id, external_id,
                             external_type, external_url, sync_status, last_synced)
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
                         (
                             connection_id,
                             "safe_decomposition",
@@ -340,7 +340,7 @@ def push_to_gitlab(project_id, session_id=None, dry_run=False, db_path=None):
                 """INSERT INTO integration_sync_log
                    (connection_id, sync_direction, items_synced, items_created,
                     items_updated, items_failed, error_details, synced_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     connection_id,
                     "push",
@@ -353,8 +353,8 @@ def push_to_gitlab(project_id, session_id=None, dry_run=False, db_path=None):
                 ),
             )
             conn.execute(
-                """UPDATE integration_connections SET last_sync = ?, sync_status = 'synced',
-                   updated_at = ? WHERE id = ?""",
+                """UPDATE integration_connections SET last_sync = %s, sync_status = 'synced',
+                   updated_at = %s WHERE id = %s""",
                 (now, now, connection_id),
             )
             conn.commit()
@@ -402,7 +402,7 @@ def pull_from_gitlab(project_id, db_path=None):
     try:
         row = conn.execute(
             """SELECT id, instance_url FROM integration_connections
-               WHERE project_id = ? AND system_type = ? AND sync_status != 'disabled'
+               WHERE project_id = %s AND system_type = %s AND sync_status != 'disabled'
                ORDER BY created_at DESC LIMIT 1""",
             (project_id, INTEGRATION_TYPE),
         ).fetchone()
@@ -416,7 +416,7 @@ def pull_from_gitlab(project_id, db_path=None):
         mappings = conn.execute(
             """SELECT icdev_id, external_id, external_type
                FROM integration_id_map
-               WHERE connection_id = ? AND icdev_type = 'safe_decomposition'""",
+               WHERE connection_id = %s AND icdev_type = 'safe_decomposition'""",
             (connection_id,),
         ).fetchall()
 
@@ -430,8 +430,8 @@ def pull_from_gitlab(project_id, db_path=None):
             # For issues: GET /api/v4/projects/:id/issues/:issue_iid
             items_pulled += 1
             conn.execute(
-                """UPDATE integration_id_map SET last_synced = ?, sync_status = 'synced'
-                   WHERE connection_id = ? AND icdev_id = ?
+                """UPDATE integration_id_map SET last_synced = %s, sync_status = 'synced'
+                   WHERE connection_id = %s AND icdev_id = %s
                    AND icdev_type = 'safe_decomposition'""",
                 (now, connection_id, mapping_dict["icdev_id"]),
             )
@@ -440,12 +440,12 @@ def pull_from_gitlab(project_id, db_path=None):
             """INSERT INTO integration_sync_log
                (connection_id, sync_direction, items_synced, items_created,
                 items_updated, items_failed, synced_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
             (connection_id, "pull", items_pulled, 0, items_updated, 0, now),
         )
         conn.execute(
-            """UPDATE integration_connections SET last_sync = ?, sync_status = 'synced',
-               updated_at = ? WHERE id = ?""",
+            """UPDATE integration_connections SET last_sync = %s, sync_status = 'synced',
+               updated_at = %s WHERE id = %s""",
             (now, now, connection_id),
         )
         conn.commit()
@@ -494,7 +494,7 @@ def create_merge_request(project_id, session_id, source_branch, target_branch="m
         row = conn.execute(
             """SELECT id, instance_url, filter_criteria
                FROM integration_connections
-               WHERE project_id = ? AND system_type = ? AND sync_status != 'disabled'
+               WHERE project_id = %s AND system_type = %s AND sync_status != 'disabled'
                ORDER BY created_at DESC LIMIT 1""",
             (project_id, INTEGRATION_TYPE),
         ).fetchone()
@@ -509,7 +509,7 @@ def create_merge_request(project_id, session_id, source_branch, target_branch="m
         # Get session info
         session = conn.execute(
             """SELECT customer_name, customer_org, total_requirements, readiness_score
-               FROM intake_sessions WHERE id = ?""",
+               FROM intake_sessions WHERE id = %s""",
             (session_id,),
         ).fetchone()
 
@@ -521,7 +521,7 @@ def create_merge_request(project_id, session_id, source_branch, target_branch="m
         # Get SAFe items count
         safe_count = conn.execute(
             """SELECT COUNT(*) as cnt FROM safe_decomposition
-               WHERE session_id = ?""",
+               WHERE session_id = %s""",
             (session_id,),
         ).fetchone()["cnt"]
 
@@ -529,7 +529,7 @@ def create_merge_request(project_id, session_id, source_branch, target_branch="m
         impacts = conn.execute(
             """SELECT impact_tier, COUNT(*) as cnt
                FROM boundary_impact_assessments
-               WHERE session_id = ?
+               WHERE session_id = %s
                GROUP BY impact_tier""",
             (session_id,),
         ).fetchall()
@@ -631,7 +631,7 @@ def get_sync_status(project_id, db_path=None):
             """SELECT id, instance_url, sync_status, last_sync, filter_criteria,
                       created_at
                FROM integration_connections
-               WHERE project_id = ? AND system_type = ?
+               WHERE project_id = %s AND system_type = %s
                ORDER BY created_at DESC LIMIT 1""",
             (project_id, INTEGRATION_TYPE),
         ).fetchone()
@@ -643,7 +643,7 @@ def get_sync_status(project_id, db_path=None):
 
         mapping_count = conn.execute(
             """SELECT COUNT(*) as cnt FROM integration_id_map
-               WHERE connection_id = ?""",
+               WHERE connection_id = %s""",
             (connection_id,),
         ).fetchone()["cnt"]
 
@@ -651,7 +651,7 @@ def get_sync_status(project_id, db_path=None):
             """SELECT sync_direction, items_synced, items_created, items_updated,
                       items_failed, synced_at
                FROM integration_sync_log
-               WHERE connection_id = ? ORDER BY synced_at DESC LIMIT 1""",
+               WHERE connection_id = %s ORDER BY synced_at DESC LIMIT 1""",
             (connection_id,),
         ).fetchone()
 
@@ -700,7 +700,7 @@ def list_mappings(project_id, db_path=None):
     try:
         row = conn.execute(
             """SELECT id FROM integration_connections
-               WHERE project_id = ? AND system_type = ?
+               WHERE project_id = %s AND system_type = %s
                ORDER BY created_at DESC LIMIT 1""",
             (project_id, INTEGRATION_TYPE),
         ).fetchone()
@@ -713,7 +713,7 @@ def list_mappings(project_id, db_path=None):
             """SELECT icdev_type, icdev_id, external_id, external_type,
                       external_url, sync_status, last_synced
                FROM integration_id_map
-               WHERE connection_id = ?
+               WHERE connection_id = %s
                ORDER BY last_synced DESC""",
             (connection_id,),
         ).fetchall()

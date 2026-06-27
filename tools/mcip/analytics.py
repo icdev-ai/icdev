@@ -45,7 +45,7 @@ def ingest_event(
             INSERT INTO mcip_dat_events
                 (id, source_type, content_hash, sender, recipient,
                  classification, tension_signal, ingested_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (event_id, source_type, content_hash, sender, recipient,
              classification, tension_signal, _now_iso()),
@@ -80,7 +80,7 @@ def compute_dti(window_hours: int = 6) -> dict:
                 """
                 SELECT COUNT(*) as cnt, AVG(tension_signal) as avg_sig
                 FROM mcip_dat_events
-                WHERE source_type = ? AND ingested_at >= ?
+                WHERE source_type = %s AND ingested_at >= %s
                 """,
                 (src, since),
             ).fetchone()
@@ -113,7 +113,7 @@ def record_dti_score(score: float, sub_scores: dict, event_count: int) -> str:
             INSERT INTO mcip_dti_scores
                 (id, score, cable_sub, unsc_sub, backchannel_sub,
                  event_count, computed_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 row_id,
@@ -161,7 +161,7 @@ def get_dti_history(hours: int = 48) -> list[dict]:
     conn = _get_conn()
     try:
         rows = conn.execute(
-            "SELECT * FROM mcip_dti_scores WHERE computed_at >= ? ORDER BY computed_at DESC",
+            "SELECT * FROM mcip_dti_scores WHERE computed_at >= %s ORDER BY computed_at DESC",
             (since,),
         ).fetchall()
         return [dict(r) for r in rows]
@@ -178,12 +178,12 @@ def get_recent_events(source_type: str | None = None, limit: int = 50) -> list[d
     try:
         if source_type:
             rows = conn.execute(
-                "SELECT * FROM mcip_dat_events WHERE source_type = ? ORDER BY ingested_at DESC LIMIT ?",
+                "SELECT * FROM mcip_dat_events WHERE source_type = %s ORDER BY ingested_at DESC LIMIT %s",
                 (source_type, limit),
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT * FROM mcip_dat_events ORDER BY ingested_at DESC LIMIT ?",
+                "SELECT * FROM mcip_dat_events ORDER BY ingested_at DESC LIMIT %s",
                 (limit,),
             ).fetchall()
         return [dict(r) for r in rows]

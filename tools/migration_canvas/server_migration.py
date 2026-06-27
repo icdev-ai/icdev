@@ -322,15 +322,15 @@ def compute_rightsizing(session_id: str) -> dict:
     """Analyze utilization and write top-3 recommendations to mc_srv_rightsizing."""
     conn = _mc_conn()
     try:
-        sess = conn.execute("SELECT * FROM mc_srv_sessions WHERE id=?", (session_id,)).fetchone()
+        sess = conn.execute("SELECT * FROM mc_srv_sessions WHERE id=%s", (session_id,)).fetchone()
         if not sess:
             return {"error": "session not found"}
         sess = dict(sess)
 
-        inv = conn.execute("SELECT * FROM mc_srv_inventory WHERE session_id=?", (session_id,)).fetchone()
+        inv = conn.execute("SELECT * FROM mc_srv_inventory WHERE session_id=%s", (session_id,)).fetchone()
         src_specs = dict(inv) if inv else {}
 
-        perf = conn.execute("SELECT * FROM mc_srv_performance WHERE session_id=? ORDER BY id DESC LIMIT 1", (session_id,)).fetchone()
+        perf = conn.execute("SELECT * FROM mc_srv_performance WHERE session_id=%s ORDER BY id DESC LIMIT 1", (session_id,)).fetchone()
         perf_data = dict(perf) if perf else None
         perf_source = (perf_data or {}).get("source", "none") if perf_data else "none"
 
@@ -339,13 +339,13 @@ def compute_rightsizing(session_id: str) -> dict:
         )
 
         # Persist recommendations
-        conn.execute("DELETE FROM mc_srv_rightsizing WHERE session_id=?", (session_id,))
+        conn.execute("DELETE FROM mc_srv_rightsizing WHERE session_id=%s", (session_id,))
         for rec in recs:
             conn.execute(
                 "INSERT INTO mc_srv_rightsizing "
                 "(session_id, recommended_instance_id, rank, cost_tier, rationale, "
                 "vcpu_req, ram_req_gb, disk_req_gb, headroom_factor) "
-                "VALUES (?,?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (session_id, rec["instance"]["id"], rec["rank"], rec["cost_tier"],
                  rec["rationale"], rec["vcpu_req"], rec["ram_req_gb"],
                  src_specs.get("total_disk_gb", 0), 1.2),
@@ -362,20 +362,20 @@ def run_compatibility_checks(session_id: str) -> list[dict]:
     """Generate CAT1/CAT2/CAT3 compatibility findings and persist to DB."""
     conn = _mc_conn()
     try:
-        sess = conn.execute("SELECT * FROM mc_srv_sessions WHERE id=?", (session_id,)).fetchone()
+        sess = conn.execute("SELECT * FROM mc_srv_sessions WHERE id=%s", (session_id,)).fetchone()
         if not sess:
             return []
         sess = dict(sess)
 
-        inv_row = conn.execute("SELECT * FROM mc_srv_inventory WHERE session_id=?", (session_id,)).fetchone()
+        inv_row = conn.execute("SELECT * FROM mc_srv_inventory WHERE session_id=%s", (session_id,)).fetchone()
         inv = dict(inv_row) if inv_row else {}
 
-        perf_row = conn.execute("SELECT * FROM mc_srv_performance WHERE session_id=? ORDER BY id DESC LIMIT 1", (session_id,)).fetchone()
+        perf_row = conn.execute("SELECT * FROM mc_srv_performance WHERE session_id=%s ORDER BY id DESC LIMIT 1", (session_id,)).fetchone()
         perf = dict(perf_row) if perf_row else {}
 
         tgt_row = None
         if sess.get("tgt_instance_id"):
-            tgt_row = conn.execute("SELECT * FROM mc_cloud_instances WHERE id=?", (sess["tgt_instance_id"],)).fetchone()
+            tgt_row = conn.execute("SELECT * FROM mc_cloud_instances WHERE id=%s", (sess["tgt_instance_id"],)).fetchone()
         tgt = dict(tgt_row) if tgt_row else {}
 
         findings = []
@@ -440,14 +440,14 @@ def run_compatibility_checks(session_id: str) -> list[dict]:
             findings.append(("licensing", "Windows requires BYOL on GovCloud", "BYOL license available", "Not confirmed", "cat2"))
 
         # Persist — delete old auto-detected rows first
-        conn.execute("DELETE FROM mc_srv_compat_checks WHERE session_id=? AND auto_detected=1", (session_id,))
+        conn.execute("DELETE FROM mc_srv_compat_checks WHERE session_id=%s AND auto_detected=1", (session_id,))
         result = []
         for category, check_name, expected, actual, severity in findings:
             status = "fail" if severity in ("cat1", "cat2") else "warning"
             conn.execute(
                 "INSERT INTO mc_srv_compat_checks "
                 "(session_id, category, check_name, expected, actual, severity, status, auto_detected) "
-                "VALUES (?,?,?,?,?,?,?,1)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,1)",
                 (session_id, category, check_name, expected, actual, severity, status),
             )
             result.append({"category": category, "check_name": check_name,
@@ -630,13 +630,13 @@ def generate_default_cutover_steps(session_id: str, migration_type: str) -> list
 
     conn = _mc_conn()
     try:
-        conn.execute("DELETE FROM mc_srv_cutover_steps WHERE session_id=?", (session_id,))
+        conn.execute("DELETE FROM mc_srv_cutover_steps WHERE session_id=%s", (session_id,))
         rows = []
         for phase, seq, desc, verify, rollback, dur in _CUTOVER_TEMPLATES[template_key]:
             conn.execute(
                 "INSERT INTO mc_srv_cutover_steps "
                 "(session_id, phase, seq_no, description, verify_action, rollback_action, duration_min, status) "
-                "VALUES (?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
                 (session_id, phase, seq, desc, verify, rollback, dur, "pending"),
             )
             rows.append({"phase": phase, "seq_no": seq, "description": desc,
@@ -677,13 +677,13 @@ def generate_default_test_cases(session_id: str) -> list[dict]:
     """Seed mc_srv_test_cases with pre/post test templates."""
     conn = _mc_conn()
     try:
-        conn.execute("DELETE FROM mc_srv_test_cases WHERE session_id=?", (session_id,))
+        conn.execute("DELETE FROM mc_srv_test_cases WHERE session_id=%s", (session_id,))
         rows = []
         for phase, seq, name, procedure, expected in _TEST_CASE_TEMPLATES:
             conn.execute(
                 "INSERT INTO mc_srv_test_cases "
                 "(session_id, phase, seq_no, test_name, procedure, expected_result) "
-                "VALUES (?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s)",
                 (session_id, phase, seq, name, procedure, expected),
             )
             rows.append({"phase": phase, "seq_no": seq, "test_name": name,
@@ -700,33 +700,33 @@ def build_erb_package(session_id: str) -> dict:
     """Assemble a complete ERB document JSON from all session sub-tables."""
     conn = _mc_conn()
     try:
-        sess = conn.execute("SELECT * FROM mc_srv_sessions WHERE id=?", (session_id,)).fetchone()
+        sess = conn.execute("SELECT * FROM mc_srv_sessions WHERE id=%s", (session_id,)).fetchone()
         if not sess:
             return {"error": "session not found"}
         sess = dict(sess)
 
-        inv = conn.execute("SELECT * FROM mc_srv_inventory WHERE session_id=? LIMIT 1", (session_id,)).fetchone()
+        inv = conn.execute("SELECT * FROM mc_srv_inventory WHERE session_id=%s LIMIT 1", (session_id,)).fetchone()
         tgt_inst = None
         if sess.get("tgt_instance_id"):
-            tgt_inst = conn.execute("SELECT * FROM mc_cloud_instances WHERE id=?", (sess["tgt_instance_id"],)).fetchone()
+            tgt_inst = conn.execute("SELECT * FROM mc_cloud_instances WHERE id=%s", (sess["tgt_instance_id"],)).fetchone()
 
         compat_rows = [dict(r) for r in conn.execute(
-            "SELECT * FROM mc_srv_compat_checks WHERE session_id=?", (session_id,)).fetchall()]
+            "SELECT * FROM mc_srv_compat_checks WHERE session_id=%s", (session_id,)).fetchall()]
         cat1 = sum(1 for r in compat_rows if r["severity"] == "cat1" and r["status"] not in ("pass", "overridden"))
         cat2 = sum(1 for r in compat_rows if r["severity"] == "cat2")
         cat3 = sum(1 for r in compat_rows if r["severity"] == "cat3")
 
         rightsizing = [dict(r) for r in conn.execute(
-            "SELECT * FROM mc_srv_rightsizing WHERE session_id=? ORDER BY rank LIMIT 1", (session_id,)).fetchall()]
+            "SELECT * FROM mc_srv_rightsizing WHERE session_id=%s ORDER BY rank LIMIT 1", (session_id,)).fetchall()]
 
         cutover = [dict(r) for r in conn.execute(
-            "SELECT * FROM mc_srv_cutover_steps WHERE session_id=? ORDER BY seq_no", (session_id,)).fetchall()]
+            "SELECT * FROM mc_srv_cutover_steps WHERE session_id=%s ORDER BY seq_no", (session_id,)).fetchall()]
         pre_tests = [dict(r) for r in conn.execute(
-            "SELECT * FROM mc_srv_test_cases WHERE session_id=? AND phase='pre' ORDER BY seq_no", (session_id,)).fetchall()]
+            "SELECT * FROM mc_srv_test_cases WHERE session_id=%s AND phase='pre' ORDER BY seq_no", (session_id,)).fetchall()]
         post_tests = [dict(r) for r in conn.execute(
-            "SELECT * FROM mc_srv_test_cases WHERE session_id=? AND phase='post' ORDER BY seq_no", (session_id,)).fetchall()]
+            "SELECT * FROM mc_srv_test_cases WHERE session_id=%s AND phase='post' ORDER BY seq_no", (session_id,)).fetchall()]
 
-        erb = conn.execute("SELECT * FROM mc_srv_erb_metadata WHERE session_id=? LIMIT 1", (session_id,)).fetchone()
+        erb = conn.execute("SELECT * FROM mc_srv_erb_metadata WHERE session_id=%s LIMIT 1", (session_id,)).fetchone()
 
         score_result = compute_readiness_score(session_id)
 
@@ -754,19 +754,19 @@ def compute_readiness_score(session_id: str) -> dict:
     """Compute weighted 0–100 readiness score and update mc_srv_sessions."""
     conn = _mc_conn()
     try:
-        inv = conn.execute("SELECT id FROM mc_srv_inventory WHERE session_id=? LIMIT 1", (session_id,)).fetchone()
-        perf = conn.execute("SELECT id FROM mc_srv_performance WHERE session_id=? LIMIT 1", (session_id,)).fetchone()
-        svcs = conn.execute("SELECT COUNT(*) FROM mc_srv_services WHERE session_id=?", (session_id,)).fetchone()[0]
-        compat_total = conn.execute("SELECT COUNT(*) FROM mc_srv_compat_checks WHERE session_id=?", (session_id,)).fetchone()[0]
+        inv = conn.execute("SELECT id FROM mc_srv_inventory WHERE session_id=%s LIMIT 1", (session_id,)).fetchone()
+        perf = conn.execute("SELECT id FROM mc_srv_performance WHERE session_id=%s LIMIT 1", (session_id,)).fetchone()
+        svcs = conn.execute("SELECT COUNT(*) FROM mc_srv_services WHERE session_id=%s", (session_id,)).fetchone()[0]
+        compat_total = conn.execute("SELECT COUNT(*) FROM mc_srv_compat_checks WHERE session_id=%s", (session_id,)).fetchone()[0]
         cat1_open = conn.execute(
-            "SELECT COUNT(*) FROM mc_srv_compat_checks WHERE session_id=? AND severity='cat1' AND status NOT IN ('pass','overridden')",
+            "SELECT COUNT(*) FROM mc_srv_compat_checks WHERE session_id=%s AND severity='cat1' AND status NOT IN ('pass','overridden')",
             (session_id,)).fetchone()[0]
-        rightsize = conn.execute("SELECT COUNT(*) FROM mc_srv_rightsizing WHERE session_id=?", (session_id,)).fetchone()[0]
-        nics = conn.execute("SELECT COUNT(*) FROM mc_srv_nic_map WHERE session_id=?", (session_id,)).fetchone()[0]
-        storage = conn.execute("SELECT COUNT(*) FROM mc_srv_storage_map WHERE session_id=?", (session_id,)).fetchone()[0]
-        cutover = conn.execute("SELECT COUNT(*) FROM mc_srv_cutover_steps WHERE session_id=?", (session_id,)).fetchone()[0]
-        tests = conn.execute("SELECT COUNT(*) FROM mc_srv_test_cases WHERE session_id=?", (session_id,)).fetchone()[0]
-        erb = conn.execute("SELECT id FROM mc_srv_erb_metadata WHERE session_id=? LIMIT 1", (session_id,)).fetchone()
+        rightsize = conn.execute("SELECT COUNT(*) FROM mc_srv_rightsizing WHERE session_id=%s", (session_id,)).fetchone()[0]
+        nics = conn.execute("SELECT COUNT(*) FROM mc_srv_nic_map WHERE session_id=%s", (session_id,)).fetchone()[0]
+        storage = conn.execute("SELECT COUNT(*) FROM mc_srv_storage_map WHERE session_id=%s", (session_id,)).fetchone()[0]
+        cutover = conn.execute("SELECT COUNT(*) FROM mc_srv_cutover_steps WHERE session_id=%s", (session_id,)).fetchone()[0]
+        tests = conn.execute("SELECT COUNT(*) FROM mc_srv_test_cases WHERE session_id=%s", (session_id,)).fetchone()[0]
+        erb = conn.execute("SELECT id FROM mc_srv_erb_metadata WHERE session_id=%s LIMIT 1", (session_id,)).fetchone()
 
         breakdown = {
             "inventory": 15 if inv else 0,
@@ -787,7 +787,7 @@ def compute_readiness_score(session_id: str) -> dict:
 
         score = max(0.0, min(100.0, float(sum(breakdown.values())) - penalty))
 
-        conn.execute("UPDATE mc_srv_sessions SET readiness_score=?, updated_at=? WHERE id=?",
+        conn.execute("UPDATE mc_srv_sessions SET readiness_score=%s, updated_at=%s WHERE id=%s",
                      (score, _now(), session_id))
         conn.commit()
 
@@ -1252,7 +1252,7 @@ def import_from_hypervisor(
         conn.execute(
             "INSERT OR IGNORE INTO mc_srv_hypervisor_sessions "
             "(id, session_id, adapter_type, host, datacenter, cluster, pulled_at, vm_count, status, error_msg) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (
                 hv_session_id, session_id, adapter_type, host,
                 datacenter or "", cluster or "", now,
@@ -1270,7 +1270,7 @@ def import_from_hypervisor(
                 "(id, session_id, hostname, vcpus, ram_gb, disk_count, total_disk_gb, "
                 "disk_type, nic_count, os_family, os_name, os_arch, bios_type, "
                 "virtualization_ext, source_format, imported_at) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (
                     inv_id, session_id,
                     vm.get("hostname", "unknown"),

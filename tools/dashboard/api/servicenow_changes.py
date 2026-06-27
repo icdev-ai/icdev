@@ -34,12 +34,12 @@ def _table_exists(conn, name):
     try:
         if getattr(conn, "_backend", "sqlite") == "postgresql":
             row = conn.execute(
-                "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = ?",
+                "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = %s",
                 (name,),
             ).fetchone()
             return row is not None
         row = conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=%s",
             (name,),
         ).fetchone()
         return row is not None
@@ -187,7 +187,7 @@ def get_change(ticket_id):
             "type, state, priority, risk, impact, category, assignment_group, assigned_to, "
             "requested_by, start_date, end_date, approval, close_code, close_notes, "
             "project_id, migration_plan_id, sync_status, raw_json, created_at, updated_at, last_synced "
-            "FROM servicenow_change_tickets WHERE id = ?",
+            "FROM servicenow_change_tickets WHERE id = %s",
             (ticket_id,),
         ).fetchone()
 
@@ -268,7 +268,7 @@ def sync_changes():
 
         # Check existing count
         existing = conn.execute(
-            "SELECT COUNT(*) FROM servicenow_change_tickets WHERE connection_id = ?",
+            "SELECT COUNT(*) FROM servicenow_change_tickets WHERE connection_id = %s",
             (connection_id,),
         ).fetchone()[0]
 
@@ -296,7 +296,7 @@ def sync_changes():
                         assigned_to, requested_by, start_date, end_date, approval, close_code,
                         close_notes, project_id, migration_plan_id, sync_status, raw_json,
                         created_at, updated_at, last_synced)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                     (
                         ticket_id,
                         connection_id,
@@ -331,7 +331,7 @@ def sync_changes():
 
         # Update connection last_sync
         conn.execute(
-            "UPDATE integration_connections SET last_sync = ?, updated_at = ? WHERE id = ?",
+            "UPDATE integration_connections SET last_sync = %s, updated_at = %s WHERE id = %s",
             (now, now, connection_id),
         )
         conn.commit()

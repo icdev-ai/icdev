@@ -229,7 +229,7 @@ def run(server: str = "http://localhost:3080",
         try:
             new_status = "pushed" if gate == "PASS" else "push_partial"
             conn.execute(
-                "UPDATE ndc_topologies SET ztp_status=?, updated_at=? "
+                "UPDATE ndc_topologies SET ztp_status=%s, updated_at=%s "
                 "WHERE source='gns3' ORDER BY updated_at DESC LIMIT 1",
                 (new_status, datetime.now(timezone.utc).isoformat()),
             )

@@ -527,7 +527,7 @@ def store_metrics(project_id: str, metrics: Dict[str, Any]) -> str:
                 coupling_score, cohesion_score, interface_coverage_pct,
                 circular_deps, approved_icd_count, total_icd_required,
                 tsp_current, overall_modularity_score)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 record_id,
                 project_id,

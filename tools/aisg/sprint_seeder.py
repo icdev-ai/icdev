@@ -60,7 +60,7 @@ def seed_for_maturity(
                 """INSERT OR IGNORE INTO kanban_tasks
                    (id, title, task_type, priority, status, created_at, updated_at,
                     scheduled_at, dispatch_source)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     task_id,
                     task["title"],

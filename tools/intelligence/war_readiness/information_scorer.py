@@ -656,7 +656,7 @@ def _persist_score(result: dict) -> None:
                 (scenario_id, information_score, rhetoric_score,
                  dehumanization_index, cyber_recon_score, disinformation_surge,
                  detail_json, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 result["scenario_id"],
@@ -690,7 +690,7 @@ def _load_signals_from_db(scenario_id: str) -> dict:
             """
             SELECT signal_type, payload_json
             FROM sg_information_signals
-            WHERE scenario_id = ?
+            WHERE scenario_id = %s
             ORDER BY signal_ts ASC
             """,
             (scenario_id,),

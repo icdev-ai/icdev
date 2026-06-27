@@ -372,7 +372,7 @@ class MigrationLens(BaseLens):
                     "INSERT INTO mc_oracle_predictions "
                     "(id, design_id, lens_id, title, description, confidence, severity, "
                     "category, recommendations, data_json, created_at) "
-                    "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                     (
                         pred.id,
                         pred.data.get("design_id", ""),

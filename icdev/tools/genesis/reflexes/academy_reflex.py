@@ -60,7 +60,7 @@ def _fetch_pattern_confidence_history(conn: Any, limit: int = 100) -> List[float
     try:
         rows = conn.execute(
             "SELECT confidence FROM genesis_gkp "
-            "WHERE confidence IS NOT NULL ORDER BY created_at DESC LIMIT ?",
+            "WHERE confidence IS NOT NULL ORDER BY created_at DESC LIMIT %s",
             (limit,),
         ).fetchall()
         return [float(r["confidence"]) for r in rows if r["confidence"] is not None]
@@ -150,7 +150,7 @@ def _fetch_unmatched_patterns(conn: Any, threshold: float = FALLBACK_THRESHOLD) 
             SELECT id, payload, confidence, created_at
             FROM genesis_gkp
             WHERE artifact_type = 'proven_pattern'
-              AND confidence >= ?
+              AND confidence >= %s
               AND promotion_status = 'promoted'
             ORDER BY confidence DESC
             LIMIT 20
@@ -175,7 +175,7 @@ def _fetch_unmatched_patterns(conn: Any, threshold: float = FALLBACK_THRESHOLD) 
         slug = _slugify(pattern_name)
         # Skip if a mission already uses this slug prefix
         existing = conn.execute(
-            "SELECT id FROM fa_missions WHERE slug LIKE ?", (f"%{slug[:20]}%",)
+            "SELECT id FROM fa_missions WHERE slug LIKE %s", (f"%{slug[:20]}%",)
         ).fetchone()
         if existing:
             continue
@@ -207,7 +207,7 @@ def _insert_draft_mission(conn: Any, pattern: Dict, dry_run: bool = False) -> bo
                (slug, title, tagline, tier, topic, role_filter, mission_type,
                 xp_reward, order_idx, difficulty, estimated_minutes,
                 is_active, status, created_at, updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (
                 slug,
                 f"[DRAFT] {pattern['pattern_name'][:80]}",
@@ -277,7 +277,7 @@ def _promote_to_kanban(
                 """INSERT INTO kanban_tasks
                    (id, title, description, status, priority,
                     created_at, updated_at, dispatch_source)
-                   VALUES (?,?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (
                     task_id, title, desc,
                     "suggested",

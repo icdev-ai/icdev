@@ -60,7 +60,7 @@ def create_matrix(
             "INSERT INTO sg_sync_matrices "
             "(id, operation_name, theater, time_blocks, row_labels, cells, "
             " created_by, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, '{}', ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, '{}', %s, %s, %s)",
             (matrix_id, operation_name, theater,
              json.dumps(tb), json.dumps(rl), created_by, now, now),
         )
@@ -170,7 +170,7 @@ def list_matrices(theater: str = "", limit: int = 20) -> list[dict]:
         else:
             rows = conn.execute(
                 "SELECT id, operation_name, theater, phase, created_by, created_at "  # nosec B608
-                "FROM sg_sync_matrices ORDER BY created_at DESC LIMIT ?",
+                "FROM sg_sync_matrices ORDER BY created_at DESC LIMIT %s",
                 (limit,),
             ).fetchall()
         cols = ("id", "operation_name", "theater", "phase", "created_by", "created_at")

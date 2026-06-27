@@ -38,7 +38,7 @@ def list_campaigns():
                       aggregate_crag_score, aggregate_ragas_score,
                       status, created_at, completed_at
                FROM rag_evaluation_campaigns
-               ORDER BY created_at DESC LIMIT ? OFFSET ?""",
+               ORDER BY created_at DESC LIMIT %s OFFSET %s""",
             (limit, offset),
         ).fetchall()
         total = conn.execute("SELECT COUNT(*) FROM rag_evaluation_campaigns").fetchone()[0]
@@ -64,7 +64,7 @@ def campaign_detail(campaign_id: str):
 
         # Campaign header
         campaign = conn.execute(
-            "SELECT * FROM rag_evaluation_campaigns WHERE id = ?",
+            "SELECT * FROM rag_evaluation_campaigns WHERE id = %s",
             (campaign_id,),
         ).fetchone()
         if not campaign:
@@ -78,7 +78,7 @@ def campaign_detail(campaign_id: str):
                       ragas_faithfulness, ragas_relevancy,
                       is_false_premise, created_at
                FROM rag_evaluation_results
-               WHERE campaign_id = ?
+               WHERE campaign_id = %s
                ORDER BY created_at""",
             (campaign_id,),
         ).fetchall()
@@ -89,7 +89,7 @@ def campaign_detail(campaign_id: str):
                       COUNT(*) as count,
                       AVG(crag_score) as avg_crag_score
                FROM rag_evaluation_results
-               WHERE campaign_id = ?
+               WHERE campaign_id = %s
                GROUP BY question_type""",
             (campaign_id,),
         ).fetchall()
@@ -100,7 +100,7 @@ def campaign_detail(campaign_id: str):
                       COUNT(*) as count,
                       AVG(crag_score) as avg_crag_score
                FROM rag_evaluation_results
-               WHERE campaign_id = ? AND entity_popularity IS NOT NULL
+               WHERE campaign_id = %s AND entity_popularity IS NOT NULL
                GROUP BY entity_popularity""",
             (campaign_id,),
         ).fetchall()
@@ -169,12 +169,12 @@ def dataset_balance():
             rows = conn.execute(
                 """SELECT taxonomy_label, COUNT(*) as count
                    FROM ft_dataset_examples
-                   WHERE dataset_id = ? AND taxonomy_label IS NOT NULL
+                   WHERE dataset_id = %s AND taxonomy_label IS NOT NULL
                    GROUP BY taxonomy_label""",
                 (dataset_id,),
             ).fetchall()
             total = conn.execute(
-                "SELECT COUNT(*) FROM ft_dataset_examples WHERE dataset_id = ?",
+                "SELECT COUNT(*) FROM ft_dataset_examples WHERE dataset_id = %s",
                 (dataset_id,),
             ).fetchone()[0]
         else:

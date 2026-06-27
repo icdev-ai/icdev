@@ -31,7 +31,7 @@ def _open_degradation_card_exists(reflex: str, metric: str) -> bool:
         row = conn.execute(
             """
             SELECT id FROM kanban_tasks
-             WHERE title LIKE ?
+             WHERE title LIKE %s
                AND status NOT IN ('done', 'dismissed')
              LIMIT 1
             """,
@@ -108,7 +108,7 @@ def _create_degradation_card(
             """
             INSERT INTO kanban_tasks
                 (id, title, description, status, priority, source, created_at, updated_at)
-            VALUES (?, ?, ?, 'backlog', ?, 'harness_reflex', ?, ?)
+            VALUES (%s, %s, %s, 'backlog', %s, 'harness_reflex', %s, %s)
             """,
             (
                 task_id,
@@ -135,7 +135,7 @@ def _create_review_card() -> None:
     try:
         conn = _conn()
         row = conn.execute(
-            "SELECT id FROM kanban_tasks WHERE title = ? AND status NOT IN ('done','dismissed') LIMIT 1",
+            "SELECT id FROM kanban_tasks WHERE title = %s AND status NOT IN ('done','dismissed') LIMIT 1",
             (title,),
         ).fetchone()
         if row:
@@ -145,7 +145,7 @@ def _create_review_card() -> None:
             """
             INSERT INTO kanban_tasks
                 (id, title, description, status, priority, source, created_at, updated_at)
-            VALUES (?, ?, ?, 'backlog', 'high', 'harness_reflex', ?, ?)
+            VALUES (%s, %s, %s, 'backlog', 'high', 'harness_reflex', %s, %s)
             """,
             (
                 task_id,
@@ -176,7 +176,7 @@ def _create_meta_review_card(meta_result: dict) -> None:
     try:
         conn = _conn()
         row = conn.execute(
-            "SELECT id FROM kanban_tasks WHERE title = ? AND status NOT IN ('done','dismissed') LIMIT 1",
+            "SELECT id FROM kanban_tasks WHERE title = %s AND status NOT IN ('done','dismissed') LIMIT 1",
             (title,),
         ).fetchone()
         if row:
@@ -196,7 +196,7 @@ def _create_meta_review_card(meta_result: dict) -> None:
             """
             INSERT INTO kanban_tasks
                 (id, title, description, status, priority, source, created_at, updated_at)
-            VALUES (?, ?, ?, 'backlog', 'high', 'harness_reflex', ?, ?)
+            VALUES (%s, %s, %s, 'backlog', 'high', 'harness_reflex', %s, %s)
             """,
             (task_id, title, body, _utcnow(), _utcnow()),
         )

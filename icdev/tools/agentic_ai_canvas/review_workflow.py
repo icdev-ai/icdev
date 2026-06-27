@@ -35,7 +35,7 @@ def get_review(design_id: str, conn) -> dict:
     Return all review comments for a design, plus derived review status.
     """
     rows = conn.execute(
-        "SELECT * FROM aadc_review_comments WHERE design_id=? ORDER BY created_at ASC",
+        "SELECT * FROM aadc_review_comments WHERE design_id=%s ORDER BY created_at ASC",
         (design_id,),
     ).fetchall()
     comments = [dict(r) for r in rows]
@@ -81,7 +81,7 @@ def add_comment(
     conn.execute(
         """INSERT INTO aadc_review_comments
            (id, design_id, reviewer, comment_type, body, node_id, created_at)
-           VALUES (?,?,?,?,?,?,?)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s)""",
         (cid, design_id, reviewer.strip(), comment_type, body or "", node_id or "", now),
     )
     conn.commit()

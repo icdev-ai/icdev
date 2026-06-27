@@ -351,7 +351,7 @@ def _load_latest_design(payload: dict) -> Optional[Dict[str, Any]]:
             row = conn.execute(
                 "SELECT id, name, graph_json, autonomy_max, "
                 "safety_impacting, rights_impacting "
-                "FROM aadc_designs WHERE id = ?",
+                "FROM aadc_designs WHERE id = %s",
                 (design_id,),
             ).fetchone()
         else:
@@ -378,7 +378,7 @@ def _get_previous_score(design_id: str) -> Optional[float]:
     try:
         conn = _aadc_connection()
         row = conn.execute(
-            "SELECT score FROM aadc_assessments WHERE design_id = ? "
+            "SELECT score FROM aadc_assessments WHERE design_id = %s "
             "ORDER BY created_at DESC LIMIT 1",
             (design_id,),
         ).fetchone()
@@ -402,7 +402,7 @@ def _write_assessment(design_id: str, scores: Dict[str, float]) -> None:
         conn.execute(
             "INSERT INTO aadc_assessments "
             "(id, design_id, score, nist_rmf_score, owasp_score, findings_json) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s)",
             (
                 _uid(),
                 design_id,
@@ -487,7 +487,7 @@ def _create_kanban_suggestion(
             "INSERT INTO kanban_tasks "
             "(id, title, description, task_type, priority, status, "
             " executor_type, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 task_id, title, description,
                 "chore", "high", "suggested",

@@ -177,7 +177,7 @@ def _audit(conn, action, details="", actor="win_theme_manager"):
     try:
         conn.execute(
             "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (str(uuid.uuid4()), _now(), "govcon.win_theme", actor, action, details, "proposal_genesis"),
         )
     except Exception:
@@ -257,7 +257,7 @@ def register_theme(
             "(id, opportunity_id, theme_type, theme_statement, supporting_evidence, "
             "target_eval_factor, ghost_competitor, priority, keywords, status, "
             "created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 theme_id,
                 opportunity_id,
@@ -336,7 +336,7 @@ def update_theme(theme_id, **kwargs):
         Dict with status and updated_fields.
     """
     conn = _get_db()
-    row = conn.execute("SELECT * FROM pg_win_themes WHERE id = ?", (theme_id,)).fetchone()
+    row = conn.execute("SELECT * FROM pg_win_themes WHERE id = %s", (theme_id,)).fetchone()
     if not row:
         conn.close()
         return {"status": "error", "message": f"Theme {theme_id} not found"}
@@ -388,7 +388,7 @@ def archive_theme(theme_id):
         Dict with status.
     """
     conn = _get_db()
-    row = conn.execute("SELECT id, status FROM pg_win_themes WHERE id = ?", (theme_id,)).fetchone()
+    row = conn.execute("SELECT id, status FROM pg_win_themes WHERE id = %s", (theme_id,)).fetchone()
     if not row:
         conn.close()
         return {"status": "error", "message": f"Theme {theme_id} not found"}
@@ -398,7 +398,7 @@ def archive_theme(theme_id):
         return {"status": "ok", "message": "Already archived"}
 
     conn.execute(
-        "UPDATE pg_win_themes SET status = 'archived', updated_at = ? WHERE id = ?",
+        "UPDATE pg_win_themes SET status = 'archived', updated_at = %s WHERE id = %s",
         (_now(), theme_id),
     )
     _audit(conn, "archive_theme", f"Archived theme {theme_id}")
@@ -434,7 +434,7 @@ def track_implementation(theme_id, section_id, status, density_score=None, notes
     conn = _get_db()
 
     # Verify theme exists
-    theme = conn.execute("SELECT id FROM pg_win_themes WHERE id = ?", (theme_id,)).fetchone()
+    theme = conn.execute("SELECT id FROM pg_win_themes WHERE id = %s", (theme_id,)).fetchone()
     if not theme:
         conn.close()
         return {"status": "error", "message": f"Theme {theme_id} not found"}
@@ -446,7 +446,7 @@ def track_implementation(theme_id, section_id, status, density_score=None, notes
     conn.execute(
         "INSERT INTO pg_theme_tracking "
         "(id, theme_id, section_id, status, density_score, notes, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s, %s)",
         (tracking_id, theme_id, section_id, status, density_score, notes, now),
     )
     _audit(
@@ -534,7 +534,7 @@ def get_implementation_report(opportunity_id):
 
     # Get all active themes
     themes = conn.execute(
-        "SELECT * FROM pg_win_themes WHERE opportunity_id = ? AND status != 'archived' ORDER BY priority ASC",
+        "SELECT * FROM pg_win_themes WHERE opportunity_id = %s AND status != 'archived' ORDER BY priority ASC",
         (opportunity_id,),
     ).fetchall()
 
@@ -561,7 +561,7 @@ def get_implementation_report(opportunity_id):
         tracking = conn.execute(
             "SELECT section_id, status, density_score, notes, created_at "
             "FROM pg_theme_tracking "
-            "WHERE theme_id = ? "
+            "WHERE theme_id = %s "
             "ORDER BY created_at DESC",
             (theme_id,),
         ).fetchall()
@@ -635,7 +635,7 @@ def get_density_scores(opportunity_id):
     themes = conn.execute(
         "SELECT id, theme_type, theme_statement, keywords, priority "
         "FROM pg_win_themes "
-        "WHERE opportunity_id = ? AND status != 'archived'",
+        "WHERE opportunity_id = %s AND status != 'archived'",
         (opportunity_id,),
     ).fetchall()
 
@@ -653,7 +653,7 @@ def get_density_scores(opportunity_id):
         "SELECT t.section_id, t.theme_id, t.status, t.density_score, t.created_at "
         "FROM pg_theme_tracking t "
         "INNER JOIN pg_win_themes w ON t.theme_id = w.id "
-        "WHERE w.opportunity_id = ? "
+        "WHERE w.opportunity_id = %s "
         "ORDER BY t.section_id, t.created_at DESC",
         (opportunity_id,),
     ).fetchall()

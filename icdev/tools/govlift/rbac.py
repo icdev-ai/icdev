@@ -218,7 +218,7 @@ def rotate_govlift_user_role(
     conn = get_connection(db_path=str(DB_PATH))
     try:
         conn.execute(
-            "UPDATE dashboard_users SET role = ?, updated_at = ? WHERE id = ?",
+            "UPDATE dashboard_users SET role = %s, updated_at = %s WHERE id = %s",
             (new_role, datetime.now(timezone.utc).isoformat(), user_id),
         )
         conn.commit()

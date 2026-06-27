@@ -70,7 +70,7 @@ class NISTAI6001Assessor(BaseAssessor):
                 try:
                     rows = conn.execute(
                         """SELECT COUNT(*) as cnt FROM confabulation_checks
-                           WHERE project_id = ?""",
+                           WHERE project_id = %s""",
                         (project_id,),
                     ).fetchone()
                     if rows and rows["cnt"] > 0:
@@ -82,7 +82,7 @@ class NISTAI6001Assessor(BaseAssessor):
                 try:
                     rows = conn.execute(
                         """SELECT COUNT(*) as cnt FROM prov_entities
-                           WHERE project_id = ?""",
+                           WHERE project_id = %s""",
                         (project_id,),
                     ).fetchone()
                     if rows and rows["cnt"] > 0:
@@ -94,7 +94,7 @@ class NISTAI6001Assessor(BaseAssessor):
                 try:
                     rows = conn.execute(
                         """SELECT COUNT(*) as cnt FROM prompt_injection_log
-                           WHERE project_id = ?""",
+                           WHERE project_id = %s""",
                         (project_id,),
                     ).fetchone()
                     if rows and rows["cnt"] >= 0:
@@ -107,7 +107,7 @@ class NISTAI6001Assessor(BaseAssessor):
                 try:
                     rows = conn.execute(
                         """SELECT COUNT(*) as cnt FROM atlas_red_team_results
-                           WHERE project_id = ?""",
+                           WHERE project_id = %s""",
                         (project_id,),
                     ).fetchone()
                     if rows and rows["cnt"] > 0:
@@ -119,7 +119,7 @@ class NISTAI6001Assessor(BaseAssessor):
                 try:
                     rows = conn.execute(
                         """SELECT COUNT(*) as cnt FROM ai_bom
-                           WHERE project_id = ?""",
+                           WHERE project_id = %s""",
                         (project_id,),
                     ).fetchone()
                     if rows and rows["cnt"] > 0:
@@ -131,7 +131,7 @@ class NISTAI6001Assessor(BaseAssessor):
                 try:
                     rows = conn.execute(
                         """SELECT COUNT(*) as cnt FROM fairness_assessments
-                           WHERE project_id = ?""",
+                           WHERE project_id = %s""",
                         (project_id,),
                     ).fetchone()
                     if rows and rows["cnt"] > 0:

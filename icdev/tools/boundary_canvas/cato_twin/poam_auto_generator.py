@@ -124,7 +124,7 @@ def generate_from_violations(
         # Load violations for this snapshot
         violations = conn.execute(
             """SELECT * FROM compliance_twin_violations
-               WHERE snapshot_id = ? AND project_id = ?""",
+               WHERE snapshot_id = %s AND project_id = %s""",
             (snapshot_id, project_id),
         ).fetchall()
 
@@ -135,7 +135,7 @@ def generate_from_violations(
         existing = {
             r["weakness_id"]
             for r in conn.execute(
-                "SELECT weakness_id FROM poam_items WHERE project_id = ?",
+                "SELECT weakness_id FROM poam_items WHERE project_id = %s",
                 (project_id,),
             ).fetchall()
         }
@@ -164,7 +164,7 @@ def generate_from_violations(
                    (project_id, weakness_id, weakness_description, severity,
                     source, control_id, status, corrective_action,
                     milestone_date, responsible_party, resources_required)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     project_id,
                     weakness_id,
@@ -187,7 +187,7 @@ def generate_from_violations(
             # so we update only the poam_id FK — a non-audit column)
             try:
                 conn.execute(
-                    "UPDATE compliance_twin_violations SET poam_id = ? WHERE id = ?",
+                    "UPDATE compliance_twin_violations SET poam_id = %s WHERE id = %s",
                     (new_poam_id, v["id"]),
                 )
             except Exception:

@@ -169,17 +169,17 @@ def load_verticals_to_db(verticals_dir=None, db_path=None):
     try:
         for vert in verticals:
             slug = vert["slug"]
-            existing = conn.execute("SELECT id FROM research_verticals WHERE slug = ?", (slug,)).fetchone()
+            existing = conn.execute("SELECT id FROM research_verticals WHERE slug = %s", (slug,)).fetchone()
 
             if existing:
                 # Update existing vertical
                 conn.execute(
                     """UPDATE research_verticals SET
-                       name = ?, description = ?, config_path = ?,
-                       keywords = ?, regulatory_bodies = ?,
-                       academic_categories = ?, community_sources = ?,
-                       updated_at = ?
-                       WHERE slug = ?""",
+                       name = %s, description = %s, config_path = %s,
+                       keywords = %s, regulatory_bodies = %s,
+                       academic_categories = %s, community_sources = %s,
+                       updated_at = %s
+                       WHERE slug = %s""",
                     (
                         vert["name"],
                         vert.get("description", ""),
@@ -200,7 +200,7 @@ def load_verticals_to_db(verticals_dir=None, db_path=None):
                        (id, name, slug, description, config_path,
                         keywords, regulatory_bodies, academic_categories,
                         community_sources, active, loaded_at, updated_at, classification)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, 'CUI')""",
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 1, %s, %s, 'CUI')""",
                     (
                         vid,
                         vert["name"],
@@ -250,9 +250,9 @@ def get_vertical(slug=None, vertical_id=None, db_path=None):
     conn = _get_db(db_path)
     try:
         if slug:
-            row = conn.execute("SELECT * FROM research_verticals WHERE slug = ?", (slug,)).fetchone()
+            row = conn.execute("SELECT * FROM research_verticals WHERE slug = %s", (slug,)).fetchone()
         elif vertical_id:
-            row = conn.execute("SELECT * FROM research_verticals WHERE id = ?", (vertical_id,)).fetchone()
+            row = conn.execute("SELECT * FROM research_verticals WHERE id = %s", (vertical_id,)).fetchone()
         else:
             return {"error": "Provide --slug or --vertical-id"}
 

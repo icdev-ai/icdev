@@ -1177,7 +1177,7 @@ def store_signals(signals, db_path=None):
 
             # Check for duplicate by content_hash
             existing = conn.execute(
-                "SELECT id FROM creative_signals WHERE content_hash = ?",
+                "SELECT id FROM creative_signals WHERE content_hash = %s",
                 (signal.get("content_hash", ""),),
             ).fetchone()
 
@@ -1191,7 +1191,7 @@ def store_signals(signals, db_path=None):
                        (id, source, source_type, competitor_id, title, body, url,
                         author, rating, upvotes, sentiment, content_hash, metadata,
                         discovered_at, classification)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'CUI')""",
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'CUI')""",
                     (
                         signal["id"],
                         signal["source"],
@@ -1403,7 +1403,7 @@ def get_scan_history(days=7, db_path=None):
             """SELECT source, DATE(discovered_at) AS scan_date, COUNT(*) AS count,
                       source_type
                FROM creative_signals
-               WHERE discovered_at >= ?
+               WHERE discovered_at >= %s
                GROUP BY source, scan_date, source_type
                ORDER BY scan_date DESC""",
             (cutoff,),
@@ -1424,7 +1424,7 @@ def get_scan_history(days=7, db_path=None):
 
         # Total count
         total = conn.execute(
-            "SELECT COUNT(*) AS total FROM creative_signals WHERE discovered_at >= ?",
+            "SELECT COUNT(*) AS total FROM creative_signals WHERE discovered_at >= %s",
             (cutoff,),
         ).fetchone()["total"]
 
@@ -1432,7 +1432,7 @@ def get_scan_history(days=7, db_path=None):
         source_totals = conn.execute(
             """SELECT source, COUNT(*) AS count
                FROM creative_signals
-               WHERE discovered_at >= ?
+               WHERE discovered_at >= %s
                GROUP BY source
                ORDER BY count DESC""",
             (cutoff,),

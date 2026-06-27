@@ -98,7 +98,7 @@ def _check_coworker_trigger(context_id: str, content: str, context: dict) -> Non
     try:
         conn = get_connection(db_path=str(DB_PATH))
         row = conn.execute(
-            "SELECT context_config FROM chat_contexts WHERE id = ?",
+            "SELECT context_config FROM chat_contexts WHERE id = %s",
             (context_id,),
         ).fetchone()
         config: dict = {}
@@ -111,7 +111,7 @@ def _check_coworker_trigger(context_id: str, content: str, context: dict) -> Non
                     pass
         config["coworker_instance_id"] = str(coworker_instance_id)
         conn.execute(
-            "UPDATE chat_contexts SET context_config = ?, updated_at = ? WHERE id = ?",
+            "UPDATE chat_contexts SET context_config = %s, updated_at = %s WHERE id = %s",
             (json.dumps(config), datetime.now(timezone.utc).isoformat(), context_id),
         )
         conn.commit()
@@ -928,7 +928,7 @@ class ChatManager:
                 "SELECT id, user_id, tenant_id, title, status, project_id, "
                 "agent_model, system_prompt, context_config, dirty_version, "
                 "message_count, classification, created_at, updated_at "
-                "FROM chat_contexts WHERE id = ?",
+                "FROM chat_contexts WHERE id = %s",
                 (context_id,),
             ).fetchone()
             conn.close()
@@ -968,7 +968,7 @@ class ChatManager:
         try:
             conn = self._get_db()
             conn.execute(
-                "UPDATE chat_contexts SET context_config = ?, updated_at = ? WHERE id = ?",
+                "UPDATE chat_contexts SET context_config = %s, updated_at = %s WHERE id = %s",
                 (
                     json.dumps({"reasoning_mode": mode}),
                     datetime.now(timezone.utc).isoformat(),
@@ -1136,9 +1136,9 @@ class ChatManager:
                 """SELECT turn_number, role, content, content_type,
                           is_compressed, compression_tier, classification, created_at
                    FROM chat_messages
-                   WHERE context_id = ? AND turn_number > ?
+                   WHERE context_id = %s AND turn_number > %s
                    ORDER BY turn_number
-                   LIMIT ?""",
+                   LIMIT %s""",
                 (context_id, since_turn, limit),
             ).fetchall()
             conn.close()
@@ -1609,7 +1609,7 @@ class ChatManager:
                    (id, user_id, tenant_id, title, status, project_id,
                     agent_model, system_prompt, context_config, dirty_version,
                     message_count, classification, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     ctx.context_id,
                     ctx.user_id,
@@ -1636,7 +1636,7 @@ class ChatManager:
         try:
             conn = self._get_db()
             conn.execute(
-                "UPDATE chat_contexts SET status = ?, updated_at = ? WHERE id = ?",
+                "UPDATE chat_contexts SET status = %s, updated_at = %s WHERE id = %s",
                 (status, datetime.now(timezone.utc).isoformat(), context_id),
             )
             conn.commit()
@@ -1659,7 +1659,7 @@ class ChatManager:
                 """INSERT INTO chat_messages
                    (context_id, turn_number, role, content, content_type,
                     metadata, classification, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     context_id,
                     turn_number,
@@ -1672,7 +1672,7 @@ class ChatManager:
                 ),
             )
             conn.execute(
-                "UPDATE chat_contexts SET message_count = ?, dirty_version = dirty_version + 1, updated_at = ? WHERE id = ?",
+                "UPDATE chat_contexts SET message_count = %s, dirty_version = dirty_version + 1, updated_at = %s WHERE id = %s",
                 (turn_number, datetime.now(timezone.utc).isoformat(), context_id),
             )
             conn.commit()
@@ -1691,7 +1691,7 @@ class ChatManager:
                 """INSERT INTO chat_tasks
                    (id, context_id, task_type, status, input_text,
                     classification, created_at)
-                   VALUES (?, ?, ?, 'processing', ?, ?, ?)""",
+                   VALUES (%s, %s, %s, 'processing', %s, %s, %s)""",
                 (
                     task_id,
                     context_id,
@@ -1711,7 +1711,7 @@ class ChatManager:
             conn = self._get_db()
             now = datetime.now(timezone.utc).isoformat()
             conn.execute(
-                "UPDATE chat_tasks SET status = 'completed', output_text = ?, completed_at = ? WHERE id = ?",
+                "UPDATE chat_tasks SET status = 'completed', output_text = %s, completed_at = %s WHERE id = %s",
                 (output_text[:5000], now, task_id),
             )
             conn.commit()
@@ -1724,7 +1724,7 @@ class ChatManager:
             conn = self._get_db()
             now = datetime.now(timezone.utc).isoformat()
             conn.execute(
-                "UPDATE chat_tasks SET status = 'failed', error_message = ?, completed_at = ? WHERE id = ?",
+                "UPDATE chat_tasks SET status = 'failed', error_message = %s, completed_at = %s WHERE id = %s",
                 (error[:2000], now, task_id),
             )
             conn.commit()

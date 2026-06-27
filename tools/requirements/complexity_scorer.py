@@ -220,7 +220,7 @@ def score_complexity(session_id: str, db_path=None) -> dict:
     # ------------------------------------------------------------------
     # 1. Load session metadata
     # ------------------------------------------------------------------
-    session = conn.execute("SELECT * FROM intake_sessions WHERE id = ?", (session_id,)).fetchone()
+    session = conn.execute("SELECT * FROM intake_sessions WHERE id = %s", (session_id,)).fetchone()
     if not session:
         conn.close()
         raise ValueError(f"Session '{session_id}' not found.")
@@ -230,7 +230,7 @@ def score_complexity(session_id: str, db_path=None) -> dict:
     # ------------------------------------------------------------------
     # 2. Load requirements
     # ------------------------------------------------------------------
-    reqs = conn.execute("SELECT * FROM intake_requirements WHERE session_id = ?", (session_id,)).fetchall()
+    reqs = conn.execute("SELECT * FROM intake_requirements WHERE session_id = %s", (session_id,)).fetchall()
     reqs = [dict(r) for r in reqs]
     requirement_count = len(reqs)
     requirement_types = [r.get("requirement_type", "functional") for r in reqs]
@@ -240,7 +240,7 @@ def score_complexity(session_id: str, db_path=None) -> dict:
     # 3. Load conversation turns
     # ------------------------------------------------------------------
     turn_row = conn.execute(
-        "SELECT COUNT(*) AS cnt FROM intake_conversation WHERE session_id = ?",
+        "SELECT COUNT(*) AS cnt FROM intake_conversation WHERE session_id = %s",
         (session_id,),
     ).fetchone()
     turn_count = turn_row["cnt"] if turn_row else 0
@@ -249,7 +249,7 @@ def score_complexity(session_id: str, db_path=None) -> dict:
     # 4. Load documents
     # ------------------------------------------------------------------
     doc_row = conn.execute(
-        "SELECT COUNT(*) AS cnt FROM intake_documents WHERE session_id = ?",
+        "SELECT COUNT(*) AS cnt FROM intake_documents WHERE session_id = %s",
         (session_id,),
     ).fetchone()
     document_count = doc_row["cnt"] if doc_row else 0

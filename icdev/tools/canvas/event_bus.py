@@ -73,7 +73,7 @@ def publish(
             """
             INSERT INTO canvas_events
                 (id, source_canvas, target_canvas, event_type, payload_json, created_at, consumed_at)
-            VALUES (?, ?, ?, ?, ?, ?, NULL)
+            VALUES (%s, %s, %s, %s, %s, %s, NULL)
             """,
             (event_id, source_canvas, target_canvas, event_type, payload_json, now),
         )
@@ -115,7 +115,7 @@ def _audit_event(
             """INSERT INTO audit_trail
                (project_id, event_type, actor, action, details,
                 affected_files, classification)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
             (
                 None,
                 "compliance_check",
@@ -256,7 +256,7 @@ def dispatch_pending(canvas_id: str) -> int:
             """
             SELECT id, source_canvas, event_type, payload_json
             FROM canvas_events
-            WHERE target_canvas = ? AND consumed_at IS NULL
+            WHERE target_canvas = %s AND consumed_at IS NULL
             ORDER BY created_at
             """,
             (canvas_id,),
@@ -273,7 +273,7 @@ def dispatch_pending(canvas_id: str) -> int:
             )
             _dispatch_to_listeners(canvas_id, etype, event_id, payload)
             conn.execute(
-                "UPDATE canvas_events SET consumed_at = ? WHERE id = ?",
+                "UPDATE canvas_events SET consumed_at = %s WHERE id = %s",
                 (now, event_id),
             )
             fired += 1

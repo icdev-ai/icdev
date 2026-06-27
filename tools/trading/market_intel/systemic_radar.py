@@ -627,7 +627,7 @@ def _score_institutional_flow() -> dict:
         cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
         rows = conn.execute(
             "SELECT transaction_type, COUNT(*) FROM ad_insider_transactions "
-            "WHERE created_at >= ? GROUP BY transaction_type",
+            "WHERE created_at >= %s GROUP BY transaction_type",
             (cutoff,)
         ).fetchall()
         buys = 0
@@ -646,7 +646,7 @@ def _score_institutional_flow() -> dict:
         # Analyst ratings last 30 days
         rows = conn.execute(
             "SELECT change, COUNT(*) FROM ad_analyst_ratings "
-            "WHERE created_at >= ? GROUP BY change",
+            "WHERE created_at >= %s GROUP BY change",
             (cutoff,)
         ).fetchall()
         upgrades = 0
@@ -961,7 +961,7 @@ def _save_snapshot(
         "family_scores_json, indicator_details_json, active_divergences_json, "
         "recession_precursor_count, crisis_similarity_json, hmm_transition_json, "
         "data_source, created_at) VALUES ("
-        "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
         (
             snapshot_id,
             horizons["immediate"]["danger"], horizons["near_term"]["danger"], horizons["medium_term"]["danger"],
@@ -984,7 +984,7 @@ def _save_snapshot(
             conn.execute(
                 "INSERT INTO ad_systemic_radar_indicators ("
                 "id, snapshot_id, family, indicator_name, raw_value, normalized_score, "
-                "signal, time_horizon, weight, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "signal, time_horizon, weight, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     _uid(), snapshot_id, family,
                     str(ind.get("name", "")),
@@ -1011,7 +1011,7 @@ def _save_alerts(snapshot_id: str, alerts: list[dict]) -> None:
             "INSERT INTO ad_systemic_radar_alerts ("
             "id, snapshot_id, alert_type, severity, family, indicator_name, "
             "message, threshold_breached, current_value, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 _uid(), snapshot_id,
                 alert["alert_type"], alert["severity"],
@@ -1161,7 +1161,7 @@ def get_history(days: int = 30) -> list[dict]:
         "SELECT id, composite_danger, composite_opportunity, regime_label, "
         "danger_score_immediate, danger_score_near_term, danger_score_medium_term, "
         "created_at FROM ad_systemic_radar_snapshots "
-        "WHERE created_at >= ? ORDER BY created_at ASC",
+        "WHERE created_at >= %s ORDER BY created_at ASC",
         (cutoff,)
     ).fetchall()
 
@@ -1187,7 +1187,7 @@ def get_active_alerts(limit: int = 50) -> list[dict]:
         "SELECT id, snapshot_id, alert_type, severity, family, indicator_name, "
         "message, threshold_breached, current_value, created_at "
         "FROM ad_systemic_radar_alerts "
-        "WHERE acknowledged = 0 ORDER BY created_at DESC LIMIT ?",
+        "WHERE acknowledged = 0 ORDER BY created_at DESC LIMIT %s",
         (limit,)
     ).fetchall()
 
@@ -1208,7 +1208,7 @@ def get_family_indicators(snapshot_id: str, family: str) -> list[dict]:
     rows = conn.execute(
         "SELECT indicator_name, raw_value, normalized_score, signal, "
         "time_horizon, weight FROM ad_systemic_radar_indicators "
-        "WHERE snapshot_id = ? AND family = ? ORDER BY weight DESC",
+        "WHERE snapshot_id = %s AND family = %s ORDER BY weight DESC",
         (snapshot_id, family)
     ).fetchall()
 

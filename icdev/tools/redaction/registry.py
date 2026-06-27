@@ -240,7 +240,7 @@ class RedactionRegistry:
             conn = get_connection()
             rows = conn.execute(
                 "SELECT entity_type, real_hash, surrogate FROM redaction_registry "
-                "WHERE session_id = ? AND (expires_at IS NULL OR expires_at > ?)",
+                "WHERE session_id = %s AND (expires_at IS NULL OR expires_at > %s)",
                 (self.session_id, datetime.now(timezone.utc).isoformat()),
             ).fetchall()
             for row in rows:
@@ -300,7 +300,7 @@ class RedactionRegistry:
             conn.execute(
                 "INSERT OR IGNORE INTO redaction_registry "
                 "(id, session_id, entity_type, real_hash, surrogate, created_at, expires_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
                 (str(uuid.uuid4()), self.session_id, entity_type, real_hash, surrogate, now.isoformat(), expires),
             )
             conn.commit()
@@ -345,7 +345,7 @@ class RedactionRegistry:
         try:
             conn = get_connection()
             cursor = conn.execute(
-                "DELETE FROM redaction_registry WHERE expires_at IS NOT NULL AND expires_at < ?",
+                "DELETE FROM redaction_registry WHERE expires_at IS NOT NULL AND expires_at < %s",
                 (datetime.now(timezone.utc).isoformat(),),
             )
             count = cursor.rowcount

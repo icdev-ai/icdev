@@ -61,12 +61,12 @@ def _query_low_performing_skills(
                 COUNT(*) AS total,
                 SUM(CASE WHEN outcome = 'success' THEN 1 ELSE 0 END) AS successes
             FROM agent_execution_traces
-            WHERE created_at >= ?
+            WHERE created_at >= %s
               AND skill_used != ''
             GROUP BY skill_used
-            HAVING COUNT(*) >= ?
+            HAVING COUNT(*) >= %s
             ORDER BY (SUM(CASE WHEN outcome = 'success' THEN 1 ELSE 0 END) * 1.0 / COUNT(*)) ASC
-            LIMIT ?
+            LIMIT %s
             """,
             (cutoff, min_trace_count, skill_limit),
         ).fetchall()
@@ -103,11 +103,11 @@ def _get_failure_examples(conn, skill: str, window_days: int, limit: int = 5) ->
             """
             SELECT lesson_pattern, improvement_notes
             FROM agent_execution_traces
-            WHERE skill_used = ?
+            WHERE skill_used = %s
               AND outcome != 'success'
-              AND created_at >= ?
+              AND created_at >= %s
             ORDER BY created_at DESC
-            LIMIT ?
+            LIMIT %s
             """,
             (skill, cutoff, limit),
         ).fetchall()
@@ -249,7 +249,7 @@ def _insert_artifact(conn, skill: str, best: Dict[str, Any], baseline_score: flo
             (artifact_id, task_type, skill_used, generation_n,
              improvement_text, composite_score, baseline_score,
              evidence_traces, applied_count, status, created_at)
-        VALUES (?, ?, ?, 1, ?, ?, ?, '[]', 0, 'pending', ?)
+        VALUES (%s, %s, %s, 1, %s, %s, %s, '[]', 0, 'pending', %s)
         """,
         (
             artifact_id,

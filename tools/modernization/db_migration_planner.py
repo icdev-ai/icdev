@@ -326,7 +326,7 @@ def generate_schema_ddl(app_id: str, target_db: str, output_dir: str) -> str:
             """SELECT lds.*, la.primary_language
                FROM legacy_db_schemas lds
                JOIN legacy_applications la ON la.id = lds.legacy_app_id
-               WHERE lds.legacy_app_id = ?
+               WHERE lds.legacy_app_id = %s
                ORDER BY lds.schema_name, lds.table_name, lds.column_name""",
             (app_id,),
         ).fetchall()
@@ -482,7 +482,7 @@ def generate_data_migration_scripts(app_id: str, target_db: str, output_dir: str
             """SELECT lds.*, la.primary_language
                FROM legacy_db_schemas lds
                JOIN legacy_applications la ON la.id = lds.legacy_app_id
-               WHERE lds.legacy_app_id = ?
+               WHERE lds.legacy_app_id = %s
                ORDER BY lds.schema_name, lds.table_name, lds.column_name""",
             (app_id,),
         ).fetchall()
@@ -626,9 +626,9 @@ def translate_stored_procedures(app_id: str, target_db: str, source_path: str, o
     # Determine source DB from the app record
     conn = _get_db()
     try:
-        conn.execute("SELECT * FROM legacy_applications WHERE id = ?", (app_id,)).fetchone()
+        conn.execute("SELECT * FROM legacy_applications WHERE id = %s", (app_id,)).fetchone()
         schema_row = conn.execute(
-            "SELECT db_type FROM legacy_db_schemas WHERE legacy_app_id = ? LIMIT 1", (app_id,)
+            "SELECT db_type FROM legacy_db_schemas WHERE legacy_app_id = %s LIMIT 1", (app_id,)
         ).fetchone()
     finally:
         conn.close()
@@ -807,7 +807,7 @@ def generate_migration_validation(app_id: str, output_dir: str) -> str:
     try:
         rows = conn.execute(
             """SELECT * FROM legacy_db_schemas
-               WHERE legacy_app_id = ?
+               WHERE legacy_app_id = %s
                ORDER BY schema_name, table_name, column_name""",
             (app_id,),
         ).fetchall()
@@ -954,7 +954,7 @@ def estimate_data_volume(app_id: str) -> dict:
     try:
         rows = conn.execute(
             """SELECT * FROM legacy_db_schemas
-               WHERE legacy_app_id = ?
+               WHERE legacy_app_id = %s
                ORDER BY schema_name, table_name, column_name""",
             (app_id,),
         ).fetchall()
@@ -1230,7 +1230,7 @@ def main():
     # Validate app exists
     conn = _get_db()
     try:
-        app = conn.execute("SELECT * FROM legacy_applications WHERE id = ?", (args.app_id,)).fetchone()
+        app = conn.execute("SELECT * FROM legacy_applications WHERE id = %s", (args.app_id,)).fetchone()
         if not app:
             print(f"ERROR: Application '{args.app_id}' not found in legacy_applications.", file=sys.stderr)
             sys.exit(1)

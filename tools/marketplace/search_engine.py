@@ -455,7 +455,7 @@ def index_asset(asset_id, db_path=None):
     conn = _get_db(db_path)
     try:
         row = conn.execute(
-            "SELECT id, name, description, tags FROM marketplace_assets WHERE id = ?",
+            "SELECT id, name, description, tags FROM marketplace_assets WHERE id = %s",
             (asset_id,),
         ).fetchone()
 
@@ -479,7 +479,7 @@ def index_asset(asset_id, db_path=None):
 
         # Check if already indexed with same content
         existing = conn.execute(
-            "SELECT content_hash FROM marketplace_embeddings WHERE asset_id = ?",
+            "SELECT content_hash FROM marketplace_embeddings WHERE asset_id = %s",
             (asset_id,),
         ).fetchone()
 
@@ -497,14 +497,14 @@ def index_asset(asset_id, db_path=None):
         # Upsert: delete old + insert new (SQLite doesn't have ON CONFLICT for all cases)
         if existing:
             conn.execute(
-                "DELETE FROM marketplace_embeddings WHERE asset_id = ?",
+                "DELETE FROM marketplace_embeddings WHERE asset_id = %s",
                 (asset_id,),
             )
 
         conn.execute(
             """INSERT INTO marketplace_embeddings
                (asset_id, content_hash, embedding, embedding_model, embedding_dimensions)
-               VALUES (?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s)""",
             (asset_id, content_hash, embedding_blob, model_name, dimensions),
         )
         conn.commit()

@@ -77,7 +77,7 @@ def vault_credential(system: str, privilege_tier: str = "app_admin",
         conn.execute(
             """INSERT INTO zig_pam_vault
                (credential_id, system, privilege_tier, rotation_days, last_rotated, checked_out, created_at)
-               VALUES (?,?,?,?,?,0,?)
+               VALUES (%s,%s,%s,%s,%s,0,%s)
                ON CONFLICT(credential_id) DO UPDATE SET
                privilege_tier=excluded.privilege_tier,
                rotation_days=excluded.rotation_days,
@@ -127,13 +127,13 @@ def request_jit_access(account_id: str, system: str, privilege_tier: str = "app_
             "INSERT INTO zig_pam_sessions "
             "(session_id, account_id, credential_id, system, privilege_tier, justification, "
             "approver, status, granted_at, expires_at, recorded, created_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,1,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,1,%s)",
             (session_id, account_id, credential_id, system, privilege_tier, justification,
              approver, status, granted_at, expires_at, now_iso),
         )
         if status == "granted":
             conn.execute(
-                "UPDATE zig_pam_vault SET checked_out=1 WHERE credential_id=?",
+                "UPDATE zig_pam_vault SET checked_out=1 WHERE credential_id=%s",
                 (credential_id,),
             )
         conn.commit()
@@ -159,15 +159,15 @@ def revoke_session(session_id: str) -> dict[str, Any]:
     try:
         _ensure_tables(conn)
         row = conn.execute(
-            "SELECT credential_id FROM zig_pam_sessions WHERE session_id=?", (session_id,)
+            "SELECT credential_id FROM zig_pam_sessions WHERE session_id=%s", (session_id,)
         ).fetchone()
         conn.execute(
-            "UPDATE zig_pam_sessions SET status='revoked', revoked_at=? WHERE session_id=?",
+            "UPDATE zig_pam_sessions SET status='revoked', revoked_at=%s WHERE session_id=%s",
             (now, session_id),
         )
         if row and row["credential_id"]:
             conn.execute(
-                "UPDATE zig_pam_vault SET checked_out=0 WHERE credential_id=?",
+                "UPDATE zig_pam_vault SET checked_out=0 WHERE credential_id=%s",
                 (row["credential_id"],),
             )
         conn.commit()

@@ -101,7 +101,7 @@ def _audit(event_type: str, details: str = "", pillar: str = "", success: bool =
         conn = get_connection()
         conn.execute(
             """INSERT INTO scout_audit (id, event_type, pillar, details, success, duration_ms, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
             (
                 f"saud-{uuid.uuid4().hex[:12]}",
                 event_type,
@@ -143,7 +143,7 @@ def _feed_innovation_signals(findings: List[dict], config: dict) -> int:
                     """INSERT INTO innovation_signals
                        (id, source, source_type, title, description, url,
                         category, score, raw_data, status, created_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', ?)""",
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'new', %s)""",
                     (
                         f.get("id", f"scout-sig-{uuid.uuid4().hex[:12]}"),
                         "scout_daemon",
@@ -178,7 +178,7 @@ def _update_heartbeat(config: dict, findings_count: int, duration_ms: int) -> No
         # Upsert heartbeat check
         conn.execute(
             """INSERT INTO heartbeat_checks (check_type, last_run, next_run, status, duration_ms, details)
-               VALUES (?, ?, ?, 'healthy', ?, ?)
+               VALUES (%s, %s, %s, 'healthy', %s, %s)
                ON CONFLICT(check_type) DO UPDATE SET
                    last_run = excluded.last_run,
                    status = 'healthy',
@@ -351,7 +351,7 @@ def run_scout(config: dict = None) -> dict:
                (id, scan_date, pillar_results, digest_path, total_findings,
                 signals_fed, repos_added, genesis_status, genesis_branch,
                 duration_ms, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 scan_id,
                 date_str,

@@ -18,13 +18,13 @@ def take_snapshot(design_id: str, label: str | None = None) -> dict:
     label = label or f"snap-{taken_at[:10]}"
     try:
         node_count = conn.execute(
-            "SELECT COUNT(*) FROM security_nodes WHERE design_id=?", (design_id,)
+            "SELECT COUNT(*) FROM security_nodes WHERE design_id=%s", (design_id,)
         ).fetchone()[0]
     except Exception:
         node_count = 0
     try:
         conn.execute(
-            "INSERT INTO sdc_attack_snapshots (id, design_id, label, node_count, path_count, created_at) VALUES (?,?,?,?,?,?)",
+            "INSERT INTO sdc_attack_snapshots (id, design_id, label, node_count, path_count, created_at) VALUES (%s,%s,%s,%s,%s,%s)",
             (snap_id, design_id, label, node_count, 0, taken_at),
         )
         conn.commit()

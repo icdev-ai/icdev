@@ -66,12 +66,12 @@ def write_to_db(
     # Check for duplicate by normalized fingerprint (D179)
     if user_id:
         c.execute(
-            "SELECT id FROM memory_entries WHERE content_hash = ? AND user_id = ?",
+            "SELECT id FROM memory_entries WHERE content_hash = %s AND user_id = %s",
             (fingerprint, user_id),
         )
     else:
         c.execute(
-            "SELECT id FROM memory_entries WHERE content_hash = ? AND user_id IS NULL",
+            "SELECT id FROM memory_entries WHERE content_hash = %s AND user_id IS NULL",
             (fingerprint,),
         )
     existing = c.fetchone()
@@ -79,7 +79,7 @@ def write_to_db(
         # Merge: bump updated_at to record the re-encounter
         # decay_weight intentionally not reset on update — managed by hybrid_search decay pass
         c.execute(
-            "UPDATE memory_entries SET updated_at = datetime('now') WHERE id = ?",
+            "UPDATE memory_entries SET updated_at = datetime('now') WHERE id = %s",
             (existing[0],),
         )
         conn.commit()
@@ -88,7 +88,7 @@ def write_to_db(
 
     c.execute(
         "INSERT INTO memory_entries (content, type, importance, content_hash, user_id, tenant_id, source, decay_weight, classification, compartment) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
         (content, entry_type, importance, fingerprint, user_id, tenant_id, source, 1.0, classification, compartment),
     )
     returning = c.fetchone()
@@ -116,7 +116,7 @@ def write_to_daily_log(content):
     conn = get_connection()
     c = conn.cursor()
     c.execute(
-        "INSERT INTO daily_logs (date, content) VALUES (?, ?)",
+        "INSERT INTO daily_logs (date, content) VALUES (%s, %s)",
         (today, content),
     )
     conn.commit()
@@ -242,7 +242,7 @@ def reset_decay(memory_id: str, conn=None) -> None:
     if conn is None:
         from tools.db.storage import get_connection
         conn = get_connection().__enter__()
-    conn.execute("UPDATE memory_entries SET decay_weight=1.0 WHERE id=?", (memory_id,))
+    conn.execute("UPDATE memory_entries SET decay_weight=1.0 WHERE id=%s", (memory_id,))
     if close:
         conn.commit()
 

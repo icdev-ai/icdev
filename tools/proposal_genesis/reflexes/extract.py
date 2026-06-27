@@ -48,7 +48,7 @@ def _re_extract_amendments() -> Dict[str, Any]:
             result = _extract_for_opportunity(opp_id)
             if result.get("status") != "error":
                 # Mark amendment diffs as re-extracted
-                conn.execute("UPDATE pg_amendment_diffs SET re_extracted = 1 WHERE opportunity_id = ?", (opp_id,))
+                conn.execute("UPDATE pg_amendment_diffs SET re_extracted = 1 WHERE opportunity_id = %s", (opp_id,))
                 conn.commit()
                 re_extracted += 1
 

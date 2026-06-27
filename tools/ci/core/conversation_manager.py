@@ -128,7 +128,7 @@ class ConversationManager:
                 "INSERT INTO ci_conversations "
                 "(id, session_key, run_id, platform, issue_number, "
                 "channel_id, thread_ts, status) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, 'active')",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, 'active')",
                 (session_id, session_key, run_id, platform, issue_number, channel_id, thread_ts),
             )
             conn.commit()
@@ -152,7 +152,7 @@ class ConversationManager:
                 "SELECT id, session_key, run_id, platform, issue_number, "
                 "status, total_turns, last_agent_action "
                 "FROM ci_conversations "
-                "WHERE session_key = ? AND status = 'active' "
+                "WHERE session_key = %s AND status = 'active' "
                 "ORDER BY created_at DESC LIMIT 1",
                 (session_key,),
             )
@@ -258,7 +258,7 @@ class ConversationManager:
             cursor = conn.execute(
                 "SELECT turn_number, role, content, content_type, action_taken "
                 "FROM ci_conversation_turns "
-                "WHERE session_id = ? ORDER BY turn_number DESC LIMIT ?",
+                "WHERE session_id = %s ORDER BY turn_number DESC LIMIT %s",
                 (session_id, max_turns),
             )
             turns = [
@@ -290,7 +290,7 @@ class ConversationManager:
             conn = get_connection(db_path=str(self.db_path))
             now = datetime.now(timezone.utc).isoformat()
             conn.execute(
-                "UPDATE ci_conversations SET status = ?, updated_at = ? WHERE id = ?",
+                "UPDATE ci_conversations SET status = %s, updated_at = %s WHERE id = %s",
                 (reason, now, session_id),
             )
             conn.commit()
@@ -403,7 +403,7 @@ class ConversationManager:
         try:
             conn = get_connection(db_path=str(self.db_path))
             cursor = conn.execute(
-                "SELECT id FROM ci_conversation_turns WHERE session_id = ? AND comment_id = ?",
+                "SELECT id FROM ci_conversation_turns WHERE session_id = %s AND comment_id = %s",
                 (session_id, comment_id),
             )
             row = cursor.fetchone()
@@ -417,7 +417,7 @@ class ConversationManager:
         try:
             conn = get_connection(db_path=str(self.db_path))
             cursor = conn.execute(
-                "SELECT MAX(turn_number) FROM ci_conversation_turns WHERE session_id = ?",
+                "SELECT MAX(turn_number) FROM ci_conversation_turns WHERE session_id = %s",
                 (session_id,),
             )
             row = cursor.fetchone()
@@ -444,7 +444,7 @@ class ConversationManager:
                 "INSERT INTO ci_conversation_turns "
                 "(session_id, turn_number, role, content, content_type, "
                 "action_taken, comment_id, metadata) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
                 (session_id, turn_number, role, content, content_type, action_taken, comment_id, metadata),
             )
             conn.commit()
@@ -458,7 +458,7 @@ class ConversationManager:
             now = datetime.now(timezone.utc).isoformat()
             conn = get_connection(db_path=str(self.db_path))
             conn.execute(
-                "UPDATE ci_conversations SET total_turns = ?, last_agent_action = ?, updated_at = ? WHERE id = ?",
+                "UPDATE ci_conversations SET total_turns = %s, last_agent_action = %s, updated_at = %s WHERE id = %s",
                 (turn_count, last_action, now, session_id),
             )
             conn.commit()
@@ -471,7 +471,7 @@ class ConversationManager:
         try:
             conn = get_connection(db_path=str(self.db_path))
             cursor = conn.execute(
-                "SELECT id, session_key, run_id, platform, issue_number, status FROM ci_conversations WHERE id = ?",
+                "SELECT id, session_key, run_id, platform, issue_number, status FROM ci_conversations WHERE id = %s",
                 (session_id,),
             )
             row = cursor.fetchone()

@@ -81,7 +81,7 @@ def _store_result(result: Dict, project_id: str, model_label: str = "") -> None:
             """INSERT INTO goveval_results
                (id, project_id, dimension, score, max_score, findings_count,
                 findings_json, model_label, evaluator, metadata_json)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 f"ge-{uuid.uuid4().hex[:12]}",
                 project_id,
@@ -136,7 +136,7 @@ def eval_ssp_completeness(project_id: str) -> Dict:
         conn = _get_db()
         # Check if SSP exists
         rows = conn.execute(
-            "SELECT content FROM compliance_artifacts WHERE project_id = ? AND artifact_type = 'ssp' ORDER BY created_at DESC LIMIT 1",
+            "SELECT content FROM compliance_artifacts WHERE project_id = %s AND artifact_type = 'ssp' ORDER BY created_at DESC LIMIT 1",
             (project_id,),
         ).fetchall()
         conn.close()
@@ -188,7 +188,7 @@ def eval_control_accuracy(project_id: str) -> Dict:
     try:
         conn = _get_db()
         rows = conn.execute(
-            "SELECT control_id, status FROM control_mappings WHERE project_id = ?", (project_id,)
+            "SELECT control_id, status FROM control_mappings WHERE project_id = %s", (project_id,)
         ).fetchall()
         conn.close()
 
@@ -294,7 +294,7 @@ def eval_sbom_quality(project_id: str) -> Dict:
     try:
         conn = _get_db()
         rows = conn.execute(
-            "SELECT content FROM compliance_artifacts WHERE project_id = ? AND artifact_type = 'sbom' ORDER BY created_at DESC LIMIT 1",
+            "SELECT content FROM compliance_artifacts WHERE project_id = %s AND artifact_type = 'sbom' ORDER BY created_at DESC LIMIT 1",
             (project_id,),
         ).fetchall()
         conn.close()
@@ -343,7 +343,7 @@ def eval_gate_pass_rate(project_id: str) -> Dict:
         conn = _get_db()
         rows = conn.execute(
             """SELECT action, details FROM audit_trail
-               WHERE project_id = ? AND event_type = 'gate.evaluation'
+               WHERE project_id = %s AND event_type = 'gate.evaluation'
                ORDER BY created_at DESC LIMIT 100""",
             (project_id,),
         ).fetchall()
@@ -386,7 +386,7 @@ def eval_artifact_currency(project_id: str) -> Dict:
         conn = _get_db()
         rows = conn.execute(
             """SELECT artifact_type, created_at FROM compliance_artifacts
-               WHERE project_id = ? ORDER BY created_at DESC""",
+               WHERE project_id = %s ORDER BY created_at DESC""",
             (project_id,),
         ).fetchall()
         conn.close()
@@ -441,7 +441,7 @@ def eval_crosswalk_cascade(project_id: str) -> Dict:
         # Check if multiple framework assessments exist
         rows = conn.execute(
             """SELECT DISTINCT source_framework FROM crosswalk_results
-               WHERE project_id = ?""",
+               WHERE project_id = %s""",
             (project_id,),
         ).fetchall()
         conn.close()
@@ -549,7 +549,7 @@ def get_trend(project_id: str) -> Dict:
         rows = conn.execute(
             """SELECT dimension, score, model_label, created_at
                FROM goveval_results
-               WHERE project_id = ?
+               WHERE project_id = %s
                ORDER BY created_at DESC
                LIMIT 100""",
             (project_id,),
@@ -583,14 +583,14 @@ def compare_models(project_id: str, model_a: str, model_b: str) -> Dict:
         rows_a = conn.execute(
             """SELECT dimension, AVG(score) as avg_score
                FROM goveval_results
-               WHERE project_id = ? AND model_label = ?
+               WHERE project_id = %s AND model_label = %s
                GROUP BY dimension""",
             (project_id, model_a),
         ).fetchall()
         rows_b = conn.execute(
             """SELECT dimension, AVG(score) as avg_score
                FROM goveval_results
-               WHERE project_id = ? AND model_label = ?
+               WHERE project_id = %s AND model_label = %s
                GROUP BY dimension""",
             (project_id, model_b),
         ).fetchall()

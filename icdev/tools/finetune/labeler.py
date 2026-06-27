@@ -63,7 +63,7 @@ def label_example(
     conn = _get_db(db_path)
     try:
         existing = conn.execute(
-            "SELECT id, dataset_id FROM ft_dataset_examples WHERE id = ?",
+            "SELECT id, dataset_id FROM ft_dataset_examples WHERE id = %s",
             (example_id,),
         ).fetchone()
         if not existing:
@@ -73,9 +73,9 @@ def label_example(
         # the example content itself is append-only per D6)
         conn.execute(
             """UPDATE ft_dataset_examples
-               SET quality_score = ?, compliance_score = ?, relevance_score = ?,
-                   approved = ?, labeled_by = ?, labeled_at = ?
-               WHERE id = ?""",
+               SET quality_score = %s, compliance_score = %s, relevance_score = %s,
+                   approved = %s, labeled_by = %s, labeled_at = %s
+               WHERE id = %s""",
             (quality_score, compliance_score, relevance_score, 1 if approved else 0, labeled_by, _now(), example_id),
         )
         conn.commit()
@@ -109,9 +109,9 @@ def batch_approve(
     try:
         cursor = conn.execute(
             """UPDATE ft_dataset_examples
-               SET approved = 1, labeled_by = COALESCE(NULLIF(labeled_by, ''), ?), labeled_at = ?
-               WHERE dataset_id = ? AND approved = 0
-                 AND quality_score >= ? AND compliance_score >= ? AND relevance_score >= ?
+               SET approved = 1, labeled_by = COALESCE(NULLIF(labeled_by, ''), %s), labeled_at = %s
+               WHERE dataset_id = %s AND approved = 0
+                 AND quality_score >= %s AND compliance_score >= %s AND relevance_score >= %s
                  AND quality_score > 0""",
             (labeled_by, _now(), dataset_id, min_quality, min_compliance, min_relevance),
         )
@@ -138,8 +138,8 @@ def batch_reject(
     try:
         cursor = conn.execute(
             """UPDATE ft_dataset_examples
-               SET approved = 0, labeled_by = ?, labeled_at = ?
-               WHERE dataset_id = ? AND quality_score > 0 AND quality_score <= ?""",
+               SET approved = 0, labeled_by = %s, labeled_at = %s
+               WHERE dataset_id = %s AND quality_score > 0 AND quality_score <= %s""",
             (labeled_by, _now(), dataset_id, max_quality),
         )
         count = cursor.rowcount
@@ -164,15 +164,15 @@ def get_unlabeled(
     try:
         rows = conn.execute(
             """SELECT * FROM ft_dataset_examples
-               WHERE dataset_id = ? AND quality_score = 0 AND compliance_score = 0 AND relevance_score = 0
-               ORDER BY created_at ASC LIMIT ?""",
+               WHERE dataset_id = %s AND quality_score = 0 AND compliance_score = 0 AND relevance_score = 0
+               ORDER BY created_at ASC LIMIT %s""",
             (dataset_id, limit),
         ).fetchall()
         examples = [dict(r) for r in rows]
 
         total_unlabeled = conn.execute(
             """SELECT COUNT(*) FROM ft_dataset_examples
-               WHERE dataset_id = ? AND quality_score = 0 AND compliance_score = 0 AND relevance_score = 0""",
+               WHERE dataset_id = %s AND quality_score = 0 AND compliance_score = 0 AND relevance_score = 0""",
             (dataset_id,),
         ).fetchone()[0]
 
@@ -196,18 +196,18 @@ def get_labeling_summary(
     conn = _get_db(db_path)
     try:
         total = conn.execute(
-            "SELECT COUNT(*) FROM ft_dataset_examples WHERE dataset_id = ?",
+            "SELECT COUNT(*) FROM ft_dataset_examples WHERE dataset_id = %s",
             (dataset_id,),
         ).fetchone()[0]
 
         labeled = conn.execute(
             """SELECT COUNT(*) FROM ft_dataset_examples
-               WHERE dataset_id = ? AND (quality_score > 0 OR compliance_score > 0 OR relevance_score > 0)""",
+               WHERE dataset_id = %s AND (quality_score > 0 OR compliance_score > 0 OR relevance_score > 0)""",
             (dataset_id,),
         ).fetchone()[0]
 
         approved = conn.execute(
-            "SELECT COUNT(*) FROM ft_dataset_examples WHERE dataset_id = ? AND approved = 1",
+            "SELECT COUNT(*) FROM ft_dataset_examples WHERE dataset_id = %s AND approved = 1",
             (dataset_id,),
         ).fetchone()[0]
 
@@ -219,7 +219,7 @@ def get_labeling_summary(
                  MIN(quality_score) as min_quality,
                  MAX(quality_score) as max_quality
                FROM ft_dataset_examples
-               WHERE dataset_id = ? AND quality_score > 0""",
+               WHERE dataset_id = %s AND quality_score > 0""",
             (dataset_id,),
         ).fetchone()
 
@@ -227,7 +227,7 @@ def get_labeling_summary(
         dist = {}
         for score_val in range(1, 6):
             cnt = conn.execute(
-                "SELECT COUNT(*) FROM ft_dataset_examples WHERE dataset_id = ? AND CAST(quality_score AS INTEGER) = ?",
+                "SELECT COUNT(*) FROM ft_dataset_examples WHERE dataset_id = %s AND CAST(quality_score AS INTEGER) = %s",
                 (dataset_id, score_val),
             ).fetchone()[0]
             dist[str(score_val)] = cnt

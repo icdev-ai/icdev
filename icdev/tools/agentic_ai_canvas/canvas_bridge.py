@@ -52,15 +52,15 @@ def link_model_node(
     conn = get_connection()
     try:
         existing = conn.execute(
-            "SELECT id FROM aadc_aimc_model_refs WHERE aadc_design_id=? AND aadc_node_id=?",
+            "SELECT id FROM aadc_aimc_model_refs WHERE aadc_design_id=%s AND aadc_node_id=%s",
             (aadc_design_id, aadc_node_id),
         ).fetchone()
         if existing:
             ref_id = existing["id"]
             conn.execute(
                 """UPDATE aadc_aimc_model_refs
-                   SET aimc_model_id=?, aimc_design_id=?, notes=?, created_at=?
-                   WHERE id=?""",
+                   SET aimc_model_id=%s, aimc_design_id=%s, notes=%s, created_at=%s
+                   WHERE id=%s""",
                 (aimc_model_id, aimc_design_id, notes, _now(), ref_id),
             )
         else:
@@ -68,7 +68,7 @@ def link_model_node(
             conn.execute(
                 """INSERT INTO aadc_aimc_model_refs
                    (id, aadc_design_id, aadc_node_id, aimc_model_id, aimc_design_id, notes, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s)""",
                 (ref_id, aadc_design_id, aadc_node_id, aimc_model_id, aimc_design_id, notes, _now()),
             )
         conn.commit()
@@ -90,7 +90,7 @@ def get_model_refs(aadc_design_id: str) -> list[dict]:
     conn = get_connection()
     try:
         rows = conn.execute(
-            "SELECT * FROM aadc_aimc_model_refs WHERE aadc_design_id=? ORDER BY created_at",
+            "SELECT * FROM aadc_aimc_model_refs WHERE aadc_design_id=%s ORDER BY created_at",
             (aadc_design_id,),
         ).fetchall()
         refs = []
@@ -111,7 +111,7 @@ def get_aadc_refs_for_model(aimc_model_id: str) -> list[dict]:
             """SELECT r.*, d.name as design_name, d.classification as il_level
                FROM aadc_aimc_model_refs r
                LEFT JOIN aadc_designs d ON d.id = r.aadc_design_id
-               WHERE r.aimc_model_id=?
+               WHERE r.aimc_model_id=%s
                ORDER BY r.created_at DESC""",
             (aimc_model_id,),
         ).fetchall()
@@ -128,7 +128,7 @@ def check_il_compatibility(aadc_design_id: str, target_il: str | None = None) ->
     conn = get_connection()
     try:
         design_row = conn.execute(
-            "SELECT * FROM aadc_designs WHERE id=?", (aadc_design_id,)
+            "SELECT * FROM aadc_designs WHERE id=%s", (aadc_design_id,)
         ).fetchone()
         if not design_row:
             return [{"error": f"AADC design '{aadc_design_id}' not found"}]
@@ -137,7 +137,7 @@ def check_il_compatibility(aadc_design_id: str, target_il: str | None = None) ->
         il_level = target_il or design_dict.get("il_level") or "IL4"
 
         refs = conn.execute(
-            "SELECT * FROM aadc_aimc_model_refs WHERE aadc_design_id=?",
+            "SELECT * FROM aadc_aimc_model_refs WHERE aadc_design_id=%s",
             (aadc_design_id,),
         ).fetchall()
     finally:
@@ -196,7 +196,7 @@ def unlink_model_node(ref_id: str) -> bool:
     """Remove an AADC↔AIMC model reference by ref ID. Returns True if deleted."""
     conn = get_connection()
     try:
-        cur = conn.execute("DELETE FROM aadc_aimc_model_refs WHERE id=?", (ref_id,))
+        cur = conn.execute("DELETE FROM aadc_aimc_model_refs WHERE id=%s", (ref_id,))
         conn.commit()
         return cur.rowcount > 0
     finally:

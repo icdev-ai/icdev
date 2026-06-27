@@ -91,7 +91,7 @@ def _step_generate_ft_pairs(dry_run: bool) -> dict:
 
         # Get or create the govcon-proposals dataset
         ds_row = conn.execute(
-            "SELECT id FROM ft_datasets WHERE name = ? LIMIT 1",
+            "SELECT id FROM ft_datasets WHERE name = %s LIMIT 1",
             ("govcon-proposals",),
         ).fetchone()
 
@@ -104,7 +104,7 @@ def _step_generate_ft_pairs(dry_run: bool) -> dict:
                 INSERT INTO ft_datasets
                     (id, name, description, purpose, example_count, version,
                      status, created_at, updated_at)
-                VALUES (?,?,?,?,?,?,?,?,?)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 """,
                 (
                     dataset_id, "govcon-proposals",
@@ -115,7 +115,7 @@ def _step_generate_ft_pairs(dry_run: bool) -> dict:
 
         # Clear stale examples (idempotent re-run)
         conn.execute(
-            "DELETE FROM ft_dataset_examples WHERE dataset_id = ?",
+            "DELETE FROM ft_dataset_examples WHERE dataset_id = %s",
             (dataset_id,),
         )
 
@@ -135,7 +135,7 @@ def _step_generate_ft_pairs(dry_run: bool) -> dict:
                     INSERT INTO ft_dataset_examples
                         (dataset_id, system_prompt, user_input, expected_output,
                          source, source_chunk_id, content_hash, classification, created_at)
-                    VALUES (?,?,?,?,?,?,?,?,?)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
                     """,
                     (
                         dataset_id, pair["system_prompt"], pair["user_input"],
@@ -147,7 +147,7 @@ def _step_generate_ft_pairs(dry_run: bool) -> dict:
 
         # Update dataset count and status
         conn.execute(
-            "UPDATE ft_datasets SET example_count = ?, status = ?, updated_at = ? WHERE id = ?",
+            "UPDATE ft_datasets SET example_count = %s, status = %s, updated_at = %s WHERE id = %s",
             (inserted, "ready", now, dataset_id),
         )
 

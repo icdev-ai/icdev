@@ -116,7 +116,7 @@ def store_event(
         c.execute(
             """INSERT INTO hook_events
                (session_id, hook_type, tool_name, payload, classification, signature)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s)""",
             (session_id, hook_type, tool_name, payload_str, classification, signature),
         )
         conn.commit()

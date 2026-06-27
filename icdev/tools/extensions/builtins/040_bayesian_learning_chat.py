@@ -134,7 +134,7 @@ def _get_fallback_advisory(project_id: str) -> dict | None:
         assessment_count = 0
         for tbl in tables:
             row = conn.execute(
-                "SELECT COUNT(*) as cnt FROM sqlite_master WHERE type='table' AND name=?",
+                "SELECT COUNT(*) as cnt FROM sqlite_master WHERE type='table' AND name=%s",
                 (tbl,),
             ).fetchone()
             if (row[0] if isinstance(row, (tuple, list)) else row["cnt"]) > 0:

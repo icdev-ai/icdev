@@ -238,7 +238,7 @@ def validate_cac_cert(client_cn: str, client_serial: Optional[str] = None) -> Op
                    t.impact_level, t.slug as tenant_slug
             FROM users u
             JOIN tenants t ON u.tenant_id = t.id
-            WHERE u.cac_cn = ? AND u.auth_method = 'cac_piv'
+            WHERE u.cac_cn = %s AND u.auth_method = 'cac_piv'
                   AND u.status = 'active' AND t.status = 'active'
         """,
             (client_cn,),

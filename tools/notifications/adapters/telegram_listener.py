@@ -88,13 +88,13 @@ def _write_hitl_decision_to_db(step_run_id: str, action: str, reason: str = "") 
         conn = get_connection()
         try:
             conn.execute(
-                "UPDATE studio_workflow_run_steps SET status=?, stderr=?, completed_at=? "
-                "WHERE step_run_id=? AND status='awaiting_approval'",
+                "UPDATE studio_workflow_run_steps SET status=%s, stderr=%s, completed_at=%s "
+                "WHERE step_run_id=%s AND status='awaiting_approval'",
                 (new_status, actor_msg, datetime.now(timezone.utc).isoformat(), step_run_id),
             )
             conn.commit()
             updated = conn.execute(
-                "SELECT status FROM studio_workflow_run_steps WHERE step_run_id=?",
+                "SELECT status FROM studio_workflow_run_steps WHERE step_run_id=%s",
                 (step_run_id,),
             ).fetchone()
             return updated and updated["status"] == new_status
@@ -253,7 +253,7 @@ def _write_to_inbox(update_id: int, message: Dict[str, Any]) -> None:
     try:
         conn.execute(
             "INSERT OR IGNORE INTO telegram_inbox (update_id, message_json, chat_id, text, created_at) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s)",
             (
                 update_id,
                 json.dumps(message),
@@ -289,7 +289,7 @@ def _process_inbox() -> Tuple[List[int], List[int]]:
             except Exception as exc:
                 error_text = f"{type(exc).__name__}: {exc}"
                 conn.execute(
-                    "UPDATE telegram_inbox SET error = ? WHERE update_id = ?",
+                    "UPDATE telegram_inbox SET error = %s WHERE update_id = %s",
                     (error_text, update_id),
                 )
                 conn.commit()
@@ -302,7 +302,7 @@ def _process_inbox() -> Tuple[List[int], List[int]]:
                 _reply(chat_id, reply)
 
             conn.execute(
-                "UPDATE telegram_inbox SET processed_at = ?, error = NULL WHERE update_id = ?",
+                "UPDATE telegram_inbox SET processed_at = %s, error = NULL WHERE update_id = %s",
                 (_utcnow_iso(), update_id),
             )
             conn.commit()
@@ -676,7 +676,7 @@ def poll_updates() -> List[Dict[str, Any]]:
         conn = get_connection()
         for uid in processed:
             row = conn.execute(
-                "SELECT text FROM telegram_inbox WHERE update_id = ?", (uid,)
+                "SELECT text FROM telegram_inbox WHERE update_id = %s", (uid,)
             ).fetchone()
             if row:
                 results.append(

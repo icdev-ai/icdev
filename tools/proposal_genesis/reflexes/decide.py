@@ -226,7 +226,7 @@ def _get_bayesian_weights() -> Optional[Dict[str, float]]:
     conn = get_connection()
     try:
         conn.execute(
-            "INSERT OR REPLACE INTO pg_proposal_genesis_config (key, value, updated_at) VALUES (?, ?, ?)",
+            "INSERT OR REPLACE INTO pg_proposal_genesis_config (key, value, updated_at) VALUES (%s, %s, %s)",
             ("bayesian_score_weights", json.dumps(bayesian_weights), _utcnow_iso()),
         )
         conn.commit()
@@ -381,7 +381,7 @@ def calibrate_weights() -> Dict[str, Any]:
 
         now = _utcnow_iso()
         conn.execute(
-            "INSERT OR REPLACE INTO pg_proposal_genesis_config (key, value, updated_at) VALUES (?, ?, ?)",
+            "INSERT OR REPLACE INTO pg_proposal_genesis_config (key, value, updated_at) VALUES (%s, %s, %s)",
             ("calibrated_score_weights", _json.dumps(new_weights), now),
         )
         conn.commit()
@@ -439,7 +439,7 @@ def _get_capability_coverage(opportunity_id: str) -> float:
                    SUM(CASE WHEN capability_match IS NOT NULL
                         AND capability_match != '' THEN 1 ELSE 0 END) as matched
             FROM rfp_shall_statements
-            WHERE opportunity_id = ?
+            WHERE opportunity_id = %s
         """,
             (opportunity_id,),
         ).fetchone()
@@ -460,7 +460,7 @@ def _get_quality_score_avg(opportunity_id: str) -> float:
             """
             SELECT AVG(composite_score) as avg_score
             FROM pg_proposal_quality_scores
-            WHERE opportunity_id = ?
+            WHERE opportunity_id = %s
             AND composite_score IS NOT NULL
         """,
             (opportunity_id,),
@@ -482,7 +482,7 @@ def _get_capture_plan_status(opportunity_id: str) -> Optional[Dict]:
             """
             SELECT status, win_strategy, teaming_strategy
             FROM pg_capture_plans
-            WHERE opportunity_id = ?
+            WHERE opportunity_id = %s
             ORDER BY updated_at DESC LIMIT 1
         """,
             (opportunity_id,),
@@ -505,7 +505,7 @@ def _get_engagement_score(opportunity_id: str) -> float:
             FROM pg_crm_engagement_scores es
             JOIN pg_crm_accounts a ON a.id = es.account_id
             JOIN sam_gov_opportunities o ON LOWER(o.agency) = LOWER(a.agency)
-            WHERE o.id = ?
+            WHERE o.id = %s
             ORDER BY es.created_at DESC LIMIT 1
         """,
             (opportunity_id,),
@@ -525,7 +525,7 @@ def _get_teaming_fit(opportunity_id: str) -> float:
             """
             SELECT MAX(fit_score) as best_fit
             FROM pg_teaming_assessments
-            WHERE opportunity_id = ?
+            WHERE opportunity_id = %s
         """,
             (opportunity_id,),
         ).fetchone()
@@ -735,7 +735,7 @@ def _store_decision(opportunity_id: str, result: Dict) -> Optional[str]:
             "INSERT INTO pg_bid_decisions "
             "(id, opportunity_id, decision, win_probability, "
             "score_breakdown, rationale, decided_by, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 dec_id,
                 opportunity_id,
@@ -763,7 +763,7 @@ def _audit_decide(event_type: str, opportunity_id: Optional[str], details: Dict,
             "INSERT INTO pg_proposal_genesis_audit "
             "(id, event_type, reflex_name, risk_tier, opportunity_id, "
             "details, success, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 _generate_id("pgaudit"),
                 event_type,

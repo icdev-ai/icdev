@@ -439,7 +439,7 @@ def seed_corpus(dry_run: bool = False) -> dict[str, Any]:
                 conn.execute(
                     """INSERT OR IGNORE INTO sg_corpus_documents
                        (id, title, content, source_type, theater_tags, created_at)
-                       VALUES (?, ?, ?, ?, ?, ?)""",
+                       VALUES (%s, %s, %s, %s, %s, %s)""",
                     (
                         entry["id"],
                         entry["title"],

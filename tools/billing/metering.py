@@ -40,7 +40,7 @@ def _write_event(
             conn.execute(
                 "INSERT INTO usage_events "
                 "(id, tenant_id, event_type, quantity, model, canvas_key, metadata, recorded_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
                 (row_id, tenant_id, event_type, quantity, model, canvas_key, metadata, recorded_at),
             )
     except Exception as exc:

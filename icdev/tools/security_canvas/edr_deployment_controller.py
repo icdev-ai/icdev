@@ -76,7 +76,7 @@ def deploy_sensor(hostname: str, edr_product: str = "crowdstrike_falcon",
             """INSERT INTO zig_edr_agents
                (device_id, hostname, edr_product, sensor_version, agent_status,
                 health_score, last_checkin, deployed_at, updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
                ON CONFLICT(device_id) DO UPDATE SET
                edr_product=excluded.edr_product,
                sensor_version=excluded.sensor_version,
@@ -91,7 +91,7 @@ def deploy_sensor(hostname: str, edr_product: str = "crowdstrike_falcon",
         # Sync to device registry (best-effort — registry seeded by compliance scan)
         try:
             conn.execute(
-                "UPDATE zig_device_registry SET edr_installed=1, updated_at=? WHERE device_id=?",
+                "UPDATE zig_device_registry SET edr_installed=1, updated_at=%s WHERE device_id=%s",
                 (now, device_id),
             )
         except Exception:

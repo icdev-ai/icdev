@@ -106,7 +106,7 @@ def _persist_run(run: dict) -> None:
             "INSERT OR REPLACE INTO batch_runs "
             "(run_id, batch_id, batch_name, project_id, status, "
             " stop_on_failure, start_time, end_time) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 run["run_id"],
                 run["batch_id"],
@@ -120,7 +120,7 @@ def _persist_run(run: dict) -> None:
         )
         # Delete any old step rows for this run (in case of re-persist)
         conn.execute(
-            "DELETE FROM batch_run_steps WHERE run_id = ?",
+            "DELETE FROM batch_run_steps WHERE run_id = %s",
             (run["run_id"],),
         )
         for idx, step in enumerate(run.get("steps", [])):
@@ -128,7 +128,7 @@ def _persist_run(run: dict) -> None:
                 "INSERT INTO batch_run_steps "
                 "(run_id, step_index, name, tool_path, status, "
                 " return_code, output_summary, start_time, end_time) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     run["run_id"],
                     idx,
@@ -642,16 +642,16 @@ def history():
     try:
         if project_id:
             runs = conn.execute(
-                "SELECT * FROM batch_runs WHERE project_id = ? ORDER BY start_time DESC LIMIT ? OFFSET ?",
+                "SELECT * FROM batch_runs WHERE project_id = %s ORDER BY start_time DESC LIMIT %s OFFSET %s",
                 (project_id, limit, offset),
             ).fetchall()
             total = conn.execute(
-                "SELECT COUNT(*) as cnt FROM batch_runs WHERE project_id = ?",
+                "SELECT COUNT(*) as cnt FROM batch_runs WHERE project_id = %s",
                 (project_id,),
             ).fetchone()["cnt"]
         else:
             runs = conn.execute(
-                "SELECT * FROM batch_runs ORDER BY start_time DESC LIMIT ? OFFSET ?",
+                "SELECT * FROM batch_runs ORDER BY start_time DESC LIMIT %s OFFSET %s",
                 (limit, offset),
             ).fetchall()
             total = conn.execute(
@@ -663,7 +663,7 @@ def history():
             run_dict = dict(r)
             # Attach steps for each run
             steps = conn.execute(
-                "SELECT * FROM batch_run_steps WHERE run_id = ? ORDER BY step_index",
+                "SELECT * FROM batch_run_steps WHERE run_id = %s ORDER BY step_index",
                 (r["run_id"],),
             ).fetchall()
             run_dict["steps"] = [dict(s) for s in steps]

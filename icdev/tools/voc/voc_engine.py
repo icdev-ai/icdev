@@ -178,9 +178,9 @@ class VOCEngine:
 
                 for m in members:
                     conn.execute(
-                        "UPDATE voc_job_statements SET job_category=?, frequency=?, "
-                        "severity_score=?, strategic_fit_score=?, composite_score=? "
-                        "WHERE id=?",
+                        "UPDATE voc_job_statements SET job_category=%s, frequency=%s, "
+                        "severity_score=%s, strategic_fit_score=%s, composite_score=%s "
+                        "WHERE id=%s",
                         (category, cluster_size, m["severity"], m["fit"], composite, m["id"]),
                     )
 
@@ -200,7 +200,7 @@ class VOCEngine:
                         "INSERT INTO creative_feature_gaps "
                         "(id, feature_name, description, gap_score, signal_ids, "
                         "metadata, discovered_at, classification) "
-                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
                         (
                             gap_id,
                             f"VOC: {category}",
@@ -214,7 +214,7 @@ class VOCEngine:
                     )
                     for m in members:
                         conn.execute(
-                            "UPDATE voc_job_statements SET creative_gap_id=? WHERE id=?",
+                            "UPDATE voc_job_statements SET creative_gap_id=%s WHERE id=%s",
                             (gap_id, m["id"]),
                         )
                     signals_created += 1
@@ -257,7 +257,7 @@ class VOCEngine:
             rows = conn.execute(
                 "SELECT job_category, COUNT(*) as cnt, AVG(composite_score) as avg_comp "
                 "FROM voc_job_statements WHERE job_category IS NOT NULL "
-                "GROUP BY job_category ORDER BY avg_comp DESC LIMIT ?",
+                "GROUP BY job_category ORDER BY avg_comp DESC LIMIT %s",
                 (limit,),
             ).fetchall()
         finally:

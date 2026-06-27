@@ -38,7 +38,7 @@ def _get_provider(provider_id: str) -> dict:
         row = conn.execute(
             "SELECT id, tenant_id, name, protocol, entity_id, metadata_url, "
             "client_id, attr_mapping, claims_mapping, enabled "
-            "FROM sso_providers WHERE id = ? AND protocol = 'saml'",
+            "FROM sso_providers WHERE id = %s AND protocol = 'saml'",
             (provider_id,),
         ).fetchone()
     if row is None:

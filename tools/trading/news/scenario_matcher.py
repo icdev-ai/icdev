@@ -188,7 +188,7 @@ def match(news_id: str) -> tuple[str, float, str] | None:
     try:
         cur = conn.cursor()
         cur.execute(
-            "SELECT title, summary FROM ad_news_items WHERE id = ?", (news_id,)
+            "SELECT title, summary FROM ad_news_items WHERE id = %s", (news_id,)
         )
         row = cur.fetchone()
         if not row:

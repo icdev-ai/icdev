@@ -71,7 +71,7 @@ def _log_audit(conn, project_id, event_type, action, details):
         conn.execute(
             """INSERT INTO audit_trail
                (project_id, event_type, actor, action, details, classification)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s)""",
             (
                 project_id,
                 event_type,
@@ -97,7 +97,7 @@ def _snapshot_project_state(conn, project_id):
 
     # Project metadata
     row = conn.execute(
-        "SELECT name, type, status, impact_level, ato_status FROM projects WHERE id = ?",
+        "SELECT name, type, status, impact_level, ato_status FROM projects WHERE id = %s",
         (project_id,),
     ).fetchone()
     if row:
@@ -210,7 +210,7 @@ def _simulate_compliance(conn, project_id, modifications):
     worst_tier = "GREEN"
     try:
         rows = conn.execute(
-            "SELECT impact_tier FROM boundary_impact_assessments WHERE project_id = ?",
+            "SELECT impact_tier FROM boundary_impact_assessments WHERE project_id = %s",
             (project_id,),
         ).fetchall()
         for r in rows:
@@ -385,7 +385,7 @@ def _simulate_cost(conn, project_id, modifications):
     try:
         rows = conn.execute(
             "SELECT t_shirt_size, COUNT(*) AS cnt FROM safe_decomposition "
-            "WHERE project_id = ? AND t_shirt_size IS NOT NULL GROUP BY t_shirt_size",
+            "WHERE project_id = %s AND t_shirt_size IS NOT NULL GROUP BY t_shirt_size",
             (project_id,),
         ).fetchall()
         for r in rows:
@@ -825,7 +825,7 @@ def create_scenario(project_id, scenario_name, scenario_type, modifications, bas
                (id, project_id, session_id, scenario_name, scenario_type,
                 base_state, modifications, status, classification,
                 created_by, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 scenario_id,
                 project_id,
@@ -919,7 +919,7 @@ def run_simulation(scenario_id, dimensions=None, db_path=None):
     try:
         # Load scenario
         row = conn.execute(
-            "SELECT * FROM simulation_scenarios WHERE id = ?",
+            "SELECT * FROM simulation_scenarios WHERE id = %s",
             (scenario_id,),
         ).fetchone()
         if not row:
@@ -931,7 +931,7 @@ def run_simulation(scenario_id, dimensions=None, db_path=None):
 
         # Update status to running
         conn.execute(
-            "UPDATE simulation_scenarios SET status = 'running' WHERE id = ?",
+            "UPDATE simulation_scenarios SET status = 'running' WHERE id = %s",
             (scenario_id,),
         )
         conn.commit()
@@ -952,7 +952,7 @@ def run_simulation(scenario_id, dimensions=None, db_path=None):
                    (scenario_id, dimension, metric_name,
                     baseline_value, simulated_value, delta, delta_pct,
                     details, visualizations, calculated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     scenario_id,
                     dim,
@@ -981,7 +981,7 @@ def run_simulation(scenario_id, dimensions=None, db_path=None):
 
         # Update scenario to completed
         conn.execute(
-            "UPDATE simulation_scenarios SET status = 'completed', completed_at = ? WHERE id = ?",
+            "UPDATE simulation_scenarios SET status = 'completed', completed_at = %s WHERE id = %s",
             (datetime.now(timezone.utc).isoformat(), scenario_id),
         )
         conn.commit()
@@ -1006,7 +1006,7 @@ def run_simulation(scenario_id, dimensions=None, db_path=None):
         # Mark failed
         try:
             conn.execute(
-                "UPDATE simulation_scenarios SET status = 'failed' WHERE id = ?",
+                "UPDATE simulation_scenarios SET status = 'failed' WHERE id = %s",
                 (scenario_id,),
             )
             conn.commit()
@@ -1030,7 +1030,7 @@ def get_scenario(scenario_id, db_path=None):
     conn = _get_connection(db_path)
     try:
         row = conn.execute(
-            "SELECT * FROM simulation_scenarios WHERE id = ?",
+            "SELECT * FROM simulation_scenarios WHERE id = %s",
             (scenario_id,),
         ).fetchone()
         if not row:
@@ -1047,7 +1047,7 @@ def get_scenario(scenario_id, db_path=None):
 
         # Fetch results
         results = conn.execute(
-            "SELECT * FROM simulation_results WHERE scenario_id = ? ORDER BY dimension",
+            "SELECT * FROM simulation_results WHERE scenario_id = %s ORDER BY dimension",
             (scenario_id,),
         ).fetchall()
 
@@ -1082,7 +1082,7 @@ def list_scenarios(project_id, db_path=None):
     try:
         rows = conn.execute(
             "SELECT id, scenario_name, scenario_type, status, created_at, completed_at "
-            "FROM simulation_scenarios WHERE project_id = ? ORDER BY created_at DESC",
+            "FROM simulation_scenarios WHERE project_id = %s ORDER BY created_at DESC",
             (project_id,),
         ).fetchall()
 
@@ -1106,11 +1106,11 @@ def compare_scenarios(scenario_id_1, scenario_id_2, db_path=None):
     conn = _get_connection(db_path)
     try:
         s1 = conn.execute(
-            "SELECT * FROM simulation_scenarios WHERE id = ?",
+            "SELECT * FROM simulation_scenarios WHERE id = %s",
             (scenario_id_1,),
         ).fetchone()
         s2 = conn.execute(
-            "SELECT * FROM simulation_scenarios WHERE id = ?",
+            "SELECT * FROM simulation_scenarios WHERE id = %s",
             (scenario_id_2,),
         ).fetchone()
         if not s1:
@@ -1121,7 +1121,7 @@ def compare_scenarios(scenario_id_1, scenario_id_2, db_path=None):
         # Fetch results for both
         def _get_results(sid):
             rows = conn.execute(
-                "SELECT * FROM simulation_results WHERE scenario_id = ?",
+                "SELECT * FROM simulation_results WHERE scenario_id = %s",
                 (sid,),
             ).fetchall()
             by_dim = {}

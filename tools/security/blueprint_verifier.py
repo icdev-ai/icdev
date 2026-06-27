@@ -213,7 +213,7 @@ class BlueprintVerifier:
         conn = self._get_db()
         row = conn.execute(
             """SELECT id FROM blueprint_digests
-               WHERE digest = ? ORDER BY computed_at DESC LIMIT 1""",
+               WHERE digest = %s ORDER BY computed_at DESC LIMIT 1""",
             (expected_digest,),
         ).fetchone()
         conn.close()
@@ -238,7 +238,7 @@ class BlueprintVerifier:
             """INSERT INTO blueprint_digests
                (id, entity_type, entity_id, digest, file_count, total_bytes,
                 directory_path, computed_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 record_id,
                 entity_type,
@@ -268,7 +268,7 @@ class BlueprintVerifier:
         conn = self._get_db()
         row = conn.execute(
             """SELECT digest, id FROM blueprint_digests
-               WHERE entity_type = ? AND entity_id = ?
+               WHERE entity_type = %s AND entity_id = %s
                ORDER BY computed_at DESC LIMIT 1""",
             (entity_type, entity_id),
         ).fetchone()
@@ -284,8 +284,8 @@ class BlueprintVerifier:
         # Record verification result
         conn.execute(
             """UPDATE blueprint_digests
-               SET verified_at = ?, verified_by = ?, verification_result = ?
-               WHERE id = ?""",
+               SET verified_at = %s, verified_by = %s, verification_result = %s
+               WHERE id = %s""",
             (_now(), verified_by, "pass" if result.get("verified") else "fail", record_id),
         )
         conn.commit()
@@ -300,7 +300,7 @@ class BlueprintVerifier:
         conn = self._get_db()
         row = conn.execute(
             """SELECT * FROM blueprint_digests
-               WHERE entity_type = ? AND entity_id = ?
+               WHERE entity_type = %s AND entity_id = %s
                ORDER BY computed_at DESC LIMIT 1""",
             (entity_type, entity_id),
         ).fetchone()
@@ -315,13 +315,13 @@ class BlueprintVerifier:
         if entity_type:
             rows = conn.execute(
                 """SELECT * FROM blueprint_digests
-                   WHERE entity_type = ? ORDER BY computed_at DESC LIMIT ?""",
+                   WHERE entity_type = %s ORDER BY computed_at DESC LIMIT %s""",
                 (entity_type, limit),
             ).fetchall()
         else:
             rows = conn.execute(
                 """SELECT * FROM blueprint_digests
-                   ORDER BY computed_at DESC LIMIT ?""",
+                   ORDER BY computed_at DESC LIMIT %s""",
                 (limit,),
             ).fetchall()
         conn.close()

@@ -410,7 +410,7 @@ def _cross_register_to_innovation(db_path=None):
             """SELECT id, title, description, composite_score, category,
                       keywords, metadata
                FROM creative_pain_points
-               WHERE composite_score >= ?
+               WHERE composite_score >= %s
                ORDER BY composite_score DESC""",
             (min_score,),
         ).fetchall()
@@ -434,8 +434,8 @@ def _cross_register_to_innovation(db_path=None):
                        (id, source, source_type, category, title, body, url,
                         content_hash, composite_score, status, metadata,
                         discovered_at, classification)
-                       VALUES (?, 'creative_engine', 'external_framework_analysis',
-                               ?, ?, ?, NULL, ?, ?, 'new', ?, ?, 'CUI')""",
+                       VALUES (%s, 'creative_engine', 'external_framework_analysis',
+                               %s, %s, %s, NULL, %s, %s, 'new', %s, %s, 'CUI')""",
                     (
                         signal_id,
                         row["category"] or "feature_gap",
@@ -598,7 +598,7 @@ def get_status(db_path=None):
         try:
             cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ")
             row = conn.execute(
-                "SELECT COUNT(*) as cnt FROM creative_signals WHERE discovered_at >= ?",
+                "SELECT COUNT(*) as cnt FROM creative_signals WHERE discovered_at >= %s",
                 (cutoff,),
             ).fetchone()
             status["signals_last_24h"] = row["cnt"] if row else 0

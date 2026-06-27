@@ -143,7 +143,7 @@ def _audit(conn, action: str, details: str = "", project_id: str = "") -> None:
         conn.execute(
             "INSERT INTO audit_trail "
             "(id, created_at, event_type, actor, action, details, session_id, project_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 str(uuid.uuid4()),
                 _now(),
@@ -259,7 +259,7 @@ def _get_loop_id_for_opp(conn, opportunity_id: str) -> Optional[str]:
     """Retrieve the workflow_loop_id for an opportunity."""
     try:
         row = conn.execute(
-            "SELECT workflow_loop_id FROM proposal_opportunities WHERE id = ?",
+            "SELECT workflow_loop_id FROM proposal_opportunities WHERE id = %s",
             (opportunity_id,),
         ).fetchone()
         if not row:
@@ -294,7 +294,7 @@ def create_opportunity_loop(
 
         # Check opportunity exists
         opp = conn.execute(
-            "SELECT id, title FROM proposal_opportunities WHERE id = ?",
+            "SELECT id, title FROM proposal_opportunities WHERE id = %s",
             (opportunity_id,),
         ).fetchone()
         if not opp:
@@ -310,7 +310,7 @@ def create_opportunity_loop(
             """INSERT INTO workflow_loops
                (id, project_id, phase_name, loop_type, status,
                 created_by, created_at, acceptance_criteria_count)
-               VALUES (?, ?, ?, 'build', 'planning', ?, ?, ?)""",
+               VALUES (%s, %s, %s, 'build', 'planning', %s, %s, %s)""",
             (loop_id, project_id, phase_name, "proposal-genesis", now, len(TRANSITION_CRITERIA)),
         )
 
@@ -321,13 +321,13 @@ def create_opportunity_loop(
                 """INSERT INTO workflow_acceptance_criteria
                    (id, loop_id, criterion_number, given_text, when_text,
                     then_text, status, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, 'pending', %s)""",
                 (crit_id, loop_id, idx, tc["given"], tc["when"], tc["then"], now),
             )
 
         # Store loop_id on opportunity row
         conn.execute(
-            "UPDATE proposal_opportunities SET workflow_loop_id = ? WHERE id = ?",
+            "UPDATE proposal_opportunities SET workflow_loop_id = %s WHERE id = %s",
             (loop_id, opportunity_id),
         )
 
@@ -369,7 +369,7 @@ def create_opportunity_loop(
 def _check_capture_to_extract(conn, opportunity_id: str) -> Tuple[bool, str]:
     """CAPTURE->EXTRACT: SAM.gov data complete (title, agency, response_date)."""
     row = conn.execute(
-        "SELECT title, agency, due_date FROM proposal_opportunities WHERE id = ?",
+        "SELECT title, agency, due_date FROM proposal_opportunities WHERE id = %s",
         (opportunity_id,),
     ).fetchone()
     if not row:
@@ -392,7 +392,7 @@ def _check_capture_to_extract(conn, opportunity_id: str) -> Tuple[bool, str]:
 def _check_extract_to_map(conn, opportunity_id: str) -> Tuple[bool, str]:
     """EXTRACT->MAP: shall statement count >= 5."""
     row = conn.execute(
-        "SELECT COUNT(*) as cnt FROM rfp_shall_statements WHERE proposal_opportunity_id = ?",
+        "SELECT COUNT(*) as cnt FROM rfp_shall_statements WHERE proposal_opportunity_id = %s",
         (opportunity_id,),
     ).fetchone()
     count = row["cnt"] if isinstance(row, dict) else row[0]
@@ -404,7 +404,7 @@ def _check_extract_to_map(conn, opportunity_id: str) -> Tuple[bool, str]:
 def _check_map_to_draft(conn, opportunity_id: str) -> Tuple[bool, str]:
     """MAP->DRAFT: capability coverage >= 60%."""
     rows = conn.execute(
-        "SELECT compliance_status FROM pg_compliance_matrix WHERE opportunity_id = ?",
+        "SELECT compliance_status FROM pg_compliance_matrix WHERE opportunity_id = %s",
         (opportunity_id,),
     ).fetchall()
     if not rows:
@@ -422,7 +422,7 @@ def _check_map_to_draft(conn, opportunity_id: str) -> Tuple[bool, str]:
 def _check_draft_to_polish(conn, opportunity_id: str) -> Tuple[bool, str]:
     """DRAFT->POLISH: all drafts substantive (word_count > 50)."""
     rows = conn.execute(
-        "SELECT id, draft_content FROM proposal_section_drafts WHERE opportunity_id = ?",
+        "SELECT id, draft_content FROM proposal_section_drafts WHERE opportunity_id = %s",
         (opportunity_id,),
     ).fetchall()
     if not rows:
@@ -442,7 +442,7 @@ def _check_draft_to_polish(conn, opportunity_id: str) -> Tuple[bool, str]:
 def _check_polish_to_decide(conn, opportunity_id: str) -> Tuple[bool, str]:
     """POLISH->DECIDE: average quality composite_score >= 0.70."""
     rows = conn.execute(
-        "SELECT composite_score FROM pg_proposal_quality_scores WHERE opportunity_id = ?",
+        "SELECT composite_score FROM pg_proposal_quality_scores WHERE opportunity_id = %s",
         (opportunity_id,),
     ).fetchall()
     if not rows:
@@ -461,7 +461,7 @@ def _check_polish_to_decide(conn, opportunity_id: str) -> Tuple[bool, str]:
 def _check_decide_to_deliver(conn, opportunity_id: str) -> Tuple[bool, str]:
     """DECIDE->DELIVER: human bid approval received (recommendation = 'bid')."""
     row = conn.execute(
-        "SELECT decision, decided_by FROM pg_bid_decisions WHERE opportunity_id = ? ORDER BY created_at DESC LIMIT 1",
+        "SELECT decision, decided_by FROM pg_bid_decisions WHERE opportunity_id = %s ORDER BY created_at DESC LIMIT 1",
         (opportunity_id,),
     ).fetchone()
     if not row:
@@ -520,15 +520,15 @@ def verify_phase_transition(
             for tc in TRANSITION_CRITERIA:
                 if tc["from"] == key[0] and tc["to"] == key[1]:
                     row = conn.execute(
-                        "SELECT id FROM workflow_acceptance_criteria WHERE loop_id = ? AND then_text = ?",
+                        "SELECT id FROM workflow_acceptance_criteria WHERE loop_id = %s AND then_text = %s",
                         (loop_id, tc["then"]),
                     ).fetchone()
                     if row:
                         crit_id = row["id"] if isinstance(row, dict) else row[0]
                         conn.execute(
                             "UPDATE workflow_acceptance_criteria "
-                            "SET status = ?, evidence = ?, verified_at = ? "
-                            "WHERE id = ?",
+                            "SET status = %s, evidence = %s, verified_at = %s "
+                            "WHERE id = %s",
                             (status, details, now, crit_id),
                         )
                         # Update acceptance counts on loop
@@ -537,7 +537,7 @@ def verify_phase_transition(
                             "  SUM(CASE WHEN status='pass' THEN 1 ELSE 0 END) as p, "
                             "  SUM(CASE WHEN status='fail' THEN 1 ELSE 0 END) as f, "
                             "  SUM(CASE WHEN status='skip' THEN 1 ELSE 0 END) as s "
-                            "FROM workflow_acceptance_criteria WHERE loop_id = ?",
+                            "FROM workflow_acceptance_criteria WHERE loop_id = %s",
                             (loop_id,),
                         ).fetchone()
                         if counts:
@@ -546,8 +546,8 @@ def verify_phase_transition(
                             sc = counts["s"] if isinstance(counts, dict) else counts[2]
                             conn.execute(
                                 "UPDATE workflow_loops SET "
-                                "acceptance_pass_count = ?, acceptance_fail_count = ?, "
-                                "acceptance_skip_count = ? WHERE id = ?",
+                                "acceptance_pass_count = %s, acceptance_fail_count = %s, "
+                                "acceptance_skip_count = %s WHERE id = %s",
                                 (pc or 0, fc or 0, sc or 0, loop_id),
                             )
                         criterion_updated = True
@@ -636,7 +636,7 @@ def reconcile_reflex(
             """INSERT INTO workflow_reconciliations
                (id, loop_id, planned_tasks, completed_tasks, deviations,
                 overall_result, classification, reconciled_at)
-               VALUES (?, ?, ?, ?, ?, ?, 'CUI', ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, 'CUI', %s)""",
             (recon_id, loop_id, expected_count, actual_count, deviations, overall, now),
         )
         conn.commit()
@@ -687,7 +687,7 @@ def generate_handoff(opportunity_id: str) -> Dict[str, Any]:
         opp = conn.execute(
             "SELECT id, title, agency, due_date, status, solicitation_number, "
             "naics_code, set_aside_type, estimated_value_low, estimated_value_high "
-            "FROM proposal_opportunities WHERE id = ?",
+            "FROM proposal_opportunities WHERE id = %s",
             (opportunity_id,),
         ).fetchone()
         if not opp:
@@ -701,14 +701,14 @@ def generate_handoff(opportunity_id: str) -> Dict[str, Any]:
 
         # Shall statement count
         shall_row = conn.execute(
-            "SELECT COUNT(*) as cnt FROM rfp_shall_statements WHERE proposal_opportunity_id = ?",
+            "SELECT COUNT(*) as cnt FROM rfp_shall_statements WHERE proposal_opportunity_id = %s",
             (opportunity_id,),
         ).fetchone()
         shall_count = shall_row["cnt"] if isinstance(shall_row, dict) else shall_row[0]
 
         # Capability coverage
         cmatrix_rows = conn.execute(
-            "SELECT compliance_status FROM pg_compliance_matrix WHERE opportunity_id = ?",
+            "SELECT compliance_status FROM pg_compliance_matrix WHERE opportunity_id = %s",
             (opportunity_id,),
         ).fetchall()
         total_reqs = len(cmatrix_rows)
@@ -721,7 +721,7 @@ def generate_handoff(opportunity_id: str) -> Dict[str, Any]:
 
         # Quality scores
         quality_rows = conn.execute(
-            "SELECT composite_score FROM pg_proposal_quality_scores WHERE opportunity_id = ?",
+            "SELECT composite_score FROM pg_proposal_quality_scores WHERE opportunity_id = %s",
             (opportunity_id,),
         ).fetchall()
         quality_scores = [
@@ -734,7 +734,7 @@ def generate_handoff(opportunity_id: str) -> Dict[str, Any]:
         # Bid recommendation
         bid_row = conn.execute(
             "SELECT decision, rationale, decided_by FROM pg_bid_decisions "
-            "WHERE opportunity_id = ? ORDER BY created_at DESC LIMIT 1",
+            "WHERE opportunity_id = %s ORDER BY created_at DESC LIMIT 1",
             (opportunity_id,),
         ).fetchone()
         bid_decision = "No decision yet"
@@ -749,7 +749,7 @@ def generate_handoff(opportunity_id: str) -> Dict[str, Any]:
         if loop_id:
             recon_rows = conn.execute(
                 "SELECT deviations, overall_result, reconciled_at "
-                "FROM workflow_reconciliations WHERE loop_id = ? "
+                "FROM workflow_reconciliations WHERE loop_id = %s "
                 "ORDER BY reconciled_at DESC",
                 (loop_id,),
             ).fetchall()
@@ -767,7 +767,7 @@ def generate_handoff(opportunity_id: str) -> Dict[str, Any]:
         if loop_id:
             ac_rows = conn.execute(
                 "SELECT then_text, status, evidence "
-                "FROM workflow_acceptance_criteria WHERE loop_id = ? "
+                "FROM workflow_acceptance_criteria WHERE loop_id = %s "
                 "ORDER BY criterion_number",
                 (loop_id,),
             ).fetchall()
@@ -874,7 +874,7 @@ def generate_handoff(opportunity_id: str) -> Dict[str, Any]:
                (id, project_id, loop_id, loop_status, context_summary,
                 decisions_made, blockers, next_actions,
                 handoff_to, created_by, classification, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'CUI', ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'CUI', %s)""",
             (
                 handoff_id,
                 f"pg-{opportunity_id}",
@@ -957,7 +957,7 @@ def next_action_recommender(limit: int = 10) -> Dict[str, Any]:
 
             # --- staleness: days since last audit event for this opp ---
             last_event = conn.execute(
-                "SELECT MAX(created_at) as latest FROM audit_trail WHERE project_id = ?",
+                "SELECT MAX(created_at) as latest FROM audit_trail WHERE project_id = %s",
                 (f"pg-{opp_id}",),
             ).fetchone()
             staleness_days = 999.0
@@ -985,7 +985,7 @@ def next_action_recommender(limit: int = 10) -> Dict[str, Any]:
 
             # --- quality gap: 1.0 - avg quality ---
             quality_rows = conn.execute(
-                "SELECT composite_score FROM pg_proposal_quality_scores WHERE opportunity_id = ?",
+                "SELECT composite_score FROM pg_proposal_quality_scores WHERE opportunity_id = %s",
                 (opp_id,),
             ).fetchall()
             scores = [
@@ -1001,7 +1001,7 @@ def next_action_recommender(limit: int = 10) -> Dict[str, Any]:
             loop_status = "none"
             if loop_id:
                 lrow = conn.execute(
-                    "SELECT status, apply_started_at FROM workflow_loops WHERE id = ?",
+                    "SELECT status, apply_started_at FROM workflow_loops WHERE id = %s",
                     (loop_id,),
                 ).fetchone()
                 if lrow:
@@ -1024,7 +1024,7 @@ def next_action_recommender(limit: int = 10) -> Dict[str, Any]:
             handoff_norm = 0.0
             if loop_id:
                 hrow = conn.execute(
-                    "SELECT MAX(created_at) as latest FROM workflow_handoffs WHERE loop_id = ?",
+                    "SELECT MAX(created_at) as latest FROM workflow_handoffs WHERE loop_id = %s",
                     (loop_id,),
                 ).fetchone()
                 if hrow:
@@ -1117,7 +1117,7 @@ def get_lifecycle_status(opportunity_id: str) -> Dict[str, Any]:
         opp = conn.execute(
             "SELECT id, title, agency, due_date, status, workflow_loop_id, "
             "solicitation_number "
-            "FROM proposal_opportunities WHERE id = ?",
+            "FROM proposal_opportunities WHERE id = %s",
             (opportunity_id,),
         ).fetchone()
         if not opp:
@@ -1143,7 +1143,7 @@ def get_lifecycle_status(opportunity_id: str) -> Dict[str, Any]:
 
         # Loop state
         lrow = conn.execute(
-            "SELECT * FROM workflow_loops WHERE id = ?",
+            "SELECT * FROM workflow_loops WHERE id = %s",
             (loop_id,),
         ).fetchone()
         if lrow:
@@ -1158,7 +1158,7 @@ def get_lifecycle_status(opportunity_id: str) -> Dict[str, Any]:
         ac_rows = conn.execute(
             "SELECT id, criterion_number, given_text, when_text, then_text, "
             "status, evidence, verified_at "
-            "FROM workflow_acceptance_criteria WHERE loop_id = ? "
+            "FROM workflow_acceptance_criteria WHERE loop_id = %s "
             "ORDER BY criterion_number",
             (loop_id,),
         ).fetchall()
@@ -1182,7 +1182,7 @@ def get_lifecycle_status(opportunity_id: str) -> Dict[str, Any]:
         recon_rows = conn.execute(
             "SELECT id, planned_tasks, completed_tasks, deviations, "
             "overall_result, reconciled_at "
-            "FROM workflow_reconciliations WHERE loop_id = ? "
+            "FROM workflow_reconciliations WHERE loop_id = %s "
             "ORDER BY reconciled_at DESC LIMIT 10",
             (loop_id,),
         ).fetchall()
@@ -1208,7 +1208,7 @@ def get_lifecycle_status(opportunity_id: str) -> Dict[str, Any]:
         # Handoffs
         handoff_rows = conn.execute(
             "SELECT id, loop_status, context_summary, created_at "
-            "FROM workflow_handoffs WHERE loop_id = ? "
+            "FROM workflow_handoffs WHERE loop_id = %s "
             "ORDER BY created_at DESC LIMIT 5",
             (loop_id,),
         ).fetchall()

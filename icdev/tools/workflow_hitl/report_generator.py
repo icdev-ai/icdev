@@ -42,7 +42,7 @@ def generate_report(
             """INSERT INTO wf_generated_reports
                (id, instance_id, report_type, style_guide_id, status,
                 generated_by, generated_at, updated_at)
-               VALUES (%s,?,?,?,'generating',?,?,%s)""",
+               VALUES (%s,%s,%s,%s,'generating',%s,%s,%s)""",
             (report_id, instance_id, report_type, style_guide_id,
              generated_by, now, now),
         )
@@ -429,7 +429,7 @@ def _store_section_chunks(report_id: str, route_result: SectionRouteResult) -> N
             conn.execute(
                 """INSERT OR IGNORE INTO wf_report_section_chunks
                    (id, report_id, section_key, chunk_id, relevance_score, rank, created_at)
-                   VALUES (%s,?,?,?,?,?,%s)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s)""",
                 (f"wrsc-{uuid.uuid4().hex[:12]}", report_id,
                  route_result.section_key, chunk.chunk_id,
                  chunk.relevance_score, chunk.rank, now),

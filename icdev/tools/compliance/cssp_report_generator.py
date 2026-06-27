@@ -130,7 +130,7 @@ def _builtin_template():
 
 def _get_project_data(conn, project_id):
     """Load project record from database."""
-    row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+    row = conn.execute("SELECT * FROM projects WHERE id = %s", (project_id,)).fetchone()
     if not row:
         raise ValueError(f"Project '{project_id}' not found in database.")
     return dict(row)
@@ -188,7 +188,7 @@ def _get_cssp_assessments(conn, project_id):
     """Retrieve all CSSP assessment results for a project."""
     rows = conn.execute(
         """SELECT * FROM cssp_assessments
-           WHERE project_id = ?
+           WHERE project_id = %s
            ORDER BY functional_area, requirement_id""",
         (project_id,),
     ).fetchall()
@@ -199,7 +199,7 @@ def _get_cssp_incidents(conn, project_id):
     """Retrieve all CSSP incidents for a project."""
     rows = conn.execute(
         """SELECT * FROM cssp_incidents
-           WHERE project_id = ?
+           WHERE project_id = %s
            ORDER BY detected_at DESC""",
         (project_id,),
     ).fetchall()
@@ -210,7 +210,7 @@ def _get_cssp_vuln_management(conn, project_id):
     """Retrieve latest vulnerability scan results for a project."""
     rows = conn.execute(
         """SELECT * FROM cssp_vuln_management
-           WHERE project_id = ?
+           WHERE project_id = %s
            ORDER BY scan_date DESC""",
         (project_id,),
     ).fetchall()
@@ -220,7 +220,7 @@ def _get_cssp_vuln_management(conn, project_id):
 def _get_cssp_certification(conn, project_id):
     """Retrieve certification status for a project."""
     row = conn.execute(
-        "SELECT * FROM cssp_certifications WHERE project_id = ?",
+        "SELECT * FROM cssp_certifications WHERE project_id = %s",
         (project_id,),
     ).fetchone()
     return dict(row) if row else {}
@@ -230,7 +230,7 @@ def _get_stig_findings(conn, project_id):
     """Retrieve STIG finding counts grouped by severity and status."""
     rows = conn.execute(
         """SELECT severity, status, COUNT(*) as cnt
-           FROM stig_findings WHERE project_id = ?
+           FROM stig_findings WHERE project_id = %s
            GROUP BY severity, status""",
         (project_id,),
     ).fetchall()
@@ -241,7 +241,7 @@ def _get_project_controls(conn, project_id):
     """Retrieve control implementation status for a project."""
     rows = conn.execute(
         """SELECT * FROM project_controls
-           WHERE project_id = ?
+           WHERE project_id = %s
            ORDER BY control_id""",
         (project_id,),
     ).fetchall()
@@ -252,7 +252,7 @@ def _get_ssp_status(conn, project_id):
     """Retrieve latest SSP document status."""
     row = conn.execute(
         """SELECT version, status, system_name, approved_by, approved_at, created_at
-           FROM ssp_documents WHERE project_id = ?
+           FROM ssp_documents WHERE project_id = %s
            ORDER BY created_at DESC LIMIT 1""",
         (project_id,),
     ).fetchone()
@@ -263,7 +263,7 @@ def _get_poam_status(conn, project_id):
     """Retrieve POA&M item summary."""
     rows = conn.execute(
         """SELECT severity, status, COUNT(*) as cnt
-           FROM poam_items WHERE project_id = ?
+           FROM poam_items WHERE project_id = %s
            GROUP BY severity, status""",
         (project_id,),
     ).fetchall()
@@ -747,7 +747,7 @@ def _log_audit_event(conn, project_id, action, details, file_path):
             """INSERT INTO audit_trail
                (project_id, event_type, actor, action, details,
                 affected_files, classification)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
             (
                 project_id,
                 "cssp_report_generated",
@@ -821,13 +821,13 @@ def generate_cssp_report(project_id, output_path=None, db_path=None):
         conn.execute(
             """SELECT MAX(CAST(
                    CASE WHEN status IS NOT NULL THEN 1 ELSE 0 END AS INTEGER
-               )) as cnt FROM cssp_certifications WHERE project_id = ?""",
+               )) as cnt FROM cssp_certifications WHERE project_id = %s""",
             (project_id,),
         ).fetchone()
         # Count existing reports to determine version
         report_count_row = conn.execute(
             """SELECT COUNT(*) as cnt FROM audit_trail
-               WHERE project_id = ? AND event_type = 'cssp_report_generated'""",
+               WHERE project_id = %s AND event_type = 'cssp_report_generated'""",
             (project_id,),
         ).fetchone()
         report_count = report_count_row["cnt"] if report_count_row else 0
@@ -925,8 +925,8 @@ def generate_cssp_report(project_id, output_path=None, db_path=None):
         today = now.strftime("%Y-%m-%d")
         overdue_row = conn.execute(
             """SELECT COUNT(*) as cnt FROM poam_items
-               WHERE project_id = ? AND status IN ('open', 'in_progress')
-               AND milestone_date < ? AND milestone_date IS NOT NULL""",
+               WHERE project_id = %s AND status IN ('open', 'in_progress')
+               AND milestone_date < %s AND milestone_date IS NOT NULL""",
             (project_id, today),
         ).fetchone()
         variables["poam_overdue"] = str(overdue_row["cnt"] if overdue_row else 0)
@@ -966,7 +966,7 @@ def generate_cssp_report(project_id, output_path=None, db_path=None):
                     ato_boundary, risk_level, authorizing_official,
                     next_assessment_date, continuous_monitoring_plan,
                     updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     project_id,
                     certification.get("certification_type", "CSSP+ATO"),
