@@ -77,8 +77,7 @@ def test_context_and_answers_can_recommend_cold_cutover(session_id):
         "Replacement is layer 2 only. Downstream OSPF/BGP is not under my control. "
         "We have a very tight maintenance window with no time for parallel validation."
     )
-    import os as _os
-    print("DEBUG env MC_DB_PATH before save", _os.environ.get("MC_DB_PATH"))
+    nm.get_coa_questions(session_id)  # seed default questions before saving answers
     nm.save_coa_answers(
         session_id,
         {
@@ -90,11 +89,6 @@ def test_context_and_answers_can_recommend_cold_cutover(session_id):
             "rollback_familiar": 0,
         },
     )
-    print("DEBUG env MC_DB_PATH after save", _os.environ.get("MC_DB_PATH"))
-    with nm._mc_conn() as conn:
-        print("DEBUG nm conn db", [dict(r) for r in conn.execute("PRAGMA database_list").fetchall()])
-        direct = conn.execute('SELECT question_key, user_answer FROM mc_net_coa_questions WHERE session_id=?', (session_id,)).fetchall()
-        print("DEBUG direct after save", [(r['question_key'], r['user_answer']) for r in direct])
     with init_db_mod.get_connection() as conn:
         conn.execute(
             "UPDATE mc_net_sessions SET engineer_context=? WHERE id=?",
@@ -102,13 +96,7 @@ def test_context_and_answers_can_recommend_cold_cutover(session_id):
         )
         conn.commit()
 
-    qs = nm.get_coa_questions(session_id)
-    for q in qs:
-        print(f"DEBUG {q['question_key']} user={q['user_answer']} def={q['default_answer']}")
-    print("DEBUG raw scores", nm._score_coa_from_answers(qs))
-    print("DEBUG signals", nm._detect_context_signals(context))
     result = nm.recommend_coa(session_id)
-    print("DEBUG result", result["recommended"], result["scores"])
     assert result["recommended"] == "coa_c"
     assert result["context_signals"]["l2_only"]
     assert result["context_signals"]["no_igp_control"]
