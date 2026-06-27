@@ -35,7 +35,7 @@ _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection, sql_placeholder
 from tools.logging.icdev_logger import get_logger
 from tools.workflow_canvas.constants import (
     EXPORT_FORMATS,
@@ -68,6 +68,65 @@ def _new_id(prefix: str = "wfc") -> str:
     return f"{prefix}-{uuid.uuid4().hex[:12]}"
 
 
+_WFC_MIGRATION_PG = """
+CREATE TABLE IF NOT EXISTS wfc_branding (
+    id               TEXT PRIMARY KEY,
+    entity_type      TEXT NOT NULL CHECK(entity_type IN ('form','workflow')),
+    entity_id        TEXT NOT NULL,
+    org_name         TEXT,
+    logo_data        TEXT,
+    primary_color    TEXT DEFAULT '#1a365d',
+    secondary_color  TEXT DEFAULT '#c8a951',
+    header_html      TEXT,
+    footer_html      TEXT,
+    show_classification INTEGER DEFAULT 1,
+    created_at       TEXT DEFAULT to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+    updated_at       TEXT DEFAULT to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+    UNIQUE(entity_type, entity_id)
+);
+CREATE TABLE IF NOT EXISTS wfc_workflow_form_nodes (
+    id                   TEXT PRIMARY KEY,
+    workflow_id          TEXT NOT NULL,
+    node_key             TEXT NOT NULL,
+    form_id              TEXT NOT NULL,
+    node_label           TEXT,
+    required_before_next INTEGER DEFAULT 1,
+    created_at           TEXT DEFAULT to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"')
+);
+CREATE INDEX IF NOT EXISTS idx_wfc_branding_entity ON wfc_branding(entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_wfc_form_nodes_workflow ON wfc_workflow_form_nodes(workflow_id);
+"""
+
+_WFC_MIGRATION_SQLITE = """
+CREATE TABLE IF NOT EXISTS wfc_branding (
+    id TEXT PRIMARY KEY,
+    entity_type TEXT NOT NULL CHECK(entity_type IN ('form','workflow')),
+    entity_id TEXT NOT NULL,
+    org_name TEXT,
+    logo_data TEXT,
+    primary_color TEXT DEFAULT '#1a365d',
+    secondary_color TEXT DEFAULT '#c8a951',
+    header_html TEXT,
+    footer_html TEXT,
+    show_classification INTEGER DEFAULT 1,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(entity_type, entity_id)
+);
+CREATE TABLE IF NOT EXISTS wfc_workflow_form_nodes (
+    id TEXT PRIMARY KEY,
+    workflow_id TEXT NOT NULL,
+    node_key TEXT NOT NULL,
+    form_id TEXT NOT NULL,
+    node_label TEXT,
+    required_before_next INTEGER DEFAULT 1,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_wfc_branding_entity ON wfc_branding(entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_wfc_form_nodes_workflow ON wfc_workflow_form_nodes(workflow_id);
+"""
+
+
 def _ensure_init() -> None:
     global _INIT_DONE
     if _INIT_DONE:
@@ -79,8 +138,16 @@ def _ensure_init() -> None:
         logger.warning("wfc: studio DB init error: %s", exc)
     try:
         conn = get_connection()
-        sql_path = Path(__file__).parent / "db" / "migrations" / "001_wfc_init.sql"
-        conn.executescript(sql_path.read_text(encoding="utf-8"))
+        is_pg = hasattr(conn, 'server_version') or 'psycopg2' in type(conn).__module__
+        migration_sql = _WFC_MIGRATION_PG if is_pg else _WFC_MIGRATION_SQLITE
+        # Execute each statement separately (executescript is SQLite-only)
+        for stmt in migration_sql.strip().split(';'):
+            stmt = stmt.strip()
+            if stmt:
+                try:
+                    conn.execute(stmt)
+                except Exception:
+                    pass  # Index may already exist — continue
         conn.commit()
         conn.close()
     except Exception as exc:
@@ -102,11 +169,15 @@ def create_wfc_blueprint() -> Blueprint:
 
     # ── Branding helpers ──────────────────────────────────────────────────
 
+    def _ph(conn):
+        return sql_placeholder(conn)
+
     def _get_branding(entity_type: str, entity_id: str) -> dict:
         conn = get_connection()
         try:
+            ph = _ph(conn)
             row = conn.execute(
-                "SELECT * FROM wfc_branding WHERE entity_type=? AND entity_id=?",
+                f"SELECT * FROM wfc_branding WHERE entity_type={ph} AND entity_id={ph}",
                 (entity_type, entity_id),
             ).fetchone()
             if row:
@@ -126,16 +197,17 @@ def create_wfc_blueprint() -> Blueprint:
     def _save_branding(entity_type: str, entity_id: str, data: dict) -> None:
         conn = get_connection()
         try:
+            ph = _ph(conn)
             existing = conn.execute(
-                "SELECT id FROM wfc_branding WHERE entity_type=? AND entity_id=?",
+                f"SELECT id FROM wfc_branding WHERE entity_type={ph} AND entity_id={ph}",
                 (entity_type, entity_id),
             ).fetchone()
             if existing:
                 conn.execute(
-                    """UPDATE wfc_branding SET
-                       org_name=?, logo_data=?, primary_color=?, secondary_color=?,
-                       header_html=?, footer_html=?, show_classification=?, updated_at=?
-                       WHERE entity_type=? AND entity_id=?""",
+                    f"""UPDATE wfc_branding SET
+                       org_name={ph}, logo_data={ph}, primary_color={ph}, secondary_color={ph},
+                       header_html={ph}, footer_html={ph}, show_classification={ph}, updated_at={ph}
+                       WHERE entity_type={ph} AND entity_id={ph}""",
                     (
                         data.get("org_name", ""),
                         data.get("logo_data", ""),
@@ -151,11 +223,11 @@ def create_wfc_blueprint() -> Blueprint:
                 )
             else:
                 conn.execute(
-                    """INSERT INTO wfc_branding
+                    f"""INSERT INTO wfc_branding
                        (id, entity_type, entity_id, org_name, logo_data,
                         primary_color, secondary_color, header_html, footer_html,
                         show_classification, created_at, updated_at)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                       VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph})""",
                     (
                         _new_id("brd"),
                         entity_type,
@@ -192,8 +264,9 @@ def create_wfc_blueprint() -> Blueprint:
     def _get_workflow(workflow_id: str) -> dict | None:
         conn = get_connection()
         try:
+            ph = _ph(conn)
             row = conn.execute(
-                "SELECT * FROM studio_workflows WHERE workflow_id=?", (workflow_id,)
+                f"SELECT * FROM studio_workflows WHERE workflow_id={ph}", (workflow_id,)
             ).fetchone()
             return dict(row) if row else None
         finally:
@@ -203,8 +276,9 @@ def create_wfc_blueprint() -> Blueprint:
         conn = get_connection()
         try:
             today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            ph = _ph(conn)
             row = conn.execute(
-                "SELECT COUNT(*) FROM studio_form_submissions WHERE submitted_at LIKE ?",
+                f"SELECT COUNT(*) FROM studio_form_submissions WHERE submitted_at LIKE {ph}",
                 (f"{today}%",),
             ).fetchone()
             return row[0] if row else 0
@@ -334,8 +408,9 @@ def create_wfc_blueprint() -> Blueprint:
         branding = _get_branding("workflow", workflow_id)
         conn = get_connection()
         try:
+            ph = _ph(conn)
             runs = conn.execute(
-                "SELECT * FROM studio_workflow_runs WHERE workflow_id=? ORDER BY started_at DESC LIMIT 20",
+                f"SELECT * FROM studio_workflow_runs WHERE workflow_id={ph} ORDER BY started_at DESC LIMIT 20",
                 (workflow_id,),
             ).fetchall()
             run_list = [dict(r) for r in runs]

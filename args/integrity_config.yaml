@@ -162,6 +162,8 @@ known_safe_obfuscation_modules:
   - network/advisory_extractor.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
   - tools/rag/pdf_provider.py  # base64.b64encode in VisionPDFProvider.extract (line 341): encodes a pdf2image-rendered PDF page PNG to base64 for JSON transport in the Ollama /api/generate `images` field for multimodal (LLaVA) OCR of scanned pages. Standard image serialization — same pattern as pdf_fallback.py and advisory_extractor.py. Not intent concealment. Authorized by Phase 64 RAG subsystem (D-RAG-15 PDF provider ABC, commit 29816dfdf — feat: Phase 64 RAG subsystem).
   - rag/pdf_provider.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
+  - tools/slides/export_html.py  # base64.b64encode in build_html (line 201): encodes a local image file's raw bytes to a base64 data URI string for embedding in a self-contained HTML slide deck (<img src="data:<mime>;base64,...">). Required for air-gap compatible HTML export — external <img src> file references break when the deck is opened offline. The variable is explicitly named `b64`; the data URI format is standard HTML5. Not intent concealment. Authorized by Slide Deck Generator canvas (commit 9237765d0 — chore: auto-commit from Claude Code session, Slides canvas feature).
+  - slides/export_html.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
 
 # ---------------------------------------------------------------------------
 # Known-safe ICDEV modules that legitimately call importlib.import_module on a

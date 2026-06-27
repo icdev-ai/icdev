@@ -1772,8 +1772,10 @@ def _index_to_rag(content: str, source_label: str, session_id: str) -> None:
 def _update_kg(session_id: str, design_id: str | None = None) -> None:
     """Update the Migration Canvas KG with network migration device nodes.
 
-    Builds a minimal graph_json with source→migration→target device nodes
-    and calls rebuild_canvas_kg("mdc", design_id) if a design_id is linked.
+    Builds a minimal graph_json with source→migration→target device nodes,
+    merges the auto-generated topology nodes/edges, adds a COA node when one
+    has been selected, and calls rebuild_canvas_kg("mdc", design_id) if a
+    design_id is linked.
     """
     if not design_id:
         # Look up linked design
@@ -1793,7 +1795,8 @@ def _update_kg(session_id: str, design_id: str | None = None) -> None:
     try:
         with _mc_conn() as conn:
             sess = dict(conn.execute(
-                "SELECT src_model, tgt_model, src_device_name, tgt_device_name FROM mc_net_sessions WHERE id=?",
+                "SELECT src_model, tgt_model, src_device_name, tgt_device_name, selected_coa, topology_json "
+                "FROM mc_net_sessions WHERE id=?",
                 (session_id,)
             ).fetchone() or {})
 
@@ -1801,17 +1804,50 @@ def _update_kg(session_id: str, design_id: str | None = None) -> None:
         tgt_id = f"net-tgt-{session_id}"
         mig_id = f"net-migration-{session_id}"
 
-        graph = {
-            "nodes": [
-                {"id": src_id, "type": "src-network-device", "label": sess.get("src_device_name") or sess.get("src_model", "Source"), "metadata": {"model": sess.get("src_model", "")}},
-                {"id": mig_id, "type": "pat-network-cutover", "label": "Network Migration"},
-                {"id": tgt_id, "type": "tgt-network-device", "label": sess.get("tgt_device_name") or sess.get("tgt_model", "Target"), "metadata": {"model": sess.get("tgt_model", "")}},
-            ],
-            "edges": [
-                {"id": f"e1-{session_id}", "source": src_id, "target": mig_id, "label": "migrates via"},
-                {"id": f"e2-{session_id}", "source": mig_id, "target": tgt_id, "label": "migrates to"},
-            ],
-        }
+        nodes = [
+            {"id": src_id, "type": "src-network-device", "label": sess.get("src_device_name") or sess.get("src_model", "Source"), "metadata": {"model": sess.get("src_model", "")}},
+            {"id": mig_id, "type": "pat-network-cutover", "label": "Network Migration"},
+            {"id": tgt_id, "type": "tgt-network-device", "label": sess.get("tgt_device_name") or sess.get("tgt_model", "Target"), "metadata": {"model": sess.get("tgt_model", "")}},
+        ]
+        edges = [
+            {"id": f"e1-{session_id}", "source": src_id, "target": mig_id, "label": "migrates via"},
+            {"id": f"e2-{session_id}", "source": mig_id, "target": tgt_id, "label": "migrates to"},
+        ]
+
+        # Merge auto-generated topology nodes/edges
+        try:
+            topo = json.loads(sess.get("topology_json") or "{}")
+            if topo.get("nodes"):
+                # Prefix topology ids to avoid collisions
+                for n in topo["nodes"]:
+                    nodes.append({
+                        "id": f"topo-{n['id']}",
+                        "type": n.get("type", "router"),
+                        "label": n.get("label", ""),
+                        "metadata": n.get("config", {}),
+                    })
+                for e in topo.get("edges", []):
+                    edges.append({
+                        "id": f"topo-{e.get('id', uuid.uuid4().hex[:8])}",
+                        "source": f"topo-{e.get('source')}",
+                        "target": f"topo-{e.get('target')}",
+                        "label": e.get("label", ""),
+                    })
+        except Exception:
+            pass
+
+        selected = sess.get("selected_coa", "")
+        if selected:
+            coa_id = f"net-coa-{session_id}"
+            coa_label = {
+                "coa_a": "COA-A: Side-by-Side Parallel",
+                "coa_b": "COA-B: Warm Cutover",
+                "coa_c": "COA-C: Cold Cutover",
+            }.get(selected, selected)
+            nodes.append({"id": coa_id, "type": "ctl-rollback", "label": coa_label})
+            edges.append({"id": f"e-coa-{session_id}", "source": mig_id, "target": coa_id, "label": "uses COA"})
+
+        graph = {"nodes": nodes, "edges": edges}
 
         with _mc_conn() as conn:
             conn.execute(
@@ -2090,6 +2126,317 @@ def select_coa(session_id: str, coa: str, context: str = "") -> dict[str, Any]:
             )
         conn.commit()
     return recommend_coa(session_id)
+
+
+# ---------------------------------------------------------------------------
+# Topology auto-generation (Phase B)
+# ---------------------------------------------------------------------------
+
+_NODE_TYPE_FOR_MEDIA = {
+    0.1: "media-ge",
+    1.0: "media-ge",
+    10.0: "media-10ge",
+    25.0: "media-25ge",
+    40.0: "media-40ge",
+    100.0: "media-100ge",
+    400.0: "media-400ge",
+}
+
+
+def _media_node_type(iface: dict) -> str:
+    speed = iface.get("speed_gbps", 0.0) or 0.0
+    optic = (iface.get("optic_type", "") or "").lower()
+    if "qsfp-dd" in optic:
+        return "qsfp-dd"
+    if "qsfp" in optic:
+        return "qsfp"
+    if optic == "sfp+":
+        return "sfp-plus"
+    if optic == "sfp":
+        return "sfp"
+    return _NODE_TYPE_FOR_MEDIA.get(speed, "media-ge")
+
+
+def _extract_vlan_ids(config_text: str, vendor: str) -> set[str]:
+    vids: set[str] = set()
+    for m in re.finditer(r"vlan-id\s+(\d+)", config_text, re.I):
+        vids.add(m.group(1))
+    for m in re.finditer(r"switchport\s+(?:access\s+vlan|trunk\s+allowed\s+vlan)\s+(\d+)", config_text, re.I):
+        vids.add(m.group(1))
+    for m in re.finditer(r"encapsulation\s+dot1Q\s+(\d+)", config_text, re.I):
+        vids.add(m.group(1))
+    return vids
+
+
+def _infer_device_type(parsed: dict) -> str:
+    if parsed.get("bgp_neighbors") or parsed.get("ospf_areas") or parsed.get("isis_nets") or parsed.get("l3vpn_vrfs"):
+        return "router"
+    if parsed.get("l2vpn_instances") or parsed.get("raw_interface_count", 0) <= 2:
+        return "switch-l2"
+    return "switch-l3"
+
+
+def _ip_in_network(ip: str, iface_ip: str) -> bool:
+    """Best-effort check whether ip belongs to the same subnet as iface_ip."""
+    if not ip or not iface_ip:
+        return False
+    try:
+        import ipaddress
+        iface_net = ipaddress.ip_interface(iface_ip.split("/")[0] + "/24" if "/" not in iface_ip else iface_ip).network
+        return ipaddress.ip_address(ip.split("/")[0]) in iface_net
+    except Exception:
+        return ip.split(".")[:3] == iface_ip.split(".")[:3]
+
+
+def discover_neighbors(session_id: str) -> list[dict[str, Any]]:
+    """Return neighbor candidates inferred from parsed config, enriched from network_canvas.db."""
+    with _mc_conn() as conn:
+        row = conn.execute(
+            "SELECT src_config_raw FROM mc_net_sessions WHERE id=?", (session_id,)
+        ).fetchone()
+    raw_config = (row[0] if row else "") or ""
+    parsed = parse_source_config(raw_config) if raw_config else {}
+    vendor = parsed.get("vendor", "")
+
+    # BGP peers
+    neighbors: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for n in parsed.get("bgp_neighbors", []):
+        ip = n.get("ip", "")
+        if not ip or ip in seen:
+            continue
+        seen.add(ip)
+        neighbors.append({
+            "neighbor_ip": ip,
+            "neighbor_name": f"BGP peer {ip}",
+            "relationship": "bgp_peer",
+            "source_interface": "",
+            "protocol_detail": f"ASN {n.get('asn', 0)}",
+        })
+    # OSPF neighbors (areas)
+    for area in parsed.get("ospf_areas", []):
+        label = f"OSPF area {area}"
+        if label in seen:
+            continue
+        seen.add(label)
+        neighbors.append({
+            "neighbor_ip": "",
+            "neighbor_name": label,
+            "relationship": "ospf_neighbor",
+            "source_interface": "",
+            "protocol_detail": f"area {area}",
+        })
+    # ISIS NETs
+    for net in parsed.get("isis_nets", []):
+        label = f"IS-IS {net}"
+        if label in seen:
+            continue
+        seen.add(label)
+        neighbors.append({
+            "neighbor_ip": "",
+            "neighbor_name": label,
+            "relationship": "isis_neighbor",
+            "source_interface": "",
+            "protocol_detail": net,
+        })
+    # Static route next-hops
+    try:
+        from tools.network.config_parser import parse_config
+        base = parse_config(raw_config, vendor=vendor)
+        for route in base.get("routes", []):
+            nh = route.get("next_hop", "")
+            if nh and nh not in seen:
+                seen.add(nh)
+                neighbors.append({
+                    "neighbor_ip": nh,
+                    "neighbor_name": f"Next-hop {nh}",
+                    "relationship": "downstream",
+                    "source_interface": "",
+                    "protocol_detail": f"static {route.get('network', '')}",
+                })
+    except Exception:
+        pass
+
+    # Enrich from network_canvas inventory
+    inventory_rows: list[dict] = []
+    try:
+        with _nc_conn() as nc:
+            inventory_rows = [
+                dict(r) for r in nc.execute(
+                    "SELECT id, label, node_id, device_type, vendor, model FROM ni_devices"
+                ).fetchall()
+            ]
+    except Exception:
+        inventory_rows = []
+
+    for nb in neighbors:
+        key = nb["neighbor_ip"] or nb["neighbor_name"]
+        match = None
+        for inv in inventory_rows:
+            labels = [str(inv.get(k, "") or "") for k in ("label", "node_id", "model")]
+            if any(key.lower() in lbl.lower() or lbl.lower() in key.lower() for lbl in labels if lbl):
+                match = inv
+                break
+        if match:
+            nb["neighbor_name"] = match.get("label") or nb["neighbor_name"]
+            nb["notes"] = f"Matched inventory {match.get('vendor','')} {match.get('model','')} ({match.get('device_type','')})"
+            nb["is_discovered"] = 1
+            nb["inventory_id"] = match.get("id", "")
+        else:
+            nb["is_discovered"] = 0
+    return neighbors
+
+
+def build_topology(session_id: str, refresh: bool = False) -> dict[str, Any]:
+    """Auto-generate a JointJS-compatible topology from the parsed source config.
+
+    The resulting graph contains source/target device nodes, per-interface media
+    nodes, inferred neighbor nodes, and VLAN/L2 segment nodes. It is persisted
+    in mc_net_sessions.topology_json and the neighbor list is also stored in
+    mc_net_topology_neighbors.
+    """
+    with _mc_conn() as conn:
+        row = conn.execute(
+            "SELECT src_device_name, tgt_device_name, src_config_raw, src_model, tgt_model, selected_coa, "
+            "topology_json FROM mc_net_sessions WHERE id=?",
+            (session_id,),
+        ).fetchone()
+    if not row:
+        raise ValueError(f"Session not found: {session_id}")
+    src_name, tgt_name, raw_config, src_model, tgt_model, selected_coa, existing_json = row
+    src_label = src_name or src_model or "Source"
+    tgt_label = tgt_name or tgt_model or "Target"
+
+    if existing_json and not refresh:
+        try:
+            stored = json.loads(existing_json)
+            if stored.get("nodes"):
+                return {"session_id": session_id, "graph_json": stored, "source": "stored"}
+        except Exception:
+            pass
+
+    parsed = parse_source_config(raw_config) if raw_config else {}
+    vendor = parsed.get("vendor", "")
+    ifaces = parsed.get("interfaces", []) or []
+    device_type = _infer_device_type(parsed)
+
+    nodes: list[dict[str, Any]] = []
+    edges: list[dict[str, Any]] = []
+    created_ids: set[str] = set()
+
+    def _add_node(nid: str, ntype: str, label: str, x: int, y: int, config: dict | None = None) -> None:
+        if nid in created_ids:
+            return
+        created_ids.add(nid)
+        nodes.append({
+            "id": nid, "type": ntype, "label": label, "x": x, "y": y,
+            "config": config or {},
+        })
+
+    src_id = f"topo-src-{session_id}"
+    tgt_id = f"topo-tgt-{session_id}"
+    _add_node(src_id, device_type, src_label, 100, 260)
+    _add_node(tgt_id, device_type, tgt_label, 720, 260)
+    edges.append({"id": f"e-mig-{session_id}", "source": src_id, "target": tgt_id, "label": "migrates to", "config": {"dashed": True}})
+
+    # Interfaces on the source side
+    vlan_ids = _extract_vlan_ids(raw_config, vendor) if raw_config else set()
+    iface_y = 60
+    for iface in ifaces:
+        name = iface.get("name", "")
+        if not name or name == "lo0":
+            continue
+        in_id = f"topo-iface-{session_id}-{name.replace('/', '-').replace(':', '_')}"
+        ip = iface.get("ip", "") or ""
+        lbl = name
+        if ip:
+            lbl += f"\\n{ip}"
+        _add_node(in_id, _media_node_type(iface), lbl, 240, iface_y)
+        edges.append({"id": f"e-si-{in_id}", "source": src_id, "target": in_id, "label": iface.get("description", "")[:20]})
+        iface_y += 56
+        if iface_y > 460:
+            iface_y = 60
+
+    # VLAN / L2 segment nodes near the middle
+    vlan_y = 60
+    for vid in sorted(vlan_ids, key=lambda x: int(x) if x.isdigit() else x):
+        vn_id = f"topo-vlan-{session_id}-{vid}"
+        _add_node(vn_id, "vlan", f"VLAN {vid}", 480, vlan_y)
+        vlan_y += 56
+        if vlan_y > 460:
+            vlan_y = 60
+
+    # Neighbor nodes from config + optional enrichment
+    neighbors = discover_neighbors(session_id)
+    neigh_y = 60
+    for nb in neighbors:
+        key = nb.get("neighbor_ip") or nb.get("neighbor_name") or "unknown"
+        n_id = f"topo-neigh-{session_id}-{key.replace('/', '-').replace(' ', '_').replace('.', '_')[:40]}"
+        rel = nb.get("relationship", "")
+        ntype = "router" if rel in ("bgp_peer", "ospf_neighbor", "isis_neighbor") else "server"
+        label = nb.get("neighbor_name") or key
+        detail = nb.get("protocol_detail", "")
+        if detail and len(label + " " + detail) < 40:
+            label = f"{label}\\n{detail}"
+        _add_node(n_id, ntype, label, 920, neigh_y)
+        # Find best source interface by IP subnet match
+        src_iface = ""
+        for iface in ifaces:
+            if iface.get("ip") and nb.get("neighbor_ip") and _ip_in_network(nb["neighbor_ip"], iface["ip"]):
+                src_iface = iface["name"]
+                break
+        if src_iface:
+            iface_id = f"topo-iface-{session_id}-{src_iface.replace('/', '-').replace(':', '_')}"
+            if iface_id in created_ids:
+                edges.append({"id": f"e-in-{n_id}", "source": iface_id, "target": n_id, "label": rel.replace('_', ' ')})
+            else:
+                edges.append({"id": f"e-sn-{n_id}", "source": src_id, "target": n_id, "label": rel.replace('_', ' ')})
+        else:
+            edges.append({"id": f"e-sn-{n_id}", "source": src_id, "target": n_id, "label": rel.replace('_', ' ')})
+        nb["node_id"] = n_id
+        neigh_y += 56
+        if neigh_y > 460:
+            neigh_y = 60
+
+    graph = {"nodes": nodes, "edges": edges}
+    neighbors_json = json.dumps(neighbors)
+    topology_json = json.dumps(graph)
+
+    with _mc_conn() as conn:
+        conn.execute(
+            "UPDATE mc_net_sessions SET topology_json=?, topology_neighbors_json=? WHERE id=?",
+            (topology_json, neighbors_json, session_id),
+        )
+        conn.execute("DELETE FROM mc_net_topology_neighbors WHERE session_id=?", (session_id,))
+        for nb in neighbors:
+            conn.execute(
+                "INSERT INTO mc_net_topology_neighbors "
+                "(id, session_id, neighbor_name, neighbor_ip, relationship, source_interface, is_discovered, notes) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    f"tnb-{session_id}-{uuid.uuid4().hex[:8]}",
+                    session_id,
+                    nb.get("neighbor_name", ""),
+                    nb.get("neighbor_ip", ""),
+                    nb.get("relationship", ""),
+                    nb.get("source_interface", ""),
+                    int(nb.get("is_discovered", 0) or 0),
+                    nb.get("notes", ""),
+                ),
+            )
+        conn.commit()
+
+    # RAG + KG indexing
+    _index_to_rag(
+        f"Network migration topology for {src_label} → {tgt_label}. "
+        f"Interfaces: {len(ifaces)}, neighbors: {len(neighbors)}, VLANs: {len(vlan_ids)}. "
+        f"Selected COA: {selected_coa or 'not selected'}.",
+        "build_topology",
+        session_id,
+    )
+    _update_kg(session_id)
+
+    return {"session_id": session_id, "graph_json": graph, "neighbors": neighbors, "source": "generated"}
 
 
 # ---------------------------------------------------------------------------
