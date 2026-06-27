@@ -80,7 +80,7 @@ def _cancel_prior_digitize_tasks(workflow_name: str) -> int:
         title_prefix = f"{workflow_name}:%"
         cur = conn.execute(
             f"""UPDATE kanban_tasks
-                SET status = 'cancelled', updated_at = {ph}
+                SET status = 'done', updated_at = {ph}
                 WHERE dispatch_source = 'process_digitizer'
                   AND status NOT IN ('done', 'cancelled')
                   AND title LIKE {ph}""",
@@ -963,7 +963,7 @@ Process Document:
             if wf_name:
                 cur = conn.execute(
                     f"""UPDATE kanban_tasks
-                        SET status = 'cancelled', updated_at = {ph}
+                        SET status = 'done', updated_at = {ph}
                         WHERE dispatch_source = 'process_digitizer'
                           AND status IN ({placeholders})
                           AND title LIKE {ph}""",
@@ -972,7 +972,7 @@ Process Document:
             else:
                 cur = conn.execute(
                     f"""UPDATE kanban_tasks
-                        SET status = 'cancelled', updated_at = {ph}
+                        SET status = 'done', updated_at = {ph}
                         WHERE dispatch_source = 'process_digitizer'
                           AND status IN ({placeholders})""",
                     base_params,
