@@ -345,6 +345,12 @@ CREATE TABLE IF NOT EXISTS mc_net_sessions (
     src_config_raw  TEXT DEFAULT '',
     target_config   TEXT DEFAULT '',
     config_parsed   INTEGER DEFAULT 0,
+    engineer_context TEXT DEFAULT '',
+    recommended_coa TEXT CHECK(recommended_coa IN ('coa_a','coa_b','coa_c','')) DEFAULT '',
+    selected_coa    TEXT CHECK(selected_coa IN ('coa_a','coa_b','coa_c','')) DEFAULT '',
+    coa_rationale   TEXT DEFAULT '',
+    topology_json   TEXT DEFAULT '',
+    topology_neighbors_json TEXT DEFAULT '',
     readiness_score REAL DEFAULT 0,
     status          TEXT DEFAULT 'in_progress',
     classification  TEXT DEFAULT 'CUI // SP-CTI',
@@ -510,6 +516,21 @@ CREATE TABLE IF NOT EXISTS mc_net_config_questions (
 );
 CREATE INDEX IF NOT EXISTS idx_mc_net_cfgq_session ON mc_net_config_questions(session_id);
 
+CREATE TABLE IF NOT EXISTS mc_net_coa_questions (
+    id              TEXT PRIMARY KEY,
+    session_id      TEXT NOT NULL REFERENCES mc_net_sessions(id) ON DELETE CASCADE,
+    question_key    TEXT NOT NULL,
+    question_text   TEXT NOT NULL,
+    default_answer  INTEGER DEFAULT NULL,
+    user_answer     INTEGER DEFAULT NULL,
+    coa_a_weight    REAL DEFAULT 0,
+    coa_b_weight    REAL DEFAULT 0,
+    coa_c_weight    REAL DEFAULT 0,
+    ai_relevance    TEXT DEFAULT '',
+    UNIQUE(session_id, question_key)
+);
+CREATE INDEX IF NOT EXISTS idx_mc_net_coaq_session ON mc_net_coa_questions(session_id);
+
 CREATE TABLE IF NOT EXISTS mc_net_parallel_timelines (
     id                   TEXT PRIMARY KEY,
     session_id           TEXT NOT NULL,
@@ -542,6 +563,20 @@ def _migrate_network_tables(conn):
         conn.commit()
     except Exception:
         pass  # column already exists
+    # Add COA/topology columns to mc_net_sessions if not present.
+    for col, ddl in [
+        ("engineer_context", "TEXT DEFAULT ''"),
+        ("recommended_coa", "TEXT DEFAULT ''"),
+        ("selected_coa", "TEXT DEFAULT ''"),
+        ("coa_rationale", "TEXT DEFAULT ''"),
+        ("topology_json", "TEXT DEFAULT ''"),
+        ("topology_neighbors_json", "TEXT DEFAULT ''"),
+    ]:
+        try:
+            conn.execute(f"ALTER TABLE mc_net_sessions ADD COLUMN {col} {ddl}")
+            conn.commit()
+        except Exception:
+            pass  # column already exists
 
 
 # ── Server Migration Schema ──────────────────────────────────────────────────
