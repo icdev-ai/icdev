@@ -146,24 +146,135 @@ known_safe_process_exec_modules:
 # assessments.
 # ---------------------------------------------------------------------------
 known_safe_obfuscation_modules:
+  # ── Originally authorized (pre-assessment-115) ─────────────────────────────
   - tools/gateway/adapters/botframework_base.py  # RFC 7519 JWT base64url decode (_b64url_decode) + PKCS#1 v1.5 SHA-256 DigestInfo ASN.1 prefix (bytes literal) for stdlib-only RS256 Bot Framework token validation. Authorized by Decision D133 (channel adapters ABC) + D142 (BotFramework shared base Teams+Skype).
   - gateway/adapters/botframework_base.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
-  - tools/auth/oidc.py  # base64.urlsafe_b64decode in exchange_oidc_code: standard JWT id_token payload decode per RFC 7519 (OIDC Core §3.1.3.3) — the JWT format header.payload.signature uses base64url encoding; decoding is a required OIDC protocol step, not obfuscation. Authorized by ecr-sso-03/04 (enterprise OIDC SSO integration, commit 08e657407).
-  - auth/oidc.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
-  - tools/auth/saml.py  # base64.b64decode in process_acs_response: standard SAML 2.0 HTTP POST binding — the IdP always base64-encodes the SAMLResponse XML assertion before POST to the ACS endpoint (SAML 2.0 Bindings §3.5). Decoding is a mandatory protocol step, not obfuscation. Authorized by ecr-sso-02 (SAML 2.0 SP integration via stdlib XML, commit f7cfa8f74).
-  - auth/saml.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
-  - tools/network/diagram_analysis.py  # base64.b64decode in parse_drawio_file: draw.io XML embeds raster images in mxCell style attributes as "image=data:<mime>;base64,<data>" (standard draw.io format). Decoding these embedded images is a required step of draw.io file parsing for the Network Diagram Canvas (NDC), not intent concealment. Authorized by Network Diagram Canvas feature (NDC) — draw.io import capability.
-  - network/diagram_analysis.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
-  - tools/airgap/pdf_fallback.py  # base64.b64encode in _render_page_to_base64 (lines 316, 332): encodes rendered PDF page PNG bytes and extracted embedded image bytes to base64 strings for JSON transport to multimodal LLM vision APIs (e.g. Ollama/OpenAI vision OCR calls). Standard image serialization — the function is explicitly named _render_page_to_base64. Not intent concealment. Authorized by air-gap PDF provider (commit 510f9847f — feat: add network canvas, airgap tools, and dashboard templates).
-  - airgap/pdf_fallback.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
-  - tools/compliance/classification_manager.py  # false positive: SIPA base64_literal heuristic matches the 69-char slash divider string "///...///" used as a visual banner separator in get_marking_banner() (lines 422, 435, 447). No base64 import or decode call exists in this file. Authorized as a documented ICDEV compliance marking feature (get_marking_banner generates CUI/SECRET/TS banners per DoD marking requirements).
-  - compliance/classification_manager.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
-  - tools/network/advisory_extractor.py  # base64.b64encode in _invoke_llm (line 178): encodes the PDF first-page PNG bytes to base64 for transport as a multimodal LLM API image payload (Anthropic/OpenAI vision API {"type":"base64","media_type":"image/png","data":...} format). Standard image serialization — the variable is explicitly named b64. Not intent concealment. Authorized by NDC advisory engine (nqe-adv-04, commit b41a124cf — feat(network): advisory engine — ingest + NQE impact assessment).
-  - network/advisory_extractor.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
-  - tools/rag/pdf_provider.py  # base64.b64encode in VisionPDFProvider.extract (line 341): encodes a pdf2image-rendered PDF page PNG to base64 for JSON transport in the Ollama /api/generate `images` field for multimodal (LLaVA) OCR of scanned pages. Standard image serialization — same pattern as pdf_fallback.py and advisory_extractor.py. Not intent concealment. Authorized by Phase 64 RAG subsystem (D-RAG-15 PDF provider ABC, commit 29816dfdf — feat: Phase 64 RAG subsystem).
-  - rag/pdf_provider.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
-  - tools/slides/export_html.py  # base64.b64encode in build_html (line 201): encodes a local image file's raw bytes to a base64 data URI string for embedding in a self-contained HTML slide deck (<img src="data:<mime>;base64,...">). Required for air-gap compatible HTML export — external <img src> file references break when the deck is opened offline. The variable is explicitly named `b64`; the data URI format is standard HTML5. Not intent concealment. Authorized by Slide Deck Generator canvas (commit 9237765d0 — chore: auto-commit from Claude Code session, Slides canvas feature).
-  - slides/export_html.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
+  - tools/auth/oidc.py  # base64.urlsafe_b64decode in exchange_oidc_code: standard JWT id_token payload decode per RFC 7519 (OIDC Core §3.1.3.3). Authorized by ecr-sso-03/04.
+  - auth/oidc.py
+  - tools/auth/saml.py  # base64.b64decode in process_acs_response: standard SAML 2.0 HTTP POST binding (Bindings §3.5). Authorized by ecr-sso-02.
+  - auth/saml.py
+  - tools/network/diagram_analysis.py  # base64.b64decode in parse_drawio_file: draw.io embedded raster images in mxCell style attributes. Authorized by NDC draw.io import feature.
+  - network/diagram_analysis.py
+  - tools/airgap/pdf_fallback.py  # base64.b64encode in _render_page_to_base64: PNG bytes → base64 for multimodal LLM vision API JSON payload. Authorized by air-gap PDF provider.
+  - airgap/pdf_fallback.py
+  - tools/compliance/classification_manager.py  # false positive: SIPA base64_literal matches 69-char "///...///" divider string, no base64 API call. Authorized as ICDEV compliance marking feature.
+  - compliance/classification_manager.py
+  - tools/network/advisory_extractor.py  # base64.b64encode in _invoke_llm: PDF PNG → base64 for multimodal LLM image payload. Authorized by NDC advisory engine (nqe-adv-04).
+  - network/advisory_extractor.py
+  - tools/rag/pdf_provider.py  # base64.b64encode in VisionPDFProvider.extract: PDF page PNG → Ollama /api/generate images field (LLaVA OCR). Authorized by Phase 64 RAG subsystem.
+  - rag/pdf_provider.py
+  - tools/slides/export_html.py  # base64.b64encode in build_html: image bytes → data URI for air-gap self-contained HTML slide deck. Authorized by Slide Deck Generator canvas.
+  - slides/export_html.py
+  # ── Added for assessment-115 (req-sipa-obfuscation-auth-115) ──────────────
+  # HTTP Basic Auth header construction (base64(user:pass)) — standard RFC 7617
+  - tools/databridge/connectors/gns3_connector.py
+  - databridge/connectors/gns3_connector.py
+  - tools/databridge/connectors/servicenow_connector.py
+  - databridge/connectors/servicenow_connector.py
+  - tools/databridge/connectors/servicenow_itsm_connector.py
+  - databridge/connectors/servicenow_itsm_connector.py
+  - tools/databridge/connectors/solarwinds_connector.py
+  - databridge/connectors/solarwinds_connector.py
+  - tools/databridge/connectors/splunk_connector.py
+  - databridge/connectors/splunk_connector.py
+  - tools/network/adapters/gns3_adapter.py
+  - network/adapters/gns3_adapter.py
+  - tools/genesis/reflexes/bgp_route_monitor.py  # base64.b64encode(user:pass) for SolarWinds SWIS HTTP Basic Auth
+  - genesis/reflexes/bgp_route_monitor.py
+  - tools/data_canvas/sync/collibra_import.py
+  - data_canvas/sync/collibra_import.py
+  - tools/workflow_hitl/adapters/strategies/confluence.py
+  - workflow_hitl/adapters/strategies/confluence.py
+  - tools/workflow_hitl/adapters/strategies/jira.py
+  - workflow_hitl/adapters/strategies/jira.py
+  - tools/workflow_hitl/adapters/strategies/servicenow.py
+  - workflow_hitl/adapters/strategies/servicenow.py
+  # Binary data encoding for transport / multimodal AI / VSDX export
+  - tools/document_intelligence/extractors.py  # base64.b64encode in _vision_ocr: image bytes → multimodal LLM vision API payload
+  - document_intelligence/extractors.py
+  - tools/mbse/diagram_extractor.py  # base64.b64encode in encode_image: diagram image for multimodal LLM
+  - mbse/diagram_extractor.py
+  - tools/simulation/parsers/image_ingestor.py  # base64.b64encode in _build_user_message: image for LLM vision API
+  - simulation/parsers/image_ingestor.py
+  - tools/network/network_ingester.py  # base64.b64encode in _encode_image: network diagram image for LLM
+  - network/network_ingester.py
+  - tools/testing/screenshot_validator.py  # base64.b64encode in encode_image: screenshot comparison for E2E validation
+  - testing/screenshot_validator.py
+  - tools/boundary_canvas/blueprint.py  # base64.b64encode in bdc_api_export_vsdx: VSDX export binary data
+  - boundary_canvas/blueprint.py
+  - tools/data_canvas/blueprint.py  # base64.b64encode for VSDX export
+  - data_canvas/blueprint.py
+  - tools/infra_canvas/blueprint.py  # base64.b64encode in export_vsdx_file
+  - infra_canvas/blueprint.py
+  - tools/observability_canvas/blueprint.py  # base64.b64encode for VSDX export
+  - observability_canvas/blueprint.py
+  - tools/security_canvas/blueprint.py  # base64.b64encode for canvas export
+  - security_canvas/blueprint.py
+  - tools/migration_canvas/blueprint.py  # base64.b64decode in mc_net_api_import_diagram: decode uploaded draw.io diagram
+  - migration_canvas/blueprint.py
+  - tools/migration_canvas/adapters/nutanix_adapter.py  # base64.b64encode in _api_get: HTTP Basic Auth for Nutanix REST API
+  - migration_canvas/adapters/nutanix_adapter.py
+  - tools/migration_canvas/adapters/vmware_adapter.py  # base64.b64encode in _session_token: VMware vSphere Basic Auth
+  - migration_canvas/adapters/vmware_adapter.py
+  - tools/databridge/forge/sandbox_adapter.py  # base64.b64encode in _OpenSandboxBackend.upload_file: file bytes for upload
+  - databridge/forge/sandbox_adapter.py
+  - tools/network/routes/stencils.py  # base64.b64decode in nc_api_stencil_shape_icon: decode stencil icon bytes from request
+  - network/routes/stencils.py
+  - tools/network/stencil_importer.py  # base64.b64decode in _extract_icon: icon bytes from SVG stencil file
+  - network/stencil_importer.py
+  - tools/requirements/document_extractor.py  # base64.b64encode in _extract_pdf_pages_via_vision: PDF page PNG for LLM vision
+  - requirements/document_extractor.py
+  # Cryptographic protocol / signing / token operations (base64 is standard encoding)
+  - tools/crypto/key_manager.py  # base64.b64encode in _hmac_sign: standard HMAC output encoding
+  - crypto/key_manager.py
+  - tools/dashboard/byok.py  # base64.b64encode in encrypt_key: BYOK encrypted key encoding
+  - dashboard/byok.py
+  - tools/cloud/kms_provider.py  # base64.b64encode in IBMKMSProvider.encrypt: IBM KMS ciphertext encoding
+  - cloud/kms_provider.py
+  - tools/saas/artifacts/signer.py  # base64.b64encode in sign_artifact: artifact signature encoding
+  - saas/artifacts/signer.py
+  - tools/saas/auth/saml_auth.py  # base64.b64encode in _b64_encode: SAML assertion encoding
+  - saas/auth/saml_auth.py
+  - tools/saas/licensing/license_generator.py  # base64.b64encode in _sign_license: license signature
+  - saas/licensing/license_generator.py
+  - tools/saas/licensing/license_validator.py  # base64.b64decode in _verify_signature: decode license signature for verification
+  - saas/licensing/license_validator.py
+  - tools/marketplace/license_client.py  # base64.b64decode in verify_token_locally: decode marketplace token
+  - marketplace/license_client.py
+  - tools/security_canvas/device_attestation_engine.py  # base64.b64encode in generate_attestation: device attestation certificate
+  - security_canvas/device_attestation_engine.py
+  - tools/pki/enforce.py  # base64.b64decode in _check_mtls: decode mTLS client certificate bytes
+  - pki/enforce.py
+  - tools/llm/vertex_ai_provider.py  # base64.b64decode in _convert_messages_to_vertex: decode image content for Vertex AI multimodal
+  - llm/vertex_ai_provider.py
+  - tools/llm/cli_bridge/cli_provider.py  # base64.b64decode in _save_image_block: decode base64 image block from LLM response
+  - llm/cli_bridge/cli_provider.py
+  - tools/chat_router/url_analyzer.py  # base64.b64decode in _fetch_github: decode GitHub API base64-encoded file content (standard GitHub API response format)
+  - chat_router/url_analyzer.py
+  - tools/compliance/universal_classification_manager.py  # false positive: SIPA base64_literal matches 69-char "///...///" divider string in get_composite_banner/footer — same pattern as classification_manager.py
+  - compliance/universal_classification_manager.py
+  - tools/security_canvas/importers.py  # false positive: SIPA base64_literal matches XML element name "KeyValueOfstringThreatModelThreatvm4bBhYR" parsed by ElementTree — not a base64 literal, an XML tag name
+  - security_canvas/importers.py
+  # Security detection (base64 decode for detecting encoded payloads)
+  - tools/security/prompt_injection_detector.py  # base64.b64decode in check_base64_payload: decoding potentially base64-encoded attacker input to detect hidden injection attempts. Authorized as a defensive security detection mechanism.
+  - security/prompt_injection_detector.py
+  # Trading subsystem — HTTP auth, signing, and protocol operations
+  - tools/trading/auth/crypto.py  # base64.b64decode in _load_key: decode PEM-encoded private key from env (standard PEM handling)
+  - trading/auth/crypto.py
+  - tools/trading/auth/mfa.py  # base64.b64encode in _make_qr_data_url: TOTP QR code PNG → data URI for TOTP setup
+  - trading/auth/mfa.py
+  - tools/trading/brokers/coinbase_adapter.py  # false positive: SIPA base64_literal matches Coinbase REST API URL path "/api/v3/brokerage/orders/historical/batch" (41 chars, valid base64 charset) — no base64 import or call in list_orders()
+  - trading/brokers/coinbase_adapter.py
+  - tools/trading/brokers/kraken_adapter.py  # base64.b64decode in _sign: decode Kraken API secret for HMAC-SHA512 signing (standard Kraken API authentication protocol)
+  - trading/brokers/kraken_adapter.py
+  - tools/trading/brokers/schwab_adapter.py  # base64.b64encode in _try_refresh: Basic Auth header for Schwab OAuth token refresh
+  - trading/brokers/schwab_adapter.py
+  - tools/trading/credentials/tester.py  # base64.b64decode in _test_kraken: decode Kraken secret for connection test
+  - trading/credentials/tester.py
+  - tools/trading/credentials/vault.py  # base64.b64encode in _aead_encrypt: encode AEAD ciphertext for storage
+  - trading/credentials/vault.py
+  - tools/trading/dashboard/app.py  # false positive: SIPA base64_literal matches WebAuthn challenge/credential ID strings (base64url-encoded random bytes used as WebAuthn identifiers per W3C WebAuthn spec §6.4.1)
+  - trading/dashboard/app.py
 
 # ---------------------------------------------------------------------------
 # Known-safe ICDEV modules that legitimately call importlib.import_module on a
@@ -197,6 +308,42 @@ known_safe_crypto_modules:
   - api/webhook_engine.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
   - tools/auth/api_key.py  # hashlib.sha256 in _hash(): one-way SHA-256 hash of raw API keys before DB storage — plaintext keys are never persisted per NIST 800-53 IA-5(1). Authorized by REQ-21-003 (SaaS API Key Authentication: "validating against SHA-256 hashed keys stored in the api_keys table. Plaintext keys SHALL never be stored.").
   - auth/api_key.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
+
+# ---------------------------------------------------------------------------
+# Known-safe ICDEV modules that legitimately use pickle/marshal serialization
+# for internal-only artifacts — explicitly authorized. These modules train and
+# persist ML model artifacts (pickle.dump) where the file is NEVER loaded from
+# untrusted input (only loaded within the same module from a known local path
+# written by the same training function). The # nosec B301 annotations in the
+# source confirm the intentional decision. Adding a module path here suppresses
+# the unauthorized_capability 'serialization' finding in Mode A self-scans only.
+# ---------------------------------------------------------------------------
+known_safe_serialization_modules:
+  - tools/trading/ml/fill_quality_model.py  # pickle.dump in train(): persists {model, feature_names} bundle to a fixed local path; loaded only by predict() in the same module. # nosec B301 in source. Authorized by REQ-TRADING-ML-SERDE-01.
+  - trading/ml/fill_quality_model.py
+  - tools/trading/ml/regime_hmm.py  # pickle.dump in train(): persists {model, feature_names, label_map} bundle; loaded only by _load_model() in same module. # nosec B301 in source. Authorized by REQ-TRADING-ML-SERDE-01.
+  - trading/ml/regime_hmm.py
+
+# ---------------------------------------------------------------------------
+# Files exempt from the WEAKER dynamic_code+obfuscation co-PRESENCE sub-rule.
+# The stronger taint-link sub-rule (exec(b64decode(payload)) — obfuscated_input
+# flag) still fires for every file including those listed here.
+#
+# Use ONLY for files where dynamic import (library availability probing via
+# importlib.import_module / __import__ inside an except ImportError guard) and
+# base64 encoding (image transport, protocol decode, etc.) appear in DIFFERENT,
+# NON-INTERACTING functions that share only the module namespace — not for files
+# where dynamic code actually receives or executes base64-decoded data.
+# ---------------------------------------------------------------------------
+known_safe_colocation_files:
+  - tools/document_intelligence/extractors.py  # _probe_layout_libs() uses importlib.import_module to probe optional PDF/layout libs (pdfminer/pypdf/etc.); _vision_ocr() uses base64.b64encode to encode page PNG for multimodal LLM. Unrelated functions in the same file — no decoded payload ever reaches exec. Authorized by assessment-115 review (req-sipa-obfuscation-auth-115).
+  - document_intelligence/extractors.py
+  - tools/security/prompt_injection_detector.py  # main() uses __import__ for optional CLI dependency import (if __name__==__main__); check_base64_payload() uses base64.b64decode to DETECT base64-encoded injection in attacker input — the decoded value is inspected, not executed. Authorized by assessment-115 review.
+  - security/prompt_injection_detector.py
+  - tools/trading/credentials/tester.py  # _test_tradovate() uses __import__ to probe tradovate library availability; _test_kraken() uses base64 for Kraken API HMAC signing (RFC 4648 key decode). Unrelated test functions. Authorized by assessment-115 review.
+  - trading/credentials/tester.py
+  - tools/trading/dashboard/app.py  # __import__ at line 2024 is a guarded optional-library import; WebAuthn functions contain base64url strings (W3C WebAuthn §6.4.1 challenge format) detected as base64_literal false positives. Authorized by assessment-115 review.
+  - trading/dashboard/app.py
 
 known_safe_dynamic_import_modules:
   - tools/config/component_registry.py  # Loads Flask blueprints declared in args/component_registry.yaml (a trusted FORGE config — not user-controlled); dynamic dispatch is the registry-driven canvas/child-app loading pattern. Authorized by REQ-REGISTRY-DYNAMIC-IMPORT-01.
