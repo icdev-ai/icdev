@@ -12,35 +12,30 @@ import os
 import sqlite3
 from pathlib import Path
 
+from tools.db.storage import get_canvas_connection
+
 _ICDEV_ROOT = Path(__file__).resolve().parents[3]
 DB_PATH = _ICDEV_ROOT / "data" / "migration_canvas.db"
+
+# Env var that carries the dedicated SQLite path when the resolved backend is
+# sqlite.  On PostgreSQL (primary) it is ignored; canvas tables live in the
+# shared icdev database, namespaced by their `mc_` prefix.
+_MC_DB_PATH_ENV = "MC_DB_PATH"
+os.environ.setdefault(_MC_DB_PATH_ENV, str(DB_PATH))
 
 _MC_BACKEND = os.environ.get("MC_STORAGE_BACKEND", os.environ.get("ICDEV_CANVAS_STORAGE_BACKEND", os.environ.get("ICDEV_STORAGE_BACKEND", "postgresql"))).lower()
 
 
 def get_connection():
-    """Get a database connection — SQLite or PostgreSQL.
+    """Get a canvas database connection — RLS disabled.
 
-    Returns a connection that supports:
-        conn.execute(sql, params) — with ? placeholders (auto-translated for PG)
-        conn.commit()
-        conn.close()
-        row["column_name"] — dict-like row access
+    Migration Canvas tables (mc_*, migration_designs, etc.) do not carry
+    tenant_id/classification columns on every row, so the global RLS predicate
+    injected by tools.db.storage.get_connection would raise UndefinedColumn on
+    PostgreSQL.  get_canvas_connection returns a connection with security
+    context None, matching the canvas-table semantics used by other canvases.
     """
-    if _MC_BACKEND == "postgresql":
-        try:
-            from tools.db.storage import get_connection as _icdev_conn
-
-            conn = _icdev_conn(db_path=os.environ.get("MC_PG_DATABASE", "migration_canvas"))
-            return conn
-        except ImportError:
-            pass
-    # SQLite (default) — per-canvas DB, distinct from icdev.db
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
-    return conn
+    return get_canvas_connection(_MC_DB_PATH_ENV)
 
 
 SCHEMA = """
