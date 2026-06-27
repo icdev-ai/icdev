@@ -22,6 +22,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from tools.migration_canvas.db.init_db import get_connection as _mc_get_connection
+
 logger = get_logger("icdev.migration_canvas.network_migration")
 
 try:
@@ -38,12 +40,15 @@ _NC_DB_PATH = _ICDEV_ROOT / "data" / "network_canvas.db"
 # DB helpers
 # ---------------------------------------------------------------------------
 
-def _mc_conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(str(_MC_DB_PATH))
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
-    return conn
+def _mc_conn():
+    """Return the canonical migration-canvas connection (PG or SQLite).
+
+    Uses tools.migration_canvas.db.init_db.get_connection so that the engine
+    reads/writes the same backend as the dashboard blueprint. Previously this
+    helper hardcoded the SQLite path, which broke when MC_STORAGE_BACKEND
+    routed sessions to PostgreSQL.
+    """
+    return _mc_get_connection()
 
 
 def _nc_conn() -> sqlite3.Connection:
@@ -2171,7 +2176,7 @@ def _target_vendor_from_model(tgt_model: str) -> str:
 
 def _build_default_questions(parsed: dict, src_vendor: str, tgt_vendor: str) -> list[dict]:
     """Generate the initial yes/no question set for config mapping."""
-    hostname = parsed.get("hostname", "source-device")
+    hostname = (parsed.get("hostname", "source-device") or "source-device").strip().rstrip(";")
     questions: list[dict] = []
 
     # Hostname preservation.

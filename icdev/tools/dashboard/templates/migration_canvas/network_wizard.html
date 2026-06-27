@@ -742,7 +742,7 @@
 
       <!-- Action bar -->
       <div style="display:flex;align-items:center;gap:10px;margin:16px 0">
-        <button class="btn btn-primary" onclick="generateConfigMap()" id="cfgmap-generate-btn">Generate AI Proposals</button>
+        <button class="btn btn-primary" onclick="generateConfigMap()" id="cfgmap-generate-btn">Generate Proposals</button>
         <button class="btn btn-secondary" onclick="applyApprovedConfigMap()" id="cfgmap-apply-btn" disabled>Apply Approved to Target Config</button>
         <span id="cfgmap-status" style="font-size:12px;color:#7a8cb0"></span>
       </div>
@@ -1966,13 +1966,9 @@ async function saveConfigMapQuestions() {
     return;
   }
   const statusEl = document.getElementById('cfgmap-questions-status');
-  statusEl.textContent = 'Saving…';
+  statusEl.textContent = 'Saved. Generating proposals…';
   try {
-    const answers = {};
-    _configMapQuestions.forEach(q => answers[q.question_key] = q.user_answer);
-    await api('POST', `/api/network-migration/${_sid}/config-map/questions`, {answers});
-    statusEl.textContent = 'Saved. Generating AI proposals…';
-    await generateConfigMap();
+    await generateConfigMap(true);
     statusEl.textContent = '';
   } catch(e) {
     statusEl.textContent = '';
@@ -1980,24 +1976,26 @@ async function saveConfigMapQuestions() {
   }
 }
 
-async function generateConfigMap() {
+async function generateConfigMap(silent=false) {
   if (!_sid) { toast('Session required', true); return; }
   const btn = document.getElementById('cfgmap-generate-btn');
   const statusEl = document.getElementById('cfgmap-status');
-  btn.disabled = true;
-  statusEl.textContent = 'Generating proposals…';
+  if (btn) btn.disabled = true;
+  if (!silent) statusEl.textContent = 'Generating proposals…';
   try {
     const answers = {};
     _configMapQuestions.forEach(q => { if (q.user_answer !== null && q.user_answer !== undefined) answers[q.question_key] = q.user_answer; });
-    const data = await api('POST', `/api/network-migration/${_sid}/config-map/generate`, {answers, use_llm: true});
+    // Rule-based by default for speed/reliability; backend still supports LLM when explicitly requested.
+    const data = await api('POST', `/api/network-migration/${_sid}/config-map/generate`, {answers, use_llm: false});
     _configMap = data.proposals || [];
     renderConfigMap(_configMap);
-    toast(`Generated ${_configMap.length} configuration mappings.`, 'ok');
+    if (!silent) toast(`Generated ${_configMap.length} configuration mappings.`, 'ok');
   } catch(e) {
-    toast('Error generating proposals: ' + e.message, true);
+    if (!silent) toast('Error generating proposals: ' + e.message, true);
+    throw e;
   } finally {
-    btn.disabled = false;
-    statusEl.textContent = '';
+    if (btn) btn.disabled = false;
+    if (!silent) statusEl.textContent = '';
   }
 }
 

@@ -236,7 +236,7 @@ function goStep(n) {
         el.style.background = parseInt(el.dataset.step) === n ? 'var(--accent-color)' : 'var(--bg-secondary)';
         el.style.color = parseInt(el.dataset.step) === n ? '#fff' : 'var(--text-primary)';
     });
-    document.querySelector('.wizard-step[data-step="' + n + '"]').style.display = '';
+    document.querySelector('.wizard-step[data-step="' + n + '"]').style.display = 'block';
     updateToneHint();
 }
 
