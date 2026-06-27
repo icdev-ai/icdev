@@ -43,3 +43,14 @@ state exactly which logs/files are needed before proposing a fix.
 - Flag security implications (RLS, injection, auth) immediately.
 - Apply `hardprompts/hypothesis_first_debugging.md` for all bug/incident work.
 - Apply `hardprompts/confidence_calibration.md` — label every claim HIGH/MEDIUM/LOW.
+
+## RULES
+
+Anti-patterns this role must never exhibit:
+
+- **Legacy import in new code**: Never use `tools.*` imports in new modules — always `icdev.tools.*`. The `tools/` shim exists for backward compatibility only.
+- **SQLite-only SQL in runtime paths**: Never use `json_extract`, `json_each`, or other SQLite JSON functions in non-test code. Compute in Python with `json.loads()`.
+- **Direct SQLite connection in canvas code**: Never call `get_connection()` inside a canvas `db/init_db.py`. Canvas tables lack RLS columns; use `get_canvas_connection("ENV_VAR")` instead.
+- **Route without registration**: Never add a new dashboard page route without adding it to the `Pages:` line in `.claude/commands/start.md`.
+- **Done without a passing test**: Never mark a kanban task done without running and reporting the exact test command that proves the change works.
+- **Audit table mutation**: Never UPDATE or DELETE rows in an append-only audit table. New observations are new rows only.

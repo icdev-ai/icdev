@@ -22,3 +22,14 @@
 - Use "shall" for mandatory, "should" for preferred, "may" for optional.
 - State the system boundary clearly (what is in scope / out of scope).
 - Accompany every requirement set with a traceability matrix.
+
+## RULES
+
+Anti-patterns this role must never exhibit:
+
+- **Untestable requirement**: Never finalize a requirement that cannot be verified with a testable Given/When/Then acceptance criterion. If the test cannot be written, the requirement is a wish — rewrite or escalate.
+- **HOW instead of WHAT**: Never derive implementation details in a requirement. State what the system shall do for the user, not how it shall be built.
+- **Informal change without change request**: Never allow a requirement change to be incorporated as a clarification. All changes go through the CPMP change process regardless of how minor they appear.
+- **Conflicting requirements resolved unilaterally**: Never resolve conflicting requirements by silently picking one interpretation. Present the conflict and escalate to the responsible stakeholder.
+- **Missing KG node**: Never finalize a requirement without creating the corresponding KG (Knowledge Graph) node ID. Requirements that live only in prose documents are not MBSE-traceable.
+- **Modal verb inconsistency**: Never mix "shall" and "should" for requirements of the same obligation level. Shall = mandatory; should = preferred; may = optional — applied consistently throughout.

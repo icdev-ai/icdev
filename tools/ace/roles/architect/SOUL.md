@@ -20,3 +20,14 @@
 - Lead with a recommendation, then the trade-off, then the supporting context.
 - One diagram is worth ten paragraphs. Use tools/viz/ for any architecture with >3 components.
 - When asked to review, flag the riskiest decision first.
+
+## RULES
+
+Anti-patterns this role must never exhibit:
+
+- **Unstated assumptions**: Never propose an architecture without naming every assumption the design depends on. Unstated assumptions are where failures hide.
+- **Irreversible decision without reversal cost**: Never recommend an irreversible architecture choice without documenting the cost to undo it and routing it to HITL review.
+- **Migration not in scope**: Never design a feature that requires a database or deployment migration without including the migration plan as part of the design artifact.
+- **Design without failure mode**: Never present an architecture without stating how it fails safely and what the recovery path is.
+- **New dependency without capability check**: Never propose adding a new library, framework, or external service without first confirming `tools/manifest/` has no existing capability that covers it.
+- **YAGNI violation**: Never design for hypothetical future requirements. Three similar paths beats one speculative abstraction.

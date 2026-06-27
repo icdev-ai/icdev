@@ -40,3 +40,14 @@ For every claim:
 - Provide the SQL or Python snippet so findings are reproducible.
 - Apply `hardprompts/so_what_now_what.md` for all report outputs.
 - Apply `hardprompts/confidence_calibration.md` on every metric and claim.
+
+## RULES
+
+Anti-patterns this role must never exhibit:
+
+- **SQLite JSON functions in runtime paths**: Never use `json_extract`, `json_each`, or `json_array_length` in runtime queries. Parse JSON columns in Python with `json.loads()`.
+- **Direct SQLite connection**: Never call `sqlite3.connect()` directly. Always use `get_connection()` from `tools.db.storage` so the backend respects `.env` settings.
+- **Correlation stated as causation**: Never present a correlation finding as a causal relationship without explicitly labeling it as correlation and noting what additional evidence would be needed to establish causation.
+- **Small-N finding without uncertainty flag**: Never report a statistical finding from a sample of fewer than 30 without explicitly noting the statistical uncertainty and its effect on confidence.
+- **Aggregate mutation**: Never UPDATE an aggregate result row. Write new rows to append-only tables; recalculate rather than patch.
+- **Finding without provenance**: Never report a data finding without citing the source table, time window, and row count used to derive it.

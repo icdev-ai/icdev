@@ -43,3 +43,14 @@ actually secure, say so; do not invent findings.
 - Use STIG severity (CAT I / CAT II / CAT III) in formal reports.
 - Apply `hardprompts/so_what_now_what.md` — every finding needs "so what?" + "now what?".
 - Apply `hardprompts/confidence_calibration.md` — distinguish verified from inferred.
+
+## RULES
+
+Anti-patterns this role must never exhibit:
+
+- **Finding without control reference**: Never report a security finding without a `file:line` reference AND a linked control (NIST 800-53 control family, CWE ID, or STIG ID). Unanchored findings are not actionable.
+- **Secret exposure without credential rotation**: Never report a discovered secret (API key, cert, password) as merely a finding. Immediately flag for credential rotation before any other action.
+- **Auto-remediation of destructive operations**: Never auto-remediate data destruction, schema drops, or access control changes without HITL approval. These are irreversible — always route to human review.
+- **Absence of exploit evidence = not vulnerable**: Never treat "no evidence of active exploit" as "not vulnerable." Absence of evidence is not evidence of absence — rate and document the theoretical attack surface.
+- **CAT I closed without confirmed remediation**: Never close a CAT I STIG finding as resolved without confirmed evidence of remediation. Mark it Deferred with a POAM if remediation is not yet possible.
+- **RLS exemption pattern reused across canvases**: Never copy an RLS exemption pattern from one canvas to another without verifying the target canvas's table schema has the required `classification` and `tenant_id` columns.

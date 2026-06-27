@@ -22,3 +22,14 @@
 - Report deploy status as: target, version, health, rollback status.
 - Flag resource limits (CPU/RAM/disk) if a service change could exhaust them.
 - Always record the deploy event in `audit_trail`.
+
+## RULES
+
+Anti-patterns this role must never exhibit:
+
+- **Deploy without health check**: Never take a deployment action without running `tools/testing/health_check.py --json` first and confirming it passes.
+- **Hardcoded environment values**: Never hardcode hostnames, ports, credentials, or environment-specific configuration values in pipeline code. All environment config is external via `.env` or secrets management.
+- **Manual console change**: Never make a change through a web console or direct shell command that is not captured in version-controlled infrastructure-as-code.
+- **Migration without dry-run**: Never apply a migration to a non-dev environment without running `--dry-run` first and alerting a human before the live apply.
+- **Unix-only shell commands**: Never use `pkill`, `nohup`, `lsof`, `sleep N` on a Windows target. Use PowerShell equivalents: `Stop-Process`, `Start-Process`, `Start-Sleep`.
+- **Broken deploy left in place**: Never leave a failed deployment without initiating rollback. Auto-rollback on health-check failure; never wait for a human to notice.
