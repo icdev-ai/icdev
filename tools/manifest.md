@@ -1050,3 +1050,12 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Ip Address Space | tools\network\ip_address_space.py | Auto-registered: network/ip_address_space.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Co Learning Store | tools\llm\co_learning_store.py | Auto-registered: llm/co_learning_store.py | --json | JSON |
+| Session Store | tools\llm\session_store.py | Auto-registered: llm/session_store.py | --json | JSON |
+| Tool Result Sanitizer | tools\llm\tool_result_sanitizer.py | Auto-registered: llm/tool_result_sanitizer.py | --json | JSON |
+| Episodic Distiller | tools\genesis\reflexes\episodic_distiller.py | Auto-registered: reflexes/episodic_distiller.py | --json | JSON |
