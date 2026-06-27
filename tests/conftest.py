@@ -1741,6 +1741,31 @@ CREATE TABLE IF NOT EXISTS wfc_workflow_form_nodes (
     required_before_next INTEGER DEFAULT 1,
     created_at           TEXT DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS forecast_jobs (
+    id             TEXT PRIMARY KEY,
+    source         TEXT NOT NULL DEFAULT 'manual',
+    context        TEXT DEFAULT '',
+    input_rows     INTEGER NOT NULL,
+    input_summary  TEXT DEFAULT '{}',
+    status         TEXT NOT NULL DEFAULT 'pending',
+    prediction     TEXT DEFAULT '{}',
+    model_id       TEXT DEFAULT 'timesfm-2.5-200m',
+    error_message  TEXT DEFAULT '',
+    created_at     TEXT DEFAULT (datetime('now')),
+    updated_at     TEXT DEFAULT (datetime('now')),
+    completed_at   TEXT,
+    classification TEXT DEFAULT 'CUI',
+    tenant_id      TEXT
+);
+CREATE TABLE IF NOT EXISTS forecast_audit (
+    id             TEXT PRIMARY KEY,
+    job_id         TEXT NOT NULL REFERENCES forecast_jobs(id) ON DELETE CASCADE,
+    event_type     TEXT NOT NULL,
+    actor          TEXT DEFAULT 'system',
+    details        TEXT DEFAULT '{}',
+    created_at     TEXT DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI'
+);
 """
 
 

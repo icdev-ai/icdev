@@ -168,6 +168,22 @@ These 6 paths adopted `SandboxExecutor` in Phase 72 (D-SEC-11):
   - `nc_bgp_events` (the mutable rolling log) uses 90-day prune via `DELETE WHERE ... >= datetime(...)` — no user-supplied date expressions.
 - **Revisit if:** NQE response fields are ever passed to `eval()`, `exec()`, or `subprocess`; or if config text matching is upgraded to regex with user-supplied patterns.
 
+### Gap 16 — TimesFM Forecast Adapter (`icdev/tools/forecast/`)
+
+**Module:** `icdev/tools/forecast/timesfm_adapter.py`
+
+**Ingress path:** `POST /api/forecast` accepts a JSON payload with `values` (numeric time-series array), optional `forecast_horizon`, `freq`, `timestamp_column`, and `value_column`. The adapter validates the schema, creates a persistent `forecast_jobs` record, runs inference via the optional Google TimesFM library (lazy-loaded), and writes an append-only `forecast_audit` event. The payload is treated as data only — no field is interpreted as code.
+
+- **Decision:** **trusted-first-party**
+- **Rationale:** The forecast adapter is first-party code. User-supplied time-series data is parsed as JSON primitives and validated before being passed to the TimesFM `predict` API. There is no `eval()`, `exec()`, `subprocess`, `os.system`, or dynamic model loading from user paths. The optional `timesfm` dependency is pinned/installed by the operator, not supplied by the user.
+- **Guardrails:**
+  - JSON payload is validated: `values` must be a non-empty list of numbers, `forecast_horizon` bounded, `freq` restricted to known tokens.
+  - Input length is capped (default 2048 observations) to reject abuse.
+  - Model checkpoint loading is lazy and uses only the configured `DEFAULT_MODEL_ID`; no user-controlled checkpoint path.
+  - Forecast results and errors are written to append-only `forecast_jobs` / `forecast_audit` tables protected by `pre_tool_use.py`.
+  - Health endpoint reports `available: false` when TimesFM is not installed, so the feature degrades gracefully in air-gap/IL6 environments.
+- **Revisit if:** the adapter is extended to execute user-supplied Python/R code, accept arbitrary model checkpoints, or generate and run arbitrary forecast scripts.
+
 ## Coherence rule
 
 The `sandbox_coverage` rule in `tools/workflow/coherence_checker.py` enforces:

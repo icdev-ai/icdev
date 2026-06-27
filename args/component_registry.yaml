@@ -1005,6 +1005,19 @@ components:
   # ═══════════════════════════════════════════════════════════════════════════
   # Core Extensions (registered separately in dashboard/app.py; IQE only here)
   # ═══════════════════════════════════════════════════════════════════════════
+- key: forecast
+  kind: core_extension
+  display_name: TimesFM Forecasting
+  description: Self-hostable time-series forecasting microservice backed by Google TimesFM.
+  env_flag: ICDEV_FORECAST_ENABLED
+  default_enabled: true
+  url_prefix: ''
+  min_il: IL4
+  default_roles: []
+  iqe:
+    adapter_module: icdev.tools.iqe.adapters.forecast
+    collections:
+    - forecast.jobs
 - key: cam
   kind: core_extension
   display_name: Cloud Assessment Modeler
