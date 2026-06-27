@@ -102,4 +102,5 @@ If any signal/gap crosses the auto-queue threshold and is not blocked, promote t
 
 - **AGPL blocker:** worldmonitor will likely be triaged as BLOCKED due to copyleft. The value is in pattern extraction, not code reuse.
 - **DB import path:** All Python commands must be run with `$env:PYTHONPATH="C:\AI\ICDev"` (or Bash `export PYTHONPATH=C:/AI/ICDev`) because `tools` is a namespace package at the repo root.
+- **PostgreSQL placeholders:** Scratch seed scripts must use `%s` for parameterized SQL; the existing `seed_external_repos.py` / `seed_competitor_repos.py` use `?` and will fail against PG.
 - **No commits:** This is an eval/scout task; scratch scripts live in `.tmp/` and are not committed.
