@@ -514,9 +514,10 @@ def grade_output_quality(
         turns_used=er.turns_used,
     )
 
+    from icdev.tools.llm.router import LLMRouter, CrossGraderViolation  # noqa: PLC0415
+    from icdev.tools.llm.provider import LLMRequest  # noqa: PLC0415
+
     try:
-        from tools.llm.router import LLMRouter, CrossGraderViolation
-        from tools.llm.provider import LLMRequest
         router = LLMRouter()
         invoke_kwargs: dict = {}
         if effective_exclude:
