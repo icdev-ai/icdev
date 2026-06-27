@@ -22,17 +22,21 @@
     <!-- Upload + paste -->
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
       <div>
-        <label id="drop-zone"
-               style="display:flex;flex-direction:column;align-items:center;justify-content:center;border:2px dashed var(--border-color);border-radius:10px;padding:32px 16px;text-align:center;cursor:pointer;transition:border-color 0.2s;min-height:140px"
-               ondragover="event.preventDefault();this.style.borderColor='#1d72ff'"
-               ondragleave="this.style.borderColor='var(--border-color)'"
-               ondrop="handleDrop(event)">
+        <div id="drop-zone"
+             role="button" tabindex="0"
+             style="display:flex;flex-direction:column;align-items:center;justify-content:center;border:2px dashed var(--border-color);border-radius:10px;padding:32px 16px;text-align:center;cursor:pointer;transition:border-color 0.2s;min-height:140px"
+             onclick="document.getElementById('file-input').click()"
+             onkeydown="if(event.key==='Enter'||event.key===' ')document.getElementById('file-input').click()"
+             ondragover="event.preventDefault();this.style.borderColor='#1d72ff'"
+             ondragleave="this.style.borderColor='var(--border-color)'"
+             ondrop="handleDrop(event)">
           <div id="dz-icon" style="font-size:2rem;margin-bottom:8px">📄</div>
           <div id="dz-label" style="font-weight:600;font-size:0.9rem;margin-bottom:4px">Drop file or click to browse</div>
           <div style="font-size:0.78rem;color:var(--text-secondary)">PDF · DOCX · PNG · JPG · TXT</div>
           <input type="file" id="file-input" accept=".pdf,.docx,.png,.jpg,.jpeg,.txt"
-                 style="display:none" onchange="handleFileSelect(this.files[0])">
-        </label>
+                 style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none"
+                 onchange="handleFileSelect(this.files[0])">
+        </div>
       </div>
       <div style="display:flex;flex-direction:column">
         <textarea id="paste-text"
@@ -477,7 +481,7 @@ async function cleanupPriorRuns() {
     var resp = await fetch('/workflow-canvas/api/workflows/cleanup-digitized', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({workflow_name: wfName, status_filter: ['backlog','in_progress']})
+      body: JSON.stringify({workflow_name: wfName, status_filter: ['backlog', 'in_progress', 'scheduled']})
     });
     var data = await resp.json();
     if (data.error) throw new Error(data.error);
