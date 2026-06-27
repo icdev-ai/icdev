@@ -342,6 +342,61 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
             },
         },
     },
+    "parallel_agents": {
+        "type": "function",
+        "is_read_only": True,
+        "function": {
+            "name": "parallel_agents",
+            "description": (
+                "Fan out multiple independent sub-agent tasks in parallel. "
+                "Each task runs its own agent loop concurrently. "
+                "Results are stored in the coordination bus under the task key "
+                "and returned as a combined summary. "
+                "Hard limits: ≤8 tasks per call, ≤8 concurrent workers."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "tasks": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "key": {
+                                    "type": "string",
+                                    "description": "Unique identifier for this task's result (used to read it back via read_result).",
+                                },
+                                "task": {
+                                    "type": "string",
+                                    "description": "The user prompt / task description for this sub-agent.",
+                                },
+                                "role": {
+                                    "type": "string",
+                                    "description": "Optional system prompt / role for the sub-agent.",
+                                },
+                                "tools": {
+                                    "type": "array",
+                                    "items": {"type": "string"},
+                                    "description": "Tool names available to this sub-agent. Defaults to ['read_file', 'list_files', 'done'].",
+                                },
+                                "max_iterations": {
+                                    "type": "integer",
+                                    "description": "Max turns for this sub-agent (default 6, max 20).",
+                                },
+                            },
+                            "required": ["key", "task"],
+                        },
+                        "description": "List of sub-agent tasks to run concurrently (max 8).",
+                    },
+                    "max_parallel": {
+                        "type": "integer",
+                        "description": "Maximum concurrent sub-agent workers (default 4, max 8).",
+                    },
+                },
+                "required": ["tasks"],
+            },
+        },
+    },
 }
 
 
@@ -436,6 +491,8 @@ class AgentToolRegistry:
             return self._done
         if name == "spawn_agent":
             return self._spawn_agent
+        if name == "parallel_agents":
+            return self._parallel_agents
         if name == "post_result":
             return self._post_result
         if name == "read_result":
@@ -750,6 +807,74 @@ class AgentToolRegistry:
             status,
         )
         return f"{header}\n{body}"
+
+    def _parallel_agents(self, inp: dict[str, Any], stop: threading.Event | None) -> str:
+        """Fan out N sub-agent tasks concurrently using ThreadPoolExecutor.
+
+        Results are posted to the coordination bus under each task's key
+        and returned as a merged summary string.
+        """
+        import concurrent.futures as _cf
+
+        raw_tasks = inp.get("tasks") or []
+        if not raw_tasks:
+            return "error: 'tasks' list is required and must be non-empty"
+        if len(raw_tasks) > 8:
+            return f"error: max 8 tasks per parallel_agents call (got {len(raw_tasks)})"
+
+        max_parallel = min(int(inp.get("max_parallel") or 4), 8)
+
+        def _run_one(task_spec: dict[str, Any], idx: int) -> dict[str, Any]:
+            key = (task_spec.get("key") or "").strip()
+            task_text = (task_spec.get("task") or "").strip()
+            if not key:
+                return {"key": f"task_{idx}", "error": "task 'key' is required"}
+            if not task_text:
+                return {"key": key, "error": "task 'task' text is required"}
+            try:
+                sub_inp = {
+                    "task": task_text,
+                    "role": task_spec.get("role") or "",
+                    "tools": task_spec.get("tools") or ["read_file", "list_files", "done"],
+                    "max_iterations": task_spec.get("max_iterations") or 6,
+                }
+                result_text = self._spawn_agent(sub_inp, stop)
+                try:
+                    self._post_result({"key": key, "value": result_text}, stop)
+                except Exception:  # noqa: BLE001
+                    pass
+                return {"key": key, "result": result_text}
+            except Exception as exc:  # noqa: BLE001
+                return {"key": key, "error": str(exc)}
+
+        results: list[dict[str, Any]] = []
+        with _cf.ThreadPoolExecutor(max_workers=max_parallel) as pool:
+            future_map = {pool.submit(_run_one, t, i): i for i, t in enumerate(raw_tasks)}
+            for fut in _cf.as_completed(future_map, timeout=600):
+                try:
+                    results.append(fut.result())
+                except Exception as exc:  # noqa: BLE001
+                    idx = future_map[fut]
+                    key = (raw_tasks[idx].get("key") or f"task_{idx}") if idx < len(raw_tasks) else f"task_{idx}"
+                    results.append({"key": key, "error": str(exc)})
+
+        key_order = {(t.get("key") or f"task_{i}"): i for i, t in enumerate(raw_tasks)}
+        results.sort(key=lambda r: key_order.get(r.get("key", ""), 999))
+
+        n_ok = sum(1 for r in results if "result" in r)
+        n_err = sum(1 for r in results if "error" in r)
+        lines = [f"parallel_agents: {len(raw_tasks)} tasks dispatched — {n_ok} succeeded, {n_err} failed.\n"]
+        for r in results:
+            key = r.get("key", "?")
+            if "error" in r:
+                lines.append(f"[{key}] ERROR: {r['error']}")
+            else:
+                preview = str(r.get("result", ""))
+                if len(preview) > 800:
+                    preview = preview[:800] + "…"
+                lines.append(f"[{key}]:\n{preview}")
+
+        return "\n\n".join(lines)
 
     def _post_result(self, inp: dict[str, Any], stop: threading.Event | None) -> str:
         from icdev.tools.ace.agent_coordination import post_result as _post
