@@ -87,6 +87,7 @@ SLIDE_TYPES: list[str] = [
     "three_animation",    # Three.js 3D scene (interactive in web viewer/HTML; placeholder in PPTX)
     "excalidraw_sketch",  # Hand-drawn whiteboard style via rough.js
     "card_grid",          # 3-column card grid (investment overview, capability comparison)
+    "table",              # Structured data table (financials, comparisons, ROI breakdowns)
 ]
 
 # ── Themes ────────────────────────────────────────────────────────────────────
@@ -145,6 +146,7 @@ LLM_FN_VIZ_PROMPT  = "slides_visual_prompt"
 LLM_FN_MERMAID     = "slides_mermaid_generation"
 LLM_FN_THREE       = "slides_three_scene_generation"
 LLM_FN_EXCALIDRAW  = "slides_excalidraw_generation"
+LLM_FN_TABLE       = "slides_table_generation"
 
 # ── Audience Modes ─────────────────────────────────────────────────────────────
 AUDIENCE_MODES: list[str] = [

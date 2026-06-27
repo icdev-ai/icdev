@@ -840,7 +840,7 @@ def create_migration_blueprint():
             if not sess:
                 return jsonify({"error": "Session not found"}), 404
             port_map = [_row_to_dict(r) for r in conn.execute(
-                "SELECT * FROM mc_net_port_map WHERE session_id=? ORDER BY rowid", (sid,)).fetchall()]
+                "SELECT * FROM mc_net_port_map WHERE session_id=? ORDER BY id", (sid,)).fetchall()]
             sess["port_map"] = port_map
             sess["compat_checks"] = [_row_to_dict(r) for r in conn.execute(
                 "SELECT * FROM mc_net_compat_checks WHERE session_id=? ORDER BY severity, category", (sid,)).fetchall()]
@@ -1128,7 +1128,7 @@ def create_migration_blueprint():
         """Get current port mapping rows."""
         with get_connection() as conn:
             rows = conn.execute(
-                "SELECT * FROM mc_net_port_map WHERE session_id=? ORDER BY rowid", (sid,)
+                "SELECT * FROM mc_net_port_map WHERE session_id=? ORDER BY id", (sid,)
             ).fetchall()
         return jsonify({"port_map": [_row_to_dict(r) for r in rows]})
 
@@ -1173,7 +1173,7 @@ def create_migration_blueprint():
         # Re-fetch from DB to return normalized rows with db column names
         with get_connection() as conn:
             saved = [_row_to_dict(r) for r in conn.execute(
-                "SELECT * FROM mc_net_port_map WHERE session_id=? ORDER BY rowid", (sid,)).fetchall()]
+                "SELECT * FROM mc_net_port_map WHERE session_id=? ORDER BY id", (sid,)).fetchall()]
         return jsonify({"ok": True, "count": len(rows), "port_map": saved})
 
     @bp.route("/api/network-migration/<sid>/compat-check", methods=["POST"])
@@ -1755,7 +1755,7 @@ def create_migration_blueprint():
         with get_connection() as conn:
             sess = _row_to_dict(conn.execute("SELECT * FROM mc_net_sessions WHERE id=?", (sid,)).fetchone())
             port_map = [_row_to_dict(r) for r in conn.execute(
-                "SELECT * FROM mc_net_port_map WHERE session_id=? ORDER BY rowid", (sid,)).fetchall()]
+                "SELECT * FROM mc_net_port_map WHERE session_id=? ORDER BY id", (sid,)).fetchall()]
         hw = _nm.fetch_hardware_profiles(sess.get("src_model",""), sess.get("tgt_model",""))
 
         if fmt == "drawio":

@@ -9,7 +9,6 @@ Set MC_STORAGE_BACKEND=postgresql + MC_PG_* env vars to use PostgreSQL.
 
 import json
 import os
-import sqlite3
 from pathlib import Path
 
 from tools.db.storage import get_canvas_connection
