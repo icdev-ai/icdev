@@ -38,7 +38,7 @@ def relay_stdin():
             chunk = sys.stdin.buffer.read1(4096)  # read1 returns immediately with available bytes
             if not chunk:
                 break
-            log(f"STDIN→server: {chunk[:200]}")
+            log(f"STDIN→server ({len(chunk)}B): {chunk}")  # log full bytes
             proc.stdin.write(chunk)
             proc.stdin.flush()
     except Exception as e:
@@ -55,6 +55,7 @@ def relay_stdout():
             chunk = proc.stdout.read1(4096)  # read1 returns immediately with available bytes
             if not chunk:
                 break
+            log(f"server→STDOUT ({len(chunk)}B): {chunk[:300]}")
             sys.stdout.buffer.write(chunk)
             sys.stdout.buffer.flush()
     except Exception as e:
