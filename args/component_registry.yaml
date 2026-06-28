@@ -1540,7 +1540,7 @@ components:
   url_prefix: /me
   min_il: IL4
   nav:
-    section: Personal
+    section: Canvases
     label: My Assistant
     icon: "🧠"
     links:
