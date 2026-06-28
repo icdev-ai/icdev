@@ -161,6 +161,33 @@
       </div>
       {% endif %}
 
+      <!-- Relationship Alerts (from relationship_health) -->
+      {% set rel_nudges = briefing.get('relationship_nudges') %}
+      {% if rel_nudges %}
+      <div class="col-12">
+        <div class="rounded-3 overflow-hidden" style="border:1px solid rgba(251,146,60,.25)">
+          <div class="px-3 py-2 fw-semibold small d-flex align-items-center gap-2" style="background:rgba(251,146,60,.07);border-bottom:1px solid rgba(251,146,60,.15)">
+            <span>🤝 Relationship Alerts</span>
+            <span class="badge fw-normal ms-auto" style="background:rgba(251,146,60,.2);color:#fdba74;font-size:.68rem">{{ rel_nudges|length }} contact(s) to check in</span>
+          </div>
+          <div class="p-3">
+            {% for nudge in rel_nudges %}
+            <div class="d-flex align-items-start gap-2 mb-2 pb-2 {% if not loop.last %}border-bottom{% endif %}" style="border-color:rgba(255,255,255,.06)">
+              <span style="font-size:.85rem;margin-top:.1rem">{% if nudge.status == 'red' %}🔴{% else %}🟡{% endif %}</span>
+              <div style="flex:1;min-width:0">
+                <span class="fw-semibold small">{{ nudge.name }}</span>
+                <span class="text-muted ms-1" style="font-size:.7rem">({{ nudge.relationship_type }})</span>
+                {% if nudge.days_since is not none %}<span class="text-muted ms-1" style="font-size:.7rem">· {{ nudge.days_since }}d ago</span>{% endif %}
+                <div class="text-muted mt-1" style="font-size:.72rem">{{ nudge.nudge }}</div>
+              </div>
+              <a href="/me/customers" class="btn btn-sm flex-shrink-0" style="font-size:.65rem;padding:.15rem .45rem;background:rgba(251,146,60,.1);border:1px solid rgba(251,146,60,.2);color:#fdba74;white-space:nowrap">Log Contact</a>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
       <!-- Meeting Prep Cards (from meeting_prep_reflex) -->
       {% set meeting_preps = briefing.get('meeting_preps') %}
       {% if meeting_preps %}
@@ -317,6 +344,13 @@
         </div>
       </div>
       {% endif %}
+
+      <!-- Weekly retro link -->
+      <div class="col-12 text-end mt-1">
+        <a href="/me/retro" class="small" style="color:#a5b4fc;text-decoration:none">📋 View weekly retrospective →</a>
+        <span class="mx-2 text-muted" style="font-size:.7rem">·</span>
+        <a href="/me/search" class="small" style="color:#9ca3af;text-decoration:none">🔍 Search second brain</a>
+      </div>
 
     </div>
 

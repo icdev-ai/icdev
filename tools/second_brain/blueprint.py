@@ -86,6 +86,11 @@ def customers_page():
     uid, tid = _user_id(), _tenant_id()
     relationships = get_relationships(uid, tid)
     profile = get_profile(uid, tid) or {}
+    try:
+        from tools.second_brain.relationship_health import get_relationship_health_map
+        health_data = {r["id"]: r["health"] for r in get_relationship_health_map(uid, tid)}
+    except Exception:
+        health_data = {}
     return render_template(
         "second_brain/customers.html",
         customers=relationships,
@@ -94,6 +99,7 @@ def customers_page():
         customer_type_icons=CUSTOMER_TYPE_ICONS,
         customer_type_descriptions=CUSTOMER_TYPE_DESCRIPTIONS,
         team_mission=profile.get("team_mission", ""),
+        health_data=health_data,
     )
 
 
@@ -634,6 +640,40 @@ def api_dic_personalise():
     return jsonify({"ok": True, "results": ranked[:10]})
 
 
+@second_brain_bp.route("/api/second-brain/relationships/health", methods=["GET"])
+def api_relationship_health():
+    """Return all relationships with health scores."""
+    try:
+        from tools.second_brain.relationship_health import get_relationship_health_map
+        return jsonify({"ok": True, "relationships": get_relationship_health_map(_user_id(), _tenant_id())})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@second_brain_bp.route("/api/integrations/google/contacts", methods=["GET"])
+def api_google_contacts():
+    """Return Gmail/People contacts for wizard relationship import."""
+    try:
+        from tools.second_brain.integrations import get_decrypted_token
+        token = get_decrypted_token(_user_id(), "gcal", _tenant_id())
+        if not token:
+            return jsonify({"ok": False, "error": "Google not connected"}), 400
+        from tools.second_brain.connectors.google import GoogleConnector
+        # Use today's calendar attendees as a proxy for frequent contacts
+        connector = GoogleConnector()
+        items = connector.get_todays_items(_user_id())
+        contacts: list[dict] = []
+        seen: set[str] = set()
+        for ev in items:
+            for email in ev.get("attendees", []):
+                if email and email not in seen:
+                    seen.add(email)
+                    contacts.append({"email": email, "name": email.split("@")[0], "org": ""})
+        return jsonify({"ok": True, "contacts": contacts[:20]})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
 def _get_connector(service: str):
     try:
         if service in ("gcal", "gmail"):
@@ -716,3 +756,40 @@ def oauth_callback_msgraph():
     except Exception as exc:
         logger.warning("[second_brain] M365 OAuth callback error: %s", exc)
         return render_template("errors/500.html", message=f"M365 OAuth failed: {exc}"), 500
+
+
+# ── Weekly Retrospective ──────────────────────────────────────────────────────
+
+@second_brain_bp.route("/me/retro")
+def page_retro():
+    from tools.second_brain.retro import get_latest_retro
+    retro = get_latest_retro(_user_id(), _tenant_id())
+    return render_template("second_brain/retro.html", retro=retro)
+
+
+@second_brain_bp.route("/api/second-brain/retro/generate", methods=["POST"])
+def api_retro_generate():
+    from tools.second_brain.retro import generate_weekly_retro
+    retro = generate_weekly_retro(_user_id(), _tenant_id())
+    return jsonify({"ok": True, "retro": retro})
+
+
+# ── Unified Search ────────────────────────────────────────────────────────────
+
+@second_brain_bp.route("/me/search")
+def page_search():
+    q = request.args.get("q", "").strip()
+    results = {}
+    if q:
+        from tools.second_brain.search import unified_search
+        results = unified_search(q, _user_id(), _tenant_id())
+    return render_template("second_brain/search.html", q=q, results=results)
+
+
+@second_brain_bp.route("/api/second-brain/search")
+def api_second_brain_search():
+    q = request.args.get("q", "").strip()
+    if not q:
+        return jsonify({"ok": False, "error": "q required"}), 400
+    from tools.second_brain.search import unified_search
+    return jsonify({"ok": True, "query": q, "results": unified_search(q, _user_id(), _tenant_id())})
