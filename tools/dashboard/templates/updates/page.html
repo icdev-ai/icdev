@@ -10,6 +10,28 @@
             if (badge) badge.remove();
         }).catch(function() {});
 })();
+
+function regenSheet() {
+    var btn = document.getElementById('btn-regen-sheet');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Regenerating…';
+    fetch('/api/capability-sheet/regenerate', {method: 'POST'})
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-check-circle me-1"></i>Done';
+            setTimeout(function() {
+                btn.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>Regenerate';
+            }, 3000);
+        })
+        .catch(function() {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-exclamation-triangle me-1"></i>Failed';
+            setTimeout(function() {
+                btn.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>Regenerate';
+            }, 3000);
+        });
+}
 </script>
 {% endblock %}
 
@@ -18,6 +40,23 @@
   <div class="d-flex align-items-center mb-4">
     <h1 class="mb-0 me-3">Platform Updates</h1>
     <span class="badge bg-primary">Changelog</span>
+  </div>
+
+  <div class="card shadow-sm border-0 mb-4" style="background:linear-gradient(135deg,#1F3864 0%,#2E4A7A 100%);">
+    <div class="card-body d-flex align-items-center justify-content-between flex-wrap gap-3 py-3">
+      <div>
+        <div class="text-white fw-semibold mb-1"><i class="bi bi-file-earmark-spreadsheet me-2"></i>ICDEV™ Capabilities &amp; Solutions</div>
+        <div class="text-white-50 small">28 challenges · 33 capabilities · 21 canvases · includes So What column</div>
+      </div>
+      <div class="d-flex gap-2">
+        <a href="/api/capability-sheet/download" class="btn btn-light btn-sm fw-semibold">
+          <i class="bi bi-download me-1"></i>Download Excel
+        </a>
+        <button id="btn-regen-sheet" class="btn btn-outline-light btn-sm" onclick="regenSheet()">
+          <i class="bi bi-arrow-clockwise me-1"></i>Regenerate
+        </button>
+      </div>
+    </div>
   </div>
 
   {% if error %}
