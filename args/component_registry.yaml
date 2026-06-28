@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+﻿# CUI // SP-CTI
 # Component Registry — single source of truth for ICDEV™ canvases, child apps,
 # features, and core extensions.
 #
@@ -181,7 +181,7 @@ components:
     - bdc.alerts
     - bdc.ai_decisions
   completeness:
-    template: tools/dashboard/templates/boundary/page.html
+    template: tools/dashboard/templates/boundary_canvas/canvas.html
     blueprint: true
     constants: tools/boundary_canvas/constants.py
     db_migration: tools/boundary_canvas/db/migrations
@@ -279,7 +279,7 @@ components:
     - data.classifications
     - data.ai_decisions
   completeness:
-    template: tools/dashboard/templates/data/page.html
+    template: tools/dashboard/templates/data_canvas/canvas.html
     blueprint: true
     constants: tools/data_canvas/constants.py
     db_migration: tools/data_canvas/db/migrations
@@ -340,7 +340,7 @@ components:
     - mc.assessments
     - mc.ai_decisions
   completeness:
-    template: tools/dashboard/templates/migration-canvas/page.html
+    template: tools/dashboard/templates/migration_canvas/canvas.html
     blueprint: true
     constants: tools/migration_canvas/constants.py
     db_migration: tools/migration_canvas/db/migrations
@@ -369,7 +369,7 @@ components:
     - aadc.artifacts
     - aadc.ai_decisions
   completeness:
-    template: tools/dashboard/templates/agentic-ai/page.html
+    template: tools/dashboard/templates/agentic_ai_canvas/analytics.html
     blueprint: true
     constants: tools/agentic_ai_canvas/constants.py
     db_migration: tools/agentic_ai_canvas/db/migrations
@@ -400,7 +400,7 @@ components:
     - aimc.artifacts
     - aimc.ai_decisions
   completeness:
-    template: tools/dashboard/templates/ai-ml/page.html
+    template: tools/dashboard/templates/aiml_canvas/canvas.html
     blueprint: true
     constants: tools/aiml_canvas/constants.py
     db_migration: tools/aiml_canvas/db/migrations
@@ -431,7 +431,7 @@ components:
     - ohc.adapters
     - ohc.drift_events
   completeness:
-    template: tools/dashboard/templates/ops/page.html
+    template: tools/dashboard/templates/ops_hub/index.html
     blueprint: true
     constants: tools/ops_hub/constants.py
     db_migration: tools/ops_hub/db/migrations
@@ -453,7 +453,7 @@ components:
     section: Canvases
     label: Info Ops
   completeness:
-    template: tools/dashboard/templates/info-ops/page.html
+    template: tools/dashboard/templates/info_ops/index.html
     blueprint: true
     constants: tools/info_ops/constants.py
     nav_link: true
@@ -483,7 +483,7 @@ components:
     - mission.evidence
     - mission.alerts
   completeness:
-    template: tools/dashboard/templates/mission-canvas/page.html
+    template: tools/dashboard/templates/mission_canvas/index.html
     blueprint: true
     constants: tools/mission_canvas/constants.py
     db_migration: tools/mission_canvas/db/migrations
@@ -514,7 +514,7 @@ components:
     - noc.maintenance_windows
     - noc.sla_records
   completeness:
-    template: tools/dashboard/templates/noc/page.html
+    template: tools/dashboard/templates/noc_canvas/index.html
     blueprint: true
     constants: tools/noc_canvas/constants.py
     db_migration: tools/noc_canvas/db/migrations
@@ -735,7 +735,7 @@ components:
     - dic.ssp_fragments
     - dic.techwriter_docs
   completeness:
-    template: tools/dashboard/templates/document_intelligence/page.html
+    template: tools/dashboard/templates/document_intelligence/index.html
     blueprint: true
     constants: tools/document_intelligence/constants.py
     db_migration: tools/document_intelligence/db/migrations
@@ -787,7 +787,7 @@ components:
     section: Build
     label: Presentations
   completeness:
-    template: tools/dashboard/templates/slides/page.html
+    template: tools/dashboard/templates/slides/index.html
     blueprint: true
     constants: tools/slides/constants.py
     iqe_adapter: false
@@ -814,7 +814,7 @@ components:
     - ace.coworkers
     - ace.messages
   completeness:
-    template: tools/dashboard/templates/ace/page.html
+    template: tools/dashboard/templates/ace/sessions.html
     blueprint: true
     constants: icdev/tools/ace/constants.py
     iqe_adapter: true
@@ -868,7 +868,7 @@ components:
     - integrity.findings
     - integrity.verdicts
   completeness:
-    template: tools/dashboard/templates/integrity/page.html
+    template: tools/dashboard/templates/integrity/index.html
     blueprint: true
     constants: tools/integrity/constants.py
     iqe_adapter: true
@@ -896,7 +896,7 @@ components:
     - foundry.runs
     - foundry.outcomes
   completeness:
-    template: tools/dashboard/templates/foundry/page.html
+    template: tools/dashboard/templates/foundry/index.html
     blueprint: true
     constants: tools/foundry/constants.py
     iqe_adapter: true
