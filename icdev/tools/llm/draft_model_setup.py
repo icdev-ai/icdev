@@ -152,10 +152,18 @@ def setup_easy(target_model: str) -> SetupResult:
 def setup_full(checkpoint: str, output_dir: Path | None = None) -> SetupResult:
     """Download DeepSpec checkpoint from HuggingFace, convert to GGUF, register with Ollama.
 
+    IMPORTANT LIMITATIONS:
+      - DSpark, Eagle3, and DFlash use CUSTOM architectures (Qwen3DSparkModel etc.)
+        that llama.cpp does NOT support. GGUF conversion will fail with
+        "Model Qwen3DSparkModel is not supported" for all DeepSpec checkpoints.
+      - True DeepSpec speculative decoding requires SGLang on Linux/Mac with CUDA.
+      - On Windows: use --easy instead (qwen3:0.6b as draft, no conversion needed).
+
     Requires:
       - huggingface_hub Python package  (pip install huggingface_hub)
       - llama.cpp with convert_hf_to_gguf.py  (https://github.com/ggerganov/llama.cpp)
         pointed to by LLAMA_CPP_DIR env var, or auto-detected in common locations
+      - PyTorch <= 3.13 (torch 2.6 has no Python 3.14 wheels)
     """
     steps: list[str] = []
     out_dir = output_dir or Path.home() / ".cache" / "icdev" / "draft_models"
