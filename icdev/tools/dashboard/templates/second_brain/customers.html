@@ -1,0 +1,280 @@
+{% extends "base.html" %}
+{% block title %}My Customers{% endblock %}
+{% block content %}
+{% set me_page = 'customers' %}
+<div class="d-flex" style="min-height:calc(100vh - 60px)">
+
+  <!-- Sidebar -->
+  <aside class="flex-shrink-0 py-3 px-2" style="width:200px;border-right:1px solid rgba(255,255,255,.08);display:flex;flex-direction:column">
+    <div class="text-uppercase fw-semibold px-2 mb-3" style="font-size:.65rem;letter-spacing:.1em;color:#6b7280">My Assistant</div>
+    {% for href,icon,label,key in [('/me','🧠','Overview','home'),('/me/profile','👤','Profile','profile'),('/me/customers','🏢','Customers','customers'),('/me/objectives','🎯','Objectives','objectives'),('/me/challenges','⚡','Challenges','challenges'),('/me/briefing/today','📋',"Today's Briefing",'briefing'),('/me/integrations','🔗','Integrations','integrations')] %}
+    <a href="{{ href }}" class="d-block px-3 py-2 rounded mb-1 text-decoration-none small {% if me_page != key %}text-secondary{% endif %}" {% if me_page == key %}style="background:rgba(37,99,235,.15);color:#60a5fa;font-weight:600"{% endif %}>{{ icon }} {{ label }}</a>
+    {% endfor %}
+  </aside>
+
+  <!-- Main -->
+  <main class="flex-grow-1 p-4" style="min-width:0">
+
+    <!-- Page header -->
+    <div class="d-flex align-items-start justify-content-between flex-wrap gap-3 mb-4">
+      <div>
+        <h4 class="fw-bold mb-1">🏢 My Customers</h4>
+        <p class="text-muted small mb-0">Define who depends on your work. Your AI assistant uses this to prioritize briefings, surface relationship nudges, and frame communications for each audience.</p>
+      </div>
+      <button class="btn btn-primary btn-sm" id="btn-add-cust">+ Add Customer</button>
+    </div>
+
+    <!-- Purpose statement card -->
+    <div class="rounded-3 mb-3 p-3" style="background:rgba(37,99,235,.06);border:1px solid rgba(37,99,235,.18)">
+      <div class="d-flex align-items-center gap-2 mb-2">
+        <span class="fw-semibold small" style="color:#60a5fa">🌟 Your Service Promise</span>
+        <span data-bs-toggle="tooltip" data-bs-placement="right" title="A clear purpose statement helps the AI understand your strategic role and communicate your value to each customer type. Edit it in Profile → Your Purpose." style="cursor:help;color:#6b7280;font-size:.8rem">ⓘ</span>
+      </div>
+      {% if team_mission %}
+      <p class="mb-1 small">{{ team_mission }}</p>
+      {% else %}
+      <p class="mb-1 small fst-italic text-muted">You haven't defined your purpose yet. <a href="/me/profile" style="color:#60a5fa">Go to Profile → Your Purpose</a> to add a service promise statement.</p>
+      {% endif %}
+    </div>
+
+    <!-- Explanation callout -->
+    <div class="alert alert-dismissible mb-4" role="alert" id="cust-explainer" style="background:rgba(16,185,129,.07);border:1px solid rgba(16,185,129,.2);color:inherit">
+      <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert" style="font-size:.75rem"></button>
+      <div class="d-flex gap-2">
+        <span>💡</span>
+        <div class="small">
+          <strong>Not just clients</strong> — think of anyone whose success depends on what you build or decide.<br>
+          A Network Architect's customers include <strong>external</strong> organizations (CSPs, ISPs) <em>and</em> <strong>internal</strong> teams (Network Ops, Application Teams, Security) who rely on the infrastructure you design.
+        </div>
+      </div>
+    </div>
+
+    <!-- Customer type legend -->
+    <div class="d-flex flex-wrap gap-2 mb-4">
+      {% for ctype in ['customer','stakeholder','peer','boss','direct','vendor','other'] %}
+      {% set icon = customer_type_icons.get(ctype,'📎') %}
+      {% set label = relationship_labels.get(ctype, ctype) %}
+      {% set desc = customer_type_descriptions.get(ctype,'') %}
+      <span class="badge rounded-pill d-flex align-items-center gap-1 py-2 px-3"
+        style="background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);font-weight:normal;font-size:.8rem;cursor:help"
+        data-bs-toggle="tooltip" data-bs-placement="top" title="{{ desc }}">
+        {{ icon }} {{ label }}
+      </span>
+      {% endfor %}
+    </div>
+
+    <!-- Customer cards grouped by type -->
+    {% set grouped = {} %}
+    {% for c in customers %}
+      {% set t = c.relationship_type or 'other' %}
+      {% if t not in grouped %}{% set _ = grouped.update({t:[]}) %}{% endif %}
+      {% set _ = grouped[t].append(c) %}
+    {% endfor %}
+
+    {% if customers %}
+      {% for ctype in ['customer','stakeholder','boss','direct','peer','vendor','other'] %}
+      {% if ctype in grouped %}
+      <div class="mb-4">
+        <div class="d-flex align-items-center gap-2 mb-2">
+          <span>{{ customer_type_icons.get(ctype,'📎') }}</span>
+          <span class="fw-semibold small">{{ relationship_labels.get(ctype, ctype) }}</span>
+          <span class="badge bg-secondary rounded-pill" style="font-size:.7rem">{{ grouped[ctype]|length }}</span>
+        </div>
+        <div class="row g-2">
+          {% for c in grouped[ctype] %}
+          <div class="col-md-6 col-lg-4">
+            <div class="rounded-3 p-3 h-100" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08)">
+              <div class="d-flex justify-content-between align-items-start">
+                <div class="flex-grow-1 me-2">
+                  <div class="fw-semibold small">{{ c.name }}</div>
+                  {% if c.title %}<div class="text-muted" style="font-size:.78rem">{{ c.title }}</div>{% endif %}
+                  {% if c.org %}<div class="text-muted" style="font-size:.75rem">{{ c.org }}</div>{% endif %}
+                  {% if c.email %}<div style="font-size:.73rem;color:#6b7280">{{ c.email }}</div>{% endif %}
+                  {% if c.expectations_json %}
+                  {% set exp = c.expectations_json | tojson | fromjson if c.expectations_json is string else c.expectations_json %}
+                  {% if exp and exp != '{}' %}
+                  <div class="mt-2 pt-2" style="border-top:1px solid rgba(255,255,255,.06)">
+                    {% for k, v in (exp.items() if exp is mapping else {}.items()) %}
+                    {% if v and k != 'commitment_date' %}
+                    <div style="font-size:.72rem;color:#9ca3af"><span style="color:#6b7280">{{ k | replace('_',' ') | title }}:</span> {{ v }}</div>
+                    {% endif %}
+                    {% endfor %}
+                    {% if c.commitment_date %}
+                    <div style="font-size:.72rem;color:#fcd34d">Renewal: {{ c.commitment_date }}</div>
+                    {% endif %}
+                  </div>
+                  {% endif %}
+                  {% endif %}
+                </div>
+                <button class="btn btn-sm cust-delete text-danger" data-id="{{ c.id }}" title="Remove" style="font-size:.85rem;padding:.15rem .35rem;line-height:1">×</button>
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+      {% endfor %}
+    {% else %}
+    <div class="text-center py-5 text-muted">
+      <div style="font-size:2.5rem" class="mb-2">🏢</div>
+      <p class="mb-1">No customers added yet.</p>
+      <p class="small">Add your first customer to help the AI understand who you serve.</p>
+      <button class="btn btn-primary btn-sm mt-2" id="btn-add-cust-empty">+ Add Your First Customer</button>
+    </div>
+    {% endif %}
+
+    <!-- Add customer form (hidden) -->
+    <div class="rounded-3 p-3 mt-3 d-none" id="add-cust-form" style="background:rgba(255,255,255,.04);border:1px solid rgba(37,99,235,.3)">
+      <div class="fw-semibold small mb-3">Add Customer / Stakeholder</div>
+      <div class="row g-2">
+        <div class="col-md-6">
+          <input class="form-control form-control-sm" id="cust-name" placeholder="Name or Team *" style="background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.15);color:inherit">
+        </div>
+        <div class="col-md-6">
+          <input class="form-control form-control-sm" id="cust-title" placeholder="Title / Role" style="background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.15);color:inherit">
+        </div>
+        <div class="col-md-6">
+          <input class="form-control form-control-sm" id="cust-org" placeholder="Organization" style="background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.15);color:inherit">
+        </div>
+        <div class="col-md-6">
+          <input class="form-control form-control-sm" type="email" id="cust-email" placeholder="Email (optional)" style="background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.15);color:inherit">
+        </div>
+        <div class="col-md-6">
+          <select class="form-select form-select-sm" id="cust-type" style="background:rgba(30,30,50,.9);border-color:rgba(255,255,255,.15);color:inherit">
+            {% for ctype in ['customer','stakeholder','peer','boss','direct','vendor','other'] %}
+            <option value="{{ ctype }}">{{ customer_type_icons.get(ctype,'') }} {{ relationship_labels.get(ctype, ctype) }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-6 d-flex align-items-center">
+          <div class="small text-muted" id="type-hint" style="font-size:.75rem"></div>
+        </div>
+        <!-- Role-adaptive expectation fields (populated by JS from /api/second-brain/proactive/expectation-fields) -->
+        <div id="expectation-fields-container" class="col-12 row g-2 mt-0"></div>
+        <div class="col-12 d-flex gap-2 mt-1">
+          <button class="btn btn-primary btn-sm" id="btn-save-cust">Save</button>
+          <button class="btn btn-outline-secondary btn-sm" id="btn-cancel-cust">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+{% include "includes/iqe_query_widget.html" %}
+
+<script>
+const currentCusts = {{ customers | tojson }};
+const typeDescriptions = {{ customer_type_descriptions | tojson }};
+let _expectationFields = [];
+let _expectationPersona = '';
+
+// Load role-adaptive expectation fields once
+fetch('/me/api/second-brain/proactive/expectation-fields')
+  .then(r => r.ok ? r.json() : {fields:[]})
+  .then(d => {
+    _expectationFields = d.fields || [];
+    _expectationPersona = d.persona || '';
+  })
+  .catch(() => {});
+
+function saveCusts(custs) {
+  return fetch('/me/api/second-brain/profile', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({relationships: custs})
+  }).then(r=>r.json());
+}
+
+function renderExpectationFields() {
+  const container = document.getElementById('expectation-fields-container');
+  if (!container || !_expectationFields.length) return;
+  container.innerHTML = _expectationFields.length ? `
+    <div class="col-12 mt-1">
+      <div class="text-uppercase fw-semibold" style="font-size:.6rem;letter-spacing:.08em;color:#6b7280">
+        ${_expectationPersona ? _expectationPersona + ' Expectations' : 'Expectations'}
+      </div>
+    </div>` + _expectationFields.map(f => {
+      const id = 'exp-' + f.key;
+      const inputStyle = 'background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.15);color:inherit';
+      let input = '';
+      if (f.type === 'select') {
+        input = `<select class="form-select form-select-sm" id="${id}" style="${inputStyle};background:rgba(30,30,50,.9)">
+          <option value="">— select —</option>
+          ${(f.options||[]).map(o=>`<option value="${o}">${o}</option>`).join('')}
+        </select>`;
+      } else {
+        input = `<input class="form-control form-control-sm" id="${id}" type="${f.type||'text'}" placeholder="${f.placeholder||''}" style="${inputStyle}">`;
+      }
+      return `<div class="col-md-6">
+        <label class="form-label small mb-1" style="color:#9ca3af"
+          ${f.help ? `title="${f.help}" data-bs-toggle="tooltip"` : ''}>${f.label}</label>
+        ${input}
+      </div>`;
+    }).join('') : '';
+  // Re-init tooltips on new elements (guard: Bootstrap may not yet be available on first render)
+  if (typeof bootstrap !== 'undefined') {
+    container.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => new bootstrap.Tooltip(el));
+  }
+}
+
+function collectExpectations() {
+  const exp = {};
+  _expectationFields.forEach(f => {
+    const el = document.getElementById('exp-' + f.key);
+    if (el && el.value.trim()) exp[f.key] = el.value.trim();
+  });
+  return Object.keys(exp).length ? exp : null;
+}
+
+function showAddForm() {
+  document.getElementById('add-cust-form').classList.remove('d-none');
+  document.getElementById('cust-name').focus();
+  updateTypeHint();
+  renderExpectationFields();
+}
+
+function updateTypeHint() {
+  const type = document.getElementById('cust-type').value;
+  document.getElementById('type-hint').textContent = typeDescriptions[type] || '';
+}
+
+document.getElementById('btn-add-cust')?.addEventListener('click', showAddForm);
+document.getElementById('btn-add-cust-empty')?.addEventListener('click', showAddForm);
+document.getElementById('cust-type')?.addEventListener('change', updateTypeHint);
+document.getElementById('btn-cancel-cust')?.addEventListener('click', () => {
+  document.getElementById('add-cust-form').classList.add('d-none');
+});
+
+document.getElementById('btn-save-cust')?.addEventListener('click', () => {
+  const name = document.getElementById('cust-name').value.trim();
+  if (!name) { document.getElementById('cust-name').focus(); return; }
+  const exp = collectExpectations();
+  const newCust = {
+    name,
+    title: document.getElementById('cust-title').value.trim(),
+    org:   document.getElementById('cust-org').value.trim(),
+    email: document.getElementById('cust-email').value.trim(),
+    relationship_type: document.getElementById('cust-type').value,
+  };
+  if (exp) {
+    newCust.expectations_json = JSON.stringify(exp);
+    const commitField = _expectationFields.find(f => f.key === 'commitment_date');
+    if (commitField && exp.commitment_date) newCust.commitment_date = exp.commitment_date;
+  }
+  currentCusts.push(newCust);
+  saveCusts(currentCusts).then(d => { if(d.ok) location.reload(); else alert('Error: '+d.error); });
+});
+
+document.querySelectorAll('.cust-delete').forEach(btn => {
+  btn.addEventListener('click', function() {
+    if (!confirm('Remove this customer?')) return;
+    const id = this.dataset.id;
+    const updated = currentCusts.filter(c => c.id !== id);
+    saveCusts(updated).then(d => { if(d.ok) location.reload(); else alert('Error: '+d.error); });
+  });
+});
+
+window.addEventListener('load', () => document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => new bootstrap.Tooltip(el)));
+</script>
+{% endblock %}
