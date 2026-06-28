@@ -35,7 +35,7 @@ proc = subprocess.Popen(
 def relay_stdin():
     try:
         while True:
-            chunk = sys.stdin.buffer.read(4096)
+            chunk = sys.stdin.buffer.read1(4096)  # read1 returns immediately with available bytes
             if not chunk:
                 break
             log(f"STDIN→server: {chunk[:200]}")
@@ -52,7 +52,7 @@ def relay_stdin():
 def relay_stdout():
     try:
         while True:
-            chunk = proc.stdout.read(4096)
+            chunk = proc.stdout.read1(4096)  # read1 returns immediately with available bytes
             if not chunk:
                 break
             sys.stdout.buffer.write(chunk)
