@@ -40,6 +40,7 @@ _DEFAULT_GATES = {
     "false_heal_max": 0.20,
     "heal_success_min": 0.60,
     "min_decisions": 10,
+    "auroc_min": 0.65,
 }
 
 
@@ -180,8 +181,8 @@ class _AnomalyDetector:
                 """
                 SELECT decision, confidence, actual_outcome
                   FROM harness_eval
-                 WHERE reflex = %s
-                   AND created_at >= %s
+                 WHERE reflex = ?
+                   AND created_at >= ?
                    AND actual_outcome IS NOT NULL
                 ORDER BY created_at
                 """,
@@ -295,7 +296,7 @@ def record_decision(
             """
             INSERT INTO harness_eval
                 (id, task_id, reflex, decision, confidence, metadata_json, created_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 row_id,
@@ -329,9 +330,9 @@ def record_outcome(
         conn.execute(
             """
             UPDATE harness_eval
-               SET actual_outcome = %s,
-                   resolved_at    = %s
-             WHERE task_id = %s
+               SET actual_outcome = ?,
+                   resolved_at    = ?
+             WHERE task_id = ?
                AND actual_outcome IS NULL
             """,
             (actual_outcome, _utcnow(), task_id),
@@ -361,8 +362,8 @@ def compute_metrics(reflex: str, window_days: int = 30) -> dict[str, Any]:
             """
             SELECT decision, confidence, actual_outcome
               FROM harness_eval
-             WHERE reflex = %s
-               AND created_at >= %s
+             WHERE reflex = ?
+               AND created_at >= ?
             """,
             (reflex, cutoff),
         ).fetchall()
@@ -389,7 +390,11 @@ def compute_metrics(reflex: str, window_days: int = 30) -> dict[str, Any]:
     recall = len(resolved) / len(known) if known else None
 
     # Expected Calibration Error (ECE) over decile bins
-    ece = _compute_ece([r for r in rows if r["confidence"] is not None and r["actual_outcome"] is not None])
+    conf_outcome_rows = [r for r in rows if r["confidence"] is not None and r["actual_outcome"] is not None]
+    ece = _compute_ece(conf_outcome_rows)
+
+    # AUROC over the same rows with confidence scores and known outcomes
+    auroc = _compute_auroc(conf_outcome_rows)
 
     # False-heal rate: self_resolved / (resolved + self_resolved) for heal reflex
     heal_total = len(resolved) + len(self_res)
@@ -410,6 +415,7 @@ def compute_metrics(reflex: str, window_days: int = 30) -> dict[str, Any]:
         "precision": round(precision, 4) if precision is not None else None,
         "recall": round(recall, 4) if recall is not None else None,
         "ece": round(ece, 4) if ece is not None else None,
+        "auroc": round(auroc, 4) if auroc is not None else None,
         "false_heal_rate": round(false_heal_rate, 4) if false_heal_rate is not None else None,
         "heal_success_rate": round(heal_success_rate, 4) if heal_success_rate is not None else None,
     }
@@ -467,6 +473,23 @@ def check_gates() -> list[dict[str, Any]]:
                     f"{reflex} ECE {ece:.3f} > {t['ece_max']:.3f}. "
                     "Confidence scores are miscalibrated. "
                     "Enable ICDEV_HARNESS_COLEARN=true to run DSPy-style prompt rewrite."
+                ),
+            })
+
+        auroc_min = float(t.get("auroc_min", _DEFAULT_GATES["auroc_min"]))
+        auroc = m.get("auroc")
+        if auroc is not None and auroc < auroc_min:
+            alerts.append({
+                "reflex": reflex,
+                "metric": "auroc",
+                "value": auroc,
+                "threshold": auroc_min,
+                "adaptive": auroc_min != _DEFAULT_GATES["auroc_min"],
+                "severity": "medium",
+                "recommendation": (
+                    f"{reflex} AUROC {auroc:.3f} < {auroc_min:.3f}. "
+                    "Confidence scores have poor discriminative power. "
+                    "Review confidence derivation in oracle heuristics and consider re-calibration."
                 ),
             })
 
@@ -531,3 +554,38 @@ def _compute_ece(rows: list) -> float | None:
         ece += (len(items) / n) * abs(avg_conf - avg_acc)
 
     return ece
+
+
+def _compute_auroc(rows: list) -> float | None:
+    """Area under ROC curve via trapezoidal rule over confidence-sorted thresholds."""
+    if len(rows) < 5:
+        return None
+
+    positives = [r for r in rows if r["actual_outcome"] == "resolved"]
+    negatives = [r for r in rows if r["actual_outcome"] != "resolved"]
+    if not positives or not negatives:
+        return None
+
+    total_pos = len(positives)
+    total_neg = len(negatives)
+
+    sorted_rows = sorted(rows, key=lambda r: float(r["confidence"] or 0.0), reverse=True)
+
+    tpr_fpr_points: list[tuple[float, float]] = [(0.0, 0.0)]
+    tp = 0
+    fp = 0
+    for r in sorted_rows:
+        if r["actual_outcome"] == "resolved":
+            tp += 1
+        else:
+            fp += 1
+        tpr_fpr_points.append((fp / total_neg, tp / total_pos))
+    tpr_fpr_points.append((1.0, 1.0))
+
+    auroc = 0.0
+    for i in range(1, len(tpr_fpr_points)):
+        x0, y0 = tpr_fpr_points[i - 1]
+        x1, y1 = tpr_fpr_points[i]
+        auroc += (x1 - x0) * (y0 + y1) / 2.0
+
+    return auroc

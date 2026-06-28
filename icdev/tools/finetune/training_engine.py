@@ -25,6 +25,13 @@ from tools.finetune.provider import FineTuneRequest
 from tools.finetune.provider_factory import get_provider
 from tools.finetune.dataset_manager import export_jsonl, get_dataset
 
+try:
+    from icdev.tools.finetune.fsdp_launcher import FSDPLauncher, FSDPUnavailable, get_fsdp_config
+    _FSDP_AVAILABLE = True
+except ImportError:
+    _FSDP_AVAILABLE = False
+    FSDPUnavailable = Exception  # type: ignore[misc,assignment]
+
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
@@ -38,7 +45,7 @@ def _get_db(db_path: Optional[Path] = None) -> sqlite3.Connection:
 def _record_event(conn: sqlite3.Connection, job_id: str, event_type: str, details: str = "{}") -> None:
     """Record a training job event (append-only, D6)."""
     conn.execute(
-        "INSERT INTO ft_training_job_events (job_id, event_type, details, created_at) VALUES (%s, %s, %s, %s)",
+        "INSERT INTO ft_training_job_events (job_id, event_type, details, created_at) VALUES (?, ?, ?, ?)",
         (job_id, event_type, details, now_iso()),
     )
 
@@ -100,7 +107,7 @@ def create_training_job(
                 lora_rank, learning_rate, epochs, batch_size, max_seq_length,
                 gpu_count, distributed, output_dir, classification,
                 tenant_id, project_id, created_by, created_at)
-               VALUES (%s, %s, %s, %s, 'pending', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+               VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 job_id,
                 dataset_id,
@@ -131,7 +138,7 @@ def create_training_job(
         export_result = export_jsonl(dataset_id, export_path, approved_only=True, db_path=db_path)
         if not export_result.get("success"):
             conn.execute(
-                "UPDATE ft_training_jobs SET status = 'failed', error_message = %s WHERE id = %s",
+                "UPDATE ft_training_jobs SET status = 'failed', error_message = ? WHERE id = ?",
                 (f"Dataset export failed: {export_result.get('error', '')}", job_id),
             )
             _record_event(conn, job_id, "failed", json.dumps({"reason": "dataset_export_failed"}))
@@ -140,13 +147,13 @@ def create_training_job(
 
         # Update status to preparing
         conn.execute(
-            "UPDATE ft_training_jobs SET status = 'preparing', started_at = %s WHERE id = %s",
+            "UPDATE ft_training_jobs SET status = 'preparing', started_at = ? WHERE id = ?",
             (now, job_id),
         )
         _record_event(conn, job_id, "started")
         conn.commit()
 
-        # Start training via provider
+        # Start training via provider (or FSDP if distributed multi-GPU)
         provider = get_provider(provider_name)
         request = FineTuneRequest(
             dataset_path=export_path,
@@ -163,11 +170,49 @@ def create_training_job(
             classification=classification,
         )
 
+        # FSDP path: distributed=True and multiple GPUs requested
+        if distributed and gpu_count > 1 and _FSDP_AVAILABLE:
+            try:
+                fsdp_cfg = get_fsdp_config()
+                launcher = FSDPLauncher(fsdp_cfg, gpu_count=gpu_count)
+                training_script = str(BASE_DIR / "icdev" / "tools" / "finetune" / "train_script.py")
+                launch_result = launcher.launch_training(request, training_script)
+                _record_event(
+                    conn,
+                    job_id,
+                    "fsdp_launched",
+                    json.dumps({"pid": launch_result.get("pid"), "command": launch_result.get("command")}),
+                )
+                conn.execute(
+                    "UPDATE ft_training_jobs SET status = 'training' WHERE id = %s",
+                    (job_id,),
+                )
+                conn.commit()
+                return {
+                    "success": True,
+                    "job_id": job_id,
+                    "status": "training",
+                    "dataset_id": dataset_id,
+                    "provider": "fsdp",
+                    "base_model": base_model,
+                    "output_dir": output_dir,
+                    "fsdp": launch_result,
+                }
+            except FSDPUnavailable as exc:
+                # Fall back to standard provider training with a warning
+                _record_event(
+                    conn,
+                    job_id,
+                    "fsdp_unavailable",
+                    json.dumps({"reason": str(exc)}),
+                )
+                conn.commit()
+
         status = provider.start_training(request)
 
         if status.status == "failed":
             conn.execute(
-                "UPDATE ft_training_jobs SET status = 'failed', error_message = %s WHERE id = %s",
+                "UPDATE ft_training_jobs SET status = 'failed', error_message = ? WHERE id = ?",
                 (status.error, job_id),
             )
             _record_event(conn, job_id, "failed", json.dumps({"error": status.error}))
@@ -175,7 +220,7 @@ def create_training_job(
             return {"success": False, "error": status.error, "job_id": job_id}
 
         conn.execute(
-            "UPDATE ft_training_jobs SET status = 'training' WHERE id = %s",
+            "UPDATE ft_training_jobs SET status = 'training' WHERE id = ?",
             (job_id,),
         )
         conn.commit()
@@ -202,7 +247,7 @@ def get_job_status(
     """Get current status of a training job."""
     conn = _get_db(db_path)
     try:
-        row = conn.execute("SELECT * FROM ft_training_jobs WHERE id = %s", (job_id,)).fetchone()
+        row = conn.execute("SELECT * FROM ft_training_jobs WHERE id = ?", (job_id,)).fetchone()
         if not row:
             return {"success": False, "error": f"Job not found: {job_id}"}
 
@@ -216,7 +261,7 @@ def get_job_status(
                 if live_status.status != job["status"]:
                     # Update DB with latest status
                     conn.execute(
-                        "UPDATE ft_training_jobs SET status = %s, loss_history = %s WHERE id = %s",
+                        "UPDATE ft_training_jobs SET status = ?, loss_history = ? WHERE id = ?",
                         (live_status.status, json.dumps(live_status.loss_history), job_id),
                     )
                     conn.commit()
@@ -230,7 +275,7 @@ def get_job_status(
 
         # Get event history
         events = conn.execute(
-            "SELECT * FROM ft_training_job_events WHERE job_id = %s ORDER BY created_at DESC LIMIT 20",
+            "SELECT * FROM ft_training_job_events WHERE job_id = ? ORDER BY created_at DESC LIMIT 20",
             (job_id,),
         ).fetchall()
         job["events"] = [dict(e) for e in events]
@@ -249,7 +294,7 @@ def cancel_job(
     """Cancel a running training job."""
     conn = _get_db(db_path)
     try:
-        row = conn.execute("SELECT * FROM ft_training_jobs WHERE id = %s", (job_id,)).fetchone()
+        row = conn.execute("SELECT * FROM ft_training_jobs WHERE id = ?", (job_id,)).fetchone()
         if not row:
             return {"success": False, "error": f"Job not found: {job_id}"}
 
@@ -260,7 +305,7 @@ def cancel_job(
         canceled = provider.cancel_training(job_id)
 
         conn.execute(
-            "UPDATE ft_training_jobs SET status = 'canceled', completed_at = %s WHERE id = %s",
+            "UPDATE ft_training_jobs SET status = 'canceled', completed_at = ? WHERE id = ?",
             (now_iso(), job_id),
         )
         _record_event(conn, job_id, "canceled")

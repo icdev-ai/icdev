@@ -19,8 +19,6 @@ from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from tools.config.core_profile import profile_default
-
 try:
     import yaml
 except ImportError:
@@ -34,20 +32,16 @@ except ImportError:
     LLMResponseCache = None
     canonical_key = None
 
+try:
+    from icdev.tools.llm.config_opts import apply_opts, opts_from_env
+except ImportError:
+    apply_opts = None  # type: ignore[assignment]
+    opts_from_env = None  # type: ignore[assignment]
+
 logger = get_logger("icdev.llm.router")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DEFAULT_CONFIG_PATH = BASE_DIR / "args" / "llm_config.yaml"
-
-
-class CrossGraderViolation(RuntimeError):
-    """Raised when no provider is available that isn't excluded by cross-grader constraint.
-
-    The cross-grader constraint prevents the same LLM that ran an agent session
-    from grading its own output.  Pass ``exclude_model_ids`` to
-    :meth:`LLMRouter.invoke` to enforce it; this exception fires when every
-    chain entry is in the exclusion list.
-    """
 
 
 class LLMUnavailableError(RuntimeError):
@@ -90,30 +84,6 @@ def _expand_env(value):
     return re.sub(pattern, replacer, value)
 
 
-# ---------------------------------------------------------------------------
-# Retry / graceful-degradation helpers (module-level so tests can import them)
-# ---------------------------------------------------------------------------
-
-_RETRY_DELAYS: list = [5, 15]
-"""Default sleep seconds between retry attempts (attempt 1→2, 2→3)."""
-
-
-def _is_transient(exc: Exception) -> bool:
-    """Return True when *exc* looks like a temporary infrastructure fault worth retrying.
-
-    Non-retryable types (CrossGraderViolation, ValueError, PermissionError) are
-    excluded unconditionally; everything else is classified by message keywords so
-    the router backs off on timeouts, rate limits, and 5xx responses.
-    """
-    if isinstance(exc, (CrossGraderViolation, ValueError, PermissionError)):
-        return False
-    msg = str(exc).lower()
-    return any(
-        s in msg
-        for s in ("timeout", "rate limit", "503", "502", "temporarily", "overloaded", "connection")
-    )
-
-
 class LLMRouter:
     """Config-driven router that maps ICDEV™ functions to LLM providers.
 
@@ -135,7 +105,7 @@ class LLMRouter:
     _degraded_tier2_probed_at: Dict[str, float] = {}
     _DEGRADATION_PROBE_INTERVAL_SECONDS: float = 300.0  # 5 minutes
 
-    def __init__(self, config_path=None):
+    def __init__(self, config_path=None, opts: Dict | None = None):
         self._config_path = Path(config_path) if config_path else DEFAULT_CONFIG_PATH
         self._config: Dict = {}
         self._providers: Dict[str, LLMProvider] = {}
@@ -143,6 +113,7 @@ class LLMRouter:
         self._availability_cache: Dict[str, bool] = {}
         self._availability_cache_time: float = 0.0
         self._cache_ttl: float = 1800.0
+        self._constructor_opts: Dict | None = opts
 
         self._load_config()
         self._maybe_activate_cli_bridge()
@@ -230,6 +201,16 @@ class LLMRouter:
         try:
             with open(self._config_path, "r", encoding="utf-8") as f:
                 self._config = yaml.safe_load(f) or {}
+            # Apply env-var overrides (ICDEV_OPTS_* -> dot-path keys)
+            if opts_from_env is not None:
+                env_opts = opts_from_env()
+                if env_opts:
+                    self._config = apply_opts(self._config, env_opts)
+                    logger.debug("Applied %d env config overrides", len(env_opts))
+            # Apply constructor opts (highest precedence after env)
+            if apply_opts is not None and getattr(self, "_constructor_opts", None):
+                self._config = apply_opts(self._config, self._constructor_opts)
+                logger.debug("Applied %d constructor opts overrides", len(self._constructor_opts))
             self._cache_ttl = float(self._config.get("settings", {}).get("availability_cache_ttl_seconds", 1800))
             logger.info(
                 "LLM config loaded: %d providers, %d models, %d routes",
@@ -238,7 +219,6 @@ class LLMRouter:
                 len(self._config.get("routing", {})),
             )
             self._register_discovered_models()
-            self._apply_profile_defaults()
         except Exception as exc:
             logger.error("Failed to load LLM config: %s", exc)
             self._config = {}
@@ -1219,9 +1199,9 @@ class LLMRouter:
             conn = get_connection(db_path=str(db_path))
             row = conn.execute(
                 """SELECT ollama_model_name FROM ft_active_models
-                   WHERE function_name = %s AND deactivated_at IS NULL
-                   AND (tenant_id = %s OR tenant_id = '')
-                   AND (project_id = %s OR project_id = '')
+                   WHERE function_name = ? AND deactivated_at IS NULL
+                   AND (tenant_id = ? OR tenant_id = '')
+                   AND (project_id = ? OR project_id = '')
                    ORDER BY id DESC LIMIT 1""",
                 (function, tenant_id, project_id),
             ).fetchone()
@@ -1405,15 +1385,6 @@ class LLMRouter:
         if env_enabled in ("false", "0", "no"):
             return None
         if not cfg.get("enabled", False) and env_enabled not in ("true", "1", "yes"):
-            return None
-
-        # Tool-use / agentic turns bypass two-tier. Two-tier (draft→review) is a
-        # text-generation pattern: the review step would strip the model's
-        # tool_calls and return refined prose, which breaks any agent loop that
-        # drives on `LLMResponse.tool_calls`. When the request carries tools,
-        # fall through to the normal chain so a tool-capable model is invoked
-        # directly and its tool_calls are preserved.
-        if getattr(request, "tools", None):
             return None
 
         tier1 = _expand_env(cfg.get("tier1_model", "qwen3-local"))
@@ -1618,196 +1589,7 @@ class LLMRouter:
 
         return 0.0
 
-    def _invoke_chain(
-        self,
-        function: str,
-        request: LLMRequest,
-        chain: list,
-        exclude_model_ids=None,
-        _redaction_session=None,
-    ) -> LLMResponse:
-        """Walk *chain* once, trying each provider in order.
-
-        Returns the first successful LLMResponse.
-        Raises CrossGraderViolation when all entries are excluded, or
-        LLMUnavailableError when all entries fail.  Callers that want
-        exponential-backoff retry should catch LLMUnavailableError and call
-        again after checking _is_transient().
-        """
-        last_error = None
-
-        # D286: Create trace span for LLM invocation
-        try:
-            from icdev.tools.observability import get_tracer
-
-            tracer = get_tracer()
-        except ImportError:
-            tracer = None
-
-        # Cross-grader: track how many entries are excluded so we can raise correctly.
-        _excluded_count = 0
-        _chain_total = len(chain)
-
-        for model_name in chain:
-            model_cfg = self._get_model_config(model_name)
-            if not model_cfg:
-                continue
-            provider_name = model_cfg.get("provider", "")
-            provider = self._get_provider(provider_name)
-            if provider is None:
-                continue
-            model_id = model_cfg.get("model_id", "")
-
-            # Cross-grader enforcement: skip models in the exclusion list.
-            if exclude_model_ids and model_id in exclude_model_ids:
-                logger.debug(
-                    "router: skipping model %r (function=%r) — excluded by cross-grader constraint",
-                    model_id, function,
-                )
-                _excluded_count += 1
-                continue
-
-            # D286: Span with GenAI semantic conventions
-            span = None
-            if tracer:
-                span = tracer.start_span(
-                    "gen_ai.invoke",
-                    kind="CLIENT",
-                    attributes={
-                        "gen_ai.operation.name": "chat",
-                        "gen_ai.system": provider_name,
-                        "gen_ai.request.model": model_id,
-                        "gen_ai.effort": request.effort or "medium",
-                        "icdev.llm_function": function,
-                    },
-                )
-
-            try:
-                _start = time.time()
-                # Stamp route-level config onto request so providers can read flags like disable_thinking
-                route_cfg = self._config.get("routing", {}).get(function, {})
-                request._route_config = route_cfg
-                response = provider.invoke(request, model_id, model_cfg)
-                _latency = int((time.time() - _start) * 1000)
-
-                if span:
-                    span.set_attribute("gen_ai.response.model", getattr(response, "model_id", model_id))
-                    span.set_attribute("gen_ai.usage.input_tokens", getattr(response, "input_tokens", 0))
-                    span.set_attribute("gen_ai.usage.output_tokens", getattr(response, "output_tokens", 0))
-                    span.set_attribute("gen_ai.latency_ms", _latency)
-                    if hasattr(response, "cost_usd"):
-                        span.set_attribute("gen_ai.usage.cost_usd", response.cost_usd)
-                    span.set_status("OK")
-                    span.end()
-
-                # D218: Log AI telemetry for usage dashboard
-                try:
-                    self._log_telemetry(
-                        function=function,
-                        request=request,
-                        response=response,
-                        model_id=model_id,
-                        provider_name=provider_name,
-                        latency_ms=_latency,
-                    )
-                except Exception:
-                    pass  # Best-effort — never block on telemetry
-
-                # Record module-level budget usage for generative_intelligence
-                try:
-                    from tools.budget.module_budget_tracker import (
-                        PREDICTIVE_ANALYSIS_FUNCTIONS,
-                        record_module_usage,
-                    )
-
-                    _resp_cost = getattr(response, "cost_usd", 0.0) or 0.0
-                    _resp_tokens = (getattr(response, "input_tokens", 0) or 0) + (
-                        getattr(response, "output_tokens", 0) or 0
-                    )
-
-                    record_module_usage(
-                        "generative_intelligence",
-                        cost_usd=_resp_cost,
-                        tokens=_resp_tokens,
-                        function=function,
-                        project_id=getattr(request, "project_id", None),
-                        model_id=getattr(response, "model_id", model_id),
-                    )
-
-                    # Also record predictive_analysis usage for simulation functions
-                    if function in PREDICTIVE_ANALYSIS_FUNCTIONS:
-                        record_module_usage(
-                            "predictive_analysis",
-                            cost_usd=_resp_cost,
-                            tokens=_resp_tokens,
-                            function=function,
-                            project_id=getattr(request, "project_id", None),
-                            model_id=getattr(response, "model_id", model_id),
-                        )
-                except Exception:
-                    pass  # Best-effort — never block on budget recording
-
-                # D-CACHE-5: Store successful response in cache
-                self._cache_store(function, request, response, model_id)
-
-                # D-RDT-2: Post-invoke de-anonymization — restore originals
-                response = self._post_invoke_deanonymize(response, _redaction_session)
-
-                # RL: record success so this model's Q-value improves
-                self._get_rl_router().record_outcome(function, model_name, success=True, latency_ms=_latency)
-
-                return response
-            except Exception as exc:
-                logger.warning(
-                    "Provider %s (%s) failed for %s: %s — trying next in chain",
-                    provider_name,
-                    model_id,
-                    function,
-                    exc,
-                )
-                if span:
-                    span.set_status("ERROR", str(exc))
-                    span.add_event(
-                        "provider_fallback",
-                        {
-                            "failed_provider": provider_name,
-                            "failed_model": model_id,
-                            "error": str(exc),
-                        },
-                    )
-                    span.end()
-                last_error = exc
-                # Mark model as unavailable in cache so next call skips it
-                self._availability_cache[model_name] = False
-                # RL: record failure so this model's Q-value decreases
-                self._get_rl_router().record_outcome(function, model_name, success=False)
-                continue
-
-        # If every chain entry was excluded, raise CrossGraderViolation instead of
-        # LLMUnavailableError so callers can distinguish the two failure modes.
-        if exclude_model_ids and _excluded_count > 0 and last_error is None:
-            raise CrossGraderViolation(
-                "Cross-grader violation: all {} model(s) in the '{}' chain are "
-                "excluded by cross-grader constraint (exclude_model_ids={!r}). "
-                "Add a different-tier model to the '{}' routing chain in "
-                "args/llm_config.yaml.".format(_chain_total, function, exclude_model_ids, function)
-            )
-
-        raise LLMUnavailableError(
-            "All providers in chain {} failed for function '{}'. Last error: {}".format(chain, function, last_error),
-            function=function,
-            chain=chain,
-            no_llm_mode=False,
-        )
-
-    def invoke(
-        self,
-        function: str,
-        request: LLMRequest,
-        *,
-        exclude_model_ids: list[str] | None = None,
-        max_retries: int = 2,
-    ) -> LLMResponse:
+    def invoke(self, function: str, request: LLMRequest) -> LLMResponse:
         """Resolve provider for function and invoke with fallback.
 
         Walks the full fallback chain: if the first provider fails at
@@ -1817,11 +1599,6 @@ class LLMRouter:
         Args:
             function: ICDEV™ function name (e.g. 'code_generation', 'nlq_sql').
             request: Vendor-agnostic LLM request.
-            exclude_model_ids: Optional list of ``model_id`` strings to skip.
-                Used by the cross-grader constraint to prevent the same LLM
-                that ran an agent session from grading its own output.
-                Raises :class:`CrossGraderViolation` if all chain entries
-                are excluded.
 
         Returns:
             LLMResponse.
@@ -1832,8 +1609,6 @@ class LLMRouter:
                 ``except RuntimeError`` blocks remain compatible. Callers
                 that need to degrade to deterministic behavior should
                 catch ``LLMUnavailableError`` specifically.
-            CrossGraderViolation: If ``exclude_model_ids`` is set and every
-                chain entry is excluded.
         """
         # Explicit no-LLM mode: short-circuit before any probing or budget
         # checks so deterministic-only environments don't pay the network
@@ -1956,37 +1731,148 @@ class LLMRouter:
         chain = self._get_chain_for_function(function)
         # RL routing: reorder chain by learned Q-values (epsilon-greedy)
         chain = self._get_rl_router().rank_models(function, chain)
+        last_error = None
 
-        # Graceful degradation: retry the full chain on transient infrastructure failures
-        # (timeouts, 503s, rate limits). Non-transient errors (auth, config) raise immediately.
-        _router_cfg = self._config.get("router", {})
-        _retry_delays = _router_cfg.get("retry_delays_seconds", _RETRY_DELAYS)
-        _eff_retries = min(max_retries, _router_cfg.get("max_retries", max_retries))
+        # D286: Create trace span for LLM invocation
+        try:
+            from tools.observability import get_tracer
 
-        for _attempt in range(_eff_retries + 1):
-            try:
-                return self._invoke_chain(
-                    function, request, chain, exclude_model_ids, _redaction_session
+            tracer = get_tracer()
+        except ImportError:
+            tracer = None
+
+        for model_name in chain:
+            model_cfg = self._get_model_config(model_name)
+            if not model_cfg:
+                continue
+            provider_name = model_cfg.get("provider", "")
+            provider = self._get_provider(provider_name)
+            if provider is None:
+                continue
+            model_id = model_cfg.get("model_id", "")
+
+            # D286: Span with GenAI semantic conventions
+            span = None
+            if tracer:
+                span = tracer.start_span(
+                    "gen_ai.invoke",
+                    kind="CLIENT",
+                    attributes={
+                        "gen_ai.operation.name": "chat",
+                        "gen_ai.system": provider_name,
+                        "gen_ai.request.model": model_id,
+                        "gen_ai.effort": request.effort or "medium",
+                        "icdev.llm_function": function,
+                    },
                 )
-            except CrossGraderViolation:
-                raise  # non-retryable: cross-grader config issue
-            except LLMUnavailableError as _exc:
-                if _attempt < _eff_retries and _is_transient(_exc):
-                    _delay = (
-                        _retry_delays[_attempt]
-                        if _attempt < len(_retry_delays)
-                        else (_retry_delays[-1] if _retry_delays else 5)
+
+            try:
+                _start = time.time()
+                # Stamp route-level config onto request so providers can read flags like disable_thinking
+                route_cfg = self._config.get("routing", {}).get(function, {})
+                request._route_config = route_cfg
+                response = provider.invoke(request, model_id, model_cfg)
+                _latency = int((time.time() - _start) * 1000)
+
+                if span:
+                    span.set_attribute("gen_ai.response.model", getattr(response, "model_id", model_id))
+                    span.set_attribute("gen_ai.usage.input_tokens", getattr(response, "input_tokens", 0))
+                    span.set_attribute("gen_ai.usage.output_tokens", getattr(response, "output_tokens", 0))
+                    span.set_attribute("gen_ai.latency_ms", _latency)
+                    if hasattr(response, "cost_usd"):
+                        span.set_attribute("gen_ai.usage.cost_usd", response.cost_usd)
+                    span.set_status("OK")
+                    span.end()
+
+                # D218: Log AI telemetry for usage dashboard
+                try:
+                    self._log_telemetry(
+                        function=function,
+                        request=request,
+                        response=response,
+                        model_id=model_id,
+                        provider_name=provider_name,
+                        latency_ms=_latency,
                     )
-                    logger.warning(
-                        "router: all providers failed (attempt %d/%d), retrying in %ds — %s",
-                        _attempt + 1,
-                        _eff_retries + 1,
-                        _delay,
-                        _exc,
+                except Exception:
+                    pass  # Best-effort — never block on telemetry
+
+                # Record module-level budget usage for generative_intelligence
+                try:
+                    from tools.budget.module_budget_tracker import (
+                        PREDICTIVE_ANALYSIS_FUNCTIONS,
+                        record_module_usage,
                     )
-                    time.sleep(_delay)
-                    continue
-                raise
+
+                    _resp_cost = getattr(response, "cost_usd", 0.0) or 0.0
+                    _resp_tokens = (getattr(response, "input_tokens", 0) or 0) + (
+                        getattr(response, "output_tokens", 0) or 0
+                    )
+
+                    record_module_usage(
+                        "generative_intelligence",
+                        cost_usd=_resp_cost,
+                        tokens=_resp_tokens,
+                        function=function,
+                        project_id=getattr(request, "project_id", None),
+                        model_id=getattr(response, "model_id", model_id),
+                    )
+
+                    # Also record predictive_analysis usage for simulation functions
+                    if function in PREDICTIVE_ANALYSIS_FUNCTIONS:
+                        record_module_usage(
+                            "predictive_analysis",
+                            cost_usd=_resp_cost,
+                            tokens=_resp_tokens,
+                            function=function,
+                            project_id=getattr(request, "project_id", None),
+                            model_id=getattr(response, "model_id", model_id),
+                        )
+                except Exception:
+                    pass  # Best-effort — never block on budget recording
+
+                # D-CACHE-5: Store successful response in cache
+                self._cache_store(function, request, response, model_id)
+
+                # D-RDT-2: Post-invoke de-anonymization — restore originals
+                response = self._post_invoke_deanonymize(response, _redaction_session)
+
+                # RL: record success so this model's Q-value improves
+                self._get_rl_router().record_outcome(function, model_name, success=True, latency_ms=_latency)
+
+                return response
+            except Exception as exc:
+                logger.warning(
+                    "Provider %s (%s) failed for %s: %s — trying next in chain",
+                    provider_name,
+                    model_id,
+                    function,
+                    exc,
+                )
+                if span:
+                    span.set_status("ERROR", str(exc))
+                    span.add_event(
+                        "provider_fallback",
+                        {
+                            "failed_provider": provider_name,
+                            "failed_model": model_id,
+                            "error": str(exc),
+                        },
+                    )
+                    span.end()
+                last_error = exc
+                # Mark model as unavailable in cache so next call skips it
+                self._availability_cache[model_name] = False
+                # RL: record failure so this model's Q-value decreases
+                self._get_rl_router().record_outcome(function, model_name, success=False)
+                continue
+
+        raise LLMUnavailableError(
+            "All providers in chain {} failed for function '{}'. Last error: {}".format(chain, function, last_error),
+            function=function,
+            chain=chain,
+            no_llm_mode=False,
+        )
 
     def invoke_chain_of_thought(self, function: str, request: LLMRequest) -> LLMResponse:
         """Invoke Chain of Thought via ChainOrchestrator.
@@ -2602,45 +2488,3 @@ class LLMRouter:
                 "Auto-registered Ollama model: %s → logical '%s' (caps: %s)",
                 raw_name, logical, default_caps,
             )
-
-    def _apply_profile_defaults(self) -> None:
-        """Adjust the default routing chain from active core profile.
-
-        If ``ICDEV_LLM_DEFAULT_MODEL`` (or the active profile's default_model)
-        matches a configured model, prepend it to the default chain so the
-        profile's preferred model is tried first. If only a provider is given,
-        find the first model for that provider and prepend it.
-
-        This is intentionally limited to the default chain; function-specific
-        routes keep their explicit ordering unless no env var overrides them.
-        """
-        routing = self._config.setdefault("routing", {})
-        default_route = routing.setdefault("default", {})
-        chain: List[str] = list(default_route.get("chain", []))
-
-        preferred_model = profile_default("ICDEV_LLM_DEFAULT_MODEL", "")
-        models = self._config.get("models", {})
-
-        if preferred_model and preferred_model in models:
-            target = preferred_model
-        else:
-            preferred_provider = profile_default("ICDEV_LLM_PROVIDER", "")
-            if preferred_provider:
-                target = next(
-                    (name for name, cfg in models.items() if cfg.get("provider") == preferred_provider),
-                    "",
-                )
-            else:
-                target = ""
-
-        if not target or target not in models:
-            return
-
-        if chain:
-            if target in chain:
-                chain.remove(target)
-            chain.insert(0, target)
-        else:
-            chain = [target]
-        default_route["chain"] = chain
-        logger.info("Core profile promoted '%s' to first model in default chain", target)
