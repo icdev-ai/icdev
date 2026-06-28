@@ -25,7 +25,7 @@ logging.basicConfig(
 )
 logger = get_logger("mcp.base")
 
-PROTOCOL_VERSION = "2024-11-05"
+PROTOCOL_VERSION = "2025-11-25"
 
 
 class MCPServer:
