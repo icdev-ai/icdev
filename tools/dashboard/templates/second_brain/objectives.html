@@ -1,50 +1,97 @@
 {% extends "base.html" %}
 {% block title %}My Objectives{% endblock %}
 {% block content %}
-<div class="container py-4" style="max-width:720px">
-  <div class="d-flex align-items-center mb-4 gap-3">
-    <a href="/me" class="btn btn-sm btn-outline-secondary">← Back</a>
-    <h2 class="mb-0 fw-bold">My Objectives</h2>
-    <button class="btn btn-primary btn-sm ms-auto" id="btn-add-obj">+ Add Objective</button>
-  </div>
+{% set me_page = 'objectives' %}
+<div class="d-flex" style="min-height:calc(100vh - 60px)">
 
-  <div id="objectives-list">
-  {% for obj in objectives %}
-  <div class="card mb-2 obj-card" data-id="{{ obj.id }}">
-    <div class="card-body d-flex align-items-start gap-3">
-      <div class="flex-grow-1">
-        <div class="fw-semibold" contenteditable="true" class="obj-title">{{ obj.title }}</div>
-        {% if obj.description %}<small class="text-muted">{{ obj.description }}</small>{% endif %}
-      </div>
-      <span class="badge {% if obj.horizon == 'week' %}bg-warning text-dark{% elif obj.horizon == 'quarter' %}bg-info text-dark{% else %}bg-secondary{% endif %}">
-        {{ {'week':'This Week', 'quarter':'This Quarter', 'long_term':'Long Term'}.get(obj.horizon, obj.horizon) }}
-      </span>
-      <button class="btn btn-sm btn-outline-danger obj-delete" data-id="{{ obj.id }}">×</button>
-    </div>
-  </div>
-  {% else %}
-  <p class="text-muted" id="empty-msg">No objectives yet. Add your top 3–5 goals below.</p>
-  {% endfor %}
-  </div>
+  <!-- Sidebar -->
+  <aside class="flex-shrink-0 py-3 px-2" style="width:200px;border-right:1px solid rgba(255,255,255,.08)">
+    <div class="text-uppercase fw-semibold px-2 mb-3" style="font-size:.65rem;letter-spacing:.1em;color:#6b7280">My Assistant</div>
+    {% for href,icon,label,key in [('/me','🧠','Overview','home'),('/me/profile','👤','Profile','profile'),('/me/customers','🏢','Customers','customers'),('/me/objectives','🎯','Objectives','objectives'),('/me/challenges','⚡','Challenges','challenges'),('/me/briefing/today','📋',"Today's Briefing",'briefing'),('/me/integrations','🔗','Integrations','integrations')] %}
+    <a href="{{ href }}" class="d-flex align-items-center gap-2 px-2 py-2 rounded mb-1 text-decoration-none small {% if me_page != key %}text-secondary{% endif %}" {% if me_page == key %}style="background:rgba(37,99,235,.15);color:#60a5fa;font-weight:600"{% endif %}>{{ icon }} {{ label }}</a>
+    {% endfor %}
+  </aside>
 
-  <!-- Add form (hidden until btn-add-obj) -->
-  <div class="card mt-3 d-none" id="add-obj-form">
-    <div class="card-body row g-2">
-      <div class="col-12"><input class="form-control" id="new-title" placeholder="Objective title *"></div>
-      <div class="col-md-8"><input class="form-control" id="new-desc" placeholder="Description (optional)"></div>
-      <div class="col-md-4">
-        <select class="form-select" id="new-horizon">
-          <option value="week">This Week</option>
-          <option value="quarter" selected>This Quarter</option>
-          <option value="long_term">Long Term</option>
-        </select>
+  <!-- Main -->
+  <main class="flex-grow-1 p-4" style="min-width:0;max-width:760px">
+
+    <div class="d-flex align-items-start justify-content-between flex-wrap gap-3 mb-4">
+      <div>
+        <h4 class="fw-bold mb-1 d-flex align-items-center gap-2">
+          🎯 My Objectives
+          <span data-bs-toggle="tooltip" data-bs-placement="right" title="Keep 3–5 objectives. Be specific enough that you'd know when you've achieved one. The AI surfaces these in your daily briefing and task prioritization." style="cursor:help;color:#6b7280;font-size:.85rem">ⓘ</span>
+        </h4>
+        <p class="text-muted small mb-0">What you're working toward — surfaced daily in your briefing and used to prioritize tasks.</p>
       </div>
-      <div class="col-12 d-flex gap-2">
-        <button class="btn btn-primary btn-sm" id="btn-save-obj">Save</button>
-        <button class="btn btn-outline-secondary btn-sm" id="btn-cancel-obj">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="btn-add-obj">+ Add Objective</button>
+    </div>
+
+    {% set horizons = [('week','This Week','⚡','rgba(245,158,11,.08)','rgba(245,158,11,.25)','#fbbf24'),('quarter','This Quarter','📅','rgba(37,99,235,.08)','rgba(37,99,235,.25)','#60a5fa'),('long_term','Long Term','🌐','rgba(139,92,246,.08)','rgba(139,92,246,.25)','#a78bfa')] %}
+
+    {% for hkey,hlabel,hicon,hbg,hborder,hcolor in horizons %}
+    {% set h_objs = objectives | selectattr('horizon','equalto',hkey) | list %}
+    {% if h_objs %}
+    <div class="mb-4">
+      <div class="d-flex align-items-center gap-2 mb-2">
+        <span>{{ hicon }}</span>
+        <span class="fw-semibold small" style="color:{{ hcolor }}">{{ hlabel }}</span>
+        <span class="badge rounded-pill" style="background:{{ hborder }};color:{{ hcolor }};font-size:.7rem">{{ h_objs|length }}</span>
+      </div>
+      {% for obj in h_objs %}
+      <div class="rounded-3 p-3 mb-2 d-flex align-items-start gap-3" style="background:{{ hbg }};border:1px solid {{ hborder }}" data-id="{{ obj.id }}">
+        <div class="flex-grow-1">
+          <div class="fw-semibold small">{{ obj.title }}</div>
+          {% if obj.description %}<div class="text-muted mt-1" style="font-size:.8rem">{{ obj.description }}</div>{% endif %}
+          {% if obj.metric %}<div class="mt-1" style="font-size:.75rem;color:#6b7280">📏 {{ obj.metric }}</div>{% endif %}
+        </div>
+        <button class="btn btn-sm obj-delete text-danger" data-id="{{ obj.id }}" style="font-size:.85rem;padding:.15rem .35rem;line-height:1;flex-shrink:0">×</button>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% endfor %}
+
+    {% if not objectives %}
+    <div class="text-center py-5 text-muted rounded-3" style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07)">
+      <div style="font-size:2.5rem" class="mb-2">🎯</div>
+      <p class="mb-1">No objectives yet.</p>
+      <p class="small mb-3">Start with your top 3. Think: what would make this week, this quarter, and this year a success?</p>
+      <div class="d-flex justify-content-center gap-2 flex-wrap small text-muted">
+        <span class="badge" style="background:rgba(245,158,11,.15);color:#fbbf24;border:1px solid rgba(245,158,11,.2)">⚡ "Ship the BGP redundancy design"</span>
+        <span class="badge" style="background:rgba(37,99,235,.15);color:#60a5fa;border:1px solid rgba(37,99,235,.2)">📅 "Complete ISP peering review"</span>
+        <span class="badge" style="background:rgba(139,92,246,.15);color:#a78bfa;border:1px solid rgba(139,92,246,.2)">🌐 "Establish network thought leadership"</span>
       </div>
     </div>
-  </div>
+    {% endif %}
+
+    <!-- Add form -->
+    <div class="rounded-3 p-3 mt-3 d-none" id="add-obj-form" style="background:rgba(255,255,255,.04);border:1px solid rgba(37,99,235,.3)">
+      <div class="fw-semibold small mb-3">New Objective</div>
+      <div class="row g-2">
+        <div class="col-12">
+          <input class="form-control form-control-sm" id="new-title" placeholder="Objective title *" style="background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.15);color:inherit">
+        </div>
+        <div class="col-md-8">
+          <input class="form-control form-control-sm" id="new-desc" placeholder="Description (optional)" style="background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.15);color:inherit">
+        </div>
+        <div class="col-md-4">
+          <select class="form-select form-select-sm" id="new-horizon" style="background:rgba(30,30,50,.9);border-color:rgba(255,255,255,.15);color:inherit">
+            <option value="week">⚡ This Week</option>
+            <option value="quarter" selected>📅 This Quarter</option>
+            <option value="long_term">🌐 Long Term</option>
+          </select>
+        </div>
+        <div class="col-12">
+          <input class="form-control form-control-sm" id="new-metric" placeholder="Success metric (optional) — e.g. 'All ISP links fully redundant'" style="background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.15);color:inherit">
+        </div>
+        <div class="col-12 d-flex gap-2">
+          <button class="btn btn-primary btn-sm" id="btn-save-obj">Save</button>
+          <button class="btn btn-outline-secondary btn-sm" id="btn-cancel-obj">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+  </main>
 </div>
 
 {% include "includes/iqe_query_widget.html" %}
@@ -61,24 +108,32 @@ function saveObjectives(objs) {
 
 document.getElementById('btn-add-obj').addEventListener('click', () => {
   document.getElementById('add-obj-form').classList.remove('d-none');
-  document.getElementById('empty-msg')?.remove();
+  document.getElementById('new-title').focus();
 });
 document.getElementById('btn-cancel-obj').addEventListener('click', () => {
   document.getElementById('add-obj-form').classList.add('d-none');
 });
 document.getElementById('btn-save-obj').addEventListener('click', () => {
   const title = document.getElementById('new-title').value.trim();
-  if (!title) return alert('Title required');
-  const newObj = {title, description: document.getElementById('new-desc').value, horizon: document.getElementById('new-horizon').value};
-  currentObjs.push(newObj);
+  if (!title) { document.getElementById('new-title').focus(); return; }
+  currentObjs.push({
+    title,
+    description: document.getElementById('new-desc').value.trim(),
+    horizon: document.getElementById('new-horizon').value,
+    metric: document.getElementById('new-metric').value.trim(),
+  });
   saveObjectives(currentObjs).then(d => { if(d.ok) location.reload(); else alert('Error: '+d.error); });
 });
+
 document.querySelectorAll('.obj-delete').forEach(btn => {
   btn.addEventListener('click', function() {
+    if (!confirm('Remove this objective?')) return;
     const id = this.dataset.id;
     const updated = currentObjs.filter(o => o.id !== id);
     saveObjectives(updated).then(d => { if(d.ok) location.reload(); else alert('Error: '+d.error); });
   });
 });
+
+document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => new bootstrap.Tooltip(el));
 </script>
 {% endblock %}

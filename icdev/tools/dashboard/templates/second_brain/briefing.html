@@ -1,99 +1,143 @@
 {% extends "base.html" %}
 {% block title %}Today's Briefing{% endblock %}
 {% block content %}
-<div class="container py-4" style="max-width:800px">
-  <div class="d-flex align-items-center mb-4 gap-3">
-    <a href="/me" class="btn btn-sm btn-outline-secondary">← Back</a>
-    <h2 class="mb-0 fw-bold">Today's Briefing</h2>
-    <small class="text-muted ms-auto">{{ briefing.date or 'Today' }}</small>
-  </div>
+{% set me_page = 'briefing' %}
+<div class="d-flex" style="min-height:calc(100vh - 60px)">
 
-  {% if briefing %}
-  <!-- Greeting -->
-  <div class="card mb-4 border-0 text-white" style="background:linear-gradient(135deg,#1a1a2e,#16213e)">
-    <div class="card-body py-4">
-      <h4>{{ briefing.greeting }}</h4>
-      <p class="mb-0 opacity-75">{{ briefing.focus }}</p>
+  <!-- Sidebar -->
+  <aside class="flex-shrink-0 py-3 px-2" style="width:200px;border-right:1px solid rgba(255,255,255,.08)">
+    <div class="text-uppercase fw-semibold px-2 mb-3" style="font-size:.65rem;letter-spacing:.1em;color:#6b7280">My Assistant</div>
+    {% for href,icon,label,key in [('/me','🧠','Overview','home'),('/me/profile','👤','Profile','profile'),('/me/customers','🏢','Customers','customers'),('/me/objectives','🎯','Objectives','objectives'),('/me/challenges','⚡','Challenges','challenges'),('/me/briefing/today','📋',"Today's Briefing",'briefing'),('/me/integrations','🔗','Integrations','integrations')] %}
+    <a href="{{ href }}" class="d-flex align-items-center gap-2 px-2 py-2 rounded mb-1 text-decoration-none small {% if me_page != key %}text-secondary{% endif %}" {% if me_page == key %}style="background:rgba(37,99,235,.15);color:#60a5fa;font-weight:600"{% endif %}>{{ icon }} {{ label }}</a>
+    {% endfor %}
+  </aside>
+
+  <!-- Main -->
+  <main class="flex-grow-1 p-4" style="min-width:0;max-width:780px">
+
+    <div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
+      <div>
+        <h4 class="fw-bold mb-0">📋 Today's Briefing</h4>
+        {% if briefing.date %}<div class="small text-muted">{{ briefing.date }}</div>{% endif %}
+      </div>
+      <button class="btn btn-outline-secondary btn-sm" onclick="fetch('/me/api/second-brain/briefing/generate',{method:'POST'}).then(()=>location.reload())">↻ Regenerate</button>
     </div>
-  </div>
 
-  {% if briefing.meetings %}
-  <div class="card mb-3">
-    <div class="card-header fw-semibold">📅 Meetings</div>
-    <ul class="list-group list-group-flush">
-      {% for m in briefing.meetings %}
-      <li class="list-group-item">
-        <div class="d-flex justify-content-between mb-1">
-          <span class="fw-semibold">{{ m.title }}</span>
-          <small class="text-muted">{{ m.time }}</small>
+    {% if briefing and briefing.get('greeting') %}
+
+    <!-- Hero -->
+    <div class="rounded-3 mb-4 p-4" style="background:linear-gradient(135deg,#0f172a,#1e1b4b)">
+      <h5 class="text-white fw-semibold mb-1">{{ briefing.greeting }}</h5>
+      {% if briefing.focus %}<p class="mb-0" style="color:#94a3b8">{{ briefing.focus }}</p>{% endif %}
+    </div>
+
+    <div class="row g-3">
+      <!-- Meetings -->
+      {% if briefing.meetings %}
+      <div class="col-12">
+        <div class="rounded-3 overflow-hidden" style="border:1px solid rgba(255,255,255,.08)">
+          <div class="px-3 py-2 fw-semibold small" style="background:rgba(255,255,255,.04);border-bottom:1px solid rgba(255,255,255,.08)">📅 Meetings ({{ briefing.meetings|length }})</div>
+          {% for m in briefing.meetings %}
+          <div class="px-3 py-3 {% if not loop.last %}border-bottom{% endif %}" style="border-color:rgba(255,255,255,.07)">
+            <div class="d-flex justify-content-between align-items-start mb-1">
+              <span class="fw-semibold small">{{ m.title }}</span>
+              <span class="badge bg-secondary fw-normal ms-2">{{ m.time }}</span>
+            </div>
+            {% if m.attendees %}<div class="text-muted small">With: {{ m.attendees | join(', ') }}</div>{% endif %}
+            {% if m.prep_notes %}<div class="mt-1 small" style="color:#60a5fa">💡 {{ m.prep_notes }}</div>{% endif %}
+          </div>
+          {% endfor %}
         </div>
-        {% if m.attendees %}<small class="text-muted">With: {{ m.attendees | join(', ') }}</small><br>{% endif %}
-        {% if m.prep_notes %}<small class="text-info">💡 {{ m.prep_notes }}</small>{% endif %}
-      </li>
-      {% endfor %}
-    </ul>
-  </div>
-  {% endif %}
+      </div>
+      {% endif %}
 
-  {% if briefing.tasks %}
-  <div class="card mb-3">
-    <div class="card-header fw-semibold">✅ Tasks</div>
-    <ul class="list-group list-group-flush">
-      {% for t in briefing.tasks %}
-      <li class="list-group-item d-flex align-items-center gap-2">
-        <span class="badge bg-secondary">{{ t.source|upper }}</span>
-        <span class="flex-grow-1">
-          {% if t.url %}<a href="{{ t.url }}" target="_blank" class="text-decoration-none">{{ t.title }}</a>{% else %}{{ t.title }}{% endif %}
-        </span>
-        {% if t.get('priority') %}<small class="text-muted">{{ t.priority }}</small>{% endif %}
-      </li>
-      {% endfor %}
-    </ul>
-  </div>
-  {% endif %}
+      <!-- Tasks -->
+      {% if briefing.tasks %}
+      <div class="col-md-6">
+        <div class="rounded-3 overflow-hidden h-100" style="border:1px solid rgba(255,255,255,.08)">
+          <div class="px-3 py-2 fw-semibold small" style="background:rgba(255,255,255,.04);border-bottom:1px solid rgba(255,255,255,.08)">✅ Tasks ({{ briefing.tasks|length }})</div>
+          {% for t in briefing.tasks %}
+          <div class="px-3 py-2 d-flex align-items-center gap-2 {% if not loop.last %}border-bottom{% endif %}" style="border-color:rgba(255,255,255,.07)">
+            <span class="badge bg-secondary fw-normal" style="font-size:.68rem">{{ t.source|upper }}</span>
+            <span class="small flex-grow-1">
+              {% if t.url %}<a href="{{ t.url }}" target="_blank" class="text-decoration-none" style="color:inherit">{{ t.title }}</a>{% else %}{{ t.title }}{% endif %}
+            </span>
+            {% if t.get('priority') %}<span class="text-muted" style="font-size:.72rem">{{ t.priority }}</span>{% endif %}
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
 
-  {% if briefing.mentions %}
-  <div class="card mb-3">
-    <div class="card-header fw-semibold">💬 Slack Mentions</div>
-    <ul class="list-group list-group-flush">
-      {% for m in briefing.mentions %}
-      <li class="list-group-item">
-        <small class="text-muted">#{{ m.channel }} · {{ m.user }}</small>
-        <p class="mb-0 mt-1">{{ m.text }}</p>
-      </li>
-      {% endfor %}
-    </ul>
-  </div>
-  {% endif %}
+      <!-- Mentions -->
+      {% if briefing.mentions %}
+      <div class="col-md-6">
+        <div class="rounded-3 overflow-hidden h-100" style="border:1px solid rgba(255,255,255,.08)">
+          <div class="px-3 py-2 fw-semibold small" style="background:rgba(255,255,255,.04);border-bottom:1px solid rgba(255,255,255,.08)">💬 Slack Mentions ({{ briefing.mentions|length }})</div>
+          {% for m in briefing.mentions %}
+          <div class="px-3 py-2 {% if not loop.last %}border-bottom{% endif %}" style="border-color:rgba(255,255,255,.07)">
+            <div class="text-muted small mb-1">#{{ m.channel }} · {{ m.user }}</div>
+            <p class="mb-0 small">{{ m.text }}</p>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
 
-  {% if briefing.relationships %}
-  <div class="card mb-3">
-    <div class="card-header fw-semibold">🤝 Relationship Nudges</div>
-    <ul class="list-group list-group-flush">
-      {% for r in briefing.relationships %}
-      <li class="list-group-item">
-        <span class="fw-semibold">{{ r.name }}</span>
-        <small class="text-muted ms-2">{{ r.relationship_type }}</small>
-        <p class="mb-0 text-muted small">{{ r.nudge }}</p>
-      </li>
-      {% endfor %}
-    </ul>
-  </div>
-  {% endif %}
+      <!-- Customer & Relationship Nudges -->
+      {% if briefing.relationships %}
+      <div class="col-12">
+        <div class="rounded-3 overflow-hidden" style="border:1px solid rgba(255,255,255,.08)">
+          <div class="px-3 py-2 fw-semibold small" style="background:rgba(255,255,255,.04);border-bottom:1px solid rgba(255,255,255,.08)">🏢 Customer & Relationship Nudges</div>
+          {% for r in briefing.relationships %}
+          <div class="px-3 py-2 d-flex align-items-start gap-3 {% if not loop.last %}border-bottom{% endif %}" style="border-color:rgba(255,255,255,.07)">
+            <div class="flex-grow-1">
+              <div class="d-flex align-items-center gap-2 mb-1">
+                <span class="fw-semibold small">{{ r.name }}</span>
+                {% if r.relationship_type %}<span class="badge bg-secondary fw-normal" style="font-size:.68rem">{{ r.relationship_type }}</span>{% endif %}
+              </div>
+              <p class="mb-0 text-muted small">{{ r.nudge }}</p>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
 
-  {% if briefing.challenges_spotlight %}
-  <div class="alert alert-info">
-    <strong>⚡ Challenge Spotlight:</strong> {{ briefing.challenges_spotlight.suggestion }}
-  </div>
-  {% endif %}
+      <!-- Challenge spotlight -->
+      {% if briefing.challenges_spotlight %}
+      <div class="col-12">
+        <div class="rounded-3 p-3" style="background:rgba(16,185,129,.07);border:1px solid rgba(16,185,129,.2)">
+          <div class="fw-semibold small mb-1" style="color:#34d399">⚡ Challenge Spotlight</div>
+          <p class="mb-0 small">{{ briefing.challenges_spotlight.suggestion }}</p>
+        </div>
+      </div>
+      {% endif %}
 
-  {% else %}
-  <div class="text-center py-5">
-    <p class="text-muted">No briefing generated yet for today.</p>
-    <button class="btn btn-primary" onclick="fetch('/me/api/second-brain/briefing/generate',{method:'POST'}).then(()=>location.reload())">Generate Briefing</button>
-  </div>
-  {% endif %}
+    </div>
+
+    {% else %}
+
+    <div class="text-center py-5 rounded-3" style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07)">
+      <div style="font-size:2.5rem" class="mb-2">📋</div>
+      <p class="text-muted mb-3">No briefing generated yet for today.</p>
+      <button class="btn btn-primary" id="btn-generate">Generate My Briefing</button>
+    </div>
+
+    {% endif %}
+
+  </main>
 </div>
 
 {% include "includes/iqe_query_widget.html" %}
+
+<script>
+document.getElementById('btn-generate')?.addEventListener('click', function() {
+  this.disabled = true; this.textContent = 'Generating…';
+  fetch('/me/api/second-brain/briefing/generate', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'})
+    .then(r=>r.json()).then(d => { if(d.ok) location.reload(); else alert('Error: '+d.error); })
+    .finally(() => { if(this) { this.disabled=false; this.textContent='Generate My Briefing'; } });
+});
+document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => new bootstrap.Tooltip(el));
+</script>
 {% endblock %}

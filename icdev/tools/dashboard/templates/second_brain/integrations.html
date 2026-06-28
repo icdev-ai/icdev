@@ -1,94 +1,106 @@
 {% extends "base.html" %}
 {% block title %}My Integrations{% endblock %}
 {% block content %}
-<div class="container py-4" style="max-width:800px">
-  <div class="d-flex align-items-center mb-4 gap-3">
-    <a href="/me" class="btn btn-sm btn-outline-secondary">← Back</a>
-    <h2 class="mb-0 fw-bold">Integrations</h2>
-  </div>
+{% set me_page = 'integrations' %}
+<div class="d-flex" style="min-height:calc(100vh - 60px)">
 
-  {% if request.args.get('connected') %}
-  <div class="alert alert-success alert-dismissible fade show">
-    ✓ <strong>{{ request.args.get('connected') | upper }}</strong> connected successfully!
-    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-  </div>
-  {% endif %}
+  <!-- Sidebar -->
+  <aside class="flex-shrink-0 py-3 px-2" style="width:200px;border-right:1px solid rgba(255,255,255,.08)">
+    <div class="text-uppercase fw-semibold px-2 mb-3" style="font-size:.65rem;letter-spacing:.1em;color:#6b7280">My Assistant</div>
+    {% for href,icon,label,key in [('/me','🧠','Overview','home'),('/me/profile','👤','Profile','profile'),('/me/customers','🏢','Customers','customers'),('/me/objectives','🎯','Objectives','objectives'),('/me/challenges','⚡','Challenges','challenges'),('/me/briefing/today','📋',"Today's Briefing",'briefing'),('/me/integrations','🔗','Integrations','integrations')] %}
+    <a href="{{ href }}" class="d-flex align-items-center gap-2 px-2 py-2 rounded mb-1 text-decoration-none small {% if me_page != key %}text-secondary{% endif %}" {% if me_page == key %}style="background:rgba(37,99,235,.15);color:#60a5fa;font-weight:600"{% endif %}>{{ icon }} {{ label }}</a>
+    {% endfor %}
+  </aside>
 
-  <div class="row g-3">
+  <!-- Main -->
+  <main class="flex-grow-1 p-4" style="min-width:0">
+
+    <div class="mb-4">
+      <h4 class="fw-bold mb-1">🔗 Integrations</h4>
+      <p class="text-muted small mb-0">Connect your tools so the AI can pull real-time context into your daily briefing — calendar prep notes, open PRs, assigned tickets, and Slack mentions.</p>
+    </div>
+
+    {% if request.args.get('connected') %}
+    <div class="alert alert-success alert-dismissible fade show mb-4" style="background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.3);color:inherit">
+      ✓ <strong>{{ request.args.get('connected') | upper }}</strong> connected successfully!
+      <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert"></button>
+    </div>
+    {% endif %}
+
     {% set service_meta = {
-      'gcal': {'icon': '📅', 'name': 'Google Calendar', 'desc': 'Today\'s events & meeting prep', 'auth': 'oauth'},
-      'gmail': {'icon': '📧', 'name': 'Gmail', 'desc': 'Frequent contacts for relationship import', 'auth': 'oauth'},
-      'slack': {'icon': '💬', 'name': 'Slack', 'desc': 'Mentions, DMs, and briefing delivery', 'auth': 'oauth'},
-      'github': {'icon': '🐙', 'name': 'GitHub', 'desc': 'Issues, PRs & review requests', 'auth': 'pat'},
-      'gitlab': {'icon': '🦊', 'name': 'GitLab', 'desc': 'MRs, issues & CI status', 'auth': 'pat'},
-      'jira': {'icon': '🎯', 'name': 'Jira', 'desc': 'Sprint board & assigned tickets', 'auth': 'apikey'},
-      'linear': {'icon': '📐', 'name': 'Linear', 'desc': 'Cycles, issues & priorities', 'auth': 'apikey'},
-      'notion': {'icon': '📝', 'name': 'Notion', 'desc': 'Pages & databases as knowledge base', 'auth': 'apikey'},
+      'gcal': {'icon': '📅', 'name': 'Google Calendar', 'desc': 'Today\'s events, meeting prep notes, attendee context', 'auth': 'oauth', 'unlocks': 'Meeting prep in your daily briefing — attendee names, agenda summaries, and suggested talking points.'},
+      'gmail': {'icon': '📧', 'name': 'Gmail', 'desc': 'Frequent contacts for customer import', 'auth': 'oauth', 'unlocks': 'Import frequent email contacts directly into your Customers map.'},
+      'slack': {'icon': '💬', 'name': 'Slack', 'desc': 'Mentions, DMs, action items, briefing delivery', 'auth': 'oauth', 'unlocks': 'Slack mentions and action items in your briefing, plus optional Slack DM delivery each morning.'},
+      'github': {'icon': '🐙', 'name': 'GitHub', 'desc': 'Assigned issues, open PRs & review requests', 'auth': 'pat', 'unlocks': 'Open PRs, review requests, and assigned issues pulled into your daily task list.'},
+      'gitlab': {'icon': '🦊', 'name': 'GitLab', 'desc': 'Merge requests, issues & CI status', 'auth': 'pat', 'unlocks': 'Open MRs, failing pipelines, and assigned issues in your briefing.'},
+      'jira': {'icon': '🎯', 'name': 'Jira', 'desc': 'Sprint board, assigned & overdue tickets', 'auth': 'apikey', 'unlocks': 'Your sprint board and overdue tickets prioritized in the daily task section.'},
+      'linear': {'icon': '📐', 'name': 'Linear', 'desc': 'Cycles, issues & priorities', 'auth': 'apikey', 'unlocks': 'Current cycle issues and unblocked priorities in your briefing.'},
+      'notion': {'icon': '📝', 'name': 'Notion', 'desc': 'Pages & databases as knowledge context', 'auth': 'apikey', 'unlocks': 'Notion pages indexed as background knowledge for AI responses.'},
     } %}
 
-    {% for svc in all_services %}
-    {% set meta = service_meta.get(svc, {}) %}
-    {% set conn = integrations.get(svc) %}
-    {% set is_connected = conn and conn.status == 'active' %}
-    <div class="col-md-6">
-      <div class="card h-100 {% if is_connected %}border-success{% endif %}">
-        <div class="card-body">
-          <div class="d-flex align-items-center mb-2 gap-2">
-            <span class="fs-4">{{ meta.get('icon','🔗') }}</span>
+    <div class="row g-3">
+      {% for svc in all_services %}
+      {% set meta = service_meta.get(svc, {}) %}
+      {% set conn = integrations.get(svc) %}
+      {% set is_connected = conn and conn.status == 'active' %}
+      <div class="col-md-6 col-xl-4">
+        <div class="rounded-3 h-100 p-3" style="background:rgba(255,255,255,.04);border:1px solid {% if is_connected %}rgba(16,185,129,.3){% else %}rgba(255,255,255,.08){% endif %}">
+          <div class="d-flex align-items-start gap-3 mb-3">
+            <span style="font-size:1.6rem;line-height:1">{{ meta.get('icon','🔗') }}</span>
             <div class="flex-grow-1">
-              <div class="fw-semibold">{{ meta.get('name', svc) }}</div>
-              <small class="text-muted">{{ meta.get('desc','') }}</small>
+              <div class="fw-semibold small">{{ meta.get('name', svc) }}</div>
+              <div class="text-muted" style="font-size:.75rem">{{ meta.get('desc','') }}</div>
             </div>
             {% if is_connected %}
-            <span class="badge bg-success">Connected</span>
+            <span class="badge rounded-pill" style="background:rgba(16,185,129,.15);color:#34d399;border:1px solid rgba(16,185,129,.3);font-size:.7rem;white-space:nowrap">✓ Connected</span>
             {% else %}
-            <span class="badge bg-secondary">Not connected</span>
+            <span class="badge rounded-pill bg-secondary fw-normal" style="font-size:.7rem;white-space:nowrap">Not connected</span>
             {% endif %}
           </div>
 
-          {% if conn and conn.last_sync_at %}
-          <small class="text-muted d-block mb-2">Last sync: {{ conn.last_sync_at[:16] }}</small>
+          {% if is_connected %}
+          {% if conn.last_sync_at %}<div class="text-muted mb-2" style="font-size:.73rem">Last sync: {{ conn.last_sync_at[:16] }}</div>{% endif %}
+          <div class="d-flex gap-2">
+            <button class="btn btn-sm btn-outline-secondary" onclick="syncService('{{ svc }}')" data-bs-toggle="tooltip" title="Pull latest data into your briefing context">↺ Sync</button>
+            <button class="btn btn-sm btn-outline-danger" onclick="revokeService('{{ svc }}')">Revoke</button>
+          </div>
+          {% else %}
+          <div class="rounded-2 p-2 mb-3 small" style="background:rgba(37,99,235,.07);border:1px solid rgba(37,99,235,.15);color:#93c5fd">
+            🔓 Unlock: {{ meta.get('unlocks','Connect to enable briefing integration.') }}
+          </div>
+          {% if meta.get('auth') == 'oauth' %}
+          <a href="/me/api/integrations/oauth/start/{{ svc }}" class="btn btn-sm btn-primary">Connect with OAuth</a>
+          {% else %}
+          <button class="btn btn-sm btn-primary" onclick="showPatForm('{{ svc }}', '{{ meta.get('auth') }}')">Connect</button>
           {% endif %}
 
-          <div class="d-flex gap-2">
-            {% if is_connected %}
-            <button class="btn btn-sm btn-outline-primary" onclick="syncService('{{ svc }}')">↺ Sync</button>
-            <button class="btn btn-sm btn-outline-danger" onclick="revokeService('{{ svc }}')">Revoke</button>
-            {% elif meta.get('auth') == 'oauth' %}
-            <a href="/me/api/integrations/oauth/start/{{ svc }}" class="btn btn-sm btn-primary">Connect</a>
-            {% else %}
-            <button class="btn btn-sm btn-primary" onclick="showPatForm('{{ svc }}', '{{ meta.get('auth') }}')">Connect</button>
-            {% endif %}
-          </div>
-
-          <!-- PAT/API key form (hidden) -->
+          <!-- PAT/API key form -->
           <div class="pat-form mt-3 d-none" id="pat-{{ svc }}">
             {% if svc in ('jira', 'linear') %}
-            <input class="form-control form-control-sm mb-1" id="pat-url-{{ svc }}" placeholder="Base URL (e.g. https://yourco.atlassian.net)">
-            <input class="form-control form-control-sm mb-1" id="pat-email-{{ svc }}" placeholder="Email">
+            <input class="form-control form-control-sm mb-1" id="pat-url-{{ svc }}" placeholder="Base URL (e.g. https://yourco.atlassian.net)" style="background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.15);color:inherit">
+            <input class="form-control form-control-sm mb-1" id="pat-email-{{ svc }}" placeholder="Email" style="background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.15);color:inherit">
             {% endif %}
-            <input class="form-control form-control-sm mb-1" id="pat-token-{{ svc }}" type="password" placeholder="{% if meta.get('auth') == 'pat' %}Personal Access Token{% else %}API Key{% endif %}">
-            <div class="d-flex gap-1">
+            <input class="form-control form-control-sm mb-1" id="pat-token-{{ svc }}" type="password" placeholder="{% if meta.get('auth') == 'pat' %}Personal Access Token{% else %}API Key{% endif %}" style="background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.15);color:inherit">
+            <div class="d-flex gap-1 mt-1">
               <button class="btn btn-sm btn-success" onclick="verifyPat('{{ svc }}')">Verify & Save</button>
               <button class="btn btn-sm btn-outline-secondary" onclick="hidePat('{{ svc }}')">Cancel</button>
             </div>
           </div>
+          {% endif %}
         </div>
       </div>
+      {% endfor %}
     </div>
-    {% endfor %}
-  </div>
+
+  </main>
 </div>
 
 {% include "includes/iqe_query_widget.html" %}
 
 <script>
-function showPatForm(svc) {
-  document.getElementById('pat-'+svc).classList.remove('d-none');
-}
-function hidePat(svc) {
-  document.getElementById('pat-'+svc).classList.add('d-none');
-}
+function showPatForm(svc) { document.getElementById('pat-'+svc).classList.remove('d-none'); }
+function hidePat(svc)    { document.getElementById('pat-'+svc).classList.add('d-none'); }
+
 function verifyPat(svc) {
   const token = document.getElementById('pat-token-'+svc).value.trim();
   const payload = {access_token: token};
@@ -99,17 +111,22 @@ function verifyPat(svc) {
   fetch('/me/api/integrations/verify/'+svc, {
     method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
   }).then(r=>r.json()).then(d => {
-    if(d.ok) { location.reload(); } else { alert('Verification failed. Check your credentials.'); }
+    if (d.ok) location.reload();
+    else alert('Verification failed — check your credentials and try again.');
   });
 }
+
 function syncService(svc) {
   fetch('/me/api/integrations/sync/'+svc, {method:'POST'})
-    .then(r=>r.json()).then(d => { alert(d.ok ? 'Synced! Items: '+(d.items_count||0) : 'Sync failed: '+d.error); });
+    .then(r=>r.json()).then(d => { alert(d.ok ? '✓ Synced' : 'Sync failed: '+d.error); });
 }
+
 function revokeService(svc) {
-  if (!confirm('Revoke '+svc+' integration?')) return;
+  if (!confirm('Revoke '+svc+' integration? This cannot be undone.')) return;
   fetch('/me/api/integrations/'+svc, {method:'DELETE'})
     .then(r=>r.json()).then(d => { if(d.ok) location.reload(); });
 }
+
+document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => new bootstrap.Tooltip(el));
 </script>
 {% endblock %}

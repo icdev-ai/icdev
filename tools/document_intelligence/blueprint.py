@@ -29,6 +29,11 @@ Routes:
   GET  /document-intelligence/api/suggestions/<id>               suggestion detail
   POST /document-intelligence/api/suggestions/<id>/accept        accept: apply content + history
   POST /document-intelligence/api/suggestions/<id>/reject        reject: mark decided + note
+
+  GET  /document-intelligence/techwriter                          tech writer workspace (migration 230)
+  PATCH /document-intelligence/api/documents/<id>/writeguard-mode update writeguard content mode
+  POST /document-intelligence/api/techwriter/research            AI research + draft for a section
+  POST /document-intelligence/api/techwriter/diagram             generate Mermaid diagram syntax
 """
 from __future__ import annotations
 
@@ -78,6 +83,13 @@ _TEMPLATES = [
     {"id": "hitl-review", "name": "HITL Review Queue", "description": "Surface AI-generated drafts for human review before publishing.", "flagship": False, "category": "governance", "kind": "workflow"},
     {"id": "sop-refresh", "name": "SOP Refresh", "description": "Keep standard operating procedures current against process changes.", "flagship": False, "category": "operations", "kind": "workflow"},
     {"id": "knowledge-handoff", "name": "Knowledge Handoff", "description": "Capture retiring-SME knowledge into a living collection via CoD-verified generation.", "flagship": False, "category": "knowledge", "kind": "workflow"},
+    # Tech Writer templates (migration 230) — category="techwriter", status='approved' on instantiate
+    {"id": "STANDARD_GUIDE", "name": "Standard Guide", "description": "Cloud-agnostic reference guide spanning multiple providers (AWS/Azure/GCP/Oracle).", "flagship": False, "category": "techwriter", "kind": "guide"},
+    {"id": "SOP", "name": "SOP", "description": "Standard Operating Procedure with numbered steps, prerequisites, and rollback.", "flagship": False, "category": "techwriter", "kind": "sop"},
+    {"id": "RUNBOOK", "name": "Runbook", "description": "Operational runbook with pre-flight checks, procedure, verification, and escalation path.", "flagship": False, "category": "techwriter", "kind": "runbook"},
+    {"id": "ARCH_NETWORK", "name": "Network Architecture", "description": "Network topology, segmentation strategy, traffic flows, and security controls.", "flagship": False, "category": "techwriter", "kind": "architecture"},
+    {"id": "ARCH_APPLICATION", "name": "Application Architecture", "description": "System context, component diagram, API contracts, data flow, and deployment architecture.", "flagship": False, "category": "techwriter", "kind": "architecture"},
+    {"id": "ARCH_SYSTEM", "name": "System Architecture", "description": "End-to-end system boundary, stakeholders, interfaces, and quality attributes.", "flagship": False, "category": "techwriter", "kind": "architecture"},
 ]
 
 _SNIPPETS = [
@@ -102,6 +114,7 @@ _PAGES = [
     {"name": "Explorer", "icon": "🔎", "href": "/document-intelligence/explorer", "desc": "KG buried-bodies explorer — orphans, tribal knowledge, contradictions.", "ready": True, "task": "dic-explore-01"},
     {"name": "Handoff", "icon": "🤝", "href": "/document-intelligence/handoff", "desc": "Knowledge handoff — capture retiring SME knowledge into a living collection.", "ready": True, "task": "dic-handoff-01"},
     {"name": "Notebook", "icon": "📓", "href": "/document-intelligence/notebook", "desc": "NotebookLM-style view — sources, chat, and AI outputs (study guide, FAQ, timeline, audio) in one screen.", "ready": True, "task": "dic-notebook-01"},
+    {"name": "Tech Writer", "icon": "✍️", "href": "/document-intelligence/techwriter", "desc": "Author arch docs, SOPs, runbooks, and standard guides with inline WriteGuard and AI research.", "ready": True, "task": "dic-techwriter-01"},
 ]
 
 _LOCAL_PROVIDERS = ["ollama", "llamacpp", "huggingface-local"]
@@ -528,6 +541,129 @@ def snippets():
 @dic_bp.route("/templates")
 def templates_page():
     return render_template("document_intelligence/templates.html", templates=_TEMPLATES)
+
+
+# ── Tech Writer Workspace ─────────────────────────────────────────────────────
+
+@dic_bp.route("/techwriter")
+def techwriter():
+    """Tech Writer Workspace — template picker + list of active drafts."""
+    tenant_id, classification = _security_context()
+    conn = _conn()
+    try:
+        active_docs = _safe_rows(
+            conn,
+            "SELECT doc_id, title, template_type, writeguard_mode, created_at "
+            "FROM dic_documents "
+            "WHERE tenant_id = %s AND template_type IS NOT NULL "
+            "ORDER BY created_at DESC LIMIT 50",
+            (tenant_id,),
+        )
+    finally:
+        conn.close()
+    from tools.document_intelligence.constants import (
+        TEMPLATE_TYPES,
+        TEMPLATE_TYPE_TO_WRITEGUARD_MODE,
+    )
+    tw_templates = [t for t in _TEMPLATES if t.get("category") == "techwriter"]
+    return render_template(
+        "document_intelligence/techwriter.html",
+        active_docs=active_docs,
+        template_types=TEMPLATE_TYPES,
+        type_to_mode=TEMPLATE_TYPE_TO_WRITEGUARD_MODE,
+        tw_templates=tw_templates,
+        pages=_PAGES,
+    )
+
+
+@dic_bp.route("/api/documents/<doc_id>/writeguard-mode", methods=["PATCH"])
+def api_set_writeguard_mode(doc_id: str):
+    """PATCH — update writeguard_mode on a techwriter document."""
+    body = request.get_json(silent=True) or {}
+    mode = (body.get("mode") or "default").strip()
+    from tools.document_intelligence.constants import WRITEGUARD_MODES
+    if mode not in WRITEGUARD_MODES:
+        return jsonify({"error": f"invalid mode: {mode}"}), 400
+    conn = _conn()
+    try:
+        conn.execute(
+            "UPDATE dic_documents SET writeguard_mode = %s WHERE doc_id = %s",
+            (mode, doc_id),
+        )
+        conn.commit()
+        return jsonify({"doc_id": doc_id, "writeguard_mode": mode})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        conn.close()
+
+
+@dic_bp.route("/api/techwriter/research", methods=["POST"])
+def api_techwriter_research():
+    """POST — AI research + draft for a single section.
+
+    Body: {query, section_heading, template_type, collection_id, web_urls}
+    Returns: {draft_content, rag_chunks, kg_entities, web_sources, is_airgap, warnings, error}
+    """
+    body = request.get_json(silent=True) or {}
+    query = (body.get("query") or "").strip()
+    if not query:
+        return jsonify({"error": "query required"}), 400
+    tenant_id, classification = _security_context()
+    try:
+        from tools.document_intelligence.tech_writing_assist import research_and_draft
+        result = research_and_draft(
+            query=query,
+            section_heading=body.get("section_heading", ""),
+            template_type=body.get("template_type", ""),
+            collection_id=body.get("collection_id", "default"),
+            tenant_id=tenant_id,
+            classification=classification,
+            web_urls=body.get("web_urls") or [],
+        )
+        return jsonify({
+            "draft_content": result.draft_content,
+            "rag_chunks": result.rag_chunks[:5],
+            "kg_entities": result.kg_entities[:10],
+            "web_sources": result.web_sources,
+            "is_airgap": result.is_airgap,
+            "warnings": result.warnings,
+            "error": result.error,
+        })
+    except Exception as exc:
+        logger.warning("dic: techwriter/research error: %s", exc)
+        return jsonify({"error": str(exc)}), 500
+
+
+@dic_bp.route("/api/techwriter/diagram", methods=["POST"])
+def api_techwriter_diagram():
+    """POST — generate Mermaid diagram syntax from a natural-language description.
+
+    Body: {description, diagram_type, template_type}
+    Returns: {syntax, diagram_type, description, error}
+    """
+    body = request.get_json(silent=True) or {}
+    description = (body.get("description") or "").strip()
+    if not description:
+        return jsonify({"error": "description required"}), 400
+    _, classification = _security_context()
+    try:
+        from tools.document_intelligence.tech_writing_assist import generate_diagram_syntax
+        result = generate_diagram_syntax(
+            description=description,
+            diagram_type=body.get("diagram_type", "mermaid"),
+            template_type=body.get("template_type", ""),
+            classification=classification,
+        )
+        return jsonify({
+            "syntax": result.syntax,
+            "diagram_type": result.diagram_type,
+            "description": result.description,
+            "error": result.error,
+        })
+    except Exception as exc:
+        logger.warning("dic: techwriter/diagram error: %s", exc)
+        return jsonify({"error": str(exc)}), 500
 
 
 @dic_bp.route("/freshness")
@@ -2210,6 +2346,32 @@ _TEMPLATE_SECTIONS: dict[str, list[str]] = {
     "hitl-review": ["Review Queue", "Reviewer Assignments", "Acceptance Criteria", "Escalation Path"],
     "sop-refresh": ["Current Procedure", "Change Summary", "Updated Steps", "Validation Criteria", "Rollback Plan"],
     "knowledge-handoff": ["SME Profile", "Knowledge Areas", "Interview Agenda", "Captured Artifacts", "Successor Onboarding"],
+    # Tech Writer templates (migration 230)
+    "STANDARD_GUIDE": [
+        "Executive Summary", "Scope and Applicability", "Cloud Provider Overview",
+        "Connectivity Patterns", "Security Controls", "Implementation Steps",
+        "Operational Procedures", "Troubleshooting", "References",
+    ],
+    "SOP": [
+        "Purpose", "Scope", "Responsibilities", "Prerequisites",
+        "Procedure", "Verification", "Rollback", "References",
+    ],
+    "RUNBOOK": [
+        "Overview", "Prerequisites", "Pre-flight Checks",
+        "Procedure", "Verification Steps", "Rollback", "Escalation Path",
+    ],
+    "ARCH_NETWORK": [
+        "Architecture Overview", "Network Topology", "Segmentation Strategy",
+        "Traffic Flows", "Security Controls", "Diagrams", "Decision Log",
+    ],
+    "ARCH_APPLICATION": [
+        "System Context", "Component Diagram", "API Contracts",
+        "Data Flow", "Security Considerations", "Deployment Architecture", "Decision Log",
+    ],
+    "ARCH_SYSTEM": [
+        "Mission and Goals", "Stakeholders", "System Boundary",
+        "Key Components", "Interfaces", "Quality Attributes", "Decision Log",
+    ],
 }
 
 
@@ -2231,6 +2393,13 @@ def api_template_instantiate(template_id):
     doc_id = _hid("dic_tpl", template_id, collection_id, now)
     version_id = f"{doc_id}_v1"
 
+    # Tech writer templates skip HITL — authors own approval.
+    is_techwriter = template_meta.get("category") == "techwriter"
+    from tools.document_intelligence.constants import TEMPLATE_TYPE_TO_WRITEGUARD_MODE
+    wg_mode = TEMPLATE_TYPE_TO_WRITEGUARD_MODE.get(template_id, "default") if is_techwriter else "default"
+    doc_origin = "human_authored" if is_techwriter else "template"
+    doc_status = "approved" if is_techwriter else "draft"
+
     conn = _conn()
     try:
         cur = conn.cursor()
@@ -2239,13 +2408,15 @@ def api_template_instantiate(template_id):
             INSERT OR REPLACE INTO dic_documents
                 (doc_id, collection_id, source_id, filename, filepath,
                  content_type, provider, title, byte_size, content_sha256,
-                 page_count, created_at, tenant_id, classification)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 page_count, created_at, tenant_id, classification,
+                 template_type, writeguard_mode)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 doc_id, collection_id, doc_id, f"{template_id}-template.md", "",
                 "text/markdown", "template", template_meta["name"], 0, "",
                 len(sections), now, tenant_id, classification,
+                template_id if is_techwriter else None, wg_mode,
             ),
         )
         cur.execute(
@@ -2256,7 +2427,7 @@ def api_template_instantiate(template_id):
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
-                version_id, doc_id, 1, "template", "draft",
+                version_id, doc_id, 1, doc_origin, doc_status,
                 "", now, created_by, tenant_id, classification,
             ),
         )
@@ -2271,7 +2442,7 @@ def api_template_instantiate(template_id):
                 """,
                 (
                     section_id, version_id, doc_id, heading, "",
-                    "[]", "draft", "template", now, created_by, tenant_id, classification,
+                    "[]", doc_status, doc_origin, now, created_by, tenant_id, classification,
                 ),
             )
         conn.commit()

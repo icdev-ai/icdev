@@ -725,12 +725,15 @@ components:
       href: /document-intelligence/handoff
     - label: 📓 Notebook
       href: /document-intelligence/notebook
+    - label: ✍️ Tech Writer
+      href: /document-intelligence/techwriter
   iqe:
     adapter_module: tools.iqe.adapters.dic
     collections:
     - dic.drift_events
     - dic.regen_queue
     - dic.ssp_fragments
+    - dic.techwriter_docs
   completeness:
     template: tools/dashboard/templates/document_intelligence/page.html
     blueprint: true

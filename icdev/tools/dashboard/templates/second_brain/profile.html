@@ -1,109 +1,158 @@
 {% extends "base.html" %}
 {% block title %}My Profile{% endblock %}
 {% block content %}
-<div class="container py-4" style="max-width:720px">
-  <div class="d-flex align-items-center mb-4 gap-3">
-    <a href="/me" class="btn btn-sm btn-outline-secondary">← Back</a>
-    <h2 class="mb-0 fw-bold">My Profile</h2>
-  </div>
+{% set me_page = 'profile' %}
+<div class="d-flex" style="min-height:calc(100vh - 60px)">
 
-  <form id="profile-form">
-    <div class="card mb-3">
-      <div class="card-header fw-semibold">Identity</div>
-      <div class="card-body row g-3">
-        <div class="col-md-6">
-          <label class="form-label">Full Name</label>
-          <input name="full_name" class="form-control" value="{{ profile.full_name or '' }}">
+  <!-- Sidebar -->
+  <aside class="flex-shrink-0 py-3 px-2" style="width:200px;border-right:1px solid rgba(255,255,255,.08)">
+    <div class="text-uppercase fw-semibold px-2 mb-3" style="font-size:.65rem;letter-spacing:.1em;color:#6b7280">My Assistant</div>
+    {% for href,icon,label,key in [('/me','🧠','Overview','home'),('/me/profile','👤','Profile','profile'),('/me/customers','🏢','Customers','customers'),('/me/objectives','🎯','Objectives','objectives'),('/me/challenges','⚡','Challenges','challenges'),('/me/briefing/today','📋',"Today's Briefing",'briefing'),('/me/integrations','🔗','Integrations','integrations')] %}
+    <a href="{{ href }}" class="d-flex align-items-center gap-2 px-2 py-2 rounded mb-1 text-decoration-none small {% if me_page != key %}text-secondary{% endif %}" {% if me_page == key %}style="background:rgba(37,99,235,.15);color:#60a5fa;font-weight:600"{% endif %}>{{ icon }} {{ label }}</a>
+    {% endfor %}
+  </aside>
+
+  <!-- Main -->
+  <main class="flex-grow-1 p-4" style="min-width:0;max-width:760px">
+
+    <div class="mb-4">
+      <h4 class="fw-bold mb-1">👤 My Profile</h4>
+      <p class="text-muted small mb-0">How your AI assistant understands you — your role, context, and working style.</p>
+    </div>
+
+    <form id="profile-form">
+
+      <!-- Purpose -->
+      <div class="rounded-3 mb-3 p-3" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08)">
+        <div class="d-flex align-items-center gap-2 mb-2">
+          <span class="fw-semibold">🌟 Your Purpose</span>
+          <span data-bs-toggle="tooltip" data-bs-placement="right" title="Your purpose statement helps the AI frame every interaction around what matters most to you and your customers. Be specific about who you serve and what value you deliver." style="cursor:help;color:#6b7280;font-size:.85rem">ⓘ</span>
         </div>
-        <div class="col-md-6">
-          <label class="form-label">Work Email</label>
-          <input name="work_email" type="email" class="form-control" value="{{ profile.work_email or '' }}">
-        </div>
-        <div class="col-md-6">
-          <label class="form-label">Title</label>
-          <input name="title" class="form-control" value="{{ profile.title or '' }}">
-        </div>
-        <div class="col-md-6">
-          <label class="form-label">Seniority Tier</label>
-          <select name="seniority_tier" class="form-select">
-            {% for key, label in seniority_labels.items() %}
-            <option value="{{ key }}" {% if profile.seniority_tier == key %}selected{% endif %}>{{ label }}</option>
-            {% endfor %}
-          </select>
+        <textarea name="team_mission" class="form-control form-control-sm" rows="3"
+          placeholder="Describe what you do and who you serve. E.g. 'As a Network Architect, I design resilient, scalable infrastructure for CSPs and ISPs, enabling high-availability services across their networks with built-in redundancy and resiliency.'"
+          style="background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.12);color:inherit">{{ profile.team_mission or '' }}</textarea>
+        <div class="mt-1 small text-muted">This appears in your Customer map and shapes every AI interaction.</div>
+      </div>
+
+      <!-- Identity -->
+      <div class="rounded-3 mb-3 p-3" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08)">
+        <div class="fw-semibold mb-3">👤 Identity</div>
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label small">Full Name</label>
+            <input name="full_name" class="form-control form-control-sm" value="{{ profile.full_name or '' }}" style="background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.12);color:inherit">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small">Work Email</label>
+            <input name="work_email" type="email" class="form-control form-control-sm" value="{{ profile.work_email or '' }}" style="background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.12);color:inherit">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small d-flex align-items-center gap-1">
+              Role / Title
+              <span data-bs-toggle="tooltip" title="Your role shapes how the AI tailors strategy and recommendations — a Network Architect gets infrastructure-first framing; a PM gets delivery-first." style="cursor:help;color:#6b7280;font-size:.8rem">ⓘ</span>
+            </label>
+            <input name="title" class="form-control form-control-sm" value="{{ profile.title or '' }}" placeholder="e.g. Network Architect, Senior Engineer" style="background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.12);color:inherit">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small d-flex align-items-center gap-1">
+              Seniority
+              <span data-bs-toggle="tooltip" title="Determines the lens the AI uses — ICs get tactical, execution-focused framing; executives get strategic framing and decision-level summaries." style="cursor:help;color:#6b7280;font-size:.8rem">ⓘ</span>
+            </label>
+            <select name="seniority_tier" class="form-select form-select-sm" style="background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.12);color:inherit">
+              {% for key, label in seniority_labels.items() %}
+              <option value="{{ key }}" {% if profile.seniority_tier == key %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
         </div>
       </div>
-    </div>
 
-    <div class="card mb-3">
-      <div class="card-header fw-semibold">Organization</div>
-      <div class="card-body row g-3">
-        <div class="col-md-6">
-          <label class="form-label">Org Name</label>
-          <input name="org_name" class="form-control" value="{{ profile.org_name or '' }}">
-        </div>
-        <div class="col-md-6">
-          <label class="form-label">Industry</label>
-          <select name="org_industry" class="form-select">
-            {% for ind in industries %}
-            <option value="{{ ind }}" {% if profile.org_industry == ind %}selected{% endif %}>{{ ind }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div class="col-md-6">
-          <label class="form-label">Org Size</label>
-          <select name="org_size" class="form-select">
-            {% for sz in org_sizes %}
-            <option value="{{ sz }}" {% if profile.org_size == sz %}selected{% endif %}>{{ sz }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div class="col-md-6">
-          <label class="form-label">Timezone</label>
-          <input name="timezone" class="form-control" value="{{ profile.timezone or 'UTC' }}">
+      <!-- Organization -->
+      <div class="rounded-3 mb-3 p-3" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08)">
+        <div class="fw-semibold mb-3">🏢 Organization</div>
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label small">Org Name</label>
+            <input name="org_name" class="form-control form-control-sm" value="{{ profile.org_name or '' }}" style="background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.12);color:inherit">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small">Industry</label>
+            <select name="org_industry" class="form-select form-select-sm" style="background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.12);color:inherit">
+              <option value="">Select industry…</option>
+              {% for ind in industries %}
+              <option value="{{ ind }}" {% if profile.org_industry == ind %}selected{% endif %}>{{ ind }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small">Org Size</label>
+            <select name="org_size" class="form-select form-select-sm" style="background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.12);color:inherit">
+              <option value="">Select size…</option>
+              {% for sz in org_sizes %}
+              <option value="{{ sz }}" {% if profile.org_size == sz %}selected{% endif %}>{{ sz }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small d-flex align-items-center gap-1">
+              Timezone
+              <span data-bs-toggle="tooltip" title="Used to time your daily briefing and surface time-zone-aware calendar prep notes." style="cursor:help;color:#6b7280;font-size:.8rem">ⓘ</span>
+            </label>
+            <input name="timezone" class="form-control form-control-sm" value="{{ profile.timezone or 'UTC' }}" placeholder="e.g. America/New_York" style="background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.12);color:inherit">
+          </div>
         </div>
       </div>
-    </div>
 
-    <div class="card mb-3">
-      <div class="card-header fw-semibold">Cadence</div>
-      <div class="card-body row g-3">
-        <div class="col-md-4">
-          <label class="form-label">Work Start</label>
-          <input name="work_start" type="time" class="form-control" value="{{ profile.work_start or '09:00' }}">
-        </div>
-        <div class="col-md-4">
-          <label class="form-label">Work End</label>
-          <input name="work_end" type="time" class="form-control" value="{{ profile.work_end or '18:00' }}">
-        </div>
-        <div class="col-md-4">
-          <label class="form-label">Briefing Time</label>
-          <input name="briefing_time" type="time" class="form-control" value="{{ profile.briefing_time or '08:00' }}">
-        </div>
-        <div class="col-md-6">
-          <label class="form-label">Communication Style</label>
-          <select name="comm_style" class="form-select">
-            <option value="1" {% if profile.comm_style == 1 %}selected{% endif %}>1 — Very Direct</option>
-            <option value="2" {% if profile.comm_style == 2 %}selected{% endif %}>2 — Direct</option>
-            <option value="3" {% if not profile.comm_style or profile.comm_style == 3 %}selected{% endif %}>3 — Balanced</option>
-            <option value="4" {% if profile.comm_style == 4 %}selected{% endif %}>4 — Collaborative</option>
-            <option value="5" {% if profile.comm_style == 5 %}selected{% endif %}>5 — Very Collaborative</option>
-          </select>
+      <!-- Work Rhythm -->
+      <div class="rounded-3 mb-3 p-3" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08)">
+        <div class="fw-semibold mb-3">⏰ Work Rhythm</div>
+        <div class="row g-3">
+          <div class="col-md-4">
+            <label class="form-label small">Work Start</label>
+            <input name="work_start" type="time" class="form-control form-control-sm" value="{{ profile.work_start or '09:00' }}" style="background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.12);color:inherit">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label small">Work End</label>
+            <input name="work_end" type="time" class="form-control form-control-sm" value="{{ profile.work_end or '18:00' }}" style="background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.12);color:inherit">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label small d-flex align-items-center gap-1">
+              Briefing Time
+              <span data-bs-toggle="tooltip" title="The AI generates and delivers your morning brief at this time each day." style="cursor:help;color:#6b7280;font-size:.8rem">ⓘ</span>
+            </label>
+            <input name="briefing_time" type="time" class="form-control form-control-sm" value="{{ profile.briefing_time or '08:00' }}" style="background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.12);color:inherit">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small d-flex align-items-center gap-1">
+              Communication Style
+              <span data-bs-toggle="tooltip" title="1 = very direct executive summaries with minimal context. 5 = collaborative narratives with full reasoning and context. Shapes how the AI writes to you." style="cursor:help;color:#6b7280;font-size:.8rem">ⓘ</span>
+            </label>
+            <select name="comm_style" class="form-select form-select-sm" style="background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.12);color:inherit">
+              <option value="1" {% if profile.comm_style == 1 %}selected{% endif %}>1 — Very Direct</option>
+              <option value="2" {% if profile.comm_style == 2 %}selected{% endif %}>2 — Direct</option>
+              <option value="3" {% if not profile.comm_style or profile.comm_style == 3 %}selected{% endif %}>3 — Balanced</option>
+              <option value="4" {% if profile.comm_style == 4 %}selected{% endif %}>4 — Collaborative</option>
+              <option value="5" {% if profile.comm_style == 5 %}selected{% endif %}>5 — Very Collaborative</option>
+            </select>
+          </div>
         </div>
       </div>
-    </div>
 
-    <div class="d-flex gap-2">
-      <button type="submit" class="btn btn-primary">Save Profile</button>
-      <button type="button" id="btn-summarize" class="btn btn-outline-secondary">Generate AI Summary</button>
-    </div>
-  </form>
+      <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary btn-sm" id="btn-save">Save Profile</button>
+        <button type="button" id="btn-summarize" class="btn btn-outline-secondary btn-sm">✨ Generate AI Summary</button>
+        <span class="small text-muted align-self-center ms-2" id="save-status"></span>
+      </div>
+    </form>
 
-  {% if profile.profile_summary %}
-  <div class="card mt-4">
-    <div class="card-header fw-semibold">AI Profile Summary</div>
-    <div class="card-body text-muted">{{ profile.profile_summary }}</div>
-  </div>
-  {% endif %}
+    {% if profile.profile_summary %}
+    <div class="rounded-3 mt-4 p-3" style="background:rgba(16,185,129,.06);border:1px solid rgba(16,185,129,.2)">
+      <div class="fw-semibold small mb-2" style="color:#34d399">✨ AI Profile Summary</div>
+      <p class="text-muted small mb-0">{{ profile.profile_summary }}</p>
+    </div>
+    {% endif %}
+
+  </main>
 </div>
 
 {% include "includes/iqe_query_widget.html" %}
@@ -111,16 +160,24 @@
 <script>
 document.getElementById('profile-form').addEventListener('submit', function(e) {
   e.preventDefault();
+  const btn = document.getElementById('btn-save');
+  const status = document.getElementById('save-status');
+  btn.disabled = true; btn.textContent = 'Saving…';
   const data = Object.fromEntries(new FormData(this).entries());
-  fetch('/me/api/second-brain/profile', {
-    method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)
-  }).then(r=>r.json()).then(d=>{ if(d.ok) alert('Saved!'); else alert('Error: '+d.error); });
+  fetch('/me/api/second-brain/profile', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)})
+    .then(r=>r.json()).then(d => {
+      if(d.ok) { status.textContent = '✓ Saved'; status.style.color='#34d399'; setTimeout(()=>status.textContent='',3000); }
+      else { status.textContent = 'Error: '+d.error; status.style.color='#f87171'; }
+    }).finally(()=>{ btn.disabled=false; btn.textContent='Save Profile'; });
 });
+
 document.getElementById('btn-summarize').addEventListener('click', function() {
   this.disabled = true; this.textContent = 'Generating…';
   fetch('/me/api/second-brain/profile/summarize', {method:'POST'})
-    .then(r=>r.json()).then(d=>{ if(d.ok) location.reload(); else alert('Error: '+d.error); })
-    .finally(()=>{ this.disabled=false; this.textContent='Generate AI Summary'; });
+    .then(r=>r.json()).then(d => { if(d.ok) location.reload(); else alert('Error: '+d.error); })
+    .finally(()=>{ this.disabled=false; this.textContent='✨ Generate AI Summary'; });
 });
+
+document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => new bootstrap.Tooltip(el));
 </script>
 {% endblock %}

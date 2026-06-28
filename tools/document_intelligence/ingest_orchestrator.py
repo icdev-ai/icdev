@@ -252,6 +252,9 @@ _ALTER_MIGRATIONS = [
     ("dic_sections", "assigned_to", "TEXT"),
     ("dic_sections", "reviewed_by", "TEXT"),
     ("dic_sections", "reviewed_at", "TEXT"),
+    # Migration 230 — tech writer workspace
+    ("dic_documents", "template_type", "TEXT"),
+    ("dic_documents", "writeguard_mode", "TEXT DEFAULT 'default'"),
 ]
 
 
