@@ -27,6 +27,22 @@
       </div>
     </div>
 
+    <!-- Delivery status bar -->
+    <div class="d-flex align-items-center gap-3 mb-3 p-2 rounded" style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);font-size:.75rem">
+      <span class="text-muted">Delivery:</span>
+      <span style="color:#6ee7b7">✓ Dashboard</span>
+      {% if briefing.delivery_status %}
+        {% if briefing.delivery_status.get('email') == 'sent' %}<span style="color:#6ee7b7">✓ Email</span>{% endif %}
+        {% if briefing.delivery_status.get('outlook') == 'sent' %}<span style="color:#6ee7b7">✓ Outlook</span>{% endif %}
+        {% if briefing.delivery_status.get('slack') == 'sent' %}<span style="color:#6ee7b7">✓ Slack</span>{% endif %}
+        {% if briefing.delivery_status.get('teams') == 'sent' %}<span style="color:#6ee7b7">✓ Teams</span>{% endif %}
+        {% if briefing.delivery_status.get('calendar') %}<span style="color:#6ee7b7">✓ Calendar</span>{% endif %}
+      {% endif %}
+      <button id="send-now-btn" class="btn btn-sm ms-auto" style="background:rgba(99,102,241,.15);border:1px solid rgba(99,102,241,.3);color:#a5b4fc;font-size:.7rem;padding:.15rem .5rem">
+        📤 Send Now
+      </button>
+    </div>
+
     {% if briefing and briefing.get('greeting') %}
 
     <!-- Hero -->
@@ -345,6 +361,24 @@ document.getElementById('btn-digest')?.addEventListener('click', () =>
   triggerProactive('/me/api/second-brain/proactive/weekly-digest', 'btn-digest', '📡 Generating…'));
 
 document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => new bootstrap.Tooltip(el));
+
+// ── Send Now (delivery) ───────────────────────────────────────────────────
+document.getElementById('send-now-btn')?.addEventListener('click', function() {
+  this.disabled = true; this.textContent = '📤 Sending…';
+  fetch('/me/api/second-brain/briefing/deliver', {method: 'POST'})
+    .then(r => r.json())
+    .then(d => {
+      if (d.ok) {
+        const s = d.delivery_status || {};
+        const chans = ['email','outlook','slack','teams','calendar'].filter(c => s[c] === 'sent');
+        this.textContent = chans.length ? `✓ Sent (${chans.join(', ')})` : '✓ Dashboard only';
+      } else {
+        this.textContent = '⚠ ' + (d.error || 'failed');
+        this.disabled = false;
+      }
+    })
+    .catch(() => { this.disabled = false; this.textContent = '📤 Send Now'; });
+});
 
 // ── Launch Prep Coworker ───────────────────────────────────────────────────
 document.querySelectorAll('.launch-prep-cw').forEach(btn => {

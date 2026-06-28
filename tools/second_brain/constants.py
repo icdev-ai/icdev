@@ -52,7 +52,7 @@ SENIORITY_LABELS: dict[str, str] = {
 
 # Integration services supported for onboarding
 INTEGRATION_SERVICES: list[str] = [
-    "gmail", "gcal", "slack", "github", "gitlab", "jira", "linear", "notion"
+    "gmail", "gcal", "slack", "msgraph", "github", "gitlab", "jira", "linear", "notion"
 ]
 
 # Role-to-integration affinity (determines which cards show first per seniority tier)

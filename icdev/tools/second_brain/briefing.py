@@ -258,6 +258,17 @@ def deliver_briefing(user_id: str, briefing_date: str | None = None, tenant_id: 
     if "calendar" in channels:
         status["calendar"] = _deliver_calendar(user_id, briefing_date, ctx, tenant_id)
 
+    # M365 email (Outlook) — attempt first; SMTP is fallback
+    if "outlook" in channels or "email" in channels:
+        m365_ok = _deliver_m365_email(user_id, briefing_date, ctx, tenant_id)
+        status["outlook"] = m365_ok
+        # If M365 not configured but SMTP is, fall back
+        if not m365_ok and "email" in channels and status.get("email") is None:
+            status["email"] = _deliver_email(user_id, briefing_date, ctx, tenant_id)
+
+    if "teams" in channels:
+        status["teams"] = _deliver_teams(user_id, briefing_date, ctx, tenant_id)
+
     # Persist delivery status
     with _conn() as conn:
         ph = sql_placeholder(conn)
@@ -347,6 +358,112 @@ def _deliver_calendar(user_id: str, briefing_date: str, ctx: dict, tenant_id: st
         return f"error: {exc}"
 
 
+def _get_m365_token(user_id: str, tenant_id: str) -> str:
+    """Load and auto-refresh the msgraph access token. Returns empty string if not configured."""
+    try:
+        from tools.db.storage import get_connection, sql_placeholder
+        from datetime import datetime, timezone
+        with get_connection() as conn:
+            ph = sql_placeholder(conn)
+            row = conn.execute(
+                f"SELECT access_token_enc, refresh_token_enc, token_expiry FROM user_integrations "
+                f"WHERE user_id={ph} AND tenant_id={ph} AND service='msgraph' AND status='active'",
+                (user_id, tenant_id),
+            ).fetchone()
+        if not row:
+            return ""
+        if isinstance(row, dict):
+            access_tok, refresh_tok, expiry = row.get("access_token_enc", ""), row.get("refresh_token_enc", ""), row.get("token_expiry", "")
+        else:
+            access_tok, refresh_tok, expiry = row[0], row[1], row[2]
+        if expiry:
+            try:
+                exp_dt = datetime.fromisoformat(str(expiry).replace("Z", "+00:00"))
+                if datetime.now(timezone.utc) >= exp_dt and refresh_tok:
+                    from tools.second_brain.connectors.microsoft import refresh_token as ms_refresh
+                    new_tokens = ms_refresh(refresh_tok)
+                    if new_tokens.get("access_token"):
+                        access_tok = new_tokens["access_token"]
+                        _update_m365_token(user_id, tenant_id, new_tokens)
+            except Exception:
+                pass
+        return access_tok or ""
+    except Exception:
+        return ""
+
+
+def _update_m365_token(user_id: str, tenant_id: str, tokens: dict) -> None:
+    try:
+        from tools.db.storage import get_connection, sql_placeholder
+        with get_connection() as conn:
+            ph = sql_placeholder(conn)
+            conn.execute(
+                f"UPDATE user_integrations SET access_token_enc={ph}, token_expiry={ph} "
+                f"WHERE user_id={ph} AND tenant_id={ph} AND service='msgraph'",
+                (tokens.get("access_token", ""), tokens.get("expires_in", ""), user_id, tenant_id),
+            )
+            conn.commit()
+    except Exception:
+        pass
+
+
+def _deliver_m365_email(user_id: str, briefing_date: str, ctx: dict, tenant_id: str) -> str:
+    """Deliver briefing via Outlook using Microsoft Graph API."""
+    token = _get_m365_token(user_id, tenant_id)
+    if not token:
+        return "skipped_no_m365_token"
+    to_addr = ctx.get("work_email") or ""
+    if not to_addr:
+        return "skipped_no_email"
+    try:
+        briefing = get_todays_briefing(user_id, tenant_id) or {}
+        html_body = _format_email_html(briefing, ctx)
+        from tools.second_brain.connectors.microsoft import send_mail
+        ok = send_mail(token, to_addr, f"🧠 AI Briefing — {briefing_date}", html_body)
+        return "sent" if ok else "failed"
+    except Exception as exc:
+        logger.warning("[briefing] M365 email delivery failed: %s", exc)
+        return f"error: {exc}"
+
+
+def _deliver_teams(user_id: str, briefing_date: str, ctx: dict, tenant_id: str) -> str:
+    """Deliver briefing summary to Microsoft Teams via Graph API."""
+    token = _get_m365_token(user_id, tenant_id)
+    if not token:
+        return "skipped_no_m365_token"
+    try:
+        from tools.db.storage import get_connection, sql_placeholder
+        with get_connection() as conn:
+            ph = sql_placeholder(conn)
+            row = conn.execute(
+                f"SELECT metadata_json FROM user_integrations "
+                f"WHERE user_id={ph} AND tenant_id={ph} AND service='msgraph' AND status='active'",
+                (user_id, tenant_id),
+            ).fetchone()
+        if not row:
+            return "skipped_no_integration"
+        meta = json.loads((row[0] if not isinstance(row, dict) else row.get("metadata_json", "")) or "{}")
+        chat_id = meta.get("teams_chat_id", "")
+        if not chat_id:
+            return "skipped_no_teams_chat_id"
+        briefing = get_todays_briefing(user_id, tenant_id) or {}
+        lines = [
+            f"🧠 *AI Briefing — {briefing_date}*",
+            "",
+            briefing.get("greeting", ""),
+            briefing.get("focus", ""),
+            "",
+            f"📅 {len(briefing.get('meetings', []))} meetings  ✅ {len(briefing.get('tasks', []))} tasks",
+            "View full briefing: http://localhost:5050/me/briefing/today",
+        ]
+        from tools.second_brain.connectors.microsoft import send_teams_message
+        ok = send_teams_message(token, chat_id, "\n".join(lines))
+        return "sent" if ok else "failed"
+    except Exception as exc:
+        logger.warning("[briefing] Teams delivery failed: %s", exc)
+        return f"error: {exc}"
+
+
 def _format_email_html(briefing: dict, ctx: dict) -> str:
     name = ctx.get("name", "")
     rows = [f"<h2>{briefing.get('greeting','Good morning!')}</h2>",
@@ -402,7 +519,7 @@ def get_users_due_for_briefing(current_hour_utc: int) -> list[dict]:
 import os
 
 if __name__ == "__main__":
-    import argparse, sys
+    import argparse
 
     parser = argparse.ArgumentParser(description="Second Brain daily briefing")
     parser.add_argument("--user-id", default="default")

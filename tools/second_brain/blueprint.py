@@ -195,6 +195,18 @@ def api_todays_briefing():
     return jsonify(briefing or {})
 
 
+@second_brain_bp.route("/api/second-brain/briefing/deliver", methods=["POST"])
+def api_briefing_deliver():
+    """Manually trigger delivery of today's briefing to all configured channels."""
+    from datetime import date
+    from tools.second_brain.briefing import deliver_briefing, get_todays_briefing
+    today_brief = get_todays_briefing(_user_id(), _tenant_id())
+    if not today_brief:
+        return jsonify({"ok": False, "error": "No briefing for today. Generate one first."}), 404
+    status = deliver_briefing(_user_id(), date.today().isoformat(), _tenant_id())
+    return jsonify({"ok": True, "delivery_status": status})
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Integration API — PAT/API key verification + OAuth
 # ─────────────────────────────────────────────────────────────────────────────
@@ -636,6 +648,71 @@ def _get_connector(service: str):
         if service in ("jira", "linear"):
             from tools.second_brain.connectors.jira import JiraConnector
             return JiraConnector()
+        if service == "msgraph":
+            # Microsoft Graph connector — lightweight wrapper
+            from tools.second_brain.connectors import microsoft as _ms
+            return _ms  # module acts as connector (no class needed)
     except Exception as exc:
         logger.debug("[second_brain] connector load failed for %s: %s", service, exc)
     return None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# M365 OAuth routes (dedicated — msgraph needs special scope/tenant handling)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@second_brain_bp.route("/api/integrations/oauth/start/msgraph")
+def oauth_start_msgraph():
+    import secrets
+    state = secrets.token_hex(16)
+    session["oauth_state_msgraph"] = state
+    redirect_uri = request.host_url.rstrip("/") + url_for("second_brain.oauth_callback_msgraph")
+    from tools.second_brain.connectors.microsoft import get_oauth_url
+    return redirect(get_oauth_url(redirect_uri, state))
+
+
+@second_brain_bp.route("/api/integrations/oauth/callback/msgraph")
+def oauth_callback_msgraph():
+    import uuid as _uuid
+    code = request.args.get("code", "")
+    state = request.args.get("state", "")
+    if not code or state != session.pop("oauth_state_msgraph", None):
+        return render_template("errors/400.html", message="M365 OAuth state mismatch"), 400
+    redirect_uri = request.host_url.rstrip("/") + url_for("second_brain.oauth_callback_msgraph")
+    try:
+        from tools.second_brain.connectors.microsoft import exchange_code, get_user_profile
+        tokens = exchange_code(code, redirect_uri)
+        access_tok = tokens.get("access_token", "")
+        ms_profile = get_user_profile(access_tok)
+        meta = json.dumps({
+            "ms_user_id": ms_profile.get("id", ""),
+            "ms_email": ms_profile.get("mail") or ms_profile.get("userPrincipalName", ""),
+            "ms_name": ms_profile.get("displayName", ""),
+        })
+        from tools.db.storage import get_connection, sql_placeholder
+        with get_connection() as conn:
+            ph = sql_placeholder(conn)
+            try:
+                conn.execute(
+                    f"INSERT INTO user_integrations (id,user_id,tenant_id,service,access_token_enc,refresh_token_enc,token_expiry,metadata_json,status) "
+                    f"VALUES ({ph},{ph},{ph},'msgraph',{ph},{ph},{ph},{ph},'active') "
+                    f"ON CONFLICT(user_id,tenant_id,service) DO UPDATE SET "
+                    f"access_token_enc=excluded.access_token_enc, refresh_token_enc=excluded.refresh_token_enc, "
+                    f"token_expiry=excluded.token_expiry, metadata_json=excluded.metadata_json, status='active'",
+                    (str(_uuid.uuid4()), _user_id(), _tenant_id(),
+                     access_tok, tokens.get("refresh_token", ""),
+                     str(tokens.get("expires_in", "")), meta),
+                )
+            except Exception:
+                conn.execute(
+                    f"INSERT OR REPLACE INTO user_integrations (id,user_id,tenant_id,service,access_token_enc,refresh_token_enc,token_expiry,metadata_json,status) "
+                    f"VALUES ({ph},{ph},{ph},'msgraph',{ph},{ph},{ph},{ph},'active')",
+                    (str(_uuid.uuid4()), _user_id(), _tenant_id(),
+                     access_tok, tokens.get("refresh_token", ""),
+                     str(tokens.get("expires_in", "")), meta),
+                )
+            conn.commit()
+        return redirect(url_for("second_brain.integrations_page") + "?connected=msgraph")
+    except Exception as exc:
+        logger.warning("[second_brain] M365 OAuth callback error: %s", exc)
+        return render_template("errors/500.html", message=f"M365 OAuth failed: {exc}"), 500

@@ -266,8 +266,11 @@ class CoWorkerThread(threading.Thread):
         # NOVA SOUL: inject identity preamble into dispatch context so
         # $soul_preamble is available to all step argument substitutions.
         try:
-            from icdev.tools.ace.soul_manager import build_identity_preamble
+            from icdev.tools.ace.soul_manager import build_identity_preamble, inject_user_profile_context
             preamble = build_identity_preamble(self.spec.role_id)
+            # Inject the launching user's world model context (Second Brain) if available.
+            user_id = getattr(self.spec, "user_id", None) or self._ace_context.get("user_id") or "default"
+            preamble = inject_user_profile_context(preamble, user_id)
             if preamble:
                 self._ace_context["soul_preamble"] = preamble
                 self._audit("soul_preamble_injected", f"role={self.spec.role_id} len={len(preamble)}")
