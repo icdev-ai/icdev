@@ -934,8 +934,8 @@
 
     {# ── Second Brain: Universal Review FAB ──────────────────────────────── #}
     {# Appears on any canvas in the user's role affinity list.                #}
-    {# Does NOT show on /me pages or the home page.                           #}
-    {% if config.get('ICDEV_SECOND_BRAIN_ENABLED') or config.get('ICDEV_SECOND_BRAIN_ENABLED', '') == 'true' %}
+    {# FAB starts hidden (display:none); JS shows it if canvas is in role     #}
+    {# affinity list returned by /me/api/second-brain/proactive/relevant-canvases #}
     <div id="sb-review-fab" style="position:fixed;bottom:80px;right:20px;z-index:1040;display:none">
       <button class="btn shadow-lg d-flex align-items-center gap-2"
         id="sb-review-btn"
@@ -1024,6 +1024,5 @@
       }
     })();
     </script>
-    {% endif %}
 </body>
 </html>
