@@ -15,9 +15,19 @@
   <!-- Main -->
   <main class="flex-grow-1 p-4" style="min-width:0;max-width:760px">
 
-    <div class="mb-4">
-      <h4 class="fw-bold mb-1">⚡ My Challenges</h4>
-      <p class="text-muted small mb-0">What slows you down. The AI uses these to prioritize suggestions and surface mitigation strategies in your daily briefing.</p>
+    <div class="d-flex align-items-start justify-content-between flex-wrap gap-3 mb-4">
+      <div>
+        <h4 class="fw-bold mb-1">⚡ My Challenges</h4>
+        <p class="text-muted small mb-0">What slows you down. The AI uses these to prioritize suggestions and surface mitigation strategies in your daily briefing.</p>
+      </div>
+      <button class="btn btn-sm" id="btn-ai-advice" style="background:rgba(99,102,241,.15);border:1px solid rgba(99,102,241,.3);color:#a5b4fc" data-bs-toggle="tooltip" title="Generate specific, context-aware mitigations for your active challenges based on your real objectives and tasks">
+        🧠 Get AI Advice
+      </button>
+    </div>
+    <!-- AI mitigation panel (hidden until triggered) -->
+    <div id="ai-mitigate-panel" class="rounded-3 mb-4 p-3 d-none" style="background:rgba(99,102,241,.07);border:1px solid rgba(99,102,241,.2)">
+      <div class="fw-semibold small mb-2" style="color:#a5b4fc">🧠 AI Mitigation Suggestions</div>
+      <div id="ai-mitigate-body" class="small text-muted">Loading…</div>
     </div>
 
     <form id="challenges-form">
@@ -104,5 +114,29 @@ document.querySelectorAll('input[name="challenge"]').forEach(cb => {
 });
 
 document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => new bootstrap.Tooltip(el));
+
+document.getElementById('btn-ai-advice')?.addEventListener('click', function() {
+  const btn = this;
+  const panel = document.getElementById('ai-mitigate-panel');
+  const body = document.getElementById('ai-mitigate-body');
+  btn.disabled = true; btn.textContent = '🧠 Generating…';
+  panel.classList.remove('d-none');
+  body.innerHTML = '<span class="text-muted">Analysing your objectives, tasks, and customers…</span>';
+  fetch('/me/api/second-brain/challenges/mitigate', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'})
+    .then(r => r.json())
+    .then(d => {
+      if (!d.ok || !d.mitigations || !d.mitigations.length) {
+        body.innerHTML = '<span class="text-muted">No active challenges to mitigate, or profile not complete yet.</span>';
+        return;
+      }
+      body.innerHTML = d.mitigations.map(m => `
+        <div class="mb-3">
+          <div class="fw-semibold mb-1" style="color:#c4b5fd">⚡ ${m.description}</div>
+          <div style="white-space:pre-line;line-height:1.65">${m.mitigations}</div>
+        </div>`).join('<hr style="border-color:rgba(255,255,255,.07)">');
+    })
+    .catch(err => { body.innerHTML = `<span class="text-danger">Error: ${err}</span>`; })
+    .finally(() => { btn.disabled=false; btn.innerHTML='🧠 Get AI Advice'; });
+});
 </script>
 {% endblock %}

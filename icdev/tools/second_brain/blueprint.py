@@ -361,6 +361,44 @@ def api_design_review():
         return jsonify({"ok": False, "error": str(exc)}), 500
 
 
+@second_brain_bp.route("/api/second-brain/proactive/relevant-canvases", methods=["GET"])
+def api_relevant_canvases():
+    """Return canvas keys in the user's role affinity list."""
+    try:
+        from tools.second_brain.role_advisor import get_relevant_canvases
+        canvases = get_relevant_canvases(_user_id(), _tenant_id())
+        return jsonify({"ok": True, "canvases": canvases})
+    except Exception as exc:
+        return jsonify({"ok": False, "canvases": [], "error": str(exc)}), 500
+
+
+@second_brain_bp.route("/api/second-brain/proactive/expectation-fields", methods=["GET"])
+def api_expectation_fields():
+    """Return role-appropriate expectation field definitions for the customer form."""
+    try:
+        from tools.second_brain.role_advisor import infer_persona, _get_user_title
+        title = _get_user_title(_user_id(), _tenant_id())
+        persona = infer_persona(title)
+        return jsonify({
+            "ok": True,
+            "fields": persona.get("expectation_fields", []),
+            "persona": persona.get("display_name", ""),
+        })
+    except Exception as exc:
+        return jsonify({"ok": False, "fields": [], "error": str(exc)}), 500
+
+
+@second_brain_bp.route("/api/second-brain/challenges/mitigate", methods=["POST"])
+def api_challenge_mitigate():
+    """Generate context-aware AI mitigations for the user's active challenges."""
+    try:
+        from tools.second_brain.proactive_advisor import generate_challenge_mitigations
+        result = generate_challenge_mitigations(_user_id(), _tenant_id())
+        return jsonify({"ok": True, "mitigations": result})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # IQE endpoint
 # ─────────────────────────────────────────────────────────────────────────────

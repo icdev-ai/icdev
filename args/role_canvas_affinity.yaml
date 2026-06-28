@@ -87,6 +87,26 @@ role_affinities:
       - data center fabric
       - zero-trust network access
       - 5G and private LTE
+    expectation_fields:
+      - key: availability_target
+        label: Availability Target
+        type: select
+        options: ["99.9%", "99.95%", "99.99%", "99.999%"]
+        help: "SLA availability commitment for this customer"
+      - key: max_rto_minutes
+        label: Max RTO (minutes)
+        type: number
+        placeholder: "e.g. 30"
+        help: "Recovery time objective if service goes down"
+      - key: asn
+        label: BGP ASN
+        type: text
+        placeholder: "e.g. AS12345"
+        help: "Autonomous System Number if this customer peers with you"
+      - key: commitment_date
+        label: Contract / SLA Renewal
+        type: date
+        help: "When this SLA or peering agreement expires"
 
   # ─────────────────────────────────────────────────────────────────────────
   # SOFTWARE DEVELOPER / ENGINEER
@@ -157,6 +177,26 @@ role_affinities:
       - observability and distributed tracing
       - DevSecOps practices
       - code review automation
+    expectation_fields:
+      - key: api_contract
+        label: API / Data Contract
+        type: text
+        placeholder: "e.g. REST v2, GraphQL endpoint"
+        help: "Technical interface this consumer depends on"
+      - key: sla_response_ms
+        label: Response Time SLA (ms)
+        type: number
+        placeholder: "e.g. 200"
+        help: "Latency commitment for this consumer"
+      - key: breaking_change_policy
+        label: Breaking Change Notice
+        type: select
+        options: ["90 days", "60 days", "30 days", "None agreed"]
+        help: "How much notice before breaking API changes?"
+      - key: commitment_date
+        label: Contract / Version EOL
+        type: date
+        help: "When this API version or contract ends"
 
   # ─────────────────────────────────────────────────────────────────────────
   # PROGRAM / PROJECT MANAGER
@@ -223,6 +263,26 @@ role_affinities:
       - stakeholder communication
       - risk management frameworks
       - digital transformation delivery
+    expectation_fields:
+      - key: key_okr
+        label: Key OKR / Deliverable
+        type: text
+        placeholder: "What this customer cares about most"
+        help: "The top outcome they're measuring you on"
+      - key: review_cadence
+        label: Review Cadence
+        type: select
+        options: ["Weekly", "Bi-weekly", "Monthly", "Quarterly"]
+        help: "How often do you sync with this stakeholder?"
+      - key: commitment_date
+        label: Next Review / Milestone
+        type: date
+        help: "Next hard date for this stakeholder"
+      - key: decision_maker
+        label: Decision Maker?
+        type: select
+        options: ["Yes", "No", "Influencer"]
+        help: "Can they approve or block your work?"
 
   # ─────────────────────────────────────────────────────────────────────────
   # SECURITY / ISSO / CYBER
@@ -292,6 +352,25 @@ role_affinities:
       - AI security and adversarial ML
       - supply chain security
       - CMMC compliance updates
+    expectation_fields:
+      - key: ato_expiry
+        label: ATO / Authorization Expiry
+        type: date
+        help: "When does their system authorization expire?"
+      - key: il_level
+        label: Impact Level
+        type: select
+        options: ["IL2", "IL4", "IL5", "IL6", "FedRAMP Moderate", "FedRAMP High"]
+        help: "Data classification level they operate at"
+      - key: compliance_frameworks
+        label: Required Frameworks
+        type: text
+        placeholder: "e.g. NIST 800-53, CMMC L2"
+        help: "Compliance frameworks this customer mandates"
+      - key: commitment_date
+        label: Next Audit / Review
+        type: date
+        help: "Next scheduled compliance review or audit"
 
   # ─────────────────────────────────────────────────────────────────────────
   # ANALYST / DATA SCIENTIST / BI
@@ -351,6 +430,26 @@ role_affinities:
       - MLOps and model governance
       - synthetic data and privacy
       - geospatial analytics
+    expectation_fields:
+      - key: data_contract
+        label: Data Contract / Source
+        type: text
+        placeholder: "e.g. Snowflake: prod.customer_events"
+        help: "Data this customer provides or consumes"
+      - key: refresh_cadence
+        label: Data Refresh Cadence
+        type: select
+        options: ["Real-time", "Hourly", "Daily", "Weekly", "On-demand"]
+        help: "How fresh does data need to be for this customer?"
+      - key: output_format
+        label: Expected Output Format
+        type: text
+        placeholder: "e.g. Dashboard, CSV export, API"
+        help: "What form do they consume your analysis in?"
+      - key: commitment_date
+        label: Report / Delivery Deadline
+        type: date
+        help: "Next hard deadline for delivering to this customer"
 
   # ─────────────────────────────────────────────────────────────────────────
   # BUSINESS DEVELOPMENT / PROPOSAL / CONTRACTING
@@ -409,6 +508,26 @@ role_affinities:
       - OTA and SBIR opportunities
       - proposal writing best practices
       - competitive landscape analysis
+    expectation_fields:
+      - key: contract_value
+        label: Contract Value / Budget
+        type: text
+        placeholder: "e.g. $2M"
+        help: "Approximate deal or budget size"
+      - key: opportunity_stage
+        label: Opportunity Stage
+        type: select
+        options: ["Prospect", "Qualified", "Proposal", "Awarded", "Active", "Renewal"]
+        help: "Current stage of this customer relationship"
+      - key: win_theme
+        label: Win Theme
+        type: text
+        placeholder: "What differentiates you for this customer"
+        help: "Your key differentiator for this customer/opportunity"
+      - key: commitment_date
+        label: Contract / Option Renewal
+        type: date
+        help: "When this contract or option year expires"
 
   # ─────────────────────────────────────────────────────────────────────────
   # INNOVATOR / PRODUCT / RESEARCH
@@ -469,6 +588,21 @@ role_affinities:
       - AI regulation and policy
       - technology readiness levels
       - digital twin advancements
+    expectation_fields:
+      - key: trl_required
+        label: Min TRL Required
+        type: select
+        options: ["TRL 1-3 (Research)", "TRL 4-6 (Demo)", "TRL 7-9 (Production)"]
+        help: "Technology readiness level this customer expects"
+      - key: pilot_budget
+        label: Pilot / PoC Budget
+        type: text
+        placeholder: "e.g. $50K"
+        help: "Available budget for prototype or pilot"
+      - key: commitment_date
+        label: Demo / PoC Deadline
+        type: date
+        help: "When does the prototype need to be ready?"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Fallback persona — used when no keyword match is found
@@ -496,3 +630,13 @@ fallback_persona:
         - description
         - owner_defined
         - next_steps_clear
+  expectation_fields:
+    - key: key_expectation
+      label: Key Expectation
+      type: text
+      placeholder: "What does this person need from you?"
+      help: "Primary thing this customer or stakeholder expects"
+    - key: commitment_date
+      label: Next Commitment Date
+      type: date
+      help: "Next hard date or deadline with this person"

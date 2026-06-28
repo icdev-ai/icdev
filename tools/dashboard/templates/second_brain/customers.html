@@ -90,6 +90,21 @@
                   {% if c.title %}<div class="text-muted" style="font-size:.78rem">{{ c.title }}</div>{% endif %}
                   {% if c.org %}<div class="text-muted" style="font-size:.75rem">{{ c.org }}</div>{% endif %}
                   {% if c.email %}<div style="font-size:.73rem;color:#6b7280">{{ c.email }}</div>{% endif %}
+                  {% if c.expectations_json %}
+                  {% set exp = c.expectations_json | tojson | fromjson if c.expectations_json is string else c.expectations_json %}
+                  {% if exp and exp != '{}' %}
+                  <div class="mt-2 pt-2" style="border-top:1px solid rgba(255,255,255,.06)">
+                    {% for k, v in (exp.items() if exp is mapping else {}.items()) %}
+                    {% if v and k != 'commitment_date' %}
+                    <div style="font-size:.72rem;color:#9ca3af"><span style="color:#6b7280">{{ k | replace('_',' ') | title }}:</span> {{ v }}</div>
+                    {% endif %}
+                    {% endfor %}
+                    {% if c.commitment_date %}
+                    <div style="font-size:.72rem;color:#fcd34d">Renewal: {{ c.commitment_date }}</div>
+                    {% endif %}
+                  </div>
+                  {% endif %}
+                  {% endif %}
                 </div>
                 <button class="btn btn-sm cust-delete text-danger" data-id="{{ c.id }}" title="Remove" style="font-size:.85rem;padding:.15rem .35rem;line-height:1">×</button>
               </div>
@@ -135,6 +150,8 @@
         <div class="col-md-6 d-flex align-items-center">
           <div class="small text-muted" id="type-hint" style="font-size:.75rem"></div>
         </div>
+        <!-- Role-adaptive expectation fields (populated by JS from /api/second-brain/proactive/expectation-fields) -->
+        <div id="expectation-fields-container" class="col-12 row g-2 mt-0"></div>
         <div class="col-12 d-flex gap-2 mt-1">
           <button class="btn btn-primary btn-sm" id="btn-save-cust">Save</button>
           <button class="btn btn-outline-secondary btn-sm" id="btn-cancel-cust">Cancel</button>
@@ -150,6 +167,17 @@
 <script>
 const currentCusts = {{ customers | tojson }};
 const typeDescriptions = {{ customer_type_descriptions | tojson }};
+let _expectationFields = [];
+let _expectationPersona = '';
+
+// Load role-adaptive expectation fields once
+fetch('/me/api/second-brain/proactive/expectation-fields')
+  .then(r => r.ok ? r.json() : {fields:[]})
+  .then(d => {
+    _expectationFields = d.fields || [];
+    _expectationPersona = d.persona || '';
+  })
+  .catch(() => {});
 
 function saveCusts(custs) {
   return fetch('/me/api/second-brain/profile', {
@@ -158,10 +186,50 @@ function saveCusts(custs) {
   }).then(r=>r.json());
 }
 
+function renderExpectationFields() {
+  const container = document.getElementById('expectation-fields-container');
+  if (!container || !_expectationFields.length) return;
+  container.innerHTML = _expectationFields.length ? `
+    <div class="col-12 mt-1">
+      <div class="text-uppercase fw-semibold" style="font-size:.6rem;letter-spacing:.08em;color:#6b7280">
+        ${_expectationPersona ? _expectationPersona + ' Expectations' : 'Expectations'}
+      </div>
+    </div>` + _expectationFields.map(f => {
+      const id = 'exp-' + f.key;
+      const inputStyle = 'background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.15);color:inherit';
+      let input = '';
+      if (f.type === 'select') {
+        input = `<select class="form-select form-select-sm" id="${id}" style="${inputStyle};background:rgba(30,30,50,.9)">
+          <option value="">— select —</option>
+          ${(f.options||[]).map(o=>`<option value="${o}">${o}</option>`).join('')}
+        </select>`;
+      } else {
+        input = `<input class="form-control form-control-sm" id="${id}" type="${f.type||'text'}" placeholder="${f.placeholder||''}" style="${inputStyle}">`;
+      }
+      return `<div class="col-md-6">
+        <label class="form-label small mb-1" style="color:#9ca3af"
+          ${f.help ? `title="${f.help}" data-bs-toggle="tooltip"` : ''}>${f.label}</label>
+        ${input}
+      </div>`;
+    }).join('') : '';
+  // Re-init tooltips on new elements
+  container.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => new bootstrap.Tooltip(el));
+}
+
+function collectExpectations() {
+  const exp = {};
+  _expectationFields.forEach(f => {
+    const el = document.getElementById('exp-' + f.key);
+    if (el && el.value.trim()) exp[f.key] = el.value.trim();
+  });
+  return Object.keys(exp).length ? exp : null;
+}
+
 function showAddForm() {
   document.getElementById('add-cust-form').classList.remove('d-none');
   document.getElementById('cust-name').focus();
   updateTypeHint();
+  renderExpectationFields();
 }
 
 function updateTypeHint() {
@@ -179,6 +247,7 @@ document.getElementById('btn-cancel-cust')?.addEventListener('click', () => {
 document.getElementById('btn-save-cust')?.addEventListener('click', () => {
   const name = document.getElementById('cust-name').value.trim();
   if (!name) { document.getElementById('cust-name').focus(); return; }
+  const exp = collectExpectations();
   const newCust = {
     name,
     title: document.getElementById('cust-title').value.trim(),
@@ -186,6 +255,11 @@ document.getElementById('btn-save-cust')?.addEventListener('click', () => {
     email: document.getElementById('cust-email').value.trim(),
     relationship_type: document.getElementById('cust-type').value,
   };
+  if (exp) {
+    newCust.expectations_json = JSON.stringify(exp);
+    const commitField = _expectationFields.find(f => f.key === 'commitment_date');
+    if (commitField && exp.commitment_date) newCust.commitment_date = exp.commitment_date;
+  }
   currentCusts.push(newCust);
   saveCusts(currentCusts).then(d => { if(d.ok) location.reload(); else alert('Error: '+d.error); });
 });

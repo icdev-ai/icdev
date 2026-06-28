@@ -158,6 +158,8 @@
 
             <li><a href="/" class="{% if request.path == '/' %}active{% endif %}">Home</a></li>
 
+            <li><a href="/me" class="{% if request.path.startswith('/me') %}active{% endif %}" style="font-weight:600" title="My AI Assistant — profile, customers, briefing">🧠 Me</a></li>
+
             <!-- ── Ops ──────────────────────────────────────────────────────── -->
             <li class="nav-dropdown">
                 <a href="javascript:void(0)" class="nav-dropdown-trigger {% if request.path in ['/projects','/agents','/orchestration','/monitoring','/platform-health','/activity','/cicd','/kanban','/batch','/simulation','/il5'] %}active{% endif %}">Ops ▾</a>
@@ -173,6 +175,7 @@
                     <li class="nav-section-label">Monitor</li>
                     <li><a href="/monitoring">Monitoring</a></li>
                     <li><a href="/platform-health">Platform Health</a></li>
+                    <li><a href="/health/canvases">Canvas Health</a></li>
                     <li><a href="/cache-savings">Cache Savings</a></li>
                     <li><a href="/activity">Activity</a></li>
                     <li><a href="/il5">IL5 Ingestion</a></li>
@@ -434,7 +437,7 @@
             <!-- ── Updates ──────────────────────────────────────────────────── -->
             <li>
                 <a href="/updates" class="{% if request.path == '/updates' %}active{% endif %}" style="position:relative;">
-                    Updates{% if unseen_release %}<span id="nav-release-badge" title="New release available" style="background:#e94560;color:#fff;font-size:.65rem;font-weight:700;border-radius:8px;padding:0 5px;margin-left:.3rem;vertical-align:middle;">1</span>{% endif %}
+                    Updates{% if unseen_release %}<span id="nav-release-badge" title="New release available" style="display:inline-block;background:#e94560;color:#fff;font-size:.65rem;font-weight:700;border-radius:8px;padding:0 5px;margin-left:.3rem;vertical-align:middle;line-height:1.6;">1</span>{% endif %}
                 </a>
             </li>
 
@@ -928,5 +931,99 @@
     {% block body_end %}
     {% include "includes/_onboarding_wizard.html" ignore missing %}
     {% endblock %}
+
+    {# ── Second Brain: Universal Review FAB ──────────────────────────────── #}
+    {# Appears on any canvas in the user's role affinity list.                #}
+    {# Does NOT show on /me pages or the home page.                           #}
+    {% if config.get('ICDEV_SECOND_BRAIN_ENABLED') or config.get('ICDEV_SECOND_BRAIN_ENABLED', '') == 'true' %}
+    <div id="sb-review-fab" style="position:fixed;bottom:80px;right:20px;z-index:1040;display:none">
+      <button class="btn shadow-lg d-flex align-items-center gap-2"
+        id="sb-review-btn"
+        style="background:linear-gradient(135deg,#1e40af,#312e81);color:#e0e7ff;border:none;border-radius:50px;padding:.45rem 1rem;font-size:.82rem"
+        data-bs-toggle="tooltip" data-bs-placement="left"
+        title="Review this work against your customers and role expectations">
+        🧠 <span>Review</span>
+      </button>
+    </div>
+    <div class="modal fade" id="sbReviewModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content" style="background:#0f172a;border:1px solid rgba(255,255,255,.1)">
+          <div class="modal-header" style="border-bottom:1px solid rgba(255,255,255,.07)">
+            <h6 class="modal-title fw-semibold mb-0">🧠 Customer &amp; Role Review</h6>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body" id="sb-review-body">
+            <div class="text-center py-4 text-muted small">Analysing…</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script>
+    (function() {
+      var pathParts = location.pathname.split('/').filter(Boolean);
+      var canvasKey = pathParts[0] || '';
+      if (!canvasKey || canvasKey === 'me') return;
+
+      fetch('/me/api/second-brain/proactive/relevant-canvases')
+        .then(function(r) { return r.ok ? r.json() : {canvases:[]}; })
+        .then(function(d) {
+          if ((d.canvases || []).indexOf(canvasKey) !== -1) {
+            var fab = document.getElementById('sb-review-fab');
+            if (fab) fab.style.display = 'block';
+            var btn = document.getElementById('sb-review-btn');
+            if (btn) new bootstrap.Tooltip(btn);
+          }
+        }).catch(function(){});
+
+      var _reviewBtn = document.getElementById('sb-review-btn');
+      if (_reviewBtn) {
+        _reviewBtn.addEventListener('click', function() {
+          var ctx = (typeof window.getProactiveContext === 'function')
+            ? window.getProactiveContext()
+            : {canvas: canvasKey, title: document.title, url: location.pathname};
+
+          var modal = new bootstrap.Modal(document.getElementById('sbReviewModal'));
+          document.getElementById('sb-review-body').innerHTML =
+            '<div class="text-center py-4 text-muted small">🧠 Analysing against your customers and role expectations…</div>';
+          modal.show();
+
+          fetch('/me/api/second-brain/proactive/design-review', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(ctx)
+          })
+          .then(function(r) { return r.json(); })
+          .then(function(d) {
+            var body = document.getElementById('sb-review-body');
+            if (!d.ok) { body.innerHTML = '<div class="text-danger small p-2">Error: '+(d.error||'unknown')+'</div>'; return; }
+            var findings = d.findings || [];
+            if (!findings.length) {
+              body.innerHTML = '<div class="text-center py-4"><div style="font-size:2rem">&#x2705;</div><p class="text-muted small mt-2">No issues found based on your current customer expectations and role requirements.</p></div>';
+              return;
+            }
+            var colorMap = {critical:'#ef4444',high:'#f87171',medium:'#fbbf24',low:'#6b7280'};
+            var bgMap = {critical:'rgba(239,68,68,.08)',high:'rgba(248,113,113,.06)',medium:'rgba(251,191,36,.06)',low:'rgba(107,114,128,.05)'};
+            body.innerHTML = findings.map(function(f) {
+              var c = colorMap[f.severity] || '#6b7280';
+              var bg = bgMap[f.severity] || 'rgba(255,255,255,.03)';
+              return '<div class="rounded-3 p-3 mb-2" style="background:'+bg+';border:1px solid '+c+'33">'
+                + '<div class="d-flex align-items-center gap-2 mb-1">'
+                + '<span class="badge rounded-pill" style="background:'+c+'22;color:'+c+';font-weight:500;font-size:.7rem">'+f.severity+'</span>'
+                + (f.customer ? '<span class="badge bg-secondary rounded-pill fw-normal" style="font-size:.68rem">'+f.customer+'</span>' : '')
+                + '<span class="fw-semibold small">'+(f.dimension||'')+'</span>'
+                + '</div>'
+                + '<p class="mb-1 small">'+f.finding+'</p>'
+                + (f.recommendation ? '<p class="mb-0 text-muted" style="font-size:.78rem">'+f.recommendation+'</p>' : '')
+                + '</div>';
+            }).join('');
+          })
+          .catch(function(err) {
+            document.getElementById('sb-review-body').innerHTML = '<div class="text-danger small p-2">Request failed: '+err+'</div>';
+          });
+        });
+      }
+    })();
+    </script>
+    {% endif %}
 </body>
 </html>

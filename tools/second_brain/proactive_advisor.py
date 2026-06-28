@@ -610,3 +610,83 @@ def _customer_nudges(customers: list[dict]) -> list[dict]:
         except (ValueError, TypeError):
             pass
     return nudges[:5]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 5. Context-aware challenge mitigations
+# ─────────────────────────────────────────────────────────────────────────────
+
+def generate_challenge_mitigations(
+    user_id: str,
+    tenant_id: str = "default",
+) -> list[dict[str, Any]]:
+    """Generate specific, context-grounded mitigations for each active challenge.
+
+    Uses the user's actual objectives, open tasks, and customers — not generic advice.
+    Returns list of {challenge_key, description, mitigations (bullet string)}.
+    """
+    try:
+        from tools.second_brain.profile import get_challenges, get_objectives
+        from tools.second_brain.role_advisor import infer_persona, _get_user_title
+    except ImportError as exc:
+        logger.warning("[proactive_advisor] generate_challenge_mitigations import failed: %s", exc)
+        return []
+
+    challenges = [
+        c for c in (get_challenges(user_id, tenant_id) or [])
+        if c.get("status") == "active"
+    ]
+    if not challenges:
+        return []
+
+    objectives = get_objectives(user_id, tenant_id) or []
+    open_tasks = _fetch_open_tasks(user_id)
+    customers = _load_customers(user_id, tenant_id)
+    title = _get_user_title(user_id, tenant_id)
+    persona = infer_persona(title)
+    persona_label = persona.get("display_name", "professional")
+
+    mitigations: list[dict[str, Any]] = []
+    for ch in challenges[:5]:
+        key = ch.get("challenge_key", "")
+        desc = ch.get("custom_description") or key.replace("_", " ").title()
+
+        obj_titles = [o.get("title", "") for o in objectives[:3]]
+        priority_tasks = [
+            t.get("title", "") for t in open_tasks
+            if t.get("priority") in ("high", "critical")
+        ][:3]
+        customer_names = [c.get("name", "") for c in customers[:3]]
+
+        prompt = (
+            f"You are an AI assistant for a {persona_label}.\n"
+            f"Their active challenge: '{desc}'.\n"
+            f"Current objectives: {obj_titles}.\n"
+            f"High-priority open tasks: {priority_tasks}.\n"
+            f"Key customers/stakeholders: {customer_names}.\n"
+            f"Generate exactly 3 specific, actionable mitigations for this challenge. "
+            f"Each must reference the actual situation above — no generic advice. "
+            f"Format: one bullet per line starting with '•'. No intro or closing text."
+        )
+        try:
+            from tools.llm.router import LLMRouter, LLMRequest
+            resp = LLMRouter().invoke(
+                "summarization",
+                LLMRequest(prompt=prompt, max_tokens=220, temperature=0.4),
+            )
+            bullets = (resp.content or "").strip()
+        except Exception as exc:
+            logger.debug("[proactive_advisor] LLM mitigate failed for %s: %s", key, exc)
+            bullets = (
+                "• Block 30 minutes this week to identify the root cause.\n"
+                "• Discuss with a trusted peer or stakeholder.\n"
+                "• Review this challenge in your next weekly reflection."
+            )
+
+        mitigations.append({
+            "challenge_key": key,
+            "description": desc,
+            "mitigations": bullets,
+        })
+
+    return mitigations
