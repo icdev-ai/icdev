@@ -599,6 +599,35 @@ def _load_customers(user_id: str, tenant_id: str) -> list[dict]:
         return []
 
 
+def enrich_briefing_with_personal_kb(user_id: str, tenant_id: str = "default") -> list[dict]:
+    """Search personal knowledge base for items relevant to today's objectives.
+
+    Called from briefing generation; writes result to briefing under 'personal_kb'.
+    """
+    try:
+        from tools.second_brain.profile import get_objectives
+        from tools.second_brain.personal_rag import search_personal_rag
+        objs = get_objectives(user_id, tenant_id) or []
+        kb_hits: list[dict] = []
+        seen_ids: set[str] = set()
+        for obj in objs[:3]:
+            title = obj.get("title", "")
+            if not title:
+                continue
+            hits = search_personal_rag(title, user_id, tenant_id, limit=2)
+            for h in hits:
+                if h.get("id") not in seen_ids:
+                    seen_ids.add(h.get("id", ""))
+                    kb_hits.append(h)
+        if kb_hits:
+            from datetime import date
+            _upsert_prep_section(user_id, tenant_id, date.today().isoformat(), {"personal_kb": kb_hits[:4]})
+        return kb_hits[:4]
+    except Exception as exc:
+        logger.debug("[proactive_advisor] personal_kb enrich failed: %s", exc)
+        return []
+
+
 def _fetch_calendar_items(user_id: str, for_date: str) -> list[dict]:
     try:
         from tools.second_brain.connectors.google import GoogleConnector

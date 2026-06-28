@@ -529,6 +529,99 @@ def api_iqe_query():
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Personal Knowledge Base (Personal RAG)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@second_brain_bp.route("/me/learn", methods=["GET"])
+def page_learn():
+    from tools.second_brain.personal_rag import get_items
+    items = get_items(_user_id(), _tenant_id())
+    return render_template("second_brain/learn.html", items=items)
+
+
+@second_brain_bp.route("/api/second-brain/learn/url", methods=["POST"])
+def api_learn_url():
+    data = request.get_json(force=True, silent=True) or {}
+    url = (data.get("url") or "").strip()
+    if not url:
+        return jsonify({"ok": False, "error": "url required"}), 400
+    from tools.second_brain.personal_rag import queue_url
+    result = queue_url(_user_id(), url, data.get("title", ""), _tenant_id())
+    return jsonify({"ok": True, **result})
+
+
+@second_brain_bp.route("/api/second-brain/learn/text", methods=["POST"])
+def api_learn_text():
+    data = request.get_json(force=True, silent=True) or {}
+    text = (data.get("text") or "").strip()
+    if not text:
+        return jsonify({"ok": False, "error": "text required"}), 400
+    from tools.second_brain.personal_rag import queue_text
+    result = queue_text(_user_id(), text, data.get("title", "Note"), data.get("tags", []), _tenant_id())
+    return jsonify({"ok": True, **result})
+
+
+@second_brain_bp.route("/api/second-brain/learn/items", methods=["GET"])
+def api_learn_items():
+    from tools.second_brain.personal_rag import get_items
+    return jsonify({"ok": True, "items": get_items(_user_id(), _tenant_id())})
+
+
+@second_brain_bp.route("/api/second-brain/learn/items/<item_id>", methods=["DELETE"])
+def api_learn_delete(item_id: str):
+    from tools.second_brain.personal_rag import delete_item
+    ok = delete_item(item_id, _user_id(), _tenant_id())
+    return jsonify({"ok": ok})
+
+
+@second_brain_bp.route("/api/second-brain/learn/search", methods=["GET"])
+def api_learn_search():
+    q = request.args.get("q", "").strip()
+    if not q:
+        return jsonify({"ok": False, "error": "q required"}), 400
+    from tools.second_brain.personal_rag import search_personal_rag
+    return jsonify({"ok": True, "results": search_personal_rag(q, _user_id(), _tenant_id())})
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Slides audience tailoring
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@second_brain_bp.route("/api/second-brain/slides/audience-framing", methods=["POST"])
+def api_slides_audience_framing():
+    """Return audience-tailored framing for a slide deck topic."""
+    data = request.get_json(force=True, silent=True) or {}
+    topic = data.get("topic", "").strip()
+    if not topic:
+        return jsonify({"ok": False, "error": "topic required"}), 400
+    from tools.second_brain.slides_tailor import get_audience_framing
+    result = get_audience_framing(topic, _user_id(), _tenant_id())
+    return jsonify({"ok": True, **result})
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# DIC personalisation test endpoint
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@second_brain_bp.route("/api/second-brain/dic/personalise", methods=["GET"])
+def api_dic_personalise():
+    q = request.args.get("q", "")
+    if not q:
+        return jsonify({"ok": False, "error": "q required"}), 400
+    try:
+        from tools.document_intelligence.search import search_documents
+        raw = search_documents(q, limit=10)
+    except Exception:
+        raw = []
+    from tools.second_brain.dic_personaliser import personalise_dic_results
+    ranked = personalise_dic_results(raw, _user_id(), _tenant_id())
+    return jsonify({"ok": True, "results": ranked[:10]})
+
+
 def _get_connector(service: str):
     try:
         if service in ("gcal", "gmail"):

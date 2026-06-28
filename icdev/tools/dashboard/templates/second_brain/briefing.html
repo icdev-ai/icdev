@@ -275,6 +275,33 @@
       </div>
       {% endif %}
 
+      {% set kb_items = briefing.get('personal_kb') %}
+      {% if kb_items %}
+      <div class="card mb-3" style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08)">
+        <div class="card-body p-3">
+          <div class="fw-semibold small mb-2" style="color:#a78bfa">📚 From Your Knowledge Base</div>
+          {% for item in kb_items %}
+          <div class="d-flex align-items-start gap-2 mb-2">
+            <span style="font-size:.8rem;margin-top:.1rem">{% if item.url %}🔗{% else %}📝{% endif %}</span>
+            <div class="small" style="line-height:1.4">
+              {% if item.url %}
+              <a href="{{ item.url }}" target="_blank" style="color:#c4b5fd;text-decoration:none">{{ item.title or item.url }}</a>
+              {% else %}
+              {{ item.title }}
+              {% endif %}
+              {% if item.summary %}
+              <div class="text-muted" style="font-size:.7rem">{{ item.summary[:100] }}</div>
+              {% endif %}
+            </div>
+          </div>
+          {% endfor %}
+          <div class="mt-2">
+            <a href="/me/learn" class="small" style="color:#a78bfa;text-decoration:none">Manage knowledge base →</a>
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
     </div>
 
     {% else %}

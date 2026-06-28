@@ -37,6 +37,11 @@
                     <label class="form-label">Presentation Title</label>
                     <input type="text" id="title" class="form-control" value="ICDEV™ Platform Overview"
                            placeholder="e.g. AI Adoption in Healthcare" required>
+                <!-- Audience framing hint (Second Brain) -->
+                <div id="audience-framing-hint" class="d-none mt-2 p-2 rounded" style="background:rgba(139,92,246,.08);border:1px solid rgba(139,92,246,.2);font-size:.8rem">
+                  <div class="fw-semibold mb-1" style="color:#c4b5fd">🎯 Audience Framing</div>
+                  <div id="af-content" class="text-muted small"></div>
+                </div>
                 </div>
                 <div class="form-group" style="margin-top:16px;">
                     <label class="form-label">Occasion / Scenario</label>
@@ -519,5 +524,33 @@ document.getElementById('generate-form').addEventListener('submit', async functi
 updateToneHint();
 onDeckTypeChange();
 goStep(1);
+
+// Audience framing — fires on title change, queries Second Brain
+(function() {
+  const titleEl = document.getElementById('title');
+  const hint = document.getElementById('audience-framing-hint');
+  const content = document.getElementById('af-content');
+  if (!titleEl || !hint || !content) return;
+  let _timer = null;
+  titleEl.addEventListener('input', function() {
+    clearTimeout(_timer);
+    _timer = setTimeout(() => {
+      const t = this.value.trim();
+      if (!t || t.length < 5) return;
+      fetch('/me/api/second-brain/slides/audience-framing', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({topic: t})
+      }).then(r => r.json()).then(d => {
+        if (!d.ok || !d.personalised) { hint.classList.add('d-none'); return; }
+        content.innerHTML =
+          '<div><strong>Audience:</strong> ' + d.matched_audience.join(', ') + ' (' + d.primary_type + ')</div>' +
+          '<div><strong>Tone:</strong> ' + d.framing.tone + ' — lead with ' + d.framing.lead_with + '</div>' +
+          '<div class="mt-1 fst-italic">' + d.suggested_openers[0] + '</div>';
+        hint.classList.remove('d-none');
+      }).catch(() => {});
+    }, 600);
+  });
+})();
 </script>
 {% endblock %}

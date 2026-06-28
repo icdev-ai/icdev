@@ -1298,6 +1298,17 @@ def api_search():
                 query, clearance=clearance, collection_id=collection_id, top_k=top_k, mode=mode,
             )
             payload["access"] = expl.to_dict()
+        # Personalise results if Second Brain is enabled
+        try:
+            import os as _os
+            if _os.environ.get("ICDEV_SECOND_BRAIN_ENABLED", "false").lower() == "true":
+                from flask import g as _g
+                from tools.second_brain.dic_personaliser import personalise_dic_results
+                _uid = getattr(_g, "user_id", "default")
+                _tid = getattr(_g, "tenant_id", "default")
+                payload["results"] = personalise_dic_results(payload["results"], _uid, _tid)
+        except Exception:
+            pass
         return jsonify(payload)
     except Exception as exc:
         logger.warning("dic: search error: %s", exc)
