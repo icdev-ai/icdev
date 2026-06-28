@@ -94,6 +94,14 @@ REFLEX_NAMES = [
     "migration_canvas",
     "academy_reflex",
     "e2e_runner",
+    "qa_agent_reflex",  # 6-hour QA coverage gap sweep + E2E sweep scheduling
+    "coherence_to_kanban_reflex",  # diffs coherence violations → files kanban bug tasks
+    "flaky_tracker_reflex",         # ingests pytest XML → files [FLAKY] kanban tasks
+    "dep_health_reflex",            # pip check + pip-audit → files [DEP-HEALTH] kanban tasks
+    "dead_code_reflex",             # orphan files + dead functions + import cycles → [DEAD-CODE] tasks
+    "critical_task_watchdog_reflex",  # polls for critical kanban tasks → watchdog_alerts + sidecar JSON
+    "api_contract_reflex",            # OpenAPI spec vs live responses → [API-CONTRACT] kanban tasks
+    "route_perf_reflex",              # NAV_ROUTES smoke + p50 latency regression detection → [PERF] tasks
     "log_triage",
     "inspect_adapt",
     "cpmp_monitor",
@@ -114,6 +122,14 @@ REFLEX_NAMES = [
     "reflexion_loop",      # nova-echo: weekly batch Reflexion pass → improvement artifacts
     "evolution",           # nova-sela: weekly GEPA-style skill text mutation + promotion
     "wiki_lint",           # karpathy-wiki: nightly health checks on memory wiki (orphans/stale/overflow)
+    "usage_rollup",        # ecr-bill-01: daily billing rollup from usage_events (00:05 UTC)
+    "episodic_distiller",  # phase-a: distill episodic events → semantic facts every 6h
+    "daily_briefing_reflex",      # second-brain: hourly check → generate+deliver user briefings
+    "nightly_prep_reflex",        # second-brain: evening stalled-work scan + tomorrow prep card
+    "thought_leadership_reflex",  # second-brain: Monday 07:00 UTC architecture digest per user
+    "meeting_prep_reflex",        # second-brain: hourly — prep cards for upcoming customer meetings
+    "objective_tracker_reflex",   # second-brain: daily 23:00 UTC — derive objective progress
+    "commitment_watch_reflex",    # second-brain: daily 06:00 UTC — commitment date alerts
 ]
 
 # Backward-compat aliases for module-level access used by other code

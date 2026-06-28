@@ -23,7 +23,10 @@
         </h4>
         <p class="text-muted small mb-0">What you're working toward — surfaced daily in your briefing and used to prioritize tasks.</p>
       </div>
-      <button class="btn btn-primary btn-sm" id="btn-add-obj">+ Add Objective</button>
+      <div class="d-flex gap-2">
+        <button class="btn btn-outline-secondary btn-sm" id="btn-sync-progress" data-bs-toggle="tooltip" title="Auto-track progress from completed kanban tasks and git commits">↻ Sync Progress</button>
+        <button class="btn btn-primary btn-sm" id="btn-add-obj">+ Add Objective</button>
+      </div>
     </div>
 
     {% set horizons = [('week','This Week','⚡','rgba(245,158,11,.08)','rgba(245,158,11,.25)','#fbbf24'),('quarter','This Quarter','📅','rgba(37,99,235,.08)','rgba(37,99,235,.25)','#60a5fa'),('long_term','Long Term','🌐','rgba(139,92,246,.08)','rgba(139,92,246,.25)','#a78bfa')] %}
@@ -38,13 +41,34 @@
         <span class="badge rounded-pill" style="background:{{ hborder }};color:{{ hcolor }};font-size:.7rem">{{ h_objs|length }}</span>
       </div>
       {% for obj in h_objs %}
-      <div class="rounded-3 p-3 mb-2 d-flex align-items-start gap-3" style="background:{{ hbg }};border:1px solid {{ hborder }}" data-id="{{ obj.id }}">
-        <div class="flex-grow-1">
-          <div class="fw-semibold small">{{ obj.title }}</div>
-          {% if obj.description %}<div class="text-muted mt-1" style="font-size:.8rem">{{ obj.description }}</div>{% endif %}
-          {% if obj.metric %}<div class="mt-1" style="font-size:.75rem;color:#6b7280">📏 {{ obj.metric }}</div>{% endif %}
+      <div class="rounded-3 p-3 mb-2" style="background:{{ hbg }};border:1px solid {{ hborder }}" data-id="{{ obj.id }}">
+        <div class="d-flex align-items-start gap-3">
+          <div class="flex-grow-1">
+            <div class="fw-semibold small">{{ obj.title }}</div>
+            {% if obj.description %}<div class="text-muted mt-1" style="font-size:.8rem">{{ obj.description }}</div>{% endif %}
+            {% if obj.metric %}<div class="mt-1" style="font-size:.75rem;color:#6b7280">📏 {{ obj.metric }}</div>{% endif %}
+          </div>
+          <button class="btn btn-sm obj-delete text-danger" data-id="{{ obj.id }}" style="font-size:.85rem;padding:.15rem .35rem;line-height:1;flex-shrink:0">×</button>
         </div>
-        <button class="btn btn-sm obj-delete text-danger" data-id="{{ obj.id }}" style="font-size:.85rem;padding:.15rem .35rem;line-height:1;flex-shrink:0">×</button>
+        {% set pct = obj.auto_progress_pct | default(0) | int %}
+        {% if pct > 0 %}
+        <div class="mt-2">
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <span style="font-size:.7rem;color:{{ hcolor }}">Auto-tracked progress</span>
+            <span class="fw-semibold" style="font-size:.7rem;color:{{ hcolor }}">{{ pct }}%</span>
+          </div>
+          <div class="progress" style="height:4px;background:rgba(255,255,255,.08)">
+            <div class="progress-bar" style="width:{{ pct }}%;background:{{ hcolor }};transition:width .6s ease"></div>
+          </div>
+          {% set notes = obj.progress_notes %}
+          {% if notes %}
+          {% set last_note = notes | last %}
+          {% if last_note and last_note.note %}
+          <div class="text-muted mt-1" style="font-size:.7rem">{{ last_note.note[:100] }}</div>
+          {% endif %}
+          {% endif %}
+        </div>
+        {% endif %}
       </div>
       {% endfor %}
     </div>
@@ -57,9 +81,9 @@
       <p class="mb-1">No objectives yet.</p>
       <p class="small mb-3">Start with your top 3. Think: what would make this week, this quarter, and this year a success?</p>
       <div class="d-flex justify-content-center gap-2 flex-wrap small text-muted">
-        <span class="badge" style="background:rgba(245,158,11,.15);color:#fbbf24;border:1px solid rgba(245,158,11,.2)">⚡ "Ship the BGP redundancy design"</span>
-        <span class="badge" style="background:rgba(37,99,235,.15);color:#60a5fa;border:1px solid rgba(37,99,235,.2)">📅 "Complete ISP peering review"</span>
-        <span class="badge" style="background:rgba(139,92,246,.15);color:#a78bfa;border:1px solid rgba(139,92,246,.2)">🌐 "Establish network thought leadership"</span>
+        <span class="badge" style="background:rgba(245,158,11,.15);color:#fbbf24;border:1px solid rgba(245,158,11,.2)">⚡ "Ship the feature by Friday"</span>
+        <span class="badge" style="background:rgba(37,99,235,.15);color:#60a5fa;border:1px solid rgba(37,99,235,.2)">📅 "Close Q3 customer reviews"</span>
+        <span class="badge" style="background:rgba(139,92,246,.15);color:#a78bfa;border:1px solid rgba(139,92,246,.2)">🌐 "Build domain thought leadership"</span>
       </div>
     </div>
     {% endif %}
@@ -132,6 +156,23 @@ document.querySelectorAll('.obj-delete').forEach(btn => {
     const updated = currentObjs.filter(o => o.id !== id);
     saveObjectives(updated).then(d => { if(d.ok) location.reload(); else alert('Error: '+d.error); });
   });
+});
+
+document.getElementById('btn-sync-progress')?.addEventListener('click', function() {
+  this.disabled = true; this.textContent = '↻ Syncing…';
+  fetch('/me/api/second-brain/objectives/sync', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'})
+    .then(r=>r.json())
+    .then(d => {
+      if (d.ok && d.count > 0) {
+        location.reload();
+      } else if (d.ok) {
+        this.disabled = false; this.textContent = '✓ Up to date';
+        setTimeout(() => { this.textContent = '↻ Sync Progress'; }, 2000);
+      } else {
+        alert('Sync error: ' + (d.error || 'unknown'));
+        this.disabled = false; this.textContent = '↻ Sync Progress';
+      }
+    }).catch(() => { this.disabled = false; this.textContent = '↻ Sync Progress'; });
 });
 
 document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => new bootstrap.Tooltip(el));

@@ -127,6 +127,9 @@ REFLEX_NAMES = [
     "daily_briefing_reflex",      # second-brain: hourly check → generate+deliver user briefings
     "nightly_prep_reflex",        # second-brain: evening stalled-work scan + tomorrow prep card
     "thought_leadership_reflex",  # second-brain: Monday 07:00 UTC architecture digest per user
+    "meeting_prep_reflex",        # second-brain: hourly — prep cards for upcoming customer meetings
+    "objective_tracker_reflex",   # second-brain: daily 23:00 UTC — derive objective progress
+    "commitment_watch_reflex",    # second-brain: daily 06:00 UTC — commitment date alerts
 ]
 
 # Backward-compat aliases for module-level access used by other code

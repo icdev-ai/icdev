@@ -118,6 +118,60 @@
       </div>
       {% endif %}
 
+      <!-- Commitment Alerts (from commitment_watch_reflex) -->
+      {% set alerts = briefing.get('commitment_alerts') %}
+      {% if alerts %}
+      <div class="col-12">
+        <div class="rounded-3 overflow-hidden" style="border:1px solid rgba(244,63,94,.25)">
+          <div class="px-3 py-2 fw-semibold small d-flex align-items-center gap-2" style="background:rgba(244,63,94,.07);border-bottom:1px solid rgba(244,63,94,.15)">
+            <span>📅 Commitment Watch</span>
+            <span class="badge fw-normal ms-auto" style="background:rgba(244,63,94,.2);color:#fda4af;font-size:.68rem">{{ alerts|length }} commitment(s)</span>
+          </div>
+          <div class="p-3">
+            {% for a in alerts %}
+            {% set urgency_color = {'overdue': '#f87171', 'critical': '#fb923c', 'high': '#fbbf24', 'medium': '#60a5fa'}.get(a.urgency, '#94a3b8') %}
+            {% set urgency_bg = {'overdue': 'rgba(248,113,113,.08)', 'critical': 'rgba(251,146,60,.06)', 'high': 'rgba(251,191,36,.06)', 'medium': 'rgba(96,165,250,.06)'}.get(a.urgency, 'transparent') %}
+            <div class="d-flex align-items-center gap-3 mb-2 rounded-2 px-2 py-1" style="background:{{ urgency_bg }}">
+              <span class="badge fw-semibold" style="background:{{ urgency_color }}1a;color:{{ urgency_color }};border:1px solid {{ urgency_color }}33;font-size:.65rem;white-space:nowrap">{{ a.urgency|upper }}</span>
+              <div class="flex-grow-1 small">
+                <span class="fw-semibold">{{ a.customer }}</span>
+                <span class="text-muted ms-1" style="font-size:.75rem">({{ a.customer_type }})</span>
+              </div>
+              <span class="small" style="color:{{ urgency_color }};white-space:nowrap">{{ a.label }}</span>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
+      <!-- Meeting Prep Cards (from meeting_prep_reflex) -->
+      {% set meeting_preps = briefing.get('meeting_preps') %}
+      {% if meeting_preps %}
+      <div class="col-12">
+        <div class="rounded-3 overflow-hidden" style="border:1px solid rgba(52,211,153,.2)">
+          <div class="px-3 py-2 fw-semibold small d-flex align-items-center gap-2" style="background:rgba(52,211,153,.06);border-bottom:1px solid rgba(52,211,153,.12)">
+            <span>🤝 Meeting Prep</span>
+            <span class="badge fw-normal ms-auto" style="background:rgba(52,211,153,.2);color:#6ee7b7;font-size:.68rem">{{ meeting_preps|length }} upcoming</span>
+          </div>
+          <div class="p-3">
+            {% for card in meeting_preps %}
+            <div class="mb-3 {% if not loop.last %}border-bottom border-dark pb-3{% endif %}">
+              <div class="d-flex align-items-center gap-2 mb-2">
+                <span class="fw-semibold small">{{ card.event_title }}</span>
+                <span class="badge fw-normal" style="background:rgba(52,211,153,.12);color:#6ee7b7;font-size:.65rem">{{ card.customer }}</span>
+                {% if card.start %}
+                <span class="text-muted ms-auto" style="font-size:.7rem">{{ card.start[11:16] if card.start|length > 10 else card.start }}</span>
+                {% endif %}
+              </div>
+              <div class="small" style="line-height:1.6;white-space:pre-line;color:#d1fae5">{{ card.bullets }}</div>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
       <!-- Tomorrow Prep (from nightly_prep_reflex) -->
       {% set prep = briefing.get('tomorrow_prep') %}
       {% if prep %}

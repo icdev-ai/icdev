@@ -399,6 +399,39 @@ def api_challenge_mitigate():
         return jsonify({"ok": False, "error": str(exc)}), 500
 
 
+@second_brain_bp.route("/api/second-brain/objectives/sync", methods=["POST"])
+def api_objectives_sync():
+    """Manually trigger objective progress sync from kanban + git."""
+    try:
+        from tools.second_brain.objective_tracker import sync_objective_progress
+        updated = sync_objective_progress(_user_id(), _tenant_id())
+        return jsonify({"ok": True, "updated": updated, "count": len(updated)})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@second_brain_bp.route("/api/second-brain/proactive/commitment-alerts", methods=["GET"])
+def api_commitment_alerts():
+    """Return commitment date alerts across all customer relationships."""
+    try:
+        from tools.second_brain.proactive_advisor import generate_commitment_alerts
+        alerts = generate_commitment_alerts(_user_id(), _tenant_id())
+        return jsonify({"ok": True, "alerts": alerts, "count": len(alerts)})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@second_brain_bp.route("/api/second-brain/proactive/meeting-preps", methods=["POST"])
+def api_meeting_preps():
+    """Manually trigger meeting prep card generation for upcoming meetings."""
+    try:
+        from tools.second_brain.proactive_advisor import generate_meeting_preps
+        cards = generate_meeting_preps(_user_id(), _tenant_id())
+        return jsonify({"ok": True, "cards": cards, "count": len(cards)})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # IQE endpoint
 # ─────────────────────────────────────────────────────────────────────────────
