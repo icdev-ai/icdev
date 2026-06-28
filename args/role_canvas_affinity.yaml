@@ -1,0 +1,498 @@
+# CUI // SP-CTI
+# Role → Canvas Affinity Map for Second Brain Proactive Advisor
+#
+# Used by tools/second_brain/role_advisor.py to:
+#   1. Infer a user's persona from their free-form job title
+#   2. Determine which canvases are relevant to that persona
+#   3. Apply role-appropriate review dimensions when checking artifacts
+#
+# Design principles:
+#   - title_keywords: matched case-insensitively against user_identity_profiles.title
+#     First persona whose keywords match wins. Order matters — put more specific first.
+#   - canvases: ordered by relevance. First 5 surface in the morning briefing.
+#   - review_dimensions: what the proactive advisor checks for this role.
+#     Each dimension has a weight (1–3) and a set of artifact_checks.
+#     artifact_checks are keys that the customer_aware_review() function looks for
+#     in the design_context dict submitted by a canvas.
+#   - stall_signal_canvases: which canvases' activity (or absence) signals a stalled objective.
+#   - digest_topics: intelligence feed topics for the weekly architecture digest.
+
+role_affinities:
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # INFRASTRUCTURE / NETWORK / CLOUD / SOLUTIONS ARCHITECT
+  # ─────────────────────────────────────────────────────────────────────────
+  - persona: solutions_architect
+    display_name: Solutions / Network / Cloud Architect
+    title_keywords:
+      - architect
+      - solutions architect
+      - network architect
+      - cloud architect
+      - infrastructure architect
+      - enterprise architect
+      - systems architect
+      - platform architect
+      - data center architect
+      - network engineer
+    canvases:
+      - idc          # Infrastructure Design Canvas
+      - ndc          # Network Design Canvas
+      - nocc         # Network Operations / Monitoring
+      - mc           # Migration Canvas
+      - rag          # RAG Knowledge Base (design docs)
+      - slides       # Architecture presentations
+      - dsoc         # Security posture (affects designs)
+      - compliance   # FedRAMP / NIST constraints on design
+    stall_signal_canvases:
+      - idc
+      - ndc
+      - mc
+    review_dimensions:
+      redundancy:
+        weight: 3
+        description: "Validates design against redundancy and availability targets"
+        artifact_checks:
+          - redundancy_level       # expected: N+1 or N+2 for external customers
+          - single_points_of_failure
+          - availability_target
+          - failover_documented
+      operational_handoff:
+        weight: 2
+        description: "Ensures operational teams can support the design"
+        artifact_checks:
+          - runbook_referenced
+          - monitoring_defined
+          - escalation_path
+      customer_sla_alignment:
+        weight: 3
+        description: "Cross-references design constraints with customer SLA expectations"
+        artifact_checks:
+          - availability_target
+          - rto_rpo
+      compliance_gate:
+        weight: 2
+        description: "Checks against applicable compliance frameworks from user profile"
+        artifact_checks:
+          - il_level
+          - fips_compliant
+    digest_topics:
+      - network architecture
+      - BGP peering
+      - MPLS and SR-MPLS
+      - SD-WAN enterprise
+      - cloud networking
+      - network automation
+      - carrier-grade reliability
+      - data center fabric
+      - zero-trust network access
+      - 5G and private LTE
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # SOFTWARE DEVELOPER / ENGINEER
+  # ─────────────────────────────────────────────────────────────────────────
+  - persona: developer
+    display_name: Software Developer / Engineer
+    title_keywords:
+      - developer
+      - software engineer
+      - full stack
+      - fullstack
+      - backend engineer
+      - frontend engineer
+      - platform engineer
+      - devops engineer
+      - sre
+      - site reliability
+      - api developer
+      - mobile developer
+    canvases:
+      - sdc          # Software Design Canvas
+      - qdc          # Quality / Testing Canvas
+      - idc          # Infrastructure (deployment targets)
+      - rag          # Technical documentation
+      - kanban       # Sprint tasks
+      - integrity    # Code integrity / SIPA
+      - slides       # Tech demos and architecture reviews
+    stall_signal_canvases:
+      - sdc
+      - kanban
+      - qdc
+    review_dimensions:
+      test_coverage:
+        weight: 3
+        description: "Validates that adequate tests exist for the design"
+        artifact_checks:
+          - test_coverage_pct
+          - has_unit_tests
+          - has_integration_tests
+          - has_e2e_tests
+      security_posture:
+        weight: 3
+        description: "Checks for known vulnerability patterns in design decisions"
+        artifact_checks:
+          - auth_mechanism
+          - input_validation
+          - secrets_management
+          - dependency_audit_clean
+      api_contract:
+        weight: 2
+        description: "Ensures API contract is defined and backward-compatible"
+        artifact_checks:
+          - openapi_spec_exists
+          - breaking_changes_flagged
+      code_quality:
+        weight: 2
+        description: "Static analysis and lint gate results"
+        artifact_checks:
+          - lint_clean
+          - complexity_score
+    digest_topics:
+      - AI-assisted development
+      - large language model APIs
+      - developer productivity tools
+      - software supply chain security
+      - API design patterns
+      - platform engineering
+      - observability and distributed tracing
+      - DevSecOps practices
+      - code review automation
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # PROGRAM / PROJECT MANAGER
+  # ─────────────────────────────────────────────────────────────────────────
+  - persona: pm
+    display_name: Program / Project Manager
+    title_keywords:
+      - program manager
+      - project manager
+      - pmo
+      - delivery manager
+      - product manager
+      - scrum master
+      - agile coach
+      - program director
+      - portfolio manager
+    canvases:
+      - pmc          # Program Management Canvas
+      - kanban       # Task and sprint tracking
+      - cpmp         # Contract / procurement management
+      - slides       # Status and stakeholder briefings
+      - compliance   # Regulatory commitments
+      - rag          # Program documents
+      - forecast     # Resource and schedule forecasting
+    stall_signal_canvases:
+      - kanban
+      - pmc
+      - cpmp
+    review_dimensions:
+      schedule_risk:
+        weight: 3
+        description: "Flags designs/plans with dependencies that could delay milestones"
+        artifact_checks:
+          - dependencies_identified
+          - critical_path_clear
+          - buffer_days
+          - milestone_dates
+      stakeholder_alignment:
+        weight: 3
+        description: "Checks that key stakeholders are identified and briefed"
+        artifact_checks:
+          - stakeholders_listed
+          - approval_chain_defined
+          - communication_plan
+      resource_viability:
+        weight: 2
+        description: "Validates that the plan is achievable with declared resources"
+        artifact_checks:
+          - team_size
+          - budget_allocated
+          - skill_gaps_identified
+      risk_register:
+        weight: 2
+        description: "Ensures risks are captured and mitigated"
+        artifact_checks:
+          - risks_documented
+          - mitigation_owner
+    digest_topics:
+      - agile delivery practices
+      - SAFe program increment planning
+      - government program management
+      - earned value management
+      - AI tools for project management
+      - stakeholder communication
+      - risk management frameworks
+      - digital transformation delivery
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # SECURITY / ISSO / CYBER
+  # ─────────────────────────────────────────────────────────────────────────
+  - persona: isso
+    display_name: Security Officer / ISSO / Cyber
+    title_keywords:
+      - isso
+      - security officer
+      - cybersecurity
+      - information security
+      - ciso
+      - security engineer
+      - penetration tester
+      - red team
+      - blue team
+      - soc analyst
+      - incident response
+      - compliance officer
+    canvases:
+      - dsoc         # Security Operations Canvas
+      - compliance   # Compliance frameworks
+      - integrity    # SIPA code integrity
+      - rag          # Security policies and runbooks
+      - aisg         # AI security gateway
+      - ndc          # Network design (security posture)
+      - supply_chain # Software supply chain risk
+    stall_signal_canvases:
+      - dsoc
+      - compliance
+      - supply_chain
+    review_dimensions:
+      control_coverage:
+        weight: 3
+        description: "Maps design decisions to NIST 800-53 control families"
+        artifact_checks:
+          - control_families_mapped
+          - open_poams
+          - ato_status
+      threat_model:
+        weight: 3
+        description: "Validates threat model exists and covers the design surface"
+        artifact_checks:
+          - threat_model_exists
+          - attack_surface_documented
+          - data_flow_classified
+      encryption_posture:
+        weight: 3
+        description: "Checks encryption at rest and in transit"
+        artifact_checks:
+          - fips_compliant
+          - tls_version
+          - key_management
+      supply_chain_risk:
+        weight: 2
+        description: "SBOM exists and no known vulnerable dependencies"
+        artifact_checks:
+          - sbom_generated
+          - critical_cves_addressed
+    digest_topics:
+      - zero trust architecture
+      - CVE disclosures affecting government systems
+      - NIST CSF 2.0 updates
+      - threat intelligence feeds
+      - ransomware and nation-state TTPs
+      - FedRAMP authorization changes
+      - AI security and adversarial ML
+      - supply chain security
+      - CMMC compliance updates
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # ANALYST / DATA SCIENTIST / BI
+  # ─────────────────────────────────────────────────────────────────────────
+  - persona: analyst
+    display_name: Analyst / Data Scientist / BI
+    title_keywords:
+      - analyst
+      - data scientist
+      - data analyst
+      - business intelligence
+      - bi developer
+      - data engineer
+      - ml engineer
+      - research analyst
+      - intelligence analyst
+      - operations analyst
+    canvases:
+      - ddc          # Data Design Canvas
+      - rag          # Research and knowledge base
+      - bdc          # Business Design Canvas
+      - slides       # Reports and presentations
+      - forecast     # Forecasting and trends
+      - ai_observatory  # AI/ML model monitoring
+    stall_signal_canvases:
+      - ddc
+      - rag
+    review_dimensions:
+      data_quality:
+        weight: 3
+        description: "Validates data sources, freshness, and lineage"
+        artifact_checks:
+          - data_sources_documented
+          - refresh_cadence
+          - data_lineage_tracked
+          - pii_classified
+      analytical_validity:
+        weight: 3
+        description: "Checks that analytical methods match the question being answered"
+        artifact_checks:
+          - methodology_documented
+          - sample_size_adequate
+          - bias_considered
+      output_actionability:
+        weight: 2
+        description: "Ensures findings lead to clear decision points"
+        artifact_checks:
+          - decision_support_clear
+          - confidence_intervals_stated
+          - stakeholder_action_defined
+    digest_topics:
+      - AI and machine learning research
+      - data engineering patterns
+      - LLM fine-tuning and evaluation
+      - government data strategy
+      - analytics at scale
+      - MLOps and model governance
+      - synthetic data and privacy
+      - geospatial analytics
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # BUSINESS DEVELOPMENT / PROPOSAL / CONTRACTING
+  # ─────────────────────────────────────────────────────────────────────────
+  - persona: biz_dev
+    display_name: Business Development / Proposal / Contracting
+    title_keywords:
+      - business development
+      - biz dev
+      - capture manager
+      - proposal manager
+      - proposal writer
+      - contracting officer
+      - contracts manager
+      - acquisitions
+      - procurement
+      - sales engineer
+      - solutions consultant
+      - account executive
+    canvases:
+      - cpmp         # Contract and proposal management
+      - bdc          # Business design
+      - slides       # Pitch decks and proposals
+      - rag          # Past performance and templates
+      - pmc          # Program tracking
+      - forecast     # Pipeline and revenue forecasting
+    stall_signal_canvases:
+      - cpmp
+      - bdc
+    review_dimensions:
+      win_theme_clarity:
+        weight: 3
+        description: "Validates that the proposal has a clear differentiating win theme"
+        artifact_checks:
+          - win_themes_defined
+          - discriminators_listed
+          - customer_hot_buttons_addressed
+      compliance_check:
+        weight: 3
+        description: "Ensures RFP requirements matrix is complete"
+        artifact_checks:
+          - rfp_sections_mapped
+          - mandatory_requirements_addressed
+          - page_limits_respected
+      past_performance:
+        weight: 2
+        description: "Relevant past performance citations exist"
+        artifact_checks:
+          - past_performance_cited
+          - relevance_documented
+    digest_topics:
+      - government contracting trends
+      - DoD acquisition reform
+      - AI in federal procurement
+      - GovCon market intelligence
+      - OTA and SBIR opportunities
+      - proposal writing best practices
+      - competitive landscape analysis
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # INNOVATOR / PRODUCT / RESEARCH
+  # ─────────────────────────────────────────────────────────────────────────
+  - persona: innovator
+    display_name: Innovator / Product / R&D
+    title_keywords:
+      - innovator
+      - product owner
+      - product lead
+      - research engineer
+      - r&d
+      - technology scout
+      - chief technology
+      - cto
+      - innovation lead
+      - emerging technology
+      - applied research
+    canvases:
+      - foundry       # ACF Autonomous Capability Foundry
+      - rag           # Research corpus
+      - slides        # Innovation pitches
+      - bdc           # Business case for new products
+      - ai_observatory # AI capability tracking
+      - sdc           # Prototype software design
+    stall_signal_canvases:
+      - foundry
+      - kanban
+    review_dimensions:
+      feasibility:
+        weight: 3
+        description: "Validates technology readiness and feasibility of the innovation"
+        artifact_checks:
+          - trl_level
+          - prototype_exists
+          - dependencies_available
+      differentiation:
+        weight: 3
+        description: "Ensures the innovation offers measurable differentiation"
+        artifact_checks:
+          - market_comparison_done
+          - differentiators_defined
+          - competitor_gap_identified
+      mvp_scope:
+        weight: 2
+        description: "Validates MVP is scoped to demonstrate core value"
+        artifact_checks:
+          - mvp_defined
+          - success_metric
+          - iteration_plan
+    digest_topics:
+      - emerging AI capabilities
+      - foundation model developments
+      - agentic AI and autonomous systems
+      - quantum computing progress
+      - edge AI and on-device inference
+      - open source AI ecosystem
+      - AI regulation and policy
+      - technology readiness levels
+      - digital twin advancements
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Fallback persona — used when no keyword match is found
+# Selects canvases relevant to general knowledge workers
+# ─────────────────────────────────────────────────────────────────────────────
+fallback_persona:
+  persona: general
+  display_name: Knowledge Worker
+  canvases:
+    - kanban
+    - slides
+    - rag
+    - compliance
+  digest_topics:
+    - AI productivity tools
+    - knowledge management
+    - government digital transformation
+    - workflow automation
+  review_dimensions:
+    completeness:
+      weight: 2
+      description: "General completeness check for any artifact"
+      artifact_checks:
+        - title
+        - description
+        - owner_defined
+        - next_steps_clear
