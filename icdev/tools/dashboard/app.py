@@ -2603,6 +2603,38 @@ def create_app(testing: bool = False) -> Flask:
             return render_template("updates/page.html", releases=releases, error=None)
 
         app.logger.info("Updates route registered at /updates")
+
+        @app.route("/api/capability-sheet/download")
+        def capability_sheet_download():
+            import yaml as _yaml
+            from flask import send_file as _send_file, abort as _abort
+            _yaml_path = _os.path.join(_os.path.dirname(__file__), "..", "..", "..", "args", "capability_sheet.yaml")
+            try:
+                with open(_yaml_path, encoding="utf-8") as _f:
+                    _meta = _yaml.safe_load(_f).get("meta", {})
+                _xl_path = _meta.get("output_path", "")
+                if not _xl_path or not _os.path.exists(_xl_path):
+                    _abort(404, "Capability sheet not found — run the generator first.")
+                return _send_file(_xl_path, as_attachment=True, download_name="ICDEV_Capabilities_Challenges_Solutions.xlsx")
+            except Exception as _exc:
+                app.logger.warning("capability-sheet download failed: %s", _exc)
+                _abort(500, str(_exc))
+
+        @app.route("/api/capability-sheet/regenerate", methods=["POST"])
+        def capability_sheet_regenerate():
+            import subprocess as _sp
+            import sys as _sys
+            _root = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))))
+            _runner = _os.path.join(_root, "icdev", "tools", "showcase", "capability_sheet_generator.py")
+            try:
+                _res = _sp.run([_sys.executable, _runner], cwd=_root, capture_output=True, text=True, timeout=60)
+                if _res.returncode == 0:
+                    return jsonify({"ok": True, "message": _res.stdout.strip()})
+                return jsonify({"ok": False, "error": _res.stderr.strip()}), 500
+            except Exception as _exc:
+                return jsonify({"ok": False, "error": str(_exc)}), 500
+
+        app.logger.info("Capability sheet routes registered")
     except Exception as _exc:
         app.logger.warning("Updates route failed to register: %s", _exc)
 
