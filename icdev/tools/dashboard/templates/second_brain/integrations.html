@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}My Integrations{% endblock %}
+{% block content %}
+<div class="container py-4" style="max-width:800px">
+  <div class="d-flex align-items-center mb-4 gap-3">
+    <a href="/me" class="btn btn-sm btn-outline-secondary">← Back</a>
+    <h2 class="mb-0 fw-bold">Integrations</h2>
+  </div>
+
+  {% if request.args.get('connected') %}
+  <div class="alert alert-success alert-dismissible fade show">
+    ✓ <strong>{{ request.args.get('connected') | upper }}</strong> connected successfully!
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+  </div>
+  {% endif %}
+
+  <div class="row g-3">
+    {% set service_meta = {
+      'gcal': {'icon': '📅', 'name': 'Google Calendar', 'desc': 'Today\'s events & meeting prep', 'auth': 'oauth'},
+      'gmail': {'icon': '📧', 'name': 'Gmail', 'desc': 'Frequent contacts for relationship import', 'auth': 'oauth'},
+      'slack': {'icon': '💬', 'name': 'Slack', 'desc': 'Mentions, DMs, and briefing delivery', 'auth': 'oauth'},
+      'github': {'icon': '🐙', 'name': 'GitHub', 'desc': 'Issues, PRs & review requests', 'auth': 'pat'},
+      'gitlab': {'icon': '🦊', 'name': 'GitLab', 'desc': 'MRs, issues & CI status', 'auth': 'pat'},
+      'jira': {'icon': '🎯', 'name': 'Jira', 'desc': 'Sprint board & assigned tickets', 'auth': 'apikey'},
+      'linear': {'icon': '📐', 'name': 'Linear', 'desc': 'Cycles, issues & priorities', 'auth': 'apikey'},
+      'notion': {'icon': '📝', 'name': 'Notion', 'desc': 'Pages & databases as knowledge base', 'auth': 'apikey'},
+    } %}
+
+    {% for svc in all_services %}
+    {% set meta = service_meta.get(svc, {}) %}
+    {% set conn = integrations.get(svc) %}
+    {% set is_connected = conn and conn.status == 'active' %}
+    <div class="col-md-6">
+      <div class="card h-100 {% if is_connected %}border-success{% endif %}">
+        <div class="card-body">
+          <div class="d-flex align-items-center mb-2 gap-2">
+            <span class="fs-4">{{ meta.get('icon','🔗') }}</span>
+            <div class="flex-grow-1">
+              <div class="fw-semibold">{{ meta.get('name', svc) }}</div>
+              <small class="text-muted">{{ meta.get('desc','') }}</small>
+            </div>
+            {% if is_connected %}
+            <span class="badge bg-success">Connected</span>
+            {% else %}
+            <span class="badge bg-secondary">Not connected</span>
+            {% endif %}
+          </div>
+
+          {% if conn and conn.last_sync_at %}
+          <small class="text-muted d-block mb-2">Last sync: {{ conn.last_sync_at[:16] }}</small>
+          {% endif %}
+
+          <div class="d-flex gap-2">
+            {% if is_connected %}
+            <button class="btn btn-sm btn-outline-primary" onclick="syncService('{{ svc }}')">↺ Sync</button>
+            <button class="btn btn-sm btn-outline-danger" onclick="revokeService('{{ svc }}')">Revoke</button>
+            {% elif meta.get('auth') == 'oauth' %}
+            <a href="/me/api/integrations/oauth/start/{{ svc }}" class="btn btn-sm btn-primary">Connect</a>
+            {% else %}
+            <button class="btn btn-sm btn-primary" onclick="showPatForm('{{ svc }}', '{{ meta.get('auth') }}')">Connect</button>
+            {% endif %}
+          </div>
+
+          <!-- PAT/API key form (hidden) -->
+          <div class="pat-form mt-3 d-none" id="pat-{{ svc }}">
+            {% if svc in ('jira', 'linear') %}
+            <input class="form-control form-control-sm mb-1" id="pat-url-{{ svc }}" placeholder="Base URL (e.g. https://yourco.atlassian.net)">
+            <input class="form-control form-control-sm mb-1" id="pat-email-{{ svc }}" placeholder="Email">
+            {% endif %}
+            <input class="form-control form-control-sm mb-1" id="pat-token-{{ svc }}" type="password" placeholder="{% if meta.get('auth') == 'pat' %}Personal Access Token{% else %}API Key{% endif %}">
+            <div class="d-flex gap-1">
+              <button class="btn btn-sm btn-success" onclick="verifyPat('{{ svc }}')">Verify & Save</button>
+              <button class="btn btn-sm btn-outline-secondary" onclick="hidePat('{{ svc }}')">Cancel</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+{% include "includes/iqe_query_widget.html" %}
+
+<script>
+function showPatForm(svc) {
+  document.getElementById('pat-'+svc).classList.remove('d-none');
+}
+function hidePat(svc) {
+  document.getElementById('pat-'+svc).classList.add('d-none');
+}
+function verifyPat(svc) {
+  const token = document.getElementById('pat-token-'+svc).value.trim();
+  const payload = {access_token: token};
+  const emailEl = document.getElementById('pat-email-'+svc);
+  const urlEl = document.getElementById('pat-url-'+svc);
+  if (emailEl) payload.email = emailEl.value.trim();
+  if (urlEl) payload.base_url = urlEl.value.trim();
+  fetch('/me/api/integrations/verify/'+svc, {
+    method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
+  }).then(r=>r.json()).then(d => {
+    if(d.ok) { location.reload(); } else { alert('Verification failed. Check your credentials.'); }
+  });
+}
+function syncService(svc) {
+  fetch('/me/api/integrations/sync/'+svc, {method:'POST'})
+    .then(r=>r.json()).then(d => { alert(d.ok ? 'Synced! Items: '+(d.items_count||0) : 'Sync failed: '+d.error); });
+}
+function revokeService(svc) {
+  if (!confirm('Revoke '+svc+' integration?')) return;
+  fetch('/me/api/integrations/'+svc, {method:'DELETE'})
+    .then(r=>r.json()).then(d => { if(d.ok) location.reload(); });
+}
+</script>
+{% endblock %}

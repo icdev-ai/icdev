@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Today's Briefing{% endblock %}
+{% block content %}
+<div class="container py-4" style="max-width:800px">
+  <div class="d-flex align-items-center mb-4 gap-3">
+    <a href="/me" class="btn btn-sm btn-outline-secondary">← Back</a>
+    <h2 class="mb-0 fw-bold">Today's Briefing</h2>
+    <small class="text-muted ms-auto">{{ briefing.date or 'Today' }}</small>
+  </div>
+
+  {% if briefing %}
+  <!-- Greeting -->
+  <div class="card mb-4 border-0 text-white" style="background:linear-gradient(135deg,#1a1a2e,#16213e)">
+    <div class="card-body py-4">
+      <h4>{{ briefing.greeting }}</h4>
+      <p class="mb-0 opacity-75">{{ briefing.focus }}</p>
+    </div>
+  </div>
+
+  {% if briefing.meetings %}
+  <div class="card mb-3">
+    <div class="card-header fw-semibold">📅 Meetings</div>
+    <ul class="list-group list-group-flush">
+      {% for m in briefing.meetings %}
+      <li class="list-group-item">
+        <div class="d-flex justify-content-between mb-1">
+          <span class="fw-semibold">{{ m.title }}</span>
+          <small class="text-muted">{{ m.time }}</small>
+        </div>
+        {% if m.attendees %}<small class="text-muted">With: {{ m.attendees | join(', ') }}</small><br>{% endif %}
+        {% if m.prep_notes %}<small class="text-info">💡 {{ m.prep_notes }}</small>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  {% if briefing.tasks %}
+  <div class="card mb-3">
+    <div class="card-header fw-semibold">✅ Tasks</div>
+    <ul class="list-group list-group-flush">
+      {% for t in briefing.tasks %}
+      <li class="list-group-item d-flex align-items-center gap-2">
+        <span class="badge bg-secondary">{{ t.source|upper }}</span>
+        <span class="flex-grow-1">
+          {% if t.url %}<a href="{{ t.url }}" target="_blank" class="text-decoration-none">{{ t.title }}</a>{% else %}{{ t.title }}{% endif %}
+        </span>
+        {% if t.get('priority') %}<small class="text-muted">{{ t.priority }}</small>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  {% if briefing.mentions %}
+  <div class="card mb-3">
+    <div class="card-header fw-semibold">💬 Slack Mentions</div>
+    <ul class="list-group list-group-flush">
+      {% for m in briefing.mentions %}
+      <li class="list-group-item">
+        <small class="text-muted">#{{ m.channel }} · {{ m.user }}</small>
+        <p class="mb-0 mt-1">{{ m.text }}</p>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  {% if briefing.relationships %}
+  <div class="card mb-3">
+    <div class="card-header fw-semibold">🤝 Relationship Nudges</div>
+    <ul class="list-group list-group-flush">
+      {% for r in briefing.relationships %}
+      <li class="list-group-item">
+        <span class="fw-semibold">{{ r.name }}</span>
+        <small class="text-muted ms-2">{{ r.relationship_type }}</small>
+        <p class="mb-0 text-muted small">{{ r.nudge }}</p>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  {% if briefing.challenges_spotlight %}
+  <div class="alert alert-info">
+    <strong>⚡ Challenge Spotlight:</strong> {{ briefing.challenges_spotlight.suggestion }}
+  </div>
+  {% endif %}
+
+  {% else %}
+  <div class="text-center py-5">
+    <p class="text-muted">No briefing generated yet for today.</p>
+    <button class="btn btn-primary" onclick="fetch('/me/api/second-brain/briefing/generate',{method:'POST'}).then(()=>location.reload())">Generate Briefing</button>
+  </div>
+  {% endif %}
+</div>
+
+{% include "includes/iqe_query_widget.html" %}
+{% endblock %}

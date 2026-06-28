@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}My Relationships{% endblock %}
+{% block content %}
+<div class="container py-4" style="max-width:800px">
+  <div class="d-flex align-items-center mb-4 gap-3">
+    <a href="/me" class="btn btn-sm btn-outline-secondary">← Back</a>
+    <h2 class="mb-0 fw-bold">Key Relationships</h2>
+    <button class="btn btn-primary btn-sm ms-auto" id="btn-add-rel">+ Add Person</button>
+  </div>
+
+  <table class="table table-hover align-middle">
+    <thead class="table-light"><tr>
+      <th>Name</th><th>Title</th><th>Type</th><th>Email</th><th></th>
+    </tr></thead>
+    <tbody>
+    {% for rel in relationships %}
+    <tr data-id="{{ rel.id }}">
+      <td class="fw-semibold">{{ rel.name }}</td>
+      <td class="text-muted">{{ rel.title or '—' }}</td>
+      <td><span class="badge bg-secondary">{{ relationship_labels.get(rel.relationship_type, rel.relationship_type) }}</span></td>
+      <td><small>{{ rel.email or '—' }}</small></td>
+      <td><button class="btn btn-sm btn-outline-danger rel-delete" data-id="{{ rel.id }}">×</button></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5" class="text-muted text-center">No relationships yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+
+  <!-- Add form -->
+  <div class="card mt-3 d-none" id="add-rel-form">
+    <div class="card-body row g-2">
+      <div class="col-md-6"><input class="form-control" id="rel-name" placeholder="Full Name *"></div>
+      <div class="col-md-6"><input class="form-control" id="rel-title" placeholder="Title"></div>
+      <div class="col-md-6"><input class="form-control" type="email" id="rel-email" placeholder="Email (optional)"></div>
+      <div class="col-md-6">
+        <select class="form-select" id="rel-type">
+          {% for key, label in relationship_labels.items() %}
+          <option value="{{ key }}">{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-12 d-flex gap-2">
+        <button class="btn btn-primary btn-sm" id="btn-save-rel">Save</button>
+        <button class="btn btn-outline-secondary btn-sm" id="btn-cancel-rel">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% include "includes/iqe_query_widget.html" %}
+
+<script>
+const currentRels = {{ relationships | tojson }};
+
+function saveRelationships(rels) {
+  return fetch('/me/api/second-brain/profile', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({relationships: rels})
+  }).then(r=>r.json());
+}
+
+document.getElementById('btn-add-rel').addEventListener('click', () => {
+  document.getElementById('add-rel-form').classList.remove('d-none');
+});
+document.getElementById('btn-cancel-rel').addEventListener('click', () => {
+  document.getElementById('add-rel-form').classList.add('d-none');
+});
+document.getElementById('btn-save-rel').addEventListener('click', () => {
+  const name = document.getElementById('rel-name').value.trim();
+  if (!name) return alert('Name required');
+  currentRels.push({
+    name, title: document.getElementById('rel-title').value,
+    email: document.getElementById('rel-email').value,
+    relationship_type: document.getElementById('rel-type').value
+  });
+  saveRelationships(currentRels).then(d => { if(d.ok) location.reload(); else alert('Error: '+d.error); });
+});
+document.querySelectorAll('.rel-delete').forEach(btn => {
+  btn.addEventListener('click', function() {
+    const id = this.dataset.id;
+    const updated = currentRels.filter(r => r.id !== id);
+    saveRelationships(updated).then(d => { if(d.ok) location.reload(); else alert('Error: '+d.error); });
+  });
+});
+</script>
+{% endblock %}
