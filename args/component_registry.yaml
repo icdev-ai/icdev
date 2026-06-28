@@ -315,7 +315,7 @@ components:
     db_migration: tools/qdc_canvas/db/migrations
     iqe_adapter: true
     nav_link: true
-    seed_queries: context/iqe/queries/quality/
+    seed_queries: context/iqe/queries/qdc/
 - key: mdc
   kind: canvas
   cli_name: migration
