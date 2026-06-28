@@ -643,7 +643,7 @@ def ingest_from_table(
             return {"status": "error", "error": f"Table '{table_name}' not found"}
 
         # Validate column exists
-        cursor = conn.execute(f"PRAGMA table_info({table_name})")  # noqa: S608
+        cursor = conn.execute(f"PRAGMA table_info({table_name})")  # noqa: S608  # nosec B608 — table_name from validated registry, not user input
         columns = [r[1] if isinstance(r, tuple) else r["name"] for r in cursor.fetchall()]
         if content_column not in columns:
             # Fallback: try common content columns

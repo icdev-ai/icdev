@@ -151,12 +151,12 @@ def _fetch_pa_statuses(project_id: Optional[str]) -> Dict[str, str]:
             try:
                 if project_id:
                     rows = conn.execute(
-                        f"SELECT requirement_id, status FROM {table} WHERE project_id = %s",  # noqa: S608
+                        f"SELECT requirement_id, status FROM {table} WHERE project_id = %s",  # noqa: S608  # nosec B608 — table from hardcoded registry, not user input
                         (project_id,),
                     ).fetchall()
                 else:
                     rows = conn.execute(
-                        f"SELECT requirement_id, status FROM {table}",  # noqa: S608
+                        f"SELECT requirement_id, status FROM {table}",  # noqa: S608  # nosec B608 — table from hardcoded registry, not user input
                     ).fetchall()
                 for row in rows:
                     results[row[0]] = row[1]

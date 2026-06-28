@@ -62,7 +62,7 @@ class CanvasCollabManager:
         try:
             session_id = str(uuid.uuid4())
             conn.execute(
-                f"INSERT OR REPLACE INTO {self.collab_table} "  # noqa: S608
+                f"INSERT OR REPLACE INTO {self.collab_table} "  # noqa: S608  # nosec B608 — collab_table is a hardcoded class constant, not user input
                 "(id, design_id, user_id, user_name, color, joined_at, last_seen, is_active) "
                 "VALUES (%s, %s, %s, %s, %s, %s, %s, 1)",
                 (session_id, design_id, user_id, user_name, color, self._now(), self._now()),
@@ -77,7 +77,7 @@ class CanvasCollabManager:
         conn = self._get_conn()
         try:
             conn.execute(
-                f"UPDATE {self.collab_table} SET is_active = 0 "  # noqa: S608
+                f"UPDATE {self.collab_table} SET is_active = 0 "  # noqa: S608  # nosec B608 — collab_table is a hardcoded class constant, not user input
                 "WHERE design_id = %s AND user_id = %s",
                 (design_id, user_id),
             )
@@ -91,7 +91,7 @@ class CanvasCollabManager:
         conn = self._get_conn()
         try:
             conn.execute(
-                f"UPDATE {self.collab_table} SET last_seen = %s "  # noqa: S608
+                f"UPDATE {self.collab_table} SET last_seen = %s "  # noqa: S608  # nosec B608 — collab_table is a hardcoded class constant, not user input
                 "WHERE design_id = %s AND user_id = %s AND is_active = 1",
                 (self._now(), design_id, user_id),
             )
@@ -105,7 +105,7 @@ class CanvasCollabManager:
         conn = self._get_conn()
         try:
             rows = conn.execute(
-                f"SELECT user_id, user_name, color, last_seen FROM {self.collab_table} "  # noqa: S608
+                f"SELECT user_id, user_name, color, last_seen FROM {self.collab_table} "  # noqa: S608  # nosec B608 — collab_table is a hardcoded class constant, not user input
                 "WHERE design_id = %s AND is_active = 1 ORDER BY joined_at",
                 (design_id,),
             ).fetchall()

@@ -148,7 +148,7 @@ def update_project(project_id: str, **kwargs: Any) -> dict:
     conn = get_connection()
     try:
         conn.execute(
-            f"UPDATE canvas_projects SET {set_clause} WHERE id = %s",  # noqa: S608
+            f"UPDATE canvas_projects SET {set_clause} WHERE id = %s",  # noqa: S608  # nosec B608 — set_clause built from hardcoded column allowlist, not user input
             values,
         )
         conn.commit()
@@ -261,7 +261,7 @@ def _read_canvas_score(
             conn.close()
             return None
         row = conn.execute(
-            f"SELECT {col} FROM {table} ORDER BY rowid DESC LIMIT 1",  # noqa: S608
+            f"SELECT {col} FROM {table} ORDER BY rowid DESC LIMIT 1",  # noqa: S608  # nosec B608 — col/table from registry constants, not user input
         ).fetchone()
         conn.close()
         return float(row[0]) if row else None
@@ -323,7 +323,7 @@ def _count_cat1_findings(canvas_key: str) -> int:
             ]
             if "severity" in cols:
                 row = conn.execute(
-                    f"SELECT COUNT(*) FROM {tbl} WHERE severity = 'CAT1'",  # noqa: S608
+                    f"SELECT COUNT(*) FROM {tbl} WHERE severity = 'CAT1'",  # noqa: S608  # nosec B608 — tbl from PRAGMA table_info, not user input
                 ).fetchone()
                 count += row[0] if row else 0
         conn.close()

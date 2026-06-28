@@ -104,20 +104,20 @@ def nc_login_required(f):
 
 
 def _crud_list(conn, table, order_by="created_at DESC", limit=100):
-    rows = conn.execute(f"SELECT * FROM [{table}] ORDER BY {order_by} LIMIT %s", (limit,)).fetchall()  # noqa: S608, E501
+    rows = conn.execute(f"SELECT * FROM [{table}] ORDER BY {order_by} LIMIT %s", (limit,)).fetchall()  # noqa: S608, E501  # nosec B608 — table/order_by are internal registry values, not user input
     return [_row_to_dict(r) for r in rows]
 
 
 def _crud_create(conn, table, data):
     cols = ", ".join(data.keys())
     placeholders = ", ".join(["?"] * len(data))
-    conn.execute(f"INSERT INTO [{table}] ({cols}) VALUES ({placeholders})", list(data.values()))  # noqa: S608
+    conn.execute(f"INSERT INTO [{table}] ({cols}) VALUES ({placeholders})", list(data.values()))  # noqa: S608  # nosec B608 — table from internal registry, cols/placeholders derived from data keys, values parameterized
     conn.commit()
     return data
 
 
 def _crud_delete(conn, table, row_id):
-    conn.execute(f"DELETE FROM [{table}] WHERE id = %s", (row_id,))  # noqa: S608
+    conn.execute(f"DELETE FROM [{table}] WHERE id = %s", (row_id,))  # noqa: S608  # nosec B608 — table from internal registry, row_id is parameterized
     conn.commit()
     return {"deleted": row_id}
 

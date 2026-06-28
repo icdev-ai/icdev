@@ -491,7 +491,7 @@ def _build_iac_context(project_id: str = "") -> str:
         iac_tables = []
         for t in ("iac_templates", "iac_modules", "iac_resources", "infrastructure_templates"):
             try:
-                row = conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()  # noqa: S608
+                row = conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()  # noqa: S608  # nosec B608 — t is a hardcoded table name from internal tuple, not user input
                 count = row[0] if row else 0
                 if count > 0:
                     iac_tables.append(f"{t}({count})")

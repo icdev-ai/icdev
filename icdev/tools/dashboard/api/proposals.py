@@ -2715,7 +2715,7 @@ def update_annotation(ann_id):
     try:
         _ensure_annotations_table(conn)
         conn.execute(
-            f"UPDATE proposal_section_annotations SET {set_clause} WHERE id = %s",  # noqa: S608
+            f"UPDATE proposal_section_annotations SET {set_clause} WHERE id = %s",  # noqa: S608  # nosec B608 — set_clause built from validated field allowlist, not raw user input
             list(updates.values()) + [ann_id],
         )
         conn.commit()
