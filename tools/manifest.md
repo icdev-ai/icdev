@@ -1092,3 +1092,13 @@
 | Flaky Tracker Reflex | tools\genesis\reflexes\flaky_tracker_reflex.py | Auto-registered: reflexes/flaky_tracker_reflex.py | --json | JSON |
 | Qa Agent Reflex | tools\genesis\reflexes\qa_agent_reflex.py | Auto-registered: reflexes/qa_agent_reflex.py | --json | JSON |
 | Route Perf Reflex | tools\genesis\reflexes\route_perf_reflex.py | Auto-registered: reflexes/route_perf_reflex.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Role Generator | tools\ace\role_generator.py | Auto-registered: ace/role_generator.py | --json | JSON |
+| Proactive Advisor | tools\second_brain\proactive_advisor.py | Auto-registered: second_brain/proactive_advisor.py | --json | JSON |
+| Role Advisor | tools\second_brain\role_advisor.py | Auto-registered: second_brain/role_advisor.py | --json | JSON |
+| Nightly Prep Reflex | tools\genesis\reflexes\nightly_prep_reflex.py | Auto-registered: reflexes/nightly_prep_reflex.py | --json | JSON |
+| Thought Leadership Reflex | tools\genesis\reflexes\thought_leadership_reflex.py | Auto-registered: reflexes/thought_leadership_reflex.py | --json | JSON |

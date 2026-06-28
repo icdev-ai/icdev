@@ -212,8 +212,10 @@ function renderExpectationFields() {
         ${input}
       </div>`;
     }).join('') : '';
-  // Re-init tooltips on new elements
-  container.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => new bootstrap.Tooltip(el));
+  // Re-init tooltips on new elements (guard: Bootstrap may not yet be available on first render)
+  if (typeof bootstrap !== 'undefined') {
+    container.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => new bootstrap.Tooltip(el));
+  }
 }
 
 function collectExpectations() {
@@ -273,6 +275,6 @@ document.querySelectorAll('.cust-delete').forEach(btn => {
   });
 });
 
-document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => new bootstrap.Tooltip(el));
+window.addEventListener('load', () => document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => new bootstrap.Tooltip(el)));
 </script>
 {% endblock %}

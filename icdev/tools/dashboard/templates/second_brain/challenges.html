@@ -113,7 +113,7 @@ document.querySelectorAll('input[name="challenge"]').forEach(cb => {
   });
 });
 
-document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => new bootstrap.Tooltip(el));
+window.addEventListener('load', () => document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => new bootstrap.Tooltip(el)));
 
 document.getElementById('btn-ai-advice')?.addEventListener('click', function() {
   const btn = this;
