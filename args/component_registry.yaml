@@ -1499,36 +1499,36 @@ components:
     nav_link: true
     seed_queries: context/iqe/queries/workflow_canvas/
 
-  - key: canvas_health
-    kind: canvas
-    display_name: Canvas Health
-    env_flag: ICDEV_CANVAS_HEALTH_ENABLED
-    default_enabled: true
-    module: tools.canvas_health.blueprint
-    blueprint_attr: bp
-    url_prefix: ''
-    roles:
-      - admin
-      - developer
-      - analyst
-    nav:
-      section: Ops
-      label: Canvas Health
-      links:
-        - label: Canvas Health
-          href: /health/canvases
-    iqe:
-      adapter_module: tools.iqe.adapters.canvas_health
-      collections:
-        - canvas_health.canvas_status
-        - canvas_health.coherence_violations
-        - canvas_health.e2e_coverage
-    completeness:
-      template: tools/dashboard/templates/canvas_health/page.html
-      blueprint: true
-      iqe_adapter: true
-      nav_link: true
-      seed_queries: context/iqe/queries/canvas_health/
+- key: canvas_health
+  kind: canvas
+  display_name: Canvas Health
+  env_flag: ICDEV_CANVAS_HEALTH_ENABLED
+  default_enabled: true
+  module: tools.canvas_health.blueprint
+  blueprint_attr: bp
+  url_prefix: ''
+  roles:
+    - admin
+    - developer
+    - analyst
+  nav:
+    section: Ops
+    label: Canvas Health
+    links:
+      - label: Canvas Health
+        href: /health/canvases
+  iqe:
+    adapter_module: tools.iqe.adapters.canvas_health
+    collections:
+      - canvas_health.canvas_status
+      - canvas_health.coherence_violations
+      - canvas_health.e2e_coverage
+  completeness:
+    template: tools/dashboard/templates/canvas_health/page.html
+    blueprint: true
+    iqe_adapter: true
+    nav_link: true
+    seed_queries: context/iqe/queries/canvas_health/
 - key: second_brain
   kind: canvas
   display_name: My AI Assistant
