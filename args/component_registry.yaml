@@ -59,7 +59,7 @@ components:
     - infra.snapshots
     - infra.ai_decisions
   completeness:
-    template: tools/dashboard/templates/infra/page.html
+    template: tools/dashboard/templates/infra_canvas/index.html
     blueprint: true
     constants: tools/infra_canvas/constants.py
     db_migration: tools/infra_canvas/db/migrations
@@ -114,7 +114,7 @@ components:
     - nqe.paths
     - nqe.os_versions
   completeness:
-    template: tools/dashboard/templates/network/page.html
+    template: tools/dashboard/templates/network/index.html
     blueprint: true
     constants: tools/network/constants.py
     db_migration: tools/network/db/migrations
@@ -146,7 +146,7 @@ components:
     - attack.paths
     - security.ai_decisions
   completeness:
-    template: tools/dashboard/templates/security/page.html
+    template: tools/dashboard/templates/security_canvas/index.html
     blueprint: true
     constants: tools/security_canvas/constants.py
     db_migration: tools/security_canvas/db/migrations
@@ -214,7 +214,7 @@ components:
     - pipeline.edges
     - pipeline.ai_decisions
   completeness:
-    template: tools/dashboard/templates/devops/page.html
+    template: tools/dashboard/templates/pipeline/index.html
     blueprint: true
     constants: tools/pipeline/constants.py
     db_migration: tools/pipeline/db/migrations
@@ -247,7 +247,7 @@ components:
     - mitre.gaps
     - observability.ai_decisions
   completeness:
-    template: tools/dashboard/templates/observability/page.html
+    template: tools/dashboard/templates/observability_canvas/index.html
     blueprint: true
     constants: tools/observability_canvas/constants.py
     db_migration: tools/observability_canvas/db/migrations
@@ -309,7 +309,7 @@ components:
     - qdc.gate_results
     - qdc.ai_decisions
   completeness:
-    template: tools/dashboard/templates/quality/page.html
+    template: tools/dashboard/templates/qdc_canvas/index.html
     blueprint: true
     constants: tools/qdc_canvas/constants.py
     db_migration: tools/qdc_canvas/db/migrations
@@ -544,7 +544,7 @@ components:
     - pmc.peering_requests
     - pmc.route_policies
   completeness:
-    template: tools/dashboard/templates/pmc/page.html
+    template: tools/dashboard/templates/pmc_canvas/index.html
     blueprint: true
     constants: tools/pmc_canvas/constants.py
     db_migration: tools/pmc_canvas/db/migrations
@@ -575,7 +575,7 @@ components:
     - ccc.dwdm_spans
     - ccc.xc_orders
   completeness:
-    template: tools/dashboard/templates/ccc/page.html
+    template: tools/dashboard/templates/ccc_canvas/index.html
     blueprint: true
     constants: tools/ccc_canvas/constants.py
     db_migration: tools/ccc_canvas/db/migrations
@@ -622,7 +622,7 @@ components:
     - dsoc.mitigations
     - dsoc.bgp_hijacks
   completeness:
-    template: tools/dashboard/templates/dsoc/page.html
+    template: tools/dashboard/templates/dsoc_canvas/index.html
     blueprint: true
     constants: tools/dsoc_canvas/constants.py
     db_migration: tools/dsoc_canvas/db/migrations
