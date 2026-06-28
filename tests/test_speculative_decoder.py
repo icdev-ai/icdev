@@ -11,6 +11,10 @@ from icdev.tools.llm.speculative_decoder import (
     SpeculativeDecoder,
     SpeculativeDecodingUnavailable,
     _http_get,
+    _detect_provider,
+    _discover_draft_model,
+    _is_enabled,
+    _resolve_endpoint,
     get_speculative_decoder,
 )
 
@@ -22,7 +26,7 @@ from icdev.tools.llm.speculative_decoder import (
 class TestSpeculativeConfig:
     def test_defaults(self):
         cfg = SpeculativeConfig()
-        assert cfg.enabled is False
+        assert cfg.enabled == "auto"   # changed: was False, now "auto"
         assert cfg.draft_model == ""
         assert cfg.draft_tokens == 5
         assert cfg.verification_ratio == pytest.approx(0.7)
@@ -44,6 +48,131 @@ class TestSpeculativeConfig:
         assert cfg.verification_ratio == pytest.approx(0.5)
         assert cfg.fallback_on_failure is False
         assert cfg.target_endpoint == "http://localhost:22434"
+
+
+# ---------------------------------------------------------------------------
+# Auto-detection helpers
+# ---------------------------------------------------------------------------
+
+class TestIsEnabled:
+    def test_bool_true(self):
+        assert _is_enabled({"enabled": True}) is True
+
+    def test_bool_false(self):
+        assert _is_enabled({"enabled": False}) is False
+
+    def test_string_true(self):
+        assert _is_enabled({"enabled": "true"}) is True
+
+    def test_string_false(self):
+        assert _is_enabled({"enabled": "false"}) is False
+
+    def test_string_auto(self):
+        assert _is_enabled({"enabled": "auto"}) is None
+
+    def test_missing_key_defaults_to_auto(self):
+        assert _is_enabled({}) is None
+
+
+class TestResolveEndpoint:
+    def test_ollama_base_url_wins(self, monkeypatch):
+        monkeypatch.setenv("OLLAMA_BASE_URL", "http://myhost:11434")
+        assert _resolve_endpoint({}) == "http://myhost:11434"
+
+    def test_expands_env_var_pattern(self, monkeypatch):
+        monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
+        monkeypatch.setenv("MY_URL", "http://other:9999")
+        result = _resolve_endpoint({"target_endpoint": "${MY_URL:-http://localhost:11434}"})
+        assert result == "http://other:9999"
+
+    def test_falls_back_to_config_value(self, monkeypatch):
+        monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
+        result = _resolve_endpoint({"target_endpoint": "http://custom:12345"})
+        assert result == "http://custom:12345"
+
+    def test_falls_back_to_localhost(self, monkeypatch):
+        monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
+        assert _resolve_endpoint({}) == "http://localhost:11434"
+
+    def test_strips_trailing_slash(self, monkeypatch):
+        monkeypatch.setenv("OLLAMA_BASE_URL", "http://myhost:11434/")
+        assert _resolve_endpoint({}) == "http://myhost:11434"
+
+
+class TestDetectProvider:
+    def test_env_var_wins(self, monkeypatch):
+        monkeypatch.setenv("ICDEV_LLM_PROVIDER", "kimi")
+        assert _detect_provider({}) == "kimi"
+
+    def test_reads_ollama_from_providers(self, monkeypatch):
+        monkeypatch.delenv("ICDEV_LLM_PROVIDER", raising=False)
+        cfg = {"providers": {"ollama_local": {}}}
+        assert _detect_provider(cfg) == "ollama"
+
+    def test_returns_empty_when_no_info(self, monkeypatch):
+        monkeypatch.delenv("ICDEV_LLM_PROVIDER", raising=False)
+        assert _detect_provider({}) == ""
+
+
+class TestDiscoverDraftModel:
+    def test_returns_empty_when_endpoint_down(self):
+        with patch("icdev.tools.llm.speculative_decoder._http_get", return_value=(0, None)):
+            assert _discover_draft_model("http://localhost:11434") == ""
+
+    def test_finds_dspark_model(self):
+        body = {"models": [{"name": "dspark_qwen3_4b:latest"}, {"name": "llama3:latest"}]}
+        with patch("icdev.tools.llm.speculative_decoder._http_get", return_value=(200, body)):
+            assert _discover_draft_model("http://localhost:11434") == "dspark_qwen3_4b:latest"
+
+    def test_finds_eagle3_model(self):
+        body = {"models": [{"name": "eagle3_qwen3_8b:latest"}]}
+        with patch("icdev.tools.llm.speculative_decoder._http_get", return_value=(200, body)):
+            assert _discover_draft_model("http://localhost:11434") == "eagle3_qwen3_8b:latest"
+
+    def test_returns_empty_when_no_draft_model_loaded(self):
+        body = {"models": [{"name": "llama3:latest"}, {"name": "qwen3:latest"}]}
+        with patch("icdev.tools.llm.speculative_decoder._http_get", return_value=(200, body)):
+            assert _discover_draft_model("http://localhost:11434") == ""
+
+
+class TestGetSpeculativeDecoderAutoDetect:
+    def test_returns_none_for_kimi_provider(self, monkeypatch):
+        monkeypatch.setenv("ICDEV_LLM_PROVIDER", "kimi")
+        assert get_speculative_decoder() is None
+
+    def test_returns_none_for_anthropic_provider(self, monkeypatch):
+        monkeypatch.setenv("ICDEV_LLM_PROVIDER", "anthropic")
+        assert get_speculative_decoder() is None
+
+    def test_auto_discovers_draft_model_when_ollama(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("ICDEV_LLM_PROVIDER", "ollama")
+        monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
+        cfg_file = tmp_path / "llm.yaml"
+        cfg_file.write_text("speculative_decoding:\n  enabled: auto\n  draft_model: ''\n", encoding="utf-8")
+        body = {"models": [{"name": "dspark_qwen3_4b:latest"}]}
+        with patch("icdev.tools.llm.speculative_decoder._http_get", return_value=(200, body)):
+            result = get_speculative_decoder(config_path=cfg_file)
+        assert result is not None
+        assert result.config.draft_model == "dspark_qwen3_4b:latest"
+
+    def test_returns_none_when_auto_and_no_draft_model_available(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("ICDEV_LLM_PROVIDER", "ollama")
+        cfg_file = tmp_path / "llm.yaml"
+        cfg_file.write_text("speculative_decoding:\n  enabled: auto\n", encoding="utf-8")
+        with patch("icdev.tools.llm.speculative_decoder._http_get", return_value=(0, None)):
+            result = get_speculative_decoder(config_path=cfg_file)
+        assert result is None
+
+    def test_uses_pinned_draft_model_without_discovery(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("ICDEV_LLM_PROVIDER", "ollama")
+        cfg_file = tmp_path / "llm.yaml"
+        cfg_file.write_text(
+            "speculative_decoding:\n  enabled: true\n  draft_model: my-draft\n  target_endpoint: 'http://localhost:11434'\n",
+            encoding="utf-8",
+        )
+        result = get_speculative_decoder(config_path=cfg_file)
+        assert result is not None
+        assert result.config.draft_model == "my-draft"
 
 
 # ---------------------------------------------------------------------------
@@ -170,9 +299,12 @@ class TestGetSpeculativeDecoder:
         assert isinstance(result, SpeculativeDecoder)
         assert result.config.draft_model == "qwen3-0.6b"
 
-    def test_returns_none_when_config_missing(self, monkeypatch, tmp_path):
+    def test_returns_none_when_config_missing_and_no_draft_model_in_ollama(self, monkeypatch, tmp_path):
         monkeypatch.setenv("ICDEV_LLM_PROVIDER", "ollama")
-        result = get_speculative_decoder(config_path=tmp_path / "nonexistent.yaml")
+        monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
+        # No config file + Ollama not reachable → None
+        with patch("icdev.tools.llm.speculative_decoder._http_get", return_value=(0, None)):
+            result = get_speculative_decoder(config_path=tmp_path / "nonexistent.yaml")
         assert result is None
 
     def test_expands_env_var_in_endpoint(self, monkeypatch, tmp_path):

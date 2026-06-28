@@ -2,19 +2,21 @@ from __future__ import annotations
 
 """Speculative decoding wrapper for Ollama-served open-weight models.
 
-Activates only when ICDEV_LLM_PROVIDER=ollama and a draft model is configured.
-Falls back silently to standard inference when not available.
+Auto-detects availability: probes Ollama /api/tags for loaded draft models and
+activates transparently — no manual config changes required.
 
-Speculative decoding: a small draft model proposes N tokens, the target model
-verifies them in one forward pass, accepting the longest matching prefix.
-Achieves 2-3x throughput on typical generation tasks.
+Detection order:
+  1. Provider: ICDEV_LLM_PROVIDER env var → llm_config.yaml routing default
+  2. Endpoint: OLLAMA_BASE_URL env var → speculative_decoding.target_endpoint → localhost:11434
+  3. Draft model: speculative_decoding.draft_model (if set) → first detected dspark/eagle3/dflash model
+  4. Returns None immediately for non-Ollama providers (zero-cost fast path)
 
-Configuration (args/llm_config.yaml or env vars):
+Configuration (args/llm_config.yaml) — all optional when auto-detecting:
     speculative_decoding:
-      enabled: false          # set true to activate for ollama path
-      draft_model: ""         # HuggingFace checkpoint or local path
-      draft_tokens: 5         # tokens to draft per step
-      verification_ratio: 0.7 # min token acceptance rate to keep spec-dec active
+      enabled: auto           # auto | true | false
+      draft_model: ""         # leave blank to auto-discover from Ollama
+      draft_tokens: 5
+      verification_ratio: 0.7
       fallback_on_failure: true
 """
 
@@ -57,12 +59,17 @@ class SpeculativeDecodingUnavailable(RuntimeError):
 class SpeculativeConfig:
     """Configuration for the speculative decoder."""
 
-    enabled: bool = False
-    draft_model: str = ""
+    enabled: str = "auto"   # "auto" | "true" | "false" (bool also accepted)
+    draft_model: str = ""   # blank = auto-discovered from Ollama tags
     draft_tokens: int = 5
     verification_ratio: float = 0.7
     fallback_on_failure: bool = True
     target_endpoint: str = "http://localhost:11434"
+
+
+# Known draft model name fragments from DeepSpec (deepseek-ai/DeepSpec)
+_DRAFT_MODEL_PATTERNS = ("dspark", "eagle3", "dflash", "draft")
+
 
 
 # ---------------------------------------------------------------------------
@@ -319,40 +326,109 @@ class SpeculativeDecoder:
 # Factory
 # ---------------------------------------------------------------------------
 
+def _detect_provider(cfg: dict) -> str:
+    """Resolve active LLM provider: env var → config routing default → empty string."""
+    env = os.environ.get("ICDEV_LLM_PROVIDER", "").lower()
+    if env:
+        return env
+    # Walk llm_config.yaml routing section for the default function's first provider
+    routing = cfg.get("routing", {})
+    default_fn = routing.get("default_function", "")
+    if default_fn:
+        fn_cfg = cfg.get("functions", {}).get(default_fn, {})
+        chain = fn_cfg.get("primary_chain") or fn_cfg.get("chain") or []
+        if chain:
+            first = chain[0] if isinstance(chain[0], str) else chain[0].get("provider", "")
+            return first.lower()
+    # Fallback: check providers dict for any ollama entry
+    providers = cfg.get("providers", {})
+    for name in providers:
+        if "ollama" in name.lower():
+            return "ollama"
+    return ""
+
+
+def _resolve_endpoint(spec_cfg: dict) -> str:
+    """Resolve target_endpoint, expanding ${VAR:-default} env patterns."""
+    raw = spec_cfg.get("target_endpoint", "")
+    # Prefer OLLAMA_BASE_URL env var over config value
+    env_url = os.environ.get("OLLAMA_BASE_URL", "")
+    if env_url:
+        return env_url.rstrip("/")
+    if raw.startswith("${") and ":-" in raw:
+        inner = raw[2:-1]
+        var, _, default = inner.partition(":-")
+        return os.environ.get(var, default).rstrip("/")
+    return (raw or "http://localhost:11434").rstrip("/")
+
+
+def _discover_draft_model(endpoint: str) -> str:
+    """Probe Ollama /api/tags and return the first loaded draft model name, or ''."""
+    status, body = _http_get(f"{endpoint}/api/tags", timeout=2.0)
+    if status != 200 or not isinstance(body, dict):
+        return ""
+    models = body.get("models", [])
+    for m in models:
+        name = (m.get("name") or "").lower()
+        if any(pat in name for pat in _DRAFT_MODEL_PATTERNS):
+            return m.get("name", "")
+    return ""
+
+
+def _is_enabled(spec_cfg: dict) -> bool | None:
+    """Parse enabled field: True/False/None(=auto). None means probe and decide."""
+    val = spec_cfg.get("enabled", "auto")
+    if isinstance(val, bool):
+        return val
+    s = str(val).lower().strip()
+    if s in ("true", "1", "yes"):
+        return True
+    if s in ("false", "0", "no"):
+        return False
+    return None  # "auto" or anything else → probe
+
+
 def get_speculative_decoder(config_path: str | Path | None = None) -> SpeculativeDecoder | None:
-    """Return a SpeculativeDecoder if enabled and ICDEV_LLM_PROVIDER=ollama, else None."""
-    provider = os.environ.get("ICDEV_LLM_PROVIDER", "").lower()
-    if provider != "ollama":
-        return None
+    """Auto-detect and return a SpeculativeDecoder, or None if not applicable.
 
+    Returns None immediately (no network call) for non-Ollama providers.
+    Probes Ollama /api/tags only when provider=ollama.
+    """
     path = Path(config_path) if config_path else _DEFAULT_CONFIG
-    if _yaml is None or not path.exists():
-        return None
+    cfg: dict = {}
+    if _yaml is not None and path.exists():
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                cfg = _yaml.safe_load(f) or {}
+        except Exception:
+            pass
 
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            cfg = _yaml.safe_load(f) or {}
-    except Exception:
+    # Fast path: non-Ollama provider → spec-dec never applies
+    provider = _detect_provider(cfg)
+    if provider and provider != "ollama":
         return None
 
     spec_cfg = cfg.get("speculative_decoding", {})
-    if not spec_cfg.get("enabled", False):
-        return None
+    enabled = _is_enabled(spec_cfg)
+    if enabled is False:
+        return None  # explicitly disabled
 
-    # Expand ${VAR:-default} in target_endpoint
-    endpoint = spec_cfg.get("target_endpoint", "http://localhost:11434")
-    if endpoint.startswith("${") and ":-" in endpoint:
-        inner = endpoint[2:-1]
-        var, _, default = inner.partition(":-")
-        endpoint = os.environ.get(var, default)
+    endpoint = _resolve_endpoint(spec_cfg)
+
+    # Resolve draft model: config value first, then auto-discover from Ollama tags
+    draft_model = spec_cfg.get("draft_model", "").strip()
+    if not draft_model:
+        draft_model = _discover_draft_model(endpoint)
+    if not draft_model:
+        return None  # no draft model available
 
     return SpeculativeDecoder(
         SpeculativeConfig(
-            enabled=spec_cfg.get("enabled", False),
-            draft_model=spec_cfg.get("draft_model", ""),
+            enabled="auto" if enabled is None else str(enabled),
+            draft_model=draft_model,
             draft_tokens=int(spec_cfg.get("draft_tokens", 5)),
             verification_ratio=float(spec_cfg.get("verification_ratio", 0.7)),
-            fallback_on_failure=spec_cfg.get("fallback_on_failure", True),
+            fallback_on_failure=bool(spec_cfg.get("fallback_on_failure", True)),
             target_endpoint=endpoint,
         )
     )
