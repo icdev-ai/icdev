@@ -2,7 +2,6 @@
 
 Workflow: processify-wfl-f77f / step 3
 """
-import json
 import sqlite3
 import uuid
 

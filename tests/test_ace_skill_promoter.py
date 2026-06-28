@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import sqlite3
-import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import pytest
 import yaml
 
 
@@ -177,7 +175,6 @@ class TestPromoteOutput:
              patch("icdev.tools.ace.skill_promoter._update_status"), \
              patch("icdev.tools.ace.skill_promoter.log_component_audit", create=True):
             try:
-                from tools.config.component_registry import log_component_audit
                 with patch("icdev.tools.ace.skill_promoter._promote", wraps=lambda *a, **k: None):
                     pass
             except Exception:

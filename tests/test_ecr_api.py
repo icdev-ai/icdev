@@ -17,8 +17,7 @@ import os
 import sqlite3
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 
@@ -125,7 +124,7 @@ def test_verify_unknown_key(patched_conn):
 
 def test_verify_revoked_key(patched_conn):
     """verify_api_key returns None for a revoked key."""
-    from tools.auth.api_key import generate_api_key, verify_api_key, _hash
+    from tools.auth.api_key import generate_api_key, verify_api_key
 
     _, raw_key, key_hash = generate_api_key("tenant-3", "revoked key")
     patched_conn.execute(
@@ -341,8 +340,6 @@ def wh_conn(wh_db):
 def test_webhook_delivery(wh_conn):
     """dispatch_event creates a delivery row; retry honours backoff; HMAC verifiable."""
     import json
-    import hmac as _hmac
-    import hashlib
 
     from tools.api.webhook_engine import dispatch_event, sign_payload, verify_signature, _process_pending
 

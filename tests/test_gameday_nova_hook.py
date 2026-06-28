@@ -2,7 +2,6 @@
 """Tests for tools/gameday/nova_hook.py — NOVA training pair persistence."""
 from __future__ import annotations
 
-import pytest
 
 
 # ---------------------------------------------------------------------------

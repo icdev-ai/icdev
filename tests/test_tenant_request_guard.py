@@ -6,7 +6,6 @@ Phase B1 — Enterprise Configurable Platform: tenant_override=disabled → 403.
 
 import os
 import sys
-import unittest
 from unittest.mock import MagicMock, patch
 
 import pytest

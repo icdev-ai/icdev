@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import patch, mock_open
-import pytest
+from unittest.mock import patch
 
 
 # ---------------------------------------------------------------------------
@@ -64,8 +63,6 @@ class TestLoadCanvases:
         )
 
     def _call(self, yaml_text: str):
-        import io
-        import yaml as _yaml
 
         # Patch the path object so read_text returns our fixture
         from icdev.tools.ace import canvas_role_gap as m
@@ -110,7 +107,7 @@ class TestBuildRoleCanvasMap:
     def _call_with_roles(self, roles: dict[str, str]):
         """roles = {filename: yaml_content}"""
         from icdev.tools.ace import canvas_role_gap as m
-        import tempfile, yaml as _yaml
+        import tempfile
 
         with tempfile.TemporaryDirectory() as tmpdir:
             td = Path(tmpdir)

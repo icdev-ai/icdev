@@ -2,7 +2,6 @@
 """Tests for icdev.tools.chat.chat_manager — context lifecycle + coworker_instance_id."""
 from __future__ import annotations
 
-import json
 import sqlite3
 from pathlib import Path
 from unittest.mock import patch

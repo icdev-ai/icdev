@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import importlib
 import sys
-import types
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -144,7 +143,6 @@ def test_health_check_status_gauge():
 def _make_health_client(mock_db_ok=True):
     """Return a Flask test client with health routes and an optionally broken DB."""
     from flask import Flask
-    from unittest.mock import patch
     import importlib
 
     mod = importlib.import_module("tools.observability.health_blueprint")

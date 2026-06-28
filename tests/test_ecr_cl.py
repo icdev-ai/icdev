@@ -184,7 +184,6 @@ def test_updates_route_missing_changelog(tmp_path: Path) -> None:
 
 def _sqlite_db(tmp_path: Path):
     """Create an in-memory-like SQLite DB with user_preferences table."""
-    import os
     import sqlite3
 
     db = tmp_path / "test.db"
@@ -269,9 +268,7 @@ def test_unseen_badge_brand_version_present() -> None:
 
 def _make_seen_version_client(db_path: str, user_id: str = "test-user"):
     """Build a minimal Flask app with the PATCH /api/user/prefs/seen-version route."""
-    import json
     import os
-    import sqlite3
 
     from flask import Flask, jsonify, session
 

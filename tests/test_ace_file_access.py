@@ -2,7 +2,6 @@
 """Tests for ACE FileAccessBroker (Phase 2 — scoped filesystem access)."""
 from __future__ import annotations
 
-import tempfile
 from pathlib import Path
 
 import pytest

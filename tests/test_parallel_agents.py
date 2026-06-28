@@ -6,7 +6,6 @@ import threading
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 
 def _make_spec(namespace="test-ns", folder_access=None):

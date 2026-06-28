@@ -8,7 +8,6 @@ the LLM response text so the step result is visible in the Activity Log.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any
 
 from tools.logging.icdev_logger import get_logger
 

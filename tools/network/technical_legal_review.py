@@ -776,7 +776,7 @@ def format_review_report(review: dict[str, Any]) -> str:
     lines = [
         f"{'=' * 70}",
         f"  {CLASSIFICATION}",
-        f"  FEDERAL NETWORK PEERING AGREEMENT — TECHNICAL & LEGAL REVIEW",
+        "  FEDERAL NETWORK PEERING AGREEMENT — TECHNICAL & LEGAL REVIEW",
         f"  Workflow: {review.get('workflow_id')}  |  Step: {review.get('step_number')}",
         f"  Review ID:  {review.get('id')}",
         f"  Draft ID:   {review.get('draft_id')}",

@@ -465,14 +465,12 @@ class TestEvalRunner:
         assert result == []
 
     def test_load_suite_empty_evals(self, tmp_path):
-        import yaml
         from icdev.tools.ace.eval_runner import load_suite
         suite = tmp_path / "empty.yaml"
         suite.write_text("evals: []\n", encoding="utf-8")
         assert load_suite(suite) == []
 
     def test_load_suite_parses_entries(self, tmp_path):
-        import yaml
         from icdev.tools.ace.eval_runner import load_suite
         suite = tmp_path / "suite.yaml"
         suite.write_text(

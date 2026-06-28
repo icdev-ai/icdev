@@ -3,7 +3,7 @@
 import json
 import sqlite3
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 
 # ---------------------------------------------------------------------------
@@ -211,7 +211,7 @@ class TestIDRConflictGateEnvelopeMerge(unittest.TestCase):
 
 class TestGetGateSingleton(unittest.TestCase):
     def test_get_gate_returns_same_instance(self):
-        from tools.idr.conflict_gate import get_gate, IDRConflictGate, _default_gate
+        from tools.idr.conflict_gate import get_gate, IDRConflictGate
         import tools.idr.conflict_gate as mod
         mod._default_gate = None  # reset singleton
         g1 = get_gate()

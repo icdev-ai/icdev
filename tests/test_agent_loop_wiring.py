@@ -10,7 +10,6 @@ Verifies that the 5 infra modules are properly wired:
 """
 from __future__ import annotations
 import json
-import pytest
 from unittest.mock import MagicMock, patch
 
 

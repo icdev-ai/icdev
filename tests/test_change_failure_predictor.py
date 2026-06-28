@@ -8,7 +8,6 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 _REPO = Path(__file__).parent.parent
 if str(_REPO) not in sys.path:

@@ -77,7 +77,7 @@ def reverse_processify(workflow_id: str) -> str:
     )
 
     doc_text = f"# AS-EXECUTED: {wf_name}\n\n"
-    doc_text += f"**Execution Date:** Auto-reconstructed from kanban run\n\n"
+    doc_text += "**Execution Date:** Auto-reconstructed from kanban run\n\n"
     doc_text += f"## Execution Log\n\n{execution_text}"
 
     try:

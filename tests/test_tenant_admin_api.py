@@ -7,7 +7,6 @@ Tests POST/DELETE override → GET reflects change → audit log entry exists.
 import json
 import os
 import sys
-import unittest
 
 import pytest
 

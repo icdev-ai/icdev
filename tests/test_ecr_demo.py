@@ -23,7 +23,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -463,7 +463,6 @@ def test_demo_mode_off_allows_writes(monkeypatch):
 def test_demo_banner_set_when_demo_mode(monkeypatch):
     """get_banner() returns demo banner when ICDEV_DEMO_MODE=true and no explicit banner mode."""
     import importlib
-    import tools.dashboard.brand as brand_mod
 
     monkeypatch.setenv("ICDEV_DEMO_MODE", "true")
     monkeypatch.delenv("ICDEV_BANNER_MODE", raising=False)

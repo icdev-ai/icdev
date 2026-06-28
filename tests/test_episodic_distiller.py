@@ -168,7 +168,6 @@ class TestHeuristicDistillation:
 
 class TestRunThresholdSkip:
     def test_skips_when_below_trigger_count(self, mem_db):
-        import tools.memory.hybrid_search as hs
         from tools.genesis.reflexes.episodic_distiller import run
 
         _seed_episodic(mem_db, 5)  # only 5 — below default 20

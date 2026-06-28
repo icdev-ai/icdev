@@ -17,7 +17,7 @@ def reverse_regen(workflow: dict, tasks: list[dict], llm_router=None) -> str:
 def _template_reverse(workflow: dict, tasks: list[dict]) -> str:
     from datetime import datetime, timezone
     lines: list[str] = [
-        f"# As-Executed Process Report",
+        "# As-Executed Process Report",
         f"**Workflow:** {workflow.get('workflow_name') or 'Unnamed'}",
         f"**Generated:** {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}",
         "",

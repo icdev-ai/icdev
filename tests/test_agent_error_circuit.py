@@ -6,7 +6,6 @@ aborts with ResultSubtype.error_consecutive_tool_failures.
 """
 from __future__ import annotations
 
-import pytest
 from icdev.tools.llm.agent_loop import run_agent_loop, ResultSubtype, DONE
 
 

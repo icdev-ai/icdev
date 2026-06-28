@@ -2,7 +2,6 @@
 """Hacker News platform connector via Algolia API (adapt-conn-04)."""
 from __future__ import annotations
 
-import logging
 from tools.logging.icdev_logger import get_logger
 import time
 from tools.platform_connectors.registry import _safe_get, register

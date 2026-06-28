@@ -1,7 +1,6 @@
 # CUI // SP-CTI
 """Tests for output redactor — PII and credential redaction."""
 from __future__ import annotations
-import pytest
 from icdev.tools.llm.output_redactor import redact, RedactResult, _PLACEHOLDER
 
 

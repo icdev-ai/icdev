@@ -108,7 +108,7 @@ class TestGradeOutputQualityRouting:
         assert sig.parameters["llm_function"].default == "agent_eval_grading"
 
     def test_calls_agent_eval_grading_routing_function(self):
-        from icdev.tools.ace.evaluator import grade_output_quality, EvalResult
+        from icdev.tools.ace.evaluator import grade_output_quality
         er = _make_eval_result("qwen3-local")
         mock_resp = _make_mock_response(
             {"faithfulness": 0.9, "completeness": 0.8, "reasoning_quality": 0.7,
@@ -125,7 +125,7 @@ class TestGradeOutputQualityRouting:
             assert call_args[0][0] == "agent_eval_grading"
 
     def test_grader_model_id_captured_in_result(self):
-        from icdev.tools.ace.evaluator import grade_output_quality, EvalResult
+        from icdev.tools.ace.evaluator import grade_output_quality
         er = _make_eval_result("qwen3-local")
         mock_resp = _make_mock_response({"overall": 0.8}, "claude-sonnet")
         with patch(_ROUTER_PATH) as MockRouter:
@@ -143,7 +143,7 @@ class TestGradeOutputQualityRouting:
 
 class TestExcludeModelIdForwarding:
     def test_exclude_model_id_passed_to_invoke(self):
-        from icdev.tools.ace.evaluator import grade_output_quality, EvalResult
+        from icdev.tools.ace.evaluator import grade_output_quality
         er = _make_eval_result("qwen3-local")
         mock_resp = _make_mock_response({"overall": 0.9}, "gpt-4o")
         with patch(_ROUTER_PATH) as MockRouter:
@@ -160,7 +160,7 @@ class TestExcludeModelIdForwarding:
 
     def test_auto_exclude_from_eval_result_model_id(self):
         """EvalResult.model_id auto-populates exclude if not explicitly given."""
-        from icdev.tools.ace.evaluator import grade_output_quality, EvalResult
+        from icdev.tools.ace.evaluator import grade_output_quality
         er = _make_eval_result("qwen3-local")
         mock_resp = _make_mock_response({"overall": 0.9}, "claude-sonnet")
         with patch(_ROUTER_PATH) as MockRouter:
@@ -172,7 +172,7 @@ class TestExcludeModelIdForwarding:
 
     def test_no_exclude_when_model_id_empty(self):
         """Empty EvalResult.model_id → no exclusion kwarg passed."""
-        from icdev.tools.ace.evaluator import grade_output_quality, EvalResult
+        from icdev.tools.ace.evaluator import grade_output_quality
         er = _make_eval_result("")
         mock_resp = _make_mock_response({"overall": 0.9}, "claude-sonnet")
         with patch(_ROUTER_PATH) as MockRouter:
@@ -190,7 +190,7 @@ class TestExcludeModelIdForwarding:
 
 class TestCrossGraderViolationAssertion:
     def test_violation_raised_when_grader_equals_session_model(self):
-        from icdev.tools.ace.evaluator import grade_output_quality, EvalResult
+        from icdev.tools.ace.evaluator import grade_output_quality
         from icdev.tools.llm.router import CrossGraderViolation
         er = _make_eval_result("qwen3-local")
         mock_resp = _make_mock_response({"overall": 0.9}, "qwen3-local")
@@ -206,8 +206,7 @@ class TestCrossGraderViolationAssertion:
                 )
 
     def test_no_violation_when_different_model(self):
-        from icdev.tools.ace.evaluator import grade_output_quality, EvalResult
-        from icdev.tools.llm.router import CrossGraderViolation
+        from icdev.tools.ace.evaluator import grade_output_quality
         er = _make_eval_result("qwen3-local")
         mock_resp = _make_mock_response({"overall": 0.8}, "claude-sonnet")
         with patch(_ROUTER_PATH) as MockRouter:
@@ -224,7 +223,7 @@ class TestCrossGraderViolationAssertion:
 
     def test_no_violation_when_exclude_not_set(self):
         """No exclusion → never raises CrossGraderViolation."""
-        from icdev.tools.ace.evaluator import grade_output_quality, EvalResult
+        from icdev.tools.ace.evaluator import grade_output_quality
         er = _make_eval_result("")
         mock_resp = _make_mock_response({"overall": 0.9}, "any-model")
         with patch(_ROUTER_PATH) as MockRouter:
@@ -235,7 +234,7 @@ class TestCrossGraderViolationAssertion:
 
     def test_session_text_alias_works(self):
         """session_text= is accepted as alias for final_content."""
-        from icdev.tools.ace.evaluator import grade_output_quality, EvalResult
+        from icdev.tools.ace.evaluator import grade_output_quality
         er = _make_eval_result("qwen3-local")
         mock_resp = _make_mock_response({"overall": 0.7}, "gpt-4o")
         with patch(_ROUTER_PATH) as MockRouter:

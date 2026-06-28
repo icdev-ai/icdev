@@ -259,7 +259,7 @@ def _handle_hitl_action(action: str, step_run_id: str = "", reason: str = "") ->
     elif len(pending) == 1:
         target = pending[0]
     else:
-        lines = [f"⚠️ Multiple gates pending — specify step ID:\n"]
+        lines = ["⚠️ Multiple gates pending — specify step ID:\n"]
         for p in pending:
             lines.append(
                 f"• <b>{p['step_name']}</b> in <code>{p['run_id']}</code>\n"

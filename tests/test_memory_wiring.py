@@ -11,12 +11,10 @@ DB_PATH/raw-SQLite would hit a syntax error.  We avoid that by either:
   (b) mocking get_connection so the StorageConnection translator is exercised.
 """
 
-import importlib
-import os
 import sqlite3
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
 import pytest
 

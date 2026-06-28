@@ -115,7 +115,7 @@ def run_eval(
         tools, tool_handlers = reg.build(["read_file", "list_files", "search_files", "done"])
 
     try:
-        from icdev.tools.llm.agent_loop import run_agent_loop, AgentLoopUnsupported
+        from icdev.tools.llm.agent_loop import run_agent_loop
         loop_result = run_agent_loop(
             router,
             system_prompt=system_prompt,

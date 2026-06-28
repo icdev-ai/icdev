@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
 
 # ---------------------------------------------------------------------------
@@ -88,14 +88,14 @@ class TestRouterBackoff:
 
     def test_transient_error_retries_full_count(self):
         """All providers failing with timeout — retries max_retries times."""
-        from tools.llm.router import LLMRouter, LLMUnavailableError
+        from tools.llm.router import LLMUnavailableError
         router = self._make_router()
         attempt_count = [0]
 
         def _fail(fn, req, chain, excl=None, red=None):
             attempt_count[0] += 1
             raise LLMUnavailableError(
-                f"All providers failed. Last error: connection timeout",
+                "All providers failed. Last error: connection timeout",
                 function=fn,
             )
 
@@ -108,7 +108,7 @@ class TestRouterBackoff:
 
     def test_nontransient_error_raises_immediately_no_retry(self):
         """Non-transient LLMUnavailableError is not retried."""
-        from tools.llm.router import LLMRouter, LLMUnavailableError
+        from tools.llm.router import LLMUnavailableError
         router = self._make_router()
         attempt_count = [0]
 
@@ -129,7 +129,7 @@ class TestRouterBackoff:
 
     def test_cross_grader_violation_never_retried(self):
         """CrossGraderViolation is re-raised immediately without retry."""
-        from tools.llm.router import LLMRouter, CrossGraderViolation
+        from tools.llm.router import CrossGraderViolation
         router = self._make_router()
         attempt_count = [0]
 
@@ -147,7 +147,7 @@ class TestRouterBackoff:
 
     def test_success_on_second_attempt(self):
         """First attempt fails transiently, second succeeds — returns result."""
-        from tools.llm.router import LLMRouter, LLMUnavailableError
+        from tools.llm.router import LLMUnavailableError
         router = self._make_router()
         calls = [0]
         mock_response = MagicMock()
@@ -171,7 +171,7 @@ class TestRouterBackoff:
 
     def test_success_on_third_attempt(self):
         """Two transient failures then success."""
-        from tools.llm.router import LLMRouter, LLMUnavailableError
+        from tools.llm.router import LLMUnavailableError
         router = self._make_router()
         calls = [0]
         mock_response = MagicMock()
@@ -194,7 +194,7 @@ class TestRouterBackoff:
 
     def test_zero_retries_no_sleep(self):
         """max_retries=0 — fail immediately, no sleep."""
-        from tools.llm.router import LLMRouter, LLMUnavailableError
+        from tools.llm.router import LLMUnavailableError
         router = self._make_router()
 
         def _fail(fn, req, chain, excl=None, red=None):
@@ -211,7 +211,7 @@ class TestRouterBackoff:
 
     def test_retry_delays_increase(self):
         """Sleep durations use the configured delay sequence (increasing)."""
-        from tools.llm.router import LLMRouter, LLMUnavailableError
+        from tools.llm.router import LLMUnavailableError
         router = self._make_router()
         sleep_calls = []
 
@@ -230,7 +230,7 @@ class TestRouterBackoff:
 
     def test_config_retry_delays_respected(self):
         """router.retry_delays_seconds in config overrides _RETRY_DELAYS default."""
-        from tools.llm.router import LLMRouter, LLMUnavailableError
+        from tools.llm.router import LLMUnavailableError
         router = self._make_router()
         router._config = {"router": {"retry_delays_seconds": [1, 2]}}
         sleep_calls = []
@@ -249,7 +249,7 @@ class TestRouterBackoff:
 
     def test_config_max_retries_caps_param(self):
         """router.max_retries in config caps the invoke() param (takes min)."""
-        from tools.llm.router import LLMRouter, LLMUnavailableError
+        from tools.llm.router import LLMUnavailableError
         router = self._make_router()
         router._config = {"router": {"max_retries": 1, "retry_delays_seconds": [1]}}
         attempt_count = [0]

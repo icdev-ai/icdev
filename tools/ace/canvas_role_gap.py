@@ -129,7 +129,7 @@ def _build_role_canvas_map() -> dict[str, dict[str, Any]]:
 
 def _render_table(result: dict[str, Any]) -> str:
     lines = [
-        f"ACE Canvas Role Gap Report",
+        "ACE Canvas Role Gap Report",
         f"  Total canvases : {result['total_canvases']}",
         f"  Covered        : {result['covered']}",
         f"  Gaps           : {result['gap_count']}",

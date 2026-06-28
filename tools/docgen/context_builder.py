@@ -578,7 +578,7 @@ def _build_query(
             )
         if diag_rem_items:
             parts.append(
-                f"Diagram-identified remediations: " + "; ".join(diag_rem_items[:3]) + "."
+                "Diagram-identified remediations: " + "; ".join(diag_rem_items[:3]) + "."
             )
     parts.append("Include operational procedures, risk mitigations, and remediation steps. Cite all facts.")
     if supplemental_notes:

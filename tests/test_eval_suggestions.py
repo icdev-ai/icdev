@@ -1,7 +1,6 @@
 # CUI // SP-CTI
 """Tests for icdev.tools.ace.evaluator.suggest_improvements."""
 from __future__ import annotations
-import pytest
 from icdev.tools.ace.evaluator import EvalResult, suggest_improvements
 
 

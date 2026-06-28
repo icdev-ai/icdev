@@ -7,8 +7,6 @@ scope constraints against actual paths on disk.
 from __future__ import annotations
 
 import pathlib
-import tempfile
-import textwrap
 
 import pytest
 
@@ -284,7 +282,6 @@ class TestGrepFiles:
 class TestReadOnlyParallelExecution:
     def test_search_files_in_read_only_set(self, tmp_tree):
         from icdev.tools.llm.agent_loop import _build_read_only_set
-        from icdev.tools.ace.agent_tools import _SCHEMAS
 
         registry = _make_registry(tmp_tree)
         tools, _ = registry.build(["read_file", "search_files", "grep_files", "write_file"])

@@ -205,7 +205,6 @@ def _action_fix_canvas_rls_bypass(params: Dict) -> Tuple[bool, str]:
     This action is safe and idempotent — it only edits files matching an exact
     structural pattern and can be re-run without harm.
     """
-    import re as _re
 
     # Derive env_var from the canvas directory name
     def _env_var(canvas_key: str) -> str:
@@ -247,7 +246,7 @@ def _action_fix_canvas_rls_bypass(params: Dict) -> Tuple[bool, str]:
             continue
 
         # Replace import line: keep other imports on the same line, add canvas import
-        new_import = f"from tools.db.storage import get_canvas_connection\n"
+        new_import = "from tools.db.storage import get_canvas_connection\n"
         patched = _IMPORT_PAT.sub(new_import, original, count=1)
         # Replace get_connection() calls (bare call with no args = canvas pattern)
         patched = _CALL_PAT.sub(f'get_canvas_connection("{env_var}"', patched)

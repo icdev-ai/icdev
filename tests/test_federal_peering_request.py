@@ -6,7 +6,6 @@ Uses SQLite in-memory DB so tests are self-contained and never touch PG.
 """
 from __future__ import annotations
 
-import json
 import sqlite3
 import sys
 from pathlib import Path

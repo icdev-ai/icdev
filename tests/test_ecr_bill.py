@@ -7,7 +7,6 @@ import sqlite3
 import sys
 import uuid
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -294,7 +293,6 @@ def _make_usage_app(conn):
     """
     import importlib
     import os
-    import sys
 
     os.environ["ICDEV_ADMIN_CONSOLE_ENABLED"] = "true"
     admin_bp_mod = importlib.import_module("tools.admin.blueprint")
@@ -407,7 +405,6 @@ def test_usage_overview_api(tmp_path):
 def test_usage_summary_aggregates(tmp_path):
     """get_usage_summary() returns correct per-event_type totals."""
     import importlib
-    import sys
 
     conn = _make_db(tmp_path)
     yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
@@ -427,7 +424,6 @@ def test_usage_summary_aggregates(tmp_path):
         )
     conn.commit()
 
-    import tools.db.storage  # ensure shim module is in sys.modules
     _shim = sys.modules["tools.db.storage"]
 
     class _CM:

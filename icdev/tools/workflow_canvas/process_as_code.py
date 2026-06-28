@@ -75,7 +75,7 @@ def export_chain_yaml(chain_id: str) -> str:
 def import_chain_yaml(yaml_text: str) -> str:
     """Create a new chain (and phases) from a YAML spec. Returns the new chain_id."""
     import yaml
-    from tools.db.storage import get_canvas_connection, get_connection, sql_placeholder
+    from tools.db.storage import get_canvas_connection, sql_placeholder
     from datetime import datetime, timezone
     import uuid
 

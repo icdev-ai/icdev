@@ -59,7 +59,8 @@ def _llm_coach(step: dict, workflow_context: dict, llm_router) -> dict:
         "Provide coaching tips."
     )
     try:
-        import json, re
+        import json
+        import re
         result = llm_router.invoke(
             "process_coach",
             LLMRequest(

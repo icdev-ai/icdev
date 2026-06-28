@@ -588,7 +588,6 @@ class AgentToolRegistry:
         return "\n".join(entries) if entries else "(empty)"
 
     def _search_files(self, inp: dict[str, Any], stop: threading.Event | None) -> str:
-        import re as _re
         from icdev.tools.ace.file_access_broker import FileAccessBroker, ScopeViolationError
 
         pattern = (inp.get("pattern") or "").strip()
@@ -736,7 +735,6 @@ class AgentToolRegistry:
         if explicit_ns and explicit_ns != self._coordination_namespace:
             from icdev.tools.ace.agent_coordination import (
                 post_result as _post_fn,
-                read_result as _read_fn,
                 _NOT_FOUND,
             )
             if "post_result" in sub_handlers:

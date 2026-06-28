@@ -17,7 +17,6 @@ import sys
 from typing import Optional
 
 from icdev.tools.ace import controller as _ace_controller
-from icdev.tools.ace.controller import ACEController
 
 _ORIGINAL_CONTROLLER_CLS = _ace_controller.ACEController
 

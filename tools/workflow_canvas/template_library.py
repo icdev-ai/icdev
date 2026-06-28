@@ -56,7 +56,8 @@ def ensure_table(conn) -> None:
 
 
 def save_template(conn, name: str, workflow: dict, industry: str = "", doc_type: str = "") -> str:
-    import uuid, yaml
+    import uuid
+    import yaml
     from tools.db.storage import sql_placeholder
     ensure_table(conn)
     ph = sql_placeholder(conn)

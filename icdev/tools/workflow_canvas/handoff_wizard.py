@@ -102,7 +102,7 @@ def save_handoff_brief(conn, phase_id: str, brief_text: str) -> None:
     now = datetime.now(timezone.utc).isoformat()
     try:
         cc.execute(
-            f"ALTER TABLE wfc_chain_phases ADD COLUMN IF NOT EXISTS handoff_brief TEXT",
+            "ALTER TABLE wfc_chain_phases ADD COLUMN IF NOT EXISTS handoff_brief TEXT",
         )
     except Exception:
         pass

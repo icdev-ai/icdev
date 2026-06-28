@@ -18,7 +18,7 @@ import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
@@ -368,7 +368,7 @@ def main() -> int:
     audit = result["pip_audit"]
     outdated = result["outdated"]
 
-    print(f"\n=== Dependency Health Check ===")
+    print("\n=== Dependency Health Check ===")
     print(f"pip check:    {pip['status'].upper()}"
           + (f" ({len(pip['conflicts'])} conflict(s))" if pip.get("conflicts") else ""))
     print(f"pip-audit:    {audit['status'].upper()}"
