@@ -82,6 +82,8 @@ def generate_briefing(
         mention_items=mention_items,
         objectives=objectives,
         challenges=challenges,
+        user_id=user_id,
+        tenant_id=tenant_id,
     )
 
     # Store
@@ -113,6 +115,8 @@ def _build_content(
     mention_items: list[dict],
     objectives: list[dict],
     challenges: list[dict],
+    user_id: str = "default",
+    tenant_id: str = "default",
 ) -> dict[str, Any]:
     """Build structured briefing dict — LLM-enhanced, template fallback."""
     name = ctx.get("name", "")
@@ -160,19 +164,24 @@ def _build_content(
             pass
         meetings.append({**ev, "prep_notes": prep.strip()})
 
-    # Relationship nudges (days-since-contact placeholder — no real tracking yet)
+    # Relationship nudges — scored by days-since-last-interaction
     relationships = []
+    relationship_nudges: list[dict] = []
     try:
-        from tools.second_brain.profile import get_relationships
-        rels = get_relationships(ctx.get("name", ""), "default")
-    except Exception:
-        rels = []
-    for rel in rels[:3]:
-        relationships.append({
-            "name": rel.get("name", ""),
-            "relationship_type": rel.get("relationship_type", "peer"),
-            "nudge": f"Consider checking in with {rel.get('name','')} ({rel.get('relationship_type','peer')}) today.",
-        })
+        from tools.second_brain.relationship_health import (
+            generate_relationship_nudges,
+            get_relationship_health_map,
+        )
+        health_map = get_relationship_health_map(user_id, tenant_id)
+        for rel in health_map[:3]:
+            relationships.append({
+                "name": rel.get("name", ""),
+                "relationship_type": rel.get("relationship_type", "peer"),
+                "nudge": rel.get("health", {}).get("nudge") or f"Check in with {rel.get('name','')} today.",
+            })
+        relationship_nudges = generate_relationship_nudges(user_id, tenant_id)
+    except Exception as exc:
+        logger.debug("[briefing] relationship health failed: %s", exc)
 
     # Challenge spotlight
     challenges_spotlight = None
@@ -192,6 +201,7 @@ def _build_content(
         "tasks": task_items[:10],
         "mentions": mention_items[:5],
         "relationships": relationships,
+        "relationship_nudges": relationship_nudges,
         "challenges_spotlight": challenges_spotlight,
         "objectives_reminder": top_objs,
     }
