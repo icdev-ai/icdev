@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}My Objectives{% endblock %}
+{% block content %}
+<div class="container py-4" style="max-width:720px">
+  <div class="d-flex align-items-center mb-4 gap-3">
+    <a href="/me" class="btn btn-sm btn-outline-secondary">← Back</a>
+    <h2 class="mb-0 fw-bold">My Objectives</h2>
+    <button class="btn btn-primary btn-sm ms-auto" id="btn-add-obj">+ Add Objective</button>
+  </div>
+
+  <div id="objectives-list">
+  {% for obj in objectives %}
+  <div class="card mb-2 obj-card" data-id="{{ obj.id }}">
+    <div class="card-body d-flex align-items-start gap-3">
+      <div class="flex-grow-1">
+        <div class="fw-semibold" contenteditable="true" class="obj-title">{{ obj.title }}</div>
+        {% if obj.description %}<small class="text-muted">{{ obj.description }}</small>{% endif %}
+      </div>
+      <span class="badge {% if obj.horizon == 'week' %}bg-warning text-dark{% elif obj.horizon == 'quarter' %}bg-info text-dark{% else %}bg-secondary{% endif %}">
+        {{ {'week':'This Week', 'quarter':'This Quarter', 'long_term':'Long Term'}.get(obj.horizon, obj.horizon) }}
+      </span>
+      <button class="btn btn-sm btn-outline-danger obj-delete" data-id="{{ obj.id }}">×</button>
+    </div>
+  </div>
+  {% else %}
+  <p class="text-muted" id="empty-msg">No objectives yet. Add your top 3–5 goals below.</p>
+  {% endfor %}
+  </div>
+
+  <!-- Add form (hidden until btn-add-obj) -->
+  <div class="card mt-3 d-none" id="add-obj-form">
+    <div class="card-body row g-2">
+      <div class="col-12"><input class="form-control" id="new-title" placeholder="Objective title *"></div>
+      <div class="col-md-8"><input class="form-control" id="new-desc" placeholder="Description (optional)"></div>
+      <div class="col-md-4">
+        <select class="form-select" id="new-horizon">
+          <option value="week">This Week</option>
+          <option value="quarter" selected>This Quarter</option>
+          <option value="long_term">Long Term</option>
+        </select>
+      </div>
+      <div class="col-12 d-flex gap-2">
+        <button class="btn btn-primary btn-sm" id="btn-save-obj">Save</button>
+        <button class="btn btn-outline-secondary btn-sm" id="btn-cancel-obj">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% include "includes/iqe_query_widget.html" %}
+
+<script>
+const currentObjs = {{ objectives | tojson }};
+
+function saveObjectives(objs) {
+  return fetch('/me/api/second-brain/profile', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({objectives: objs})
+  }).then(r=>r.json());
+}
+
+document.getElementById('btn-add-obj').addEventListener('click', () => {
+  document.getElementById('add-obj-form').classList.remove('d-none');
+  document.getElementById('empty-msg')?.remove();
+});
+document.getElementById('btn-cancel-obj').addEventListener('click', () => {
+  document.getElementById('add-obj-form').classList.add('d-none');
+});
+document.getElementById('btn-save-obj').addEventListener('click', () => {
+  const title = document.getElementById('new-title').value.trim();
+  if (!title) return alert('Title required');
+  const newObj = {title, description: document.getElementById('new-desc').value, horizon: document.getElementById('new-horizon').value};
+  currentObjs.push(newObj);
+  saveObjectives(currentObjs).then(d => { if(d.ok) location.reload(); else alert('Error: '+d.error); });
+});
+document.querySelectorAll('.obj-delete').forEach(btn => {
+  btn.addEventListener('click', function() {
+    const id = this.dataset.id;
+    const updated = currentObjs.filter(o => o.id !== id);
+    saveObjectives(updated).then(d => { if(d.ok) location.reload(); else alert('Error: '+d.error); });
+  });
+});
+</script>
+{% endblock %}

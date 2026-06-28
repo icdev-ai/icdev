@@ -15,6 +15,16 @@ _DEFAULT_STATE: dict = {
     "first_iqe_run": False,
     "dismissed_at": None,
     "last_seen_version": None,
+    # Phase B — Second Brain onboarding fields
+    "context_capture_started": False,
+    "context_capture_complete": False,
+    "identity_step_done": False,
+    "connections_step_done": False,
+    "world_step_done": False,
+    "cadence_step_done": False,
+    "quicklearn_step_done": False,
+    "integration_count": 0,
+    "briefing_channels": ["dashboard"],
 }
 
 _ALLOWED_KEYS = frozenset(_DEFAULT_STATE)

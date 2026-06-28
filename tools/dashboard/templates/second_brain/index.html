@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}My AI Assistant{% endblock %}
+{% block content %}
+<div class="container-fluid py-4">
+  <div class="row mb-3">
+    <div class="col">
+      <h2 class="fw-bold">My AI Assistant</h2>
+      <p class="text-muted mb-0">Your personalized daily briefing and command center.</p>
+    </div>
+    <div class="col-auto">
+      <a href="/me/briefing/today" class="btn btn-outline-primary btn-sm me-2">Full Briefing</a>
+      <button class="btn btn-primary btn-sm" id="btn-gen-briefing">Generate Briefing</button>
+    </div>
+  </div>
+
+  {% if briefing %}
+  <div class="row g-3">
+    <!-- Greeting card -->
+    <div class="col-12">
+      <div class="card border-0 bg-gradient" style="background:linear-gradient(135deg,#1a1a2e,#16213e);color:#fff">
+        <div class="card-body py-4">
+          <h4 class="mb-1">{{ briefing.greeting }}</h4>
+          <p class="mb-0 opacity-75">{{ briefing.focus }}</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Meetings -->
+    {% if briefing.meetings %}
+    <div class="col-md-6">
+      <div class="card h-100">
+        <div class="card-header fw-semibold">📅 Meetings ({{ briefing.meetings|length }})</div>
+        <div class="card-body p-0">
+          <ul class="list-group list-group-flush">
+            {% for m in briefing.meetings[:5] %}
+            <li class="list-group-item">
+              <div class="d-flex justify-content-between">
+                <span class="fw-semibold">{{ m.title }}</span>
+                <small class="text-muted">{{ m.time }}</small>
+              </div>
+              {% if m.prep_notes %}<small class="text-muted">{{ m.prep_notes }}</small>{% endif %}
+            </li>
+            {% endfor %}
+          </ul>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Tasks -->
+    {% if briefing.tasks %}
+    <div class="col-md-6">
+      <div class="card h-100">
+        <div class="card-header fw-semibold">✅ Tasks ({{ briefing.tasks|length }})</div>
+        <div class="card-body p-0">
+          <ul class="list-group list-group-flush">
+            {% for t in briefing.tasks[:5] %}
+            <li class="list-group-item d-flex align-items-center gap-2">
+              <span class="badge bg-secondary">{{ t.source|upper }}</span>
+              <span class="flex-grow-1">{{ t.title }}</span>
+              {% if t.get('priority') %}<small class="text-muted">{{ t.priority }}</small>{% endif %}
+            </li>
+            {% endfor %}
+          </ul>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Quick links -->
+    <div class="col-12">
+      <div class="row g-2">
+        <div class="col-auto"><a href="/me/profile" class="btn btn-outline-secondary btn-sm">👤 Profile</a></div>
+        <div class="col-auto"><a href="/me/objectives" class="btn btn-outline-secondary btn-sm">🎯 Objectives</a></div>
+        <div class="col-auto"><a href="/me/relationships" class="btn btn-outline-secondary btn-sm">🤝 Relationships</a></div>
+        <div class="col-auto"><a href="/me/challenges" class="btn btn-outline-secondary btn-sm">⚡ Challenges</a></div>
+        <div class="col-auto"><a href="/me/integrations" class="btn btn-outline-secondary btn-sm">🔗 Integrations</a></div>
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <div class="text-center py-5">
+    <p class="text-muted">No briefing yet for today.</p>
+    <button class="btn btn-primary" id="btn-gen-briefing-cta">Generate My Briefing</button>
+  </div>
+  {% endif %}
+</div>
+
+{% include "includes/iqe_query_widget.html" %}
+
+<script>
+function generateBriefing() {
+  fetch('/me/api/second-brain/briefing/generate', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'})
+    .then(r => r.json()).then(d => { if(d.ok) location.reload(); else alert('Briefing error: ' + d.error); });
+}
+document.getElementById('btn-gen-briefing')?.addEventListener('click', generateBriefing);
+document.getElementById('btn-gen-briefing-cta')?.addEventListener('click', generateBriefing);
+</script>
+{% endblock %}

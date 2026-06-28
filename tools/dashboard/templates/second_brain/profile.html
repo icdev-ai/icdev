@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block title %}My Profile{% endblock %}
+{% block content %}
+<div class="container py-4" style="max-width:720px">
+  <div class="d-flex align-items-center mb-4 gap-3">
+    <a href="/me" class="btn btn-sm btn-outline-secondary">← Back</a>
+    <h2 class="mb-0 fw-bold">My Profile</h2>
+  </div>
+
+  <form id="profile-form">
+    <div class="card mb-3">
+      <div class="card-header fw-semibold">Identity</div>
+      <div class="card-body row g-3">
+        <div class="col-md-6">
+          <label class="form-label">Full Name</label>
+          <input name="full_name" class="form-control" value="{{ profile.full_name or '' }}">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Work Email</label>
+          <input name="work_email" type="email" class="form-control" value="{{ profile.work_email or '' }}">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Title</label>
+          <input name="title" class="form-control" value="{{ profile.title or '' }}">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Seniority Tier</label>
+          <select name="seniority_tier" class="form-select">
+            {% for key, label in seniority_labels.items() %}
+            <option value="{{ key }}" {% if profile.seniority_tier == key %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="card mb-3">
+      <div class="card-header fw-semibold">Organization</div>
+      <div class="card-body row g-3">
+        <div class="col-md-6">
+          <label class="form-label">Org Name</label>
+          <input name="org_name" class="form-control" value="{{ profile.org_name or '' }}">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Industry</label>
+          <select name="org_industry" class="form-select">
+            {% for ind in industries %}
+            <option value="{{ ind }}" {% if profile.org_industry == ind %}selected{% endif %}>{{ ind }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Org Size</label>
+          <select name="org_size" class="form-select">
+            {% for sz in org_sizes %}
+            <option value="{{ sz }}" {% if profile.org_size == sz %}selected{% endif %}>{{ sz }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Timezone</label>
+          <input name="timezone" class="form-control" value="{{ profile.timezone or 'UTC' }}">
+        </div>
+      </div>
+    </div>
+
+    <div class="card mb-3">
+      <div class="card-header fw-semibold">Cadence</div>
+      <div class="card-body row g-3">
+        <div class="col-md-4">
+          <label class="form-label">Work Start</label>
+          <input name="work_start" type="time" class="form-control" value="{{ profile.work_start or '09:00' }}">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Work End</label>
+          <input name="work_end" type="time" class="form-control" value="{{ profile.work_end or '18:00' }}">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Briefing Time</label>
+          <input name="briefing_time" type="time" class="form-control" value="{{ profile.briefing_time or '08:00' }}">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Communication Style</label>
+          <select name="comm_style" class="form-select">
+            <option value="1" {% if profile.comm_style == 1 %}selected{% endif %}>1 — Very Direct</option>
+            <option value="2" {% if profile.comm_style == 2 %}selected{% endif %}>2 — Direct</option>
+            <option value="3" {% if not profile.comm_style or profile.comm_style == 3 %}selected{% endif %}>3 — Balanced</option>
+            <option value="4" {% if profile.comm_style == 4 %}selected{% endif %}>4 — Collaborative</option>
+            <option value="5" {% if profile.comm_style == 5 %}selected{% endif %}>5 — Very Collaborative</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="d-flex gap-2">
+      <button type="submit" class="btn btn-primary">Save Profile</button>
+      <button type="button" id="btn-summarize" class="btn btn-outline-secondary">Generate AI Summary</button>
+    </div>
+  </form>
+
+  {% if profile.profile_summary %}
+  <div class="card mt-4">
+    <div class="card-header fw-semibold">AI Profile Summary</div>
+    <div class="card-body text-muted">{{ profile.profile_summary }}</div>
+  </div>
+  {% endif %}
+</div>
+
+{% include "includes/iqe_query_widget.html" %}
+
+<script>
+document.getElementById('profile-form').addEventListener('submit', function(e) {
+  e.preventDefault();
+  const data = Object.fromEntries(new FormData(this).entries());
+  fetch('/me/api/second-brain/profile', {
+    method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)
+  }).then(r=>r.json()).then(d=>{ if(d.ok) alert('Saved!'); else alert('Error: '+d.error); });
+});
+document.getElementById('btn-summarize').addEventListener('click', function() {
+  this.disabled = true; this.textContent = 'Generating…';
+  fetch('/me/api/second-brain/profile/summarize', {method:'POST'})
+    .then(r=>r.json()).then(d=>{ if(d.ok) location.reload(); else alert('Error: '+d.error); })
+    .finally(()=>{ this.disabled=false; this.textContent='Generate AI Summary'; });
+});
+</script>
+{% endblock %}

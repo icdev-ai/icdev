@@ -1529,3 +1529,49 @@ components:
       iqe_adapter: true
       nav_link: true
       seed_queries: context/iqe/queries/canvas_health/
+- key: second_brain
+  kind: canvas
+  display_name: My AI Assistant
+  description: Personal second brain — daily briefing, profile, objectives, relationships, challenges, integrations.
+  env_flag: ICDEV_SECOND_BRAIN_ENABLED
+  default_enabled: true
+  module: icdev.tools.second_brain.blueprint
+  blueprint_attr: second_brain_bp
+  url_prefix: /me
+  min_il: IL4
+  nav:
+    section: Personal
+    label: My Assistant
+    icon: "🧠"
+    links:
+      - label: Today's Briefing
+        href: /me/briefing/today
+      - label: My Profile
+        href: /me/profile
+      - label: Objectives
+        href: /me/objectives
+      - label: Relationships
+        href: /me/relationships
+      - label: Challenges
+        href: /me/challenges
+      - label: Integrations
+        href: /me/integrations
+  rbac:
+    roles:
+      - admin
+      - user
+      - analyst
+      - developer
+  iqe:
+    adapter_module: tools.iqe.adapters.second_brain
+    collections:
+      - second_brain.profile
+      - second_brain.objectives
+      - second_brain.briefings
+      - second_brain.relationships
+  completeness:
+    template: tools/dashboard/templates/second_brain/index.html
+    blueprint: true
+    iqe_adapter: true
+    nav_link: true
+    seed_queries: context/iqe/queries/second_brain/

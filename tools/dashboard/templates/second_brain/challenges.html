@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}My Challenges{% endblock %}
+{% block content %}
+<div class="container py-4" style="max-width:720px">
+  <div class="d-flex align-items-center mb-4 gap-3">
+    <a href="/me" class="btn btn-sm btn-outline-secondary">← Back</a>
+    <h2 class="mb-0 fw-bold">My Challenges</h2>
+  </div>
+  <p class="text-muted">Select the challenges that slow you down. Your AI assistant will surface suggestions to help.</p>
+
+  <form id="challenges-form">
+    <div class="row g-2 mb-4">
+      {% for key in challenge_keys %}
+      {% set label = challenge_labels.get(key, key) %}
+      {% set active = challenges | selectattr('challenge_key', 'equalto', key) | list | length > 0 %}
+      <div class="col-md-6">
+        <div class="form-check card p-3 {% if active %}border-primary{% endif %}">
+          <input class="form-check-input" type="checkbox" name="challenge" value="{{ key }}" id="ch-{{ key }}" {% if active %}checked{% endif %}>
+          <label class="form-check-label fw-semibold" for="ch-{{ key }}">{{ label }}</label>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <div class="mb-3">
+      <label class="form-label">Anything else? (custom challenge)</label>
+      <textarea name="custom_challenge" class="form-control" rows="2" placeholder="Describe a specific challenge not listed above…"></textarea>
+    </div>
+
+    <button type="submit" class="btn btn-primary">Save Challenges</button>
+  </form>
+
+  {% if challenges %}
+  <hr class="my-4">
+  <h5 class="fw-semibold mb-3">Active Challenges</h5>
+  {% for c in challenges %}
+  <div class="card mb-2">
+    <div class="card-body d-flex justify-content-between align-items-center">
+      <div>
+        <span class="fw-semibold">{{ challenge_labels.get(c.challenge_key, c.challenge_key or c.custom_description) }}</span>
+        {% if c.custom_description and not c.challenge_key %}<small class="text-muted d-block">{{ c.custom_description }}</small>{% endif %}
+      </div>
+      <span class="badge {% if c.severity == 'high' %}bg-danger{% elif c.severity == 'medium' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
+        {{ c.severity }}
+      </span>
+    </div>
+  </div>
+  {% endfor %}
+  {% endif %}
+</div>
+
+{% include "includes/iqe_query_widget.html" %}
+
+<script>
+document.getElementById('challenges-form').addEventListener('submit', function(e) {
+  e.preventDefault();
+  const selected = [...document.querySelectorAll('input[name="challenge"]:checked')].map(el => ({challenge_key: el.value, severity: 'medium'}));
+  const custom = document.querySelector('[name="custom_challenge"]').value.trim();
+  if (custom) selected.push({challenge_key: null, custom_description: custom, severity: 'medium'});
+  fetch('/me/api/second-brain/profile', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({challenges: selected})
+  }).then(r=>r.json()).then(d => { if(d.ok) location.reload(); else alert('Error: '+d.error); });
+});
+</script>
+{% endblock %}
