@@ -108,6 +108,22 @@
                 </div>
                 <button class="btn btn-sm cust-delete text-danger" data-id="{{ c.id }}" title="Remove" style="font-size:.85rem;padding:.15rem .35rem;line-height:1">×</button>
               </div>
+              <!-- Interaction timeline -->
+              <div class="mt-2 pt-2" style="border-top:1px solid rgba(255,255,255,.07)">
+                <div class="d-flex align-items-center justify-content-between">
+                  <button class="btn btn-link p-0 text-decoration-none text-muted history-toggle"
+                          data-id="{{ c.id }}" style="font-size:.72rem">
+                    📝 History
+                  </button>
+                  <button class="btn btn-link p-0 text-decoration-none log-btn"
+                          data-id="{{ c.id }}" data-name="{{ c.name }}" style="font-size:.72rem;color:#60a5fa">
+                    + Log
+                  </button>
+                </div>
+                <div class="history-panel d-none mt-2" id="hist-{{ c.id }}">
+                  <div class="text-muted fst-italic history-loading" style="font-size:.72rem">Loading…</div>
+                </div>
+              </div>
             </div>
           </div>
           {% endfor %}
@@ -276,5 +292,119 @@ document.querySelectorAll('.cust-delete').forEach(btn => {
 });
 
 window.addEventListener('load', () => document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => new bootstrap.Tooltip(el)));
+
+// ── Interaction timeline ───────────────────────────────────────────────────
+const TYPE_ICONS = {meeting:'📅',email:'✉️',call:'📞',delivery:'📦',review:'🔍',other:'📎'};
+
+document.querySelectorAll('.history-toggle').forEach(btn => {
+  btn.addEventListener('click', function() {
+    const id = this.dataset.id;
+    const panel = document.getElementById('hist-' + id);
+    if (!panel.classList.contains('d-none')) { panel.classList.add('d-none'); return; }
+    panel.classList.remove('d-none');
+    if (panel.dataset.loaded) return;
+    fetch('/me/api/second-brain/customers/' + id + '/interactions')
+      .then(r => r.json())
+      .then(d => {
+        panel.dataset.loaded = '1';
+        if (!d.interactions || !d.interactions.length) {
+          panel.innerHTML = '<div class="text-muted fst-italic" style="font-size:.72rem">No interactions logged yet.</div>';
+          return;
+        }
+        panel.innerHTML = d.interactions.map(i => `
+          <div class="d-flex align-items-start gap-2 py-1 border-bottom" style="border-color:rgba(255,255,255,.06)">
+            <span style="font-size:.7rem;margin-top:.1rem">${TYPE_ICONS[i.type]||'📎'}</span>
+            <div style="flex:1;min-width:0">
+              <div class="fw-semibold" style="font-size:.72rem">${i.title}</div>
+              <div class="text-muted" style="font-size:.68rem">${i.date}${i.follow_up_date?' · follow-up '+i.follow_up_date:''}</div>
+              ${i.notes?'<div class="text-muted mt-1" style="font-size:.7rem">'+i.notes+'</div>':''}
+              ${(i.action_items||[]).length?'<ul class="mb-0 ps-3 mt-1" style="font-size:.68rem">'+(i.action_items.map(a=>'<li>'+a+'</li>').join(''))+'</ul>':''}
+            </div>
+            <button class="btn btn-link p-0 del-int text-danger" data-iid="${i.id}" data-cid="${id}" style="font-size:.8rem;line-height:1">×</button>
+          </div>`).join('');
+        panel.querySelectorAll('.del-int').forEach(b => b.addEventListener('click', function() {
+          if (!confirm('Delete this interaction?')) return;
+          fetch('/me/api/second-brain/customers/'+this.dataset.cid+'/interactions/'+this.dataset.iid, {method:'DELETE'})
+            .then(() => { panel.dataset.loaded=''; panel.classList.add('d-none'); });
+        }));
+      })
+      .catch(() => { panel.innerHTML = '<div class="text-muted" style="font-size:.72rem">Failed to load.</div>'; });
+  });
+});
+
+// ── Log interaction modal ──────────────────────────────────────────────────
+let _logTarget = null;
+const _logModalEl = document.createElement('div');
+_logModalEl.innerHTML = `
+<div class="modal fade" id="logIntModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content" style="background:#1a1a2e;border:1px solid rgba(255,255,255,.1)">
+      <div class="modal-header border-0 pb-0">
+        <h6 class="modal-title fw-semibold small" id="logIntTitle">Log Interaction</h6>
+        <button type="button" class="btn-close btn-close-white btn-sm" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body pt-2">
+        <select class="form-select form-select-sm mb-2" id="li-type" style="background:rgba(30,30,50,.9);border-color:rgba(255,255,255,.15);color:inherit">
+          <option value="meeting">📅 Meeting</option>
+          <option value="email">✉️ Email</option>
+          <option value="call">📞 Call</option>
+          <option value="delivery">📦 Delivery</option>
+          <option value="review">🔍 Review</option>
+          <option value="other">📎 Other</option>
+        </select>
+        <input class="form-control form-control-sm mb-2" id="li-title" placeholder="Title *" style="background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.15);color:inherit">
+        <input class="form-control form-control-sm mb-2" id="li-date" type="date" style="background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.15);color:inherit">
+        <textarea class="form-control form-control-sm mb-2" id="li-notes" rows="2" placeholder="Notes (optional)" style="background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.15);color:inherit;resize:none"></textarea>
+        <input class="form-control form-control-sm mb-2" id="li-actions" placeholder="Action items (comma-separated)" style="background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.15);color:inherit">
+        <input class="form-control form-control-sm" id="li-followup" type="date" title="Follow-up date" style="background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.15);color:inherit">
+      </div>
+      <div class="modal-footer border-0 pt-0">
+        <button class="btn btn-primary btn-sm" id="li-save">Save</button>
+        <button class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>`;
+document.body.appendChild(_logModalEl);
+document.getElementById('li-date').value = new Date().toISOString().slice(0,10);
+
+document.querySelectorAll('.log-btn').forEach(btn => {
+  btn.addEventListener('click', function() {
+    _logTarget = this.dataset.id;
+    document.getElementById('logIntTitle').textContent = 'Log — ' + this.dataset.name;
+    ['li-title','li-notes','li-actions','li-followup'].forEach(id => document.getElementById(id).value='');
+    document.getElementById('li-date').value = new Date().toISOString().slice(0,10);
+    new bootstrap.Modal(document.getElementById('logIntModal')).show();
+  });
+});
+
+document.getElementById('li-save')?.addEventListener('click', () => {
+  const title = document.getElementById('li-title').value.trim();
+  if (!title) { document.getElementById('li-title').focus(); return; }
+  const actions = document.getElementById('li-actions').value.split(',').map(s=>s.trim()).filter(Boolean);
+  const btn = document.getElementById('li-save');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  fetch('/me/api/second-brain/customers/' + _logTarget + '/interactions', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({
+      title,
+      notes: document.getElementById('li-notes').value.trim(),
+      action_items: actions,
+      follow_up_date: document.getElementById('li-followup').value || null,
+      interaction_type: document.getElementById('li-type').value,
+      interaction_date: document.getElementById('li-date').value,
+    }),
+  }).then(r=>r.json()).then(d => {
+    if (d.ok) {
+      bootstrap.Modal.getInstance(document.getElementById('logIntModal'))?.hide();
+      // Invalidate cached history panel for this customer
+      const panel = document.getElementById('hist-' + _logTarget);
+      if (panel) { panel.dataset.loaded = ''; panel.classList.add('d-none'); }
+    } else {
+      alert('Error: ' + d.error);
+    }
+  }).catch(e => alert('Request failed: ' + e))
+    .finally(() => { btn.disabled=false; btn.textContent='Save'; });
+});
 </script>
 {% endblock %}

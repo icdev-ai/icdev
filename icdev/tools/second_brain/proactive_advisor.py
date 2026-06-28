@@ -206,7 +206,7 @@ def generate_tomorrow_prep(
     }
 
     # Persist to tomorrow's briefing record so morning briefing finds it
-    _upsert_prep_section(user_id, tenant_id, tomorrow, prep)
+    _upsert_prep_section(user_id, tenant_id, tomorrow, {"tomorrow_prep": prep})
     return prep
 
 
@@ -245,7 +245,13 @@ def _llm_focus_recommendation(ctx, meetings, tasks, stalled) -> str:
 
 
 def _upsert_prep_section(user_id: str, tenant_id: str, date_str: str, prep: dict) -> None:
-    """Store tomorrow-prep in the briefing record for *date_str*."""
+    """Merge *prep* keys into the briefing record for *date_str*.
+
+    Each caller wraps its section under a named key, e.g.
+    ``{"tomorrow_prep": {...}}`` or ``{"weekly_digest": {...}}``.
+    This function does a shallow ``content.update(prep)`` so multiple callers
+    each add their own top-level key without overwriting each other.
+    """
     import uuid
     try:
         from tools.second_brain.constants import BRIEFING_ENV_FLAG
@@ -260,19 +266,18 @@ def _upsert_prep_section(user_id: str, tenant_id: str, date_str: str, prep: dict
             if row:
                 record_id = row[0]
                 content = json.loads(row[1] or "{}")
-                content["tomorrow_prep"] = prep
+                content.update(prep)
                 conn.execute(
                     f"UPDATE user_daily_briefings SET content_json={ph} WHERE id={ph}",
                     (json.dumps(content), record_id),
                 )
             else:
                 record_id = str(uuid.uuid4())
-                content = {"tomorrow_prep": prep}
                 conn.execute(
                     f"INSERT INTO user_daily_briefings "
                     f"(id, user_id, tenant_id, briefing_date, content_json) "
                     f"VALUES ({ph},{ph},{ph},{ph},{ph})",
-                    (record_id, user_id, tenant_id, date_str, json.dumps(content)),
+                    (record_id, user_id, tenant_id, date_str, json.dumps(prep)),
                 )
             conn.commit()
     except Exception as exc:
@@ -316,6 +321,7 @@ def generate_weekly_architecture_digest(
         "cve_highlights": cve_items[:3],
         "research_highlights": research_items[:5],
         "synthesis": digest_text,
+        "standards_watch": generate_standards_watch(user_id, tenant_id),
     }
 
     # Store in today's briefing under "weekly_digest" key
@@ -495,6 +501,81 @@ def _check_customer_expectations(
             })
 
     return findings
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 8. Domain standards watch (used by weekly digest)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def generate_standards_watch(user_id: str, tenant_id: str = "default") -> list[dict[str, Any]]:
+    """Pull standards/regulatory updates from existing DB sources filtered by role topics.
+
+    Draws from research_findings, cve_entries, and memory_entries already in the
+    platform — no external HTTP calls.
+    """
+    from tools.second_brain.role_advisor import get_digest_topics
+    topics = get_digest_topics(user_id, tenant_id)[:6]
+    if not topics:
+        return []
+
+    items: list[dict] = []
+
+    # 1. Research canvas findings matching role topics
+    for r in _fetch_research_items(topics[:5]):
+        items.append({
+            "title": (r.get("title") or "")[:120],
+            "source": "Research",
+            "severity": "",
+            "date": str(r.get("date", ""))[:10],
+            "url": r.get("url", ""),
+        })
+
+    # 2. CVEs mentioning role topics
+    for c in _fetch_relevant_cves(topics[:3]):
+        items.append({
+            "title": f"{c.get('id', 'CVE')}: {(c.get('description') or '')[:80]}",
+            "source": "CVE",
+            "severity": c.get("severity", ""),
+            "date": str(c.get("published_at", ""))[:10],
+            "url": "",
+        })
+
+    # 3. Semantic memory entries tagged with role topics (last 7 days)
+    try:
+        from tools.db.storage import get_connection
+        from datetime import timedelta
+        since = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+        topic_filter = " OR ".join([f"content ILIKE %s"] * len(topics))
+        params = [f"%{t}%" for t in topics] + [since]
+        with get_connection() as conn:
+            rows = conn.execute(
+                f"SELECT content, created_at FROM memory_entries "
+                f"WHERE memory_type='semantic' AND ({topic_filter}) AND created_at > %s "
+                f"ORDER BY created_at DESC LIMIT 5",
+                params,
+            ).fetchall()
+        for r in rows:
+            items.append({
+                "title": (r[0] or "")[:120],
+                "source": "Knowledge",
+                "severity": "",
+                "date": str(r[1] or "")[:10],
+                "url": "",
+            })
+    except Exception:
+        pass
+
+    # Deduplicate by title prefix and sort newest-first
+    seen: set[str] = set()
+    unique: list[dict] = []
+    for item in items:
+        key = (item.get("title") or "")[:50].lower()
+        if key and key not in seen:
+            seen.add(key)
+            unique.append(item)
+
+    unique.sort(key=lambda x: x.get("date", ""), reverse=True)
+    return unique[:8]
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -432,6 +432,80 @@ def api_meeting_preps():
         return jsonify({"ok": False, "error": str(exc)}), 500
 
 
+@second_brain_bp.route("/api/second-brain/proactive/launch-meeting-coworker", methods=["POST"])
+def api_launch_meeting_coworker():
+    """Spawn an ACE coworker pre-loaded with meeting prep context."""
+    data = request.get_json(force=True, silent=True) or {}
+    customer_name = data.get("customer_name", "")
+    meeting_title = data.get("meeting_title", "")
+    bullets = data.get("bullets", "")
+    customer_type = data.get("customer_type", "")
+
+    directive = (
+        f"I have a meeting coming up: '{meeting_title}' with {customer_name} ({customer_type}).\n"
+        f"Here is what was prepared:\n{bullets}\n\n"
+        f"Help me prepare further. Ask me what I need help with — "
+        f"draft talking points, anticipate their questions, or review the agenda."
+    )
+
+    try:
+        from tools.ace.controller import ACEController
+        instance_id = ACEController.get_instance().launch(
+            problem_text=directive,
+            trigger_source="second_brain_meeting_prep",
+            trigger_ref=f"meeting:{meeting_title[:40]}",
+            user_id=_user_id(),
+        )
+        return jsonify({"ok": True, "instance_id": instance_id, "redirect": f"/coworker/{instance_id}"})
+    except Exception:
+        import urllib.parse
+        msg = urllib.parse.quote(directive[:500])
+        return jsonify({"ok": True, "instance_id": None, "redirect": f"/coworker?prefill={msg}"})
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Customer interaction history API
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@second_brain_bp.route("/api/second-brain/customers/<relationship_id>/interactions", methods=["GET"])
+def api_get_interactions(relationship_id: str):
+    from tools.second_brain.interactions import get_interactions
+    items = get_interactions(relationship_id, _user_id(), _tenant_id())
+    return jsonify({"ok": True, "interactions": items})
+
+
+@second_brain_bp.route("/api/second-brain/customers/<relationship_id>/interactions", methods=["POST"])
+def api_log_interaction(relationship_id: str):
+    data = request.get_json(force=True, silent=True) or {}
+    try:
+        from tools.second_brain.interactions import log_interaction
+        result = log_interaction(
+            relationship_id=relationship_id,
+            user_id=_user_id(),
+            title=data.get("title", "Interaction"),
+            notes=data.get("notes", ""),
+            action_items=data.get("action_items", []),
+            follow_up_date=data.get("follow_up_date"),
+            interaction_type=data.get("interaction_type", "meeting"),
+            interaction_date=data.get("interaction_date"),
+            tenant_id=_tenant_id(),
+        )
+        return jsonify({"ok": True, "interaction": result})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@second_brain_bp.route(
+    "/api/second-brain/customers/<relationship_id>/interactions/<interaction_id>",
+    methods=["DELETE"],
+)
+def api_delete_interaction(relationship_id: str, interaction_id: str):
+    from tools.second_brain.interactions import delete_interaction
+    ok = delete_interaction(interaction_id, _user_id(), _tenant_id())
+    return jsonify({"ok": ok})
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # IQE endpoint
 # ─────────────────────────────────────────────────────────────────────────────
