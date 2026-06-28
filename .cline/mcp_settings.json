@@ -3,11 +3,11 @@
     "icdev-unified": {
       "command": "python",
       "args": [
-        "C:/Users/schuo/Downloads/ICDev/tools/mcp/mcp_debug_wrapper.py"
+        "C:/AI/ICDev/tools/mcp/mcp_debug_wrapper.py"
       ],
       "env": {
-        "ICDEV_DB_PATH": "C:/Users/schuo/Downloads/ICDev/data/icdev.db",
-        "ICDEV_PROJECT_ROOT": "C:/Users/schuo/Downloads/ICDev"
+        "ICDEV_DB_PATH": "C:/AI/ICDev/data/icdev.db",
+        "ICDEV_PROJECT_ROOT": "C:/AI/ICDev"
       },
       "disabled": false
     },
