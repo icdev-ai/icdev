@@ -82,7 +82,8 @@ CREATE TABLE IF NOT EXISTS user_integrations (
 );
 CREATE TABLE IF NOT EXISTS user_daily_briefings (
     id TEXT PRIMARY KEY, user_id TEXT NOT NULL, tenant_id TEXT NOT NULL DEFAULT 'default',
-    briefing_date TEXT NOT NULL, content_json TEXT, delivery_status_json TEXT DEFAULT '{}',
+    briefing_date TEXT NOT NULL, content_json TEXT, delivery_channels TEXT DEFAULT '["dashboard"]',
+    delivery_status_json TEXT DEFAULT '{}',
     opened_at TEXT, created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
     UNIQUE(user_id, tenant_id, briefing_date)
 );
@@ -352,9 +353,14 @@ class TestBriefingEngine(unittest.TestCase):
         })
         upsert_profile("brf_user", context_complete=1)
 
+    def _mock_llm(self):
+        mock_router = MagicMock()
+        mock_router.return_value.invoke.return_value = {"content": "Good morning, Frank."}
+        return patch("tools.llm.router.LLMRouter", mock_router)
+
     def test_generate_briefing_returns_dict(self):
         self._seed_user()
-        with patch("tools.second_brain.briefing.get_users_due_for_briefing", return_value=[]):
+        with self._mock_llm():
             from tools.second_brain.briefing import generate_briefing
             result = generate_briefing("brf_user", "2026-06-28")
         self.assertIsInstance(result, dict)
@@ -363,10 +369,10 @@ class TestBriefingEngine(unittest.TestCase):
 
     def test_generate_briefing_stored(self):
         self._seed_user()
-        from tools.second_brain.briefing import generate_briefing, get_todays_briefing
-        with patch("tools.second_brain.briefing.get_users_due_for_briefing", return_value=[]):
+        with self._mock_llm():
+            from tools.second_brain.briefing import generate_briefing
             generate_briefing("brf_user", "2026-06-28")
-        stored = self._conn.execute(
+        stored = self._conn._inner.execute(
             "SELECT content_json FROM user_daily_briefings WHERE user_id='brf_user'"
         ).fetchone()
         self.assertIsNotNone(stored)
@@ -383,8 +389,9 @@ class TestBriefingEngine(unittest.TestCase):
 
     def test_briefing_content_structure(self):
         self._seed_user()
-        from tools.second_brain.briefing import generate_briefing
-        result = generate_briefing("brf_user", "2026-06-28")
+        with self._mock_llm():
+            from tools.second_brain.briefing import generate_briefing
+            result = generate_briefing("brf_user", "2026-06-28")
         self.assertIn("meetings", result)
         self.assertIn("tasks", result)
         self.assertIsInstance(result["meetings"], list)
