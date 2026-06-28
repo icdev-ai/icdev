@@ -110,6 +110,40 @@
     </div>
     {% endif %}
 
+    <!-- AI Research & Draft (techwriter only) -->
+    {% if doc.template_type %}
+    <div id="research-panel-{{ s.section_id }}" style="display:none;margin-bottom:10px;background:#05101f;border:1px solid #1a3560;border-radius:6px;padding:12px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+        <input id="research-query-{{ s.section_id }}" value="{{ s.heading | replace('"', '') }}"
+          style="flex:1;background:#0b1726;border:1px solid #1a3560;color:#b8d0e8;padding:6px 10px;border-radius:4px;font-size:11px;"
+          placeholder="Research query…" />
+        <button onclick="runResearch('{{ s.section_id }}')"
+          style="background:#1a2e52;color:#7ab3f0;padding:5px 12px;border:1px solid #1e3a6e;border-radius:4px;cursor:pointer;font-size:11px;">
+          🔍 Research &amp; Draft
+        </button>
+        <button onclick="document.getElementById('research-panel-{{ s.section_id }}').style.display='none'"
+          style="background:none;border:none;color:#5a7aa0;cursor:pointer;font-size:14px;">✕</button>
+      </div>
+      <span id="research-airgap-{{ s.section_id }}" style="display:none;background:#1a1a2e;color:#5a7aa0;font-size:10px;padding:2px 8px;border-radius:3px;margin-bottom:6px;display:inline-block;">
+        🔒 Air-gap mode — web research disabled
+      </span>
+      <textarea id="research-draft-{{ s.section_id }}" readonly rows="5"
+        style="display:none;width:100%;background:#0b1726;border:1px solid #1a3560;color:#a8c8e0;padding:8px;border-radius:4px;font-size:11px;box-sizing:border-box;resize:vertical;">
+      </textarea>
+      <div id="research-actions-{{ s.section_id }}" style="display:none;margin-top:6px;display:none;">
+        <button onclick="insertResearchDraft('{{ s.section_id }}')"
+          style="background:#052e16;color:#4ade80;padding:5px 12px;border:1px solid #1a5a30;border-radius:4px;cursor:pointer;font-size:11px;">
+          ↳ Insert into section
+        </button>
+      </div>
+      <!-- Sources accordion -->
+      <details id="research-sources-{{ s.section_id }}" style="margin-top:8px;display:none;">
+        <summary style="color:#5a7aa0;font-size:10px;cursor:pointer;">Sources</summary>
+        <div id="research-sources-body-{{ s.section_id }}" style="font-size:10px;color:#7a8cb0;margin-top:4px;max-height:140px;overflow-y:auto;"></div>
+      </details>
+    </div>
+    {% endif %}
+
     <!-- Actions -->
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
       {% if role_levels.get(user_role, 0) >= 1 %}
@@ -158,6 +192,10 @@
         ✓ Style <span id="style-badge-{{ s.section_id }}" style="border-radius:8px;padding:0 5px;margin-left:3px;font-size:10px;"></span>
       </button>
       {% if doc.template_type %}
+      <button onclick="toggleResearchPanel('{{ s.section_id }}')"
+        style="background:#05101f;color:#38bdf8;padding:6px 14px;border:1px solid #1a3560;border-radius:5px;cursor:pointer;font-size:12px;">
+        🔍 Research
+      </button>
       <button onclick="openDiagramModal('{{ s.section_id }}')"
         style="background:#1a1a3a;color:#a78bfa;padding:6px 14px;border:1px solid #3a2a6e;border-radius:5px;cursor:pointer;font-size:12px;">
         ⬡ Diagram
@@ -278,7 +316,83 @@
 {% endif %}
 
 <script>
-// dsyn-patch-03: AI Suggestions panel logic
+// ── Tech Writer: Research & Draft ────────────────────────────────────────────
+function toggleResearchPanel(sectionId) {
+  var panel = document.getElementById('research-panel-' + sectionId);
+  if (!panel) return;
+  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+}
+
+function runResearch(sectionId) {
+  var query = (document.getElementById('research-query-' + sectionId) || {}).value || '';
+  if (!query.trim()) { alert('Enter a research query.'); return; }
+  var draftEl = document.getElementById('research-draft-' + sectionId);
+  var actionsEl = document.getElementById('research-actions-' + sectionId);
+  var sourcesEl = document.getElementById('research-sources-' + sectionId);
+  var sourcesBody = document.getElementById('research-sources-body-' + sectionId);
+  var airgapEl = document.getElementById('research-airgap-' + sectionId);
+  if (draftEl) { draftEl.value = 'Researching…'; draftEl.style.display = 'block'; }
+  fetch('/document-intelligence/api/techwriter/research', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      query: query,
+      section_heading: query,
+      template_type: '{{ doc.template_type or "" }}',
+      collection_id: '{{ doc.collection_id or "" }}'
+    })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (draftEl) {
+      draftEl.value = data.draft_content || data.error || 'No draft generated.';
+      draftEl.style.display = 'block';
+    }
+    if (actionsEl && data.draft_content) actionsEl.style.display = 'block';
+    if (airgapEl) airgapEl.style.display = data.is_airgap ? 'inline-block' : 'none';
+    // Render sources
+    if (sourcesBody) {
+      var parts = [];
+      (data.rag_chunks || []).forEach(function(c) {
+        parts.push('<div style="margin-bottom:4px;"><span style="color:#38bdf8;">RAG</span> ' +
+          escH(c.text ? c.text.slice(0, 120) : '') + '</div>');
+      });
+      (data.kg_entities || []).forEach(function(e) {
+        parts.push('<div style="margin-bottom:4px;"><span style="color:#a78bfa;">KG</span> ' +
+          escH(e.label || '') + ' — ' + escH(e.summary ? e.summary.slice(0, 80) : '') + '</div>');
+      });
+      (data.web_sources || []).forEach(function(w) {
+        parts.push('<div style="margin-bottom:4px;"><span style="color:#4ade80;">WEB</span> ' +
+          escH(w.url || '') + '</div>');
+      });
+      sourcesBody.innerHTML = parts.join('') || '<span style="color:#5a7aa0;">No sources.</span>';
+      if (parts.length && sourcesEl) sourcesEl.style.display = 'block';
+    }
+  })
+  .catch(function(e) {
+    if (draftEl) { draftEl.value = 'Research failed: ' + e.message; draftEl.style.display = 'block'; }
+  });
+}
+
+function insertResearchDraft(sectionId) {
+  var draftEl = document.getElementById('research-draft-' + sectionId);
+  if (!draftEl || !draftEl.value) return;
+  var ta = document.getElementById('textarea-' + sectionId);
+  if (ta) {
+    var pos = ta.selectionEnd || ta.value.length;
+    ta.value = ta.value.slice(0, pos) + (ta.value ? '\n\n' : '') + draftEl.value + ta.value.slice(pos);
+    ta.dispatchEvent(new Event('input'));
+  } else {
+    // Section not in edit mode — copy to clipboard as fallback
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(draftEl.value)
+        .then(function() { alert('Draft copied to clipboard. Click Edit on the section to paste.'); });
+    }
+  }
+  document.getElementById('research-panel-' + sectionId).style.display = 'none';
+}
+
+// ── dsyn-patch-03: AI Suggestions panel logic
 var _sugSectionId = null;
 function loadSuggestionsForDoc() {
   var collectionId = '{{ doc.collection_id }}';

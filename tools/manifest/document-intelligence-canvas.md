@@ -308,3 +308,28 @@ prov = get_chunk_provenance(
 | `tools/genesis/reflexes/dic_digest.py::run` | Weekly reflex: new-doc summary + freshness alerts → notification_log. Registered in daemon.py REFLEX_NAMES. |
 | `tools/research/source_scanners/dic_scanner.py::scan_dic_collection` | Research engine scanner: queries rag_chunks from a DIC collection, maps to research_signals format. Key: "dic_collection". |
 | `tools/canvas/kg_builder.py::upsert_from_dic` | Post-generation KG bridge: writes DIC entities/relationships to canvas_kg_nodes/edges with canvas='dic'. |
+
+## Tech Writer Workspace (Migration 230)
+
+| Tool | Purpose |
+|------|---------|
+| `tools/document_intelligence/tech_writing_assist.py` | AI research + drafting + diagram generation for the Tech Writer workspace. `research_and_draft(query, section_heading, template_type, ...)` → `ResearchResult`; `generate_diagram_syntax(description, diagram_type, template_type)` → `DiagramResult`. Never raises — all errors surface in result.error. Uses module-level optional imports (RAGRetriever, kg_retrieve, LLMRouter, fetch_content, is_airgap) so tests can patch them. Air-gap aware (skips web when air-gapped). |
+
+Routes added to `blueprint.py`:
+- `GET /techwriter` — Tech Writer workspace page (6 template-type cards + continue-writing list)
+- `PATCH /api/documents/<id>/writeguard-mode` — update WriteGuard content mode
+- `POST /api/techwriter/research` — AI research + draft per section (caps rag_chunks to 5, kg_entities to 10)
+- `POST /api/techwriter/diagram` — generate Mermaid syntax from natural-language description
+
+Constants in `tools/document_intelligence/constants.py`:
+- `TEMPLATE_TYPES` — 6 types: STANDARD_GUIDE, SOP, RUNBOOK, ARCH_NETWORK, ARCH_APPLICATION, ARCH_SYSTEM
+- `WRITEGUARD_MODES` — mode keys; `TEMPLATE_TYPE_TO_WRITEGUARD_MODE` maps each template type to its mode
+
+Frontend:
+- `tools/dashboard/static/js/dic-techwriter-sidebar.js` — `DICTechWriterSidebar.init({sidebarId, mode, debounceMs:1500})`. MutationObserver catches dynamically created `textarea[data-section-id]` elements. Debounced 1500ms → POST `/api/writeguard/analyze` → severity-coloured findings + SVG donut score. Apply-fix button calls `/api/writeguard/rewrite`.
+- `doc_detail.html` — conditional two-column layout + `<aside id="wg-sidebar">` + AI Research drawer + Mermaid `<dialog>` editor; all guarded by `{% if doc.template_type %}`.
+
+Content modes in `tools/writing/content_modes.py`:
+- `standard_guide` — checks AWS/Azure/GCP/Oracle coverage, References section
+- `architecture_doc` — checks decision log, security section, warns if no `[DIAGRAM:]` marker
+- `sop_runbook` — checks numbered steps, Rollback, Prerequisites, Verification; suppresses tone+clichés

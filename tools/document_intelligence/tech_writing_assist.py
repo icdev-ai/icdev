@@ -7,9 +7,37 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any
 
 logger = logging.getLogger(__name__)
+
+# ── Optional deps — imported at module level so tests can patch them ──────────
+try:
+    from tools.airgap.detector import is_airgap
+except Exception:
+    def is_airgap(**kwargs):  # type: ignore[misc]
+        return True
+
+try:
+    from tools.rag.retriever import RAGRetriever
+except Exception:
+    RAGRetriever = None  # type: ignore[assignment,misc]
+
+try:
+    from tools.knowledge_graph.graph_rag import retrieve as kg_retrieve
+except Exception:
+    kg_retrieve = None  # type: ignore[assignment]
+
+try:
+    from tools.chat_router.url_analyzer import fetch_content
+except Exception:
+    fetch_content = None  # type: ignore[assignment]
+
+try:
+    from tools.llm.router import LLMRouter
+    from tools.llm.provider import LLMRequest
+except Exception:
+    LLMRouter = None  # type: ignore[assignment,misc]
+    LLMRequest = None  # type: ignore[assignment,misc]
 
 # ── System prompts by template type ──────────────────────────────────────────
 _SYSTEM_PROMPTS: dict[str, str] = {
@@ -104,57 +132,55 @@ def research_and_draft(
 
     # ── 1. Air-gap check (use_cache=False prevents stale results in tests) ──
     try:
-        from tools.airgap.detector import is_airgap
         result.is_airgap = is_airgap(use_cache=False)
     except Exception as exc:
         logger.debug("air-gap check failed: %s", exc)
         result.is_airgap = True  # fail safe: assume air-gapped
 
     # ── 2. RAG retrieval ─────────────────────────────────────────────────────
-    try:
-        from tools.rag.retriever import RAGRetriever
-        retriever = RAGRetriever(tenant_id=tenant_id or "default")
-        search_results = retriever.search(query, top_k=top_k)
-        for sr in search_results[:top_k]:
-            chunk = {
-                "chunk_id": getattr(sr, "chunk_id", ""),
-                "doc_id": getattr(sr, "doc_id", ""),
-                "text": getattr(sr, "text", "") or getattr(sr, "content", ""),
-                "score": float(getattr(sr, "score", 0)),
-            }
-            result.rag_chunks.append(chunk)
-            if chunk["text"]:
-                context_parts.append(f"[RAG] {chunk['text'][:800]}")
-    except Exception as exc:
-        result.warnings.append(f"RAG unavailable: {exc}")
-        logger.debug("RAG retrieval failed: %s", exc)
+    if RAGRetriever is not None:
+        try:
+            retriever = RAGRetriever(tenant_id=tenant_id or "default")
+            search_results = retriever.search(query, top_k=top_k)
+            for sr in search_results[:top_k]:
+                chunk = {
+                    "chunk_id": getattr(sr, "chunk_id", ""),
+                    "doc_id": getattr(sr, "doc_id", ""),
+                    "text": getattr(sr, "text", "") or getattr(sr, "content", ""),
+                    "score": float(getattr(sr, "score", 0)),
+                }
+                result.rag_chunks.append(chunk)
+                if chunk["text"]:
+                    context_parts.append(f"[RAG] {chunk['text'][:800]}")
+        except Exception as exc:
+            result.warnings.append(f"RAG unavailable: {exc}")
+            logger.debug("RAG retrieval failed: %s", exc)
 
     # ── 3. KG retrieval ──────────────────────────────────────────────────────
-    try:
-        from tools.knowledge_graph.graph_rag import retrieve as kg_retrieve
-        kg_result = kg_retrieve(query, top_k=top_k, compress=False)
-        if isinstance(kg_result, dict):
-            nodes = kg_result.get("nodes", []) or []
-            for node in nodes[:10]:
-                entity = {
-                    "entity_id": node.get("node_id", ""),
-                    "type": node.get("entity_type", ""),
-                    "label": node.get("label", ""),
-                    "summary": node.get("summary", ""),
-                }
-                result.kg_entities.append(entity)
-                if entity["summary"]:
-                    context_parts.append(f"[KG:{entity['type']}] {entity['label']}: {entity['summary'][:400]}")
-    except Exception as exc:
-        result.warnings.append(f"KG unavailable: {exc}")
-        logger.debug("KG retrieval failed: %s", exc)
+    if kg_retrieve is not None:
+        try:
+            kg_result = kg_retrieve(query, top_k=top_k, compress=False)
+            if isinstance(kg_result, dict):
+                nodes = kg_result.get("nodes", []) or []
+                for node in nodes[:10]:
+                    entity = {
+                        "entity_id": node.get("node_id", ""),
+                        "type": node.get("entity_type", ""),
+                        "label": node.get("label", ""),
+                        "summary": node.get("summary", ""),
+                    }
+                    result.kg_entities.append(entity)
+                    if entity["summary"]:
+                        context_parts.append(f"[KG:{entity['type']}] {entity['label']}: {entity['summary'][:400]}")
+        except Exception as exc:
+            result.warnings.append(f"KG unavailable: {exc}")
+            logger.debug("KG retrieval failed: %s", exc)
 
     # ── 4. Web research (only when NOT air-gapped) ───────────────────────────
-    if not result.is_airgap:
+    if not result.is_airgap and fetch_content is not None:
         urls_to_fetch = list(web_urls or [])
         for url in urls_to_fetch[:3]:
             try:
-                from tools.chat_router.url_analyzer import fetch_content
                 content = fetch_content(url)
                 if content:
                     snippet = str(content)[:1000]
@@ -181,21 +207,22 @@ def research_and_draft(
         f"Classification: {classification}."
     )
 
-    try:
-        from tools.llm.router import LLMRouter
-        from tools.llm.provider import LLMRequest
-        router = LLMRouter()
-        req = LLMRequest(
-            messages=[{"role": "user", "content": user_msg}],
-            system_prompt=system_prompt,
-            max_tokens=2048,
-            temperature=0.4,
-        )
-        response = router.invoke("tech_writing_draft", req)
-        result.draft_content = (response.content or "").strip()
-    except Exception as exc:
-        result.error = f"LLM draft failed: {exc}"
-        logger.warning("LLM draft failed: %s", exc)
+    if LLMRouter is not None and LLMRequest is not None:
+        try:
+            router = LLMRouter()
+            req = LLMRequest(
+                messages=[{"role": "user", "content": user_msg}],
+                system_prompt=system_prompt,
+                max_tokens=2048,
+                temperature=0.4,
+            )
+            response = router.invoke("tech_writing_draft", req)
+            result.draft_content = (response.content or "").strip()
+        except Exception as exc:
+            result.error = f"LLM draft failed: {exc}"
+            logger.warning("LLM draft failed: %s", exc)
+    else:
+        result.error = "LLM not available."
 
     return result
 
@@ -229,28 +256,29 @@ def generate_diagram_syntax(
         "Return only the Mermaid syntax."
     )
 
-    try:
-        from tools.llm.router import LLMRouter
-        from tools.llm.provider import LLMRequest
-        router = LLMRouter()
-        req = LLMRequest(
-            messages=[{"role": "user", "content": user_msg}],
-            system_prompt=system_prompt,
-            max_tokens=512,
-            temperature=0.2,
-        )
-        response = router.invoke("diagram_generation", req)
-        syntax = (response.content or "").strip()
-        # Strip accidental markdown fences
-        if syntax.startswith("```"):
-            lines = syntax.splitlines()
-            syntax = "\n".join(
-                l for l in lines
-                if not l.strip().startswith("```")
-            ).strip()
-        result.syntax = syntax
-    except Exception as exc:
-        result.error = f"Diagram generation failed: {exc}"
-        logger.warning("Diagram generation failed: %s", exc)
+    if LLMRouter is not None and LLMRequest is not None:
+        try:
+            router = LLMRouter()
+            req = LLMRequest(
+                messages=[{"role": "user", "content": user_msg}],
+                system_prompt=system_prompt,
+                max_tokens=512,
+                temperature=0.2,
+            )
+            response = router.invoke("diagram_generation", req)
+            syntax = (response.content or "").strip()
+            # Strip accidental markdown fences
+            if syntax.startswith("```"):
+                lines = syntax.splitlines()
+                syntax = "\n".join(
+                    ln for ln in lines
+                    if not ln.strip().startswith("```")
+                ).strip()
+            result.syntax = syntax
+        except Exception as exc:
+            result.error = f"Diagram generation failed: {exc}"
+            logger.warning("Diagram generation failed: %s", exc)
+    else:
+        result.error = "LLM not available."
 
     return result

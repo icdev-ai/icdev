@@ -158,6 +158,8 @@
 
             <li><a href="/" class="{% if request.path == '/' %}active{% endif %}">Home</a></li>
 
+            <li><a href="/me" class="{% if request.path.startswith('/me') %}active{% endif %}" style="font-weight:600" title="My AI Assistant — profile, customers, briefing">🧠 Me</a></li>
+
             <!-- ── Ops ──────────────────────────────────────────────────────── -->
             <li class="nav-dropdown">
                 <a href="javascript:void(0)" class="nav-dropdown-trigger {% if request.path in ['/projects','/agents','/orchestration','/monitoring','/platform-health','/activity','/cicd','/kanban','/batch','/simulation','/il5'] %}active{% endif %}">Ops ▾</a>

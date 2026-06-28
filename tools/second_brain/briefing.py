@@ -402,7 +402,7 @@ def get_users_due_for_briefing(current_hour_utc: int) -> list[dict]:
 import os
 
 if __name__ == "__main__":
-    import argparse, sys
+    import argparse
 
     parser = argparse.ArgumentParser(description="Second Brain daily briefing")
     parser.add_argument("--user-id", default="default")

@@ -341,7 +341,7 @@ Be specific, warm, and professional. Do not use bullet points."""
 
 
 if __name__ == "__main__":
-    import argparse, sys
+    import argparse
 
     parser = argparse.ArgumentParser(description="Second Brain profile utility")
     parser.add_argument("--user-id", default="default")

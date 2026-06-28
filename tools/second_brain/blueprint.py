@@ -2,8 +2,6 @@
 """Second Brain (/me) canvas blueprint — profile, objectives, relationships, challenges, briefing, integrations."""
 from __future__ import annotations
 
-import json
-import os
 import secrets
 
 from flask import Blueprint, g, jsonify, redirect, render_template, request, session, url_for

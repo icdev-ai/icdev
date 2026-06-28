@@ -1072,3 +1072,23 @@
 |------|------|-------------|-------|--------|
 | Output Redactor | tools\llm\output_redactor.py | Auto-registered: llm/output_redactor.py | --json | JSON |
 | Role Cost Caps | tools\llm\role_cost_caps.py | Auto-registered: llm/role_cost_caps.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Health Data | tools\canvas_health\health_data.py | Auto-registered: canvas_health/health_data.py | --json | JSON |
+| Tech Writing Assist | tools\document_intelligence\tech_writing_assist.py | Auto-registered: document_intelligence/tech_writing_assist.py | --json | JSON |
+| Api Contract Tester | tools\testing\api_contract_tester.py | Auto-registered: testing/api_contract_tester.py | --json | JSON |
+| Dep Health | tools\testing\dep_health.py | Auto-registered: testing/dep_health.py | --json | JSON |
+| Flaky Tracker | tools\testing\flaky_tracker.py | Auto-registered: testing/flaky_tracker.py | --json | JSON |
+| Visual Regression | tools\testing\visual_regression.py | Auto-registered: testing/visual_regression.py | --json | JSON |
+| Second Brain | tools\iqe\adapters\second_brain.py | Auto-registered: adapters/second_brain.py | --json | JSON |
+| Api Contract Reflex | tools\genesis\reflexes\api_contract_reflex.py | Auto-registered: reflexes/api_contract_reflex.py | --json | JSON |
+| Coherence To Kanban Reflex | tools\genesis\reflexes\coherence_to_kanban_reflex.py | Auto-registered: reflexes/coherence_to_kanban_reflex.py | --json | JSON |
+| Critical Task Watchdog Reflex | tools\genesis\reflexes\critical_task_watchdog_reflex.py | Auto-registered: reflexes/critical_task_watchdog_reflex.py | --json | JSON |
+| Dead Code Reflex | tools\genesis\reflexes\dead_code_reflex.py | Auto-registered: reflexes/dead_code_reflex.py | --json | JSON |
+| Dep Health Reflex | tools\genesis\reflexes\dep_health_reflex.py | Auto-registered: reflexes/dep_health_reflex.py | --json | JSON |
+| Flaky Tracker Reflex | tools\genesis\reflexes\flaky_tracker_reflex.py | Auto-registered: reflexes/flaky_tracker_reflex.py | --json | JSON |
+| Qa Agent Reflex | tools\genesis\reflexes\qa_agent_reflex.py | Auto-registered: reflexes/qa_agent_reflex.py | --json | JSON |
+| Route Perf Reflex | tools\genesis\reflexes\route_perf_reflex.py | Auto-registered: reflexes/route_perf_reflex.py | --json | JSON |
