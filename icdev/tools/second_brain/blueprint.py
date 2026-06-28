@@ -760,7 +760,7 @@ def oauth_callback_msgraph():
 
 # ── Weekly Retrospective ──────────────────────────────────────────────────────
 
-@second_brain_bp.route("/me/retro")
+@second_brain_bp.route("/retro")
 def page_retro():
     from tools.second_brain.retro import get_latest_retro
     retro = get_latest_retro(_user_id(), _tenant_id())
@@ -776,7 +776,7 @@ def api_retro_generate():
 
 # ── Unified Search ────────────────────────────────────────────────────────────
 
-@second_brain_bp.route("/me/search")
+@second_brain_bp.route("/search")
 def page_search():
     q = request.args.get("q", "").strip()
     results = {}

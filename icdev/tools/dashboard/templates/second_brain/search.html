@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Second Brain Search{% endblock %}
+{% block content %}
+<div class="container-fluid py-4" style="max-width:760px">
+  <h5 class="fw-semibold mb-3">🔍 Search Your Second Brain</h5>
+
+  <form method="get" action="/me/search" class="mb-4">
+    <div class="input-group">
+      <input type="text" name="q" value="{{ q }}" autofocus
+             placeholder="Search objectives, contacts, interactions, knowledge…"
+             class="form-control"
+             style="background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.15);color:inherit">
+      <button class="btn btn-primary" type="submit">Search</button>
+    </div>
+  </form>
+
+  {% if q and not results %}
+  <div class="text-muted small fst-italic text-center py-4">No results found for "{{ q }}".</div>
+  {% endif %}
+
+  {% if results %}
+  {% set source_meta = {
+    'objectives':    ('🎯', 'Objectives',     '#f9a8d4'),
+    'relationships': ('👤', 'Relationships',  '#60a5fa'),
+    'interactions':  ('🤝', 'Interactions',   '#34d399'),
+    'knowledge':     ('📚', 'Knowledge Base', '#a78bfa'),
+    'briefings':     ('📋', 'Briefings',      '#fcd34d'),
+  } %}
+
+  {% for source, items in results.items() %}
+  {% set sm = source_meta.get(source, ('•', source, '#9ca3af')) %}
+  <div class="mb-4">
+    <div class="fw-semibold small mb-2" style="color:{{ sm[2] }}">{{ sm[0] }} {{ sm[1] }} ({{ items|length }})</div>
+    {% for item in items %}
+    <div class="py-2 border-bottom" style="border-color:rgba(255,255,255,.06)">
+      <div class="d-flex align-items-start justify-content-between gap-2">
+        <div style="flex:1;min-width:0">
+          <a href="{{ item.url }}" class="fw-semibold small text-decoration-none" style="color:inherit">
+            {{ item.title }}
+          </a>
+          {% if item.snippet %}
+          <div class="text-muted mt-1" style="font-size:.72rem">{{ item.snippet }}</div>
+          {% endif %}
+        </div>
+        {% if item.meta %}
+        <span class="text-muted flex-shrink-0" style="font-size:.65rem">{{ item.meta }}</span>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endfor %}
+  {% endif %}
+</div>
+{% endblock %}
