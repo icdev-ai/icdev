@@ -167,7 +167,7 @@ marketplace-saas/.pytest_cache/
 *.key
 *-key.pem
 *.private_key.pem
-data/certs/
+data/certs/*.key
 args/pki/*-key.pem
 args/marketplace_private_key.pem
 icdev/data/args/marketplace_private_key.pem
