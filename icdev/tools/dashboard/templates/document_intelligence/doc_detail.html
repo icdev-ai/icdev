@@ -61,9 +61,16 @@
   </div>
 </div>
 
-<!-- Sections -->
+<!-- Sections + WriteGuard Sidebar (techwriter two-column layout) -->
+{% if doc.template_type %}
+<div style="display:flex;gap:18px;margin-bottom:24px;align-items:flex-start;">
+<div style="flex:1 1 65%;min-width:0;">
+{% else %}
 <div style="margin-bottom:24px;">
-  <h3 style="margin:0 0 12px;color:#9bb8d8;font-size:14px;">Sections</h3>
+{% endif %}
+  <h3 style="margin:0 0 12px;color:#9bb8d8;font-size:14px;">Sections
+    {% if doc.template_type %}<span style="margin-left:8px;font-size:10px;background:#1a1a3a;color:#a78bfa;padding:2px 8px;border-radius:8px;">{{ doc.template_type | replace('_', ' ') }}</span>{% endif %}
+  </h3>
   {% for s in sections %}
   <div style="background:#0b1726;border:1px solid #1a3560;border-radius:8px;padding:16px;margin-bottom:14px;" id="sec-{{ s.section_id }}">
     <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px;">
@@ -150,6 +157,12 @@
         style="background:#1a2a1a;color:#7fd8a0;padding:6px 14px;border:1px solid #2a4a2a;border-radius:5px;cursor:pointer;font-size:12px;">
         ✓ Style <span id="style-badge-{{ s.section_id }}" style="border-radius:8px;padding:0 5px;margin-left:3px;font-size:10px;"></span>
       </button>
+      {% if doc.template_type %}
+      <button onclick="openDiagramModal('{{ s.section_id }}')"
+        style="background:#1a1a3a;color:#a78bfa;padding:6px 14px;border:1px solid #3a2a6e;border-radius:5px;cursor:pointer;font-size:12px;">
+        ⬡ Diagram
+      </button>
+      {% endif %}
       <button onclick="toggleHistoryPanel('{{ s.section_id }}')"
         style="background:#1a2030;color:#93c5fd;padding:6px 14px;border:1px solid #1e3560;border-radius:5px;cursor:pointer;font-size:12px;">
         🕒 History <span id="hist-count-{{ s.section_id }}" style="background:#1e3560;border-radius:8px;padding:0 5px;margin-left:3px;font-size:10px;display:none;"></span>
@@ -212,7 +225,57 @@
   {% else %}
   <p style="color:#5a7aa0;font-size:12px;">No sections yet. Generate a draft or instantiate a template.</p>
   {% endfor %}
-</div>
+</div><!-- /sections -->
+{% if doc.template_type %}
+</div><!-- /sections flex column -->
+<!-- WriteGuard Sidebar -->
+<aside id="wg-sidebar" style="flex:0 0 280px;width:280px;background:#0b1726;border:1px solid #1a3560;border-radius:8px;padding:14px;position:sticky;top:80px;align-self:flex-start;max-height:calc(100vh - 120px);overflow-y:auto;">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+    <span style="color:#9bb8d8;font-size:12px;font-weight:600;">✍️ WriteGuard</span>
+    <div style="display:flex;align-items:center;gap:6px;">
+      <span style="color:#5a7aa0;font-size:10px;">{{ (doc.writeguard_mode or 'default').replace('_',' ') }}</span>
+      <button id="wg-sidebar-toggle" class="wg-sb-toggle" title="Collapse" style="background:none;border:1px solid #1a3560;color:#5a7aa0;border-radius:3px;padding:1px 6px;cursor:pointer;font-size:11px;">◀</button>
+    </div>
+  </div>
+  <div class="wg-sb-body" style="font-size:11px;color:#b8d0e8;"></div>
+</aside>
+</div><!-- /flex row -->
+{% endif %}
+
+<!-- Mermaid Diagram Editor Modal (techwriter only) -->
+{% if doc.template_type %}
+<dialog id="diagram-modal" style="background:#0b1726;border:1px solid #3a2a6e;border-radius:10px;padding:0;width:720px;max-width:95vw;color:#eaeaea;">
+  <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid #1a3560;">
+    <span style="color:#a78bfa;font-size:14px;font-weight:600;">⬡ Diagram Editor</span>
+    <button onclick="document.getElementById('diagram-modal').close()" style="background:none;border:none;color:#5a7aa0;cursor:pointer;font-size:20px;line-height:1;">✕</button>
+  </div>
+  <div style="display:flex;gap:12px;padding:16px 18px;">
+    <!-- Syntax editor -->
+    <div style="flex:1 1 50%;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <span style="color:#9bb8d8;font-size:11px;font-weight:600;">Mermaid Syntax</span>
+        <div style="display:flex;gap:6px;">
+          <input id="diagram-ai-prompt" placeholder="Describe diagram…" style="background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:4px 8px;border-radius:4px;font-size:11px;width:180px;" />
+          <button onclick="generateDiagram()" style="background:#2a1a6e;color:#a78bfa;padding:4px 10px;border:1px solid #3a2a8e;border-radius:4px;cursor:pointer;font-size:11px;">AI Generate</button>
+        </div>
+      </div>
+      <textarea id="diagram-syntax" rows="14" oninput="previewDiagram()"
+        style="width:100%;background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:10px;border-radius:5px;font-size:12px;font-family:monospace;box-sizing:border-box;resize:vertical;"
+        placeholder="graph TD&#10;  A[Start] --> B[Step 1]&#10;  B --> C[End]"></textarea>
+    </div>
+    <!-- Preview -->
+    <div style="flex:1 1 50%;">
+      <div style="color:#9bb8d8;font-size:11px;font-weight:600;margin-bottom:6px;">Preview</div>
+      <div id="diagram-preview" style="background:#050d1f;border:1px solid #1a3560;border-radius:5px;padding:12px;min-height:200px;overflow:auto;"></div>
+      <div id="diagram-preview-err" style="color:#f87171;font-size:10px;margin-top:4px;display:none;"></div>
+    </div>
+  </div>
+  <div style="display:flex;justify-content:flex-end;gap:8px;padding:12px 18px;border-top:1px solid #1a3560;">
+    <button onclick="document.getElementById('diagram-modal').close()" style="background:#1e293b;color:#94a3b8;padding:6px 16px;border:1px solid #1a3560;border-radius:5px;cursor:pointer;font-size:12px;">Cancel</button>
+    <button onclick="insertDiagram()" style="background:#2a1a6e;color:#a78bfa;padding:6px 16px;border:1px solid #3a2a8e;border-radius:5px;cursor:pointer;font-size:12px;">Insert into Section</button>
+  </div>
+</dialog>
+{% endif %}
 
 <script>
 // dsyn-patch-03: AI Suggestions panel logic
@@ -375,6 +438,7 @@ function _enterEditMode(sectionId) {
   var textarea = document.createElement('textarea');
   textarea.value = currentText;
   textarea.id = 'textarea-' + sectionId;
+  textarea.dataset.sectionId = sectionId;
   textarea.style = 'width:100%;min-height:120px;background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:10px;border-radius:5px;font-size:12px;box-sizing:border-box;';
 
   function _releaseLock() {
@@ -1052,6 +1116,104 @@ function runDiff() {
     });
 }
 </script>
+
+{% if doc.template_type %}
+<script src="/static/js/dic-techwriter-sidebar.js"></script>
+<script>
+// ── WriteGuard Sidebar Init ─────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', function() {
+  DICTechWriterSidebar.init({
+    sidebarId: 'wg-sidebar',
+    mode: '{{ doc.writeguard_mode or "default" }}',
+    debounceMs: 1500
+  });
+});
+
+// ── Diagram Blocks: parse [DIAGRAM:mermaid]…[/DIAGRAM] in section content ──
+function renderDiagramBlocks() {
+  document.querySelectorAll('[id^="content-"]').forEach(function(el) {
+    var html = el.innerHTML;
+    var re = /\[DIAGRAM:mermaid\]([\s\S]*?)\[\/DIAGRAM\]/g;
+    var replaced = html.replace(re, function(_, syntax) {
+      return '<div class="mermaid">' + syntax.trim() + '</div>';
+    });
+    if (replaced !== html) {
+      el.innerHTML = replaced;
+    }
+  });
+  if (window.mermaid) {
+    try { mermaid.run({ querySelector: '.mermaid' }); } catch(e) {}
+  }
+}
+document.addEventListener('DOMContentLoaded', renderDiagramBlocks);
+
+// ── Diagram Modal ────────────────────────────────────────────────────────────
+var _diagramSectionId = null;
+var _diagramPreviewTimer = null;
+
+function openDiagramModal(sectionId) {
+  _diagramSectionId = sectionId;
+  document.getElementById('diagram-syntax').value = '';
+  document.getElementById('diagram-preview').innerHTML = '';
+  document.getElementById('diagram-ai-prompt').value = '';
+  document.getElementById('diagram-preview-err').style.display = 'none';
+  document.getElementById('diagram-modal').showModal();
+}
+
+function previewDiagram() {
+  clearTimeout(_diagramPreviewTimer);
+  _diagramPreviewTimer = setTimeout(function() {
+    var syntax = document.getElementById('diagram-syntax').value.trim();
+    var preview = document.getElementById('diagram-preview');
+    var errEl = document.getElementById('diagram-preview-err');
+    errEl.style.display = 'none';
+    if (!syntax) { preview.innerHTML = ''; return; }
+    if (!window.mermaid) { preview.innerHTML = '<code style="font-size:10px;color:#7a8cb0;">Mermaid not loaded</code>'; return; }
+    var uid = 'prev-' + Date.now();
+    mermaid.render(uid, syntax)
+      .then(function(r) { preview.innerHTML = r.svg; })
+      .catch(function(e) {
+        preview.innerHTML = '';
+        errEl.textContent = 'Syntax error: ' + (e.message || e);
+        errEl.style.display = 'block';
+      });
+  }, 400);
+}
+
+function generateDiagram() {
+  var desc = document.getElementById('diagram-ai-prompt').value.trim();
+  if (!desc) { alert('Enter a description first.'); return; }
+  fetch('/document-intelligence/api/techwriter/diagram', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ description: desc, template_type: '{{ doc.template_type or "" }}' })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (d.syntax) {
+      document.getElementById('diagram-syntax').value = d.syntax;
+      previewDiagram();
+    } else if (d.error) {
+      alert('AI diagram error: ' + d.error);
+    }
+  })
+  .catch(function() { alert('Diagram generation failed.'); });
+}
+
+function insertDiagram() {
+  var syntax = document.getElementById('diagram-syntax').value.trim();
+  if (!syntax || !_diagramSectionId) return;
+  var ta = document.getElementById('textarea-' + _diagramSectionId);
+  if (ta) {
+    var marker = '\n\n[DIAGRAM:mermaid]\n' + syntax + '\n[/DIAGRAM]\n';
+    var pos = ta.selectionEnd || ta.value.length;
+    ta.value = ta.value.slice(0, pos) + marker + ta.value.slice(pos);
+    ta.dispatchEvent(new Event('input'));
+  }
+  document.getElementById('diagram-modal').close();
+}
+</script>
+{% endif %}
 
 {% set iqe_canvas = "dic" %}
 {% set iqe_api_route = "/document-intelligence/api/iqe-query" %}

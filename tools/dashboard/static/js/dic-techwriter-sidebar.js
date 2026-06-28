@@ -134,15 +134,37 @@
     _debounceTimer = setTimeout(_analyze, _debounceMs);
   }
 
-  // ── Bind to section textareas ─────────────────────────────────────────────
-  function _bindTextareas() {
-    document.querySelectorAll('textarea[data-section-id]').forEach(function (ta) {
-      ta.addEventListener('focus', function () {
-        _activeTextarea = ta;
-        _lastText = '';  // force re-analysis on focus change
-      });
-      ta.addEventListener('input', _onInput);
+  // ── Bind a single textarea ────────────────────────────────────────────────
+  var _boundSet = new WeakSet ? new WeakSet() : null;
+
+  function _bindOne(ta) {
+    if (_boundSet && _boundSet.has(ta)) return;
+    if (_boundSet) _boundSet.add(ta);
+    ta.addEventListener('focus', function () {
+      _activeTextarea = ta;
+      _lastText = '';  // force re-analysis on focus change
     });
+    ta.addEventListener('input', _onInput);
+  }
+
+  // ── Bind to section textareas (initial + dynamic via MutationObserver) ────
+  function _bindTextareas() {
+    document.querySelectorAll('textarea[data-section-id]').forEach(_bindOne);
+
+    if (window.MutationObserver) {
+      var observer = new MutationObserver(function (mutations) {
+        mutations.forEach(function (m) {
+          m.addedNodes.forEach(function (node) {
+            if (node.nodeType !== 1) return;
+            if (node.tagName === 'TEXTAREA' && node.dataset && node.dataset.sectionId) {
+              _bindOne(node);
+            }
+            node.querySelectorAll && node.querySelectorAll('textarea[data-section-id]').forEach(_bindOne);
+          });
+        });
+      });
+      observer.observe(document.body, { childList: true, subtree: true });
+    }
   }
 
   // ── Collapse toggle ───────────────────────────────────────────────────────
