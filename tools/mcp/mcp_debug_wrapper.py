@@ -44,8 +44,10 @@ def relay_stdin():
     except Exception as e:
         log(f"stdin relay error: {e}")
     finally:
-        try: proc.stdin.close()
-        except: pass
+        try:
+            proc.stdin.close()
+        except Exception:
+            pass
 
 def relay_stdout():
     try:

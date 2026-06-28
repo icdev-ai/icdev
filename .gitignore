@@ -164,8 +164,14 @@ marketplace-saas/.pytest_cache/
 .claude/projects/
 
 # Private keys (NEVER commit)
+*.key
+*-key.pem
 *.private_key.pem
+data/certs/
+args/pki/*-key.pem
 args/marketplace_private_key.pem
+icdev/data/args/marketplace_private_key.pem
+icdev/data/args/pki/*-key.pem
 
 # Genesis runtime exports (GKP artifacts)
 data/genesis/exports/
