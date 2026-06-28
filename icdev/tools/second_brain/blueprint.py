@@ -534,7 +534,7 @@ def api_iqe_query():
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@second_brain_bp.route("/me/learn", methods=["GET"])
+@second_brain_bp.route("/learn", methods=["GET"])
 def page_learn():
     from tools.second_brain.personal_rag import get_items
     items = get_items(_user_id(), _tenant_id())
