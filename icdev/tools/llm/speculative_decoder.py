@@ -67,8 +67,15 @@ class SpeculativeConfig:
     target_endpoint: str = "http://localhost:11434"
 
 
-# Known draft model name fragments from DeepSpec (deepseek-ai/DeepSpec)
-_DRAFT_MODEL_PATTERNS = ("dspark", "eagle3", "dflash", "draft")
+# DeepSpec-trained draft models (deepseek-ai/DeepSpec HuggingFace checkpoints)
+_DEEPSPEC_PATTERNS = ("dspark", "eagle3", "dflash")
+
+# Small base models usable as approximate drafts when no DeepSpec model is available.
+# Heuristic: model name ends with a sub-2B size tag alongside a larger companion.
+# Prefer the smallest available member of the same model family as the target.
+_SMALL_MODEL_SIZES = (":0.5b", ":0.6b", ":1b", ":1.5b", "-0.5b", "-0.6b", "-1b", "-1.5b")
+
+_DRAFT_MODEL_PATTERNS = _DEEPSPEC_PATTERNS + ("draft",)
 
 
 
@@ -363,15 +370,39 @@ def _resolve_endpoint(spec_cfg: dict) -> str:
 
 
 def _discover_draft_model(endpoint: str) -> str:
-    """Probe Ollama /api/tags and return the first loaded draft model name, or ''."""
+    """Probe Ollama /api/tags and return the best available draft model name, or ''.
+
+    Selection priority:
+      1. DeepSpec-trained draft models (dspark/eagle3/dflash) — best quality
+      2. Any model explicitly named 'draft'
+      3. Smallest loaded member of the largest loaded model family (e.g. qwen3:0.5b
+         when qwen3:4b is also loaded) — practical fallback, no conversion needed
+    """
     status, body = _http_get(f"{endpoint}/api/tags", timeout=2.0)
     if status != 200 or not isinstance(body, dict):
         return ""
     models = body.get("models", [])
-    for m in models:
-        name = (m.get("name") or "").lower()
-        if any(pat in name for pat in _DRAFT_MODEL_PATTERNS):
-            return m.get("name", "")
+    names = [m.get("name", "") for m in models]
+    lowered = [n.lower() for n in names]
+
+    # Priority 1 & 2: DeepSpec or explicit draft name
+    for i, low in enumerate(lowered):
+        if any(pat in low for pat in _DRAFT_MODEL_PATTERNS):
+            return names[i]
+
+    # Priority 3: smallest model of a family that also has a larger member loaded
+    family_map: dict[str, list[str]] = {}
+    for name in names:
+        family = name.split(":")[0].lower()
+        family_map.setdefault(family, []).append(name)
+
+    for family, members in family_map.items():
+        if len(members) < 2:
+            continue
+        small = [m for m in members if any(m.lower().endswith(sz) for sz in _SMALL_MODEL_SIZES)]
+        if small:
+            return small[0]
+
     return ""
 
 
