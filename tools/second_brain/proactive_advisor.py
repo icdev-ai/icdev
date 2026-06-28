@@ -690,3 +690,186 @@ def generate_challenge_mitigations(
         })
 
     return mitigations
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 6. Meeting prep cards (callable by meeting_prep_reflex + manual endpoint)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def generate_meeting_preps(
+    user_id: str,
+    tenant_id: str = "default",
+) -> list[dict[str, Any]]:
+    """For each calendar event in the next 90 minutes with a known customer attendee,
+    generate a 3-bullet prep card and store it in today's briefing."""
+    from datetime import date, timedelta as td
+
+    customers = _load_customers(user_id, tenant_id)
+    customer_names = {c.get("name", "").lower(): c for c in customers}
+    if not customer_names:
+        return []
+
+    today = date.today().isoformat()
+    calendar_items = _fetch_calendar_items(user_id, today)
+
+    now_utc = datetime.now(timezone.utc)
+    upcoming = []
+    for item in calendar_items:
+        start_raw = item.get("start") or item.get("date") or ""
+        try:
+            start_dt = datetime.fromisoformat(start_raw.replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            continue
+        delta = (start_dt - now_utc).total_seconds() / 60
+        if 0 <= delta <= 90:
+            upcoming.append(item)
+
+    cards = []
+    for event in upcoming[:5]:
+        title = event.get("title", event.get("summary", "Meeting"))
+        attendees = event.get("attendees", [])
+        matched = next(
+            (customer_names[a.lower()] for a in attendees if a.lower() in customer_names),
+            None,
+        )
+        if not matched:
+            # Try partial name match
+            matched = next(
+                (c for name, c in customer_names.items()
+                 if name in title.lower() or title.lower() in name),
+                None,
+            )
+        if not matched:
+            continue
+
+        cname = matched.get("name", "")
+        ctype = matched.get("relationship_type", "")
+        notes = matched.get("notes", "")
+        expectations = matched.get("expectations_json") or "{}"
+        if isinstance(expectations, str):
+            try:
+                expectations = json.loads(expectations)
+            except Exception:
+                expectations = {}
+
+        prompt = (
+            f"You are preparing someone for a meeting with {cname} ({ctype}) titled '{title}'.\n"
+            f"Customer notes: {notes[:200] if notes else 'None recorded'}.\n"
+            f"Key expectations: {json.dumps(expectations)[:200]}.\n"
+            f"Write exactly 3 bullet points (starting with •) to help the person walk in prepared:\n"
+            f"1. What to lead with (context or update {cname} needs)\n"
+            f"2. A question to ask to uncover concerns or needs\n"
+            f"3. One commitment or action to offer that would add value.\n"
+            f"Be specific to this customer. No intro or closing."
+        )
+        try:
+            from tools.llm.router import LLMRouter, LLMRequest
+            resp = LLMRouter().invoke(
+                "summarization",
+                LLMRequest(prompt=prompt, max_tokens=180, temperature=0.35),
+            )
+            bullets = (resp.content or "").strip()
+        except Exception as exc:
+            logger.debug("[proactive_advisor] meeting prep LLM failed: %s", exc)
+            bullets = (
+                f"• Confirm {cname}'s current priorities before diving in.\n"
+                f"• Ask what would make this meeting most valuable for them.\n"
+                f"• Offer one clear next step you'll own before the next sync."
+            )
+
+        card = {
+            "event_title": title,
+            "customer": cname,
+            "customer_type": ctype,
+            "start": event.get("start", ""),
+            "bullets": bullets,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        cards.append(card)
+
+    if cards:
+        _upsert_prep_section(user_id, tenant_id, today, {"meeting_preps": cards})
+        logger.info("[proactive_advisor] %d meeting prep cards generated for %s", len(cards), user_id)
+
+    return cards
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 7. Commitment date watch (callable by commitment_watch_reflex + manual endpoint)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def generate_commitment_alerts(
+    user_id: str,
+    tenant_id: str = "default",
+) -> list[dict[str, Any]]:
+    """Scan all customer relationships for upcoming or overdue commitment dates.
+
+    Returns list of alert dicts bucketed by urgency:
+      overdue / critical (≤7d) / high (≤30d) / medium (≤90d)
+    Also upserts into today's briefing under 'commitment_alerts'.
+    """
+    import json as _json
+    from datetime import date
+
+    customers = _load_customers(user_id, tenant_id)
+    today = date.today()
+    alerts: list[dict[str, Any]] = []
+
+    for c in customers:
+        cname = c.get("name", "")
+        ctype = c.get("relationship_type", "")
+
+        # Commitment date can live in the top-level column or inside expectations_json
+        cdate_raw = c.get("commitment_date")
+        if not cdate_raw:
+            exp = c.get("expectations_json") or "{}"
+            if isinstance(exp, str):
+                try:
+                    exp = _json.loads(exp)
+                except Exception:
+                    exp = {}
+            cdate_raw = exp.get("commitment_date")
+
+        if not cdate_raw:
+            continue
+
+        try:
+            cdate = date.fromisoformat(str(cdate_raw)[:10])
+        except (ValueError, TypeError):
+            continue
+
+        delta = (cdate - today).days
+
+        if delta < 0:
+            urgency = "overdue"
+            label = f"Overdue by {-delta} day(s)"
+        elif delta <= 7:
+            urgency = "critical"
+            label = f"Due in {delta} day(s)"
+        elif delta <= 30:
+            urgency = "high"
+            label = f"Due in {delta} day(s)"
+        elif delta <= 90:
+            urgency = "medium"
+            label = f"Due in {delta} day(s)"
+        else:
+            continue
+
+        alerts.append({
+            "customer": cname,
+            "customer_type": ctype,
+            "commitment_date": str(cdate),
+            "urgency": urgency,
+            "label": label,
+            "delta_days": delta,
+        })
+
+    alerts.sort(key=lambda a: a["delta_days"])
+
+    if alerts:
+        from datetime import date as _date
+        today_str = _date.today().isoformat()
+        _upsert_prep_section(user_id, tenant_id, today_str, {"commitment_alerts": alerts})
+        logger.info("[proactive_advisor] %d commitment alerts generated for %s", len(alerts), user_id)
+
+    return alerts
