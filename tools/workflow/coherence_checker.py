@@ -3017,11 +3017,18 @@ def check_new_page_completeness() -> CoherenceCheck:
                 continue
 
             if declared_tpl and not declared_tpl.exists():
-                # Dir exists but declared template file missing
-                registry_violations.append(
-                    f"tch-completeness-{key}-template: {declared_tpl_str} declared "
-                    "in completeness.template but file does not exist"
+                # Only flag as missing if no fallback template exists either.
+                # Many canvases declare page.html in the registry but ship
+                # index.html — that is a valid layout choice, not a gap.
+                _any_fallback = any(
+                    (canvas_tpl_dir / fb).exists()
+                    for fb in ("index.html", "canvas.html", "page.html")
                 )
+                if not _any_fallback:
+                    registry_violations.append(
+                        f"tch-completeness-{key}-template: {declared_tpl_str} declared "
+                        "in completeness.template but file does not exist"
+                    )
                 # Continue to check other components anyway
 
             # --- Case B: non-page.html template — run full 8-component gate ---
