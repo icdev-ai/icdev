@@ -287,20 +287,14 @@ def generate_weekly_architecture_digest(
     user_id: str,
     tenant_id: str = "default",
 ) -> dict[str, Any]:
-    """Pull architecture intelligence relevant to the user's customer types
-    and generate a weekly digest stored in today's briefing."""
+    """Pull intelligence relevant to the user's role + customer types and
+    generate a weekly digest stored in today's briefing."""
+    from tools.second_brain.role_advisor import get_digest_topics
+
     ctx = _load_world_model(user_id, tenant_id)
-    customers = _load_customers(user_id, tenant_id)
 
-    # Build topic list from customer types
-    topics: list[str] = []
-    seen_types: set[str] = set()
-    for c in customers:
-        ctype = c.get("relationship_type", "")
-        if ctype not in seen_types:
-            seen_types.add(ctype)
-            topics.extend(_CUSTOMER_DOMAIN_TOPICS.get(ctype, [])[:3])
-
+    # Role-aware topics (combines role persona + customer type boost)
+    topics: list[str] = get_digest_topics(user_id, tenant_id)
     if not topics:
         topics = _DEFAULT_DIGEST_TOPICS
 
@@ -385,77 +379,120 @@ def customer_aware_review(
     user_id: str,
     tenant_id: str = "default",
 ) -> list[dict[str, Any]]:
-    """Cross-reference a design against the user's known customers and their
-    implied SLA/resiliency requirements.
+    """Cross-reference a design against the user's role + customers.
 
-    *design_context* should contain at minimum:
-        {"title": str, "description": str, "redundancy_level": "N+0"|"N+1"|"N+2",
-         "single_points_of_failure": [...], "availability_target": "99.9" | "99.99" | ...}
+    Returns findings combining:
+      1. Role-aware dimension checks (from args/role_canvas_affinity.yaml)
+      2. Customer-specific expectation checks (derived from relationship types)
 
-    Returns a list of findings, each with keys: customer, finding, severity, recommendation.
+    *design_context* is a free-form dict — the advisor checks which expected
+    keys are present vs absent; it does not require a fixed schema. Canvases
+    pass whatever fields they have; unfilled checks become medium/high findings.
     """
+    from tools.second_brain.role_advisor import build_role_aware_review
+
+    # 1. Role-aware review (dimension checks from YAML config)
+    findings: list[dict[str, Any]] = build_role_aware_review(design_context, user_id, tenant_id)
+
+    # 2. Customer expectation checks (relationship-type heuristics, role-agnostic)
     customers = _load_customers(user_id, tenant_id)
-    if not customers:
-        return []
-
-    findings: list[dict[str, Any]] = []
-    redundancy = design_context.get("redundancy_level", "N+1")
-    spofs = design_context.get("single_points_of_failure", [])
-    avail_target = str(design_context.get("availability_target", "99.9"))
-
     for customer in customers:
         ctype = customer.get("relationship_type", "")
         cname = customer.get("name", "")
+        customer_findings = _check_customer_expectations(design_context, cname, ctype)
+        findings.extend(customer_findings)
 
-        # External customers (CSPs, ISPs) typically need 99.99%+ / N+2
-        if ctype == "customer":
-            if spofs:
-                findings.append({
-                    "customer": cname,
-                    "customer_type": "External Customer",
-                    "finding": f"Single points of failure detected: {', '.join(str(s) for s in spofs[:3])}.",
-                    "severity": "high",
-                    "recommendation": (
-                        f"{cname} is an external customer expecting carrier-grade reliability. "
-                        f"Eliminate all SPOFs or document explicit failover procedures before delivery."
-                    ),
-                })
-            if redundancy == "N+0":
-                findings.append({
-                    "customer": cname,
-                    "customer_type": "External Customer",
-                    "finding": "No redundancy (N+0) detected in design.",
-                    "severity": "critical",
-                    "recommendation": (
-                        f"External customers like {cname} (CSP/ISP) typically require N+1 minimum. "
-                        f"N+0 creates unacceptable outage risk for their downstream services."
-                    ),
-                })
-            if "99.999" not in avail_target and "99.99" not in avail_target:
-                findings.append({
-                    "customer": cname,
-                    "customer_type": "External Customer",
-                    "finding": f"Availability target {avail_target}% may not meet CSP/ISP SLA expectations.",
-                    "severity": "medium",
-                    "recommendation": (
-                        "Verify the SLA with this customer. Most carrier-grade agreements require "
-                        "99.99% (52 min downtime/year) or better."
-                    ),
-                })
+    return findings
 
-        # Internal customers (Network Ops, App Teams) need operational clarity
-        elif ctype == "stakeholder":
-            if not design_context.get("runbook_referenced"):
-                findings.append({
-                    "customer": cname,
-                    "customer_type": "Internal Customer",
-                    "finding": "No runbook or operational documentation referenced in design.",
-                    "severity": "medium",
-                    "recommendation": (
-                        f"{cname} (internal team) will operate this infrastructure daily. "
-                        f"Include runbooks, escalation paths, and monitoring thresholds before handoff."
-                    ),
-                })
+
+def _check_customer_expectations(
+    design_context: dict[str, Any],
+    cname: str,
+    ctype: str,
+) -> list[dict[str, Any]]:
+    """Generic customer-expectation checks that apply regardless of user role.
+
+    These are derived from the relationship_type, not the user's job title:
+      - customer (external): availability, no SPOFs, explicit SLA reference
+      - stakeholder (internal): runbook, monitoring, escalation path
+      - direct (team member): documentation, reproducible process
+      - boss (manager): executive summary, risk register
+    """
+    findings: list[dict[str, Any]] = []
+
+    if ctype == "customer":
+        # External customers expect high availability and explicit SLA commitment
+        spofs = design_context.get("single_points_of_failure", [])
+        if spofs:
+            findings.append({
+                "customer": cname,
+                "customer_type": "External Customer",
+                "finding": f"SPOFs detected: {', '.join(str(s) for s in spofs[:3])}.",
+                "severity": "high",
+                "recommendation": (
+                    f"{cname} is an external customer — eliminate SPOFs or "
+                    f"document failover procedures before delivery."
+                ),
+                "dimension": "reliability",
+            })
+        avail = str(design_context.get("availability_target", ""))
+        if avail and "99.99" not in avail and "99.999" not in avail:
+            findings.append({
+                "customer": cname,
+                "customer_type": "External Customer",
+                "finding": f"Availability target {avail}% may fall short of external customer expectations.",
+                "severity": "medium",
+                "recommendation": (
+                    f"Confirm SLA requirements with {cname}. External customers typically "
+                    f"expect 99.99% or better."
+                ),
+                "dimension": "reliability",
+            })
+
+    elif ctype == "stakeholder":
+        # Internal stakeholders need operational handoff clarity
+        if not design_context.get("runbook_referenced"):
+            findings.append({
+                "customer": cname,
+                "customer_type": "Internal Stakeholder",
+                "finding": "No runbook or operational doc referenced.",
+                "severity": "medium",
+                "recommendation": (
+                    f"{cname} will operate or rely on this work day-to-day. "
+                    f"Add runbooks, monitoring thresholds, and escalation paths."
+                ),
+                "dimension": "operational_handoff",
+            })
+
+    elif ctype == "boss":
+        # Managers expect risk visibility
+        if not design_context.get("risks_documented"):
+            findings.append({
+                "customer": cname,
+                "customer_type": "Manager",
+                "finding": "No risk register or risk summary included.",
+                "severity": "low",
+                "recommendation": (
+                    f"Add a brief risk section for {cname}. Managers need to "
+                    f"understand top risks before approving."
+                ),
+                "dimension": "risk_register",
+            })
+
+    elif ctype == "direct":
+        # Team members need reproducible, documented work
+        if not design_context.get("methodology_documented"):
+            findings.append({
+                "customer": cname,
+                "customer_type": "Direct Report / Team",
+                "finding": "Methodology or process not documented.",
+                "severity": "low",
+                "recommendation": (
+                    f"{cname} may need to reproduce or extend this work. "
+                    f"Document the approach so the process can be handed off."
+                ),
+                "dimension": "documentation",
+            })
 
     return findings
 
