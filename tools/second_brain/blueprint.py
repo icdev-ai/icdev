@@ -40,8 +40,21 @@ def _tenant_id() -> str:
 @second_brain_bp.route("/")
 def index():
     from tools.second_brain.briefing import get_todays_briefing
-    briefing = get_todays_briefing(_user_id(), _tenant_id()) or {}
-    return render_template("second_brain/index.html", briefing=briefing)
+    from tools.second_brain.profile import get_profile, get_objectives, get_relationships, get_challenges
+    uid, tid = _user_id(), _tenant_id()
+    briefing = get_todays_briefing(uid, tid) or {}
+    profile = get_profile(uid, tid) or {}
+    objectives = get_objectives(uid, tid)
+    customers = get_relationships(uid, tid)
+    challenges = get_challenges(uid, tid)
+    return render_template(
+        "second_brain/index.html",
+        briefing=briefing,
+        profile=profile,
+        objectives=objectives,
+        customers=customers,
+        challenges=challenges,
+    )
 
 
 @second_brain_bp.route("/profile")
@@ -65,28 +78,43 @@ def objectives_page():
     return render_template("second_brain/objectives.html", objectives=objectives)
 
 
+@second_brain_bp.route("/customers")
+def customers_page():
+    from tools.second_brain.profile import get_relationships, get_profile
+    from tools.second_brain.constants import (
+        RELATIONSHIP_LABELS, RELATIONSHIP_TYPES,
+        CUSTOMER_TYPE_ICONS, CUSTOMER_TYPE_DESCRIPTIONS,
+    )
+    uid, tid = _user_id(), _tenant_id()
+    relationships = get_relationships(uid, tid)
+    profile = get_profile(uid, tid) or {}
+    return render_template(
+        "second_brain/customers.html",
+        customers=relationships,
+        relationship_labels=RELATIONSHIP_LABELS,
+        relationship_types=RELATIONSHIP_TYPES,
+        customer_type_icons=CUSTOMER_TYPE_ICONS,
+        customer_type_descriptions=CUSTOMER_TYPE_DESCRIPTIONS,
+        team_mission=profile.get("team_mission", ""),
+    )
+
+
 @second_brain_bp.route("/relationships")
 def relationships_page():
-    from tools.second_brain.profile import get_relationships
-    from tools.second_brain.constants import RELATIONSHIP_LABELS
-    relationships = get_relationships(_user_id(), _tenant_id())
-    return render_template(
-        "second_brain/relationships.html",
-        relationships=relationships,
-        relationship_labels=RELATIONSHIP_LABELS,
-    )
+    return redirect("/me/customers", code=301)
 
 
 @second_brain_bp.route("/challenges")
 def challenges_page():
     from tools.second_brain.profile import get_challenges
-    from tools.second_brain.constants import CHALLENGE_KEYS, CHALLENGE_LABELS
+    from tools.second_brain.constants import CHALLENGE_KEYS, CHALLENGE_LABELS, CHALLENGE_DESCRIPTIONS
     challenges = get_challenges(_user_id(), _tenant_id())
     return render_template(
         "second_brain/challenges.html",
         challenges=challenges,
         challenge_keys=CHALLENGE_KEYS,
         challenge_labels=CHALLENGE_LABELS,
+        challenge_descriptions=CHALLENGE_DESCRIPTIONS,
     )
 
 

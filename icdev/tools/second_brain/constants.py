@@ -27,6 +27,19 @@ CHALLENGE_LABELS: dict[str, str] = {
     "skill_gaps": "Skill Gaps",
 }
 
+CHALLENGE_DESCRIPTIONS: dict[str, str] = {
+    "meeting_overload": "Too many meetings leave little time for deep, focused work.",
+    "unclear_priorities": "Competing demands make it hard to know what matters most right now.",
+    "context_switching": "Constant task-switching fragments concentration and reduces output quality.",
+    "stakeholder_alignment": "Different teams or leaders have diverging expectations or priorities.",
+    "information_overload": "More signals arrive than you can usefully process — noise drowns signal.",
+    "team_capacity": "Not enough people, time, or budget to deliver what's expected.",
+    "technical_debt": "Accumulated shortcuts and legacy decisions slow down every new initiative.",
+    "compliance_burden": "Regulatory, audit, or policy requirements consume disproportionate time.",
+    "delivery_pressure": "Hard deadlines or executive pressure compress quality and planning cycles.",
+    "skill_gaps": "The team (or you) lack skills the current work demands.",
+}
+
 SENIORITY_TIERS: list[str] = ["ic", "lead", "manager", "director", "executive"]
 
 SENIORITY_LABELS: dict[str, str] = {
@@ -64,11 +77,48 @@ RELATIONSHIP_TYPES: list[str] = [
 RELATIONSHIP_LABELS: dict[str, str] = {
     "boss": "My Manager",
     "direct": "Direct Report",
-    "peer": "Peer",
-    "stakeholder": "Stakeholder",
-    "customer": "Customer",
-    "vendor": "Vendor / Partner",
+    "peer": "Peer / Colleague",
+    "stakeholder": "Internal Customer",
+    "customer": "External Customer",
+    "vendor": "Partner / Vendor",
     "other": "Other",
+}
+
+# Customer type icons for UI display
+CUSTOMER_TYPE_ICONS: dict[str, str] = {
+    "customer":    "🏢",
+    "stakeholder": "🏠",
+    "boss":        "👆",
+    "direct":      "👥",
+    "peer":        "🤝",
+    "vendor":      "🔗",
+    "other":       "📎",
+}
+
+# Tooltip descriptions for each customer / relationship type
+CUSTOMER_TYPE_DESCRIPTIONS: dict[str, str] = {
+    "customer": (
+        "Organizations or groups outside your company that consume your services. "
+        "For network architects: CSPs, ISPs, enterprise clients who rely on the infrastructure you design."
+    ),
+    "stakeholder": (
+        "Teams inside your organization whose daily work depends on what you deliver. "
+        "For network architects: Network Operations, Application Teams, Security, Cloud Engineering."
+    ),
+    "boss": (
+        "Your management chain and sponsors who set strategic direction and evaluate your impact."
+    ),
+    "direct": (
+        "People you lead and are responsible for developing — your direct reports or team members."
+    ),
+    "peer": (
+        "Same-level collaborators in adjacent domains. "
+        "Peers often share resources, coordinate dependencies, and are your primary cross-functional partners."
+    ),
+    "vendor": (
+        "Technology partners, vendors, and contractors whose products or services you evaluate, integrate, or manage."
+    ),
+    "other": "Any other key relationship that doesn't fit the categories above.",
 }
 
 COMM_STYLE_LABELS: dict[int, str] = {
