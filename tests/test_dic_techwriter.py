@@ -319,3 +319,62 @@ def test_generate_diagram_syntax_flavor_mapping():
     assert _DIAGRAM_FLAVORS["ARCH_APPLICATION"] == "sequenceDiagram"
     assert _DIAGRAM_FLAVORS["SOP"] == "flowchart TD"
     assert _DIAGRAM_FLAVORS["STANDARD_GUIDE"] == "mindmap"
+
+
+# ── Docgen ↔ Tech Writer integration ─────────────────────────────────────────
+
+def test_import_from_docgen_invalid_template_type():
+    """POST /api/import-from-docgen with bad template_type returns 400."""
+    import flask
+    from tools.document_intelligence.blueprint import dic_bp
+    app = flask.Flask(__name__)
+    app.register_blueprint(dic_bp, url_prefix="/document-intelligence")
+    app.config["TESTING"] = True
+    with app.test_client() as client:
+        resp = client.post(
+            "/document-intelligence/api/import-from-docgen",
+            json={"session_id": "ses-1", "title": "Test", "template_type": "INVALID"},
+            content_type="application/json",
+        )
+        assert resp.status_code == 400
+        data = resp.get_json()
+        assert "error" in data
+
+
+def test_import_from_docgen_route_exists():
+    """Route /api/import-from-docgen is registered in the DIC blueprint."""
+    from tools.document_intelligence.blueprint import dic_bp
+    import flask
+    app = flask.Flask(__name__)
+    app.register_blueprint(dic_bp, url_prefix="/document-intelligence")
+    endpoints = [r.rule for r in app.url_map.iter_rules()]
+    assert any("import-from-docgen" in r for r in endpoints), \
+        f"import-from-docgen not found in {endpoints}"
+
+
+def test_docgen_template_type_mapping_constants():
+    """All TEMPLATE_TYPES have a valid writeguard mode mapping."""
+    from tools.document_intelligence.constants import TEMPLATE_TYPES, TEMPLATE_TYPE_TO_WRITEGUARD_MODE, WRITEGUARD_MODES
+    for tt in TEMPLATE_TYPES:
+        mode = TEMPLATE_TYPE_TO_WRITEGUARD_MODE.get(tt)
+        assert mode is not None, f"{tt} missing from TEMPLATE_TYPE_TO_WRITEGUARD_MODE"
+        assert mode in WRITEGUARD_MODES, f"Mode {mode!r} not in WRITEGUARD_MODES"
+
+
+def test_import_from_docgen_valid_template_type_returns_500_or_doc_id():
+    """POST /api/import-from-docgen with valid template_type returns 200+doc_id or 500 (no DB in test)."""
+    import flask
+    from tools.document_intelligence.blueprint import dic_bp
+    app = flask.Flask(__name__)
+    app.register_blueprint(dic_bp, url_prefix="/document-intelligence")
+    app.config["TESTING"] = True
+    with app.test_client() as client:
+        resp = client.post(
+            "/document-intelligence/api/import-from-docgen",
+            json={"session_id": "ses-2", "title": "Network Runbook", "template_type": "RUNBOOK", "classification": "CUI"},
+            content_type="application/json",
+        )
+        # Either succeeds (200 with doc_id) or fails gracefully (500 with error, no DB)
+        assert resp.status_code in (200, 500)
+        data = resp.get_json()
+        assert "doc_id" in data or "error" in data

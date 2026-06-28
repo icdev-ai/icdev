@@ -2,8 +2,6 @@
 """Second Brain (/me) canvas blueprint — profile, objectives, relationships, challenges, briefing, integrations."""
 from __future__ import annotations
 
-import json
-import os
 import secrets
 
 from flask import Blueprint, g, jsonify, redirect, render_template, request, session, url_for
@@ -311,6 +309,56 @@ def api_calendar_contacts():
         return jsonify(list(attendees)[:20])
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Proactive advisor API — manual triggers for autonomous features
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@second_brain_bp.route("/api/second-brain/proactive/tomorrow-prep", methods=["POST"])
+def api_tomorrow_prep():
+    """Manually trigger tomorrow-prep generation."""
+    try:
+        from tools.second_brain.proactive_advisor import generate_tomorrow_prep
+        prep = generate_tomorrow_prep(_user_id(), _tenant_id())
+        return jsonify({"ok": True, "prep": prep})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@second_brain_bp.route("/api/second-brain/proactive/weekly-digest", methods=["POST"])
+def api_weekly_digest():
+    """Manually trigger weekly architecture digest generation."""
+    try:
+        from tools.second_brain.proactive_advisor import generate_weekly_architecture_digest
+        digest = generate_weekly_architecture_digest(_user_id(), _tenant_id())
+        return jsonify({"ok": True, "digest": digest})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@second_brain_bp.route("/api/second-brain/proactive/stalled-work", methods=["GET"])
+def api_stalled_work():
+    """Return objectives with no forward motion in 5+ days."""
+    try:
+        from tools.second_brain.proactive_advisor import scan_stalled_objectives
+        items = scan_stalled_objectives(_user_id(), _tenant_id())
+        return jsonify({"ok": True, "stalled": items})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@second_brain_bp.route("/api/second-brain/proactive/design-review", methods=["POST"])
+def api_design_review():
+    """Customer-aware design review. POST body: design_context dict."""
+    data = request.get_json(force=True, silent=True) or {}
+    try:
+        from tools.second_brain.proactive_advisor import customer_aware_review
+        findings = customer_aware_review(data, _user_id(), _tenant_id())
+        return jsonify({"ok": True, "findings": findings})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
 
 
 # ─────────────────────────────────────────────────────────────────────────────

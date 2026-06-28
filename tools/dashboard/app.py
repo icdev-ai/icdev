@@ -1676,6 +1676,7 @@ def create_app(testing: bool = False) -> Flask:
     # Auto-reload templates on change (no server restart needed)
     app.config["TEMPLATES_AUTO_RELOAD"] = True
     app.jinja_env.auto_reload = True
+    app.config["EXCALIDRAW_HOST"] = os.environ.get("EXCALIDRAW_HOST", "")
 
     # Release cached canvas DB connections after each request (OPT-06).
     @app.teardown_appcontext

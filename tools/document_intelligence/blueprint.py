@@ -34,6 +34,7 @@ Routes:
   PATCH /document-intelligence/api/documents/<id>/writeguard-mode update writeguard content mode
   POST /document-intelligence/api/techwriter/research            AI research + draft for a section
   POST /document-intelligence/api/techwriter/diagram             generate Mermaid diagram syntax
+  POST /document-intelligence/api/import-from-docgen            import docgen session → new tech writer doc
 """
 from __future__ import annotations
 
@@ -663,6 +664,93 @@ def api_techwriter_diagram():
         })
     except Exception as exc:
         logger.warning("dic: techwriter/diagram error: %s", exc)
+        return jsonify({"error": str(exc)}), 500
+
+
+@dic_bp.route("/api/import-from-docgen", methods=["POST"])
+def api_import_from_docgen():
+    """POST — create a DIC tech-writer document seeded from a docgen session.
+
+    Body: {session_id, title, template_type, classification}
+    Returns: {doc_id, collection_id, template_type, writeguard_mode}
+
+    Docgen → Tech Writer bridge: imports docgen session metadata and creates a
+    pre-seeded DIC document with the matching template type and sections.
+    """
+    from tools.document_intelligence.constants import (
+        TEMPLATE_TYPE_TO_WRITEGUARD_MODE,
+        TEMPLATE_TYPES,
+    )
+
+    body = request.get_json(silent=True) or {}
+    session_id = (body.get("session_id") or "").strip()
+    title = (body.get("title") or "Untitled").strip()
+    template_type = (body.get("template_type") or "ARCH_SYSTEM").strip().upper()
+    classification = (body.get("classification") or "CUI").strip()
+
+    if template_type not in TEMPLATE_TYPES:
+        return jsonify({"error": f"Invalid template_type: {template_type}"}), 400
+
+    tenant_id, _ = _security_context()
+    writeguard_mode = TEMPLATE_TYPE_TO_WRITEGUARD_MODE.get(template_type, "default")
+
+    try:
+        conn = _conn()
+        # Create a new collection for this import if no matching one exists
+        import uuid as _uuid
+        doc_id = str(_uuid.uuid4())
+        collection_id = f"docgen-import-{session_id[:8]}" if session_id else str(_uuid.uuid4())[:8]
+
+        # Ensure the collection exists (upsert-style: ignore if duplicate)
+        try:
+            conn.execute(
+                """INSERT INTO dic_collections
+                   (collection_id, name, tenant_id, classification, created_at)
+                   VALUES (%s,%s,%s,%s,NOW())
+                   ON CONFLICT (collection_id) DO NOTHING""",
+                (collection_id, f"Docgen Import — {title[:60]}", tenant_id, classification),
+            )
+        except Exception:
+            pass  # collection already exists or ON CONFLICT not supported
+
+        conn.execute(
+            """INSERT INTO dic_documents
+               (doc_id, collection_id, title, filename, status, origin,
+                classification, template_type, writeguard_mode, tenant_id, created_at)
+               VALUES (%s,%s,%s,%s,'approved','human_authored',%s,%s,%s,%s,NOW())""",
+            (
+                doc_id,
+                collection_id,
+                title,
+                f"docgen-{session_id[:8]}.doc" if session_id else "imported.doc",
+                classification,
+                template_type,
+                writeguard_mode,
+                tenant_id,
+            ),
+        )
+
+        # Seed sections from _TEMPLATE_SECTIONS
+        sections = _TEMPLATE_SECTIONS.get(template_type, [])
+        for i, heading in enumerate(sections):
+            s_id = str(_uuid.uuid4())
+            conn.execute(
+                """INSERT INTO dic_sections
+                   (section_id, doc_id, heading, content, section_order, status, created_at)
+                   VALUES (%s,%s,%s,%s,%s,'draft',NOW())""",
+                (s_id, doc_id, heading, "", i),
+            )
+
+        conn.commit() if hasattr(conn, "commit") else None
+        logger.info("dic: import-from-docgen → doc_id=%s template=%s", doc_id, template_type)
+        return jsonify({
+            "doc_id": doc_id,
+            "collection_id": collection_id,
+            "template_type": template_type,
+            "writeguard_mode": writeguard_mode,
+        })
+    except Exception as exc:
+        logger.warning("dic: import-from-docgen error: %s", exc)
         return jsonify({"error": str(exc)}), 500
 
 

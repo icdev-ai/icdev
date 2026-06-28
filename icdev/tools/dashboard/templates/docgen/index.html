@@ -105,9 +105,17 @@
           <span style="background:#1a2a3a;color:#7a8cb0;font-size:10px;padding:2px 7px;border-radius:3px;margin-left:4px;">{{ session.doc_type }}</span>
           <span style="background:#0a1525;color:#5a7aa0;font-size:10px;padding:2px 7px;border-radius:3px;margin-left:4px;">{{ session.classification }}</span>
         </div>
-        <span id="session-status-badge" style="font-size:11px;padding:3px 9px;border-radius:4px;background:#1a2a3a;color:#7ab3f0;">
-          Stage {{ session.stage }}: {{ session.status }}
-        </span>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
+          <span id="session-status-badge" style="font-size:11px;padding:3px 9px;border-radius:4px;background:#1a2a3a;color:#7ab3f0;">
+            Stage {{ session.stage }}: {{ session.status }}
+          </span>
+          {% if session.doc_type in ('runbook','design_doc','standard_guide') %}
+          <button onclick="openInTechWriter('{{ session.id }}', '{{ session.title | replace("'","") }}', '{{ session.doc_type }}', '{{ session.classification or 'CUI' }}')"
+            style="background:#1a1a3a;color:#a78bfa;padding:4px 10px;border:1px solid #3a2a6e;border-radius:4px;cursor:pointer;font-size:11px;">
+            ✍️ Open in Tech Writer
+          </button>
+          {% endif %}
+        </div>
       </div>
     </div>
 
@@ -187,6 +195,11 @@
       {% endif %}
       {% endif %}
       {% if session.stage == 4 %}
+      <div style="margin-bottom:8px;">
+        <label style="display:block;font-size:11px;color:#aaa;margin-bottom:4px;">Additional context — operator notes (highest priority, overrides conflicts):</label>
+        <textarea id="supplemental-text" rows="3" placeholder="Paste free-form notes, email body, or operator instructions here…"
+          style="width:100%;font-size:12px;background:#1e1e1e;color:#ccc;border:1px solid #444;border-radius:4px;padding:6px;resize:vertical;"></textarea>
+      </div>
       <button onclick="triggerGenerate()" style="background:#856404;color:#ffd666;padding:7px 14px;border:1px solid #a07a10;border-radius:4px;cursor:pointer;font-size:12px;">
         ✨ Generate Document
       </button>
@@ -409,7 +422,9 @@ function triggerReconcile() {
 
 function triggerGenerate() {
   setStatus('Generating document…');
-  fetch('/docgen/api/sessions/' + SESSION_ID + '/generate', {method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})
+  var sup = (document.getElementById('supplemental-text') || {}).value;
+  var body = sup && sup.trim() ? JSON.stringify({supplemental_text: sup.trim()}) : '{}';
+  fetch('/docgen/api/sessions/' + SESSION_ID + '/generate', {method:'POST',headers:{'Content-Type':'application/json'},body:body})
     .then(function(r){return r.json();}).then(function(d){
       if (d.error) { setStatus('Error: ' + d.error); return; }
       setStatus('Generation started.'); setTimeout(function(){location.reload();},2000);
@@ -456,6 +471,36 @@ if (fileInput) {
         }).catch(function(){statusEl.textContent = 'Upload error.';});
     });
   });
+}
+
+// ── Docgen → Tech Writer ──────────────────────────────────────────────────────
+var _DOCTYPE_TO_TEMPLATE = {
+  'runbook': 'RUNBOOK',
+  'design_doc': 'ARCH_SYSTEM',
+  'standard_guide': 'STANDARD_GUIDE'
+};
+
+function openInTechWriter(sessionId, title, docType, classification) {
+  var templateType = _DOCTYPE_TO_TEMPLATE[docType] || 'ARCH_SYSTEM';
+  fetch('/document-intelligence/api/import-from-docgen', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      session_id: sessionId,
+      title: title,
+      template_type: templateType,
+      classification: classification || 'CUI'
+    })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (d.doc_id) {
+      window.location.href = '/document-intelligence/doc/' + d.doc_id;
+    } else {
+      alert('Tech Writer import failed: ' + (d.error || JSON.stringify(d)));
+    }
+  })
+  .catch(function(e) { alert('Import failed: ' + e.message); });
 }
 </script>
 {% endblock %}

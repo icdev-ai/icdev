@@ -124,7 +124,9 @@ REFLEX_NAMES = [
     "wiki_lint",           # karpathy-wiki: nightly health checks on memory wiki (orphans/stale/overflow)
     "usage_rollup",        # ecr-bill-01: daily billing rollup from usage_events (00:05 UTC)
     "episodic_distiller",  # phase-a: distill episodic events → semantic facts every 6h
-    "daily_briefing_reflex",  # second-brain: hourly check → generate+deliver user briefings
+    "daily_briefing_reflex",      # second-brain: hourly check → generate+deliver user briefings
+    "nightly_prep_reflex",        # second-brain: evening stalled-work scan + tomorrow prep card
+    "thought_leadership_reflex",  # second-brain: Monday 07:00 UTC architecture digest per user
 ]
 
 # Backward-compat aliases for module-level access used by other code

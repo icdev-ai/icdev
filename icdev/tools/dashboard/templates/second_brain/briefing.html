@@ -20,7 +20,11 @@
         <h4 class="fw-bold mb-0">📋 Today's Briefing</h4>
         {% if briefing.date %}<div class="small text-muted">{{ briefing.date }}</div>{% endif %}
       </div>
-      <button class="btn btn-outline-secondary btn-sm" onclick="fetch('/me/api/second-brain/briefing/generate',{method:'POST'}).then(()=>location.reload())">↻ Regenerate</button>
+      <div class="d-flex gap-2 flex-wrap">
+        <button class="btn btn-outline-secondary btn-sm" id="btn-regen" onclick="fetch('/me/api/second-brain/briefing/generate',{method:'POST'}).then(()=>location.reload())" data-bs-toggle="tooltip" title="Regenerate today's briefing from all connected sources">↻ Regenerate</button>
+        <button class="btn btn-sm" id="btn-prep" style="background:rgba(99,102,241,.15);border:1px solid rgba(99,102,241,.3);color:#a5b4fc" data-bs-toggle="tooltip" title="Generate tomorrow-prep: stalled work scan + meeting preview + customer nudges">🌙 Prep Tomorrow</button>
+        <button class="btn btn-sm" id="btn-digest" style="background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.25);color:#fcd34d" data-bs-toggle="tooltip" title="Generate weekly architecture intelligence digest tailored to your customer domains">📡 Architecture Digest</button>
+      </div>
     </div>
 
     {% if briefing and briefing.get('greeting') %}
@@ -114,6 +118,85 @@
       </div>
       {% endif %}
 
+      <!-- Tomorrow Prep (from nightly_prep_reflex) -->
+      {% set prep = briefing.get('tomorrow_prep') %}
+      {% if prep %}
+      <div class="col-12">
+        <div class="rounded-3 overflow-hidden" style="border:1px solid rgba(99,102,241,.25)">
+          <div class="px-3 py-2 fw-semibold small d-flex align-items-center gap-2" style="background:rgba(99,102,241,.08);border-bottom:1px solid rgba(99,102,241,.15)">
+            <span>🌙 Prep for Tomorrow</span>
+            <span class="badge fw-normal ms-auto" style="background:rgba(99,102,241,.25);color:#a5b4fc;font-size:.68rem">{{ prep.date }}</span>
+          </div>
+          <div class="p-3">
+            {% if prep.focus %}<p class="mb-3 small" style="color:#c7d2fe">{{ prep.focus }}</p>{% endif %}
+            {% if prep.meetings %}
+            <div class="mb-3">
+              <div class="fw-semibold small mb-2" style="color:#818cf8">📅 Tomorrow's Meetings</div>
+              {% for m in prep.meetings[:4] %}
+              <div class="d-flex align-items-start gap-2 mb-2">
+                <span class="badge fw-normal" style="background:rgba(99,102,241,.2);color:#a5b4fc;white-space:nowrap;font-size:.7rem">{{ m.time }}</span>
+                <div class="small">
+                  <div>{{ m.title }}</div>
+                  {% if m.prep_note %}<div class="text-muted" style="font-size:.75rem;margin-top:.15rem">{{ m.prep_note }}</div>{% endif %}
+                </div>
+              </div>
+              {% endfor %}
+            </div>
+            {% endif %}
+            {% if prep.stalled_objectives %}
+            <div class="mb-2">
+              <div class="fw-semibold small mb-1" style="color:#f87171">🚨 Stalled Work</div>
+              {% for s in prep.stalled_objectives %}
+              <div class="small text-muted mb-1">• <span class="fw-semibold" style="color:#fca5a5">{{ s.title }}</span> — {{ s.reason }}</div>
+              {% endfor %}
+            </div>
+            {% endif %}
+            {% if prep.customer_nudges %}
+            <div>
+              <div class="fw-semibold small mb-1" style="color:#60a5fa">🏢 Customer Check-Ins</div>
+              {% for n in prep.customer_nudges %}
+              <div class="small text-muted mb-1">• <span class="fw-semibold" style="color:#93c5fd">{{ n.name }}</span> — {{ n.nudge }}</div>
+              {% endfor %}
+            </div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
+      <!-- Weekly Architecture Digest (from thought_leadership_reflex) -->
+      {% set digest = briefing.get('weekly_digest') %}
+      {% if digest %}
+      <div class="col-12">
+        <div class="rounded-3 overflow-hidden" style="border:1px solid rgba(251,191,36,.2)">
+          <div class="px-3 py-2 fw-semibold small d-flex align-items-center gap-2" style="background:rgba(251,191,36,.06);border-bottom:1px solid rgba(251,191,36,.15)">
+            <span>📡 Weekly Architecture Intelligence</span>
+            <span class="badge fw-normal ms-auto" style="background:rgba(251,191,36,.2);color:#fcd34d;font-size:.68rem">Week of {{ digest.week_of }}</span>
+          </div>
+          <div class="p-3">
+            {% if digest.topics %}
+            <div class="d-flex flex-wrap gap-1 mb-3">
+              {% for t in digest.topics[:5] %}
+              <span class="badge rounded-pill" style="background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.2);color:#fcd34d;font-weight:normal">{{ t }}</span>
+              {% endfor %}
+            </div>
+            {% endif %}
+            {% if digest.synthesis %}
+            <div class="small" style="line-height:1.65;white-space:pre-line">{{ digest.synthesis }}</div>
+            {% endif %}
+            {% if digest.cve_highlights %}
+            <div class="mt-3">
+              <div class="fw-semibold small mb-1" style="color:#f87171">🔐 Security Watch</div>
+              {% for c in digest.cve_highlights %}
+              <div class="small text-muted mb-1">• <span class="fw-semibold" style="color:#fca5a5">{{ c.id }}</span> ({{ c.severity }}) — {{ c.description[:100] }}</div>
+              {% endfor %}
+            </div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
     </div>
 
     {% else %}
@@ -138,6 +221,24 @@ document.getElementById('btn-generate')?.addEventListener('click', function() {
     .then(r=>r.json()).then(d => { if(d.ok) location.reload(); else alert('Error: '+d.error); })
     .finally(() => { if(this) { this.disabled=false; this.textContent='Generate My Briefing'; } });
 });
+
+function triggerProactive(endpoint, btnId, loadingText) {
+  const btn = document.getElementById(btnId);
+  if (!btn) return;
+  const orig = btn.textContent;
+  btn.disabled = true; btn.textContent = loadingText;
+  fetch(endpoint, {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'})
+    .then(r=>r.json())
+    .then(d => { if(d.ok) location.reload(); else alert('Error: ' + (d.error || 'Unknown')); })
+    .catch(e => alert('Request failed: ' + e))
+    .finally(() => { btn.disabled=false; btn.textContent=orig; });
+}
+
+document.getElementById('btn-prep')?.addEventListener('click', () =>
+  triggerProactive('/me/api/second-brain/proactive/tomorrow-prep', 'btn-prep', '🌙 Scanning…'));
+document.getElementById('btn-digest')?.addEventListener('click', () =>
+  triggerProactive('/me/api/second-brain/proactive/weekly-digest', 'btn-digest', '📡 Generating…'));
+
 document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => new bootstrap.Tooltip(el));
 </script>
 {% endblock %}
