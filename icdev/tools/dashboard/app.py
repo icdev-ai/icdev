@@ -8511,6 +8511,40 @@ def create_app(testing: bool = False) -> Flask:
     def not_found(e):
         return render_template("404.html", message="Page not found"), 404
 
+    @app.errorhandler(500)
+    def internal_error(e):
+        if flask_request.is_json or flask_request.path.startswith("/api/"):
+            return jsonify({"error": "Internal server error", "message": str(e)}), 500
+        return render_template("500.html", message=str(e)), 500
+
+    # -------------------------------------------------------------------
+    # Health check endpoints (P2 — monitoring / load-balancer)
+    # -------------------------------------------------------------------
+
+    @app.route("/api/health")
+    def api_health():
+        try:
+            from tools.db.storage import get_connection as _gc
+            _gc().execute("SELECT 1").fetchone()
+            db_ok = True
+        except Exception:
+            db_ok = False
+        return jsonify({"status": "ok" if db_ok else "degraded", "db": db_ok})
+
+    @app.route("/api/status")
+    def api_status():
+        return jsonify({
+            "status": "running",
+            "service": "ICDEV™ Dashboard",
+            "version": "1.0",
+        })
+
+    @app.route("/robots.txt")
+    def robots_txt():
+        from flask import Response
+        body = "User-agent: *\nDisallow: /\n"
+        return Response(body, mimetype="text/plain")
+
     # -------------------------------------------------------------------
     # CLI Generator (cherry-picked from icdev main)
     # -------------------------------------------------------------------

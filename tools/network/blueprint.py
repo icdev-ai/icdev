@@ -14779,11 +14779,26 @@ Planning rules:
         return base + "."
 
 
+    # ── Compliance Audit landing ───────────────────────────────────────────
+    @bp.route("/compliance-audit")
+    def nc_compliance_audit_index():
+        """List topologies so the user can pick one to audit."""
+        conn = get_connection()
+        topos = [
+            dict(r) if hasattr(r, "keys") else {"id": r[0], "name": r[1]}
+            for r in conn.execute(
+                "SELECT id, name FROM topologies ORDER BY name"
+            ).fetchall()
+        ]
+        conn.close()
+        return render_template("network/compliance_audit_index.html", topologies=topos)
+
     # ── Config Review ─────────────────────────────────────────────────────
     @bp.route("/config-review")
     def nc_config_review():
         """Configuration Review Assistant — upload and AI-review device configs."""
-        return render_template("network/config_review.html")
+        from tools.network.constants import CONFIG_REVIEW_ROLES
+        return render_template("network/config_review.html", roles=CONFIG_REVIEW_ROLES)
 
     # ── Diagram Analysis ──────────────────────────────────────────────────
     @bp.route("/diagram-analysis")
@@ -14796,8 +14811,8 @@ Planning rules:
     @bp.route("/migration-phases")
     def nc_migration_phases_hub():
         """Redirect bare /migration-phases to the Migration Hub."""
-        from flask import redirect, url_for
-        return redirect(url_for("network.migration_hub"))
+        from flask import redirect
+        return redirect("/network/migration-hub")
 
     # ── PVM Predictive Vulnerability Management routes ────────────────────
     from tools.network.routes.pvm import register_pvm_routes

@@ -139,7 +139,7 @@
         _consecutiveErrors = 0;
         _currentInterval = POLL_INTERVAL_MS;
         updateStatusDot(STATE_CONNECTED);
-        console.log("[ICDEV™ Live] HTTP polling started (" + POLL_INTERVAL_MS + "ms)");
+        console.debug("[ICDEV™ Live] HTTP polling started (" + POLL_INTERVAL_MS + "ms)");
         // Do an initial poll immediately
         doPoll();
     }
@@ -149,7 +149,7 @@
         stopCountdown();
         _state = STATE_DISCONNECTED;
         updateStatusDot(STATE_DISCONNECTED);
-        console.log("[ICDEV™ Live] HTTP polling stopped.");
+        console.debug("[ICDEV™ Live] HTTP polling stopped.");
     }
 
     function schedulePoll() {
