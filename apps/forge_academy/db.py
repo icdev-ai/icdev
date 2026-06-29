@@ -1251,6 +1251,14 @@ def seed_mission_ontology_mappings() -> None:
     from .ontology import build_mission_ontology_id, build_step_ontology_id
     from .content_loader import BUILTIN_MISSIONS, BUILTIN_STEPS
     conn = get_connection()
+    # Skip if already seeded — avoids 80×N per-mission connection/commit storm
+    try:
+        existing = conn.execute("SELECT COUNT(*) FROM fa_mission_ontology").fetchone()[0]
+        if existing >= len(BUILTIN_MISSIONS):
+            _log.debug("FORGE Academy: ontology mappings already seeded (%d), skipping", existing)
+            return
+    except Exception:
+        pass  # table may not exist yet; proceed with seeding
     for m in BUILTIN_MISSIONS:
         row = conn.execute("SELECT id FROM fa_missions WHERE slug=?", (m["slug"],)).fetchone()
         if not row:

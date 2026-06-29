@@ -96,6 +96,7 @@
           <div class="mb-1" style="font-size:2rem">📋</div>
           <p class="text-muted small mb-3">No briefing generated yet for today.</p>
           <button class="btn btn-primary btn-sm" id="btn-gen-briefing-cta">Generate My Briefing</button>
+          <div id="briefing-gen-error" class="text-danger small mt-2" style="display:none;"></div>
         </div>
         {% endif %}
       </div>
@@ -131,10 +132,22 @@ document.getElementById('hero-date').textContent = new Date().toLocaleDateString
 
 function generateBriefing() {
   const btn = document.getElementById('btn-gen-briefing') || document.getElementById('btn-gen-briefing-cta');
+  const origText = btn ? btn.textContent : 'Generate Briefing';
+  const errEl = document.getElementById('briefing-gen-error');
   if (btn) { btn.disabled = true; btn.textContent = 'Generating…'; }
+  if (errEl) errEl.style.display = 'none';
   fetch('/me/api/second-brain/briefing/generate', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'})
-    .then(r=>r.json()).then(d => { if(d.ok) location.reload(); else alert('Error: ' + d.error); })
-    .finally(() => { if(btn) { btn.disabled=false; btn.textContent='⚡ Generate Briefing'; } });
+    .then(r=>r.json()).then(function(d) {
+      if (d.ok) { location.reload(); }
+      else {
+        if (errEl) { errEl.textContent = 'Error: ' + d.error; errEl.style.display = ''; }
+        else { alert('Error: ' + d.error); }
+      }
+    })
+    .catch(function() {
+      if (errEl) { errEl.textContent = 'Network error — please try again.'; errEl.style.display = ''; }
+    })
+    .finally(function() { if (btn) { btn.disabled = false; btn.textContent = origText; } });
 }
 document.getElementById('btn-gen-briefing')?.addEventListener('click', generateBriefing);
 document.getElementById('btn-gen-briefing-cta')?.addEventListener('click', generateBriefing);

@@ -21,7 +21,8 @@
         {% if briefing.date %}<div class="small text-muted">{{ briefing.date }}</div>{% endif %}
       </div>
       <div class="d-flex gap-2 flex-wrap">
-        <button class="btn btn-outline-secondary btn-sm" id="btn-regen" onclick="fetch('/me/api/second-brain/briefing/generate',{method:'POST'}).then(()=>location.reload())" data-bs-toggle="tooltip" title="Regenerate today's briefing from all connected sources">↻ Regenerate</button>
+        <button class="btn btn-outline-secondary btn-sm" id="btn-regen" onclick="fetch('/me/api/second-brain/briefing/generate',{method:'POST'}).then(r=>r.json()).then(function(d){if(d.ok){location.reload();}else{var e=document.getElementById('briefing-regen-error');if(e){e.textContent='Error: '+d.error;e.style.display='';}}})" data-bs-toggle="tooltip" title="Regenerate today's briefing from all connected sources">↻ Regenerate</button>
+        <div id="briefing-regen-error" class="text-danger small" style="display:none;align-self:center;"></div>
         <button class="btn btn-sm" id="btn-prep" style="background:rgba(99,102,241,.15);border:1px solid rgba(99,102,241,.3);color:#a5b4fc" data-bs-toggle="tooltip" title="Generate tomorrow-prep: stalled work scan + meeting preview + customer nudges">🌙 Prep Tomorrow</button>
         <button class="btn btn-sm" id="btn-digest" style="background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.25);color:#fcd34d" data-bs-toggle="tooltip" title="Generate weekly architecture intelligence digest tailored to your customer domains">📡 Architecture Digest</button>
       </div>
@@ -371,10 +372,26 @@
 
 <script>
 document.getElementById('btn-generate')?.addEventListener('click', function() {
-  this.disabled = true; this.textContent = 'Generating…';
+  var btn = this;
+  btn.disabled = true; btn.textContent = 'Generating…';
   fetch('/me/api/second-brain/briefing/generate', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'})
-    .then(r=>r.json()).then(d => { if(d.ok) location.reload(); else alert('Error: '+d.error); })
-    .finally(() => { if(this) { this.disabled=false; this.textContent='Generate My Briefing'; } });
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.ok) { location.reload(); }
+      else {
+        var errEl = document.createElement('p');
+        errEl.className = 'text-danger small mt-2';
+        errEl.textContent = 'Error: ' + d.error;
+        btn.parentNode.insertBefore(errEl, btn.nextSibling);
+      }
+    })
+    .catch(function() {
+      var errEl = document.createElement('p');
+      errEl.className = 'text-danger small mt-2';
+      errEl.textContent = 'Network error — please try again.';
+      btn.parentNode.insertBefore(errEl, btn.nextSibling);
+    })
+    .finally(function() { btn.disabled = false; btn.textContent = 'Generate My Briefing'; });
 });
 
 function triggerProactive(endpoint, btnId, loadingText) {

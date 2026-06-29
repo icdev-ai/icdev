@@ -30,6 +30,8 @@ from .integrations import (
 bp = Blueprint("forge_academy", __name__)
 
 _initialized = False
+import threading as _threading
+_init_lock = _threading.Lock()
 
 
 @bp.app_context_processor
@@ -55,7 +57,11 @@ def _inject_fa_nav():
 
 def _ensure_init():
     global _initialized
-    if not _initialized:
+    if _initialized:
+        return
+    with _init_lock:
+        if _initialized:  # double-checked locking
+            return
         try:
             migrate()
             seed_mission_catalog()
