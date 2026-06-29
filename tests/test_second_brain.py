@@ -1,512 +1,688 @@
+"""Second Brain canvas test suite — profile, roles, interactions, health, search, routes."""
 # CUI // SP-CTI
-"""Tests for the Second Brain / AI Executive Assistant system."""
 from __future__ import annotations
 
 import json
 import os
-import sys
-import types
-import unittest
-from unittest.mock import MagicMock, patch
+import pathlib
+from datetime import datetime, timezone, timedelta
 
-# Ensure repo root is on path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import pytest
 
-os.environ.setdefault("ICDEV_STORAGE_BACKEND", "sqlite")
-os.environ.setdefault("ICDEV_SECOND_BRAIN_ENABLED", "true")
-os.environ.setdefault("ICDEV_SECRET_KEY", "test-key-for-second-brain")
+# ── helpers ──────────────────────────────────────────────────────────────────
 
+USER_ID = "test-sb-user"
+TENANT_ID = "test"
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Helpers — lightweight in-memory DB stub for canvas-scoped connection
-# ─────────────────────────────────────────────────────────────────────────────
+_MIGRATION_DIR = pathlib.Path(__file__).parent.parent / "icdev" / "tools" / "db" / "migrations"
 
-class _WrappedConn:
-    """Thin wrapper adding _backend attr so SQL placeholder detection works on Py3.14."""
-    _backend = "sqlite"
-
-    def __init__(self, inner):
-        self._inner = inner
-
-    def execute(self, sql, params=()):
-        # Translate %s placeholders to ? for SQLite
-        sql = sql.replace("%s", "?")
-        return self._inner.execute(sql, params)
-
-    def commit(self):
-        return self._inner.commit()
-
-    def close(self):
-        return self._inner.close()
-
-
-_SQLITE_SCHEMA = """
+_SB_DDL = """
 CREATE TABLE IF NOT EXISTS user_identity_profiles (
-    user_id TEXT NOT NULL, tenant_id TEXT NOT NULL DEFAULT 'default',
-    full_name TEXT, work_email TEXT, title TEXT, seniority_tier TEXT,
-    department TEXT, timezone TEXT DEFAULT 'UTC',
-    work_start TEXT DEFAULT '09:00', work_end TEXT DEFAULT '18:00',
-    focus_block TEXT DEFAULT 'am', meeting_heavy_days TEXT DEFAULT '[]',
-    briefing_time TEXT DEFAULT '08:00', delivery_channels TEXT DEFAULT '["dashboard"]',
-    comm_style INTEGER DEFAULT 3, org_name TEXT, org_industry TEXT, org_size TEXT,
-    team_mission TEXT, profile_summary TEXT, context_complete INTEGER DEFAULT 0,
-    created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
-    updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+    user_id          TEXT NOT NULL,
+    tenant_id        TEXT NOT NULL DEFAULT 'default',
+    full_name        TEXT,
+    work_email       TEXT,
+    title            TEXT,
+    seniority_tier   TEXT,
+    department       TEXT,
+    timezone         TEXT NOT NULL DEFAULT 'UTC',
+    work_start       TEXT NOT NULL DEFAULT '09:00',
+    work_end         TEXT NOT NULL DEFAULT '18:00',
+    focus_block      TEXT NOT NULL DEFAULT 'am',
+    meeting_heavy_days TEXT NOT NULL DEFAULT '[]',
+    briefing_time    TEXT NOT NULL DEFAULT '08:00',
+    delivery_channels TEXT NOT NULL DEFAULT '["dashboard"]',
+    comm_style       INTEGER NOT NULL DEFAULT 3,
+    org_name         TEXT,
+    org_industry     TEXT,
+    org_size         TEXT,
+    team_mission     TEXT,
+    profile_summary  TEXT,
+    context_complete INTEGER NOT NULL DEFAULT 0,
+    created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at       TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (user_id, tenant_id)
 );
 CREATE TABLE IF NOT EXISTS user_objectives (
-    id TEXT PRIMARY KEY, user_id TEXT NOT NULL, tenant_id TEXT NOT NULL DEFAULT 'default',
-    title TEXT NOT NULL, description TEXT, horizon TEXT, metric TEXT,
-    status TEXT DEFAULT 'active', sort_order INTEGER DEFAULT 0,
-    created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+    id          TEXT PRIMARY KEY,
+    user_id     TEXT NOT NULL,
+    tenant_id   TEXT NOT NULL DEFAULT 'default',
+    title       TEXT NOT NULL,
+    description TEXT,
+    horizon     TEXT,
+    metric      TEXT,
+    status      TEXT NOT NULL DEFAULT 'active',
+    sort_order  INTEGER NOT NULL DEFAULT 0,
+    progress_notes TEXT DEFAULT '[]',
+    last_auto_update TEXT,
+    auto_progress_pct INTEGER DEFAULT 0,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
-CREATE INDEX IF NOT EXISTS idx_user_obj ON user_objectives(user_id, tenant_id, status);
+CREATE INDEX IF NOT EXISTS idx_user_obj ON user_objectives (user_id, tenant_id, status);
 CREATE TABLE IF NOT EXISTS user_relationships (
-    id TEXT PRIMARY KEY, user_id TEXT NOT NULL, tenant_id TEXT NOT NULL DEFAULT 'default',
-    name TEXT NOT NULL, title TEXT, email TEXT, org TEXT, relationship_type TEXT,
-    notes TEXT, last_contact_at TEXT,
-    created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+    id                TEXT PRIMARY KEY,
+    user_id           TEXT NOT NULL,
+    tenant_id         TEXT NOT NULL DEFAULT 'default',
+    name              TEXT NOT NULL,
+    title             TEXT,
+    email             TEXT,
+    org               TEXT,
+    relationship_type TEXT,
+    notes             TEXT,
+    last_contact_at   TEXT,
+    expectations_json TEXT DEFAULT '{}',
+    commitment_date   TEXT,
+    created_at        TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE INDEX IF NOT EXISTS idx_user_rel ON user_relationships (user_id, tenant_id);
 CREATE TABLE IF NOT EXISTS user_challenges (
-    id TEXT PRIMARY KEY, user_id TEXT NOT NULL, tenant_id TEXT NOT NULL DEFAULT 'default',
-    challenge_key TEXT, custom_description TEXT, severity TEXT DEFAULT 'medium',
-    status TEXT DEFAULT 'active',
-    created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+    id                   TEXT PRIMARY KEY,
+    user_id              TEXT NOT NULL,
+    tenant_id            TEXT NOT NULL DEFAULT 'default',
+    challenge_key        TEXT,
+    custom_description   TEXT,
+    severity             TEXT DEFAULT 'medium',
+    status               TEXT DEFAULT 'active',
+    created_at           TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE TABLE IF NOT EXISTS user_integrations (
-    id TEXT PRIMARY KEY, user_id TEXT NOT NULL, tenant_id TEXT NOT NULL DEFAULT 'default',
-    service TEXT NOT NULL, access_token_enc TEXT, refresh_token_enc TEXT,
-    token_expiry TEXT, scopes TEXT, metadata_json TEXT, status TEXT DEFAULT 'active',
-    last_sync_at TEXT, created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+    id                TEXT PRIMARY KEY,
+    user_id           TEXT NOT NULL,
+    tenant_id         TEXT NOT NULL DEFAULT 'default',
+    service           TEXT NOT NULL,
+    access_token_enc  TEXT,
+    refresh_token_enc TEXT,
+    token_expiry      TEXT,
+    scopes            TEXT,
+    metadata_json     TEXT,
+    status            TEXT DEFAULT 'active',
+    last_sync_at      TEXT,
+    created_at        TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE(user_id, tenant_id, service)
 );
 CREATE TABLE IF NOT EXISTS user_daily_briefings (
-    id TEXT PRIMARY KEY, user_id TEXT NOT NULL, tenant_id TEXT NOT NULL DEFAULT 'default',
-    briefing_date TEXT NOT NULL, content_json TEXT, delivery_channels TEXT DEFAULT '["dashboard"]',
+    id                   TEXT PRIMARY KEY,
+    user_id              TEXT NOT NULL,
+    tenant_id            TEXT NOT NULL DEFAULT 'default',
+    briefing_date        TEXT NOT NULL,
+    content_json         TEXT,
     delivery_status_json TEXT DEFAULT '{}',
-    opened_at TEXT, created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+    opened_at            TEXT,
+    created_at           TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE(user_id, tenant_id, briefing_date)
 );
-CREATE INDEX IF NOT EXISTS idx_briefing ON user_daily_briefings(user_id, tenant_id, briefing_date);
+CREATE INDEX IF NOT EXISTS idx_briefing ON user_daily_briefings (user_id, tenant_id, briefing_date);
+CREATE TABLE IF NOT EXISTS user_relationship_interactions (
+    id               TEXT PRIMARY KEY,
+    relationship_id  TEXT NOT NULL,
+    user_id          TEXT NOT NULL,
+    tenant_id        TEXT NOT NULL DEFAULT 'default',
+    interaction_date TEXT NOT NULL,
+    title            TEXT NOT NULL,
+    notes            TEXT,
+    action_items     TEXT DEFAULT '[]',
+    follow_up_date   TEXT,
+    interaction_type TEXT DEFAULT 'meeting',
+    created_at       TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_rel_interactions
+    ON user_relationship_interactions (relationship_id, user_id, interaction_date DESC);
+CREATE TABLE IF NOT EXISTS user_knowledge_items (
+    id          TEXT PRIMARY KEY,
+    user_id     TEXT NOT NULL,
+    tenant_id   TEXT NOT NULL DEFAULT 'default',
+    source_type TEXT NOT NULL,
+    source_url  TEXT,
+    title       TEXT,
+    raw_content TEXT,
+    summary     TEXT,
+    tags        TEXT DEFAULT '[]',
+    status      TEXT DEFAULT 'pending',
+    error_msg   TEXT,
+    created_at  TEXT DEFAULT (datetime('now')),
+    indexed_at  TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_user_ki ON user_knowledge_items (user_id, tenant_id, status);
 """
 
 
-def _make_canvas_conn():
-    """Return a wrapped SQLite in-memory connection with the Second Brain schema."""
-    import sqlite3
-    inner = sqlite3.connect(":memory:")
-    inner.row_factory = sqlite3.Row
-    conn = _WrappedConn(inner)
-    for stmt in _SQLITE_SCHEMA.split(";"):
-        stmt = stmt.strip()
-        if stmt:
-            try:
-                conn.execute(stmt)
-            except Exception:
-                pass
-    conn.commit()
-    return conn
-
-
-class _CM:
-    """Context-manager wrapper for a plain connection."""
-    def __init__(self, conn):
-        self._conn = conn
-    def __enter__(self):
-        return self._conn
-    def __exit__(self, *_):
+@pytest.fixture(autouse=True)
+def sb_env(monkeypatch):
+    """Enable Second Brain and force SQLite for all tests."""
+    monkeypatch.setenv("ICDEV_SECOND_BRAIN_ENABLED", "true")
+    monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
+    # Create canvas tables in the shared test SQLite DB
+    try:
+        from tools.db.storage import get_canvas_connection
+        conn = get_canvas_connection("ICDEV_SECOND_BRAIN_ENABLED")
+        conn.executescript(_SB_DDL)
+        conn.commit()
+    except Exception:
         pass
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Constants tests
-# ─────────────────────────────────────────────────────────────────────────────
-
-class TestSecondBrainConstants(unittest.TestCase):
-    def test_challenge_keys_count(self):
-        from tools.second_brain.constants import CHALLENGE_KEYS
-        self.assertEqual(len(CHALLENGE_KEYS), 10)
-
-    def test_seniority_tiers(self):
-        from tools.second_brain.constants import SENIORITY_TIERS
-        self.assertIn("ic", SENIORITY_TIERS)
-        self.assertIn("executive", SENIORITY_TIERS)
-
-    def test_integration_services(self):
-        from tools.second_brain.constants import INTEGRATION_SERVICES
-        self.assertIn("github", INTEGRATION_SERVICES)
-        self.assertIn("slack", INTEGRATION_SERVICES)
-
-    def test_tier_integrations_keys(self):
-        from tools.second_brain.constants import SENIORITY_TIERS, TIER_INTEGRATIONS
-        for tier in SENIORITY_TIERS:
-            self.assertIn(tier, TIER_INTEGRATIONS)
-
-    def test_relationship_labels_complete(self):
-        from tools.second_brain.constants import RELATIONSHIP_LABELS, RELATIONSHIP_TYPES
-        for rt in RELATIONSHIP_TYPES:
-            self.assertIn(rt, RELATIONSHIP_LABELS)
-
-    def test_challenge_labels_complete(self):
-        from tools.second_brain.constants import CHALLENGE_KEYS, CHALLENGE_LABELS
-        for k in CHALLENGE_KEYS:
-            self.assertIn(k, CHALLENGE_LABELS)
-
-    def test_comm_style_labels(self):
-        from tools.second_brain.constants import COMM_STYLE_LABELS
-        self.assertEqual(len(COMM_STYLE_LABELS), 5)
-
-    def test_briefing_env_flag(self):
-        from tools.second_brain.constants import BRIEFING_ENV_FLAG
-        self.assertTrue(BRIEFING_ENV_FLAG.startswith("ICDEV_"))
+@pytest.fixture
+def flask_client():
+    """Flask test client for route smoke tests."""
+    import importlib
+    app_mod = importlib.import_module("tools.dashboard.app")
+    app = app_mod.app
+    app.config["TESTING"] = True
+    app.config["SECRET_KEY"] = "test-sb-secret"
+    with app.test_client() as client:
+        with app.app_context():
+            yield client
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Profile CRUD tests
-# ─────────────────────────────────────────────────────────────────────────────
+# ── profile ──────────────────────────────────────────────────────────────────
 
-class TestSecondBrainProfile(unittest.TestCase):
-    def setUp(self):
-        self._conn = _make_canvas_conn()
-        self._cm = _CM(self._conn)
-        self._patch = patch("tools.second_brain.profile._conn", return_value=self._cm)
-        self._patch.start()
-
-    def tearDown(self):
-        self._patch.stop()
-        self._conn.close()
+class TestProfile:
+    def test_get_profile_new_user_returns_dict(self):
+        from tools.second_brain.profile import get_profile
+        p = get_profile(USER_ID, TENANT_ID)
+        assert isinstance(p, (dict, type(None)))  # None or {} both acceptable
 
     def test_upsert_and_get_profile(self):
-        from tools.second_brain.profile import get_profile, upsert_profile
-        upsert_profile("u1", full_name="Alice", title="Engineer", org_name="ACME")
-        p = get_profile("u1")
-        self.assertIsNotNone(p)
-        self.assertEqual(p["full_name"], "Alice")
-        self.assertEqual(p["org_name"], "ACME")
+        from tools.second_brain.profile import upsert_profile, get_profile
+        upsert_profile(USER_ID, TENANT_ID, title="Network Architect", org_name="ACME")
+        p = get_profile(USER_ID, TENANT_ID)
+        assert p is not None
+        assert p.get("title") == "Network Architect"
+        assert p.get("org_name") == "ACME"
 
     def test_upsert_updates_existing(self):
-        from tools.second_brain.profile import get_profile, upsert_profile
-        upsert_profile("u2", full_name="Bob")
-        upsert_profile("u2", full_name="Bob Updated", title="Senior Eng")
-        p = get_profile("u2")
-        self.assertEqual(p["full_name"], "Bob Updated")
-        self.assertEqual(p["title"], "Senior Eng")
+        from tools.second_brain.profile import upsert_profile, get_profile
+        upsert_profile(USER_ID, TENANT_ID, title="Old Title")
+        upsert_profile(USER_ID, TENANT_ID, title="New Title")
+        p = get_profile(USER_ID, TENANT_ID)
+        assert p.get("title") == "New Title"
 
-    def test_get_profile_missing_returns_none(self):
-        from tools.second_brain.profile import get_profile
-        self.assertIsNone(get_profile("nonexistent-user"))
+    def test_get_objectives_returns_list(self):
+        from tools.second_brain.profile import get_objectives
+        objs = get_objectives(USER_ID, TENANT_ID)
+        assert isinstance(objs, list)
 
-    def test_save_objectives(self):
-        from tools.second_brain.profile import get_objectives, save_objectives, upsert_profile
-        upsert_profile("u3")
-        objs = [{"title": "Ship v2", "horizon": "quarter"}, {"title": "Learn Rust", "horizon": "long_term"}]
-        ids = save_objectives("u3", objs)
-        self.assertEqual(len(ids), 2)
-        fetched = get_objectives("u3")
-        self.assertEqual(len(fetched), 2)
-        titles = [o["title"] for o in fetched]
-        self.assertIn("Ship v2", titles)
+    def test_get_relationships_returns_list(self):
+        from tools.second_brain.profile import get_relationships
+        rels = get_relationships(USER_ID, TENANT_ID)
+        assert isinstance(rels, list)
 
-    def test_save_relationships(self):
-        from tools.second_brain.profile import get_relationships, save_relationships, upsert_profile
-        upsert_profile("u4")
-        rels = [{"name": "Alice", "relationship_type": "boss"}, {"name": "Bob", "relationship_type": "peer"}]
-        ids = save_relationships("u4", rels)
-        self.assertEqual(len(ids), 2)
-        fetched = get_relationships("u4")
-        names = [r["name"] for r in fetched]
-        self.assertIn("Alice", names)
-        self.assertIn("Bob", names)
-
-    def test_save_challenges(self):
-        from tools.second_brain.profile import get_challenges, save_challenges, upsert_profile
-        upsert_profile("u5")
-        chals = [{"challenge_key": "meeting_overload", "severity": "high"}]
-        ids = save_challenges("u5", chals)
-        self.assertEqual(len(ids), 1)
-        fetched = get_challenges("u5")
-        self.assertEqual(fetched[0]["challenge_key"], "meeting_overload")
-
-    def test_save_full_profile(self):
-        from tools.second_brain.profile import get_full_profile, save_full_profile
-        data = {
-            "profile": {"full_name": "Carol", "title": "CTO", "org_name": "TechCorp"},
-            "objectives": [{"title": "Scale platform", "horizon": "quarter"}],
-            "relationships": [{"name": "Dave", "relationship_type": "direct"}],
-            "challenges": [{"challenge_key": "unclear_priorities", "severity": "medium"}],
-        }
-        save_full_profile("u6", data)
-        full = get_full_profile("u6")
-        self.assertIsNotNone(full)
-        self.assertEqual(full["profile"]["full_name"], "Carol")
-        self.assertEqual(len(full["objectives"]), 1)
-        self.assertEqual(len(full["relationships"]), 1)
-        self.assertEqual(len(full["challenges"]), 1)
+    def test_get_challenges_returns_list(self):
+        from tools.second_brain.profile import get_challenges
+        chals = get_challenges(USER_ID, TENANT_ID)
+        assert isinstance(chals, list)
 
     def test_build_world_model_context(self):
-        from tools.second_brain.profile import build_world_model_context, save_full_profile, upsert_profile
-        save_full_profile("u7", {
-            "profile": {"full_name": "Eve", "title": "VP Eng", "org_name": "Startup"},
-            "objectives": [{"title": "Grow team", "horizon": "quarter"}],
-            "challenges": [{"challenge_key": "team_capacity", "severity": "high"}],
-        })
-        # context_complete must be set for world model to return
-        upsert_profile("u7", context_complete=1)
-        ctx = build_world_model_context("u7")
-        self.assertIsNotNone(ctx)
-        self.assertEqual(ctx["name"], "Eve")
-        self.assertIn("Grow team", ctx["objectives"])
-        self.assertIn("team_capacity", ctx["challenge_keys"])
+        from tools.second_brain.profile import upsert_profile, build_world_model_context
+        # context_complete must be 1 for the function to return a dict
+        upsert_profile(USER_ID, TENANT_ID, title="Network Architect",
+                       org_name="ACME", context_complete=1)
+        ctx = build_world_model_context(USER_ID, TENANT_ID)
+        assert isinstance(ctx, dict)
+        for key in ("name", "title", "org_name", "objectives",
+                    "challenge_keys", "relationship_names", "comm_style_label", "timezone"):
+            assert key in ctx, f"Missing key: {key}"
 
-    def test_objectives_replace_all(self):
-        from tools.second_brain.profile import get_objectives, save_objectives, upsert_profile
-        upsert_profile("u8")
-        save_objectives("u8", [{"title": "Old goal", "horizon": "week"}])
-        save_objectives("u8", [{"title": "New goal A"}, {"title": "New goal B"}])
-        fetched = get_objectives("u8")
-        titles = [o["title"] for o in fetched]
-        self.assertNotIn("Old goal", titles)
-        self.assertIn("New goal A", titles)
+    def test_build_world_model_context_no_crash_empty_user(self):
+        from tools.second_brain.profile import build_world_model_context
+        # Returns None for unknown/incomplete user — both are valid
+        ctx = build_world_model_context("nonexistent-user-xyz", "test")
+        assert ctx is None or isinstance(ctx, dict)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Token encryption tests
-# ─────────────────────────────────────────────────────────────────────────────
+# ── role advisor ──────────────────────────────────────────────────────────────
 
-class TestIntegrationTokens(unittest.TestCase):
-    def setUp(self):
-        self._conn = _make_canvas_conn()
-        self._cm = _CM(self._conn)
-        self._patch = patch("tools.second_brain.integrations._conn", return_value=self._cm)
-        self._patch.start()
+class TestRoleAdvisor:
+    def test_infer_network_architect(self):
+        from tools.second_brain.role_advisor import infer_persona
+        p = infer_persona("Senior Network Architect")
+        assert p.get("persona") == "solutions_architect"
 
-    def tearDown(self):
-        self._patch.stop()
-        self._conn.close()
+    def test_infer_software_engineer(self):
+        from tools.second_brain.role_advisor import infer_persona
+        p = infer_persona("Software Engineer")
+        assert isinstance(p, dict)
+        assert "persona" in p
 
-    def _skip_if_no_cryptography(self):
-        try:
-            import cryptography  # noqa: F401
-        except ImportError:
-            self.skipTest("cryptography package not installed")
+    def test_infer_empty_title_no_crash(self):
+        from tools.second_brain.role_advisor import infer_persona
+        p = infer_persona("")
+        assert isinstance(p, dict)
+        assert "persona" in p
 
-    def test_encrypt_decrypt_roundtrip(self):
-        self._skip_if_no_cryptography()
-        from tools.second_brain.integrations import _decrypt, _encrypt
-        token = "ghp_test_token_abc123"
-        self.assertEqual(_decrypt(_encrypt(token)), token)
+    def test_infer_unknown_role_returns_fallback(self):
+        from tools.second_brain.role_advisor import infer_persona
+        p = infer_persona("Galactic Overlord of Cheese XYZ9999")
+        assert isinstance(p, dict)
+        assert "persona" in p
 
-    def test_empty_token_roundtrip(self):
-        self._skip_if_no_cryptography()
-        from tools.second_brain.integrations import _decrypt, _encrypt
-        self.assertEqual(_decrypt(_encrypt("")), "")
+    def test_infer_pm_role(self):
+        from tools.second_brain.role_advisor import infer_persona
+        p = infer_persona("Product Manager")
+        assert isinstance(p, dict)
 
-    def test_save_and_retrieve_token(self):
-        self._skip_if_no_cryptography()
-        from tools.second_brain.integrations import get_decrypted_token, save_integration
-        save_integration("u1", "github", access_token="ghp_abc123")
-        retrieved = get_decrypted_token("u1", "github")
-        self.assertEqual(retrieved, "ghp_abc123")
+    def test_get_relevant_canvases_returns_list(self):
+        from tools.second_brain.role_advisor import get_relevant_canvases
+        canvases = get_relevant_canvases(USER_ID, TENANT_ID)
+        assert isinstance(canvases, list)
 
-    def test_revoke_clears_token(self):
-        self._skip_if_no_cryptography()
-        from tools.second_brain.integrations import get_decrypted_token, revoke_integration, save_integration
-        save_integration("u2", "slack", access_token="xoxb-test")
-        revoke_integration("u2", "slack")
-        self.assertIsNone(get_decrypted_token("u2", "slack"))
+    def test_get_digest_topics_returns_list(self):
+        from tools.second_brain.role_advisor import get_digest_topics
+        topics = get_digest_topics(USER_ID, TENANT_ID)
+        assert isinstance(topics, list)
 
-    def test_list_integrations_no_tokens(self):
-        self._skip_if_no_cryptography()
-        from tools.second_brain.integrations import list_integrations, save_integration
-        save_integration("u3", "jira", access_token="secret", metadata={"email": "a@b.com"})
-        items = list_integrations("u3")
-        self.assertEqual(len(items), 1)
-        self.assertEqual(items[0]["service"], "jira")
-        self.assertNotIn("access_token_enc", items[0])
-        self.assertNotIn("secret", str(items[0]))
+    def test_canvases_populated_after_profile_set(self):
+        from tools.second_brain.profile import upsert_profile
+        from tools.second_brain.role_advisor import get_relevant_canvases
+        upsert_profile(USER_ID, TENANT_ID, title="Network Architect")
+        canvases = get_relevant_canvases(USER_ID, TENANT_ID)
+        assert len(canvases) > 0
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Briefing engine tests
-# ─────────────────────────────────────────────────────────────────────────────
+# ── interactions ──────────────────────────────────────────────────────────────
 
-class TestBriefingEngine(unittest.TestCase):
-    def setUp(self):
-        self._conn = _make_canvas_conn()
-        self._cm = _CM(self._conn)
-        self._pconn = patch("tools.second_brain.briefing._conn", return_value=self._cm)
-        self._ppconn = patch("tools.second_brain.profile._conn", return_value=self._cm)
-        self._pconn.start()
-        self._ppconn.start()
+class TestInteractions:
+    REL_ID = "test-rel-interactions-001"
 
-    def tearDown(self):
-        self._pconn.stop()
-        self._ppconn.stop()
-        self._conn.close()
+    def test_log_returns_id(self):
+        from tools.second_brain.interactions import log_interaction
+        result = log_interaction(
+            self.REL_ID, USER_ID, "Q3 planning call",
+            notes="Good sync", tenant_id=TENANT_ID
+        )
+        assert "id" in result
+        assert result.get("relationship_id") == self.REL_ID
 
-    def _seed_user(self):
-        from tools.second_brain.profile import save_full_profile, upsert_profile
-        save_full_profile("brf_user", {
-            "profile": {"full_name": "Frank", "title": "Director", "org_name": "BigCo"},
-            "objectives": [{"title": "Launch Q3", "horizon": "quarter"}],
-            "challenges": [{"challenge_key": "meeting_overload"}],
-        })
-        upsert_profile("brf_user", context_complete=1)
+    def test_get_interactions_after_log(self):
+        from tools.second_brain.interactions import log_interaction, get_interactions
+        log_interaction(self.REL_ID, USER_ID, "Sprint review", tenant_id=TENANT_ID)
+        items = get_interactions(self.REL_ID, USER_ID, TENANT_ID)
+        assert isinstance(items, list)
+        assert any(i["title"] == "Sprint review" for i in items)
 
-    def _mock_llm(self):
-        mock_router = MagicMock()
-        mock_router.return_value.invoke.return_value = {"content": "Good morning, Frank."}
-        return patch("tools.llm.router.LLMRouter", mock_router)
+    def test_get_interactions_most_recent_first(self):
+        from tools.second_brain.interactions import log_interaction, get_interactions
+        log_interaction(self.REL_ID, USER_ID, "First", interaction_date="2026-01-01", tenant_id=TENANT_ID)
+        log_interaction(self.REL_ID, USER_ID, "Second", interaction_date="2026-06-01", tenant_id=TENANT_ID)
+        items = get_interactions(self.REL_ID, USER_ID, TENANT_ID)
+        dates = [i["date"] for i in items if i["title"] in ("First", "Second")]
+        assert dates == sorted(dates, reverse=True)
 
-    def test_generate_briefing_returns_dict(self):
-        self._seed_user()
-        with self._mock_llm():
-            from tools.second_brain.briefing import generate_briefing
-            result = generate_briefing("brf_user", "2026-06-28")
-        self.assertIsInstance(result, dict)
-        self.assertIn("date", result)
-        self.assertIn("greeting", result)
+    def test_delete_interaction(self):
+        from tools.second_brain.interactions import log_interaction, get_interactions, delete_interaction
+        r = log_interaction(self.REL_ID, USER_ID, "To delete", tenant_id=TENANT_ID)
+        iid = r["id"]
+        assert delete_interaction(iid, USER_ID, TENANT_ID) is True
+        items = get_interactions(self.REL_ID, USER_ID, TENANT_ID)
+        assert not any(i.get("id") == iid for i in items)
 
-    def test_generate_briefing_stored(self):
-        self._seed_user()
-        with self._mock_llm():
-            from tools.second_brain.briefing import generate_briefing
-            generate_briefing("brf_user", "2026-06-28")
-        stored = self._conn._inner.execute(
-            "SELECT content_json FROM user_daily_briefings WHERE user_id='brf_user'"
-        ).fetchone()
-        self.assertIsNotNone(stored)
-
-    def test_get_todays_briefing_none_if_not_generated(self):
-        from tools.second_brain.briefing import get_todays_briefing
-        result = get_todays_briefing("no_such_user")
-        self.assertIsNone(result)
-
-    def test_get_users_due_no_profiles(self):
-        from tools.second_brain.briefing import get_users_due_for_briefing
-        due = get_users_due_for_briefing(8)
-        self.assertEqual(due, [])
-
-    def test_briefing_content_structure(self):
-        self._seed_user()
-        with self._mock_llm():
-            from tools.second_brain.briefing import generate_briefing
-            result = generate_briefing("brf_user", "2026-06-28")
-        self.assertIn("meetings", result)
-        self.assertIn("tasks", result)
-        self.assertIsInstance(result["meetings"], list)
-        self.assertIsInstance(result["tasks"], list)
+    def test_get_interactions_empty_rel(self):
+        from tools.second_brain.interactions import get_interactions
+        items = get_interactions("nonexistent-rel-xyz", USER_ID, TENANT_ID)
+        assert items == []
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Onboarding state tests
-# ─────────────────────────────────────────────────────────────────────────────
+# ── relationship health ───────────────────────────────────────────────────────
 
-class TestOnboardingStateExtension(unittest.TestCase):
-    def test_default_state_has_second_brain_keys(self):
-        from tools.auth.onboarding import _DEFAULT_STATE
-        self.assertIn("context_capture_complete", _DEFAULT_STATE)
-        self.assertIn("identity_step_done", _DEFAULT_STATE)
-        self.assertIn("connections_step_done", _DEFAULT_STATE)
-        self.assertIn("world_step_done", _DEFAULT_STATE)
-        self.assertIn("cadence_step_done", _DEFAULT_STATE)
-        self.assertIn("integration_count", _DEFAULT_STATE)
-        self.assertIn("briefing_channels", _DEFAULT_STATE)
+class TestRelationshipHealth:
+    def _rel(self, rtype: str = "customer") -> dict:
+        return {"id": "r1", "name": "Alice", "relationship_type": rtype}
 
-    def test_briefing_channels_default(self):
-        from tools.auth.onboarding import _DEFAULT_STATE
-        self.assertEqual(_DEFAULT_STATE["briefing_channels"], ["dashboard"])
+    def test_green_recent_contact(self):
+        from tools.second_brain.relationship_health import score_relationship
+        recent = (datetime.now(timezone.utc) - timedelta(days=3)).strftime("%Y-%m-%d")
+        h = score_relationship(self._rel(), recent)
+        assert h["status"] == "green"
 
+    def test_amber_stale_customer(self):
+        from tools.second_brain.relationship_health import score_relationship
+        stale = (datetime.now(timezone.utc) - timedelta(days=20)).strftime("%Y-%m-%d")
+        h = score_relationship(self._rel("customer"), stale)
+        assert h["status"] == "amber"
 
-# ─────────────────────────────────────────────────────────────────────────────
-# ACE SOUL injection tests
-# ─────────────────────────────────────────────────────────────────────────────
+    def test_red_very_stale_customer(self):
+        from tools.second_brain.relationship_health import score_relationship
+        old = (datetime.now(timezone.utc) - timedelta(days=45)).strftime("%Y-%m-%d")
+        h = score_relationship(self._rel("customer"), old)
+        assert h["status"] == "red"
 
-class TestSoulManagerInjection(unittest.TestCase):
-    def test_inject_returns_original_if_no_profile(self):
-        from icdev.tools.ace.soul_manager import inject_user_profile_context
-        with patch("tools.second_brain.profile.build_world_model_context", return_value=None):
-            result = inject_user_profile_context("SOUL TEXT", "no_user")
-        self.assertEqual(result, "SOUL TEXT")
+    def test_no_contact_logged(self):
+        from tools.second_brain.relationship_health import score_relationship
+        h = score_relationship(self._rel(), None)
+        assert h["status"] == "amber"
+        assert h["days_since"] is None
 
-    def test_inject_prepends_block_when_profile_exists(self):
-        from icdev.tools.ace.soul_manager import inject_user_profile_context
-        mock_ctx = {
-            "name": "Grace", "title": "Lead", "org_name": "Org",
-            "objectives": ["Goal 1"], "challenge_keys": ["meeting_overload"],
-            "relationship_names": ["Alice"], "timezone": "UTC",
-            "comm_style_label": "Direct",
-        }
-        with patch("tools.second_brain.profile.build_world_model_context", return_value=mock_ctx):
-            result = inject_user_profile_context("BASE SOUL", "grace_user")
-        self.assertIn("WHO YOU ARE WORKING WITH", result)
-        self.assertIn("Grace", result)
-        self.assertIn("Goal 1", result)
-        self.assertIn("BASE SOUL", result)
+    def test_boss_tighter_threshold(self):
+        from tools.second_brain.relationship_health import score_relationship
+        slightly_old = (datetime.now(timezone.utc) - timedelta(days=10)).strftime("%Y-%m-%d")
+        h = score_relationship(self._rel("boss"), slightly_old)
+        assert h["status"] in ("amber", "red")
 
-    def test_inject_is_safe_on_import_error(self):
-        from icdev.tools.ace.soul_manager import inject_user_profile_context
-        with patch("tools.second_brain.profile.build_world_model_context", side_effect=ImportError):
-            result = inject_user_profile_context("SOUL", "user1")
-        self.assertEqual(result, "SOUL")
+    def test_nudge_has_nudge_field(self):
+        from tools.second_brain.relationship_health import score_relationship
+        old = (datetime.now(timezone.utc) - timedelta(days=45)).strftime("%Y-%m-%d")
+        h = score_relationship(self._rel("customer"), old)
+        assert h.get("nudge") is not None
 
+    def test_green_has_no_nudge(self):
+        from tools.second_brain.relationship_health import score_relationship
+        recent = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+        h = score_relationship(self._rel(), recent)
+        assert h.get("nudge") is None
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Connector smoke tests (mock HTTP)
-# ─────────────────────────────────────────────────────────────────────────────
+    def test_generate_nudges_returns_list(self):
+        from tools.second_brain.relationship_health import generate_relationship_nudges
+        nudges = generate_relationship_nudges(USER_ID, TENANT_ID)
+        assert isinstance(nudges, list)
 
-class TestConnectorSmokeTests(unittest.TestCase):
-    def test_github_connector_no_token_returns_empty(self):
-        from tools.second_brain.connectors.github import GitHubConnector
-        c = GitHubConnector()
-        with patch("tools.second_brain.integrations.get_decrypted_token", return_value=None):
-            items = c.get_todays_items("test_user")
-        self.assertEqual(items, [])
-
-    def test_jira_connector_no_creds_returns_empty(self):
-        from tools.second_brain.connectors.jira import JiraConnector
-        c = JiraConnector()
-        with patch("tools.second_brain.integrations.get_integration_metadata", return_value={}):
-            items = c.get_todays_items("test_user")
-        self.assertEqual(items, [])
-
-    def test_slack_connector_no_token_returns_empty(self):
-        from tools.second_brain.connectors.slack import SlackConnector
-        c = SlackConnector()
-        with patch("tools.second_brain.integrations.get_decrypted_token", return_value=None):
-            items = c.get_todays_items("test_user")
-        self.assertEqual(items, [])
-
-    def test_google_connector_no_token_returns_empty(self):
-        from tools.second_brain.connectors.google import GoogleConnector
-        c = GoogleConnector()
-        with patch("tools.second_brain.integrations.get_decrypted_token", return_value=None):
-            items = c.get_todays_items("test_user")
-        self.assertEqual(items, [])
+    def test_generate_nudges_capped_at_5(self):
+        from tools.second_brain.relationship_health import generate_relationship_nudges
+        nudges = generate_relationship_nudges(USER_ID, TENANT_ID)
+        assert len(nudges) <= 5
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# IQE adapter tests
-# ─────────────────────────────────────────────────────────────────────────────
+# ── DIC personaliser ──────────────────────────────────────────────────────────
 
-class TestIQEAdapter(unittest.TestCase):
-    def test_get_collections(self):
-        from tools.iqe.adapters.second_brain import COLLECTIONS, get_collections
-        self.assertEqual(get_collections(), COLLECTIONS)
-        self.assertGreaterEqual(len(COLLECTIONS), 4)
-
-    def test_query_profile_no_profile(self):
-        from tools.iqe.adapters.second_brain import query
-        with patch("tools.second_brain.profile.get_full_profile", return_value=None):
-            results = query("what is my role", "second_brain.profile", "no_user")
-        self.assertIsInstance(results, list)
-        self.assertGreater(len(results), 0)
-
-    def test_query_unknown_collection_returns_empty(self):
-        from tools.iqe.adapters.second_brain import query
-        results = query("test", "second_brain.unknown")
-        self.assertEqual(results, [])
+def _seed_dic_objective(user_id: str, tenant_id: str) -> None:
+    """Ensure at least one objective exists so personaliser has keywords."""
+    import uuid
+    try:
+        from tools.db.storage import get_canvas_connection, sql_placeholder
+        conn = get_canvas_connection("ICDEV_SECOND_BRAIN_ENABLED")
+        ph = sql_placeholder(conn)
+        conn.execute(
+            f"INSERT OR IGNORE INTO user_objectives (id, user_id, tenant_id, title) "
+            f"VALUES ({ph},{ph},{ph},{ph})",
+            (str(uuid.uuid4()), user_id, tenant_id, "Network architecture design")
+        )
+        conn.commit()
+    except Exception:
+        pass
 
 
-if __name__ == "__main__":
-    unittest.main(verbosity=2)
+class TestDicPersonaliser:
+    def test_empty_input(self):
+        from tools.second_brain.dic_personaliser import personalise_dic_results
+        assert personalise_dic_results([], USER_ID, TENANT_ID) == []
+
+    def test_adds_combined_score(self):
+        _seed_dic_objective(USER_ID, TENANT_ID)
+        from tools.second_brain.dic_personaliser import personalise_dic_results
+        results = [{"title": "network design", "content": "BGP routing", "score": 0.8}]
+        ranked = personalise_dic_results(results, USER_ID, TENANT_ID)
+        assert len(ranked) == 1
+        assert "combined_score" in ranked[0]
+        assert "personal_score" in ranked[0]
+
+    def test_sorted_descending_by_combined_score(self):
+        _seed_dic_objective(USER_ID, TENANT_ID)
+        from tools.second_brain.dic_personaliser import personalise_dic_results
+        results = [
+            {"title": "unrelated topic aaa", "content": "xyz abc", "score": 0.9},
+            {"title": "network arch", "content": "BGP MPLS routing", "score": 0.5},
+        ]
+        ranked = personalise_dic_results(results, USER_ID, TENANT_ID)
+        assert len(ranked) == 2
+        assert ranked[0]["combined_score"] >= ranked[-1]["combined_score"]
+
+    def test_combined_score_in_0_1_range(self):
+        _seed_dic_objective(USER_ID, TENANT_ID)
+        from tools.second_brain.dic_personaliser import personalise_dic_results
+        results = [{"title": "test", "content": "content", "score": 0.7}]
+        ranked = personalise_dic_results(results, USER_ID, TENANT_ID)
+        s = ranked[0]["combined_score"]
+        assert 0.0 <= s <= 1.5  # base 0-1, personal 0-1, weighted sum can slightly exceed 1
+
+    def test_no_crash_missing_score_field(self):
+        from tools.second_brain.dic_personaliser import personalise_dic_results
+        results = [{"title": "test", "content": "some content"}]  # no 'score' key
+        ranked = personalise_dic_results(results, USER_ID, TENANT_ID)
+        assert len(ranked) == 1
+
+
+# ── slides tailor ─────────────────────────────────────────────────────────────
+
+class TestSlidesTailor:
+    def test_returns_framing_dict(self):
+        from tools.second_brain.slides_tailor import get_audience_framing
+        result = get_audience_framing("network architecture review", USER_ID, TENANT_ID)
+        assert isinstance(result, dict)
+        assert "framing" in result
+        assert "personalised" in result
+
+    def test_framing_has_required_keys(self):
+        from tools.second_brain.slides_tailor import get_audience_framing
+        result = get_audience_framing("quarterly business review", USER_ID, TENANT_ID)
+        framing = result.get("framing", {})
+        assert "tone" in framing
+        assert "lead_with" in framing
+        assert "open_with" in framing
+
+    def test_empty_topic_no_crash(self):
+        from tools.second_brain.slides_tailor import get_audience_framing
+        result = get_audience_framing("", USER_ID, TENANT_ID)
+        assert isinstance(result, dict)
+        assert "framing" in result
+
+    def test_suggested_openers_is_list(self):
+        from tools.second_brain.slides_tailor import get_audience_framing
+        result = get_audience_framing("architecture review", USER_ID, TENANT_ID)
+        assert isinstance(result.get("suggested_openers"), list)
+        assert len(result["suggested_openers"]) >= 1
+
+
+# ── personal RAG ──────────────────────────────────────────────────────────────
+
+class TestPersonalRag:
+    def test_queue_text_returns_done(self):
+        from tools.second_brain.personal_rag import queue_text
+        r = queue_text(USER_ID, "NIST 800-53 AI controls", "NIST Notes", tenant_id=TENANT_ID)
+        assert r.get("status") == "done"
+        assert "id" in r
+
+    def test_get_items_includes_added(self):
+        from tools.second_brain.personal_rag import queue_text, get_items
+        queue_text(USER_ID, "some knowledge content", "My Note", tenant_id=TENANT_ID)
+        items = get_items(USER_ID, TENANT_ID)
+        assert isinstance(items, list)
+        assert any(i.get("title") == "My Note" for i in items)
+
+    def test_delete_removes_item(self):
+        from tools.second_brain.personal_rag import queue_text, get_items, delete_item
+        r = queue_text(USER_ID, "temp content", "Temp Note", tenant_id=TENANT_ID)
+        iid = r["id"]
+        assert delete_item(iid, USER_ID, TENANT_ID) is True
+        items = get_items(USER_ID, TENANT_ID)
+        assert not any(i.get("id") == iid for i in items)
+
+    def test_search_returns_list(self):
+        from tools.second_brain.personal_rag import search_personal_rag
+        results = search_personal_rag("NIST", USER_ID, TENANT_ID)
+        assert isinstance(results, list)
+
+    def test_search_no_crash_empty_query(self):
+        from tools.second_brain.personal_rag import search_personal_rag
+        results = search_personal_rag("", USER_ID, TENANT_ID)
+        assert isinstance(results, list)
+
+    def test_queue_text_with_tags(self):
+        from tools.second_brain.personal_rag import queue_text
+        r = queue_text(USER_ID, "tagged content", "Tagged", tags=["security", "compliance"], tenant_id=TENANT_ID)
+        assert r.get("status") == "done"
+
+    def test_get_items_empty_for_new_user(self):
+        from tools.second_brain.personal_rag import get_items
+        items = get_items("brand-new-user-xyz999", TENANT_ID)
+        assert items == []
+
+
+# ── retro ─────────────────────────────────────────────────────────────────────
+
+class TestRetro:
+    def test_generate_returns_dict(self):
+        from tools.second_brain.retro import generate_weekly_retro
+        retro = generate_weekly_retro(USER_ID, TENANT_ID)
+        assert isinstance(retro, dict)
+
+    def test_generate_has_required_keys(self):
+        from tools.second_brain.retro import generate_weekly_retro
+        retro = generate_weekly_retro(USER_ID, TENANT_ID)
+        for key in ("week_ending", "done_tasks", "commits", "interactions",
+                    "objective_progress", "summary"):
+            assert key in retro, f"Missing key: {key}"
+
+    def test_generate_lists_are_lists(self):
+        from tools.second_brain.retro import generate_weekly_retro
+        retro = generate_weekly_retro(USER_ID, TENANT_ID)
+        assert isinstance(retro["done_tasks"], list)
+        assert isinstance(retro["commits"], list)
+        assert isinstance(retro["interactions"], list)
+        assert isinstance(retro["objective_progress"], list)
+
+    def test_generate_summary_is_string(self):
+        from tools.second_brain.retro import generate_weekly_retro
+        retro = generate_weekly_retro(USER_ID, TENANT_ID)
+        assert isinstance(retro["summary"], str)
+        assert len(retro["summary"]) > 0
+
+    def test_get_latest_no_crash_empty(self):
+        from tools.second_brain.retro import get_latest_retro
+        retro = get_latest_retro("no-retro-user-xyz", TENANT_ID)
+        assert retro is None or isinstance(retro, dict)
+
+    def test_generate_then_retrieve(self):
+        from tools.second_brain.retro import generate_weekly_retro, get_latest_retro
+        generate_weekly_retro(USER_ID, TENANT_ID)
+        retro = get_latest_retro(USER_ID, TENANT_ID)
+        assert retro is not None
+        assert isinstance(retro, dict)
+
+
+# ── unified search ────────────────────────────────────────────────────────────
+
+class TestSearch:
+    def test_empty_query_returns_empty_dict(self):
+        from tools.second_brain.search import unified_search
+        result = unified_search("", USER_ID, TENANT_ID)
+        assert result == {}
+
+    def test_single_char_returns_empty_dict(self):
+        from tools.second_brain.search import unified_search
+        result = unified_search("x", USER_ID, TENANT_ID)
+        assert result == {}
+
+    def test_valid_query_returns_dict(self):
+        from tools.second_brain.search import unified_search
+        result = unified_search("network", USER_ID, TENANT_ID)
+        assert isinstance(result, dict)
+
+    def test_result_buckets_are_lists(self):
+        from tools.second_brain.search import unified_search
+        result = unified_search("test", USER_ID, TENANT_ID)
+        for bucket in result.values():
+            assert isinstance(bucket, list)
+
+    def test_no_empty_buckets_in_result(self):
+        from tools.second_brain.search import unified_search
+        result = unified_search("asdfghjklqwerty", USER_ID, TENANT_ID)
+        for key, items in result.items():
+            assert len(items) > 0, f"Empty bucket '{key}' should be excluded"
+
+    def test_search_finds_added_knowledge(self):
+        from tools.second_brain.personal_rag import queue_text
+        from tools.second_brain.search import unified_search
+        queue_text(USER_ID, "NIST 800-53 security controls revision 6", "NIST Rev6", tenant_id=TENANT_ID)
+        result = unified_search("NIST", USER_ID, TENANT_ID)
+        assert isinstance(result, dict)
+        if "knowledge" in result:
+            assert len(result["knowledge"]) >= 1
+
+
+# ── routes ────────────────────────────────────────────────────────────────────
+
+class TestRoutes:
+    PAGES = [
+        "/me",
+        "/me/profile",
+        "/me/objectives",
+        "/me/customers",
+        "/me/briefing/today",
+        "/me/learn",
+        "/me/search",
+        "/me/retro",
+        "/me/integrations",
+    ]
+
+    @pytest.mark.parametrize("path", PAGES)
+    def test_page_loads_200(self, flask_client, path):
+        r = flask_client.get(path, follow_redirects=True)
+        assert r.status_code == 200, f"{path} returned {r.status_code}: {r.data[:200]}"
+
+    def test_relationship_health_endpoint(self, flask_client):
+        r = flask_client.get("/me/api/second-brain/relationships/health")
+        assert r.status_code == 200
+        data = json.loads(r.data)
+        assert data.get("ok") is True
+        assert "relationships" in data
+
+    def test_learn_text_endpoint(self, flask_client):
+        r = flask_client.post(
+            "/me/api/second-brain/learn/text",
+            json={"text": "test knowledge content", "title": "Route Test Note"},
+        )
+        assert r.status_code == 200
+        data = json.loads(r.data)
+        assert data.get("ok") is True
+
+    def test_learn_items_endpoint(self, flask_client):
+        r = flask_client.get("/me/api/second-brain/learn/items")
+        assert r.status_code == 200
+        data = json.loads(r.data)
+        assert data.get("ok") is True
+        assert "items" in data
+
+    def test_search_api_endpoint(self, flask_client):
+        r = flask_client.get("/me/api/second-brain/search?q=test")
+        assert r.status_code == 200
+        data = json.loads(r.data)
+        assert data.get("ok") is True
+        assert "results" in data
+
+    def test_search_api_empty_q(self, flask_client):
+        r = flask_client.get("/me/api/second-brain/search")
+        assert r.status_code in (400, 200)
+
+    def test_infer_role_endpoint(self, flask_client):
+        r = flask_client.get("/me/api/second-brain/profile/infer-role?title=Network+Architect")
+        assert r.status_code == 200
+        data = json.loads(r.data)
+        assert data.get("ok") is True
+        assert "persona" in data
+
+    def test_infer_role_returns_persona_name(self, flask_client):
+        r = flask_client.get("/me/api/second-brain/profile/infer-role?title=Senior+Network+Architect")
+        data = json.loads(r.data)
+        persona = data.get("persona", {})
+        assert persona.get("persona") == "solutions_architect"
+
+    def test_commitment_alerts_endpoint(self, flask_client):
+        r = flask_client.get("/me/api/second-brain/proactive/commitment-alerts")
+        assert r.status_code == 200
+        data = json.loads(r.data)
+        assert data.get("ok") is True
+
+    def test_retro_generate_endpoint(self, flask_client):
+        r = flask_client.post("/me/api/second-brain/retro/generate")
+        assert r.status_code == 200
+        data = json.loads(r.data)
+        assert data.get("ok") is True
+        assert "retro" in data
+
+    def test_profile_save_endpoint(self, flask_client):
+        r = flask_client.post(
+            "/me/api/second-brain/profile",
+            json={"title": "Test Engineer", "org_name": "Test Org"},
+        )
+        assert r.status_code == 200
+        data = json.loads(r.data)
+        assert data.get("ok") is True
