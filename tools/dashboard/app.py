@@ -1552,7 +1552,7 @@ def _get_chat_models() -> tuple[list[dict], str]:
     import yaml
     from pathlib import Path
 
-    config_path = Path("args/llm_config.yaml")
+    config_path = BASE_DIR / "args" / "llm_config.yaml"
     try:
         with open(config_path, encoding="utf-8") as _f:
             cfg = yaml.safe_load(_f)
@@ -1911,7 +1911,7 @@ def create_app(testing: bool = False) -> Flask:
         except Exception as exc:
             return _j2({"events": [], "error": str(exc)})
 
-    _NOTIFY_SETTINGS_PATH = Path("args/kanban_notify.json")
+    _NOTIFY_SETTINGS_PATH = BASE_DIR / "args" / "kanban_notify.json"
     _NOTIFY_CHANNELS = [
         {"id": "telegram",   "label": "Telegram",   "env_keys": ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"]},
         {"id": "slack",      "label": "Slack",      "env_keys": ["SLACK_BOT_TOKEN", "SLACK_WEBHOOK_URL"]},
