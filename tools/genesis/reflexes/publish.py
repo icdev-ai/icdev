@@ -54,7 +54,7 @@ def _compute_quality_threshold(config: Dict[str, Any]) -> float:
             FROM pulse_posts
             WHERE readability_score IS NOT NULL
               AND readability_score > 0
-              AND created_at >= datetime('now', ?)
+              AND created_at >= datetime('now', %s)
             ORDER BY created_at DESC
             LIMIT 200
             """,
@@ -98,7 +98,7 @@ def _get_pending_topics(limit: int = 2) -> List[Dict[str, Any]]:
             WHERE is_high_demand = 1
             AND article_generated = 0
             ORDER BY frequency DESC, created_at DESC
-            LIMIT ?
+            LIMIT %s
         """,
             (limit,),
         ).fetchall()
@@ -132,7 +132,7 @@ def _get_pending_topics(limit: int = 2) -> List[Dict[str, Any]]:
                 FROM pulse_topic_clusters
                 WHERE used_count = 0
                 ORDER BY priority_score DESC, created_at DESC
-                LIMIT ?
+                LIMIT %s
             """,
                 (remaining,),
             ).fetchall()
@@ -222,7 +222,7 @@ def _stage_draft(
                (id, title, slug, status, topic, body_markdown,
                 readability_score, hero_image_path, hero_image_method,
                 hero_image_prompt, author_id, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 post_id,
                 topic[:300],
@@ -365,7 +365,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             try:
                 conn = get_connection()
                 conn.execute(
-                    "UPDATE pulse_topic_clusters SET used_count = used_count + 1 WHERE id = ?", (topic_data["id"],)
+                    "UPDATE pulse_topic_clusters SET used_count = used_count + 1 WHERE id = %s", (topic_data["id"],)
                 )
                 conn.commit()
                 conn.close()

@@ -99,7 +99,7 @@ def _audit(conn, event_type, action, details, project_id=None):
             "INSERT INTO audit_trail "
             "(id, timestamp, event_type, actor, action, "
             "details, project_id, session_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 _gen_id("aud"),
                 _now(),
@@ -118,7 +118,7 @@ def _audit(conn, event_type, action, details, project_id=None):
                 "INSERT INTO audit_trail "
                 "(project_id, event_type, actor, "
                 "action, details, session_id) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s)",
                 (
                     project_id,
                     event_type,
@@ -198,7 +198,7 @@ def add_posting(
         "salary_low, salary_high, tools_mentioned, certifications_mentioned, "
         "source_url, posting_date, scan_date, correlated_opportunity_id, "
         "signal_type, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
         (
             signal_id,
             competitor_name,
@@ -249,8 +249,8 @@ def compute_velocity(competitor_name, weeks_back=12):
     rows = conn.execute(
         "SELECT id, role_title, location, clearance_required, scan_date "
         "FROM pg_talent_signals "
-        "WHERE competitor_name = ? "
-        "AND scan_date >= date('now', ?) "
+        "WHERE competitor_name = %s "
+        "AND scan_date >= date('now', %s) "
         "ORDER BY scan_date",
         (competitor_name, f"-{weeks_back * 7} days"),
     ).fetchall()
@@ -326,7 +326,7 @@ def compute_velocity(competitor_name, weeks_back=12):
             "(id, competitor_name, week_start, posting_count, velocity_zscore, "
             "dominant_role_category, dominant_location, "
             "dominant_clearance, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (vel_id, competitor_name, week_start, c, round(zscore, 4), dom_role, dom_loc, dom_clr, now),
         )
 
@@ -678,7 +678,7 @@ def generate_competitor_profile(competitor_name):
     conn = _get_db()
 
     signals = conn.execute(
-        "SELECT * FROM pg_talent_signals WHERE competitor_name = ? ORDER BY scan_date DESC",
+        "SELECT * FROM pg_talent_signals WHERE competitor_name = %s ORDER BY scan_date DESC",
         (competitor_name,),
     ).fetchall()
     conn.close()

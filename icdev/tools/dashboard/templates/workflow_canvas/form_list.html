@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Forms — ICDEV™{% endblock %}
+
+{% block content %}
+{% from "includes/classification_macros.html" import design_classification_banner %}
+{{ design_classification_banner('CUI') }}
+
+<div class="page-container" style="padding:24px">
+  <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+    <div>
+      <div style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:4px">
+        <a href="/workflow-canvas/">Workflow &amp; Forms</a> / Forms
+      </div>
+      <h1 style="margin:0;font-size:1.5rem">Form Library</h1>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <label id="import-btn" style="padding:8px 18px;background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:6px;font-size:0.9rem;font-weight:600;white-space:nowrap;cursor:pointer">
+        📎 Import Template
+        <input type="file" accept=".pdf,.docx,.png,.jpg,.jpeg" style="display:none" onchange="importAndRedirect(this)">
+      </label>
+      <a href="/workflow-canvas/forms/new" style="padding:8px 18px;background:#1d72ff;color:#fff;border-radius:6px;text-decoration:none;font-size:0.9rem;font-weight:600;white-space:nowrap">+ New Form</a>
+    </div>
+  </div>
+
+  <!-- Industry filter -->
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px">
+    {% for cat in industry_categories %}
+    <a href="?industry={{ cat }}"
+       style="padding:4px 12px;border-radius:20px;font-size:0.8rem;text-decoration:none;
+              background:{{ 'var(--accent-blue)' if cat == industry else 'var(--bg-secondary)' }};
+              color:{{ 'white' if cat == industry else 'var(--text-primary)' }}">
+      {{ cat }}
+    </a>
+    {% endfor %}
+  </div>
+
+  {% if forms %}
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px">
+    {% for form in forms %}
+    <div style="background:var(--bg-secondary);border-radius:10px;padding:18px;border:1px solid var(--border-color)">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px">
+        <h3 style="margin:0;font-size:1rem">{{ form.name }}</h3>
+        <span class="badge badge-{{ 'success' if form.status=='published' else 'warning' if form.status=='draft' else 'neutral' }}">{{ form.status }}</span>
+      </div>
+      {% if form.description %}
+      <p style="font-size:0.85rem;color:var(--text-secondary);margin:0 0 12px">{{ form.description }}</p>
+      {% endif %}
+      <div style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:12px">
+        v{{ form.version }} · {{ form.created_at[:10] if form.created_at else '' }}
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <a href="/workflow-canvas/forms/{{ form.form_id }}" class="btn btn-xs btn-ghost">View</a>
+        <a href="/workflow-canvas/forms/{{ form.form_id }}/edit" class="btn btn-xs btn-secondary">Edit</a>
+        <button class="btn btn-xs btn-danger" onclick="deleteForm('{{ form.form_id }}','{{ form.name|e }}')">Delete</button>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div style="text-align:center;padding:60px;color:var(--text-secondary)">
+    <div style="font-size:3rem;margin-bottom:12px">📋</div>
+    <div style="font-size:1.1rem;margin-bottom:8px">No forms yet</div>
+    <a href="/workflow-canvas/forms/new" style="padding:8px 18px;background:#1d72ff;color:#fff;border-radius:6px;text-decoration:none;font-size:0.9rem;font-weight:600">Create your first form</a>
+    <div style="margin-top:12px"><a href="/workflow-canvas/templates">or browse templates</a></div>
+  </div>
+  {% endif %}
+</div>
+
+<script>
+function deleteForm(id, name) {
+  if (!confirm('Delete form "' + name + '"? This cannot be undone.')) return;
+  fetch('/workflow-canvas/api/forms/' + id, {method:'DELETE'})
+    .then(r => r.json())
+    .then(d => { if (d.status === 'ok') location.reload(); else alert(d.error || 'Error'); });
+}
+
+async function importAndRedirect(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  const btn = document.getElementById('import-btn');
+  const origLabel = btn.childNodes[0].textContent.trim();
+  btn.childNodes[0].textContent = '⏳ Uploading… ';
+  const formData = new FormData();
+  formData.append('file', file);
+  try {
+    const resp = await fetch('/workflow-canvas/api/forms/import', {method: 'POST', body: formData});
+    const data = await resp.json();
+    if (data.error) { alert('Import failed: ' + data.error); btn.childNodes[0].textContent = origLabel + ' '; return; }
+    sessionStorage.setItem('wfc_import', JSON.stringify({fields: data.fields, source_file: data.source_file}));
+    window.location = '/workflow-canvas/forms/new';
+  } catch (e) {
+    alert('Import error: ' + e.message);
+    btn.childNodes[0].textContent = origLabel + ' ';
+  }
+}
+</script>
+{% endblock %}

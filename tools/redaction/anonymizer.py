@@ -261,7 +261,7 @@ class RedactionAnonymizer:
             conn.execute(
                 "INSERT INTO redaction_audit "
                 "(id, session_id, timestamp, text_length, detection_count, "
-                "entity_types, impact_level) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "entity_types, impact_level) VALUES (%s, %s, %s, %s, %s, %s, %s)",
                 (
                     str(uuid.uuid4()),
                     self.session_id,

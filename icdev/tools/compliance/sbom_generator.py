@@ -43,7 +43,7 @@ def _get_connection(db_path=None):
 
 def _get_project(conn, project_id):
     """Load project data."""
-    row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+    row = conn.execute("SELECT * FROM projects WHERE id = %s", (project_id,)).fetchone()
     if not row:
         raise ValueError(f"Project '{project_id}' not found.")
     return dict(row)
@@ -56,7 +56,7 @@ def _log_audit_event(conn, project_id, action, details, file_path=None):
             """INSERT INTO audit_trail
                (project_id, event_type, actor, action, details,
                 affected_files, classification)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
             (
                 project_id,
                 "sbom_generated",
@@ -928,7 +928,7 @@ def generate_sbom(
             """SELECT MAX(CAST(
                  CASE WHEN version GLOB '[0-9]*' THEN version ELSE '0' END
                AS REAL)) as max_ver
-               FROM sbom_records WHERE project_id = ?""",
+               FROM sbom_records WHERE project_id = %s""",
             (project_id,),
         ).fetchone()
         max_ver = existing["max_ver"] if existing and existing["max_ver"] else 0.0
@@ -939,7 +939,7 @@ def generate_sbom(
             """INSERT INTO sbom_records
                (project_id, version, format, file_path,
                 component_count, vulnerability_count)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s)""",
             (
                 project_id,
                 new_version,

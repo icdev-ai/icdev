@@ -106,7 +106,7 @@ def create_migration_blueprint():
         try:
             with get_connection() as conn:
                 conn.execute(
-                    "INSERT INTO mc_audit (design_id, user, action, detail, created_at) VALUES (?,?,?,?,?)",
+                    "INSERT INTO mc_audit (design_id, user, action, detail, created_at) VALUES (%s,%s,%s,%s,%s)",
                     (design_id, user_id, action, detail, now_isoformat()),
                 )
         except Exception:
@@ -119,7 +119,7 @@ def create_migration_blueprint():
             with _icdev_conn() as _ic:
                 _ic.execute(
                     "INSERT INTO audit_trail (id, event_type, actor, action, details, classification, created_at) "
-                    "VALUES (?,?,?,?,?,?,?)",
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s)",
                     (
                         str(_uuid.uuid4()),
                         "migration_canvas",
@@ -191,7 +191,7 @@ def create_migration_blueprint():
         """Open existing migration design canvas."""
         with get_connection() as conn:
             design = _row_to_dict(
-                conn.execute("SELECT * FROM migration_designs WHERE id=?", (design_id,)).fetchone()
+                conn.execute("SELECT * FROM migration_designs WHERE id=%s", (design_id,)).fetchone()
             )
         if not design:
             abort(404)
@@ -213,7 +213,7 @@ def create_migration_blueprint():
         if template_id:
             with get_connection() as conn:
                 tpl = conn.execute(
-                    "SELECT name, graph_json FROM mc_templates WHERE id=?",
+                    "SELECT name, graph_json FROM mc_templates WHERE id=%s",
                     (template_id,),
                 ).fetchone()
             if tpl:
@@ -307,7 +307,7 @@ def create_migration_blueprint():
         if template_id:
             with get_connection() as conn:
                 ex = conn.execute(
-                    "SELECT id, name FROM migration_designs WHERE template_id=? LIMIT 1",
+                    "SELECT id, name FROM migration_designs WHERE template_id=%s LIMIT 1",
                     (template_id,),
                 ).fetchone()
             if ex:
@@ -321,7 +321,7 @@ def create_migration_blueprint():
                 "INSERT INTO migration_designs "
                 "(id, name, description, migration_type, graph_json, template_id, "
                 "classification, created_at, updated_at) "
-                "VALUES (?,?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (
                     design_id,
                     name,
@@ -362,7 +362,7 @@ def create_migration_blueprint():
     def mc_api_get_design(design_id):
         """Get a single migration design."""
         with get_connection() as conn:
-            row = conn.execute("SELECT * FROM migration_designs WHERE id=?", (design_id,)).fetchone()
+            row = conn.execute("SELECT * FROM migration_designs WHERE id=%s", (design_id,)).fetchone()
         if not row:
             return jsonify({"error": "Design not found"}), 404
         return jsonify(_row_to_dict(row))
@@ -374,12 +374,12 @@ def create_migration_blueprint():
         data = request.get_json(force=True, silent=True) or {}
         now = now_isoformat()
         with get_connection() as conn:
-            existing = conn.execute("SELECT id FROM migration_designs WHERE id=?", (design_id,)).fetchone()
+            existing = conn.execute("SELECT id FROM migration_designs WHERE id=%s", (design_id,)).fetchone()
             if not existing:
                 return jsonify({"error": "Design not found"}), 404
             conn.execute(
-                "UPDATE migration_designs SET name=?, description=?, migration_type=?, "
-                "graph_json=?, classification=?, updated_at=? WHERE id=?",
+                "UPDATE migration_designs SET name=%s, description=%s, migration_type=%s, "
+                "graph_json=%s, classification=%s, updated_at=%s WHERE id=%s",
                 (
                     data.get("name", "Untitled"),
                     data.get("description", ""),
@@ -418,7 +418,7 @@ def create_migration_blueprint():
     def mc_api_delete_design(design_id):
         """Delete a migration design."""
         with get_connection() as conn:
-            conn.execute("DELETE FROM migration_designs WHERE id=?", (design_id,))
+            conn.execute("DELETE FROM migration_designs WHERE id=%s", (design_id,))
             conn.commit()
         _audit(design_id, "delete", "Design deleted")
         return jsonify({"status": "deleted"})
@@ -445,7 +445,7 @@ def create_migration_blueprint():
         use_cot = data.get("use_cot", False)
         chain_mode = "cot" if use_cot else ""
         with get_connection() as conn:
-            row = conn.execute("SELECT graph_json FROM migration_designs WHERE id=?", (design_id,)).fetchone()
+            row = conn.execute("SELECT graph_json FROM migration_designs WHERE id=%s", (design_id,)).fetchone()
         if not row:
             return jsonify({"error": "Design not found"}), 404
 
@@ -458,7 +458,7 @@ def create_migration_blueprint():
                 "INSERT INTO mc_assessments "
                 "(id, design_id, assessment_type, findings_json, score, grade, "
                 "cat1_findings, cat2_findings, cat3_findings, readiness_score, created_at) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (
                     assessment_id,
                     design_id,
@@ -497,7 +497,7 @@ def create_migration_blueprint():
     def mc_api_gaps(design_id):
         """Detect gaps in a migration design."""
         with get_connection() as conn:
-            row = conn.execute("SELECT graph_json FROM migration_designs WHERE id=?", (design_id,)).fetchone()
+            row = conn.execute("SELECT graph_json FROM migration_designs WHERE id=%s", (design_id,)).fetchone()
         if not row:
             return jsonify({"error": "Design not found"}), 404
         gaps = detect_migration_gaps(row["graph_json"])
@@ -508,7 +508,7 @@ def create_migration_blueprint():
     def mc_api_readiness(design_id):
         """Compute migration readiness score."""
         with get_connection() as conn:
-            row = conn.execute("SELECT graph_json FROM migration_designs WHERE id=?", (design_id,)).fetchone()
+            row = conn.execute("SELECT graph_json FROM migration_designs WHERE id=%s", (design_id,)).fetchone()
         if not row:
             return jsonify({"error": "Design not found"}), 404
         readiness = compute_readiness_score(row["graph_json"])
@@ -519,7 +519,7 @@ def create_migration_blueprint():
     def mc_api_stats(design_id):
         """Get design statistics."""
         with get_connection() as conn:
-            row = conn.execute("SELECT graph_json FROM migration_designs WHERE id=?", (design_id,)).fetchone()
+            row = conn.execute("SELECT graph_json FROM migration_designs WHERE id=%s", (design_id,)).fetchone()
         if not row:
             return jsonify({"error": "Design not found"}), 404
         stats = get_design_stats(row["graph_json"])
@@ -542,7 +542,7 @@ def create_migration_blueprint():
     def mc_api_get_template(template_id):
         """Get a single template."""
         with get_connection() as conn:
-            row = conn.execute("SELECT * FROM mc_templates WHERE id=?", (template_id,)).fetchone()
+            row = conn.execute("SELECT * FROM mc_templates WHERE id=%s", (template_id,)).fetchone()
         if not row:
             return jsonify({"error": "Template not found"}), 404
         return jsonify(_row_to_dict(row))
@@ -578,7 +578,7 @@ def create_migration_blueprint():
         with get_connection() as conn:
             rows = conn.execute(
                 "SELECT id, design_id, version_number, change_summary, user_id, created_at "
-                "FROM mc_versions WHERE design_id=? ORDER BY version_number DESC",
+                "FROM mc_versions WHERE design_id=%s ORDER BY version_number DESC",
                 (design_id,),
             ).fetchall()
         return jsonify([_row_to_dict(r) for r in rows])
@@ -588,18 +588,18 @@ def create_migration_blueprint():
     def mc_api_create_version(design_id):
         """Create a version snapshot of the current design."""
         with get_connection() as conn:
-            design = conn.execute("SELECT graph_json FROM migration_designs WHERE id=?", (design_id,)).fetchone()
+            design = conn.execute("SELECT graph_json FROM migration_designs WHERE id=%s", (design_id,)).fetchone()
             if not design:
                 return jsonify({"error": "Design not found"}), 404
             max_ver = conn.execute(
-                "SELECT COALESCE(MAX(version_number), 0) FROM mc_versions WHERE design_id=?",
+                "SELECT COALESCE(MAX(version_number), 0) FROM mc_versions WHERE design_id=%s",
                 (design_id,),
             ).fetchone()[0]
             ver_id = str(_uuid.uuid4())
             data = request.get_json(force=True, silent=True) or {}
             conn.execute(
                 "INSERT INTO mc_versions (id, design_id, version_number, graph_json, change_summary, user_id, created_at) "
-                "VALUES (?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s)",
                 (
                     ver_id,
                     design_id,
@@ -708,7 +708,7 @@ def create_migration_blueprint():
     def mc_api_get_runbook(runbook_id):
         """Get a single runbook."""
         with get_connection() as conn:
-            row = conn.execute("SELECT * FROM mc_runbooks WHERE id=?", (runbook_id,)).fetchone()
+            row = conn.execute("SELECT * FROM mc_runbooks WHERE id=%s", (runbook_id,)).fetchone()
         if not row:
             return jsonify({"error": "Runbook not found"}), 404
         d = _row_to_dict(row)
@@ -747,7 +747,7 @@ def create_migration_blueprint():
         with get_connection() as conn:
             if design_id:
                 rows = conn.execute(
-                    "SELECT * FROM mc_oracle_predictions WHERE design_id=? ORDER BY created_at DESC LIMIT 50",
+                    "SELECT * FROM mc_oracle_predictions WHERE design_id=%s ORDER BY created_at DESC LIMIT 50",
                     (design_id,),
                 ).fetchall()
             else:
@@ -804,23 +804,32 @@ def create_migration_blueprint():
         sid = "nmig-" + _uuid.uuid4().hex[:12]
         src_model = data.get("src_model", "")
         tgt_model = data.get("tgt_model", "")
+        engineer_context = data.get("engineer_context", "") or ""
+        selected_coa = data.get("selected_coa", "") or ""
 
         with get_connection() as conn:
             conn.execute(
                 "INSERT INTO mc_net_sessions "
-                "(id, design_id, src_model, tgt_model, src_device_name, tgt_device_name, src_site, created_at, updated_at) "
-                "VALUES (?,?,?,?,?,?,?,?,?)",
+                "(id, design_id, src_model, tgt_model, src_device_name, tgt_device_name, src_site, "
+                "engineer_context, selected_coa, created_at, updated_at) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (sid, data.get("design_id"), src_model, tgt_model,
                  data.get("src_device_name", ""), data.get("tgt_device_name", ""),
-                 data.get("src_site", ""), now_isoformat(), now_isoformat()),
+                 data.get("src_site", ""), engineer_context, selected_coa,
+                 now_isoformat(), now_isoformat()),
             )
             # Link back on design if provided
             if data.get("design_id"):
                 conn.execute(
-                    "UPDATE migration_designs SET network_session_id=? WHERE id=?",
+                    "UPDATE migration_designs SET network_session_id=%s WHERE id=%s",
                     (sid, data["design_id"]),
                 )
             conn.commit()
+
+        try:
+            _nm.seed_coa_questions(sid)
+        except Exception:
+            pass
 
         try:
             _nm._update_kg(sid, data.get("design_id"))
@@ -836,20 +845,26 @@ def create_migration_blueprint():
     def mc_net_api_get(sid):
         """Get full session with all sub-table data."""
         with get_connection() as conn:
-            sess = _row_to_dict(conn.execute("SELECT * FROM mc_net_sessions WHERE id=?", (sid,)).fetchone())
+            sess = _row_to_dict(conn.execute("SELECT * FROM mc_net_sessions WHERE id=%s", (sid,)).fetchone())
             if not sess:
                 return jsonify({"error": "Session not found"}), 404
             port_map = [_row_to_dict(r) for r in conn.execute(
-                "SELECT * FROM mc_net_port_map WHERE session_id=? ORDER BY rowid", (sid,)).fetchall()]
+                "SELECT * FROM mc_net_port_map WHERE session_id=%s ORDER BY id", (sid,)).fetchall()]
             sess["port_map"] = port_map
             sess["compat_checks"] = [_row_to_dict(r) for r in conn.execute(
-                "SELECT * FROM mc_net_compat_checks WHERE session_id=? ORDER BY severity, category", (sid,)).fetchall()]
+                "SELECT * FROM mc_net_compat_checks WHERE session_id=%s ORDER BY severity, category", (sid,)).fetchall()]
             sess["test_cases"] = [_row_to_dict(r) for r in conn.execute(
-                "SELECT * FROM mc_net_test_cases WHERE session_id=? ORDER BY phase, seq_no", (sid,)).fetchall()]
+                "SELECT * FROM mc_net_test_cases WHERE session_id=%s ORDER BY phase, seq_no", (sid,)).fetchall()]
             sess["cutover_steps"] = [_row_to_dict(r) for r in conn.execute(
-                "SELECT * FROM mc_net_cutover_steps WHERE session_id=? ORDER BY seq_no", (sid,)).fetchall()]
+                "SELECT * FROM mc_net_cutover_steps WHERE session_id=%s ORDER BY seq_no", (sid,)).fetchall()]
             sess["erb"] = _row_to_dict(conn.execute(
-                "SELECT * FROM mc_net_erb_metadata WHERE session_id=?", (sid,)).fetchone())
+                "SELECT * FROM mc_net_erb_metadata WHERE session_id=%s", (sid,)).fetchone())
+            sess["config_map"] = [_row_to_dict(r) for r in conn.execute(
+                "SELECT * FROM mc_net_config_map WHERE session_id=%s ORDER BY src_section_type, created_at",
+                (sid,)).fetchall()]
+            sess["config_map_questions"] = [_row_to_dict(r) for r in conn.execute(
+                "SELECT * FROM mc_net_config_questions WHERE session_id=%s ORDER BY question_key",
+                (sid,)).fetchall()]
         hw = {}
         try:
             hw = _nm.fetch_hardware_profiles(sess.get("src_model", ""), sess.get("tgt_model", ""))
@@ -870,6 +885,8 @@ def create_migration_blueprint():
             "test_cases": sess["test_cases"],
             "cutover_steps": sess["cutover_steps"],
             "erb": sess["erb"],
+            "config_map": sess["config_map"],
+            "config_map_questions": sess["config_map_questions"],
             "hardware_profiles": hw,
             "parsed_interfaces": parsed_ifs,
         })
@@ -879,14 +896,14 @@ def create_migration_blueprint():
     def mc_net_api_update(sid):
         """Update top-level session fields (device names, site, status)."""
         data = request.get_json(force=True, silent=True) or {}
-        allowed = {"src_device_name", "tgt_device_name", "src_site", "status", "src_model", "tgt_model"}
+        allowed = {"src_device_name", "tgt_device_name", "src_site", "status", "src_model", "tgt_model", "engineer_context", "selected_coa"}
         fields = {k: v for k, v in data.items() if k in allowed}
         if not fields:
             return jsonify({"error": "No valid fields"}), 400
         set_clause = ", ".join(f"{k}=?" for k in fields)
         with get_connection() as conn:
             conn.execute(
-                f"UPDATE mc_net_sessions SET {set_clause}, updated_at=? WHERE id=?",  # nosec B608
+                f"UPDATE mc_net_sessions SET {set_clause}, updated_at=%s WHERE id=%s",  # nosec B608
                 list(fields.values()) + [now_isoformat(), sid],
             )
             conn.commit()
@@ -897,7 +914,7 @@ def create_migration_blueprint():
     def mc_net_api_hw_profiles(sid):
         """Fetch hardware profiles for source and target models."""
         with get_connection() as conn:
-            sess = _row_to_dict(conn.execute("SELECT src_model, tgt_model FROM mc_net_sessions WHERE id=?", (sid,)).fetchone())
+            sess = _row_to_dict(conn.execute("SELECT src_model, tgt_model FROM mc_net_sessions WHERE id=%s", (sid,)).fetchone())
         if not sess:
             return jsonify({"error": "Session not found"}), 404
         src = request.args.get("src_model", sess.get("src_model", ""))
@@ -920,13 +937,13 @@ def create_migration_blueprint():
             if vendor:
                 rows = conn.execute(
                     f"SELECT {_CATALOG_COLS} FROM nc_hardware_profiles "  # nosec B608
-                    "WHERE LOWER(vendor)=LOWER(?) AND device_type=? ORDER BY vendor, model",
+                    "WHERE LOWER(vendor)=LOWER(%s) AND device_type=%s ORDER BY vendor, model",
                     (vendor, device_type),
                 ).fetchall()
             else:
                 rows = conn.execute(
                     f"SELECT {_CATALOG_COLS} FROM nc_hardware_profiles "  # nosec B608
-                    "WHERE device_type=? ORDER BY vendor, model",
+                    "WHERE device_type=%s ORDER BY vendor, model",
                     (device_type,),
                 ).fetchall()
         return jsonify({"devices": [_row_to_dict(r) for r in rows]})
@@ -944,7 +961,7 @@ def create_migration_blueprint():
 
         with get_connection() as conn:
             conn.execute(
-                "UPDATE mc_net_sessions SET src_config_raw=?, config_parsed=1, updated_at=? WHERE id=?",
+                "UPDATE mc_net_sessions SET src_config_raw=%s, config_parsed=1, updated_at=%s WHERE id=%s",
                 (raw_config, now_isoformat(), sid),
             )
             conn.commit()
@@ -1046,7 +1063,7 @@ def create_migration_blueprint():
         with get_connection() as conn:
             try:
                 conn.execute(
-                    "UPDATE mc_net_sessions SET diagram_topology_json=?, updated_at=? WHERE id=?",
+                    "UPDATE mc_net_sessions SET diagram_topology_json=%s, updated_at=%s WHERE id=%s",
                     (topo_json, now_isoformat(), sid),
                 )
                 conn.commit()
@@ -1055,7 +1072,7 @@ def create_migration_blueprint():
                 try:
                     conn.execute("ALTER TABLE mc_net_sessions ADD COLUMN diagram_topology_json TEXT")
                     conn.execute(
-                        "UPDATE mc_net_sessions SET diagram_topology_json=?, updated_at=? WHERE id=?",
+                        "UPDATE mc_net_sessions SET diagram_topology_json=%s, updated_at=%s WHERE id=%s",
                         (topo_json, now_isoformat(), sid),
                     )
                     conn.commit()
@@ -1083,7 +1100,7 @@ def create_migration_blueprint():
         # Update KG: add diagram topology nodes/edges to migration KG
         try:
             with get_connection() as conn:
-                sess = _row_to_dict(conn.execute("SELECT design_id FROM mc_net_sessions WHERE id=?", (sid,)).fetchone())
+                sess = _row_to_dict(conn.execute("SELECT design_id FROM mc_net_sessions WHERE id=%s", (sid,)).fetchone())
             graph_nodes = [
                 {"id": f"dev-{d['id']}", "label": d["name"], "type": d["device_type"],
                  "properties": {"ip": d["ip_address"], "vendor": d["vendor"], "model": d["model"],
@@ -1120,7 +1137,7 @@ def create_migration_blueprint():
         """Get current port mapping rows."""
         with get_connection() as conn:
             rows = conn.execute(
-                "SELECT * FROM mc_net_port_map WHERE session_id=? ORDER BY rowid", (sid,)
+                "SELECT * FROM mc_net_port_map WHERE session_id=%s ORDER BY id", (sid,)
             ).fetchall()
         return jsonify({"port_map": [_row_to_dict(r) for r in rows]})
 
@@ -1134,7 +1151,7 @@ def create_migration_blueprint():
         if not rows:
             # Auto-generate: parse config from session + fetch hw profile
             with get_connection() as conn:
-                sess = _row_to_dict(conn.execute("SELECT * FROM mc_net_sessions WHERE id=?", (sid,)).fetchone())
+                sess = _row_to_dict(conn.execute("SELECT * FROM mc_net_sessions WHERE id=%s", (sid,)).fetchone())
             raw_config = sess.get("src_config_raw", "")
             if not raw_config:
                 return jsonify({"error": "No config imported yet — call /parse-config first"}), 400
@@ -1143,14 +1160,14 @@ def create_migration_blueprint():
             rows = _nm._generate_port_map(parsed["interfaces"], hw["target"])
 
         with get_connection() as conn:
-            conn.execute("DELETE FROM mc_net_port_map WHERE session_id=?", (sid,))
+            conn.execute("DELETE FROM mc_net_port_map WHERE session_id=%s", (sid,))
             for r in rows:
                 conn.execute(
                     "INSERT INTO mc_net_port_map (session_id, src_interface, src_speed_gbps, src_media, "
                     "src_optic_type, src_ip_address, src_description, src_circuit_id, tgt_interface, "
                     "tgt_speed_gbps, tgt_optic_required, optic_change, speed_mismatch, cable_id, "
                     "far_end_device, far_end_port, notes, status) "
-                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                     (sid, r.get("src_interface",""), r.get("src_speed_gbps",0), r.get("src_media",""),
                      r.get("src_optic_type",""), r.get("src_ip_address",""), r.get("src_description",""),
                      r.get("src_circuit_id",""), r.get("tgt_interface",""), r.get("tgt_speed_gbps",0),
@@ -1165,7 +1182,7 @@ def create_migration_blueprint():
         # Re-fetch from DB to return normalized rows with db column names
         with get_connection() as conn:
             saved = [_row_to_dict(r) for r in conn.execute(
-                "SELECT * FROM mc_net_port_map WHERE session_id=? ORDER BY rowid", (sid,)).fetchall()]
+                "SELECT * FROM mc_net_port_map WHERE session_id=%s ORDER BY id", (sid,)).fetchall()]
         return jsonify({"ok": True, "count": len(rows), "port_map": saved})
 
     @bp.route("/api/network-migration/<sid>/compat-check", methods=["POST"])
@@ -1175,7 +1192,7 @@ def create_migration_blueprint():
         data = request.get_json(force=True, silent=True) or {}
 
         with get_connection() as conn:
-            sess = _row_to_dict(conn.execute("SELECT * FROM mc_net_sessions WHERE id=?", (sid,)).fetchone())
+            sess = _row_to_dict(conn.execute("SELECT * FROM mc_net_sessions WHERE id=%s", (sid,)).fetchone())
         if not sess:
             return jsonify({"error": "Session not found"}), 404
 
@@ -1193,11 +1210,11 @@ def create_migration_blueprint():
                     c["status"] = "overridden"
 
         with get_connection() as conn:
-            conn.execute("DELETE FROM mc_net_compat_checks WHERE session_id=? AND auto_detected=1", (sid,))
+            conn.execute("DELETE FROM mc_net_compat_checks WHERE session_id=%s AND auto_detected=1", (sid,))
             for c in checks:
                 conn.execute(
                     "INSERT INTO mc_net_compat_checks (session_id, category, check_name, expected, actual, "
-                    "severity, status, override_reason, auto_detected) VALUES (?,?,?,?,?,?,?,?,?)",
+                    "severity, status, override_reason, auto_detected) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                     (sid, c["category"], c["check_name"], c["expected"], c["actual"],
                      c["severity"], c["status"], c.get("override_reason",""), 1),
                 )
@@ -1207,14 +1224,141 @@ def create_migration_blueprint():
         return jsonify({"checks": checks, "total": len(checks),
                         "blockers": sum(1 for c in checks if c["status"]=="fail" and not c.get("override_reason"))})
 
+    # ── COA selection (engineer context + yes/no questions + recommendation) ────
+
+    @bp.route("/api/network-migration/<sid>/coa-questions", methods=["GET"])
+    @mdc_login_required
+    def mc_net_api_get_coa_questions(sid):
+        """Get yes/no questions used to recommend a Course of Action."""
+        return jsonify(_nm.get_coa_questions(sid))
+
+    @bp.route("/api/network-migration/<sid>/coa-questions", methods=["POST"])
+    @mdc_login_required
+    def mc_net_api_save_coa_questions(sid):
+        """Save COA question answers and return a fresh recommendation."""
+        data = request.get_json(force=True, silent=True) or {}
+        answers = data.get("answers", {})
+        _nm.save_coa_answers(sid, answers)
+        result = _nm.recommend_coa(sid)
+        return jsonify(result)
+
+    @bp.route("/api/network-migration/<sid>/recommend-coa", methods=["GET"])
+    @mdc_login_required
+    def mc_net_api_recommend_coa(sid):
+        """Return the current COA recommendation."""
+        return jsonify(_nm.recommend_coa(sid))
+
+    @bp.route("/api/network-migration/<sid>/select-coa", methods=["POST"])
+    @mdc_login_required
+    def mc_net_api_select_coa(sid):
+        """Accept or override the recommended COA."""
+        data = request.get_json(force=True, silent=True) or {}
+        coa = data.get("coa", "").strip().lower()
+        context = data.get("engineer_context", "")
+        if coa not in ("coa_a", "coa_b", "coa_c"):
+            return jsonify({"error": "coa must be one of coa_a, coa_b, coa_c"}), 400
+        result = _nm.select_coa(sid, coa, context=context)
+        _audit(sid, "coa_selected", coa)
+        return jsonify(result)
+
+    @bp.route("/api/network-migration/<sid>/topology", methods=["GET", "POST"])
+    @mdc_login_required
+    def mc_net_api_topology(sid):
+        """GET returns stored topology JSON; POST rebuilds/refreshes it."""
+        if request.method == "POST":
+            try:
+                result = _nm.build_topology(sid, refresh=True)
+                _audit(sid, "topology_refreshed", f"nodes={len(result.get('graph_json', {}).get('nodes', []))}")
+                return jsonify(result)
+            except ValueError as exc:
+                return jsonify({"error": str(exc)}), 404
+            except Exception as exc:
+                logger.exception("Topology build failed for %s", sid)
+                return jsonify({"error": str(exc)}), 500
+        # GET
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT topology_json, topology_neighbors_json FROM mc_net_sessions WHERE id=%s", (sid,)
+            ).fetchone()
+        if not row:
+            return jsonify({"error": "Session not found"}), 404
+        return jsonify({
+            "session_id": sid,
+            "graph_json": json.loads(row[0] or "{}"),
+            "neighbors": json.loads(row[1] or "[]"),
+            "source": "stored",
+        })
+
+    # ── Config mapping (AI-assisted, HITL-reviewed) ───────────────────────────
+
+    @bp.route("/api/network-migration/<sid>/config-map/questions", methods=["GET"])
+    @mdc_login_required
+    def mc_net_api_get_config_questions(sid):
+        """Get yes/no questions for config mapping."""
+        return jsonify(_nm.generate_config_map_questions(sid))
+
+    @bp.route("/api/network-migration/<sid>/config-map/questions", methods=["POST"])
+    @mdc_login_required
+    def mc_net_api_save_config_questions(sid):
+        """Save user answers and regenerate proposals."""
+        data = request.get_json(force=True, silent=True) or {}
+        answers = data.get("answers", {})
+        result = _nm.propose_config_mapping(sid, answers=answers)
+        return jsonify(result)
+
+    @bp.route("/api/network-migration/<sid>/config-map/generate", methods=["POST"])
+    @mdc_login_required
+    def mc_net_api_generate_config_map(sid):
+        """Generate (or regenerate) AI config mapping proposals."""
+        data = request.get_json(force=True, silent=True) or {}
+        use_llm = data.get("use_llm", True)
+        answers = data.get("answers", {})
+        result = _nm.propose_config_mapping(sid, answers=answers, use_llm=use_llm)
+        return jsonify(result)
+
+    @bp.route("/api/network-migration/<sid>/config-map", methods=["GET"])
+    @mdc_login_required
+    def mc_net_api_get_config_map(sid):
+        """List persisted config mapping proposals."""
+        return jsonify(_nm.get_config_map(sid))
+
+    @bp.route("/api/network-migration/<sid>/config-map/<mid>/decide", methods=["POST"])
+    @mdc_login_required
+    def mc_net_api_decide_config_map(sid, mid):
+        """Approve / reject / skip a single mapping row."""
+        data = request.get_json(force=True, silent=True) or {}
+        decision = data.get("decision", "pending")
+        note = data.get("note", "")
+        result = _nm.decide_config_map_row(sid, mid, decision, note)
+        if result.get("error"):
+            return jsonify(result), 400
+        return jsonify(result)
+
+    @bp.route("/api/network-migration/<sid>/config-map/apply", methods=["POST"])
+    @mdc_login_required
+    def mc_net_api_apply_config_map(sid):
+        """Apply approved mapping rows to produce target config."""
+        result = _nm.apply_approved_config_map(sid)
+        if result.get("error"):
+            return jsonify(result), 400
+        _audit(sid, "config_map_applied", f"approved={result.get('approved_count',0)}")
+        return jsonify(result)
+
+    @bp.route("/api/network-migration/<sid>/config-map/export", methods=["GET"])
+    @mdc_login_required
+    def mc_net_api_export_config_map(sid):
+        """Export the config map as JSON."""
+        data = _nm.get_config_map(sid)
+        return jsonify(data)
+
     @bp.route("/api/network-migration/<sid>/convert-config", methods=["POST"])
     @mdc_login_required
     def mc_net_api_convert_config(sid):
         """Convert source config to target config and run commit-check simulation."""
         with get_connection() as conn:
-            sess = _row_to_dict(conn.execute("SELECT * FROM mc_net_sessions WHERE id=?", (sid,)).fetchone())
+            sess = _row_to_dict(conn.execute("SELECT * FROM mc_net_sessions WHERE id=%s", (sid,)).fetchone())
             port_map = [_row_to_dict(r) for r in conn.execute(
-                "SELECT * FROM mc_net_port_map WHERE session_id=?", (sid,)).fetchall()]
+                "SELECT * FROM mc_net_port_map WHERE session_id=%s", (sid,)).fetchall()]
         if not sess or not sess.get("src_config_raw"):
             return jsonify({"error": "No config imported — call /parse-config first"}), 400
 
@@ -1253,11 +1397,11 @@ def create_migration_blueprint():
         auto_seed = request.args.get("seed", "false").lower() == "true"
         with get_connection() as conn:
             rows = conn.execute(
-                "SELECT * FROM mc_net_test_cases WHERE session_id=? ORDER BY phase, seq_no", (sid,)
+                "SELECT * FROM mc_net_test_cases WHERE session_id=%s ORDER BY phase, seq_no", (sid,)
             ).fetchall()
             if not rows and auto_seed:
                 # Get vendor from session config
-                sess = _row_to_dict(conn.execute("SELECT src_config_raw FROM mc_net_sessions WHERE id=?", (sid,)).fetchone())
+                sess = _row_to_dict(conn.execute("SELECT src_config_raw FROM mc_net_sessions WHERE id=%s", (sid,)).fetchone())
                 vendor = ""
                 if sess.get("src_config_raw"):
                     try:
@@ -1268,12 +1412,12 @@ def create_migration_blueprint():
                 for t in seeded:
                     conn.execute(
                         "INSERT INTO mc_net_test_cases (session_id, phase, seq_no, test_name, procedure, expected_result) "
-                        "VALUES (?,?,?,?,?,?)",
+                        "VALUES (%s,%s,%s,%s,%s,%s)",
                         (sid, t["phase"], t["seq_no"], t["test_name"], t["procedure"], t["expected_result"]),
                     )
                 conn.commit()
                 rows = conn.execute(
-                    "SELECT * FROM mc_net_test_cases WHERE session_id=? ORDER BY phase, seq_no", (sid,)
+                    "SELECT * FROM mc_net_test_cases WHERE session_id=%s ORDER BY phase, seq_no", (sid,)
                 ).fetchall()
         return jsonify({"test_cases": [_row_to_dict(r) for r in rows]})
 
@@ -1287,7 +1431,7 @@ def create_migration_blueprint():
         with get_connection() as conn:
             for u in updates:
                 conn.execute(
-                    "UPDATE mc_net_test_cases SET passed=?, actual_result=?, notes=?, executed_at=?, updated_at=? WHERE id=? AND session_id=?",
+                    "UPDATE mc_net_test_cases SET passed=%s, actual_result=%s, notes=%s, executed_at=%s, updated_at=%s WHERE id=%s AND session_id=%s",
                     (u.get("passed"), u.get("actual_result",""), u.get("notes",""),
                      now_isoformat(), now_isoformat(), u["id"], sid),
                 )
@@ -1299,7 +1443,7 @@ def create_migration_blueprint():
     def mc_net_api_get_cutover(sid):
         with get_connection() as conn:
             rows = conn.execute(
-                "SELECT * FROM mc_net_cutover_steps WHERE session_id=? ORDER BY seq_no", (sid,)
+                "SELECT * FROM mc_net_cutover_steps WHERE session_id=%s ORDER BY seq_no", (sid,)
             ).fetchall()
         return jsonify([_row_to_dict(r) for r in rows])
 
@@ -1313,19 +1457,19 @@ def create_migration_blueprint():
         if not steps:
             # Auto-generate from port map
             with get_connection() as conn:
-                sess = _row_to_dict(conn.execute("SELECT src_config_raw FROM mc_net_sessions WHERE id=?", (sid,)).fetchone())
+                sess = _row_to_dict(conn.execute("SELECT src_config_raw FROM mc_net_sessions WHERE id=%s", (sid,)).fetchone())
                 port_map = [_row_to_dict(r) for r in conn.execute(
-                    "SELECT * FROM mc_net_port_map WHERE session_id=?", (sid,)).fetchall()]
+                    "SELECT * FROM mc_net_port_map WHERE session_id=%s", (sid,)).fetchall()]
             parsed = _nm.parse_source_config(sess.get("src_config_raw","")) if sess.get("src_config_raw") else {}
             steps = _nm.build_cutover_sequence(port_map, data.get("strategy","traffic_volume_asc"), parsed)
 
         with get_connection() as conn:
-            conn.execute("DELETE FROM mc_net_cutover_steps WHERE session_id=?", (sid,))
+            conn.execute("DELETE FROM mc_net_cutover_steps WHERE session_id=%s", (sid,))
             for s in steps:
                 conn.execute(
                     "INSERT INTO mc_net_cutover_steps (session_id, seq_no, circuit_id, interface, description, "
                     "drain_action, cutover_action, verify_action, rollback_action, duration_min, status) "
-                    "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                     (sid, s.get("seq_no",0), s.get("circuit_id",""), s.get("interface",""), s.get("description",""),
                      s.get("drain_action",""), s.get("cutover_action",""), s.get("verify_action",""),
                      s.get("rollback_action",""), s.get("duration_min",5), s.get("status","pending")),
@@ -1349,11 +1493,11 @@ def create_migration_blueprint():
         fields = {k: v for k, v in data.items() if k in allowed}
 
         with get_connection() as conn:
-            existing = conn.execute("SELECT id FROM mc_net_erb_metadata WHERE session_id=?", (sid,)).fetchone()
+            existing = conn.execute("SELECT id FROM mc_net_erb_metadata WHERE session_id=%s", (sid,)).fetchone()
             if existing:
                 set_clause = ", ".join(f"{k}=?" for k in fields)
                 conn.execute(
-                    f"UPDATE mc_net_erb_metadata SET {set_clause}, updated_at=? WHERE session_id=?",  # nosec B608
+                    f"UPDATE mc_net_erb_metadata SET {set_clause}, updated_at=%s WHERE session_id=%s",  # nosec B608
                     list(fields.values()) + [now_isoformat(), sid],
                 )
             else:
@@ -1420,7 +1564,7 @@ def create_migration_blueprint():
         # Update ERB metadata with sop_id
         with get_connection() as conn:
             conn.execute(
-                "UPDATE mc_net_erb_metadata SET sop_id=?, approval_status='pending', updated_at=? WHERE session_id=?",
+                "UPDATE mc_net_erb_metadata SET sop_id=%s, approval_status='pending', updated_at=%s WHERE session_id=%s",
                 (sop_id, now_isoformat(), sid),
             )
             conn.commit()
@@ -1529,7 +1673,7 @@ def create_migration_blueprint():
                 "INSERT INTO mc_net_sessions "
                 "(id, design_id, src_model, tgt_model, src_device_name, tgt_device_name, "
                 "src_site, src_config_raw, config_parsed, created_at, updated_at) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (sid, data.get("design_id"), src_model, data.get("tgt_model", ""),
                  data.get("src_device_name", ""), data.get("tgt_device_name", ""),
                  data.get("src_site", ""),
@@ -1581,7 +1725,7 @@ def create_migration_blueprint():
 
         with get_connection() as conn:
             conn.execute(
-                "UPDATE mc_net_sessions SET src_config_raw=?, config_parsed=1, updated_at=? WHERE id=?",
+                "UPDATE mc_net_sessions SET src_config_raw=%s, config_parsed=1, updated_at=%s WHERE id=%s",
                 (config_text, now_isoformat(), sid),
             )
             conn.commit()
@@ -1602,7 +1746,7 @@ def create_migration_blueprint():
         if not device_info:
             with get_connection() as conn:
                 sess = conn.execute(
-                    "SELECT src_model FROM mc_net_sessions WHERE id=?", (sid,)
+                    "SELECT src_model FROM mc_net_sessions WHERE id=%s", (sid,)
                 ).fetchone()
             if sess:
                 device_info = {"model": sess[0], "device_type": "router"}
@@ -1627,7 +1771,7 @@ def create_migration_blueprint():
         with get_connection() as conn:
             rows = conn.execute(
                 "SELECT protocol, migration_steps_json, risk_level, ai_notes, status "
-                "FROM mc_net_protocol_plans WHERE session_id=?", (sid,)
+                "FROM mc_net_protocol_plans WHERE session_id=%s", (sid,)
             ).fetchall()
         protocols = {}
         for r in rows:
@@ -1663,7 +1807,7 @@ def create_migration_blueprint():
             rows = conn.execute(
                 "SELECT id, milestone_name, description, days_before_cutover, phase, "
                 "owner, duration_hours, status, notes "
-                "FROM mc_net_parallel_timelines WHERE session_id=? "
+                "FROM mc_net_parallel_timelines WHERE session_id=%s "
                 "ORDER BY days_before_cutover", (sid,)
             ).fetchall()
         return jsonify({"milestones": [dict(r) for r in rows]})
@@ -1683,9 +1827,9 @@ def create_migration_blueprint():
         """Export port diagram as SVG or DrawIO JSON."""
         fmt = request.args.get("format", "svg")
         with get_connection() as conn:
-            sess = _row_to_dict(conn.execute("SELECT * FROM mc_net_sessions WHERE id=?", (sid,)).fetchone())
+            sess = _row_to_dict(conn.execute("SELECT * FROM mc_net_sessions WHERE id=%s", (sid,)).fetchone())
             port_map = [_row_to_dict(r) for r in conn.execute(
-                "SELECT * FROM mc_net_port_map WHERE session_id=? ORDER BY rowid", (sid,)).fetchall()]
+                "SELECT * FROM mc_net_port_map WHERE session_id=%s ORDER BY id", (sid,)).fetchall()]
         hw = _nm.fetch_hardware_profiles(sess.get("src_model",""), sess.get("tgt_model",""))
 
         if fmt == "drawio":
@@ -1923,7 +2067,7 @@ def create_migration_blueprint():
         )
         try:
             conn = get_connection()
-            row = conn.execute("SELECT * FROM mc_srv_sessions WHERE id=?", (sid,)).fetchone()
+            row = conn.execute("SELECT * FROM mc_srv_sessions WHERE id=%s", (sid,)).fetchone()
             conn.close()
             if not row:
                 abort(404)
@@ -1955,7 +2099,7 @@ def create_migration_blueprint():
             conn = get_connection()
             row = conn.execute(
                 "SELECT id, src_hostname, migration_type, tgt_platform, status "
-                "FROM mc_srv_sessions WHERE id=?", (sid,)
+                "FROM mc_srv_sessions WHERE id=%s", (sid,)
             ).fetchone()
             conn.close()
             srv_session = dict(zip(
@@ -1985,7 +2129,7 @@ def create_migration_blueprint():
                 """INSERT INTO mc_srv_sessions
                    (id, migration_type, src_hostname, src_ip, src_os, src_hypervisor,
                     tgt_platform, tgt_region, status, classification, notes, created_at, updated_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (
                     sid,
                     body.get("migration_type", ""),
@@ -2013,7 +2157,7 @@ def create_migration_blueprint():
     def mc_srv_api_get(sid):
         try:
             conn = get_connection()
-            row = conn.execute("SELECT * FROM mc_srv_sessions WHERE id=?", (sid,)).fetchone()
+            row = conn.execute("SELECT * FROM mc_srv_sessions WHERE id=%s", (sid,)).fetchone()
             if not row:
                 conn.close()
                 return jsonify({"error": "not found"}), 404
@@ -2043,7 +2187,7 @@ def create_migration_blueprint():
             set_clause = ", ".join(f"{k}=?" for k in updates)
             vals = list(updates.values()) + [sid]
             conn = get_connection()
-            conn.execute(f"UPDATE mc_srv_sessions SET {set_clause} WHERE id=?", vals)  # nosec B608 – cols from hardcoded allowlist; values parameterized
+            conn.execute(f"UPDATE mc_srv_sessions SET {set_clause} WHERE id=%s", vals)  # nosec B608 – cols from hardcoded allowlist; values parameterized
             conn.commit()
             conn.close()
             return jsonify({"ok": True})
@@ -2063,9 +2207,9 @@ def create_migration_blueprint():
             ]
             for tbl in tables:
                 if tbl == "mc_srv_sessions":
-                    conn.execute(f"DELETE FROM {tbl} WHERE id=?", (sid,))  # nosec B608 – tbl from hardcoded list above
+                    conn.execute(f"DELETE FROM {tbl} WHERE id=%s", (sid,))  # nosec B608 – tbl from hardcoded list above
                 else:
-                    conn.execute(f"DELETE FROM {tbl} WHERE session_id=?", (sid,))  # nosec B608 – tbl from hardcoded list above
+                    conn.execute(f"DELETE FROM {tbl} WHERE session_id=%s", (sid,))  # nosec B608 – tbl from hardcoded list above
             conn.commit()
             conn.close()
             _audit(None, "srv_delete_session", sid)
@@ -2080,20 +2224,20 @@ def create_migration_blueprint():
     def mc_srv_api_inventory_get(sid):
         try:
             conn = get_connection()
-            inv_row = conn.execute("SELECT * FROM mc_srv_inventory WHERE session_id=?", (sid,)).fetchone()
+            inv_row = conn.execute("SELECT * FROM mc_srv_inventory WHERE session_id=%s", (sid,)).fetchone()
             inv_cols = [d[0] for d in conn.execute("SELECT * FROM mc_srv_inventory LIMIT 0").description]
             inventory = dict(zip(inv_cols, inv_row)) if inv_row else {}
             nics = [
                 dict(zip([d[0] for d in conn.execute("SELECT * FROM mc_srv_nic_map LIMIT 0").description], r))
-                for r in conn.execute("SELECT * FROM mc_srv_nic_map WHERE session_id=?", (sid,))
+                for r in conn.execute("SELECT * FROM mc_srv_nic_map WHERE session_id=%s", (sid,))
             ]
             storage = [
                 dict(zip([d[0] for d in conn.execute("SELECT * FROM mc_srv_storage_map LIMIT 0").description], r))
-                for r in conn.execute("SELECT * FROM mc_srv_storage_map WHERE session_id=?", (sid,))
+                for r in conn.execute("SELECT * FROM mc_srv_storage_map WHERE session_id=%s", (sid,))
             ]
             services = [
                 dict(zip([d[0] for d in conn.execute("SELECT * FROM mc_srv_services LIMIT 0").description], r))
-                for r in conn.execute("SELECT * FROM mc_srv_services WHERE session_id=?", (sid,))
+                for r in conn.execute("SELECT * FROM mc_srv_services WHERE session_id=%s", (sid,))
             ]
             conn.close()
             return jsonify({"inventory": inventory, "nics": nics, "storage": storage, "services": services})
@@ -2125,13 +2269,13 @@ def create_migration_blueprint():
 
             now = _sm._now()
             conn = get_connection()
-            conn.execute("DELETE FROM mc_srv_inventory WHERE session_id=?", (sid,))
+            conn.execute("DELETE FROM mc_srv_inventory WHERE session_id=%s", (sid,))
             conn.execute(
                 """INSERT INTO mc_srv_inventory
                    (session_id, vcpus, ram_gb, disk_count, total_disk_gb, disk_type,
                     nic_count, primary_nic_gbps, os_family, os_name, os_arch,
                     bios_type, virtualization_ext, raw_export_json, created_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (
                     sid,
                     inv.get("vcpus", 0),
@@ -2151,33 +2295,33 @@ def create_migration_blueprint():
                 ),
             )
             # Replace NIC map
-            conn.execute("DELETE FROM mc_srv_nic_map WHERE session_id=?", (sid,))
+            conn.execute("DELETE FROM mc_srv_nic_map WHERE session_id=%s", (sid,))
             for i, nic in enumerate(nics):
                 conn.execute(
-                    "INSERT INTO mc_srv_nic_map (session_id,src_nic,src_speed_gbps,src_mac,src_vlan,src_ip,created_at) VALUES (?,?,?,?,?,?,?)",
+                    "INSERT INTO mc_srv_nic_map (session_id,src_nic,src_speed_gbps,src_mac,src_vlan,src_ip,created_at) VALUES (%s,%s,%s,%s,%s,%s,%s)",
                     (sid, nic.get("name", f"eth{i}"), nic.get("speed_gbps", 1.0),
                      nic.get("mac", ""), nic.get("vlan", ""), nic.get("ip", ""), now),
                 )
             # Replace storage map
-            conn.execute("DELETE FROM mc_srv_storage_map WHERE session_id=?", (sid,))
+            conn.execute("DELETE FROM mc_srv_storage_map WHERE session_id=%s", (sid,))
             for i, disk in enumerate(disks):
                 conn.execute(
-                    "INSERT INTO mc_srv_storage_map (session_id,src_disk,src_size_gb,src_type,src_mount,src_filesystem,src_used_gb,created_at) VALUES (?,?,?,?,?,?,?,?)",
+                    "INSERT INTO mc_srv_storage_map (session_id,src_disk,src_size_gb,src_type,src_mount,src_filesystem,src_used_gb,created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
                     (sid, disk.get("name", f"disk{i}"), disk.get("size_gb", 0),
                      disk.get("type", "SSD"), disk.get("mount", ""), disk.get("filesystem", ""),
                      disk.get("used_gb", 0), now),
                 )
             # Save services from parsed input
             if services:
-                conn.execute("DELETE FROM mc_srv_services WHERE session_id=?", (sid,))
+                conn.execute("DELETE FROM mc_srv_services WHERE session_id=%s", (sid,))
                 for svc in services:
                     conn.execute(
-                        "INSERT INTO mc_srv_services (session_id,service_name,service_role,port,protocol,status,auto_detected,created_at) VALUES (?,?,?,?,?,?,?,?)",
+                        "INSERT INTO mc_srv_services (session_id,service_name,service_role,port,protocol,status,auto_detected,created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
                         (sid, svc.get("service_name", ""), svc.get("service_role", ""),
                          svc.get("port", 0), svc.get("protocol", "tcp"),
                          svc.get("status", "running"), int(svc.get("auto_detected", 0)), now),
                     )
-            conn.execute("UPDATE mc_srv_sessions SET updated_at=? WHERE id=?", (now, sid))
+            conn.execute("UPDATE mc_srv_sessions SET updated_at=%s WHERE id=%s", (now, sid))
             conn.commit()
             conn.close()
             return jsonify({"ok": True, "nics": len(nics), "disks": len(disks), "services": len(services)})
@@ -2194,12 +2338,12 @@ def create_migration_blueprint():
             services = body.get("services", [])
             now = _sm._now()
             conn = get_connection()
-            conn.execute("DELETE FROM mc_srv_services WHERE session_id=?", (sid,))
+            conn.execute("DELETE FROM mc_srv_services WHERE session_id=%s", (sid,))
             for svc in services:
                 conn.execute(
                     """INSERT INTO mc_srv_services
                        (session_id, service_name, service_role, port, protocol, status, auto_detected, created_at)
-                       VALUES (?,?,?,?,?,?,?,?)""",
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
                     (
                         sid, svc.get("service_name", ""), svc.get("service_role", ""),
                         svc.get("port", 0), svc.get("protocol", "tcp"),
@@ -2219,7 +2363,7 @@ def create_migration_blueprint():
     def mc_srv_api_perf_get(sid):
         try:
             conn = get_connection()
-            row = conn.execute("SELECT * FROM mc_srv_performance WHERE session_id=?", (sid,)).fetchone()
+            row = conn.execute("SELECT * FROM mc_srv_performance WHERE session_id=%s", (sid,)).fetchone()
             cols = [d[0] for d in conn.execute("SELECT * FROM mc_srv_performance LIMIT 0").description]
             result = dict(zip(cols, row)) if row else {}
             conn.close()
@@ -2236,13 +2380,13 @@ def create_migration_blueprint():
             body = request.get_json(force=True) or {}
             now = _sm._now()
             conn = get_connection()
-            conn.execute("DELETE FROM mc_srv_performance WHERE session_id=?", (sid,))
+            conn.execute("DELETE FROM mc_srv_performance WHERE session_id=%s", (sid,))
             conn.execute(
                 """INSERT INTO mc_srv_performance
                    (session_id, cpu_avg_pct, cpu_peak_pct, ram_avg_pct, ram_peak_pct,
                     disk_iops_avg, disk_iops_peak, net_mbps_avg, net_mbps_peak,
                     sample_period_days, source, created_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (
                     sid,
                     body.get("cpu_avg_pct", 0), body.get("cpu_peak_pct", 0),
@@ -2252,7 +2396,7 @@ def create_migration_blueprint():
                     body.get("sample_period_days", 30), body.get("source", "manual"), now,
                 ),
             )
-            conn.execute("UPDATE mc_srv_sessions SET updated_at=? WHERE id=?", (now, sid))
+            conn.execute("UPDATE mc_srv_sessions SET updated_at=%s WHERE id=%s", (now, sid))
             conn.commit()
             conn.close()
             return jsonify({"ok": True})
@@ -2331,7 +2475,7 @@ def create_migration_blueprint():
         try:
             conn = get_connection()
             rows = list(conn.execute(
-                "SELECT * FROM mc_srv_compat_checks WHERE session_id=? ORDER BY severity, category",
+                "SELECT * FROM mc_srv_compat_checks WHERE session_id=%s ORDER BY severity, category",
                 (sid,),
             ))
             cols = [d[0] for d in conn.execute("SELECT * FROM mc_srv_compat_checks LIMIT 0").description]
@@ -2353,7 +2497,7 @@ def create_migration_blueprint():
                 return jsonify({"error": "override reason required"}), 400
             conn = get_connection()
             conn.execute(
-                "UPDATE mc_srv_compat_checks SET status='override', override_reason=? WHERE id=? AND session_id=?",
+                "UPDATE mc_srv_compat_checks SET status='override', override_reason=%s WHERE id=%s AND session_id=%s",
                 (reason, cid, sid),
             )
             conn.commit()
@@ -2374,13 +2518,13 @@ def create_migration_blueprint():
             nics = body.get("nics", [])
             now = _sm._now()
             conn = get_connection()
-            conn.execute("DELETE FROM mc_srv_nic_map WHERE session_id=?", (sid,))
+            conn.execute("DELETE FROM mc_srv_nic_map WHERE session_id=%s", (sid,))
             for nic in nics:
                 conn.execute(
                     """INSERT INTO mc_srv_nic_map
                        (session_id, src_nic, src_speed_gbps, src_mac, src_vlan, src_ip,
                         tgt_nic, tgt_vlan, tgt_ip, ip_change, requires_dhcp, created_at)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                     (
                         sid, nic.get("src_nic", ""), nic.get("src_speed_gbps", 1.0),
                         nic.get("src_mac", ""), nic.get("src_vlan", ""), nic.get("src_ip", ""),
@@ -2388,7 +2532,7 @@ def create_migration_blueprint():
                         int(nic.get("ip_change", 0)), int(nic.get("requires_dhcp", 0)), now,
                     ),
                 )
-            conn.execute("UPDATE mc_srv_sessions SET updated_at=? WHERE id=?", (now, sid))
+            conn.execute("UPDATE mc_srv_sessions SET updated_at=%s WHERE id=%s", (now, sid))
             conn.commit()
             conn.close()
             return jsonify({"ok": True, "nics": len(nics)})
@@ -2405,7 +2549,7 @@ def create_migration_blueprint():
             disks = body.get("disks", [])
             now = _sm._now()
             conn = get_connection()
-            conn.execute("DELETE FROM mc_srv_storage_map WHERE session_id=?", (sid,))
+            conn.execute("DELETE FROM mc_srv_storage_map WHERE session_id=%s", (sid,))
             for disk in disks:
                 src_gb = disk.get("src_size_gb", 0) or 0
                 tgt_gb = disk.get("tgt_size_gb", 0) or src_gb
@@ -2415,7 +2559,7 @@ def create_migration_blueprint():
                        (session_id, src_disk, src_size_gb, src_type, src_mount, src_filesystem,
                         src_used_gb, tgt_volume, tgt_size_gb, tgt_type, tgt_iops_provisioned,
                         size_increase_pct, created_at)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                     (
                         sid, disk.get("src_disk", ""), src_gb, disk.get("src_type", "SSD"),
                         disk.get("src_mount", ""), disk.get("src_filesystem", ""),
@@ -2424,7 +2568,7 @@ def create_migration_blueprint():
                         pct, now,
                     ),
                 )
-            conn.execute("UPDATE mc_srv_sessions SET updated_at=? WHERE id=?", (now, sid))
+            conn.execute("UPDATE mc_srv_sessions SET updated_at=%s WHERE id=%s", (now, sid))
             conn.commit()
             conn.close()
             return jsonify({"ok": True, "disks": len(disks)})
@@ -2439,7 +2583,7 @@ def create_migration_blueprint():
         try:
             conn = get_connection()
             rows = list(conn.execute(
-                "SELECT * FROM mc_srv_dependencies WHERE session_id=? ORDER BY criticality DESC",
+                "SELECT * FROM mc_srv_dependencies WHERE session_id=%s ORDER BY criticality DESC",
                 (sid,),
             ))
             cols = [d[0] for d in conn.execute("SELECT * FROM mc_srv_dependencies LIMIT 0").description]
@@ -2458,13 +2602,13 @@ def create_migration_blueprint():
             deps = body.get("dependencies", [])
             now = _sm._now()
             conn = get_connection()
-            conn.execute("DELETE FROM mc_srv_dependencies WHERE session_id=?", (sid,))
+            conn.execute("DELETE FROM mc_srv_dependencies WHERE session_id=%s", (sid,))
             for dep in deps:
                 conn.execute(
                     """INSERT INTO mc_srv_dependencies
                        (session_id, dep_hostname, dep_ip, dep_role, dep_type,
                         dep_port, criticality, migration_order, created_at)
-                       VALUES (?,?,?,?,?,?,?,?,?)""",
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                     (
                         sid, dep.get("dep_hostname", ""), dep.get("dep_ip", ""),
                         dep.get("dep_role", ""), dep.get("dep_type", "outbound"),
@@ -2490,20 +2634,20 @@ def create_migration_blueprint():
             if seed:
                 conn = get_connection()
                 existing = conn.execute(
-                    "SELECT COUNT(*) FROM mc_srv_cutover_steps WHERE session_id=?", (sid,)
+                    "SELECT COUNT(*) FROM mc_srv_cutover_steps WHERE session_id=%s", (sid,)
                 ).fetchone()[0]
                 conn.close()
                 if not existing:
                     conn2 = get_connection()
                     row = conn2.execute(
-                        "SELECT migration_type FROM mc_srv_sessions WHERE id=?", (sid,)
+                        "SELECT migration_type FROM mc_srv_sessions WHERE id=%s", (sid,)
                     ).fetchone()
                     conn2.close()
                     mtype = row[0] if row else "p2v_cloud"
                     _sm.generate_default_cutover_steps(sid, mtype)
             conn = get_connection()
             rows = list(conn.execute(
-                "SELECT * FROM mc_srv_cutover_steps WHERE session_id=? ORDER BY phase, seq_no",
+                "SELECT * FROM mc_srv_cutover_steps WHERE session_id=%s ORDER BY phase, seq_no",
                 (sid,),
             ))
             cols = [d[0] for d in conn.execute("SELECT * FROM mc_srv_cutover_steps LIMIT 0").description]
@@ -2527,13 +2671,13 @@ def create_migration_blueprint():
             steps = body.get("steps", [])
             now = _sm._now()
             conn = get_connection()
-            conn.execute("DELETE FROM mc_srv_cutover_steps WHERE session_id=?", (sid,))
+            conn.execute("DELETE FROM mc_srv_cutover_steps WHERE session_id=%s", (sid,))
             for step in steps:
                 conn.execute(
                     """INSERT INTO mc_srv_cutover_steps
                        (session_id, phase, seq_no, description, action, verify_action,
                         rollback_action, owner, duration_min, status, created_at)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                     (
                         sid, step.get("phase", "cutover"), step.get("seq_no", 0),
                         step.get("description", ""), step.get("action", ""),
@@ -2542,7 +2686,7 @@ def create_migration_blueprint():
                         step.get("status", "pending"), now,
                     ),
                 )
-            conn.execute("UPDATE mc_srv_sessions SET updated_at=? WHERE id=?", (now, sid))
+            conn.execute("UPDATE mc_srv_sessions SET updated_at=%s WHERE id=%s", (now, sid))
             conn.commit()
             conn.close()
             return jsonify({"ok": True, "steps": len(steps)})
@@ -2561,14 +2705,14 @@ def create_migration_blueprint():
             if seed:
                 conn = get_connection()
                 existing = conn.execute(
-                    "SELECT COUNT(*) FROM mc_srv_test_cases WHERE session_id=?", (sid,)
+                    "SELECT COUNT(*) FROM mc_srv_test_cases WHERE session_id=%s", (sid,)
                 ).fetchone()[0]
                 conn.close()
                 if not existing:
                     _sm.generate_default_test_cases(sid)
             conn = get_connection()
             rows = list(conn.execute(
-                "SELECT * FROM mc_srv_test_cases WHERE session_id=? ORDER BY phase, seq_no",
+                "SELECT * FROM mc_srv_test_cases WHERE session_id=%s ORDER BY phase, seq_no",
                 (sid,),
             ))
             cols = [d[0] for d in conn.execute("SELECT * FROM mc_srv_test_cases LIMIT 0").description]
@@ -2596,7 +2740,7 @@ def create_migration_blueprint():
             actual = body.get("actual_result", "")
             conn = get_connection()
             conn.execute(
-                "UPDATE mc_srv_test_cases SET passed=?, actual_result=?, executed_at=? WHERE id=? AND session_id=?",
+                "UPDATE mc_srv_test_cases SET passed=%s, actual_result=%s, executed_at=%s WHERE id=%s AND session_id=%s",
                 (passed, actual, _sm._now(), tc_id, sid),
             )
             conn.commit()
@@ -2628,13 +2772,13 @@ def create_migration_blueprint():
             now = _sm._now()
             erb_id = body.get("id") or f"erb-{_uuid.uuid4().hex[:10]}"
             conn = get_connection()
-            conn.execute("DELETE FROM mc_srv_erb_metadata WHERE session_id=?", (sid,))
+            conn.execute("DELETE FROM mc_srv_erb_metadata WHERE session_id=%s", (sid,))
             conn.execute(
                 """INSERT INTO mc_srv_erb_metadata
                    (id, session_id, change_type, risk_tier, business_justification,
                     technical_summary, impact_summary, rollback_plan, mw_start, mw_end,
                     go_nogo_criteria, requestor, approver, approval_status, created_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (
                     erb_id, sid,
                     body.get("change_type", ""), body.get("risk_tier", "medium"),
@@ -2646,7 +2790,7 @@ def create_migration_blueprint():
                     body.get("approval_status", "pending"), now,
                 ),
             )
-            conn.execute("UPDATE mc_srv_sessions SET updated_at=? WHERE id=?", (now, sid))
+            conn.execute("UPDATE mc_srv_sessions SET updated_at=%s WHERE id=%s", (now, sid))
             conn.commit()
             conn.close()
             return jsonify({"ok": True, "id": erb_id})
@@ -2691,7 +2835,7 @@ def create_migration_blueprint():
             conn = get_connection()
             row = conn.execute(
                 "SELECT id, src_hostname, migration_type, tgt_platform, status, readiness_score "
-                "FROM mc_srv_sessions WHERE id=?", (sid,)
+                "FROM mc_srv_sessions WHERE id=%s", (sid,)
             ).fetchone()
             conn.close()
             if row:
@@ -2798,7 +2942,7 @@ def create_migration_blueprint():
         with get_connection() as db:
             rows = db.execute(
                 "SELECT id, adapter_type, host, pulled_at, vm_count, status, error_msg "
-                "FROM mc_srv_hypervisor_sessions WHERE session_id=? ORDER BY pulled_at DESC",
+                "FROM mc_srv_hypervisor_sessions WHERE session_id=%s ORDER BY pulled_at DESC",
                 (session_id,),
             ).fetchall()
         return jsonify({"sessions": [dict(r) for r in rows]})
@@ -2845,7 +2989,7 @@ def create_migration_blueprint():
         with get_connection() as db:
             rows = db.execute(
                 "SELECT id, run_at, check_type, target, status, detail, elapsed_ms "
-                "FROM mc_srv_post_migration_tests WHERE session_id=? ORDER BY run_at DESC LIMIT 200",
+                "FROM mc_srv_post_migration_tests WHERE session_id=%s ORDER BY run_at DESC LIMIT 200",
                 (session_id,),
             ).fetchall()
         return jsonify({"results": [dict(r) for r in rows], "total": len(rows)})
@@ -2876,12 +3020,12 @@ def create_migration_blueprint():
         with get_connection() as db:
             rows = db.execute(
                 "SELECT id, src_model AS model, src_device_name AS hostname "
-                "FROM mc_net_sessions WHERE id=?",
+                "FROM mc_net_sessions WHERE id=%s",
                 (session_id,),
             ).fetchall()
             port_devices = db.execute(
                 "SELECT DISTINCT far_end_device AS model FROM mc_net_port_map "
-                "WHERE session_id=? AND far_end_device != ''",
+                "WHERE session_id=%s AND far_end_device != ''",
                 (session_id,),
             ).fetchall()
         devices = [dict(r) for r in rows] + [{"model": r[0]} for r in port_devices]
@@ -2949,7 +3093,7 @@ def create_migration_blueprint():
         from tools.migration_canvas.db.init_db import get_connection
         with get_connection() as db:
             row = db.execute(
-                "SELECT * FROM mc_net_config_validation WHERE session_id=? ORDER BY run_at DESC LIMIT 1",
+                "SELECT * FROM mc_net_config_validation WHERE session_id=%s ORDER BY run_at DESC LIMIT 1",
                 (session_id,),
             ).fetchone()
         if not row:
@@ -3033,7 +3177,7 @@ def create_migration_blueprint():
                     license_type, license_expiry, source_repo, artifact_url,
                     dependencies_json, migration_strategy, migration_status,
                     notes, classification, created_at, updated_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (
                     app_id,
                     data.get("session_id"),
@@ -3067,7 +3211,7 @@ def create_migration_blueprint():
     def app_inventory_get(app_id):
         """Get a single app inventory record."""
         with get_connection() as db:
-            row = db.execute("SELECT * FROM mc_app_inventory WHERE id=?", (app_id,)).fetchone()
+            row = db.execute("SELECT * FROM mc_app_inventory WHERE id=%s", (app_id,)).fetchone()
         if not row:
             return jsonify({"error": "Not found"}), 404
         return jsonify(dict(row))
@@ -3090,7 +3234,7 @@ def create_migration_blueprint():
         set_clause = ", ".join(f"{k}=?" for k in updates)
         vals = list(updates.values()) + [app_id]
         with get_connection() as db:
-            db.execute(f"UPDATE mc_app_inventory SET {set_clause} WHERE id=?", vals)  # nosec B608 – cols from hardcoded allowlist; values parameterized
+            db.execute(f"UPDATE mc_app_inventory SET {set_clause} WHERE id=%s", vals)  # nosec B608 – cols from hardcoded allowlist; values parameterized
         _audit(app_id, "APP_UPDATED", str(list(updates.keys())))
         return jsonify({"ok": True})
 
@@ -3099,7 +3243,7 @@ def create_migration_blueprint():
     def app_inventory_delete(app_id):
         """Delete an app inventory record."""
         with get_connection() as db:
-            db.execute("DELETE FROM mc_app_inventory WHERE id=?", (app_id,))
+            db.execute("DELETE FROM mc_app_inventory WHERE id=%s", (app_id,))
         _audit(app_id, "APP_DELETED", "")
         return jsonify({"ok": True})
 
@@ -3131,7 +3275,7 @@ def create_migration_blueprint():
                        (id, name, version, language, framework, app_type,
                         owner, criticality, environment, stig_category,
                         license_type, classification, created_at, updated_at)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                     (
                         app_id, name,
                         row.get("version", ""),
@@ -3167,7 +3311,7 @@ def create_migration_blueprint():
                 db.execute(
                     """INSERT INTO mc_app_server_bindings
                        (id, app_id, server_id, role, port, protocol, notes, created_at)
-                       VALUES (?,?,?,?,?,?,?,?)""",
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
                     (binding_id, app_id, server_id,
                      data.get("role", "primary"),
                      data.get("port"),
@@ -3187,7 +3331,7 @@ def create_migration_blueprint():
         """List servers bound to an app."""
         with get_connection() as db:
             rows = db.execute(
-                "SELECT * FROM mc_app_server_bindings WHERE app_id=? ORDER BY created_at",
+                "SELECT * FROM mc_app_server_bindings WHERE app_id=%s ORDER BY created_at",
                 (app_id,),
             ).fetchall()
         return jsonify({"bindings": [dict(r) for r in rows]})
@@ -3198,7 +3342,7 @@ def create_migration_blueprint():
         """Remove app-server binding."""
         with get_connection() as db:
             db.execute(
-                "DELETE FROM mc_app_server_bindings WHERE app_id=? AND server_id=?",
+                "DELETE FROM mc_app_server_bindings WHERE app_id=%s AND server_id=%s",
                 (app_id, server_id),
             )
         return jsonify({"ok": True})
@@ -3212,7 +3356,7 @@ def create_migration_blueprint():
                 """SELECT b.*, a.name as app_name, a.criticality, a.migration_strategy
                    FROM mc_app_server_bindings b
                    JOIN mc_app_inventory a ON a.id = b.app_id
-                   WHERE b.server_id=? ORDER BY b.created_at""",
+                   WHERE b.server_id=%s ORDER BY b.created_at""",
                 (server_id,),
             ).fetchall()
         return jsonify({"apps": [dict(r) for r in rows]})
@@ -3233,7 +3377,7 @@ def create_migration_blueprint():
                 """INSERT INTO mc_app_dependencies
                    (id, source_app_id, target_app_id, target_server_id, target_service,
                     dep_type, protocol, port, latency_sla_ms, notes, created_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (
                     dep_id, app_id,
                     data.get("target_app_id"),
@@ -3255,7 +3399,7 @@ def create_migration_blueprint():
         """List direct dependencies for an app."""
         with get_connection() as db:
             rows = db.execute(
-                "SELECT * FROM mc_app_dependencies WHERE source_app_id=? ORDER BY created_at",
+                "SELECT * FROM mc_app_dependencies WHERE source_app_id=%s ORDER BY created_at",
                 (app_id,),
             ).fetchall()
         return jsonify({"dependencies": [dict(r) for r in rows]})
@@ -3266,7 +3410,7 @@ def create_migration_blueprint():
         """Remove a dependency edge."""
         with get_connection() as db:
             db.execute(
-                "DELETE FROM mc_app_dependencies WHERE id=? AND source_app_id=?",
+                "DELETE FROM mc_app_dependencies WHERE id=%s AND source_app_id=%s",
                 (dep_id, app_id),
             )
         return jsonify({"ok": True})
@@ -3288,12 +3432,12 @@ def create_migration_blueprint():
                         continue
                     visited_apps.add(aid)
                     row = db.execute(
-                        "SELECT id, name, app_type FROM mc_app_inventory WHERE id=?", (aid,)
+                        "SELECT id, name, app_type FROM mc_app_inventory WHERE id=%s", (aid,)
                     ).fetchone()
                     if row:
                         nodes.append({"id": row["id"], "name": row["name"], "type": row["app_type"] or "app"})
                     deps = db.execute(
-                        "SELECT * FROM mc_app_dependencies WHERE source_app_id=?", (aid,)
+                        "SELECT * FROM mc_app_dependencies WHERE source_app_id=%s", (aid,)
                     ).fetchall()
                     for dep in deps:
                         edges.append({
@@ -3359,7 +3503,7 @@ def create_migration_blueprint():
                     target_type, target_host, target_db, target_schema, migration_method,
                     estimated_size_gb, estimated_duration_minutes, validation_query,
                     cutover_type, rollback_procedure, status, notes, classification, created_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (
                     dm_id,
                     data.get("session_id"),
@@ -3391,7 +3535,7 @@ def create_migration_blueprint():
     def data_migration_get(dm_id):
         """Get a data migration plan by ID."""
         with get_connection() as db:
-            row = db.execute("SELECT * FROM mc_data_migration WHERE id=?", (dm_id,)).fetchone()
+            row = db.execute("SELECT * FROM mc_data_migration WHERE id=%s", (dm_id,)).fetchone()
         if not row:
             return jsonify({"error": "Not found"}), 404
         return jsonify(dict(row))
@@ -3413,7 +3557,7 @@ def create_migration_blueprint():
         set_clause = ", ".join(f"{k}=?" for k in updates)
         vals = list(updates.values()) + [dm_id]
         with get_connection() as db:
-            db.execute(f"UPDATE mc_data_migration SET {set_clause} WHERE id=?", vals)  # nosec B608 – cols from hardcoded updates dict; values parameterized
+            db.execute(f"UPDATE mc_data_migration SET {set_clause} WHERE id=%s", vals)  # nosec B608 – cols from hardcoded updates dict; values parameterized
         return jsonify({"ok": True})
 
     # ── ServiceNow CMDB Import ───────────────────────────────────────────────
@@ -3453,7 +3597,7 @@ def create_migration_blueprint():
                         """INSERT INTO mc_app_inventory
                            (id, name, version, owner, team, criticality, notes,
                             classification, created_at, updated_at)
-                           VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                         (app_id, mapped["name"], mapped.get("version", ""),
                          mapped.get("owner", ""), mapped.get("team", ""),
                          mapped.get("criticality", "medium"), mapped.get("notes", ""),
@@ -3560,14 +3704,14 @@ def create_migration_blueprint():
             with _gc() as _conn:
                 if record_id:
                     rows = _conn.execute(
-                        "SELECT * FROM canvas_ai_decisions WHERE canvas_type='mc' AND record_id=? "
-                        "ORDER BY created_at DESC LIMIT ?",
+                        "SELECT * FROM canvas_ai_decisions WHERE canvas_type='mc' AND record_id=%s "
+                        "ORDER BY created_at DESC LIMIT %s",
                         (record_id, limit),
                     ).fetchall()
                 else:
                     rows = _conn.execute(
                         "SELECT * FROM canvas_ai_decisions WHERE canvas_type='mc' "
-                        "ORDER BY created_at DESC LIMIT ?",
+                        "ORDER BY created_at DESC LIMIT %s",
                         (limit,),
                     ).fetchall()
             return jsonify({"ok": True, "canvas": "mc", "decisions": [dict(r) for r in rows]})
@@ -3650,7 +3794,7 @@ def create_migration_blueprint():
         """Run migration governance framework check."""
         import uuid as _uuid_mod
         with get_connection() as conn:
-            row = conn.execute("SELECT graph_json FROM migration_designs WHERE id=?", (design_id,)).fetchone()
+            row = conn.execute("SELECT graph_json FROM migration_designs WHERE id=%s", (design_id,)).fetchone()
             if not row:
                 return jsonify({"error": "Not found"}), 404
             try:
@@ -3665,7 +3809,7 @@ def create_migration_blueprint():
                 "INSERT INTO mc_assessments "
                 "(id, design_id, assessment_type, findings_json, score, grade, "
                 "cat1_findings, cat2_findings, cat3_findings, readiness_score, created_at) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (assess_id, design_id, "governance",
                  json.dumps([{"title": c["title"], "severity": c["severity"], "status": c["status"]}
                              for c in result["checks"]]),

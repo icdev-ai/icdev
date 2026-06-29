@@ -113,7 +113,7 @@ CREATE TABLE IF NOT EXISTS bd_isa_tracker (
 CREATE TABLE IF NOT EXISTS bd_audit (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     design_id       TEXT,
-    user            TEXT DEFAULT '',
+    "user"          TEXT DEFAULT '',
     action          TEXT NOT NULL,
     detail          TEXT,
     classification  TEXT DEFAULT 'CUI // SP-CTI',

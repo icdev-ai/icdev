@@ -84,7 +84,7 @@ def _detect_admin_creation_anomaly(
         try:
             # 1. Total active admin count
             rows = conn.execute(
-                "SELECT COUNT(*) FROM dashboard_users WHERE role = ? AND status = 'active'",
+                "SELECT COUNT(*) FROM dashboard_users WHERE role = %s AND status = 'active'",
                 ("admin",),
             ).fetchone()
             admin_count = rows[0] if rows else 0
@@ -97,7 +97,7 @@ def _detect_admin_creation_anomaly(
                 """
                 SELECT COUNT(*) FROM dashboard_users
                 WHERE role = 'admin'
-                  AND created_at >= datetime(?, ?)
+                  AND created_at >= datetime(%s, %s)
                 """,
                 (now_ts, f"-{_ADMIN_BURST_WINDOW_SECONDS} seconds"),
             ).fetchone()

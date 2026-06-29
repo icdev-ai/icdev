@@ -1,7 +1,6 @@
 """Tests for the ACE pipeline runner."""
 import importlib
 import pathlib
-import sys
 
 
 def _load(tmp_path=None):

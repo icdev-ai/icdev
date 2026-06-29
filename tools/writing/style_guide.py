@@ -85,7 +85,7 @@ def load_style_guide_from_db(scope: str = "global", scope_id: str = "") -> Optio
         try:
             row = conn.execute(
                 "SELECT guide_yaml, inherits_from FROM wg_style_guides "
-                "WHERE scope = ? AND (scope_id = ? OR scope_id IS NULL) "
+                "WHERE scope = %s AND (scope_id = %s OR scope_id IS NULL) "
                 "AND is_active = 1 ORDER BY version DESC LIMIT 1",
                 (scope, scope_id),
             ).fetchone()

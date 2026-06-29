@@ -667,14 +667,14 @@ def generate_spec(feature_gap_id, db_path=None):
     conn = _get_db(db_path)
     try:
         # Fetch feature gap
-        gap_row = conn.execute("SELECT * FROM creative_feature_gaps WHERE id = ?", (feature_gap_id,)).fetchone()
+        gap_row = conn.execute("SELECT * FROM creative_feature_gaps WHERE id = %s", (feature_gap_id,)).fetchone()
         if not gap_row:
             return {"error": f"Feature gap not found: {feature_gap_id}"}
         feature_gap = dict(gap_row)
 
         # Check if spec already exists for this gap
         existing = conn.execute(
-            "SELECT id, status FROM creative_specs WHERE feature_gap_id = ?", (feature_gap_id,)
+            "SELECT id, status FROM creative_specs WHERE feature_gap_id = %s", (feature_gap_id,)
         ).fetchone()
         if existing:
             return {
@@ -687,7 +687,7 @@ def generate_spec(feature_gap_id, db_path=None):
         pain_point_id = feature_gap.get("pain_point_id")
         pain_point = None
         if pain_point_id:
-            pp_row = conn.execute("SELECT * FROM creative_pain_points WHERE id = ?", (pain_point_id,)).fetchone()
+            pp_row = conn.execute("SELECT * FROM creative_pain_points WHERE id = %s", (pain_point_id,)).fetchone()
             if pp_row:
                 pain_point = dict(pp_row)
 
@@ -790,7 +790,7 @@ def generate_spec(feature_gap_id, db_path=None):
             (id, feature_gap_id, pain_point_id, title, spec_content,
              composite_score, justification, estimated_effort,
              target_persona, competitive_advantage, status, metadata, created_at, classification)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'generated', ?, ?, 'CUI')""",
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'generated', %s, %s, 'CUI')""",
             (
                 spec_id,
                 feature_gap_id,
@@ -904,7 +904,7 @@ def generate_all_eligible(db_path=None):
             conn2 = _get_db(db_path)
             try:
                 pp_row = conn2.execute(
-                    "SELECT composite_score FROM creative_pain_points WHERE id = ?", (pain_point_id,)
+                    "SELECT composite_score FROM creative_pain_points WHERE id = %s", (pain_point_id,)
                 ).fetchone()
                 if pp_row and pp_row["composite_score"] is not None:
                     composite_score = pp_row["composite_score"]
@@ -1059,7 +1059,7 @@ def get_spec(spec_id, db_path=None):
 
     conn = _get_db(db_path)
     try:
-        row = conn.execute("SELECT * FROM creative_specs WHERE id = ?", (spec_id,)).fetchone()
+        row = conn.execute("SELECT * FROM creative_specs WHERE id = %s", (spec_id,)).fetchone()
         if not row:
             return {"error": f"Spec not found: {spec_id}"}
 
@@ -1069,7 +1069,7 @@ def get_spec(spec_id, db_path=None):
         gap_summary = {}
         if spec.get("feature_gap_id"):
             gap_row = conn.execute(
-                "SELECT id, feature_name, gap_score, market_demand, status FROM creative_feature_gaps WHERE id = ?",
+                "SELECT id, feature_name, gap_score, market_demand, status FROM creative_feature_gaps WHERE id = %s",
                 (spec["feature_gap_id"],),
             ).fetchone()
             if gap_row:
@@ -1080,7 +1080,7 @@ def get_spec(spec_id, db_path=None):
         if spec.get("pain_point_id"):
             pp_row = conn.execute(
                 "SELECT id, title, category, severity, frequency, composite_score "
-                "FROM creative_pain_points WHERE id = ?",
+                "FROM creative_pain_points WHERE id = %s",
                 (spec["pain_point_id"],),
             ).fetchone()
             if pp_row:

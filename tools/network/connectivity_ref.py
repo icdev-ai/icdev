@@ -819,7 +819,7 @@ def get_sop_deep_link(title: str) -> str | None:
     try:
         conn = _get_conn()
         row = conn.execute(
-            "SELECT sop_id FROM ndc_sops WHERE title = ? LIMIT 1", (title,)
+            "SELECT sop_id FROM ndc_sops WHERE title = %s LIMIT 1", (title,)
         ).fetchone()
         conn.close()
         if row:
@@ -908,7 +908,7 @@ def seed_patterns(dry_run: bool = False) -> int:
                 """INSERT OR IGNORE INTO nc_connectivity_patterns
                    (id, csp_pair, pattern_key, label, description, resiliency, cost_tier,
                     use_cases, node_types, sop_refs)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 row,
             )
             inserted += cur.rowcount

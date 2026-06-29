@@ -86,7 +86,7 @@ def _record_artifact(plan_id, task_id, artifact_type, file_path, description):
     conn.execute(
         "INSERT INTO migration_artifacts "
         "(plan_id, task_id, artifact_type, file_path, file_hash, description, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s, %s)",
         (
             plan_id,
             task_id,
@@ -142,7 +142,7 @@ def generate_adapter(plan_id, legacy_component_id, language="python", output_dir
     """Generate an adapter-pattern wrapper for a legacy component."""
     conn = _get_db()
 
-    comp = conn.execute("SELECT * FROM legacy_components WHERE id = ?", (legacy_component_id,)).fetchone()
+    comp = conn.execute("SELECT * FROM legacy_components WHERE id = %s", (legacy_component_id,)).fetchone()
     if not comp:
         conn.close()
         raise ValueError(f"Legacy component {legacy_component_id} not found")
@@ -163,7 +163,7 @@ def generate_adapter(plan_id, legacy_component_id, language="python", output_dir
 
     # Look for a matching migration task
     task = conn.execute(
-        "SELECT id FROM migration_tasks WHERE plan_id = ? AND legacy_component_id = ? "
+        "SELECT id FROM migration_tasks WHERE plan_id = %s AND legacy_component_id = %s "
         "AND task_type = 'generate_adapter' LIMIT 1",
         (plan_id, legacy_component_id),
     ).fetchone()
@@ -300,18 +300,18 @@ def generate_facade(plan_id, language="python", output_dir="."):
     """Generate an API facade with routing for all legacy endpoints."""
     conn = _get_db()
 
-    plan = conn.execute("SELECT * FROM migration_plans WHERE id = ?", (plan_id,)).fetchone()
+    plan = conn.execute("SELECT * FROM migration_plans WHERE id = %s", (plan_id,)).fetchone()
     if not plan:
         conn.close()
         raise ValueError(f"Migration plan {plan_id} not found")
 
     app_id = plan["legacy_app_id"]
-    apis = conn.execute("SELECT * FROM legacy_apis WHERE legacy_app_id = ? ORDER BY path", (app_id,)).fetchall()
+    apis = conn.execute("SELECT * FROM legacy_apis WHERE legacy_app_id = %s ORDER BY path", (app_id,)).fetchall()
 
     # Group by service boundary from extract_service tasks
     service_tasks = conn.execute(
         "SELECT mt.id, mt.title, mt.legacy_component_id FROM migration_tasks mt "
-        "WHERE mt.plan_id = ? AND mt.task_type = 'extract_service'",
+        "WHERE mt.plan_id = %s AND mt.task_type = 'extract_service'",
         (plan_id,),
     ).fetchall()
 
@@ -321,7 +321,7 @@ def generate_facade(plan_id, language="python", output_dir="."):
         comp_to_service[st["legacy_component_id"]] = st["title"]
 
     task = conn.execute(
-        "SELECT id FROM migration_tasks WHERE plan_id = ? AND task_type = 'generate_facade' LIMIT 1",
+        "SELECT id FROM migration_tasks WHERE plan_id = %s AND task_type = 'generate_facade' LIMIT 1",
         (plan_id,),
     ).fetchone()
     task_id = task["id"] if task else None
@@ -518,7 +518,7 @@ def generate_service_scaffold(plan_id, service_name, language="python", framewor
 
     conn = _get_db()
     task = conn.execute(
-        "SELECT id FROM migration_tasks WHERE plan_id = ? AND task_type = 'extract_service' AND title LIKE ? LIMIT 1",
+        "SELECT id FROM migration_tasks WHERE plan_id = %s AND task_type = 'extract_service' AND title LIKE %s LIMIT 1",
         (plan_id, f"%{service_name}%"),
     ).fetchone()
     task_id = task["id"] if task else None
@@ -870,7 +870,7 @@ def generate_service_scaffold(plan_id, service_name, language="python", framewor
 def generate_data_access_layer(plan_id, service_name, tables, language="python", output_dir="."):
     """Generate repository/DAO code from legacy DB schema definitions."""
     conn = _get_db()
-    plan = conn.execute("SELECT * FROM migration_plans WHERE id = ?", (plan_id,)).fetchone()
+    plan = conn.execute("SELECT * FROM migration_plans WHERE id = %s", (plan_id,)).fetchone()
     if not plan:
         conn.close()
         raise ValueError(f"Migration plan {plan_id} not found")
@@ -882,7 +882,7 @@ def generate_data_access_layer(plan_id, service_name, tables, language="python",
 
     for table in tables:
         columns = conn.execute(
-            "SELECT * FROM legacy_db_schemas WHERE legacy_app_id = ? AND table_name = ? ORDER BY column_name",
+            "SELECT * FROM legacy_db_schemas WHERE legacy_app_id = %s AND table_name = %s ORDER BY column_name",
             (app_id, table),
         ).fetchall()
         if not columns:
@@ -1099,7 +1099,7 @@ def generate_data_access_layer(plan_id, service_name, tables, language="python",
             all_paths.append(str(ctx_path))
 
     task = conn.execute(
-        "SELECT id FROM migration_tasks WHERE plan_id = ? AND task_type = 'migrate_schema' LIMIT 1",
+        "SELECT id FROM migration_tasks WHERE plan_id = %s AND task_type = 'migrate_schema' LIMIT 1",
         (plan_id,),
     ).fetchone()
     task_id = task["id"] if task else None
@@ -1118,7 +1118,7 @@ def generate_data_access_layer(plan_id, service_name, tables, language="python",
 def generate_migration_tests(plan_id, output_dir="."):
     """Generate API compatibility, data integrity, and functional equivalence tests."""
     conn = _get_db()
-    plan = conn.execute("SELECT * FROM migration_plans WHERE id = ?", (plan_id,)).fetchone()
+    plan = conn.execute("SELECT * FROM migration_plans WHERE id = %s", (plan_id,)).fetchone()
     if not plan:
         conn.close()
         raise ValueError(f"Migration plan {plan_id} not found")
@@ -1128,22 +1128,22 @@ def generate_migration_tests(plan_id, output_dir="."):
     ban_top = _banner_top(language)
     ban_bot = _banner_bottom(language)
 
-    apis = conn.execute("SELECT * FROM legacy_apis WHERE legacy_app_id = ?", (app_id,)).fetchall()
+    apis = conn.execute("SELECT * FROM legacy_apis WHERE legacy_app_id = %s", (app_id,)).fetchall()
 
     tables = conn.execute(
-        "SELECT DISTINCT table_name FROM legacy_db_schemas WHERE legacy_app_id = ?",
+        "SELECT DISTINCT table_name FROM legacy_db_schemas WHERE legacy_app_id = %s",
         (app_id,),
     ).fetchall()
 
     components = conn.execute(
         "SELECT lc.* FROM legacy_components lc "
         "JOIN migration_tasks mt ON mt.legacy_component_id = lc.id "
-        "WHERE mt.plan_id = ?",
+        "WHERE mt.plan_id = %s",
         (plan_id,),
     ).fetchall()
 
     task = conn.execute(
-        "SELECT id FROM migration_tasks WHERE plan_id = ? AND task_type = 'generate_test' LIMIT 1",
+        "SELECT id FROM migration_tasks WHERE plan_id = %s AND task_type = 'generate_test' LIMIT 1",
         (plan_id,),
     ).fetchone()
     task_id = task["id"] if task else None
@@ -1355,7 +1355,7 @@ def generate_migration_tests(plan_id, output_dir="."):
 def generate_rollback_scripts(plan_id, output_dir="."):
     """Generate rollback scripts for completed/in-progress migration tasks."""
     conn = _get_db()
-    plan = conn.execute("SELECT * FROM migration_plans WHERE id = ?", (plan_id,)).fetchone()
+    plan = conn.execute("SELECT * FROM migration_plans WHERE id = %s", (plan_id,)).fetchone()
     if not plan:
         conn.close()
         raise ValueError(f"Migration plan {plan_id} not found")
@@ -1366,20 +1366,20 @@ def generate_rollback_scripts(plan_id, output_dir="."):
     ban_bot = _banner_bottom(language)
 
     tasks = conn.execute(
-        "SELECT * FROM migration_tasks WHERE plan_id = ? AND status IN ('completed', 'in_progress') "
+        "SELECT * FROM migration_tasks WHERE plan_id = %s AND status IN ('completed', 'in_progress') "
         "ORDER BY created_at",
         (plan_id,),
     ).fetchall()
 
-    apis = conn.execute("SELECT * FROM legacy_apis WHERE legacy_app_id = ?", (app_id,)).fetchall()
+    apis = conn.execute("SELECT * FROM legacy_apis WHERE legacy_app_id = %s", (app_id,)).fetchall()
 
     schema_cols = conn.execute(
-        "SELECT DISTINCT table_name FROM legacy_db_schemas WHERE legacy_app_id = ?",
+        "SELECT DISTINCT table_name FROM legacy_db_schemas WHERE legacy_app_id = %s",
         (app_id,),
     ).fetchall()
 
     task_for_artifact = conn.execute(
-        "SELECT id FROM migration_tasks WHERE plan_id = ? AND task_type = 'cutover' LIMIT 1",
+        "SELECT id FROM migration_tasks WHERE plan_id = %s AND task_type = 'cutover' LIMIT 1",
         (plan_id,),
     ).fetchone()
     task_id = task_for_artifact["id"] if task_for_artifact else None
@@ -1513,7 +1513,7 @@ def generate_rollback_scripts(plan_id, output_dir="."):
 def generate_all(plan_id, output_dir="."):
     """Orchestrate all code generation for a migration plan."""
     conn = _get_db()
-    plan = conn.execute("SELECT * FROM migration_plans WHERE id = ?", (plan_id,)).fetchone()
+    plan = conn.execute("SELECT * FROM migration_plans WHERE id = %s", (plan_id,)).fetchone()
     if not plan:
         conn.close()
         raise ValueError(f"Migration plan {plan_id} not found")
@@ -1526,19 +1526,19 @@ def generate_all(plan_id, output_dir="."):
     adapter_comps = conn.execute(
         "SELECT DISTINCT lc.id, lc.name FROM legacy_components lc "
         "JOIN migration_tasks mt ON mt.legacy_component_id = lc.id "
-        "WHERE mt.plan_id = ? AND mt.task_type IN ('generate_adapter', 'create_acl')",
+        "WHERE mt.plan_id = %s AND mt.task_type IN ('generate_adapter', 'create_acl')",
         (plan_id,),
     ).fetchall()
 
     # Service extraction tasks
     service_tasks = conn.execute(
-        "SELECT * FROM migration_tasks WHERE plan_id = ? AND task_type = 'extract_service'",
+        "SELECT * FROM migration_tasks WHERE plan_id = %s AND task_type = 'extract_service'",
         (plan_id,),
     ).fetchall()
 
     # Tables by service
     tables = conn.execute(
-        "SELECT DISTINCT table_name FROM legacy_db_schemas WHERE legacy_app_id = ?",
+        "SELECT DISTINCT table_name FROM legacy_db_schemas WHERE legacy_app_id = %s",
         (app_id,),
     ).fetchall()
     table_names = [t["table_name"] for t in tables]
@@ -1624,19 +1624,19 @@ def generate_all(plan_id, output_dir="."):
     # 8. Update migration_tasks output_path
     conn = _get_db()
     conn.execute(
-        "UPDATE migration_tasks SET output_path = ? WHERE plan_id = ? AND task_type = 'generate_adapter'",
+        "UPDATE migration_tasks SET output_path = %s WHERE plan_id = %s AND task_type = 'generate_adapter'",
         (str(Path(output_dir) / "adapters"), plan_id),
     )
     conn.execute(
-        "UPDATE migration_tasks SET output_path = ? WHERE plan_id = ? AND task_type = 'generate_facade'",
+        "UPDATE migration_tasks SET output_path = %s WHERE plan_id = %s AND task_type = 'generate_facade'",
         (str(Path(output_dir) / "facade"), plan_id),
     )
     conn.execute(
-        "UPDATE migration_tasks SET output_path = ? WHERE plan_id = ? AND task_type = 'extract_service'",
+        "UPDATE migration_tasks SET output_path = %s WHERE plan_id = %s AND task_type = 'extract_service'",
         (str(Path(output_dir) / "services"), plan_id),
     )
     conn.execute(
-        "UPDATE migration_tasks SET output_path = ? WHERE plan_id = ? AND task_type = 'generate_test'",
+        "UPDATE migration_tasks SET output_path = %s WHERE plan_id = %s AND task_type = 'generate_test'",
         (str(Path(output_dir) / "tests"), plan_id),
     )
     conn.commit()
@@ -1682,7 +1682,7 @@ def main():
 
     # Resolve language from plan if not specified
     conn = _get_db()
-    plan = conn.execute("SELECT * FROM migration_plans WHERE id = ?", (args.plan_id,)).fetchone()
+    plan = conn.execute("SELECT * FROM migration_plans WHERE id = %s", (args.plan_id,)).fetchone()
     if not plan:
         conn.close()
         msg = f"Migration plan {args.plan_id} not found"
@@ -1706,7 +1706,7 @@ def main():
         comps = conn.execute(
             "SELECT DISTINCT lc.id FROM legacy_components lc "
             "JOIN migration_tasks mt ON mt.legacy_component_id = lc.id "
-            "WHERE mt.plan_id = ?",
+            "WHERE mt.plan_id = %s",
             (args.plan_id,),
         ).fetchall()
         conn.close()
@@ -1721,7 +1721,7 @@ def main():
         else:
             conn = _get_db()
             svc_tasks = conn.execute(
-                "SELECT title FROM migration_tasks WHERE plan_id = ? AND task_type = 'extract_service'",
+                "SELECT title FROM migration_tasks WHERE plan_id = %s AND task_type = 'extract_service'",
                 (args.plan_id,),
             ).fetchall()
             conn.close()
@@ -1736,7 +1736,7 @@ def main():
         conn = _get_db()
         app_id = plan["legacy_app_id"]
         tbls = conn.execute(
-            "SELECT DISTINCT table_name FROM legacy_db_schemas WHERE legacy_app_id = ?",
+            "SELECT DISTINCT table_name FROM legacy_db_schemas WHERE legacy_app_id = %s",
             (app_id,),
         ).fetchall()
         conn.close()

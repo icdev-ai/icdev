@@ -451,6 +451,97 @@ def export_jsonl(
         conn.close()
 
 
+# ── Cache Invalidation ────────────────────────────────────────────────
+
+
+def invalidate_cache(
+    dataset_id: str,
+    reason: str = "",
+    db_path: Optional[Path] = None,
+) -> int:
+    """Mark a dataset as needing refresh when underlying data changes.
+
+    Resets dataset status to 'draft' and unapproves all examples so they
+    must be re-reviewed before the next training run. Returns count of
+    examples affected.
+    """
+    conn = _get_db(db_path)
+    try:
+        # Verify dataset exists
+        ds = conn.execute("SELECT id, project_id FROM ft_datasets WHERE id = %s", (dataset_id,)).fetchone()
+        if not ds:
+            return 0
+
+        project_id = ds["project_id"] if hasattr(ds, "keys") else ds[1]
+
+        # Reset dataset status to draft (needs relabeling)
+        conn.execute(
+            "UPDATE ft_datasets SET status = 'draft', updated_at = %s WHERE id = %s",
+            (_now(), dataset_id),
+        )
+
+        # Unapprove all examples (marks them as needing re-review)
+        cur = conn.execute(
+            "UPDATE ft_dataset_examples SET approved = 0 WHERE dataset_id = %s AND approved = 1",
+            (dataset_id,),
+        )
+        affected = cur.rowcount if hasattr(cur, "rowcount") else 0
+
+        # Log invalidation event
+        try:
+            conn.execute(
+                "INSERT INTO ft_training_job_events (job_id, event_type, details, created_at) VALUES (%s, %s, %s, %s)",
+                (
+                    dataset_id,
+                    "cache_invalidated",
+                    json.dumps({"reason": reason, "examples_unapproved": affected}),
+                    _now(),
+                ),
+            )
+        except Exception:
+            # ft_training_job_events may not accept dataset_id as job_id; log and continue
+            pass
+
+        _audit(
+            conn,
+            project_id,
+            "finetune_cache_invalidated",
+            json.dumps({"dataset_id": dataset_id, "reason": reason, "affected": affected}),
+        )
+        conn.commit()
+        return affected
+    except Exception:
+        return 0
+    finally:
+        conn.close()
+
+
+def get_dataset_hash(
+    dataset_id: str,
+    db_path: Optional[Path] = None,
+) -> Optional[str]:
+    """Compute a deterministic SHA256 hash of all example content hashes in a dataset.
+
+    Returns None if the dataset is not found or has no examples. Changes when any
+    example changes, enabling downstream cache-bust detection.
+    """
+    conn = _get_db(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT content_hash FROM ft_dataset_examples WHERE dataset_id = %s ORDER BY content_hash ASC",
+            (dataset_id,),
+        ).fetchall()
+        if not rows:
+            return None
+        hashes = [r["content_hash"] if hasattr(r, "keys") else r[0] for r in rows]
+        combined = "|".join(hashes)
+        return hashlib.sha256(combined.encode("utf-8")).hexdigest()
+    except Exception:
+        return None
+    finally:
+        conn.close()
+
+
 # ── CLI ───────────────────────────────────────────────────────────────
 
 

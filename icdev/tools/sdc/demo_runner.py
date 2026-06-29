@@ -169,7 +169,7 @@ def _run_scenario_a(audience: str) -> Dict[str, Any]:
                     """
                     SELECT mitre_technique, mitre_tactic, COUNT(*) AS c
                     FROM sc_threats
-                    WHERE design_id = ? AND id LIKE 'demo-threat-%'
+                    WHERE design_id = %s AND id LIKE 'demo-threat-%'
                     GROUP BY mitre_technique, mitre_tactic
                     ORDER BY c DESC LIMIT 5
                     """,
@@ -207,7 +207,7 @@ def _run_scenario_b(audience: str, simulate: bool = False) -> Dict[str, Any]:
             SELECT step_id, step_name, status, approved_by, approved_at,
                    started_at, completed_at
             FROM sdc_workflow_step_runs
-            WHERE design_id = ?
+            WHERE design_id = %s
             ORDER BY step_id
             """,
             (_PRIMARY_DESIGN_ID,),
@@ -236,7 +236,7 @@ def _run_scenario_b(audience: str, simulate: bool = False) -> Dict[str, Any]:
                 time.sleep(1)
                 now_iso = datetime.now(timezone.utc).isoformat()
                 conn.execute(
-                    "UPDATE sdc_workflow_step_runs SET approved_by=?, approved_at=? WHERE id=?",
+                    "UPDATE sdc_workflow_step_runs SET approved_by=%s, approved_at=%s WHERE id=%s",
                     ("isso-demo@agency.gov", now_iso, f"demo-run-{s['step_id']}"),
                 )
                 conn.commit()
@@ -283,11 +283,11 @@ def _run_scenario_c(audience: str) -> Dict[str, Any]:
     try:
         # 1. After-state compliance timeline
         after = conn.execute(
-            "SELECT * FROM sdc_compliance_timeline WHERE design_id=? AND snapshot_label='after' LIMIT 1",
+            "SELECT * FROM sdc_compliance_timeline WHERE design_id=%s AND snapshot_label='after' LIMIT 1",
             (_PRIMARY_DESIGN_ID,),
         ).fetchone()
         before = conn.execute(
-            "SELECT * FROM sdc_compliance_timeline WHERE design_id=? AND snapshot_label='before' LIMIT 1",
+            "SELECT * FROM sdc_compliance_timeline WHERE design_id=%s AND snapshot_label='before' LIMIT 1",
             (_PRIMARY_DESIGN_ID,),
         ).fetchone()
 
@@ -314,7 +314,7 @@ def _run_scenario_c(audience: str) -> Dict[str, Any]:
 
         # 2. Attack paths blocked
         snaps = conn.execute(
-            "SELECT edges_json FROM sdc_attack_snapshots WHERE component_id=?",
+            "SELECT edges_json FROM sdc_attack_snapshots WHERE component_id=%s",
             (_PRIMARY_DESIGN_ID,),
         ).fetchall()
         result["attack_paths_blocked"] = len(snaps)
@@ -322,7 +322,7 @@ def _run_scenario_c(audience: str) -> Dict[str, Any]:
         # 3. Controls summary
         controls = conn.execute(
             "SELECT control_id, title, implementation_status FROM sc_controls "
-            "WHERE design_id=? AND id LIKE 'demo-ctrl-%' ORDER BY control_id",
+            "WHERE design_id=%s AND id LIKE 'demo-ctrl-%' ORDER BY control_id",
             (_PRIMARY_DESIGN_ID,),
         ).fetchall()
         result["implemented_controls"] = [
@@ -332,7 +332,7 @@ def _run_scenario_c(audience: str) -> Dict[str, Any]:
 
         # 4. ROI summary
         roi = conn.execute(
-            "SELECT * FROM sdc_roi_metrics WHERE design_id=? LIMIT 1",
+            "SELECT * FROM sdc_roi_metrics WHERE design_id=%s LIMIT 1",
             (_PRIMARY_DESIGN_ID,),
         ).fetchone()
         if roi:

@@ -109,20 +109,20 @@ def dispatch(project_id: str, component_name: str | None = None,
     conn = _mc_conn()
     try:
         proj = conn.execute(
-            "SELECT id, name, mc_session_id FROM mc_projects WHERE id=?", (project_id,)
+            "SELECT id, name, mc_session_id FROM mc_projects WHERE id=%s", (project_id,)
         ).fetchone()
         if not proj:
             raise ValueError(f"Project not found: {project_id}")
 
         session_id = proj["mc_session_id"] if hasattr(proj, "__getitem__") else proj[2]
         components = conn.execute(
-            "SELECT * FROM mc_app_inventory WHERE session_id=?", (session_id,)
+            "SELECT * FROM mc_app_inventory WHERE session_id=%s", (session_id,)
         ).fetchall()
 
         ai_opps = {
             row["component_name"]: row
             for row in conn.execute(
-                "SELECT * FROM mc_ai_opportunities WHERE project_id=?", (project_id,)
+                "SELECT * FROM mc_ai_opportunities WHERE project_id=%s", (project_id,)
             ).fetchall()
         }
 
@@ -181,8 +181,8 @@ def dispatch(project_id: str, component_name: str | None = None,
                     # Skip if identical job already queued/completed for this component
                     existing = conn.execute(
                         "SELECT id FROM mc_refactor_jobs "
-                        "WHERE project_id=? AND component_name=? AND refactor_type=? "
-                        "  AND params_json=? AND status NOT IN ('failed')",
+                        "WHERE project_id=%s AND component_name=%s AND refactor_type=%s "
+                        "  AND params_json=%s AND status NOT IN ('failed')",
                         (project_id, comp_name, spec["type"], job["params_json"]),
                     ).fetchone()
                     if existing:
@@ -195,7 +195,7 @@ def dispatch(project_id: str, component_name: str | None = None,
                         " source_path, output_path, params_json, status, result_summary, "
                         " artifacts_json, error_message, triggered_by, ai_opp_id, "
                         " classification, created_at) "
-                        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                         (
                             job["id"], job["project_id"], job["app_id"],
                             job["component_name"], job["refactor_type"],
@@ -224,7 +224,7 @@ def run_job(job_id: str) -> dict:
     conn = _mc_conn()
     try:
         row = conn.execute(
-            "SELECT * FROM mc_refactor_jobs WHERE id=?", (job_id,)
+            "SELECT * FROM mc_refactor_jobs WHERE id=%s", (job_id,)
         ).fetchone()
         if not row:
             return {"error": f"Job not found: {job_id}"}
@@ -235,7 +235,7 @@ def run_job(job_id: str) -> dict:
 
         # Mark running
         conn.execute(
-            "UPDATE mc_refactor_jobs SET status='running', started_at=? WHERE id=?",
+            "UPDATE mc_refactor_jobs SET status='running', started_at=%s WHERE id=%s",
             (_now(), job_id),
         )
         conn.commit()
@@ -244,8 +244,8 @@ def run_job(job_id: str) -> dict:
             artifacts, summary = _execute_job(job)
             conn.execute(
                 "UPDATE mc_refactor_jobs "
-                "SET status='completed', completed_at=?, result_summary=?, artifacts_json=? "
-                "WHERE id=?",
+                "SET status='completed', completed_at=%s, result_summary=%s, artifacts_json=%s "
+                "WHERE id=%s",
                 (_now(), summary, json.dumps(artifacts), job_id),
             )
             conn.commit()
@@ -255,7 +255,7 @@ def run_job(job_id: str) -> dict:
             logger.exception("Job %s failed: %s", job_id, exc)
             conn.execute(
                 "UPDATE mc_refactor_jobs "
-                "SET status='failed', completed_at=?, error_message=? WHERE id=?",
+                "SET status='failed', completed_at=%s, error_message=%s WHERE id=%s",
                 (_now(), str(exc), job_id),
             )
             conn.commit()
@@ -289,7 +289,7 @@ def get_jobs(project_id: str) -> list[dict]:
     conn = _mc_conn()
     try:
         rows = conn.execute(
-            "SELECT * FROM mc_refactor_jobs WHERE project_id=? ORDER BY created_at DESC",
+            "SELECT * FROM mc_refactor_jobs WHERE project_id=%s ORDER BY created_at DESC",
             (project_id,),
         ).fetchall()
         jobs = [dict(r) for r in rows]
@@ -305,7 +305,7 @@ def get_job_detail(job_id: str) -> dict | None:
     conn = _mc_conn()
     try:
         row = conn.execute(
-            "SELECT * FROM mc_refactor_jobs WHERE id=?", (job_id,)
+            "SELECT * FROM mc_refactor_jobs WHERE id=%s", (job_id,)
         ).fetchone()
         if not row:
             return None

@@ -64,7 +64,7 @@ def _fetch_predictions(conn: Any) -> List[Dict]:
             lens_id = 'forge_academy'
             OR lower(lens_name) LIKE '%academy%'
         )
-        AND confidence >= ?
+        AND confidence >= %s
         AND (outcome IS NULL OR outcome = 'pending')
         ORDER BY confidence DESC, created_at DESC
         """,
@@ -76,7 +76,7 @@ def _fetch_predictions(conn: Any) -> List[Dict]:
 def _already_promoted(conn: Any, prediction_id: str) -> bool:
     """Return True if a kanban task was already created for this prediction."""
     row = conn.execute(
-        "SELECT id FROM kanban_tasks WHERE id LIKE ? LIMIT 1",
+        "SELECT id FROM kanban_tasks WHERE id LIKE %s LIMIT 1",
         (f"fa-oracle-{prediction_id[:8]}%",),
     ).fetchone()
     return row is not None
@@ -107,7 +107,7 @@ def _promote(conn: Any, pred: Dict, dry_run: bool) -> str | None:
             "INSERT INTO kanban_tasks "
             "(id, title, description, task_type, priority, status, "
             " executor_type, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 task_id, title, description,
                 "chore", priority, "suggested",

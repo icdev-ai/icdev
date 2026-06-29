@@ -55,7 +55,7 @@ def _ensure_table(conn: sqlite3.Connection) -> None:
 
 def _get_project_info(conn: sqlite3.Connection, project_id: str) -> Dict:
     try:
-        row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+        row = conn.execute("SELECT * FROM projects WHERE id = %s", (project_id,)).fetchone()
         return dict(row) if row else {"id": project_id, "name": project_id}
     except Exception:
         return {"id": project_id, "name": project_id}
@@ -64,7 +64,7 @@ def _get_project_info(conn: sqlite3.Connection, project_id: str) -> Dict:
 def _get_model_cards(conn: sqlite3.Connection, project_id: str) -> List[Dict]:
     try:
         rows = conn.execute(
-            "SELECT model_name, version, card_hash, created_at FROM model_cards WHERE project_id = ?",
+            "SELECT model_name, version, card_hash, created_at FROM model_cards WHERE project_id = %s",
             (project_id,),
         ).fetchall()
         return [dict(r) for r in rows]
@@ -84,7 +84,7 @@ def _get_compliance_status(conn: sqlite3.Connection, project_id: str) -> List[Di
     try:
         rows = conn.execute(
             """SELECT framework_id, coverage_pct, gate_status, last_assessed
-               FROM project_framework_status WHERE project_id = ?""",
+               FROM project_framework_status WHERE project_id = %s""",
             (project_id,),
         ).fetchall()
         return [dict(r) for r in rows]
@@ -213,7 +213,7 @@ def generate_system_card(
         card_hash = hashlib.sha256(card_json.encode()).hexdigest()[:16]
 
         existing = conn.execute(
-            "SELECT version FROM system_cards WHERE project_id = ?",
+            "SELECT version FROM system_cards WHERE project_id = %s",
             (project_id,),
         ).fetchone()
         version = (existing["version"] + 1) if existing else 1
@@ -221,7 +221,7 @@ def generate_system_card(
         conn.execute(
             """INSERT OR REPLACE INTO system_cards
                (project_id, card_data, card_hash, version, created_at)
-               VALUES (?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s)""",
             (project_id, card_json, card_hash, version, now),
         )
         conn.commit()
@@ -231,7 +231,7 @@ def generate_system_card(
             conn.execute(
                 """INSERT INTO audit_trail
                    (project_id, event_type, actor, action, details, classification)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s)""",
                 (
                     project_id,
                     "system_card_generated",
@@ -261,7 +261,7 @@ def list_system_cards(project_id: str, db_path: Path = DB_PATH) -> Dict:
     try:
         _ensure_table(conn)
         rows = conn.execute(
-            "SELECT version, card_hash, created_at FROM system_cards WHERE project_id = ?",
+            "SELECT version, card_hash, created_at FROM system_cards WHERE project_id = %s",
             (project_id,),
         ).fetchall()
         return {

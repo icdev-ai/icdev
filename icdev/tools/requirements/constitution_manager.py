@@ -168,7 +168,7 @@ def add_principle(
     conn.execute(
         """INSERT INTO project_constitutions
                (id, project_id, principle_text, category, priority, is_active, created_by, created_at)
-           VALUES (?, ?, ?, ?, ?, 1, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s, 1, %s, %s)""",
         (principle_id, project_id, principle_text, category, priority, created_by, now),
     )
     conn.commit()
@@ -246,7 +246,7 @@ def remove_principle(principle_id: str, db_path=None) -> dict:
         Confirmation dict.
     """
     conn = _get_connection(db_path)
-    row = conn.execute("SELECT * FROM project_constitutions WHERE id = ?", (principle_id,)).fetchone()
+    row = conn.execute("SELECT * FROM project_constitutions WHERE id = %s", (principle_id,)).fetchone()
 
     if not row:
         conn.close()
@@ -263,7 +263,7 @@ def remove_principle(principle_id: str, db_path=None) -> dict:
         }
 
     conn.execute(
-        "UPDATE project_constitutions SET is_active = 0 WHERE id = ?",
+        "UPDATE project_constitutions SET is_active = 0 WHERE id = %s",
         (principle_id,),
     )
     conn.commit()
@@ -313,7 +313,7 @@ def load_defaults(project_id: str, db_path=None) -> dict:
 
     # Fetch existing principle texts to skip duplicates
     existing_rows = conn.execute(
-        "SELECT principle_text FROM project_constitutions WHERE project_id = ? AND is_active = 1",
+        "SELECT principle_text FROM project_constitutions WHERE project_id = %s AND is_active = 1",
         (project_id,),
     ).fetchall()
     existing_texts = {r["principle_text"] for r in existing_rows}
@@ -340,7 +340,7 @@ def load_defaults(project_id: str, db_path=None) -> dict:
         conn.execute(
             """INSERT INTO project_constitutions
                    (id, project_id, principle_text, category, priority, is_active, created_by, created_at)
-               VALUES (?, ?, ?, ?, ?, 1, 'system', ?)""",
+               VALUES (%s, %s, %s, %s, %s, 1, 'system', %s)""",
             (principle_id, project_id, text, category, priority, datetime.now(timezone.utc).isoformat()),
         )
         loaded += 1

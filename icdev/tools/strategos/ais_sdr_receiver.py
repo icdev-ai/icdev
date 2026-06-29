@@ -74,7 +74,7 @@ def _write_track(conn, decoded: dict, source: str) -> bool:
         conn.execute(
             "INSERT OR IGNORE INTO sg_vessel_tracks "
             "(id, mmsi, vessel_name, vessel_type, flag, lat, lon, speed, heading, ts, source) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (row_id, mmsi, vessel_name, vessel_type, None,
              float(lat), float(lon), speed, heading, ts, source),
         )
@@ -87,7 +87,7 @@ def _write_track(conn, decoded: dict, source: str) -> bool:
                 conn.execute(
                     "INSERT OR IGNORE INTO sg_vessel_tracks "
                     "(id, mmsi, vessel_name, vessel_type, flag, lat, lon, speed, heading, ts) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                     (row_id, mmsi, vessel_name, vessel_type, None,
                      float(lat), float(lon), speed, heading, ts),
                 )

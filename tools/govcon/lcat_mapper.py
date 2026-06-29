@@ -266,7 +266,7 @@ def _get_db():
 def _audit(conn, event_type, action, details, opportunity_id=None):
     conn.execute(
         "INSERT INTO audit_trail (id, timestamp, event_type, actor, action, details, project_id, session_id) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
         (
             _gen_id("aud"),
             _now(),
@@ -405,7 +405,7 @@ def store_allocations(opportunity_id, allocations):
         conn.execute(
             "INSERT INTO pg_lcat_allocations (id, cost_volume_id, task_description, labor_category, "
             "bls_soc_code, fte_count, hourly_rate, annual_cost, basis_of_estimate, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 aid,
                 opportunity_id,
@@ -432,7 +432,7 @@ def list_allocations(opportunity_id):
     conn = _get_db()
     rows = conn.execute(
         "SELECT id, task_description, labor_category, bls_soc_code, fte_count, hourly_rate, annual_cost, basis_of_estimate, created_at "
-        "FROM pg_lcat_allocations WHERE cost_volume_id = ? ORDER BY created_at",
+        "FROM pg_lcat_allocations WHERE cost_volume_id = %s ORDER BY created_at",
         (opportunity_id,),
     ).fetchall()
     conn.close()

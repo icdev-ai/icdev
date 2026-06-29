@@ -328,7 +328,7 @@ def log_abac_decision(
             """
             INSERT INTO abac_decisions
             (policy_name, decision, subject, resource, action, recorded_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s)
             """,
             (
                 decision.policy_name,

@@ -10,7 +10,6 @@ SQLite stores content locally in the FTS5 table so updates to memory_entries
 do NOT auto-propagate; `tools/memory/session_indexer.py::reindex_all()` refreshes
 the index on demand.
 """
-import logging
 from tools.logging.icdev_logger import get_logger
 
 logger = get_logger(__name__)

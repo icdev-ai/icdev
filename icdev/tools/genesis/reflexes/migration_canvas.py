@@ -162,7 +162,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 ic.execute(
                     """INSERT OR IGNORE INTO kanban_tasks
                        (id, title, description, status, priority, source, created_at, updated_at)
-                       VALUES (?,?,?,?,?,?,?,?)""",
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
                     (
                         task_id,
                         f"[NMCE] {f['suggested_action']}",

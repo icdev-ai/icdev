@@ -72,7 +72,7 @@ def dispatch_event(event_type: str, payload: dict[str, Any], tenant_id: str) -> 
     with get_connection() as conn:
         rows = conn.execute(
             "SELECT id, event_types FROM webhook_endpoints "
-            "WHERE tenant_id = ? AND enabled = 1",
+            "WHERE tenant_id = %s AND enabled = 1",
             (tenant_id,),
         ).fetchall()
         for row in rows:
@@ -85,7 +85,7 @@ def dispatch_event(event_type: str, payload: dict[str, Any], tenant_id: str) -> 
                 INSERT INTO webhook_deliveries
                     (id, endpoint_id, event_type, payload, status, attempts,
                      last_attempted_at, delivered_at)
-                VALUES (?, ?, ?, ?, 'pending', 0, NULL, NULL)
+                VALUES (%s, %s, %s, %s, 'pending', 0, NULL, NULL)
                 """,
                 (delivery_id, endpoint_id, event_type, json.dumps(payload)),
             )
@@ -135,7 +135,7 @@ def _process_pending(conn) -> int:
         "       d.last_attempted_at, e.url, e.secret "
         "FROM webhook_deliveries d "
         "JOIN webhook_endpoints e ON e.id = d.endpoint_id "
-        "WHERE d.status = 'pending' AND d.attempts < ?",
+        "WHERE d.status = 'pending' AND d.attempts < %s",
         (_MAX_ATTEMPTS,),
     ).fetchall()
 
@@ -157,17 +157,17 @@ def _process_pending(conn) -> int:
         if success:
             conn.execute(
                 "UPDATE webhook_deliveries "
-                "SET status = 'delivered', attempts = ?, "
-                "    last_attempted_at = ?, delivered_at = ? "
-                "WHERE id = ?",
+                "SET status = 'delivered', attempts = %s, "
+                "    last_attempted_at = %s, delivered_at = %s "
+                "WHERE id = %s",
                 (new_attempts, now_iso, now_iso, delivery_id),
             )
         else:
             new_status = "failed" if new_attempts >= _MAX_ATTEMPTS else "pending"
             conn.execute(
                 "UPDATE webhook_deliveries "
-                "SET status = ?, attempts = ?, last_attempted_at = ? "
-                "WHERE id = ?",
+                "SET status = %s, attempts = %s, last_attempted_at = %s "
+                "WHERE id = %s",
                 (new_status, new_attempts, now_iso, delivery_id),
             )
         processed += 1

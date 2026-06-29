@@ -90,7 +90,7 @@ def _cross_register(conn, signal: dict) -> Optional[str]:
     """INSERT signal into innovation_signals; return new id (or existing id on dup)."""
     ch = _content_hash(signal["id"])
     existing = conn.execute(
-        "SELECT id FROM innovation_signals WHERE content_hash = ?", (ch,)
+        "SELECT id FROM innovation_signals WHERE content_hash = %s", (ch,)
     ).fetchone()
     if existing:
         return existing[0]
@@ -103,7 +103,7 @@ def _cross_register(conn, signal: dict) -> Optional[str]:
                (id, source, source_type, title, url, metadata,
                 community_score, content_hash, discovered_at,
                 status, category, innovation_score, classification)
-               VALUES (?,?,?,?,?,?,0.0,?,?,'new',?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,0.0,%s,%s,'new',%s,%s,%s)""",
             (
                 innovation_id,
                 "regfore_engine",
@@ -181,7 +181,7 @@ class ForesightEngine:
         try:
             for sig in unique:
                 if conn.execute(
-                    "SELECT id FROM regulatory_foresight_signals WHERE id = ?",
+                    "SELECT id FROM regulatory_foresight_signals WHERE id = %s",
                     (sig["id"],),
                 ).fetchone():
                     continue
@@ -195,7 +195,7 @@ class ForesightEngine:
                         time_to_mandate_days, icdev_impact_score,
                         blast_radius_score, composite_score,
                         status, innovation_signal_id, scanned_at, classification)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,'new',NULL,?,?)""",
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'new',NULL,%s,%s)""",
                     (
                         sig["id"],
                         sig["source"],
@@ -225,7 +225,7 @@ class ForesightEngine:
                     if innovation_id:
                         conn.execute(
                             "UPDATE regulatory_foresight_signals "
-                            "SET innovation_signal_id = ? WHERE id = ?",
+                            "SET innovation_signal_id = %s WHERE id = %s",
                             (innovation_id, sig["id"]),
                         )
                         conn.commit()
@@ -252,7 +252,7 @@ class ForesightEngine:
                 "SELECT COUNT(*) FROM regulatory_foresight_signals"
             ).fetchone()[0]
             high = conn.execute(
-                "SELECT COUNT(*) FROM regulatory_foresight_signals WHERE composite_score >= ?",
+                "SELECT COUNT(*) FROM regulatory_foresight_signals WHERE composite_score >= %s",
                 (_DEFAULT_THRESHOLD,),
             ).fetchone()[0]
             cross = conn.execute(
@@ -277,7 +277,7 @@ class ForesightEngine:
         try:
             rows = conn.execute(
                 "SELECT * FROM regulatory_foresight_signals "
-                "WHERE composite_score >= ? ORDER BY composite_score DESC",
+                "WHERE composite_score >= %s ORDER BY composite_score DESC",
                 (min_score,),
             ).fetchall()
             return [dict(r) for r in rows]

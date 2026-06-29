@@ -39,7 +39,7 @@ def scan_inventory(project_id: str) -> dict:
         with get_connection() as conn:
             cur = conn.cursor()
             cur.execute(
-                "SELECT metric_key, metric_value FROM mdc_inventory WHERE project_id = ? ORDER BY created_at DESC LIMIT 30",
+                "SELECT metric_key, metric_value FROM mdc_inventory WHERE project_id = %s ORDER BY created_at DESC LIMIT 30",
                 (project_id,),
             )
             rows = cur.fetchall()

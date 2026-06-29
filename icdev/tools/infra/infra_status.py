@@ -44,7 +44,7 @@ def get_status(project_id: str, db_path: Path = None) -> dict:
                 """SELECT id, version, status, deployed_by, health_check_passed,
                           created_at, completed_at
                    FROM deployments
-                   WHERE project_id = ? AND environment = ?
+                   WHERE project_id = %s AND environment = %s
                    ORDER BY created_at DESC
                    LIMIT 1""",
                 (project_id, env),
@@ -72,7 +72,7 @@ def get_status(project_id: str, db_path: Path = None) -> dict:
             """SELECT id, environment, version, status, deployed_by,
                       health_check_passed, created_at, completed_at
                FROM deployments
-               WHERE project_id = ?
+               WHERE project_id = %s
                ORDER BY created_at DESC
                LIMIT 10""",
             (project_id,),
@@ -100,7 +100,7 @@ def get_status(project_id: str, db_path: Path = None) -> dict:
         alert_rows = conn.execute(
             """SELECT id, severity, source, title, description, status, created_at
                FROM alerts
-               WHERE project_id = ? AND status IN ('firing', 'active', 'pending')
+               WHERE project_id = %s AND status IN ('firing', 'active', 'pending')
                ORDER BY
                  CASE severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2
                                WHEN 'warning' THEN 3 ELSE 4 END,
@@ -128,7 +128,7 @@ def get_status(project_id: str, db_path: Path = None) -> dict:
         failure_rows = conn.execute(
             """SELECT id, source, error_type, error_message, resolved, created_at
                FROM failure_log
-               WHERE project_id = ?
+               WHERE project_id = %s
                  AND created_at > datetime('now', '-24 hours')
                ORDER BY created_at DESC
                LIMIT 20""",
@@ -153,7 +153,7 @@ def get_status(project_id: str, db_path: Path = None) -> dict:
         metric_rows = conn.execute(
             """SELECT metric_name, metric_value, labels, collected_at
                FROM metric_snapshots
-               WHERE project_id = ?
+               WHERE project_id = %s
                ORDER BY collected_at DESC
                LIMIT 50""",
             (project_id,),
@@ -178,7 +178,7 @@ def get_status(project_id: str, db_path: Path = None) -> dict:
                  SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed,
                  SUM(CASE WHEN status = 'rolled_back' THEN 1 ELSE 0 END) as rolled_back
                FROM deployments
-               WHERE project_id = ?
+               WHERE project_id = %s
                  AND created_at > datetime('now', '-30 days')""",
             (project_id,),
         ).fetchone()

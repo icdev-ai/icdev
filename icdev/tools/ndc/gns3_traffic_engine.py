@@ -528,7 +528,7 @@ class GNS3TrafficEngine:
             conn.execute(f"""
                 INSERT INTO {self.db_table}
                 (collected_at, src, dst_ip, label, scenario, reachable, avg_rtt_ms, loss_pct, hops, raw_output)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """, (ts, f["src"], f.get("dst_ip", f.get("dst", "")), f["label"], f["scenario"],
                   1 if f.get("reachable") else 0,
                   f.get("avg_rtt_ms"), f.get("loss_pct", 0),
@@ -543,8 +543,8 @@ class GNS3TrafficEngine:
                     try:
                         conn.execute("""
                             UPDATE ndc_isp_telemetry
-                            SET latency_ms=?, loss_pct=?
-                            WHERE isp=? AND timestamp=(SELECT MAX(timestamp) FROM ndc_isp_telemetry WHERE isp=?)
+                            SET latency_ms=%s, loss_pct=%s
+                            WHERE isp=%s AND timestamp=(SELECT MAX(timestamp) FROM ndc_isp_telemetry WHERE isp=%s)
                         """, (row["avg_rtt_ms"], row["loss_pct"], isp_name, isp_name))
                     except Exception:
                         pass

@@ -153,7 +153,7 @@ def pull_from_innovation(
 
             # Explicit pre-insert dedup check (unique hash constraint).
             dup_check = conn.execute(
-                "SELECT 1 FROM foundry_signals WHERE content_hash = ? LIMIT 1",
+                "SELECT 1 FROM foundry_signals WHERE content_hash = %s LIMIT 1",
                 (sig_hash,),
             ).fetchone()
 
@@ -166,7 +166,7 @@ def pull_from_innovation(
                 "INSERT INTO foundry_signals "
                 "(run_id, source_engine, source_ref, theme, raw_score, keywords, "
                 "tenant_id, classification, content_hash) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     run_id_str,
                     "innovation",

@@ -102,7 +102,7 @@ def issue_openc2_command(action: str, target: str, actuator: str = "slpf",
         _ensure_tables(conn)
         conn.execute(
             "INSERT INTO zig_openc2_commands (command_id, action, target, actuator, args, status, created_at) "
-            "VALUES (?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s)",
             (command_id, action, target, actuator, json.dumps(envelope), "issued", now),
         )
         conn.commit()
@@ -121,7 +121,7 @@ def taxii_exchange(direction: str, collection: str = "indicators",
         _ensure_tables(conn)
         conn.execute(
             "INSERT INTO zig_taxii_exchanges (direction, collection, object_count, peer, created_at) "
-            "VALUES (?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s)",
             (direction, collection, object_count, peer, now),
         )
         conn.commit()
@@ -140,7 +140,7 @@ def record_feedback(automation: str, outcome: str, success: bool,
         _ensure_tables(conn)
         conn.execute(
             "INSERT INTO zig_automation_feedback (automation, outcome, success, latency_ms, created_at) "
-            "VALUES (?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s)",
             (automation, outcome, int(success), latency_ms, now),
         )
         conn.commit()
@@ -156,7 +156,7 @@ def evaluate_effectiveness(automation: str) -> dict[str, Any]:
         _ensure_tables(conn)
         row = conn.execute(
             "SELECT COUNT(*) as total, SUM(success) as succ, AVG(latency_ms) as lat "
-            "FROM zig_automation_feedback WHERE automation=?",
+            "FROM zig_automation_feedback WHERE automation=%s",
             (automation,),
         ).fetchone()
         total = int(row["total"] or 0)

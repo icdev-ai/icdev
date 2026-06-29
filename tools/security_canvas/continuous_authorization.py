@@ -3,7 +3,7 @@
 
 Implements continuous application security monitoring and automated ongoing
 authorization (cATO). Each application carries a live authorization posture
-derived from DAST gates, runtime checks, vulnerability drift, and control
+computed from DAST gates, runtime checks, vulnerability drift, and control
 status. When posture degrades below the ATO maintenance threshold, the
 authorization is automatically suspended pending remediation — replacing the
 periodic point-in-time ATO with a continuous one.
@@ -77,7 +77,7 @@ def _resolve_dast_signal(conn, application: str) -> float:
     """Pull the latest DAST gate result for the application as a 0..1 signal."""
     row = conn.execute(
         "SELECT gate_status, dast_score, runtime_score FROM zig_dast_gate_results "
-        "WHERE application=? ORDER BY evaluated_at DESC LIMIT 1",
+        "WHERE application=%s ORDER BY evaluated_at DESC LIMIT 1",
         (application,),
     ).fetchone()
     if not row:
@@ -126,7 +126,7 @@ def evaluate_authorization(application: str, signals: dict | None = None) -> dic
         conn.execute(
             "INSERT INTO zig_continuous_ato "
             "(application, ato_state, posture_score, signals_json, degraded_signals, evaluated_at) "
-            "VALUES (?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s)",
             (application, ato_state, posture_score, json.dumps(resolved),
              json.dumps(degraded), now),
         )
@@ -135,7 +135,7 @@ def evaluate_authorization(application: str, signals: dict | None = None) -> dic
             conn.execute(
                 "INSERT INTO zig_app_monitoring_events "
                 "(application, event_type, signal, severity, detail, created_at) "
-                "VALUES (?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s)",
                 (application, "signal_degraded", sig, "warning",
                  f"{sig}={resolved[sig]:.2f} below 0.70", now),
             )

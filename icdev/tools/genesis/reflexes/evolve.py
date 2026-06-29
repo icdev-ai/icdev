@@ -55,7 +55,7 @@ def _get_recently_evolved(hours: int = 72) -> set:
         rows = conn.execute(
             """
             SELECT payload FROM genesis_gkp
-            WHERE genesis_reflex = 'evolve' AND created_at > ?
+            WHERE genesis_reflex = 'evolve' AND created_at > %s
         """,
             (cutoff,),
         ).fetchall()
@@ -221,7 +221,7 @@ def _get_worst_quality_file(
             SELECT file_path, cyclomatic_complexity, cognitive_complexity,
                    maintainability_score, smell_count, function_count
             FROM code_quality_metrics
-            WHERE smell_count > ?
+            WHERE smell_count > %s
             ORDER BY smell_count DESC, cyclomatic_complexity DESC
             LIMIT 50
         """, (smell_threshold,)).fetchall()
@@ -311,7 +311,7 @@ def _select_most_failures(
                 """
                 SELECT cyclomatic_complexity, cognitive_complexity,
                        maintainability_score, smell_count, function_count
-                FROM code_quality_metrics WHERE file_path = ? LIMIT 1
+                FROM code_quality_metrics WHERE file_path = %s LIMIT 1
             """,
                 (fp_norm,),
             ).fetchone()
@@ -374,7 +374,7 @@ def _select_highest_churn(
                 """
                 SELECT cyclomatic_complexity, cognitive_complexity,
                        maintainability_score, smell_count, function_count
-                FROM code_quality_metrics WHERE file_path = ? LIMIT 1
+                FROM code_quality_metrics WHERE file_path = %s LIMIT 1
             """,
                 (fp_norm,),
             ).fetchone()
@@ -408,7 +408,7 @@ def _select_lowest_coverage(
             SELECT file_path, cyclomatic_complexity, cognitive_complexity,
                    maintainability_score, smell_count, function_count
             FROM code_quality_metrics
-            WHERE maintainability_score < ?
+            WHERE maintainability_score < %s
             ORDER BY maintainability_score ASC
             LIMIT 50
         """, (maint_threshold,)).fetchall()
@@ -865,7 +865,7 @@ def _compute_strategy_acceptance_rate(strategy: str, window: int) -> float:
             SELECT payload FROM genesis_gkp
             WHERE genesis_reflex = 'evolve'
             ORDER BY created_at DESC
-            LIMIT ?
+            LIMIT %s
         """,
             (window,),
         ).fetchall()
@@ -895,7 +895,7 @@ def _compute_strategy_acceptance_rate(strategy: str, window: int) -> float:
             SELECT event_type FROM genesis_audit
             WHERE event_type IN ('genesis.evolve.mutation_accepted', 'genesis.evolve.mutation_rejected')
             ORDER BY created_at DESC
-            LIMIT ?
+            LIMIT %s
         """,
             (window,),
         ).fetchall()
@@ -930,7 +930,7 @@ def _log_strategy_switch(
         conn.execute(
             """
             INSERT INTO genesis_audit (event_type, reflex_name, details, created_at)
-            VALUES (?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s)
         """,
             (
                 "genesis.evolve.strategy_rotated",

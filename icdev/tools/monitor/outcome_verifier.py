@@ -207,7 +207,7 @@ def check_pending_prs(db_path: Optional[Path] = None) -> dict:
             FROM auto_resolution_log ar
             WHERE ar.pr_url IS NOT NULL
               AND ar.resolution_status = 'pr_created'
-              AND ar.created_at >= ?
+              AND ar.created_at >= %s
               AND ar.id NOT IN (
                   SELECT resolution_id FROM outcome_verification_log
                   WHERE result IN ('merged', 'closed', 'timeout')
@@ -242,7 +242,7 @@ def check_pending_prs(db_path: Optional[Path] = None) -> dict:
                     INSERT INTO outcome_verification_log
                         (id, resolution_id, pr_url, verification_type, result,
                          checked_at, created_at)
-                    VALUES (?, ?, ?, 'pr_merge_check', 'cli_unavailable', ?, ?)
+                    VALUES (%s, %s, %s, 'pr_merge_check', 'cli_unavailable', %s, %s)
                 """,
                     (ov_id, r["id"], r["pr_url"], _now(), _now()),
                 )
@@ -296,7 +296,7 @@ def check_pending_prs(db_path: Optional[Path] = None) -> dict:
                 INSERT INTO outcome_verification_log
                     (id, resolution_id, pr_url, verification_type, result,
                      checked_at, created_at)
-                VALUES (?, ?, ?, 'pr_merge_check', ?, ?, ?)
+                VALUES (%s, %s, %s, 'pr_merge_check', %s, %s, %s)
             """,
                 (ov_id, r["id"], r["pr_url"], ov_result, _now(), _now()),
             )
@@ -325,7 +325,7 @@ def _schedule_recurrence_check(resolution_id: str, pr_url: str, db_path: Optiona
             INSERT INTO outcome_verification_log
                 (id, resolution_id, pr_url, verification_type, result,
                  checked_at, created_at)
-            VALUES (?, ?, ?, 'recurrence_check', 'pending', NULL, ?)
+            VALUES (%s, %s, %s, 'recurrence_check', 'pending', NULL, %s)
         """,
             (ov_id, resolution_id, pr_url, _now()),
         )
@@ -379,7 +379,7 @@ def check_recurrence(db_path: Optional[Path] = None) -> dict:
         conn = _get_conn(db_path)
         try:
             orig = conn.execute(
-                "SELECT alert_type, created_at FROM auto_resolution_log WHERE id = ?", (res_id,)
+                "SELECT alert_type, created_at FROM auto_resolution_log WHERE id = %s", (res_id,)
             ).fetchone()
         finally:
             conn.close()
@@ -412,9 +412,9 @@ def check_recurrence(db_path: Optional[Path] = None) -> dict:
                 """
                 SELECT COUNT(*) as cnt
                 FROM auto_resolution_log
-                WHERE alert_type = ?
-                  AND created_at > ?
-                  AND id != ?
+                WHERE alert_type = %s
+                  AND created_at > %s
+                  AND id != %s
             """,
                 (orig_data["alert_type"], merge_created, res_id),
             ).fetchone()
@@ -439,8 +439,8 @@ def check_recurrence(db_path: Optional[Path] = None) -> dict:
             conn.execute(
                 """
                 UPDATE outcome_verification_log
-                SET result = ?, checked_at = ?, confidence_delta = ?
-                WHERE id = ?
+                SET result = %s, checked_at = %s, confidence_delta = %s
+                WHERE id = %s
             """,
                 (ov_result, _now(), delta, r["id"]),
             )
@@ -471,7 +471,7 @@ def _apply_confidence_delta(resolution_id: str, delta: float, db_path: Optional[
     conn = _get_conn(db_path)
     try:
         # Get the matched pattern from the resolution details
-        row = conn.execute("SELECT details FROM auto_resolution_log WHERE id = ?", (resolution_id,)).fetchone()
+        row = conn.execute("SELECT details FROM auto_resolution_log WHERE id = %s", (resolution_id,)).fetchone()
         if not row:
             return
 

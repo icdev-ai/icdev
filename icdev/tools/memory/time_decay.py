@@ -212,7 +212,7 @@ def score_entry(
     cfg = config or load_decay_config()
     conn = _get_connection(db_path)
     row = conn.execute(
-        "SELECT id, content, type, importance, created_at FROM memory_entries WHERE id = ?",
+        "SELECT id, content, type, importance, created_at FROM memory_entries WHERE id = %s",
         (entry_id,),
     ).fetchone()
     conn.close()

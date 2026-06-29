@@ -171,7 +171,7 @@ def create_admin_blueprint() -> Blueprint | None:
                     f"SELECT id, event_type, actor, tenant_id, component_key, "
                     f"profile_name, details, classification, recorded_at "
                     f"FROM component_audit_log {where_sql} "
-                    f"ORDER BY recorded_at DESC LIMIT ? OFFSET ?",
+                    f"ORDER BY recorded_at DESC LIMIT %s OFFSET %s",
                     params + [limit, offset],
                 ).fetchall()
             return jsonify({
@@ -206,7 +206,7 @@ def create_admin_blueprint() -> Blueprint | None:
                     f"SELECT id, tenant_id, principal_type, principal_id, canvas_name, "
                     f"access_level, granted_by, granted_at, expires_at, revoked_at "
                     f"FROM canvas_access_grants {where_sql} "
-                    f"ORDER BY granted_at DESC LIMIT ? OFFSET ?",
+                    f"ORDER BY granted_at DESC LIMIT %s OFFSET %s",
                     params + [limit, offset],
                 ).fetchall()
             return jsonify({
@@ -233,7 +233,7 @@ def create_admin_blueprint() -> Blueprint | None:
                 rows = conn.execute(
                     "SELECT id, tenant_id, name, protocol, entity_id, metadata_url, "
                     "client_id, attr_mapping, enabled, created_at, updated_at "
-                    f"FROM sso_providers WHERE tenant_id = ?{where_extra} ORDER BY created_at DESC",
+                    f"FROM sso_providers WHERE tenant_id = %s{where_extra} ORDER BY created_at DESC",
                     (tenant_id,),
                 ).fetchall()
             providers = []
@@ -269,7 +269,7 @@ def create_admin_blueprint() -> Blueprint | None:
                 conn.execute(
                     "INSERT INTO sso_providers "
                     "(id, tenant_id, name, protocol, entity_id, metadata_url, client_id, attr_mapping) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
                     (
                         pid, tenant_id, name, protocol,
                         payload.get("entity_id"),
@@ -312,7 +312,7 @@ def create_admin_blueprint() -> Blueprint | None:
         try:
             with get_connection() as conn:
                 cur = conn.execute(
-                    f"UPDATE sso_providers SET {set_clause} WHERE id = ? AND tenant_id = ?",
+                    f"UPDATE sso_providers SET {set_clause} WHERE id = %s AND tenant_id = %s",
                     params,
                 )
                 conn.commit()
@@ -332,7 +332,7 @@ def create_admin_blueprint() -> Blueprint | None:
         try:
             with get_connection() as conn:
                 cur = conn.execute(
-                    "UPDATE sso_providers SET enabled = 0, updated_at = ? WHERE id = ? AND tenant_id = ?",
+                    "UPDATE sso_providers SET enabled = 0, updated_at = %s WHERE id = %s AND tenant_id = %s",
                     (now, provider_id, tenant_id),
                 )
                 conn.commit()
@@ -360,21 +360,21 @@ def create_admin_blueprint() -> Blueprint | None:
                     rows = conn.execute(
                         "SELECT id, control_id, framework, tenant_id, evidence_type, "
                         "source_table, source_row_id, summary, collected_at, collector "
-                        "FROM evidence_items WHERE tenant_id = ? AND control_id = ? "
-                        "AND framework = ? ORDER BY collected_at DESC LIMIT 500",
+                        "FROM evidence_items WHERE tenant_id = %s AND control_id = %s "
+                        "AND framework = %s ORDER BY collected_at DESC LIMIT 500",
                         (tenant_id, control_id, framework),
                     ).fetchall()
                 else:
                     rows = conn.execute(
                         "SELECT id, control_id, framework, tenant_id, evidence_type, "
                         "source_table, source_row_id, summary, collected_at, collector "
-                        "FROM evidence_items WHERE tenant_id = ? AND framework = ? "
+                        "FROM evidence_items WHERE tenant_id = %s AND framework = %s "
                         "ORDER BY collected_at DESC LIMIT 500",
                         (tenant_id, framework),
                     ).fetchall()
                 ctrl_rows = conn.execute(
                     "SELECT DISTINCT control_id FROM evidence_items "
-                    "WHERE tenant_id = ? ORDER BY control_id",
+                    "WHERE tenant_id = %s ORDER BY control_id",
                     (tenant_id,),
                 ).fetchall()
             cols = ["id", "control_id", "framework", "tenant_id", "evidence_type",
@@ -495,7 +495,7 @@ def create_admin_blueprint() -> Blueprint | None:
                 summary_rows = conn.execute(
                     "SELECT event_type, SUM(quantity) AS total_quantity "
                     "FROM usage_events "
-                    "WHERE tenant_id = ? AND recorded_at >= ? "
+                    "WHERE tenant_id = %s AND recorded_at >= %s "
                     "GROUP BY event_type ORDER BY total_quantity DESC",
                     (tenant_id, since),
                 ).fetchall()
@@ -504,7 +504,7 @@ def create_admin_blueprint() -> Blueprint | None:
                     "SELECT substr(recorded_at, 1, 10) AS date, event_type, "
                     "SUM(quantity) AS total_quantity "
                     "FROM usage_events "
-                    "WHERE tenant_id = ? AND recorded_at >= ? "
+                    "WHERE tenant_id = %s AND recorded_at >= %s "
                     "GROUP BY substr(recorded_at, 1, 10), event_type "
                     "ORDER BY date, event_type",
                     (tenant_id, since),
@@ -513,7 +513,7 @@ def create_admin_blueprint() -> Blueprint | None:
                 month_row = conn.execute(
                     "SELECT SUM(quantity) AS total "
                     "FROM usage_events "
-                    "WHERE tenant_id = ? AND recorded_at >= ?",
+                    "WHERE tenant_id = %s AND recorded_at >= %s",
                     (tenant_id, month_start),
                 ).fetchone()
 
@@ -543,7 +543,7 @@ def create_admin_blueprint() -> Blueprint | None:
             with get_connection() as conn:
                 rows = conn.execute(
                     "SELECT id, name, key_prefix, scopes, created_at, last_used_at, "
-                    "expires_at, revoked_at FROM api_keys WHERE tenant_id = ? "
+                    "expires_at, revoked_at FROM api_keys WHERE tenant_id = %s "
                     "ORDER BY created_at DESC",
                     (tenant_id,),
                 ).fetchall()
@@ -568,7 +568,7 @@ def create_admin_blueprint() -> Blueprint | None:
             )
             with get_connection() as conn:
                 row = conn.execute(
-                    "SELECT id FROM api_keys WHERE key_hash = ?", (key_hash,)
+                    "SELECT id FROM api_keys WHERE key_hash = %s", (key_hash,)
                 ).fetchone()
             key_id = row["id"] if row else None
             return jsonify({
@@ -590,7 +590,7 @@ def create_admin_blueprint() -> Blueprint | None:
         try:
             with get_connection() as conn:
                 cur = conn.execute(
-                    "UPDATE api_keys SET revoked_at = ? WHERE id = ? AND tenant_id = ?",
+                    "UPDATE api_keys SET revoked_at = %s WHERE id = %s AND tenant_id = %s",
                     (now, key_id, tenant_id),
                 )
                 conn.commit()
@@ -613,7 +613,7 @@ def create_admin_blueprint() -> Blueprint | None:
             with get_connection() as conn:
                 rows = conn.execute(
                     "SELECT id, url, event_types, enabled, created_at "
-                    "FROM webhook_endpoints WHERE tenant_id = ? ORDER BY created_at DESC",
+                    "FROM webhook_endpoints WHERE tenant_id = %s ORDER BY created_at DESC",
                     (tenant_id,),
                 ).fetchall()
             return jsonify({"tenant_id": tenant_id, "endpoints": [dict(r) for r in rows]})
@@ -640,7 +640,7 @@ def create_admin_blueprint() -> Blueprint | None:
                 conn.execute(
                     "INSERT INTO webhook_endpoints "
                     "(id, tenant_id, url, event_types, secret, enabled, created_at) "
-                    "VALUES (?, ?, ?, ?, ?, 1, ?)",
+                    "VALUES (%s, %s, %s, %s, %s, 1, %s)",
                     (wid, tenant_id, url, event_types, secret, now),
                 )
                 conn.commit()
@@ -661,7 +661,7 @@ def create_admin_blueprint() -> Blueprint | None:
         try:
             with get_connection() as conn:
                 cur = conn.execute(
-                    "UPDATE webhook_endpoints SET enabled = 0 WHERE id = ? AND tenant_id = ?",
+                    "UPDATE webhook_endpoints SET enabled = 0 WHERE id = %s AND tenant_id = %s",
                     (endpoint_id, tenant_id),
                 )
                 conn.commit()
@@ -702,16 +702,16 @@ def create_admin_blueprint() -> Blueprint | None:
                 consumer_rows = conn.execute(
                     "SELECT tenant_id, event_type, SUM(quantity) AS total_quantity "
                     "FROM usage_events "
-                    "WHERE recorded_at >= ? "
+                    "WHERE recorded_at >= %s "
                     "GROUP BY tenant_id, event_type "
-                    "ORDER BY total_quantity DESC LIMIT ?",
+                    "ORDER BY total_quantity DESC LIMIT %s",
                     (since, limit),
                 ).fetchall()
 
                 type_rows = conn.execute(
                     "SELECT event_type, SUM(quantity) AS total_quantity "
                     "FROM usage_events "
-                    "WHERE recorded_at >= ? "
+                    "WHERE recorded_at >= %s "
                     "GROUP BY event_type ORDER BY total_quantity DESC",
                     (since,),
                 ).fetchall()

@@ -34,7 +34,7 @@ def emit_roi_event(
             """
             INSERT INTO aisg_roi_events
                 (action_type, time_saved_minutes, description, triggered_by, occurred_at)
-            VALUES (?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s)
             """,
             (action_type, time_saved, description, triggered_by, occurred_at),
         )

@@ -40,7 +40,7 @@ def create(
             """INSERT INTO wf_external_steps
                (id, instance_id, stage_name, step_type, external_system, webhook_token,
                 status, payload_json, created_at, updated_at)
-               VALUES (%s,?,?,?,?,?,?,?,?,%s)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (step_id, instance_id, stage_name, step_type,
              stage_config.get("system"), token, "pending", payload, _now(), _now()),
         )

@@ -24,11 +24,28 @@ except ImportError:
 oscal_api = Blueprint("oscal_api", __name__, url_prefix="/api/oscal")
 
 
+class _PGCompatConn:
+    """Silently pre-translate ? → %s for PG so translate_sql never warns."""
+    def __init__(self, conn):
+        self._conn = conn
+        self._pg = getattr(conn, "_backend", "sqlite") == "postgresql"
+    def _fix(self, sql):
+        return sql.replace("?", "%s") if self._pg and "?" in sql else sql
+    def execute(self, sql, params=()):
+        return self._conn.execute(self._fix(sql), params)
+    def executemany(self, sql, seq):
+        return self._conn.executemany(self._fix(sql), seq)
+    def commit(self): return self._conn.commit()
+    def rollback(self): return self._conn.rollback()
+    def close(self): return self._conn.close()
+    def __getattr__(self, name): return getattr(self._conn, name)
+
+
 def _get_db() -> sqlite3.Connection:
     if get_db_connection:
-        return get_db_connection(DB_PATH)
+        return _PGCompatConn(get_db_connection(DB_PATH))
     conn = get_connection(db_path=str(DB_PATH))
-    return conn
+    return _PGCompatConn(conn)
 
 
 # ── Tool Detection ──────────────────────────────────────────────
@@ -84,7 +101,7 @@ def list_validations():
         params = (project_id,) if project_id else ()
 
         rows = conn.execute(
-            f"SELECT * FROM oscal_validation_log {where} ORDER BY created_at DESC LIMIT ? OFFSET ?",  # nosec B608 -- table/column names are internal constants, not user input
+            f"SELECT * FROM oscal_validation_log {where} ORDER BY created_at DESC LIMIT %s OFFSET %s",  # nosec B608 -- table/column names are internal constants, not user input
             params + (limit, offset),
         ).fetchall()
 
@@ -115,7 +132,7 @@ def list_artifacts():
         params = (project_id,) if project_id else ()
 
         rows = conn.execute(
-            f"SELECT * FROM oscal_artifacts {where} ORDER BY generated_at DESC LIMIT ? OFFSET ?",  # nosec B608 -- table/column names are internal constants, not user input
+            f"SELECT * FROM oscal_artifacts {where} ORDER BY generated_at DESC LIMIT %s OFFSET %s",  # nosec B608 -- table/column names are internal constants, not user input
             params + (limit, offset),
         ).fetchall()
 

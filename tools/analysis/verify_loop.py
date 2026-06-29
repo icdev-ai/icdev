@@ -154,7 +154,7 @@ def _store_result(result: Dict, project_id: str = "") -> None:
                 verifier_name, verifier_type, blocking, passed,
                 error_count, error_summary, repaired, repair_model,
                 content_hash, project_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 f"vl-{uuid.uuid4().hex[:12]}",
                 result.get("file_path", ""),

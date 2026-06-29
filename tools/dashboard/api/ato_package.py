@@ -62,10 +62,27 @@ PACKAGE_STEPS = [
 ]
 
 
+class _PGCompatConn:
+    """Silently pre-translate ? → %s for PG so translate_sql never warns."""
+    def __init__(self, conn):
+        self._conn = conn
+        self._pg = getattr(conn, "_backend", "sqlite") == "postgresql"
+    def _fix(self, sql):
+        return sql.replace("?", "%s") if self._pg and "?" in sql else sql
+    def execute(self, sql, params=()):
+        return self._conn.execute(self._fix(sql), params)
+    def executemany(self, sql, seq):
+        return self._conn.executemany(self._fix(sql), seq)
+    def commit(self): return self._conn.commit()
+    def rollback(self): return self._conn.rollback()
+    def close(self): return self._conn.close()
+    def __getattr__(self, name): return getattr(self._conn, name)
+
+
 def _get_db():
     """Return a connection to icdev.db with Row factory."""
     conn = get_connection(db_path=str(DB_PATH))
-    return conn
+    return _PGCompatConn(conn)
 
 
 def _table_exists(conn, table_name):
@@ -73,12 +90,12 @@ def _table_exists(conn, table_name):
     try:
         if _is_pg(conn):
             row = conn.execute(
-                "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = ?",
+                "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = %s",
                 (table_name,),
             ).fetchone()
             return row is not None
         row = conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=%s",
             (table_name,),
         ).fetchone()
         return row is not None
@@ -307,7 +324,7 @@ def ssp_documents():
                 "SELECT id, project_id, version, system_name, system_boundary, "
                 "authorization_type, status, approved_by, approved_at, "
                 "classification, created_at "
-                "FROM ssp_documents WHERE project_id = ? ORDER BY created_at DESC",
+                "FROM ssp_documents WHERE project_id = %s ORDER BY created_at DESC",
                 (project_id,),
             ).fetchall()
         else:

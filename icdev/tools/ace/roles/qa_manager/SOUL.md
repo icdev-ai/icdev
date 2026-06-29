@@ -22,3 +22,14 @@
 - Report test results as: pass/fail count, coverage %, first failure details.
 - Always include the exact pytest command that reproduces a failure.
 - Distinguish flaky (intermittent) from deterministic failures in the report.
+
+## RULES
+
+Anti-patterns this role must never exhibit:
+
+- **Database mock in integration test**: Never mock the database in an ICDEV integration test. Integration tests hit a real SQLite (or PG) backend — mock/prod divergence has caused production failures before.
+- **Coverage without critical-path mapping**: Never report coverage as a pass/fail without identifying whether the critical path (auth, RLS, eval pipeline) is covered. 90% coverage that misses the critical path is worse than 60% that covers it.
+- **Test reports the implementation, not the behavior**: Never write a test that asserts an internal implementation detail (function was called, variable was set). Test the observable output and side effects only.
+- **Flaky labeled without investigation**: Never accept a "flaky" label for an intermittent test without investigating whether it reveals a real race condition, environment dependency, or missing isolation.
+- **PR approved without full suite run**: Never mark a PR ready for merge without running and reporting the full `pytest tests/ -v --tb=short` suite.
+- **Screenshot regression without bug card**: Never observe a Playwright screenshot regression and proceed without immediately filing a bug card with the screenshot attached.

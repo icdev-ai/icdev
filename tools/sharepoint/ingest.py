@@ -116,7 +116,7 @@ def _stable_id(*parts: str) -> str:
 def _upsert_site(conn, site_id: str, url: str, title: str, last_modified: str | None) -> None:
     conn.execute(
         """INSERT OR REPLACE INTO sharepoint_sites (id, url, title, last_modified)
-           VALUES (?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s)""",
         (site_id, url, title or "", last_modified),
     )
 
@@ -124,7 +124,7 @@ def _upsert_site(conn, site_id: str, url: str, title: str, last_modified: str | 
 def _upsert_list(conn, list_id: str, site_id: str, name: str, item_count: int) -> None:
     conn.execute(
         """INSERT OR REPLACE INTO sharepoint_lists (id, site_id, name, item_count)
-           VALUES (?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s)""",
         (list_id, site_id, name or "", int(item_count)),
     )
 
@@ -140,7 +140,7 @@ def _upsert_item(
     conn.execute(
         """INSERT OR REPLACE INTO sharepoint_items
            (id, list_id, title, payload, modified_at)
-           VALUES (?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s)""",
         (item_id, list_id, title or "", json.dumps(payload), modified_at),
     )
 
@@ -157,7 +157,7 @@ def _upsert_document(
     conn.execute(
         """INSERT OR REPLACE INTO sharepoint_documents
            (id, site_id, path, size, mime_type, content_hash)
-           VALUES (?, ?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s, %s)""",
         (doc_id, site_id, path or "", int(size), mime_type or "", content_hash),
     )
 

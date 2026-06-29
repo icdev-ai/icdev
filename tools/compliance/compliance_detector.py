@@ -140,7 +140,7 @@ def detect_frameworks(
         row = conn.execute(
             """SELECT id, name, description, classification, impact_level,
                       target_frameworks, type
-               FROM projects WHERE id = ?""",
+               FROM projects WHERE id = %s""",
             (project_id,),
         ).fetchone()
         if not row:
@@ -151,7 +151,7 @@ def detect_frameworks(
         try:
             cat_rows = conn.execute(
                 """SELECT data_category, subcategory
-                   FROM data_classifications WHERE project_id = ?""",
+                   FROM data_classifications WHERE project_id = %s""",
                 (project_id,),
             ).fetchall()
             data_categories = set(r["data_category"] for r in cat_rows)
@@ -284,7 +284,7 @@ def detect_frameworks(
             """INSERT INTO compliance_detection_log
                (project_id, data_categories, detected_frameworks,
                 required_frameworks, recommended_frameworks, rules_matched)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s)""",
             (
                 project_id,
                 json.dumps(sorted(data_categories)),
@@ -321,7 +321,7 @@ def apply_detection(
                 """INSERT OR REPLACE INTO framework_applicability
                    (project_id, framework_id, source, confirmed,
                     detection_confidence, detection_reason, created_at)
-                   VALUES (?, ?, 'auto_detected', 0, ?, ?, ?)""",
+                   VALUES (%s, %s, 'auto_detected', 0, %s, %s, %s)""",
                 (
                     project_id,
                     fw["framework_id"],
@@ -337,7 +337,7 @@ def apply_detection(
                 """INSERT OR IGNORE INTO framework_applicability
                    (project_id, framework_id, source, confirmed,
                     detection_confidence, detection_reason, created_at)
-                   VALUES (?, ?, 'auto_detected', 0, ?, ?, ?)""",
+                   VALUES (%s, %s, 'auto_detected', 0, %s, %s, %s)""",
                 (
                     project_id,
                     fw["framework_id"],
@@ -372,15 +372,15 @@ def confirm_frameworks(
         now = datetime.now(timezone.utc).isoformat()
         conn.execute(
             """UPDATE framework_applicability
-               SET confirmed = 1, confirmed_by = ?, confirmed_at = ?
-               WHERE project_id = ? AND confirmed = 0""",
+               SET confirmed = 1, confirmed_by = %s, confirmed_at = %s
+               WHERE project_id = %s AND confirmed = 0""",
             (confirmed_by, now, project_id),
         )
         conn.commit()
 
         rows = conn.execute(
             """SELECT framework_id, source, confirmed, detection_confidence
-               FROM framework_applicability WHERE project_id = ?""",
+               FROM framework_applicability WHERE project_id = %s""",
             (project_id,),
         ).fetchall()
 

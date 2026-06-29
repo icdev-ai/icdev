@@ -122,7 +122,7 @@ def _update_billing_status(tenant_id: str, billing_status: str) -> None:
 
         with get_connection() as conn:
             conn.execute(
-                "UPDATE tenants SET billing_status = ? WHERE id = ?",
+                "UPDATE tenants SET billing_status = %s WHERE id = %s",
                 (billing_status, tenant_id),
             )
     except Exception as exc:

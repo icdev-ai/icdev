@@ -25,7 +25,7 @@ def generate_roadmap() -> dict:
         for p in ZIG_PILLARS:
             caps = conn.execute(
                 "SELECT id, title, phase, maturity_level, implementation_status "
-                "FROM zig_capabilities WHERE pillar_slug=? ORDER BY phase",
+                "FROM zig_capabilities WHERE pillar_slug=%s ORDER BY phase",
                 (p["slug"],),
             ).fetchall()
             by_phase = {"discovery": [], "phase1": [], "phase2": []}

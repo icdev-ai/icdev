@@ -131,7 +131,7 @@ def verify_challenge(
     try:
         # Check for existing binding
         existing = conn.execute(
-            "SELECT id, binding_status FROM remote_user_bindings WHERE channel = ? AND channel_user_id = ?",
+            "SELECT id, binding_status FROM remote_user_bindings WHERE channel = %s AND channel_user_id = %s",
             (channel, channel_user_id),
         ).fetchone()
 
@@ -140,8 +140,8 @@ def verify_challenge(
                 return {"success": False, "error": f"Channel user already bound (binding {existing['id']})"}
             # Update revoked/pending binding
             conn.execute(
-                "UPDATE remote_user_bindings SET icdev_user_id = ?, tenant_id = ?, "
-                "binding_status = 'active', bound_at = ? WHERE id = ?",
+                "UPDATE remote_user_bindings SET icdev_user_id = %s, tenant_id = %s, "
+                "binding_status = 'active', bound_at = %s WHERE id = %s",
                 (icdev_user_id, tenant_id, now, existing["id"]),
             )
             binding_id = existing["id"]
@@ -150,7 +150,7 @@ def verify_challenge(
                 "INSERT INTO remote_user_bindings "
                 "(id, channel, channel_user_id, icdev_user_id, tenant_id, "
                 " binding_status, bound_at, created_at) "
-                "VALUES (?, ?, ?, ?, ?, 'active', ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, 'active', %s, %s)",
                 (binding_id, channel, channel_user_id, icdev_user_id, tenant_id, now, now),
             )
 
@@ -205,13 +205,13 @@ def provision_binding(
     try:
         # Upsert
         existing = conn.execute(
-            "SELECT id FROM remote_user_bindings WHERE channel = ? AND channel_user_id = ?", (channel, channel_user_id)
+            "SELECT id FROM remote_user_bindings WHERE channel = %s AND channel_user_id = %s", (channel, channel_user_id)
         ).fetchone()
 
         if existing:
             conn.execute(
-                "UPDATE remote_user_bindings SET icdev_user_id = ?, tenant_id = ?, "
-                "binding_status = 'active', bound_at = ? WHERE id = ?",
+                "UPDATE remote_user_bindings SET icdev_user_id = %s, tenant_id = %s, "
+                "binding_status = 'active', bound_at = %s WHERE id = %s",
                 (icdev_user_id, tenant_id, now, existing["id"]),
             )
             binding_id = existing["id"]
@@ -220,7 +220,7 @@ def provision_binding(
                 "INSERT INTO remote_user_bindings "
                 "(id, channel, channel_user_id, icdev_user_id, tenant_id, "
                 " binding_status, bound_at, created_at) "
-                "VALUES (?, ?, ?, ?, ?, 'active', ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, 'active', %s, %s)",
                 (binding_id, channel, channel_user_id, icdev_user_id, tenant_id, now, now),
             )
 
@@ -262,7 +262,7 @@ def resolve_binding(channel: str, channel_user_id: str, db_path: Optional[Path] 
     try:
         row = conn.execute(
             "SELECT * FROM remote_user_bindings "
-            "WHERE channel = ? AND channel_user_id = ? AND binding_status = 'active'",
+            "WHERE channel = %s AND channel_user_id = %s AND binding_status = 'active'",
             (channel, channel_user_id),
         ).fetchone()
         return dict(row) if row else None
@@ -285,7 +285,7 @@ def revoke_binding(binding_id: str, reason: str = "", db_path: Optional[Path] = 
     try:
         result = conn.execute(
             "UPDATE remote_user_bindings SET binding_status = 'revoked', "
-            "revoked_at = ? WHERE id = ? AND binding_status = 'active'",
+            "revoked_at = %s WHERE id = %s AND binding_status = 'active'",
             (now, binding_id),
         )
         conn.commit()

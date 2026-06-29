@@ -594,7 +594,7 @@ class RedTeamRunner:
                    (id, project_id, plugin_id, plugin_name, category,
                     passed, tests_run, tests_passed, findings_json,
                     duration_ms, classification, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'CUI', ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'CUI', %s)""",
                 (
                     entry_id,
                     project_id,

@@ -218,7 +218,7 @@ def create_form(
             """INSERT INTO studio_forms
                (form_id, name, description, schema_json, created_by,
                 created_at, updated_at, status)
-               VALUES (?, ?, ?, ?, ?, ?, ?, 'draft')""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, 'draft')""",
             (form_id, name, description, json.dumps(schema), created_by, _now_iso(), _now_iso()),
         )
         conn.commit()
@@ -245,7 +245,7 @@ def list_forms(*, status: str | None = None) -> list[dict]:
 def get_form(form_id: str) -> dict | None:
     conn = get_connection()
     try:
-        row = conn.execute("SELECT * FROM studio_forms WHERE form_id = ?", (form_id,)).fetchone()
+        row = conn.execute("SELECT * FROM studio_forms WHERE form_id = %s", (form_id,)).fetchone()
         return dict(row) if row else None
     finally:
         conn.close()
@@ -292,7 +292,7 @@ def update_form(
     conn = get_connection()
     try:
         conn.execute(
-            f"UPDATE studio_forms SET {', '.join(sets)} WHERE form_id = ?",  # nosec B608 — column names are hardcoded
+            f"UPDATE studio_forms SET {', '.join(sets)} WHERE form_id = %s",  # nosec B608 — column names are hardcoded
             vals,
         )
         conn.commit()
@@ -304,7 +304,7 @@ def update_form(
 def delete_form(form_id: str) -> dict:
     conn = get_connection()
     try:
-        cur = conn.execute("DELETE FROM studio_forms WHERE form_id = ?", (form_id,))
+        cur = conn.execute("DELETE FROM studio_forms WHERE form_id = %s", (form_id,))
         conn.commit()
         return {"status": "ok"} if cur.rowcount else {"status": "error", "error": "Not found"}
     finally:
@@ -325,7 +325,7 @@ def submit_form(form_id: str, data: dict, *, submitted_by: str = "user") -> dict
         conn.execute(
             """INSERT INTO studio_form_submissions
                (submission_id, form_id, data_json, submitted_by, submitted_at)
-               VALUES (?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s)""",
             (sub_id, form_id, json.dumps(data), submitted_by, _now_iso()),
         )
         conn.commit()
@@ -338,7 +338,7 @@ def list_submissions(form_id: str) -> list[dict]:
     conn = get_connection()
     try:
         rows = conn.execute(
-            "SELECT * FROM studio_form_submissions WHERE form_id = ? ORDER BY submitted_at DESC",
+            "SELECT * FROM studio_form_submissions WHERE form_id = %s ORDER BY submitted_at DESC",
             (form_id,),
         ).fetchall()
         return [dict(r) for r in rows]

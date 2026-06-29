@@ -165,7 +165,8 @@ def _build_test_app(tmp_path: Path, seed_rows: list):
     flask_app.config["TESTING"] = True
 
     from tools.dashboard.app import _register_govcon_pages
-    _register_govcon_pages(flask_app, _get_db)
+    with patch("tools.dashboard.app.require_role", lambda *roles: lambda f: f):
+        _register_govcon_pages(flask_app, _get_db)
 
     return flask_app, db_path
 
@@ -505,7 +506,8 @@ def _build_test_app_with_gaps(tmp_path: Path, pattern_rows: list):
     flask_app.config["TESTING"] = True
 
     from tools.dashboard.app import _register_govcon_pages
-    _register_govcon_pages(flask_app, _get_db)
+    with patch("tools.dashboard.app.require_role", lambda *roles: lambda f: f):
+        _register_govcon_pages(flask_app, _get_db)
 
     return flask_app, db_path
 
@@ -729,10 +731,16 @@ class TestEnhancementRecommendationsRoute:
 
 def _build_api_test_app():
     """Return a Flask test app with only the govcon_api blueprint registered."""
+    from flask import g
     from tools.dashboard.api.govcon import govcon_api
 
     flask_app = Flask(__name__)
     flask_app.config["TESTING"] = True
+
+    @flask_app.before_request
+    def _fake_auth():
+        g.current_user = {"id": "test-user", "role": "admin"}
+
     flask_app.register_blueprint(govcon_api)
     return flask_app
 

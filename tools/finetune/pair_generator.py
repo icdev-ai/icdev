@@ -327,8 +327,8 @@ def generate_from_rag_source(
         rows = conn.execute(
             """SELECT id, content, source_id
                FROM rag_chunks
-               WHERE source_table = ? AND tier = 'hot'
-               ORDER BY created_at DESC LIMIT ?""",
+               WHERE source_table = %s AND tier = 'hot'
+               ORDER BY created_at DESC LIMIT %s""",
             (source_table, limit),
         ).fetchall()
 
@@ -368,18 +368,18 @@ def get_generation_stats(
     conn = _get_db(db_path)
     try:
         total = conn.execute(
-            "SELECT COUNT(*) FROM ft_dataset_examples WHERE dataset_id = ? AND source = 'rag_auto_generated'",
+            "SELECT COUNT(*) FROM ft_dataset_examples WHERE dataset_id = %s AND source = 'rag_auto_generated'",
             (dataset_id,),
         ).fetchone()[0]
 
         approved = conn.execute(
-            "SELECT COUNT(*) FROM ft_dataset_examples WHERE dataset_id = ? AND source = 'rag_auto_generated' AND approved = 1",
+            "SELECT COUNT(*) FROM ft_dataset_examples WHERE dataset_id = %s AND source = 'rag_auto_generated' AND approved = 1",
             (dataset_id,),
         ).fetchone()[0]
 
         labeled = conn.execute(
             """SELECT COUNT(*) FROM ft_dataset_examples
-               WHERE dataset_id = ? AND source = 'rag_auto_generated'
+               WHERE dataset_id = %s AND source = 'rag_auto_generated'
                  AND (quality_score > 0 OR compliance_score > 0 OR relevance_score > 0)""",
             (dataset_id,),
         ).fetchone()[0]

@@ -88,7 +88,7 @@ def create_opord(
         conn.execute(
             "INSERT INTO sg_opords "
             "(id, title, theater, task_org, status, created_by, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, 'draft', ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, 'draft', %s, %s, %s)",
             (opord_id, title, theater, task_org or None, created_by, now, now),
         )
         conn.commit()
@@ -198,7 +198,7 @@ def list_opords(theater: str = "", limit: int = 30) -> list[dict]:
         else:
             rows = conn.execute(
                 "SELECT id, title, theater, status, created_by, created_at "  # nosec B608
-                "FROM sg_opords ORDER BY created_at DESC LIMIT ?",
+                "FROM sg_opords ORDER BY created_at DESC LIMIT %s",
                 (limit,),
             ).fetchall()
         cols = ("id", "title", "theater", "status", "created_by", "created_at")

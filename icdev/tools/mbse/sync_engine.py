@@ -376,7 +376,7 @@ def detect_drift(project_id: str, db_path: Optional[Path] = None) -> dict:
                   se.source_hash AS current_model_hash, se.name AS element_name
            FROM model_code_mappings mcm
            LEFT JOIN sysml_elements se ON mcm.sysml_element_id = se.id
-           WHERE mcm.project_id = ?""",
+           WHERE mcm.project_id = %s""",
         (project_id,),
     )
     rows = [dict(r) for r in cursor.fetchall()]
@@ -428,8 +428,8 @@ def detect_drift(project_id: str, db_path: Optional[Path] = None) -> dict:
         # Update sync_status in DB
         cursor.execute(
             """UPDATE model_code_mappings
-               SET sync_status = ?, last_synced = ?
-               WHERE id = ?""",
+               SET sync_status = %s, last_synced = %s
+               WHERE id = %s""",
             (new_status, _ts(), mapping_id),
         )
 
@@ -498,7 +498,7 @@ def sync_model_to_code(project_id: str, language: str = "python", db_path: Optio
                   se.source_hash, se.stereotype
            FROM model_code_mappings mcm
            JOIN sysml_elements se ON mcm.sysml_element_id = se.id
-           WHERE mcm.project_id = ? AND mcm.sync_status = 'model_ahead'""",
+           WHERE mcm.project_id = %s AND mcm.sync_status = 'model_ahead'""",
         (project_id,),
     )
     model_ahead_rows = [dict(r) for r in cursor.fetchall()]
@@ -520,9 +520,9 @@ def sync_model_to_code(project_id: str, language: str = "python", db_path: Optio
             new_code_hash = _compute_file_hash(str(code_path))
             cursor.execute(
                 """UPDATE model_code_mappings
-                   SET sync_status = 'synced', code_hash = ?, model_hash = ?,
-                       last_synced = ?
-                   WHERE id = ?""",
+                   SET sync_status = 'synced', code_hash = %s, model_hash = %s,
+                       last_synced = %s
+                   WHERE id = %s""",
                 (new_code_hash, row["source_hash"], _ts(), row["id"]),
             )
             files_updated += 1
@@ -534,10 +534,10 @@ def sync_model_to_code(project_id: str, language: str = "python", db_path: Optio
         """SELECT se.id, se.name, se.element_type, se.properties,
                   se.description, se.source_hash, se.stereotype
            FROM sysml_elements se
-           WHERE se.project_id = ?
+           WHERE se.project_id = %s
              AND se.id NOT IN (
                  SELECT sysml_element_id FROM model_code_mappings
-                 WHERE project_id = ?
+                 WHERE project_id = %s
              )
              AND se.element_type IN ('block', 'interface_block', 'activity')""",
         (project_id, project_id),
@@ -569,7 +569,7 @@ def sync_model_to_code(project_id: str, language: str = "python", db_path: Optio
                    (project_id, sysml_element_id, code_path, code_type,
                     mapping_direction, sync_status, model_hash, code_hash,
                     last_synced)
-                   VALUES (?, ?, ?, ?, 'model_to_code', 'synced', ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, 'model_to_code', 'synced', %s, %s, %s)""",
                 (
                     project_id,
                     elem["id"],
@@ -588,9 +588,9 @@ def sync_model_to_code(project_id: str, language: str = "python", db_path: Optio
     cursor.execute(
         """SELECT mcm.id, mcm.code_path
            FROM model_code_mappings mcm
-           WHERE mcm.project_id = ?
+           WHERE mcm.project_id = %s
              AND mcm.sysml_element_id NOT IN (
-                 SELECT id FROM sysml_elements WHERE project_id = ?
+                 SELECT id FROM sysml_elements WHERE project_id = %s
              )
              AND mcm.sync_status != 'unknown'""",
         (project_id, project_id),
@@ -600,8 +600,8 @@ def sync_model_to_code(project_id: str, language: str = "python", db_path: Optio
     for row in orphaned_rows:
         cursor.execute(
             """UPDATE model_code_mappings
-               SET sync_status = 'unknown', last_synced = ?
-               WHERE id = ?""",
+               SET sync_status = 'unknown', last_synced = %s
+               WHERE id = %s""",
             (_ts(), row["id"]),
         )
         files_orphaned += 1
@@ -788,7 +788,7 @@ def sync_code_to_model(project_id: str, output_path: str, db_path: Optional[Path
                   se.name, se.xmi_id
            FROM model_code_mappings mcm
            LEFT JOIN sysml_elements se ON mcm.sysml_element_id = se.id
-           WHERE mcm.project_id = ? AND mcm.sync_status = 'code_ahead'""",
+           WHERE mcm.project_id = %s AND mcm.sync_status = 'code_ahead'""",
         (project_id,),
     )
     code_ahead_rows = [dict(r) for r in cursor.fetchall()]
@@ -831,8 +831,8 @@ def sync_code_to_model(project_id: str, output_path: str, db_path: Optional[Path
             new_hash = _compute_file_hash(code_path)
             cursor.execute(
                 """UPDATE model_code_mappings
-                   SET code_hash = ?, last_synced = ?
-                   WHERE id = ?""",
+                   SET code_hash = %s, last_synced = %s
+                   WHERE id = %s""",
                 (new_hash, _ts(), row["id"]),
             )
         except Exception as exc:
@@ -842,7 +842,7 @@ def sync_code_to_model(project_id: str, output_path: str, db_path: Optional[Path
     project_output_dir = BASE_DIR / "output" / project_id
     if project_output_dir.exists():
         cursor.execute(
-            "SELECT code_path FROM model_code_mappings WHERE project_id = ?",
+            "SELECT code_path FROM model_code_mappings WHERE project_id = %s",
             (project_id,),
         )
         mapped_paths = {r["code_path"] for r in cursor.fetchall()}
@@ -954,7 +954,7 @@ def resolve_conflict(project_id: str, mapping_id: int, resolution: str, db_path:
                   se.description, se.source_hash, se.stereotype
            FROM model_code_mappings mcm
            LEFT JOIN sysml_elements se ON mcm.sysml_element_id = se.id
-           WHERE mcm.id = ? AND mcm.project_id = ?""",
+           WHERE mcm.id = %s AND mcm.project_id = %s""",
         (mapping_id, project_id),
     )
     row = cursor.fetchone()
@@ -989,10 +989,10 @@ def resolve_conflict(project_id: str, mapping_id: int, resolution: str, db_path:
             new_code_hash = _compute_file_hash(str(code_path))
             cursor.execute(
                 """UPDATE model_code_mappings
-                   SET sync_status = 'synced', code_hash = ?,
-                       model_hash = ?, mapping_direction = 'model_to_code',
-                       last_synced = ?
-                   WHERE id = ?""",
+                   SET sync_status = 'synced', code_hash = %s,
+                       model_hash = %s, mapping_direction = 'model_to_code',
+                       last_synced = %s
+                   WHERE id = %s""",
                 (new_code_hash, row["source_hash"], _ts(), mapping_id),
             )
 
@@ -1002,10 +1002,10 @@ def resolve_conflict(project_id: str, mapping_id: int, resolution: str, db_path:
             current_code_hash = _compute_file_hash(row["code_path"])
             cursor.execute(
                 """UPDATE model_code_mappings
-                   SET sync_status = 'synced', code_hash = ?,
-                       model_hash = ?, mapping_direction = 'code_to_model',
-                       last_synced = ?
-                   WHERE id = ?""",
+                   SET sync_status = 'synced', code_hash = %s,
+                       model_hash = %s, mapping_direction = 'code_to_model',
+                       last_synced = %s
+                   WHERE id = %s""",
                 (current_code_hash, row["source_hash"], _ts(), mapping_id),
             )
 
@@ -1013,8 +1013,8 @@ def resolve_conflict(project_id: str, mapping_id: int, resolution: str, db_path:
             cursor.execute(
                 """UPDATE model_code_mappings
                    SET sync_status = 'synced', mapping_direction = 'bidirectional',
-                       last_synced = ?
-                   WHERE id = ?""",
+                       last_synced = %s
+                   WHERE id = %s""",
                 (_ts(), mapping_id),
             )
 
@@ -1118,7 +1118,7 @@ def reimport_xmi(project_id: str, file_path: str, db_path: Optional[Path] = None
 
     # Step 2: Load existing elements by xmi_id
     cursor.execute(
-        "SELECT id, xmi_id, source_hash FROM sysml_elements WHERE project_id = ?",
+        "SELECT id, xmi_id, source_hash FROM sysml_elements WHERE project_id = %s",
         (project_id,),
     )
     existing = {r["xmi_id"]: dict(r) for r in cursor.fetchall()}
@@ -1142,11 +1142,11 @@ def reimport_xmi(project_id: str, file_path: str, db_path: Optional[Path] = None
                 # Element changed — update it
                 cursor.execute(
                     """UPDATE sysml_elements
-                       SET name = ?, element_type = ?, qualified_name = ?,
-                           stereotype = ?, description = ?, properties = ?,
-                           diagram_type = ?, source_file = ?,
-                           source_hash = ?, updated_at = ?
-                       WHERE project_id = ? AND xmi_id = ?""",
+                       SET name = %s, element_type = %s, qualified_name = %s,
+                           stereotype = %s, description = %s, properties = %s,
+                           diagram_type = %s, source_file = %s,
+                           source_hash = %s, updated_at = %s
+                       WHERE project_id = %s AND xmi_id = %s""",
                     (
                         elem["name"],
                         elem["element_type"],
@@ -1166,8 +1166,8 @@ def reimport_xmi(project_id: str, file_path: str, db_path: Optional[Path] = None
                 elem_db_id = existing[xmi_id]["id"]
                 cursor.execute(
                     """UPDATE model_code_mappings
-                       SET sync_status = 'model_ahead', model_hash = ?
-                       WHERE project_id = ? AND sysml_element_id = ?""",
+                       SET sync_status = 'model_ahead', model_hash = %s
+                       WHERE project_id = %s AND sysml_element_id = %s""",
                     (new_source_hash, project_id, elem_db_id),
                 )
                 updated += 1
@@ -1183,7 +1183,7 @@ def reimport_xmi(project_id: str, file_path: str, db_path: Optional[Path] = None
                         qualified_name, parent_id, stereotype, description,
                         properties, diagram_type, source_file, source_hash,
                         imported_at, updated_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                     (
                         elem_id,
                         project_id,
@@ -1213,16 +1213,16 @@ def reimport_xmi(project_id: str, file_path: str, db_path: Optional[Path] = None
             # Mark as deleted by updating a description note (we do NOT delete)
             cursor.execute(
                 """UPDATE sysml_elements
-                   SET description = description || ' [DELETED in reimport ' || ? || ']',
-                       updated_at = ?
-                   WHERE id = ?""",
+                   SET description = description || ' [DELETED in reimport ' || %s || ']',
+                       updated_at = %s
+                   WHERE id = %s""",
                 (timestamp, timestamp, existing_elem["id"]),
             )
             # Mark associated mappings as unknown
             cursor.execute(
                 """UPDATE model_code_mappings
                    SET sync_status = 'unknown'
-                   WHERE project_id = ? AND sysml_element_id = ?""",
+                   WHERE project_id = %s AND sysml_element_id = %s""",
                 (project_id, existing_elem["id"]),
             )
             deleted += 1
@@ -1233,8 +1233,8 @@ def reimport_xmi(project_id: str, file_path: str, db_path: Optional[Path] = None
            (project_id, import_type, source_file, source_hash,
             elements_imported, relationships_imported, errors,
             error_details, status, imported_by, imported_at)
-           VALUES (?, 'xmi_reimport', ?, ?, ?, 0, 0, NULL, 'completed',
-                   'icdev-sync-engine', ?)""",
+           VALUES (%s, 'xmi_reimport', %s, %s, %s, 0, 0, NULL, 'completed',
+                   'icdev-sync-engine', %s)""",
         (
             project_id,
             str(Path(file_path).name),
@@ -1338,7 +1338,7 @@ def reimport_reqif(project_id: str, file_path: str, db_path: Optional[Path] = No
     # Step 2: Load existing requirements by doors_id
     cursor.execute(
         "SELECT id, doors_id, title, description, priority, requirement_type "
-        "FROM doors_requirements WHERE project_id = ?",
+        "FROM doors_requirements WHERE project_id = %s",
         (project_id,),
     )
     existing = {}
@@ -1377,9 +1377,9 @@ def reimport_reqif(project_id: str, file_path: str, db_path: Optional[Path] = No
             if new_hash != old_hash:
                 cursor.execute(
                     """UPDATE doors_requirements
-                       SET title = ?, description = ?, priority = ?,
-                           requirement_type = ?, source_hash = ?, updated_at = ?
-                       WHERE project_id = ? AND doors_id = ?""",
+                       SET title = %s, description = %s, priority = %s,
+                           requirement_type = %s, source_hash = %s, updated_at = %s
+                       WHERE project_id = %s AND doors_id = %s""",
                     (
                         req.get("title", ""),
                         req.get("description", ""),
@@ -1403,7 +1403,7 @@ def reimport_reqif(project_id: str, file_path: str, db_path: Optional[Path] = No
                        (id, project_id, doors_id, title, description,
                         priority, requirement_type, status,
                         source_file, source_hash, imported_at, updated_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)""",
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, 'active', %s, %s, %s, %s)""",
                     (
                         req_id,
                         project_id,
@@ -1427,8 +1427,8 @@ def reimport_reqif(project_id: str, file_path: str, db_path: Optional[Path] = No
         if doors_id not in new_doors_ids:
             cursor.execute(
                 """UPDATE doors_requirements
-                   SET status = 'deleted', updated_at = ?
-                   WHERE project_id = ? AND doors_id = ?""",
+                   SET status = 'deleted', updated_at = %s
+                   WHERE project_id = %s AND doors_id = %s""",
                 (timestamp, project_id, doors_id),
             )
             deleted += 1
@@ -1439,8 +1439,8 @@ def reimport_reqif(project_id: str, file_path: str, db_path: Optional[Path] = No
            (project_id, import_type, source_file, source_hash,
             elements_imported, relationships_imported, errors,
             error_details, status, imported_by, imported_at)
-           VALUES (?, 'reqif_reimport', ?, ?, ?, 0, 0, NULL, 'completed',
-                   'icdev-sync-engine', ?)""",
+           VALUES (%s, 'reqif_reimport', %s, %s, %s, 0, 0, NULL, 'completed',
+                   'icdev-sync-engine', %s)""",
         (
             project_id,
             str(Path(file_path).name),
@@ -1513,7 +1513,7 @@ def generate_sync_report(project_id: str, db_path: Optional[Path] = None) -> str
                   se.name AS element_name, se.element_type
            FROM model_code_mappings mcm
            LEFT JOIN sysml_elements se ON mcm.sysml_element_id = se.id
-           WHERE mcm.project_id = ?
+           WHERE mcm.project_id = %s
            ORDER BY mcm.sync_status, se.name""",
         (project_id,),
     )
@@ -1523,7 +1523,7 @@ def generate_sync_report(project_id: str, db_path: Optional[Path] = None) -> str
     cursor.execute(
         """SELECT import_type, source_file, status, imported_at
            FROM model_imports
-           WHERE project_id = ?
+           WHERE project_id = %s
            ORDER BY imported_at DESC LIMIT 5""",
         (project_id,),
     )

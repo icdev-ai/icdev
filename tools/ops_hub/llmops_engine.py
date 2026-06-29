@@ -254,7 +254,7 @@ def get_recent_chain_runs(limit: int = 25, function: str = "") -> list[dict]:
                 FROM llm_chain_telemetry
                 {where}
                 ORDER BY created_at DESC
-                LIMIT ?
+                LIMIT %s
                 """,
                 params + (int(limit),),
             ).fetchall()

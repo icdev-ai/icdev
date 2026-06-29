@@ -42,7 +42,7 @@ def list_mods(contract_id: str, *, db_path: str | None = None) -> list[dict]:
     conn = _get_conn(db_path)
     try:
         rows = conn.execute(
-            "SELECT * FROM cpmp_contract_mods WHERE contract_id = ? ORDER BY mod_number",
+            "SELECT * FROM cpmp_contract_mods WHERE contract_id = %s ORDER BY mod_number",
             (contract_id,),
         ).fetchall()
         return [dict(r) for r in rows]
@@ -54,7 +54,7 @@ def get_mod(mod_id: str, *, db_path: str | None = None) -> dict | None:
     conn = _get_conn(db_path)
     try:
         row = conn.execute(
-            "SELECT * FROM cpmp_contract_mods WHERE id = ?", (mod_id,)
+            "SELECT * FROM cpmp_contract_mods WHERE id = %s", (mod_id,)
         ).fetchone()
         return dict(row) if row else None
     finally:
@@ -84,7 +84,7 @@ def create_mod(
     try:
         # Auto-increment mod_number within contract
         row = conn.execute(
-            "SELECT COALESCE(MAX(mod_number), 0) + 1 FROM cpmp_contract_mods WHERE contract_id = ?",
+            "SELECT COALESCE(MAX(mod_number), 0) + 1 FROM cpmp_contract_mods WHERE contract_id = %s",
             (contract_id,),
         ).fetchone()
         mod_number = row[0]
@@ -94,7 +94,7 @@ def create_mod(
             """INSERT INTO cpmp_contract_mods
                (id, contract_id, mod_number, type, description, value_delta, status,
                 requested_by, requested_at, classification, tenant_id, metadata, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, 'requested', ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, 'requested', %s, %s, %s, %s, %s, %s, %s)""",
             (mod_id, contract_id, mod_number, type_, description, value_delta,
              requested_by, now, classification, tenant_id, metadata, now, now),
         )
@@ -117,7 +117,7 @@ def transition_mod(
     conn = _get_conn(db_path)
     try:
         row = conn.execute(
-            "SELECT status FROM cpmp_contract_mods WHERE id = ?", (mod_id,)
+            "SELECT status FROM cpmp_contract_mods WHERE id = %s", (mod_id,)
         ).fetchone()
         if not row:
             raise ValueError(f"Modification {mod_id} not found")
@@ -142,7 +142,7 @@ def transition_mod(
             params.append(v)
         params.append(mod_id)
         conn.execute(
-            f"UPDATE cpmp_contract_mods SET {', '.join(set_clauses)} WHERE id = ?",
+            f"UPDATE cpmp_contract_mods SET {', '.join(set_clauses)} WHERE id = %s",
             params,
         )
         _record_status_history(conn, "contract_mod", mod_id, old_status, new_status, actor, reason)
@@ -159,6 +159,6 @@ def _record_status_history(
     conn.execute(
         """INSERT INTO cpmp_status_history
            (entity_type, entity_id, old_status, new_status, changed_by, reason)
-           VALUES (?, ?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s, %s)""",
         (entity_type, entity_id, old_status, new_status, changed_by, reason),
     )

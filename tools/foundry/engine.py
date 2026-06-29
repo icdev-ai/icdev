@@ -63,6 +63,7 @@ except Exception:  # pragma: no cover - yaml is a core dep but stay defensive
     _HAS_YAML = False
 
 from tools.foundry.db.init_db import _is_pg, init_db
+from tools.db.storage import sql_placeholder
 from tools.logging.icdev_logger import get_logger
 
 logger = get_logger("icdev.foundry.engine")
@@ -398,7 +399,7 @@ def _recent_vv_fail_rate(conn: Any, window: int = 10) -> Optional[dict]:
     """
     try:
         rows = conn.execute(
-            "SELECT outcome FROM foundry_outcomes ORDER BY id DESC LIMIT %s",
+            f"SELECT outcome FROM foundry_outcomes ORDER BY id DESC LIMIT {sql_placeholder(conn)}",
             (window,),
         ).fetchall()
     except Exception as exc:  # noqa: BLE001
@@ -471,14 +472,15 @@ def _ensure_hitl_circuit_card(
         f"Review the recent V&V failures in foundry_outcomes before re-enabling autonomous build."
     )
     try:
+        ph = sql_placeholder(conn)
         conn.execute(
-            """
+            f"""
             INSERT OR IGNORE INTO kanban_tasks
                 (id, title, description, task_type, priority, status,
                  hitl_stage, dispatch_source, created_at, updated_at,
                  tenant_id, classification)
-            VALUES (%s, %s, %s, 'hitl', 'critical', 'backlog',
-                    'circuit_breaker', 'foundry_circuit_breaker', %s, %s, %s, %s)
+            VALUES ({ph}, {ph}, {ph}, 'hitl', 'critical', 'backlog',
+                    'circuit_breaker', 'foundry_circuit_breaker', {ph}, {ph}, {ph}, {ph})
             """,
             (
                 card_id,
@@ -510,9 +512,10 @@ def _row_id(row: Any) -> Any:
 
 def _open_run(conn: Any, tenant_id: str, classification: str) -> Any:
     """INSERT a 'running' foundry_runs row; return its primary key (used as run_id)."""
+    ph = sql_placeholder(conn)
     sql = (
-        "INSERT INTO foundry_runs (status, tenant_id, classification) "
-        "VALUES (?, ?, ?)"
+        f"INSERT INTO foundry_runs (status, tenant_id, classification) "
+        f"VALUES ({ph}, {ph}, {ph})"
     )
     params = ("running", tenant_id, classification)
     if _is_pg():
@@ -746,7 +749,7 @@ def status(*, conn: Any = None, limit: int = 10) -> dict:
         try:
             cur = conn.execute(
                 "SELECT id, cycle_at, harvested, concepts_proposed, concepts_approved, "
-                "tasks_emitted, status FROM foundry_runs ORDER BY id DESC LIMIT %s",
+                f"tasks_emitted, status FROM foundry_runs ORDER BY id DESC LIMIT {sql_placeholder(conn)}",
                 (int(limit),),
             )
             cols = ["id", "cycle_at", "harvested", "concepts_proposed",

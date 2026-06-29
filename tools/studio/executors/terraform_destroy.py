@@ -46,7 +46,7 @@ def _find_state_for_run(run_id: str, tfstate_dir: Path) -> Path | None:
             try:
                 row = conn.execute(
                     "SELECT stdout FROM studio_workflow_run_steps "
-                    "WHERE run_id = ? AND step_name = 'Terraform Apply'",
+                    "WHERE run_id = %s AND step_name = 'Terraform Apply'",
                     (run_id,),
                 ).fetchone()
                 if row and row["stdout"]:

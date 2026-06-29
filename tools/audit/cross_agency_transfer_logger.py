@@ -41,7 +41,7 @@ def _now() -> str:
 
 def _table_exists(conn) -> bool:
     row = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=%s",
         (_TABLE,),
     ).fetchone()
     return row is not None
@@ -157,7 +157,7 @@ class CrossAgencyTransferLogger:
                      bytes_transferred, checksum, duration_ms,
                      rejection_reason, error_code, details, occurred_at)
                 VALUES
-                    (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     event_id,
@@ -222,7 +222,7 @@ def _mirror_to_audit_trail(conn, kwargs: dict, event_id: str, occurred_at: str) 
             INSERT INTO audit_trail
                 (id, event_type, actor, action, project_id, details,
                  classification, recorded_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 audit_id,
@@ -246,7 +246,7 @@ def query_by_transfer_id(transfer_id: str) -> list[dict]:
     if not _table_exists(conn):
         return []
     rows = conn.execute(
-        "SELECT * FROM cross_agency_transfers WHERE transfer_id=? ORDER BY occurred_at DESC LIMIT 50",
+        "SELECT * FROM cross_agency_transfers WHERE transfer_id=%s ORDER BY occurred_at DESC LIMIT 50",
         (transfer_id,),
     ).fetchall()
     return [dict(r) for r in rows]

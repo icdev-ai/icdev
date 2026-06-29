@@ -1,0 +1,7 @@
+# IQE-FC-001: Recent forecast jobs
+# Lists the most recent time-series forecasting jobs with status and model.
+
+foreach j in forecast.jobs
+select j.id, j.source, j.context, j.input_rows, j.status, j.model_id, j.created_at
+order by j.created_at desc
+limit 20

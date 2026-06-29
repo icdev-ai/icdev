@@ -319,7 +319,7 @@ def seed_default_vehicles() -> Dict[str, Any]:
     skipped = 0
     for v in DEFAULT_VEHICLES:
         existing = conn.execute(
-            "SELECT id FROM pgv_procurement_vehicles WHERE vehicle_name = ?",
+            "SELECT id FROM pgv_procurement_vehicles WHERE vehicle_name = %s",
             (v["vehicle_name"],),
         ).fetchone()
         if existing:
@@ -332,7 +332,7 @@ def seed_default_vehicles() -> Dict[str, Any]:
                 domains, naics_prefixes, min_ceiling_usd, max_ceiling_usd,
                 set_aside_eligible, fair_opportunity_required, notes,
                 status, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'active', %s, %s)""",
             (vid, v["vehicle_name"], v["vehicle_type"], v["agency"],
              v["contract_holders"], v["domains"], v["naics_prefixes"],
              v["min_ceiling_usd"], v["max_ceiling_usd"],
@@ -447,7 +447,7 @@ def match_initiative(
     # Persist matches
     conn = _get_conn()
     # Clear prior matches for this initiative
-    conn.execute("DELETE FROM pgv_vehicle_match WHERE initiative_code = ?",
+    conn.execute("DELETE FROM pgv_vehicle_match WHERE initiative_code = %s",
                  (initiative_code,))
     for idx, m in enumerate(scored):
         mid = str(uuid.uuid4())
@@ -456,7 +456,7 @@ def match_initiative(
             """INSERT INTO pgv_vehicle_match
                (id, initiative_code, vehicle_id, viability_score,
                 rationale, recommended, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
             (mid, initiative_code, m["vehicle_id"], m["score"],
              m["rationale"], recommended, _now()),
         )
@@ -563,16 +563,16 @@ def _upsert_viability(
 ) -> None:
     conn = _get_conn()
     existing = conn.execute(
-        "SELECT id FROM pgv_initiative_viability WHERE initiative_code = ?",
+        "SELECT id FROM pgv_initiative_viability WHERE initiative_code = %s",
         (initiative_code,),
     ).fetchone()
     if existing:
         conn.execute(
             """UPDATE pgv_initiative_viability
-               SET title=?, agency=?, naics=?, ceiling_usd=?, viable=?,
-                   recommended_vehicle=?, recommended_path=?, flagged_reason=?,
-                   evaluated_at=?
-               WHERE initiative_code=?""",
+               SET title=%s, agency=%s, naics=%s, ceiling_usd=%s, viable=%s,
+                   recommended_vehicle=%s, recommended_path=%s, flagged_reason=%s,
+                   evaluated_at=%s
+               WHERE initiative_code=%s""",
             (title, agency, naics, ceiling_usd, 1 if viable else 0,
              recommended_vehicle, recommended_path, flagged_reason,
              _now(), initiative_code),
@@ -582,7 +582,7 @@ def _upsert_viability(
             """INSERT INTO pgv_initiative_viability
                (id, initiative_code, title, agency, naics, ceiling_usd,
                 viable, recommended_vehicle, recommended_path, flagged_reason, evaluated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (str(uuid.uuid4()), initiative_code, title, agency, naics, ceiling_usd,
              1 if viable else 0, recommended_vehicle, recommended_path,
              flagged_reason, _now()),

@@ -69,7 +69,7 @@ def check_routeable_signals() -> Dict[str, Any]:
         min_score = fed_config.get("innovation_to_creative", {}).get("min_signal_score", 0.70)
         rows = conn.execute(
             "SELECT id, title, source, composite_score FROM innovation_signals "
-            "WHERE composite_score >= ? "
+            "WHERE composite_score >= %s "
             "AND id NOT IN (SELECT source_signal_id FROM creative_signals WHERE source_signal_id IS NOT NULL) "
             "ORDER BY composite_score DESC LIMIT 10",
             (min_score,),
@@ -83,7 +83,7 @@ def check_routeable_signals() -> Dict[str, Any]:
         min_score = fed_config.get("creative_to_research", {}).get("min_gap_score", 0.65)
         rows = conn.execute(
             "SELECT id, title, composite_score FROM creative_feature_gaps "
-            "WHERE composite_score >= ? "
+            "WHERE composite_score >= %s "
             "AND id NOT IN (SELECT source_gap_id FROM research_sessions WHERE source_gap_id IS NOT NULL) "
             "ORDER BY composite_score DESC LIMIT 10",
             (min_score,),
@@ -147,7 +147,7 @@ def route_signals(dry_run: bool = False) -> Dict[str, Any]:
                 conn.execute(
                     "INSERT OR IGNORE INTO creative_signals "
                     "(id, source, title, raw_content, source_signal_id, created_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    "VALUES (%s, %s, %s, %s, %s, %s)",
                     (
                         f"cs-fed-{signal['id'][-10:]}",
                         "innovation_federation",

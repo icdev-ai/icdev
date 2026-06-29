@@ -624,8 +624,8 @@ def generate_and_store(scope, scope_id, db_path=None):
     conn = _get_connection(db_path)
     try:
         conn.execute(
-            """UPDATE dev_profiles SET profile_md = ?
-               WHERE scope = ? AND scope_id = ? AND is_active = 1""",
+            """UPDATE dev_profiles SET profile_md = %s
+               WHERE scope = %s AND scope_id = %s AND is_active = 1""",
             (profile_md, scope, scope_id),
         )
         conn.commit()

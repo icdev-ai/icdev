@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+{% block title %}{{ form.name }} — ICDEV™{% endblock %}
+
+{% block content %}
+{% from "includes/classification_macros.html" import design_classification_banner %}
+{{ design_classification_banner('CUI') }}
+
+<div class="page-container" style="padding:24px">
+
+  <!-- Breadcrumbs -->
+  <div style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:12px">
+    <a href="/workflow-canvas/">Workflow &amp; Forms</a> /
+    <a href="/workflow-canvas/forms">Forms</a> /
+    {{ form.name }}
+  </div>
+
+  <!-- Header + action bar -->
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px">
+    <div>
+      <h1 style="margin:0;font-size:1.5rem">{{ form.name }}</h1>
+      {% if form.description %}
+      <p style="margin:4px 0 0;color:var(--text-secondary)">{{ form.description }}</p>
+      {% endif %}
+      <div style="margin-top:6px;display:flex;gap:8px;align-items:center">
+        <span class="badge badge-{{ 'success' if form.status=='published' else 'warning' if form.status=='draft' else 'neutral' }}">{{ form.status }}</span>
+        <span style="font-size:0.8rem;color:var(--text-secondary)">v{{ form.version }}</span>
+        <span style="font-size:0.8rem;color:var(--text-secondary)">Created {{ form.created_at[:10] if form.created_at else '' }}</span>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <a href="/workflow-canvas/forms/{{ form.form_id }}/edit" style="padding:8px 18px;background:#1d72ff;color:#fff;border-radius:6px;text-decoration:none;font-size:0.9rem;font-weight:600;white-space:nowrap">✏️ Edit</a>
+      <div style="position:relative">
+        <button class="btn btn-secondary" onclick="toggleExportMenu()">📤 Export ▾</button>
+        <div id="export-menu" style="display:none;position:absolute;top:110%;right:0;background:var(--bg-primary);border:1px solid var(--border-color);border-radius:6px;min-width:200px;z-index:999;box-shadow:0 4px 12px rgba(0,0,0,.15)">
+          {% for fmt in export_formats %}
+          <div style="padding:10px 14px;cursor:pointer"
+               onmouseenter="this.style.background='var(--bg-secondary)'"
+               onmouseleave="this.style.background=''"
+               onclick="exportForm('{{ fmt.id }}')">{{ fmt.label }}</div>
+          {% endfor %}
+        </div>
+      </div>
+      <button class="btn btn-danger" onclick="deleteForm()">🗑 Delete</button>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 320px;gap:24px">
+
+    <!-- Fields preview -->
+    <div>
+      <h2 style="font-size:1rem;margin:0 0 12px">Fields ({{ fields|length }})</h2>
+      {% if fields %}
+      <div style="display:flex;flex-direction:column;gap:10px">
+        {% for f in fields %}
+        <div style="background:var(--bg-secondary);border-radius:8px;padding:14px;display:flex;align-items:center;justify-content:space-between">
+          <div>
+            <div style="font-weight:600">{{ f.label or f.id }}{% if f.required %} <span style="color:#ef4444">*</span>{% endif %}</div>
+            <div style="font-size:0.8rem;color:var(--text-secondary)">
+              {{ f.type }}
+              {% if f.options %} · {{ f.options|join(', ') }}{% endif %}
+            </div>
+          </div>
+          <span style="font-size:0.75rem;background:var(--bg-primary);padding:2px 8px;border-radius:4px;border:1px solid var(--border-color);color:var(--text-secondary)">{{ f.type }}</span>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div style="color:var(--text-secondary);font-size:0.9rem">No fields defined.</div>
+      {% endif %}
+
+      <!-- Submissions -->
+      <h2 style="font-size:1rem;margin:24px 0 12px">Submissions ({{ submissions|length }})</h2>
+      {% if submissions %}
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:0.85rem">
+          <thead>
+            <tr style="border-bottom:2px solid var(--border-color)">
+              <th style="text-align:left;padding:8px">ID</th>
+              <th style="text-align:left;padding:8px">Submitted By</th>
+              <th style="text-align:left;padding:8px">Date</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for sub in submissions %}
+            <tr style="border-bottom:1px solid var(--border-color)">
+              <td style="padding:8px;font-family:monospace;font-size:0.8rem">{{ sub.submission_id }}</td>
+              <td style="padding:8px">{{ sub.submitted_by or 'anonymous' }}</td>
+              <td style="padding:8px">{{ sub.submitted_at[:19] if sub.submitted_at else '' }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div style="color:var(--text-secondary);font-size:0.9rem">No submissions yet.</div>
+      {% endif %}
+    </div>
+
+    <!-- Branding sidebar -->
+    <div style="background:var(--bg-secondary);border-radius:8px;padding:16px">
+      <h3 style="margin:0 0 12px;font-size:0.95rem">Enterprise Branding</h3>
+      {% if branding.org_name %}
+      <div style="margin-bottom:8px"><strong>Organization:</strong> {{ branding.org_name }}</div>
+      {% endif %}
+      {% if branding.primary_color %}
+      <div style="margin-bottom:8px;display:flex;align-items:center;gap:8px">
+        <span>Primary Color:</span>
+        <span style="display:inline-block;width:20px;height:20px;border-radius:4px;background:{{ branding.primary_color }};border:1px solid var(--border-color)"></span>
+        <code style="font-size:0.8rem">{{ branding.primary_color }}</code>
+      </div>
+      {% endif %}
+      {% if branding.logo_data %}
+      <div style="margin-bottom:8px">
+        <div style="font-size:0.8rem;color:var(--text-secondary);margin-bottom:4px">Logo</div>
+        {% if branding.logo_data.startswith('data:image') %}
+        <img src="{{ branding.logo_data }}" style="max-width:120px;max-height:60px;object-fit:contain">
+        {% else %}
+        <code style="font-size:0.75rem;word-break:break-all">{{ branding.logo_data[:60] }}…</code>
+        {% endif %}
+      </div>
+      {% endif %}
+      {% if branding.header_html %}
+      <div style="margin-bottom:8px">
+        <div style="font-size:0.8rem;color:var(--text-secondary);margin-bottom:4px">Header</div>
+        <div style="font-size:0.8rem;padding:6px;background:var(--bg-primary);border-radius:4px">{{ branding.header_html|truncate(80) }}</div>
+      </div>
+      {% endif %}
+      {% if branding.footer_html %}
+      <div style="margin-bottom:8px">
+        <div style="font-size:0.8rem;color:var(--text-secondary);margin-bottom:4px">Footer</div>
+        <div style="font-size:0.8rem;padding:6px;background:var(--bg-primary);border-radius:4px">{{ branding.footer_html|truncate(80) }}</div>
+      </div>
+      {% endif %}
+      <a href="/workflow-canvas/forms/{{ form.form_id }}/edit" class="btn btn-sm btn-secondary" style="margin-top:8px;display:inline-block">Edit Branding →</a>
+    </div>
+
+  </div>
+</div>
+
+<script>
+const FORM_ID = '{{ form.form_id }}';
+
+function toggleExportMenu() {
+  const m = document.getElementById('export-menu');
+  m.style.display = m.style.display === 'none' ? 'block' : 'none';
+}
+document.addEventListener('click', e => {
+  if (!e.target.closest('#export-menu') && !e.target.matches('[onclick*="toggleExportMenu"]')) {
+    const m = document.getElementById('export-menu');
+    if (m) m.style.display = 'none';
+  }
+});
+
+async function exportForm(fmt) {
+  const resp = await fetch('/workflow-canvas/api/forms/' + FORM_ID + '/export/' + fmt, {method:'POST'});
+  if (!resp.ok) { const d = await resp.json(); alert(d.error || 'Export failed'); return; }
+  const blob = await resp.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = '{{ form.name|lower|replace(" ","_") }}.' + fmt;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+async function deleteForm() {
+  if (!confirm('Delete this form? This cannot be undone.')) return;
+  const resp = await fetch('/workflow-canvas/api/forms/' + FORM_ID, {method:'DELETE'});
+  const d = await resp.json();
+  if (d.status === 'ok') window.location.href = '/workflow-canvas/forms';
+  else alert(d.error || 'Delete failed');
+}
+</script>
+{% endblock %}

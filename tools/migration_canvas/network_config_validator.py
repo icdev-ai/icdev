@@ -240,7 +240,7 @@ def validate_migration_completeness(session_id: str) -> dict:
     with _conn() as db:
         sess = db.execute(
             "SELECT src_config_raw, src_model, tgt_model, tgt_device_name "
-            "FROM mc_net_sessions WHERE id=?",
+            "FROM mc_net_sessions WHERE id=%s",
             (session_id,),
         ).fetchone()
 
@@ -287,7 +287,7 @@ def validate_migration_completeness(session_id: str) -> dict:
         db.execute(
             "INSERT INTO mc_net_config_validation "
             "(id, session_id, run_at, diff_summary, completeness_score, status) "
-            "VALUES (?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s)",
             (row_id, session_id, run_at, json.dumps(diff), score, status),
         )
         db.commit()

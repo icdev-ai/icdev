@@ -130,7 +130,7 @@ def record_canvas_decision(
                     (id, canvas_type, record_id, decision_type, decision,
                      rationale, model_used, confidence, alternatives,
                      trace_id, span_id, actor, project_id, classification)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     decision_id,

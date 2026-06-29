@@ -177,6 +177,52 @@ CREATE TABLE IF NOT EXISTS ace_skill_candidates (
 );
 CREATE INDEX IF NOT EXISTS idx_ace_skill_candidates_status ON ace_skill_candidates(status);
 CREATE INDEX IF NOT EXISTS idx_ace_skill_candidates_role ON ace_skill_candidates(role_id);
+
+CREATE TABLE IF NOT EXISTS ace_sessions (
+    session_id            TEXT PRIMARY KEY,
+    instance_id           TEXT NOT NULL REFERENCES ace_instances(id) ON DELETE CASCADE,
+    conversation_history  TEXT NOT NULL DEFAULT '[]',
+    history_json          TEXT NOT NULL DEFAULT '[]',
+    resume_token          TEXT NOT NULL UNIQUE,
+    turn_count            INTEGER NOT NULL DEFAULT 0,
+    created_at            TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_ace_sessions_instance ON ace_sessions(instance_id);
+CREATE INDEX IF NOT EXISTS idx_ace_sessions_token ON ace_sessions(resume_token);
+
+CREATE TABLE IF NOT EXISTS ace_qa_runs (
+    id                TEXT PRIMARY KEY,
+    trigger           TEXT NOT NULL DEFAULT '',
+    trigger_ref       TEXT NOT NULL DEFAULT '',
+    canvas_filter     TEXT NOT NULL DEFAULT '',
+    started_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    completed_at      TEXT,
+    status            TEXT NOT NULL DEFAULT 'running',
+    total_tests       INTEGER NOT NULL DEFAULT 0,
+    passed            INTEGER NOT NULL DEFAULT 0,
+    failed            INTEGER NOT NULL DEFAULT 0,
+    screenshot_count  INTEGER NOT NULL DEFAULT 0,
+    report_path       TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_ace_qa_runs_status  ON ace_qa_runs(status);
+CREATE INDEX IF NOT EXISTS idx_ace_qa_runs_started ON ace_qa_runs(started_at);
+
+CREATE TABLE IF NOT EXISTS ace_qa_failures (
+    id                    TEXT PRIMARY KEY,
+    run_id                TEXT NOT NULL REFERENCES ace_qa_runs(id),
+    test_name             TEXT NOT NULL DEFAULT '',
+    spec_file             TEXT NOT NULL DEFAULT '',
+    error_message         TEXT NOT NULL DEFAULT '',
+    screenshot_path       TEXT NOT NULL DEFAULT '',
+    severity              TEXT NOT NULL DEFAULT 'medium',
+    kanban_task_id        TEXT NOT NULL DEFAULT '',
+    healing_attempted     INTEGER NOT NULL DEFAULT 0,
+    healing_succeeded     INTEGER NOT NULL DEFAULT 0,
+    healed_selector       TEXT NOT NULL DEFAULT '',
+    created_at            TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_ace_qa_failures_run      ON ace_qa_failures(run_id);
+CREATE INDEX IF NOT EXISTS idx_ace_qa_failures_severity ON ace_qa_failures(severity);
 """
 
 # ---------------------------------------------------------------------------
@@ -199,7 +245,7 @@ def init() -> None:
             )
             conn.commit()
         except Exception:
-            pass  # column already exists — safe to ignore
+            conn.rollback()  # column already exists — reset aborted PG txn
     finally:
         conn.close()
 

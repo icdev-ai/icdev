@@ -97,7 +97,7 @@ def _store_amendment_diff(opp_id: str, diff_type: str, section: str, old_text: s
             """
             INSERT INTO pg_amendment_diffs
                 (id, opportunity_id, diff_type, section, old_text, new_text, re_extracted, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, 0, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, 0, %s)
         """,
             (f"pgad-{uuid.uuid4().hex[:10]}", opp_id, diff_type, section, old_text, new_text, _utcnow_iso()),
         )
@@ -184,7 +184,7 @@ def _create_workflow_loop(opp_id: str, opp_title: str) -> Optional[str]:
             conn = get_connection()
             try:
                 conn.execute(
-                    "UPDATE proposal_opportunities SET workflow_loop_id = ? WHERE id = ?",
+                    "UPDATE proposal_opportunities SET workflow_loop_id = %s WHERE id = %s",
                     (loop_id, opp_id),
                 )
                 conn.commit()
@@ -219,7 +219,7 @@ def _verify_workflow_criteria(opp_id: str) -> Dict[str, Any]:
         conn = get_connection()
         try:
             row = conn.execute(
-                "SELECT workflow_loop_id FROM proposal_opportunities WHERE id = ?",
+                "SELECT workflow_loop_id FROM proposal_opportunities WHERE id = %s",
                 (opp_id,),
             ).fetchone()
         finally:
@@ -328,7 +328,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 new_rows = conn.execute(
                     "SELECT id, title FROM proposal_opportunities "
                     "WHERE (workflow_loop_id IS NULL OR workflow_loop_id = '') "
-                    "ORDER BY created_at DESC LIMIT ?",
+                    "ORDER BY created_at DESC LIMIT %s",
                     (max(new_opportunities, _NEW_OPP_FETCH_LIMIT),),
                 ).fetchall()
             finally:

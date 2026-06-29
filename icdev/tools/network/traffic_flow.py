@@ -443,7 +443,7 @@ class TrafficFlowEngine:
         conn.execute(
             """INSERT INTO nc_traffic_flows
                (id, topology_id, name, src_zone, dst_zone, app_type, classification)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
             (flow_id, topology_id, name, src_zone, dst_zone, app_type, classification),
         )
         conn.commit()
@@ -453,7 +453,7 @@ class TrafficFlowEngine:
         """Return all flows for a topology as plain dicts."""
         self._ensure_tables(conn)
         rows = conn.execute(
-            "SELECT * FROM nc_traffic_flows WHERE topology_id = ? ORDER BY created_at",
+            "SELECT * FROM nc_traffic_flows WHERE topology_id = %s ORDER BY created_at",
             (topology_id,),
         ).fetchall()
         return [dict(r) for r in rows]
@@ -462,10 +462,10 @@ class TrafficFlowEngine:
         """Delete a flow and its walkthrough steps. Returns True if a row was deleted."""
         self._ensure_tables(conn)
         conn.execute(
-            "DELETE FROM nc_flow_walkthrough_steps WHERE flow_id = ?", (flow_id,)
+            "DELETE FROM nc_flow_walkthrough_steps WHERE flow_id = %s", (flow_id,)
         )
         cur = conn.execute(
-            "DELETE FROM nc_traffic_flows WHERE id = ?", (flow_id,)
+            "DELETE FROM nc_traffic_flows WHERE id = %s", (flow_id,)
         )
         conn.commit()
         deleted = getattr(cur, "rowcount", None)
@@ -489,14 +489,14 @@ class TrafficFlowEngine:
         self._ensure_tables(conn)
 
         flow_row = conn.execute(
-            "SELECT * FROM nc_traffic_flows WHERE id = ?", (flow_id,)
+            "SELECT * FROM nc_traffic_flows WHERE id = %s", (flow_id,)
         ).fetchone()
         if not flow_row:
             return []
         flow = dict(flow_row)
 
         topo_row = conn.execute(
-            "SELECT graph_json FROM topologies WHERE id = ?", (flow["topology_id"],)
+            "SELECT graph_json FROM topologies WHERE id = %s", (flow["topology_id"],)
         ).fetchone()
 
         nodes_dict: dict[str, dict] = {}
@@ -508,7 +508,7 @@ class TrafficFlowEngine:
                 try:
                     from tools.network.migration_phases import generate_phase_graph
                     phase_row = conn.execute(
-                        "SELECT * FROM nc_migration_phases WHERE id=?", (phase_id,)
+                        "SELECT * FROM nc_migration_phases WHERE id=%s", (phase_id,)
                     ).fetchone()
                     if phase_row:
                         raw_graph = generate_phase_graph(raw_graph, dict(phase_row))
@@ -537,14 +537,14 @@ class TrafficFlowEngine:
 
         # Load per-node domain policy overrides from DB (keyed by node_id)
         policy_rows = conn.execute(
-            "SELECT * FROM nc_security_domain_policies WHERE topology_id = ?",
+            "SELECT * FROM nc_security_domain_policies WHERE topology_id = %s",
             (flow["topology_id"],),
         ).fetchall()
         policy_by_node: dict[str, dict] = {r["node_id"]: dict(r) for r in policy_rows}
 
         # Delete stale steps before regenerating
         conn.execute(
-            "DELETE FROM nc_flow_walkthrough_steps WHERE flow_id = ?", (flow_id,)
+            "DELETE FROM nc_flow_walkthrough_steps WHERE flow_id = %s", (flow_id,)
         )
 
         steps: list[dict] = []
@@ -591,7 +591,7 @@ class TrafficFlowEngine:
                 """INSERT INTO nc_flow_walkthrough_steps
                    (id, flow_id, step_number, node_id, node_label,
                     action_type, security_detail, network_detail, narrative)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     str(uuid.uuid4()),
                     flow_id,
@@ -615,7 +615,7 @@ class TrafficFlowEngine:
             """SELECT step_number, node_id, node_label, action_type,
                       security_detail, network_detail, narrative
                FROM nc_flow_walkthrough_steps
-               WHERE flow_id = ?
+               WHERE flow_id = %s
                ORDER BY step_number""",
             (flow_id,),
         ).fetchall()

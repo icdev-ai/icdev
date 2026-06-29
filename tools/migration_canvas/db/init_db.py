@@ -9,38 +9,32 @@ Set MC_STORAGE_BACKEND=postgresql + MC_PG_* env vars to use PostgreSQL.
 
 import json
 import os
-import sqlite3
 from pathlib import Path
+
+from tools.db.storage import get_canvas_connection, sql_placeholder
 
 _ICDEV_ROOT = Path(__file__).resolve().parents[3]
 DB_PATH = _ICDEV_ROOT / "data" / "migration_canvas.db"
+
+# Env var that carries the dedicated SQLite path when the resolved backend is
+# sqlite.  On PostgreSQL (primary) it is ignored; canvas tables live in the
+# shared icdev database, namespaced by their `mc_` prefix.
+_MC_DB_PATH_ENV = "MC_DB_PATH"
+os.environ.setdefault(_MC_DB_PATH_ENV, str(DB_PATH))
 
 _MC_BACKEND = os.environ.get("MC_STORAGE_BACKEND", os.environ.get("ICDEV_CANVAS_STORAGE_BACKEND", os.environ.get("ICDEV_STORAGE_BACKEND", "postgresql"))).lower()
 
 
 def get_connection():
-    """Get a database connection — SQLite or PostgreSQL.
+    """Get a canvas database connection — RLS disabled.
 
-    Returns a connection that supports:
-        conn.execute(sql, params) — with ? placeholders (auto-translated for PG)
-        conn.commit()
-        conn.close()
-        row["column_name"] — dict-like row access
+    Migration Canvas tables (mc_*, migration_designs, etc.) do not carry
+    tenant_id/classification columns on every row, so the global RLS predicate
+    injected by tools.db.storage.get_connection would raise UndefinedColumn on
+    PostgreSQL.  get_canvas_connection returns a connection with security
+    context None, matching the canvas-table semantics used by other canvases.
     """
-    if _MC_BACKEND == "postgresql":
-        try:
-            from tools.db.storage import get_connection as _icdev_conn
-
-            conn = _icdev_conn(db_path=os.environ.get("MC_PG_DATABASE", "migration_canvas"))
-            return conn
-        except ImportError:
-            pass
-    # SQLite (default) — per-canvas DB, distinct from icdev.db
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
-    return conn
+    return get_canvas_connection(_MC_DB_PATH_ENV)
 
 
 SCHEMA = """
@@ -349,7 +343,14 @@ CREATE TABLE IF NOT EXISTS mc_net_sessions (
     src_site        TEXT DEFAULT '',
     tgt_site        TEXT DEFAULT '',
     src_config_raw  TEXT DEFAULT '',
+    target_config   TEXT DEFAULT '',
     config_parsed   INTEGER DEFAULT 0,
+    engineer_context TEXT DEFAULT '',
+    recommended_coa TEXT CHECK(recommended_coa IN ('coa_a','coa_b','coa_c','')) DEFAULT '',
+    selected_coa    TEXT CHECK(selected_coa IN ('coa_a','coa_b','coa_c','')) DEFAULT '',
+    coa_rationale   TEXT DEFAULT '',
+    topology_json   TEXT DEFAULT '',
+    topology_neighbors_json TEXT DEFAULT '',
     readiness_score REAL DEFAULT 0,
     status          TEXT DEFAULT 'in_progress',
     classification  TEXT DEFAULT 'CUI // SP-CTI',
@@ -482,6 +483,54 @@ CREATE TABLE IF NOT EXISTS mc_net_protocol_plans (
 );
 CREATE INDEX IF NOT EXISTS idx_mc_net_proto_session ON mc_net_protocol_plans(session_id);
 
+CREATE TABLE IF NOT EXISTS mc_net_config_map (
+    id                  TEXT PRIMARY KEY,
+    session_id          TEXT NOT NULL REFERENCES mc_net_sessions(id) ON DELETE CASCADE,
+    src_section_type    TEXT NOT NULL,
+    src_stanza_text     TEXT NOT NULL,
+    src_lines_json      TEXT DEFAULT '[]',
+    tgt_section_type    TEXT DEFAULT '',
+    tgt_stanza_text     TEXT DEFAULT '',
+    mapping_action      TEXT NOT NULL CHECK(mapping_action IN ('direct','rename','merge','split','remove','manual','skip')) DEFAULT 'direct',
+    confidence          REAL DEFAULT 0,
+    ai_rationale        TEXT DEFAULT '',
+    ai_question_key     TEXT DEFAULT '',
+    status              TEXT NOT NULL CHECK(status IN ('pending','approved','rejected','skipped','needs_review')) DEFAULT 'pending',
+    reviewer_note       TEXT DEFAULT '',
+    applied_to_target   INTEGER DEFAULT 0,
+    created_at          TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_mc_net_cfgmap_session ON mc_net_config_map(session_id);
+CREATE INDEX IF NOT EXISTS idx_mc_net_cfgmap_status ON mc_net_config_map(status);
+
+CREATE TABLE IF NOT EXISTS mc_net_config_questions (
+    id              TEXT PRIMARY KEY,
+    session_id      TEXT NOT NULL REFERENCES mc_net_sessions(id) ON DELETE CASCADE,
+    question_key    TEXT NOT NULL,
+    question_text   TEXT NOT NULL,
+    default_answer  INTEGER DEFAULT NULL,
+    user_answer     INTEGER DEFAULT NULL,
+    ai_relevance    TEXT DEFAULT '',
+    UNIQUE(session_id, question_key)
+);
+CREATE INDEX IF NOT EXISTS idx_mc_net_cfgq_session ON mc_net_config_questions(session_id);
+
+CREATE TABLE IF NOT EXISTS mc_net_coa_questions (
+    id              TEXT PRIMARY KEY,
+    session_id      TEXT NOT NULL REFERENCES mc_net_sessions(id) ON DELETE CASCADE,
+    question_key    TEXT NOT NULL,
+    question_text   TEXT NOT NULL,
+    default_answer  INTEGER DEFAULT NULL,
+    user_answer     INTEGER DEFAULT NULL,
+    coa_a_weight    REAL DEFAULT 0,
+    coa_b_weight    REAL DEFAULT 0,
+    coa_c_weight    REAL DEFAULT 0,
+    ai_relevance    TEXT DEFAULT '',
+    UNIQUE(session_id, question_key)
+);
+CREATE INDEX IF NOT EXISTS idx_mc_net_coaq_session ON mc_net_coa_questions(session_id);
+
 CREATE TABLE IF NOT EXISTS mc_net_parallel_timelines (
     id                   TEXT PRIMARY KEY,
     session_id           TEXT NOT NULL,
@@ -496,6 +545,19 @@ CREATE TABLE IF NOT EXISTS mc_net_parallel_timelines (
     created_at           TEXT DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_mc_net_timeline_session ON mc_net_parallel_timelines(session_id);
+
+CREATE TABLE IF NOT EXISTS mc_net_topology_neighbors (
+    id              TEXT PRIMARY KEY,
+    session_id      TEXT NOT NULL REFERENCES mc_net_sessions(id) ON DELETE CASCADE,
+    neighbor_name   TEXT DEFAULT '',
+    neighbor_ip     TEXT DEFAULT '',
+    relationship    TEXT DEFAULT '',
+    source_interface TEXT DEFAULT '',
+    is_discovered   INTEGER DEFAULT 0,
+    notes           TEXT DEFAULT '',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_mc_net_topo_neighbor_session ON mc_net_topology_neighbors(session_id);
 """
 
 
@@ -508,6 +570,26 @@ def _migrate_network_tables(conn):
         conn.commit()
     except Exception:
         pass  # column already exists
+    # Add target_config to mc_net_sessions if not present.
+    try:
+        conn.execute("ALTER TABLE mc_net_sessions ADD COLUMN target_config TEXT DEFAULT ''")
+        conn.commit()
+    except Exception:
+        pass  # column already exists
+    # Add COA/topology columns to mc_net_sessions if not present.
+    for col, ddl in [
+        ("engineer_context", "TEXT DEFAULT ''"),
+        ("recommended_coa", "TEXT DEFAULT ''"),
+        ("selected_coa", "TEXT DEFAULT ''"),
+        ("coa_rationale", "TEXT DEFAULT ''"),
+        ("topology_json", "TEXT DEFAULT ''"),
+        ("topology_neighbors_json", "TEXT DEFAULT ''"),
+    ]:
+        try:
+            conn.execute(f"ALTER TABLE mc_net_sessions ADD COLUMN {col} {ddl}")
+            conn.commit()
+        except Exception:
+            pass  # column already exists
 
 
 # ── Server Migration Schema ──────────────────────────────────────────────────
@@ -1793,40 +1875,41 @@ def init_db():
         _migrate_cam_tables(conn)
         _seed_cloud_instances(conn)
 
+        ph = sql_placeholder(conn)
         # Seed templates
         for tpl in SEED_TEMPLATES:
-            existing = conn.execute("SELECT id FROM mc_templates WHERE id=?", (tpl["id"],)).fetchone()
+            existing = conn.execute(f"SELECT id FROM mc_templates WHERE id={ph}", (tpl["id"],)).fetchone()
             if not existing:
                 conn.execute(
-                    "INSERT INTO mc_templates (id, name, category, description, graph_json, tags) VALUES (?,?,?,?,?,?)",
+                    f"INSERT INTO mc_templates (id, name, category, description, graph_json, tags) VALUES ({ph},{ph},{ph},{ph},{ph},{ph})",
                     (tpl["id"], tpl["name"], tpl["category"], tpl["description"], tpl["graph_json"], tpl["tags"]),
                 )
 
         # Seed snippets
         for snip in SEED_SNIPPETS:
-            existing = conn.execute("SELECT id FROM mc_snippets WHERE id=?", (snip["id"],)).fetchone()
+            existing = conn.execute(f"SELECT id FROM mc_snippets WHERE id={ph}", (snip["id"],)).fetchone()
             if not existing:
                 conn.execute(
-                    "INSERT INTO mc_snippets (id, name, category, description, graph_json, tags) VALUES (?,?,?,?,?,?)",
+                    f"INSERT INTO mc_snippets (id, name, category, description, graph_json, tags) VALUES ({ph},{ph},{ph},{ph},{ph},{ph})",
                     (snip["id"], snip["name"], snip["category"], snip["description"], snip["graph_json"], snip["tags"]),
                 )
 
         # Seed runbooks
         for rb in SEED_RUNBOOKS:
-            existing = conn.execute("SELECT id FROM mc_runbooks WHERE id=?", (rb["id"],)).fetchone()
+            existing = conn.execute(f"SELECT id FROM mc_runbooks WHERE id={ph}", (rb["id"],)).fetchone()
             if not existing:
                 conn.execute(
-                    "INSERT INTO mc_runbooks (id, title, trigger_event, severity, description, steps_json) VALUES (?,?,?,?,?,?)",
+                    f"INSERT INTO mc_runbooks (id, title, trigger_event, severity, description, steps_json) VALUES ({ph},{ph},{ph},{ph},{ph},{ph})",
                     (rb["id"], rb["title"], rb["trigger_event"], rb["severity"], rb["description"], rb["steps_json"]),
                 )
 
         # Seed SOPs
         for sop in SEED_SOPS:
-            existing = conn.execute("SELECT id FROM mc_sops WHERE id=?", (sop["id"],)).fetchone()
+            existing = conn.execute(f"SELECT id FROM mc_sops WHERE id={ph}", (sop["id"],)).fetchone()
             if not existing:
                 conn.execute(
-                    "INSERT INTO mc_sops (id, title, sop_type, description, purpose, scope, "
-                    "nist_controls, steps, approval_status) VALUES (?,?,?,?,?,?,?,?,?)",
+                    f"INSERT INTO mc_sops (id, title, sop_type, description, purpose, scope, "
+                    f"nist_controls, steps, approval_status) VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph})",
                     (sop["id"], sop["title"], sop["sop_type"], sop["description"],
                      sop["purpose"], sop["scope"], sop["nist_controls"], sop["steps"], "draft"),
                 )

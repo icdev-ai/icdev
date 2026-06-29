@@ -406,7 +406,7 @@ def scan_competitor(competitor_name, db_path=None):
         conn.execute(
             "INSERT INTO innovation_competitor_scans "
             "(id,competitor_name,scan_date,releases_found,features_found,"
-            "gaps_identified,metadata,created_at) VALUES (?,?,?,?,?,0,?,?)",
+            "gaps_identified,metadata,created_at) VALUES (%s,%s,%s,%s,%s,0,%s,%s)",
             (sid, competitor_name, ts, len(rels), len(feats), json.dumps(meta), ts),
         )
         conn.commit()
@@ -466,7 +466,7 @@ def gap_analysis(db_path=None):
         nm, cat = comp.get("name", "unknown"), comp.get("category", "unknown")
         row = conn.execute(
             "SELECT id, metadata FROM innovation_competitor_scans "
-            "WHERE competitor_name=? ORDER BY scan_date DESC LIMIT 1",
+            "WHERE competitor_name=%s ORDER BY scan_date DESC LIMIT 1",
             (nm,),
         ).fetchone()
         if not row:
@@ -501,19 +501,19 @@ def gap_analysis(db_path=None):
             "gaps_found": len(comp_gaps),
             "coverage_pct": round(covered / total * 100, 1),
         }
-        conn.execute("UPDATE innovation_competitor_scans SET gaps_identified=? WHERE id=?", (len(comp_gaps), row["id"]))
+        conn.execute("UPDATE innovation_competitor_scans SET gaps_identified=%s WHERE id=%s", (len(comp_gaps), row["id"]))
 
     stored = 0
     for gap in all_gaps:
         ch = _hash(f"{gap['competitor']}:{gap['feature']}")
-        if conn.execute("SELECT 1 FROM innovation_signals WHERE content_hash=?", (ch,)).fetchone():
+        if conn.execute("SELECT 1 FROM innovation_signals WHERE content_hash=%s", (ch,)).fetchone():
             continue
         try:
             conn.execute(
                 "INSERT INTO innovation_signals "
                 "(id,source,source_type,title,description,url,metadata,"
                 "community_score,content_hash,discovered_at,status,category) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,'new',?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'new',%s)",
                 (
                     f"sig-{uuid.uuid4().hex[:12]}",
                     "competitive_intel",
@@ -567,7 +567,7 @@ def get_competitor_report(db_path=None):
         cats.add(cat)
         scans = conn.execute(
             "SELECT id,scan_date,releases_found,features_found,gaps_identified "
-            "FROM innovation_competitor_scans WHERE competitor_name=? "
+            "FROM innovation_competitor_scans WHERE competitor_name=%s "
             "ORDER BY scan_date DESC LIMIT 5",
             (nm,),
         ).fetchall()
@@ -588,7 +588,7 @@ def get_competitor_report(db_path=None):
         gap_sigs = conn.execute(
             "SELECT title,description,community_score,discovered_at "
             "FROM innovation_signals WHERE source='competitive_intel' "
-            "AND metadata LIKE ? ORDER BY discovered_at DESC LIMIT 10",
+            "AND metadata LIKE %s ORDER BY discovered_at DESC LIMIT 10",
             (f'%"competitor": "{nm}"%',),
         ).fetchall()
         gaps = [

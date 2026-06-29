@@ -505,7 +505,7 @@ class DDCDataHubSync:
         try:
             row = conn.execute(
                 "SELECT id, name, description, graph_json, classification "
-                "FROM data_designs WHERE id = ?",
+                "FROM data_designs WHERE id = %s",
                 (design_id,),
             ).fetchone()
             if row is None:
@@ -530,7 +530,7 @@ class DDCDataHubSync:
         try:
             rows = conn.execute(
                 "SELECT source_node_id, target_node_id, lineage_type, column_name "
-                "FROM dd_lineage WHERE design_id = ?",
+                "FROM dd_lineage WHERE design_id = %s",
                 (design_id,),
             ).fetchall()
             return [dict(r) for r in rows]

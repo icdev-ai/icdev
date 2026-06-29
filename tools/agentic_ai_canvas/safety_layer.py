@@ -63,7 +63,7 @@ def _audit(design_id: str, action: str, detail: str) -> None:
         try:
             conn.execute(
                 "INSERT INTO aadc_audit (id, design_id, action, detail, classification, created_at) "
-                "VALUES (?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s)",
                 (f"sl-{uuid.uuid4().hex[:8]}", design_id, action, detail,
                  "CUI", datetime.now(timezone.utc).isoformat()),
             )
@@ -87,7 +87,7 @@ def _forward_siem(design_id: str, event_type: str, state: str, detail: str) -> N
             # Write to siem_events if table exists; silently skip if not.
             conn.execute(
                 "INSERT INTO siem_events (id, source, event_type, severity, detail, created_at) "
-                "VALUES (?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s)",
                 (f"se-{uuid.uuid4().hex[:8]}",
                  f"aadc-safety:{design_id}",
                  event_type,

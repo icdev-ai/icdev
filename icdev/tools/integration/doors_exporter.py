@@ -505,7 +505,7 @@ def export_reqif(session_id, output_path, include_trace=True, db_path=None):
                       priority, status, clarity_score, completeness_score,
                       acceptance_criteria, classification
                FROM intake_requirements
-               WHERE session_id = ?
+               WHERE session_id = %s
                ORDER BY id""",
             (session_id,),
         ).fetchall()
@@ -553,7 +553,7 @@ def export_reqif(session_id, output_path, include_trace=True, db_path=None):
 
         # Get project_id for audit
         session_row = conn.execute(
-            "SELECT project_id FROM intake_sessions WHERE id = ?",
+            "SELECT project_id FROM intake_sessions WHERE id = %s",
             (session_id,),
         ).fetchone()
         project_id = session_row["project_id"] if session_row else None

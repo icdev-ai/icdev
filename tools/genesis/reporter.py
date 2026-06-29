@@ -416,7 +416,7 @@ def generate_report(lookback_days: int = 7) -> Dict[str, Any]:
         conn.execute(
             """
             INSERT INTO genesis_audit (id, event_type, details, created_at)
-            VALUES (?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s)
         """,
             (
                 f"aud-{uuid.uuid4().hex[:10]}",

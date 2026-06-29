@@ -314,7 +314,7 @@ def write_inventory(
             conn.execute(
                 "INSERT INTO mc_inventory_imports "
                 "(id, session_id, source_format, source_file, record_count, status, imported_at) "
-                "VALUES (?, ?, ?, ?, ?, 'pending', ?)",
+                "VALUES (%s, %s, %s, %s, %s, 'pending', %s)",
                 (import_id, session_id, source_format, source_file, len(servers), now),
             )
         except Exception as exc:
@@ -326,7 +326,7 @@ def write_inventory(
                     "INSERT OR IGNORE INTO mc_srv_inventory "
                     "(id, session_id, hostname, ip_address, os, cpu_cores, ram_gb, disk_gb, "
                     "environment, status, tags, created_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                     (
                         srv["id"], session_id, srv["hostname"], srv["ip_address"],
                         srv["os"], srv["cpu_cores"], srv["ram_gb"], srv["disk_gb"],
@@ -341,7 +341,7 @@ def write_inventory(
         # Update import record
         try:
             conn.execute(
-                "UPDATE mc_inventory_imports SET status='complete', record_count=? WHERE id=?",
+                "UPDATE mc_inventory_imports SET status='complete', record_count=%s WHERE id=%s",
                 (inserted, import_id),
             )
         except Exception as exc:

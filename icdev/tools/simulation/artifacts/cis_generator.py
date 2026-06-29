@@ -139,7 +139,7 @@ def _resolve(canvas_type: str) -> str:
 
 def _load_graph_json(conn, session_id: str) -> dict[str, Any]:
     row = conn.execute(
-        "SELECT canvas_type, topology_id, metadata FROM nc_simulation_sessions WHERE id = ?",
+        "SELECT canvas_type, topology_id, metadata FROM nc_simulation_sessions WHERE id = %s",
         (session_id,),
     ).fetchone()
     if not row:
@@ -154,7 +154,7 @@ def _load_graph_json(conn, session_id: str) -> dict[str, Any]:
     topology_id = row[1]
     if topology_id:
         trow = conn.execute(
-            "SELECT graph_json FROM topologies WHERE id = ?", (topology_id,)
+            "SELECT graph_json FROM topologies WHERE id = %s", (topology_id,)
         ).fetchone()
         if trow and trow[0]:
             try:

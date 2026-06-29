@@ -51,7 +51,7 @@ def metrics_summary():
             return jsonify({"error": "No scan data found", "has_data": False})
 
         scan_id = latest["scan_id"]
-        rows = conn.execute("SELECT * FROM code_quality_metrics WHERE scan_id = ?", (scan_id,)).fetchall()
+        rows = conn.execute("SELECT * FROM code_quality_metrics WHERE scan_id = %s", (scan_id,)).fetchall()
         conn.close()
 
         metrics = [dict(r) for r in rows]
@@ -101,7 +101,7 @@ def top_complex():
                WHERE function_name IS NOT NULL
                GROUP BY function_name, file_path
                ORDER BY cyclomatic_complexity DESC
-               LIMIT ?""",
+               LIMIT %s""",
             (limit,),
         ).fetchall()
         conn.close()
@@ -157,7 +157,7 @@ def trend_data():
                           SUM(smell_count) as total_smells,
                           COUNT(DISTINCT file_path) as files_scanned
                    FROM code_quality_metrics
-                   WHERE project_id = ? OR project_id IS NULL
+                   WHERE project_id = %s OR project_id IS NULL
                    GROUP BY scan_id
                    ORDER BY scan_date ASC
                    LIMIT 30""",
@@ -199,7 +199,7 @@ def feedback_stats():
                WHERE source_function IS NOT NULL
                GROUP BY source_function
                ORDER BY test_total DESC
-               LIMIT ?""",
+               LIMIT %s""",
             (limit,),
         ).fetchall()
         conn.close()
@@ -314,7 +314,7 @@ def log_health():
         conn = _get_db()
         _ensure_log_health_table(conn)
         row = conn.execute(
-            "SELECT COUNT(*) as c FROM kanban_tasks WHERE title LIKE '[LOG-TRIAGE]%' AND created_at >= ?",
+            "SELECT COUNT(*) as c FROM kanban_tasks WHERE title LIKE '[LOG-TRIAGE]%' AND created_at >= %s",
             (cutoff_7d,),
         ).fetchone()
         if row:

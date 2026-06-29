@@ -105,7 +105,7 @@ class FileVersioner:
         try:
             row = conn.execute(
                 """SELECT MAX(version_number) as max_ver FROM sync_file_versions
-                   WHERE job_id=? AND relative_path=?""",
+                   WHERE job_id=%s AND relative_path=%s""",
                 (job_id, relative_path),
             ).fetchone()
             next_ver = (row["max_ver"] or 0) + 1
@@ -113,7 +113,7 @@ class FileVersioner:
             # Check if this exact hash already versioned (skip duplicate)
             existing = conn.execute(
                 """SELECT id FROM sync_file_versions
-                   WHERE job_id=? AND relative_path=? AND content_hash=?
+                   WHERE job_id=%s AND relative_path=%s AND content_hash=%s
                    ORDER BY version_number DESC LIMIT 1""",
                 (job_id, relative_path, content_hash),
             ).fetchone()
@@ -149,7 +149,7 @@ class FileVersioner:
                 """INSERT INTO sync_file_versions
                    (id, job_id, relative_path, version_number, content_hash,
                     file_size, version_path, action, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, 'auto', ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, 'auto', %s)""",
                 (ver_id, job_id, relative_path, next_ver, content_hash, file_size, ver_path, _now()),
             )
             conn.commit()
@@ -174,7 +174,7 @@ class FileVersioner:
         """Remove oldest versions beyond max_versions limit."""
         rows = conn.execute(
             """SELECT id, version_path, version_number FROM sync_file_versions
-               WHERE job_id=? AND relative_path=?
+               WHERE job_id=%s AND relative_path=%s
                ORDER BY version_number DESC""",
             (job_id, relative_path),
         ).fetchall()
@@ -192,7 +192,7 @@ class FileVersioner:
                 except OSError:
                     pass
             # Delete DB record
-            conn.execute("DELETE FROM sync_file_versions WHERE id=?", (row["id"],))
+            conn.execute("DELETE FROM sync_file_versions WHERE id=%s", (row["id"],))
         conn.commit()
 
     def list_versions(self, job_id: str, relative_path: str = None, limit: int = 50) -> List[Dict]:
@@ -211,15 +211,15 @@ class FileVersioner:
             if relative_path:
                 rows = conn.execute(
                     """SELECT * FROM sync_file_versions
-                       WHERE job_id=? AND relative_path=?
-                       ORDER BY version_number DESC LIMIT ?""",
+                       WHERE job_id=%s AND relative_path=%s
+                       ORDER BY version_number DESC LIMIT %s""",
                     (job_id, relative_path, limit),
                 ).fetchall()
             else:
                 rows = conn.execute(
                     """SELECT * FROM sync_file_versions
-                       WHERE job_id=?
-                       ORDER BY created_at DESC LIMIT ?""",
+                       WHERE job_id=%s
+                       ORDER BY created_at DESC LIMIT %s""",
                     (job_id, limit),
                 ).fetchall()
             return [dict(r) for r in rows]
@@ -238,7 +238,7 @@ class FileVersioner:
         """
         conn = self._get_db()
         try:
-            row = conn.execute("SELECT * FROM sync_file_versions WHERE id=?", (version_id,)).fetchone()
+            row = conn.execute("SELECT * FROM sync_file_versions WHERE id=%s", (version_id,)).fetchone()
             if not row:
                 return {"status": "error", "error": f"Version not found: {version_id}"}
             ver = dict(row)
@@ -269,7 +269,7 @@ class FileVersioner:
                 """INSERT INTO sync_file_versions
                    (id, job_id, relative_path, version_number, content_hash,
                     file_size, version_path, action, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, 'restore', ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, 'restore', %s)""",
                 (
                     restore_id,
                     ver["job_id"],
@@ -298,15 +298,15 @@ class FileVersioner:
         conn = self._get_db()
         try:
             total = conn.execute(
-                "SELECT COUNT(*) as cnt FROM sync_file_versions WHERE job_id=?",
+                "SELECT COUNT(*) as cnt FROM sync_file_versions WHERE job_id=%s",
                 (job_id,),
             ).fetchone()["cnt"]
             files = conn.execute(
-                "SELECT COUNT(DISTINCT relative_path) as cnt FROM sync_file_versions WHERE job_id=?",
+                "SELECT COUNT(DISTINCT relative_path) as cnt FROM sync_file_versions WHERE job_id=%s",
                 (job_id,),
             ).fetchone()["cnt"]
             total_size = conn.execute(
-                "SELECT COALESCE(SUM(file_size), 0) as s FROM sync_file_versions WHERE job_id=?",
+                "SELECT COALESCE(SUM(file_size), 0) as s FROM sync_file_versions WHERE job_id=%s",
                 (job_id,),
             ).fetchone()["s"]
         finally:

@@ -346,7 +346,7 @@ def _save_brief(
                 """INSERT INTO sg_intelligence_briefs_war_council
                    (id, theater, scenario_summary, content_md,
                     rag_active, rag_doc_count, model_used, latency_ms, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     brief_id,
                     theater,
@@ -365,7 +365,7 @@ def _save_brief(
                 """INSERT OR IGNORE INTO sg_intelligence_briefs
                    (id, brief_type, title, content_md, sio_confidence,
                     analyst_reviewed, created_at)
-                   VALUES (?, ?, ?, ?, ?, 0, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, 0, %s)""",
                 (
                     brief_id,
                     "war_council",

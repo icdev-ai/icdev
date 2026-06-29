@@ -53,7 +53,6 @@ try:
     from tools.logging.icdev_logger import get_logger
     logger = get_logger("databridge.skype")
 except Exception:
-    import logging
     logger = get_logger("databridge.skype")
 
 _TOKEN_CACHE: Dict[str, Any] = {}

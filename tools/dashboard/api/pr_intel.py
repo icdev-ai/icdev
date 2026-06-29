@@ -34,12 +34,12 @@ def _table_exists(conn, name):
     try:
         if getattr(conn, "_backend", "sqlite") == "postgresql":
             row = conn.execute(
-                "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = ?",
+                "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = %s",
                 (name,),
             ).fetchone()
             return row is not None
         row = conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=%s",
             (name,),
         ).fetchone()
         return row is not None
@@ -179,7 +179,7 @@ def list_reports():
             f"security_findings, compliance_impacts, overall_status, "
             f"classification, created_at "
             f"FROM pr_intelligence_reports{where} "
-            f"ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            f"ORDER BY created_at DESC LIMIT %s OFFSET %s",
             params + [per_page, offset],
         ).fetchall()
 
@@ -245,7 +245,7 @@ def report_detail(report_id):
             "SELECT id, project_id, pr_reference, diff_summary, files_changed, "
             "security_findings, compliance_impacts, code_quality_delta, "
             "overall_status, report_json, classification, created_at "
-            "FROM pr_intelligence_reports WHERE id = ?",
+            "FROM pr_intelligence_reports WHERE id = %s",
             (report_id,),
         ).fetchone()
 

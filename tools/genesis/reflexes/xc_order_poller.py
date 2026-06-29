@@ -193,7 +193,7 @@ def run(ctx: Dict[str, Any], conn=None) -> Dict[str, Any]:
                             # Dedup check
                             try:
                                 existing = nocc.execute(
-                                    "SELECT id FROM noc_alarms WHERE alarm_source='xc_order_poller' AND device_name=? AND cleared=0 LIMIT 1",
+                                    "SELECT id FROM noc_alarms WHERE alarm_source='xc_order_poller' AND device_name=%s AND cleared=0 LIMIT 1",
                                     (str(xc_id),),
                                 ).fetchone()
                             except Exception:
@@ -211,7 +211,7 @@ def run(ctx: Dict[str, Any], conn=None) -> Dict[str, Any]:
                                 severity = anomaly["severity"]
                                 try:
                                     nocc.execute(
-                                        "INSERT INTO noc_alarms (alarm_source, severity, alarm_type, device_name, description, cleared, acknowledged, suppressed, first_seen, last_seen, classification) VALUES (?,?,?,?,?,0,0,0,?,?,'CUI')",
+                                        "INSERT INTO noc_alarms (alarm_source, severity, alarm_type, device_name, description, cleared, acknowledged, suppressed, first_seen, last_seen, classification) VALUES (%s,%s,%s,%s,%s,0,0,0,%s,%s,'CUI')",
                                         ("xc_order_poller", severity, "circuit",
                                          str(xc_id), desc, now, now),
                                     )

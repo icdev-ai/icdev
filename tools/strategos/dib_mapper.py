@@ -447,7 +447,7 @@ def build_dib_graph(db_path: str | None = None) -> dict:
                    (id, node_name, side, node_type, country, lat, lon,
                     systems_produced, blast_radius, criticality,
                     domain_profile, vendor_type, notes, created_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                    ON CONFLICT(id) DO UPDATE SET
                      blast_radius=excluded.blast_radius,
                      notes=excluded.notes""",
@@ -476,7 +476,7 @@ def build_dib_graph(db_path: str | None = None) -> dict:
             conn.execute(
                 """INSERT INTO dib_supply_edges
                    (id, source_node_id, target_node_id, edge_type, system, throughput_pct, created_at)
-                   VALUES (?,?,?,?,?,?,?)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s)
                    ON CONFLICT DO NOTHING""",
                 (
                     eid,
@@ -505,12 +505,12 @@ def write_kg_edges(db_path: str | None = None) -> dict:
 
         # Ensure KG graph exists
         existing = conn.execute(
-            "SELECT id FROM kg_graphs WHERE id = ?", (_KG_GRAPH_ID,)
+            "SELECT id FROM kg_graphs WHERE id = %s", (_KG_GRAPH_ID,)
         ).fetchone()
         if not existing:
             conn.execute(
                 """INSERT INTO kg_graphs (id, project_id, name, entity_count, edge_count, created_at, updated_at)
-                   VALUES (?,?,?,0,0,?,?)
+                   VALUES (%s,%s,%s,0,0,%s,%s)
                    ON CONFLICT(id) DO NOTHING""",
                 (_KG_GRAPH_ID, "strategos", _KG_GRAPH_NAME, now, now),
             )
@@ -522,7 +522,7 @@ def write_kg_edges(db_path: str | None = None) -> dict:
             node_id_map[node["id"]] = kg_node_id
             conn.execute(
                 """INSERT INTO kg_nodes (id, graph_id, label, entity_type, properties, created_at)
-                   VALUES (?,?,?,?,?,?)
+                   VALUES (%s,%s,%s,%s,%s,%s)
                    ON CONFLICT(id) DO UPDATE SET label=excluded.label, properties=excluded.properties""",
                 (
                     kg_node_id,
@@ -556,7 +556,7 @@ def write_kg_edges(db_path: str | None = None) -> dict:
             conn.execute(
                 """INSERT INTO kg_edges
                    (id, graph_id, source_id, target_id, relationship, weight, properties, created_at)
-                   VALUES (?,?,?,?,?,?,?,?)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
                    ON CONFLICT DO NOTHING""",
                 (
                     ke_id,
@@ -573,7 +573,7 @@ def write_kg_edges(db_path: str | None = None) -> dict:
 
         # Update graph counters
         conn.execute(
-            """UPDATE kg_graphs SET entity_count=?, edge_count=?, updated_at=? WHERE id=?""",
+            """UPDATE kg_graphs SET entity_count=%s, edge_count=%s, updated_at=%s WHERE id=%s""",
             (len(DIB_NODES), edges_written, now, _KG_GRAPH_ID),
         )
         conn.commit()

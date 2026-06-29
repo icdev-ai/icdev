@@ -545,7 +545,7 @@ def _record_validations(db_path, job_id, results):
             c.execute(
                 """INSERT INTO translation_validations
                    (id, job_id, check_type, passed, score, findings)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s)""",
                 (
                     val_id,
                     job_id,

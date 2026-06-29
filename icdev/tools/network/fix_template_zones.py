@@ -403,7 +403,7 @@ TEMPLATE_ZONES = {
 
 
 def fix_template(conn, tpl_id, spec):
-    row = conn.execute("SELECT graph_json FROM nc_templates WHERE id=?", (tpl_id,)).fetchone()
+    row = conn.execute("SELECT graph_json FROM nc_templates WHERE id=%s", (tpl_id,)).fetchone()
     if not row:
         print(f"  SKIP {tpl_id} — not found in DB")
         return False
@@ -486,7 +486,7 @@ def fix_template(conn, tpl_id, spec):
 
     # Assemble: zones first (back), then headings, then badge, then devices
     gj["nodes"] = new_zone_nodes + new_heading_nodes + badge_nodes + nodes
-    conn.execute("UPDATE nc_templates SET graph_json=? WHERE id=?", (json.dumps(gj), tpl_id))
+    conn.execute("UPDATE nc_templates SET graph_json=%s WHERE id=%s", (json.dumps(gj), tpl_id))
     zone_count = len(new_zone_nodes)
     print(f"  OK {tpl_id:35s} — {zone_count} zones, {len(new_heading_nodes)} headings, {len(badge_nodes)} badges")
     return True

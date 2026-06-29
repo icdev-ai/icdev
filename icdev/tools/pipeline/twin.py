@@ -43,7 +43,7 @@ def take_snapshot(pipeline_id: str, label: str = None, user_id: str = "system") 
     Returns the snapshot dict on success, raises on DB error.
     """
     conn = _get_connection()
-    row = conn.execute("SELECT graph_json, name FROM pipelines WHERE id=?", (pipeline_id,)).fetchone()
+    row = conn.execute("SELECT graph_json, name FROM pipelines WHERE id=%s", (pipeline_id,)).fetchone()
     if not row:
         conn.close()
         raise ValueError(f"Pipeline {pipeline_id!r} not found")
@@ -58,7 +58,7 @@ def take_snapshot(pipeline_id: str, label: str = None, user_id: str = "system") 
     conn.execute(
         """INSERT INTO pdc_snapshots
            (id, pipeline_id, label, graph_json, node_count, edge_count, created_by, created_at)
-           VALUES (?,?,?,?,?,?,?,?)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
         (snap_id, pipeline_id, snap_label, row["graph_json"],
          len(nodes), len(edges), user_id, _now()),
     )
@@ -82,7 +82,7 @@ def list_snapshots(pipeline_id: str) -> list:
     conn = _get_connection()
     rows = conn.execute(
         "SELECT id, pipeline_id, label, node_count, edge_count, created_by, created_at "
-        "FROM pdc_snapshots WHERE pipeline_id=? ORDER BY created_at DESC",
+        "FROM pdc_snapshots WHERE pipeline_id=%s ORDER BY created_at DESC",
         (pipeline_id,),
     ).fetchall()
     conn.close()
@@ -161,14 +161,14 @@ def simulate_delta(
     # Resolve baseline
     if baseline_snap_id:
         snap_row = conn.execute(
-            "SELECT graph_json FROM pdc_snapshots WHERE id=?", (baseline_snap_id,)
+            "SELECT graph_json FROM pdc_snapshots WHERE id=%s", (baseline_snap_id,)
         ).fetchone()
         if not snap_row:
             conn.close()
             raise ValueError(f"Snapshot {baseline_snap_id!r} not found")
         baseline_graph = json.loads(snap_row["graph_json"])
     else:
-        pipe_row = conn.execute("SELECT graph_json FROM pipelines WHERE id=?", (pipeline_id,)).fetchone()
+        pipe_row = conn.execute("SELECT graph_json FROM pipelines WHERE id=%s", (pipeline_id,)).fetchone()
         if not pipe_row:
             conn.close()
             raise ValueError(f"Pipeline {pipeline_id!r} not found")
@@ -199,7 +199,7 @@ def simulate_delta(
            (id, pipeline_id, baseline_snap_id, delta_graph_json,
             verdict, antipatterns_json, slsa_json, compliance_json, diff_json,
             critical_count, high_count, medium_count, created_by, created_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
         (
             sim_id, pipeline_id, baseline_snap_id,
             json.dumps(delta_graph),
@@ -240,7 +240,7 @@ def simulate_delta(
 def get_simulation(sim_id: str) -> dict | None:
     """Retrieve a stored simulation result by ID."""
     conn = _get_connection()
-    row = conn.execute("SELECT * FROM pdc_simulations WHERE id=?", (sim_id,)).fetchone()
+    row = conn.execute("SELECT * FROM pdc_simulations WHERE id=%s", (sim_id,)).fetchone()
     conn.close()
     if not row:
         return None

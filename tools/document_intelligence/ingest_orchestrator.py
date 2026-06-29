@@ -252,6 +252,9 @@ _ALTER_MIGRATIONS = [
     ("dic_sections", "assigned_to", "TEXT"),
     ("dic_sections", "reviewed_by", "TEXT"),
     ("dic_sections", "reviewed_at", "TEXT"),
+    # Migration 230 — tech writer workspace
+    ("dic_documents", "template_type", "TEXT"),
+    ("dic_documents", "writeguard_mode", "TEXT DEFAULT 'default'"),
 ]
 
 
@@ -1657,14 +1660,14 @@ def ingest_file(
 
         # ── Dedup: content-hash based idempotency ───────────────────────────────
         dup_row = conn.execute(
-            "SELECT doc_id, filename FROM dic_documents WHERE content_sha256 = ? AND collection_id = ? LIMIT 1",
+            "SELECT doc_id, filename FROM dic_documents WHERE content_sha256 = %s AND collection_id = %s LIMIT 1",
             (content_hash, collection_id),
         ).fetchone()
         if dup_row:
             existing_doc_id = dup_row[0] if hasattr(dup_row, "__getitem__") else dup_row["doc_id"]
             existing_filename = dup_row[1] if hasattr(dup_row, "__getitem__") else dup_row.get("filename", "")
             ver_row = conn.execute(
-                "SELECT version_id, version_no FROM dic_versions WHERE doc_id = ? ORDER BY version_no DESC LIMIT 1",
+                "SELECT version_id, version_no FROM dic_versions WHERE doc_id = %s ORDER BY version_no DESC LIMIT 1",
                 (existing_doc_id,),
             ).fetchone()
             if ver_row:
@@ -1673,7 +1676,7 @@ def ingest_file(
                 version_id = f"{existing_doc_id}_v1"
             # Report the existing chunk count so callers see consistent metrics.
             chunk_row = conn.execute(
-                "SELECT COUNT(*) FROM dic_chunk_links WHERE version_id = ?",
+                "SELECT COUNT(*) FROM dic_chunk_links WHERE version_id = %s",
                 (version_id,),
             ).fetchone()
             existing_chunks = chunk_row[0] if chunk_row else 0
@@ -1767,7 +1770,7 @@ def ingest_file(
                 (doc_id, collection_id, source_id, filename, filepath,
                  content_type, provider, title, byte_size, content_sha256,
                  page_count, created_at, tenant_id, classification)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 doc_id, collection_id, source_id, p.name, str(p),
@@ -1782,7 +1785,7 @@ def ingest_file(
             INSERT OR REPLACE INTO dic_versions
                 (version_id, doc_id, version_no, origin, status,
                  content_sha256, created_at, created_by, tenant_id, classification)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 version_id, doc_id, 1, "human_authored", "approved",
@@ -1791,7 +1794,7 @@ def ingest_file(
         )
 
         # Refresh chunk links for this version.
-        cur.execute("DELETE FROM dic_chunk_links WHERE version_id = ?", (version_id,))
+        cur.execute("DELETE FROM dic_chunk_links WHERE version_id = %s", (version_id,))
         for i, chunk in enumerate(chunks):
             # final_chunk_ids contains the canonical rag_chunks.id (existing or
             # newly upserted). Fall back to the chunk's own id only when the map
@@ -1811,7 +1814,7 @@ def ingest_file(
                 INSERT OR REPLACE INTO dic_chunk_links
                     (link_id, doc_id, version_id, rag_chunk_id, collection_id,
                      chunk_index, page, section, created_at, tenant_id, classification)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     link_id, doc_id, version_id, rag_chunk_id, collection_id,
@@ -2229,7 +2232,7 @@ def detect_collection_anomalies(
         cur = conn.cursor()
         cur.execute(
             "SELECT doc_id, page_count, byte_size FROM dic_documents "
-            "WHERE collection_id = ? ORDER BY created_at DESC LIMIT ?",
+            "WHERE collection_id = %s ORDER BY created_at DESC LIMIT %s",
             (collection_id, limit),
         )
         rows = cur.fetchall()
@@ -2653,7 +2656,7 @@ def _detect_near_duplicate_titles(
         cur = conn.cursor()
         cur.execute(
             "SELECT doc_id, filename, title FROM dic_documents "
-            "WHERE collection_id = ? AND doc_id != ?",
+            "WHERE collection_id = %s AND doc_id != %s",
             (collection_id, new_doc_id),
         )
         rows = cur.fetchall()
@@ -3261,7 +3264,7 @@ def re_enrich_metadata(
     try:
         _ensure_schema(conn)
         row = conn.execute(
-            "SELECT doc_id, filename FROM dic_documents WHERE doc_id = ?",
+            "SELECT doc_id, filename FROM dic_documents WHERE doc_id = %s",
             (doc_id,),
         ).fetchone()
         if not row:
@@ -3270,7 +3273,7 @@ def re_enrich_metadata(
         chunk_rows = conn.execute(
             "SELECT rc.content FROM rag_chunks rc "
             "JOIN dic_chunk_links dcl ON dcl.rag_chunk_id = rc.id "
-            "WHERE dcl.doc_id = ? ORDER BY dcl.chunk_index",
+            "WHERE dcl.doc_id = %s ORDER BY dcl.chunk_index",
             (doc_id,),
         ).fetchall()
         chunks: list[str] = []

@@ -96,7 +96,7 @@ def ingest_indicator(indicator: str, indicator_type: str, feed: str = "misp",
         conn.execute(
             """INSERT INTO zig_ti_indicators
                (indicator_id, indicator, indicator_type, feed, confidence, threat_type, valid_until, created_at)
-               VALUES (?,?,?,?,?,?,?,?)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
                ON CONFLICT(indicator_id) DO UPDATE SET
                feed=excluded.feed, confidence=excluded.confidence,
                threat_type=excluded.threat_type, valid_until=excluded.valid_until""",
@@ -117,7 +117,7 @@ def match_observable(observable: str, context: str = "") -> dict[str, Any]:
         _ensure_tables(conn)
         hit = conn.execute(
             "SELECT indicator_id, confidence, threat_type, feed FROM zig_ti_indicators "
-            "WHERE indicator=? AND valid_until >= ?",
+            "WHERE indicator=%s AND valid_until >= %s",
             (observable, now),
         ).fetchone()
         if not hit:
@@ -126,7 +126,7 @@ def match_observable(observable: str, context: str = "") -> dict[str, Any]:
         severity = "CAT-I" if hit["confidence"] >= 0.8 else "CAT-II"
         conn.execute(
             "INSERT INTO zig_ti_matches (indicator_id, observable, context, severity, created_at) "
-            "VALUES (?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s)",
             (hit["indicator_id"], observable, context, severity, now),
         )
         conn.commit()
@@ -180,7 +180,7 @@ def run_threat_hunt(technique: str, hypothesis: str = "") -> dict[str, Any]:
 
         conn.execute(
             "INSERT INTO zig_threat_hunts (hunt_id, technique, hypothesis, findings, status, created_at) "
-            "VALUES (?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s)",
             (hunt_id, technique, hyp, findings, "complete", now),
         )
         conn.commit()

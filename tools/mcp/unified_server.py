@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# Path setup must come first so ICDev's tools/ wins over any shadowing packages (e.g. FathomDesk)
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent.parent.parent))
 
 from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI

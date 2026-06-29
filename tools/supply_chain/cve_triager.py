@@ -68,7 +68,7 @@ def _log_audit(conn, project_id, event_type, action, details):
         conn.execute(
             """INSERT INTO audit_trail
                (project_id, event_type, actor, action, details, classification)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s)""",
             (
                 project_id,
                 event_type,
@@ -93,7 +93,7 @@ def _load_edges(conn, project_id):
     rows = conn.execute(
         """SELECT source_type, source_id, target_type, target_id, criticality
            FROM supply_chain_dependencies
-           WHERE project_id = ?""",
+           WHERE project_id = %s""",
         (project_id,),
     ).fetchall()
 
@@ -224,7 +224,7 @@ def triage_cve(
                 triage_decision, triage_rationale,
                 upstream_impact, downstream_impact,
                 sla_deadline, triaged_by, triaged_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 project_id,
                 cve_id,
@@ -294,7 +294,7 @@ def update_triage(triage_id, status, remediation_plan=None, assigned_to=None, db
 
     conn = _get_connection(db_path)
     try:
-        row = conn.execute("SELECT * FROM cve_triage WHERE id = ?", (triage_id,)).fetchone()
+        row = conn.execute("SELECT * FROM cve_triage WHERE id = %s", (triage_id,)).fetchone()
         if not row:
             raise ValueError(f"Triage record '{triage_id}' not found.")
 
@@ -319,7 +319,7 @@ def update_triage(triage_id, status, remediation_plan=None, assigned_to=None, db
 
         params.append(triage_id)
         conn.execute(
-            f"UPDATE cve_triage SET {', '.join(updates)} WHERE id = ?",  # nosec B608 -- table/column names are internal constants, not user input
+            f"UPDATE cve_triage SET {', '.join(updates)} WHERE id = %s",  # nosec B608 -- table/column names are internal constants, not user input
             params,
         )
         conn.commit()
@@ -355,7 +355,7 @@ def get_pending(project_id, db_path=None):
     try:
         rows = conn.execute(
             """SELECT * FROM cve_triage
-               WHERE project_id = ?
+               WHERE project_id = %s
                  AND (triage_decision IS NULL
                       OR triage_decision IN ('defer', 'mitigate'))
                ORDER BY
@@ -401,7 +401,7 @@ def check_sla(project_id, db_path=None):
     try:
         rows = conn.execute(
             """SELECT * FROM cve_triage
-               WHERE project_id = ?
+               WHERE project_id = %s
                  AND (triage_decision IS NULL
                       OR triage_decision IN ('defer', 'mitigate'))""",
             (project_id,),
@@ -478,7 +478,7 @@ def propagate_cve_impact(project_id, triage_id, db_path=None):
     conn = _get_connection(db_path)
     try:
         row = conn.execute(
-            "SELECT * FROM cve_triage WHERE id = ? AND project_id = ?",
+            "SELECT * FROM cve_triage WHERE id = %s AND project_id = %s",
             (triage_id, project_id),
         ).fetchone()
         if not row:
@@ -502,7 +502,7 @@ def propagate_cve_impact(project_id, triage_id, db_path=None):
                           ia.data_types_shared
                    FROM supply_chain_dependencies sd
                    LEFT JOIN isa_agreements ia ON sd.isa_id = ia.id
-                   WHERE sd.project_id = ? AND sd.isa_id IS NOT NULL""",
+                   WHERE sd.project_id = %s AND sd.isa_id IS NOT NULL""",
                 (project_id,),
             ).fetchall()
 

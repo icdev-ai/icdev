@@ -185,7 +185,7 @@ class BayesianIWUpdater:
                 conn.execute(
                     "INSERT INTO sg_bayesian_war_posteriors "
                     "(id, prior, evidence_type, strength, likelihood_ratio, posterior, metadata_json, created_at) "
-                    "VALUES (?,?,?,?,?,?,?,?)",
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
                     (
                         rid, result["prior"], result["evidence_type"], result["strength"],
                         result["likelihood_ratio"], result["posterior"],

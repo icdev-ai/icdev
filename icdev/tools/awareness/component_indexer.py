@@ -639,13 +639,13 @@ def _upsert_graph_row(conn: Any, node_count: int, edge_count: int) -> None:
     """Ensure kg_graphs has a row for our graph and update counts."""
     now = datetime.now(timezone.utc).isoformat()
     row = conn.execute(
-        "SELECT id FROM kg_graphs WHERE id = ?", (GRAPH_ID,)
+        "SELECT id FROM kg_graphs WHERE id = %s", (GRAPH_ID,)
     ).fetchone()
     if row is None:
         conn.execute(
             "INSERT INTO kg_graphs (id, project_id, name, description, "
             "entity_count, edge_count, metadata, created_at, updated_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (
                 GRAPH_ID,
                 None,
@@ -660,8 +660,8 @@ def _upsert_graph_row(conn: Any, node_count: int, edge_count: int) -> None:
         )
     else:
         conn.execute(
-            "UPDATE kg_graphs SET entity_count = ?, edge_count = ?, "
-            "updated_at = ? WHERE id = ?",
+            "UPDATE kg_graphs SET entity_count = %s, edge_count = %s, "
+            "updated_at = %s WHERE id = %s",
             (node_count, edge_count, now, GRAPH_ID),
         )
 
@@ -670,7 +670,7 @@ def _upsert_node(conn: Any, node: Node) -> None:
     now = datetime.now(timezone.utc).isoformat()
     conn.execute(
         "INSERT INTO kg_nodes (id, graph_id, label, entity_type, properties, created_at) "
-        "VALUES (?,?,?,?,?,?) "
+        "VALUES (%s,%s,%s,%s,%s,%s) "
         "ON CONFLICT(id) DO UPDATE SET label = excluded.label, "
         "entity_type = excluded.entity_type, properties = excluded.properties",
         (
@@ -689,7 +689,7 @@ def _upsert_edge(conn: Any, edge: Edge) -> None:
     conn.execute(
         "INSERT INTO kg_edges (id, graph_id, source_id, target_id, "
         "relationship, weight, properties, created_at) "
-        "VALUES (?,?,?,?,?,?,?,?) "
+        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s) "
         "ON CONFLICT(id) DO UPDATE SET weight = excluded.weight, "
         "properties = excluded.properties",
         (
@@ -792,7 +792,7 @@ def prune_stale_nodes(
     conn = get_connection()
     try:
         rows = conn.execute(
-            "SELECT id, entity_type, properties FROM kg_nodes WHERE graph_id = ?",
+            "SELECT id, entity_type, properties FROM kg_nodes WHERE graph_id = %s",
             (GRAPH_ID,),
         ).fetchall()
     except Exception as exc:
@@ -822,7 +822,7 @@ def prune_stale_nodes(
         # Backing file is gone. Only prune if nothing references this node.
         try:
             ec = conn.execute(
-                "SELECT COUNT(*) AS n FROM kg_edges WHERE source_id = ? OR target_id = ?",
+                "SELECT COUNT(*) AS n FROM kg_edges WHERE source_id = %s OR target_id = %s",
                 (d["id"], d["id"]),
             ).fetchone()
             if (dict(ec).get("n", 0) if ec else 0) > 0:
@@ -838,13 +838,13 @@ def prune_stale_nodes(
                 # Snapshots first (best-effort; table may be absent in slim envs)
                 try:
                     conn.execute(
-                        "DELETE FROM awareness_component_health WHERE node_id = ?",
+                        "DELETE FROM awareness_component_health WHERE node_id = %s",
                         (c["id"],),
                     )
                 except Exception:
                     pass
                 conn.execute(
-                    "DELETE FROM kg_nodes WHERE id = ? AND graph_id = ?",
+                    "DELETE FROM kg_nodes WHERE id = %s AND graph_id = %s",
                     (c["id"], GRAPH_ID),
                 )
                 conn.commit()
@@ -984,18 +984,18 @@ def get_stats() -> Dict[str, Any]:
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT COUNT(*) AS cnt FROM kg_nodes WHERE graph_id = ?",
+            "SELECT COUNT(*) AS cnt FROM kg_nodes WHERE graph_id = %s",
             (GRAPH_ID,),
         ).fetchone()
         node_count = dict(row).get("cnt", 0) if row else 0
         row = conn.execute(
-            "SELECT COUNT(*) AS cnt FROM kg_edges WHERE graph_id = ?",
+            "SELECT COUNT(*) AS cnt FROM kg_edges WHERE graph_id = %s",
             (GRAPH_ID,),
         ).fetchone()
         edge_count = dict(row).get("cnt", 0) if row else 0
         rows = conn.execute(
             "SELECT entity_type, COUNT(*) AS cnt FROM kg_nodes "
-            "WHERE graph_id = ? GROUP BY entity_type ORDER BY cnt DESC",
+            "WHERE graph_id = %s GROUP BY entity_type ORDER BY cnt DESC",
             (GRAPH_ID,),
         ).fetchall()
         by_type = {dict(r)["entity_type"]: dict(r)["cnt"] for r in rows}

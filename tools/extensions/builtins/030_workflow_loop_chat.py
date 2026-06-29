@@ -56,7 +56,7 @@ def _record_advisory(context_id: str, turn_number: int):
 
 def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
     row = conn.execute(
-        "SELECT COUNT(*) as cnt FROM sqlite_master WHERE type='table' AND name=?",
+        "SELECT COUNT(*) as cnt FROM sqlite_master WHERE type='table' AND name=%s",
         (name,),
     ).fetchone()
     return (row[0] if isinstance(row, (tuple, list)) else row["cnt"]) > 0
@@ -78,7 +78,7 @@ def _check_loop_status(project_id: str) -> dict | None:
 
         loops = conn.execute(
             """SELECT * FROM workflow_loops
-               WHERE project_id = ? AND status NOT IN ('closed', 'abandoned')
+               WHERE project_id = %s AND status NOT IN ('closed', 'abandoned')
                ORDER BY created_at DESC""",
             (project_id,),
         ).fetchall()
@@ -97,7 +97,7 @@ def _check_loop_status(project_id: str) -> dict | None:
                 has_recon = False
                 if _table_exists(conn, "workflow_reconciliations"):
                     r = conn.execute(
-                        "SELECT COUNT(*) as cnt FROM workflow_reconciliations WHERE loop_id = ?",
+                        "SELECT COUNT(*) as cnt FROM workflow_reconciliations WHERE loop_id = %s",
                         (lid,),
                     ).fetchone()
                     has_recon = (r[0] if isinstance(r, (tuple, list)) else r["cnt"]) > 0

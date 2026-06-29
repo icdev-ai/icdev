@@ -3,11 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}ICDEV™ Dashboard{% endblock %}</title>
+    <title>{% block title %}{{ brand.product_name if brand is defined else "ICDEV™" }} Dashboard{% endblock %}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/ux.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='vendor/hljs/github-dark.min.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/assistant-widget.css') }}">
+    {%- if brand is defined and (brand.primary_color or brand.secondary_color) %}
+    <style>:root {
+      --accent-primary: {{ brand.primary_color | default('#4a90d9') }};
+      --accent-secondary: {{ brand.secondary_color | default('#7c3aed') }};
+      --accent-blue: {{ brand.primary_color | default('#4a90d9') }};
+      --accent-blue-light: {{ brand.primary_color | default('#6db3f8') }};
+    }</style>
+    {%- endif %}
     {% block head %}{% endblock %}
     {% block extra_css %}{% endblock %}
     <script>
@@ -137,20 +145,20 @@
     <!-- Skip to main content (accessibility) -->
     <a href="#main-content" class="skip-link">Skip to main content</a>
 
-    <!-- CUI Banner Top (D173 — toggle via ICDEV_CUI_BANNER_ENABLED) -->
+    <!-- Classification / Info Banner (DSW-1 — configured via args/banner.yaml or ICDEV_BANNER_MODE) -->
     {% block global_banner %}
-    {% if cui_banner_enabled %}
-    <div class="cui-banner" role="banner" aria-label="Classification marking">{{ cui_banner_top }}</div>
-    {% endif %}
+    {% include "includes/_banner.html" ignore missing %}
     {% endblock %}
 
     <!-- Navigation -->
     <nav class="navbar" role="navigation" aria-label="Main navigation">
-        <a class="navbar-brand" href="/">ICDEV™</a>
+        <a class="navbar-brand" href="/">{{ brand.product_name if brand is defined else "ICDEV™" }}</a>
         <button id="nav-hamburger" aria-label="Toggle navigation" aria-expanded="false" onclick="ICDEV.toggleMobileNav()">&#9776;</button>
         <ul class="navbar-nav" id="navbar-nav">
 
             <li><a href="/" class="{% if request.path == '/' %}active{% endif %}">Home</a></li>
+
+            <li><a href="/me" class="{% if request.path.startswith('/me') %}active{% endif %}" style="font-weight:600" title="My AI Assistant — profile, customers, briefing">🧠 Me</a></li>
 
             <!-- ── Ops ──────────────────────────────────────────────────────── -->
             <li class="nav-dropdown">
@@ -159,7 +167,7 @@
                     <li class="nav-section-label">DevOps</li>
                     <li><a href="/projects">Projects</a></li>
                     <li><a href="/agents">Agents</a></li>
-                    {# Co-Worker Teams (ACE) — link restored once the /coworker blueprint is registered (currently 404s) #}
+                    <li><a href="/coworker/sessions">Co-Worker (ACE)</a></li>
                     <li><a href="/kanban">Task Board</a></li>
                     <li><a href="/cicd">CI/CD</a></li>
                     <li><a href="/orchestration">Orchestration</a></li>
@@ -167,6 +175,7 @@
                     <li class="nav-section-label">Monitor</li>
                     <li><a href="/monitoring">Monitoring</a></li>
                     <li><a href="/platform-health">Platform Health</a></li>
+                    <li><a href="/health/canvases">Canvas Health</a></li>
                     <li><a href="/cache-savings">Cache Savings</a></li>
                     <li><a href="/activity">Activity</a></li>
                     <li><a href="/il5">IL5 Ingestion</a></li>
@@ -352,7 +361,7 @@
                     <li><a href="/strategos/hitl">HITL Queue</a></li>
                     <li class="nav-dropdown-divider"></li>
                     <li class="nav-section-label">MCIP</li>
-                    <li><a href="/dat" style="color:#a78bfa;">DAT — Diplomatic Tracker</a></li>
+                    <li><a href="/mcip" style="color:#a78bfa;">DAT — Diplomatic Tracker</a></li>
                     <li class="nav-dropdown-divider"></li>
                     <li><a href="#" onclick="if(typeof openStratChat!=='undefined')openStratChat();return false;" style="color:#f59e0b;font-weight:600;">Intelligence Chat</a></li>
                 </ul>
@@ -405,7 +414,7 @@
 
             <!-- ── Studio ────────────────────────────────────────────────────── -->
             <li class="nav-dropdown">
-                <a href="javascript:void(0)" class="nav-dropdown-trigger {% if '/studio' in request.path %}active{% endif %}" style="color:var(--accent-blue-light);">Studio ▾</a>
+                <a href="javascript:void(0)" class="nav-dropdown-trigger {% if '/studio' in request.path or '/workflow-canvas' in request.path %}active{% endif %}" style="color:var(--accent-blue-light);">Studio ▾</a>
                 <ul class="nav-dropdown-menu">
                     <li><a href="/studio/app-builder">App Builder</a></li>
                     <li><a href="/studio/workflows">Workflow Builder</a></li>
@@ -416,13 +425,19 @@
                     {% if not airgap_mode %}
                     <li><a href="/studio/marketplace">Marketplace</a></li>
                     {% endif %}
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Workflow Canvas</li>
+                    <li><a href="/workflow-canvas/forms">Form Builder</a></li>
+                    <li><a href="/workflow-canvas/workflows">Workflow Designer</a></li>
+                    <li><a href="/workflow-canvas/templates">Template Library</a></li>
+                    <li><a href="/workflow-canvas/processify">Process-Ify</a></li>
                 </ul>
             </li>
 
             <!-- ── Updates ──────────────────────────────────────────────────── -->
             <li>
                 <a href="/updates" class="{% if request.path == '/updates' %}active{% endif %}" style="position:relative;">
-                    Updates{% if unseen_release %}<span id="nav-release-badge" title="New release available" style="background:#e94560;color:#fff;font-size:.65rem;font-weight:700;border-radius:8px;padding:0 5px;margin-left:.3rem;vertical-align:middle;">1</span>{% endif %}
+                    Updates{% if unseen_release %}<span id="nav-release-badge" title="New release available" style="display:inline-block;background:#e94560;color:#fff;font-size:.65rem;font-weight:700;border-radius:8px;padding:0 5px;margin-left:.3rem;vertical-align:middle;line-height:1.6;">1</span>{% endif %}
                 </a>
             </li>
 
@@ -491,8 +506,15 @@
         {% block content %}{% endblock %}
     </div>
 
-    <!-- CUI Banner Bottom (D173) -->
-    {% if cui_banner_enabled %}
+    <!-- Classification / Info Banner Bottom (DSW-1) -->
+    {% if banner is defined and banner.enabled and banner.position in ('bottom', 'both') %}
+    <div class="icdev-banner icdev-banner-bottom"
+         role="contentinfo"
+         aria-label="Classification marking"
+         style="background-color:{{ banner.background_color }};color:{{ banner.text_color }};font-size:{{ banner.font_size }};font-weight:{{ banner.font_weight }};letter-spacing:{{ banner.letter_spacing }};">
+      {{ banner.text }}
+    </div>
+    {% elif cui_banner_enabled %}
     <div class="cui-banner bottom" role="contentinfo" aria-label="Classification marking">{{ cui_banner_bottom }}</div>
     {% endif %}
 
@@ -525,6 +547,15 @@
     <script>
     // Theme toggle (FDE E1)
     window.ICDEV = window.ICDEV || {};
+
+    // Canvas Shell pane collapse (DSW-2)
+    ICDEV.collapsePane = function(side) {
+        var pane = document.getElementById('canvas-pane-' + side);
+        if (!pane) return;
+        var collapsed = pane.classList.toggle('collapsed');
+        try { localStorage.setItem('icdev-pane-' + side, collapsed ? 'collapsed' : ''); } catch(e) {}
+    };
+
     ICDEV.toggleMobileNav = function() {
         var nav = document.getElementById('navbar-nav');
         var btn = document.getElementById('nav-hamburger');
@@ -595,6 +626,7 @@
     });
     </script>
 
+    <script defer src="{{ url_for('static', filename='vendor/bootstrap/bootstrap.bundle.min.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/api.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/ux.js') }}"></script>
     <script defer src="{{ url_for('static', filename='vendor/mermaid/mermaid.min.js') }}"></script>
@@ -795,6 +827,12 @@
             [/^\/foundry/, 'foundry'],
             [/^\/ai-|^\/dashboard\/.*-view/, 'aisg'],
             [/^\/dat/, 'dat'],
+            [/^\/mcip/, 'dat'],
+            [/^\/updates/, 'updates'],
+            [/^\/docgen/, 'docgen'],
+            [/^\/monitoring\/forecast/, 'forecast'],
+            [/^\/monitoring/, 'logs'],
+            [/^\/me/, 'second_brain'],
         ];
 
         function detectCanvas() {
@@ -879,6 +917,8 @@
             });
         };
 
+        window.icdevMBOpen = open;
+
         document.addEventListener('keydown', function(e) {
             if (e.ctrlKey && e.shiftKey && e.key === 'Q') {
                 e.preventDefault();
@@ -895,5 +935,108 @@
     {% block body_end %}
     {% include "includes/_onboarding_wizard.html" ignore missing %}
     {% endblock %}
+
+    {# ── IQE Global Query Trigger FAB ─────────────────────────────────────── #}
+    <button id="iqe-fab" onclick="icdevMBOpen()"
+        aria-label="Open IQE global query bar"
+        style="position:fixed;bottom:140px;right:20px;z-index:1039;
+               background:var(--accent,#4f8ef7);color:#fff;border:none;border-radius:50%;
+               width:40px;height:40px;font-size:0.82rem;font-weight:700;cursor:pointer;
+               box-shadow:0 2px 10px rgba(0,0,0,0.35);display:flex;align-items:center;
+               justify-content:center;letter-spacing:.02em;"
+        title="IQE Query Bar (Ctrl+Shift+Q)">IQE</button>
+
+    {# ── Second Brain: Universal Review FAB ──────────────────────────────── #}
+    {# Appears on any canvas in the user's role affinity list.                #}
+    {# FAB starts hidden (display:none); JS shows it if canvas is in role     #}
+    {# affinity list returned by /me/api/second-brain/proactive/relevant-canvases #}
+    <div id="sb-review-fab" style="position:fixed;bottom:80px;right:20px;z-index:1040;display:none">
+      <button class="btn shadow-lg d-flex align-items-center gap-2"
+        id="sb-review-btn"
+        style="background:linear-gradient(135deg,#1e40af,#312e81);color:#e0e7ff;border:none;border-radius:50px;padding:.45rem 1rem;font-size:.82rem"
+        data-bs-toggle="tooltip" data-bs-placement="left"
+        title="Review this work against your customers and role expectations">
+        🧠 <span>Review</span>
+      </button>
+    </div>
+    <div class="modal fade" id="sbReviewModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content" style="background:#0f172a;border:1px solid rgba(255,255,255,.1)">
+          <div class="modal-header" style="border-bottom:1px solid rgba(255,255,255,.07)">
+            <h6 class="modal-title fw-semibold mb-0">🧠 Customer &amp; Role Review</h6>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body" id="sb-review-body">
+            <div class="text-center py-4 text-muted small">Analysing…</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script>
+    (function() {
+      var pathParts = location.pathname.split('/').filter(Boolean);
+      var canvasKey = pathParts[0] || '';
+      if (!canvasKey || canvasKey === 'me') return;
+
+      fetch('/me/api/second-brain/proactive/relevant-canvases')
+        .then(function(r) { return r.ok ? r.json() : {canvases:[]}; })
+        .then(function(d) {
+          if ((d.canvases || []).indexOf(canvasKey) !== -1) {
+            var fab = document.getElementById('sb-review-fab');
+            if (fab) fab.style.display = 'block';
+            var btn = document.getElementById('sb-review-btn');
+            if (btn) new bootstrap.Tooltip(btn);
+          }
+        }).catch(function(){});
+
+      var _reviewBtn = document.getElementById('sb-review-btn');
+      if (_reviewBtn) {
+        _reviewBtn.addEventListener('click', function() {
+          var ctx = (typeof window.getProactiveContext === 'function')
+            ? window.getProactiveContext()
+            : {canvas: canvasKey, title: document.title, url: location.pathname};
+
+          var modal = new bootstrap.Modal(document.getElementById('sbReviewModal'));
+          document.getElementById('sb-review-body').innerHTML =
+            '<div class="text-center py-4 text-muted small">🧠 Analysing against your customers and role expectations…</div>';
+          modal.show();
+
+          fetch('/me/api/second-brain/proactive/design-review', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(ctx)
+          })
+          .then(function(r) { return r.json(); })
+          .then(function(d) {
+            var body = document.getElementById('sb-review-body');
+            if (!d.ok) { body.innerHTML = '<div class="text-danger small p-2">Error: '+(d.error||'unknown')+'</div>'; return; }
+            var findings = d.findings || [];
+            if (!findings.length) {
+              body.innerHTML = '<div class="text-center py-4"><div style="font-size:2rem">&#x2705;</div><p class="text-muted small mt-2">No issues found based on your current customer expectations and role requirements.</p></div>';
+              return;
+            }
+            var colorMap = {critical:'#ef4444',high:'#f87171',medium:'#fbbf24',low:'#6b7280'};
+            var bgMap = {critical:'rgba(239,68,68,.08)',high:'rgba(248,113,113,.06)',medium:'rgba(251,191,36,.06)',low:'rgba(107,114,128,.05)'};
+            body.innerHTML = findings.map(function(f) {
+              var c = colorMap[f.severity] || '#6b7280';
+              var bg = bgMap[f.severity] || 'rgba(255,255,255,.03)';
+              return '<div class="rounded-3 p-3 mb-2" style="background:'+bg+';border:1px solid '+c+'33">'
+                + '<div class="d-flex align-items-center gap-2 mb-1">'
+                + '<span class="badge rounded-pill" style="background:'+c+'22;color:'+c+';font-weight:500;font-size:.7rem">'+f.severity+'</span>'
+                + (f.customer ? '<span class="badge bg-secondary rounded-pill fw-normal" style="font-size:.68rem">'+f.customer+'</span>' : '')
+                + '<span class="fw-semibold small">'+(f.dimension||'')+'</span>'
+                + '</div>'
+                + '<p class="mb-1 small">'+f.finding+'</p>'
+                + (f.recommendation ? '<p class="mb-0 text-muted" style="font-size:.78rem">'+f.recommendation+'</p>' : '')
+                + '</div>';
+            }).join('');
+          })
+          .catch(function(err) {
+            document.getElementById('sb-review-body').innerHTML = '<div class="text-danger small p-2">Request failed: '+err+'</div>';
+          });
+        });
+      }
+    })();
+    </script>
 </body>
 </html>

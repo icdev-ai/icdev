@@ -119,7 +119,7 @@ def _audit(
     """Write to append-only audit log."""
     conn.execute(
         "INSERT INTO prompt_audit_log (id, prompt_name, version, action, actor, details, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s, %s)",
         (_new_id("paud-"), prompt_name, version, action, actor, json.dumps(details or {}), _now()),
     )
 
@@ -142,7 +142,7 @@ def register_prompt(
     try:
         # Determine next version
         row = conn.execute(
-            "SELECT MAX(version) AS mv FROM prompt_versions WHERE prompt_name = ?",
+            "SELECT MAX(version) AS mv FROM prompt_versions WHERE prompt_name = %s",
             (name,),
         ).fetchone()
         max_ver = (row["mv"] if isinstance(row, dict) else row[0]) if row else None
@@ -153,7 +153,7 @@ def register_prompt(
         # Dedup: if latest version has same hash, return it
         if max_ver:
             existing = conn.execute(
-                "SELECT * FROM prompt_versions WHERE prompt_name = ? AND version = ?",
+                "SELECT * FROM prompt_versions WHERE prompt_name = %s AND version = %s",
                 (name, max_ver),
             ).fetchone()
             existing_hash = existing["template_hash"] if isinstance(existing, dict) else existing[4]
@@ -173,7 +173,7 @@ def register_prompt(
             "INSERT INTO prompt_versions "
             "(id, prompt_name, version, template_text, template_hash, variables, "
             " function_name, status, ab_weight, created_by, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, 'draft', 1.0, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, 'draft', 1.0, %s, %s, %s)",
             (
                 pid,
                 name,
@@ -207,7 +207,7 @@ def activate_prompt(name: str, version: int, actor: str = "system") -> Dict[str,
     _init_tables(conn)
     try:
         row = conn.execute(
-            "SELECT id, status FROM prompt_versions WHERE prompt_name = ? AND version = ?",
+            "SELECT id, status FROM prompt_versions WHERE prompt_name = %s AND version = %s",
             (name, version),
         ).fetchone()
         if not row:
@@ -215,14 +215,14 @@ def activate_prompt(name: str, version: int, actor: str = "system") -> Dict[str,
 
         # Deprecate current active
         conn.execute(
-            "UPDATE prompt_versions SET status = 'deprecated', updated_at = ? "
-            "WHERE prompt_name = ? AND status = 'active'",
+            "UPDATE prompt_versions SET status = 'deprecated', updated_at = %s "
+            "WHERE prompt_name = %s AND status = 'active'",
             (_now(), name),
         )
         # Activate requested version
         now = _now()
         conn.execute(
-            "UPDATE prompt_versions SET status = 'active', updated_at = ? WHERE prompt_name = ? AND version = ?",
+            "UPDATE prompt_versions SET status = 'active', updated_at = %s WHERE prompt_name = %s AND version = %s",
             (now, name, version),
         )
         _audit(conn, name, version, "activated", actor)
@@ -239,7 +239,7 @@ def get_active_prompt(name: str) -> Optional[Dict[str, Any]]:
     try:
         # Check for active A/B test first
         ab = conn.execute(
-            "SELECT * FROM prompt_ab_tests WHERE prompt_name = ? AND status = 'active'",
+            "SELECT * FROM prompt_ab_tests WHERE prompt_name = %s AND status = 'active'",
             (name,),
         ).fetchone()
         if ab:
@@ -249,7 +249,7 @@ def get_active_prompt(name: str) -> Optional[Dict[str, Any]]:
             vb_ver = ab_dict["variant_b_version"] if isinstance(ab_dict, dict) else ab_dict[3]
             chosen_ver = vb_ver if random.random() < split else va_ver
             row = conn.execute(
-                "SELECT * FROM prompt_versions WHERE prompt_name = ? AND version = ?",
+                "SELECT * FROM prompt_versions WHERE prompt_name = %s AND version = %s",
                 (name, chosen_ver),
             ).fetchone()
             if row:
@@ -261,7 +261,7 @@ def get_active_prompt(name: str) -> Optional[Dict[str, Any]]:
 
         # No A/B — return active version
         row = conn.execute(
-            "SELECT * FROM prompt_versions WHERE prompt_name = ? AND status = 'active' ORDER BY version DESC LIMIT 1",
+            "SELECT * FROM prompt_versions WHERE prompt_name = %s AND status = 'active' ORDER BY version DESC LIMIT 1",
             (name,),
         ).fetchone()
         if row:
@@ -277,20 +277,20 @@ def rollback_prompt(name: str, to_version: int, actor: str = "system") -> Dict[s
     _init_tables(conn)
     try:
         row = conn.execute(
-            "SELECT id FROM prompt_versions WHERE prompt_name = ? AND version = ?",
+            "SELECT id FROM prompt_versions WHERE prompt_name = %s AND version = %s",
             (name, to_version),
         ).fetchone()
         if not row:
             return {"status": "error", "message": f"Prompt {name} v{to_version} not found"}
 
         conn.execute(
-            "UPDATE prompt_versions SET status = 'deprecated', updated_at = ? "
-            "WHERE prompt_name = ? AND status = 'active'",
+            "UPDATE prompt_versions SET status = 'deprecated', updated_at = %s "
+            "WHERE prompt_name = %s AND status = 'active'",
             (_now(), name),
         )
         now = _now()
         conn.execute(
-            "UPDATE prompt_versions SET status = 'active', updated_at = ? WHERE prompt_name = ? AND version = ?",
+            "UPDATE prompt_versions SET status = 'active', updated_at = %s WHERE prompt_name = %s AND version = %s",
             (now, name, to_version),
         )
         _audit(conn, name, to_version, "rolled_back", actor)
@@ -306,11 +306,11 @@ def diff_versions(name: str, v1: int, v2: int) -> Dict[str, Any]:
     _init_tables(conn)
     try:
         r1 = conn.execute(
-            "SELECT template_text FROM prompt_versions WHERE prompt_name = ? AND version = ?",
+            "SELECT template_text FROM prompt_versions WHERE prompt_name = %s AND version = %s",
             (name, v1),
         ).fetchone()
         r2 = conn.execute(
-            "SELECT template_text FROM prompt_versions WHERE prompt_name = ? AND version = ?",
+            "SELECT template_text FROM prompt_versions WHERE prompt_name = %s AND version = %s",
             (name, v2),
         ).fetchone()
         if not r1 or not r2:
@@ -358,7 +358,7 @@ def start_ab_test(
         # Verify both versions exist
         for v in (version_a, version_b):
             row = conn.execute(
-                "SELECT id FROM prompt_versions WHERE prompt_name = ? AND version = ?",
+                "SELECT id FROM prompt_versions WHERE prompt_name = %s AND version = %s",
                 (name, v),
             ).fetchone()
             if not row:
@@ -366,8 +366,8 @@ def start_ab_test(
 
         # Cancel any existing active test for this prompt
         conn.execute(
-            "UPDATE prompt_ab_tests SET status = 'cancelled', completed_at = ? "
-            "WHERE prompt_name = ? AND status = 'active'",
+            "UPDATE prompt_ab_tests SET status = 'cancelled', completed_at = %s "
+            "WHERE prompt_name = %s AND status = 'active'",
             (_now(), name),
         )
 
@@ -377,7 +377,7 @@ def start_ab_test(
             "INSERT INTO prompt_ab_tests "
             "(id, prompt_name, variant_a_version, variant_b_version, "
             " traffic_split, status, metrics_json, created_at) "
-            "VALUES (?, ?, ?, ?, ?, 'active', ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, 'active', %s, %s)",
             (test_id, name, version_a, version_b, split, json.dumps({"a": [], "b": []}), now),
         )
         _audit(
@@ -410,7 +410,7 @@ def record_ab_result(test_id: str, variant: str, quality_score: float) -> Dict[s
     _init_tables(conn)
     try:
         row = conn.execute(
-            "SELECT metrics_json, status FROM prompt_ab_tests WHERE id = ?",
+            "SELECT metrics_json, status FROM prompt_ab_tests WHERE id = %s",
             (test_id,),
         ).fetchone()
         if not row:
@@ -424,7 +424,7 @@ def record_ab_result(test_id: str, variant: str, quality_score: float) -> Dict[s
         metrics[variant].append(quality_score)
 
         conn.execute(
-            "UPDATE prompt_ab_tests SET metrics_json = ? WHERE id = ?",
+            "UPDATE prompt_ab_tests SET metrics_json = %s WHERE id = %s",
             (json.dumps(metrics), test_id),
         )
         conn.commit()
@@ -446,7 +446,7 @@ def complete_ab_test(test_id: str, actor: str = "system") -> Dict[str, Any]:
     _init_tables(conn)
     try:
         row = conn.execute(
-            "SELECT * FROM prompt_ab_tests WHERE id = ? AND status = 'active'",
+            "SELECT * FROM prompt_ab_tests WHERE id = %s AND status = 'active'",
             (test_id,),
         ).fetchone()
         if not row:
@@ -468,18 +468,18 @@ def complete_ab_test(test_id: str, actor: str = "system") -> Dict[str, Any]:
 
         now = _now()
         conn.execute(
-            "UPDATE prompt_ab_tests SET status = 'completed', winner = ?, completed_at = ? WHERE id = ?",
+            "UPDATE prompt_ab_tests SET status = 'completed', winner = %s, completed_at = %s WHERE id = %s",
             (winner, now, test_id),
         )
 
         # Activate the winning version
         conn.execute(
-            "UPDATE prompt_versions SET status = 'deprecated', updated_at = ? "
-            "WHERE prompt_name = ? AND status = 'active'",
+            "UPDATE prompt_versions SET status = 'deprecated', updated_at = %s "
+            "WHERE prompt_name = %s AND status = 'active'",
             (now, prompt_name),
         )
         conn.execute(
-            "UPDATE prompt_versions SET status = 'active', updated_at = ? WHERE prompt_name = ? AND version = ?",
+            "UPDATE prompt_versions SET status = 'active', updated_at = %s WHERE prompt_name = %s AND version = %s",
             (now, prompt_name, winner_ver),
         )
 
@@ -601,7 +601,7 @@ def gate_check() -> Dict[str, Any]:
         for row in all_names:
             name = row["prompt_name"] if isinstance(row, dict) else row[0]
             active = conn.execute(
-                "SELECT 1 FROM prompt_versions WHERE prompt_name = ? AND status = 'active' LIMIT 1",
+                "SELECT 1 FROM prompt_versions WHERE prompt_name = %s AND status = 'active' LIMIT 1",
                 (name,),
             ).fetchone()
             if not active:

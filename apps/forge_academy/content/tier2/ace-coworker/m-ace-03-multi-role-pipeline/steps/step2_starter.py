@@ -1,5 +1,3 @@
-import time
-import requests
 
 BASE_URL = "http://localhost:5050"
 

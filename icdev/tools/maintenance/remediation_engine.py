@@ -43,7 +43,7 @@ def _get_connection(db_path=None):
 
 def _get_project(conn, project_id):
     """Fetch project row or raise ValueError."""
-    row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+    row = conn.execute("SELECT * FROM projects WHERE id = %s", (project_id,)).fetchone()
     if not row:
         raise ValueError(f"Project not found: {project_id}")
     return dict(row)
@@ -54,7 +54,7 @@ def _log_audit_event(conn, project_id, action, details):
     conn.execute(
         """INSERT INTO audit_trail
            (project_id, event_type, actor, action, details, classification)
-           VALUES (?, ?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s, %s)""",
         (
             project_id,
             "vulnerability_resolved",
@@ -154,7 +154,7 @@ def _prioritize_remediations(conn, project_id):
                di.dependency_file, di.purl
         FROM dependency_vulnerabilities dv
         JOIN dependency_inventory di ON dv.dependency_id = di.id
-        WHERE dv.project_id = ? AND dv.status = 'open' AND dv.fix_available = 1
+        WHERE dv.project_id = %s AND dv.status = 'open' AND dv.fix_available = 1
         ORDER BY
             CASE dv.severity
                 WHEN 'critical' THEN 1 WHEN 'high' THEN 2
@@ -477,7 +477,7 @@ def _record_remediation_action(
            (project_id, vulnerability_id, dependency_id, action_type,
             from_version, to_version, dependency_file, git_branch,
             git_commit, status, applied_at, test_results, classification)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
         (
             project_id,
             vuln.get("id"),
@@ -502,9 +502,9 @@ def _update_vulnerability_status(conn, vuln_id, new_status, action_desc=None):
     now = datetime.now(timezone.utc).isoformat() + "Z"
     conn.execute(
         """UPDATE dependency_vulnerabilities
-           SET status = ?, remediated_at = ?, remediation_action = ?,
-               updated_at = ?
-           WHERE id = ?""",
+           SET status = %s, remediated_at = %s, remediation_action = %s,
+               updated_at = %s
+           WHERE id = %s""",
         (new_status, now, action_desc, now, vuln_id),
     )
     conn.commit()
@@ -519,7 +519,7 @@ def _count_active_remediations(conn, project_id):
     """Return the number of remediation branches currently in-flight."""
     row = conn.execute(
         """SELECT COUNT(*) AS cnt FROM remediation_actions
-           WHERE project_id = ? AND status IN ('pending', 'applied')""",
+           WHERE project_id = %s AND status IN ('pending', 'applied')""",
         (project_id,),
     ).fetchone()
     return row["cnt"] if row else 0

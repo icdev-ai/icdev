@@ -65,7 +65,7 @@ def _get_previous_score(conn, device_name: str):
     try:
         cur = conn.execute(
             "SELECT current_score FROM nc_compliance_drift "
-            "WHERE device_name = ? ORDER BY assessed_at DESC LIMIT 1",
+            "WHERE device_name = %s ORDER BY assessed_at DESC LIMIT 1",
             (device_name,),
         )
         row = cur.fetchone()
@@ -111,7 +111,7 @@ def _insert_drift(conn, rec: dict) -> None:
              failing_controls, critical_controls_failing,
              predicted_fail_date, days_to_failure,
              risk_score, risk_tier, assessed_at, created_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,CURRENT_TIMESTAMP)
         """,
         (
             rec["device_name"], rec.get("framework", "DISA_STIG"),

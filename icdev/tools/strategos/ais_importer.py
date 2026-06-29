@@ -243,7 +243,7 @@ def import_to_db(
                 _conn.execute(
                     "INSERT OR IGNORE INTO sg_vessel_tracks "
                     "(id, mmsi, vessel_name, vessel_type, flag, lat, lon, speed, heading, ts) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                     (
                         str(uuid.uuid4()),
                         v["mmsi"],

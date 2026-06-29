@@ -231,7 +231,7 @@ def _promote_to_kanban(opp: dict) -> None:
             conn.execute(
                 """INSERT OR IGNORE INTO tasks
                    (id, title, description, status, priority, created_at, updated_at)
-                   VALUES (?,?,?,'suggested',?,?,?)""",
+                   VALUES (%s,%s,%s,'suggested',%s,%s,%s)""",
                 (
                     task_id,
                     f"[Migration Intel] {opp['title'][:100]}",

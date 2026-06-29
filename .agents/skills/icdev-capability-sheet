@@ -1,0 +1,57 @@
+---
+name: icdev-capability-sheet
+description: Update and regenerate the ICDEV Capabilities & Solutions Excel spreadsheet from the YAML source of truth
+triggers:
+  - "update capability sheet"
+  - "regenerate capability sheet"
+  - "capability sheet delta"
+---
+
+# ICDEV Capability Sheet Updater
+
+Keeps `args/capability_sheet.yaml` as the version-controlled source of truth for the
+ICDEV Capabilities, Challenges & Solutions spreadsheet.
+
+## Commands
+
+```bash
+# Full update: detect new features from git + regenerate Excel
+python icdev/tools/showcase/capability_sheet_runner.py
+
+# Delta only (draft new rows, don't regenerate Excel yet)
+python icdev/tools/showcase/capability_sheet_delta.py
+
+# Regenerate Excel from current YAML (no delta detection)
+python icdev/tools/showcase/capability_sheet_generator.py
+
+# Dry run (show what delta would add, don't write)
+python icdev/tools/showcase/capability_sheet_delta.py --dry-run
+
+# Custom output path
+python icdev/tools/showcase/capability_sheet_generator.py --output "C:/path/to/output.xlsx"
+```
+
+## Workflow
+
+1. Delta detector reads `meta.last_commit_sha` from YAML
+2. Scans `git log` for new `feat:` commits since that SHA
+3. LLM drafts new/updated rows with `status: draft`
+4. You review and approve rows in `args/capability_sheet.yaml`
+   (change `status: draft` to `status: approved`)
+5. Generator reads approved rows only and writes Excel
+6. Commit `args/capability_sheet.yaml` to track the update
+
+## Adding rows manually
+
+Edit `args/capability_sheet.yaml` directly. Set `status: approved` for immediate inclusion.
+Then run: `python icdev/tools/showcase/capability_sheet_generator.py`
+
+## Archiving rows
+
+Change `status: approved` to `status: archived`. The row is preserved in the YAML
+history but excluded from the next generated Excel.
+
+## Source of truth
+
+`args/capability_sheet.yaml` — edit here, never in the Excel file directly.
+The Excel output is always regenerated; any hand-edits to it will be overwritten.

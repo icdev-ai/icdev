@@ -82,7 +82,7 @@ def _store_result(result: Dict, project_id: str = "") -> None:
             """INSERT INTO formal_verification_results
                (id, file_path, check_name, check_category, passed, severity,
                 finding_count, findings_json, score, content_hash, project_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 f"fv-{uuid.uuid4().hex[:12]}",
                 result.get("file_path", ""),

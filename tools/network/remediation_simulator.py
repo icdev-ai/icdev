@@ -193,7 +193,7 @@ def simulate_remediation(remediation_action_id: int) -> dict:
 
     try:
         row_obj = conn.execute(
-            "SELECT * FROM nc_remediation_actions WHERE id = ?",
+            "SELECT * FROM nc_remediation_actions WHERE id = %s",
             (remediation_action_id,),
         ).fetchone()
     except Exception as exc:
@@ -225,7 +225,7 @@ def simulate_remediation(remediation_action_id: int) -> dict:
     sim_at = _now()
     try:
         conn.execute(
-            "UPDATE nc_remediation_actions SET status = 'simulated', updated_at = ? WHERE id = ?",
+            "UPDATE nc_remediation_actions SET status = 'simulated', updated_at = %s WHERE id = %s",
             (sim_at, remediation_action_id),
         )
         conn.commit()

@@ -198,7 +198,7 @@ class RuntimeFeedbackCollector:
                      test_file, test_function, test_passed,
                      test_duration_ms, error_type, error_message,
                      coverage_pct, run_id)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                     (
                         _uid(),
                         self.project_id,
@@ -269,8 +269,8 @@ class RuntimeFeedbackCollector:
                 """SELECT cyclomatic_complexity, cognitive_complexity,
                           nesting_depth, smell_count, maintainability_score
                    FROM code_quality_metrics
-                   WHERE function_name = ?1
-                     AND (?2 IS NULL OR project_id = ?2)
+                   WHERE function_name = %s1
+                     AND (%s2 IS NULL OR project_id = %s2)
                    ORDER BY created_at DESC LIMIT 1""",
                 (source_function, pid),
             ).fetchone()
@@ -281,8 +281,8 @@ class RuntimeFeedbackCollector:
                           SUM(CASE WHEN test_passed = 1 THEN 1 ELSE 0 END) as passed,
                           AVG(test_duration_ms) as avg_duration
                    FROM runtime_feedback
-                   WHERE source_function = ?1
-                     AND (?2 IS NULL OR project_id = ?2)
+                   WHERE source_function = %s1
+                     AND (%s2 IS NULL OR project_id = %s2)
                      AND created_at > datetime('now', '-30 days')""",
                 (source_function, pid),
             ).fetchone()

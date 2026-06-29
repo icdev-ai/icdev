@@ -1,0 +1,7 @@
+collection: canvas_health.coherence_violations
+query: "Which canvases have critical coherence violations?"
+description: "List canvases flagged red — typically those with canvas_rls_bypass violations (get_canvas_connection() missing)."
+example_questions:
+  - "Which canvases need RLS bypass fixes?"
+  - "Show me canvases with coherence violations"
+  - "What are the critical canvas issues?"

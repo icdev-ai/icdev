@@ -61,14 +61,14 @@ def create_target(
             "INSERT INTO sg_f3ead_targets "
             "(id, target_name, target_type, description, phase, responsible_element, "
             " priority, theater, geo_hint, phase_entered_at, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, 'find', ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, 'find', %s, %s, %s, %s, %s, %s, %s)",
             (target_id, target_name, target_type, description,
              responsible_element, priority, theater, geo_hint, now, now, now),
         )
         conn.execute(
             "INSERT INTO sg_target_events "
             "(id, target_id, from_phase, to_phase, actor, notes, created_at) "
-            "VALUES (?, ?, NULL, 'find', 'system', 'Target created', ?)",
+            "VALUES (%s, %s, NULL, 'find', 'system', 'Target created', %s)",
             (str(uuid.uuid4()), target_id, now),
         )
         conn.commit()
@@ -109,7 +109,7 @@ def advance_phase(
         conn.execute(
             "INSERT INTO sg_target_events "
             "(id, target_id, from_phase, to_phase, actor, notes, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (str(uuid.uuid4()), target_id, current, next_phase, actor, notes, now),
         )
         conn.commit()
@@ -147,7 +147,7 @@ def set_phase(
         conn.execute(
             "INSERT INTO sg_target_events "
             "(id, target_id, from_phase, to_phase, actor, notes, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (str(uuid.uuid4()), target_id, current, phase, actor,
              notes or f"Manual phase set by {actor}", now),
         )

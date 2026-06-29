@@ -114,7 +114,7 @@ def _audit(conn, action, details="", actor="cmmc_validator"):
     try:
         conn.execute(
             "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (str(uuid.uuid4()), _now(), "govcon.cmmc_supply_chain", actor, action, details, "proposal_genesis"),
         )
     except Exception:
@@ -252,7 +252,7 @@ def add_team_member(
             "(id, opportunity_id, team_member_name, role, required_cmmc_level, actual_cmmc_level, "
             "sprs_score, assessment_type, poam_status, cert_expiry, cage_code, "
             "compliance_status, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 member_id,
                 opportunity_id,
@@ -301,7 +301,7 @@ def update_member(member_id, **kwargs):
         Dict with status and updated_fields.
     """
     conn = _get_db()
-    row = conn.execute("SELECT * FROM pg_cmmc_supply_chain WHERE id = ?", (member_id,)).fetchone()
+    row = conn.execute("SELECT * FROM pg_cmmc_supply_chain WHERE id = %s", (member_id,)).fetchone()
     if not row:
         conn.close()
         return {"status": "error", "message": f"Member {member_id} not found"}
@@ -340,7 +340,7 @@ def update_member(member_id, **kwargs):
     params.append(member_id)
 
     conn.execute(
-        f"UPDATE pg_cmmc_supply_chain SET {', '.join(sets)} WHERE id = ?",
+        f"UPDATE pg_cmmc_supply_chain SET {', '.join(sets)} WHERE id = %s",
         params,  # nosec B608 -- table/column names are internal constants, not user input
     )
     _audit(conn, "update_member", f"Updated member {member_id}: {list(kwargs.keys())}, status={effective_status}")
@@ -371,7 +371,7 @@ def validate_team(opportunity_id):
     """
     conn = _get_db()
     members = conn.execute(
-        "SELECT * FROM pg_cmmc_supply_chain WHERE opportunity_id = ? ORDER BY role ASC, team_member_name ASC",
+        "SELECT * FROM pg_cmmc_supply_chain WHERE opportunity_id = %s ORDER BY role ASC, team_member_name ASC",
         (opportunity_id,),
     ).fetchall()
 
@@ -395,7 +395,7 @@ def validate_team(opportunity_id):
         # Update DB if status changed
         if effective_status != member.get("compliance_status"):
             conn.execute(
-                "UPDATE pg_cmmc_supply_chain SET compliance_status = ?, updated_at = ? WHERE id = ?",
+                "UPDATE pg_cmmc_supply_chain SET compliance_status = %s, updated_at = %s WHERE id = %s",
                 (effective_status, _now(), member["id"]),
             )
 
@@ -511,7 +511,7 @@ def generate_flow_down(opportunity_id):
     """
     conn = _get_db()
     members = conn.execute(
-        "SELECT * FROM pg_cmmc_supply_chain WHERE opportunity_id = ? ORDER BY role ASC, team_member_name ASC",
+        "SELECT * FROM pg_cmmc_supply_chain WHERE opportunity_id = %s ORDER BY role ASC, team_member_name ASC",
         (opportunity_id,),
     ).fetchall()
     conn.close()

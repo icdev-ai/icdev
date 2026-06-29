@@ -152,7 +152,7 @@ def scan_collection(
         if retention_days is None:
             try:
                 cur.execute(
-                    "SELECT retention_days FROM dic_collections WHERE collection_id = ? AND tenant_id = ?",
+                    "SELECT retention_days FROM dic_collections WHERE collection_id = %s AND tenant_id = %s",
                     (collection_id, tenant_id),
                 )
                 row = cur.fetchone()
@@ -165,7 +165,7 @@ def scan_collection(
         # Load documents in collection.
         cur.execute(
             "SELECT doc_id, title, created_at, classification FROM dic_documents "
-            "WHERE collection_id = ? AND tenant_id = ? ORDER BY created_at DESC",
+            "WHERE collection_id = %s AND tenant_id = %s ORDER BY created_at DESC",
             (collection_id, tenant_id),
         )
         docs = cur.fetchall()
@@ -176,7 +176,7 @@ def scan_collection(
             did = d[0] if hasattr(d, "__getitem__") else d["doc_id"]
             try:
                 cur.execute(
-                    "SELECT created_at, status FROM dic_versions WHERE doc_id = ? ORDER BY version_no DESC LIMIT 1",
+                    "SELECT created_at, status FROM dic_versions WHERE doc_id = %s ORDER BY version_no DESC LIMIT 1",
                     (did,),
                 )
                 vrow = cur.fetchone()
@@ -193,8 +193,8 @@ def scan_collection(
         # Load drift events since the latest version per doc (approximate: collection-wide).
         try:
             cur.execute(
-                "SELECT COUNT(*) FROM dic_drift_events WHERE source = ? AND detected_at > "
-                "(SELECT MAX(created_at) FROM dic_versions WHERE collection_id = ?)",
+                "SELECT COUNT(*) FROM dic_drift_events WHERE source = %s AND detected_at > "
+                "(SELECT MAX(created_at) FROM dic_versions WHERE collection_id = %s)",
                 (collection_id, collection_id),
             )
             drift_row = cur.fetchone()
@@ -219,7 +219,7 @@ def scan_collection(
             # Pending sections count.
             try:
                 cur.execute(
-                    "SELECT COUNT(*) FROM dic_sections WHERE doc_id = ? AND status IN ('pending_review','needs_revision','draft')",
+                    "SELECT COUNT(*) FROM dic_sections WHERE doc_id = %s AND status IN ('pending_review','needs_revision','draft')",
                     (did,),
                 )
                 psc_row = cur.fetchone()
@@ -243,7 +243,7 @@ def scan_collection(
             try:
                 cur.execute(
                     "INSERT INTO dic_doc_freshness (doc_id, collection_id, state, reason, source_event, score, updated_at, tenant_id, classification) "
-                    "VALUES (?,?,?,?,?,?,?,?,?) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) "
                     "ON CONFLICT (doc_id) DO UPDATE SET state=EXCLUDED.state, reason=EXCLUDED.reason, source_event=EXCLUDED.source_event, score=EXCLUDED.score, updated_at=EXCLUDED.updated_at",
                     (did, collection_id, fres.state, fres.reason, fres.source_event, fres.score, _now_utc(), tenant_id, doc_cls),
                 )
@@ -257,7 +257,7 @@ def scan_collection(
         try:
             cur.execute(
                 "INSERT INTO dic_freshness_scans (scan_id, collection_id, stale_count, regen_priority, scanned_at, tenant_id) "
-                "VALUES (?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s)",
                 (scan_id, collection_id, stale_count, regen_priority, _now_utc(), tenant_id),
             )
         except Exception as exc:
@@ -295,7 +295,7 @@ def corpus_heatmap(
         cur.execute(
             "SELECT f.doc_id, f.collection_id, f.state, f.reason, f.score, d.title "
             "FROM dic_doc_freshness f LEFT JOIN dic_documents d ON d.doc_id = f.doc_id "
-            "WHERE f.tenant_id = ? ORDER BY f.score DESC LIMIT ?",
+            "WHERE f.tenant_id = %s ORDER BY f.score DESC LIMIT %s",
             (tenant_id, limit),
         )
         rows = cur.fetchall()

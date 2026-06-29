@@ -82,7 +82,7 @@ def create_baseline(
             "(id, indicator_name, indicator_category, scope, scope_id, "
             " threshold_score, severity_band, operator_id, rationale, "
             " is_active, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 1, %s, %s)",
             (
                 baseline_id,
                 indicator_name,
@@ -156,7 +156,7 @@ def validate_indicator_score(
         rows = conn.execute(
             "SELECT id, scope, scope_id, threshold_score, severity_band "
             "FROM indicator_baselines "
-            "WHERE indicator_name = ? AND is_active = 1 "
+            "WHERE indicator_name = %s AND is_active = 1 "
             "ORDER BY CASE scope "
             "  WHEN 'user'    THEN 4 "
             "  WHEN 'project' THEN 3 "

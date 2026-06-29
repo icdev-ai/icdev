@@ -825,7 +825,7 @@ def import_reqif(project_id: str, file_path: str, db_path: str = None) -> dict:
                 if parent_reqif_id:
                     # Lookup from already-stored rows
                     cursor.execute(
-                        "SELECT id FROM doors_requirements WHERE project_id = ? AND doors_id = ?",
+                        "SELECT id FROM doors_requirements WHERE project_id = %s AND doors_id = %s",
                         (project_id, parent_reqif_id),
                     )
                     prow = cursor.fetchone()
@@ -839,7 +839,7 @@ def import_reqif(project_id: str, file_path: str, db_path: str = None) -> dict:
                         requirement_type, title, description, priority,
                         status, parent_req_id, source_file, source_hash,
                         imported_at, updated_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'active', %s, %s, %s, %s, %s)
                        ON CONFLICT(project_id, doors_id) DO UPDATE SET
                            module_name = excluded.module_name,
                            requirement_type = excluded.requirement_type,
@@ -894,8 +894,8 @@ def import_reqif(project_id: str, file_path: str, db_path: str = None) -> dict:
                            (project_id, source_type, source_id,
                             target_type, target_id, link_type,
                             confidence, evidence, created_by, created_at)
-                           VALUES (?, 'doors_requirement', ?, 'doors_requirement', ?,
-                                   'derives_from', 1.0, ?, 'reqif-parser', ?)
+                           VALUES (%s, 'doors_requirement', %s, 'doors_requirement', %s,
+                                   'derives_from', 1.0, %s, 'reqif-parser', %s)
                         """,
                         (
                             project_id,
@@ -921,7 +921,7 @@ def import_reqif(project_id: str, file_path: str, db_path: str = None) -> dict:
                (project_id, import_type, source_file, source_hash,
                 elements_imported, relationships_imported,
                 errors, error_details, status, imported_by, imported_at)
-               VALUES (?, 'reqif', ?, ?, ?, ?, ?, ?, ?, 'reqif-parser', ?)
+               VALUES (%s, 'reqif', %s, %s, %s, %s, %s, %s, %s, 'reqif-parser', %s)
             """,
             (
                 project_id,
@@ -1002,7 +1002,7 @@ def export_reqif(project_id: str, output_path: str, db_path: str = None) -> dict
 
         # Fetch requirements
         cursor.execute(
-            "SELECT * FROM doors_requirements WHERE project_id = ? ORDER BY module_name, doors_id",
+            "SELECT * FROM doors_requirements WHERE project_id = %s ORDER BY module_name, doors_id",
             (project_id,),
         )
         rows = [dict(r) for r in cursor.fetchall()]
@@ -1230,7 +1230,7 @@ def diff_reqif(project_id: str, new_file: str, db_path: str = None) -> dict:
     try:
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT * FROM doors_requirements WHERE project_id = ?",
+            "SELECT * FROM doors_requirements WHERE project_id = %s",
             (project_id,),
         )
         db_rows = [dict(r) for r in cursor.fetchall()]
@@ -1317,7 +1317,7 @@ def get_import_summary(import_id: int, db_path: str = None) -> dict:
     conn = _get_connection(db_path)
     try:
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM model_imports WHERE id = ?", (import_id,))
+        cursor.execute("SELECT * FROM model_imports WHERE id = %s", (import_id,))
         row = cursor.fetchone()
         if not row:
             return {"error": f"Import ID {import_id} not found"}

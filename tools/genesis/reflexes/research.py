@@ -195,7 +195,7 @@ def _is_duplicate(content_hash: str) -> bool:
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT COUNT(*) as cnt FROM innovation_signals WHERE content_hash = ?", (content_hash,)
+            "SELECT COUNT(*) as cnt FROM innovation_signals WHERE content_hash = %s", (content_hash,)
         ).fetchone()
         return (row["cnt"] if row else 0) > 0
     except Exception:

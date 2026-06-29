@@ -205,7 +205,7 @@ def _audit(conn, action, details="", actor="compliance_matrix_builder"):
         conn.execute(
             "INSERT INTO audit_trail "
             "(id, created_at, event_type, actor, action, details, session_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (str(uuid.uuid4()), _now(), "govcon.compliance_matrix", actor, action, details, "govcon"),
         )
     except Exception:
@@ -699,7 +699,7 @@ def _store_requirements(requirements: List[Dict], conn=None) -> Dict:
 
         # Dedup check: same text for same opportunity
         existing = conn.execute(
-            "SELECT id FROM pg_compliance_matrix WHERE opportunity_id = ? AND requirement_text = ?",
+            "SELECT id FROM pg_compliance_matrix WHERE opportunity_id = %s AND requirement_text = %s",
             (opp_id, req["requirement_text"][:2000]),
         ).fetchone()
 
@@ -712,7 +712,7 @@ def _store_requirements(requirements: List[Dict], conn=None) -> Dict:
             "(id, opportunity_id, requirement_id, requirement_text, source_section, "
             "evaluation_factor, evaluation_weight, assigned_volume, assigned_section, "
             "compliance_status, amendment_version, notes, created_at, updated_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (
                 req["id"],
                 req["opportunity_id"],
@@ -756,7 +756,7 @@ def build_matrix(opportunity_id: str) -> Dict:
     conn = _get_db()
 
     rows = conn.execute(
-        "SELECT * FROM pg_compliance_matrix WHERE opportunity_id = ? ORDER BY source_section, created_at",
+        "SELECT * FROM pg_compliance_matrix WHERE opportunity_id = %s ORDER BY source_section, created_at",
         (opportunity_id,),
     ).fetchall()
 
@@ -905,13 +905,13 @@ def auto_map_sections(opportunity_id: str) -> Dict:
 
     rows = conn.execute(
         "SELECT id, requirement_text, assigned_volume, assigned_section, source_section "
-        "FROM pg_compliance_matrix WHERE opportunity_id = ?",
+        "FROM pg_compliance_matrix WHERE opportunity_id = %s",
         (opportunity_id,),
     ).fetchall()
 
     # Also load existing proposal volumes for the opportunity
     volumes = conn.execute(
-        "SELECT id, volume_type, title FROM proposal_volumes WHERE opportunity_id = ?",
+        "SELECT id, volume_type, title FROM proposal_volumes WHERE opportunity_id = %s",
         (opportunity_id,),
     ).fetchall()
     volume_map = {v["volume_type"]: v for v in volumes if v.get("volume_type")}
@@ -943,8 +943,8 @@ def auto_map_sections(opportunity_id: str) -> Dict:
                 assigned_section = volume_map[best_volume].get("title")
 
             conn.execute(
-                "UPDATE pg_compliance_matrix SET assigned_volume = ?, "
-                "assigned_section = ?, updated_at = ? WHERE id = ?",
+                "UPDATE pg_compliance_matrix SET assigned_volume = %s, "
+                "assigned_section = %s, updated_at = %s WHERE id = %s",
                 (best_volume, assigned_section, _now(), row["id"]),
             )
             mapped += 1
@@ -981,7 +981,7 @@ def get_coverage(opportunity_id: str) -> Dict:
     conn = _get_db()
 
     rows = conn.execute(
-        "SELECT source_section, assigned_volume, compliance_status FROM pg_compliance_matrix WHERE opportunity_id = ?",
+        "SELECT source_section, assigned_volume, compliance_status FROM pg_compliance_matrix WHERE opportunity_id = %s",
         (opportunity_id,),
     ).fetchall()
 
@@ -1081,7 +1081,7 @@ def detect_amendments(
     # Fetch existing requirements for this opportunity
     existing_rows = conn.execute(
         "SELECT id, requirement_text, source_section, compliance_status "
-        "FROM pg_compliance_matrix WHERE opportunity_id = ?",
+        "FROM pg_compliance_matrix WHERE opportunity_id = %s",
         (opportunity_id,),
     ).fetchall()
     existing_list = [r["requirement_text"] for r in existing_rows]
@@ -1280,14 +1280,14 @@ def evaluate_gate(opportunity_id: str) -> Dict:
     # Count Section M gaps (FAIL condition)
     m_gaps = conn.execute(
         "SELECT COUNT(*) as c FROM pg_compliance_matrix "
-        "WHERE opportunity_id = ? AND source_section = 'M' AND compliance_status = 'gap'",
+        "WHERE opportunity_id = %s AND source_section = 'M' AND compliance_status = 'gap'",
         (opportunity_id,),
     ).fetchone()
     m_gap_count = m_gaps["c"] if m_gaps else 0
 
     # Count all partials (WARN condition)
     partials = conn.execute(
-        "SELECT COUNT(*) as c FROM pg_compliance_matrix WHERE opportunity_id = ? AND compliance_status = 'partial'",
+        "SELECT COUNT(*) as c FROM pg_compliance_matrix WHERE opportunity_id = %s AND compliance_status = 'partial'",
         (opportunity_id,),
     ).fetchone()
     partial_count = partials["c"] if partials else 0
@@ -1297,7 +1297,7 @@ def evaluate_gate(opportunity_id: str) -> Dict:
         "SELECT COUNT(*) as total, "
         "SUM(CASE WHEN compliance_status = 'addressed' THEN 1 ELSE 0 END) as addressed, "
         "SUM(CASE WHEN compliance_status = 'gap' THEN 1 ELSE 0 END) as gaps "
-        "FROM pg_compliance_matrix WHERE opportunity_id = ?",
+        "FROM pg_compliance_matrix WHERE opportunity_id = %s",
         (opportunity_id,),
     ).fetchone()
 

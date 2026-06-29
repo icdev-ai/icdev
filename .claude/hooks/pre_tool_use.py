@@ -546,6 +546,11 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "nc_capacity_predictions",   # bandwidth saturation forecasts
         "nc_change_risk",            # pre-change failure probability scores
         "nc_supply_chain_risk",      # vendor supply-chain risk aggregation
+        # TimesFM Forecasting microservice (migration 219) — forecast audit log append-only NIST AU
+        "forecast_audit",
+        # ACE QA Agent (NIST AU — test evidence is immutable)
+        "ace_qa_runs",
+        "ace_qa_failures",
     ]
 
     if tool_name == "Bash":

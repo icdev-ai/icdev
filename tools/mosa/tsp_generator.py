@@ -73,7 +73,7 @@ def _conn(db_path=None):
 
 
 def _project(conn, pid):
-    r = conn.execute("SELECT * FROM projects WHERE id = ?", (pid,)).fetchone()
+    r = conn.execute("SELECT * FROM projects WHERE id = %s", (pid,)).fetchone()
     if not r:
         raise ValueError(f"Project '{pid}' not found")
     return dict(r)
@@ -239,12 +239,12 @@ def generate_tsp(project_id, output_dir=None, db_path=None):
         conn.execute(
             """INSERT INTO tsp_documents (id,project_id,version,standards,deviations,
             content,file_path,classification,status,approval_status,created_at,updated_at)
-            VALUES (?,?,'1.0.0',?,?,?,?,'CUI // SP-CTI','draft','pending',?,?)""",
+            VALUES (%s,%s,'1.0.0',%s,%s,%s,%s,'CUI // SP-CTI','draft','pending',%s,%s)""",
             (tid, project_id, json.dumps(stds), json.dumps(devs), content, str(fp), now.isoformat(), now.isoformat()),
         )
         conn.execute(
             """INSERT INTO audit_trail (project_id,event_type,actor,action,details,classification)
-            VALUES (?,'tsp_generated','icdev-mosa-engine',?,?,'CUI')""",
+            VALUES (%s,'tsp_generated','icdev-mosa-engine',%s,%s,'CUI')""",
             (
                 project_id,
                 f"TSP generated: {tid} ({len(stds)} standards)",

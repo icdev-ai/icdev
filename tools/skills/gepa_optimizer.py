@@ -7,7 +7,7 @@ maps each artifact to its source skill file, uses LLM Router to generate a
 targeted patch, and writes the improved skill file. Creates a low-priority kanban
 review card for each update so a human can audit before the next cycle uses it.
 
-Based on the GEPA (Genetic Evolution via Prompt Artifacts) pattern from Hermes:
+Implements the GEPA (Genetic Evolution via Prompt Artifacts) optimization pattern:
   execution trace → reflexion artifact → skill patch → improved skill file
 
 Usage:
@@ -119,7 +119,7 @@ def _get_pending_artifacts(conn) -> list[dict]:
             "WHERE status = 'pending' "
             "  AND composite_score IS NOT NULL "
             "  AND baseline_score IS NOT NULL "
-            "  AND composite_score >= ? "
+            "  AND composite_score >= %s "
             "ORDER BY (composite_score - baseline_score) DESC "
             "LIMIT 10",
             (_MIN_COMPOSITE_SCORE,),
@@ -145,8 +145,8 @@ def _mark_applied(conn, artifact_id: str) -> None:
     now = datetime.now(timezone.utc).isoformat()
     conn.execute(
         "UPDATE agent_improvement_artifacts "
-        "SET status='applied', applied_at=?, applied_count=COALESCE(applied_count,0)+1 "
-        "WHERE artifact_id=?",
+        "SET status='applied', applied_at=%s, applied_count=COALESCE(applied_count,0)+1 "
+        "WHERE artifact_id=%s",
         (now, artifact_id),
     )
     conn.commit()

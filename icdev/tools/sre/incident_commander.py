@@ -110,13 +110,13 @@ def _add_event(
     conn.execute(
         """INSERT INTO sre_incident_events
            (id, incident_id, event_type, description, actor, created_at)
-           VALUES (?, ?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s, %s)""",
         (event_id, incident_id, event_type, description, actor, now),
     )
 
     # Also append to timeline_json on the incident
     timeline = conn.execute(
-        "SELECT timeline_json FROM sre_incidents WHERE id = ?",
+        "SELECT timeline_json FROM sre_incidents WHERE id = %s",
         (incident_id,),
     ).fetchone()
 
@@ -132,7 +132,7 @@ def _add_event(
             }
         )
         conn.execute(
-            "UPDATE sre_incidents SET timeline_json = ? WHERE id = ?",
+            "UPDATE sre_incidents SET timeline_json = %s WHERE id = %s",
             (json.dumps(tl), incident_id),
         )
 
@@ -176,7 +176,7 @@ def create_incident(title: str, severity: str, service: str, alert_source: str =
         """INSERT INTO sre_incidents
            (id, title, severity, status, service_name, alert_source,
             timeline_json, created_at)
-           VALUES (?, ?, ?, 'detected', ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, 'detected', %s, %s, %s, %s)""",
         (incident_id, title, severity, service, alert_source, initial_timeline, now),
     )
 
@@ -186,7 +186,7 @@ def create_incident(title: str, severity: str, service: str, alert_source: str =
     escalated = False
     if severity == "sev1" and cfg["auto_escalate_sev1"]:
         conn.execute(
-            "UPDATE sre_incidents SET escalated = 1 WHERE id = ?",
+            "UPDATE sre_incidents SET escalated = 1 WHERE id = %s",
             (incident_id,),
         )
         _add_event(conn, incident_id, "escalated", "Auto-escalated: sev1 incident")
@@ -220,7 +220,7 @@ def triage_incident(incident_id: str, root_cause: str = None) -> dict:
     init_tables(conn)
 
     row = conn.execute(
-        "SELECT id, status FROM sre_incidents WHERE id = ?",
+        "SELECT id, status FROM sre_incidents WHERE id = %s",
         (incident_id,),
     ).fetchone()
 
@@ -238,7 +238,7 @@ def triage_incident(incident_id: str, root_cause: str = None) -> dict:
 
     # SQLite doesn't have updated_at column, just use timeline
     conn.execute(
-        f"UPDATE sre_incidents SET status = 'triaging'{', root_cause = ?' if root_cause else ''} WHERE id = ?",  # nosec B608
+        f"UPDATE sre_incidents SET status = 'triaging'{', root_cause = ?' if root_cause else ''} WHERE id = %s",  # nosec B608
         ([root_cause, incident_id] if root_cause else [incident_id]),
     )
 
@@ -272,7 +272,7 @@ def escalate_incident(incident_id: str, reason: str) -> dict:
     init_tables(conn)
 
     row = conn.execute(
-        "SELECT id, status, severity FROM sre_incidents WHERE id = ?",
+        "SELECT id, status, severity FROM sre_incidents WHERE id = %s",
         (incident_id,),
     ).fetchone()
 
@@ -280,7 +280,7 @@ def escalate_incident(incident_id: str, reason: str) -> dict:
         return {"status": "error", "message": f"Incident not found: {incident_id}"}
 
     conn.execute(
-        "UPDATE sre_incidents SET escalated = 1 WHERE id = ?",
+        "UPDATE sre_incidents SET escalated = 1 WHERE id = %s",
         (incident_id,),
     )
     _add_event(conn, incident_id, "escalated", f"Escalated: {reason}")
@@ -309,7 +309,7 @@ def resolve_incident(incident_id: str, mitigation_steps: list) -> dict:
     init_tables(conn)
 
     row = conn.execute(
-        "SELECT id, status, created_at FROM sre_incidents WHERE id = ?",
+        "SELECT id, status, created_at FROM sre_incidents WHERE id = %s",
         (incident_id,),
     ).fetchone()
 
@@ -327,9 +327,9 @@ def resolve_incident(incident_id: str, mitigation_steps: list) -> dict:
 
     conn.execute(
         """UPDATE sre_incidents
-           SET status = 'resolved', mitigation_steps = ?, resolved_at = ?,
-               mttr_seconds = ?
-           WHERE id = ?""",
+           SET status = 'resolved', mitigation_steps = %s, resolved_at = %s,
+               mttr_seconds = %s
+           WHERE id = %s""",
         (json.dumps(mitigation_steps), now_iso, mttr_seconds, incident_id),
     )
 
@@ -362,7 +362,7 @@ def add_postmortem(incident_id: str, url: str, lessons_learned: str) -> dict:
     init_tables(conn)
 
     row = conn.execute(
-        "SELECT id, status FROM sre_incidents WHERE id = ?",
+        "SELECT id, status FROM sre_incidents WHERE id = %s",
         (incident_id,),
     ).fetchone()
 
@@ -370,7 +370,7 @@ def add_postmortem(incident_id: str, url: str, lessons_learned: str) -> dict:
         return {"status": "error", "message": f"Incident not found: {incident_id}"}
 
     conn.execute(
-        "UPDATE sre_incidents SET status = 'postmortem', postmortem_url = ? WHERE id = ?",
+        "UPDATE sre_incidents SET status = 'postmortem', postmortem_url = %s WHERE id = %s",
         (url, incident_id),
     )
     _add_event(conn, incident_id, "postmortem_added", f"Postmortem added: {url}. Lessons: {lessons_learned}")
@@ -398,7 +398,7 @@ def close_incident(incident_id: str) -> dict:
     init_tables(conn)
 
     row = conn.execute(
-        "SELECT id, status FROM sre_incidents WHERE id = ?",
+        "SELECT id, status FROM sre_incidents WHERE id = %s",
         (incident_id,),
     ).fetchone()
 
@@ -408,7 +408,7 @@ def close_incident(incident_id: str) -> dict:
     now = datetime.now(timezone.utc).isoformat()
 
     conn.execute(
-        "UPDATE sre_incidents SET status = 'closed', closed_at = ? WHERE id = ?",
+        "UPDATE sre_incidents SET status = 'closed', closed_at = %s WHERE id = %s",
         (now, incident_id),
     )
     _add_event(conn, incident_id, "closed", "Incident closed")
@@ -456,7 +456,7 @@ def get_incident(incident_id: str) -> dict:
     ]
 
     row = conn.execute(
-        f"SELECT {', '.join(cols)} FROM sre_incidents WHERE id = ?",  # nosec B608
+        f"SELECT {', '.join(cols)} FROM sre_incidents WHERE id = %s",  # nosec B608
         (incident_id,),
     ).fetchone()
 
@@ -477,7 +477,7 @@ def get_incident(incident_id: str) -> dict:
     events = conn.execute(
         """SELECT id, event_type, description, actor, created_at
            FROM sre_incident_events
-           WHERE incident_id = ?
+           WHERE incident_id = %s
            ORDER BY created_at""",
         (incident_id,),
     ).fetchall()
@@ -551,7 +551,7 @@ def get_mttr_stats() -> dict:
     for sev in SEVERITIES:
         rows = conn.execute(
             """SELECT mttr_seconds FROM sre_incidents
-               WHERE severity = ? AND mttr_seconds IS NOT NULL
+               WHERE severity = %s AND mttr_seconds IS NOT NULL
                ORDER BY created_at DESC""",
             (sev,),
         ).fetchall()

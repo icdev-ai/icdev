@@ -187,7 +187,7 @@ def _log_event(conn, event_type, details, actor="system"):
     try:
         conn.execute(
             """INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, project_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
             (
                 _generate_id("audit"),
                 datetime.now(timezone.utc).isoformat(),
@@ -229,14 +229,14 @@ def create_profile(
     try:
         # Determine next version
         row = conn.execute(
-            "SELECT MAX(version) as max_v FROM dev_profiles WHERE scope = ? AND scope_id = ?",
+            "SELECT MAX(version) as max_v FROM dev_profiles WHERE scope = %s AND scope_id = %s",
             (scope, scope_id),
         ).fetchone()
         next_version = (row["max_v"] or 0) + 1
 
         # Deactivate previous versions
         conn.execute(
-            "UPDATE dev_profiles SET is_active = 0 WHERE scope = ? AND scope_id = ? AND is_active = 1",
+            "UPDATE dev_profiles SET is_active = 0 WHERE scope = %s AND scope_id = %s AND is_active = 1",
             (scope, scope_id),
         )
 
@@ -258,7 +258,7 @@ def create_profile(
             """INSERT INTO dev_profiles
                (id, scope, scope_id, version, profile_md, profile_yaml,
                 inherits_from, created_by, created_at, is_active, change_summary)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 1, %s)""",
             (
                 profile_id,
                 scope,
@@ -305,13 +305,13 @@ def get_profile(scope, scope_id, version=None, db_path=None):
     try:
         if version:
             row = conn.execute(
-                "SELECT * FROM dev_profiles WHERE scope = ? AND scope_id = ? AND version = ?",
+                "SELECT * FROM dev_profiles WHERE scope = %s AND scope_id = %s AND version = %s",
                 (scope, scope_id, version),
             ).fetchone()
         else:
             row = conn.execute(
                 """SELECT * FROM dev_profiles
-                   WHERE scope = ? AND scope_id = ? AND is_active = 1
+                   WHERE scope = %s AND scope_id = %s AND is_active = 1
                    ORDER BY version DESC LIMIT 1""",
                 (scope, scope_id),
             ).fetchone()
@@ -344,7 +344,7 @@ def get_profile_history(scope, scope_id, db_path=None):
         rows = conn.execute(
             """SELECT id, scope, scope_id, version, is_active, inherits_from,
                       created_by, created_at, change_summary, approved_by
-               FROM dev_profiles WHERE scope = ? AND scope_id = ?
+               FROM dev_profiles WHERE scope = %s AND scope_id = %s
                ORDER BY version DESC""",
             (scope, scope_id),
         ).fetchall()
@@ -439,7 +439,7 @@ def resolve_profile(scope, scope_id, db_path=None):
             # Load profile at this scope
             row = conn.execute(
                 """SELECT * FROM dev_profiles
-                   WHERE scope = ? AND scope_id = ? AND is_active = 1
+                   WHERE scope = %s AND scope_id = %s AND is_active = 1
                    ORDER BY version DESC LIMIT 1""",
                 (anc_scope, anc_scope_id),
             ).fetchone()
@@ -512,7 +512,7 @@ def _build_ancestry(conn, scope, scope_id):
     if scope == "project":
         try:
             row = conn.execute(
-                "SELECT * FROM projects WHERE id = ?",
+                "SELECT * FROM projects WHERE id = %s",
                 (scope_id,),
             ).fetchone()
             if row:
@@ -551,8 +551,8 @@ def _lock_source(conn, dimension_path, ancestry):
         row = conn.execute(
             """SELECT dpl.* FROM dev_profile_locks dpl
                JOIN dev_profiles dp ON dpl.profile_id = dp.id
-               WHERE dp.scope = ? AND dp.scope_id = ? AND dp.is_active = 1
-                 AND dpl.dimension_path = ? AND dpl.is_active = 1""",
+               WHERE dp.scope = %s AND dp.scope_id = %s AND dp.is_active = 1
+                 AND dpl.dimension_path = %s AND dpl.is_active = 1""",
             (anc_scope, anc_scope_id, dimension_path),
         ).fetchone()
         if row:
@@ -656,7 +656,7 @@ def lock_dimension(scope, scope_id, dimension_path, lock_owner_role, locked_by, 
         # Find active profile at this scope
         profile = conn.execute(
             """SELECT id FROM dev_profiles
-               WHERE scope = ? AND scope_id = ? AND is_active = 1
+               WHERE scope = %s AND scope_id = %s AND is_active = 1
                ORDER BY version DESC LIMIT 1""",
             (scope, scope_id),
         ).fetchone()
@@ -667,7 +667,7 @@ def lock_dimension(scope, scope_id, dimension_path, lock_owner_role, locked_by, 
         # Check for existing lock
         existing = conn.execute(
             """SELECT id FROM dev_profile_locks
-               WHERE profile_id = ? AND dimension_path = ? AND is_active = 1""",
+               WHERE profile_id = %s AND dimension_path = %s AND is_active = 1""",
             (profile["id"], dimension_path),
         ).fetchone()
 
@@ -678,7 +678,7 @@ def lock_dimension(scope, scope_id, dimension_path, lock_owner_role, locked_by, 
         conn.execute(
             """INSERT INTO dev_profile_locks
                (id, profile_id, dimension_path, lock_owner_role, locked_by, locked_at, reason, is_active)
-               VALUES (?, ?, ?, ?, ?, ?, ?, 1)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, 1)""",
             (
                 lock_id,
                 profile["id"],
@@ -720,7 +720,7 @@ def unlock_dimension(scope, scope_id, dimension_path, unlocked_by, role, db_path
     try:
         profile = conn.execute(
             """SELECT id FROM dev_profiles
-               WHERE scope = ? AND scope_id = ? AND is_active = 1
+               WHERE scope = %s AND scope_id = %s AND is_active = 1
                ORDER BY version DESC LIMIT 1""",
             (scope, scope_id),
         ).fetchone()
@@ -730,7 +730,7 @@ def unlock_dimension(scope, scope_id, dimension_path, unlocked_by, role, db_path
 
         lock = conn.execute(
             """SELECT * FROM dev_profile_locks
-               WHERE profile_id = ? AND dimension_path = ? AND is_active = 1""",
+               WHERE profile_id = %s AND dimension_path = %s AND is_active = 1""",
             (profile["id"], dimension_path),
         ).fetchone()
 
@@ -744,7 +744,7 @@ def unlock_dimension(scope, scope_id, dimension_path, unlocked_by, role, db_path
             }
 
         conn.execute(
-            "UPDATE dev_profile_locks SET is_active = 0 WHERE id = ?",
+            "UPDATE dev_profile_locks SET is_active = 0 WHERE id = %s",
             (lock["id"],),
         )
 
@@ -775,7 +775,7 @@ def _get_active_locks(conn, scope, scope_id):
     rows = conn.execute(
         """SELECT dpl.* FROM dev_profile_locks dpl
            JOIN dev_profiles dp ON dpl.profile_id = dp.id
-           WHERE dp.scope = ? AND dp.scope_id = ? AND dp.is_active = 1
+           WHERE dp.scope = %s AND dp.scope_id = %s AND dp.is_active = 1
              AND dpl.is_active = 1""",
         (scope, scope_id),
     ).fetchall()

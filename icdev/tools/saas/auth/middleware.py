@@ -150,7 +150,7 @@ def _log_auth_event(tenant_id: Optional[str], user_id: Optional[str], event_type
         conn.execute(
             """
             INSERT INTO audit_platform (tenant_id, user_id, event_type, action, details, ip_address, recorded_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
         """,
             (
                 tenant_id,

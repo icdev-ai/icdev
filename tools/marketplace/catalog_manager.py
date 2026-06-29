@@ -202,8 +202,8 @@ def register_asset(
                 classification, impact_level, publisher_tenant_id,
                 publisher_org, publisher_user, catalog_tier, status,
                 license, tags, compliance_controls, supported_languages)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'tenant_local', 'draft',
-                       ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'tenant_local', 'draft',
+                       %s, %s, %s, %s)""",
             (
                 asset_id,
                 slug,
@@ -274,7 +274,7 @@ def add_version(asset_id, version, changelog=None, file_path=None, published_by=
             """INSERT INTO marketplace_versions
                (id, asset_id, version, changelog, sha256_hash,
                 file_path, file_size_bytes, metadata, published_by, status)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft')""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'draft')""",
             (
                 version_id,
                 asset_id,
@@ -290,7 +290,7 @@ def add_version(asset_id, version, changelog=None, file_path=None, published_by=
 
         # Update current_version on asset
         conn.execute(
-            "UPDATE marketplace_assets SET current_version = ?, updated_at = ? WHERE id = ?",
+            "UPDATE marketplace_assets SET current_version = %s, updated_at = %s WHERE id = %s",
             (version, _now(), asset_id),
         )
         conn.commit()
@@ -315,7 +315,7 @@ def update_status(asset_id, status, db_path=None):
     conn = _get_db(db_path)
     try:
         conn.execute(
-            "UPDATE marketplace_assets SET status = ?, updated_at = ? WHERE id = ?",
+            "UPDATE marketplace_assets SET status = %s, updated_at = %s WHERE id = %s",
             (status, _now(), asset_id),
         )
         conn.commit()
@@ -329,14 +329,14 @@ def promote_to_central(asset_id, db_path=None):
     """Promote an asset from tenant_local to central_vetted catalog."""
     conn = _get_db(db_path)
     try:
-        row = conn.execute("SELECT status FROM marketplace_assets WHERE id = ?", (asset_id,)).fetchone()
+        row = conn.execute("SELECT status FROM marketplace_assets WHERE id = %s", (asset_id,)).fetchone()
         if not row:
             raise ValueError(f"Asset not found: {asset_id}")
         if row["status"] != "published":
             raise ValueError(f"Asset must be 'published' to promote. Current: {row['status']}")
 
         conn.execute(
-            "UPDATE marketplace_assets SET catalog_tier = 'central_vetted', updated_at = ? WHERE id = ?",
+            "UPDATE marketplace_assets SET catalog_tier = 'central_vetted', updated_at = %s WHERE id = %s",
             (_now(), asset_id),
         )
         conn.commit()
@@ -359,8 +359,8 @@ def deprecate_asset(asset_id, replacement_slug=None, db_path=None):
         conn.execute(
             """UPDATE marketplace_assets
                SET deprecated = 1, status = 'deprecated',
-                   replacement_slug = ?, updated_at = ?
-               WHERE id = ?""",
+                   replacement_slug = %s, updated_at = %s
+               WHERE id = %s""",
             (replacement_slug, _now(), asset_id),
         )
         conn.commit()
@@ -381,9 +381,9 @@ def get_asset(slug=None, asset_id=None, db_path=None):
     conn = _get_db(db_path)
     try:
         if slug:
-            row = conn.execute("SELECT * FROM marketplace_assets WHERE slug = ?", (slug,)).fetchone()
+            row = conn.execute("SELECT * FROM marketplace_assets WHERE slug = %s", (slug,)).fetchone()
         elif asset_id:
-            row = conn.execute("SELECT * FROM marketplace_assets WHERE id = ?", (asset_id,)).fetchone()
+            row = conn.execute("SELECT * FROM marketplace_assets WHERE id = %s", (asset_id,)).fetchone()
         else:
             raise ValueError("Either 'slug' or 'asset_id' is required")
 
@@ -401,7 +401,7 @@ def get_asset(slug=None, asset_id=None, db_path=None):
 
         # Get versions
         versions = conn.execute(
-            "SELECT * FROM marketplace_versions WHERE asset_id = ? ORDER BY created_at DESC",
+            "SELECT * FROM marketplace_versions WHERE asset_id = %s ORDER BY created_at DESC",
             (asset["id"],),
         ).fetchall()
         asset["versions"] = [dict(v) for v in versions]
@@ -409,7 +409,7 @@ def get_asset(slug=None, asset_id=None, db_path=None):
         # Get latest scan results
         scans = conn.execute(
             """SELECT * FROM marketplace_scan_results
-               WHERE asset_id = ?
+               WHERE asset_id = %s
                ORDER BY scanned_at DESC""",
             (asset["id"],),
         ).fetchall()
@@ -488,7 +488,7 @@ def list_versions(asset_id, db_path=None):
     conn = _get_db(db_path)
     try:
         rows = conn.execute(
-            "SELECT * FROM marketplace_versions WHERE asset_id = ? ORDER BY created_at DESC",
+            "SELECT * FROM marketplace_versions WHERE asset_id = %s ORDER BY created_at DESC",
             (asset_id,),
         ).fetchall()
         return {"versions": [dict(r) for r in rows], "total": len(rows)}

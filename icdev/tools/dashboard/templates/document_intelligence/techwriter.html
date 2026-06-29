@@ -1,0 +1,176 @@
+{% extends "base.html" %}
+{% block title %}Tech Writer — Document Intelligence — ICDEV™{% endblock %}
+{% block content %}
+<div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;margin-bottom:12px;">CUI // SP-CTI</div>
+
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+  <div>
+    <h2 style="margin:0;color:#eaeaea;font-size:20px;">✍️ Tech Writer Workspace</h2>
+    <p style="color:#7a8cb0;font-size:12px;margin:4px 0 0;">Author architecture docs, SOPs, runbooks, and cloud-agnostic standard guides with inline WriteGuard and AI research.</p>
+  </div>
+  <a href="/document-intelligence/" style="background:#0f3460;color:#7ab3f0;padding:8px 16px;border-radius:5px;text-decoration:none;font-size:13px;">← DIC Overview</a>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 380px;gap:20px;align-items:start;">
+
+  <!-- LEFT: Template Picker -->
+  <div>
+    <h3 style="color:#9bb8d8;font-size:14px;margin:0 0 14px;">Start a New Document</h3>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;margin-bottom:28px;">
+
+      {% for tmpl in tw_templates %}
+      {% set kind_color = {
+        'guide': '#7ab3f0', 'sop': '#fbbf24', 'runbook': '#f87171', 'architecture': '#a78bfa'
+      }.get(tmpl.kind, '#94a3b8') %}
+      {% set kind_bg = {
+        'guide': '#0f2040', 'sop': '#2e1a05', 'runbook': '#2e0505', 'architecture': '#1a1040'
+      }.get(tmpl.kind, '#1e293b') %}
+      <div class="tw-template-card" style="background:#0b1726;border:1px solid #1a3560;border-radius:8px;padding:16px;cursor:pointer;transition:border-color 0.2s;"
+           onclick="createTechDoc('{{ tmpl.id }}', '{{ tmpl.name }}')"
+           onmouseenter="this.style.borderColor='{{ kind_color }}'"
+           onmouseleave="this.style.borderColor='#1a3560'">
+        <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px;">
+          <strong style="color:#eaeaea;font-size:14px;">{{ tmpl.name }}</strong>
+          <span style="background:{{ kind_bg }};color:{{ kind_color }};padding:2px 8px;border-radius:10px;font-size:10px;white-space:nowrap;">{{ tmpl.kind }}</span>
+        </div>
+        <p style="color:#7a8cb0;font-size:12px;margin:0 0 12px;line-height:1.5;">{{ tmpl.description }}</p>
+        <div style="font-size:11px;color:#4a6a8a;">
+          {% set sections = {
+            'STANDARD_GUIDE': 9, 'SOP': 8, 'RUNBOOK': 7,
+            'ARCH_NETWORK': 7, 'ARCH_APPLICATION': 7, 'ARCH_SYSTEM': 7
+          } %}
+          {{ sections.get(tmpl.id, 7) }} sections · WriteGuard: {{ type_to_mode.get(tmpl.id, 'default') | replace('_', ' ') }}
+        </div>
+      </div>
+      {% endfor %}
+
+    </div>
+
+    <!-- Collection selector for new docs -->
+    <div id="create-form" style="display:none;background:#0b1726;border:1px solid #1e3560;border-radius:8px;padding:16px;margin-bottom:20px;">
+      <div style="color:#9bb8d8;font-size:13px;font-weight:600;margin-bottom:12px;">New <span id="create-type-label">Document</span></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;">
+        <div style="flex:1;min-width:180px;">
+          <label style="display:block;color:#7a8cb0;font-size:11px;margin-bottom:4px;">Title</label>
+          <input id="new-doc-title" placeholder="e.g. Cloud Connectivity Standard Guide"
+            style="width:100%;background:#050d1f;border:1px solid #1a3560;color:#eaeaea;padding:8px 10px;border-radius:5px;font-size:13px;box-sizing:border-box;" />
+        </div>
+        <div style="flex:0 0 140px;">
+          <label style="display:block;color:#7a8cb0;font-size:11px;margin-bottom:4px;">Collection</label>
+          <input id="new-doc-collection" value="default"
+            style="width:100%;background:#050d1f;border:1px solid #1a3560;color:#eaeaea;padding:8px 10px;border-radius:5px;font-size:13px;box-sizing:border-box;" />
+        </div>
+        <button onclick="submitCreateDoc()"
+          style="background:#1a5a40;color:#4ade80;padding:8px 18px;border:1px solid #2a8a60;border-radius:5px;cursor:pointer;font-size:13px;font-weight:600;">
+          Create →
+        </button>
+        <button onclick="cancelCreate()"
+          style="background:#1e293b;color:#94a3b8;padding:8px 14px;border:1px solid #2a3a4a;border-radius:5px;cursor:pointer;font-size:13px;">
+          Cancel
+        </button>
+      </div>
+      <div id="create-status" style="margin-top:8px;font-size:12px;color:#7a8cb0;display:none;"></div>
+    </div>
+
+    <!-- IQE widget -->
+    {% include "includes/iqe_query_widget.html" %}
+  </div>
+
+  <!-- RIGHT: Continue Writing -->
+  <div>
+    <h3 style="color:#9bb8d8;font-size:14px;margin:0 0 14px;">Continue Writing
+      <span style="font-weight:400;color:#5a7aa0;font-size:12px;">({{ active_docs | length }})</span>
+    </h3>
+    {% if active_docs %}
+    <div style="display:flex;flex-direction:column;gap:10px;">
+      {% for doc in active_docs %}
+      {% set kind_color = {
+        'STANDARD_GUIDE': '#7ab3f0', 'SOP': '#fbbf24', 'RUNBOOK': '#f87171',
+        'ARCH_NETWORK': '#a78bfa', 'ARCH_APPLICATION': '#a78bfa', 'ARCH_SYSTEM': '#a78bfa'
+      }.get(doc.template_type, '#94a3b8') %}
+      <a href="/document-intelligence/doc/{{ doc.doc_id }}"
+         style="display:block;background:#0b1726;border:1px solid #1a3560;border-radius:8px;padding:12px 14px;text-decoration:none;transition:border-color 0.2s;"
+         onmouseenter="this.style.borderColor='{{ kind_color }}'"
+         onmouseleave="this.style.borderColor='#1a3560'">
+        <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:4px;">
+          <span style="color:#eaeaea;font-size:13px;font-weight:600;">{{ doc.title or 'Untitled' }}</span>
+          <span style="background:#1e293b;color:{{ kind_color }};padding:1px 7px;border-radius:8px;font-size:10px;white-space:nowrap;">{{ doc.template_type | replace('_', ' ') }}</span>
+        </div>
+        <div style="color:#5a7aa0;font-size:11px;">
+          WG: {{ doc.writeguard_mode | replace('_', ' ') }} ·
+          {{ doc.created_at[:10] if doc.created_at else '—' }}
+        </div>
+      </a>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div style="background:#050d1f;border:1px dashed #1a3560;border-radius:8px;padding:24px;text-align:center;">
+      <p style="color:#5a7aa0;font-size:13px;margin:0;">No tech writing documents yet.<br>Pick a template on the left to get started.</p>
+    </div>
+    {% endif %}
+  </div>
+
+</div>
+
+<script>
+var _pendingTemplateId = '';
+var _pendingTemplateName = '';
+
+function createTechDoc(templateId, templateName) {
+  _pendingTemplateId = templateId;
+  _pendingTemplateName = templateName;
+  document.getElementById('create-type-label').textContent = templateName;
+  document.getElementById('new-doc-title').value = '';
+  document.getElementById('new-doc-title').placeholder = 'e.g. ' + (
+    templateId === 'STANDARD_GUIDE' ? 'Cloud Connectivity Standard Guide' :
+    templateId === 'SOP' ? 'Incident Response SOP' :
+    templateId === 'RUNBOOK' ? 'Database Failover Runbook' :
+    templateId === 'ARCH_NETWORK' ? 'Enterprise Network Architecture' :
+    templateId === 'ARCH_APPLICATION' ? 'Application Platform Architecture' :
+    'System Architecture Overview'
+  );
+  document.getElementById('create-status').style.display = 'none';
+  document.getElementById('create-form').style.display = 'block';
+  document.getElementById('new-doc-title').focus();
+}
+
+function cancelCreate() {
+  document.getElementById('create-form').style.display = 'none';
+  _pendingTemplateId = '';
+}
+
+function submitCreateDoc() {
+  var title = document.getElementById('new-doc-title').value.trim();
+  var collectionId = document.getElementById('new-doc-collection').value.trim() || 'default';
+  if (!title) {
+    document.getElementById('create-status').textContent = 'Please enter a title.';
+    document.getElementById('create-status').style.color = '#f87171';
+    document.getElementById('create-status').style.display = 'block';
+    return;
+  }
+  var statusEl = document.getElementById('create-status');
+  statusEl.textContent = 'Creating…';
+  statusEl.style.color = '#7a8cb0';
+  statusEl.style.display = 'block';
+
+  fetch('/document-intelligence/api/templates/' + _pendingTemplateId + '/instantiate', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({collection_id: collectionId, title: title})
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.error) {
+      statusEl.textContent = 'Error: ' + data.error;
+      statusEl.style.color = '#f87171';
+    } else {
+      window.location.href = '/document-intelligence/doc/' + data.doc_id;
+    }
+  })
+  .catch(function(e) {
+    statusEl.textContent = 'Network error — please retry.';
+    statusEl.style.color = '#f87171';
+  });
+}
+</script>
+{% endblock %}

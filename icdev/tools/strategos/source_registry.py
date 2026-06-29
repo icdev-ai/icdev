@@ -106,7 +106,7 @@ def create_source(
             "INSERT INTO sg_sources "
             "(id, source_name, source_type, reliability, theater, notes, "
             " created_by, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (source_id, source_name, source_type, reliability,
              theater, notes, created_by, now, now),
         )
@@ -209,7 +209,7 @@ def add_report(
         conn.execute(
             "INSERT INTO sg_source_reports "
             "(id, source_id, content, credibility, collected_at, confidence, subject, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
             (report_id, source_id, content, credibility, cat, base_conf, subject, now),
         )
         conn.execute(

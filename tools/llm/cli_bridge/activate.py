@@ -159,34 +159,19 @@ def should_enable() -> bool:
     return not _has_cloud_key()
 
 
-def _env_toggle(var: str) -> Optional[bool]:
-    """Return a tri-state bool for an env var, or None for missing/non-boolean values."""
-    raw = os.environ.get(var)
-    if raw is None:
-        return None
-    low = raw.strip().lower()
-    if low in ("1", "true", "yes", "on"):
-        return True
-    if low in ("0", "false", "no", "off"):
-        return False
-    return None
-
-
 def cli_bridge_enabled() -> bool:
     """Resolve the effective enable state.
 
     Precedence (highest to lowest):
     1. Context override (set via :func:`cli_bridge_override`)
-    2. ``ICDEV_CLI_BRIDGE`` env var explicit enable/disable
-    3. ``should_enable()`` auto-detection (air-gapped or no cloud key)
+    2. ``should_enable()`` auto-detection (air-gapped or no cloud key)
+
+    The legacy ``ICDEV_CLI_BRIDGE`` env-var toggle is intentionally no longer
+    consulted — the context-scoped override is the sole per-request override path.
     """
     override = _cli_bridge_override.get()
     if override is not None:
         return override
-
-    env_state = _env_toggle("ICDEV_CLI_BRIDGE")
-    if env_state is not None:
-        return env_state
 
     return should_enable()
 

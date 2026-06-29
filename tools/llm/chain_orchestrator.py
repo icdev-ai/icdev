@@ -269,7 +269,7 @@ class ChainOrchestrator:
                         (session_id, function, chain_mode, models_used, rounds,
                          input_tokens, output_tokens, cost_usd, duration_ms,
                          final_model_id, stop_reason, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """,
                     (
                         result.trace_id,

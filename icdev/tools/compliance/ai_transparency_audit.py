@@ -62,7 +62,7 @@ def _count_table(db_path: Path, table: str, project_id: str) -> int:
     try:
         conn = get_connection(db_path=str(db_path))
         row = conn.execute(
-            f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = ?",  # nosec B608 -- table/column names are internal constants, not user input
+            f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = %s",  # nosec B608 -- table/column names are internal constants, not user input
             (project_id,),
         ).fetchone()
         conn.close()

@@ -119,7 +119,7 @@ def forward_alert(
                 "INSERT INTO siem_delivery_log "
                 "(id, alert_title, severity, siem_endpoint, status_code, "
                 " duration_ms, sla_met, error, delivered_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     delivery_id,
                     alert_payload.get("title", ""),

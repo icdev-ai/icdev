@@ -135,7 +135,7 @@ def submit_for_approval(session_id, approval_type, submitted_by, reviewers, cond
 
         # Get project_id from session
         session_row = conn.execute(
-            "SELECT project_id FROM intake_sessions WHERE id = ?",
+            "SELECT project_id FROM intake_sessions WHERE id = %s",
             (session_id,),
         ).fetchone()
         if not session_row:
@@ -157,7 +157,7 @@ def submit_for_approval(session_id, approval_type, submitted_by, reviewers, cond
                (id, session_id, project_id, approval_type, status,
                 submitted_by, submitted_at, reviewers, current_reviewer,
                 conditions, classification, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 approval_id,
                 session_id,
@@ -230,7 +230,7 @@ def review_approval(approval_id, reviewer, decision, rationale, db_path=None):
         row = conn.execute(
             """SELECT id, session_id, project_id, approval_type, status,
                       reviewers, approval_chain
-               FROM approval_workflows WHERE id = ?""",
+               FROM approval_workflows WHERE id = %s""",
             (approval_id,),
         ).fetchone()
         if not row:
@@ -270,10 +270,10 @@ def review_approval(approval_id, reviewer, decision, rationale, db_path=None):
 
         conn.execute(
             """UPDATE approval_workflows
-               SET status = ?, current_reviewer = NULL,
-                   decision_rationale = ?, decided_at = ?,
-                   approval_chain = ?, updated_at = ?
-               WHERE id = ?""",
+               SET status = %s, current_reviewer = NULL,
+                   decision_rationale = %s, decided_at = %s,
+                   approval_chain = %s, updated_at = %s
+               WHERE id = %s""",
             (new_status, rationale, now, json.dumps(existing_chain), now, approval_id),
         )
         conn.commit()
@@ -402,7 +402,7 @@ def get_approval(approval_id, db_path=None):
                       approval_chain, related_coa_id, conditions,
                       decision_rationale, decided_at, classification,
                       created_at, updated_at
-               FROM approval_workflows WHERE id = ?""",
+               FROM approval_workflows WHERE id = %s""",
             (approval_id,),
         ).fetchone()
         if not row:
@@ -454,7 +454,7 @@ def list_approvals(session_id, db_path=None):
                       submitted_by, submitted_at, reviewers, decided_at,
                       decision_rationale
                FROM approval_workflows
-               WHERE session_id = ?
+               WHERE session_id = %s
                ORDER BY submitted_at DESC""",
             (session_id,),
         ).fetchall()

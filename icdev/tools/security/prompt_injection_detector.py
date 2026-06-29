@@ -509,7 +509,7 @@ class PromptInjectionDetector:
                    (id, project_id, user_id, source, text_hash,
                     detected, confidence, action, finding_count,
                     findings_json, scanned_at, classification)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     entry_id,
                     project_id,
@@ -561,7 +561,7 @@ class PromptInjectionDetector:
                 conn = get_connection(db_path=str(self._db_path))
                 cursor = conn.execute(
                     """SELECT action, COUNT(*) FROM prompt_injection_log
-                       WHERE project_id = ? AND action IN ('block', 'flag')
+                       WHERE project_id = %s AND action IN ('block', 'flag')
                        GROUP BY action""",
                     (project_id,),
                 )

@@ -36,3 +36,11 @@ tool_permissions:
   - Read
   - Bash
   - Grep
+rules:
+  - "Never approve a task without checking every acceptance criterion listed in the original task spec."
+  - "Never rely solely on the builder's self-reported summary — always inspect the actual artifacts directly."
+  - "Never approve if tests are missing, failing, or only test the happy path."
+  - "Never assume a passing test suite means all requirements are met — verify behavioral correctness independently."
+  - "Never let personal confidence override explicit acceptance criteria — if a criterion is not met, reject."
+  - "Never emit task.approved after finding a scope violation, security regression, or missing migration."
+  - "Never re-verify the same implementation without new evidence after a rejection cycle."

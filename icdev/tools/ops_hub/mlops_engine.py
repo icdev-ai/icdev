@@ -33,7 +33,7 @@ def create_experiment(name: str, description: str = "", tags: dict | None = None
     try:
         conn.execute("""
             INSERT INTO ohc_experiments (id, name, description, tags_json, classification, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
         """, (eid, name, description, json.dumps(tags or {}), classification, now, now))
         conn.commit()
     finally:
@@ -60,7 +60,7 @@ def list_experiments(limit: int = 50) -> list[dict]:
                    (SELECT COUNT(*) FROM ohc_experiment_runs r WHERE r.experiment_id = e.id) AS run_count
             FROM ohc_experiments e
             ORDER BY created_at DESC
-            LIMIT ?
+            LIMIT %s
         """, (limit,)).fetchall()
         return [dict(r) for r in rows]
     finally:
@@ -79,7 +79,7 @@ def create_run(experiment_id: str, run_name: str = "", params: dict | None = Non
                 (id, experiment_id, run_name, status, start_time,
                  params_json, metrics_json, tags_json, source_adapter,
                  classification, created_at, updated_at)
-            VALUES (?, ?, ?, 'running', ?, ?, '{}', ?, 'internal', ?, ?, ?)
+            VALUES (%s, %s, %s, 'running', %s, %s, '{}', %s, 'internal', %s, %s, %s)
         """, (rid, experiment_id, run_name, now,
               json.dumps(params or {}), json.dumps(tags or {}),
               classification, now, now))
@@ -95,7 +95,7 @@ def finish_run(run_id: str, metrics: dict, status: str = "completed") -> dict:
     conn = _conn()
     try:
         # Compute duration
-        row = conn.execute("SELECT start_time FROM ohc_experiment_runs WHERE id=?", (run_id,)).fetchone()
+        row = conn.execute("SELECT start_time FROM ohc_experiment_runs WHERE id=%s", (run_id,)).fetchone()
         duration_ms = 0
         if row:
             try:
@@ -107,8 +107,8 @@ def finish_run(run_id: str, metrics: dict, status: str = "completed") -> dict:
                 pass
         conn.execute("""
             UPDATE ohc_experiment_runs
-            SET status=?, end_time=?, duration_ms=?, metrics_json=?, updated_at=?
-            WHERE id=?
+            SET status=%s, end_time=%s, duration_ms=%s, metrics_json=%s, updated_at=%s
+            WHERE id=%s
         """, (status, now, duration_ms, json.dumps(metrics), now, run_id))
         conn.commit()
     finally:
@@ -152,7 +152,7 @@ def register_model(name: str, version: str, run_id: str = "", artifact_path: str
                 (id, name, version, stage, run_id, artifact_path,
                  model_type, framework, metrics_json, tags_json,
                  source_adapter, classification, created_at, updated_at)
-            VALUES (?, ?, ?, 'none', ?, ?, ?, ?, ?, ?, 'internal', ?, ?, ?)
+            VALUES (%s, %s, %s, 'none', %s, %s, %s, %s, %s, %s, 'internal', %s, %s, %s)
         """, (mid, name, version, run_id, artifact_path, model_type, framework,
               json.dumps(metrics or {}), json.dumps(tags or {}), classification, now, now))
         conn.commit()
@@ -195,7 +195,7 @@ def transition_model_stage(name: str, version: str, stage: str) -> dict:
     conn = _conn()
     try:
         rows = conn.execute(
-            "UPDATE ohc_model_registry SET stage=?, updated_at=? WHERE name=? AND version=?",
+            "UPDATE ohc_model_registry SET stage=%s, updated_at=%s WHERE name=%s AND version=%s",
             (stage, now, name, version)
         ).rowcount
         conn.commit()

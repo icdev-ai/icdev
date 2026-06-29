@@ -295,7 +295,7 @@ class EncryptionAtRest:
         conn.execute(
             """INSERT INTO encryption_key_log
                (id, classification, column_name, action, key_hash_prefix, reason, performed_by, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 str(uuid.uuid4()),
                 classification,
@@ -377,7 +377,7 @@ class EncryptionAtRest:
         key_hash = hashlib.sha256(key).hexdigest()
         conn = self._get_db()
         row = conn.execute(
-            "SELECT id FROM encryption_keys WHERE classification = ? AND column_name = ?",
+            "SELECT id FROM encryption_keys WHERE classification = %s AND column_name = %s",
             (classification, column),
         ).fetchone()
         if not row:
@@ -389,7 +389,7 @@ class EncryptionAtRest:
             conn.execute(
                 """INSERT INTO encryption_keys
                    (id, classification, column_name, key_hash, wrapped_key, hsm_enabled, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s)""",
                 (str(uuid.uuid4()), classification, column, key_hash, wrapped, hsm_enabled, _now()),
             )
             self._log_event(conn, classification, "create", column, key_hash[:16], "auto-created on first use")
@@ -406,7 +406,7 @@ class EncryptionAtRest:
         conn = self._get_db()
         if classification:
             rows = conn.execute(
-                "SELECT id, classification, column_name, key_hash FROM encryption_keys WHERE classification = ?",
+                "SELECT id, classification, column_name, key_hash FROM encryption_keys WHERE classification = %s",
                 (classification,),
             ).fetchall()
         else:
@@ -421,7 +421,7 @@ class EncryptionAtRest:
             conn.execute(
                 """INSERT INTO encryption_key_history
                    (id, classification, column_name, key_hash, wrapped_key, created_at, retired_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s)""",
                 (
                     str(uuid.uuid4()),
                     row["classification"],
@@ -442,8 +442,8 @@ class EncryptionAtRest:
                 hsm_enabled = 1 if wrapped else 0
             conn.execute(
                 """UPDATE encryption_keys
-                   SET key_hash = ?, wrapped_key = ?, hsm_enabled = ?, rotated_at = ?
-                   WHERE id = ?""",
+                   SET key_hash = %s, wrapped_key = %s, hsm_enabled = %s, rotated_at = %s
+                   WHERE id = %s""",
                 (new_hash, wrapped, hsm_enabled, now, row["id"]),
             )
             self._log_event(
@@ -475,12 +475,12 @@ class EncryptionAtRest:
         by_classification = {}
         for cls in CLASSIFICATIONS:
             count = conn.execute(
-                "SELECT COUNT(*) FROM encryption_keys WHERE classification = ?", (cls,)
+                "SELECT COUNT(*) FROM encryption_keys WHERE classification = %s", (cls,)
             ).fetchone()[0]
             by_classification[cls] = count
         cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
         recent_rotations = conn.execute(
-            "SELECT COUNT(*) FROM encryption_key_log WHERE action = 'rotate' AND created_at > ?",
+            "SELECT COUNT(*) FROM encryption_key_log WHERE action = 'rotate' AND created_at > %s",
             (cutoff,),
         ).fetchone()[0]
         conn.close()

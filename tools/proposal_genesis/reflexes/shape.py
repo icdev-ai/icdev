@@ -182,7 +182,7 @@ def _create_capture_plan(opp: Dict) -> Optional[str]:
                 (id, opportunity_id, status, win_strategy, discriminators,
                  teaming_strategy, price_strategy, gate_reviews,
                  created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """,
             (
                 plan_id,
@@ -212,7 +212,7 @@ def _create_capture_plan(opp: Dict) -> Optional[str]:
                 INSERT INTO pg_capture_activities
                     (id, capture_plan_id, activity_type, description,
                      status, created_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s)
             """,
                 (
                     _generate_id("pgact"),
@@ -229,7 +229,7 @@ def _create_capture_plan(opp: Dict) -> Optional[str]:
             "INSERT INTO pg_proposal_genesis_audit "
             "(id, event_type, reflex_name, risk_tier, opportunity_id, "
             "details, success, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 _generate_id("pgaudit"),
                 "capture_plan_created",
@@ -430,7 +430,7 @@ def _store_assessment(opp_id: str, partner_id: str, assessment: Dict) -> Optiona
                 (id, opportunity_id, partner_id, fit_score,
                  capability_gaps_filled, risk_assessment,
                  recommendation, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         """,
             (
                 assessment_id,
@@ -464,7 +464,7 @@ def _update_teaming_strategy(opp_id: str) -> None:
             "SELECT ta.*, tp.name as partner_name "
             "FROM pg_teaming_assessments ta "
             "INNER JOIN pg_teaming_partners tp ON tp.id = ta.partner_id "
-            "WHERE ta.opportunity_id = ? "
+            "WHERE ta.opportunity_id = %s "
             "ORDER BY ta.fit_score DESC",
             (opp_id,),
         ).fetchall()
@@ -486,7 +486,7 @@ def _update_teaming_strategy(opp_id: str) -> None:
         strategy = "; ".join(strategy_parts) if strategy_parts else "No strong teaming matches found"
 
         conn.execute(
-            "UPDATE pg_capture_plans SET teaming_strategy = ?, updated_at = ? WHERE opportunity_id = ?",
+            "UPDATE pg_capture_plans SET teaming_strategy = %s, updated_at = %s WHERE opportunity_id = %s",
             (strategy, _utcnow_iso(), opp_id),
         )
         conn.commit()

@@ -43,7 +43,7 @@ def _fetch_llm_confidence_history(limit: int = 50) -> list[float]:
                 WHERE reflex = 'oracle_triage'
                   AND confidence IS NOT NULL
                 ORDER BY created_at DESC
-                LIMIT ?
+                LIMIT %s
                 """,
                 (limit,),
             ).fetchall()

@@ -374,7 +374,7 @@ def extract_and_store(opp_id=None, db_path=None, config=None):
     # Fetch opportunities
     if opp_id:
         rows = conn.execute(
-            "SELECT id, description, title FROM sam_gov_opportunities WHERE id = ?", (opp_id,)
+            "SELECT id, description, title FROM sam_gov_opportunities WHERE id = %s", (opp_id,)
         ).fetchall()
     else:
         rows = conn.execute("SELECT id, description, title FROM sam_gov_opportunities WHERE active = 'true'").fetchall()
@@ -393,7 +393,7 @@ def extract_and_store(opp_id=None, db_path=None, config=None):
         for stmt in statements:
             # Check for existing by content_hash
             existing = conn.execute(
-                "SELECT id FROM rfp_shall_statements WHERE content_hash = ?", (stmt["content_hash"],)
+                "SELECT id FROM rfp_shall_statements WHERE content_hash = %s", (stmt["content_hash"],)
             ).fetchone()
 
             if existing:
@@ -405,7 +405,7 @@ def extract_and_store(opp_id=None, db_path=None, config=None):
                 "(id, sam_opportunity_id, statement_text, statement_type, "
                 "domain_category, keywords, keyword_fingerprint, content_hash, "
                 "extracted_at, classification) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (
                     _stmt_id(),
                     row["id"],
@@ -528,7 +528,7 @@ def cluster_patterns(db_path=None, config=None):
             # Check if pattern already exists by fingerprint
             existing = conn.execute(
                 "SELECT id, shall_statement_ids, sam_opportunity_ids, frequency "
-                "FROM rfp_requirement_patterns WHERE keyword_fingerprint = ? AND domain_category = ?",
+                "FROM rfp_requirement_patterns WHERE keyword_fingerprint = %s AND domain_category = %s",
                 (fingerprint, domain),
             ).fetchone()
 
@@ -542,8 +542,8 @@ def cluster_patterns(db_path=None, config=None):
 
                 conn.execute(
                     "UPDATE rfp_requirement_patterns SET "
-                    "frequency=?, shall_statement_ids=?, sam_opportunity_ids=?, last_seen=? "
-                    "WHERE id=?",
+                    "frequency=%s, shall_statement_ids=%s, sam_opportunity_ids=%s, last_seen=%s "
+                    "WHERE id=%s",
                     (new_freq, json.dumps(merged_ids), json.dumps(merged_opp_ids), _now(), existing["id"]),
                 )
                 updated_patterns += 1
@@ -557,7 +557,7 @@ def cluster_patterns(db_path=None, config=None):
                     "keywords, representative_text, capability_coverage, "
                     "icdev_capability_ids, status, first_seen, last_seen, "
                     "metadata, classification) "
-                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                     (
                         _pattern_id(),
                         pattern_name,
@@ -663,7 +663,7 @@ def get_trends(db_path=None, top_k=20):
     top_patterns = conn.execute(
         "SELECT id, pattern_name, domain_category, frequency, capability_coverage, status "
         "FROM rfp_requirement_patterns "
-        "ORDER BY frequency DESC LIMIT ?",
+        "ORDER BY frequency DESC LIMIT %s",
         (top_k,),
     ).fetchall()
 
@@ -672,7 +672,7 @@ def get_trends(db_path=None, top_k=20):
         "SELECT id, pattern_name, domain_category, frequency, capability_coverage "
         "FROM rfp_requirement_patterns "
         "WHERE capability_coverage < 0.4 AND frequency >= 3 "
-        "ORDER BY frequency DESC LIMIT ?",
+        "ORDER BY frequency DESC LIMIT %s",
         (top_k,),
     ).fetchall()
 

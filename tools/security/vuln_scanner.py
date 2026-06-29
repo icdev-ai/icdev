@@ -369,7 +369,7 @@ def _store_findings_in_db(aggregated: Dict, project_id: Optional[str]) -> None:
             c.execute(
                 """INSERT INTO failure_log
                    (project_id, source, error_type, error_message, context)
-                   VALUES (?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s)""",
                 (project_id, source, error_type, error_message, context),
             )
 
@@ -450,7 +450,7 @@ def _log_audit(project_id: Optional[str], aggregated: Dict) -> None:
         c.execute(
             """INSERT INTO audit_trail
                (project_id, event_type, actor, action, details, classification)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s)""",
             (
                 project_id,
                 "security_scan",
@@ -479,7 +479,7 @@ def _log_audit(project_id: Optional[str], aggregated: Dict) -> None:
             c.execute(
                 """INSERT INTO audit_trail
                    (project_id, event_type, actor, action, details, classification)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s)""",
                 (
                     project_id,
                     event_type,

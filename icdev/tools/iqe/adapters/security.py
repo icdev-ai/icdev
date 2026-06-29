@@ -225,7 +225,7 @@ def zig_targets_adapter(conn: Any) -> list[dict]:
                 d = dict(t)
                 scores = _conn.execute(
                     "SELECT pillar_slug, score, maturity_level FROM zig_maturity_scores "
-                    "WHERE target_id=? ORDER BY created_at DESC LIMIT 7",
+                    "WHERE target_id=%s ORDER BY created_at DESC LIMIT 7",
                     (d["id"],),
                 ).fetchall()
                 if scores:

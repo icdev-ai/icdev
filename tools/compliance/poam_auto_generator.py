@@ -142,7 +142,7 @@ def generate_poam_items(conn: Any) -> list[dict[str, Any]]:
 def _existing_project_controls(conn: Any, project_id: str) -> frozenset[tuple[str, str]]:
     """Return (project_id, control_id) pairs already in poam_items for *project_id*."""
     rows = conn.execute(
-        "SELECT project_id, control_id FROM poam_items WHERE project_id = ?",
+        "SELECT project_id, control_id FROM poam_items WHERE project_id = %s",
         (project_id,),
     ).fetchall()
     return frozenset((r[0], r[1]) for r in rows)
@@ -155,7 +155,7 @@ def _insert_poam_item(conn: Any, item: dict[str, Any]) -> None:
            (project_id, weakness_id, weakness_description, severity, source,
             control_id, status, corrective_action, milestone_date,
             responsible_party, resources_required)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
         (
             item["project_id"],
             item["weakness_id"],
@@ -178,8 +178,8 @@ def _write_audit_event(conn: Any, item: dict[str, Any]) -> None:
         conn.execute(
             """INSERT INTO audit_trail
                (project_id, event_type, actor, action, details, classification)
-               VALUES (?, 'poam_generated', 'icdev-compliance-engine',
-                       'auto_generate_poam', ?, 'CUI')""",
+               VALUES (%s, 'poam_generated', 'icdev-compliance-engine',
+                       'auto_generate_poam', %s, 'CUI')""",
             (
                 item["project_id"],
                 json.dumps({

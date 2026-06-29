@@ -314,7 +314,7 @@ class LearningCollector:
         try:
             health_row = conn.execute(
                 """SELECT health_status FROM child_telemetry
-                   WHERE child_id = ?
+                   WHERE child_id = %s
                    ORDER BY collected_at DESC LIMIT 1""",
                 (child_id,),
             ).fetchone()
@@ -334,7 +334,7 @@ class LearningCollector:
                    (child_id, behavior_type, description, evidence_json,
                     confidence, evaluated, absorbed, created_at,
                     classification, trust_level, injection_scan_result)
-                   VALUES (?, ?, ?, ?, ?, 0, 0, ?, 'CUI', ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, 0, 0, %s, 'CUI', %s, %s)""",
                 (
                     child_id,
                     behavior_type,
@@ -357,7 +357,7 @@ class LearningCollector:
             except Exception:
                 row = conn.execute(
                     """SELECT id FROM child_learned_behaviors
-                       WHERE child_id = ? AND created_at = ?
+                       WHERE child_id = %s AND created_at = %s
                        ORDER BY id DESC LIMIT 1""",
                     (child_id, now),
                 ).fetchone()
@@ -400,7 +400,7 @@ class LearningCollector:
         conn = self._get_conn()
         try:
             row = conn.execute(
-                "SELECT * FROM child_learned_behaviors WHERE id = ?",
+                "SELECT * FROM child_learned_behaviors WHERE id = %s",
                 (behavior_id,),
             ).fetchone()
 
@@ -491,8 +491,8 @@ class LearningCollector:
             now = _now()
             conn.execute(
                 """UPDATE child_learned_behaviors
-                   SET evaluated = 1, evaluated_at = ?
-                   WHERE id = ?""",
+                   SET evaluated = 1, evaluated_at = %s
+                   WHERE id = %s""",
                 (now, behavior_id),
             )
             conn.commit()
@@ -686,7 +686,7 @@ class LearningCollector:
                    FROM child_learned_behaviors
                    WHERE evaluated = 0
                    ORDER BY confidence DESC, created_at ASC
-                   LIMIT ?""",
+                   LIMIT %s""",
                 (limit,),
             ).fetchall()
 
@@ -721,7 +721,7 @@ class LearningCollector:
                           evidence_json, confidence, evaluated, absorbed,
                           created_at, evaluated_at, absorbed_at
                    FROM child_learned_behaviors
-                   WHERE child_id = ?
+                   WHERE child_id = %s
                    ORDER BY created_at DESC""",
                 (child_id,),
             ).fetchall()

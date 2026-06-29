@@ -157,7 +157,7 @@ def _log_sync_event(
     conn.execute(
         """INSERT INTO sync_log (job_id, action, relative_path, source_hash,
            dest_hash, bytes_transferred, duration_ms, resolution, error_detail)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
         (
             job_id,
             action,
@@ -175,7 +175,7 @@ def _log_sync_event(
 def _load_cached_state(conn, job_id, side="source"):
     """Load cached file state from sync_state table."""
     rows = conn.execute(
-        "SELECT relative_path, content_hash, file_size, mtime_epoch FROM sync_state WHERE job_id=? AND side=?",
+        "SELECT relative_path, content_hash, file_size, mtime_epoch FROM sync_state WHERE job_id=%s AND side=%s",
         (job_id, side),
     ).fetchall()
     return {
@@ -195,7 +195,7 @@ def _save_state(conn, job_id, manifest, side="source"):
         conn.execute(
             """INSERT INTO sync_state (job_id, relative_path, content_hash, file_size,
                mtime_epoch, side, last_synced_at, last_synced_hash)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                ON CONFLICT(job_id, relative_path, side)
                DO UPDATE SET content_hash=excluded.content_hash,
                   file_size=excluded.file_size, mtime_epoch=excluded.mtime_epoch,
@@ -238,7 +238,7 @@ def check_fim(job_id: str, db_path=None) -> Dict:
 
     conn = _get_db(db_path)
     try:
-        row = conn.execute("SELECT * FROM sync_jobs WHERE id=?", (job_id,)).fetchone()
+        row = conn.execute("SELECT * FROM sync_jobs WHERE id=%s", (job_id,)).fetchone()
         if not row:
             return {"status": "error", "error": f"Job not found: {job_id}"}
         job = dict(row)
@@ -335,7 +335,7 @@ def create_job(
                dest_provider, sync_mode, conflict_strategy, delete_orphans,
                schedule_interval_seconds, bandwidth_limit_kbps, max_workers,
                project_id, created_by, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 job_id,
                 name,
@@ -383,21 +383,21 @@ def get_job_status(job_id: str, db_path=None) -> Dict:
     """Get detailed status for a sync job."""
     conn = _get_db(db_path)
     try:
-        row = conn.execute("SELECT * FROM sync_jobs WHERE id=?", (job_id,)).fetchone()
+        row = conn.execute("SELECT * FROM sync_jobs WHERE id=%s", (job_id,)).fetchone()
         if not row:
             return {"status": "error", "error": f"Job not found: {job_id}"}
         job = dict(row)
 
         # Recent log entries
         logs = conn.execute(
-            "SELECT * FROM sync_log WHERE job_id=? ORDER BY created_at DESC LIMIT 20",
+            "SELECT * FROM sync_log WHERE job_id=%s ORDER BY created_at DESC LIMIT 20",
             (job_id,),
         ).fetchall()
         job["recent_log"] = [dict(row) for row in logs]
 
         # Pending conflicts
         conflicts = conn.execute(
-            "SELECT * FROM sync_conflicts WHERE job_id=? AND resolution='pending'",
+            "SELECT * FROM sync_conflicts WHERE job_id=%s AND resolution='pending'",
             (job_id,),
         ).fetchall()
         job["pending_conflicts"] = [dict(c) for c in conflicts]
@@ -410,13 +410,13 @@ def delete_job(job_id: str, db_path=None) -> Dict:
     """Delete a sync job and its state."""
     conn = _get_db(db_path)
     try:
-        row = conn.execute("SELECT name FROM sync_jobs WHERE id=?", (job_id,)).fetchone()
+        row = conn.execute("SELECT name FROM sync_jobs WHERE id=%s", (job_id,)).fetchone()
         if not row:
             return {"status": "error", "error": f"Job not found: {job_id}"}
         name = row["name"]
-        conn.execute("DELETE FROM sync_state WHERE job_id=?", (job_id,))
-        conn.execute("DELETE FROM sync_conflicts WHERE job_id=?", (job_id,))
-        conn.execute("DELETE FROM sync_jobs WHERE id=?", (job_id,))
+        conn.execute("DELETE FROM sync_state WHERE job_id=%s", (job_id,))
+        conn.execute("DELETE FROM sync_conflicts WHERE job_id=%s", (job_id,))
+        conn.execute("DELETE FROM sync_jobs WHERE id=%s", (job_id,))
         conn.commit()
     finally:
         conn.close()
@@ -454,7 +454,7 @@ def _scan_both_sides(job, config, job_id, db_path):
     conn = _get_db(db_path)
     try:
         _log_sync_event(conn, job_id, "scan_completed")
-        conn.execute("UPDATE sync_jobs SET status='syncing', updated_at=? WHERE id=?", (_now(), job_id))
+        conn.execute("UPDATE sync_jobs SET status='syncing', updated_at=%s WHERE id=%s", (_now(), job_id))
         conn.commit()
     finally:
         conn.close()
@@ -516,14 +516,14 @@ def _tally_and_persist(job, job_id, results, src_manifest, dst_manifest, t0, db_
         _save_state(conn, job_id, src_manifest, "source")
         _save_state(conn, job_id, dst_manifest, "dest")
         conn.execute(
-            """UPDATE sync_jobs SET status=?, last_run_at=?, files_synced=?,
-               files_skipped=?, bytes_transferred=?, error_message=?, updated_at=?
-               WHERE id=?""",
+            """UPDATE sync_jobs SET status=%s, last_run_at=%s, files_synced=%s,
+               files_skipped=%s, bytes_transferred=%s, error_message=%s, updated_at=%s
+               WHERE id=%s""",
             (status, _now(), synced, skipped, total_bytes,
              f"{errored} errors" if errored else None, _now(), job_id),
         )
         if status == "completed":
-            conn.execute("UPDATE sync_jobs SET last_success_at=? WHERE id=?", (_now(), job_id))
+            conn.execute("UPDATE sync_jobs SET last_success_at=%s WHERE id=%s", (_now(), job_id))
         _log_sync_event(
             conn, job_id,
             "sync_completed" if status == "completed" else "sync_failed",
@@ -552,7 +552,7 @@ def run_sync(job_id: str, dry_run: bool = False, db_path=None) -> Dict:
 
     conn = _get_db(db_path)
     try:
-        row = conn.execute("SELECT * FROM sync_jobs WHERE id=?", (job_id,)).fetchone()
+        row = conn.execute("SELECT * FROM sync_jobs WHERE id=%s", (job_id,)).fetchone()
         if not row:
             return {"status": "error", "error": f"Job not found: {job_id}"}
         job = dict(row)
@@ -572,7 +572,7 @@ def run_sync(job_id: str, dry_run: bool = False, db_path=None) -> Dict:
 
     conn = _get_db(db_path)
     try:
-        conn.execute("UPDATE sync_jobs SET status='scanning', updated_at=? WHERE id=?", (_now(), job_id))
+        conn.execute("UPDATE sync_jobs SET status='scanning', updated_at=%s WHERE id=%s", (_now(), job_id))
         conn.commit()
         _log_sync_event(conn, job_id, "scan_started")
         conn.commit()
@@ -591,7 +591,7 @@ def run_sync(job_id: str, dry_run: bool = False, db_path=None) -> Dict:
         if dry_run:
             conn = _get_db(db_path)
             try:
-                conn.execute("UPDATE sync_jobs SET status='idle', updated_at=? WHERE id=?", (_now(), job_id))
+                conn.execute("UPDATE sync_jobs SET status='idle', updated_at=%s WHERE id=%s", (_now(), job_id))
                 conn.commit()
             finally:
                 conn.close()
@@ -642,7 +642,7 @@ def run_sync(job_id: str, dry_run: bool = False, db_path=None) -> Dict:
         elapsed_ms = int((time.monotonic() - t0) * 1000)
         conn = _get_db(db_path)
         try:
-            conn.execute("UPDATE sync_jobs SET status='failed', error_message=?, updated_at=? WHERE id=?",
+            conn.execute("UPDATE sync_jobs SET status='failed', error_message=%s, updated_at=%s WHERE id=%s",
                          (str(e), _now(), job_id))
             _log_sync_event(conn, job_id, "sync_failed", error_detail=str(e), duration_ms=elapsed_ms)
             conn.commit()
@@ -676,7 +676,7 @@ def pause_job(job_id: str, db_path=None) -> Dict:
     """Pause a sync job."""
     conn = _get_db(db_path)
     try:
-        conn.execute("UPDATE sync_jobs SET status='paused', updated_at=? WHERE id=?", (_now(), job_id))
+        conn.execute("UPDATE sync_jobs SET status='paused', updated_at=%s WHERE id=%s", (_now(), job_id))
         conn.commit()
     finally:
         conn.close()
@@ -687,7 +687,7 @@ def resume_job(job_id: str, db_path=None) -> Dict:
     """Resume a paused sync job."""
     conn = _get_db(db_path)
     try:
-        conn.execute("UPDATE sync_jobs SET status='idle', updated_at=? WHERE id=?", (_now(), job_id))
+        conn.execute("UPDATE sync_jobs SET status='idle', updated_at=%s WHERE id=%s", (_now(), job_id))
         conn.commit()
     finally:
         conn.close()
@@ -699,7 +699,7 @@ def get_sync_log(job_id: str, limit: int = 50, db_path=None) -> Dict:
     conn = _get_db(db_path)
     try:
         rows = conn.execute(
-            "SELECT * FROM sync_log WHERE job_id=? ORDER BY created_at DESC LIMIT ?",
+            "SELECT * FROM sync_log WHERE job_id=%s ORDER BY created_at DESC LIMIT %s",
             (job_id, limit),
         ).fetchall()
     finally:
@@ -712,7 +712,7 @@ def get_conflicts(job_id: str, db_path=None) -> Dict:
     conn = _get_db(db_path)
     try:
         rows = conn.execute(
-            "SELECT * FROM sync_conflicts WHERE job_id=? AND resolution='pending' ORDER BY created_at DESC",
+            "SELECT * FROM sync_conflicts WHERE job_id=%s AND resolution='pending' ORDER BY created_at DESC",
             (job_id,),
         ).fetchall()
     finally:
@@ -728,7 +728,7 @@ def resolve_conflict(conflict_id: str, resolution: str, resolved_by: str = "user
     conn = _get_db(db_path)
     try:
         conn.execute(
-            "UPDATE sync_conflicts SET resolution=?, resolved_at=?, resolved_by=? WHERE id=?",
+            "UPDATE sync_conflicts SET resolution=%s, resolved_at=%s, resolved_by=%s WHERE id=%s",
             (resolution, _now(), resolved_by, conflict_id),
         )
         conn.commit()
@@ -801,7 +801,7 @@ def watch_job(job_id: str, db_path=None, blocking: bool = True) -> Dict:
 
     conn = _get_db(db_path)
     try:
-        row = conn.execute("SELECT * FROM sync_jobs WHERE id=?", (job_id,)).fetchone()
+        row = conn.execute("SELECT * FROM sync_jobs WHERE id=%s", (job_id,)).fetchone()
         if not row:
             return {"status": "error", "error": f"Job not found: {job_id}"}
         job = dict(row)
@@ -844,7 +844,7 @@ def watch_job(job_id: str, db_path=None, blocking: bool = True) -> Dict:
         # Restore status to 'watching' after watcher-triggered sync
         _conn = _get_db(db_path)
         try:
-            _conn.execute("UPDATE sync_jobs SET status='watching', updated_at=? WHERE id=?", (_now(), job_id))
+            _conn.execute("UPDATE sync_jobs SET status='watching', updated_at=%s WHERE id=%s", (_now(), job_id))
             _conn.commit()
         finally:
             _conn.close()
@@ -862,7 +862,7 @@ def watch_job(job_id: str, db_path=None, blocking: bool = True) -> Dict:
     # Update job status to 'watching'
     conn = _get_db(db_path)
     try:
-        conn.execute("UPDATE sync_jobs SET status='watching', updated_at=? WHERE id=?", (_now(), job_id))
+        conn.execute("UPDATE sync_jobs SET status='watching', updated_at=%s WHERE id=%s", (_now(), job_id))
         conn.commit()
     finally:
         conn.close()
@@ -914,11 +914,11 @@ def stop_watching(job_id: str, db_path=None) -> Dict:
 
     conn = _get_db(db_path)
     try:
-        row = conn.execute("SELECT name, status FROM sync_jobs WHERE id=?", (job_id,)).fetchone()
+        row = conn.execute("SELECT name, status FROM sync_jobs WHERE id=%s", (job_id,)).fetchone()
         if not row:
             return {"status": "error", "error": f"Job not found: {job_id}"}
         if row["status"] == "watching":
-            conn.execute("UPDATE sync_jobs SET status='idle', updated_at=? WHERE id=?", (_now(), job_id))
+            conn.execute("UPDATE sync_jobs SET status='idle', updated_at=%s WHERE id=%s", (_now(), job_id))
             conn.commit()
     finally:
         conn.close()

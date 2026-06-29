@@ -97,7 +97,7 @@ def _load_simulation_kg(project_id: str, db_path: Optional[str] = None) -> Tuple
     # 1. Load SysML elements as architecture nodes
     try:
         rows = conn.execute(
-            "SELECT id, name, stereotype, element_type FROM sysml_elements WHERE project_id = ?",
+            "SELECT id, name, stereotype, element_type FROM sysml_elements WHERE project_id = %s",
             (project_id,),
         ).fetchall()
         for r in rows:
@@ -114,7 +114,7 @@ def _load_simulation_kg(project_id: str, db_path: Optional[str] = None) -> Tuple
     # 2. Load SysML relationships as edges
     try:
         rows = conn.execute(
-            "SELECT source_id, target_id, relationship_type FROM sysml_relationships WHERE project_id = ?",
+            "SELECT source_id, target_id, relationship_type FROM sysml_relationships WHERE project_id = %s",
             (project_id,),
         ).fetchall()
         for r in rows:
@@ -128,7 +128,7 @@ def _load_simulation_kg(project_id: str, db_path: Optional[str] = None) -> Tuple
     # 3. Load compliance controls as compliance nodes
     try:
         rows = conn.execute(
-            "SELECT id, control_id, implementation_status FROM project_controls WHERE project_id = ?",
+            "SELECT id, control_id, implementation_status FROM project_controls WHERE project_id = %s",
             (project_id,),
         ).fetchall()
         for r in rows:
@@ -145,7 +145,7 @@ def _load_simulation_kg(project_id: str, db_path: Optional[str] = None) -> Tuple
     # 4. Load supply chain vendors
     try:
         rows = conn.execute(
-            "SELECT id, vendor_name, scrm_risk_tier FROM supply_chain_vendors WHERE project_id = ?",
+            "SELECT id, vendor_name, scrm_risk_tier FROM supply_chain_vendors WHERE project_id = %s",
             (project_id,),
         ).fetchall()
         for r in rows:
@@ -162,7 +162,7 @@ def _load_simulation_kg(project_id: str, db_path: Optional[str] = None) -> Tuple
     # 5. Load supply chain dependencies as edges
     try:
         rows = conn.execute(
-            "SELECT vendor_id, depends_on_vendor_id, dependency_type FROM supply_chain_dependencies WHERE project_id = ?",
+            "SELECT vendor_id, depends_on_vendor_id, dependency_type FROM supply_chain_dependencies WHERE project_id = %s",
             (project_id,),
         ).fetchall()
         for r in rows:
@@ -175,13 +175,13 @@ def _load_simulation_kg(project_id: str, db_path: Optional[str] = None) -> Tuple
     # 6. Load existing KG if available (kg_nodes/kg_edges for this project)
     try:
         graph_row = conn.execute(
-            "SELECT id FROM kg_graphs WHERE project_id = ? ORDER BY created_at DESC LIMIT 1",
+            "SELECT id FROM kg_graphs WHERE project_id = %s ORDER BY created_at DESC LIMIT 1",
             (project_id,),
         ).fetchone()
         if graph_row:
             gid = graph_row["id"]
             kg_nodes = conn.execute(
-                "SELECT id, label, entity_type, properties, centrality FROM kg_nodes WHERE graph_id = ?",
+                "SELECT id, label, entity_type, properties, centrality FROM kg_nodes WHERE graph_id = %s",
                 (gid,),
             ).fetchall()
             for r in kg_nodes:
@@ -195,7 +195,7 @@ def _load_simulation_kg(project_id: str, db_path: Optional[str] = None) -> Tuple
                     "centrality": r["centrality"] or 0.0,
                 }
             kg_edges = conn.execute(
-                "SELECT source_id, target_id, relationship, weight FROM kg_edges WHERE graph_id = ?",
+                "SELECT source_id, target_id, relationship, weight FROM kg_edges WHERE graph_id = %s",
                 (gid,),
             ).fetchall()
             for r in kg_edges:

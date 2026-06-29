@@ -260,13 +260,13 @@ def _get_session_vertical_config(session_id, db_path=None):
     except FileNotFoundError:
         return None, None
     try:
-        session_row = conn.execute("SELECT * FROM research_sessions WHERE id = ?", (session_id,)).fetchone()
+        session_row = conn.execute("SELECT * FROM research_sessions WHERE id = %s", (session_id,)).fetchone()
         if not session_row:
             return None, None
 
         session = dict(session_row)
         vertical_id = session.get("vertical_id", "")
-        vert_row = conn.execute("SELECT * FROM research_verticals WHERE id = ?", (vertical_id,)).fetchone()
+        vert_row = conn.execute("SELECT * FROM research_verticals WHERE id = %s", (vertical_id,)).fetchone()
         if not vert_row:
             return session, None
 
@@ -1643,7 +1643,7 @@ def store_signals(signals, session_id, db_path=None):
 
             # Check for duplicate by content_hash within session
             existing = conn.execute(
-                "SELECT id FROM research_signals WHERE content_hash = ? AND session_id = ?",
+                "SELECT id FROM research_signals WHERE content_hash = %s AND session_id = %s",
                 (signal.get("content_hash", ""), session_id),
             ).fetchone()
 
@@ -1657,7 +1657,7 @@ def store_signals(signals, session_id, db_path=None):
                        (id, session_id, source, source_type, title, body, url,
                         author, upvotes, citations, sentiment, content_hash,
                         keywords, metadata, discovered_at, classification)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'CUI')""",
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'CUI')""",
                     (
                         signal["id"],
                         session_id,
@@ -1694,9 +1694,9 @@ def store_signals(signals, session_id, db_path=None):
             conn.execute(
                 """UPDATE research_sessions
                    SET signal_count = (
-                       SELECT COUNT(*) FROM research_signals WHERE session_id = ?
-                   ), updated_at = ?
-                   WHERE id = ?""",
+                       SELECT COUNT(*) FROM research_signals WHERE session_id = %s
+                   ), updated_at = %s
+                   WHERE id = %s""",
                 (session_id, _now(), session_id),
             )
             conn.commit()
@@ -1776,7 +1776,7 @@ def run_scan(session_id, source=None, session_config=None, db_path=None):
                 cache_row = conn_cache.execute(
                     """SELECT MAX(discovered_at) as latest
                        FROM research_signals
-                       WHERE session_id = ? AND source = 'regulatory_body'
+                       WHERE session_id = %s AND source = 'regulatory_body'
                          AND source_type != 'scan_error'""",
                     (session_id,),
                 ).fetchone()
@@ -1888,7 +1888,7 @@ def get_scan_status(session_id, db_path=None):
         rows = conn.execute(
             """SELECT source, source_type, COUNT(*) AS count
                FROM research_signals
-               WHERE session_id = ?
+               WHERE session_id = %s
                GROUP BY source, source_type
                ORDER BY count DESC""",
             (session_id,),
@@ -1904,14 +1904,14 @@ def get_scan_status(session_id, db_path=None):
 
         # Total count
         total = conn.execute(
-            "SELECT COUNT(*) AS total FROM research_signals WHERE session_id = ?",
+            "SELECT COUNT(*) AS total FROM research_signals WHERE session_id = %s",
             (session_id,),
         ).fetchone()["total"]
 
         # Date range
         date_range = conn.execute(
             """SELECT MIN(discovered_at) AS earliest, MAX(discovered_at) AS latest
-               FROM research_signals WHERE session_id = ?""",
+               FROM research_signals WHERE session_id = %s""",
             (session_id,),
         ).fetchone()
 

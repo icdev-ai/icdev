@@ -158,6 +158,7 @@ def test_rollup_reflex_module_importable():
 def test_metering_records_event(tmp_path, monkeypatch):
     """record_usage() inserts a row into usage_events (synchronous via mock)."""
     import importlib
+    _make_db(tmp_path)
 
     # Synchronous mock so the background thread completes before assertions
     inserted: list = []

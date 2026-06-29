@@ -77,7 +77,7 @@ def create_template(
         conn.execute(
             "INSERT INTO govlift_runbook_templates "
             "(id, name, category, description, workload_type, author, steps_json, estimated_min, created_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (rbt_id, name, category, description, workload_type, author, steps_json, estimated_min, now),
         )
         conn.commit()
@@ -91,7 +91,7 @@ def get_template(template_id: str) -> dict:
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT * FROM govlift_runbook_templates WHERE id = ?",
+            "SELECT * FROM govlift_runbook_templates WHERE id = %s",
             (template_id,),
         ).fetchone()
         return _row_to_dict(row)
@@ -140,7 +140,7 @@ def create_runbook(template_id: str, name: str | None = None) -> dict:
         conn.execute(
             "INSERT INTO govlift_runbooks "
             "(id, template_id, name, status, step_count, created_at, updated_at) "
-            "VALUES (?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s)",
             (rb_id, template_id, rb_name, "draft", len(steps), now, now),
         )
         conn.commit()
@@ -173,7 +173,7 @@ def get_runbook(runbook_id: str) -> dict:
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT * FROM govlift_runbooks WHERE id = ?",
+            "SELECT * FROM govlift_runbooks WHERE id = %s",
             (runbook_id,),
         ).fetchone()
         return _row_to_dict(row)
@@ -188,7 +188,7 @@ def get_runbook(runbook_id: str) -> dict:
 
 def _get_latest_execution(conn, runbook_id: str) -> dict:
     row = conn.execute(
-        "SELECT * FROM govlift_runbook_executions WHERE runbook_id = ? ORDER BY created_at DESC LIMIT 1",
+        "SELECT * FROM govlift_runbook_executions WHERE runbook_id = %s ORDER BY created_at DESC LIMIT 1",
         (runbook_id,),
     ).fetchone()
     return _row_to_dict(row)
@@ -196,7 +196,7 @@ def _get_latest_execution(conn, runbook_id: str) -> dict:
 
 def _get_steps(conn, execution_id: str) -> list[dict]:
     rows = conn.execute(
-        "SELECT * FROM govlift_runbook_step_results WHERE execution_id = ? ORDER BY step_num",
+        "SELECT * FROM govlift_runbook_step_results WHERE execution_id = %s ORDER BY step_num",
         (execution_id,),
     ).fetchall()
     return [_row_to_dict(r) for r in rows]
@@ -219,7 +219,7 @@ def start_execution(runbook_id: str) -> dict:
     try:
         conn.execute(
             "INSERT INTO govlift_runbook_executions (id, runbook_id, status, started_at, created_at) "
-            "VALUES (?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s)",
             (exec_id, runbook_id, "running", now, now),
         )
         for i, step in enumerate(steps, start=1):
@@ -227,7 +227,7 @@ def start_execution(runbook_id: str) -> dict:
             conn.execute(
                 "INSERT INTO govlift_runbook_step_results "
                 "(id, execution_id, runbook_id, step_num, step_name, status, output, started_at) "
-                "VALUES (?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
                 (
                     _step_id(), exec_id, runbook_id, i,
                     step.get("name", f"Step {i}"), step_status, "",
@@ -235,7 +235,7 @@ def start_execution(runbook_id: str) -> dict:
                 ),
             )
         conn.execute(
-            "UPDATE govlift_runbooks SET status = ?, updated_at = ? WHERE id = ?",
+            "UPDATE govlift_runbooks SET status = %s, updated_at = %s WHERE id = %s",
             ("running", now, runbook_id),
         )
         conn.commit()
@@ -272,8 +272,8 @@ def complete_step(runbook_id: str, step_num: int, status: str, output: str = "")
         now = _now()
 
         conn.execute(
-            "UPDATE govlift_runbook_step_results SET status = ?, output = ?, completed_at = ? "
-            "WHERE execution_id = ? AND step_num = ?",
+            "UPDATE govlift_runbook_step_results SET status = %s, output = %s, completed_at = %s "
+            "WHERE execution_id = %s AND step_num = %s",
             (status, output, now, exec_id, step_num),
         )
 
@@ -282,28 +282,28 @@ def complete_step(runbook_id: str, step_num: int, status: str, output: str = "")
 
         if status == "failed":
             conn.execute(
-                "UPDATE govlift_runbooks SET status = ?, failed_step = ?, updated_at = ? WHERE id = ?",
+                "UPDATE govlift_runbooks SET status = %s, failed_step = %s, updated_at = %s WHERE id = %s",
                 ("failed", step_num, now, runbook_id),
             )
             conn.execute(
-                "UPDATE govlift_runbook_executions SET status = ?, completed_at = ? WHERE id = ?",
+                "UPDATE govlift_runbook_executions SET status = %s, completed_at = %s WHERE id = %s",
                 ("failed", now, exec_id),
             )
         elif status == "completed":
             next_step = step_num + 1
             if next_step <= step_count:
                 conn.execute(
-                    "UPDATE govlift_runbook_step_results SET status = ?, started_at = ? "
-                    "WHERE execution_id = ? AND step_num = ?",
+                    "UPDATE govlift_runbook_step_results SET status = %s, started_at = %s "
+                    "WHERE execution_id = %s AND step_num = %s",
                     ("running", now, exec_id, next_step),
                 )
             else:
                 conn.execute(
-                    "UPDATE govlift_runbooks SET status = ?, updated_at = ? WHERE id = ?",
+                    "UPDATE govlift_runbooks SET status = %s, updated_at = %s WHERE id = %s",
                     ("completed", now, runbook_id),
                 )
                 conn.execute(
-                    "UPDATE govlift_runbook_executions SET status = ?, completed_at = ? WHERE id = ?",
+                    "UPDATE govlift_runbook_executions SET status = %s, completed_at = %s WHERE id = %s",
                     ("completed", now, exec_id),
                 )
 
@@ -327,16 +327,16 @@ def trigger_rollback(runbook_id: str) -> dict:
         exec_id = exec_rec["id"]
 
         conn.execute(
-            "UPDATE govlift_runbook_step_results SET status = ?, completed_at = ? "
-            "WHERE execution_id = ? AND status = 'completed'",
+            "UPDATE govlift_runbook_step_results SET status = %s, completed_at = %s "
+            "WHERE execution_id = %s AND status = 'completed'",
             ("failed", now, exec_id),
         )
         conn.execute(
-            "UPDATE govlift_runbooks SET status = ?, updated_at = ? WHERE id = ?",
+            "UPDATE govlift_runbooks SET status = %s, updated_at = %s WHERE id = %s",
             ("rolled_back", now, runbook_id),
         )
         conn.execute(
-            "UPDATE govlift_runbook_executions SET status = ?, completed_at = ? WHERE id = ?",
+            "UPDATE govlift_runbook_executions SET status = %s, completed_at = %s WHERE id = %s",
             ("rolled_back", now, exec_id),
         )
         conn.commit()

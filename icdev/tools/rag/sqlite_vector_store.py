@@ -276,7 +276,7 @@ class SQLiteVectorStore(VectorStoreProvider):
                 chunk.compute_content_hash()
             # Check for existing content_hash (dedup)
             row = conn.execute(
-                "SELECT id FROM rag_chunks WHERE content_hash = ?",
+                "SELECT id FROM rag_chunks WHERE content_hash = %s",
                 (chunk.content_hash,),
             ).fetchone()
             if row:
@@ -290,7 +290,7 @@ class SQLiteVectorStore(VectorStoreProvider):
                    (id, content, content_hash, embedding, source_type, source_id,
                     source_table, chunk_index, total_chunks, metadata, tier,
                     tenant_id, project_id, classification)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     chunk.chunk_id,
                     chunk.content,
@@ -439,7 +439,7 @@ class SQLiteVectorStore(VectorStoreProvider):
             """SELECT id, content, content_hash, source_type, source_id,
                       source_table, chunk_index, total_chunks, metadata,
                       tier, tenant_id, project_id, classification
-               FROM rag_chunks WHERE content_hash = ?""",
+               FROM rag_chunks WHERE content_hash = %s""",
             (content_hash,),
         ).fetchone()
         conn.close()
@@ -480,7 +480,7 @@ class SQLiteVectorStore(VectorStoreProvider):
         for cid in chunk_ids:
             if target_tier == "warm":
                 # Compress float32 → float16
-                row = conn.execute("SELECT embedding FROM rag_chunks WHERE id = ?", (cid,)).fetchone()
+                row = conn.execute("SELECT embedding FROM rag_chunks WHERE id = %s", (cid,)).fetchone()
                 if row and row[0]:
                     emb = _blob_to_embedding(row[0])
                     try:
@@ -492,8 +492,8 @@ class SQLiteVectorStore(VectorStoreProvider):
                         compressed = row[0]  # Keep float32 without numpy
                     conn.execute(
                         """UPDATE rag_chunks
-                           SET tier = ?, embedding = ?, updated_at = CURRENT_TIMESTAMP
-                           WHERE id = ?""",
+                           SET tier = %s, embedding = %s, updated_at = CURRENT_TIMESTAMP
+                           WHERE id = %s""",
                         (target_tier, compressed, cid),
                     )
                     migrated += 1
@@ -501,16 +501,16 @@ class SQLiteVectorStore(VectorStoreProvider):
                 # Remove embedding, keep metadata
                 conn.execute(
                     """UPDATE rag_chunks
-                       SET tier = ?, embedding = NULL, updated_at = CURRENT_TIMESTAMP
-                       WHERE id = ?""",
+                       SET tier = %s, embedding = NULL, updated_at = CURRENT_TIMESTAMP
+                       WHERE id = %s""",
                     (target_tier, cid),
                 )
                 migrated += 1
             else:
                 conn.execute(
                     """UPDATE rag_chunks
-                       SET tier = ?, updated_at = CURRENT_TIMESTAMP
-                       WHERE id = ?""",
+                       SET tier = %s, updated_at = CURRENT_TIMESTAMP
+                       WHERE id = %s""",
                     (target_tier, cid),
                 )
                 migrated += 1

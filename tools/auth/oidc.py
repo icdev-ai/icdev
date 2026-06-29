@@ -23,7 +23,7 @@ def _get_provider(provider_id: str, protocol: str = "oidc") -> dict:
         row = conn.execute(
             "SELECT id, tenant_id, name, protocol, entity_id, metadata_url, "
             "client_id, client_secret_enc, claims_mapping, enabled "
-            "FROM sso_providers WHERE id = ? AND protocol = ?",
+            "FROM sso_providers WHERE id = %s AND protocol = %s",
             (provider_id, protocol),
         ).fetchone()
     if row is None:
@@ -161,7 +161,7 @@ def _persist_oidc_session(
         conn.execute(
             "INSERT INTO sso_sessions "
             "(id, tenant_id, provider_id, name_id, id_token) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s)",
             (sid, tenant_id, provider_id, name_id, id_token),
         )
         conn.commit()

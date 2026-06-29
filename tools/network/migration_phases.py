@@ -726,7 +726,7 @@ def save_consolidation(topo_id: str, analysis: dict) -> None:
                capex_delta, opex_annual_delta, tco_3yr_delta,
                bw_increase_pct, spof_count_before, spof_count_after,
                analysis_json, created_at, updated_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             ON CONFLICT(topo_id) DO UPDATE SET
               devices_removed=excluded.devices_removed,
               rack_units_freed=excluded.rack_units_freed,
@@ -766,7 +766,7 @@ def load_consolidation(topo_id: str) -> dict:
         from tools.db.storage import get_connection
         conn = get_connection()
         row = conn.execute(
-            "SELECT analysis_json FROM nc_consolidation_analysis WHERE topo_id=?", (topo_id,)
+            "SELECT analysis_json FROM nc_consolidation_analysis WHERE topo_id=%s", (topo_id,)
         ).fetchone()
         conn.close()
         if row:
@@ -821,7 +821,7 @@ def _get_device_interfaces(conn, device_id: str) -> list[dict]:
     try:
         row = conn.execute(
             """SELECT config_text FROM ni_device_configs
-               WHERE device_id=? ORDER BY created_at DESC LIMIT 1""",
+               WHERE device_id=%s ORDER BY created_at DESC LIMIT 1""",
             (device_id,),
         ).fetchone()
         config = row["config_text"] if row and row["config_text"] else ""
@@ -832,13 +832,13 @@ def _get_device_interfaces(conn, device_id: str) -> list[dict]:
         # Try resolving node_id -> device_id
         try:
             dev_row = conn.execute(
-                "SELECT id FROM ni_devices WHERE node_id=?", (device_id,)
+                "SELECT id FROM ni_devices WHERE node_id=%s", (device_id,)
             ).fetchone()
             if dev_row:
                 did = dev_row["id"]
                 row = conn.execute(
                     """SELECT config_text FROM ni_device_configs
-                       WHERE device_id=? ORDER BY created_at DESC LIMIT 1""",
+                       WHERE device_id=%s ORDER BY created_at DESC LIMIT 1""",
                     (did,),
                 ).fetchone()
                 config = row["config_text"] if row and row["config_text"] else ""

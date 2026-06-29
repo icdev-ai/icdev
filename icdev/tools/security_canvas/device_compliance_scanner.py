@@ -124,7 +124,7 @@ def scan_device(hostname: str, os_platform: str = "linux",
             conn.execute(
                 "INSERT INTO zig_device_compliance_scans "
                 "(device_id, scan_type, check_id, check_name, passed, severity, scanned_at) "
-                "VALUES (?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s)",
                 (device_id, "cis", check_id, desc, int(passed), "CIS", now),
             )
 
@@ -140,7 +140,7 @@ def scan_device(hostname: str, os_platform: str = "linux",
             conn.execute(
                 "INSERT INTO zig_device_compliance_scans "
                 "(device_id, scan_type, check_id, check_name, passed, severity, scanned_at) "
-                "VALUES (?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s)",
                 (device_id, "stig", check_id, desc, int(passed), severity, now),
             )
 
@@ -160,7 +160,7 @@ def scan_device(hostname: str, os_platform: str = "linux",
         conn.execute(
             """INSERT INTO zig_device_registry
                (device_id, hostname, os_platform, health_score, compliance_score, last_seen_at, updated_at)
-               VALUES (?,?,?,?,?,?,?)
+               VALUES (%s,%s,%s,%s,%s,%s,%s)
                ON CONFLICT(device_id) DO UPDATE SET
                health_score=excluded.health_score,
                compliance_score=excluded.compliance_score,
@@ -222,7 +222,7 @@ def get_compliance_summary() -> dict[str, Any]:
         _ensure_tables(conn)
         total = conn.execute("SELECT COUNT(*) FROM zig_device_registry").fetchone()[0]
         compliant = conn.execute(
-            "SELECT COUNT(*) FROM zig_device_registry WHERE compliance_score >= ?",
+            "SELECT COUNT(*) FROM zig_device_registry WHERE compliance_score >= %s",
             (_HEALTH_THRESHOLD,),
         ).fetchone()[0]
         avg_score = conn.execute(

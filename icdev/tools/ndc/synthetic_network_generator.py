@@ -819,7 +819,7 @@ def _insert_topologies(conn, topologies: list[dict], reset: bool) -> int:
             _NOW.strftime("%Y-%m-%dT%H:%M:%SZ"),
         ))
     conn.executemany(
-        "INSERT OR REPLACE INTO topologies (id,name,description,graph_json,template_id,classification,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)",
+        "INSERT OR REPLACE INTO topologies (id,name,description,graph_json,template_id,classification,created_at,updated_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
         rows,
     )
     return len(rows)
@@ -883,7 +883,7 @@ def _insert_devices(conn, topologies: list[dict], reset: bool) -> int:
         (id,topology_id,node_id,label,device_type,vendor,model,firmware_version,eol_date,eos_date,
          purchase_date,purchase_cost,annual_maintenance_cost,replacement_cost,site,rack_location,
          criticality_score,downstream_count,notes,properties_json)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
         rows,
     )
     return len(rows)
@@ -907,7 +907,7 @@ def _insert_circuits(conn, circuits: list[dict], reset: bool) -> int:
         (id,topology_id,circuit_id,carrier,circuit_type,bandwidth,handoff_a,handoff_z,
          customer,site,monthly_cost_usd,contract_start,contract_end,sla_uptime_pct,
          install_status,created_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
         rows,
     )
     return len(rows)
@@ -955,7 +955,7 @@ def _insert_configs(conn, topologies: list[dict]) -> int:
         conn.executemany(
             """INSERT OR REPLACE INTO ni_device_configs
             (id,device_id,config_type,config_text,config_hash,source,version)
-            VALUES (?,?,?,?,?,?,?)""",
+            VALUES (%s,%s,%s,%s,%s,%s,%s)""",
             rows,
         )
     return len(rows)

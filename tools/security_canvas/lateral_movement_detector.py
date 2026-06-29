@@ -65,7 +65,7 @@ def _contain(conn, source_identity: str, risk_score: float, reason: str) -> None
     now = datetime.now(timezone.utc).isoformat()
     conn.execute(
         """INSERT INTO zig_quarantine (source_identity, reason, risk_score, quarantined_at, status)
-           VALUES (?,?,?,?, 'active')
+           VALUES (%s,%s,%s,%s, 'active')
            ON CONFLICT(source_identity) DO UPDATE SET
            reason=excluded.reason, risk_score=excluded.risk_score,
            quarantined_at=excluded.quarantined_at, status='active'""",
@@ -75,7 +75,7 @@ def _contain(conn, source_identity: str, risk_score: float, reason: str) -> None
     try:
         conn.execute(
             "UPDATE zig_segmentation_policies SET action='deny' "
-            "WHERE mode='identity_micro' AND source=?",
+            "WHERE mode='identity_micro' AND source=%s",
             (source_identity,),
         )
     except Exception:
@@ -109,7 +109,7 @@ def analyze_flow(source_identity: str, target: str,
         conn.execute(
             "INSERT INTO zig_lateral_movement_events "
             "(source_identity, target, risk_score, indicators, action, contained, created_at) "
-            "VALUES (?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s)",
             (source_identity, target, risk_score, json.dumps(active), action,
              int(action == "contained"), now),
         )
@@ -133,13 +133,13 @@ def release_quarantine(source_identity: str) -> dict[str, Any]:
     try:
         _ensure_tables(conn)
         conn.execute(
-            "UPDATE zig_quarantine SET status='released', released_at=? WHERE source_identity=?",
+            "UPDATE zig_quarantine SET status='released', released_at=%s WHERE source_identity=%s",
             (now, source_identity),
         )
         try:
             conn.execute(
                 "UPDATE zig_segmentation_policies SET action='allow' "
-                "WHERE mode='identity_micro' AND source=?",
+                "WHERE mode='identity_micro' AND source=%s",
                 (source_identity,),
             )
         except Exception:

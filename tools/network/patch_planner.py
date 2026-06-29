@@ -144,7 +144,7 @@ def _append_audit_log(conn, action: str, plan_id: str, advisory_id: int | None =
         conn.execute(
             """INSERT INTO nc_nqe_audit_log
                (action, input_text, nql_generated, data_source, confidence, advisory_id, created_at)
-               VALUES (?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s)""",
             (
                 action,
                 f"patch_plan:{plan_id}",
@@ -214,7 +214,7 @@ def create_patch_plan(approved_by: str | None = None) -> dict:
             devices = conn.execute(
                 """SELECT device_name, ip, criticality, surface_score
                    FROM nc_attack_surface
-                   WHERE (advisory_id = ? OR cve_id = ?)
+                   WHERE (advisory_id = %s OR cve_id = %s)
                      AND (reachable = 1 OR criticality >= 4)
                    ORDER BY criticality DESC, surface_score DESC""",
                 (advisory_id, q.get("cve_id", "")),
@@ -252,7 +252,7 @@ def create_patch_plan(approved_by: str | None = None) -> dict:
                            (plan_id, batch_id, advisory_id, device_name, action,
                             scheduled_at, maintenance_window_id, blast_radius_json,
                             simulation_status, risk_reduction, approved_by, created_at)
-                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                         (
                             plan_id,
                             batch_id,
@@ -325,7 +325,7 @@ def get_plan_summary(plan_id: str) -> dict:
     conn = get_connection()
     try:
         rows = conn.execute(
-            "SELECT * FROM nc_patch_plans WHERE plan_id = ?", (plan_id,)
+            "SELECT * FROM nc_patch_plans WHERE plan_id = %s", (plan_id,)
         ).fetchall()
         if not rows:
             return {"plan_id": plan_id, "found": False}

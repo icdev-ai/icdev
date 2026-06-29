@@ -54,7 +54,7 @@ def generate_api_key(
             """
             INSERT INTO api_keys
                 (id, tenant_id, name, key_prefix, key_hash, scopes, expires_at, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (row_id, tenant_id, name, key_prefix, key_hash, scopes, expires_at, created_at),
         )
@@ -76,7 +76,7 @@ def verify_api_key(raw_key: str) -> Optional[Tuple[str, str]]:
             """
             SELECT id, tenant_id, scopes, revoked_at, expires_at
             FROM   api_keys
-            WHERE  key_hash = ?
+            WHERE  key_hash = %s
             """,
             (key_hash,),
         ).fetchone()
@@ -94,7 +94,7 @@ def verify_api_key(raw_key: str) -> Optional[Tuple[str, str]]:
     # Update last_used_at (mutable field — not append-only violation)
     with get_connection() as conn:
         conn.execute(
-            "UPDATE api_keys SET last_used_at = ? WHERE id = ?",
+            "UPDATE api_keys SET last_used_at = %s WHERE id = %s",
             (now, row_id),
         )
         conn.commit()

@@ -90,7 +90,7 @@ def add_policy(mode: str, source: str, destination: str, port_protocol: str = "a
         conn.execute(
             """INSERT INTO zig_segmentation_policies
                (policy_id, mode, source, destination, port_protocol, action, identity_bound, created_at)
-               VALUES (?,?,?,?,?,?,?,?)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
                ON CONFLICT(policy_id) DO UPDATE SET
                action=excluded.action, identity_bound=excluded.identity_bound""",
             (policy_id, mode, source, destination, port_protocol, action, int(identity_bound), now),
@@ -112,14 +112,14 @@ def evaluate_flow(source: str, destination: str, port_protocol: str = "any",
         # Explicit deny wins; else explicit allow; else default-deny
         deny = conn.execute(
             "SELECT policy_id FROM zig_segmentation_policies "
-            "WHERE mode=? AND source=? AND destination=? AND action='deny' "
-            "AND (port_protocol=? OR port_protocol='any')",
+            "WHERE mode=%s AND source=%s AND destination=%s AND action='deny' "
+            "AND (port_protocol=%s OR port_protocol='any')",
             (mode, source, destination, port_protocol),
         ).fetchone()
         allow = conn.execute(
             "SELECT policy_id, identity_bound FROM zig_segmentation_policies "
-            "WHERE mode=? AND source=? AND destination=? AND action='allow' "
-            "AND (port_protocol=? OR port_protocol='any')",
+            "WHERE mode=%s AND source=%s AND destination=%s AND action='allow' "
+            "AND (port_protocol=%s OR port_protocol='any')",
             (mode, source, destination, port_protocol),
         ).fetchone()
 
@@ -133,7 +133,7 @@ def evaluate_flow(source: str, destination: str, port_protocol: str = "any",
         conn.execute(
             "INSERT INTO zig_segmentation_evaluations "
             "(mode, source, destination, port_protocol, decision, matched_policy, created_at) "
-            "VALUES (?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s)",
             (mode, source, destination, port_protocol, decision, matched, now),
         )
         conn.commit()

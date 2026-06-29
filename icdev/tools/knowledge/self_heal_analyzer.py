@@ -265,7 +265,7 @@ def _get_project_effectiveness(pattern_id, project_id: str, db_path: Path = None
     try:
         row = conn.execute(
             """SELECT effectiveness, attempts FROM self_heal_project_patterns
-               WHERE pattern_signature = ? AND project_id = ?""",
+               WHERE pattern_signature = %s AND project_id = %s""",
             (str(pattern_id), project_id),
         ).fetchone()
         if row and row["attempts"] >= 3:
@@ -289,13 +289,13 @@ def _record_project_outcome(pattern_id, project_id: str, success: bool, db_path:
             INSERT INTO self_heal_project_patterns
                 (pattern_signature, project_id, attempts, successes, failures,
                  effectiveness, last_attempt_at)
-            VALUES (?, ?, 1, ?, ?, ?, ?)
+            VALUES (%s, %s, 1, %s, %s, %s, %s)
             ON CONFLICT(pattern_signature, project_id) DO UPDATE SET
                 attempts = attempts + 1,
-                successes = successes + ?,
-                failures = failures + ?,
-                effectiveness = CAST((successes + ?) AS REAL) / (attempts + 1),
-                last_attempt_at = ?
+                successes = successes + %s,
+                failures = failures + %s,
+                effectiveness = CAST((successes + %s) AS REAL) / (attempts + 1),
+                last_attempt_at = %s
         """,
             (
                 str(pattern_id),
@@ -469,7 +469,7 @@ def _check_rate_limit(pattern_id: int, db_path: Path = None) -> bool:
     try:
         count = conn.execute(
             """SELECT COUNT(*) FROM self_healing_events
-               WHERE pattern_id = ?
+               WHERE pattern_id = %s
                  AND created_at > datetime('now', '-1 hour')""",
             (pattern_id,),
         ).fetchone()[0]
@@ -495,7 +495,7 @@ def _record_healing_event(
             """INSERT INTO self_healing_events
                (project_id, pattern_id, trigger_source, trigger_data,
                 action_taken, outcome, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
             (
                 project_id,
                 pattern_id,
@@ -536,7 +536,7 @@ def record_outcome(
     conn = _get_db(db_path)
     try:
         event = conn.execute(
-            "SELECT pattern_id, outcome as old_outcome FROM self_healing_events WHERE id = ?",
+            "SELECT pattern_id, outcome as old_outcome FROM self_healing_events WHERE id = %s",
             (healing_event_id,),
         ).fetchone()
 
@@ -546,8 +546,8 @@ def record_outcome(
         # Update the event
         conn.execute(
             """UPDATE self_healing_events
-               SET outcome = ?, action_taken = COALESCE(action_taken, '') || ' | outcome: ' || ?
-               WHERE id = ?""",
+               SET outcome = %s, action_taken = COALESCE(action_taken, '') || ' | outcome: ' || %s
+               WHERE id = %s""",
             (outcome, details or outcome, healing_event_id),
         )
         conn.commit()
@@ -565,7 +565,7 @@ def record_outcome(
             # Fetch project_id from the event's failure context
             try:
                 evt_details = conn.execute(
-                    "SELECT trigger_source FROM self_healing_events WHERE id = ?", (healing_event_id,)
+                    "SELECT trigger_source FROM self_healing_events WHERE id = %s", (healing_event_id,)
                 ).fetchone()
                 if evt_details:
                     trigger = evt_details["trigger_source"] or ""

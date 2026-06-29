@@ -1,0 +1,78 @@
+﻿! Enterprise Core Router - RTR-CORE-01
+! Site Alpha Data Center
+! Last Modified: 2026-06-01 by noc-engineer@icdev.mil
+!
+hostname RTR-CORE-01
+!
+! Authentication
+aaa new-model
+aaa authentication login default group tacacs+ local
+aaa authorization exec default group tacacs+ local
+aaa accounting exec default start-stop group tacacs+
+!
+tacacs server TACACS-PRIMARY
+ address ipv4 172.16.0.150
+ key 7 ENCRYPTED_KEY_HERE
+!
+! SSH Configuration
+ip ssh version 2
+ip ssh time-out 60
+ip ssh authentication-retries 3
+crypto key generate rsa modulus 2048
+!
+! Logging
+logging host 172.16.0.100
+logging host 172.16.0.101
+logging trap informational
+service timestamps log datetime msec localtime
+!
+! VTY Security
+line vty 0 15
+ transport input ssh
+ login authentication default
+ exec-timeout 15 0
+ access-class VTY-ACL in
+!
+! BGP Configuration
+router bgp 65001
+ bgp router-id 192.168.0.1
+ neighbor 192.168.0.2 remote-as 65001
+ neighbor 192.168.0.2 description SITE-BRAVO-DR
+ neighbor 203.0.113.1 remote-as 7018
+ neighbor 203.0.113.1 description ISP-PRIMARY
+!
+! SNMP
+snmp-server group ICDEV-GROUP v3 priv
+snmp-server user ICDEV-MONITOR ICDEV-GROUP v3 auth sha AUTHKEY priv aes 128 PRIVKEY
+!
+! SECURITY ISSUES IDENTIFIED:
+! WARNING: SNMP community string 'public' still present on legacy config
+snmp-server community public RO
+! TODO: Remove above line after migration (ticket NW-2024-091)
+!
+! NetFlow
+ip flow-export destination 172.16.0.200 9996
+ip flow-export version 9
+!
+interface GigabitEthernet0/0
+ description WAN-PRIMARY-ISP
+ ip address 203.0.113.2 255.255.255.252
+ ip access-group INBOUND-WAN in
+ ip flow ingress
+ no shutdown
+!
+interface GigabitEthernet0/1
+ description CORE-SWITCH-TRUNK
+ ip address 192.168.0.1 255.255.0.0
+ no shutdown
+!
+! Access Control Lists
+ip access-list extended INBOUND-WAN
+ 10 deny ip 10.0.0.0 0.255.255.255 any log
+ 20 deny ip 172.16.0.0 0.15.255.255 any log
+ 30 deny ip 192.168.0.0 0.0.255.255 any log
+ 40 permit tcp any host 10.10.0.10 eq 443
+ 50 permit tcp any host 10.10.0.50 eq 25
+ 60 deny ip any any log
+!
+end

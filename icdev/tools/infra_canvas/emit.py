@@ -80,7 +80,7 @@ def _load_graph(project: str) -> dict[str, Any]:
         conn = get_connection()
         cur = conn.cursor()
         try:
-            cur.execute("SELECT graph_json FROM infra_designs WHERE id = ?", (project,))
+            cur.execute("SELECT graph_json FROM infra_designs WHERE id = %s", (project,))
         except Exception:
             cur.execute("SELECT graph_json FROM infra_designs WHERE id = %s", (project,))
         row = cur.fetchone()

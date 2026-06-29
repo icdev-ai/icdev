@@ -743,7 +743,7 @@ class PromptChainExecutor:
                     final_output_hash, total_duration_ms,
                     total_tokens_used, error_message, executed_by,
                     created_at, completed_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                    ON CONFLICT(id) DO UPDATE SET
                    status = excluded.status,
                    steps_completed = excluded.steps_completed,
@@ -841,7 +841,7 @@ class PromptChainExecutor:
         conn = _get_db(self._db_path)
         try:
             row = conn.execute(
-                "SELECT * FROM prompt_chain_executions WHERE id = ?",
+                "SELECT * FROM prompt_chain_executions WHERE id = %s",
                 (execution_id,),
             ).fetchone()
             if not row:

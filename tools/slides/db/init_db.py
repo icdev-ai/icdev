@@ -98,38 +98,43 @@ CREATE INDEX IF NOT EXISTS idx_slides_audit_deck_id ON slides_audit(deck_id);
 
 _SCHEMA_SQLITE = """
 CREATE TABLE IF NOT EXISTS slides_decks (
-    deck_id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    title           TEXT NOT NULL,
-    deck_type       TEXT NOT NULL DEFAULT 'executive_overview',
-    theme           TEXT NOT NULL DEFAULT 'midnight_executive',
-    tone            TEXT DEFAULT 'professional',
-    occasion        TEXT,
-    target_audience TEXT,
-    citation_style  TEXT DEFAULT 'inline_links',
-    output_formats  TEXT DEFAULT '["pptx"]',
-    status          TEXT NOT NULL DEFAULT 'pending',
-    source_types    TEXT DEFAULT '[]',
-    pptx_path       TEXT,
-    pdf_path        TEXT,
-    html_path       TEXT,
-    slide_count     INTEGER DEFAULT 0,
-    error_message   TEXT,
-    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
-    completed_at    DATETIME
+    deck_id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    title                TEXT NOT NULL,
+    deck_type            TEXT NOT NULL DEFAULT 'executive_overview',
+    theme                TEXT NOT NULL DEFAULT 'midnight_executive',
+    tone                 TEXT DEFAULT 'professional',
+    occasion             TEXT,
+    target_audience      TEXT,
+    citation_style       TEXT DEFAULT 'inline_links',
+    output_formats       TEXT DEFAULT '["pptx"]',
+    status               TEXT NOT NULL DEFAULT 'pending',
+    source_types         TEXT DEFAULT '[]',
+    pptx_path            TEXT,
+    pdf_path             TEXT,
+    html_path            TEXT,
+    slide_count          INTEGER DEFAULT 0,
+    error_message        TEXT,
+    enable_rich_diagrams INTEGER DEFAULT 0,
+    audience_mode        TEXT,
+    created_at           DATETIME DEFAULT CURRENT_TIMESTAMP,
+    completed_at         DATETIME
 );
 
 CREATE TABLE IF NOT EXISTS slides_slides (
-    slide_id      INTEGER PRIMARY KEY AUTOINCREMENT,
-    deck_id       INTEGER NOT NULL REFERENCES slides_decks(deck_id) ON DELETE CASCADE,
-    position      INTEGER NOT NULL,
-    slide_type    TEXT NOT NULL DEFAULT 'content',
-    title         TEXT NOT NULL,
-    bullets       TEXT DEFAULT '[]',
-    speaker_notes TEXT,
-    citations     TEXT DEFAULT '[]',
-    image_path    TEXT,
-    image_prompt  TEXT,
-    created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+    slide_id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    deck_id              INTEGER NOT NULL REFERENCES slides_decks(deck_id) ON DELETE CASCADE,
+    position             INTEGER NOT NULL,
+    slide_type           TEXT NOT NULL DEFAULT 'content',
+    title                TEXT NOT NULL,
+    bullets              TEXT DEFAULT '[]',
+    speaker_notes        TEXT,
+    citations            TEXT DEFAULT '[]',
+    image_path           TEXT,
+    image_prompt         TEXT,
+    mermaid_code         TEXT,
+    three_scene_config   TEXT,
+    excalidraw_elements  TEXT,
+    created_at           DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS slides_audit (
@@ -203,8 +208,12 @@ def _apply_migrations(conn) -> None:
                 try:
                     conn.execute(stmt)
                 except Exception:
-                    # Idempotent migrations tolerate already-present columns.
-                    pass
+                    # Idempotent — tolerate already-present columns/constraints.
+                    # Rollback so PostgreSQL transaction does not stay in aborted state.
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
         if is_pg:
             conn.execute(
                 "INSERT INTO slides_schema_migrations (version) VALUES (%s)",

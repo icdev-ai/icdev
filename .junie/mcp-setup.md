@@ -6,7 +6,7 @@
 3. Select "stdio" transport
 
 ## Servers
-  - **icdev-unified**: `python C:/Users/schuo/Downloads/ICDev/tools/mcp/mcp_debug_wrapper.py`
+  - **icdev-unified**: `python C:/AI/ICDev/tools/mcp/mcp_debug_wrapper.py`
   - **playwright**: `cmd /c npx -y @playwright/mcp@latest`
 
 ## Environment Variables

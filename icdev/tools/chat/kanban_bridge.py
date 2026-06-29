@@ -52,7 +52,7 @@ def list_context_tasks(context_id: str) -> list[dict]:
         """SELECT id, title, task_type, priority, status, scheduled_at,
                   completed_at, depends_on_task_id, created_at
            FROM kanban_tasks
-           WHERE dispatch_source = ?
+           WHERE dispatch_source = %s
            ORDER BY created_at DESC""",
         (tag,),
     ).fetchall()
@@ -75,7 +75,7 @@ def create_context_task(
         """INSERT INTO kanban_tasks
            (id, title, description, task_type, priority, status,
             dispatch_source, depends_on_task_id, scheduled_at, created_at, updated_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
         (
             task_id, title, description, task_type, priority, "scheduled",
             _dispatch_tag(context_id), depends_on, now, now, now,
@@ -121,7 +121,7 @@ def mark_task_done(task_id: str) -> dict:
     conn = get_connection()
     now = _now()
     conn.execute(
-        "UPDATE kanban_tasks SET status='done', completed_at=?, updated_at=? WHERE id=?",
+        "UPDATE kanban_tasks SET status='done', completed_at=%s, updated_at=%s WHERE id=%s",
         (now, now, task_id),
     )
     conn.commit()

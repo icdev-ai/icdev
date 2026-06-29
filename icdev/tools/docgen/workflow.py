@@ -401,7 +401,12 @@ def stage1_ingest_upload(
             path=file_path,
             collection_id=_get_collection_id(session_id),
         )
-        dic_doc_id = result.get("doc_id") if result else None
+        # IngestOutcome is a dataclass; fall back to dict .get() for compatibility
+        dic_doc_id = (
+            getattr(result, "doc_id", None)
+            if result and not isinstance(result, dict)
+            else (result.get("doc_id") if result else None)
+        )
         sm.set_upload_status(upload_id, "ingested", dic_doc_id=dic_doc_id)
         log.info("IDR ingest: upload=%s → dic_doc=%s", upload_id, dic_doc_id)
     except ImportError:
@@ -464,12 +469,17 @@ def stage2_analyze_upload(
             try:
                 result = _run_analyzer(diag_mod_path, diag_fn_name, file_path, domain)
                 result_ref_id = result.get("analysis_id") or str(uuid.uuid4())
-                row = sm.add_analysis(session_id, upload_id, "diagram_analysis", result_ref_id)
+                import json as _json
+                row = sm.add_analysis(
+                    session_id, upload_id, "diagram_analysis", result_ref_id,
+                    result_json=_json.dumps(result),
+                )
                 analyses_created.append(row)
                 sm.set_upload_status(upload_id, "analyzed")
                 log.info(
-                    "IDR diagram analysis complete: upload=%s ref=%s",
+                    "IDR diagram analysis complete: upload=%s ref=%s tabs=%s",
                     upload_id, result_ref_id,
+                    list((result.get("tabs") or {}).keys()),
                 )
             except Exception:
                 log.exception("IDR diagram analysis failed: upload=%s", upload_id)
@@ -486,7 +496,11 @@ def stage2_analyze_upload(
             try:
                 result = _run_analyzer(cfg_mod_path, cfg_fn_name, file_path, domain)
                 result_ref_id = result.get("review_id") or str(uuid.uuid4())
-                row = sm.add_analysis(session_id, upload_id, "config_review", result_ref_id)
+                import json as _json
+                row = sm.add_analysis(
+                    session_id, upload_id, "config_review", result_ref_id,
+                    result_json=_json.dumps(result),
+                )
                 analyses_created.append(row)
                 sm.set_upload_status(upload_id, "analyzed")
                 log.info(
@@ -510,7 +524,11 @@ def stage2_analyze_upload(
             try:
                 result = _run_analyzer(iac_mod_path, iac_fn_name, file_path, domain)
                 result_ref_id = result.get("review_id") or str(uuid.uuid4())
-                row = sm.add_analysis(session_id, upload_id, "iac_review", result_ref_id)
+                import json as _json
+                row = sm.add_analysis(
+                    session_id, upload_id, "iac_review", result_ref_id,
+                    result_json=_json.dumps(result),
+                )
                 analyses_created.append(row)
                 sm.set_upload_status(upload_id, "analyzed")
                 log.info(
@@ -525,6 +543,23 @@ def stage2_analyze_upload(
         else:
             log.debug("No IaC reviewer configured for domain=%s", domain)
             sm.set_upload_status(upload_id, "analyzed")
+
+    # ── Email — extract body text and run entity extraction ───────────────────
+    elif upload_type == "email":
+        try:
+            from tools.docgen.context_builder import _extract_email
+            email_text = _extract_email(file_path)
+            if email_text.strip():
+                extraction = stage0_ingest_document(session_id, email_text[:8000])
+                log.info(
+                    "IDR email extraction: upload=%s entities=%d findings=%d",
+                    upload_id,
+                    len(extraction.get("entities", [])),
+                    len(extraction.get("key_findings", [])),
+                )
+        except Exception as exc:
+            log.warning("IDR email extraction skipped for %s: %s", upload_id, exc)
+        sm.set_upload_status(upload_id, "analyzed")
 
     # ── Doc / supplement — LLM entity extraction ──────────────────────────────
     elif upload_type in ("doc", "supplement"):

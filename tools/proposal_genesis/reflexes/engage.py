@@ -92,7 +92,7 @@ def _create_account_from_opportunity(opp: Dict) -> Optional[str]:
     try:
         # Check if account already exists (race condition guard)
         existing = conn.execute(
-            "SELECT id FROM pg_crm_accounts WHERE name = ?",
+            "SELECT id FROM pg_crm_accounts WHERE name = %s",
             (agency,),
         ).fetchone()
         if existing:
@@ -106,7 +106,7 @@ def _create_account_from_opportunity(opp: Dict) -> Optional[str]:
             INSERT INTO pg_crm_accounts
                 (id, name, agency, account_type, naics_codes, status,
                  created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         """,
             (
                 account_id,
@@ -125,7 +125,7 @@ def _create_account_from_opportunity(opp: Dict) -> Optional[str]:
             "INSERT INTO pg_proposal_genesis_audit "
             "(id, event_type, reflex_name, risk_tier, opportunity_id, "
             "details, success, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 _generate_id("pgaudit"),
                 "account_created",
@@ -237,7 +237,7 @@ def _log_interaction(
             INSERT INTO pg_crm_interactions
                 (id, contact_id, account_id, interaction_type, subject,
                  notes, opportunity_id, interaction_date, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         """,
             (
                 interaction_id,
@@ -278,7 +278,7 @@ def _get_account_for_agency(agency: str) -> Optional[str]:
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT id FROM pg_crm_accounts WHERE name = ? AND status = 'active'",
+            "SELECT id FROM pg_crm_accounts WHERE name = %s AND status = 'active'",
             (agency,),
         ).fetchone()
         return row["id"] if row else None
@@ -307,7 +307,7 @@ def _compute_win_rate(conn, agency_name: str) -> float:
                 SUM(CASE WHEN wl.outcome = 'won' THEN 1 ELSE 0 END) as wins
             FROM pg_win_loss_records wl
             JOIN sam_gov_opportunities o ON o.id = wl.opportunity_id
-            WHERE LOWER(o.agency) = LOWER(?)
+            WHERE LOWER(o.agency) = LOWER(%s)
             AND wl.outcome IN ('won', 'lost')
         """,
             (agency_name,),
@@ -343,7 +343,7 @@ def _compute_engagement_scores() -> List[Dict]:
                 SELECT COUNT(*) as cnt,
                        MAX(interaction_date) as last_date
                 FROM pg_crm_interactions
-                WHERE account_id = ?
+                WHERE account_id = %s
             """,
                 (acct_id,),
             ).fetchone()
@@ -356,7 +356,7 @@ def _compute_engagement_scores() -> List[Dict]:
                 """
                 SELECT COUNT(*) as cnt
                 FROM proposal_opportunities
-                WHERE agency = ?
+                WHERE agency = %s
                 AND status IN ('tracking', 'drafting', 'reviewing')
             """,
                 (acct_name,),
@@ -394,7 +394,7 @@ def _compute_engagement_scores() -> List[Dict]:
                     (id, account_id, score, score_breakdown,
                      interaction_count, last_interaction_at,
                      opportunity_count, win_rate, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
                 (
                     score_id,
@@ -478,7 +478,7 @@ def create_account(
             INSERT INTO pg_crm_accounts
                 (id, name, agency, sub_agency, account_type, website,
                  naics_codes, set_asides, notes, status, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """,
             (
                 account_id,
@@ -534,7 +534,7 @@ def update_account(account_id: str, **fields) -> Dict[str, Any]:
     conn = get_connection()
     try:
         cur = conn.execute(
-            f"UPDATE pg_crm_accounts SET {set_clause} WHERE id = ?",
+            f"UPDATE pg_crm_accounts SET {set_clause} WHERE id = %s",
             values,  # nosec B608 — columns from hardcoded allowlist
         )
         conn.commit()
@@ -553,12 +553,12 @@ def list_accounts(status: Optional[str] = None, limit: int = 50) -> List[Dict]:
     try:
         if status:
             rows = conn.execute(
-                "SELECT * FROM pg_crm_accounts WHERE status = ? ORDER BY updated_at DESC LIMIT ?",
+                "SELECT * FROM pg_crm_accounts WHERE status = %s ORDER BY updated_at DESC LIMIT %s",
                 (status, limit),
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT * FROM pg_crm_accounts ORDER BY updated_at DESC LIMIT ?",
+                "SELECT * FROM pg_crm_accounts ORDER BY updated_at DESC LIMIT %s",
                 (limit,),
             ).fetchall()
         return [dict(r) for r in rows]
@@ -572,7 +572,7 @@ def get_account(account_id: str) -> Optional[Dict]:
     """Get a single CRM account by ID."""
     conn = get_connection()
     try:
-        row = conn.execute("SELECT * FROM pg_crm_accounts WHERE id = ?", (account_id,)).fetchone()
+        row = conn.execute("SELECT * FROM pg_crm_accounts WHERE id = %s", (account_id,)).fetchone()
         return dict(row) if row else None
     except Exception:
         return None
@@ -624,7 +624,7 @@ def create_contact(
                 (id, account_id, name, title, email, phone,
                  role_in_procurement, influence_level, notes,
                  last_contact_at, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """,
             (
                 contact_id,
@@ -675,7 +675,7 @@ def update_contact(contact_id: str, **fields) -> Dict[str, Any]:
     conn = get_connection()
     try:
         cur = conn.execute(
-            f"UPDATE pg_crm_contacts SET {set_clause} WHERE id = ?",
+            f"UPDATE pg_crm_contacts SET {set_clause} WHERE id = %s",
             values,  # nosec B608 — columns from hardcoded allowlist
         )
         conn.commit()
@@ -692,7 +692,7 @@ def delete_contact(contact_id: str) -> Dict[str, Any]:
     """Delete a CRM contact."""
     conn = get_connection()
     try:
-        cur = conn.execute("DELETE FROM pg_crm_contacts WHERE id = ?", (contact_id,))
+        cur = conn.execute("DELETE FROM pg_crm_contacts WHERE id = %s", (contact_id,))
         conn.commit()
         if cur.rowcount == 0:
             return {"success": False, "error": "contact not found"}
@@ -712,7 +712,7 @@ def list_contacts(account_id: Optional[str] = None, limit: int = 50) -> List[Dic
                 "SELECT c.*, a.name AS account_name "
                 "FROM pg_crm_contacts c "
                 "LEFT JOIN pg_crm_accounts a ON a.id = c.account_id "
-                "WHERE c.account_id = ? ORDER BY c.updated_at DESC LIMIT ?",
+                "WHERE c.account_id = %s ORDER BY c.updated_at DESC LIMIT %s",
                 (account_id, limit),
             ).fetchall()
         else:
@@ -720,7 +720,7 @@ def list_contacts(account_id: Optional[str] = None, limit: int = 50) -> List[Dic
                 "SELECT c.*, a.name AS account_name "
                 "FROM pg_crm_contacts c "
                 "LEFT JOIN pg_crm_accounts a ON a.id = c.account_id "
-                "ORDER BY c.updated_at DESC LIMIT ?",
+                "ORDER BY c.updated_at DESC LIMIT %s",
                 (limit,),
             ).fetchall()
         return [dict(r) for r in rows]
@@ -738,7 +738,7 @@ def get_contact(contact_id: str) -> Optional[Dict]:
             "SELECT c.*, a.name AS account_name "
             "FROM pg_crm_contacts c "
             "LEFT JOIN pg_crm_accounts a ON a.id = c.account_id "
-            "WHERE c.id = ?",
+            "WHERE c.id = %s",
             (contact_id,),
         ).fetchone()
         return dict(row) if row else None
@@ -794,7 +794,7 @@ def log_manual_interaction(
             INSERT INTO pg_crm_interactions
                 (id, contact_id, account_id, interaction_type, subject,
                  notes, opportunity_id, interaction_date, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         """,
             (
                 interaction_id,
@@ -812,7 +812,7 @@ def log_manual_interaction(
         # Update contact last_contact_at if a contact was specified
         if contact_id:
             conn.execute(
-                "UPDATE pg_crm_contacts SET last_contact_at = ?, updated_at = ? WHERE id = ?",
+                "UPDATE pg_crm_contacts SET last_contact_at = %s, updated_at = %s WHERE id = %s",
                 (date, now, contact_id),
             )
 

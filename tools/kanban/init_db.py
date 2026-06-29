@@ -202,7 +202,7 @@ def _existing_columns(conn, table: str) -> set:
     try:
         if pg:
             rows = conn.execute(
-                "SELECT column_name FROM information_schema.columns WHERE table_name = ?",
+                "SELECT column_name FROM information_schema.columns WHERE table_name = %s",
                 (table,),
             ).fetchall()
             key, idx = "column_name", 0

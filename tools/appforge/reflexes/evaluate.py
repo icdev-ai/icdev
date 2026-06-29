@@ -47,7 +47,7 @@ def run(config: Dict[str, Any], trust) -> Dict[str, Any]:
 
         # Promote to 'selected'
         conn.execute(
-            "UPDATE appforge_challenges SET status = 'selected' WHERE challenge_id = ?",
+            "UPDATE appforge_challenges SET status = 'selected' WHERE challenge_id = %s",
             (top["challenge_id"],),
         )
         conn.commit()

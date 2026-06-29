@@ -46,12 +46,12 @@ def _table_exists(conn, table_name):
     try:
         if _is_pg(conn):
             row = conn.execute(
-                "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public' AND table_name=?",
+                "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public' AND table_name=%s",
                 (table_name,),
             ).fetchone()
         else:
             row = conn.execute(
-                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?",
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=%s",
                 (table_name,),
             ).fetchone()
         return row[0] > 0

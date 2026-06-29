@@ -37,6 +37,11 @@
                     <label class="form-label">Presentation Title</label>
                     <input type="text" id="title" class="form-control" value="ICDEV™ Platform Overview"
                            placeholder="e.g. AI Adoption in Healthcare" required>
+                <!-- Audience framing hint (Second Brain) -->
+                <div id="audience-framing-hint" class="d-none mt-2 p-2 rounded" style="background:rgba(139,92,246,.08);border:1px solid rgba(139,92,246,.2);font-size:.8rem">
+                  <div class="fw-semibold mb-1" style="color:#c4b5fd">🎯 Audience Framing</div>
+                  <div id="af-content" class="text-muted small"></div>
+                </div>
                 </div>
                 <div class="form-group" style="margin-top:16px;">
                     <label class="form-label">Occasion / Scenario</label>
@@ -48,7 +53,7 @@
                     <input type="text" id="target_audience" class="form-control"
                            placeholder="e.g. C-suite executives, new hires, investors, patients">
                 </div>
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:16px;">
+                <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; margin-top:16px;">
                     <div class="form-group">
                         <label class="form-label">Deck Type</label>
                         <select id="deck_type" class="form-control" onchange="onDeckTypeChange()">
@@ -60,12 +65,57 @@
                         </select>
                     </div>
                     <div class="form-group">
+                        <label class="form-label">Presentation Language</label>
+                        <select id="output_language" class="form-control">
+                            <option value="English" selected>English</option>
+                            <option value="Spanish">Spanish</option>
+                            <option value="French">French</option>
+                            <option value="German">German</option>
+                            <option value="Japanese">Japanese</option>
+                            <option value="Korean">Korean</option>
+                            <option value="Chinese (Simplified)">Chinese (Simplified)</option>
+                            <option value="Portuguese">Portuguese</option>
+                            <option value="Arabic">Arabic</option>
+                            <option value="Italian">Italian</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
                         <label class="form-label">Max Slides</label>
                         <input type="range" id="max_slides" min="5" max="16" value="10"
                                oninput="document.getElementById('slides-val').textContent=this.value">
                         <span id="slides-val" style="font-weight:600; margin-left:8px;">10</span> slides
                     </div>
                 </div>
+
+                {# Audience Mode #}
+                <div class="form-group" style="margin-top:20px;">
+                    <label class="form-label" style="font-weight:700;">Audience Mode <span style="font-weight:400; color:var(--text-secondary); font-size:12px;">(optional — tailors narrative arc)</span></label>
+                    <div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:8px;" id="audience-mode-radios">
+                        <label style="display:flex; align-items:center; gap:6px; background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:8px; padding:8px 14px; cursor:pointer; font-size:13px;">
+                            <input type="radio" name="audience_mode" value="" checked onchange="onAudienceModeChange('')"> None
+                        </label>
+                        {% for mode in audience_modes %}
+                        <label style="display:flex; align-items:center; gap:6px; background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:8px; padding:8px 14px; cursor:pointer; font-size:13px;">
+                            <input type="radio" name="audience_mode" value="{{ mode }}" onchange="onAudienceModeChange('{{ mode }}')">
+                            {{ mode | replace('_', ' ') | title }}
+                        </label>
+                        {% endfor %}
+                    </div>
+                    <div id="audience-hint" style="display:none; margin-top:10px; padding:10px 14px; background:rgba(212,160,23,0.08); border-left:3px solid #D4A017; border-radius:4px; font-size:12px; color:var(--text-secondary);"></div>
+                </div>
+
+                {# Pitch Template Presets #}
+                {% if pitch_templates %}
+                <div class="form-group" style="margin-top:16px;">
+                    <label class="form-label" style="font-weight:700;">Pitch Template <span style="font-weight:400; color:var(--text-secondary); font-size:12px;">(optional preset)</span></label>
+                    <select id="pitch_template" class="form-control" style="margin-top:6px;" onchange="onPitchTemplateChange()">
+                        <option value="">— Custom / Manual —</option>
+                        {% for key, tmpl in pitch_templates.items() %}
+                        <option value="{{ key }}">{{ tmpl.label }} ({{ tmpl.slides }} slides)</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                {% endif %}
             </div>
         </div>
         <div style="display:flex; justify-content:flex-end;">
@@ -179,6 +229,23 @@
         </div>
 
         <div class="card" style="margin-bottom:20px;">
+            <div class="card-header"><h3 style="margin:0;">🌐 Rich Diagrams & 3D Animations</h3></div>
+            <div class="card-body">
+                <label style="display:flex; align-items:flex-start; gap:10px; cursor:pointer;">
+                    <input type="checkbox" id="enable_rich_diagrams" style="margin-top:3px;">
+                    <div>
+                        <div style="font-weight:600;">Enable rich diagrams (Three.js · Mermaid · Excalidraw)</div>
+                        <div style="font-size:12px; color:var(--text-secondary); margin-top:4px;">
+                            Adds interactive 3D animations, flowchart diagrams, and hand-drawn sketches to applicable slides.
+                            <strong>Best experienced in the web presentation viewer (▶ Present).</strong>
+                            PPTX export shows styled placeholder cards; HTML export embeds the interactive renderers (self-contained, air-gap safe).
+                        </div>
+                    </div>
+                </label>
+            </div>
+        </div>
+
+        <div class="card" style="margin-bottom:20px;">
             <div class="card-header"><h3 style="margin:0;">Graphics</h3></div>
             <div class="card-body">
                 <label style="display:flex; align-items:center; gap:10px; cursor:pointer;">
@@ -186,8 +253,19 @@
                     <div>
                         <div style="font-weight:600;">Generate contextual images per slide</div>
                         <div style="font-size:12px; color:var(--text-secondary);">
-                            Uses {{ 'Ollama cloud' if env.SLIDES_IMAGE_PROVIDER == 'ollama_cloud' else (env.SLIDES_IMAGE_PROVIDER|default('matplotlib'))|title }} image generation.
-                            Fallback: programmatic themed diagram.
+                            {% set provider = env.SLIDES_IMAGE_PROVIDER|default('matplotlib') %}
+                            {% set provider_label = {
+                                'gpt_image_2': 'OpenAI GPT-Image-2',
+                                'gpt-image-2': 'OpenAI GPT-Image-2',
+                                'gpt_image': 'OpenAI GPT-Image',
+                                'imagen_4': 'Google Imagen 4',
+                                'ollama_cloud': 'Ollama cloud',
+                                'dalle': 'OpenAI DALL-E 3',
+                                'gemini': 'Google Imagen 3',
+                                'matplotlib': 'programmatic fallback'
+                            }.get(provider, provider|title) %}
+                            Uses {{ provider_label }} image generation.
+                            {% if provider == 'matplotlib' %}No cloud API required.{% else %}Fallback: programmatic themed diagram.{% endif %}
                         </div>
                     </div>
                 </label>
@@ -203,9 +281,26 @@
         </div>
 
         <div id="progress" style="display:none; margin-bottom:16px;">
-            <div style="background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:8px; padding:20px; text-align:center;">
-                <div class="spinner" style="margin:0 auto 12px;"></div>
-                <div id="progress-msg" style="color:var(--text-secondary);">Generating your deck — researching, planning outline, writing slides…</div>
+            <div style="background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:8px; padding:20px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+                    <span style="font-weight:600; font-size:14px;">Generating your deck…</span>
+                    <span id="progress-msg" style="font-size:13px; color:var(--text-secondary);">Starting…</span>
+                </div>
+                <!-- Phase steps -->
+                <div style="display:flex; gap:0; margin-bottom:16px;" id="phase-steps">
+                    {% for phase_label in ['Gather', 'Plan', 'Write', 'Images', 'Build'] %}
+                    <div class="phase-step" data-phase="{{ loop.index }}"
+                         style="flex:1; text-align:center; padding:8px 4px; font-size:11px; font-weight:600;
+                                border-bottom:3px solid var(--border-color); color:var(--text-secondary);
+                                transition:all 0.3s;">
+                        {{ loop.index }}. {{ phase_label }}
+                    </div>
+                    {% endfor %}
+                </div>
+                <!-- Progress bar -->
+                <div style="background:var(--bg-primary); border-radius:4px; height:6px; overflow:hidden;">
+                    <div id="progress-bar" style="height:100%; background:#D4A017; width:0%; transition:width 0.5s ease;"></div>
+                </div>
             </div>
         </div>
 
@@ -220,6 +315,9 @@
 </form>
 
 <script>
+var AUDIENCE_HINTS = {{ audience_mode_hints | tojson | safe }};
+var PITCH_TEMPLATES = {{ pitch_templates | tojson | safe }};
+
 var TONE_HINTS = {
     'professional': 'Polished, concise, and authoritative; clean corporate visuals.',
     'fun': 'Light, playful, conversational; friendly flat illustrations and warm accents.',
@@ -236,7 +334,7 @@ function goStep(n) {
         el.style.background = parseInt(el.dataset.step) === n ? 'var(--accent-color)' : 'var(--bg-secondary)';
         el.style.color = parseInt(el.dataset.step) === n ? '#fff' : 'var(--text-primary)';
     });
-    document.querySelector('.wizard-step[data-step="' + n + '"]').style.display = '';
+    document.querySelector('.wizard-step[data-step="' + n + '"]').style.display = 'block';
     updateToneHint();
 }
 
@@ -261,6 +359,55 @@ function onDeckTypeChange() {
     }
 }
 
+function onAudienceModeChange(mode) {
+    var hintEl = document.getElementById('audience-hint');
+    if (!mode || !AUDIENCE_HINTS[mode]) {
+        hintEl.style.display = 'none';
+        return;
+    }
+    var hint = AUDIENCE_HINTS[mode];
+    hintEl.innerHTML = '<strong>' + mode.replace('_', ' ').replace(/\b\w/g, function(c){ return c.toUpperCase(); }) + ' arc:</strong> ' +
+        hint.narrative + '<br><span style="opacity:0.8;">Emphasis: ' + hint.emphasis + '</span>';
+    hintEl.style.display = '';
+    // Auto-set tone if mode recommends one and tone hasn't been manually changed
+    if (hint.tone_override) {
+        var toneEl = document.getElementById('tone');
+        if (toneEl && !toneEl.dataset.manuallySet) {
+            toneEl.value = hint.tone_override;
+            updateToneHint();
+        }
+    }
+}
+
+function onPitchTemplateChange() {
+    var key = document.getElementById('pitch_template').value;
+    if (!key || !PITCH_TEMPLATES[key]) return;
+    var tmpl = PITCH_TEMPLATES[key];
+    // Auto-fill deck_type and max_slides
+    var deckTypeEl = document.getElementById('deck_type');
+    if (deckTypeEl && tmpl.deck_type) {
+        deckTypeEl.value = tmpl.deck_type;
+        onDeckTypeChange();
+    }
+    var maxSlidesEl = document.getElementById('max_slides');
+    if (maxSlidesEl && tmpl.slides) {
+        maxSlidesEl.value = tmpl.slides;
+    }
+    // Show a brief toast-style note
+    var note = document.getElementById('pitch-template-note');
+    if (!note) {
+        note = document.createElement('div');
+        note.id = 'pitch-template-note';
+        note.style.cssText = 'font-size:12px; color:#D4A017; margin-top:6px;';
+        document.getElementById('pitch_template').parentElement.appendChild(note);
+    }
+    note.textContent = 'Arc: ' + (tmpl.arc || []).join(' → ');
+}
+
+document.getElementById('tone').addEventListener('change', function() {
+    this.dataset.manuallySet = '1';
+});
+
 document.getElementById('generate-form').addEventListener('submit', async function(e) {
     e.preventDefault();
     var btn = document.getElementById('submit-btn');
@@ -275,6 +422,7 @@ document.getElementById('generate-form').addEventListener('submit', async functi
     var sources = Array.from(document.querySelectorAll('input[name=sources]:checked')).map(i => i.value);
     var outputFormats = Array.from(document.querySelectorAll('input[name=output_formats]:checked')).map(i => i.value);
 
+    var audienceModeEl = document.querySelector('input[name=audience_mode]:checked');
     var payload = {
         title: document.getElementById('title').value,
         occasion: document.getElementById('occasion').value,
@@ -287,7 +435,40 @@ document.getElementById('generate-form').addEventListener('submit', async functi
         output_formats: outputFormats,
         sources: sources,
         upload_text: document.getElementById('upload_text').value,
+        enable_rich_diagrams: document.getElementById('enable_rich_diagrams').checked,
+        audience_mode: (audienceModeEl && audienceModeEl.value) ? audienceModeEl.value : null,
+        output_language: document.getElementById('output_language').value,
     };
+
+    var _phaseMap = {
+        'running':    {step: 0, pct: 5},
+        'gathering':  {step: 1, pct: 10},
+        'planning':   {step: 2, pct: 30},
+        'generating': {step: 3, pct: 55},
+        'graphics':   {step: 4, pct: 75},
+        'building':   {step: 5, pct: 90},
+        'completed':  {step: 5, pct: 100},
+        'auto':       {step: 5, pct: 100},
+    };
+
+    function _updateProgress(status, label) {
+        var info = _phaseMap[status] || {step: 0, pct: 5};
+        document.getElementById('progress-msg').textContent = label;
+        document.getElementById('progress-bar').style.width = info.pct + '%';
+        document.querySelectorAll('#phase-steps .phase-step').forEach(function(el, i) {
+            var stepNum = parseInt(el.dataset.phase);
+            if (stepNum < info.step) {
+                el.style.borderBottomColor = '#51cf66';
+                el.style.color = '#51cf66';
+            } else if (stepNum === info.step) {
+                el.style.borderBottomColor = '#D4A017';
+                el.style.color = '#D4A017';
+            } else {
+                el.style.borderBottomColor = 'var(--border-color)';
+                el.style.color = 'var(--text-secondary)';
+            }
+        });
+    }
 
     try {
         var resp = await fetch('/slides/api/generate', {
@@ -296,15 +477,41 @@ document.getElementById('generate-form').addEventListener('submit', async functi
             body: JSON.stringify(payload),
         });
         var data = await resp.json();
-        if (data.deck_id) {
-            window.location.href = '/slides/' + data.deck_id;
-        } else {
-            errorMsg.textContent = data.error || 'Generation failed.';
+        if (!data.deck_id) {
+            errorMsg.textContent = data.error || 'Failed to start generation.';
             errorMsg.style.display = '';
             btn.disabled = false;
             btn.textContent = 'Generate Deck ✨';
             progress.style.display = 'none';
+            return;
         }
+
+        // Poll status until done
+        var deckId = data.deck_id;
+        _updateProgress('running', 'Starting…');
+
+        var pollInterval = setInterval(async function() {
+            try {
+                var sr = await fetch('/slides/api/' + deckId + '/status');
+                var sd = await sr.json();
+                _updateProgress(sd.status, sd.phase_label || sd.status);
+                if (sd.done) {
+                    clearInterval(pollInterval);
+                    if (sd.error && sd.status === 'failed') {
+                        errorMsg.textContent = 'Generation failed. Check the deck for details.';
+                        errorMsg.style.display = '';
+                        btn.disabled = false;
+                        btn.textContent = 'Generate Deck ✨';
+                        progress.style.display = 'none';
+                    } else {
+                        window.location.href = '/slides/' + deckId;
+                    }
+                }
+            } catch(pollErr) {
+                // Network hiccup — keep polling
+            }
+        }, 2000);
+
     } catch(err) {
         errorMsg.textContent = 'Network error: ' + err.message;
         errorMsg.style.display = '';
@@ -317,5 +524,33 @@ document.getElementById('generate-form').addEventListener('submit', async functi
 updateToneHint();
 onDeckTypeChange();
 goStep(1);
+
+// Audience framing — fires on title change, queries Second Brain
+(function() {
+  const titleEl = document.getElementById('title');
+  const hint = document.getElementById('audience-framing-hint');
+  const content = document.getElementById('af-content');
+  if (!titleEl || !hint || !content) return;
+  let _timer = null;
+  titleEl.addEventListener('input', function() {
+    clearTimeout(_timer);
+    _timer = setTimeout(() => {
+      const t = this.value.trim();
+      if (!t || t.length < 5) return;
+      fetch('/me/api/second-brain/slides/audience-framing', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({topic: t})
+      }).then(r => r.json()).then(d => {
+        if (!d.ok || !d.personalised) { hint.classList.add('d-none'); return; }
+        content.innerHTML =
+          '<div><strong>Audience:</strong> ' + d.matched_audience.join(', ') + ' (' + d.primary_type + ')</div>' +
+          '<div><strong>Tone:</strong> ' + d.framing.tone + ' — lead with ' + d.framing.lead_with + '</div>' +
+          '<div class="mt-1 fst-italic">' + d.suggested_openers[0] + '</div>';
+        hint.classList.remove('d-none');
+      }).catch(() => {});
+    }, 600);
+  });
+})();
 </script>
 {% endblock %}

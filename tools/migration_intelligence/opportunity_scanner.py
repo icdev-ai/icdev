@@ -81,8 +81,8 @@ def scan_hardware_eol(horizon_days: int = 730, db_path: str | None = None) -> di
             """SELECT vendor, model, product_family, eol_date, eos_date,
                       ports_json, throughput_gbps, form_factor
                FROM nc_hardware_profiles
-               WHERE (eol_date IS NOT NULL AND eol_date <= ?)
-                  OR (eos_date IS NOT NULL AND eos_date <= ?)
+               WHERE (eol_date IS NOT NULL AND eol_date <= %s)
+                  OR (eos_date IS NOT NULL AND eos_date <= %s)
                ORDER BY eol_date ASC""",
             (cutoff, cutoff),
         ).fetchall()
@@ -153,7 +153,7 @@ def scan_network_topology(db_path: str | None = None) -> dict[str, Any]:
         for t in topologies:
             try:
                 node_count = nc.execute(
-                    "SELECT COUNT(*) as c FROM nc_nodes WHERE topology_id = ?", (t["id"],)
+                    "SELECT COUNT(*) as c FROM nc_nodes WHERE topology_id = %s", (t["id"],)
                 ).fetchone()["c"]
                 if node_count > 50:
                     # Large topology → network redesign opportunity
@@ -322,7 +322,7 @@ def run_full_scan(config: dict | None = None, db_path: str | None = None) -> dic
         mi.execute(
             """INSERT INTO mi_scans
                (id, scan_type, airgap_mode, canvases_scanned, status, started_at)
-               VALUES (?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s)""",
             (scan_id, "full", int(_AIRGAP), json.dumps(["ndc", "mdc", "nmce"]), "running", started_at),
         )
         mi.commit()
@@ -348,9 +348,9 @@ def run_full_scan(config: dict | None = None, db_path: str | None = None) -> dic
     try:
         mi.execute(
             """UPDATE mi_scans
-               SET status='completed', opportunities_found=?, opportunities_new=?,
-                   canvases_scanned=?, completed_at=?
-               WHERE id=?""",
+               SET status='completed', opportunities_found=%s, opportunities_new=%s,
+                   canvases_scanned=%s, completed_at=%s
+               WHERE id=%s""",
             (total_found, total_found, json.dumps(["ndc", "mdc", "nmce"]), completed_at, scan_id),
         )
         mi.commit()
@@ -412,7 +412,7 @@ def _map_migration_type(mtype: str) -> str:
 def _upsert_opportunity(conn, fields: dict) -> None:
     """Insert opportunity if not already present (by title match)."""
     existing = conn.execute(
-        "SELECT id FROM mi_opportunities WHERE title = ?", (fields["title"],)
+        "SELECT id FROM mi_opportunities WHERE title = %s", (fields["title"],)
     ).fetchone()
     if existing:
         return  # skip duplicates
@@ -424,7 +424,7 @@ def _upsert_opportunity(conn, fields: dict) -> None:
             source_entity_id, source_entity_name, current_platform,
             eol_date, eol_urgency_score, business_value_score,
             composite_score, priority, status, created_at, updated_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
         (
             fields.get("id", f"opp-{uuid.uuid4().hex[:8]}"),
             fields.get("title", ""),

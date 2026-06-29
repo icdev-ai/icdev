@@ -25,18 +25,30 @@ pipeline:
 # ── Graphics ────────────────────────────────────────────────────────────────
 graphics:
   enabled: ${SLIDES_IMAGE_ENABLED:-true}
-  # Provider: ollama_cloud | dalle | gemini | matplotlib (safe default)
+  # Provider:
+  #   gpt_image_2  -> OpenAI GPT-Image-2 (recommended: best text + diagrams)
+  #   imagen_4     -> Google Imagen 4 (enterprise, native 16:9, typography)
+  #   ollama_cloud -> Ollama cloud/local image model (SDXL / FLUX)
+  #   dalle        -> OpenAI DALL-E 3 (legacy)
+  #   gemini       -> Google Imagen 3 (legacy)
+  #   matplotlib   -> deterministic air-gap fallback (always available)
   provider: ${SLIDES_IMAGE_PROVIDER:-matplotlib}
-  # Image generation model (only used by ollama_cloud backend)
-  model: ${SLIDES_IMAGE_MODEL:-sdxl:latest}
+  # Image generation model (only used by ollama_cloud / gpt_image_2 / imagen_4 backends)
+  # Examples:
+  #   gpt_image_2: gpt-image-2
+  #   imagen_4:    imagen-4.0-generate-001 | imagen-4.0-fast-generate-001 | imagen-4.0-ultra-generate-001
+  #   ollama_cloud: sdxl:latest | flux-schnell | z-image
+  model: ${SLIDES_IMAGE_MODEL:-}
   # 16:9 widescreen for slides
   size: "1024x576"
   quality: standard
+  # Aspect ratio for providers that support it (e.g. imagen_4)
+  aspect_ratio: "16:9"
   # Style hint injected into visual prompt
   style: "professional corporate, dark navy and gold color palette, minimalist, no text, high quality"
   per_slide: true
   # Skip image and use placeholder on timeout
-  timeout_seconds: 30
+  timeout_seconds: 60
   # Images go into output_dir/images/
   images_subdir: "images"
 
@@ -123,6 +135,25 @@ tones:
     - minimal
     - bold
 
+# ── Rich Diagram Support (Three.js / Mermaid / Excalidraw via rough.js) ──────
+rich_diagrams:
+  enabled: ${SLIDES_RICH_DIAGRAMS_ENABLED:-false}
+  max_per_deck: 3
+  keyword_routing:
+    mermaid: [flow, process, sequence, architecture, pipeline, diagram, lifecycle, workflow]
+    three: [3d, neural, network, model, space, dimension, layers, topology, AI]
+    excalidraw: [how, concept, sketch, whiteboard, explain, works, overview, intro]
+  three_scene_presets:
+    neural_network: "Neural network layers with animated data-flow particles"
+    data_flow: "Pipeline stages as boxes connected by flowing arrows and particles"
+    architecture_boxes: "System components as labeled cubes in a 3D grid"
+    radar_sweep: "Rotating radar/globe for coverage or monitoring concepts"
+
+# ── Audience Mode ─────────────────────────────────────────────────────────────
+audience_mode:
+  enabled: true
+  narrative_arc_hint: true
+
 # ── LLM Routing Functions ────────────────────────────────────────────────────
 llm:
   outline_function: slides_outline_planning
@@ -130,3 +161,6 @@ llm:
   revision_function: slides_content_revision
   viz_prompt_function: slides_visual_prompt
   research_function: slides_topic_research
+  mermaid_function: slides_mermaid_generation
+  three_function: slides_three_scene_generation
+  excalidraw_function: slides_excalidraw_generation

@@ -25,6 +25,13 @@ from tools.finetune.provider import FineTuneRequest
 from tools.finetune.provider_factory import get_provider
 from tools.finetune.dataset_manager import export_jsonl, get_dataset
 
+try:
+    from icdev.tools.finetune.fsdp_launcher import FSDPLauncher, FSDPUnavailable, get_fsdp_config
+    _FSDP_AVAILABLE = True
+except ImportError:
+    _FSDP_AVAILABLE = False
+    FSDPUnavailable = Exception  # type: ignore[misc,assignment]
+
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
@@ -146,7 +153,7 @@ def create_training_job(
         _record_event(conn, job_id, "started")
         conn.commit()
 
-        # Start training via provider
+        # Start training via provider (or FSDP if distributed multi-GPU)
         provider = get_provider(provider_name)
         request = FineTuneRequest(
             dataset_path=export_path,
@@ -162,6 +169,44 @@ def create_training_job(
             job_id=job_id,
             classification=classification,
         )
+
+        # FSDP path: distributed=True and multiple GPUs requested
+        if distributed and gpu_count > 1 and _FSDP_AVAILABLE:
+            try:
+                fsdp_cfg = get_fsdp_config()
+                launcher = FSDPLauncher(fsdp_cfg, gpu_count=gpu_count)
+                training_script = str(BASE_DIR / "icdev" / "tools" / "finetune" / "train_script.py")
+                launch_result = launcher.launch_training(request, training_script)
+                _record_event(
+                    conn,
+                    job_id,
+                    "fsdp_launched",
+                    json.dumps({"pid": launch_result.get("pid"), "command": launch_result.get("command")}),
+                )
+                conn.execute(
+                    "UPDATE ft_training_jobs SET status = 'training' WHERE id = %s",
+                    (job_id,),
+                )
+                conn.commit()
+                return {
+                    "success": True,
+                    "job_id": job_id,
+                    "status": "training",
+                    "dataset_id": dataset_id,
+                    "provider": "fsdp",
+                    "base_model": base_model,
+                    "output_dir": output_dir,
+                    "fsdp": launch_result,
+                }
+            except FSDPUnavailable as exc:
+                # Fall back to standard provider training with a warning
+                _record_event(
+                    conn,
+                    job_id,
+                    "fsdp_unavailable",
+                    json.dumps({"reason": str(exc)}),
+                )
+                conn.commit()
 
         status = provider.start_training(request)
 

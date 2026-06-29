@@ -193,7 +193,7 @@ def _get_project_override(project_id: str, db_path: Path = None) -> Optional[dic
     try:
         c = conn.cursor()
         c.execute(
-            "SELECT * FROM dispatcher_mode_overrides WHERE project_id = ?",
+            "SELECT * FROM dispatcher_mode_overrides WHERE project_id = %s",
             (project_id,),
         )
         row = c.fetchone()
@@ -405,7 +405,7 @@ def enable_for_project(
             """INSERT INTO dispatcher_mode_overrides
                (id, project_id, enabled, custom_dispatch_tools,
                 custom_blocked_tools, created_at, created_by)
-               VALUES (?, ?, 1, ?, ?, ?, ?)
+               VALUES (%s, %s, 1, %s, %s, %s, %s)
                ON CONFLICT(project_id) DO UPDATE SET
                enabled = 1,
                custom_dispatch_tools = excluded.custom_dispatch_tools,
@@ -463,8 +463,8 @@ def disable_for_project(project_id: str, disabled_by: str = "system", db_path: P
     try:
         conn.execute(
             """UPDATE dispatcher_mode_overrides
-               SET enabled = 0, created_by = ?, created_at = ?
-               WHERE project_id = ?""",
+               SET enabled = 0, created_by = %s, created_at = %s
+               WHERE project_id = %s""",
             (disabled_by, now_iso(), project_id),
         )
         conn.commit()

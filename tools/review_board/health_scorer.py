@@ -191,7 +191,7 @@ def compute_health_score() -> Dict[str, Any]:
             conn.execute(
                 "INSERT INTO review_board_health_history "
                 "(id, score, grade, trend, breakdown, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s)",
                 (_gen_id(), score, grade, trend, json.dumps(breakdown), _now()),
             )
             conn.commit()
@@ -212,7 +212,7 @@ def get_trend(limit: int = 30) -> List[Dict]:
         rows = conn.execute(
             "SELECT id, score, grade, trend, created_at "
             "FROM review_board_health_history "
-            "ORDER BY created_at DESC LIMIT ?",
+            "ORDER BY created_at DESC LIMIT %s",
             (limit,),
         ).fetchall()
         return [dict(r) for r in rows]

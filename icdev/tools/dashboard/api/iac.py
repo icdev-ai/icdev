@@ -11,7 +11,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from tools.db.storage import get_connection  # noqa: E402
+from tools.db.storage import get_connection, sql_placeholder  # noqa: E402
 
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
@@ -48,12 +48,12 @@ def _table_exists(conn, name):
     try:
         if getattr(conn, "_backend", "sqlite") == "postgresql":
             row = conn.execute(
-                "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = ?",
+                "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = %s",
                 (name,),
             ).fetchone()
             return row is not None
         row = conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=%s",
             (name,),
         ).fetchone()
         return row is not None
@@ -119,7 +119,7 @@ def iac_stats():
             row = conn.execute("SELECT COUNT(*) FROM stig_findings").fetchone()
             total = row[0]
             hardened_row = conn.execute(
-                "SELECT COUNT(*) FROM stig_findings WHERE status = ?",
+                "SELECT COUNT(*) FROM stig_findings WHERE status = %s",
                 ("NotAFinding",),
             ).fetchone()
             hardened = hardened_row[0]
@@ -138,6 +138,7 @@ def iac_stats():
 def list_artifacts():
     """GET /api/iac/artifacts -- List IaC artifacts with optional filters."""
     conn = _get_db()
+    ph = sql_placeholder(conn)
     try:
         if not _table_exists(conn, "migration_artifacts"):
             return jsonify({"artifacts": [], "total": 0, "page": 1, "per_page": 25})
@@ -147,16 +148,16 @@ def list_artifacts():
         page = max(int(request.args.get("page", "1")), 1)
         per_page = min(max(int(request.args.get("per_page", "25")), 1), 100)
 
-        placeholders = ",".join("?" for _ in IAC_ARTIFACT_TYPES)
+        placeholders = ",".join(ph for _ in IAC_ARTIFACT_TYPES)
         base_where = f"artifact_type IN ({placeholders})"
         params = list(IAC_ARTIFACT_TYPES)
 
         if plan_id:
-            base_where += " AND plan_id = ?"
+            base_where += f" AND plan_id = {ph}"
             params.append(plan_id)
 
         if artifact_type and artifact_type in IAC_ARTIFACT_TYPES:
-            base_where += " AND artifact_type = ?"
+            base_where += f" AND artifact_type = {ph}"
             params.append(artifact_type)
 
         # Total count
@@ -173,7 +174,7 @@ def list_artifacts():
             f"SELECT id, plan_id, artifact_type, file_path, description, "  # nosec B608 -- table/column names are internal constants, not user input
             f"created_at FROM migration_artifacts "
             f"WHERE {base_where} ORDER BY created_at DESC "
-            f"LIMIT ? OFFSET ?",
+            f"LIMIT %s OFFSET %s",
             query_params,
         ).fetchall()
 
@@ -212,7 +213,7 @@ def artifact_detail(artifact_id):
 
         row = conn.execute(
             "SELECT id, plan_id, artifact_type, file_path, description, "
-            "created_at FROM migration_artifacts WHERE id = ?",
+            "created_at FROM migration_artifacts WHERE id = %s",
             (artifact_id,),
         ).fetchone()
 

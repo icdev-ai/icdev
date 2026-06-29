@@ -120,7 +120,7 @@ def _inject_advisory(context_id: str, tasks: list[dict], canvas: str) -> None:
         conn.execute(
             """INSERT OR IGNORE INTO chat_messages
                (id, context_id, role, content, content_type, created_at)
-               VALUES (?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s)""",
             (msg_id, context_id, "system", body, "build_advisory", now),
         )
         conn.commit()

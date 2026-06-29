@@ -109,11 +109,11 @@ def _ensure_tables(conn):
 def _load_graph(conn, graph_id):
     """Load nodes and edges for a graph.  Returns (nodes_list, edges_list)."""
     nodes = conn.execute(
-        "SELECT id, label, entity_type, centrality, properties FROM kg_nodes WHERE graph_id = ?",
+        "SELECT id, label, entity_type, centrality, properties FROM kg_nodes WHERE graph_id = %s",
         (graph_id,),
     ).fetchall()
     edges = conn.execute(
-        "SELECT id, source_id, target_id, relationship, weight FROM kg_edges WHERE graph_id = ?",
+        "SELECT id, source_id, target_id, relationship, weight FROM kg_edges WHERE graph_id = %s",
         (graph_id,),
     ).fetchall()
     return nodes, edges
@@ -474,7 +474,7 @@ def graph_summary(graph_id, db_path=None):
     conn = _get_db(db_path)
     _ensure_tables(conn)
     try:
-        graph = conn.execute("SELECT * FROM kg_graphs WHERE id = ?", (graph_id,)).fetchone()
+        graph = conn.execute("SELECT * FROM kg_graphs WHERE id = %s", (graph_id,)).fetchone()
         if not graph:
             return {"status": "error", "message": f"Graph {graph_id} not found"}
 

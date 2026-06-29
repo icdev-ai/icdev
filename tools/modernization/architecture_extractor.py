@@ -171,7 +171,7 @@ def extract_call_graph(app_id: str) -> dict:
         ph = ",".join("?" for _ in CALL_GRAPH_DEP_TYPES)
         edge_rows = conn.execute(
             f"SELECT source_component_id, target_component_id, dependency_type, weight "  # nosec B608 -- table/column names are internal constants, not user input
-            f"FROM legacy_dependencies WHERE legacy_app_id=? AND dependency_type IN ({ph}) "
+            f"FROM legacy_dependencies WHERE legacy_app_id=%s AND dependency_type IN ({ph}) "
             f"AND target_component_id IS NOT NULL",
             (app_id, *CALL_GRAPH_DEP_TYPES),
         ).fetchall()
@@ -216,10 +216,10 @@ def extract_component_diagram(app_id: str) -> dict:
     conn = _get_db()
     try:
         comps = conn.execute(
-            "SELECT id,name,component_type,qualified_name FROM legacy_components WHERE legacy_app_id=?", (app_id,)
+            "SELECT id,name,component_type,qualified_name FROM legacy_components WHERE legacy_app_id=%s", (app_id,)
         ).fetchall()
         deps = conn.execute(
-            "SELECT source_component_id,target_component_id FROM legacy_dependencies WHERE legacy_app_id=? AND target_component_id IS NOT NULL",
+            "SELECT source_component_id,target_component_id FROM legacy_dependencies WHERE legacy_app_id=%s AND target_component_id IS NOT NULL",
             (app_id,),
         ).fetchall()
         c2p, pkg_comps = {}, collections.defaultdict(list)
@@ -258,17 +258,17 @@ def extract_data_flow(app_id: str) -> dict:
     conn = _get_db()
     try:
         apis = conn.execute(
-            "SELECT id,component_id,method,path FROM legacy_apis WHERE legacy_app_id=?", (app_id,)
+            "SELECT id,component_id,method,path FROM legacy_apis WHERE legacy_app_id=%s", (app_id,)
         ).fetchall()
         cm = {
             c["id"]: dict(c)
             for c in conn.execute(
-                "SELECT id,name,component_type FROM legacy_components WHERE legacy_app_id=?", (app_id,)
+                "SELECT id,name,component_type FROM legacy_components WHERE legacy_app_id=%s", (app_id,)
             ).fetchall()
         }
         adj = collections.defaultdict(set)
         for d in conn.execute(
-            "SELECT source_component_id,target_component_id FROM legacy_dependencies WHERE legacy_app_id=? AND target_component_id IS NOT NULL",
+            "SELECT source_component_id,target_component_id FROM legacy_dependencies WHERE legacy_app_id=%s AND target_component_id IS NOT NULL",
             (app_id,),
         ).fetchall():
             adj[d["source_component_id"]].add(d["target_component_id"])
@@ -340,11 +340,11 @@ def detect_service_boundaries(app_id: str) -> dict:
     conn = _get_db()
     try:
         comps = conn.execute(
-            "SELECT id,name,component_type,coupling_score,cohesion_score FROM legacy_components WHERE legacy_app_id=?",
+            "SELECT id,name,component_type,coupling_score,cohesion_score FROM legacy_components WHERE legacy_app_id=%s",
             (app_id,),
         ).fetchall()
         deps = conn.execute(
-            "SELECT source_component_id,target_component_id,weight FROM legacy_dependencies WHERE legacy_app_id=? AND target_component_id IS NOT NULL",
+            "SELECT source_component_id,target_component_id,weight FROM legacy_dependencies WHERE legacy_app_id=%s AND target_component_id IS NOT NULL",
             (app_id,),
         ).fetchall()
         if not comps:
@@ -682,7 +682,7 @@ def extract_database_schema(app_id: str, source_path: str) -> dict:
         raise FileNotFoundError(f"Source path not found: {source_path}")
     conn = _get_db()
     try:
-        ar = conn.execute("SELECT primary_language,framework FROM legacy_applications WHERE id=?", (app_id,)).fetchone()
+        ar = conn.execute("SELECT primary_language,framework FROM legacy_applications WHERE id=%s", (app_id,)).fetchone()
         if not ar:
             raise ValueError(f"Application {app_id} not found in database.")
         lang, fw = (ar["primary_language"] or "").lower(), (ar["framework"] or "").lower()
@@ -699,7 +699,7 @@ def extract_database_schema(app_id: str, source_path: str) -> dict:
             for col in ti.get("columns", []):
                 try:
                     conn.execute(
-                        "INSERT OR IGNORE INTO legacy_db_schemas (id,legacy_app_id,db_type,schema_name,table_name,column_name,data_type,is_primary_key,is_foreign_key,foreign_table,foreign_column) VALUES (?,?,?,'public',?,?,?,?,?,?,?)",
+                        "INSERT OR IGNORE INTO legacy_db_schemas (id,legacy_app_id,db_type,schema_name,table_name,column_name,data_type,is_primary_key,is_foreign_key,foreign_table,foreign_column) VALUES (%s,%s,%s,'public',%s,%s,%s,%s,%s,%s,%s)",
                         (
                             str(uuid.uuid4()),
                             app_id,
@@ -765,26 +765,26 @@ def generate_architecture_summary(app_id: str) -> dict:
     conn = _get_db()
     try:
         ar = conn.execute(
-            "SELECT name,primary_language,framework,loc_total,complexity_score,maintainability_index FROM legacy_applications WHERE id=?",
+            "SELECT name,primary_language,framework,loc_total,complexity_score,maintainability_index FROM legacy_applications WHERE id=%s",
             (app_id,),
         ).fetchone()
         if not ar:
             raise ValueError(f"Application {app_id} not found in database.")
         comps = conn.execute(
-            "SELECT component_type,cyclomatic_complexity,coupling_score FROM legacy_components WHERE legacy_app_id=?",
+            "SELECT component_type,cyclomatic_complexity,coupling_score FROM legacy_components WHERE legacy_app_id=%s",
             (app_id,),
         ).fetchall()
         dc = conn.execute(
-            "SELECT COUNT(*) as cnt FROM legacy_dependencies WHERE legacy_app_id=?", (app_id,)
+            "SELECT COUNT(*) as cnt FROM legacy_dependencies WHERE legacy_app_id=%s", (app_id,)
         ).fetchone()["cnt"]
-        ac = conn.execute("SELECT COUNT(*) as cnt FROM legacy_apis WHERE legacy_app_id=?", (app_id,)).fetchone()["cnt"]
+        ac = conn.execute("SELECT COUNT(*) as cnt FROM legacy_apis WHERE legacy_app_id=%s", (app_id,)).fetchone()["cnt"]
         tc2 = conn.execute(
-            "SELECT COUNT(DISTINCT table_name) as cnt FROM legacy_db_schemas WHERE legacy_app_id=?", (app_id,)
+            "SELECT COUNT(DISTINCT table_name) as cnt FROM legacy_db_schemas WHERE legacy_app_id=%s", (app_id,)
         ).fetchone()["cnt"]
         hs = [
             {"name": h["name"], "coupling_score": h["coupling_score"]}
             for h in conn.execute(
-                "SELECT name,coupling_score FROM legacy_components WHERE legacy_app_id=? ORDER BY coupling_score DESC LIMIT 5",
+                "SELECT name,coupling_score FROM legacy_components WHERE legacy_app_id=%s ORDER BY coupling_score DESC LIMIT 5",
                 (app_id,),
             ).fetchall()
         ]

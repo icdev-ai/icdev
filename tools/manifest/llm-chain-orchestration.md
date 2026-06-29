@@ -115,3 +115,11 @@ migration generator, AI-ify — see `docs/security/sandbox-coverage.md`.
 | CoD hard prompt | `hardprompts/chain_of_debate.md` |
 | ANVIL command | `.claude/commands/cod.md` |
 | Tests | `tests/tools/llm/chain_orchestrator_test.py` |
+
+---
+
+### Benchmark Runner (`icdev/tools/llm/benchmark_runner.py`)
+- Evaluates active LLM against DeepSpec benchmark suite (GSM8K, MATH500, HumanEval, MBPP, AIME, MT-Bench, Alpaca)
+- `BenchmarkRunner.run_benchmark(name, limit, data_path)` → list[BenchmarkResult]
+- `BenchmarkRunner.score(results)` → accuracy dict
+- CLI: `python -m icdev.tools.llm.benchmark_runner --benchmark gsm8k --limit 50 --json`

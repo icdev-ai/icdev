@@ -181,7 +181,7 @@ def generate_cloud_overlay(topology_id: str) -> Dict[str, Any]:
     """Enrich a topology with cloud-provider overlay nodes."""
     conn = _nc_conn()
     row = conn.execute(
-        "SELECT id, name, graph_json FROM topologies WHERE id=?", (topology_id,)
+        "SELECT id, name, graph_json FROM topologies WHERE id=%s", (topology_id,)
     ).fetchone()
     conn.close()
 

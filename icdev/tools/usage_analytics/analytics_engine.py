@@ -61,7 +61,7 @@ class AnalyticsEngine:
                 SELECT substr(occurred_at, 1, 10) AS day,
                        COUNT(DISTINCT user_session) AS cnt
                 FROM usage_events
-                WHERE occurred_at >= ?
+                WHERE occurred_at >= %s
                   AND feature_tag IS NOT NULL
                 GROUP BY day
                 """,
@@ -81,7 +81,7 @@ class AnalyticsEngine:
                     SUM(CASE WHEN status_code >= 400 THEN 1 ELSE 0 END) AS error_count,
                     AVG(duration_ms) AS avg_duration_ms
                 FROM usage_events
-                WHERE occurred_at >= ?
+                WHERE occurred_at >= %s
                   AND feature_tag IS NOT NULL
                 GROUP BY feature_tag, day
                 """,
@@ -102,14 +102,14 @@ class AnalyticsEngine:
                 agg_id = f"{feature_tag}::{day}"
 
                 existing = conn.execute(
-                    "SELECT id FROM usage_aggregates WHERE id = ? LIMIT 1", (agg_id,)
+                    "SELECT id FROM usage_aggregates WHERE id = %s LIMIT 1", (agg_id,)
                 ).fetchone()
                 if existing:
                     conn.execute(
                         """UPDATE usage_aggregates
-                           SET hit_count=?, unique_sessions=?, error_count=?,
-                               avg_duration_ms=?, adoption_score=?, updated_at=?
-                           WHERE id=?""",
+                           SET hit_count=%s, unique_sessions=%s, error_count=%s,
+                               avg_duration_ms=%s, adoption_score=%s, updated_at=%s
+                           WHERE id=%s""",
                         (hit_count, unique_sessions, error_count,
                          avg_duration, adoption_score, now_iso, agg_id),
                     )
@@ -118,7 +118,7 @@ class AnalyticsEngine:
                         """INSERT INTO usage_aggregates
                            (id, feature_tag, date, hit_count, unique_sessions,
                             error_count, avg_duration_ms, adoption_score, updated_at)
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                         (agg_id, feature_tag, day, hit_count, unique_sessions,
                          error_count, avg_duration, adoption_score, now_iso),
                     )
@@ -141,7 +141,7 @@ class AnalyticsEngine:
                 SELECT feature_tag, date, hit_count, unique_sessions,
                        error_count, avg_duration_ms, adoption_score
                 FROM usage_aggregates
-                WHERE date >= ?
+                WHERE date >= %s
                 ORDER BY feature_tag, date DESC
                 """,
                 (cutoff_7d,),
@@ -224,7 +224,7 @@ class AnalyticsEngine:
                 ).hexdigest()
 
                 existing = conn.execute(
-                    "SELECT id FROM innovation_signals WHERE content_hash = ? LIMIT 1",
+                    "SELECT id FROM innovation_signals WHERE content_hash = %s LIMIT 1",
                     (content_hash,),
                 ).fetchone()
                 if existing:
@@ -254,7 +254,7 @@ class AnalyticsEngine:
                        (id, source, source_type, title, description, url,
                         metadata, community_score, content_hash, discovered_at,
                         status, category)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', ?)""",
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'new', %s)""",
                     (
                         str(uuid.uuid4()),
                         "usage_analytics",

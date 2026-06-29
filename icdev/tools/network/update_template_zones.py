@@ -517,7 +517,7 @@ def main() -> None:
     skipped = 0
 
     for tpl_id, (short, builder) in TEMPLATE_MAP.items():
-        cur.execute("SELECT graph_json FROM nc_templates WHERE id = ?", (tpl_id,))
+        cur.execute("SELECT graph_json FROM nc_templates WHERE id = %s", (tpl_id,))
         row = cur.fetchone()
         if row is None:
             print(f"  SKIP  {tpl_id} — not found in DB")
@@ -551,7 +551,7 @@ def main() -> None:
 
         updated_json = json.dumps(graph, ensure_ascii=False)
         cur.execute(
-            "UPDATE nc_templates SET graph_json = ? WHERE id = ?",
+            "UPDATE nc_templates SET graph_json = %s WHERE id = %s",
             (updated_json, tpl_id),
         )
         zone_count = sum(1 for n in to_add if n["type"] == "draw-rect")

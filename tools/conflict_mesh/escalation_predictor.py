@@ -129,7 +129,7 @@ class EscalationPredictor:
                 INSERT INTO conflict_predictions
                     (id, event_id, source, prediction_date, escalation_risk,
                      signals, model_version, confidence, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     row["id"], row["event_id"], row["source"],
@@ -167,9 +167,9 @@ class EscalationPredictor:
             rows = conn.execute(
                 """
                 SELECT * FROM conflict_predictions
-                WHERE escalation_risk >= ?
+                WHERE escalation_risk >= %s
                 ORDER BY escalation_risk DESC, created_at DESC
-                LIMIT ?
+                LIMIT %s
                 """,
                 (threshold, limit),
             ).fetchall()
@@ -199,7 +199,7 @@ def main() -> None:
             conn = _get_conn()
             conn.row_factory = lambda c, r: dict(zip([col[0] for col in c.description], r))
             events = conn.execute(
-                "SELECT * FROM sg_conflict_events WHERE event_date >= ? LIMIT ?",
+                "SELECT * FROM sg_conflict_events WHERE event_date >= %s LIMIT %s",
                 (args.batch_since, args.limit),
             ).fetchall()
             conn.close()
@@ -218,7 +218,7 @@ def main() -> None:
             conn = _get_conn()
             conn.row_factory = lambda c, r: dict(zip([col[0] for col in c.description], r))
             event = conn.execute(
-                "SELECT * FROM sg_conflict_events WHERE id = ?", (args.event_id,)
+                "SELECT * FROM sg_conflict_events WHERE id = %s", (args.event_id,)
             ).fetchone()
             conn.close()
         except Exception as exc:

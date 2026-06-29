@@ -31,7 +31,7 @@ def get_domain(domain_id: str) -> dict | None:
     try:
         with get_connection() as conn:
             row = conn.execute(
-                "SELECT * FROM dm_domains WHERE id=?", (domain_id,)
+                "SELECT * FROM dm_domains WHERE id=%s", (domain_id,)
             ).fetchone()
         return dict(row) if row else None
     except Exception as exc:
@@ -47,7 +47,7 @@ def create_domain(data: dict) -> dict:
                 """INSERT INTO dm_domains
                    (id, name, description, owner_team, owner_email,
                     maturity_level, classification, created_at, updated_at)
-                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (
                     domain_id,
                     data.get("name", ""),
@@ -78,7 +78,7 @@ def update_domain(domain_id: str, data: dict) -> dict | None:
         values = list(fields.values()) + [now, domain_id]
         with get_connection() as conn:
             conn.execute(
-                f"UPDATE dm_domains SET {set_clause}, updated_at=? WHERE id=?",
+                f"UPDATE dm_domains SET {set_clause}, updated_at=%s WHERE id=%s",
                 values,
             )
             conn.commit()
@@ -91,12 +91,12 @@ def delete_domain(domain_id: str) -> bool:
     try:
         with get_connection() as conn:
             ref = conn.execute(
-                "SELECT COUNT(*) FROM dm_data_products WHERE domain_id=?",
+                "SELECT COUNT(*) FROM dm_data_products WHERE domain_id=%s",
                 (domain_id,),
             ).fetchone()[0]
             if ref:
                 return False
-            conn.execute("DELETE FROM dm_domains WHERE id=?", (domain_id,))
+            conn.execute("DELETE FROM dm_domains WHERE id=%s", (domain_id,))
             conn.commit()
         return True
     except Exception:
@@ -107,15 +107,15 @@ def compute_domain_maturity(domain_id: str) -> dict:
     try:
         with get_connection() as conn:
             product_count = conn.execute(
-                "SELECT COUNT(*) FROM dm_data_products WHERE domain_id=?",
+                "SELECT COUNT(*) FROM dm_data_products WHERE domain_id=%s",
                 (domain_id,),
             ).fetchone()[0]
             contract_count = conn.execute(
-                "SELECT COUNT(*) FROM dm_data_contracts WHERE domain_id=?",
+                "SELECT COUNT(*) FROM dm_data_contracts WHERE domain_id=%s",
                 (domain_id,),
             ).fetchone()[0]
             policy_count = conn.execute(
-                "SELECT COUNT(*) FROM dm_opa_policies WHERE domain_id=? AND enabled=1",
+                "SELECT COUNT(*) FROM dm_opa_policies WHERE domain_id=%s AND enabled=1",
                 (domain_id,),
             ).fetchone()[0]
 
@@ -146,7 +146,7 @@ def list_domain_products(domain_id: str) -> list[dict]:
     try:
         with get_connection() as conn:
             rows = conn.execute(
-                "SELECT * FROM dm_data_products WHERE domain_id=? ORDER BY name",
+                "SELECT * FROM dm_data_products WHERE domain_id=%s ORDER BY name",
                 (domain_id,),
             ).fetchall()
         return [dict(r) for r in rows]

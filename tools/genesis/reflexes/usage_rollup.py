@@ -57,7 +57,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                        COALESCE(model, '') AS model,
                        SUM(quantity)       AS total_quantity
                 FROM   usage_events
-                WHERE  recorded_at >= ? AND recorded_at <= ?
+                WHERE  recorded_at >= %s AND recorded_at <= %s
                 GROUP  BY tenant_id, event_type, COALESCE(model, '')
                 """,
                 (date_start, date_end),
@@ -68,7 +68,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                     """
                     INSERT INTO usage_daily_rollup
                         (tenant_id, event_type, model, rollup_date, total_quantity)
-                    VALUES (?, ?, ?, ?, ?)
+                    VALUES (%s, %s, %s, %s, %s)
                     ON CONFLICT (tenant_id, event_type, model, rollup_date)
                     DO UPDATE SET total_quantity = excluded.total_quantity
                     """,

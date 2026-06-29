@@ -577,7 +577,7 @@ def validate_prd(session_id: str, db_path=None) -> dict:
     """
     conn = _get_connection(db_path)
     try:
-        session = conn.execute("SELECT * FROM intake_sessions WHERE id = ?", (session_id,)).fetchone()
+        session = conn.execute("SELECT * FROM intake_sessions WHERE id = %s", (session_id,)).fetchone()
         if not session:
             return {"status": "error", "error": f"Session '{session_id}' not found."}
         session = dict(session)
@@ -585,7 +585,7 @@ def validate_prd(session_id: str, db_path=None) -> dict:
         reqs = [
             dict(r)
             for r in conn.execute(
-                "SELECT * FROM intake_requirements WHERE session_id = ? ORDER BY created_at",
+                "SELECT * FROM intake_requirements WHERE session_id = %s ORDER BY created_at",
                 (session_id,),
             ).fetchall()
         ]
@@ -593,7 +593,7 @@ def validate_prd(session_id: str, db_path=None) -> dict:
         decomp = [
             dict(r)
             for r in conn.execute(
-                "SELECT * FROM safe_decomposition WHERE session_id = ?",
+                "SELECT * FROM safe_decomposition WHERE session_id = %s",
                 (session_id,),
             ).fetchall()
         ]

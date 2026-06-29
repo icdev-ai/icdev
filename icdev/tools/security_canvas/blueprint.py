@@ -169,7 +169,7 @@ def create_security_blueprint():
         try:
             with get_connection() as conn:
                 conn.execute(
-                    "INSERT INTO sc_audit (action, entity_type, entity_id, details, user_id, ts) VALUES (?,?,?,?,?,?)",
+                    "INSERT INTO sc_audit (action, entity_type, entity_id, details, user_id, ts) VALUES (%s,%s,%s,%s,%s,%s)",
                     (action, entity_type, entity_id, details, user_id, _now()),
                 )
         except Exception:
@@ -240,7 +240,7 @@ def create_security_blueprint():
     def sc_canvas(design_id):
         """Open existing security design canvas."""
         with get_connection() as conn:
-            design = _row_to_dict(conn.execute("SELECT * FROM security_designs WHERE id=?", (design_id,)).fetchone())
+            design = _row_to_dict(conn.execute("SELECT * FROM security_designs WHERE id=%s", (design_id,)).fetchone())
         if not design:
             abort(404)
         return render_template(
@@ -255,12 +255,12 @@ def create_security_blueprint():
         """View a single assessment result."""
         with get_connection() as conn:
             assessment = _row_to_dict(
-                conn.execute("SELECT * FROM sc_assessments WHERE id=?", (assessment_id,)).fetchone()
+                conn.execute("SELECT * FROM sc_assessments WHERE id=%s", (assessment_id,)).fetchone()
             )
             if not assessment:
                 abort(404)
             design = _row_to_dict(
-                conn.execute("SELECT * FROM security_designs WHERE id=?", (assessment["design_id"],)).fetchone()
+                conn.execute("SELECT * FROM security_designs WHERE id=%s", (assessment["design_id"],)).fetchone()
             )
         return render_template(
             "security_canvas/assessment.html",
@@ -273,11 +273,11 @@ def create_security_blueprint():
     def sc_remediation_page(design_id):
         """View remediation plans for a design."""
         with get_connection() as conn:
-            design = _row_to_dict(conn.execute("SELECT * FROM security_designs WHERE id=?", (design_id,)).fetchone())
+            design = _row_to_dict(conn.execute("SELECT * FROM security_designs WHERE id=%s", (design_id,)).fetchone())
             plans = [
                 _row_to_dict(r)
                 for r in conn.execute(
-                    "SELECT * FROM sc_remediation_plans WHERE design_id=? ORDER BY created_at DESC", (design_id,)
+                    "SELECT * FROM sc_remediation_plans WHERE design_id=%s ORDER BY created_at DESC", (design_id,)
                 ).fetchall()
             ]
         return render_template(
@@ -311,7 +311,7 @@ def create_security_blueprint():
         if template_id:
             with get_connection() as conn:
                 ex = conn.execute(
-                    "SELECT id, name FROM security_designs WHERE template_id=? LIMIT 1",
+                    "SELECT id, name FROM security_designs WHERE template_id=%s LIMIT 1",
                     (template_id,),
                 ).fetchone()
             if ex:
@@ -325,7 +325,7 @@ def create_security_blueprint():
                 "INSERT INTO security_designs "
                 "(id, name, description, graph_json, template_id, "
                 "source_topology_id, classification, created_at, updated_at) "
-                "VALUES (?,?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (
                     design_id,
                     name,
@@ -355,7 +355,7 @@ def create_security_blueprint():
     def sc_api_get_design(design_id):
         """Get a single security design."""
         with get_connection() as conn:
-            row = conn.execute("SELECT * FROM security_designs WHERE id=?", (design_id,)).fetchone()
+            row = conn.execute("SELECT * FROM security_designs WHERE id=%s", (design_id,)).fetchone()
         if not row:
             return jsonify({"error": "Not found"}), 404
         return jsonify(_row_to_dict(row))
@@ -367,7 +367,7 @@ def create_security_blueprint():
         data = request.get_json(force=True, silent=True) or {}
         now = _now()
         with get_connection() as conn:
-            existing = conn.execute("SELECT id FROM security_designs WHERE id=?", (design_id,)).fetchone()
+            existing = conn.execute("SELECT id FROM security_designs WHERE id=%s", (design_id,)).fetchone()
             if not existing:
                 return jsonify({"error": "Not found"}), 404
             updates = []
@@ -384,7 +384,7 @@ def create_security_blueprint():
             params.append(now)
             params.append(design_id)
             conn.execute(
-                f"UPDATE security_designs SET {', '.join(updates)} WHERE id=?",  # nosec B608 -- keys from hardcoded allowlist
+                f"UPDATE security_designs SET {', '.join(updates)} WHERE id=%s",  # nosec B608 -- keys from hardcoded allowlist
                 params,
             )
         _audit("UPDATE", "design", design_id, json.dumps(list(data.keys())))
@@ -439,8 +439,8 @@ def create_security_blueprint():
         )
         with get_connection() as conn:
             for table in child_tables:
-                conn.execute(f"DELETE FROM {table} WHERE design_id=?", (design_id,))  # nosec B608 -- table from hardcoded tuple
-            conn.execute("DELETE FROM security_designs WHERE id=?", (design_id,))
+                conn.execute(f"DELETE FROM {table} WHERE design_id=%s", (design_id,))  # nosec B608 -- table from hardcoded tuple
+            conn.execute("DELETE FROM security_designs WHERE id=%s", (design_id,))
         _audit("DELETE", "design", design_id, "")
         return jsonify({"deleted": design_id})
 
@@ -480,7 +480,7 @@ def create_security_blueprint():
     def sc_api_delete_assessment(assessment_id):
         """Delete a single assessment."""
         with get_connection() as conn:
-            conn.execute("DELETE FROM sc_assessments WHERE id=?", (assessment_id,))
+            conn.execute("DELETE FROM sc_assessments WHERE id=%s", (assessment_id,))
         _audit("DELETE", "assessment", assessment_id, "")
         return jsonify({"deleted": assessment_id})
 
@@ -495,7 +495,7 @@ def create_security_blueprint():
         data = request.get_json(force=True, silent=True) or {}
         with get_connection() as conn:
             row = conn.execute(
-                "SELECT graph_json FROM security_designs WHERE id=?",
+                "SELECT graph_json FROM security_designs WHERE id=%s",
                 (design_id,),
             ).fetchone()
             if not row:
@@ -516,7 +516,7 @@ def create_security_blueprint():
                 "(id, design_id, assessment_type, trigger_source, "
                 "total_threats, total_controls, risk_score, posture_grade, "
                 "findings_json, recommendations_json, ran_at) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (
                     assess_id,
                     design_id,
@@ -566,7 +566,7 @@ def create_security_blueprint():
         with get_connection() as conn:
             row = conn.execute(
                 "SELECT risk_score, posture_grade, ran_at "
-                "FROM sc_assessments WHERE design_id=? "
+                "FROM sc_assessments WHERE design_id=%s "
                 "ORDER BY ran_at DESC LIMIT 1",
                 (design_id,),
             ).fetchone()
@@ -590,7 +590,7 @@ def create_security_blueprint():
         """Run STRIDE threat analysis on a design."""
         with get_connection() as conn:
             row = conn.execute(
-                "SELECT graph_json FROM security_designs WHERE id=?",
+                "SELECT graph_json FROM security_designs WHERE id=%s",
                 (design_id,),
             ).fetchone()
         if not row:
@@ -605,7 +605,7 @@ def create_security_blueprint():
         """Export full STRIDE report with gaps and suggested controls."""
         with get_connection() as conn:
             row = conn.execute(
-                "SELECT name, graph_json FROM security_designs WHERE id=?",
+                "SELECT name, graph_json FROM security_designs WHERE id=%s",
                 (design_id,),
             ).fetchone()
         if not row:
@@ -651,7 +651,7 @@ def create_security_blueprint():
             rows = conn.execute(
                 "SELECT id, assessment_type, trigger_source, risk_score, "
                 "posture_grade, ran_at FROM sc_assessments "
-                "WHERE design_id=? ORDER BY ran_at DESC",
+                "WHERE design_id=%s ORDER BY ran_at DESC",
                 (design_id,),
             ).fetchall()
         return jsonify([_row_to_dict(r) for r in rows])
@@ -666,7 +666,7 @@ def create_security_blueprint():
         """Generate and save a remediation plan for a design."""
         with get_connection() as conn:
             row = conn.execute(
-                "SELECT graph_json FROM security_designs WHERE id=?",
+                "SELECT graph_json FROM security_designs WHERE id=%s",
                 (design_id,),
             ).fetchone()
             if not row:
@@ -682,7 +682,7 @@ def create_security_blueprint():
                 "INSERT INTO sc_remediation_plans "
                 "(id, design_id, title, priority, status, "
                 "remediation_steps, estimated_effort, created_at) "
-                "VALUES (?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
                 (
                     plan_id,
                     design_id,
@@ -708,7 +708,7 @@ def create_security_blueprint():
         """One-click auto-fix: generate missing control nodes and edges."""
         with get_connection() as conn:
             row = conn.execute(
-                "SELECT graph_json FROM security_designs WHERE id=?",
+                "SELECT graph_json FROM security_designs WHERE id=%s",
                 (design_id,),
             ).fetchone()
             if not row:
@@ -735,7 +735,7 @@ def create_security_blueprint():
             # Save updated graph back to DB
             now = _now()
             conn.execute(
-                "UPDATE security_designs SET graph_json=?, updated_at=? WHERE id=?",
+                "UPDATE security_designs SET graph_json=%s, updated_at=%s WHERE id=%s",
                 (json.dumps(graph), now, design_id),
             )
         _audit("AUTO_FIX", "design", design_id, f"fixes={result['total_fixes']}")
@@ -751,7 +751,7 @@ def create_security_blueprint():
         """Compute NIST 800-53 control family coverage for a design."""
         with get_connection() as conn:
             row = conn.execute(
-                "SELECT graph_json FROM security_designs WHERE id=?",
+                "SELECT graph_json FROM security_designs WHERE id=%s",
                 (design_id,),
             ).fetchone()
         if not row:
@@ -769,7 +769,7 @@ def create_security_blueprint():
         """Find and score attack paths through the design graph."""
         with get_connection() as conn:
             row = conn.execute(
-                "SELECT graph_json FROM security_designs WHERE id=?",
+                "SELECT graph_json FROM security_designs WHERE id=%s",
                 (design_id,),
             ).fetchone()
         if not row:
@@ -787,7 +787,7 @@ def create_security_blueprint():
         """Build formal attack graph: nodes with classification levels, edges with TTP annotations."""
         with get_connection() as conn:
             row = conn.execute(
-                "SELECT graph_json FROM security_designs WHERE id=?",
+                "SELECT graph_json FROM security_designs WHERE id=%s",
                 (design_id,),
             ).fetchone()
         if not row:
@@ -813,7 +813,7 @@ def create_security_blueprint():
         """
         with get_connection() as conn:
             row = conn.execute(
-                "SELECT graph_json FROM security_designs WHERE id=?",
+                "SELECT graph_json FROM security_designs WHERE id=%s",
                 (design_id,),
             ).fetchone()
         if not row:
@@ -844,7 +844,7 @@ def create_security_blueprint():
         """
         with get_connection() as conn:
             row = conn.execute(
-                "SELECT graph_json FROM security_designs WHERE id=?",
+                "SELECT graph_json FROM security_designs WHERE id=%s",
                 (design_id,),
             ).fetchone()
         if not row:
@@ -867,7 +867,7 @@ def create_security_blueprint():
         """Generate FedRAMP authorization boundary and missing controls."""
         with get_connection() as conn:
             row = conn.execute(
-                "SELECT graph_json FROM security_designs WHERE id=?",
+                "SELECT graph_json FROM security_designs WHERE id=%s",
                 (design_id,),
             ).fetchone()
         if not row:
@@ -893,7 +893,7 @@ def create_security_blueprint():
         now = _now()
         with get_connection() as conn:
             conn.execute(
-                "UPDATE security_designs SET graph_json=?, updated_at=? WHERE id=?",
+                "UPDATE security_designs SET graph_json=%s, updated_at=%s WHERE id=%s",
                 (json.dumps(graph), now, design_id),
             )
         _audit("FEDRAMP_BOUNDARY", "design", design_id, f"impact={impact_level} additions={result['total_additions']}")
@@ -935,7 +935,7 @@ def create_security_blueprint():
         """Export security design in various formats."""
         conn = get_connection()
         row = conn.execute(
-            "SELECT name, graph_json FROM security_designs WHERE id=?",
+            "SELECT name, graph_json FROM security_designs WHERE id=%s",
             (design_id,),
         ).fetchone()
         conn.close()
@@ -1111,7 +1111,7 @@ def create_security_blueprint():
         """Return applicable runbooks for a design based on its assessment."""
         with get_connection() as conn:
             row = conn.execute(
-                "SELECT graph_json FROM security_designs WHERE id=?",
+                "SELECT graph_json FROM security_designs WHERE id=%s",
                 (design_id,),
             ).fetchone()
         if not row:
@@ -1138,7 +1138,7 @@ def create_security_blueprint():
         """Render the ATO artifact export page for a design."""
         with get_connection() as conn:
             row = conn.execute(
-                "SELECT id, name FROM security_designs WHERE id=?",
+                "SELECT id, name FROM security_designs WHERE id=%s",
                 (design_id,),
             ).fetchone()
         if not row:
@@ -1156,7 +1156,7 @@ def create_security_blueprint():
         """Generate and return SSP markdown."""
         with get_connection() as conn:
             row = conn.execute(
-                "SELECT name, graph_json FROM security_designs WHERE id=?",
+                "SELECT name, graph_json FROM security_designs WHERE id=%s",
                 (design_id,),
             ).fetchone()
         if not row:
@@ -1178,7 +1178,7 @@ def create_security_blueprint():
         """Generate and return SAR markdown."""
         with get_connection() as conn:
             row = conn.execute(
-                "SELECT name, graph_json FROM security_designs WHERE id=?",
+                "SELECT name, graph_json FROM security_designs WHERE id=%s",
                 (design_id,),
             ).fetchone()
         if not row:
@@ -1200,7 +1200,7 @@ def create_security_blueprint():
         """Generate and return POA&M markdown."""
         with get_connection() as conn:
             row = conn.execute(
-                "SELECT name, graph_json FROM security_designs WHERE id=?",
+                "SELECT name, graph_json FROM security_designs WHERE id=%s",
                 (design_id,),
             ).fetchone()
         if not row:
@@ -1222,7 +1222,7 @@ def create_security_blueprint():
         """Generate all ATO artifacts (SSP, SAR, POA&M) as a bundle."""
         with get_connection() as conn:
             row = conn.execute(
-                "SELECT name, graph_json FROM security_designs WHERE id=?",
+                "SELECT name, graph_json FROM security_designs WHERE id=%s",
                 (design_id,),
             ).fetchone()
         if not row:
@@ -1268,11 +1268,11 @@ def create_security_blueprint():
 
         with get_connection() as conn:
             row_a = conn.execute(
-                "SELECT name, graph_json FROM security_designs WHERE id=?",
+                "SELECT name, graph_json FROM security_designs WHERE id=%s",
                 (design_a_id,),
             ).fetchone()
             row_b = conn.execute(
-                "SELECT name, graph_json FROM security_designs WHERE id=?",
+                "SELECT name, graph_json FROM security_designs WHERE id=%s",
                 (design_b_id,),
             ).fetchone()
 
@@ -1307,7 +1307,7 @@ def create_security_blueprint():
             with get_connection() as conn:
                 latest = conn.execute(
                     "SELECT risk_score, posture_grade, ran_at "
-                    "FROM sc_assessments WHERE design_id=? "
+                    "FROM sc_assessments WHERE design_id=%s "
                     "ORDER BY ran_at DESC LIMIT 1",
                     (d["id"],),
                 ).fetchone()
@@ -1493,7 +1493,7 @@ def create_security_blueprint():
         """Compute MITRE ATT&CK technique coverage for a design."""
         with get_connection() as conn:
             row = conn.execute(
-                "SELECT graph_json FROM security_designs WHERE id=?",
+                "SELECT graph_json FROM security_designs WHERE id=%s",
                 (design_id,),
             ).fetchone()
         if not row:
@@ -1530,7 +1530,7 @@ def create_security_blueprint():
             conn.execute(
                 "INSERT INTO security_designs "
                 "(id, name, description, graph_json, classification, "
-                "created_at, updated_at) VALUES (?,?,?,?,?,?,?)",
+                "created_at, updated_at) VALUES (%s,%s,%s,%s,%s,%s,%s)",
                 (
                     design_id,
                     result.get("design_name", "Imported Design"),
@@ -1631,7 +1631,7 @@ def create_security_blueprint():
         """Compute compliance crosswalk (NIST/FedRAMP/CMMC) for a design."""
         with get_connection() as conn:
             row = conn.execute(
-                "SELECT graph_json FROM security_designs WHERE id=?",
+                "SELECT graph_json FROM security_designs WHERE id=%s",
                 (design_id,),
             ).fetchone()
         if not row:
@@ -1654,7 +1654,7 @@ def create_security_blueprint():
         with get_connection() as conn:
             rows = conn.execute(
                 "SELECT id, version_number, change_summary, user_id, created_at "
-                "FROM sc_versions WHERE design_id=? ORDER BY version_number DESC",
+                "FROM sc_versions WHERE design_id=%s ORDER BY version_number DESC",
                 (design_id,),
             ).fetchall()
         return jsonify([_row_to_dict(r) for r in rows])
@@ -1665,7 +1665,7 @@ def create_security_blueprint():
         """Get a single version's full graph_json."""
         with get_connection() as conn:
             row = conn.execute(
-                "SELECT * FROM sc_versions WHERE id=? AND design_id=?",
+                "SELECT * FROM sc_versions WHERE id=%s AND design_id=%s",
                 (version_id, design_id),
             ).fetchone()
         if not row:
@@ -1684,7 +1684,7 @@ def create_security_blueprint():
         data = request.get_json(force=True, silent=True) or {}
         with get_connection() as conn:
             row = conn.execute(
-                "SELECT graph_json FROM security_designs WHERE id=?",
+                "SELECT graph_json FROM security_designs WHERE id=%s",
                 (design_id,),
             ).fetchone()
             if not row:
@@ -1697,14 +1697,14 @@ def create_security_blueprint():
             except Exception:
                 current_graph = {}
             ver_num = conn.execute(
-                "SELECT COALESCE(MAX(version_number), 0) + 1 FROM sc_versions WHERE design_id=?",
+                "SELECT COALESCE(MAX(version_number), 0) + 1 FROM sc_versions WHERE design_id=%s",
                 (design_id,),
             ).fetchone()[0]
             # Compute diff against previous version if exists
             change_summary = data.get("change_summary", "")
             if not change_summary:
                 prev = conn.execute(
-                    "SELECT graph_json FROM sc_versions WHERE design_id=? ORDER BY version_number DESC LIMIT 1",
+                    "SELECT graph_json FROM sc_versions WHERE design_id=%s ORDER BY version_number DESC LIMIT 1",
                     (design_id,),
                 ).fetchone()
                 if prev:
@@ -1718,7 +1718,7 @@ def create_security_blueprint():
             now = _now()
             conn.execute(
                 "INSERT INTO sc_versions (id, design_id, version_number, graph_json, change_summary, user_id, created_at) "
-                "VALUES (?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s)",
                 (
                     ver_id,
                     design_id,
@@ -1738,20 +1738,20 @@ def create_security_blueprint():
         """Restore a previous version by copying its graph_json back to the design."""
         with get_connection() as conn:
             ver_row = conn.execute(
-                "SELECT graph_json, version_number FROM sc_versions WHERE id=? AND design_id=?",
+                "SELECT graph_json, version_number FROM sc_versions WHERE id=%s AND design_id=%s",
                 (version_id, design_id),
             ).fetchone()
             if not ver_row:
                 return jsonify({"error": "Version not found"}), 404
             design_row = conn.execute(
-                "SELECT id FROM security_designs WHERE id=?",
+                "SELECT id FROM security_designs WHERE id=%s",
                 (design_id,),
             ).fetchone()
             if not design_row:
                 return jsonify({"error": "Design not found"}), 404
             now = _now()
             conn.execute(
-                "UPDATE security_designs SET graph_json=?, updated_at=? WHERE id=?",
+                "UPDATE security_designs SET graph_json=%s, updated_at=%s WHERE id=%s",
                 (ver_row[0], now, design_id),
             )
         _audit("RESTORE", "version", version_id, f"design={design_id} restored to v{ver_row[1]}")
@@ -1866,7 +1866,7 @@ def create_security_blueprint():
         """Run LLM-assisted threat identification on a design."""
         with get_connection() as conn:
             row = conn.execute(
-                "SELECT graph_json FROM security_designs WHERE id=?",
+                "SELECT graph_json FROM security_designs WHERE id=%s",
                 (design_id,),
             ).fetchone()
         if not row:
@@ -1970,13 +1970,13 @@ def create_security_blueprint():
     @sc_login_required
     def sc_twin_page(design_id):
         conn = get_connection()
-        design = conn.execute("SELECT * FROM security_designs WHERE id=?", (design_id,)).fetchone()
+        design = conn.execute("SELECT * FROM security_designs WHERE id=%s", (design_id,)).fetchone()
         if not design:
             return render_template("404.html"), 404
         design = _row_to_dict(design)
         try:
             snapshots = conn.execute(
-                "SELECT * FROM sdc_attack_snapshots WHERE design_id=? ORDER BY created_at DESC LIMIT 20",
+                "SELECT * FROM sdc_attack_snapshots WHERE design_id=%s ORDER BY created_at DESC LIMIT 20",
                 (design_id,),
             ).fetchall()
         except Exception:
@@ -2050,7 +2050,7 @@ def create_security_blueprint():
     @sc_login_required
     def sc_api_twin_current_topology(design_id):
         conn = get_connection()
-        row = conn.execute("SELECT graph_json FROM security_designs WHERE id=?", (design_id,)).fetchone()
+        row = conn.execute("SELECT graph_json FROM security_designs WHERE id=%s", (design_id,)).fetchone()
         if not row:
             return jsonify({"error": "Design not found"}), 404
         try:
@@ -2114,14 +2114,14 @@ def create_security_blueprint():
             with _gc() as _conn:
                 if record_id:
                     rows = _conn.execute(
-                        "SELECT * FROM canvas_ai_decisions WHERE canvas_type='sdc' AND record_id=? "
-                        "ORDER BY created_at DESC LIMIT ?",
+                        "SELECT * FROM canvas_ai_decisions WHERE canvas_type='sdc' AND record_id=%s "
+                        "ORDER BY created_at DESC LIMIT %s",
                         (record_id, limit),
                     ).fetchall()
                 else:
                     rows = _conn.execute(
                         "SELECT * FROM canvas_ai_decisions WHERE canvas_type='sdc' "
-                        "ORDER BY created_at DESC LIMIT ?",
+                        "ORDER BY created_at DESC LIMIT %s",
                         (limit,),
                     ).fetchall()
             return jsonify({"ok": True, "canvas": "sdc", "decisions": [dict(r) for r in rows]})
@@ -2161,7 +2161,7 @@ def create_security_blueprint():
             conn = _sq.connect(str(_db))
             conn.row_factory = _sq.Row
             rows = conn.execute(
-                "SELECT * FROM sdc_compliance_timeline WHERE design_id=? ORDER BY snapshot_label",
+                "SELECT * FROM sdc_compliance_timeline WHERE design_id=%s ORDER BY snapshot_label",
                 (design_id,),
             ).fetchall()
             conn.close()
@@ -2206,7 +2206,7 @@ def create_security_blueprint():
             conn = _sq.connect(str(_db))
             conn.row_factory = _sq.Row
             snaps = conn.execute(
-                "SELECT nodes_json FROM sdc_attack_snapshots WHERE component_id=?",
+                "SELECT nodes_json FROM sdc_attack_snapshots WHERE component_id=%s",
                 (design_id,),
             ).fetchall()
             conn.close()
@@ -2289,7 +2289,7 @@ def create_security_blueprint():
                     "COALESCE(ac.status, 'not_started') as status, ac.evidence_note "
                     "FROM zig_activities a "
                     "LEFT JOIN zig_activity_completions ac ON a.id=ac.activity_id "
-                    "WHERE a.capability_id=? ORDER BY a.phase",
+                    "WHERE a.capability_id=%s ORDER BY a.phase",
                     (cap["id"],),
                 ).fetchall()
                 activities_by_cap[cap["id"]] = [dict(a) for a in acts]
@@ -2321,7 +2321,7 @@ def create_security_blueprint():
                     "FROM zig_activities a "
                     "JOIN zig_capabilities c ON a.capability_id=c.id "
                     "LEFT JOIN zig_activity_completions ac ON a.id=ac.activity_id "
-                    "WHERE a.phase=? ORDER BY c.pillar_slug, c.id",
+                    "WHERE a.phase=%s ORDER BY c.pillar_slug, c.id",
                     (phase_slug,),
                 ).fetchall()
                 activities_by_phase[phase_slug] = [dict(a) for a in acts]
@@ -2410,7 +2410,7 @@ def create_security_blueprint():
         conn = get_connection()
         try:
             conn.execute(
-                "UPDATE zig_capabilities SET implementation_status=?, evidence_note=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                "UPDATE zig_capabilities SET implementation_status=%s, evidence_note=%s, updated_at=CURRENT_TIMESTAMP WHERE id=%s",
                 (new_status, evidence_note, cap_id),
             )
             conn.commit()
@@ -2554,7 +2554,7 @@ def create_security_blueprint():
             conn = get_connection()
             conn.execute(
                 "INSERT INTO zig_targets (id, name, description, system_type, classification, status, created_at, updated_at) "
-                "VALUES (?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
                 (target_id, name,
                  data.get("description", ""),
                  data.get("system_type", "general"),
@@ -2575,7 +2575,7 @@ def create_security_blueprint():
         try:
             conn = get_connection()
             row = conn.execute(
-                "SELECT * FROM zig_targets WHERE id=?", (target_id,)
+                "SELECT * FROM zig_targets WHERE id=%s", (target_id,)
             ).fetchone()
             conn.close()
             if not row:

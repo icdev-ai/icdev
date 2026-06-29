@@ -76,7 +76,7 @@ def create(
             """INSERT INTO wf_templates
                (id, name, canvas_type, stages_json, roles_json, approval_policy,
                 kickback_limit, is_default, is_system, created_by, created_at, updated_at)
-               VALUES (%s,?,?,?,?,?,?,0,0,?,?,%s)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,0,0,%s,%s,%s)""",
             (template_id, name, canvas_type, stages, roles, approval_policy,
              kickback_limit, created_by, now, now),
         )
@@ -168,7 +168,7 @@ def seed_system_templates():
                 """INSERT OR IGNORE INTO wf_templates
                    (id, name, canvas_type, stages_json, roles_json, approval_policy,
                     kickback_limit, is_default, is_system, created_by, created_at, updated_at)
-                   VALUES (%s,?,?,?,?,?,?,1,1,'system',?,%s)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,1,1,'system',%s,%s)""",
                 (tid, f"Default {'Global' if ct is None else ct} Workflow",
                  ct, json.dumps(stages), json.dumps(roles),
                  ApprovalPolicy.ANY_ONE, 3, now, now),

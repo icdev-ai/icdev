@@ -228,7 +228,7 @@ class ToolChainValidator:
                    (id, project_id, agent_id, session_id, tool_name,
                     tool_sequence_json, rule_matched, severity, action,
                     context_json, classification, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'CUI', ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'CUI', %s)""",
                 (
                     entry_id,
                     project_id,
@@ -292,7 +292,7 @@ class ToolChainValidator:
             for severity in ("critical", "high", "medium"):
                 row = conn.execute(
                     f"SELECT COUNT(*) FROM tool_chain_events "  # nosec B608 -- table/column names are internal constants, not user input
-                    f"WHERE {where} AND severity = ? AND created_at >= ?",
+                    f"WHERE {where} AND severity = %s AND created_at >= %s",
                     params + [severity, cutoff],
                 ).fetchone()
                 count = row[0] if row else 0

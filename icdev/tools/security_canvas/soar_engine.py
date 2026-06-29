@@ -104,7 +104,7 @@ def run_playbook(playbook: str, entity: str = "", trigger_event: str = "") -> di
         conn.execute(
             "INSERT INTO zig_soar_executions "
             "(execution_id, playbook, trigger_event, entity, actions_run, status, severity, created_at) "
-            "VALUES (?,?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
             (execution_id, playbook, trigger_event or pb["trigger"], entity,
              json.dumps(actions), "completed", pb["severity"], now),
         )
@@ -136,7 +136,7 @@ def compute_adaptive_access(principal: str, composite_risk: float | None = None)
             try:
                 row = conn.execute(
                     "SELECT composite_risk FROM zig_ueba_correlations "
-                    "WHERE entity_id=? ORDER BY created_at DESC LIMIT 1",
+                    "WHERE entity_id=%s ORDER BY created_at DESC LIMIT 1",
                     (principal,),
                 ).fetchone()
                 composite_risk = float(row["composite_risk"]) if row else 0.0
@@ -152,7 +152,7 @@ def compute_adaptive_access(principal: str, composite_risk: float | None = None)
 
         conn.execute(
             "INSERT INTO zig_adaptive_access_policy "
-            "(principal, composite_risk, required_assurance, reason, created_at) VALUES (?,?,?,?,?)",
+            "(principal, composite_risk, required_assurance, reason, created_at) VALUES (%s,%s,%s,%s,%s)",
             (principal, composite_risk, required, reason, now),
         )
         conn.commit()

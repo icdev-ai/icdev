@@ -308,7 +308,7 @@ def register_pattern(pattern: dict, db_path: Path = DB_PATH) -> dict:
 
         # Check for duplicate
         existing = conn.execute(
-            "SELECT id FROM innovation_signals WHERE content_hash = ?",
+            "SELECT id FROM innovation_signals WHERE content_hash = %s",
             (content_hash,),
         ).fetchone()
 
@@ -335,10 +335,10 @@ def register_pattern(pattern: dict, db_path: Path = DB_PATH) -> dict:
                 category, innovation_score, score_breakdown, content_hash,
                 status, gotcha_layer, implementation_status,
                 classification, discovered_at, created_at)
-               VALUES (?, ?, 'external_framework_analysis', ?, ?, ?,
-                       ?, ?, ?, ?,
-                       'triaged', ?, ?,
-                       'CUI', ?, ?)""",
+               VALUES (%s, %s, 'external_framework_analysis', %s, %s, %s,
+                       %s, %s, %s, %s,
+                       'triaged', %s, %s,
+                       'CUI', %s, %s)""",
             (
                 signal_id,
                 pattern["source"],

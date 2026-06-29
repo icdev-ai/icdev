@@ -439,6 +439,100 @@ reflexes:
     interval_hours: 24
     success_metric:
       name: tasks_created
+
+  qa_agent_reflex:
+    enabled: true
+    risk_tier: green
+    schedule: "every 6h"
+    interval_seconds: 21600  # 6 hours
+    description: "QA Agent sweep — detect E2E coverage gaps per canvas and schedule targeted Playwright runs via kanban tasks"
+    interval_hours: 6
+    max_gap_tasks_per_run: 5  # cap gap tasks per cycle to avoid kanban flood
+    success_metric:
+      name: gap_tasks_created
+      threshold: 0
+      operator: gte  # 0 = no gaps (healthy); > 0 = gap tasks filed
+      threshold: 0
+      operator: gte
+
+  coherence_to_kanban_reflex:
+    enabled: true
+    risk_tier: green
+    schedule: "every 6h"
+    interval_seconds: 21600
+    description: "Diff coherence check results against baseline; file [COHERENCE] kanban bug tasks for new violations only"
+    success_metric:
+      name: tasks_created
+      threshold: 0
+      operator: gte
+
+  flaky_tracker_reflex:
+    enabled: true
+    risk_tier: green
+    schedule: "every 12h"
+    interval_seconds: 43200
+    threshold: 0.15
+    min_runs: 5
+    description: "Ingest pytest JUnit XML results; file [FLAKY] kanban bug tasks for tests with fail_rate >= 15%"
+    success_metric:
+      name: total_flaky
+      threshold: 0
+      operator: gte
+
+  dep_health_reflex:
+    enabled: true
+    risk_tier: green
+    schedule: "every 24h"
+    interval_seconds: 86400
+    description: "pip check + pip-audit (if available) + outdated scan; file [DEP-HEALTH] kanban tasks for critical/high findings"
+    success_metric:
+      name: filed_tasks
+      threshold: 0
+      operator: gte
+
+  dead_code_reflex:
+    enabled: true
+    risk_tier: green
+    schedule: "every 24h"
+    interval_seconds: 86400
+    description: "Dead code sweep — orphan files, dead functions, import cycles → [DEAD-CODE] kanban tasks"
+    success_metric:
+      name: dead_items_found
+      threshold: 0
+      operator: gte
+
+  critical_task_watchdog_reflex:
+    enabled: true
+    risk_tier: green
+    schedule: "every 5m"
+    interval_seconds: 300
+    description: "Poll for newly-filed critical kanban tasks; emit watchdog_alerts + file-based sidecar notifications in data/alerts/"
+    success_metric:
+      name: new_critical_tasks
+      threshold: 0
+      operator: gte
+
+  api_contract_reflex:
+    enabled: true
+    risk_tier: green
+    schedule: "every 6h"
+    interval_seconds: 21600
+    description: "Hit live API endpoints and validate responses against OpenAPI spec; file [API-CONTRACT] bug tasks for schema drift"
+    success_metric:
+      name: failed
+      threshold: 0
+      operator: lte
+
+  route_perf_reflex:
+    enabled: true
+    risk_tier: green
+    schedule: "every 6h"
+    interval_seconds: 21600
+    threshold_multiplier: 2.5
+    min_runs: 5
+    description: "Full NAV_ROUTES smoke (auto-persists elapsed_ms to route_perf.db) + p50 latency regression detection; files [PERF] kanban tasks for routes exceeding threshold"
+    success_metric:
+      name: regressions_found
       threshold: 0
       operator: gte
 
@@ -1138,6 +1232,22 @@ reflexes:
       name: rows_upserted
       threshold: 0
       operator: gte  # 0 = no usage yesterday (healthy), > 0 = rows rolled up
+
+  episodic_distiller:
+    enabled: true
+    risk_tier: yellow
+    schedule: "every 6h"
+    description: "Distill accumulated episodic memory events into durable semantic facts (Phase A harness memory)"
+    trigger_count: 20          # min undistilled episodic entries before running
+    batch_size: 50             # max entries to process per run
+    cluster_threshold: 0.35   # cosine similarity threshold for grouping events
+    max_facts_per_cluster: 3  # max semantic facts produced per cluster
+    model_function: "summarization"  # LLM router function (cheap model preferred)
+    use_llm: true             # set false to use heuristic fallback (zero tokens)
+    success_metric:
+      name: semantic_facts_written
+      threshold: 0
+      operator: gte
 
 # ── Promoter Configuration ───────────────────────────────────────────────────
 

@@ -4,7 +4,7 @@ Flask Blueprint for audit API.
 Queries the audit_trail table in icdev.db.
 """
 
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection, sql_placeholder
 from flask import Blueprint, jsonify, request
 
 from tools.dashboard.config import DB_PATH
@@ -24,6 +24,7 @@ def list_audit_entries():
     Optional query params: project_id, event_type, actor, limit (default 50).
     """
     conn = _get_db()
+    ph = sql_placeholder(conn)
     try:
         project_id = request.args.get("project_id")
         event_type = request.args.get("event_type")
@@ -39,16 +40,16 @@ def list_audit_entries():
         params: list = []
 
         if project_id:
-            query += " AND project_id = ?"
+            query += f" AND project_id = {ph}"
             params.append(project_id)
         if event_type:
-            query += " AND event_type = ?"
+            query += f" AND event_type = {ph}"
             params.append(event_type)
         if actor:
-            query += " AND actor = ?"
+            query += f" AND actor = {ph}"
             params.append(actor)
 
-        query += " ORDER BY created_at DESC LIMIT ?"
+        query += f" ORDER BY created_at DESC LIMIT {ph}"
         params.append(limit_int)
 
         rows = conn.execute(query, params).fetchall()

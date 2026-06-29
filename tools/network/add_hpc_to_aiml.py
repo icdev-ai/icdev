@@ -15,7 +15,7 @@ def eid():
 def main():
     conn = get_connection(str(DB_PATH))
 
-    gj = json.loads(conn.execute("SELECT graph_json FROM nc_templates WHERE id=?", ("tpl-aiml-fabric",)).fetchone()[0])
+    gj = json.loads(conn.execute("SELECT graph_json FROM nc_templates WHERE id=%s", ("tpl-aiml-fabric",)).fetchone()[0])
     nodes = gj["nodes"]
     edges = gj["edges"]
 
@@ -81,7 +81,7 @@ def main():
     gj["edges"] = edges
 
     conn.execute(
-        "UPDATE nc_templates SET graph_json=?, name=?, description=?, tags=? WHERE id=?",
+        "UPDATE nc_templates SET graph_json=%s, name=%s, description=%s, tags=%s WHERE id=%s",
         (
             json.dumps(gj),
             "AI/ML + HPC Network Fabric (RDMA/RoCE)",

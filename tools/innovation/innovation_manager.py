@@ -443,7 +443,7 @@ def get_status(db_path=None):
 
             cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ")
             recent = conn.execute(
-                "SELECT COUNT(*) as count FROM innovation_signals WHERE discovered_at >= ?",
+                "SELECT COUNT(*) as count FROM innovation_signals WHERE discovered_at >= %s",
                 (cutoff,),
             ).fetchone()
             status["signals_last_24h"] = recent["count"] if recent else 0

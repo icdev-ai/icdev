@@ -447,7 +447,7 @@ def _geo_upsert_entity(conn, node: dict) -> None:
         INSERT INTO sg_entities
             (entity_id, entity_name, entity_type, theater, country,
              lat, lon, domain_profile, capacity_json, criticality, status, notes, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT(entity_id) DO UPDATE SET
             entity_name    = excluded.entity_name,
             criticality    = excluded.criticality,
@@ -480,7 +480,7 @@ def _geo_upsert_kg_node(conn, node: dict) -> None:
         INSERT INTO sg_kg_nodes
             (node_id, entity_id, entity_type, label, theater, country,
              lat, lon, properties_json, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT(node_id) DO UPDATE SET
             label           = excluded.label,
             properties_json = excluded.properties_json
@@ -507,7 +507,7 @@ def _geo_upsert_kg_node(conn, node: dict) -> None:
 def _ensure_theater_project(conn) -> None:
     """Insert the ukraine-theater project row if it doesn't exist."""
     existing = conn.execute(
-        "SELECT id FROM projects WHERE id = ?", (THEATER_PROJECT_ID,)
+        "SELECT id FROM projects WHERE id = %s", (THEATER_PROJECT_ID,)
     ).fetchone()
     if existing:
         return
@@ -517,7 +517,7 @@ def _ensure_theater_project(conn) -> None:
         INSERT INTO projects
             (id, name, description, type, classification, status,
              directory_path, impact_level, cloud_environment, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """,
         (
             THEATER_PROJECT_ID,
@@ -539,7 +539,7 @@ def _ensure_theater_project(conn) -> None:
 def _icdev_upsert_vendor(conn, vendor: dict) -> str:
     """Insert or return existing vendor id."""
     existing = conn.execute(
-        "SELECT id FROM supply_chain_vendors WHERE project_id = ? AND vendor_name = ?",
+        "SELECT id FROM supply_chain_vendors WHERE project_id = %s AND vendor_name = %s",
         (THEATER_PROJECT_ID, vendor["vendor_name"]),
     ).fetchone()
     if existing:
@@ -553,7 +553,7 @@ def _icdev_upsert_vendor(conn, vendor: dict) -> str:
             (id, project_id, vendor_name, vendor_type, country_of_origin,
              scrm_risk_tier, section_889_status, dod_approved, isa_required,
              last_assessed, classification, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """,
         (
             vendor_id,
@@ -587,7 +587,7 @@ def _icdev_upsert_dependency(
         INSERT OR IGNORE INTO supply_chain_dependencies
             (project_id, source_type, source_id, target_type, target_id,
              dependency_type, criticality, metadata, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         """,
         (
             THEATER_PROJECT_ID,
@@ -666,7 +666,7 @@ def sync_to_supply_chain() -> dict:
         # Sync each logistics node as an entity reference dependency
         rows = geo.execute(
             "SELECT entity_id, entity_name, entity_type, country, criticality, capacity_json "
-            "FROM sg_entities WHERE theater = ?",
+            "FROM sg_entities WHERE theater = %s",
             (THEATER,),
         ).fetchall()
 
@@ -725,7 +725,7 @@ def seed_kg_nodes() -> dict:
 
         # 2. Add logistics_node KG entries for all sg_entities in theater
         rows = geo.execute(
-            "SELECT entity_id, entity_name, country, lat, lon FROM sg_entities WHERE theater = ?",
+            "SELECT entity_id, entity_name, country, lat, lon FROM sg_entities WHERE theater = %s",
             (THEATER,),
         ).fetchall()
         for row in rows:

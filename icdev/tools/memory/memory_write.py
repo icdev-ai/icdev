@@ -28,6 +28,7 @@ MEMORY_FILE = BASE_DIR / "memory" / "MEMORY.md"
 LOGS_DIR = BASE_DIR / "memory" / "logs"
 VALID_TYPES = ("fact", "preference", "event", "insight", "task", "relationship", "thinking")
 VALID_SOURCES = ("manual", "hook", "thinking", "auto")
+VALID_TIERS = ("procedural", "episodic", "semantic")
 MEMORY_SECTIONS = (
     "user_preferences",
     "key_facts",
@@ -49,12 +50,18 @@ def compute_content_hash(content: str) -> str:
 
 
 def write_to_db(
-    content, entry_type, importance, user_id=None, tenant_id=None, source="manual",
-    classification="CUI", compartment=""
+    content, entry_type, importance=5, user_id=None, tenant_id=None, source="manual",
+    classification="CUI", compartment="", tier="episodic", session_ref=None,
+    trace_id=None,
 ):
     """Write memory entry with SHA-256 dedup upsert (D179).
 
     Normalizes content before hashing so case/whitespace variants deduplicate.
+
+    Args:
+        tier: Memory tier — 'episodic', 'semantic', 'procedural' (migration 226).
+        session_ref: agent_loop_sessions.session_id that produced this entry.
+        trace_id: OTel span / agent_loop correlation ID (migration 229).
 
     Returns:
         dict: {id, status ('inserted'|'duplicate_merged'), fingerprint}
@@ -66,12 +73,12 @@ def write_to_db(
     # Check for duplicate by normalized fingerprint (D179)
     if user_id:
         c.execute(
-            "SELECT id FROM memory_entries WHERE content_hash = ? AND user_id = ?",
+            "SELECT id FROM memory_entries WHERE content_hash = %s AND user_id = %s",
             (fingerprint, user_id),
         )
     else:
         c.execute(
-            "SELECT id FROM memory_entries WHERE content_hash = ? AND user_id IS NULL",
+            "SELECT id FROM memory_entries WHERE content_hash = %s AND user_id IS NULL",
             (fingerprint,),
         )
     existing = c.fetchone()
@@ -79,18 +86,42 @@ def write_to_db(
         # Merge: bump updated_at to record the re-encounter
         # decay_weight intentionally not reset on update — managed by hybrid_search decay pass
         c.execute(
-            "UPDATE memory_entries SET updated_at = datetime('now') WHERE id = ?",
+            "UPDATE memory_entries SET updated_at = datetime('now') WHERE id = %s",
             (existing[0],),
         )
         conn.commit()
         conn.close()
         return {"id": existing[0], "status": "duplicate_merged", "fingerprint": fingerprint}
 
-    c.execute(
-        "INSERT INTO memory_entries (content, type, importance, content_hash, user_id, tenant_id, source, decay_weight, classification, compartment) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
-        (content, entry_type, importance, fingerprint, user_id, tenant_id, source, 1.0, classification, compartment),
-    )
+    _tier = tier if tier in VALID_TIERS else "episodic"
+    try:
+        c.execute(
+            "INSERT INTO memory_entries "
+            "(content, type, importance, content_hash, user_id, tenant_id, source, "
+            "decay_weight, classification, compartment, tier, session_ref, trace_id) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+            (content, entry_type, importance, fingerprint, user_id, tenant_id, source,
+             1.0, classification, compartment, _tier, session_ref, trace_id),
+        )
+    except Exception:
+        try:
+            c.execute(
+                "INSERT INTO memory_entries "
+                "(content, type, importance, content_hash, user_id, tenant_id, source, "
+                "decay_weight, classification, compartment, tier, session_ref) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+                (content, entry_type, importance, fingerprint, user_id, tenant_id, source,
+                 1.0, classification, compartment, _tier, session_ref),
+            )
+        except Exception:
+            c.execute(
+                "INSERT INTO memory_entries "
+                "(content, type, importance, content_hash, user_id, tenant_id, source, "
+                "decay_weight, classification, compartment) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+                (content, entry_type, importance, fingerprint, user_id, tenant_id, source,
+                 1.0, classification, compartment),
+            )
     returning = c.fetchone()
     entry_id = returning[0] if returning else None
     conn.commit()
@@ -116,7 +147,7 @@ def write_to_daily_log(content):
     conn = get_connection()
     c = conn.cursor()
     c.execute(
-        "INSERT INTO daily_logs (date, content) VALUES (?, ?)",
+        "INSERT INTO daily_logs (date, content) VALUES (%s, %s)",
         (today, content),
     )
     conn.commit()
@@ -182,7 +213,8 @@ def update_crossrefs(new_slug: str, new_content: str, memory_dir: Path | None = 
     Returns:
         List of file paths that were updated with a back-link.
     """
-    import os, re
+    import os
+    import re
 
     if memory_dir is None:
         userprofile = Path(os.environ.get("USERPROFILE", Path.home()))
@@ -242,7 +274,7 @@ def reset_decay(memory_id: str, conn=None) -> None:
     if conn is None:
         from tools.db.storage import get_connection
         conn = get_connection().__enter__()
-    conn.execute("UPDATE memory_entries SET decay_weight=1.0 WHERE id=?", (memory_id,))
+    conn.execute("UPDATE memory_entries SET decay_weight=1.0 WHERE id=%s", (memory_id,))
     if close:
         conn.commit()
 

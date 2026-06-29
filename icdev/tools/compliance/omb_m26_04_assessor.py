@@ -68,7 +68,7 @@ class OMBM2604Assessor(BaseAssessor):
                 try:
                     rows = conn.execute(
                         """SELECT COUNT(*) as cnt FROM model_cards
-                           WHERE project_id = ?""",
+                           WHERE project_id = %s""",
                         (project_id,),
                     ).fetchone()
                     if rows and rows["cnt"] > 0:
@@ -80,7 +80,7 @@ class OMBM2604Assessor(BaseAssessor):
                 try:
                     rows = conn.execute(
                         """SELECT COUNT(*) as cnt FROM system_cards
-                           WHERE project_id = ?""",
+                           WHERE project_id = %s""",
                         (project_id,),
                     ).fetchone()
                     if rows and rows["cnt"] > 0:
@@ -92,7 +92,7 @@ class OMBM2604Assessor(BaseAssessor):
                 try:
                     rows = conn.execute(
                         """SELECT COUNT(*) as cnt FROM fairness_assessments
-                           WHERE project_id = ?""",
+                           WHERE project_id = %s""",
                         (project_id,),
                     ).fetchone()
                     if rows and rows["cnt"] > 0:
@@ -105,7 +105,7 @@ class OMBM2604Assessor(BaseAssessor):
                 try:
                     for table in ["xai_assessments", "shap_attributions"]:
                         rows = conn.execute(
-                            f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = ?",  # nosec B608 -- table/column names are internal constants, not user input
+                            f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = %s",  # nosec B608 -- table/column names are internal constants, not user input
                             (project_id,),
                         ).fetchone()
                         if rows and rows["cnt"] > 0:
@@ -118,7 +118,7 @@ class OMBM2604Assessor(BaseAssessor):
                 try:
                     rows = conn.execute(
                         """SELECT COUNT(*) as cnt FROM ai_accountability_appeals
-                           WHERE project_id = ?""",
+                           WHERE project_id = %s""",
                         (project_id,),
                     ).fetchone()
                     if rows and rows["cnt"] > 0:
@@ -130,7 +130,7 @@ class OMBM2604Assessor(BaseAssessor):
                 try:
                     rows = conn.execute(
                         """SELECT COUNT(*) as cnt FROM ai_ethics_reviews
-                           WHERE project_id = ? AND opt_out_policy = 1""",
+                           WHERE project_id = %s AND opt_out_policy = 1""",
                         (project_id,),
                     ).fetchone()
                     if rows and rows["cnt"] > 0:
@@ -142,7 +142,7 @@ class OMBM2604Assessor(BaseAssessor):
                 try:
                     rows = conn.execute(
                         """SELECT COUNT(*) as cnt FROM ai_ethics_reviews
-                           WHERE project_id = ? AND review_type = 'impact_assessment'""",
+                           WHERE project_id = %s AND review_type = 'impact_assessment'""",
                         (project_id,),
                     ).fetchone()
                     if rows and rows["cnt"] > 0:

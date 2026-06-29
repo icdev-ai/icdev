@@ -81,7 +81,7 @@ def _get_iac_artifacts(run_id: str) -> list[dict]:
         try:
             row = conn.execute(
                 "SELECT stdout FROM studio_workflow_run_steps "
-                "WHERE run_id = ? AND step_name = 'Generate IaC'",
+                "WHERE run_id = %s AND step_name = 'Generate IaC'",
                 (run_id,),
             ).fetchone()
             if row and row["stdout"]:

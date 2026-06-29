@@ -116,7 +116,7 @@ def _update_status(
                 val = extra["details"]
                 params.append(json.dumps(val) if isinstance(val, dict) else str(val))
         params.append(resolution_id)
-        conn.execute(f"UPDATE auto_resolution_log SET {', '.join(sets)} WHERE id = ?", params)  # nosec B608 -- table/column names are internal constants, not user input
+        conn.execute(f"UPDATE auto_resolution_log SET {', '.join(sets)} WHERE id = %s", params)  # nosec B608 -- table/column names are internal constants, not user input
         conn.commit()
     finally:
         conn.close()
@@ -361,7 +361,7 @@ def resolve_alert(
         conn.execute(
             "INSERT INTO auto_resolution_log (id, alert_source, alert_type, alert_payload, "
             "project_id, confidence, decision, resolution_status) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, 'analyzing')",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, 'analyzing')",
             (
                 rid,
                 source,
@@ -761,7 +761,7 @@ def _get_trust_tier_for_component(component_id: str, db_path: Optional[Path] = N
             role_id = component_id
             try:
                 row = conn.execute(
-                    "SELECT role_id FROM ace_instances WHERE id = ? LIMIT 1",
+                    "SELECT role_id FROM ace_instances WHERE id = %s LIMIT 1",
                     (component_id,),
                 ).fetchone()
                 if row:
@@ -771,7 +771,7 @@ def _get_trust_tier_for_component(component_id: str, db_path: Optional[Path] = N
 
             score_row = conn.execute(
                 "SELECT new_score FROM ace_trust_ledger "
-                "WHERE role_id = ? ORDER BY recorded_at DESC LIMIT 1",
+                "WHERE role_id = %s ORDER BY recorded_at DESC LIMIT 1",
                 (role_id,),
             ).fetchone()
         finally:
@@ -793,14 +793,14 @@ def _do_auto_restart(component_id: str, failure_type: str, db_path: Optional[Pat
         if failure_type in ("ace_instance_stale",):
             conn.execute(
                 "UPDATE ace_instances SET state='cancelled', updated_at=datetime('now') "
-                "WHERE id=? AND state NOT IN ('complete','cancelled','failed')",
+                "WHERE id=%s AND state NOT IN ('complete','cancelled','failed')",
                 (component_id,),
             )
         elif failure_type == "kanban_stale":
             try:
                 conn.execute(
                     "UPDATE kanban_tasks SET status='cancelled', updated_at=datetime('now') "
-                    "WHERE id=? AND status NOT IN ('done','cancelled','dismissed')",
+                    "WHERE id=%s AND status NOT IN ('done','cancelled','dismissed')",
                     (component_id,),
                 )
             except Exception:
@@ -836,7 +836,7 @@ def _do_hitl_escalation(
             conn.execute(
                 "INSERT OR IGNORE INTO kanban_tasks "
                 "(id, title, description, status, task_type, priority, created_at, updated_at) "
-                "VALUES (?, ?, ?, 'backlog', 'hitl', 'high', datetime('now'), datetime('now'))",
+                "VALUES (%s, %s, %s, 'backlog', 'hitl', 'high', datetime('now'), datetime('now'))",
                 (
                     card_id,
                     f"[HITL] {failure_type}: {component_id}",
@@ -872,7 +872,7 @@ def resolve_component(
     try:
         row = conn.execute(
             "SELECT id, attempt_count, next_retry_at, status FROM component_heal_log "
-            "WHERE component_id=? AND failure_type=? "
+            "WHERE component_id=%s AND failure_type=%s "
             "ORDER BY created_at DESC LIMIT 1",
             (component_id, failure_type),
         ).fetchone()
@@ -913,15 +913,15 @@ def resolve_component(
         try:
             if log_id:
                 conn.execute(
-                    "UPDATE component_heal_log SET attempt_count=?, last_attempt_at=datetime('now'), "
-                    "next_retry_at=?, status=?, trust_tier=? WHERE id=?",
+                    "UPDATE component_heal_log SET attempt_count=%s, last_attempt_at=datetime('now'), "
+                    "next_retry_at=%s, status=%s, trust_tier=%s WHERE id=%s",
                     (attempt + 1, next_retry_str, final_status, trust_tier, log_id),
                 )
             else:
                 conn.execute(
                     "INSERT INTO component_heal_log "
                     "(id, component_id, failure_type, attempt_count, last_attempt_at, next_retry_at, status, trust_tier) "
-                    "VALUES (?, ?, ?, ?, datetime('now'), ?, ?, ?)",
+                    "VALUES (%s, %s, %s, %s, datetime('now'), %s, %s, %s)",
                     (_generate_id("heal"), component_id, failure_type, 1, next_retry_str, final_status, trust_tier),
                 )
             conn.commit()
@@ -937,7 +937,7 @@ def resolve_component(
             conn.execute(
                 "INSERT INTO component_heal_log "
                 "(id, component_id, failure_type, attempt_count, last_attempt_at, status, trust_tier) "
-                "VALUES (?, ?, ?, ?, datetime('now'), ?, ?)",
+                "VALUES (%s, %s, %s, %s, datetime('now'), %s, %s)",
                 (_generate_id("heal"), component_id, failure_type, attempt + 1, final_status, trust_tier),
             )
             conn.commit()

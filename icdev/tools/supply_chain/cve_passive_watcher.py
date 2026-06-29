@@ -90,7 +90,7 @@ def _log_audit(conn, project_id, event_type, action, details):
         conn.execute(
             """INSERT INTO audit_trail
                (project_id, event_type, actor, action, details, classification)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s)""",
             (
                 project_id,
                 event_type,
@@ -111,7 +111,7 @@ def _log_watch(conn, project_id, audit_trail_id, cve_id, component, triage_id, s
         """INSERT INTO cve_passive_watch_log
            (audit_trail_id, project_id, cve_id, component, triage_id,
             skipped, source_event_type, processed_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
         (
             audit_trail_id,
             project_id,
@@ -152,7 +152,7 @@ def _get_ato_impact_radius(conn, project_id, component):
     rows = conn.execute(
         """SELECT source_type, source_id, target_type, target_id
            FROM supply_chain_dependencies
-           WHERE project_id = ?""",
+           WHERE project_id = %s""",
         (project_id,),
     ).fetchall()
 
@@ -290,7 +290,7 @@ def _extract_cves_from_entry(row):
 def _get_high_watermark(conn, project_id):
     """Return the highest audit_trail_id already processed for this project."""
     row = conn.execute(
-        "SELECT MAX(audit_trail_id) FROM cve_passive_watch_log WHERE project_id = ?",
+        "SELECT MAX(audit_trail_id) FROM cve_passive_watch_log WHERE project_id = %s",
         (project_id,),
     ).fetchone()
     return row[0] or 0
@@ -300,7 +300,7 @@ def _is_already_triaged(conn, project_id, cve_id, component):
     """Return True if this (project, cve_id, component) is already in cve_triage."""
     row = conn.execute(
         """SELECT id FROM cve_triage
-           WHERE project_id = ? AND cve_id = ? AND package_name = ?""",
+           WHERE project_id = %s AND cve_id = %s AND package_name = %s""",
         (project_id, cve_id, component),
     ).fetchone()
     return row is not None
@@ -310,7 +310,7 @@ def _already_logged(conn, project_id, audit_trail_id, cve_id):
     """Return True if this (audit_trail_id, cve_id) pair was already processed."""
     row = conn.execute(
         """SELECT id FROM cve_passive_watch_log
-           WHERE project_id = ? AND audit_trail_id = ? AND cve_id = ?""",
+           WHERE project_id = %s AND audit_trail_id = %s AND cve_id = %s""",
         (project_id, audit_trail_id, cve_id),
     ).fetchone()
     return row is not None
@@ -347,7 +347,7 @@ def watch_scan(project_id, since_id=None, db_path=None, auto_triage=True, ato_on
         audit_rows = conn.execute(
             f"""SELECT id, project_id, event_type, actor, action, details, created_at
                 FROM audit_trail
-                WHERE id > ?
+                WHERE id > %s
                   AND event_type IN ({placeholders})
                 ORDER BY id ASC""",
             [since_id] + list(ATO_EVENT_TYPES),
@@ -554,14 +554,14 @@ def get_status(project_id, db_path=None):
                 SUM(CASE WHEN skipped = 0 THEN 1 ELSE 0 END) AS total_triaged,
                 SUM(CASE WHEN skipped = 1 THEN 1 ELSE 0 END) AS total_skipped
                FROM cve_passive_watch_log
-               WHERE project_id = ?""",
+               WHERE project_id = %s""",
             (project_id,),
         ).fetchone()
 
         recent = conn.execute(
             """SELECT cve_id, component, triage_id, skipped, source_event_type, processed_at
                FROM cve_passive_watch_log
-               WHERE project_id = ?
+               WHERE project_id = %s
                ORDER BY id DESC
                LIMIT 10""",
             (project_id,),

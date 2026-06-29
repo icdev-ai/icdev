@@ -1320,12 +1320,59 @@ BUILTIN_STEPS: dict[str, list] = {
 def seed_mission_catalog() -> None:
     """Upsert all builtin missions and seed their steps on first creation."""
     try:
-        from .db import upsert_mission
         from tools.db.storage import get_connection
         conn = get_connection()
+        # Fast path: skip if catalog is already fully seeded
+        try:
+            existing_count = conn.execute(
+                "SELECT COUNT(*) FROM fa_missions WHERE is_active=1"
+            ).fetchone()[0]
+            if existing_count >= len(BUILTIN_MISSIONS):
+                _log.debug("FORGE Academy: mission catalog already seeded (%d missions), skipping", existing_count)
+                return
+        except Exception:
+            pass  # fa_missions may not exist yet; proceed with full seed
+
+        # Batch upsert all missions in one executemany + single commit (avoids N individual commits)
+        rows = [
+            (
+                m["slug"], m["title"], m.get("tagline", ""),
+                m.get("tier", 1), m.get("topic", ""), m.get("role_filter", "all"),
+                m.get("mission_type", "coding"), m.get("xp_reward", 200),
+                json.dumps(m.get("prereqs", [])), m.get("order_idx", 0),
+                m.get("difficulty", "intermediate"), m.get("estimated_minutes", 30),
+                m.get("source_credit", ""),
+            )
+            for m in BUILTIN_MISSIONS
+        ]
+        conn.executemany(
+            """INSERT INTO fa_missions
+               (slug,title,tagline,tier,topic,role_filter,mission_type,xp_reward,
+                prereq_slugs_json,order_idx,difficulty,estimated_minutes,source_credit)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+               ON CONFLICT(slug) DO UPDATE SET
+                 title=excluded.title, tagline=excluded.tagline,
+                 xp_reward=excluded.xp_reward, order_idx=excluded.order_idx""",
+            rows,
+        )
+        conn.commit()
+
+        # Fetch all IDs in one query instead of N per-mission SELECTs
+        slugs = [m["slug"] for m in BUILTIN_MISSIONS]
+        slug_to_id = {}
+        for row in conn.execute(
+            "SELECT id, slug FROM fa_missions WHERE slug IN ({})".format(
+                ",".join(["?"] * len(slugs))
+            ),
+            slugs,
+        ).fetchall():
+            slug_to_id[row["slug"]] = row["id"]
+
+        # Seed steps for missions that have none
         for m in BUILTIN_MISSIONS:
-            mission_id = upsert_mission(m)
-            # Seed steps only if none exist for this mission
+            mission_id = slug_to_id.get(m["slug"])
+            if not mission_id:
+                continue
             existing = conn.execute(
                 "SELECT COUNT(*) FROM fa_mission_steps WHERE mission_id=?", (mission_id,)
             ).fetchone()[0]

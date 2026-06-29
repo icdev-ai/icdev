@@ -131,7 +131,7 @@ def create_observability_blueprint():
         try:
             with get_connection() as conn:
                 conn.execute(
-                    "INSERT INTO od_audit (design_id, user, action, detail, created_at) VALUES (?,?,?,?,?)",
+                    "INSERT INTO od_audit (design_id, actor, action, detail, created_at) VALUES (%s,%s,%s,%s,%s)",
                     (design_id, user_id, action, details, _now()),
                 )
         except Exception:
@@ -191,7 +191,7 @@ def create_observability_blueprint():
         if template_id:
             with get_connection() as conn:
                 tpl = conn.execute(
-                    "SELECT name, graph_json FROM od_templates WHERE id=?",
+                    "SELECT name, graph_json FROM od_templates WHERE id=%s",
                     (template_id,),
                 ).fetchone()
             if tpl:
@@ -212,7 +212,7 @@ def create_observability_blueprint():
     def oc_canvas(design_id):
         """Canvas editor for a specific observability design."""
         with get_connection() as conn:
-            row = conn.execute("SELECT * FROM observability_designs WHERE id=?", (design_id,)).fetchone()
+            row = conn.execute("SELECT * FROM observability_designs WHERE id=%s", (design_id,)).fetchone()
         if not row:
             return redirect("/observability/")
         design = _row_to_dict(row)
@@ -263,7 +263,7 @@ def create_observability_blueprint():
         """Detection coverage page for a specific observability design."""
         with get_connection() as conn:
             design = _row_to_dict(
-                conn.execute("SELECT id, name FROM observability_designs WHERE id=?", (design_id,)).fetchone()
+                conn.execute("SELECT id, name FROM observability_designs WHERE id=%s", (design_id,)).fetchone()
             )
         if not design:
             return redirect("/observability/")
@@ -275,7 +275,7 @@ def create_observability_blueprint():
         """Remediation page — gap analysis with recommended fixes."""
         with get_connection() as conn:
             design = _row_to_dict(
-                conn.execute("SELECT id, name FROM observability_designs WHERE id=?", (design_id,)).fetchone()
+                conn.execute("SELECT id, name FROM observability_designs WHERE id=%s", (design_id,)).fetchone()
             )
         if not design:
             return redirect("/observability/")
@@ -301,7 +301,7 @@ def create_observability_blueprint():
         if template_id:
             with get_connection() as conn:
                 ex = conn.execute(
-                    "SELECT id, name FROM observability_designs WHERE template_id=? LIMIT 1",
+                    "SELECT id, name FROM observability_designs WHERE template_id=%s LIMIT 1",
                     (template_id,),
                 ).fetchone()
             if ex:
@@ -313,7 +313,7 @@ def create_observability_blueprint():
         if template_id and graph_json == '{"nodes":[],"edges":[]}':
             try:
                 with get_connection() as conn:
-                    tpl = conn.execute("SELECT graph_json FROM od_templates WHERE id=?", (template_id,)).fetchone()
+                    tpl = conn.execute("SELECT graph_json FROM od_templates WHERE id=%s", (template_id,)).fetchone()
                     if tpl:
                         graph_json = tpl["graph_json"]
             except Exception:
@@ -325,7 +325,7 @@ def create_observability_blueprint():
             conn.execute(
                 "INSERT INTO observability_designs "
                 "(id, name, description, graph_json, template_id, classification, "
-                "created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)",
+                "created_at, updated_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
                 (
                     design_id,
                     name,
@@ -366,7 +366,7 @@ def create_observability_blueprint():
         """Get a specific observability design."""
         conn = get_connection()
         try:
-            row = conn.execute("SELECT * FROM observability_designs WHERE id=?", (design_id,)).fetchone()
+            row = conn.execute("SELECT * FROM observability_designs WHERE id=%s", (design_id,)).fetchone()
         finally:
             conn.close()
         if not row:
@@ -384,8 +384,8 @@ def create_observability_blueprint():
         conn = get_connection()
         try:
             conn.execute(
-                "UPDATE observability_designs SET name=?, description=?, "
-                "graph_json=?, classification=?, updated_at=? WHERE id=?",
+                "UPDATE observability_designs SET name=%s, description=%s, "
+                "graph_json=%s, classification=%s, updated_at=%s WHERE id=%s",
                 (
                     data.get("name", ""),
                     data.get("description", ""),
@@ -448,9 +448,9 @@ def create_observability_blueprint():
         logger.info("Deleting observability design: %s", design_id)
         conn = get_connection()
         try:
-            conn.execute("DELETE FROM od_assessments WHERE design_id=?", (design_id,))
-            conn.execute("DELETE FROM od_versions WHERE design_id=?", (design_id,))
-            conn.execute("DELETE FROM observability_designs WHERE id=?", (design_id,))
+            conn.execute("DELETE FROM od_assessments WHERE design_id=%s", (design_id,))
+            conn.execute("DELETE FROM od_versions WHERE design_id=%s", (design_id,))
+            conn.execute("DELETE FROM observability_designs WHERE id=%s", (design_id,))
             conn.commit()
         finally:
             conn.close()
@@ -465,9 +465,9 @@ def create_observability_blueprint():
         try:
             ids = [r[0] for r in conn.execute("SELECT id FROM observability_designs").fetchall()]
             for did in ids:
-                conn.execute("DELETE FROM od_assessments WHERE design_id=?", (did,))
-                conn.execute("DELETE FROM od_versions WHERE design_id=?", (did,))
-                conn.execute("DELETE FROM observability_designs WHERE id=?", (did,))
+                conn.execute("DELETE FROM od_assessments WHERE design_id=%s", (did,))
+                conn.execute("DELETE FROM od_versions WHERE design_id=%s", (did,))
+                conn.execute("DELETE FROM observability_designs WHERE id=%s", (did,))
             conn.commit()
         finally:
             conn.close()
@@ -486,7 +486,7 @@ def create_observability_blueprint():
         chain_mode = "cot" if use_cot else ""
         conn = get_connection()
         try:
-            row = conn.execute("SELECT graph_json FROM observability_designs WHERE id=?", (design_id,)).fetchone()
+            row = conn.execute("SELECT graph_json FROM observability_designs WHERE id=%s", (design_id,)).fetchone()
         finally:
             conn.close()
         if not row:
@@ -511,7 +511,7 @@ def create_observability_blueprint():
             conn.execute(
                 "INSERT INTO od_assessments "
                 "(id, design_id, assessment_type, findings_json, score, grade, created_at) "
-                "VALUES (?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s)",
                 (
                     assessment_id,
                     design_id,
@@ -574,7 +574,7 @@ def create_observability_blueprint():
 
         conn = get_connection()
         try:
-            row = conn.execute("SELECT graph_json FROM observability_designs WHERE id=?", (design_id,)).fetchone()
+            row = conn.execute("SELECT graph_json FROM observability_designs WHERE id=%s", (design_id,)).fetchone()
         finally:
             conn.close()
         if not row:
@@ -598,7 +598,7 @@ def create_observability_blueprint():
         conn = get_connection()
         try:
             conn.execute(
-                "UPDATE observability_designs SET graph_json=?, updated_at=? WHERE id=?",
+                "UPDATE observability_designs SET graph_json=%s, updated_at=%s WHERE id=%s",
                 (json.dumps(graph_data), _now(), design_id),
             )
             conn.commit()
@@ -658,7 +658,7 @@ def create_observability_blueprint():
         """Get a specific template with full graph_json."""
         conn = get_connection()
         try:
-            row = conn.execute("SELECT * FROM od_templates WHERE id=?", (template_id,)).fetchone()
+            row = conn.execute("SELECT * FROM od_templates WHERE id=%s", (template_id,)).fetchone()
         finally:
             conn.close()
         if not row:
@@ -697,7 +697,7 @@ def create_observability_blueprint():
         with get_connection() as conn:
             rows = conn.execute(
                 "SELECT id, version_number, change_summary, user_id, created_at "
-                "FROM od_versions WHERE design_id=? ORDER BY version_number DESC",
+                "FROM od_versions WHERE design_id=%s ORDER BY version_number DESC",
                 (design_id,),
             ).fetchall()
         return jsonify([_row_to_dict(r) for r in rows])
@@ -709,7 +709,7 @@ def create_observability_blueprint():
         data = request.get_json(force=True, silent=True) or {}
         with get_connection() as conn:
             row = conn.execute(
-                "SELECT graph_json FROM observability_designs WHERE id=?",
+                "SELECT graph_json FROM observability_designs WHERE id=%s",
                 (design_id,),
             ).fetchone()
             if not row:
@@ -720,13 +720,13 @@ def create_observability_blueprint():
             except Exception:
                 current_graph = {}
             ver_num = conn.execute(
-                "SELECT COALESCE(MAX(version_number), 0) + 1 FROM od_versions WHERE design_id=?",
+                "SELECT COALESCE(MAX(version_number), 0) + 1 FROM od_versions WHERE design_id=%s",
                 (design_id,),
             ).fetchone()[0]
             change_summary = data.get("change_summary", "")
             if not change_summary:
                 prev = conn.execute(
-                    "SELECT graph_json FROM od_versions WHERE design_id=? ORDER BY version_number DESC LIMIT 1",
+                    "SELECT graph_json FROM od_versions WHERE design_id=%s ORDER BY version_number DESC LIMIT 1",
                     (design_id,),
                 ).fetchone()
                 if prev:
@@ -739,7 +739,7 @@ def create_observability_blueprint():
             now = _now()
             conn.execute(
                 "INSERT INTO od_versions (id, design_id, version_number, graph_json, change_summary, user_id, created_at) "
-                "VALUES (?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s)",
                 (
                     ver_id,
                     design_id,
@@ -761,14 +761,14 @@ def create_observability_blueprint():
         """Restore an observability design to a previous version snapshot."""
         with get_connection() as conn:
             ver = conn.execute(
-                "SELECT graph_json, version_number FROM od_versions WHERE id=? AND design_id=?",
+                "SELECT graph_json, version_number FROM od_versions WHERE id=%s AND design_id=%s",
                 (version_id, design_id),
             ).fetchone()
             if not ver:
                 return jsonify({"error": "Version not found"}), 404
             now = _now()
             conn.execute(
-                "UPDATE observability_designs SET graph_json=?, updated_at=? WHERE id=?",
+                "UPDATE observability_designs SET graph_json=%s, updated_at=%s WHERE id=%s",
                 (ver[0], now, design_id),
             )
         _audit("VERSION_RESTORE", design_id, f"restored to v{ver[1]}")
@@ -785,11 +785,11 @@ def create_observability_blueprint():
             return jsonify({"error": "version_a and version_b required"}), 400
         with get_connection() as conn:
             ver_a = conn.execute(
-                "SELECT graph_json, version_number FROM od_versions WHERE id=? AND design_id=?",
+                "SELECT graph_json, version_number FROM od_versions WHERE id=%s AND design_id=%s",
                 (ver_a_id, design_id),
             ).fetchone()
             ver_b = conn.execute(
-                "SELECT graph_json, version_number FROM od_versions WHERE id=? AND design_id=?",
+                "SELECT graph_json, version_number FROM od_versions WHERE id=%s AND design_id=%s",
                 (ver_b_id, design_id),
             ).fetchone()
         if not ver_a or not ver_b:
@@ -830,7 +830,7 @@ def create_observability_blueprint():
 
         with get_connection() as conn:
             row = conn.execute(
-                "SELECT name, graph_json FROM observability_designs WHERE id=?",
+                "SELECT name, graph_json FROM observability_designs WHERE id=%s",
                 (design_id,),
             ).fetchone()
         if not row:
@@ -851,7 +851,7 @@ def create_observability_blueprint():
 
     def _odc_fetch(design_id):
         with get_connection() as conn:
-            row = conn.execute("SELECT name, graph_json FROM observability_designs WHERE id=?", (design_id,)).fetchone()
+            row = conn.execute("SELECT name, graph_json FROM observability_designs WHERE id=%s", (design_id,)).fetchone()
         if not row:
             return None, None
         d = _row_to_dict(row)
@@ -1005,7 +1005,7 @@ def create_observability_blueprint():
 
         with get_connection() as conn:
             row = conn.execute(
-                "SELECT name, graph_json FROM observability_designs WHERE id=?",
+                "SELECT name, graph_json FROM observability_designs WHERE id=%s",
                 (design_id,),
             ).fetchone()
         if not row:
@@ -1079,7 +1079,7 @@ def create_observability_blueprint():
         retention_days = int(request.args.get("retention_days", 90))
         with get_connection() as conn:
             row = conn.execute(
-                "SELECT graph_json FROM observability_designs WHERE id=?",
+                "SELECT graph_json FROM observability_designs WHERE id=%s",
                 (design_id,),
             ).fetchone()
         if not row:
@@ -1310,7 +1310,7 @@ def create_observability_blueprint():
             try:
                 with get_connection() as conn:
                     row = conn.execute(
-                        "SELECT graph_json FROM observability_designs WHERE id=?",
+                        "SELECT graph_json FROM observability_designs WHERE id=%s",
                         (design_id,),
                     ).fetchone()
                 if row:
@@ -1419,13 +1419,13 @@ def create_observability_blueprint():
     @oc_login_required
     def oc_twin_page(design_id):
         conn = get_connection()
-        design = conn.execute("SELECT * FROM observability_designs WHERE id=?", (design_id,)).fetchone()
+        design = conn.execute("SELECT * FROM observability_designs WHERE id=%s", (design_id,)).fetchone()
         if not design:
             return render_template("404.html"), 404
         design = _row_to_dict(design)
         try:
             snapshots = conn.execute(
-                "SELECT * FROM odc_twin_snapshots WHERE design_id=? ORDER BY created_at DESC LIMIT 20",
+                "SELECT * FROM odc_twin_snapshots WHERE design_id=%s ORDER BY created_at DESC LIMIT 20",
                 (design_id,),
             ).fetchall()
         except Exception:
@@ -1469,7 +1469,7 @@ def create_observability_blueprint():
     @oc_login_required
     def oc_api_twin_current_topology(design_id):
         conn = get_connection()
-        row = conn.execute("SELECT graph_json FROM observability_designs WHERE id=?", (design_id,)).fetchone()
+        row = conn.execute("SELECT graph_json FROM observability_designs WHERE id=%s", (design_id,)).fetchone()
         if not row:
             return jsonify({"error": "Design not found"}), 404
         try:
@@ -1585,13 +1585,13 @@ def create_observability_blueprint():
 
             raw_nodes = conn.execute(
                 "SELECT node_id, node_type, label, metadata_json "
-                "FROM canvas_kg_nodes WHERE canvas = 'sg' LIMIT ?",
+                "FROM canvas_kg_nodes WHERE canvas = 'sg' LIMIT %s",
                 (limit * 3,),
             ).fetchall()
 
             raw_edges = conn.execute(
                 "SELECT source_id, target_id, edge_type, metadata_json "
-                "FROM canvas_kg_edges WHERE canvas = 'sg' LIMIT ?",
+                "FROM canvas_kg_edges WHERE canvas = 'sg' LIMIT %s",
                 (limit * 5,),
             ).fetchall()
         except Exception as exc:
@@ -1734,14 +1734,14 @@ def create_observability_blueprint():
             with _gc() as _conn:
                 if record_id:
                     rows = _conn.execute(
-                        "SELECT * FROM canvas_ai_decisions WHERE canvas_type='odc' AND record_id=? "
-                        "ORDER BY created_at DESC LIMIT ?",
+                        "SELECT * FROM canvas_ai_decisions WHERE canvas_type='odc' AND record_id=%s "
+                        "ORDER BY created_at DESC LIMIT %s",
                         (record_id, limit),
                     ).fetchall()
                 else:
                     rows = _conn.execute(
                         "SELECT * FROM canvas_ai_decisions WHERE canvas_type='odc' "
-                        "ORDER BY created_at DESC LIMIT ?",
+                        "ORDER BY created_at DESC LIMIT %s",
                         (limit,),
                     ).fetchall()
             return jsonify({"ok": True, "canvas": "odc", "decisions": [dict(r) for r in rows]})
@@ -1827,7 +1827,7 @@ def create_observability_blueprint():
         """Run observability governance framework check."""
         import uuid as _uuid_mod
         conn = get_connection()
-        row = conn.execute("SELECT graph_json FROM observability_designs WHERE id=?", (design_id,)).fetchone()
+        row = conn.execute("SELECT graph_json FROM observability_designs WHERE id=%s", (design_id,)).fetchone()
         if not row:
             conn.close()
             return jsonify({"error": "Not found"}), 404
@@ -1842,7 +1842,7 @@ def create_observability_blueprint():
         assess_id = str(_uuid_mod.uuid4())
         conn.execute(
             "INSERT INTO od_assessments (id, design_id, assessment_type, findings_json, score, grade, created_at) "
-            "VALUES (?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s)",
             (assess_id, design_id, "governance",
              json.dumps([{"title": c["title"], "severity": c["severity"], "status": c["status"]}
                          for c in result["checks"]]),

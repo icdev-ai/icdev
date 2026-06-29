@@ -208,7 +208,7 @@ def _suggest_kanban_card(
     try:
         # Dedup: skip if same title + same source already open
         existing = conn.execute(
-            "SELECT id FROM kanban_tasks WHERE title = ? AND dispatch_source = ? "
+            "SELECT id FROM kanban_tasks WHERE title = %s AND dispatch_source = %s "
             "AND status NOT IN ('done', 'dismissed')",
             (title[:120], created_by),
         ).fetchone()
@@ -221,7 +221,7 @@ def _suggest_kanban_card(
             """INSERT INTO kanban_tasks
                (id, task_type, title, description, status, priority,
                 tags, dispatch_source, created_at, updated_at)
-               VALUES (?, ?, ?, ?, 'suggested', ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, 'suggested', %s, %s, %s, %s, %s)""",
             (
                 task_id,
                 "fix",

@@ -1715,7 +1715,7 @@ def noc_incident_create(args: dict) -> dict:
                 conn.execute(
                     "INSERT INTO noc_incidents (incident_number, title, severity, status, "
                     "affected_circuit, affected_carrier, root_cause, sla_breach, opened_by, "
-                    "assigned_to, classification) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                    "assigned_to, classification) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                     (incident_number, title, severity, "open", affected_circuit,
                      affected_carrier, root_cause, sla_breach, opened_by, assigned_to,
                      "CUI // SP-CTI"),
@@ -1802,7 +1802,7 @@ def ccc_circuit_ingest(args: dict) -> dict:
             conn.execute(
                 "INSERT OR REPLACE INTO ccc_circuits"
                 " (circuit_id, circuit_type, carrier, bandwidth_gbps, utilization_pct, mrr_usd)"
-                " VALUES (?, ?, ?, ?, ?, ?)",
+                " VALUES (%s, %s, %s, %s, %s, %s)",
                 values,
             )
         except Exception:

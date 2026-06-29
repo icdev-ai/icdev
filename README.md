@@ -1,19 +1,74 @@
 <p align="center">
+  <a href="https://github.com/icdev-ai/icdev/stargazers"><img src="https://img.shields.io/github/stars/icdev-ai/icdev?style=social" alt="GitHub Stars"></a>
+  <a href="https://github.com/icdev-ai/icdev/network/members"><img src="https://img.shields.io/github/forks/icdev-ai/icdev?style=social" alt="GitHub Forks"></a>
+</p>
+
+<p align="center">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License">
   <img src="https://img.shields.io/badge/python-3.9%2B-brightgreen" alt="Python 3.9+">
-  <img src="https://img.shields.io/badge/version-1.2.30-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-1.2.31-blue" alt="Version">
+  <a href="https://pypi.org/project/icdev/"><img src="https://img.shields.io/pypi/v/icdev?color=informational&label=PyPI" alt="PyPI Version"></a>
+  <a href="https://pypi.org/project/icdev/"><img src="https://img.shields.io/pypi/dm/icdev?label=PyPI%20downloads" alt="PyPI Downloads"></a>
   <img src="https://img.shields.io/badge/compliance%20frameworks-42-orange" alt="Compliance Frameworks">
   <img src="https://img.shields.io/badge/tools-560%2B-blueviolet" alt="Tools">
   <img src="https://img.shields.io/badge/agents-16-red" alt="Agents">
   <img src="https://img.shields.io/badge/languages-6-green" alt="Languages">
   <img src="https://img.shields.io/badge/canvases-13-00acc1" alt="Design Canvases">
   <img src="https://img.shields.io/badge/solution%20packs-7-ff6b35" alt="Solution Packs">
-  <img src="https://img.shields.io/badge/PyPI-icdev-informational" alt="PyPI">
+  <a href="https://github.com/icdev-ai/icdev/issues"><img src="https://img.shields.io/github/issues/icdev-ai/icdev" alt="Open Issues"></a>
+  <a href="https://github.com/icdev-ai/icdev/actions"><img src="https://img.shields.io/github/actions/workflow/status/icdev-ai/icdev/icdev-ci.yml?label=CI" alt="CI Status"></a>
 </p>
 
 # ICDEV™ — Intelligent Certified Development Platform
 
 **A system that builds systems.**
+
+---
+
+## Table of Contents
+
+- [What's New](#whats-new-in-1231--enterprise-configurable-platform--ace-file-access--processify)
+- [What ICDEV™ Builds](#what-icdev-builds)
+- [10 Design Canvases](#10-design-canvases)
+- [Quick Start](#quick-start)
+- [FORGE Framework](#how-it-actually-works)
+- [Ask Any Canvas](#ask-any-canvas)
+- [Network Design Canvas](#network-design-canvas)
+- [Agentic AI Design Canvas](#agentic-ai-design-canvas)
+- [FathomDesk — Trading Intelligence](#fathomdesk--ai-powered-trading-intelligence)
+- [FORGE Academy](#forge-academy)
+- [AI GameDay](#ai-gameday)
+- [SaaS & Multi-Tenancy](#saas--portal)
+- [MCP Server Integration](#mcp-server-integration)
+- [Security](#security)
+- [Deployment](#deployment)
+- [Testing](#testing)
+- [Project Structure](#project-structure)
+- [License](#license)
+
+---
+
+## What's New in 1.2.31 — Enterprise-Configurable Platform, ACE File Access Broker & Processify Canvas
+
+- **Enterprise-Configurable Platform** — Component registration is now 100% registry-driven. Canvases, child apps, and features are declared in `args/component_registry.yaml`; no changes to `app.py`, `enable.py`, or `base.html` required to add a new component. Core profiles (`args/core_profiles.yaml`) let operators apply environment presets with `icdev profile apply <name>`. Tenant-level enablement overrides land in `tenant_component_overrides` (migration 207); every change is logged to the append-only `component_audit_log` (migration 208).
+- **ACE File Access Broker** — `icdev/tools/ace/file_access_broker.py` enforces three-tier file access for co-worker agents: `zero_access` (`.env`, `*.pem`, `*.tfstate`), `read_only` (lock files, compliance catalogs), `no_delete` (`CLAUDE.md`, goals, IaC). Requests outside policy are blocked at execution time with an audit entry.
+- **ACE Skill Promoter & Soul Manager** — `skill_promoter.py` autonomously proposes new skills derived from co-worker discoveries and queues them for human review. `soul_manager.py` manages SOUL personality configs per co-worker role, enabling per-role tone, vocabulary, and risk posture.
+- **ACE Agent Coordination** — `agent_coordination.py` + migration 222 bring cross-session advisory locks so concurrent co-worker and kanban agents negotiate file ownership rather than stomping each other. Coordination state is persisted and visible in the HITL dashboard.
+- **Agent Loop Persistence** — Migrations 220 (`agent_loop_sessions`) and 221 (`agent_hitl_pending`) give the reusable `run_agent_loop` primitive durable session state: loop resume on restart, HITL item queue with approver assignments, and cost/token tracking per session.
+- **Processify Canvas** — New BPMN-style process design canvas at `/processify`. Drag-and-drop swimlane editor with BPMN 2.0 primitives (tasks, gateways, events, pools), JSON export, compliance overlay (maps lanes to NIST 800-53 process controls), and IQE query support.
+- **Canvas Health Dashboard** — `tools/dashboard/templates/canvas_health/` delivers a real-time health panel for all registered canvases: record counts, last-indexed timestamp, IQE adapter status, missing ACE roles, and pending HITL items.
+- **Updates Feed** — `tools/dashboard/templates/updates/` provides a system-wide chronological feed of component config changes, migration runs, and reflex activity — visible from the main nav under **Updates**.
+- **Coworker HITL Workflow** — `templates/coworker/hitl.html` exposes a dedicated HITL queue UI: approve/reject/comment on co-worker decisions with full audit trail, priority ranking, and bulk-action support.
+- **Billing Module** — `icdev/tools/billing/` adds tenant billing and subscription management: usage metering (API calls, LLM tokens, storage), tier enforcement, invoice generation, and a billing dashboard at `/billing`.
+- **Onboarding Wizard** — New first-run experience (`onboarding.js` + `_onboarding_wizard.html`): 5-step guided setup covers DB backend, LLM provider, first canvas selection, profile application, and dashboard tour. Triggered automatically on fresh installs; re-launchable from Settings.
+- **Migration Topology Visualization** — `migration-topology.js` renders an interactive Sankey-style migration wave diagram at `/migration/topology` — shows workloads, target environments, estimated risk bands, and STIG compliance readiness per wave.
+- **Network Topology Neighbors** — Migration 218 adds `net_topology_neighbors` table with pre-computed neighbor sets for O(1) blast-radius lookup. `blueprint_helpers.py` updated to use the materialized neighbor index rather than graph traversal at query time.
+- **Capability Sheet Reflex** — `icdev/tools/genesis/reflexes/capability_sheet_reflex.py` runs on a 6-hour cadence, auto-generating and updating the `.agents/skills/icdev-capability-sheet` from current tool manifests, MCP registrations, and canvas inventory. Always reflects the live platform state.
+- **CMMI L3 Assessor Hardening** — `cmmi_l3_assessor.py` updated with refined evidence-weight scoring for PA 3.1–3.6, automatic detection of process asset library gaps, and a new HTML evidence report template.
+- **Canvas Auto-Remediation Improvements** — `auto_remediate.py` now triggers on IQE scan findings in addition to drift-detector alerts. Confidence threshold for auto-apply raised to 0.75; sub-threshold findings surface as HITL items in the new HITL queue UI.
+- **Lint Clean (264 fixes)** — Ruff auto-fix resolved 264 style and correctness issues across 128 files; all CI lint gates green.
+
+---
 
 ## What's New in 1.2.30 — ACE Co-Worker Hardening, AAC Agent Readiness & Kanban PR Flow
 
@@ -516,6 +571,10 @@ pip install --no-index --find-links ./icdev-wheels 'icdev[govcloud]'
 git clone https://github.com/icdev-ai/icdev.git
 cd icdev
 pip install -r requirements.txt
+
+# Configure environment (copy sample, then edit with your LLM keys)
+cp .env.sample .env
+# Edit .env — set OLLAMA_MODEL, API keys, DB backend, and canvas toggles
 
 # Initialize databases (588+ tables)
 python tools/db/init_icdev_db.py

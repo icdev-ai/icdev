@@ -337,14 +337,14 @@ def generate_assessment_report(app_id, output_dir=None, db_path=None):
 
     try:
         # --- Fetch application ---
-        app_row = conn.execute("SELECT * FROM legacy_applications WHERE id = ?", (app_id,)).fetchone()
+        app_row = conn.execute("SELECT * FROM legacy_applications WHERE id = %s", (app_id,)).fetchone()
         if app_row is None:
             raise ValueError(f"Application '{app_id}' not found in legacy_applications.")
         app = dict(app_row)
 
         # --- Fetch latest assessment ---
         assess_row = conn.execute(
-            "SELECT * FROM migration_assessments WHERE legacy_app_id = ? ORDER BY assessed_at DESC LIMIT 1", (app_id,)
+            "SELECT * FROM migration_assessments WHERE legacy_app_id = %s ORDER BY assessed_at DESC LIMIT 1", (app_id,)
         ).fetchone()
         if assess_row is None:
             raise ValueError(
@@ -355,27 +355,27 @@ def generate_assessment_report(app_id, output_dir=None, db_path=None):
 
         # --- Fetch components (top 20 by complexity) ---
         comp_rows = conn.execute(
-            "SELECT * FROM legacy_components WHERE legacy_app_id = ? ORDER BY cyclomatic_complexity DESC LIMIT 20",
+            "SELECT * FROM legacy_components WHERE legacy_app_id = %s ORDER BY cyclomatic_complexity DESC LIMIT 20",
             (app_id,),
         ).fetchall()
         components = [dict(r) for r in comp_rows]
 
         total_components_row = conn.execute(
-            "SELECT COUNT(*) AS cnt FROM legacy_components WHERE legacy_app_id = ?",
+            "SELECT COUNT(*) AS cnt FROM legacy_components WHERE legacy_app_id = %s",
             (app_id,),
         ).fetchone()
         total_components = total_components_row["cnt"] if total_components_row else 0
 
         # --- Fetch APIs ---
         api_rows = conn.execute(
-            "SELECT * FROM legacy_apis WHERE legacy_app_id = ? ORDER BY path, method",
+            "SELECT * FROM legacy_apis WHERE legacy_app_id = %s ORDER BY path, method",
             (app_id,),
         ).fetchall()
         apis = [dict(r) for r in api_rows]
 
         # --- Fetch DB schemas (grouped by table) ---
         schema_rows = conn.execute(
-            "SELECT * FROM legacy_db_schemas WHERE legacy_app_id = ? ORDER BY table_name, column_name", (app_id,)
+            "SELECT * FROM legacy_db_schemas WHERE legacy_app_id = %s ORDER BY table_name, column_name", (app_id,)
         ).fetchall()
         db_schemas = [dict(r) for r in schema_rows]
 
@@ -637,14 +637,14 @@ def generate_progress_report(plan_id, pi_number=None, output_dir=None, db_path=N
 
     try:
         # --- Fetch plan ---
-        plan_row = conn.execute("SELECT * FROM migration_plans WHERE id = ?", (plan_id,)).fetchone()
+        plan_row = conn.execute("SELECT * FROM migration_plans WHERE id = %s", (plan_id,)).fetchone()
         if plan_row is None:
             raise ValueError(f"Migration plan '{plan_id}' not found in migration_plans.")
         plan = dict(plan_row)
 
         # --- Fetch all tasks for this plan ---
         task_rows = conn.execute(
-            "SELECT * FROM migration_tasks WHERE plan_id = ? ORDER BY priority, title",
+            "SELECT * FROM migration_tasks WHERE plan_id = %s ORDER BY priority, title",
             (plan_id,),
         ).fetchall()
         tasks = [dict(r) for r in task_rows]
@@ -652,12 +652,12 @@ def generate_progress_report(plan_id, pi_number=None, output_dir=None, db_path=N
         # --- Fetch progress snapshots ---
         if pi_number:
             progress_rows = conn.execute(
-                "SELECT * FROM migration_progress WHERE plan_id = ? AND pi_number = ? ORDER BY id DESC",
+                "SELECT * FROM migration_progress WHERE plan_id = %s AND pi_number = %s ORDER BY id DESC",
                 (plan_id, pi_number),
             ).fetchall()
         else:
             progress_rows = conn.execute(
-                "SELECT * FROM migration_progress WHERE plan_id = ? ORDER BY pi_number",
+                "SELECT * FROM migration_progress WHERE plan_id = %s ORDER BY pi_number",
                 (plan_id,),
             ).fetchall()
         progress = [dict(r) for r in progress_rows]
@@ -909,7 +909,7 @@ def generate_ato_impact_report(plan_id, output_dir=None, db_path=None):
 
     try:
         # --- Fetch plan ---
-        plan_row = conn.execute("SELECT * FROM migration_plans WHERE id = ?", (plan_id,)).fetchone()
+        plan_row = conn.execute("SELECT * FROM migration_plans WHERE id = %s", (plan_id,)).fetchone()
         if plan_row is None:
             raise ValueError(f"Migration plan '{plan_id}' not found.")
         plan = dict(plan_row)
@@ -919,7 +919,7 @@ def generate_ato_impact_report(plan_id, output_dir=None, db_path=None):
         assessment = None
         if app_id:
             assess_row = conn.execute(
-                "SELECT * FROM migration_assessments WHERE legacy_app_id = ? ORDER BY assessed_at DESC LIMIT 1",
+                "SELECT * FROM migration_assessments WHERE legacy_app_id = %s ORDER BY assessed_at DESC LIMIT 1",
                 (app_id,),
             ).fetchone()
             if assess_row:
@@ -929,7 +929,7 @@ def generate_ato_impact_report(plan_id, output_dir=None, db_path=None):
         compliance_links = []
         try:
             link_rows = conn.execute(
-                "SELECT * FROM digital_thread_links WHERE project_id = ? AND link_type LIKE '%compliance%'",
+                "SELECT * FROM digital_thread_links WHERE project_id = %s AND link_type LIKE '%compliance%'",
                 (plan.get("legacy_app_id", ""),),
             ).fetchall()
             compliance_links = [dict(r) for r in link_rows]
@@ -1186,14 +1186,14 @@ def generate_executive_summary(app_id, output_dir=None, db_path=None):
 
     try:
         # --- Fetch application ---
-        app_row = conn.execute("SELECT * FROM legacy_applications WHERE id = ?", (app_id,)).fetchone()
+        app_row = conn.execute("SELECT * FROM legacy_applications WHERE id = %s", (app_id,)).fetchone()
         if app_row is None:
             raise ValueError(f"Application '{app_id}' not found.")
         app = dict(app_row)
 
         # --- Fetch latest assessment ---
         assess_row = conn.execute(
-            "SELECT * FROM migration_assessments WHERE legacy_app_id = ? ORDER BY assessed_at DESC LIMIT 1", (app_id,)
+            "SELECT * FROM migration_assessments WHERE legacy_app_id = %s ORDER BY assessed_at DESC LIMIT 1", (app_id,)
         ).fetchone()
         if assess_row is None:
             raise ValueError(f"No assessment found for '{app_id}'. Run seven_r_assessor.py first.")
@@ -1201,7 +1201,7 @@ def generate_executive_summary(app_id, output_dir=None, db_path=None):
 
         # --- Component count ---
         comp_count_row = conn.execute(
-            "SELECT COUNT(*) AS cnt FROM legacy_components WHERE legacy_app_id = ?",
+            "SELECT COUNT(*) AS cnt FROM legacy_components WHERE legacy_app_id = %s",
             (app_id,),
         ).fetchone()
         comp_count = comp_count_row["cnt"] if comp_count_row else 0

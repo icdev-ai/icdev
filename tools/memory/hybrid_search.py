@@ -306,6 +306,69 @@ def _summarize_results(query, top_entries, cache_ttl=_SUMMARY_CACHE_TTL):
         return None, str(exc)
 
 
+def search(
+    query: str,
+    limit: int = 5,
+    tier: str | None = None,
+    user_id: str | None = None,
+    tenant_id: str | None = None,
+    bm25_weight: float = 0.7,
+    semantic_weight: float = 0.3,
+) -> list[dict]:
+    """Programmatic hybrid search for use by agent_loop and chat_manager.
+
+    Returns a list of dicts: {id, content, type, score}.  Returns [] on any
+    error so callers can degrade gracefully.  Tier filtering is applied at
+    the Python level and is a no-op if migration 226 has not yet run.
+
+    Args:
+        query:    Natural-language search query.
+        limit:    Maximum number of results to return (default 5).
+        tier:     Optional pipe-separated tier filter, e.g. ``'episodic|semantic'``.
+                  Values: ``'procedural'``, ``'episodic'``, ``'semantic'``.
+        user_id:  Scope results to this user (or global entries).
+        tenant_id: Scope results to this tenant (or global entries).
+    """
+    if not query or not query.strip():
+        return []
+    try:
+        entries = get_all_entries(user_id=user_id, tenant_id=tenant_id)
+        if not entries:
+            return []
+
+        # Tier filter — applied after fetch; column may not exist yet (migration 226)
+        if tier:
+            allowed = {t.strip() for t in tier.split("|") if t.strip()}
+            if allowed:
+                conn = _connect()
+                try:
+                    # Try to fetch tier column; fall back silently if not present
+                    c = conn.cursor()
+                    c.execute("SELECT id, tier FROM memory_entries")
+                    tier_map = {row[0]: (row[1] or "episodic") for row in c.fetchall()}
+                except Exception:
+                    tier_map = {}
+                finally:
+                    conn.close()
+                if tier_map:
+                    entries = [e for e in entries if tier_map.get(e[0], "episodic") in allowed]
+
+        if not entries:
+            return []
+
+        bm25_scores = bm25_search(query, entries)
+        semantic_scores = semantic_search(query, entries)
+        ranked = hybrid_rank(entries, bm25_scores, semantic_scores, bm25_weight, semantic_weight)
+
+        return [
+            {"id": id_, "content": content, "type": type_, "score": round(score, 4)}
+            for score, id_, content, type_, importance, created_at in ranked[:limit]
+            if score > 0
+        ]
+    except Exception:
+        return []
+
+
 def main():
     parser = argparse.ArgumentParser(description="Hybrid search (BM25 + semantic)")
     parser.add_argument("--query", required=True, help="Search query")
@@ -381,7 +444,7 @@ def main():
     conn = get_connection()
     c = conn.cursor()
     c.execute(
-        "INSERT INTO memory_access_log (query, results_count, search_type) VALUES (?, ?, ?)",
+        "INSERT INTO memory_access_log (query, results_count, search_type) VALUES (%s, %s, %s)",
         (args.query, min(args.limit, len(results)), search_type),
     )
     conn.commit()

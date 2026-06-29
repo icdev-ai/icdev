@@ -897,37 +897,42 @@ CREATE TABLE IF NOT EXISTS zig_maturity_scores (
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS slides_decks (
-    deck_id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    title           TEXT NOT NULL,
-    deck_type       TEXT NOT NULL DEFAULT 'executive_overview',
-    theme           TEXT NOT NULL DEFAULT 'midnight_executive',
-    tone            TEXT DEFAULT 'professional',
-    occasion        TEXT,
-    target_audience TEXT,
-    citation_style  TEXT DEFAULT 'inline_links',
-    output_formats  TEXT DEFAULT '["pptx"]',
-    status          TEXT NOT NULL DEFAULT 'pending',
-    source_types    TEXT DEFAULT '[]',
-    pptx_path       TEXT,
-    pdf_path        TEXT,
-    html_path       TEXT,
-    slide_count     INTEGER DEFAULT 0,
-    error_message   TEXT,
-    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
-    completed_at    DATETIME
+    deck_id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    title                TEXT NOT NULL,
+    deck_type            TEXT NOT NULL DEFAULT 'executive_overview',
+    theme                TEXT NOT NULL DEFAULT 'midnight_executive',
+    tone                 TEXT DEFAULT 'professional',
+    occasion             TEXT,
+    target_audience      TEXT,
+    citation_style       TEXT DEFAULT 'inline_links',
+    output_formats       TEXT DEFAULT '["pptx"]',
+    status               TEXT NOT NULL DEFAULT 'pending',
+    source_types         TEXT DEFAULT '[]',
+    pptx_path            TEXT,
+    pdf_path             TEXT,
+    html_path            TEXT,
+    slide_count          INTEGER DEFAULT 0,
+    error_message        TEXT,
+    enable_rich_diagrams INTEGER DEFAULT 0,
+    audience_mode        TEXT,
+    created_at           DATETIME DEFAULT CURRENT_TIMESTAMP,
+    completed_at         DATETIME
 );
 CREATE TABLE IF NOT EXISTS slides_slides (
-    slide_id      INTEGER PRIMARY KEY AUTOINCREMENT,
-    deck_id       INTEGER NOT NULL REFERENCES slides_decks(deck_id) ON DELETE CASCADE,
-    position      INTEGER NOT NULL,
-    slide_type    TEXT NOT NULL DEFAULT 'content',
-    title         TEXT NOT NULL,
-    bullets       TEXT DEFAULT '[]',
-    speaker_notes TEXT,
-    citations     TEXT DEFAULT '[]',
-    image_path    TEXT,
-    image_prompt  TEXT,
-    created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+    slide_id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    deck_id              INTEGER NOT NULL REFERENCES slides_decks(deck_id) ON DELETE CASCADE,
+    position             INTEGER NOT NULL,
+    slide_type           TEXT NOT NULL DEFAULT 'content',
+    title                TEXT NOT NULL,
+    bullets              TEXT DEFAULT '[]',
+    speaker_notes        TEXT,
+    citations            TEXT DEFAULT '[]',
+    image_path           TEXT,
+    image_prompt         TEXT,
+    mermaid_code         TEXT,
+    three_scene_config   TEXT,
+    excalidraw_elements  TEXT,
+    created_at           DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS slides_audit (
     audit_id  INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1521,6 +1526,7 @@ CREATE TABLE IF NOT EXISTS idr_sessions (
     prior_docs_context TEXT,
     last_source_hash TEXT,
     source_hash_checked_at TEXT,
+    final_doc_text  TEXT,
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
     updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
@@ -1547,6 +1553,8 @@ CREATE TABLE IF NOT EXISTS idr_analyses (
     status          TEXT NOT NULL DEFAULT 'done',
     error_msg       TEXT,
     tenant_id       TEXT,
+    result_json     TEXT,
+    confidence_score REAL,
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS idr_conflicts (
@@ -1575,6 +1583,7 @@ CREATE TABLE IF NOT EXISTS idr_artifacts (
     wg_result_id    TEXT,
     published_at    TEXT,
     tenant_id       TEXT,
+    flagged_sections TEXT,
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -1690,6 +1699,72 @@ CREATE TABLE IF NOT EXISTS nc_supply_chain_risk (
     model_version TEXT NOT NULL DEFAULT '1.0',
     assessed_at TEXT DEFAULT CURRENT_TIMESTAMP,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS studio_forms (
+    form_id     TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    description TEXT,
+    schema_json TEXT NOT NULL,
+    created_by  TEXT,
+    created_at  TEXT DEFAULT (datetime('now')),
+    updated_at  TEXT DEFAULT (datetime('now')),
+    version     INTEGER DEFAULT 1,
+    status      TEXT DEFAULT 'draft'
+);
+CREATE TABLE IF NOT EXISTS studio_form_submissions (
+    submission_id TEXT PRIMARY KEY,
+    form_id       TEXT NOT NULL REFERENCES studio_forms(form_id),
+    data_json     TEXT NOT NULL,
+    submitted_by  TEXT,
+    submitted_at  TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS wfc_branding (
+    id               TEXT PRIMARY KEY,
+    entity_type      TEXT NOT NULL,
+    entity_id        TEXT NOT NULL,
+    org_name         TEXT,
+    logo_data        TEXT,
+    primary_color    TEXT DEFAULT '#1a365d',
+    secondary_color  TEXT DEFAULT '#c8a951',
+    header_html      TEXT,
+    footer_html      TEXT,
+    show_classification INTEGER DEFAULT 1,
+    created_at       TEXT DEFAULT (datetime('now')),
+    updated_at       TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS wfc_workflow_form_nodes (
+    id                   TEXT PRIMARY KEY,
+    workflow_id          TEXT NOT NULL,
+    node_key             TEXT NOT NULL,
+    form_id              TEXT NOT NULL,
+    node_label           TEXT,
+    required_before_next INTEGER DEFAULT 1,
+    created_at           TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS forecast_jobs (
+    id             TEXT PRIMARY KEY,
+    source         TEXT NOT NULL DEFAULT 'manual',
+    context        TEXT DEFAULT '',
+    input_rows     INTEGER NOT NULL,
+    input_summary  TEXT DEFAULT '{}',
+    status         TEXT NOT NULL DEFAULT 'pending',
+    prediction     TEXT DEFAULT '{}',
+    model_id       TEXT DEFAULT 'timesfm-2.5-200m',
+    error_message  TEXT DEFAULT '',
+    created_at     TEXT DEFAULT (datetime('now')),
+    updated_at     TEXT DEFAULT (datetime('now')),
+    completed_at   TEXT,
+    classification TEXT DEFAULT 'CUI',
+    tenant_id      TEXT
+);
+CREATE TABLE IF NOT EXISTS forecast_audit (
+    id             TEXT PRIMARY KEY,
+    job_id         TEXT NOT NULL REFERENCES forecast_jobs(id) ON DELETE CASCADE,
+    event_type     TEXT NOT NULL,
+    actor          TEXT DEFAULT 'system',
+    details        TEXT DEFAULT '{}',
+    created_at     TEXT DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI'
 );
 """
 

@@ -205,7 +205,7 @@ class AgentOutputValidator:
                    (id, project_id, agent_id, tool_name, violation_type,
                     severity, details_json, output_hash, action_taken,
                     classification, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'CUI', ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'CUI', %s)""",
                 (
                     entry_id,
                     project_id,
@@ -258,7 +258,7 @@ class AgentOutputValidator:
             for severity in ("critical", "high", "medium"):
                 row = conn.execute(
                     f"SELECT COUNT(*) FROM agent_output_violations "  # nosec B608 -- table/column names are internal constants, not user input
-                    f"WHERE {where} AND severity = ? AND created_at >= ?",
+                    f"WHERE {where} AND severity = %s AND created_at >= %s",
                     params + [severity, cutoff],
                 ).fetchone()
                 count = row[0] if row else 0

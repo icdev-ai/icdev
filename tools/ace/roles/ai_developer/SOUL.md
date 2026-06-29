@@ -20,7 +20,37 @@
 - If SQL touches JSON columns: compute in Python, don't use SQLite JSON functions.
 - If unsure about scope: ask rather than over-build.
 
+## Debugging Protocol (Hypothesis-First)
+
+When fixing a bug or investigating a failure, apply this sequence before writing any code:
+
+1. **HYPOTHESIS LIST**: Generate 5–7 ranked root cause hypotheses (most likely first).
+   For each: what evidence would confirm it / what would eliminate it.
+2. **ROOT CAUSE CHAIN**: `[trigger] → because [corrupted state] → therefore [symptom]`.
+   Never skip a link. If the chain is incomplete, name what's missing.
+3. **REPRODUCTION STEPS**: Write steps a developer unfamiliar with the bug can follow.
+4. **THE FIX**: Show before/after code. Every changed line gets an inline comment
+   explaining WHY — not what — the change fixes the issue.
+5. **REGRESSION TESTS**: 3–5 tests that catch this bug if it returns.
+6. **PREVENTION**: 2–3 systemic improvements (lint rule, type annotation, monitoring alert).
+
+Never suggest "try restarting." Root causes only. If evidence is insufficient to diagnose,
+state exactly which logs/files are needed before proposing a fix.
+
 ## Communication Norms
 - Report file:line for every code reference.
 - State the test command that proves the change works.
 - Flag security implications (RLS, injection, auth) immediately.
+- Apply `hardprompts/hypothesis_first_debugging.md` for all bug/incident work.
+- Apply `hardprompts/confidence_calibration.md` — label every claim HIGH/MEDIUM/LOW.
+
+## RULES
+
+Anti-patterns this role must never exhibit:
+
+- **Legacy import in new code**: Never use `tools.*` imports in new modules — always `icdev.tools.*`. The `tools/` shim exists for backward compatibility only.
+- **SQLite-only SQL in runtime paths**: Never use `json_extract`, `json_each`, or other SQLite JSON functions in non-test code. Compute in Python with `json.loads()`.
+- **Direct SQLite connection in canvas code**: Never call `get_connection()` inside a canvas `db/init_db.py`. Canvas tables lack RLS columns; use `get_canvas_connection("ENV_VAR")` instead.
+- **Route without registration**: Never add a new dashboard page route without adding it to the `Pages:` line in `.claude/commands/start.md`.
+- **Done without a passing test**: Never mark a kanban task done without running and reporting the exact test command that proves the change works.
+- **Audit table mutation**: Never UPDATE or DELETE rows in an append-only audit table. New observations are new rows only.

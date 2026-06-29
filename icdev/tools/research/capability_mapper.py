@@ -363,7 +363,7 @@ def map_challenge_capabilities(challenge_id, session_id, db_path=None):
     conn = _get_db(db_path)
     try:
         # Load the challenge
-        row = conn.execute("SELECT * FROM research_challenges WHERE id = ?", (challenge_id,)).fetchone()
+        row = conn.execute("SELECT * FROM research_challenges WHERE id = %s", (challenge_id,)).fetchone()
 
         if not row:
             return {"status": "error", "message": f"Challenge not found: {challenge_id}"}
@@ -406,7 +406,7 @@ def map_challenge_capabilities(challenge_id, session_id, db_path=None):
                     """INSERT INTO research_capability_map
                     (id, session_id, challenge_id, capability_id, capability_name, coverage_score,
                      keyword_overlap, gap_description, enhancement_needed, metadata, mapped_at, classification)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'CUI')""",
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'CUI')""",
                     (
                         mapping_id,
                         session_id,
@@ -439,7 +439,7 @@ def map_challenge_capabilities(challenge_id, session_id, db_path=None):
         # Update challenge status to 'mapped' if it was 'scored' or 'new'
         if challenge.get("status") in ("new", "scored"):
             conn.execute(
-                "UPDATE research_challenges SET status = 'mapped' WHERE id = ?",
+                "UPDATE research_challenges SET status = 'mapped' WHERE id = %s",
                 (challenge_id,),
             )
 
@@ -478,7 +478,7 @@ def map_all_challenges(session_id, db_path=None):
     conn = _get_db(db_path)
     try:
         challenges = conn.execute(
-            "SELECT id FROM research_challenges WHERE session_id = ? ORDER BY composite_score DESC",
+            "SELECT id FROM research_challenges WHERE session_id = %s ORDER BY composite_score DESC",
             (session_id,),
         ).fetchall()
     finally:
@@ -534,7 +534,7 @@ def get_session_coverage(session_id, db_path=None):
     try:
         # Get all mappings for this session
         mappings = conn.execute(
-            "SELECT * FROM research_capability_map WHERE session_id = ?",
+            "SELECT * FROM research_capability_map WHERE session_id = %s",
             (session_id,),
         ).fetchall()
 
@@ -630,7 +630,7 @@ def get_challenge_capabilities(challenge_id, db_path=None):
     try:
         # Get challenge info
         challenge = conn.execute(
-            "SELECT id, title, category, composite_score, status FROM research_challenges WHERE id = ?",
+            "SELECT id, title, category, composite_score, status FROM research_challenges WHERE id = %s",
             (challenge_id,),
         ).fetchone()
 
@@ -641,7 +641,7 @@ def get_challenge_capabilities(challenge_id, db_path=None):
 
         # Get mappings
         mappings = conn.execute(
-            "SELECT * FROM research_capability_map WHERE challenge_id = ? ORDER BY coverage_score DESC",
+            "SELECT * FROM research_capability_map WHERE challenge_id = %s ORDER BY coverage_score DESC",
             (challenge_id,),
         ).fetchall()
 

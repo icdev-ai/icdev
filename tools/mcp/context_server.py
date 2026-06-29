@@ -166,7 +166,7 @@ def handle_get_project_context(args: dict) -> dict:
 
     try:
         conn = _get_db()
-        project = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+        project = conn.execute("SELECT * FROM projects WHERE id = %s", (project_id,)).fetchone()
         if not project:
             conn.close()
             return {"error": f"Project '{project_id}' not found"}
@@ -175,12 +175,12 @@ def handle_get_project_context(args: dict) -> dict:
 
         # Get compliance status
         poam_count = conn.execute(
-            "SELECT COUNT(*) as cnt FROM poam_items WHERE project_id = ?", (project_id,)
+            "SELECT COUNT(*) as cnt FROM poam_items WHERE project_id = %s", (project_id,)
         ).fetchone()["cnt"]
 
         # Get recent audit events
         events = conn.execute(
-            "SELECT event_type, action, created_at FROM audit_trail WHERE project_id = ? ORDER BY created_at DESC LIMIT 5",  # noqa: E501
+            "SELECT event_type, action, created_at FROM audit_trail WHERE project_id = %s ORDER BY created_at DESC LIMIT 5",  # noqa: E501
             (project_id,),
         ).fetchall()
 

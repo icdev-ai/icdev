@@ -95,8 +95,8 @@ def cleanup_expired(conn: Optional[sqlite3.Connection] = None) -> int:
         now = now_iso()
         cursor = conn.execute(
             """UPDATE agent_task_leases
-               SET status = 'expired', released_at = ?
-               WHERE status = 'active' AND expires_at < ?""",
+               SET status = 'expired', released_at = %s
+               WHERE status = 'active' AND expires_at < %s""",
             (now, now),
         )
         conn.commit()
@@ -136,7 +136,7 @@ def checkout_task(
         existing = conn.execute(
             """SELECT task_id, agent_id, leased_at, expires_at
                FROM agent_task_leases
-               WHERE task_id = ? AND status = 'active'""",
+               WHERE task_id = %s AND status = 'active'""",
             (task_id,),
         ).fetchone()
 
@@ -148,8 +148,8 @@ def checkout_task(
                 # Same agent re-claiming — renew lease
                 conn.execute(
                     """UPDATE agent_task_leases
-                       SET expires_at = ?
-                       WHERE task_id = ? AND status = 'active'""",
+                       SET expires_at = %s
+                       WHERE task_id = %s AND status = 'active'""",
                     (expires, task_id),
                 )
                 conn.commit()
@@ -179,7 +179,7 @@ def checkout_task(
         conn.execute(
             """INSERT INTO agent_task_leases
                (task_id, agent_id, leased_at, expires_at, status)
-               VALUES (?, ?, ?, ?, 'active')""",
+               VALUES (%s, %s, %s, %s, 'active')""",
             (task_id, agent_id, now, expires),
         )
         conn.commit()
@@ -199,7 +199,7 @@ def checkout_task(
         existing = conn.execute(
             """SELECT agent_id, leased_at, expires_at
                FROM agent_task_leases
-               WHERE task_id = ? AND status = 'active'""",
+               WHERE task_id = %s AND status = 'active'""",
             (task_id,),
         ).fetchone()
         holder = existing["agent_id"] if existing else "unknown"
@@ -228,8 +228,8 @@ def release_task(task_id: str, agent_id: str) -> Dict:
         now = now_iso()
         cursor = conn.execute(
             """UPDATE agent_task_leases
-               SET status = 'released', released_at = ?
-               WHERE task_id = ? AND agent_id = ? AND status = 'active'""",
+               SET status = 'released', released_at = %s
+               WHERE task_id = %s AND agent_id = %s AND status = 'active'""",
             (now, task_id, agent_id),
         )
         conn.commit()
@@ -237,7 +237,7 @@ def release_task(task_id: str, agent_id: str) -> Dict:
         if cursor.rowcount == 0:
             # Check why it failed
             existing = conn.execute(
-                """SELECT agent_id, status FROM agent_task_leases WHERE task_id = ?""",
+                """SELECT agent_id, status FROM agent_task_leases WHERE task_id = %s""",
                 (task_id,),
             ).fetchone()
             if not existing:
@@ -269,7 +269,7 @@ def get_lease_status(task_id: str) -> Dict:
         row = conn.execute(
             """SELECT task_id, agent_id, leased_at, expires_at, released_at, status
                FROM agent_task_leases
-               WHERE task_id = ?
+               WHERE task_id = %s
                ORDER BY id DESC LIMIT 1""",
             (task_id,),
         ).fetchone()
@@ -297,7 +297,7 @@ def get_active_leases(agent_id: str = None) -> Dict:
             rows = conn.execute(
                 """SELECT task_id, agent_id, leased_at, expires_at
                    FROM agent_task_leases
-                   WHERE status = 'active' AND agent_id = ?
+                   WHERE status = 'active' AND agent_id = %s
                    ORDER BY leased_at DESC""",
                 (agent_id,),
             ).fetchall()

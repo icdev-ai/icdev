@@ -85,7 +85,7 @@ def create_supply_chain_blueprint() -> Blueprint:
             cutoff = (datetime.now(timezone.utc) + timedelta(days=90)).strftime("%Y-%m-%d")
             expiring_isas = conn.execute(
                 "SELECT COUNT(*) FROM isa_agreements "
-                "WHERE status IN ('active','expiring') AND expiry_date <= ?", (cutoff,)
+                "WHERE status IN ('active','expiring') AND expiry_date <= %s", (cutoff,)
             ).fetchone()[0]
             critical_cves = conn.execute(
                 "SELECT COUNT(*) FROM cve_triage WHERE severity='critical' AND remediated_at IS NULL"

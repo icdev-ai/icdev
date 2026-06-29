@@ -12,7 +12,7 @@ from pathlib import Path
 from flask import Blueprint, jsonify, request
 
 from tools.awareness.value_scorer import annotate_tasks_with_value
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection, sql_placeholder
 from tools.dashboard.sse_manager import sse_manager
 
 try:
@@ -39,7 +39,7 @@ def _notify_task_done(task_id: str, title: str):
             conn = get_connection()
             conn.execute(
                 "INSERT INTO notifications (id, title, message, severity, source, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s)",
                 (
                     f"notif-kanban-{task_id}-done-{_utcnow()[:19]}",
                     f"Task done: {title}",
@@ -75,7 +75,7 @@ def _latest_verification(conn, task_id: str):
             "SELECT result, codelens_passed, coherence_passed, "
             "e2e_ran, e2e_passed, companion_synced, verified_at, reason "
             "FROM kanban_verifications "
-            "WHERE task_id = ? "
+            "WHERE task_id = %s "
             "ORDER BY verified_at DESC LIMIT 1",
             (task_id,),
         ).fetchone()
@@ -112,7 +112,7 @@ def _log_verification_bypass(conn, task_id: str, reason: str) -> None:
         conn.execute(
             "INSERT INTO kanban_verifications "
             "(id, task_id, verified_at, result, reason) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s)",
             (
                 f"kv-bypass-{uuid.uuid4().hex[:12]}",
                 task_id,
@@ -290,7 +290,7 @@ def list_tasks():
         )
         if status_filter:
             rows = conn.execute(
-                f"{select}WHERE kt.status = ? ORDER BY {order}",  # nosec B608
+                f"{select}WHERE kt.status = %s ORDER BY {order}",  # nosec B608
                 (status_filter,),
             ).fetchall()
         else:
@@ -423,7 +423,7 @@ def _maybe_auto_close_parent(conn, child_task_id: str) -> None:
             auto_close_parent_if_all_children_done,
         )
         row = conn.execute(
-            "SELECT depends_on_task_id FROM kanban_tasks WHERE id = ?", (child_task_id,)
+            "SELECT depends_on_task_id FROM kanban_tasks WHERE id = %s", (child_task_id,)
         ).fetchone()
         parent_id = (dict(row).get("depends_on_task_id") if hasattr(row, "keys") else row[0]) if row else None
 
@@ -440,7 +440,7 @@ def _maybe_auto_close_parent(conn, child_task_id: str) -> None:
         if naming_result and naming_result.applied:
             naming_parent = naming_result.task_id
             np_row = conn.execute(
-                "SELECT depends_on_task_id FROM kanban_tasks WHERE id = ?", (naming_parent,)
+                "SELECT depends_on_task_id FROM kanban_tasks WHERE id = %s", (naming_parent,)
             ).fetchone()
             np_parent = (dict(np_row).get("depends_on_task_id") if hasattr(np_row, "keys") else np_row[0]) if np_row else None
             if np_parent:
@@ -472,7 +472,7 @@ def _check_dependency_cycle_dfs(task_id: str, new_deps: list, conn) -> tuple:
             return False
         visited.add(node)
         rows = conn.execute(
-            "SELECT depends_on_id FROM kanban_task_deps WHERE task_id = ?",
+            "SELECT depends_on_id FROM kanban_task_deps WHERE task_id = %s",
             (node,),
         ).fetchall()
         for r in rows:
@@ -482,7 +482,7 @@ def _check_dependency_cycle_dfs(task_id: str, new_deps: list, conn) -> tuple:
         return False
 
     for dep_id in new_deps:
-        row = conn.execute("SELECT id FROM kanban_tasks WHERE id = ?", (dep_id,)).fetchone()
+        row = conn.execute("SELECT id FROM kanban_tasks WHERE id = %s", (dep_id,)).fetchone()
         if not row:
             return False, f"depends_on_task_id {dep_id!r} not found"
         if _dfs(dep_id):
@@ -507,7 +507,7 @@ def _validate_dependency(conn, task_id: str, depends_on: str):
     if depends_on == task_id:
         return False, "task cannot depend on itself"
     row = conn.execute(
-        "SELECT depends_on_task_id FROM kanban_tasks WHERE id = ?",
+        "SELECT depends_on_task_id FROM kanban_tasks WHERE id = %s",
         (depends_on,),
     ).fetchone()
     if not row:
@@ -549,7 +549,7 @@ def create_task():
             "status, scheduled_at, executor_type, depends_on_task_id, "
             "start_date, target_date, "
             "created_at, updated_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (
                 task_id,
                 data["title"],
@@ -570,7 +570,7 @@ def create_task():
         for dep_id in dep_ids:
             conn.execute(
                 "INSERT INTO kanban_task_deps (task_id, depends_on_id, created_at) "
-                "VALUES (?, ?, ?) ON CONFLICT (task_id, depends_on_id) DO NOTHING",
+                "VALUES (%s, %s, %s) ON CONFLICT (task_id, depends_on_id) DO NOTHING",
                 (task_id, dep_id, now),
             )
         conn.commit()
@@ -606,8 +606,9 @@ def update_task(task_id):
     """Update a kanban task (status, priority, title, etc.)."""
     data = request.get_json(force=True)
     conn = get_connection()
+    ph = sql_placeholder(conn)
     try:
-        existing = conn.execute("SELECT * FROM kanban_tasks WHERE id = ?", (task_id,)).fetchone()
+        existing = conn.execute("SELECT * FROM kanban_tasks WHERE id = %s", (task_id,)).fetchone()
         if not existing:
             return jsonify({"error": "Task not found"}), 404
 
@@ -643,7 +644,7 @@ def update_task(task_id):
         vals = []
         for field in allowed:
             if field in data:
-                sets.append(f"{field} = ?")
+                sets.append(f"{field} = {ph}")
                 vals.append(data[field])
 
         if not sets:
@@ -651,18 +652,18 @@ def update_task(task_id):
 
         # Auto-set completed_at when moving to done
         if data.get("status") == "done" and existing["status"] != "done":
-            sets.append("completed_at = ?")
+            sets.append(f"completed_at = {ph}")
             vals.append(_utcnow())
         # Clear completed_at if moving out of done
         elif data.get("status") and data["status"] != "done" and existing["status"] == "done":
             sets.append("completed_at = NULL")
 
-        sets.append("updated_at = ?")
+        sets.append(f"updated_at = {ph}")
         vals.append(_utcnow())
         vals.append(task_id)
 
         conn.execute(
-            f"UPDATE kanban_tasks SET {', '.join(sets)} WHERE id = ?",  # nosec B608 -- table/column names are internal constants, not user input
+            f"UPDATE kanban_tasks SET {', '.join(sets)} WHERE id = %s",  # nosec B608 -- table/column names are internal constants, not user input
             tuple(vals),
         )
         conn.commit()
@@ -670,11 +671,11 @@ def update_task(task_id):
         # Multi-parent: update junction table when depends_on_task_ids provided
         if new_dep_ids:
             now_ts = _utcnow()
-            conn.execute("DELETE FROM kanban_task_deps WHERE task_id = ?", (task_id,))
+            conn.execute("DELETE FROM kanban_task_deps WHERE task_id = %s", (task_id,))
             for dep_id in new_dep_ids:
                 conn.execute(
                     "INSERT INTO kanban_task_deps (task_id, depends_on_id, created_at) "
-                    "VALUES (?, ?, ?) ON CONFLICT (task_id, depends_on_id) DO NOTHING",
+                    "VALUES (%s, %s, %s) ON CONFLICT (task_id, depends_on_id) DO NOTHING",
                     (task_id, dep_id, now_ts),
                 )
             conn.commit()
@@ -705,10 +706,10 @@ def delete_task(task_id):
     """Delete a kanban task."""
     conn = get_connection()
     try:
-        existing = conn.execute("SELECT id FROM kanban_tasks WHERE id = ?", (task_id,)).fetchone()
+        existing = conn.execute("SELECT id FROM kanban_tasks WHERE id = %s", (task_id,)).fetchone()
         if not existing:
             return jsonify({"error": "Task not found"}), 404
-        conn.execute("DELETE FROM kanban_tasks WHERE id = ?", (task_id,))
+        conn.execute("DELETE FROM kanban_tasks WHERE id = %s", (task_id,))
         conn.commit()
         try:
             sse_manager.broadcast(
@@ -743,7 +744,7 @@ def inject_message(task_id):
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT status, title FROM kanban_tasks WHERE id = ?", (task_id,)
+            "SELECT status, title FROM kanban_tasks WHERE id = %s", (task_id,)
         ).fetchone()
     finally:
         conn.close()
@@ -793,10 +794,10 @@ def task_heartbeat(task_id):
     """
     conn = get_connection()
     if hasattr(conn, "set_security_context"):
-        conn.set_security_context(None)
+        conn.set_security_context(None)  # rls-bypass: kanban_tasks has no tenant_id column; internal system table
     try:
         row = conn.execute(
-            "SELECT status FROM kanban_tasks WHERE id = ?", (task_id,)
+            "SELECT status FROM kanban_tasks WHERE id = %s", (task_id,)
         ).fetchone()
         if not row:
             return jsonify({"error": "Task not found"}), 404
@@ -807,7 +808,7 @@ def task_heartbeat(task_id):
             }), 409
         now = _utcnow()
         conn.execute(
-            "UPDATE kanban_tasks SET last_heartbeat_at = ?, updated_at = ? WHERE id = ?",
+            "UPDATE kanban_tasks SET last_heartbeat_at = %s, updated_at = %s WHERE id = %s",
             (now, now, task_id),
         )
         conn.commit()
@@ -837,10 +838,10 @@ def task_handoff(task_id):
 
     conn = get_connection()
     if hasattr(conn, "set_security_context"):
-        conn.set_security_context(None)
+        conn.set_security_context(None)  # rls-bypass: kanban_tasks has no tenant_id column; internal system table
     try:
         row = conn.execute(
-            "SELECT id FROM kanban_tasks WHERE id = ?", (task_id,)
+            "SELECT id FROM kanban_tasks WHERE id = %s", (task_id,)
         ).fetchone()
         if not row:
             return jsonify({"error": "Task not found"}), 404
@@ -848,18 +849,18 @@ def task_handoff(task_id):
         now = _utcnow()
         conn.execute(
             "UPDATE kanban_tasks "
-            "SET last_run_summary = ?, last_run_metadata = ?, updated_at = ? "
-            "WHERE id = ?",
+            "SET last_run_summary = %s, last_run_metadata = %s, updated_at = %s "
+            "WHERE id = %s",
             (summary or None, metadata_str, now, task_id),
         )
         exec_row = conn.execute(
-            "SELECT id FROM kanban_executions WHERE task_id = ? "
+            "SELECT id FROM kanban_executions WHERE task_id = %s "
             "ORDER BY created_at DESC LIMIT 1",
             (task_id,),
         ).fetchone()
         if exec_row:
             conn.execute(
-                "UPDATE kanban_executions SET run_summary = ?, run_metadata = ? WHERE id = ?",
+                "UPDATE kanban_executions SET run_summary = %s, run_metadata = %s WHERE id = %s",
                 (summary or None, metadata_str, dict(exec_row)["id"]),
             )
         conn.commit()
@@ -891,16 +892,16 @@ def task_subscribe(task_id):
 
     conn = get_connection()
     if hasattr(conn, "set_security_context"):
-        conn.set_security_context(None)
+        conn.set_security_context(None)  # rls-bypass: kanban_task_subscriptions has no tenant_id column; internal system table
     try:
-        row = conn.execute("SELECT id FROM kanban_tasks WHERE id = ?", (task_id,)).fetchone()
+        row = conn.execute("SELECT id FROM kanban_tasks WHERE id = %s", (task_id,)).fetchone()
         if not row:
             return jsonify({"error": "Task not found"}), 404
         sub_id = f"sub-{uuid.uuid4().hex[:12]}"
         now = _utcnow()
         conn.execute(
             "INSERT INTO kanban_task_subscriptions (id, task_id, channel, target, events, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s)",
             (sub_id, task_id, channel, target, events_str, now),
         )
         conn.commit()
@@ -914,11 +915,11 @@ def list_subscriptions(task_id):
     """List all webhook subscriptions for a task."""
     conn = get_connection()
     if hasattr(conn, "set_security_context"):
-        conn.set_security_context(None)
+        conn.set_security_context(None)  # rls-bypass: kanban_task_subscriptions has no tenant_id column; internal system table
     try:
         rows = conn.execute(
             "SELECT id, channel, target, events, created_at "
-            "FROM kanban_task_subscriptions WHERE task_id = ? ORDER BY created_at",
+            "FROM kanban_task_subscriptions WHERE task_id = %s ORDER BY created_at",
             (task_id,),
         ).fetchall()
         return jsonify({"subscriptions": [dict(r) for r in rows]}), 200
@@ -931,9 +932,9 @@ def delete_subscription(sub_id):
     """Remove a webhook subscription."""
     conn = get_connection()
     if hasattr(conn, "set_security_context"):
-        conn.set_security_context(None)
+        conn.set_security_context(None)  # rls-bypass: kanban_task_subscriptions has no tenant_id column; internal system table
     try:
-        conn.execute("DELETE FROM kanban_task_subscriptions WHERE id = ?", (sub_id,))
+        conn.execute("DELETE FROM kanban_task_subscriptions WHERE id = %s", (sub_id,))
         conn.commit()
     finally:
         conn.close()
@@ -998,10 +999,10 @@ def specify_task():
         try:
             conn = get_connection()
             if hasattr(conn, "set_security_context"):
-                conn.set_security_context(None)
+                conn.set_security_context(None)  # rls-bypass: kanban_tasks has no tenant_id column; internal system table
             try:
                 conn.execute(
-                    "UPDATE kanban_tasks SET acceptance_criteria = ?, updated_at = ? WHERE id = ?",
+                    "UPDATE kanban_tasks SET acceptance_criteria = %s, updated_at = %s WHERE id = %s",
                     (spec["acceptance_criteria"], _utcnow(), task_id),
                 )
                 conn.commit()
@@ -1026,10 +1027,10 @@ def judge_task(task_id):
 
     conn = get_connection()
     if hasattr(conn, "set_security_context"):
-        conn.set_security_context(None)
+        conn.set_security_context(None)  # rls-bypass: kanban_tasks has no tenant_id column; internal system table
     try:
         row = conn.execute(
-            "SELECT title, acceptance_criteria FROM kanban_tasks WHERE id = ?", (task_id,)
+            "SELECT title, acceptance_criteria FROM kanban_tasks WHERE id = %s", (task_id,)
         ).fetchone()
         if not row:
             return jsonify({"error": "Task not found"}), 404
@@ -1123,12 +1124,13 @@ def bulk_move_tasks():
     moved = 0
     failed = []
     conn = get_connection()
+    ph = sql_placeholder(conn)
     try:
         # Gather source_prediction_id for dismiss path before we
         # UPDATE so we can mark the predictions in the same transaction.
         rows = conn.execute(
             "SELECT id, status, source_prediction_id FROM kanban_tasks "
-            f"WHERE id IN ({','.join(['?'] * len(task_ids))})",  # nosec B608 -- placeholders only
+            f"WHERE id IN ({','.join([ph] * len(task_ids))})",  # nosec B608 -- placeholders only
             tuple(task_ids),
         ).fetchall()
         by_id = {dict(r)["id"]: dict(r) for r in rows}
@@ -1139,14 +1141,14 @@ def bulk_move_tasks():
                 failed.append({"id": tid, "error": "not found"})
                 continue
             try:
-                sql = "UPDATE kanban_tasks SET status = ?, updated_at = ?"
+                sql = f"UPDATE kanban_tasks SET status = {ph}, updated_at = {ph}"
                 vals = [new_status, now]
                 if new_status == "done" and existing["status"] != "done":
-                    sql += ", completed_at = ?"
+                    sql += f", completed_at = {ph}"
                     vals.append(now)
                 elif new_status != "done" and existing["status"] == "done":
                     sql += ", completed_at = NULL"
-                sql += " WHERE id = ?"
+                sql += f" WHERE id = {ph}"
                 vals.append(tid)
                 conn.execute(sql, tuple(vals))
 
@@ -1159,7 +1161,7 @@ def bulk_move_tasks():
                         conn.execute(
                             "UPDATE oracle_predictions "
                             "SET outcome = 'dismissed' "
-                            "WHERE id = ? AND outcome IN ('pending', '', NULL)",
+                            "WHERE id = %s AND outcome IN ('pending', '', NULL)",
                             (existing["source_prediction_id"],),
                         )
                     except Exception:
@@ -1169,7 +1171,7 @@ def bulk_move_tasks():
                             conn.execute(
                                 "UPDATE oracle_predictions "
                                 "SET outcome = 'dismissed' "
-                                "WHERE id = ? "
+                                "WHERE id = %s "
                                 "  AND (outcome IS NULL OR outcome = '' "
                                 "       OR outcome = 'pending')",
                                 (existing["source_prediction_id"],),
@@ -1235,6 +1237,7 @@ def promote_all_suggested():
 
     now = _utcnow()
     conn = get_connection()
+    ph = sql_placeholder(conn)
     try:
         # Fetch suggested cards with oracle metadata (same JOIN as list_tasks)
         select = (
@@ -1247,7 +1250,7 @@ def promote_all_suggested():
             "LEFT JOIN oracle_predictions op "
             "ON kt.source_prediction_id = op.id "
             "WHERE kt.status = 'suggested' "
-            "AND (kt.last_failure_reason IS NULL OR kt.last_failure_reason NOT LIKE ?) "
+            f"AND (kt.last_failure_reason IS NULL OR kt.last_failure_reason NOT LIKE {ph}) "
         )
         rows = conn.execute(select, ("QUARANTINED by self_debug%",)).fetchall()
         tasks = [dict(r) for r in rows]
@@ -1300,7 +1303,7 @@ def promote_all_suggested():
         # Batch update by IDs (safe cap at 1000 per existing bulk_move limit)
         ph = ",".join(["?"] * len(eligible_ids))
         conn.execute(
-            f"UPDATE kanban_tasks SET status = 'backlog', updated_at = ? "  # nosec B608
+            f"UPDATE kanban_tasks SET status = 'backlog', updated_at = %s "  # nosec B608
             f"WHERE id IN ({ph})",
             (now, *eligible_ids),
         )
@@ -1346,10 +1349,11 @@ def move_task(task_id):
 
     now = _utcnow()
     conn = get_connection()
+    ph = sql_placeholder(conn)
     if hasattr(conn, "set_security_context"):
         conn.set_security_context(None)  # rls-bypass: kanban_tasks has no classification/tenant_id columns
     try:
-        existing = conn.execute("SELECT status, title FROM kanban_tasks WHERE id = ?", (task_id,)).fetchone()
+        existing = conn.execute("SELECT status, title FROM kanban_tasks WHERE id = %s", (task_id,)).fetchone()
         if not existing:
             return jsonify({"error": "Task not found"}), 404
 
@@ -1359,14 +1363,14 @@ def move_task(task_id):
         moving_to_done = new_status == "done" and existing["status"] != "done"
         if moving_to_done:
             dep_row = conn.execute(
-                "SELECT depends_on_task_id FROM kanban_tasks WHERE id = ?",
+                "SELECT depends_on_task_id FROM kanban_tasks WHERE id = %s",
                 (task_id,),
             ).fetchone()
             parent_id = (dep_row or {}).get("depends_on_task_id")
             parent_status = None
             if parent_id:
                 parent_row = conn.execute(
-                    "SELECT status FROM kanban_tasks WHERE id = ?",
+                    "SELECT status FROM kanban_tasks WHERE id = %s",
                     (parent_id,),
                 ).fetchone()
                 parent_status = (parent_row or {}).get("status")
@@ -1427,16 +1431,16 @@ def move_task(task_id):
                 except Exception:
                     pass
 
-        sql = "UPDATE kanban_tasks SET status = ?, updated_at = ?"
+        sql = f"UPDATE kanban_tasks SET status = {ph}, updated_at = {ph}"
         vals = [new_status, now]
         if new_status == "done" and existing["status"] != "done":
-            sql += ", completed_at = ?"
+            sql += f", completed_at = {ph}"
             vals.append(now)
             if bypass:
                 sql += ", completed_via_bypass = 1"
         elif new_status != "done" and existing["status"] == "done":
             sql += ", completed_at = NULL, completed_via_bypass = 0"
-        sql += " WHERE id = ?"
+        sql += f" WHERE id = {ph}"
         vals.append(task_id)
 
         conn.execute(sql, tuple(vals))
@@ -1449,7 +1453,7 @@ def move_task(task_id):
             conn.execute(
                 "INSERT INTO kanban_status_transitions "
                 "(id, task_id, from_status, to_status, actor, reason, recorded_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
                 (
                     "kst-" + _sec.token_hex(6),
                     task_id,
@@ -1490,12 +1494,12 @@ def list_comments(task_id):
     """Return comments for a task, oldest first."""
     conn = get_connection()
     try:
-        if not conn.execute("SELECT id FROM kanban_tasks WHERE id = ?", (task_id,)).fetchone():
+        if not conn.execute("SELECT id FROM kanban_tasks WHERE id = %s", (task_id,)).fetchone():
             return jsonify({"error": "Task not found"}), 404
         try:
             rows = conn.execute(
                 "SELECT id, author, body, created_at FROM kanban_task_comments "
-                "WHERE task_id = ? ORDER BY created_at ASC",
+                "WHERE task_id = %s ORDER BY created_at ASC",
                 (task_id,),
             ).fetchall()
             return jsonify({"comments": [dict(r) for r in rows]})
@@ -1516,13 +1520,13 @@ def add_comment(task_id):
 
     conn = get_connection()
     try:
-        if not conn.execute("SELECT id FROM kanban_tasks WHERE id = ?", (task_id,)).fetchone():
+        if not conn.execute("SELECT id FROM kanban_tasks WHERE id = %s", (task_id,)).fetchone():
             return jsonify({"error": "Task not found"}), 404
         comment_id = f"kc-{uuid.uuid4().hex[:12]}"
         now = _utcnow()
         conn.execute(
             "INSERT INTO kanban_task_comments (id, task_id, author, body, created_at) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s)",
             (comment_id, task_id, author[:64], body[:2000], now),
         )
         conn.commit()
@@ -1677,7 +1681,7 @@ def create_tag():
     try:
         try:
             conn.execute(
-                "INSERT INTO kanban_tags (id, name, color, created_at) VALUES (?, ?, ?, ?)",
+                "INSERT INTO kanban_tags (id, name, color, created_at) VALUES (%s, %s, %s, %s)",
                 (tag_id, name, color, _utcnow()),
             )
             conn.commit()
@@ -1699,10 +1703,10 @@ def delete_tag(tag_id):
     """Delete a tag and its task associations."""
     conn = get_connection()
     try:
-        if not conn.execute("SELECT id FROM kanban_tags WHERE id = ?", (tag_id,)).fetchone():
+        if not conn.execute("SELECT id FROM kanban_tags WHERE id = %s", (tag_id,)).fetchone():
             return jsonify({"error": "Tag not found"}), 404
-        conn.execute("DELETE FROM kanban_task_tags WHERE tag_id = ?", (tag_id,))
-        conn.execute("DELETE FROM kanban_tags WHERE id = ?", (tag_id,))
+        conn.execute("DELETE FROM kanban_task_tags WHERE tag_id = %s", (tag_id,))
+        conn.execute("DELETE FROM kanban_tags WHERE id = %s", (tag_id,))
         conn.commit()
         return jsonify({"status": "deleted", "id": tag_id})
     finally:
@@ -1718,7 +1722,7 @@ def list_task_tags(task_id):
             rows = conn.execute(
                 "SELECT t.id, t.name, t.color FROM kanban_tags t "
                 "JOIN kanban_task_tags tt ON tt.tag_id = t.id "
-                "WHERE tt.task_id = ? ORDER BY t.name",
+                "WHERE tt.task_id = %s ORDER BY t.name",
                 (task_id,),
             ).fetchall()
             return jsonify({"tags": [dict(r) for r in rows]})
@@ -1737,13 +1741,13 @@ def add_task_tag(task_id):
         return jsonify({"error": "tag_id is required"}), 400
     conn = get_connection()
     try:
-        if not conn.execute("SELECT id FROM kanban_tasks WHERE id = ?", (task_id,)).fetchone():
+        if not conn.execute("SELECT id FROM kanban_tasks WHERE id = %s", (task_id,)).fetchone():
             return jsonify({"error": "Task not found"}), 404
-        if not conn.execute("SELECT id FROM kanban_tags WHERE id = ?", (tag_id,)).fetchone():
+        if not conn.execute("SELECT id FROM kanban_tags WHERE id = %s", (tag_id,)).fetchone():
             return jsonify({"error": "Tag not found"}), 404
         try:
             conn.execute(
-                "INSERT INTO kanban_task_tags (task_id, tag_id, created_at) VALUES (?, ?, ?)",
+                "INSERT INTO kanban_task_tags (task_id, tag_id, created_at) VALUES (%s, %s, %s)",
                 (task_id, tag_id, _utcnow()),
             )
             conn.commit()
@@ -1762,7 +1766,7 @@ def remove_task_tag(task_id, tag_id):
     conn = get_connection()
     try:
         conn.execute(
-            "DELETE FROM kanban_task_tags WHERE task_id = ? AND tag_id = ?",
+            "DELETE FROM kanban_task_tags WHERE task_id = %s AND tag_id = %s",
             (task_id, tag_id),
         )
         conn.commit()
@@ -1952,7 +1956,7 @@ def create_from_plan():
                 "status, scheduled_at, executor_type, depends_on_task_id, "
                 "start_date, target_date, "
                 "created_at, updated_at) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (
                     task_id,
                     t,
@@ -2008,20 +2012,21 @@ def list_lessons():
 
     since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     conn = get_connection()
+    ph = sql_placeholder(conn)
     try:
         sql = (
             "SELECT id, content, created_at, importance "
-            "FROM memory_entries WHERE type = ? AND created_at >= ?"
+            f"FROM memory_entries WHERE type = {ph} AND created_at >= {ph}"
         )
         params: List[Any] = ["lesson_learned", since]
         if pattern_filter:
-            sql += " AND content LIKE ?"
+            sql += f" AND content LIKE {ph}"
             params.append(f'%"pattern": "{pattern_filter}"%')
         if systemic_filter is not None:
-            sql += " AND content LIKE ?"
+            sql += f" AND content LIKE {ph}"
             target = "true" if systemic_filter in ("1", "true", "yes") else "false"
             params.append(f'%"is_systemic": {target}%')
-        sql += " ORDER BY created_at DESC LIMIT ?"
+        sql += f" ORDER BY created_at DESC LIMIT {ph}"
         params.append(limit)
         rows = conn.execute(sql, tuple(params)).fetchall()
         lessons: List[Dict[str, Any]] = []

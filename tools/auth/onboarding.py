@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from tools.db.storage import get_connection
+from tools.db.storage import get_canvas_connection, sql_placeholder
 
 _DEFAULT_STATE: dict = {
     "completed": False,
@@ -15,6 +15,16 @@ _DEFAULT_STATE: dict = {
     "first_iqe_run": False,
     "dismissed_at": None,
     "last_seen_version": None,
+    # Phase B — Second Brain onboarding fields
+    "context_capture_started": False,
+    "context_capture_complete": False,
+    "identity_step_done": False,
+    "connections_step_done": False,
+    "world_step_done": False,
+    "cadence_step_done": False,
+    "quicklearn_step_done": False,
+    "integration_count": 0,
+    "briefing_channels": ["dashboard"],
 }
 
 _ALLOWED_KEYS = frozenset(_DEFAULT_STATE)
@@ -22,9 +32,10 @@ _ALLOWED_KEYS = frozenset(_DEFAULT_STATE)
 
 def get_onboarding_state(user_id: str) -> dict:
     """Return onboarding state for *user_id*, creating defaults if absent."""
-    with get_connection() as conn:
+    with get_canvas_connection("ICDEV_USER_PREFS_ENABLED") as conn:
+        ph = sql_placeholder(conn)
         row = conn.execute(
-            "SELECT onboarding_state FROM user_preferences WHERE user_id = ?",
+            f"SELECT onboarding_state FROM user_preferences WHERE user_id = {ph}",
             (user_id,),
         ).fetchone()
     if row is None:
@@ -43,14 +54,15 @@ def update_onboarding_state(user_id: str, **kwargs) -> dict:
         if key in _ALLOWED_KEYS:
             current[key] = value
     blob = json.dumps(current)
-    with get_connection() as conn:
+    with get_canvas_connection("ICDEV_USER_PREFS_ENABLED") as conn:
+        ph = sql_placeholder(conn)
         conn.execute(
-            """
+            f"""
             INSERT INTO user_preferences (user_id, onboarding_state)
-                VALUES (?, ?)
+                VALUES ({ph}, {ph})
             ON CONFLICT(user_id) DO UPDATE SET
                 onboarding_state = excluded.onboarding_state,
-                updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+                updated_at = CURRENT_TIMESTAMP
             """,
             (user_id, blob),
         )

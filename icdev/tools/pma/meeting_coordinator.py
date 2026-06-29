@@ -99,7 +99,7 @@ def create_meeting(contract_id: str, data: Dict[str, Any], conn=None) -> Dict[st
             """
             INSERT INTO pma_meeting_logs
                 (id, contract_id, title, date_held, attendees, notes, status, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 meeting_id,
@@ -131,7 +131,7 @@ def list_meetings(contract_id: str, conn=None) -> List[Dict[str, Any]]:
 
     try:
         rows = conn.execute(
-            "SELECT * FROM pma_meeting_logs WHERE contract_id = ? ORDER BY date_held DESC, created_at DESC",
+            "SELECT * FROM pma_meeting_logs WHERE contract_id = %s ORDER BY date_held DESC, created_at DESC",
             (contract_id,),
         ).fetchall()
         return [dict(r) for r in rows]
@@ -157,7 +157,7 @@ def extract_action_items(
     _ensure_tables(conn)
 
     meeting_row = conn.execute(
-        "SELECT id, contract_id FROM pma_meeting_logs WHERE id = ?", (meeting_id,)
+        "SELECT id, contract_id FROM pma_meeting_logs WHERE id = %s", (meeting_id,)
     ).fetchone()
     if not meeting_row:
         if owns:
@@ -186,7 +186,7 @@ def extract_action_items(
             INSERT INTO pma_action_items
                 (id, meeting_id, contract_id, description, owner, due_date,
                  status, hitl_approved, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, NULL, 'open', 0, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, NULL, 'open', 0, %s, %s)
             """,
             (item_id, meeting_id, contract_id, sentence[:500], owner, now, now),
         )
@@ -225,10 +225,10 @@ def get_overdue_action_items(contract_id: str, conn=None) -> List[Dict[str, Any]
         rows = conn.execute(
             """
             SELECT * FROM pma_action_items
-            WHERE contract_id = ?
+            WHERE contract_id = %s
               AND status NOT IN ('completed', 'overdue')
               AND due_date IS NOT NULL
-              AND due_date < ?
+              AND due_date < %s
             ORDER BY due_date
             """,
             (contract_id, today),
@@ -237,7 +237,7 @@ def get_overdue_action_items(contract_id: str, conn=None) -> List[Dict[str, Any]
 
         for item in overdue:
             conn.execute(
-                "UPDATE pma_action_items SET status = 'overdue', updated_at = ? WHERE id = ?",
+                "UPDATE pma_action_items SET status = 'overdue', updated_at = %s WHERE id = %s",
                 (datetime.now(timezone.utc).isoformat(), item["id"]),
             )
         if overdue:
@@ -260,7 +260,7 @@ def list_action_items(meeting_id: str, conn=None) -> List[Dict[str, Any]]:
 
     try:
         rows = conn.execute(
-            "SELECT * FROM pma_action_items WHERE meeting_id = ? ORDER BY created_at",
+            "SELECT * FROM pma_action_items WHERE meeting_id = %s ORDER BY created_at",
             (meeting_id,),
         ).fetchall()
         return [dict(r) for r in rows]
@@ -284,7 +284,7 @@ def update_action_item(item_id: str, data: Dict[str, Any], conn=None) -> Dict[st
 
     try:
         row = conn.execute(
-            "SELECT * FROM pma_action_items WHERE id = ?", (item_id,)
+            "SELECT * FROM pma_action_items WHERE id = %s", (item_id,)
         ).fetchone()
         if not row:
             return {"status": "error", "message": "Action item not found"}
@@ -307,13 +307,13 @@ def update_action_item(item_id: str, data: Dict[str, Any], conn=None) -> Dict[st
         set_clause = ", ".join(f"{k} = ?" for k in updates)
         values = list(updates.values()) + [item_id]
         conn.execute(
-            f"UPDATE pma_action_items SET {set_clause} WHERE id = ?", values
+            f"UPDATE pma_action_items SET {set_clause} WHERE id = %s", values
         )
         conn.commit()
 
         updated = dict(
             conn.execute(
-                "SELECT * FROM pma_action_items WHERE id = ?", (item_id,)
+                "SELECT * FROM pma_action_items WHERE id = %s", (item_id,)
             ).fetchone()
         )
         return {"status": "ok", "item_id": item_id, "item": updated}

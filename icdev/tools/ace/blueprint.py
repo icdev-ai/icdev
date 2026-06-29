@@ -30,12 +30,13 @@ attached (see CLAUDE.md canvas DB guardrail).
 from __future__ import annotations
 
 import json
-import logging
-from tools.logging.icdev_logger import get_logger
 import os
+import uuid
 from typing import Any, Optional
 
-from flask import Blueprint, jsonify, render_template, request
+from tools.logging.icdev_logger import get_logger
+
+from flask import Blueprint, Response, jsonify, render_template, request
 
 # Module-level import — must not raise at startup.  controller.py imports only the
 # stdlib at module scope, so this is safe and gives the blueprint a stable handle.
@@ -276,6 +277,58 @@ def trust_leaderboard():
         return jsonify({"rows": rows, "count": len(rows)})
 
 
+@ace_bp.route("/sessions")
+def sessions_list():
+    """Agent session replay — list of all saved agent_loop_sessions."""
+    try:
+        return render_template("ace/sessions.html")
+    except Exception as exc:  # noqa: BLE001
+        logger.info("ace/sessions.html unavailable (%s); JSON fallback", exc)
+        from icdev.tools.llm.agent_loop_session import list_sessions
+        return jsonify(list_sessions(limit=50))
+
+
+@ace_bp.route("/sessions/<session_id>")
+def session_detail(session_id: str):
+    """Agent session replay — turn-by-turn detail view for one session."""
+    try:
+        return render_template("ace/session_detail.html", session_id=session_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.info("ace/session_detail.html unavailable (%s); JSON fallback", exc)
+        from icdev.tools.llm.agent_loop_session import get_session_metadata
+        return jsonify(get_session_metadata(session_id) or {"error": "not found"})
+
+
+@ace_bp.route("/live/<instance_id>")
+def live_monitor(instance_id: str):
+    """Real-time agent loop monitoring via SSE stream."""
+    try:
+        return render_template("ace/live.html", instance_id=instance_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.info("ace/live.html unavailable (%s); JSON fallback", exc)
+        return jsonify({"instance_id": instance_id, "stream": f"/api/ace/{instance_id}/stream"})
+
+
+@ace_bp.route("/evals")
+def evals_page():
+    """Agent eval suite — run history and pass/fail trends."""
+    try:
+        return render_template("ace/evals.html")
+    except Exception as exc:  # noqa: BLE001
+        logger.info("ace/evals.html unavailable (%s); JSON fallback", exc)
+        return jsonify({"page": "evals"})
+
+
+@ace_bp.route("/evals/trends")
+def evals_trends_page():
+    """Eval score trending — time-bucketed aggregation chart."""
+    try:
+        return render_template("ace/trends.html")
+    except Exception as exc:  # noqa: BLE001
+        logger.info("ace/trends.html unavailable (%s); JSON fallback", exc)
+        return jsonify({"page": "evals/trends"})
+
+
 @ace_bp.route("/<instance_id>")
 def instance_detail(instance_id: str):
     """Single instance: header, coworkers, message timeline, artifacts."""
@@ -367,6 +420,58 @@ def instance_detail(instance_id: str):
                 "artifacts": artifacts,
             }
         )
+
+
+@ace_bp.route("/<instance_id>/resume")
+def instance_resume(instance_id: str):
+    """Return conversation_history for a session identified by resume_token.
+
+    GET /coworker/<id>/resume?token=<resume_token>
+    Returns JSON: {session_id, conversation_history, turn_count}
+    """
+    token = (request.args.get("token") or "").strip()
+    if not token:
+        return jsonify({"error": "token required"}), 400
+
+    conn = None
+    try:
+        conn = _db()
+        session = _one(
+            conn.execute(
+                _q(
+                    conn,
+                    "SELECT session_id, conversation_history, turn_count "
+                    "FROM ace_sessions WHERE resume_token = ? AND instance_id = ?",
+                ),
+                (token, instance_id),
+            )
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ace instance_resume read failed for %s: %s", instance_id, exc)
+        return jsonify({"error": "db error"}), 500
+    finally:
+        if conn is not None:
+            conn.close()
+
+    if session is None:
+        return jsonify({"error": "session not found"}), 404
+
+    history = session["conversation_history"]
+    if isinstance(history, str):
+        try:
+            history = json.loads(history)
+        except (TypeError, ValueError):
+            history = []
+    if not isinstance(history, list):
+        history = []
+
+    return jsonify(
+        {
+            "session_id": session["session_id"],
+            "conversation_history": history,
+            "turn_count": session.get("turn_count") or len(history),
+        }
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -593,6 +698,22 @@ def api_artifacts(instance_id: str):
     return jsonify({"artifacts": items, "count": len(items)})
 
 
+@ace_api_bp.route("/<instance_id>/hitl/pending", methods=["GET"])
+def api_hitl_pending(instance_id: str):
+    """List pending mid-turn HITL checkpoint requests for an instance.
+
+    Returns ``{items: [...], count: N}`` — each item has tool_name, tool_input_json,
+    coworker_id, detail, created_at.  Use ``POST /<id>/hitl`` to approve/reject.
+    """
+    try:
+        from icdev.tools.llm.agent_hitl import get_pending_hitl
+        items = get_pending_hitl(instance_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ace hitl/pending failed for %s: %s", instance_id, exc)
+        items = []
+    return jsonify({"items": items, "count": len(items)})
+
+
 @ace_api_bp.route("/<instance_id>/abort", methods=["POST"])
 def api_abort(instance_id: str):
     """Signal all coworkers to stop; marks the instance ``cancelled``.
@@ -637,7 +758,7 @@ def api_hitl_resolve(instance_id: str):
                 conn.execute(
                     "INSERT INTO ace_audit_log "
                     "(instance_id, coworker_id, action, detail, actor, created_at) "
-                    "VALUES (?, ?, 'hitl_rejected', ?, 'hitl_gate', ?)",
+                    "VALUES (%s, %s, 'hitl_rejected', %s, 'hitl_gate', %s)",
                     (instance_id, coworker_id, detail, now),
                 )
                 conn.commit()
@@ -652,6 +773,527 @@ def api_hitl_resolve(instance_id: str):
     except Exception as exc:
         logger.warning("ace hitl resolve failed for %s/%s: %s", instance_id, coworker_id, exc)
         return jsonify({"error": str(exc)}), 500
+
+
+@ace_api_bp.route("/sessions", methods=["GET"])
+def api_sessions_list():
+    """Paginated list of agent_loop_sessions with summary stats.
+
+    Query params: limit, offset, subtype (result_subtype filter),
+    coworker_id, instance_id.
+    """
+    from icdev.tools.llm.agent_loop_session import list_sessions
+
+    limit = _int_arg("limit", _DEFAULT_LIMIT, lo=1, hi=_MAX_LIMIT)
+    offset = _int_arg("offset", 0, lo=0, hi=10_000_000)
+    subtype = (request.args.get("subtype") or "").strip()
+    coworker_id = (request.args.get("coworker_id") or "").strip()
+    instance_id = (request.args.get("instance_id") or "").strip()
+
+    result = list_sessions(
+        limit=limit,
+        offset=offset,
+        result_subtype=subtype,
+        coworker_id=coworker_id,
+        instance_id=instance_id,
+    )
+    return jsonify({**result, "limit": limit, "offset": offset})
+
+
+@ace_api_bp.route("/sessions/<session_id>", methods=["GET"])
+def api_session_detail(session_id: str):
+    """Full session detail: metadata + parsed turn-by-turn replay.
+
+    Returns ``turns_parsed`` — a list of structured turn dicts, each with
+    ``user_input`` (str), ``assistant_text`` (str), and ``tool_calls`` (list).
+    """
+    from icdev.tools.llm.agent_loop_session import get_session_metadata, load_session
+
+    meta = get_session_metadata(session_id)
+    if meta is None:
+        return jsonify({"error": f"session not found: {session_id}"}), 404
+
+    messages = load_session(session_id)
+    turns_parsed = _parse_turns(messages)
+
+    return jsonify({**meta, "turns_parsed": turns_parsed})
+
+
+@ace_api_bp.route("/sessions/<session_id>/eval", methods=["GET"])
+def api_session_eval_get(session_id: str):
+    """Return stored eval metrics for a session (if any).
+
+    GET /api/ace/sessions/<session_id>/eval
+    Returns: EvalResult fields as JSON, or {error: not_found}.
+    """
+    try:
+        from icdev.tools.ace.evaluator import get_eval
+        er = get_eval(session_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ace eval get failed for %s: %s", session_id, exc)
+        return jsonify({"error": str(exc)}), 500
+    if er is None:
+        return jsonify({"error": "no eval found", "session_id": session_id}), 404
+    return jsonify({
+        "session_id": er.session_id,
+        "outcome": er.outcome,
+        "done": er.done,
+        "turns_used": er.turns_used,
+        "efficiency_score": er.efficiency_score,
+        "total_tool_calls": er.total_tool_calls,
+        "error_tool_calls": er.error_tool_calls,
+        "tool_error_rate": er.tool_error_rate,
+        "unique_tools": er.unique_tools,
+        "tool_precision": er.tool_precision,
+        "total_cost_usd": er.total_cost_usd,
+        "total_input_tokens": er.total_input_tokens,
+        "total_output_tokens": er.total_output_tokens,
+        "reasoning_coverage": er.reasoning_coverage,
+        "avg_reasoning_chars": er.avg_reasoning_chars,
+        "has_error_recovery_reasoning": er.has_error_recovery_reasoning,
+        "plan_stated": er.plan_stated,
+        "scope_violations": er.scope_violations,
+        "trust_denials": er.trust_denials,
+        "llm_grade": er.llm_grade,
+        "reasoning_style": er.reasoning_style,
+        "graded_at": er.graded_at,
+        "grading_version": er.grading_version,
+    })
+
+
+@ace_api_bp.route("/sessions/<session_id>/eval", methods=["POST"])
+def api_session_eval_post(session_id: str):
+    """Score a session and persist the eval result.
+
+    POST /api/ace/sessions/<session_id>/eval
+    Body (optional): {max_iterations: int, reasoning_style: str, judge: bool,
+                      user_prompt: str, final_content: str}
+    Returns: the new EvalResult as JSON.
+    """
+    data = request.get_json(silent=True) or {}
+    max_iter = int(data.get("max_iterations") or 12)
+    reasoning_style = str(data.get("reasoning_style") or "")
+    run_judge = bool(data.get("judge", False))
+    user_prompt = str(data.get("user_prompt") or "")
+    final_content = str(data.get("final_content") or "")
+
+    try:
+        from icdev.tools.ace.evaluator import score_session, save_eval, grade_output_quality
+        er = score_session(session_id, max_iterations=max_iter, reasoning_style=reasoning_style)
+        if er.outcome == "not_found":
+            return jsonify({"error": f"session not found: {session_id}"}), 404
+        if run_judge and user_prompt and final_content:
+            grade = grade_output_quality(er, user_prompt=user_prompt, final_content=final_content)
+            er.llm_grade = grade
+        eval_id = save_eval(er)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ace eval post failed for %s: %s", session_id, exc)
+        return jsonify({"error": str(exc)}), 500
+
+    return jsonify({
+        "eval_id": eval_id,
+        "session_id": er.session_id,
+        "outcome": er.outcome,
+        "done": er.done,
+        "turns_used": er.turns_used,
+        "efficiency_score": er.efficiency_score,
+        "total_tool_calls": er.total_tool_calls,
+        "error_tool_calls": er.error_tool_calls,
+        "tool_error_rate": er.tool_error_rate,
+        "unique_tools": er.unique_tools,
+        "tool_precision": er.tool_precision,
+        "total_cost_usd": er.total_cost_usd,
+        "total_input_tokens": er.total_input_tokens,
+        "total_output_tokens": er.total_output_tokens,
+        "reasoning_coverage": er.reasoning_coverage,
+        "avg_reasoning_chars": er.avg_reasoning_chars,
+        "has_error_recovery_reasoning": er.has_error_recovery_reasoning,
+        "plan_stated": er.plan_stated,
+        "scope_violations": er.scope_violations,
+        "trust_denials": er.trust_denials,
+        "llm_grade": er.llm_grade,
+        "reasoning_style": er.reasoning_style,
+        "graded_at": er.graded_at,
+        "grading_version": er.grading_version,
+    }), 201
+
+
+@ace_api_bp.route("/sessions/<session_id>/eval/suggestions", methods=["GET"])
+def api_session_eval_suggestions(session_id: str):
+    """Return rule-based improvement suggestions for a session.
+
+    GET /api/ace/sessions/<session_id>/eval/suggestions
+    First loads the stored eval (if any); if none exists, scores on-the-fly.
+    Returns: {session_id, suggestions: [{issue, suggestion, field, severity}],
+              eval_summary: {outcome, efficiency_score, reasoning_coverage, tool_error_rate}}
+    """
+    try:
+        from icdev.tools.ace.evaluator import get_eval, score_session, suggest_improvements
+        er = get_eval(session_id)
+        if er is None:
+            er = score_session(session_id)
+        if er.outcome == "not_found":
+            return jsonify({"error": f"session not found: {session_id}"}), 404
+        suggestions = suggest_improvements(er)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ace eval suggestions failed for %s: %s", session_id, exc)
+        return jsonify({"error": str(exc)}), 500
+
+    return jsonify({
+        "session_id": session_id,
+        "suggestions": suggestions,
+        "eval_summary": {
+            "outcome": er.outcome,
+            "done": er.done,
+            "efficiency_score": er.efficiency_score,
+            "reasoning_coverage": er.reasoning_coverage,
+            "tool_error_rate": er.tool_error_rate,
+            "scope_violations": er.scope_violations,
+            "plan_stated": er.plan_stated,
+            "turns_used": er.turns_used,
+            "max_iterations": er.max_iterations,
+        },
+    })
+
+
+@ace_api_bp.route("/sessions/<session_id>/rerun", methods=["POST"])
+def api_session_rerun(session_id: str):
+    """Launch a new coworker session based on a prior session's config.
+
+    Reads the original problem_text and role_ids from the source instance,
+    optionally prepends improvement suggestions to the problem_text, then
+    launches a new ACE run.
+
+    POST body (all optional):
+        apply_suggestions: bool  (default true)
+        extra_prompt:      str   appended after the patched problem_text
+
+    Returns: {new_instance_id, source_session_id, source_instance_id,
+              patched_prompt_preview: str (first 300 chars)}
+    """
+    data = request.get_json(silent=True) or {}
+    apply_sugg = bool(data.get("apply_suggestions", True))
+    extra_prompt = (data.get("extra_prompt") or "").strip()
+
+    # 1. Resolve source instance from the session
+    from icdev.tools.llm.agent_loop_session import get_session_metadata
+    meta = get_session_metadata(session_id)
+    if meta is None:
+        return jsonify({"error": f"session not found: {session_id}"}), 404
+
+    source_instance_id = meta.get("instance_id") or ""
+
+    # 2. Load original launch config from ace_instances
+    problem_text = ""
+    role_ids: list[str] = []
+    if source_instance_id:
+        try:
+            conn = _db()
+            row = conn.execute(
+                _q(conn, "SELECT config_json FROM ace_instances WHERE id = ?"),
+                (source_instance_id,),
+            ).fetchone()
+            conn.close()
+            if row:
+                cfg = _decode_json(row[0] if isinstance(row, (list, tuple)) else row.get("config_json", ""))
+                problem_text = cfg.get("problem_text", "")
+                role_ids = cfg.get("role_ids") or []
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("ace rerun: failed to load source config for %s: %s", source_instance_id, exc)
+
+    # 3. Apply suggestions as a guidance prefix to problem_text
+    if apply_sugg:
+        try:
+            from icdev.tools.ace.evaluator import get_eval, score_session, suggest_improvements, apply_suggestions_to_prompt
+            er = get_eval(session_id) or score_session(session_id)
+            suggestions = suggest_improvements(er)
+            if suggestions:
+                guidance = apply_suggestions_to_prompt("", suggestions)
+                if guidance.strip():
+                    problem_text = guidance + (problem_text or "(re-run with improvements)")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("ace rerun: suggest_improvements failed for %s: %s", session_id, exc)
+
+    if extra_prompt:
+        problem_text = (problem_text or "") + "\n\n" + extra_prompt
+
+    if not problem_text.strip():
+        return jsonify({"error": "could not reconstruct problem_text from source session"}), 422
+
+    # 4. Launch new run
+    try:
+        new_instance_id = ACEController.get_instance().launch(
+            problem_text=problem_text,
+            trigger_source="rerun",
+            trigger_ref=session_id,
+            user_id="dashboard",
+            role_ids=role_ids or None,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ace rerun: launch failed for source %s: %s", session_id, exc)
+        return jsonify({"error": str(exc)}), 500
+
+    return jsonify({
+        "new_instance_id": new_instance_id,
+        "source_session_id": session_id,
+        "source_instance_id": source_instance_id,
+        "patched_prompt_preview": problem_text[:300],
+    }), 202
+
+
+@ace_api_bp.route("/sessions/<session_id>/eval/compare", methods=["GET"])
+def api_session_eval_compare(session_id: str):
+    """Compare this session's eval against a baseline session.
+
+    GET /api/ace/sessions/<id>/eval/compare?baseline=<other_session_id>
+
+    Returns field-by-field deltas and overall_improved flag.
+    baseline is session A; current session_id is session B.
+    """
+    baseline_id = (request.args.get("baseline") or "").strip()
+    if not baseline_id:
+        return jsonify({"error": "baseline query param required"}), 400
+    try:
+        from icdev.tools.ace.evaluator import compare_evals
+        result = compare_evals(baseline_id, session_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ace eval compare failed %s vs %s: %s", baseline_id, session_id, exc)
+        return jsonify({"error": str(exc)}), 500
+    return jsonify(result)
+
+
+@ace_api_bp.route("/evals/trends", methods=["GET"])
+def api_evals_trends():
+    """GET /api/ace/evals/trends?days=30&role=&bucket=week
+
+    Returns aggregated eval score trends over time.
+    """
+    try:
+        from icdev.tools.ace.evaluator import get_eval_trends
+        days = int(request.args.get("days", 30))
+        role = (request.args.get("role") or "").strip() or None
+        bucket = request.args.get("bucket", "week")
+        data = get_eval_trends(days=days, role=role, bucket=bucket)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ace eval trends failed: %s", exc)
+        return jsonify({"error": str(exc)}), 500
+    return jsonify({"trends": data, "days": days, "bucket": bucket})
+
+
+@ace_api_bp.route("/evals", methods=["GET"])
+def api_evals_list():
+    """List all stored eval results.
+
+    GET /api/ace/evals?limit=50&offset=0&outcome=success
+    Returns: {evals: [...], count, total}.
+    """
+    limit = _int_arg("limit", _DEFAULT_LIMIT, lo=1, hi=_MAX_LIMIT)
+    offset = _int_arg("offset", 0, lo=0, hi=10_000_000)
+    outcome = (request.args.get("outcome") or "").strip()
+
+    items: list[dict] = []
+    total = 0
+    conn = None
+    try:
+        from icdev.tools.db.storage import get_canvas_connection
+        conn = get_canvas_connection("ACE_DB_PATH")
+        where = "WHERE outcome = ?" if outcome else ""
+        params: tuple = (outcome,) if outcome else ()
+        cnt = _one(conn.execute(_q(conn, f"SELECT COUNT(*) AS n FROM agent_evals {where}"), params))
+        total = (cnt or {}).get("n", 0)
+        items = _rows(conn.execute(
+            _q(conn, f"SELECT session_id, outcome, done, turns_used, efficiency_score, "
+               f"tool_error_rate, total_cost_usd, reasoning_coverage, plan_stated, "
+               f"scope_violations, graded_at, grading_version "
+               f"FROM agent_evals {where} ORDER BY graded_at DESC LIMIT ? OFFSET ?"),
+            params + (limit, offset),
+        ))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ace evals list failed: %s", exc)
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        if conn is not None:
+            conn.close()
+
+    return jsonify({"evals": items, "count": len(items), "total": total, "limit": limit, "offset": offset})
+
+
+def _parse_turns(messages: list[dict]) -> list[dict]:
+    """Convert raw Anthropic-format messages into structured turn dicts.
+
+    Each turn is: {user_input, assistant_text, tool_calls: [{name, input, result, is_error}]}.
+    Tool calls from the assistant message are paired with their results from the
+    subsequent user message (tool_result content blocks).
+    """
+    turns: list[dict] = []
+    i = 0
+    while i < len(messages):
+        msg = messages[i]
+        role = msg.get("role", "")
+
+        if role == "user":
+            content = msg.get("content", "")
+            if isinstance(content, str):
+                user_text = content
+            elif isinstance(content, list):
+                # May be tool_result blocks — defer to assistant turn handling
+                user_text = None
+                results_by_id: dict[str, dict] = {}
+                for block in content:
+                    if isinstance(block, dict) and block.get("type") == "tool_result":
+                        tid = block.get("tool_use_id", "")
+                        results_by_id[tid] = {
+                            "result": _block_text(block.get("content", "")),
+                            "is_error": bool(block.get("is_error", False)),
+                        }
+                if results_by_id:
+                    # These belong to the previous turn's tool calls — patch them in.
+                    if turns:
+                        for tc in turns[-1].get("tool_calls", []):
+                            tid = tc.get("_id", "")
+                            if tid in results_by_id:
+                                tc.update(results_by_id[tid])
+                    i += 1
+                    continue
+            else:
+                user_text = str(content) if content else None
+
+            # Peek at the next assistant message.
+            asst_msg = messages[i + 1] if i + 1 < len(messages) and messages[i + 1].get("role") == "assistant" else None
+            asst_text = ""
+            tool_calls: list[dict] = []
+            if asst_msg is not None:
+                asst_content = asst_msg.get("content", "")
+                if isinstance(asst_content, str):
+                    asst_text = asst_content
+                elif isinstance(asst_content, list):
+                    for block in asst_content:
+                        if not isinstance(block, dict):
+                            continue
+                        btype = block.get("type", "")
+                        if btype == "text":
+                            asst_text += block.get("text", "")
+                        elif btype == "tool_use":
+                            tool_calls.append({
+                                "_id": block.get("id", ""),
+                                "name": block.get("name", ""),
+                                "input": block.get("input", {}),
+                                "result": None,
+                                "is_error": False,
+                            })
+
+            turns.append({
+                "user_input": user_text,
+                "assistant_text": asst_text.strip(),
+                "tool_calls": tool_calls,
+            })
+            i += 2 if asst_msg is not None else 1
+        else:
+            i += 1
+
+    # Strip internal _id from serialized output.
+    for turn in turns:
+        for tc in turn.get("tool_calls", []):
+            tc.pop("_id", None)
+    return turns
+
+
+def _block_text(content) -> str:
+    """Extract text from a tool_result content value (str or list of blocks)."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "text":
+                parts.append(block.get("text", ""))
+            elif isinstance(block, str):
+                parts.append(block)
+        return "".join(parts)
+    return str(content) if content else ""
+
+
+@ace_api_bp.route("/monitor-summary", methods=["GET"])
+def api_monitor_summary():
+    """Home-page monitor tile: active instances, HITL queue, 24h agent loop stats."""
+    from datetime import datetime, timedelta, timezone
+
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).strftime(
+        "%Y-%m-%d %H:%M:%S"
+    )
+    conn = None
+    try:
+        conn = _db()
+
+        # Active ACE instances
+        ph = ", ".join(["?"] * len(_ACTIVE_STATES))
+        row = _one(
+            conn.execute(
+                _q(conn, f"SELECT COUNT(*) AS n FROM ace_instances WHERE state IN ({ph})"),
+                tuple(_ACTIVE_STATES),
+            )
+        )
+        active_instances = int((row or {}).get("n", 0) or 0)
+
+        # HITL items awaiting human review (table may not exist on older installs)
+        hitl_pending = 0
+        try:
+            row = _one(
+                conn.execute(
+                    _q(conn, "SELECT COUNT(*) AS n FROM agent_hitl_pending WHERE status = ?"),
+                    ("pending",),
+                )
+            )
+            hitl_pending = int((row or {}).get("n", 0) or 0)
+        except Exception:  # noqa: BLE001
+            pass
+
+        # Agent loop sessions in the last 24 h (table may not exist on older installs)
+        sessions_24h = 0
+        cost_24h_usd = 0.0
+        success_rate_24h = None
+        last_session_at = None
+        try:
+            row = _one(
+                conn.execute(
+                    _q(
+                        conn,
+                        "SELECT COUNT(*) AS n, SUM(total_cost_usd) AS cost,"
+                        " SUM(CASE WHEN result_subtype = ? THEN 1 ELSE 0 END) AS ok"
+                        " FROM agent_loop_sessions WHERE created_at >= ?",
+                    ),
+                    ("success", cutoff),
+                )
+            )
+            if row:
+                sessions_24h = int(row.get("n", 0) or 0)
+                cost_24h_usd = float(row.get("cost", 0.0) or 0.0)
+                ok_count = int(row.get("ok", 0) or 0)
+                if sessions_24h > 0:
+                    success_rate_24h = round(ok_count / sessions_24h, 3)
+
+            ts_row = _one(conn.execute("SELECT MAX(created_at) AS ts FROM agent_loop_sessions"))
+            if ts_row:
+                last_session_at = ts_row.get("ts")
+        except Exception:  # noqa: BLE001
+            pass
+
+        return jsonify(
+            {
+                "active_instances": active_instances,
+                "hitl_pending": hitl_pending,
+                "sessions_24h": sessions_24h,
+                "cost_24h_usd": round(cost_24h_usd, 4),
+                "success_rate_24h": success_rate_24h,
+                "last_session_at": last_session_at,
+            }
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ace monitor-summary failed: %s", exc)
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        if conn is not None:
+            conn.close()
 
 
 @ace_api_bp.route("/profiles", methods=["GET"])
@@ -742,6 +1384,122 @@ def api_profiles_delete(role_id: str):
     except Exception as exc:
         logger.warning("ace profiles delete failed: %s", exc)
         return jsonify({"error": str(exc)}), 500
+
+
+@ace_api_bp.route("/coworkers/<coworker_id>/stats", methods=["GET"])
+def api_coworker_stats(coworker_id: str):
+    """Per-coworker usage stats: message count, tool calls, sessions.
+
+    GET /api/ace/coworkers/<coworker_id>/stats
+    Returns: {coworker_id, message_count, tool_call_count, session_count,
+              last_active, instances: [instance_id, ...]}
+    """
+    conn = None
+    try:
+        conn = _db()
+        msg_row = _one(
+            conn.execute(
+                _q(conn, "SELECT COUNT(*) AS n FROM ace_messages WHERE coworker_id = ?"),
+                (coworker_id,),
+            )
+        )
+        tool_row = _one(
+            conn.execute(
+                _q(
+                    conn,
+                    "SELECT COUNT(*) AS n FROM ace_audit_log "
+                    "WHERE coworker_id = ? AND action = 'agent_turn'",
+                ),
+                (coworker_id,),
+            )
+        )
+        last_row = _one(
+            conn.execute(
+                _q(
+                    conn,
+                    "SELECT MAX(created_at) AS last_active FROM ace_messages "
+                    "WHERE coworker_id = ?",
+                ),
+                (coworker_id,),
+            )
+        )
+        inst_rows = _rows(
+            conn.execute(
+                _q(
+                    conn,
+                    "SELECT DISTINCT instance_id FROM ace_messages WHERE coworker_id = ?",
+                ),
+                (coworker_id,),
+            )
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ace coworker_stats failed for %s: %s", coworker_id, exc)
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        if conn is not None:
+            conn.close()
+
+    session_count = 0
+    try:
+        from icdev.tools.llm.agent_loop_session import list_sessions
+        sr = list_sessions(coworker_id=coworker_id, limit=1000)
+        session_count = sr.get("total", 0)
+    except Exception:
+        pass
+
+    return jsonify({
+        "coworker_id": coworker_id,
+        "message_count": (msg_row or {}).get("n", 0),
+        "tool_call_count": (tool_row or {}).get("n", 0),
+        "session_count": session_count,
+        "last_active": (last_row or {}).get("last_active"),
+        "instances": [r["instance_id"] for r in inst_rows],
+    })
+
+
+@ace_api_bp.route("/<instance_id>/stream", methods=["GET"])
+def api_stream(instance_id: str):
+    """Server-Sent Events stream for live agent events on *instance_id*.
+
+    GET /api/ace/<instance_id>/stream
+    Each SSE message is: data: {json}\n\n
+    Events: agent_turn, loop_done
+    The connection closes after 60 s of inactivity (no events).
+    """
+    from icdev.tools.ace import event_bus as _eb
+    import json as _json
+
+    timeout = float(request.args.get("timeout", 25))
+    # max_pings=0 means unlimited; use a small positive value in tests to bound
+    # the generator when no events are expected (e.g. ?max_pings=1).
+    max_pings = int(request.args.get("max_pings", 0))
+
+    def _generate():
+        q = _eb.subscribe(instance_id)
+        ping_count = 0
+        try:
+            while True:
+                event = _eb.drain(instance_id, q, timeout=timeout)
+                if event is None:
+                    yield ": ping\n\n"
+                    ping_count += 1
+                    if max_pings and ping_count >= max_pings:
+                        break
+                    continue
+                yield f"data: {_json.dumps(event)}\n\n"
+                if event.get("type") == "loop_done":
+                    break
+        finally:
+            _eb.unsubscribe(instance_id, q)
+
+    return Response(
+        _generate(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @ace_api_bp.route("/iqe-query", methods=["POST"])
@@ -842,3 +1600,207 @@ def api_ace_event_topics():
         return jsonify({"ok": True, "topics": topic_map})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
+
+
+@ace_api_bp.route("/<instance_id>/nova-state", methods=["GET"])
+def api_nova_state(instance_id: str):
+    """NOVA state snapshot for an instance: per-coworker trust, memory, improvements."""
+    from icdev.tools.ace.trust_calibrator import INITIAL_TRUST
+
+    cws: list[dict] = []
+    conn_ace = None
+    try:
+        conn_ace = _db()
+        cws = _rows(
+            conn_ace.execute(
+                _q(
+                    conn_ace,
+                    "SELECT id, role_id, display_name, state, trust_tier, "
+                    "assigned_step, last_active_at, created_at "
+                    "FROM ace_coworkers WHERE instance_id = ? ORDER BY created_at",
+                ),
+                (instance_id,),
+            )
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ace nova-state: canvas read failed: %s", exc)
+    finally:
+        if conn_ace is not None:
+            conn_ace.close()
+
+    trust: dict[str, float] = {}
+    fact_counts: dict[str, int] = {}
+    improvements: list[dict] = []
+    conn_nova = None
+    try:
+        from icdev.tools.db.storage import get_connection
+
+        conn_nova = get_connection()
+        for r in _rows(
+            conn_nova.execute(
+                _q(
+                    conn_nova,
+                    "SELECT role_id, new_score FROM ace_trust_ledger "
+                    "ORDER BY recorded_at ASC",
+                )
+            )
+        ):
+            trust[r["role_id"]] = float(r["new_score"])
+        for r in _rows(
+            conn_nova.execute(
+                _q(
+                    conn_nova,
+                    "SELECT role_id, COUNT(*) AS n FROM ace_coworker_memory GROUP BY role_id",
+                )
+            )
+        ):
+            fact_counts[r["role_id"]] = int(r["n"])
+        improvements = [
+            {"task_type": r["task_type"], "improvement_text": r["improvement_text"]}
+            for r in _rows(
+                conn_nova.execute(
+                    _q(
+                        conn_nova,
+                        "SELECT task_type, improvement_text FROM agent_improvement_artifacts "
+                        "WHERE status = ? ORDER BY applied_at DESC LIMIT ?",
+                    ),
+                    ("applied", 20),
+                )
+            )
+        ]
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ace nova-state: nova read failed: %s", exc)
+    finally:
+        if conn_nova is not None:
+            conn_nova.close()
+
+    out: list[dict] = []
+    for cw in cws:
+        role = cw.get("role_id", "")
+        out.append(
+            {
+                "coworker_id": cw.get("id"),
+                "role_id": role,
+                "display_name": cw.get("display_name"),
+                "state": cw.get("state"),
+                "trust_tier": cw.get("trust_tier"),
+                "trust_score": float(trust.get(role, INITIAL_TRUST)),
+                "fact_count": int(fact_counts.get(role, 0)),
+                "recent_improvements": improvements,
+            }
+        )
+    return jsonify({"coworkers": out})
+
+
+# ---------------------------------------------------------------------------
+# Chat API — multi-turn session helper
+# ---------------------------------------------------------------------------
+
+_CHAT_INSTANCE_ID = "ace-chat"
+
+
+def _chat_ensure_instance(conn) -> None:
+    """Ensure the synthetic chat instance exists for session FK integrity."""
+    conn.execute(
+        _q(
+            conn,
+            "INSERT OR IGNORE INTO ace_instances (id, name, role_id, state) VALUES (?, ?, ?, ?)",
+        ),
+        (_CHAT_INSTANCE_ID, "ACE Chat", "chat", "active"),
+    )
+
+
+@ace_api_bp.route("/chat", methods=["POST"])
+def api_ace_chat():
+    """POST /api/ace/chat — multi-turn chat with persisted session history."""
+    body = request.get_json(silent=True) or {}
+    session_id = body.get("session_id")
+    user_message = body.get("user_message")
+    if not session_id or not isinstance(session_id, str):
+        return jsonify({"error": "session_id is required"}), 400
+    if not user_message or not isinstance(user_message, str):
+        return jsonify({"error": "user_message is required"}), 400
+
+    conn = None
+    try:
+        conn = _db()
+        _chat_ensure_instance(conn)
+
+        row = _one(
+            conn.execute(
+                _q(
+                    conn,
+                    "SELECT conversation_history, history_json, turn_count, resume_token "
+                    "FROM ace_sessions WHERE session_id = ? AND instance_id = ?",
+                ),
+                (session_id, _CHAT_INSTANCE_ID),
+            )
+        )
+
+        if row:
+            raw_history = row.get("history_json") or row.get("conversation_history") or "[]"
+            try:
+                history = json.loads(raw_history) if raw_history else []
+            except (TypeError, ValueError):
+                history = []
+            if not isinstance(history, list):
+                history = []
+            turn_count = int(row.get("turn_count", 0))
+            resume_token = row.get("resume_token") or f"rt-{uuid.uuid4().hex[:12]}"
+        else:
+            history = []
+            turn_count = 0
+            resume_token = f"rt-{uuid.uuid4().hex[:12]}"
+
+        history.append({"role": "user", "content": user_message})
+
+        assistant_message = ""
+        try:
+            from icdev.tools.llm.router import LLMRouter
+            from icdev.tools.llm.provider import LLMRequest
+
+            router = LLMRouter()
+            req = LLMRequest(
+                function="llm_generation",
+                messages=history,
+                model="claude-sonnet-4-6",
+                max_tokens=512,
+            )
+            resp = router.invoke("llm_generation", req)
+            assistant_message = getattr(resp, "content", "") or ""
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("ace chat LLM call failed: %s", exc)
+            assistant_message = ""
+
+        if not assistant_message:
+            assistant_message = "ACE response to: " + user_message
+
+        history.append({"role": "assistant", "content": assistant_message})
+        turn_count += 1
+        history_json = json.dumps(history)
+
+        conn.execute(
+            _q(
+                conn,
+                "INSERT INTO ace_sessions (session_id, instance_id, conversation_history, history_json, resume_token, turn_count) "
+                "VALUES (?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(session_id) DO UPDATE SET "
+                "  conversation_history = excluded.conversation_history, "
+                "  history_json = excluded.history_json, "
+                "  turn_count = excluded.turn_count",
+            ),
+            (session_id, _CHAT_INSTANCE_ID, history_json, history_json, resume_token, turn_count),
+        )
+        conn.commit()
+
+        return jsonify({
+            "session_id": session_id,
+            "turn_count": turn_count,
+            "assistant_message": assistant_message,
+        })
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ace chat endpoint error: %s", exc)
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        if conn is not None:
+            conn.close()

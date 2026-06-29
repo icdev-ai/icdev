@@ -57,7 +57,7 @@ def validate_api_key(key: str) -> Optional[dict]:
             FROM api_keys k
             JOIN users u ON k.user_id = u.id AND k.tenant_id = u.tenant_id
             JOIN tenants t ON k.tenant_id = t.id
-            WHERE k.key_hash = ?
+            WHERE k.key_hash = %s
         """,
             (key_hash,),
         ).fetchone()
@@ -93,7 +93,7 @@ def validate_api_key(key: str) -> Optional[dict]:
         # Update last_used_at
         try:
             conn.execute(
-                "UPDATE api_keys SET last_used_at = ? WHERE id = ?",
+                "UPDATE api_keys SET last_used_at = %s WHERE id = %s",
                 (datetime.now(timezone.utc).isoformat(), row["key_id"]),
             )
             conn.commit()

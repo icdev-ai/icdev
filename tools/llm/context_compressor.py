@@ -369,7 +369,7 @@ class ContextCompressor:
             rows = conn.execute(
                 "SELECT method, COUNT(*) as n, SUM(original_tokens) as orig, "
                 "SUM(compressed_tokens) as comp, MIN(compression_ratio) as best "
-                "FROM llm_context_compression_log WHERE session_id = ? "
+                "FROM llm_context_compression_log WHERE session_id = %s "
                 "GROUP BY method",
                 (self.session_id,),
             ).fetchall()
@@ -428,7 +428,7 @@ class ContextCompressor:
                 "INSERT INTO llm_context_compression_log "
                 "(id, session_id, content_type, method, original_tokens, compressed_tokens, "
                 "compression_ratio, reversible, budget_tokens, duration_ms, headroom_available, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     str(uuid.uuid4()),
                     self.session_id,

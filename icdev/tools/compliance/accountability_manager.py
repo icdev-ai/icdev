@@ -135,7 +135,7 @@ def _audit_log(conn: sqlite3.Connection, project_id: str, event_type: str, actor
     """Write to audit_trail if it exists."""
     try:
         conn.execute(
-            "INSERT INTO audit_trail (project_id, event_type, actor, action, created_at) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO audit_trail (project_id, event_type, actor, action, created_at) VALUES (%s, %s, %s, %s, %s)",
             (project_id, event_type, actor, action, datetime.now(timezone.utc).isoformat()),
         )
         conn.commit()
@@ -148,7 +148,7 @@ def register_oversight_plan(
 ) -> Dict:
     """Register a human oversight plan for an AI system."""
     cur = conn.execute(
-        "INSERT INTO ai_oversight_plans (project_id, plan_name, description, created_by) VALUES (?, ?, ?, ?)",
+        "INSERT INTO ai_oversight_plans (project_id, plan_name, description, created_by) VALUES (%s, %s, %s, %s)",
         (project_id, plan_name, description, created_by),
     )
     conn.commit()
@@ -174,7 +174,7 @@ def designate_caio(
 ) -> Dict:
     """Designate a Chief AI Officer or responsible individual."""
     cur = conn.execute(
-        "INSERT INTO ai_caio_registry (project_id, name, role, organization) VALUES (?, ?, ?, ?)",
+        "INSERT INTO ai_caio_registry (project_id, name, role, organization) VALUES (%s, %s, %s, %s)",
         (project_id, name, role, organization),
     )
     conn.commit()
@@ -191,7 +191,7 @@ def designate_caio(
 def file_appeal(conn: sqlite3.Connection, project_id: str, appellant: str, ai_system: str, grievance: str = "") -> Dict:
     """File an appeal against an AI system decision."""
     cur = conn.execute(
-        "INSERT INTO ai_accountability_appeals (project_id, appellant, ai_system, grievance) VALUES (?, ?, ?, ?)",
+        "INSERT INTO ai_accountability_appeals (project_id, appellant, ai_system, grievance) VALUES (%s, %s, %s, %s)",
         (project_id, appellant, ai_system, grievance),
     )
     conn.commit()
@@ -211,11 +211,11 @@ def resolve_appeal(conn: sqlite3.Connection, appeal_id: int, resolution: str, st
         return {"error": f"Invalid status. Must be one of {VALID_APPEAL_STATUSES}"}
     now = datetime.now(timezone.utc).isoformat()
     conn.execute(
-        "UPDATE ai_accountability_appeals SET resolution=?, status=?, resolved_at=? WHERE id=?",
+        "UPDATE ai_accountability_appeals SET resolution=%s, status=%s, resolved_at=%s WHERE id=%s",
         (resolution, status, now, appeal_id),
     )
     conn.commit()
-    row = conn.execute("SELECT * FROM ai_accountability_appeals WHERE id=?", (appeal_id,)).fetchone()
+    row = conn.execute("SELECT * FROM ai_accountability_appeals WHERE id=%s", (appeal_id,)).fetchone()
     if not row:
         return {"error": f"Appeal {appeal_id} not found"}
     _audit_log(
@@ -238,7 +238,7 @@ def submit_ethics_review(
     cur = conn.execute(
         "INSERT INTO ai_ethics_reviews "
         "(project_id, review_type, summary, findings, recommendation) "
-        "VALUES (?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s)",
         (project_id, review_type, summary, findings, recommendation),
     )
     conn.commit()
@@ -273,7 +273,7 @@ def schedule_reassessment(
     cur = conn.execute(
         "INSERT INTO ai_reassessment_schedule "
         "(project_id, ai_system, frequency, last_assessed, next_due) "
-        "VALUES (?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s)",
         (project_id, ai_system, frequency, base, next_due),
     )
     conn.commit()
@@ -296,23 +296,23 @@ def schedule_reassessment(
 def get_accountability_summary(conn: sqlite3.Connection, project_id: str) -> Dict:
     """Return a consolidated accountability summary for a project."""
     plans = conn.execute(
-        "SELECT * FROM ai_oversight_plans WHERE project_id=?",
+        "SELECT * FROM ai_oversight_plans WHERE project_id=%s",
         (project_id,),
     ).fetchall()
     caios = conn.execute(
-        "SELECT * FROM ai_caio_registry WHERE project_id=?",
+        "SELECT * FROM ai_caio_registry WHERE project_id=%s",
         (project_id,),
     ).fetchall()
     appeals = conn.execute(
-        "SELECT * FROM ai_accountability_appeals WHERE project_id=?",
+        "SELECT * FROM ai_accountability_appeals WHERE project_id=%s",
         (project_id,),
     ).fetchall()
     reviews = conn.execute(
-        "SELECT * FROM ai_ethics_reviews WHERE project_id=?",
+        "SELECT * FROM ai_ethics_reviews WHERE project_id=%s",
         (project_id,),
     ).fetchall()
     schedules = conn.execute(
-        "SELECT * FROM ai_reassessment_schedule WHERE project_id=?",
+        "SELECT * FROM ai_reassessment_schedule WHERE project_id=%s",
         (project_id,),
     ).fetchall()
     open_appeals = [dict(a) for a in appeals if a["status"] in ("submitted", "under_review")]

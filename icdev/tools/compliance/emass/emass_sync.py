@@ -68,7 +68,7 @@ def _log_audit(conn, project_id, action, details=None):
     conn.execute(
         """INSERT INTO audit_trail
            (project_id, event_type, actor, action, details, classification, created_at)
-           VALUES (?, 'emass_sync', 'icdev-emass-sync', ?, ?, 'CUI', datetime('now'))""",
+           VALUES (%s, 'emass_sync', 'icdev-emass-sync', %s, %s, 'CUI', datetime('now'))""",
         (project_id, action, json.dumps(details) if details else None),
     )
     conn.commit()
@@ -154,7 +154,7 @@ def _log_sync(
            (project_id, sync_mode, sync_status, started_at, completed_at,
             controls_synced, poam_synced, artifacts_synced, test_results_synced,
             error_message, details, classification)
-           VALUES (?, ?, ?, ?, datetime('now'), ?, ?, ?, ?, ?, ?, 'CUI')""",
+           VALUES (%s, %s, %s, %s, datetime('now'), %s, %s, %s, %s, %s, %s, 'CUI')""",
         (
             project_id,
             mode,
@@ -194,7 +194,7 @@ def _update_emass_system(
         auth_term_date: Authorization termination date from eMASS.
     """
     existing = conn.execute(
-        "SELECT project_id FROM emass_systems WHERE project_id = ?",
+        "SELECT project_id FROM emass_systems WHERE project_id = %s",
         (project_id,),
     ).fetchone()
 
@@ -220,7 +220,7 @@ def _update_emass_system(
             params.append(auth_term_date)
         params.append(project_id)
         conn.execute(
-            f"UPDATE emass_systems SET {', '.join(updates)} WHERE project_id = ?",  # nosec B608 -- table/column names are internal constants, not user input
+            f"UPDATE emass_systems SET {', '.join(updates)} WHERE project_id = %s",  # nosec B608 -- table/column names are internal constants, not user input
             params,
         )
     else:
@@ -229,7 +229,7 @@ def _update_emass_system(
                (project_id, emass_system_id, authorization_status,
                 authorization_date, authorization_termination_date,
                 last_sync, last_sync_status, sync_mode, classification)
-               VALUES (?, ?, ?, ?, ?, datetime('now'), ?, ?, 'CUI')""",
+               VALUES (%s, %s, %s, %s, %s, datetime('now'), %s, %s, 'CUI')""",
             (
                 project_id,
                 emass_system_id or "",
@@ -265,28 +265,28 @@ def _load_project_data(conn, project_id):
     data = {}
 
     # Project info
-    row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+    row = conn.execute("SELECT * FROM projects WHERE id = %s", (project_id,)).fetchone()
     if not row:
         raise ValueError(f"Project '{project_id}' not found.")
     data["project"] = dict(row)
 
     # Control implementations
     rows = conn.execute(
-        "SELECT * FROM project_controls WHERE project_id = ? ORDER BY control_id",
+        "SELECT * FROM project_controls WHERE project_id = %s ORDER BY control_id",
         (project_id,),
     ).fetchall()
     data["controls"] = [dict(r) for r in rows]
 
     # POA&M items
     rows = conn.execute(
-        "SELECT * FROM poam_items WHERE project_id = ? ORDER BY severity",
+        "SELECT * FROM poam_items WHERE project_id = %s ORDER BY severity",
         (project_id,),
     ).fetchall()
     data["poam_items"] = [dict(r) for r in rows]
 
     # STIG findings
     rows = conn.execute(
-        "SELECT * FROM stig_findings WHERE project_id = ? ORDER BY severity, finding_id",
+        "SELECT * FROM stig_findings WHERE project_id = %s ORDER BY severity, finding_id",
         (project_id,),
     ).fetchall()
     data["stig_findings"] = [dict(r) for r in rows]
@@ -294,7 +294,7 @@ def _load_project_data(conn, project_id):
     # Vulnerability management / scan results
     try:
         rows = conn.execute(
-            "SELECT * FROM cssp_vuln_management WHERE project_id = ? ORDER BY scan_date DESC LIMIT 10",
+            "SELECT * FROM cssp_vuln_management WHERE project_id = %s ORDER BY scan_date DESC LIMIT 10",
             (project_id,),
         ).fetchall()
         data["vuln_scans"] = [dict(r) for r in rows]
@@ -377,7 +377,7 @@ def _sync_via_api(project_id, db_path=None):
         conn2 = _get_connection(db_path)
         try:
             ssp_rows = conn2.execute(
-                "SELECT file_path FROM ssp_documents WHERE project_id = ? AND file_path IS NOT NULL",
+                "SELECT file_path FROM ssp_documents WHERE project_id = %s AND file_path IS NOT NULL",
                 (project_id,),
             ).fetchall()
             for row in ssp_rows:
@@ -390,7 +390,7 @@ def _sync_via_api(project_id, db_path=None):
                     }
                 )
             sbom_rows = conn2.execute(
-                "SELECT file_path FROM sbom_records WHERE project_id = ? AND file_path IS NOT NULL",
+                "SELECT file_path FROM sbom_records WHERE project_id = %s AND file_path IS NOT NULL",
                 (project_id,),
             ).fetchall()
             for row in sbom_rows:
@@ -689,14 +689,14 @@ def pull_ato_status(project_id, db_path=None):
         _ensure_sync_tables(conn)
 
         # Resolve eMASS system ID
-        project = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+        project = conn.execute("SELECT * FROM projects WHERE id = %s", (project_id,)).fetchone()
         if not project:
             raise ValueError(f"Project '{project_id}' not found.")
         project = dict(project)
 
         # Check emass_systems for a mapped system ID
         emass_row = conn.execute(
-            "SELECT emass_system_id FROM emass_systems WHERE project_id = ?",
+            "SELECT emass_system_id FROM emass_systems WHERE project_id = %s",
             (project_id,),
         ).fetchone()
         emass_system_id = None
@@ -787,7 +787,7 @@ def get_sync_history(project_id, db_path=None):
         # Sync log entries
         rows = conn.execute(
             """SELECT * FROM emass_sync_log
-               WHERE project_id = ?
+               WHERE project_id = %s
                ORDER BY started_at DESC""",
             (project_id,),
         ).fetchall()
@@ -795,7 +795,7 @@ def get_sync_history(project_id, db_path=None):
 
         # Current system record
         sys_row = conn.execute(
-            "SELECT * FROM emass_systems WHERE project_id = ?",
+            "SELECT * FROM emass_systems WHERE project_id = %s",
             (project_id,),
         ).fetchone()
         system_record = dict(sys_row) if sys_row else None

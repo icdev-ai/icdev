@@ -101,7 +101,7 @@ def _get_due_deliverables(days_ahead: int = _DEFAULT_DAYS_AHEAD) -> List[Dict]:
             AND d.status IN ('not_started', 'in_progress', 'overdue')
             AND d.generated_by_tool IS NULL
             AND d.due_date IS NOT NULL
-            AND d.due_date <= date('now', '+' || ? || ' days')
+            AND d.due_date <= date('now', '+' || %s || ' days')
             ORDER BY d.due_date ASC
         """,
             (days_ahead,),
@@ -132,7 +132,7 @@ def _get_stale_documentation(max_age_days: int = _DEFAULT_STALE_THRESHOLD_DAYS) 
             AND d.deliverable_type IN ('documentation', 'plan')
             AND d.status IN ('accepted', 'submitted', 'government_review')
             AND d.generated_by_tool IS NOT NULL
-            AND d.updated_at < date('now', '-' || ? || ' days')
+            AND d.updated_at < date('now', '-' || %s || ' days')
             ORDER BY d.updated_at ASC
         """,
             (max_age_days,),
@@ -403,7 +403,7 @@ def _record_generation(
             "INSERT INTO cpmp_cdrl_generations "
             "(id, deliverable_id, contract_id, cdrl_type, generation_tool, "
             "status, error_message, generated_by, metadata, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 gen_id,
                 deliverable_id,
@@ -420,8 +420,8 @@ def _record_generation(
         # Update deliverable status if successful
         if success:
             conn.execute(
-                "UPDATE cpmp_deliverables SET generated_by_tool = ?, "
-                "status = 'in_progress', updated_at = ? WHERE id = ?",
+                "UPDATE cpmp_deliverables SET generated_by_tool = %s, "
+                "status = 'in_progress', updated_at = %s WHERE id = %s",
                 (tool_path, now, deliverable_id),
             )
         conn.commit()
@@ -440,7 +440,7 @@ def _record_compliance_refresh(deliverable_id: str, contract_id: str, cdrl_type:
             "INSERT INTO pg_proposal_genesis_audit "
             "(id, event_type, reflex_name, risk_tier, opportunity_id, "
             "details, success, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 _generate_id("pgaudit"),
                 "compliance_refresh_flagged",
@@ -473,7 +473,7 @@ def _audit_fulfill(event_type: str, contract_id: Optional[str], details: Dict, s
             "INSERT INTO pg_proposal_genesis_audit "
             "(id, event_type, reflex_name, risk_tier, opportunity_id, "
             "details, success, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 _generate_id("pgaudit"),
                 event_type,

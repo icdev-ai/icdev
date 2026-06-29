@@ -746,10 +746,18 @@ def analyze_from_file(file_path: str, domain: str = "network") -> dict:
                 temperature=0.1,
                 skip_injection_scan=True,
             )
-            resp = router.invoke("ndc_diagram_quick_scan", quick_req)
-            vision_text = getattr(resp, "content", "") or ""
-        except Exception as exc:
-            logger.warning("analyze_from_file quick vision scan failed: %s", exc)
+            import concurrent.futures as _cf
+            _ex = _cf.ThreadPoolExecutor(max_workers=1)
+            _fut = _ex.submit(router.invoke, "ndc_diagram_quick_scan", quick_req)
+            try:
+                resp = _fut.result(timeout=20)
+                vision_text = getattr(resp, "content", "") or ""
+            except _cf.TimeoutError:
+                pass  # quick-scan timed out — proceed without vision text
+            finally:
+                _ex.shutdown(wait=False)  # don't block on CLI-bridge poll thread
+        except Exception:
+            pass  # quick-scan unavailable — proceed without vision text
 
     if graph_json:
         node_labels = " ".join((n.get("label") or "") for n in graph_json.get("nodes", []))
@@ -760,8 +768,11 @@ def analyze_from_file(file_path: str, domain: str = "network") -> dict:
 
     tabs: dict = {}
     try:
+        import concurrent.futures
         from tools.llm.router import LLMRouter
         from tools.llm.provider import LLMRequest
+
+        _LLM_TIMEOUT = 45  # seconds per batch — guards against CLI-bridge hang
 
         router = LLMRouter()
         all_images = images or []
@@ -781,13 +792,19 @@ def analyze_from_file(file_path: str, domain: str = "network") -> dict:
                 temperature=0.2,
                 skip_injection_scan=True,
             )
-            resp = router.invoke("ndc_diagram_analysis", req)
+            _ex2 = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+            _fut = _ex2.submit(router.invoke, "ndc_diagram_analysis", req)
+            try:
+                resp = _fut.result(timeout=_LLM_TIMEOUT)
+            except concurrent.futures.TimeoutError:
+                raise TimeoutError("ndc_diagram_analysis timeout")
+            finally:
+                _ex2.shutdown(wait=False)  # don't block on CLI-bridge poll thread
             raw = getattr(resp, "content", "") or ""
             batch_results.append(parse_analysis_response(raw))
 
         tabs = _merge_tab_results(batch_results) if total > 1 else (batch_results[0] if batch_results else {})
-    except Exception as exc:
-        logger.error("analyze_from_file LLM call failed: %s", exc)
+    except Exception:
         tabs = _fallback_analysis(_upload_stub, domain, cloud_context)
 
     logger.info(
@@ -795,6 +812,10 @@ def analyze_from_file(file_path: str, domain: str = "network") -> dict:
         p.name, fmt,
         sum(len(v) for v in tabs.values() if isinstance(v, list)),
     )
+
+    # Generate remediation diagram from the security/compliance/remediate findings
+    remediation_diagram = generate_remediation_diagram(tabs, domain)
+
     return {
         "analysis_id": analysis_id,
         "tabs": tabs,
@@ -802,7 +823,78 @@ def analyze_from_file(file_path: str, domain: str = "network") -> dict:
         "industry": domain,
         "filename": p.name,
         "format": fmt,
+        "remediation_diagram": remediation_diagram,
     }
+
+
+def generate_remediation_diagram(tabs: dict, domain: str = "network") -> str:
+    """Generate a Mermaid diagram showing the remediated (fixed) network state.
+
+    Extracts security/compliance/remediate findings from *tabs* and asks the LLM
+    to produce a Mermaid flowchart that depicts the network AFTER all findings are
+    applied.  Returns a Mermaid code block string, or an empty string on failure.
+    """
+    # Collect all findings that carry remediation guidance
+    finding_lines: list[str] = []
+    for tab_key in ("security", "compliance", "remediate"):
+        for item in tabs.get(tab_key, []):
+            title = item.get("title") or item.get("component") or ""
+            detail = item.get("detail") or item.get("description") or ""
+            remediation = item.get("remediation") or ""
+            if title or remediation:
+                line = f"- [{tab_key.upper()}] {title}"
+                if remediation:
+                    line += f": {remediation}"
+                elif detail:
+                    line += f": {detail}"
+                finding_lines.append(line)
+
+    if not finding_lines:
+        return ""
+
+    findings_text = "\n".join(finding_lines[:40])  # cap to avoid token overrun
+
+    prompt = (
+        f"Domain: {domain}\n\n"
+        "The following security and compliance findings were detected in a network diagram:\n\n"
+        f"{findings_text}\n\n"
+        "Generate a Mermaid flowchart (```mermaid ... ```) that shows the REMEDIATED network "
+        "state — i.e. what the network should look like AFTER all findings above are resolved. "
+        "Use clear node labels and show trust zones, encryption, and authentication flows. "
+        "Only output the Mermaid code block, nothing else."
+    )
+
+    try:
+        from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
+        import concurrent.futures
+
+        router = LLMRouter()
+        req = LLMRequest(
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=1200,
+            temperature=0.1,
+            skip_injection_scan=True,
+        )
+        ex = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        fut = ex.submit(router.invoke, "document_qna", req)
+        try:
+            resp = fut.result(timeout=30)
+            raw = getattr(resp, "content", "") or ""
+            # Extract the mermaid code block if present
+            import re as _re
+            m = _re.search(r"```mermaid\s*([\s\S]+?)```", raw)
+            if m:
+                return "```mermaid\n" + m.group(1).strip() + "\n```"
+            return raw.strip()
+        except concurrent.futures.TimeoutError:
+            logger.warning("generate_remediation_diagram: LLM timeout")
+            return ""
+        finally:
+            ex.shutdown(wait=False)
+    except Exception as exc:
+        logger.warning("generate_remediation_diagram: %s", exc)
+        return ""
 
 
 # ── Findings Persistence ──────────────────────────────────────────────────────

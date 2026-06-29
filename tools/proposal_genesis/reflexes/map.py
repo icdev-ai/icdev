@@ -120,7 +120,7 @@ def _get_requirement_texts(opp_id: str) -> List[str]:
     try:
         rows = conn.execute(
             "SELECT statement_text FROM rfp_shall_statements "
-            "WHERE proposal_opportunity_id = ? OR sam_opportunity_id = ? "
+            "WHERE proposal_opportunity_id = %s OR sam_opportunity_id = %s "
             f"ORDER BY domain_category LIMIT {_REQ_FETCH_LIMIT}",
             (opp_id, opp_id),
         ).fetchall()
@@ -346,7 +346,7 @@ def _enrich_with_knowledge_base(opp_id: str) -> Dict[str, Any]:
         try:
             # Get requirement patterns for this opportunity
             rows = conn.execute(
-                "SELECT pattern_text FROM rfp_requirement_patterns WHERE opportunity_id = ? LIMIT 20", (opp_id,)
+                "SELECT pattern_text FROM rfp_requirement_patterns WHERE opportunity_id = %s LIMIT 20", (opp_id,)
             ).fetchall()
         finally:
             conn.close()
@@ -424,7 +424,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         conn_pat = get_connection()
         try:
             pat_rows = conn_pat.execute(
-                "SELECT pattern_text FROM rfp_requirement_patterns WHERE opportunity_id = ? LIMIT 20",
+                "SELECT pattern_text FROM rfp_requirement_patterns WHERE opportunity_id = %s LIMIT 20",
                 (opp_id,),
             ).fetchall()
         except Exception:

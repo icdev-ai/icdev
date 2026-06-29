@@ -253,7 +253,7 @@ def _pull_framework_controls(conn, project_id: str, framework: str) -> List[Dict
         return []
 
     exists = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=%s",
         (table,),
     ).fetchone()
     if not exists:
@@ -266,7 +266,7 @@ def _pull_framework_controls(conn, project_id: str, framework: str) -> List[Dict
                        COALESCE(evidence_ref, NULL)       AS evidence_ref,
                        COALESCE(score, 0.0)               AS score
                 FROM {table}
-               WHERE project_id = ?
+               WHERE project_id = %s
                ORDER BY assessed_at DESC""",
             (project_id,),
         ).fetchall()
@@ -280,7 +280,7 @@ def _log_audit(conn, project_id: str, summary: Dict) -> None:
         conn.execute(
             """INSERT INTO audit_trail
                (project_id, event_type, actor, action, details, classification)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s)""",
             (
                 project_id,
                 "cato_twin_reflex",
@@ -367,7 +367,7 @@ def run(ctx: Dict[str, Any], conn=None) -> Dict[str, Any]:
                     # Count violations from this snapshot
                     viols = conn.execute(
                         "SELECT COUNT(*) AS cnt FROM compliance_twin_violations "
-                        "WHERE snapshot_id = ?",
+                        "WHERE snapshot_id = %s",
                         (snap_id,),
                     ).fetchone()
                     viol_count = dict(viols)["cnt"] if viols else 0

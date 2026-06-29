@@ -141,7 +141,7 @@ def list_pr_tasks(
         if task_id:
             rows = conn.execute(
                 "SELECT id, title, description, status, executor_url "
-                "FROM kanban_tasks WHERE id = ?",
+                "FROM kanban_tasks WHERE id = %s",
                 (task_id,),
             ).fetchall()
         else:
@@ -406,14 +406,14 @@ class PRWatcher:
                 rows = conn.execute(
                     "SELECT details FROM audit_trail "
                     "WHERE action = 'pr_watcher.resume' "
-                    "AND details::text LIKE ?",
+                    "AND details::text LIKE %s",
                     (f"%{task_id}%",),
                 ).fetchall()
             else:
                 rows = conn.execute(
                     "SELECT details FROM audit_trail "
                     "WHERE action = 'pr_watcher.resume' "
-                    "AND details LIKE ?",
+                    "AND details LIKE %s",
                     (f"%{task_id}%",),
                 ).fetchall()
             return len(rows)

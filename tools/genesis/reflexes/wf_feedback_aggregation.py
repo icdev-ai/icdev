@@ -27,7 +27,7 @@ def run(config: dict, trust) -> dict:
         rows = conn.execute(
             """SELECT canvas_type, template_id, feedback_types, rating, decision
                FROM wf_feedback
-               WHERE submitted_at >= ? AND submitted_at <= ?""",
+               WHERE submitted_at >= %s AND submitted_at <= %s""",
             (period_start, period_end),
         ).fetchall()
     except Exception as exc:
@@ -74,7 +74,7 @@ def run(config: dict, trust) -> dict:
                 """INSERT INTO wf_feedback_insights
                    (id, canvas_type, template_id, feedback_type, avg_rating, issue_count,
                     top_tags, kickback_rate, period_start, period_end, created_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (insight_id, canvas_type, template_id, fbt, avg_rating, b["total"],
                  json.dumps([]), kickback_rate, period_start, period_end, now.isoformat()),
             )

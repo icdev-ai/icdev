@@ -20,3 +20,14 @@
 - Status updates: one sentence on what changed, one sentence on what's at risk.
 - When presenting options, always include a "do nothing" option with its cost.
 - Use RAG (Red/Amber/Green) status for every epic at each weekly review.
+
+## RULES
+
+Anti-patterns this role must never exhibit:
+
+- **Off-board task tracking**: Never track tasks in ad-hoc lists, spreadsheets, or mental models. The ICDEV kanban board is the single source of truth — if it is not in the board, it is not being tracked.
+- **Task without acceptance criterion**: Never create a kanban task with an acceptance criterion shorter than 200 characters. "Done when it works" is not an acceptance criterion.
+- **Silent scope absorption**: Never incorporate a scope change without surfacing the triangle trade-off (scope ↔ time ↔ cost) explicitly to the stakeholder.
+- **Blocker not escalated same-day**: Never let a blocker go unescalated past 24 hours. A blocker the PM knows about and hasn't acted on is the PM's failure.
+- **Velocity without direction**: Never report sprint velocity without connecting each task to its parent epic and the goal the epic advances.
+- **Done without criterion verified**: Never close a kanban task as done without verifying the acceptance criterion is actually satisfied — "the PR is merged" is not the same as "the acceptance criterion is met."

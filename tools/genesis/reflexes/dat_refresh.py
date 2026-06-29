@@ -103,7 +103,7 @@ def _compute_adaptive_cooldown(conn, *, cfg: dict | None = None) -> float:
                 "SELECT dti_score, computed_at "
                 "FROM sg_dat_dti_snapshots "
                 "ORDER BY computed_at DESC "
-                "LIMIT ?",
+                "LIMIT %s",
                 (min_samples + 1,),
             ).fetchall()
         except Exception as exc:
@@ -182,7 +182,7 @@ def _log_run(conn, result: dict) -> None:
         try:
             cur.execute(
                 "INSERT INTO genesis_reflex_log "
-                "(id, reflex_name, ran_at, result_json) VALUES (?, ?, ?, ?)",
+                "(id, reflex_name, ran_at, result_json) VALUES (%s, %s, %s, %s)",
                 (str(uuid.uuid4()), REFLEX_NAME,
                  datetime.now(timezone.utc).isoformat(),
                  json.dumps(result)),

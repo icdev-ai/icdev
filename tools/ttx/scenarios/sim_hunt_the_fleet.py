@@ -45,7 +45,7 @@ def log_receipt(session_id, team_id, tool_slug):
     conn.execute(
         """INSERT INTO ttx_api_log
            (session_id, team_id, tool_slug, endpoint, call_id, result_hash, called_at)
-           VALUES (?, ?, ?, ?, ?, ?, datetime('now'))""",
+           VALUES (%s, %s, %s, %s, %s, %s, datetime('now'))""",
         (session_id, team_id, tool_slug, tool_slug, call_id, result_hash),
     )
     conn.commit()
@@ -109,7 +109,7 @@ for tname, role_id, pname, missions, level in teams_cfg:
                "completed_missions": missions}
     conn = get_connection()
     conn.execute(
-        "UPDATE ttx_team_members SET academy_username=?, academy_profile_json=? WHERE member_id=?",
+        "UPDATE ttx_team_members SET academy_username=%s, academy_profile_json=%s WHERE member_id=%s",
         (pname.lower().replace(" ","_"), json.dumps(profile), member["member_id"]),
     )
     conn.commit()
@@ -220,7 +220,7 @@ print(f"\n  Dispatched: {inj3['inject_id'][:8]}...")
 # Reload to see dispatched body
 conn = get_connection()
 dispatched_body = conn.execute(
-    "SELECT body_md FROM ttx_injects WHERE inject_id = ?", (inj3["inject_id"],)
+    "SELECT body_md FROM ttx_injects WHERE inject_id = %s", (inj3["inject_id"],)
 ).fetchone()["body_md"]
 
 if triggered:

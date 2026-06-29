@@ -15,7 +15,7 @@ networks, works with Flask's synchronous WSGI, and avoids long-lived connections
 
 import json
 import uuid
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection, sql_placeholder
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -48,20 +48,21 @@ def get_recent_events():
 
     conn = _get_db()
     try:
+        ph = sql_placeholder(conn)
         query = "SELECT * FROM hook_events WHERE 1=1"
         params = []
 
         if hook_type:
-            query += " AND hook_type = ?"
+            query += f" AND hook_type = {ph}"
             params.append(hook_type)
         if tool_name:
-            query += " AND tool_name = ?"
+            query += f" AND tool_name = {ph}"
             params.append(tool_name)
         if severity:
-            query += " AND severity = ?"
+            query += f" AND severity = {ph}"
             params.append(severity)
 
-        query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+        query += f" ORDER BY created_at DESC LIMIT {ph} OFFSET {ph}"
         params.extend([limit, offset])
 
         rows = conn.execute(query, params).fetchall()
@@ -106,23 +107,24 @@ def poll_events():
 
     conn = _get_db()
     try:
+        ph = sql_placeholder(conn)
         query = "SELECT * FROM hook_events WHERE 1=1"
         params: list = []
 
         if since:
-            query += " AND created_at > ?"
+            query += f" AND created_at > {ph}"
             params.append(since)
         if severity:
-            query += " AND severity = ?"
+            query += f" AND severity = {ph}"
             params.append(severity)
         if hook_type:
-            query += " AND hook_type = ?"
+            query += f" AND hook_type = {ph}"
             params.append(hook_type)
         if tool_name:
-            query += " AND tool_name = ?"
+            query += f" AND tool_name = {ph}"
             params.append(tool_name)
 
-        query += " ORDER BY created_at DESC LIMIT ?"
+        query += f" ORDER BY created_at DESC LIMIT {ph}"
         params.append(limit)
 
         rows = conn.execute(query, params).fetchall()
@@ -252,7 +254,7 @@ def ingest_event():
             "INSERT OR IGNORE INTO hook_events "
             "(id, hook_type, tool_name, session_id, project_id, "
             " severity, message, payload, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 data.get("id", str(uuid.uuid4())),
                 data.get("hook_type", ""),

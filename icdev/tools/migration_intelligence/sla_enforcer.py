@@ -160,7 +160,7 @@ def annotate_strategies(db_path=None) -> dict:
                 three_tier_ids.add(opp["id"])
                 try:
                     conn.execute(
-                        "UPDATE mi_opportunities SET app_profile='standard_three_tier', updated_at=? WHERE id=?",
+                        "UPDATE mi_opportunities SET app_profile='standard_three_tier', updated_at=%s WHERE id=%s",
                         (_now(), opp["id"]),
                     )
                 except Exception:
@@ -168,11 +168,11 @@ def annotate_strategies(db_path=None) -> dict:
             else:
                 try:
                     existing_profile = conn.execute(
-                        "SELECT app_profile FROM mi_opportunities WHERE id=?", (opp["id"],)
+                        "SELECT app_profile FROM mi_opportunities WHERE id=%s", (opp["id"],)
                     ).fetchone()
                     if existing_profile and not existing_profile["app_profile"]:
                         conn.execute(
-                            "UPDATE mi_opportunities SET app_profile='other', updated_at=? WHERE id=?",
+                            "UPDATE mi_opportunities SET app_profile='other', updated_at=%s WHERE id=%s",
                             (_now(), opp["id"]),
                         )
                 except Exception:
@@ -195,8 +195,8 @@ def annotate_strategies(db_path=None) -> dict:
             try:
                 conn.execute(
                     """UPDATE mi_strategies
-                       SET cutover_hours_estimate=?, sla_compliant=?
-                       WHERE id=?""",
+                       SET cutover_hours_estimate=%s, sla_compliant=%s
+                       WHERE id=%s""",
                     (cutover_h, compliant, strat["id"]),
                 )
                 annotated += 1
@@ -237,7 +237,7 @@ def get_sla_report(db_path=None) -> dict:
         for opp in three_tier_opps:
             strats = conn.execute(
                 """SELECT id, strategy_type, cutover_hours_estimate, sla_compliant, recommended
-                   FROM mi_strategies WHERE opportunity_id=?""",
+                   FROM mi_strategies WHERE opportunity_id=%s""",
                 (opp["id"],),
             ).fetchall()
             for s in strats:
@@ -277,7 +277,7 @@ def check_sla_for_opportunity(opportunity_id: str, db_path=None) -> dict:
     conn = _get_conn(db_path)
     try:
         opp = conn.execute(
-            "SELECT id, title, description, opportunity_type, source_entity_name, app_profile FROM mi_opportunities WHERE id=?",
+            "SELECT id, title, description, opportunity_type, source_entity_name, app_profile FROM mi_opportunities WHERE id=%s",
             (opportunity_id,),
         ).fetchone()
         if not opp:
@@ -286,7 +286,7 @@ def check_sla_for_opportunity(opportunity_id: str, db_path=None) -> dict:
 
         profile = opp.get("app_profile") or ("standard_three_tier" if is_three_tier_app(opp) else "other")
         strats = conn.execute(
-            "SELECT id, strategy_type, cutover_hours_estimate, sla_compliant, recommended FROM mi_strategies WHERE opportunity_id=?",
+            "SELECT id, strategy_type, cutover_hours_estimate, sla_compliant, recommended FROM mi_strategies WHERE opportunity_id=%s",
             (opportunity_id,),
         ).fetchall()
         strats = [dict(s) for s in strats]

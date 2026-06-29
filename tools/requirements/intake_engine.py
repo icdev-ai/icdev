@@ -190,7 +190,7 @@ def _build_conversation_history(session_id, conn, current_message):
     history_rows = conn.execute(
         """SELECT turn_number, role, content
            FROM intake_conversation
-           WHERE session_id = ?
+           WHERE session_id = %s
            ORDER BY turn_number DESC LIMIT 10""",
         (session_id,),
     ).fetchall()
@@ -251,7 +251,7 @@ def _append_doc_context_section(system_parts, session_id, conn):
     """Append uploaded document summaries and extracted requirements to system_parts."""
     doc_rows = conn.execute(
         "SELECT file_name, document_type, extracted_requirements_count, "
-        "extracted_sections FROM intake_documents WHERE session_id = ?",
+        "extracted_sections FROM intake_documents WHERE session_id = %s",
         (session_id,),
     ).fetchall()
     if not doc_rows:
@@ -276,7 +276,7 @@ def _append_doc_context_section(system_parts, session_id, conn):
                 pass
     doc_reqs = conn.execute(
         "SELECT raw_text, requirement_type FROM intake_requirements "
-        "WHERE session_id = ? AND source_document IS NOT NULL ORDER BY created_at LIMIT 20",
+        "WHERE session_id = %s AND source_document IS NOT NULL ORDER BY created_at LIMIT 20",
         (session_id,),
     ).fetchall()
     if doc_reqs:
@@ -456,7 +456,7 @@ def _resolve_classification(project_id, classification, conn):
     if not project_id:
         return classification if classification is not None else "CUI"
     row = conn.execute(
-        "SELECT id, classification, impact_level FROM projects WHERE id = ?",
+        "SELECT id, classification, impact_level FROM projects WHERE id = %s",
         (project_id,),
     ).fetchone()
     if not row:
@@ -543,7 +543,7 @@ def _seed_template_requirements(session_id: str, template_reqs: list, classifica
                 """INSERT INTO intake_requirements
                    (id, session_id, source_turn, raw_text, requirement_type, priority,
                     status, acceptance_criteria, classification)
-                   VALUES (?, ?, 0, ?, ?, ?, 'validated', ?, ?)""",
+                   VALUES (%s, %s, 0, %s, %s, %s, 'validated', %s, %s)""",
                 (req_id, session_id, raw_text, req_type, priority, criteria,
                  classification or "CUI"),
             )
@@ -563,7 +563,7 @@ def _create_session_impl(params: "_NewSessionParams") -> dict:
         """INSERT INTO intake_sessions
            (id, project_id, customer_name, customer_org, session_status,
             classification, impact_level, created_by)
-           VALUES (?, ?, ?, ?, 'active', ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, 'active', %s, %s, %s)""",
         (session_id, params.project_id, params.customer_name, params.customer_org,
          classification, params.impact_level, params.created_by),
     )
@@ -575,12 +575,12 @@ def _create_session_impl(params: "_NewSessionParams") -> dict:
     # Merge extra_context (e.g. fast_track config from use case)
     if params.extra_context and isinstance(params.extra_context, dict):
         context.update(params.extra_context)
-    conn.execute("UPDATE intake_sessions SET context_summary = ? WHERE id = ?",
+    conn.execute("UPDATE intake_sessions SET context_summary = %s WHERE id = %s",
                  (json.dumps(context), session_id))
     conn.execute(
         """INSERT INTO intake_conversation
            (session_id, turn_number, role, content, content_type)
-           VALUES (?, 0, 'system', ?, 'text')""",
+           VALUES (%s, 0, 'system', %s, 'text')""",
         (session_id, json.dumps({
             "event": "session_created", "project_id": params.project_id,
             "customer_name": params.customer_name, "impact_level": params.impact_level,
@@ -596,7 +596,7 @@ def _create_session_impl(params: "_NewSessionParams") -> dict:
     conn.execute(
         """INSERT INTO intake_conversation
            (session_id, turn_number, role, content, content_type, classification)
-           VALUES (?, 1, 'analyst', ?, 'text', ?)""",
+           VALUES (%s, 1, 'analyst', %s, 'text', %s)""",
         (session_id, welcome_message, classification or "CUI"),
     )
     conn.commit()
@@ -664,7 +664,7 @@ def create_session(
 def get_session(session_id: str, db_path=None) -> dict:
     """Get session status and summary."""
     conn = _get_connection(db_path)
-    row = conn.execute("SELECT * FROM intake_sessions WHERE id = ?", (session_id,)).fetchone()
+    row = conn.execute("SELECT * FROM intake_sessions WHERE id = %s", (session_id,)).fetchone()
     if not row:
         conn.close()
         raise ValueError(f"Session '{session_id}' not found.")
@@ -673,22 +673,22 @@ def get_session(session_id: str, db_path=None) -> dict:
 
     # Get counts
     req_count = conn.execute(
-        "SELECT COUNT(*) as cnt FROM intake_requirements WHERE session_id = ?",
+        "SELECT COUNT(*) as cnt FROM intake_requirements WHERE session_id = %s",
         (session_id,),
     ).fetchone()["cnt"]
 
     turn_count = conn.execute(
-        "SELECT COUNT(*) as cnt FROM intake_conversation WHERE session_id = ?",
+        "SELECT COUNT(*) as cnt FROM intake_conversation WHERE session_id = %s",
         (session_id,),
     ).fetchone()["cnt"]
 
     decomp_count = conn.execute(
-        "SELECT COUNT(*) as cnt FROM safe_decomposition WHERE session_id = ?",
+        "SELECT COUNT(*) as cnt FROM safe_decomposition WHERE session_id = %s",
         (session_id,),
     ).fetchone()["cnt"]
 
     doc_count = conn.execute(
-        "SELECT COUNT(*) as cnt FROM intake_documents WHERE session_id = ?",
+        "SELECT COUNT(*) as cnt FROM intake_documents WHERE session_id = %s",
         (session_id,),
     ).fetchone()["cnt"]
 
@@ -705,7 +705,7 @@ def get_session(session_id: str, db_path=None) -> dict:
 def resume_session(session_id: str, db_path=None) -> dict:
     """Resume a paused session. Returns context summary and last state."""
     conn = _get_connection(db_path)
-    row = conn.execute("SELECT * FROM intake_sessions WHERE id = ?", (session_id,)).fetchone()
+    row = conn.execute("SELECT * FROM intake_sessions WHERE id = %s", (session_id,)).fetchone()
     if not row:
         conn.close()
         raise ValueError(f"Session '{session_id}' not found.")
@@ -719,7 +719,7 @@ def resume_session(session_id: str, db_path=None) -> dict:
     recent_turns = conn.execute(
         """SELECT turn_number, role, content, content_type
            FROM intake_conversation
-           WHERE session_id = ?
+           WHERE session_id = %s
            ORDER BY turn_number DESC LIMIT 5""",
         (session_id,),
     ).fetchall()
@@ -729,7 +729,7 @@ def resume_session(session_id: str, db_path=None) -> dict:
     reqs = conn.execute(
         """SELECT id, raw_text, requirement_type, priority, status
            FROM intake_requirements
-           WHERE session_id = ?
+           WHERE session_id = %s
            ORDER BY created_at""",
         (session_id,),
     ).fetchall()
@@ -737,7 +737,7 @@ def resume_session(session_id: str, db_path=None) -> dict:
 
     # Update status to active
     conn.execute(
-        "UPDATE intake_sessions SET session_status = 'active', updated_at = ? WHERE id = ?",
+        "UPDATE intake_sessions SET session_status = 'active', updated_at = %s WHERE id = %s",
         (datetime.now(timezone.utc).isoformat(), session_id),
     )
     conn.commit()
@@ -771,7 +771,7 @@ def pause_session(session_id: str, db_path=None) -> dict:
     """Pause a session for later resumption."""
     conn = _get_connection(db_path)
     conn.execute(
-        "UPDATE intake_sessions SET session_status = 'paused', updated_at = ? WHERE id = ?",
+        "UPDATE intake_sessions SET session_status = 'paused', updated_at = %s WHERE id = %s",
         (datetime.now(timezone.utc).isoformat(), session_id),
     )
     conn.commit()
@@ -899,7 +899,7 @@ def process_turn(
     conn = _get_connection(db_path)
 
     # Verify session exists and is active
-    session = conn.execute("SELECT * FROM intake_sessions WHERE id = ?", (session_id,)).fetchone()
+    session = conn.execute("SELECT * FROM intake_sessions WHERE id = %s", (session_id,)).fetchone()
     if not session:
         conn.close()
         raise ValueError(f"Session '{session_id}' not found.")
@@ -911,7 +911,7 @@ def process_turn(
 
     # Get current turn number
     last_turn = conn.execute(
-        "SELECT MAX(turn_number) as max_turn FROM intake_conversation WHERE session_id = ?",
+        "SELECT MAX(turn_number) as max_turn FROM intake_conversation WHERE session_id = %s",
         (session_id,),
     ).fetchone()
     turn_number = (last_turn["max_turn"] or 0) + 1
@@ -920,7 +920,7 @@ def process_turn(
     conn.execute(
         """INSERT INTO intake_conversation
            (session_id, turn_number, role, content, content_type, classification)
-           VALUES (?, ?, 'customer', ?, 'text', ?)""",
+           VALUES (%s, %s, 'customer', %s, 'text', %s)""",
         (session_id, turn_number, customer_message, session_data.get("classification", "CUI")),
     )
 
@@ -951,7 +951,7 @@ def process_turn(
             flagged_terms.add(a["phrase"].lower())
         context["flagged_ambiguities"] = sorted(flagged_terms)
         conn.execute(
-            "UPDATE intake_sessions SET context_summary = ? WHERE id = ?",
+            "UPDATE intake_sessions SET context_summary = %s WHERE id = %s",
             (json.dumps(context), session_id),
         )
 
@@ -979,16 +979,16 @@ def process_turn(
 
     # --- Update session counters ---
     req_count = conn.execute(
-        "SELECT COUNT(*) as cnt FROM intake_requirements WHERE session_id = ?",
+        "SELECT COUNT(*) as cnt FROM intake_requirements WHERE session_id = %s",
         (session_id,),
     ).fetchone()["cnt"]
 
     conn.execute(
         """UPDATE intake_sessions
-           SET total_requirements = ?,
-               ambiguity_count = ambiguity_count + ?,
-               updated_at = ?
-           WHERE id = ?""",
+           SET total_requirements = %s,
+               ambiguity_count = ambiguity_count + %s,
+               updated_at = %s
+           WHERE id = %s""",
         (req_count, len(ambiguities), datetime.now(timezone.utc).isoformat(), session_id),
     )
 
@@ -1004,7 +1004,7 @@ def process_turn(
             # Store BDD as acceptance criteria so testability score reflects it
             if gherkin and req.get("id"):
                 conn.execute(
-                    "UPDATE intake_requirements SET acceptance_criteria = ? WHERE id = ?",
+                    "UPDATE intake_requirements SET acceptance_criteria = %s WHERE id = %s",
                     (gherkin, req["id"]),
                 )
     except ImportError:
@@ -1100,7 +1100,7 @@ def process_turn(
                 mosa_asked_pillars.update(newly_asked)
                 context["mosa_asked_pillars"] = sorted(mosa_asked_pillars)
                 conn.execute(
-                    "UPDATE intake_sessions SET context_summary = ? WHERE id = ?",
+                    "UPDATE intake_sessions SET context_summary = %s WHERE id = %s",
                     (json.dumps(context), session_id),
                 )
 
@@ -1159,7 +1159,7 @@ def process_turn(
                 asked_followup_dims.add(weakest)
                 context["asked_followup_dims"] = sorted(asked_followup_dims)
                 conn.execute(
-                    "UPDATE intake_sessions SET context_summary = ? WHERE id = ?",
+                    "UPDATE intake_sessions SET context_summary = %s WHERE id = %s",
                     (json.dumps(context), session_id),
                 )
 
@@ -1172,7 +1172,7 @@ def process_turn(
                 asked_clarifications.add(question_text)
                 context["asked_clarification_questions"] = sorted(asked_clarifications)
                 conn.execute(
-                    "UPDATE intake_sessions SET context_summary = ? WHERE id = ?",
+                    "UPDATE intake_sessions SET context_summary = %s WHERE id = %s",
                     (json.dumps(context), session_id),
                 )
 
@@ -1197,7 +1197,7 @@ def process_turn(
         """INSERT INTO intake_conversation
            (session_id, turn_number, role, content, content_type,
             extracted_requirements, metadata, classification)
-           VALUES (?, ?, 'analyst', ?, 'text', ?, ?, ?)""",
+           VALUES (%s, %s, 'analyst', %s, 'text', %s, %s, %s)""",
         (
             session_id,
             analyst_turn,
@@ -1438,7 +1438,7 @@ def _extract_requirements_from_text(text, session_id, turn_number, conn):
     """Extract structured requirements. Tries LLM intent extraction first, falls back to keywords."""
     # Look up classification once
     sess_row = conn.execute(
-        "SELECT classification FROM intake_sessions WHERE id = ?",
+        "SELECT classification FROM intake_sessions WHERE id = %s",
         (session_id,),
     ).fetchone()
     req_classification = sess_row[0] if sess_row else "CUI"
@@ -1454,7 +1454,7 @@ def _extract_requirements_from_text(text, session_id, turn_number, conn):
                 """INSERT INTO intake_requirements
                    (id, session_id, source_turn, raw_text, requirement_type,
                     priority, status, classification)
-                   VALUES (?, ?, ?, ?, ?, ?, 'draft', ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, 'draft', %s)""",
                 (req_id, session_id, turn_number,
                  item["text"], item["type"], item["priority"], req_classification),
             )
@@ -1510,7 +1510,7 @@ def _extract_requirements_from_text(text, session_id, turn_number, conn):
             """INSERT INTO intake_requirements
                (id, session_id, source_turn, raw_text, requirement_type,
                 priority, status, classification)
-               VALUES (?, ?, ?, ?, ?, ?, 'draft', ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, 'draft', %s)""",
             (req_id, session_id, turn_number, sentence.strip(), req_type, priority, req_classification),
         )
         extracted.append({
@@ -1531,14 +1531,14 @@ def _analyze_conversation_coverage(session_id, conn):
     """
     # Gather all customer messages
     rows = conn.execute(
-        "SELECT content FROM intake_conversation WHERE session_id = ? AND role = 'customer' ORDER BY turn_number",
+        "SELECT content FROM intake_conversation WHERE session_id = %s AND role = 'customer' ORDER BY turn_number",
         (session_id,),
     ).fetchall()
     all_text = " ".join(dict(r)["content"] for r in rows).lower()
 
     # Also include requirements extracted from uploaded documents
     doc_reqs = conn.execute(
-        "SELECT raw_text FROM intake_requirements WHERE session_id = ? AND source_document IS NOT NULL",
+        "SELECT raw_text FROM intake_requirements WHERE session_id = %s AND source_document IS NOT NULL",
         (session_id,),
     ).fetchall()
     if doc_reqs:
@@ -2474,7 +2474,7 @@ def _detect_ai_governance_signals(text, session_data=None):
 def _quick_readiness_estimate(session_id, conn):
     """Quick readiness estimate based on requirement counts and quality."""
     reqs = conn.execute(
-        "SELECT * FROM intake_requirements WHERE session_id = ? AND status IN ('draft', 'clarified', 'validated', 'approved', 'decomposed')",
+        "SELECT * FROM intake_requirements WHERE session_id = %s AND status IN ('draft', 'clarified', 'validated', 'approved', 'decomposed')",
         (session_id,),
     ).fetchall()
 
@@ -2497,7 +2497,7 @@ def _quick_readiness_estimate(session_id, conn):
     # Clarity: based on unresolved ambiguities vs total requirements
     # Resolved = flagged but user has continued the conversation (addressed it)
     sess_row = conn.execute(
-        "SELECT ambiguity_count, context_summary FROM intake_sessions WHERE id = ?",
+        "SELECT ambiguity_count, context_summary FROM intake_sessions WHERE id = %s",
         (session_id,),
     ).fetchone()
     sess_dict = dict(sess_row) if sess_row else {}
@@ -2510,7 +2510,7 @@ def _quick_readiness_estimate(session_id, conn):
     flagged = ctx.get("flagged_ambiguities", [])
     # Count user turns after ambiguities were first flagged as clarification
     turn_count = conn.execute(
-        "SELECT COUNT(*) as cnt FROM intake_conversation WHERE session_id = ? AND role = 'customer'",
+        "SELECT COUNT(*) as cnt FROM intake_conversation WHERE session_id = %s AND role = 'customer'",
         (session_id,),
     ).fetchone()["cnt"]
     # Each user turn after the first resolves ambiguity somewhat
@@ -2530,7 +2530,7 @@ def _quick_readiness_estimate(session_id, conn):
     context = {}
     try:
         ctx_row = conn.execute(
-            "SELECT context_summary FROM intake_sessions WHERE id = ?",
+            "SELECT context_summary FROM intake_sessions WHERE id = %s",
             (session_id,),
         ).fetchone()
         if ctx_row:
@@ -2594,11 +2594,11 @@ def export_requirements(session_id: str, db_path=None) -> dict:
     """Export all requirements from a session as structured JSON."""
     conn = _get_connection(db_path)
     reqs = conn.execute(
-        "SELECT * FROM intake_requirements WHERE session_id = ? ORDER BY created_at",
+        "SELECT * FROM intake_requirements WHERE session_id = %s ORDER BY created_at",
         (session_id,),
     ).fetchall()
 
-    session = conn.execute("SELECT * FROM intake_sessions WHERE id = ?", (session_id,)).fetchone()
+    session = conn.execute("SELECT * FROM intake_sessions WHERE id = %s", (session_id,)).fetchone()
     conn.close()
 
     if not session:

@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
-from tools.trading.data.provider import Bar, Chain, MarketDataProvider, OptionContract, Quote
+from tools.trading.data.provider import Bar, Chain, MarketDataProvider, Quote
 
 logger = logging.getLogger(__name__)
 

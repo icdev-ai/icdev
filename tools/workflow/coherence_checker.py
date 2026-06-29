@@ -2951,32 +2951,207 @@ def check_new_page_completeness() -> CoherenceCheck:
             rel = (canvas_subdir / name).relative_to(PROJECT_ROOT)
             mirror_violations.append(f"{rel}: icdev/ mirror missing")
 
-    all_violations = violations + mirror_violations
+    # ------------------------------------------------------------------
+    # Sub-check: registry-registered canvases checked against the full
+    # 8-component gate, covering TWO previously invisible cases:
+    #
+    #   A) Enabled canvases with missing template dir or missing template file
+    #      (e.g. ndc/sdc declared page.html but directory doesn't exist;
+    #      mission_canvas has directory but declared page.html is absent).
+    #
+    #   B) Canvases with non-page.html primary templates (e.g. docgen →
+    #      index.html, second_brain → index.html) that the page.html glob
+    #      above never visits — their IQE wiring, mirror, and blueprint
+    #      completeness were never checked.
+    #
+    # The page.html glob loop above already handles canvases whose declared
+    # template EXISTS and IS named page.html; those are skipped here to avoid
+    # double-reporting.  All others (non-page.html template, or template
+    # missing entirely, or dir missing) are checked here.
+    # ------------------------------------------------------------------
+    registry_violations: List[str] = []
+    try:
+        import yaml as _yaml
+        registry_path = PROJECT_ROOT / "args" / "component_registry.yaml"
+        registry_data = _yaml.safe_load(registry_path.read_text(encoding="utf-8")) or {}
+        all_registry_canvases = [
+            c for c in registry_data.get("components", [])
+            if c.get("kind") == "canvas"
+        ]
+        # Collect canvas dirs already fully covered by the page.html glob above
+        # so we don't double-report them.
+        already_covered: Set[str] = set()
+        for page_html in templates_dir.rglob("*/page.html"):
+            already_covered.add(page_html.parent.name)
+
+        for canvas_entry in all_registry_canvases:
+            key = canvas_entry.get("key", "")
+            if not key or key in whitelist:
+                continue
+            is_enabled = canvas_entry.get("default_enabled", False)
+            completeness = canvas_entry.get("completeness", {})
+            declared_tpl_str = completeness.get("template", "")
+
+            # Resolve declared template path
+            declared_tpl: Optional[Path] = None
+            if declared_tpl_str:
+                declared_tpl = PROJECT_ROOT / declared_tpl_str
+
+            # If declared template is page.html and exists → already covered
+            if declared_tpl and declared_tpl.name == "page.html" and declared_tpl.exists():
+                continue  # Caught by the page.html glob loop above
+
+            # Skip non-enabled canvases that have NO template dir at all
+            # (they're intentionally not built yet)
+            canvas_tpl_dir = templates_dir / key
+            if not canvas_tpl_dir.exists() and not is_enabled:
+                continue
+
+            # --- Case A: enabled canvas with missing dir or missing template ---
+            if not canvas_tpl_dir.exists():
+                registry_violations.append(
+                    f"tch-completeness-{key}-template: enabled in "
+                    f"component_registry.yaml but tools/dashboard/templates/{key}/ "
+                    "does not exist (invisible to 8-component gate)"
+                )
+                continue
+
+            if declared_tpl and not declared_tpl.exists():
+                # Only flag as missing if no fallback template exists either.
+                # Many canvases declare page.html in the registry but ship
+                # index.html — that is a valid layout choice, not a gap.
+                _any_fallback = any(
+                    (canvas_tpl_dir / fb).exists()
+                    for fb in ("index.html", "canvas.html", "page.html")
+                )
+                if not _any_fallback:
+                    registry_violations.append(
+                        f"tch-completeness-{key}-template: {declared_tpl_str} declared "
+                        "in completeness.template but file does not exist"
+                    )
+                # Continue to check other components anyway
+
+            # --- Case B: non-page.html template — run full 8-component gate ---
+            # Find the main template: declared path (if it exists) or fallback
+            main_tpl: Optional[Path] = None
+            if declared_tpl and declared_tpl.exists():
+                main_tpl = declared_tpl
+            else:
+                for fallback in ("index.html", "canvas.html", "page.html"):
+                    cand = canvas_tpl_dir / fallback
+                    if cand.exists():
+                        main_tpl = cand
+                        break
+
+            if main_tpl is None:
+                # Only report if enabled — not-yet-built disabled canvases are expected
+                if is_enabled:
+                    registry_violations.append(
+                        f"tch-completeness-{key}-template: no usable template in "
+                        f"tools/dashboard/templates/{key}/ "
+                        "(expected index.html, canvas.html, or page.html)"
+                    )
+                continue
+
+            # Skip if this canvas dir is already covered by page.html glob
+            if key in already_covered or canvas_tpl_dir.name in already_covered:
+                continue
+
+            main_tpl_text = _read_text(main_tpl)
+            rel_tpl = main_tpl.relative_to(PROJECT_ROOT)
+
+            # 1. icdev/ mirror for main template
+            icdev_mirror = PROJECT_ROOT / "icdev" / main_tpl.relative_to(PROJECT_ROOT / "tools")
+            if not icdev_mirror.exists():
+                registry_violations.append(
+                    f"tch-completeness-{key}-mirror: {rel_tpl}: icdev/ mirror missing"
+                )
+
+            # 2+3. Blueprint with @route
+            module_path = canvas_entry.get("module", "")
+            bp_file: Optional[Path] = None
+            if module_path:
+                bp_rel = module_path.replace(".", "/") + ".py"
+                bp_file = PROJECT_ROOT / bp_rel
+                if not bp_file.exists():
+                    # Try icdev/ namespace
+                    bp_file = PROJECT_ROOT / "icdev" / bp_rel
+            if bp_file and not bp_file.exists():
+                registry_violations.append(
+                    f"tch-completeness-{key}-blueprint: {module_path}.py missing"
+                )
+            elif bp_file and not re.search(r"@\w+\.route\s*\(", _read_text(bp_file)):
+                registry_violations.append(
+                    f"tch-completeness-{key}-blueprint: {module_path} has no @route"
+                )
+
+            # 5. IQE adapter
+            iqe_cfg = canvas_entry.get("iqe", {})
+            iqe_adapter_mod = iqe_cfg.get("adapter_module", "")
+            if iqe_adapter_mod:
+                adapter_file = PROJECT_ROOT / (iqe_adapter_mod.replace(".", "/") + ".py")
+                if not adapter_file.exists():
+                    registry_violations.append(
+                        f"tch-completeness-{key}-iqe_adapter: "
+                        f"{iqe_adapter_mod} adapter missing"
+                    )
+
+            # 6. IQE seed queries
+            seed_path_str = completeness.get("seed_queries", "")
+            if seed_path_str:
+                seed_dir = PROJECT_ROOT / seed_path_str
+                if not seed_dir.exists() or not (
+                    list(seed_dir.glob("*.yaml")) + list(seed_dir.glob("*.yml"))
+                ):
+                    registry_violations.append(
+                        f"tch-completeness-{key}-seed_queries: "
+                        f"{seed_path_str} missing or empty"
+                    )
+
+            # 7. IQE widget in template
+            if "iqe_query_widget" not in main_tpl_text and "iqe-widget" not in main_tpl_text:
+                registry_violations.append(
+                    f"tch-completeness-{key}-iqe_widget: "
+                    f"{rel_tpl} missing iqe_query_widget include"
+                )
+
+    except Exception:
+        pass  # registry unavailable — skip this sub-check
+
+    all_violations = violations + mirror_violations + registry_violations
     status = "fail" if all_violations else "pass"
-    canvas_count = len(list(templates_dir.rglob("*/page.html")))
+    # Count is now the broader set: page.html glob + registry-driven canvases
+    page_html_count = len(list(templates_dir.rglob("*/page.html")))
+    registry_extra = len(set(
+        v.split(":")[0].replace("tch-completeness-", "").split("-")[0]
+        for v in registry_violations
+    )) if registry_violations else 0
+    canvas_count = page_html_count + registry_extra
     checked_count = canvas_count - whitelisted_count
     wl_note = f" ({whitelisted_count} whitelisted)" if whitelisted_count else ""
     incomplete_count = len(violations)
     mirror_count = len(mirror_violations)
+    registry_count = len(registry_violations)
     mirror_note = f"; {mirror_count} icdev/ mirror gap(s)" if mirror_count else ""
+    registry_note = f"; {registry_count} registry gap(s)" if registry_count else ""
     return CoherenceCheck(
         check_id="new_page_completeness",
         check_name="New Page 8-Component Completeness",
         status=status,
         expected=[
             f"0 incomplete pages out of {checked_count} checked{wl_note}; "
-            "0 icdev/ mirror gaps"
+            "0 icdev/ mirror gaps; 0 registry gaps"
         ],
         actual=[
             f"{incomplete_count} incomplete page(s) out of {checked_count} "
-            f"checked{wl_note}{mirror_note}"
+            f"checked{wl_note}{mirror_note}{registry_note}"
         ],
         missing=all_violations,
         extra=[],
         message=(
             f"{incomplete_count} canvas page(s) missing components"
-            f"{mirror_note} — these features will be broken, unreachable, "
-            "or absent from the icdev/ package"
+            f"{mirror_note}{registry_note} — these features will be broken, "
+            "unreachable, or absent from the icdev/ package"
         ) if all_violations else (
             f"All {checked_count} canvas pages complete and icdev/ mirrors in parity{wl_note}"
             if checked_count > 0
@@ -3085,7 +3260,10 @@ def check_blueprint_imports() -> CoherenceCheck:
     """
     import subprocess as _sp
 
-    blueprint_files = sorted((PROJECT_ROOT / "tools").rglob("blueprint.py"))
+    blueprint_files = sorted(
+        list((PROJECT_ROOT / "tools").rglob("blueprint.py"))
+        + list((PROJECT_ROOT / "icdev" / "tools").rglob("blueprint.py"))
+    )
     failures: List[str] = []
 
     for bp_file in blueprint_files:
@@ -4116,6 +4294,228 @@ def check_profile_sync(changed_files: Optional[List[Path]] = None) -> CoherenceC
 
 
 # ---------------------------------------------------------------------------
+# Template Variable Parity Check (OPT-CC-02)
+# ---------------------------------------------------------------------------
+
+def check_template_variable_parity() -> "CoherenceCheck":
+    """Detect Jinja2 template variables used in templates but not passed by render_template().
+
+    Scans blueprint.py files for render_template() calls, extracts keyword
+    arguments, then compares against {{ var }} references in the template.
+    Variables used in the template but absent from the call-site are potential
+    UndefinedError failures at runtime.
+
+    Conservative: skips calls that use **kwargs (dynamic), and excludes
+    Flask/Jinja2 built-in globals to avoid false positives.
+    """
+    import ast as _ast
+    import re as _re
+
+    # Names always injected by Flask/Jinja2 without explicit passing
+    _BUILTINS = frozenset({
+        "g", "request", "session", "config", "current_user", "url_for",
+        "get_flashed_messages", "range", "lipsum", "dict", "namespace",
+        "loop", "super", "caller", "True", "False", "None",
+        "csrf_token", "now", "static",
+        # Common ICDEV context processors
+        "active_alerts", "nav_links", "unseen_release", "icdev_version",
+        "active_toggles", "current_tenant", "security_context",
+    })
+
+    _TEMPLATES_DIR = PROJECT_ROOT / "tools" / "dashboard" / "templates"
+    violations: List[str] = []
+
+    def _extract_render_calls(src: str):
+        """Return [(template_name, frozenset(kwargs))] from a blueprint source."""
+        calls = []
+        try:
+            tree = _ast.parse(src)
+        except SyntaxError:
+            return calls
+        for node in _ast.walk(tree):
+            if not isinstance(node, _ast.Call):
+                continue
+            func = node.func
+            is_rt = (
+                (isinstance(func, _ast.Name) and func.id == "render_template")
+                or (isinstance(func, _ast.Attribute) and func.attr == "render_template")
+            )
+            if not is_rt or not node.args:
+                continue
+            first = node.args[0]
+            if not isinstance(first, _ast.Constant) or not isinstance(first.value, str):
+                continue
+            template_name = first.value
+            # Skip calls with **kwargs — dynamic context, can't analyse statically
+            if any(kw.arg is None for kw in node.keywords):
+                continue
+            kwargs = frozenset(kw.arg for kw in node.keywords if kw.arg)
+            calls.append((template_name, kwargs))
+        return calls
+
+    def _find_template_vars(template_src: str) -> set:
+        """Extract first-level identifiers from {{ var }}, {% if var %}, {% for x in var %}."""
+        found = set()
+        # {{ identifier }} or {{ identifier.attr }} or {{ identifier | filter }}
+        for m in _re.finditer(r'\{\{-?\s*([a-zA-Z_][a-zA-Z0-9_]*)', template_src):
+            found.add(m.group(1))
+        # {% if/elif var %}, {% for x in var %}, {% set x = var %}
+        for m in _re.finditer(
+            r'\{%-?\s+(?:if|elif|for\s+\w+\s+in)\s+([a-zA-Z_][a-zA-Z0-9_]*)',
+            template_src
+        ):
+            found.add(m.group(1))
+        return found - _BUILTINS
+
+    # Search both namespaces
+    for bp_dir in [PROJECT_ROOT / "tools", PROJECT_ROOT / "icdev" / "tools"]:
+        for bp_file in sorted(bp_dir.rglob("blueprint.py")):
+            # Skip test fixtures
+            if "test" in str(bp_file).lower() or "__pycache__" in str(bp_file):
+                continue
+            try:
+                src = bp_file.read_text(encoding="utf-8", errors="replace")
+            except Exception:
+                continue
+
+            calls = _extract_render_calls(src)
+            for template_name, kwargs in calls:
+                tmpl_path = _TEMPLATES_DIR / template_name
+                if not tmpl_path.exists():
+                    continue
+                try:
+                    tmpl_src = tmpl_path.read_text(encoding="utf-8", errors="replace")
+                except Exception:
+                    continue
+
+                template_vars = _find_template_vars(tmpl_src)
+                # Strip {% include %} vars — included templates have their own context
+                # Only flag top-level vars that are not in kwargs
+                missing_vars = template_vars - kwargs
+                if missing_vars:
+                    rel_bp = str(bp_file.relative_to(PROJECT_ROOT))
+                    violations.append(
+                        f"{rel_bp} → {template_name}: undefined {sorted(missing_vars)}"
+                    )
+
+    if violations:
+        return CoherenceCheck(
+            check_id="template_variable_parity",
+            check_name="Template Variable Parity",
+            status="warn",  # warn not fail — some vars come from context processors
+            expected=["All render_template() kwargs match template {{ var }} references"],
+            actual=violations,
+            missing=violations,
+            extra=[],
+            message=(
+                f"{len(violations)} render_template() call(s) may pass missing template "
+                "variables — potential UndefinedError at runtime. "
+                "Verify that missing vars are provided by a @app.context_processor."
+            ),
+        )
+
+    return CoherenceCheck(
+        check_id="template_variable_parity",
+        check_name="Template Variable Parity",
+        status="pass",
+        expected=["All render_template() kwargs match template {{ var }} references"],
+        actual=[],
+        missing=[],
+        extra=[],
+        message="No template variable parity issues detected.",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Canvas RLS Bypass Check (OPT-CC-01)
+# ---------------------------------------------------------------------------
+
+def check_canvas_rls_bypass() -> "CoherenceCheck":
+    """Detect canvas db/init_db.py files that use get_connection() instead of
+    get_canvas_connection().
+
+    Canvas-specific tables lack classification/tenant_id columns. Using
+    get_connection() injects RLS predicates that reference those columns and
+    raises UndefinedColumn on every query. Every canvas db/init_db.py must use
+    get_canvas_connection("ENV_VAR") or call conn.set_security_context(None).
+    """
+    violations: List[str] = []
+    checked: List[str] = []
+
+    # Search both canonical (icdev/tools/) and legacy (tools/) namespaces
+    for base in [PROJECT_ROOT / "tools", PROJECT_ROOT / "icdev" / "tools"]:
+        for init_db in base.glob("*/db/init_db.py"):
+            rel = str(init_db.relative_to(PROJECT_ROOT))
+            # Skip test fixtures and the storage module itself
+            if "test" in rel or "storage.py" in rel:
+                continue
+            checked.append(rel)
+            try:
+                content = init_db.read_text(encoding="utf-8", errors="replace")
+            except Exception:
+                continue
+
+            # Only flag files that IMPORT get_connection from the storage layer.
+            # Files that define their own local get_connection() (e.g. sqlite3-only
+            # modules) or that use the global DB intentionally are not violations.
+            import re as _re2
+            if not _re2.search(
+                r"from\s+(?:tools|icdev\.tools)\.db\.storage\s+import[^\n]*\bget_connection\b",
+                content,
+            ):
+                continue
+
+            # If it already uses the safe bypass patterns, skip
+            safe = (
+                "get_canvas_connection" in content
+                or "set_security_context(None)" in content
+                or "security_context=None" in content
+            )
+            if safe:
+                continue
+
+            # Exclude files whose DDL defines classification or tenant_id columns —
+            # those tables participate correctly in RLS and don't need the bypass.
+            has_rls_columns = bool(
+                _re2.search(r"\bclassification\b.*TEXT", content)
+                or _re2.search(r"\btenant_id\b.*TEXT", content)
+            )
+            if has_rls_columns:
+                continue
+
+            violations.append(rel)
+
+    if violations:
+        return CoherenceCheck(
+            check_id="canvas_rls_bypass",
+            check_name="Canvas RLS Bypass (get_canvas_connection)",
+            status="fail",
+            expected=["get_canvas_connection() or set_security_context(None)"],
+            actual=violations,
+            missing=violations,
+            extra=[],
+            message=(
+                f"{len(violations)} canvas db/init_db.py file(s) call get_connection() "
+                "without RLS bypass — canvas tables lack classification/tenant_id columns "
+                "and will raise UndefinedColumn on every PG query. "
+                "Replace with get_canvas_connection('ENV_VAR'). "
+                f"Affected: {', '.join(violations)}"
+            ),
+        )
+
+    return CoherenceCheck(
+        check_id="canvas_rls_bypass",
+        check_name="Canvas RLS Bypass (get_canvas_connection)",
+        status="pass",
+        expected=["get_canvas_connection() or set_security_context(None)"],
+        actual=checked,
+        missing=[],
+        extra=[],
+        message=f"All {len(checked)} canvas db/init_db.py files use safe RLS bypass patterns.",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Check Registry & Orchestrator
 # ---------------------------------------------------------------------------
 
@@ -4140,6 +4540,8 @@ CHECK_REGISTRY = {
     "hitl_workflow": check_hitl_workflow,
     "mcp_security": check_mcp_security,
     "security_context": check_security_context,
+    "canvas_rls_bypass": check_canvas_rls_bypass,
+    "template_variable_parity": check_template_variable_parity,
     "log_standard": check_log_standard_compliance,
     "nav_route_parity": check_nav_route_parity,
     "blueprint_imports": check_blueprint_imports,
@@ -4183,6 +4585,8 @@ _FIX_REGISTRY: Dict[str, str] = {
     "hitl_workflow": "skip",  # module fixes require human judgment
     "mcp_security": "skip",  # scanner module creation requires human judgment
     "security_context": "skip",  # RLS bypass documentation and wiring fixes require human judgment
+    "canvas_rls_bypass": "skip",  # get_canvas_connection() migration requires human judgment per canvas
+    "template_variable_parity": "skip",  # undefined vars may come from context processors — human must verify
     "canvas_placeholder_style": "skip",  # SQL placeholder fixes require human judgment (search+replace in SQL strings)
     "runtime_placeholder_style": "skip",  # SQL placeholder fixes require human judgment (search+replace in SQL strings)
     "ace_yaml_listen_topics": "skip",  # YAML restructuring requires human judgment

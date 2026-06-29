@@ -28,6 +28,7 @@ profiles:
       - diagram
       - doc
       - config
+      - email
       - supplement
     example_doc_types:
       - runbook
@@ -56,6 +57,7 @@ profiles:
       - diagram
       - doc
       - config
+      - email
       - supplement
     example_doc_types:
       - security_design
@@ -85,6 +87,7 @@ profiles:
       - diagram
       - doc
       - iac
+      - email
       - supplement
     example_doc_types:
       - runbook
@@ -111,6 +114,7 @@ profiles:
     upload_types:
       - diagram
       - doc
+      - email
       - supplement
     example_doc_types:
       - adr
@@ -137,6 +141,7 @@ profiles:
     upload_types:
       - diagram
       - doc
+      - email
       - supplement
     example_doc_types:
       - assessment
@@ -188,6 +193,7 @@ profiles:
       - doc
       - config
       - iac
+      - email
       - supplement
     example_doc_types:
       - standard_guide

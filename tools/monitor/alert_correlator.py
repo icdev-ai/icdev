@@ -294,7 +294,7 @@ def escalate(incident: dict, db_path: Path = None) -> dict:
         conn.execute(
             """INSERT INTO audit_trail
                (project_id, event_type, actor, action, details, classification)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s)""",
             (
                 project_id,
                 "self_heal_triggered",
@@ -309,7 +309,7 @@ def escalate(incident: dict, db_path: Path = None) -> dict:
         conn.execute(
             """INSERT INTO alerts
                (project_id, severity, source, title, description, status, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
             (
                 project_id,
                 incident.get("severity", "warning"),
@@ -397,7 +397,7 @@ def _load_alerts_from_db(
             """SELECT id, project_id, severity, source, title, description,
                       status, created_at
                FROM alerts
-               WHERE project_id = ? AND created_at > ?
+               WHERE project_id = %s AND created_at > %s
                ORDER BY created_at DESC""",
             (project_id, start),
         ).fetchall()

@@ -150,10 +150,29 @@ def review_page(session_id: str):
     if not session:
         return render_template("errors/404.html"), 404
     artifacts = sm.list_artifacts(session_id)
+    analyses = sm.list_analyses(session_id)
+
+    # Extract remediation diagrams from diagram_analysis result_json
+    remediation_diagrams: list[str] = []
+    for a in analyses:
+        if a.get("analysis_type") != "diagram_analysis":
+            continue
+        raw_json = a.get("result_json")
+        if raw_json:
+            try:
+                stored = json.loads(raw_json)
+                rdiag = stored.get("remediation_diagram", "")
+                if rdiag and rdiag.strip():
+                    remediation_diagrams.append(rdiag.strip())
+            except Exception:
+                pass
+
     return render_template(
         "docgen/review.html",
         session=session,
         artifacts=artifacts,
+        analyses=analyses,
+        remediation_diagrams=remediation_diagrams,
         page_title=f"IDR Review — {session.get('title', session_id)}",
     )
 
@@ -490,15 +509,23 @@ def api_generate(session_id: str):
     # Attempt DIC generation (fallback / complement to ACE).
     doc_id = None
     try:
-        from tools.document_intelligence.doc_generator import DocGenerator
+        from tools.document_intelligence.doc_generator import generate_document as _dic_gen
 
-        gen = DocGenerator()
-        result = gen.generate_document(
+        result = _dic_gen(
             query=context["query_string"],
-            collection_id=context["session_id"],
-            metadata={"idr_session_id": session_id},
+            collection_id=None,  # full DIC KB search; falls back to session-scoped internally
+            classification=context.get("classification", "CUI"),
+            created_by="idr_pipeline",
+            supplemental_text=context.get("supplemental_text", ""),
+            kg_chunks=context.get("kg_chunks", []),
         )
         doc_id = result.doc_id if result else None
+        # Persist assembled text so WriteGuard / HITL review can read it
+        if result and result.sections:
+            final_text = "\n\n".join(
+                f"## {s.heading}\n{s.content}" for s in result.sections if s.content
+            )
+            sm.set_field(session_id, final_doc_text=final_text)
         advance(session_id, 5)
     except ImportError:
         logger.warning("DIC DocGenerator not available — placeholder generation")

@@ -37,7 +37,7 @@ def file_exception(data: dict) -> dict:
             """INSERT INTO nc_exceptions
                (device_id, device_name, exception_type, risk_acceptance_level,
                 justification, expiry_date, advisory_id, status, updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (
                 data.get("device_id", ""),
                 data.get("device_name", ""),
@@ -52,7 +52,7 @@ def file_exception(data: dict) -> dict:
         )
         conn.commit()
         new_id = cur.lastrowid
-        row = conn.execute("SELECT * FROM nc_exceptions WHERE id = ?", (new_id,)).fetchone()
+        row = conn.execute("SELECT * FROM nc_exceptions WHERE id = %s", (new_id,)).fetchone()
         return dict(row)
     finally:
         conn.close()
@@ -74,12 +74,12 @@ def approve_exception(exc_id: int | str, level: str, approver: str) -> dict:
     try:
         conn.execute(
             f"""UPDATE nc_exceptions
-                SET {col_flag}=1, {col_by}=?, {col_at}=?, status=?, updated_at=?
-                WHERE id=?""",
+                SET {col_flag}=1, {col_by}=%s, {col_at}=%s, status=%s, updated_at=%s
+                WHERE id=%s""",
             (approver, now, new_status, now, exc_id),
         )
         conn.commit()
-        row = conn.execute("SELECT * FROM nc_exceptions WHERE id = ?", (exc_id,)).fetchone()
+        row = conn.execute("SELECT * FROM nc_exceptions WHERE id = %s", (exc_id,)).fetchone()
         return dict(row) if row else {}
     finally:
         conn.close()

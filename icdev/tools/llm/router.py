@@ -34,6 +34,12 @@ except ImportError:
     LLMResponseCache = None
     canonical_key = None
 
+try:
+    from icdev.tools.llm.config_opts import apply_opts, opts_from_env
+except ImportError:
+    apply_opts = None  # type: ignore[assignment]
+    opts_from_env = None  # type: ignore[assignment]
+
 logger = get_logger("icdev.llm.router")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -101,7 +107,7 @@ class LLMRouter:
     _degraded_tier2_probed_at: Dict[str, float] = {}
     _DEGRADATION_PROBE_INTERVAL_SECONDS: float = 300.0  # 5 minutes
 
-    def __init__(self, config_path=None):
+    def __init__(self, config_path=None, opts: Dict | None = None):
         self._config_path = Path(config_path) if config_path else DEFAULT_CONFIG_PATH
         self._config: Dict = {}
         self._providers: Dict[str, LLMProvider] = {}
@@ -109,6 +115,7 @@ class LLMRouter:
         self._availability_cache: Dict[str, bool] = {}
         self._availability_cache_time: float = 0.0
         self._cache_ttl: float = 1800.0
+        self._constructor_opts: Dict | None = opts
 
         self._load_config()
         self._maybe_activate_cli_bridge()
@@ -196,6 +203,16 @@ class LLMRouter:
         try:
             with open(self._config_path, "r", encoding="utf-8") as f:
                 self._config = yaml.safe_load(f) or {}
+            # Apply env-var overrides (ICDEV_OPTS_* -> dot-path keys)
+            if opts_from_env is not None:
+                env_opts = opts_from_env()
+                if env_opts:
+                    self._config = apply_opts(self._config, env_opts)
+                    logger.debug("Applied %d env config overrides", len(env_opts))
+            # Apply constructor opts (highest precedence after env)
+            if apply_opts is not None and getattr(self, "_constructor_opts", None):
+                self._config = apply_opts(self._config, self._constructor_opts)
+                logger.debug("Applied %d constructor opts overrides", len(self._constructor_opts))
             self._cache_ttl = float(self._config.get("settings", {}).get("availability_cache_ttl_seconds", 1800))
             logger.info(
                 "LLM config loaded: %d providers, %d models, %d routes",

@@ -1,0 +1,32 @@
+From: noc-team@corp.internal
+To: network-admin@corp.internal
+Subject: URGENT: RTR-CORE-01 Security Findings — Action Required
+Date: Thu, 26 Jun 2026 08:00:00 +0000
+Content-Type: text/plain; charset=utf-8
+
+Network Operations Team,
+
+Following the automated compliance scan on RTR-CORE-01 (192.168.1.1), the following
+critical items require immediate documentation and remediation:
+
+1. SNMP v2c community string "public" detected — MUST be replaced with SNMP v3 AuthPriv.
+   Reference: SOP-NET-042, Section 4.2. Deadline: 48 hours.
+
+2. Telnet (port 23) still enabled on management interface — disable immediately, enforce SSH-only.
+   CAT1 STIG violation: V-220130.
+
+3. BGP peer 10.0.0.2 (AS 65002) has no MD5 authentication — add password per SOP-SEC-018.
+
+4. VLAN 10 (Management) lacks ACL restricting access to jump-host only (10.10.10.5).
+
+5. Type 7 password encoding found in running-config — replace all with Type 9 (scrypt).
+
+Recommended remediation order: items 1, 2, 5 before end of business today.
+
+Palo Alto firewall rule audit scheduled for 2026-06-27. Please ensure BGP route maps
+are documented in the updated runbook before that date.
+
+TACACS+ server pool (192.168.100.10, 192.168.100.11) confirmed reachable. All VTY lines
+must authenticate via TACACS+ per SOP-NET-042, Section 6.1.
+
+—NOC Operations Center

@@ -42,7 +42,7 @@ def _write_field_audit(schema: str, role: str, filtered_fields: list) -> None:
         _ac = _sq.connect(_db, timeout=5)
         _ac.execute(
             "INSERT INTO field_filter_audit (schema_name, role, filtered_fields, recorded_at)"
-            " VALUES (?, ?, ?, ?)",
+            " VALUES (%s, %s, %s, %s)",
             (schema, role, json.dumps(filtered_fields), datetime.now(timezone.utc).isoformat()),
         )
         _ac.commit()
@@ -228,7 +228,7 @@ def log_field_filter(
         conn.execute(
             """
             INSERT INTO field_filter_audit (schema_name, role, filtered_fields, recorded_at)
-            VALUES (?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s)
             """,
             (
                 schema,

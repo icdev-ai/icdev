@@ -94,11 +94,11 @@ def _resolve_element_name(element_type: str, element_id: str, conn) -> str:
     c = conn.cursor()
     try:
         if element_type == "doors_requirement":
-            c.execute("SELECT title FROM doors_requirements WHERE id = ?", (element_id,))
+            c.execute("SELECT title FROM doors_requirements WHERE id = %s", (element_id,))
             row = c.fetchone()
             return row[0] if row else element_id
         elif element_type == "sysml_element":
-            c.execute("SELECT name FROM sysml_elements WHERE id = ?", (element_id,))
+            c.execute("SELECT name FROM sysml_elements WHERE id = %s", (element_id,))
             row = c.fetchone()
             return row[0] if row else element_id
         elif element_type == "code_module":
@@ -106,11 +106,11 @@ def _resolve_element_name(element_type: str, element_id: str, conn) -> str:
         elif element_type == "test_file":
             return element_id
         elif element_type == "nist_control":
-            c.execute("SELECT title FROM compliance_controls WHERE id = ?", (element_id,))
+            c.execute("SELECT title FROM compliance_controls WHERE id = %s", (element_id,))
             row = c.fetchone()
             return row[0] if row else element_id
         elif element_type == "stig_rule":
-            c.execute("SELECT title FROM stig_findings WHERE rule_id = ?", (element_id,))
+            c.execute("SELECT title FROM stig_findings WHERE rule_id = %s", (element_id,))
             row = c.fetchone()
             return row[0] if row else element_id
         elif element_type == "compliance_artifact":
@@ -157,7 +157,7 @@ def create_link(
             """INSERT OR REPLACE INTO digital_thread_links
                (project_id, source_type, source_id, target_type, target_id,
                 link_type, confidence, evidence, created_by, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 project_id,
                 source_type,
@@ -213,7 +213,7 @@ def delete_link(project_id: str, link_id: int, db_path=None) -> bool:
     c = conn.cursor()
     try:
         c.execute(
-            "DELETE FROM digital_thread_links WHERE id = ? AND project_id = ?",
+            "DELETE FROM digital_thread_links WHERE id = %s AND project_id = %s",
             (link_id, project_id),
         )
         conn.commit()
@@ -260,7 +260,7 @@ def get_forward_trace(project_id: str, source_type: str, source_id: str, max_dep
         c.execute(
             """SELECT target_type, target_id, link_type, confidence, evidence
                FROM digital_thread_links
-               WHERE project_id = ? AND source_type = ? AND source_id = ?""",
+               WHERE project_id = %s AND source_type = %s AND source_id = %s""",
             (project_id, curr_type, curr_id),
         )
         rows = c.fetchall()
@@ -315,7 +315,7 @@ def get_backward_trace(project_id: str, target_type: str, target_id: str, max_de
         c.execute(
             """SELECT source_type, source_id, link_type, confidence, evidence
                FROM digital_thread_links
-               WHERE project_id = ? AND target_type = ? AND target_id = ?""",
+               WHERE project_id = %s AND target_type = %s AND target_id = %s""",
             (project_id, curr_type, curr_id),
         )
         rows = c.fetchall()
@@ -378,13 +378,13 @@ def compute_coverage(project_id: str, db_path=None) -> dict:
     c = conn.cursor()
 
     # Total DOORS requirements for this project
-    c.execute("SELECT COUNT(*) FROM doors_requirements WHERE project_id = ?", (project_id,))
+    c.execute("SELECT COUNT(*) FROM doors_requirements WHERE project_id = %s", (project_id,))
     total_reqs = c.fetchone()[0]
 
     # Requirements linked to sysml_elements
     c.execute(
         """SELECT COUNT(DISTINCT source_id) FROM digital_thread_links
-           WHERE project_id = ? AND source_type = 'doors_requirement'
+           WHERE project_id = %s AND source_type = 'doors_requirement'
              AND target_type = 'sysml_element'""",
         (project_id,),
     )
@@ -392,7 +392,7 @@ def compute_coverage(project_id: str, db_path=None) -> dict:
 
     # Total SysML blocks for this project
     c.execute(
-        "SELECT COUNT(*) FROM sysml_elements WHERE project_id = ? AND element_type = 'block'",
+        "SELECT COUNT(*) FROM sysml_elements WHERE project_id = %s AND element_type = 'block'",
         (project_id,),
     )
     total_blocks = c.fetchone()[0]
@@ -400,7 +400,7 @@ def compute_coverage(project_id: str, db_path=None) -> dict:
     # Blocks linked to code_modules
     c.execute(
         """SELECT COUNT(DISTINCT source_id) FROM digital_thread_links
-           WHERE project_id = ? AND source_type = 'sysml_element'
+           WHERE project_id = %s AND source_type = 'sysml_element'
              AND target_type = 'code_module'""",
         (project_id,),
     )
@@ -410,10 +410,10 @@ def compute_coverage(project_id: str, db_path=None) -> dict:
     c.execute(
         """SELECT COUNT(DISTINCT cm) FROM (
                SELECT source_id AS cm FROM digital_thread_links
-               WHERE project_id = ? AND source_type = 'code_module'
+               WHERE project_id = %s AND source_type = 'code_module'
                UNION
                SELECT target_id AS cm FROM digital_thread_links
-               WHERE project_id = ? AND target_type = 'code_module'
+               WHERE project_id = %s AND target_type = 'code_module'
            )""",
         (project_id, project_id),
     )
@@ -422,20 +422,20 @@ def compute_coverage(project_id: str, db_path=None) -> dict:
     # Code modules linked to test_files
     c.execute(
         """SELECT COUNT(DISTINCT source_id) FROM digital_thread_links
-           WHERE project_id = ? AND source_type = 'code_module'
+           WHERE project_id = %s AND source_type = 'code_module'
              AND target_type = 'test_file'""",
         (project_id,),
     )
     code_with_tests = c.fetchone()[0]
 
     # Total project_controls
-    c.execute("SELECT COUNT(*) FROM project_controls WHERE project_id = ?", (project_id,))
+    c.execute("SELECT COUNT(*) FROM project_controls WHERE project_id = %s", (project_id,))
     total_controls = c.fetchone()[0]
 
     # Controls linked to any thread element
     c.execute(
         """SELECT COUNT(DISTINCT pc.control_id) FROM project_controls pc
-           WHERE pc.project_id = ?
+           WHERE pc.project_id = %s
              AND (EXISTS (
                  SELECT 1 FROM digital_thread_links dtl
                  WHERE dtl.project_id = pc.project_id
@@ -448,7 +448,7 @@ def compute_coverage(project_id: str, db_path=None) -> dict:
 
     # Full chain completeness: requirement -> model -> code -> test -> control
     # For each requirement, check if a full chain exists
-    c.execute("SELECT id FROM doors_requirements WHERE project_id = ?", (project_id,))
+    c.execute("SELECT id FROM doors_requirements WHERE project_id = %s", (project_id,))
     req_ids = [row[0] for row in c.fetchall()]
     full_chain_count = 0
 
@@ -456,8 +456,8 @@ def compute_coverage(project_id: str, db_path=None) -> dict:
         # req -> sysml_element
         c.execute(
             """SELECT target_id FROM digital_thread_links
-               WHERE project_id = ? AND source_type = 'doors_requirement'
-                 AND source_id = ? AND target_type = 'sysml_element'""",
+               WHERE project_id = %s AND source_type = 'doors_requirement'
+                 AND source_id = %s AND target_type = 'sysml_element'""",
             (project_id, req_id),
         )
         model_ids = [row[0] for row in c.fetchall()]
@@ -469,8 +469,8 @@ def compute_coverage(project_id: str, db_path=None) -> dict:
             # sysml_element -> code_module
             c.execute(
                 """SELECT target_id FROM digital_thread_links
-                   WHERE project_id = ? AND source_type = 'sysml_element'
-                     AND source_id = ? AND target_type = 'code_module'""",
+                   WHERE project_id = %s AND source_type = 'sysml_element'
+                     AND source_id = %s AND target_type = 'code_module'""",
                 (project_id, model_id),
             )
             code_ids = [row[0] for row in c.fetchall()]
@@ -481,8 +481,8 @@ def compute_coverage(project_id: str, db_path=None) -> dict:
                 # code_module -> test_file
                 c.execute(
                     """SELECT target_id FROM digital_thread_links
-                       WHERE project_id = ? AND source_type = 'code_module'
-                         AND source_id = ? AND target_type = 'test_file'""",
+                       WHERE project_id = %s AND source_type = 'code_module'
+                         AND source_id = %s AND target_type = 'test_file'""",
                     (project_id, code_id),
                 )
                 test_ids = [row[0] for row in c.fetchall()]
@@ -555,15 +555,15 @@ def find_orphans(project_id: str, db_path=None) -> dict:
     # Requirements without model links
     c.execute(
         """SELECT dr.id, dr.doors_id, dr.title FROM doors_requirements dr
-           WHERE dr.project_id = ?
+           WHERE dr.project_id = %s
              AND dr.id NOT IN (
                  SELECT source_id FROM digital_thread_links
-                 WHERE project_id = ? AND source_type = 'doors_requirement'
+                 WHERE project_id = %s AND source_type = 'doors_requirement'
                    AND target_type = 'sysml_element'
              )
              AND dr.id NOT IN (
                  SELECT target_id FROM digital_thread_links
-                 WHERE project_id = ? AND target_type = 'doors_requirement'
+                 WHERE project_id = %s AND target_type = 'doors_requirement'
                    AND source_type = 'sysml_element'
              )""",
         (project_id, project_id, project_id),
@@ -573,15 +573,15 @@ def find_orphans(project_id: str, db_path=None) -> dict:
     # SysML blocks without code links
     c.execute(
         """SELECT se.id, se.name FROM sysml_elements se
-           WHERE se.project_id = ? AND se.element_type = 'block'
+           WHERE se.project_id = %s AND se.element_type = 'block'
              AND se.id NOT IN (
                  SELECT source_id FROM digital_thread_links
-                 WHERE project_id = ? AND source_type = 'sysml_element'
+                 WHERE project_id = %s AND source_type = 'sysml_element'
                    AND target_type = 'code_module'
              )
              AND se.id NOT IN (
                  SELECT target_id FROM digital_thread_links
-                 WHERE project_id = ? AND target_type = 'sysml_element'
+                 WHERE project_id = %s AND target_type = 'sysml_element'
                    AND source_type = 'code_module'
              )""",
         (project_id, project_id, project_id),
@@ -593,10 +593,10 @@ def find_orphans(project_id: str, db_path=None) -> dict:
     c.execute(
         """SELECT DISTINCT cm FROM (
                SELECT source_id AS cm FROM digital_thread_links
-               WHERE project_id = ? AND source_type = 'code_module'
+               WHERE project_id = %s AND source_type = 'code_module'
                UNION
                SELECT target_id AS cm FROM digital_thread_links
-               WHERE project_id = ? AND target_type = 'code_module'
+               WHERE project_id = %s AND target_type = 'code_module'
            )""",
         (project_id, project_id),
     )
@@ -606,9 +606,9 @@ def find_orphans(project_id: str, db_path=None) -> dict:
     for code_id in all_code:
         c.execute(
             """SELECT 1 FROM digital_thread_links
-               WHERE project_id = ?
-                 AND ((source_type = 'code_module' AND source_id = ? AND target_type = 'test_file')
-                   OR (target_type = 'code_module' AND target_id = ? AND source_type = 'test_file'))
+               WHERE project_id = %s
+                 AND ((source_type = 'code_module' AND source_id = %s AND target_type = 'test_file')
+                   OR (target_type = 'code_module' AND target_id = %s AND source_type = 'test_file'))
                LIMIT 1""",
             (project_id, code_id, code_id),
         )
@@ -618,7 +618,7 @@ def find_orphans(project_id: str, db_path=None) -> dict:
     # NIST controls without evidence (no links at all)
     c.execute(
         """SELECT pc.control_id FROM project_controls pc
-           WHERE pc.project_id = ?
+           WHERE pc.project_id = %s
              AND NOT EXISTS (
                  SELECT 1 FROM digital_thread_links dtl
                  WHERE dtl.project_id = pc.project_id
@@ -669,7 +669,7 @@ def find_gaps(project_id: str, db_path=None) -> dict:
     c.execute(
         """SELECT dtl.source_id, dtl.target_id
            FROM digital_thread_links dtl
-           WHERE dtl.project_id = ?
+           WHERE dtl.project_id = %s
              AND dtl.source_type = 'doors_requirement'
              AND dtl.target_type = 'sysml_element'""",
         (project_id,),
@@ -678,8 +678,8 @@ def find_gaps(project_id: str, db_path=None) -> dict:
     for req_id, model_id in req_model_links:
         c.execute(
             """SELECT 1 FROM digital_thread_links
-               WHERE project_id = ? AND source_type = 'sysml_element'
-                 AND source_id = ? AND target_type = 'code_module'
+               WHERE project_id = %s AND source_type = 'sysml_element'
+                 AND source_id = %s AND target_type = 'code_module'
                LIMIT 1""",
             (project_id, model_id),
         )
@@ -703,7 +703,7 @@ def find_gaps(project_id: str, db_path=None) -> dict:
     c.execute(
         """SELECT dtl.source_id, dtl.target_id
            FROM digital_thread_links dtl
-           WHERE dtl.project_id = ?
+           WHERE dtl.project_id = %s
              AND dtl.source_type = 'sysml_element'
              AND dtl.target_type = 'code_module'""",
         (project_id,),
@@ -712,8 +712,8 @@ def find_gaps(project_id: str, db_path=None) -> dict:
     for model_id, code_id in model_code_links:
         c.execute(
             """SELECT 1 FROM digital_thread_links
-               WHERE project_id = ? AND source_type = 'code_module'
-                 AND source_id = ? AND target_type = 'test_file'
+               WHERE project_id = %s AND source_type = 'code_module'
+                 AND source_id = %s AND target_type = 'test_file'
                LIMIT 1""",
             (project_id, code_id),
         )
@@ -735,7 +735,7 @@ def find_gaps(project_id: str, db_path=None) -> dict:
     c.execute(
         """SELECT dtl.source_id, dtl.target_id
            FROM digital_thread_links dtl
-           WHERE dtl.project_id = ?
+           WHERE dtl.project_id = %s
              AND dtl.source_type = 'code_module'
              AND dtl.target_type = 'test_file'""",
         (project_id,),
@@ -744,11 +744,11 @@ def find_gaps(project_id: str, db_path=None) -> dict:
     for code_id, test_id in code_test_links:
         c.execute(
             """SELECT 1 FROM digital_thread_links
-               WHERE project_id = ?
+               WHERE project_id = %s
                  AND target_type = 'nist_control'
                  AND (
-                     (source_type = 'code_module' AND source_id = ?)
-                     OR (source_type = 'test_file' AND source_id = ?)
+                     (source_type = 'code_module' AND source_id = %s)
+                     OR (source_type = 'test_file' AND source_id = %s)
                  )
                LIMIT 1""",
             (project_id, code_id, test_id),
@@ -805,7 +805,7 @@ def auto_link_by_name(project_id: str, db_path=None) -> dict:
     # 1. Get all SysML blocks for this project
     c.execute(
         """SELECT id, name FROM sysml_elements
-           WHERE project_id = ? AND element_type = 'block'""",
+           WHERE project_id = %s AND element_type = 'block'""",
         (project_id,),
     )
     blocks = c.fetchall()
@@ -813,7 +813,7 @@ def auto_link_by_name(project_id: str, db_path=None) -> dict:
     # 2. Get all code mappings for this project (model_code_mappings)
     c.execute(
         """SELECT code_path, code_type FROM model_code_mappings
-           WHERE project_id = ?""",
+           WHERE project_id = %s""",
         (project_id,),
     )
     code_paths = c.fetchall()
@@ -821,7 +821,7 @@ def auto_link_by_name(project_id: str, db_path=None) -> dict:
     # 3. Get all DOORS requirements
     c.execute(
         """SELECT id, doors_id, title FROM doors_requirements
-           WHERE project_id = ?""",
+           WHERE project_id = %s""",
         (project_id,),
     )
     requirements = c.fetchall()
@@ -978,7 +978,7 @@ def auto_link_to_controls(project_id: str, db_path=None) -> dict:
     # Get all SysML elements for this project
     c.execute(
         """SELECT id, name, element_type, stereotype, description
-           FROM sysml_elements WHERE project_id = ?""",
+           FROM sysml_elements WHERE project_id = %s""",
         (project_id,),
     )
     elements = c.fetchall()
@@ -988,7 +988,7 @@ def auto_link_to_controls(project_id: str, db_path=None) -> dict:
         """SELECT DISTINCT pc.control_id, cc.family, cc.title
            FROM project_controls pc
            JOIN compliance_controls cc ON pc.control_id = cc.id
-           WHERE pc.project_id = ?""",
+           WHERE pc.project_id = %s""",
         (project_id,),
     )
     controls = c.fetchall()
@@ -1064,10 +1064,10 @@ def generate_traceability_report(project_id: str, db_path=None) -> str:
     # Collect all trace chains from requirements
     conn = get_connection(db_path=str(path))
     c = conn.cursor()
-    c.execute("SELECT id, doors_id, title FROM doors_requirements WHERE project_id = ?", (project_id,))
+    c.execute("SELECT id, doors_id, title FROM doors_requirements WHERE project_id = %s", (project_id,))
     all_reqs = c.fetchall()
 
-    c.execute("SELECT COUNT(*) FROM digital_thread_links WHERE project_id = ?", (project_id,))
+    c.execute("SELECT COUNT(*) FROM digital_thread_links WHERE project_id = %s", (project_id,))
     total_links = c.fetchone()[0]
     conn.close()
 
@@ -1285,7 +1285,7 @@ def validate_thread_integrity(project_id: str, db_path=None) -> dict:
     # Get all links for this project
     c.execute(
         """SELECT id, source_type, source_id, target_type, target_id, link_type, confidence
-           FROM digital_thread_links WHERE project_id = ?""",
+           FROM digital_thread_links WHERE project_id = %s""",
         (project_id,),
     )
     all_links = c.fetchall()
@@ -1333,7 +1333,7 @@ def validate_thread_integrity(project_id: str, db_path=None) -> dict:
         if src_type in type_table_map:
             table, col = type_table_map[src_type]
             try:
-                c.execute(f"SELECT 1 FROM {table} WHERE {col} = ? LIMIT 1", (src_id,))  # nosec B608 -- table/column names are internal constants, not user input
+                c.execute(f"SELECT 1 FROM {table} WHERE {col} = %s LIMIT 1", (src_id,))  # nosec B608 -- table/column names are internal constants, not user input
                 if not c.fetchone():
                     issues.append(
                         {
@@ -1350,7 +1350,7 @@ def validate_thread_integrity(project_id: str, db_path=None) -> dict:
         if tgt_type in type_table_map:
             table, col = type_table_map[tgt_type]
             try:
-                c.execute(f"SELECT 1 FROM {table} WHERE {col} = ? LIMIT 1", (tgt_id,))  # nosec B608 -- table/column names are internal constants, not user input
+                c.execute(f"SELECT 1 FROM {table} WHERE {col} = %s LIMIT 1", (tgt_id,))  # nosec B608 -- table/column names are internal constants, not user input
                 if not c.fetchone():
                     issues.append(
                         {

@@ -59,7 +59,7 @@ def create_goal(
                (id, title, description, category, horizon_years, target_year,
                 priority, source, owner, status, success_criteria, kpis, tags,
                 created_by, created_at, updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?,'active',?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'active',%s,%s,%s,%s,%s,%s)""",
             (
                 goal_id, title, description, category, horizon_years, target_year,
                 priority, source, owner, success_criteria,
@@ -93,7 +93,7 @@ def list_goals(status: str | None = None, category: str | None = None, db_path: 
 def get_goal(goal_id: str, db_path: str | None = None) -> dict | None:
     conn = _get_conn(db_path)
     try:
-        row = conn.execute("SELECT * FROM mi_goals WHERE id = ?", (goal_id,)).fetchone()
+        row = conn.execute("SELECT * FROM mi_goals WHERE id = %s", (goal_id,)).fetchone()
         return dict(row) if row else None
     finally:
         conn.close()
@@ -113,7 +113,7 @@ def update_goal(goal_id: str, updates: dict[str, Any], db_path: str | None = Non
     set_clause = ", ".join(f"{k} = ?" for k in cols)
     conn = _get_conn(db_path)
     try:
-        conn.execute(f"UPDATE mi_goals SET {set_clause} WHERE id = ?", [*cols.values(), goal_id])
+        conn.execute(f"UPDATE mi_goals SET {set_clause} WHERE id = %s", [*cols.values(), goal_id])
         conn.commit()
         return True
     finally:
@@ -228,7 +228,7 @@ def _log_chat(log_id, user_input, parsed_goals, goal_ids, model, confidence, db_
         conn.execute(
             """INSERT OR IGNORE INTO mi_goal_chat_log
                (id, user_input, parsed_goals, goals_created, llm_model, confidence, created_at)
-               VALUES (?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s)""",
             (log_id, user_input[:2000], json.dumps(parsed_goals), json.dumps(goal_ids),
              model, confidence, _now()),
         )
@@ -250,7 +250,7 @@ def compute_goal_alignment(opportunity_id: str, db_path: str | None = None) -> l
     """
     conn = _get_conn(db_path)
     try:
-        opp = conn.execute("SELECT * FROM mi_opportunities WHERE id = ?", (opportunity_id,)).fetchone()
+        opp = conn.execute("SELECT * FROM mi_opportunities WHERE id = %s", (opportunity_id,)).fetchone()
         if not opp:
             return []
         goals = conn.execute("SELECT * FROM mi_goals WHERE status = 'active'").fetchall()
@@ -266,7 +266,7 @@ def compute_goal_alignment(opportunity_id: str, db_path: str | None = None) -> l
             conn.execute(
                 """INSERT OR REPLACE INTO mi_goal_alignments
                    (id, goal_id, opportunity_id, alignment_score, alignment_reason, computed_at)
-                   VALUES (?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s)""",
                 (aln_id, a["goal_id"], opportunity_id, a["score"], a["reason"], _now()),
             )
         conn.commit()

@@ -9,7 +9,7 @@ ways: by *initiative tier* (tier_1 / tier_2) and by *equipment category*
 
 Tiers are defined in [[tools/budget/initiative_allocator.py]] and stored
 on the allocation row. Equipment categories live on each IGCE line item
-(``proc_igce_line_items.equipment_category``) and are derived from CLIN
+(``proc_igce_line_items.equipment_category``) and are inferred from CLIN
 descriptions when not explicitly assigned.
 
 Schema read:

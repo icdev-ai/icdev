@@ -202,7 +202,7 @@ def check_output(
         conn.execute(
             """INSERT INTO confabulation_checks
                (project_id, check_type, input_hash, result, risk_score, findings_count, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
             (project_id, "full_check", input_hash, json.dumps(result), risk_score, len(all_findings), now),
         )
         conn.commit()
@@ -222,7 +222,7 @@ def get_summary(project_id: str, db_path: Path = DB_PATH) -> Dict:
                       AVG(risk_score) as avg_risk,
                       MAX(risk_score) as max_risk,
                       SUM(findings_count) as total_findings
-               FROM confabulation_checks WHERE project_id = ?""",
+               FROM confabulation_checks WHERE project_id = %s""",
             (project_id,),
         ).fetchone()
 

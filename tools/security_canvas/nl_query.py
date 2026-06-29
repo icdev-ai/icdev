@@ -153,7 +153,7 @@ class SDCComplianceGraph:
     def _load(self, conn: Any) -> None:
         # Load nodes
         rows = conn.execute(
-            "SELECT id, label, entity_type, properties FROM kg_nodes WHERE graph_id = ?",
+            "SELECT id, label, entity_type, properties FROM kg_nodes WHERE graph_id = %s",
             (self._graph_id,),
         ).fetchall()
         for row in rows:
@@ -171,7 +171,7 @@ class SDCComplianceGraph:
 
         # Load edges (store as bidirectional)
         edge_rows = conn.execute(
-            "SELECT source_id, target_id, relationship, weight, properties FROM kg_edges WHERE graph_id = ?",
+            "SELECT source_id, target_id, relationship, weight, properties FROM kg_edges WHERE graph_id = %s",
             (self._graph_id,),
         ).fetchall()
         for row in edge_rows:

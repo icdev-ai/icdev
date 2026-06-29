@@ -209,7 +209,7 @@ def generate_intsum(theater: str = "global", lookback_hours: int = 24) -> dict[s
             "INSERT INTO sg_intsums "
             "(id, period_start, period_end, theater, classification, "
             " prepared_by, status, latency_ms, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 intsum_id,
                 period_start.isoformat(),
@@ -226,7 +226,7 @@ def generate_intsum(theater: str = "global", lookback_hours: int = 24) -> dict[s
             conn.execute(
                 "INSERT INTO sg_intsum_paragraphs "
                 "(id, intsum_id, para_num, heading, content, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s)",
                 (str(uuid.uuid4()), intsum_id, para["para_num"],
                  para["heading"], para["content"], now),
             )
@@ -255,7 +255,7 @@ def list_intsums(limit: int = 10) -> list[dict]:
         rows = conn.execute(
             "SELECT id, period_start, period_end, theater, status, "  # nosec B608
             "classification, created_at "
-            "FROM sg_intsums ORDER BY created_at DESC LIMIT ?",
+            "FROM sg_intsums ORDER BY created_at DESC LIMIT %s",
             (limit,),
         ).fetchall()
         cols = ("id", "period_start", "period_end", "theater",

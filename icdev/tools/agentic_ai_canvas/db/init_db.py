@@ -992,7 +992,7 @@ if __name__ == "__main__":
         ).fetchall()
         print(f"AADC Canvas DB initialized: {len(tables)} tables")
         for t in tables:
-            count = conn.execute(f"SELECT COUNT(*) FROM [{t[0]}]").fetchone()[0]  # noqa: S608
+            count = conn.execute(f"SELECT COUNT(*) FROM [{t[0]}]").fetchone()[0]  # noqa: S608  # nosec B608 — t[0] from sqlite_master table list, not user input
             print(f"  {t[0]}: {count} rows")
     finally:
         conn.close()

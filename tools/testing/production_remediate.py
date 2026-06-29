@@ -112,7 +112,7 @@ def _detect_project_id() -> str:
         conn.execute(
             "INSERT OR IGNORE INTO projects "
             "(id, name, type, classification, status, directory_path, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
             (pid, "ICDEV™ Platform", "webapp", "CUI", "active", str(PROJECT_ROOT), now, now),
         )
         conn.commit()
@@ -492,7 +492,7 @@ def _store_remediation(
                 message, details, duration_ms,
                 verification_check_id, verification_status, verification_message,
                 dry_run, report_json)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 source_audit_id,
                 action.check_id,
@@ -769,7 +769,7 @@ def run_remediation(
         try:
             conn = _get_db()
             conn.execute(
-                """UPDATE remediation_audit_log SET report_json = ?
+                """UPDATE remediation_audit_log SET report_json = %s
                    WHERE id = (SELECT MAX(id) FROM remediation_audit_log)""",
                 (json.dumps(report.to_dict()),),
             )

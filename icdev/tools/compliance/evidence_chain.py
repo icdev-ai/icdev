@@ -159,7 +159,7 @@ def _open_sqlite(path: Path) -> Optional[sqlite3.Connection]:
 
 
 def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
-    row = conn.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone()
+    row = conn.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=%s", (name,)).fetchone()
     return row[0] > 0
 
 
@@ -632,7 +632,7 @@ def _persist_chain(
                    (chain_id, event_id, source, event_type, actor, action,
                     oscal_controls, oscal_family, evidence_type, classification,
                     event_ts, details_json)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (
                     chain_id,
                     ev["event_id"],

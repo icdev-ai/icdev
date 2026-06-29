@@ -71,7 +71,7 @@ class FreshnessGuardianReflex:
             db_conn_json_str = None
             try:
                 run_row = ddc_conn.execute(
-                    "SELECT db_conn_json FROM dd_quality_runs WHERE rule_id=? ORDER BY created_at DESC LIMIT 1",
+                    "SELECT db_conn_json FROM dd_quality_runs WHERE rule_id=%s ORDER BY created_at DESC LIMIT 1",
                     (rule_id,),
                 ).fetchone()
                 if run_row:
@@ -154,7 +154,7 @@ class FreshnessGuardianReflex:
                        (id, rule_id, design_id, db_conn_json, last_checked,
                         passed, actual_max_value, cutoff_value, detail,
                         classification, created_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                     (
                         alert_id,
                         rule_id,
@@ -179,7 +179,7 @@ class FreshnessGuardianReflex:
                     """INSERT INTO dd_quality_runs
                        (id, rule_id, db_conn_json, passed, actual_value,
                         threshold, detail, classification, reflex_run, created_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                     (
                         run_id,
                         rule_id,
@@ -200,7 +200,7 @@ class FreshnessGuardianReflex:
                         """INSERT INTO dd_quality_runs
                            (id, rule_id, db_conn_json, passed, actual_value,
                             threshold, detail, classification, created_at)
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                         (
                             run_id,
                             rule_id,
@@ -228,7 +228,7 @@ class FreshnessGuardianReflex:
                     main_conn.execute(
                         """INSERT INTO genesis_audit
                            (id, event_type, reflex_name, details, created_at)
-                           VALUES (?, ?, ?, ?, ?)""",
+                           VALUES (%s, %s, %s, %s, %s)""",
                         (
                             f"aud-{uuid.uuid4().hex[:10]}",
                             "freshness.breach",

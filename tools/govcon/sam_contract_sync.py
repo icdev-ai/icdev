@@ -77,7 +77,7 @@ def _audit(conn, action, details="", actor="sam_contract_sync"):
     try:
         conn.execute(
             "INSERT INTO audit_trail (event_type, actor, action, details, session_id) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s)",
             ("hook_event_logged", actor, action, details, "cpmp"),
         )
     except Exception:
@@ -135,7 +135,7 @@ def sync_awards(lookback_days=None):
     for award in awards:
         content = _content_hash(award)
 
-        existing = conn.execute("SELECT id FROM cpmp_sam_contract_awards WHERE content_hash = ?", (content,)).fetchone()
+        existing = conn.execute("SELECT id FROM cpmp_sam_contract_awards WHERE content_hash = %s", (content,)).fetchone()
         if existing:
             dup_count += 1
             continue
@@ -147,7 +147,7 @@ def sync_awards(lookback_days=None):
             "(id, sam_award_id, piid, awardee_name, awardee_uei, awardee_cage, "
             "obligation_amount, base_exercised_options_value, award_date, pop_start, pop_end, "
             "awarding_agency, naics_code, psc_code, content_hash, linked_contract_id, discovered_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 _uuid(),
                 sam_award_id,
@@ -206,8 +206,8 @@ def search_awards(query_text, limit=20):
     pattern = f"%{query_text}%"
     rows = conn.execute(
         "SELECT * FROM cpmp_sam_contract_awards "
-        "WHERE awardee_name LIKE ? OR awarding_agency LIKE ? OR piid LIKE ? OR sam_award_id LIKE ? "
-        "ORDER BY discovered_at DESC LIMIT ?",
+        "WHERE awardee_name LIKE %s OR awarding_agency LIKE %s OR piid LIKE %s OR sam_award_id LIKE %s "
+        "ORDER BY discovered_at DESC LIMIT %s",
         (pattern, pattern, pattern, pattern, limit),
     ).fetchall()
     conn.close()
@@ -218,18 +218,18 @@ def link_award_to_contract(sam_award_id, contract_id):
     """Link a SAM.gov award record to a CPMP contract."""
     conn = _get_db()
 
-    award = conn.execute("SELECT id FROM cpmp_sam_contract_awards WHERE sam_award_id = ?", (sam_award_id,)).fetchone()
+    award = conn.execute("SELECT id FROM cpmp_sam_contract_awards WHERE sam_award_id = %s", (sam_award_id,)).fetchone()
     if not award:
         conn.close()
         return {"status": "error", "message": f"SAM award {sam_award_id} not found"}
 
-    contract = conn.execute("SELECT id FROM cpmp_contracts WHERE id = ?", (contract_id,)).fetchone()
+    contract = conn.execute("SELECT id FROM cpmp_contracts WHERE id = %s", (contract_id,)).fetchone()
     if not contract:
         conn.close()
         return {"status": "error", "message": f"Contract {contract_id} not found"}
 
     conn.execute(
-        "UPDATE cpmp_sam_contract_awards SET linked_contract_id = ? WHERE sam_award_id = ?",
+        "UPDATE cpmp_sam_contract_awards SET linked_contract_id = %s WHERE sam_award_id = %s",
         (contract_id, sam_award_id),
     )
     _audit(conn, "link_award", f"Linked SAM award {sam_award_id} to contract {contract_id}")

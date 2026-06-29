@@ -156,7 +156,7 @@ def assess_impact(
             """INSERT INTO ai_ethics_reviews
                (project_id, review_type, ai_system, findings,
                 pre_deployment_review, reviewer)
-               VALUES (?, 'impact_assessment', ?, ?, 1, ?)""",
+               VALUES (%s, 'impact_assessment', %s, %s, 1, %s)""",
             (project_id, ai_system, json.dumps(assessment), reviewer),
         )
         conn.commit()
@@ -184,7 +184,7 @@ def _auto_assess_dimension(
         try:
             row = conn.execute(
                 """SELECT risk_level FROM ai_use_case_inventory
-                   WHERE project_id = ? AND name = ?""",
+                   WHERE project_id = %s AND name = %s""",
                 (project_id, ai_system),
             ).fetchone()
             if row:
@@ -196,7 +196,7 @@ def _auto_assess_dimension(
         try:
             row = conn.execute(
                 """SELECT COUNT(*) as cnt FROM ai_oversight_plans
-                   WHERE project_id = ?""",
+                   WHERE project_id = %s""",
                 (project_id,),
             ).fetchone()
             return "low" if row and row["cnt"] > 0 else "medium"
@@ -207,7 +207,7 @@ def _auto_assess_dimension(
         try:
             row = conn.execute(
                 """SELECT COUNT(*) as cnt FROM fairness_assessments
-                   WHERE project_id = ?""",
+                   WHERE project_id = %s""",
                 (project_id,),
             ).fetchone()
             return "low" if row and row["cnt"] > 0 else "medium"
@@ -224,7 +224,7 @@ def get_impact_summary(project_id: str, db_path: Path = DB_PATH) -> Dict:
         _ensure_tables(conn)
         rows = conn.execute(
             """SELECT ai_system, findings, created_at FROM ai_ethics_reviews
-               WHERE project_id = ? AND review_type = 'impact_assessment'
+               WHERE project_id = %s AND review_type = 'impact_assessment'
                ORDER BY created_at DESC""",
             (project_id,),
         ).fetchall()

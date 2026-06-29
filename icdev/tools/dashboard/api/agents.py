@@ -32,7 +32,7 @@ def list_agents():
             # Count active tasks for this agent
             task_count = conn.execute(
                 "SELECT COUNT(*) as cnt FROM a2a_tasks "
-                "WHERE target_agent_id = ? AND status IN ('submitted', 'working')",
+                "WHERE target_agent_id = %s AND status IN ('submitted', 'working')",
                 (agent["id"],),
             ).fetchone()
             agent["active_task_count"] = task_count["cnt"] if task_count else 0

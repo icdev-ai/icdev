@@ -1,0 +1,83 @@
+﻿STANDARD OPERATING PROCEDURE
+SOP-NET-042: Enterprise Network Configuration and Security Baseline
+
+Classification: CUI // SP-CTI
+Version: 2.1
+Effective Date: 2026-06-01
+Author: Network Engineering Team
+Approving Authority: Chief Information Security Officer
+
+1. PURPOSE
+This SOP establishes the configuration baseline and security requirements for all enterprise network devices including routers, switches, and firewalls deployed within the classified enclave. Compliance with this SOP is mandatory for all IL4 and IL5 network infrastructure.
+
+2. SCOPE
+Applies to all Cisco IOS-based routers and switches, Palo Alto firewalls, and F5 load balancers within the ICDEV enterprise network boundary. Excludes guest wireless networks and contractor DMZ segments.
+
+3. NETWORK TOPOLOGY OVERVIEW
+The enterprise network is organized into three security zones:
+  - Core Zone (192.168.0.0/16): Classified processing, IL5 enclave
+  - DMZ Zone (10.10.0.0/24): Internet-facing services, IL4
+  - Management Zone (172.16.0.0/24): Out-of-band management, restricted access
+
+Primary data center is located at Site Alpha with DR failover at Site Bravo. WAN connectivity uses MPLS with BGP routing between sites. Internet egress is controlled via two Palo Alto PA-5220 firewalls in active-passive HA.
+
+4. ROUTER BASELINE CONFIGURATION
+4.1 Authentication Requirements
+  - All VTY lines must use AAA authentication with TACACS+ primary, local fallback
+  - SSH version 2 only; Telnet disabled on all interfaces
+  - Minimum RSA key size: 2048 bits
+  - Login block-for 300 attempts 5 within 60 seconds
+
+4.2 Access Control
+  - ACLs applied on all untrusted interfaces (inbound)
+  - RFC 3330 bogon filtering on all external interfaces
+  - ICMP rate-limited to 100 packets/second
+  - NetFlow enabled on all WAN interfaces, exported to SIEM collector at 172.16.0.200
+
+4.3 Logging Requirements
+  - Syslog to 172.16.0.100 (SIEM) and 172.16.0.101 (backup)
+  - Log level: informational (level 6) minimum
+  - Timestamps: service timestamps log datetime msec localtime
+  - Archive config on change with 30-day retention
+
+5. SWITCH BASELINE CONFIGURATION
+5.1 Layer 2 Security
+  - Port security enabled on all access ports (max 2 MACs)
+  - BPDU Guard enabled on all access ports
+  - Dynamic ARP Inspection on all VLANs except native
+  - DHCP Snooping enabled, trusted uplinks only
+  - 802.1X port-based authentication required for workstation ports
+
+5.2 VLAN Architecture
+  - VLAN 10: Management (172.16.0.0/24)
+  - VLAN 20: Servers (192.168.10.0/24)
+  - VLAN 30: Workstations (192.168.20.0/24)
+  - VLAN 40: VoIP (192.168.30.0/24)
+  - VLAN 99: Native/unused (no traffic, disabled)
+
+6. FIREWALL POLICY BASELINE
+6.1 Default Deny Policy
+  All traffic is denied by default. Explicit permit rules are required for all flows.
+
+6.2 Inbound Rules (Internet to DMZ)
+  - TCP/443 to web servers (10.10.0.10-20): PERMITTED
+  - TCP/25 to mail gateway (10.10.0.50): PERMITTED
+  - All other inbound: DENIED, logged
+
+6.3 Known Deficiencies
+  - CAT1 FINDING: Management access from DMZ not fully blocked (ticket NW-2024-089)
+  - HIGH: NTP not synchronized to authoritative source on 3 devices
+  - MEDIUM: SNMP v2c still in use on legacy switches (EOL migration in progress)
+
+7. CHANGE MANAGEMENT
+All network changes require:
+  - Change ticket in ServiceNow with network engineering approval
+  - Pre-change backup of device configuration
+  - Maintenance window (Saturday 0200-0600 local)
+  - Post-change verification checklist completion
+  - Rollback plan documented before implementation
+
+8. REFERENCES
+  - NIST SP 800-53 Rev 5 (SC, AC, AU controls)
+  - DoD STIGs: Cisco IOS Router L3, Cisco IOS Switch L2
+  - CJCSI 6510.01F: Information Assurance and Computer Network Defense

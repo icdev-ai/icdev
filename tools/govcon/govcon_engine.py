@@ -57,7 +57,7 @@ def _audit(conn, action, details="", actor="govcon_engine"):
     try:
         conn.execute(
             "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (str(uuid.uuid4()), _now(), "govcon.pipeline", actor, action, details, "govcon"),
         )
     except Exception:

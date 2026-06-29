@@ -151,11 +151,11 @@ def _update_entry(
     conn.execute(
         """
         UPDATE tech_radar_entries
-        SET    current_ring    = ?,
-               previous_ring   = ?,
-               composite_score = ?,
-               last_assessed   = ?
-        WHERE  id = ?
+        SET    current_ring    = %s,
+               previous_ring   = %s,
+               composite_score = %s,
+               last_assessed   = %s
+        WHERE  id = %s
         """,
         (new_ring, old_ring, round(new_score, 4), now, entry_id),
     )
@@ -164,7 +164,7 @@ def _update_entry(
 def _touch_entry(conn, entry_id: str, new_score: float, now: str) -> None:
     """Update score + last_assessed without changing the ring."""
     conn.execute(
-        "UPDATE tech_radar_entries SET composite_score=?, last_assessed=? WHERE id=?",
+        "UPDATE tech_radar_entries SET composite_score=%s, last_assessed=%s WHERE id=%s",
         (round(new_score, 4), now, entry_id),
     )
 
@@ -183,7 +183,7 @@ def _insert_history(
         INSERT INTO tech_radar_history
             (id, entry_id, from_ring, to_ring, composite_score,
              innovation_signal_id, changed_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
         """,
         (
             str(uuid.uuid4()),
@@ -211,7 +211,7 @@ def _register_innovation_signal(
     content_hash = _content_hash(title)
 
     existing = conn.execute(
-        "SELECT id FROM innovation_signals WHERE content_hash = ?",
+        "SELECT id FROM innovation_signals WHERE content_hash = %s",
         (content_hash,),
     ).fetchone()
     if existing:
@@ -229,8 +229,8 @@ def _register_innovation_signal(
             (id, source, source_type, title, description, url, metadata,
              community_score, content_hash, discovered_at, status,
              category, innovation_score, classification)
-        VALUES (?, 'tech_radar', 'technology_promotion', ?, ?, NULL, NULL,
-                ?, ?, ?, 'new', ?, ?, 'CUI // SP-CTI')
+        VALUES (%s, 'tech_radar', 'technology_promotion', %s, %s, NULL, NULL,
+                %s, %s, %s, 'new', %s, %s, 'CUI // SP-CTI')
         """,
         (
             signal_id,
@@ -383,7 +383,7 @@ class RadarEngine:
             rows = conn.execute(
                 """
                 SELECT * FROM tech_radar_entries
-                WHERE  current_ring = ?
+                WHERE  current_ring = %s
                 ORDER  BY composite_score DESC
                 """,
                 (ring,),

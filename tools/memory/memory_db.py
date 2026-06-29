@@ -45,7 +45,7 @@ def search(query, limit=10, user_id=None, tenant_id=None):
 
     # Log the access
     c.execute(
-        "INSERT INTO memory_access_log (query, results_count, search_type) VALUES (?, ?, ?)",
+        "INSERT INTO memory_access_log (query, results_count, search_type) VALUES (%s, %s, %s)",
         (query, len(results), "keyword"),
     )
     conn.commit()

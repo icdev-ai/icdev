@@ -31,7 +31,7 @@ def import_ndc_topology(topology_id: str) -> dict:
 
         with ndc_conn() as conn:
             row = conn.execute(
-                "SELECT id, name, graph_json FROM topologies WHERE id=?",
+                "SELECT id, name, graph_json FROM topologies WHERE id=%s",
                 (topology_id,),
             ).fetchone()
         if not row:
@@ -51,7 +51,7 @@ def import_ndc_topology(topology_id: str) -> dict:
     # Check if design already exists for this topology
     with sc_conn() as sconn:
         existing = sconn.execute(
-            "SELECT id FROM security_designs WHERE source_topology_id=?",
+            "SELECT id FROM security_designs WHERE source_topology_id=%s",
             (topology_id,),
         ).fetchone()
 
@@ -60,7 +60,7 @@ def import_ndc_topology(topology_id: str) -> dict:
         if existing:
             design_id = existing[0]
             sconn.execute(
-                "UPDATE security_designs SET graph_json=?, updated_at=? WHERE id=?",
+                "UPDATE security_designs SET graph_json=%s, updated_at=%s WHERE id=%s",
                 (json.dumps(sdc_graph), now, design_id),
             )
             action = "updated"
@@ -70,7 +70,7 @@ def import_ndc_topology(topology_id: str) -> dict:
                 "INSERT INTO security_designs "
                 "(id, name, description, graph_json, source_topology_id, "
                 "classification, created_at, updated_at) "
-                "VALUES (?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
                 (
                     design_id,
                     f"Security: {topo_name}",
@@ -206,7 +206,7 @@ def sync_ndc_compliance_to_sdc(
             findings = conn.execute(
                 "SELECT rule_id, severity, title, description, "
                 "affected_entity FROM nc_compliance_findings "
-                "WHERE topology_id=? AND status='open'",
+                "WHERE topology_id=%s AND status='open'",
                 (topology_id,),
             ).fetchall()
 
@@ -232,7 +232,7 @@ def sync_ndc_compliance_to_sdc(
                     "INSERT OR IGNORE INTO sc_threats "
                     "(id, design_id, threat_category, title, description, "
                     "likelihood, impact, status, created_at) "
-                    "VALUES (?,?,?,?,?,?,?,?,?)",
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                     (
                         threat_id,
                         design_id,
@@ -271,7 +271,7 @@ def push_sdc_remediation_to_ndc(
         with sc_conn() as sconn:
             plans = sconn.execute(
                 "SELECT remediation_steps FROM sc_remediation_plans "
-                "WHERE design_id=? AND status='open' "
+                "WHERE design_id=%s AND status='open' "
                 "ORDER BY created_at DESC LIMIT 1",
                 (design_id,),
             ).fetchone()

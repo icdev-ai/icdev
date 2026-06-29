@@ -657,7 +657,7 @@ class CodeAnalyzer:
                      import_count, class_count, function_count,
                      smells_json, smell_count, maintainability_score,
                      content_hash, scan_id)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                     (
                         _uid(),
                         m.get("project_id"),
@@ -707,11 +707,11 @@ class CodeAnalyzer:
                           COUNT(*) as metric_count,
                           MIN(created_at) as scan_date
                    FROM code_quality_metrics
-                   WHERE (?1 IS NULL OR project_id = ?1)
+                   WHERE (%s1 IS NULL OR project_id = %s1)
                      AND function_name IS NOT NULL
                    GROUP BY scan_id
                    ORDER BY scan_date DESC
-                   LIMIT ?2""",
+                   LIMIT %s2""",
                 (project_id, last_n),
             ).fetchall()
             return [

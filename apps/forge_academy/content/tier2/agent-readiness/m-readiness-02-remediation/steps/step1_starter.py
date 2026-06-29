@@ -1,5 +1,4 @@
 """STIG marker injector — adds V-ID comments to relevant functions."""
-import ast
 import pathlib
 import sys
 

@@ -31,7 +31,7 @@ def _get_connection(db_path=None):
 
 def _get_project(conn, project_id):
     """Load project data."""
-    row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+    row = conn.execute("SELECT * FROM projects WHERE id = %s", (project_id,)).fetchone()
     if not row:
         raise ValueError(f"Project '{project_id}' not found.")
     return dict(row)
@@ -85,7 +85,7 @@ def _log_audit_event(conn, project_id, action, details, file_path=None):
             """INSERT INTO audit_trail
                (project_id, event_type, actor, action, details,
                 affected_files, classification)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
             (
                 project_id,
                 "stig_checked",
@@ -474,16 +474,16 @@ def run_stig_check(
             # Upsert into stig_findings table
             existing = conn.execute(
                 """SELECT id FROM stig_findings
-                   WHERE project_id = ? AND stig_id = ? AND finding_id = ?""",
+                   WHERE project_id = %s AND stig_id = %s AND finding_id = %s""",
                 (project_id, stig_id, finding["finding_id"]),
             ).fetchone()
 
             if existing:
                 conn.execute(
                     """UPDATE stig_findings
-                       SET status = ?, comments = ?, assessed_by = ?,
-                           assessed_at = ?, updated_at = ?
-                       WHERE id = ?""",
+                       SET status = %s, comments = %s, assessed_by = %s,
+                           assessed_at = %s, updated_at = %s
+                       WHERE id = %s""",
                     (status, comments, "icdev-stig-checker", now.isoformat(), now.isoformat(), existing["id"]),
                 )
             else:
@@ -492,7 +492,7 @@ def run_stig_check(
                        (project_id, stig_id, finding_id, rule_id, severity,
                         title, description, check_content, fix_text,
                         status, comments, target_type, assessed_by, assessed_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                     (
                         project_id,
                         stig_id,

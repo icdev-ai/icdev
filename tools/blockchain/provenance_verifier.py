@@ -44,7 +44,7 @@ def verify_audit_integrity(entry_id: int, db_path: Path = None) -> dict:
     conn = _get_db(db_path)
     try:
         row = conn.execute(
-            "SELECT id, project_id, event_type, actor, action, details, classification, ip_address, session_id, created_at, hash, previous_hash, signature FROM audit_trail WHERE id = ?",
+            "SELECT id, project_id, event_type, actor, action, details, classification, ip_address, session_id, created_at, hash, previous_hash, signature FROM audit_trail WHERE id = %s",
             (entry_id,),
         ).fetchone()
 
@@ -81,7 +81,7 @@ def verify_audit_integrity(entry_id: int, db_path: Path = None) -> dict:
 
         # 2. Verify chain link
         prev_row = conn.execute(
-            "SELECT hash FROM audit_trail WHERE id = ?",
+            "SELECT hash FROM audit_trail WHERE id = %s",
             (entry_id - 1,),
         ).fetchone()
         prev_hash = prev_row["hash"] if prev_row and prev_row["hash"] else GENESIS_HASH
@@ -109,7 +109,7 @@ def verify_audit_integrity(entry_id: int, db_path: Path = None) -> dict:
 
         # 4. Check blockchain anchor
         reg = conn.execute(
-            "SELECT merkle_root, blockchain_tx_id FROM source_citation_registry WHERE source_table='audit_trail' AND source_record_id=?",
+            "SELECT merkle_root, blockchain_tx_id FROM source_citation_registry WHERE source_table='audit_trail' AND source_record_id=%s",
             (str(entry_id),),
         ).fetchone()
         if reg and reg["merkle_root"]:
@@ -128,7 +128,7 @@ def verify_citation(registry_id: str, db_path: Path = None) -> dict:
     conn = _get_db(db_path)
     try:
         row = conn.execute(
-            "SELECT * FROM source_citation_registry WHERE id = ?",
+            "SELECT * FROM source_citation_registry WHERE id = %s",
             (registry_id,),
         ).fetchone()
 
@@ -155,7 +155,7 @@ def verify_slsa_attestation(project_id: str, db_path: Path = None) -> dict:
     conn = _get_db(db_path)
     try:
         row = conn.execute(
-            "SELECT id, source_hash, merkle_root, blockchain_tx_id FROM source_citation_registry WHERE project_id = ? AND citation_type = 'slsa' ORDER BY created_at DESC LIMIT 1",
+            "SELECT id, source_hash, merkle_root, blockchain_tx_id FROM source_citation_registry WHERE project_id = %s AND citation_type = 'slsa' ORDER BY created_at DESC LIMIT 1",
             (project_id,),
         ).fetchone()
 
@@ -181,23 +181,23 @@ def generate_verification_report(project_id: str, db_path: Path = None) -> dict:
     try:
         # Count audit entries
         audit_total = conn.execute(
-            "SELECT COUNT(*) as cnt FROM audit_trail WHERE project_id = ?",
+            "SELECT COUNT(*) as cnt FROM audit_trail WHERE project_id = %s",
             (project_id,),
         ).fetchone()["cnt"]
 
         audit_hashed = conn.execute(
-            "SELECT COUNT(*) as cnt FROM audit_trail WHERE project_id = ? AND hash IS NOT NULL",
+            "SELECT COUNT(*) as cnt FROM audit_trail WHERE project_id = %s AND hash IS NOT NULL",
             (project_id,),
         ).fetchone()["cnt"]
 
         audit_signed = conn.execute(
-            "SELECT COUNT(*) as cnt FROM audit_trail WHERE project_id = ? AND signature IS NOT NULL",
+            "SELECT COUNT(*) as cnt FROM audit_trail WHERE project_id = %s AND signature IS NOT NULL",
             (project_id,),
         ).fetchone()["cnt"]
 
         # Count citations
         citations = conn.execute(
-            "SELECT * FROM source_citation_registry WHERE project_id = ?",
+            "SELECT * FROM source_citation_registry WHERE project_id = %s",
             (project_id,),
         ).fetchall()
 
@@ -212,7 +212,7 @@ def generate_verification_report(project_id: str, db_path: Path = None) -> dict:
 
         # Sample verification: check last 5 audit entries
         sample_ids = conn.execute(
-            "SELECT id FROM audit_trail WHERE project_id = ? ORDER BY id DESC LIMIT 5",
+            "SELECT id FROM audit_trail WHERE project_id = %s ORDER BY id DESC LIMIT 5",
             (project_id,),
         ).fetchall()
         sample_results = [verify_audit_integrity(r["id"], db_path) for r in sample_ids]

@@ -92,7 +92,7 @@ def verify_loop_processes(loop_id: str, db_path: Optional[Path] = None) -> Dict[
     """
     conn = _get_db(db_path)
     try:
-        loop = conn.execute("SELECT * FROM workflow_loops WHERE id = ?", (loop_id,)).fetchone()
+        loop = conn.execute("SELECT * FROM workflow_loops WHERE id = %s", (loop_id,)).fetchone()
         if not loop:
             return {"error": f"Loop {loop_id} not found"}
 
@@ -115,8 +115,8 @@ def verify_loop_processes(loop_id: str, db_path: Optional[Path] = None) -> Dict[
             try:
                 evidence = conn.execute(
                     """SELECT action, created_at FROM audit_trail
-                       WHERE event_type LIKE ? AND project_id = ?
-                       AND created_at >= ?
+                       WHERE event_type LIKE %s AND project_id = %s
+                       AND created_at >= %s
                        ORDER BY created_at DESC LIMIT 1""",
                     (f"%{proc}%", project_id, since),
                 ).fetchone()
@@ -192,8 +192,8 @@ def check_project_processes(
             try:
                 evidence = conn.execute(
                     """SELECT action, created_at FROM audit_trail
-                       WHERE event_type LIKE ? AND project_id = ?
-                       AND created_at >= ?
+                       WHERE event_type LIKE %s AND project_id = %s
+                       AND created_at >= %s
                        ORDER BY created_at DESC LIMIT 1""",
                     (f"%{proc}%", project_id, since),
                 ).fetchone()

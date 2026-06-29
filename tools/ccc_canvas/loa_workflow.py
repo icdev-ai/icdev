@@ -9,7 +9,7 @@ def _next_loa_number(conn) -> str:
     ts = datetime.now(timezone.utc).strftime("%Y%m")
     try:
         row = conn.execute(
-            "SELECT COUNT(*) FROM ccc_loa_requests WHERE loa_number LIKE ?",
+            "SELECT COUNT(*) FROM ccc_loa_requests WHERE loa_number LIKE %s",
             (f"LOA-{ts}-%",),
         ).fetchone()
     except Exception:
@@ -54,7 +54,7 @@ def create_loa_request(conn, data: dict) -> dict:
 def generate_loa_text(conn, loa_id: int) -> str:
     """Generate a plain-text LOA document from a request record."""
     try:
-        row = conn.execute("SELECT * FROM ccc_loa_requests WHERE id=?", (loa_id,)).fetchone()
+        row = conn.execute("SELECT * FROM ccc_loa_requests WHERE id=%s", (loa_id,)).fetchone()
     except Exception:
         row = conn.execute("SELECT * FROM ccc_loa_requests WHERE id=%s", (loa_id,)).fetchone()
     if not row:
@@ -103,7 +103,7 @@ def generate_loa_for_facility(conn, loa_id: int, facility_type: str) -> str:
         return generate_loa_text(conn, loa_id)
 
     try:
-        row = conn.execute("SELECT * FROM ccc_loa_requests WHERE id=?", (loa_id,)).fetchone()
+        row = conn.execute("SELECT * FROM ccc_loa_requests WHERE id=%s", (loa_id,)).fetchone()
     except Exception:
         row = conn.execute("SELECT * FROM ccc_loa_requests WHERE id=%s", (loa_id,)).fetchone()
     if not row:

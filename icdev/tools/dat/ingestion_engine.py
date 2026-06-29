@@ -281,7 +281,7 @@ def _persist_audit(manifest: dict, db_path: Path, audit_table: str, dry_run: boo
             f"INSERT INTO {audit_table} "  # nosec B608 — table name validated against allowlist above
             "(id, run_at, config_path, state_dept_count, unsc_count, "
             "backchannel_count, total_count, status, manifest_path, detail_json) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 manifest["manifest_id"],
                 manifest["run_at"],

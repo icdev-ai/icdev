@@ -170,8 +170,8 @@ def _already_open(conn, device_name: str, alarm_type: str) -> bool:
     except Exception:
         try:
             row = conn.execute(
-                """SELECT id FROM noc_alarms WHERE device_name=?
-                   AND alarm_type=? AND cleared=0 LIMIT 1""",
+                """SELECT id FROM noc_alarms WHERE device_name=%s
+                   AND alarm_type=%s AND cleared=0 LIMIT 1""",
                 (device_name, alarm_type),
             ).fetchone()
         except Exception:

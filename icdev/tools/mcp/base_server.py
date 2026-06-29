@@ -25,7 +25,7 @@ logging.basicConfig(
 )
 logger = get_logger("mcp.base")
 
-PROTOCOL_VERSION = "2024-11-05"
+PROTOCOL_VERSION = "2025-11-25"
 
 
 class MCPServer:
@@ -168,12 +168,9 @@ class MCPServer:
             return None
 
     def _write_message(self, obj: dict) -> None:
-        """Write a Content-Length-framed JSON-RPC message to stdout."""
+        """Write a newline-delimited JSON message to stdout (MCP 2025 NDJSON transport)."""
         body = json.dumps(obj, separators=(",", ":"), ensure_ascii=False)
-        body_bytes = body.encode("utf-8")
-        header = f"Content-Length: {len(body_bytes)}\r\n\r\n"
-        sys.stdout.buffer.write(header.encode("utf-8"))
-        sys.stdout.buffer.write(body_bytes)
+        sys.stdout.buffer.write((body + "\n").encode("utf-8"))
         sys.stdout.buffer.flush()
 
     # ------------------------------------------------------------------

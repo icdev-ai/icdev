@@ -86,7 +86,7 @@ def _log_audit(event_type: str, gkp_id: str = None, details: Dict = None) -> Non
             """
             INSERT INTO genesis_audit
                 (id, event_type, reflex_name, details, gkp_id, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s)
         """,
             (
                 f"aud-{uuid.uuid4().hex[:10]}",
@@ -147,7 +147,7 @@ def _check_duplicate(payload_hash: str, artifact_type: str) -> Optional[str]:
         row = conn.execute(
             """
             SELECT id FROM genesis_gkp
-            WHERE sha256 = ? AND artifact_type = ?
+            WHERE sha256 = %s AND artifact_type = %s
               AND promotion_status NOT IN ('rejected', 'dedup_skipped')
         """,
             (payload_hash, artifact_type),
@@ -190,7 +190,7 @@ def export_gkp(
             INSERT INTO genesis_gkp
                 (id, gkp_version, artifact_type, genesis_reflex, confidence,
                  evidence, payload, sha256, promotion_status, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """,
             (
                 gkp_id,
@@ -247,7 +247,7 @@ def promote_gkp(gkp_id: str, auto: bool = False) -> Dict[str, Any]:
     """
     conn = get_connection()
     try:
-        row = conn.execute("SELECT * FROM genesis_gkp WHERE id = ?", (gkp_id,)).fetchone()
+        row = conn.execute("SELECT * FROM genesis_gkp WHERE id = %s", (gkp_id,)).fetchone()
         if not row:
             return {"error": f"GKP not found: {gkp_id}"}
 
@@ -292,8 +292,8 @@ def promote_gkp(gkp_id: str, auto: bool = False) -> Dict[str, Any]:
             new_status = STATUS_AUTO_PROMOTED if auto else STATUS_PROMOTED
             conn.execute(
                 """
-                UPDATE genesis_gkp SET promotion_status = ?, promoted_at = ?
-                WHERE id = ?
+                UPDATE genesis_gkp SET promotion_status = %s, promoted_at = %s
+                WHERE id = %s
             """,
                 (new_status, _utcnow_iso(), gkp_id),
             )
@@ -329,13 +329,13 @@ def reject_gkp(gkp_id: str, reason: str = "") -> Dict[str, Any]:
     """Reject a GKP — it will not be promoted."""
     conn = get_connection()
     try:
-        row = conn.execute("SELECT promotion_status FROM genesis_gkp WHERE id = ?", (gkp_id,)).fetchone()
+        row = conn.execute("SELECT promotion_status FROM genesis_gkp WHERE id = %s", (gkp_id,)).fetchone()
         if not row:
             return {"error": f"GKP not found: {gkp_id}"}
 
         conn.execute(
             """
-            UPDATE genesis_gkp SET promotion_status = ? WHERE id = ?
+            UPDATE genesis_gkp SET promotion_status = %s WHERE id = %s
         """,
             (STATUS_REJECTED, gkp_id),
         )
@@ -357,7 +357,7 @@ def auto_promote_eligible() -> List[Dict[str, Any]]:
     try:
         pending = conn.execute(
             """
-            SELECT * FROM genesis_gkp WHERE promotion_status = ?
+            SELECT * FROM genesis_gkp WHERE promotion_status = %s
             ORDER BY created_at ASC
         """,
             (STATUS_PENDING,),
@@ -448,7 +448,7 @@ def _import_research_signal(payload: Dict) -> Dict:
             INSERT INTO innovation_signals
                 (id, source, source_type, title, description, content_hash,
                  innovation_score, status, discovered_at, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """,
             (
                 signal_id,
@@ -480,7 +480,7 @@ def _import_compliance_knowledge(payload: Dict) -> Dict:
             """
             INSERT INTO dh_enrichment_cache
                 (id, source, query_hash, result_data, expires_at, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s)
         """,
             (
                 cache_id,
@@ -509,7 +509,7 @@ def _import_quality_baseline(payload: Dict) -> Dict:
                 (id, project_id, file_path, language, total_functions,
                  avg_cyclomatic, avg_cognitive, avg_nesting, avg_params,
                  avg_loc, maintainability_score, smells, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """,
             (
                 f"cqm-{uuid.uuid4().hex[:8]}",
@@ -546,7 +546,7 @@ def _import_proven_pattern(payload: Dict, confidence: float) -> Dict:
                 (id, pattern_type, pattern_signature, root_cause,
                  remediation, confidence, auto_healable, occurrence_count,
                  source, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """,
             (
                 pattern_id,
@@ -619,7 +619,7 @@ def _import_training_pair(payload: Dict) -> Dict:
             INSERT INTO ft_training_pairs
                 (id, dataset_id, instruction, input_text, output_text,
                  purpose, approved, source, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         """,
             (
                 pair_id,
@@ -656,15 +656,15 @@ def list_gkps(status: str = None, limit: int = 50) -> List[Dict]:
         if status:
             rows = conn.execute(
                 """
-                SELECT * FROM genesis_gkp WHERE promotion_status = ?
-                ORDER BY created_at DESC LIMIT ?
+                SELECT * FROM genesis_gkp WHERE promotion_status = %s
+                ORDER BY created_at DESC LIMIT %s
             """,
                 (status, limit),
             ).fetchall()
         else:
             rows = conn.execute(
                 """
-                SELECT * FROM genesis_gkp ORDER BY created_at DESC LIMIT ?
+                SELECT * FROM genesis_gkp ORDER BY created_at DESC LIMIT %s
             """,
                 (limit,),
             ).fetchall()

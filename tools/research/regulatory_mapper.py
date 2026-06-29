@@ -426,7 +426,7 @@ def map_regulatory_signals(session_id, db_path=None):
         # Get all regulatory signals for this session
         rows = conn.execute(
             """SELECT * FROM research_signals
-               WHERE session_id = ? AND source = 'regulatory_body'
+               WHERE session_id = %s AND source = 'regulatory_body'
                ORDER BY discovered_at ASC""",
             (session_id,),
         ).fetchall()
@@ -521,7 +521,7 @@ def map_regulatory_signals(session_id, db_path=None):
                     regulation_id, regulation_url, enforcement_actions, deadline,
                     nist_controls, icdev_frameworks, crosswalk_coverage,
                     gap_analysis, metadata, mapped_at, classification)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'CUI')""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'CUI')""",
                 (
                     map_id,
                     session_id,
@@ -594,7 +594,7 @@ def map_challenge_regulations(challenge_id, session_id, db_path=None):
     conn = _get_db(db_path)
     try:
         # Get challenge from DB
-        challenge_row = conn.execute("SELECT * FROM research_challenges WHERE id = ?", (challenge_id,)).fetchone()
+        challenge_row = conn.execute("SELECT * FROM research_challenges WHERE id = %s", (challenge_id,)).fetchone()
         if not challenge_row:
             return {"error": f"Challenge not found: {challenge_id}"}
 
@@ -615,7 +615,7 @@ def map_challenge_regulations(challenge_id, session_id, db_path=None):
         # Get all regulatory maps for this session (unlinked to a challenge)
         reg_maps = conn.execute(
             """SELECT * FROM research_regulatory_map
-               WHERE session_id = ?
+               WHERE session_id = %s
                ORDER BY mapped_at ASC""",
             (session_id,),
         ).fetchall()
@@ -654,8 +654,8 @@ def map_challenge_regulations(challenge_id, session_id, db_path=None):
             if match_count >= 1:
                 conn.execute(
                     """UPDATE research_regulatory_map
-                       SET challenge_id = ?
-                       WHERE id = ? AND (challenge_id IS NULL OR challenge_id = '')""",
+                       SET challenge_id = %s
+                       WHERE id = %s AND (challenge_id IS NULL OR challenge_id = '')""",
                     (challenge_id, reg["id"]),
                 )
                 linked += 1
@@ -703,7 +703,7 @@ def get_regulatory_landscape(session_id, db_path=None):
     try:
         rows = conn.execute(
             """SELECT * FROM research_regulatory_map
-               WHERE session_id = ?
+               WHERE session_id = %s
                ORDER BY regulatory_body ASC""",
             (session_id,),
         ).fetchall()
@@ -787,7 +787,7 @@ def get_challenge_regulations(challenge_id, db_path=None):
     try:
         rows = conn.execute(
             """SELECT * FROM research_regulatory_map
-               WHERE challenge_id = ?
+               WHERE challenge_id = %s
                ORDER BY mapped_at ASC""",
             (challenge_id,),
         ).fetchall()

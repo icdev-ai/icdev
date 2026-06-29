@@ -123,7 +123,7 @@ def _get_pii_cols(conn: Any, table: str) -> list[str]:
     else:
         rows = conn.execute(
             "SELECT column_name FROM information_schema.columns "
-            "WHERE table_schema = 'public' AND table_name = ?",
+            "WHERE table_schema = 'public' AND table_name = %s",
             (table,),
         ).fetchall()
         cols = {row[0] for row in rows}
@@ -169,7 +169,7 @@ def erase_tenant_data(
             set_sql = ", ".join(f"{col} = NULL" for col in pii_cols)
             try:
                 cur = conn.execute(
-                    f"UPDATE {table} SET {set_sql} WHERE tenant_id = ?",
+                    f"UPDATE {table} SET {set_sql} WHERE tenant_id = %s",
                     (tenant_id,),
                 )
                 if getattr(cur, "rowcount", 0) > 0:
@@ -184,7 +184,7 @@ def erase_tenant_data(
         conn.execute(
             "INSERT INTO erasure_audit "
             "(id, tenant_id, requested_by, scope, tables_affected, completed_at) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s)",
             (
                 erasure_id,
                 tenant_id,

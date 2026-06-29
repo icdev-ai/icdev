@@ -217,7 +217,7 @@ def _fetch_top_values(ctx: _ProfileCtx, safe_col: str, safe_table: str) -> list[
     else:
         cur = ctx.conn.execute(
             f"SELECT {safe_col}, COUNT(*) AS cnt FROM {safe_table} WHERE {safe_col} IS NOT NULL "  # nosec B608
-            f"GROUP BY {safe_col} ORDER BY cnt DESC LIMIT ?", (limit,),
+            f"GROUP BY {safe_col} ORDER BY cnt DESC LIMIT %s", (limit,),
         )
     return [{"value": str(r[0]), "count": r[1]} for r in cur.fetchall()]
 

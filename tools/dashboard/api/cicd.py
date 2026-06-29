@@ -45,8 +45,8 @@ def list_pipelines():
             rows = conn.execute(
                 "SELECT id, session_key, run_id, platform, workflow, status, "
                 "trigger_source, created_at, completed_at "
-                "FROM ci_pipeline_runs WHERE status = ? "
-                "ORDER BY created_at DESC LIMIT ?",
+                "FROM ci_pipeline_runs WHERE status = %s "
+                "ORDER BY created_at DESC LIMIT %s",
                 (status_filter, limit),
             ).fetchall()
         else:
@@ -54,7 +54,7 @@ def list_pipelines():
                 "SELECT id, session_key, run_id, platform, workflow, status, "
                 "trigger_source, created_at, completed_at "
                 "FROM ci_pipeline_runs "
-                "ORDER BY created_at DESC LIMIT ?",
+                "ORDER BY created_at DESC LIMIT %s",
                 (limit,),
             ).fetchall()
 
@@ -82,7 +82,7 @@ def pipeline_detail(run_id):
     conn = _get_db()
     try:
         pipeline = conn.execute(
-            "SELECT * FROM ci_pipeline_runs WHERE run_id = ?",
+            "SELECT * FROM ci_pipeline_runs WHERE run_id = %s",
             (run_id,),
         ).fetchone()
 
@@ -94,7 +94,7 @@ def pipeline_detail(run_id):
         # Fetch recovery attempts from audit trail
         try:
             recovery = conn.execute(
-                "SELECT * FROM audit_trail WHERE event_type = 'ci.recovery' AND project_id = ? ORDER BY created_at ASC",
+                "SELECT * FROM audit_trail WHERE event_type = 'ci.recovery' AND project_id = %s ORDER BY created_at ASC",
                 (run_id,),
             ).fetchall()
             result["recovery_attempts"] = [dict(r) for r in recovery]
@@ -104,13 +104,13 @@ def pipeline_detail(run_id):
         # Fetch conversation if exists
         try:
             conversation = conn.execute(
-                "SELECT * FROM ci_conversations WHERE run_id = ? ORDER BY created_at DESC LIMIT 1",
+                "SELECT * FROM ci_conversations WHERE run_id = %s ORDER BY created_at DESC LIMIT 1",
                 (run_id,),
             ).fetchone()
             if conversation:
                 conv = dict(conversation)
                 turns = conn.execute(
-                    "SELECT * FROM ci_conversation_turns WHERE session_id = ? ORDER BY turn_number ASC",
+                    "SELECT * FROM ci_conversation_turns WHERE session_id = %s ORDER BY turn_number ASC",
                     (conv["id"],),
                 ).fetchall()
                 conv["turns"] = [dict(t) for t in turns]
@@ -131,7 +131,7 @@ def conversation_view(session_key):
     conn = _get_db()
     try:
         conversation = conn.execute(
-            "SELECT * FROM ci_conversations WHERE session_key = ? ORDER BY created_at DESC LIMIT 1",
+            "SELECT * FROM ci_conversations WHERE session_key = %s ORDER BY created_at DESC LIMIT 1",
             (session_key,),
         ).fetchone()
 
@@ -140,7 +140,7 @@ def conversation_view(session_key):
 
         conv = dict(conversation)
         turns = conn.execute(
-            "SELECT * FROM ci_conversation_turns WHERE session_id = ? ORDER BY turn_number ASC",
+            "SELECT * FROM ci_conversation_turns WHERE session_id = %s ORDER BY turn_number ASC",
             (conv["id"],),
         ).fetchall()
         conv["turns"] = [dict(t) for t in turns]
@@ -197,7 +197,7 @@ def event_queue(session_key):
         rows = conn.execute(
             "SELECT id, session_key, event_id, status, created_at, processed_at "
             "FROM ci_event_queue "
-            "WHERE session_key = ? ORDER BY created_at ASC",
+            "WHERE session_key = %s ORDER BY created_at ASC",
             (session_key,),
         ).fetchall()
 

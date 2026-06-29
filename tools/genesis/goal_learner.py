@@ -187,7 +187,7 @@ def _log_audit(event_type: str, goal_id: str = None, details: Dict = None) -> No
             """
             INSERT INTO genesis_audit
                 (id, event_type, reflex_name, details, gkp_id, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s)
             """,
             (
                 f"aud-{uuid.uuid4().hex[:10]}",
@@ -355,11 +355,11 @@ def _collect_novel_events(lookback_days: int = 7, max_events: int = 500) -> List
             """
             SELECT id, event_type, reflex_name, details, created_at
             FROM genesis_audit
-            WHERE created_at >= ?
+            WHERE created_at >= %s
               AND success IS NOT 0
               AND event_type NOT LIKE 'genesis.promoter.%'
             ORDER BY created_at DESC
-            LIMIT ?
+            LIMIT %s
             """,
             (cutoff, max_events),
         ).fetchall()
@@ -386,9 +386,9 @@ def _collect_kanban_completions(lookback_days: int = 7, max_completions: int = 2
             FROM kanban_tasks
             WHERE status = 'done'
               AND completed_at IS NOT NULL
-              AND completed_at >= ?
+              AND completed_at >= %s
             ORDER BY completed_at DESC
-            LIMIT ?
+            LIMIT %s
             """,
             (cutoff, max_completions),
         ).fetchall()
@@ -808,7 +808,7 @@ def _store_generated_goal(
                 (id, version, domain_label, title, slug, novelty_score,
                  quality_score, evidence_count, keywords, goal_markdown,
                  sha256, status, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 goal_id,
@@ -847,7 +847,7 @@ def _check_duplicate_domain(domain_label: str) -> Optional[str]:
         row = conn.execute(
             """
             SELECT id FROM genesis_generated_goals
-            WHERE domain_label = ? AND status IN ('suggested', 'approved')
+            WHERE domain_label = %s AND status IN ('suggested', 'approved')
             LIMIT 1
             """,
             (domain_label,),
@@ -961,7 +961,7 @@ def scan_and_generate(
             conn = get_connection()
             try:
                 conn.execute(
-                    "UPDATE genesis_generated_goals SET goal_file_path = ?, updated_at = ? WHERE id = ?",
+                    "UPDATE genesis_generated_goals SET goal_file_path = %s, updated_at = %s WHERE id = %s",
                     (goal_file_path, _utcnow_iso(), goal_id),
                 )
                 conn.commit()
@@ -1041,9 +1041,9 @@ def list_generated_goals(status: str = None, limit: int = 50) -> List[Dict[str, 
                        quality_score, evidence_count, status, goal_file_path,
                        gkp_id, created_at, updated_at
                 FROM genesis_generated_goals
-                WHERE status = ?
+                WHERE status = %s
                 ORDER BY quality_score DESC, created_at DESC
-                LIMIT ?
+                LIMIT %s
                 """,
                 (status, limit),
             ).fetchall()
@@ -1055,7 +1055,7 @@ def list_generated_goals(status: str = None, limit: int = 50) -> List[Dict[str, 
                        gkp_id, created_at, updated_at
                 FROM genesis_generated_goals
                 ORDER BY quality_score DESC, created_at DESC
-                LIMIT ?
+                LIMIT %s
                 """,
                 (limit,),
             ).fetchall()
@@ -1070,7 +1070,7 @@ def get_goal_detail(goal_id: str) -> Optional[Dict[str, Any]]:
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT * FROM genesis_generated_goals WHERE id = ?", (goal_id,)
+            "SELECT * FROM genesis_generated_goals WHERE id = %s", (goal_id,)
         ).fetchone()
         return dict(row) if row else None
     finally:
@@ -1087,7 +1087,7 @@ def approve_goal(goal_id: str) -> Dict[str, Any]:
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT * FROM genesis_generated_goals WHERE id = ?", (goal_id,)
+            "SELECT * FROM genesis_generated_goals WHERE id = %s", (goal_id,)
         ).fetchone()
         if not row:
             return {"error": f"Goal not found: {goal_id}"}
@@ -1149,9 +1149,9 @@ def approve_goal(goal_id: str) -> Dict[str, Any]:
         conn.execute(
             """
             UPDATE genesis_generated_goals
-            SET status = ?, approved_at = ?, goal_file_path = ?,
-                gkp_id = ?, updated_at = ?
-            WHERE id = ?
+            SET status = %s, approved_at = %s, goal_file_path = %s,
+                gkp_id = %s, updated_at = %s
+            WHERE id = %s
             """,
             (STATUS_APPROVED, now, f"goals/{slug}.md", gkp_id, now, goal_id),
         )
@@ -1180,7 +1180,7 @@ def reject_goal(goal_id: str, reason: str = "") -> Dict[str, Any]:
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT status FROM genesis_generated_goals WHERE id = ?", (goal_id,)
+            "SELECT status FROM genesis_generated_goals WHERE id = %s", (goal_id,)
         ).fetchone()
         if not row:
             return {"error": f"Goal not found: {goal_id}"}
@@ -1193,8 +1193,8 @@ def reject_goal(goal_id: str, reason: str = "") -> Dict[str, Any]:
         conn.execute(
             """
             UPDATE genesis_generated_goals
-            SET status = ?, rejection_reason = ?, rejected_at = ?, updated_at = ?
-            WHERE id = ?
+            SET status = %s, rejection_reason = %s, rejected_at = %s, updated_at = %s
+            WHERE id = %s
             """,
             (STATUS_REJECTED, reason, now, now, goal_id),
         )

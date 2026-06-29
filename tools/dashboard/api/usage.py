@@ -120,7 +120,7 @@ def usage_time_series():
                    SUM(cost_estimate_usd) as cost,
                    COUNT(*) as requests
                FROM agent_token_usage
-               WHERE created_at >= ?
+               WHERE created_at >= %s
                GROUP BY DATE(created_at)
                ORDER BY day""",
             (cutoff,),

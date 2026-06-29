@@ -35,7 +35,7 @@ def _create_job(db_path, project_id, source_language, target_language, source_pa
             """INSERT INTO translation_jobs
                (id, project_id, source_language, target_language,
                 source_path, output_path, status)
-               VALUES (?, ?, ?, ?, ?, ?, 'pending')""",
+               VALUES (%s, %s, %s, %s, %s, %s, 'pending')""",
             (job_id, project_id, source_language, target_language, str(source_path), str(output_dir)),
         )
         conn.commit()
@@ -62,7 +62,7 @@ def _update_job_status(db_path, job_id, status, **kwargs):
         values.append(job_id)
 
         c.execute(
-            f"UPDATE translation_jobs SET {', '.join(sets)} WHERE id = ?",  # nosec B608 -- table/column names are internal constants, not user input
+            f"UPDATE translation_jobs SET {', '.join(sets)} WHERE id = %s",  # nosec B608 -- table/column names are internal constants, not user input
             values,
         )
         conn.commit()

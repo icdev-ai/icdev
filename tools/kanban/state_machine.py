@@ -326,7 +326,7 @@ def transition(
         conn.execute(
             "INSERT INTO kanban_status_transitions "
             "(id, task_id, from_status, to_status, actor, reason, recorded_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (
                 "kst-" + _secrets.token_hex(6),
                 task_id,

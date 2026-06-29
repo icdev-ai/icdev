@@ -1212,7 +1212,7 @@ def _create_diagnostic_card_with_patch(
             conn.execute(
                 "INSERT INTO kanban_tasks "
                 "(id, title, description, task_type, priority, status, "
-                " created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                " created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
                 (new_id, title, body, "chore", "high", "suggested", now, now),
             )
             conn.commit()

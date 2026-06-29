@@ -240,13 +240,13 @@ def _store_updates(body, entries, db_path=None):
     try:
         for e in entries:
             chash = hashlib.sha256(f"{body}:{e['title']}".encode()).hexdigest()
-            if conn.execute("SELECT 1 FROM innovation_standards_updates WHERE content_hash=?", (chash,)).fetchone():
+            if conn.execute("SELECT 1 FROM innovation_standards_updates WHERE content_hash=%s", (chash,)).fetchone():
                 continue
             conn.execute(
                 "INSERT INTO innovation_standards_updates "
                 "(id,body,title,publication_type,url,abstract,published_date,"
                 "impact_assessment,status,content_hash,created_at) "
-                "VALUES (?,?,?,?,?,?,?,NULL,'new',?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,NULL,'new',%s,%s)",
                 (
                     f"upd-{uuid.uuid4().hex[:12]}",
                     body,
@@ -411,7 +411,7 @@ def assess_impact(update_id, db_path=None):
     _ensure_table(db_path)
     conn = _get_db(db_path)
     try:
-        row = conn.execute("SELECT * FROM innovation_standards_updates WHERE id=?", (update_id,)).fetchone()
+        row = conn.execute("SELECT * FROM innovation_standards_updates WHERE id=%s", (update_id,)).fetchone()
         if not row:
             return {"error": f"Update not found: {update_id}"}
         text = f"{row['title'] or ''} {row['abstract'] or ''}".lower()
@@ -476,7 +476,7 @@ def assess_impact(update_id, db_path=None):
             "assessed_at": now_iso(),
         }
         conn.execute(
-            "UPDATE innovation_standards_updates SET impact_assessment=?, status='assessed' WHERE id=?",
+            "UPDATE innovation_standards_updates SET impact_assessment=%s, status='assessed' WHERE id=%s",
             (json.dumps(assessment), update_id),
         )
         conn.commit()
@@ -507,7 +507,7 @@ def get_standards_report(days=30, db_path=None):
         cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
         rows = conn.execute(
             "SELECT body,status,COUNT(*) as count FROM innovation_standards_updates "
-            "WHERE created_at>=? GROUP BY body,status ORDER BY body",
+            "WHERE created_at>=%s GROUP BY body,status ORDER BY body",
             (cutoff,),
         ).fetchall()
         by_body, total = {}, 0
@@ -519,7 +519,7 @@ def get_standards_report(days=30, db_path=None):
         assessed_rows = conn.execute(
             "SELECT id,body,title,publication_type,impact_assessment "
             "FROM innovation_standards_updates "
-            "WHERE created_at>=? AND status='assessed' ORDER BY created_at DESC LIMIT 50",
+            "WHERE created_at>=%s AND status='assessed' ORDER BY created_at DESC LIMIT 50",
             (cutoff,),
         ).fetchall()
         assessed = []
@@ -538,7 +538,7 @@ def get_standards_report(days=30, db_path=None):
             )
         assessed.sort(key=lambda x: x["priority"], reverse=True)
         unassessed = conn.execute(
-            "SELECT COUNT(*) as c FROM innovation_standards_updates WHERE created_at>=? AND status='new'", (cutoff,)
+            "SELECT COUNT(*) as c FROM innovation_standards_updates WHERE created_at>=%s AND status='new'", (cutoff,)
         ).fetchone()["c"]
         return {
             "report_date": now_iso(),

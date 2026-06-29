@@ -32,7 +32,7 @@ def fetch_annotations_since(since_ts: str) -> List[Dict[str, Any]]:
         cursor = conn.execute(
             "SELECT id, signature_id, delta, reason, ts "
             "FROM sg_pattern_learner_log "
-            "WHERE ts >= ? "
+            "WHERE ts >= %s "
             "ORDER BY ts ASC",
             (since_ts,),
         )
@@ -72,7 +72,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         for sig_id, net_delta in net_deltas.items():
             conn.execute(
                 "INSERT INTO sg_pattern_learner_log (signature_id, delta, reason, ts) "
-                "VALUES (?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s)",
                 (sig_id, net_delta, "pattern_learner:24h-consolidation", now_ts),
             )
         conn.commit()

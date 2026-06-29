@@ -161,7 +161,7 @@ def _get_db():
 
 def _get_plan_info(conn, plan_id):
     """Fetch migration plan record and validate it exists."""
-    row = conn.execute("SELECT * FROM migration_plans WHERE id = ?", (plan_id,)).fetchone()
+    row = conn.execute("SELECT * FROM migration_plans WHERE id = %s", (plan_id,)).fetchone()
     if not row:
         raise ValueError(f"Migration plan '{plan_id}' not found in database.")
     return dict(row)
@@ -169,7 +169,7 @@ def _get_plan_info(conn, plan_id):
 
 def _get_legacy_app_project_id(conn, legacy_app_id):
     """Get the project_id for a legacy application."""
-    row = conn.execute("SELECT project_id FROM legacy_applications WHERE id = ?", (legacy_app_id,)).fetchone()
+    row = conn.execute("SELECT project_id FROM legacy_applications WHERE id = %s", (legacy_app_id,)).fetchone()
     if not row:
         raise ValueError(f"Legacy application '{legacy_app_id}' not found in database.")
     return row["project_id"]
@@ -187,7 +187,7 @@ def _log_audit(conn, project_id, event_type, action, details=None):
     conn.execute(
         """INSERT INTO audit_trail
            (project_id, event_type, actor, action, details, classification)
-           VALUES (?, ?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s, %s)""",
         (
             project_id,
             event_type,
@@ -248,7 +248,7 @@ def inherit_controls(legacy_app_id, plan_id):
                       cc.family, cc.title
                FROM project_controls pc
                LEFT JOIN compliance_controls cc ON pc.control_id = cc.id
-               WHERE pc.project_id = ?
+               WHERE pc.project_id = %s
                  AND pc.implementation_status IN ('implemented', 'partially_implemented')
                ORDER BY pc.control_id""",
             (project_id,),
@@ -268,9 +268,9 @@ def inherit_controls(legacy_app_id, plan_id):
                        (project_id, source_type, source_id,
                         target_type, target_id, link_type,
                         confidence, evidence, created_by, created_at)
-                       VALUES (?, 'nist_control', ?,
-                               'migration_task', ?, 'traces_to',
-                               ?, ?, 'compliance-bridge', ?)""",
+                       VALUES (%s, 'nist_control', %s,
+                               'migration_task', %s, 'traces_to',
+                               %s, %s, 'compliance-bridge', %s)""",
                     (
                         project_id,
                         control_id,
@@ -351,10 +351,10 @@ def distribute_controls(plan_id, service_map):
         inherited_rows = conn.execute(
             """SELECT source_id AS control_id
                FROM digital_thread_links
-               WHERE project_id = ?
+               WHERE project_id = %s
                  AND source_type = 'nist_control'
                  AND target_type = 'migration_task'
-                 AND target_id = ?
+                 AND target_id = %s
                  AND link_type = 'traces_to'""",
             (project_id, plan_id),
         ).fetchall()
@@ -371,7 +371,7 @@ def distribute_controls(plan_id, service_map):
             types_set = set()
             for comp_id in comp_ids:
                 row = conn.execute(
-                    "SELECT component_type FROM legacy_components WHERE id = ?",
+                    "SELECT component_type FROM legacy_components WHERE id = %s",
                     (comp_id,),
                 ).fetchone()
                 if row:
@@ -416,9 +416,9 @@ def distribute_controls(plan_id, service_map):
                            (project_id, source_type, source_id,
                             target_type, target_id, link_type,
                             confidence, evidence, created_by, created_at)
-                           VALUES (?, 'nist_control', ?,
-                                   'migration_task', ?, 'traces_to',
-                                   ?, ?, 'compliance-bridge', ?)""",
+                           VALUES (%s, 'nist_control', %s,
+                                   'migration_task', %s, 'traces_to',
+                                   %s, %s, 'compliance-bridge', %s)""",
                         (
                             project_id,
                             control_id,
@@ -499,10 +499,10 @@ def identify_ato_gaps(plan_id):
         inherited_rows = conn.execute(
             """SELECT source_id AS control_id
                FROM digital_thread_links
-               WHERE project_id = ?
+               WHERE project_id = %s
                  AND source_type = 'nist_control'
                  AND target_type = 'migration_task'
-                 AND target_id = ?
+                 AND target_id = %s
                  AND link_type = 'traces_to'""",
             (project_id, plan_id),
         ).fetchall()
@@ -512,10 +512,10 @@ def identify_ato_gaps(plan_id):
         distributed_rows = conn.execute(
             """SELECT source_id AS control_id
                FROM digital_thread_links
-               WHERE project_id = ?
+               WHERE project_id = %s
                  AND source_type = 'nist_control'
                  AND target_type = 'migration_task'
-                 AND target_id LIKE ?
+                 AND target_id LIKE %s
                  AND link_type = 'traces_to'""",
             (project_id, f"{plan_id}::%"),
         ).fetchall()
@@ -541,7 +541,7 @@ def identify_ato_gaps(plan_id):
 
             # Get control metadata
             ctrl_row = conn.execute(
-                "SELECT title, description FROM compliance_controls WHERE id = ?",
+                "SELECT title, description FROM compliance_controls WHERE id = %s",
                 (control_id,),
             ).fetchone()
             title = ctrl_row["title"] if ctrl_row else "Unknown"
@@ -562,7 +562,7 @@ def identify_ato_gaps(plan_id):
             impl_row = conn.execute(
                 """SELECT implementation_description
                    FROM project_controls
-                   WHERE project_id = ? AND control_id = ?""",
+                   WHERE project_id = %s AND control_id = %s""",
                 (project_id, control_id),
             ).fetchone()
 
@@ -638,7 +638,7 @@ def generate_ato_impact_report(plan_id, output_dir=None):
 
         # Gather legacy app info
         app_row = conn.execute(
-            "SELECT name FROM legacy_applications WHERE id = ?",
+            "SELECT name FROM legacy_applications WHERE id = %s",
             (legacy_app_id,),
         ).fetchone()
         app_name = app_row["name"] if app_row else legacy_app_id
@@ -647,10 +647,10 @@ def generate_ato_impact_report(plan_id, output_dir=None):
         inherited_rows = conn.execute(
             """SELECT source_id AS control_id
                FROM digital_thread_links
-               WHERE project_id = ?
+               WHERE project_id = %s
                  AND source_type = 'nist_control'
                  AND target_type = 'migration_task'
-                 AND target_id = ?
+                 AND target_id = %s
                  AND link_type = 'traces_to'""",
             (project_id, plan_id),
         ).fetchall()
@@ -663,10 +663,10 @@ def generate_ato_impact_report(plan_id, output_dir=None):
         distributed_rows = conn.execute(
             """SELECT DISTINCT source_id AS control_id
                FROM digital_thread_links
-               WHERE project_id = ?
+               WHERE project_id = %s
                  AND source_type = 'nist_control'
                  AND target_type = 'migration_task'
-                 AND target_id LIKE ?
+                 AND target_id LIKE %s
                  AND link_type = 'traces_to'""",
             (project_id, f"{plan_id}::%"),
         ).fetchall()
@@ -941,7 +941,7 @@ def create_compliance_thread(plan_id):
 
         # Get all migration tasks for this plan
         tasks = conn.execute(
-            "SELECT * FROM migration_tasks WHERE plan_id = ?",
+            "SELECT * FROM migration_tasks WHERE plan_id = %s",
             (plan_id,),
         ).fetchall()
 
@@ -960,9 +960,9 @@ def create_compliance_thread(plan_id):
                            (project_id, source_type, source_id,
                             target_type, target_id, link_type,
                             confidence, evidence, created_by, created_at)
-                           VALUES (?, 'legacy_component', ?,
-                                   'migration_task', ?, 'migrates_to',
-                                   1.0, ?, 'compliance-bridge', ?)""",
+                           VALUES (%s, 'legacy_component', %s,
+                                   'migration_task', %s, 'migrates_to',
+                                   1.0, %s, 'compliance-bridge', %s)""",
                         (
                             project_id,
                             comp_id,
@@ -985,9 +985,9 @@ def create_compliance_thread(plan_id):
                            (project_id, source_type, source_id,
                             target_type, target_id, link_type,
                             confidence, evidence, created_by, created_at)
-                           VALUES (?, 'migration_task', ?,
-                                   'code_module', ?, 'implements',
-                                   0.9, ?, 'compliance-bridge', ?)""",
+                           VALUES (%s, 'migration_task', %s,
+                                   'code_module', %s, 'implements',
+                                   0.9, %s, 'compliance-bridge', %s)""",
                         (
                             project_id,
                             task_id,
@@ -1005,10 +1005,10 @@ def create_compliance_thread(plan_id):
                 distributed = conn.execute(
                     """SELECT source_id AS control_id
                        FROM digital_thread_links
-                       WHERE project_id = ?
+                       WHERE project_id = %s
                          AND source_type = 'nist_control'
                          AND target_type = 'migration_task'
-                         AND target_id LIKE ?
+                         AND target_id LIKE %s
                          AND link_type = 'traces_to'""",
                     (project_id, f"{plan_id}::%"),
                 ).fetchall()
@@ -1020,9 +1020,9 @@ def create_compliance_thread(plan_id):
                                (project_id, source_type, source_id,
                                 target_type, target_id, link_type,
                                 confidence, evidence, created_by, created_at)
-                               VALUES (?, 'code_module', ?,
-                                       'nist_control', ?, 'satisfies',
-                                       0.8, ?, 'compliance-bridge', ?)""",
+                               VALUES (%s, 'code_module', %s,
+                                       'nist_control', %s, 'satisfies',
+                                       0.8, %s, 'compliance-bridge', %s)""",
                             (
                                 project_id,
                                 code_module_id,
@@ -1039,10 +1039,10 @@ def create_compliance_thread(plan_id):
         inherited_rows = conn.execute(
             """SELECT source_id AS control_id
                FROM digital_thread_links
-               WHERE project_id = ?
+               WHERE project_id = %s
                  AND source_type = 'nist_control'
                  AND target_type = 'migration_task'
-                 AND target_id = ?
+                 AND target_id = %s
                  AND link_type = 'traces_to'""",
             (project_id, plan_id),
         ).fetchall()
@@ -1051,7 +1051,7 @@ def create_compliance_thread(plan_id):
         satisfied_rows = conn.execute(
             """SELECT target_id AS control_id
                FROM digital_thread_links
-               WHERE project_id = ?
+               WHERE project_id = %s
                  AND source_type = 'code_module'
                  AND target_type = 'nist_control'
                  AND link_type = 'satisfies'""",
@@ -1118,7 +1118,7 @@ def validate_ato_coverage(plan_id):
         pre_rows = conn.execute(
             """SELECT control_id, implementation_status
                FROM project_controls
-               WHERE project_id = ?
+               WHERE project_id = %s
                  AND implementation_status IN ('implemented', 'partially_implemented')
                ORDER BY control_id""",
             (project_id,),
@@ -1134,10 +1134,10 @@ def validate_ato_coverage(plan_id):
         post_distributed = conn.execute(
             """SELECT DISTINCT source_id AS control_id
                FROM digital_thread_links
-               WHERE project_id = ?
+               WHERE project_id = %s
                  AND source_type = 'nist_control'
                  AND target_type = 'migration_task'
-                 AND (target_id = ? OR target_id LIKE ?)
+                 AND (target_id = %s OR target_id LIKE %s)
                  AND link_type = 'traces_to'""",
             (project_id, plan_id, f"{plan_id}::%"),
         ).fetchall()
@@ -1243,10 +1243,10 @@ def get_compliance_dashboard(plan_id):
         inherited_rows = conn.execute(
             """SELECT source_id AS control_id
                FROM digital_thread_links
-               WHERE project_id = ?
+               WHERE project_id = %s
                  AND source_type = 'nist_control'
                  AND target_type = 'migration_task'
-                 AND target_id = ?
+                 AND target_id = %s
                  AND link_type = 'traces_to'""",
             (project_id, plan_id),
         ).fetchall()
@@ -1257,10 +1257,10 @@ def get_compliance_dashboard(plan_id):
         distributed_rows = conn.execute(
             """SELECT DISTINCT source_id AS control_id
                FROM digital_thread_links
-               WHERE project_id = ?
+               WHERE project_id = %s
                  AND source_type = 'nist_control'
                  AND target_type = 'migration_task'
-                 AND target_id LIKE ?
+                 AND target_id LIKE %s
                  AND link_type = 'traces_to'""",
             (project_id, f"{plan_id}::%"),
         ).fetchall()

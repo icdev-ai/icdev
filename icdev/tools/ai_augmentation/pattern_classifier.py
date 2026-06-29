@@ -57,6 +57,8 @@ _AD_Z_SCORE_THRESHOLD: float = float(_threshold_ad_cfg.get("z_score_threshold", 
 _AD_IQR_MULTIPLIER: float = float(_threshold_ad_cfg.get("iqr_multiplier", 1.5))
 _AD_MIN_SAMPLE_SIZE: int = int(_threshold_ad_cfg.get("min_sample_size", 5))
 _AD_FALLBACK_TO_ALL: bool = bool(_threshold_ad_cfg.get("fallback_to_all", True))
+_AD_JAVA_STATIC_INT_MIN: int = int(_threshold_ad_cfg.get("java_static_int_min", 1))
+_KEYWORD_MIN_STRING_COUNT: int = 3
 
 _semgrep_cfg: dict[str, Any] = _cfg.get("semgrep", {})
 _SEMGREP_RULES_DIR: str = _semgrep_cfg.get(
@@ -226,34 +228,63 @@ def _collect_all_numeric_thresholds(tree: ast.AST) -> list[float]:
     return values
 
 
+class AnomalyThresholdDetector:
+    """Streaming anomaly detector for numeric observations."""
+
+    def __init__(self, min_samples: int = 5) -> None:
+        self.min_samples = min_samples
+        self._values: list[float] = []
+
+    def observe(self, value: float | int) -> None:
+        self._values.append(float(value))
+
+    def _mean_std(self) -> tuple[float, float]:
+        n = len(self._values)
+        mean = sum(self._values) / n
+        variance = sum((x - mean) ** 2 for x in self._values) / n
+        return mean, variance ** 0.5 if variance > 0 else 0.0
+
+    def score(self, value: float | int) -> float:
+        """Return an anomaly score in [0.0, 1.0]."""
+        if len(self._values) < self.min_samples:
+            return 0.0
+        mean, std = self._mean_std()
+        val = float(value)
+        if std > 0:
+            z = abs(val - mean) / std
+            return min(z / (_AD_Z_SCORE_THRESHOLD * 2.0), 1.0)
+        sorted_pop = sorted(self._values)
+        n = len(sorted_pop)
+        q1 = sorted_pop[n // 4]
+        q3 = sorted_pop[(3 * n) // 4]
+        iqr = q3 - q1
+        if iqr <= 0:
+            return 0.0
+        if val < q1:
+            return min((q1 - val) / (_AD_IQR_MULTIPLIER * iqr), 1.0)
+        if val > q3:
+            return min((val - q3) / (_AD_IQR_MULTIPLIER * iqr), 1.0)
+        return 0.0
+
+    def is_anomalous(self, value: float | int) -> bool:
+        if len(self._values) < self.min_samples:
+            return False
+        return self.score(value) >= 0.5
+
+
+def _score_threshold_anomaly(value: float, population: list[float]) -> float:
+    """Return a normalized anomaly score for value in population."""
+    detector = AnomalyThresholdDetector(min_samples=_AD_MIN_SAMPLE_SIZE)
+    for v in population:
+        detector.observe(v)
+    return detector.score(value)
+
+
 def _is_threshold_anomalous(value: float, population: list[float]) -> bool:
-    """Return True if value is a statistical outlier in population.
-
-    Uses z-score first; falls back to IQR fence when variance is zero.
-    When the population is too small, respects _AD_FALLBACK_TO_ALL.
-    """
-    n = len(population)
-    if n < _AD_MIN_SAMPLE_SIZE:
+    """Return True if value is a statistical outlier in population."""
+    if len(population) < _AD_MIN_SAMPLE_SIZE:
         return _AD_FALLBACK_TO_ALL
-
-    mean = sum(population) / n
-    variance = sum((x - mean) ** 2 for x in population) / n
-    if variance > 0:
-        z = abs(value - mean) / (variance ** 0.5)
-        if z > _AD_Z_SCORE_THRESHOLD:
-            return True
-
-    sorted_pop = sorted(population)
-    q1 = sorted_pop[n // 4]
-    q3 = sorted_pop[(3 * n) // 4]
-    iqr = q3 - q1
-    if iqr > 0:
-        lower = q1 - _AD_IQR_MULTIPLIER * iqr
-        upper = q3 + _AD_IQR_MULTIPLIER * iqr
-        if value < lower or value > upper:
-            return True
-
-    return False
+    return _score_threshold_anomaly(value, population) >= 0.5
 
 
 def _build_parent_map(tree: ast.AST) -> dict[int, ast.AST]:
@@ -701,6 +732,7 @@ def _detect_hardcoded_threshold(
             ]
             if not numeric_consts:
                 continue
+            anomaly_scores = [_score_threshold_anomaly(float(v), population) for v in numeric_consts]
             if _AD_ENABLED and not any(
                 _is_threshold_anomalous(float(v), population) for v in numeric_consts
             ):
@@ -715,6 +747,8 @@ def _detect_hardcoded_threshold(
                     "kind": "compare",
                     "constants": numeric_consts,
                     "anomaly_detected": _AD_ENABLED,
+                    "anomaly_scores": anomaly_scores,
+                    "max_anomaly_score": max(anomaly_scores) if anomaly_scores else 0.0,
                 },
             })
         elif isinstance(node, ast.BinOp):
@@ -729,6 +763,7 @@ def _detect_hardcoded_threshold(
             if not (left_const or right_const):
                 continue
             const_val = node.left.value if left_const else node.right.value  # type: ignore[union-attr]
+            score = _score_threshold_anomaly(float(const_val), population)
             if _AD_ENABLED and not _is_threshold_anomalous(float(const_val), population):
                 continue
             results.append({
@@ -742,6 +777,8 @@ def _detect_hardcoded_threshold(
                     "op": type(node.op).__name__,
                     "constants": [const_val],
                     "anomaly_detected": _AD_ENABLED,
+                    "anomaly_scores": [score],
+                    "max_anomaly_score": score,
                 },
             })
     return results
@@ -1110,6 +1147,35 @@ def _cs_detect_hardcoded_threshold_ts(fp: str, root: Any, src: bytes) -> list[di
     return results
 
 
+def _cs_collect_numeric_thresholds_ts(root: Any, src: bytes) -> list[float]:
+    """Collect numeric threshold constants from a C# tree-sitter tree."""
+    values: list[float] = []
+    _CMP_OPS: frozenset[str] = frozenset({"<", ">", "<=", ">=", "==", "!="})
+    for node, _parent_type, _scope in _cs_walk_scoped(root, src):
+        if node.type != "binary_expression":
+            continue
+        op_token: str | None = None
+        for child in node.children:
+            if not child.is_named:
+                text = src[child.start_byte:child.end_byte].decode(
+                    "utf-8", errors="replace"
+                ).strip()
+                if text in _CMP_OPS:
+                    op_token = text
+                    break
+        if not op_token:
+            continue
+        for child in node.children:
+            if child.is_named and child.type in ("integer_literal", "real_literal"):
+                try:
+                    values.append(
+                        float(src[child.start_byte:child.end_byte].decode("utf-8"))
+                    )
+                except ValueError:
+                    pass
+    return values
+
+
 def _cs_collect_calls_in_method(
     method_node: Any, src: bytes
 ) -> tuple[set[str], set[str]]:
@@ -1351,13 +1417,27 @@ def _cs_detect_via_regex(file_path: str, source_text: str) -> list[dict]:
         m = _CS_RE_THRESHOLD.search(line)
         if m:
             const = m.group(1) or m.group(2) or "?"
+            const_f = float(const) if const not in (None, "?") else None
+            if _AD_ENABLED and const_f is not None:
+                population = _cs_collect_numeric_thresholds_regex(source_text)
+                if not _is_threshold_anomalous(const_f, population):
+                    continue
             results.append({
                 "pattern_type": "hardcoded_threshold",
                 "module_path": file_path,
                 "function_name": "<unknown>",
                 "line_start": i,
                 "line_end": i,
-                "pattern_detail": {"kind": "binary_expression", "constants": [const]},
+                "pattern_detail": {
+                    "kind": "binary_expression",
+                    "constants": [const],
+                    "anomaly_detected": _AD_ENABLED,
+                    "anomaly_scores": [
+                        _score_threshold_anomaly(const_f, _cs_collect_numeric_thresholds_regex(source_text))
+                    ] if const_f is not None else [],
+                    "max_anomaly_score": _score_threshold_anomaly(const_f, _cs_collect_numeric_thresholds_regex(source_text))
+                        if const_f is not None else 0.0,
+                },
             })
 
         # keyword_list_search
@@ -1374,6 +1454,19 @@ def _cs_detect_via_regex(file_path: str, source_text: str) -> list[dict]:
     results.extend(_cs_regex_nested_ifs(file_path, lines))
     results.extend(_cs_regex_large_dict(file_path, lines))
     return results
+
+
+def _cs_collect_numeric_thresholds_regex(source_text: str) -> list[float]:
+    """Collect numeric threshold constants via the C# regex fallback."""
+    values: list[float] = []
+    for match in _CS_RE_THRESHOLD.finditer(source_text):
+        val = match.group(1) or match.group(2)
+        if val:
+            try:
+                values.append(float(val))
+            except ValueError:
+                pass
+    return values
 
 
 def _cs_detect_file(file_path: str) -> list[dict]:
@@ -1499,6 +1592,35 @@ def _java_detect_db_render_chain(file_path: str, lines: list[str]) -> list[dict]
     return results
 
 
+def _java_collect_numeric_thresholds(lines: list[str]) -> list[float]:
+    """Collect numeric threshold constants from Java source lines.
+
+    Captures Spring Data `PageRequest.of` page sizes and positive static int
+    constants that are commonly used as hardcoded thresholds.
+    """
+    values: list[float] = []
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("//") or stripped.startswith("*"):
+            continue
+        match = _JAVA_RE_PAGEREQUEST.search(line)
+        if match:
+            try:
+                values.append(float(match.group(1)))
+            except (ValueError, TypeError):
+                pass
+        else:
+            match = _JAVA_RE_STATIC_INT.search(line)
+            if match:
+                try:
+                    v = int(match.group(1))
+                    if v > 0:
+                        values.append(float(v))
+                except (ValueError, TypeError):
+                    pass
+    return values
+
+
 def _java_detect_via_regex(file_path: str, source_text: str) -> list[dict]:
     """Regex-based Java pattern detection for all 8 AAC pattern types."""
     results: list[dict] = []
@@ -1570,23 +1692,49 @@ def _java_detect_via_regex(file_path: str, source_text: str) -> list[dict]:
         # hardcoded_threshold — PageRequest literal or static int constant
         m = _JAVA_RE_PAGEREQUEST.search(line)
         if m:
-            results.append({
-                "pattern_type": "hardcoded_threshold",
-                "module_path": file_path,
-                "function_name": "<unknown>",
-                "line_start": i, "line_end": i,
-                "pattern_detail": {"kind": "PageRequest.of", "page_size": int(m.group(1))},
-            })
-        else:
-            m = _JAVA_RE_STATIC_INT.search(line)
-            if m and int(m.group(1)) > 0:
+            val = int(m.group(1))
+            if _AD_ENABLED and not _is_threshold_anomalous(float(val), _java_collect_numeric_thresholds(lines)):
+                pass
+            else:
                 results.append({
                     "pattern_type": "hardcoded_threshold",
                     "module_path": file_path,
                     "function_name": "<unknown>",
                     "line_start": i, "line_end": i,
-                    "pattern_detail": {"kind": "static_int_const", "value": int(m.group(1))},
+                    "pattern_detail": {
+                        "kind": "PageRequest.of",
+                        "page_size": val,
+                        "anomaly_detected": _AD_ENABLED,
+                        "anomaly_scores": [
+                            _score_threshold_anomaly(float(val), _java_collect_numeric_thresholds(lines))
+                        ],
+                        "max_anomaly_score": _score_threshold_anomaly(float(val), _java_collect_numeric_thresholds(lines)),
+                    },
                 })
+        else:
+            m = _JAVA_RE_STATIC_INT.search(line)
+            if m:
+                val = int(m.group(1))
+                if val <= 0:
+                    pass
+                elif _AD_ENABLED and not _is_threshold_anomalous(float(val), _java_collect_numeric_thresholds(lines)):
+                    pass
+                else:
+                    results.append({
+                        "pattern_type": "hardcoded_threshold",
+                        "module_path": file_path,
+                        "function_name": "<unknown>",
+                        "line_start": i, "line_end": i,
+                        "pattern_detail": {
+                            "kind": "static_int_const",
+                            "value": val,
+                            "anomaly_detected": _AD_ENABLED,
+                            "anomaly_scores": [
+                                _score_threshold_anomaly(float(val), _java_collect_numeric_thresholds(lines))
+                            ],
+                            "max_anomaly_score": _score_threshold_anomaly(float(val), _java_collect_numeric_thresholds(lines)),
+                        },
+                    })
 
         # keyword_list_search — Spring Data method or manual equalsIgnoreCase loop
         m = _JAVA_RE_FINDBY_KEYWORD.search(line)

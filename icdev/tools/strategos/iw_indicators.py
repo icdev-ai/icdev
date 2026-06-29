@@ -41,7 +41,7 @@ def create_indicator(
             "INSERT INTO sg_iw_indicators "
             "(id, name, description, coa_id, coa_name, weight, category, theater, "
             " status, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'not_observed', ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'not_observed', %s, %s)",
             (ind_id, name, description, coa_id, coa_name,
              weight, category, theater, now, now),
         )
@@ -68,7 +68,7 @@ def record_observation(
             "INSERT INTO sg_iw_observations "
             "(id, indicator_id, observed_status, source, notes, confidence, "
             " observed_at, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
             (obs_id, indicator_id, observed_status, source, notes, confidence, now, now),
         )
         conn.execute(

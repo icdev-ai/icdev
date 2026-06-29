@@ -363,7 +363,7 @@ class CrossPollinator:
                 existing_caps = conn.execute(
                     """SELECT DISTINCT child_id
                        FROM child_capabilities
-                       WHERE capability_name = ?
+                       WHERE capability_name = %s
                          AND status = 'active'""",
                     (beh_dict["description"][:200],),
                 ).fetchall()
@@ -493,7 +493,7 @@ class CrossPollinator:
             for tid in target_child_ids:
                 # Simple compatibility check: verify target exists
                 target = conn.execute(
-                    "SELECT id, child_name FROM child_app_registry WHERE id = ?",
+                    "SELECT id, child_name FROM child_app_registry WHERE id = %s",
                     (tid,),
                 ).fetchone()
                 if target:
@@ -513,7 +513,7 @@ class CrossPollinator:
                    (id, source_child_id, capability_name, target_child_ids,
                     proposed_by, status, compatibility_scores_json,
                     rationale, proposed_at, classification)
-                   VALUES (?, ?, ?, ?, ?, 'proposed', ?, ?, ?, 'CUI')""",
+                   VALUES (%s, %s, %s, %s, %s, 'proposed', %s, %s, %s, 'CUI')""",
                 (
                     proposal_id,
                     source_child_id,
@@ -534,8 +534,8 @@ class CrossPollinator:
                         source_child_id, target_child_id,
                         propagation_status, initiated_by,
                         initiated_at, classification)
-                       VALUES (?, 'cross_pollination', 'child_learned', ?, ?,
-                               'pending', ?, ?, 'CUI')""",
+                       VALUES (%s, 'cross_pollination', 'child_learned', %s, %s,
+                               'pending', %s, %s, 'CUI')""",
                     (
                         capability_name,
                         source_child_id,
@@ -590,7 +590,7 @@ class CrossPollinator:
         try:
             # Verify proposal exists and is in 'proposed' status
             row = conn.execute(
-                "SELECT * FROM cross_pollination_proposals WHERE id = ?",
+                "SELECT * FROM cross_pollination_proposals WHERE id = %s",
                 (proposal_id,),
             ).fetchone()
 
@@ -612,8 +612,8 @@ class CrossPollinator:
             # Update status to approved
             conn.execute(
                 """UPDATE cross_pollination_proposals
-                   SET status = 'approved', approver = ?, approved_at = ?
-                   WHERE id = ?""",
+                   SET status = 'approved', approver = %s, approved_at = %s
+                   WHERE id = %s""",
                 (approver, now, proposal_id),
             )
             conn.commit()
@@ -654,7 +654,7 @@ class CrossPollinator:
         try:
             # Fetch proposal
             row = conn.execute(
-                "SELECT * FROM cross_pollination_proposals WHERE id = ?",
+                "SELECT * FROM cross_pollination_proposals WHERE id = %s",
                 (proposal_id,),
             ).fetchone()
 
@@ -674,7 +674,7 @@ class CrossPollinator:
             conn.execute(
                 """UPDATE cross_pollination_proposals
                    SET status = 'executing'
-                   WHERE id = ?""",
+                   WHERE id = %s""",
                 (proposal_id,),
             )
             conn.commit()
@@ -715,8 +715,8 @@ class CrossPollinator:
                             """INSERT OR REPLACE INTO child_capabilities
                                (child_id, capability_name, version, status,
                                 source, learned_at, metadata, updated_at)
-                               VALUES (?, ?, '1.0.0', 'active', 'learned',
-                                       ?, ?, ?)""",
+                               VALUES (%s, %s, '1.0.0', 'active', 'learned',
+                                       %s, %s, %s)""",
                             (
                                 tid,
                                 capability_name,
@@ -735,10 +735,10 @@ class CrossPollinator:
                     # Update propagation_log for this target
                     conn.execute(
                         """UPDATE propagation_log
-                           SET propagation_status = 'success', completed_at = ?
-                           WHERE capability_name = ?
-                             AND source_child_id = ?
-                             AND target_child_id = ?
+                           SET propagation_status = 'success', completed_at = %s
+                           WHERE capability_name = %s
+                             AND source_child_id = %s
+                             AND target_child_id = %s
                              AND propagation_status = 'pending'""",
                         (now, capability_name, source_child_id, tid),
                     )
@@ -756,11 +756,11 @@ class CrossPollinator:
                     conn.execute(
                         """UPDATE propagation_log
                            SET propagation_status = 'failed',
-                               error_details = ?,
-                               completed_at = ?
-                           WHERE capability_name = ?
-                             AND source_child_id = ?
-                             AND target_child_id = ?
+                               error_details = %s,
+                               completed_at = %s
+                           WHERE capability_name = %s
+                             AND source_child_id = %s
+                             AND target_child_id = %s
                              AND propagation_status = 'pending'""",
                         (str(e), now, capability_name, source_child_id, tid),
                     )
@@ -769,8 +769,8 @@ class CrossPollinator:
             final_status = "completed" if all_success else "failed"
             conn.execute(
                 """UPDATE cross_pollination_proposals
-                   SET status = ?, executed_at = ?
-                   WHERE id = ?""",
+                   SET status = %s, executed_at = %s
+                   WHERE id = %s""",
                 (final_status, now, proposal_id),
             )
             conn.commit()

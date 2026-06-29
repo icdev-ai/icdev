@@ -76,7 +76,7 @@ def check_retrain_needed(
         # Get datasets to check
         if dataset_id:
             datasets = conn.execute(
-                "SELECT * FROM ft_datasets WHERE id = ? AND status IN ('ready', 'labeling')",
+                "SELECT * FROM ft_datasets WHERE id = %s AND status IN ('ready', 'labeling')",
                 (dataset_id,),
             ).fetchall()
         else:
@@ -103,7 +103,7 @@ def check_retrain_needed(
             # Find last completed training job for this dataset
             last_job = conn.execute(
                 """SELECT completed_at FROM ft_training_jobs
-                   WHERE dataset_id = ? AND status = 'completed'
+                   WHERE dataset_id = %s AND status = 'completed'
                    ORDER BY completed_at DESC LIMIT 1""",
                 (ds_id,),
             ).fetchone()
@@ -118,22 +118,22 @@ def check_retrain_needed(
             if last_trained_at:
                 new_count = conn.execute(
                     """SELECT COUNT(*) FROM ft_dataset_examples
-                       WHERE dataset_id = ? AND approved = 1
-                         AND created_at > ?""",
+                       WHERE dataset_id = %s AND approved = 1
+                         AND created_at > %s""",
                     (ds_id, last_trained_at),
                 ).fetchone()[0]
             else:
                 # Never trained — count all approved examples
                 new_count = conn.execute(
                     """SELECT COUNT(*) FROM ft_dataset_examples
-                       WHERE dataset_id = ? AND approved = 1""",
+                       WHERE dataset_id = %s AND approved = 1""",
                     (ds_id,),
                 ).fetchone()[0]
 
             # Check any active training jobs (don't re-trigger)
             active_job = conn.execute(
                 """SELECT id FROM ft_training_jobs
-                   WHERE dataset_id = ? AND status NOT IN ('completed', 'failed', 'canceled')
+                   WHERE dataset_id = %s AND status NOT IN ('completed', 'failed', 'canceled')
                    LIMIT 1""",
                 (ds_id,),
             ).fetchone()

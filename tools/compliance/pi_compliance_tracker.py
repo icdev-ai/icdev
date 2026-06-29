@@ -71,7 +71,7 @@ def _get_connection(db_path=None):
 
 def _verify_project(conn, project_id):
     """Verify project exists and return its data."""
-    row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+    row = conn.execute("SELECT * FROM projects WHERE id = %s", (project_id,)).fetchone()
     if not row:
         raise ValueError(f"Project '{project_id}' not found.")
     return dict(row)
@@ -83,7 +83,7 @@ def _log_audit(conn, project_id, action, details):
         conn.execute(
             """INSERT INTO audit_trail
                (project_id, event_type, actor, action, details, classification)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s)""",
             (
                 project_id,
                 "pi_compliance_updated",
@@ -108,7 +108,7 @@ def _count_implemented_controls(conn, project_id):
     rows = conn.execute(
         """SELECT implementation_status, COUNT(*) as cnt
            FROM project_controls
-           WHERE project_id = ?
+           WHERE project_id = %s
            GROUP BY implementation_status""",
         (project_id,),
     ).fetchall()
@@ -122,7 +122,7 @@ def _count_implemented_controls(conn, project_id):
 def _count_total_required_controls(conn, project_id):
     """Count total required controls for the project."""
     row = conn.execute(
-        "SELECT COUNT(*) as cnt FROM project_controls WHERE project_id = ?",
+        "SELECT COUNT(*) as cnt FROM project_controls WHERE project_id = %s",
         (project_id,),
     ).fetchone()
     return row["cnt"] if row else 0
@@ -133,7 +133,7 @@ def _count_open_poam_items(conn, project_id):
     rows = conn.execute(
         """SELECT status, COUNT(*) as cnt
            FROM poam_items
-           WHERE project_id = ?
+           WHERE project_id = %s
            GROUP BY status""",
         (project_id,),
     ).fetchall()
@@ -156,7 +156,7 @@ def _compute_compliance_score(conn, project_id):
     # SSP: 12%
     ssp_row = conn.execute(
         """SELECT status FROM ssp_documents
-           WHERE project_id = ? ORDER BY created_at DESC LIMIT 1""",
+           WHERE project_id = %s ORDER BY created_at DESC LIMIT 1""",
         (project_id,),
     ).fetchone()
     if ssp_row:
@@ -173,8 +173,8 @@ def _compute_compliance_score(conn, project_id):
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         overdue_row = conn.execute(
             """SELECT COUNT(*) as cnt FROM poam_items
-               WHERE project_id = ? AND status IN ('open', 'in_progress')
-               AND milestone_date < ? AND milestone_date IS NOT NULL""",
+               WHERE project_id = %s AND status IN ('open', 'in_progress')
+               AND milestone_date < %s AND milestone_date IS NOT NULL""",
             (project_id, today),
         ).fetchone()
         overdue = overdue_row["cnt"] if overdue_row else 0
@@ -186,7 +186,7 @@ def _compute_compliance_score(conn, project_id):
     # STIG: 15%
     stig_rows = conn.execute(
         """SELECT severity, status, COUNT(*) as cnt
-           FROM stig_findings WHERE project_id = ?
+           FROM stig_findings WHERE project_id = %s
            GROUP BY severity, status""",
         (project_id,),
     ).fetchall()
@@ -202,7 +202,7 @@ def _compute_compliance_score(conn, project_id):
 
     # SBOM: 6%
     sbom_row = conn.execute(
-        "SELECT id FROM sbom_records WHERE project_id = ? LIMIT 1",
+        "SELECT id FROM sbom_records WHERE project_id = %s LIMIT 1",
         (project_id,),
     ).fetchone()
     sbom_score = 100 if sbom_row else 0
@@ -218,7 +218,7 @@ def _compute_compliance_score(conn, project_id):
     # CSSP: 15%
     try:
         cssp_rows = conn.execute(
-            "SELECT status FROM cssp_assessments WHERE project_id = ?",
+            "SELECT status FROM cssp_assessments WHERE project_id = %s",
             (project_id,),
         ).fetchall()
         if cssp_rows:
@@ -238,7 +238,7 @@ def _compute_compliance_score(conn, project_id):
     # SbD: 12%
     try:
         sbd_rows = conn.execute(
-            "SELECT status FROM sbd_assessments WHERE project_id = ?",
+            "SELECT status FROM sbd_assessments WHERE project_id = %s",
             (project_id,),
         ).fetchall()
         if sbd_rows:
@@ -258,7 +258,7 @@ def _compute_compliance_score(conn, project_id):
     # IV&V: 10%
     try:
         ivv_cert = conn.execute(
-            "SELECT overall_score FROM ivv_certifications WHERE project_id = ?",
+            "SELECT overall_score FROM ivv_certifications WHERE project_id = %s",
             (project_id,),
         ).fetchone()
         ivv_score = ivv_cert["overall_score"] if ivv_cert and ivv_cert["overall_score"] else 0
@@ -274,7 +274,7 @@ def _count_findings_remediated(conn, project_id):
     """Count STIG findings that are not open (i.e., remediated)."""
     row = conn.execute(
         """SELECT COUNT(*) as cnt FROM stig_findings
-           WHERE project_id = ? AND status != 'Open'""",
+           WHERE project_id = %s AND status != 'Open'""",
         (project_id,),
     ).fetchone()
     return row["cnt"] if row else 0
@@ -347,7 +347,7 @@ def start_pi(project_id, pi_number, start_date, end_date, db_path=None):
 
         # Check for duplicate
         existing = conn.execute(
-            "SELECT id FROM pi_compliance_tracking WHERE project_id = ? AND pi_number = ?",
+            "SELECT id FROM pi_compliance_tracking WHERE project_id = %s AND pi_number = %s",
             (project_id, pi_number),
         ).fetchone()
         if existing:
@@ -374,7 +374,7 @@ def start_pi(project_id, pi_number, start_date, end_date, db_path=None):
                (project_id, pi_number, pi_start_date, pi_end_date,
                 compliance_score_start, controls_implemented, controls_remaining,
                 poam_items_opened, findings_remediated, notes)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 project_id,
                 pi_number,
@@ -444,7 +444,7 @@ def record_pi_progress(project_id, pi_number, db_path=None):
         # Get existing PI record
         pi_row = conn.execute(
             """SELECT * FROM pi_compliance_tracking
-               WHERE project_id = ? AND pi_number = ?""",
+               WHERE project_id = %s AND pi_number = %s""",
             (project_id, pi_number),
         ).fetchone()
         if not pi_row:
@@ -491,13 +491,13 @@ def record_pi_progress(project_id, pi_number, db_path=None):
         # Update the PI record
         conn.execute(
             """UPDATE pi_compliance_tracking SET
-               controls_implemented = ?,
-               controls_remaining = ?,
-               poam_items_closed = ?,
-               poam_items_opened = ?,
-               findings_remediated = ?,
-               notes = ?
-               WHERE project_id = ? AND pi_number = ?""",
+               controls_implemented = %s,
+               controls_remaining = %s,
+               poam_items_closed = %s,
+               poam_items_opened = %s,
+               findings_remediated = %s,
+               notes = %s
+               WHERE project_id = %s AND pi_number = %s""",
             (
                 implemented_now,
                 remaining_now,
@@ -560,7 +560,7 @@ def close_pi(project_id, pi_number, db_path=None):
         # Get existing PI record
         pi_row = conn.execute(
             """SELECT * FROM pi_compliance_tracking
-               WHERE project_id = ? AND pi_number = ?""",
+               WHERE project_id = %s AND pi_number = %s""",
             (project_id, pi_number),
         ).fetchone()
         if not pi_row:
@@ -614,15 +614,15 @@ def close_pi(project_id, pi_number, db_path=None):
         # Update the record
         conn.execute(
             """UPDATE pi_compliance_tracking SET
-               compliance_score_end = ?,
-               controls_implemented = ?,
-               controls_remaining = ?,
-               poam_items_closed = ?,
-               poam_items_opened = ?,
-               findings_remediated = ?,
-               artifacts_generated = ?,
-               notes = ?
-               WHERE project_id = ? AND pi_number = ?""",
+               compliance_score_end = %s,
+               controls_implemented = %s,
+               controls_remaining = %s,
+               poam_items_closed = %s,
+               poam_items_opened = %s,
+               findings_remediated = %s,
+               artifacts_generated = %s,
+               notes = %s
+               WHERE project_id = %s AND pi_number = %s""",
             (
                 final_score,
                 implemented_now,
@@ -690,7 +690,7 @@ def get_pi_velocity(project_id, db_path=None):
 
         rows = conn.execute(
             """SELECT * FROM pi_compliance_tracking
-               WHERE project_id = ?
+               WHERE project_id = %s
                ORDER BY pi_start_date ASC""",
             (project_id,),
         ).fetchall()
@@ -811,7 +811,7 @@ def get_compliance_burndown(project_id, target_framework=None, db_path=None):
         # Get velocity from closed PIs
         rows = conn.execute(
             """SELECT * FROM pi_compliance_tracking
-               WHERE project_id = ?
+               WHERE project_id = %s
                ORDER BY pi_start_date ASC""",
             (project_id,),
         ).fetchall()
@@ -943,7 +943,7 @@ def generate_pi_compliance_report(project_id, pi_number, output_path=None, db_pa
         # Get PI record
         pi_row = conn.execute(
             """SELECT * FROM pi_compliance_tracking
-               WHERE project_id = ? AND pi_number = ?""",
+               WHERE project_id = %s AND pi_number = %s""",
             (project_id, pi_number),
         ).fetchone()
         if not pi_row:
@@ -981,7 +981,7 @@ def generate_pi_compliance_report(project_id, pi_number, output_path=None, db_pa
         all_pis = conn.execute(
             """SELECT pi_number, compliance_score_start, compliance_score_end, notes
                FROM pi_compliance_tracking
-               WHERE project_id = ?
+               WHERE project_id = %s
                ORDER BY pi_start_date ASC""",
             (project_id,),
         ).fetchall()
@@ -1194,7 +1194,7 @@ def list_pis(project_id, db_path=None):
 
         rows = conn.execute(
             """SELECT * FROM pi_compliance_tracking
-               WHERE project_id = ?
+               WHERE project_id = %s
                ORDER BY pi_start_date ASC""",
             (project_id,),
         ).fetchall()
@@ -1263,7 +1263,7 @@ def get_pi_details(project_id, pi_number, db_path=None):
 
         pi_row = conn.execute(
             """SELECT * FROM pi_compliance_tracking
-               WHERE project_id = ? AND pi_number = ?""",
+               WHERE project_id = %s AND pi_number = %s""",
             (project_id, pi_number),
         ).fetchone()
         if not pi_row:

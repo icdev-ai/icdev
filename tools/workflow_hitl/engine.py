@@ -62,7 +62,7 @@ class WorkflowEngine:
                 """INSERT INTO wf_instances
                    (id, template_id, task_id, project_id, canvas_type,
                     current_stage, kickback_count, status, created_at, updated_at)
-                   VALUES (%s,?,?,?,?,?,0,?,?,%s)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,0,%s,%s,%s)""",
                 (instance_id, tmpl["id"], task_id, project_id, canvas_type,
                  stages[0]["name"] if stages else "build", WfStatus.ACTIVE, now, now),
             )
@@ -331,7 +331,7 @@ class WorkflowEngine:
                 conn.execute(
                     "INSERT INTO wf_approvals "
                     "(id, instance_id, stage, team_id, assigned_to, status, cot_trace_id, created_at, updated_at) "
-                    "VALUES (%s, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
                     (approval_id, instance_id, stage_config["name"], None, None, "approved", trace_id, _now(), _now()),
                 )
                 conn.commit()
@@ -368,7 +368,7 @@ class WorkflowEngine:
             conn.execute(
                 """INSERT INTO wf_approvals
                    (id, instance_id, stage, team_id, assigned_to, status, created_at, updated_at)
-                   VALUES (%s,?,?,?,NULL,'pending',?,%s)""",
+                   VALUES (%s,%s,%s,%s,NULL,'pending',%s,%s)""",
                 (approval_id, instance_id, stage_config["name"], team_id, now, now),
             )
             try:

@@ -203,7 +203,7 @@ def save_freshness_run(result: dict, design_id: str | None = None) -> str:
         except Exception:
             conn.execute(
                 "INSERT INTO dd_freshness_runs (run_id, design_id, overall_status, result_json, run_at) "
-                "VALUES (?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s)",
                 (run_id, design_id, result.get("overall_status", "unknown"), payload, now),
             )
         conn.commit()

@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+﻿# CUI // SP-CTI
 # Component Registry — single source of truth for ICDEV™ canvases, child apps,
 # features, and core extensions.
 #
@@ -59,7 +59,7 @@ components:
     - infra.snapshots
     - infra.ai_decisions
   completeness:
-    template: tools/dashboard/templates/infra/page.html
+    template: tools/dashboard/templates/infra_canvas/index.html
     blueprint: true
     constants: tools/infra_canvas/constants.py
     db_migration: tools/infra_canvas/db/migrations
@@ -114,7 +114,7 @@ components:
     - nqe.paths
     - nqe.os_versions
   completeness:
-    template: tools/dashboard/templates/network/page.html
+    template: tools/dashboard/templates/network/index.html
     blueprint: true
     constants: tools/network/constants.py
     db_migration: tools/network/db/migrations
@@ -146,7 +146,7 @@ components:
     - attack.paths
     - security.ai_decisions
   completeness:
-    template: tools/dashboard/templates/security/page.html
+    template: tools/dashboard/templates/security_canvas/index.html
     blueprint: true
     constants: tools/security_canvas/constants.py
     db_migration: tools/security_canvas/db/migrations
@@ -181,7 +181,7 @@ components:
     - bdc.alerts
     - bdc.ai_decisions
   completeness:
-    template: tools/dashboard/templates/boundary/page.html
+    template: tools/dashboard/templates/boundary_canvas/canvas.html
     blueprint: true
     constants: tools/boundary_canvas/constants.py
     db_migration: tools/boundary_canvas/db/migrations
@@ -214,7 +214,7 @@ components:
     - pipeline.edges
     - pipeline.ai_decisions
   completeness:
-    template: tools/dashboard/templates/devops/page.html
+    template: tools/dashboard/templates/pipeline/index.html
     blueprint: true
     constants: tools/pipeline/constants.py
     db_migration: tools/pipeline/db/migrations
@@ -247,7 +247,7 @@ components:
     - mitre.gaps
     - observability.ai_decisions
   completeness:
-    template: tools/dashboard/templates/observability/page.html
+    template: tools/dashboard/templates/observability_canvas/index.html
     blueprint: true
     constants: tools/observability_canvas/constants.py
     db_migration: tools/observability_canvas/db/migrations
@@ -279,7 +279,7 @@ components:
     - data.classifications
     - data.ai_decisions
   completeness:
-    template: tools/dashboard/templates/data/page.html
+    template: tools/dashboard/templates/data_canvas/canvas.html
     blueprint: true
     constants: tools/data_canvas/constants.py
     db_migration: tools/data_canvas/db/migrations
@@ -309,13 +309,13 @@ components:
     - qdc.gate_results
     - qdc.ai_decisions
   completeness:
-    template: tools/dashboard/templates/quality/page.html
+    template: tools/dashboard/templates/qdc_canvas/index.html
     blueprint: true
     constants: tools/qdc_canvas/constants.py
     db_migration: tools/qdc_canvas/db/migrations
     iqe_adapter: true
     nav_link: true
-    seed_queries: context/iqe/queries/quality/
+    seed_queries: context/iqe/queries/qdc/
 - key: mdc
   kind: canvas
   cli_name: migration
@@ -340,7 +340,7 @@ components:
     - mc.assessments
     - mc.ai_decisions
   completeness:
-    template: tools/dashboard/templates/migration-canvas/page.html
+    template: tools/dashboard/templates/migration_canvas/canvas.html
     blueprint: true
     constants: tools/migration_canvas/constants.py
     db_migration: tools/migration_canvas/db/migrations
@@ -369,7 +369,7 @@ components:
     - aadc.artifacts
     - aadc.ai_decisions
   completeness:
-    template: tools/dashboard/templates/agentic-ai/page.html
+    template: tools/dashboard/templates/agentic_ai_canvas/analytics.html
     blueprint: true
     constants: tools/agentic_ai_canvas/constants.py
     db_migration: tools/agentic_ai_canvas/db/migrations
@@ -400,7 +400,7 @@ components:
     - aimc.artifacts
     - aimc.ai_decisions
   completeness:
-    template: tools/dashboard/templates/ai-ml/page.html
+    template: tools/dashboard/templates/aiml_canvas/canvas.html
     blueprint: true
     constants: tools/aiml_canvas/constants.py
     db_migration: tools/aiml_canvas/db/migrations
@@ -431,7 +431,7 @@ components:
     - ohc.adapters
     - ohc.drift_events
   completeness:
-    template: tools/dashboard/templates/ops/page.html
+    template: tools/dashboard/templates/ops_hub/index.html
     blueprint: true
     constants: tools/ops_hub/constants.py
     db_migration: tools/ops_hub/db/migrations
@@ -453,7 +453,7 @@ components:
     section: Canvases
     label: Info Ops
   completeness:
-    template: tools/dashboard/templates/info-ops/page.html
+    template: tools/dashboard/templates/info_ops/index.html
     blueprint: true
     constants: tools/info_ops/constants.py
     nav_link: true
@@ -472,7 +472,7 @@ components:
     section: Canvases
     label: Mission Control
     links:
-    - label: Dashboard
+    - label: Mission Overview
       href: /mission-canvas/
       style: color:#00bcd4;
   iqe:
@@ -483,7 +483,7 @@ components:
     - mission.evidence
     - mission.alerts
   completeness:
-    template: tools/dashboard/templates/mission-canvas/page.html
+    template: tools/dashboard/templates/mission_canvas/index.html
     blueprint: true
     constants: tools/mission_canvas/constants.py
     db_migration: tools/mission_canvas/db/migrations
@@ -514,7 +514,7 @@ components:
     - noc.maintenance_windows
     - noc.sla_records
   completeness:
-    template: tools/dashboard/templates/noc/page.html
+    template: tools/dashboard/templates/noc_canvas/index.html
     blueprint: true
     constants: tools/noc_canvas/constants.py
     db_migration: tools/noc_canvas/db/migrations
@@ -544,7 +544,7 @@ components:
     - pmc.peering_requests
     - pmc.route_policies
   completeness:
-    template: tools/dashboard/templates/pmc/page.html
+    template: tools/dashboard/templates/pmc_canvas/index.html
     blueprint: true
     constants: tools/pmc_canvas/constants.py
     db_migration: tools/pmc_canvas/db/migrations
@@ -575,7 +575,7 @@ components:
     - ccc.dwdm_spans
     - ccc.xc_orders
   completeness:
-    template: tools/dashboard/templates/ccc/page.html
+    template: tools/dashboard/templates/ccc_canvas/index.html
     blueprint: true
     constants: tools/ccc_canvas/constants.py
     db_migration: tools/ccc_canvas/db/migrations
@@ -622,7 +622,7 @@ components:
     - dsoc.mitigations
     - dsoc.bgp_hijacks
   completeness:
-    template: tools/dashboard/templates/dsoc/page.html
+    template: tools/dashboard/templates/dsoc_canvas/index.html
     blueprint: true
     constants: tools/dsoc_canvas/constants.py
     db_migration: tools/dsoc_canvas/db/migrations
@@ -725,14 +725,17 @@ components:
       href: /document-intelligence/handoff
     - label: 📓 Notebook
       href: /document-intelligence/notebook
+    - label: ✍️ Tech Writer
+      href: /document-intelligence/techwriter
   iqe:
     adapter_module: tools.iqe.adapters.dic
     collections:
     - dic.drift_events
     - dic.regen_queue
     - dic.ssp_fragments
+    - dic.techwriter_docs
   completeness:
-    template: tools/dashboard/templates/document_intelligence/page.html
+    template: tools/dashboard/templates/document_intelligence/index.html
     blueprint: true
     constants: tools/document_intelligence/constants.py
     db_migration: tools/document_intelligence/db/migrations
@@ -784,7 +787,7 @@ components:
     section: Build
     label: Presentations
   completeness:
-    template: tools/dashboard/templates/slides/page.html
+    template: tools/dashboard/templates/slides/index.html
     blueprint: true
     constants: tools/slides/constants.py
     iqe_adapter: false
@@ -811,7 +814,7 @@ components:
     - ace.coworkers
     - ace.messages
   completeness:
-    template: tools/dashboard/templates/ace/page.html
+    template: tools/dashboard/templates/ace/sessions.html
     blueprint: true
     constants: icdev/tools/ace/constants.py
     iqe_adapter: true
@@ -824,7 +827,7 @@ components:
   default_enabled: false
   module: tools.aisg.blueprint
   blueprint_attr: bp
-  url_prefix: /ai-skills
+  url_prefix: ''
   min_il: IL4
   default_roles: []
   nav:
@@ -865,7 +868,7 @@ components:
     - integrity.findings
     - integrity.verdicts
   completeness:
-    template: tools/dashboard/templates/integrity/page.html
+    template: tools/dashboard/templates/integrity/index.html
     blueprint: true
     constants: tools/integrity/constants.py
     iqe_adapter: true
@@ -893,7 +896,7 @@ components:
     - foundry.runs
     - foundry.outcomes
   completeness:
-    template: tools/dashboard/templates/foundry/page.html
+    template: tools/dashboard/templates/foundry/index.html
     blueprint: true
     constants: tools/foundry/constants.py
     iqe_adapter: true
@@ -1005,6 +1008,19 @@ components:
   # ═══════════════════════════════════════════════════════════════════════════
   # Core Extensions (registered separately in dashboard/app.py; IQE only here)
   # ═══════════════════════════════════════════════════════════════════════════
+- key: forecast
+  kind: core_extension
+  display_name: TimesFM Forecasting
+  description: Self-hostable time-series forecasting microservice backed by Google TimesFM.
+  env_flag: ICDEV_FORECAST_ENABLED
+  default_enabled: true
+  url_prefix: ''
+  min_il: IL4
+  default_roles: []
+  iqe:
+    adapter_module: icdev.tools.iqe.adapters.forecast
+    collections:
+    - forecast.jobs
 - key: cam
   kind: core_extension
   display_name: Cloud Assessment Modeler
@@ -1440,3 +1456,153 @@ components:
     iqe_adapter: true
     nav_link: true
     seed_queries: context/iqe/queries/docgen/
+- key: wfc
+  kind: canvas
+  cli_name: workflow-forms
+  display_name: Workflow & Forms
+  description: >-
+    Drag-and-drop form builder and visual workflow pipeline designer with
+    enterprise branding (logo, header, footer, colors) and multi-format export
+    (PPT, PDF, DOCX). Forms can be embedded as intake checkpoints in workflows.
+  env_flag: ICDEV_WFC_ENABLED
+  default_enabled: true
+  module: tools.workflow_canvas.blueprint
+  blueprint_attr: create_wfc_blueprint
+  url_prefix: /workflow-canvas
+  min_il: IL4
+  default_roles:
+    - developer
+    - analyst
+    - technical_writer
+  nav:
+    section: Canvases
+    label: Workflow & Forms
+    links:
+      - label: Workflow Home
+        href: /workflow-canvas/
+      - label: Form Builder
+        href: /workflow-canvas/forms
+      - label: Workflow Designer
+        href: /workflow-canvas/workflows
+      - label: Template Library
+        href: /workflow-canvas/templates
+  iqe:
+    adapter_module: tools.iqe.adapters.wfc
+    collections:
+      - wfc.forms
+      - wfc.workflows
+      - wfc.templates
+      - wfc.submissions
+  completeness:
+    template: tools/dashboard/templates/workflow_canvas/page.html
+    blueprint: true
+    constants: tools/workflow_canvas/constants.py
+    db_migration: tools/workflow_canvas/db/migrations
+    iqe_adapter: true
+    nav_link: true
+    seed_queries: context/iqe/queries/workflow_canvas/
+
+- key: canvas_health
+  kind: canvas
+  display_name: Canvas Health
+  env_flag: ICDEV_CANVAS_HEALTH_ENABLED
+  default_enabled: true
+  module: tools.canvas_health.blueprint
+  blueprint_attr: bp
+  url_prefix: ''
+  roles:
+    - admin
+    - developer
+    - analyst
+  nav:
+    section: Ops
+    label: Canvas Health
+    links:
+      - label: Canvas Health
+        href: /health/canvases
+  iqe:
+    adapter_module: tools.iqe.adapters.canvas_health
+    collections:
+      - canvas_health.canvas_status
+      - canvas_health.coherence_violations
+      - canvas_health.e2e_coverage
+  completeness:
+    template: tools/dashboard/templates/canvas_health/page.html
+    blueprint: true
+    iqe_adapter: true
+    nav_link: true
+    seed_queries: context/iqe/queries/canvas_health/
+- key: cwk
+  kind: canvas
+  display_name: Co-Workers
+  description: AI co-worker roster — list, preview, and launch AI personas directly into the shared chat canvas.
+  env_flag: ICDEV_CWK_ENABLED
+  default_enabled: true
+  module: icdev.tools.coworkers.blueprint
+  blueprint_attr: coworkers_bp
+  url_prefix: /coworkers
+  min_il: IL4
+  min_tier: community
+  nav:
+    section: Canvases
+    label: Co-Workers
+    icon: "🤝"
+  rbac:
+    roles:
+      - admin
+      - user
+      - analyst
+      - developer
+  completeness:
+    template: tools/dashboard/templates/coworkers/index.html
+    blueprint: true
+    nav_link: true
+
+- key: second_brain
+  kind: canvas
+  display_name: My AI Assistant
+  description: Personal second brain — daily briefing, profile, objectives, relationships, challenges, integrations.
+  env_flag: ICDEV_SECOND_BRAIN_ENABLED
+  default_enabled: true
+  module: icdev.tools.second_brain.blueprint
+  blueprint_attr: second_brain_bp
+  url_prefix: /me
+  min_il: IL4
+  nav:
+    section: Canvases
+    label: My Assistant
+    icon: "🧠"
+    links:
+      - label: Today's Briefing
+        href: /me/briefing/today
+      - label: My Profile
+        href: /me/profile
+      - label: Objectives
+        href: /me/objectives
+      - label: Relationships
+        href: /me/relationships
+      - label: Challenges
+        href: /me/challenges
+      - label: Integrations
+        href: /me/integrations
+  rbac:
+    roles:
+      - admin
+      - user
+      - analyst
+      - developer
+  iqe:
+    adapter_module: tools.iqe.adapters.second_brain
+    collections:
+      - second_brain.profile
+      - second_brain.objectives
+      - second_brain.briefings
+      - second_brain.relationships
+      - second_brain.commitments
+      - second_brain.knowledge
+  completeness:
+    template: tools/dashboard/templates/second_brain/index.html
+    blueprint: true
+    iqe_adapter: true
+    nav_link: true
+    seed_queries: context/iqe/queries/second_brain/

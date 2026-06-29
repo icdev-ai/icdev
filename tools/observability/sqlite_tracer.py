@@ -267,7 +267,7 @@ class SQLiteTracer(Tracer):
                             status_code, status_message,
                             attributes, events,
                             agent_id, project_id, classification)
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                         (
                             span.span_id,
                             span.trace_id,
@@ -333,7 +333,7 @@ class SQLiteTracer(Tracer):
         try:
             conn = get_connection(db_path=str(self._db_path))
             rows = conn.execute(
-                f"SELECT * FROM otel_spans WHERE {where} ORDER BY start_time DESC LIMIT ?",  # nosec B608 -- table/column names are internal constants, not user input
+                f"SELECT * FROM otel_spans WHERE {where} ORDER BY start_time DESC LIMIT %s",  # nosec B608 -- table/column names are internal constants, not user input
                 params,
             ).fetchall()
             conn.close()

@@ -17,9 +17,12 @@ from tools.logging.icdev_logger import get_logger
 import json
 import re
 import sqlite3
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from tools.migration_canvas.db.init_db import get_connection as _mc_get_connection
 
 logger = get_logger("icdev.migration_canvas.network_migration")
 
@@ -37,12 +40,15 @@ _NC_DB_PATH = _ICDEV_ROOT / "data" / "network_canvas.db"
 # DB helpers
 # ---------------------------------------------------------------------------
 
-def _mc_conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(str(_MC_DB_PATH))
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
-    return conn
+def _mc_conn():
+    """Return the canonical migration-canvas connection (PG or SQLite).
+
+    Uses tools.migration_canvas.db.init_db.get_connection so that the engine
+    reads/writes the same backend as the dashboard blueprint. Previously this
+    helper hardcoded the SQLite path, which broke when MC_STORAGE_BACKEND
+    routed sessions to PostgreSQL.
+    """
+    return _mc_get_connection()
 
 
 def _nc_conn() -> sqlite3.Connection:
@@ -313,11 +319,11 @@ def fetch_hardware_profiles(src_model: str, tgt_model: str) -> dict[str, Any]:
     """
     with _nc_conn() as conn:
         src = conn.execute(
-            "SELECT * FROM nc_hardware_profiles WHERE LOWER(model)=LOWER(?) OR LOWER(id)=LOWER(?)",
+            "SELECT * FROM nc_hardware_profiles WHERE LOWER(model)=LOWER(%s) OR LOWER(id)=LOWER(%s)",
             (src_model, f"hw-{src_model.lower().replace(' ','-')}"),
         ).fetchone()
         tgt = conn.execute(
-            "SELECT * FROM nc_hardware_profiles WHERE LOWER(model)=LOWER(?) OR LOWER(id)=LOWER(?)",
+            "SELECT * FROM nc_hardware_profiles WHERE LOWER(model)=LOWER(%s) OR LOWER(id)=LOWER(%s)",
             (tgt_model, f"hw-{tgt_model.lower().replace(' ','-')}"),
         ).fetchone()
 
@@ -1405,33 +1411,33 @@ def compute_readiness(
     session_id: str = compatibility
     with _mc_conn() as conn:
         session = conn.execute(
-            "SELECT * FROM mc_net_sessions WHERE id=?", (session_id,)
+            "SELECT * FROM mc_net_sessions WHERE id=%s", (session_id,)
         ).fetchone()
         if not session:
             return {"overall": 0, "error": "session not found"}
 
         port_rows = conn.execute(
             "SELECT COUNT(*) cnt, SUM(CASE WHEN status='mapped' THEN 1 ELSE 0 END) mapped "
-            "FROM mc_net_port_map WHERE session_id=?", (session_id,)
+            "FROM mc_net_port_map WHERE session_id=%s", (session_id,)
         ).fetchone()
 
         compat_rows = conn.execute(
             "SELECT COUNT(*) cnt, "
             "SUM(CASE WHEN status='fail' AND (override_reason='' OR override_reason IS NULL) THEN 1 ELSE 0 END) blocking "
-            "FROM mc_net_compat_checks WHERE session_id=?", (session_id,)
+            "FROM mc_net_compat_checks WHERE session_id=%s", (session_id,)
         ).fetchone()
 
         test_rows = conn.execute(
             "SELECT COUNT(*) cnt, SUM(CASE WHEN passed IS NOT NULL THEN 1 ELSE 0 END) executed "
-            "FROM mc_net_test_cases WHERE session_id=?", (session_id,)
+            "FROM mc_net_test_cases WHERE session_id=%s", (session_id,)
         ).fetchone()
 
         cutover_rows = conn.execute(
-            "SELECT COUNT(*) FROM mc_net_cutover_steps WHERE session_id=?", (session_id,)
+            "SELECT COUNT(*) FROM mc_net_cutover_steps WHERE session_id=%s", (session_id,)
         ).fetchone()
 
         erb_row = conn.execute(
-            "SELECT id, business_justification, risk_tier FROM mc_net_erb_metadata WHERE session_id=?",
+            "SELECT id, business_justification, risk_tier FROM mc_net_erb_metadata WHERE session_id=%s",
             (session_id,)
         ).fetchone()
 
@@ -1587,28 +1593,28 @@ def generate_erb_package(
     # --- String mode: DB-backed assembly ---
     with _mc_conn() as conn:
         session = dict(conn.execute(
-            "SELECT * FROM mc_net_sessions WHERE id=?", (session_id,)
+            "SELECT * FROM mc_net_sessions WHERE id=%s", (session_id,)
         ).fetchone() or {})
 
         port_map = [dict(r) for r in conn.execute(
-            "SELECT * FROM mc_net_port_map WHERE session_id=? ORDER BY rowid", (session_id,)
+            "SELECT * FROM mc_net_port_map WHERE session_id=%s ORDER BY id", (session_id,)
         ).fetchall()]
 
         compat = [dict(r) for r in conn.execute(
-            "SELECT * FROM mc_net_compat_checks WHERE session_id=? ORDER BY severity, category, check_name",
+            "SELECT * FROM mc_net_compat_checks WHERE session_id=%s ORDER BY severity, category, check_name",
             (session_id,)
         ).fetchall()]
 
         tests = [dict(r) for r in conn.execute(
-            "SELECT * FROM mc_net_test_cases WHERE session_id=? ORDER BY phase, seq_no", (session_id,)
+            "SELECT * FROM mc_net_test_cases WHERE session_id=%s ORDER BY phase, seq_no", (session_id,)
         ).fetchall()]
 
         cutover = [dict(r) for r in conn.execute(
-            "SELECT * FROM mc_net_cutover_steps WHERE session_id=? ORDER BY seq_no", (session_id,)
+            "SELECT * FROM mc_net_cutover_steps WHERE session_id=%s ORDER BY seq_no", (session_id,)
         ).fetchall()]
 
         erb_meta = dict(conn.execute(
-            "SELECT * FROM mc_net_erb_metadata WHERE session_id=?", (session_id,)
+            "SELECT * FROM mc_net_erb_metadata WHERE session_id=%s", (session_id,)
         ).fetchone() or {})
 
     # Auto-compute risk tier from compat blockers if not manually set
@@ -1766,8 +1772,10 @@ def _index_to_rag(content: str, source_label: str, session_id: str) -> None:
 def _update_kg(session_id: str, design_id: str | None = None) -> None:
     """Update the Migration Canvas KG with network migration device nodes.
 
-    Builds a minimal graph_json with source→migration→target device nodes
-    and calls rebuild_canvas_kg("mdc", design_id) if a design_id is linked.
+    Builds a minimal graph_json with source→migration→target device nodes,
+    merges the auto-generated topology nodes/edges, adds a COA node when one
+    has been selected, and calls rebuild_canvas_kg("mdc", design_id) if a
+    design_id is linked.
     """
     if not design_id:
         # Look up linked design
@@ -1775,7 +1783,7 @@ def _update_kg(session_id: str, design_id: str | None = None) -> None:
             with _mc_conn() as conn:
                 row = conn.execute(
                     "SELECT migration_designs.id FROM migration_designs "
-                    "WHERE network_session_id=?", (session_id,)
+                    "WHERE network_session_id=%s", (session_id,)
                 ).fetchone()
                 design_id = row[0] if row else None
         except Exception:
@@ -1787,7 +1795,8 @@ def _update_kg(session_id: str, design_id: str | None = None) -> None:
     try:
         with _mc_conn() as conn:
             sess = dict(conn.execute(
-                "SELECT src_model, tgt_model, src_device_name, tgt_device_name FROM mc_net_sessions WHERE id=?",
+                "SELECT src_model, tgt_model, src_device_name, tgt_device_name, selected_coa, topology_json "
+                "FROM mc_net_sessions WHERE id=%s",
                 (session_id,)
             ).fetchone() or {})
 
@@ -1795,21 +1804,54 @@ def _update_kg(session_id: str, design_id: str | None = None) -> None:
         tgt_id = f"net-tgt-{session_id}"
         mig_id = f"net-migration-{session_id}"
 
-        graph = {
-            "nodes": [
-                {"id": src_id, "type": "src-network-device", "label": sess.get("src_device_name") or sess.get("src_model", "Source"), "metadata": {"model": sess.get("src_model", "")}},
-                {"id": mig_id, "type": "pat-network-cutover", "label": "Network Migration"},
-                {"id": tgt_id, "type": "tgt-network-device", "label": sess.get("tgt_device_name") or sess.get("tgt_model", "Target"), "metadata": {"model": sess.get("tgt_model", "")}},
-            ],
-            "edges": [
-                {"id": f"e1-{session_id}", "source": src_id, "target": mig_id, "label": "migrates via"},
-                {"id": f"e2-{session_id}", "source": mig_id, "target": tgt_id, "label": "migrates to"},
-            ],
-        }
+        nodes = [
+            {"id": src_id, "type": "src-network-device", "label": sess.get("src_device_name") or sess.get("src_model", "Source"), "metadata": {"model": sess.get("src_model", "")}},
+            {"id": mig_id, "type": "pat-network-cutover", "label": "Network Migration"},
+            {"id": tgt_id, "type": "tgt-network-device", "label": sess.get("tgt_device_name") or sess.get("tgt_model", "Target"), "metadata": {"model": sess.get("tgt_model", "")}},
+        ]
+        edges = [
+            {"id": f"e1-{session_id}", "source": src_id, "target": mig_id, "label": "migrates via"},
+            {"id": f"e2-{session_id}", "source": mig_id, "target": tgt_id, "label": "migrates to"},
+        ]
+
+        # Merge auto-generated topology nodes/edges
+        try:
+            topo = json.loads(sess.get("topology_json") or "{}")
+            if topo.get("nodes"):
+                # Prefix topology ids to avoid collisions
+                for n in topo["nodes"]:
+                    nodes.append({
+                        "id": f"topo-{n['id']}",
+                        "type": n.get("type", "router"),
+                        "label": n.get("label", ""),
+                        "metadata": n.get("config", {}),
+                    })
+                for e in topo.get("edges", []):
+                    edges.append({
+                        "id": f"topo-{e.get('id', uuid.uuid4().hex[:8])}",
+                        "source": f"topo-{e.get('source')}",
+                        "target": f"topo-{e.get('target')}",
+                        "label": e.get("label", ""),
+                    })
+        except Exception:
+            pass
+
+        selected = sess.get("selected_coa", "")
+        if selected:
+            coa_id = f"net-coa-{session_id}"
+            coa_label = {
+                "coa_a": "COA-A: Side-by-Side Parallel",
+                "coa_b": "COA-B: Warm Cutover",
+                "coa_c": "COA-C: Cold Cutover",
+            }.get(selected, selected)
+            nodes.append({"id": coa_id, "type": "ctl-rollback", "label": coa_label})
+            edges.append({"id": f"e-coa-{session_id}", "source": mig_id, "target": coa_id, "label": "uses COA"})
+
+        graph = {"nodes": nodes, "edges": edges}
 
         with _mc_conn() as conn:
             conn.execute(
-                "UPDATE migration_designs SET graph_json=?, updated_at=? WHERE id=?",
+                "UPDATE migration_designs SET graph_json=%s, updated_at=%s WHERE id=%s",
                 (json.dumps(graph), _now(), design_id),
             )
             conn.commit()
@@ -1818,6 +1860,583 @@ def _update_kg(session_id: str, design_id: str | None = None) -> None:
         rebuild_canvas_kg("mdc", design_id)
     except Exception as exc:
         logger.debug("KG update skipped: %s", exc)
+
+
+# ---------------------------------------------------------------------------
+# NMCE Phase 3: COA selection, topology, and SOP-aware recommendation
+# ---------------------------------------------------------------------------
+
+_DEFAULT_COA_QUESTIONS = [
+    {
+        "key": "spare_ports_available",
+        "text": "Do you have spare ports / VLANs to connect the replacement device alongside the existing one?",
+        "default_answer": 1,
+        "coa_a_weight": 1.0,
+        "coa_b_weight": 0.3,
+        "coa_c_weight": -0.2,
+    },
+    {
+        "key": "same_mgmt_vlan_ok",
+        "text": "Can the replacement device be placed on the same management VLAN as the existing device?",
+        "default_answer": 1,
+        "coa_a_weight": 0.8,
+        "coa_b_weight": 0.4,
+        "coa_c_weight": 0.0,
+    },
+    {
+        "key": "igp_controlled",
+        "text": "Is the downstream IGP (OSPF/IS-IS/BGP) under your control and reachable for adjacency testing?",
+        "default_answer": 1,
+        "coa_a_weight": 0.7,
+        "coa_b_weight": 0.5,
+        "coa_c_weight": -0.1,
+    },
+    {
+        "key": "tight_maintenance_window",
+        "text": "Is the maintenance window too short to run parallel validation?",
+        "default_answer": 0,
+        "coa_a_weight": -0.6,
+        "coa_b_weight": -0.2,
+        "coa_c_weight": 0.8,
+    },
+    {
+        "key": "l2_only_replacement",
+        "text": "Is the replacement device operating strictly at Layer 2 (no IGP routing on the device)?",
+        "default_answer": 0,
+        "coa_a_weight": 0.4,
+        "coa_b_weight": 0.2,
+        "coa_c_weight": 0.6,
+    },
+    {
+        "key": "rollback_familiar",
+        "text": "Is the team familiar with a fast rollback to the existing device if the cutover fails?",
+        "default_answer": 1,
+        "coa_a_weight": 0.5,
+        "coa_b_weight": 0.6,
+        "coa_c_weight": 0.3,
+    },
+]
+
+
+def seed_coa_questions(session_id: str) -> None:
+    """Create default COA questions for a session if they don't already exist."""
+    existing_keys: set = set()
+    with _mc_conn() as conn:
+        for row in conn.execute(
+            "SELECT question_key FROM mc_net_coa_questions WHERE session_id=%s", (session_id,)
+        ).fetchall():
+            existing_keys.add(row[0])
+    for q in _DEFAULT_COA_QUESTIONS:
+        if q["key"] in existing_keys:
+            continue
+        with _mc_conn() as conn:
+            conn.execute(
+                """INSERT INTO mc_net_coa_questions
+                   (id, session_id, question_key, question_text, default_answer, user_answer,
+                    coa_a_weight, coa_b_weight, coa_c_weight)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                (
+                    str(uuid.uuid4()),
+                    session_id,
+                    q["key"],
+                    q["text"],
+                    q.get("default_answer"),
+                    q.get("default_answer"),
+                    q.get("coa_a_weight", 0),
+                    q.get("coa_b_weight", 0),
+                    q.get("coa_c_weight", 0),
+                ),
+            )
+            conn.commit()
+
+
+def get_coa_questions(session_id: str) -> list[dict]:
+    """Return COA questions for a session, seeding defaults first."""
+    seed_coa_questions(session_id)
+    with _mc_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM mc_net_coa_questions WHERE session_id=%s ORDER BY question_key",
+            (session_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def save_coa_answers(session_id: str, answers: dict[str, int | bool | None]) -> list[dict]:
+    """Persist user answers and return updated questions."""
+    with _mc_conn() as conn:
+        for key, ans in answers.items():
+            if ans is None:
+                continue
+            val = 1 if ans else 0 if isinstance(ans, bool) else int(ans)
+            conn.execute(
+                "UPDATE mc_net_coa_questions SET user_answer=%s WHERE session_id=%s AND question_key=%s",
+                (val, session_id, key),
+            )
+        conn.commit()
+    return get_coa_questions(session_id)
+
+
+def _score_coa_from_answers(questions: list[dict]) -> dict[str, float]:
+    """Score each COA from yes/no answers using question weights."""
+    scores = {"coa_a": 0.0, "coa_b": 0.0, "coa_c": 0.0}
+    for q in questions:
+        ans = q.get("user_answer")
+        if ans is None:
+            ans = q.get("default_answer", 1)
+        direction = 1.0 if ans else -1.0
+        scores["coa_a"] += direction * (q.get("coa_a_weight") or 0)
+        scores["coa_b"] += direction * (q.get("coa_b_weight") or 0)
+        scores["coa_c"] += direction * (q.get("coa_c_weight") or 0)
+    return scores
+
+
+def _detect_context_signals(context: str) -> dict[str, bool]:
+    """Rule-based signal extraction from free-text engineer context."""
+    text = (context or "").lower()
+    signals = {
+        "l2_only": any(t in text for t in [
+            "layer 2", "layer2", "layer-2", "l2 ", "l2-only", "strictly l2", "no routing", "downstream igp"
+        ]),
+        "no_igp_control": any(t in text for t in [
+            "not under my control", "not controlled", "downstream", "another team", "provider managed"
+        ]),
+        "tight_window": any(t in text for t in [
+            "tight window", "tight maintenance", "short window", "no time", "limited maintenance",
+            "brief outage", "maintenance window too short"
+        ]),
+        "spare_ports": any(t in text for t in [
+            "spare port", "available port", "extra port", "same vlan", "parallel connection"
+        ]),
+    }
+    return signals
+
+
+def _adjust_scores_from_context(scores: dict[str, float], context: str) -> dict[str, float]:
+    """Apply rule-based context adjustments to COA scores."""
+    signals = _detect_context_signals(context)
+    if signals["l2_only"]:
+        scores["coa_a"] += 0.5
+        scores["coa_b"] += 0.2
+        scores["coa_c"] += 0.7
+    if signals["no_igp_control"]:
+        scores["coa_a"] += 0.6
+        scores["coa_b"] += 0.1
+        scores["coa_c"] -= 0.3
+    if signals["tight_window"]:
+        scores["coa_a"] -= 0.5
+        scores["coa_b"] -= 0.1
+        scores["coa_c"] += 0.7
+    if signals["spare_ports"]:
+        scores["coa_a"] += 0.4
+        scores["coa_b"] += 0.2
+    return scores
+
+
+def recommend_coa(session_id: str) -> dict[str, Any]:
+    """Recommend a COA based on parsed config, yes/no answers, and free-text context."""
+    questions = get_coa_questions(session_id)
+    scores = _score_coa_from_answers(questions)
+
+    with _mc_conn() as conn:
+        row = conn.execute(
+            "SELECT engineer_context, src_config_raw FROM mc_net_sessions WHERE id=%s", (session_id,)
+        ).fetchone()
+    context = (row[0] if row else "") or ""
+    src_config_raw = (row[1] if row else "") or ""
+
+    scores = _adjust_scores_from_context(scores, context)
+
+    # Config-derived signals
+    parsed = parse_source_config(src_config_raw) if src_config_raw else {}
+    if parsed.get("bgp_neighbors") or parsed.get("ospf_areas") or parsed.get("isis_nets"):
+        # If IGP is present, side-by-side validation is more valuable.
+        scores["coa_a"] += 0.2
+        scores["coa_b"] += 0.1
+    if (parsed.get("raw_interface_count") or 0) <= 2:
+        # Very small device: cold cutover is more practical.
+        scores["coa_c"] += 0.3
+
+    # Normalize to 0-1 range
+    def _norm(v: float) -> float:
+        return max(0.0, min(1.0, (v + 2.0) / 4.0))
+
+    normalized = {k: _norm(v) for k, v in scores.items()}
+    recommended = max(normalized, key=normalized.get)
+
+    # Build rationale
+    coa_names = {
+        "coa_a": "Side-by-Side Parallel (safe default)",
+        "coa_b": "Warm Cutover",
+        "coa_c": "Cold Cutover",
+    }
+    rationale = (
+        f"Recommended '{coa_names[recommended]}' based on your answers and context. "
+        f"Scores: COA-A {normalized['coa_a']:.0%}, COA-B {normalized['coa_b']:.0%}, "
+        f"COA-C {normalized['coa_c']:.0%}."
+    )
+
+    # Optional LLM enhancement for rationale text
+    try:
+        from tools.llm.router import LLMRouter, LLMRequest
+        router = LLMRouter()
+        prompt = (
+            "You are a network migration engineer. Given these COA scores and context, "
+            "write one concise paragraph explaining why the recommended COA is best "
+            "and what the engineer should watch out for."
+            f"\nContext: {context}\n"
+            f"Scores: COA-A={normalized['coa_a']:.2f}, COA-B={normalized['coa_b']:.2f}, COA-C={normalized['coa_c']:.2f}\n"
+            f"Recommended: {recommended}"
+        )
+        resp = router.invoke("recommendation", LLMRequest(prompt=prompt, max_tokens=200))
+        if resp and resp.content:
+            rationale = resp.content.strip()[:1000]
+    except Exception as exc:
+        logger.debug("LLM COA rationale skipped: %s", exc)
+
+    # Persist recommendation
+    with _mc_conn() as conn:
+        conn.execute(
+            "UPDATE mc_net_sessions SET recommended_coa=%s, coa_rationale=%s WHERE id=%s",
+            (recommended, rationale, session_id),
+        )
+        conn.commit()
+
+    return {
+        "recommended": recommended,
+        "rationale": rationale,
+        "scores": normalized,
+        "questions": questions,
+        "context_signals": _detect_context_signals(context),
+    }
+
+
+def select_coa(session_id: str, coa: str, context: str = "") -> dict[str, Any]:
+    """Persist engineer-selected COA and refresh recommendation if context changed."""
+    if coa not in ("coa_a", "coa_b", "coa_c"):
+        raise ValueError(f"Invalid COA: {coa}")
+    with _mc_conn() as conn:
+        if context:
+            conn.execute(
+                "UPDATE mc_net_sessions SET selected_coa=%s, engineer_context=%s WHERE id=%s",
+                (coa, context, session_id),
+            )
+        else:
+            conn.execute(
+                "UPDATE mc_net_sessions SET selected_coa=%s WHERE id=%s", (coa, session_id)
+            )
+        conn.commit()
+    return recommend_coa(session_id)
+
+
+# ---------------------------------------------------------------------------
+# Topology auto-generation (Phase B)
+# ---------------------------------------------------------------------------
+
+_NODE_TYPE_FOR_MEDIA = {
+    0.1: "media-ge",
+    1.0: "media-ge",
+    10.0: "media-10ge",
+    25.0: "media-25ge",
+    40.0: "media-40ge",
+    100.0: "media-100ge",
+    400.0: "media-400ge",
+}
+
+
+def _media_node_type(iface: dict) -> str:
+    speed = iface.get("speed_gbps", 0.0) or 0.0
+    optic = (iface.get("optic_type", "") or "").lower()
+    if "qsfp-dd" in optic:
+        return "qsfp-dd"
+    if "qsfp" in optic:
+        return "qsfp"
+    if optic == "sfp+":
+        return "sfp-plus"
+    if optic == "sfp":
+        return "sfp"
+    return _NODE_TYPE_FOR_MEDIA.get(speed, "media-ge")
+
+
+def _extract_vlan_ids(config_text: str, vendor: str) -> set[str]:
+    vids: set[str] = set()
+    for m in re.finditer(r"vlan-id\s+(\d+)", config_text, re.I):
+        vids.add(m.group(1))
+    for m in re.finditer(r"switchport\s+(?:access\s+vlan|trunk\s+allowed\s+vlan)\s+(\d+)", config_text, re.I):
+        vids.add(m.group(1))
+    for m in re.finditer(r"encapsulation\s+dot1Q\s+(\d+)", config_text, re.I):
+        vids.add(m.group(1))
+    return vids
+
+
+def _infer_device_type(parsed: dict) -> str:
+    if parsed.get("bgp_neighbors") or parsed.get("ospf_areas") or parsed.get("isis_nets") or parsed.get("l3vpn_vrfs"):
+        return "router"
+    if parsed.get("l2vpn_instances") or parsed.get("raw_interface_count", 0) <= 2:
+        return "switch-l2"
+    return "switch-l3"
+
+
+def _ip_in_network(ip: str, iface_ip: str) -> bool:
+    """Best-effort check whether ip belongs to the same subnet as iface_ip."""
+    if not ip or not iface_ip:
+        return False
+    try:
+        import ipaddress
+        iface_net = ipaddress.ip_interface(iface_ip.split("/")[0] + "/24" if "/" not in iface_ip else iface_ip).network
+        return ipaddress.ip_address(ip.split("/")[0]) in iface_net
+    except Exception:
+        return ip.split(".")[:3] == iface_ip.split(".")[:3]
+
+
+def discover_neighbors(session_id: str) -> list[dict[str, Any]]:
+    """Return neighbor candidates inferred from parsed config, enriched from network_canvas.db."""
+    with _mc_conn() as conn:
+        row = conn.execute(
+            "SELECT src_config_raw FROM mc_net_sessions WHERE id=%s", (session_id,)
+        ).fetchone()
+    raw_config = (row[0] if row else "") or ""
+    parsed = parse_source_config(raw_config) if raw_config else {}
+    vendor = parsed.get("vendor", "")
+
+    # BGP peers
+    neighbors: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for n in parsed.get("bgp_neighbors", []):
+        ip = n.get("ip", "")
+        if not ip or ip in seen:
+            continue
+        seen.add(ip)
+        neighbors.append({
+            "neighbor_ip": ip,
+            "neighbor_name": f"BGP peer {ip}",
+            "relationship": "bgp_peer",
+            "source_interface": "",
+            "protocol_detail": f"ASN {n.get('asn', 0)}",
+        })
+    # OSPF neighbors (areas)
+    for area in parsed.get("ospf_areas", []):
+        label = f"OSPF area {area}"
+        if label in seen:
+            continue
+        seen.add(label)
+        neighbors.append({
+            "neighbor_ip": "",
+            "neighbor_name": label,
+            "relationship": "ospf_neighbor",
+            "source_interface": "",
+            "protocol_detail": f"area {area}",
+        })
+    # ISIS NETs
+    for net in parsed.get("isis_nets", []):
+        label = f"IS-IS {net}"
+        if label in seen:
+            continue
+        seen.add(label)
+        neighbors.append({
+            "neighbor_ip": "",
+            "neighbor_name": label,
+            "relationship": "isis_neighbor",
+            "source_interface": "",
+            "protocol_detail": net,
+        })
+    # Static route next-hops
+    try:
+        from tools.network.config_parser import parse_config
+        base = parse_config(raw_config, vendor=vendor)
+        for route in base.get("routes", []):
+            nh = route.get("next_hop", "")
+            if nh and nh not in seen:
+                seen.add(nh)
+                neighbors.append({
+                    "neighbor_ip": nh,
+                    "neighbor_name": f"Next-hop {nh}",
+                    "relationship": "downstream",
+                    "source_interface": "",
+                    "protocol_detail": f"static {route.get('network', '')}",
+                })
+    except Exception:
+        pass
+
+    # Enrich from network_canvas inventory
+    inventory_rows: list[dict] = []
+    try:
+        with _nc_conn() as nc:
+            inventory_rows = [
+                dict(r) for r in nc.execute(
+                    "SELECT id, label, node_id, device_type, vendor, model FROM ni_devices"
+                ).fetchall()
+            ]
+    except Exception:
+        inventory_rows = []
+
+    for nb in neighbors:
+        key = nb["neighbor_ip"] or nb["neighbor_name"]
+        match = None
+        for inv in inventory_rows:
+            labels = [str(inv.get(k, "") or "") for k in ("label", "node_id", "model")]
+            if any(key.lower() in lbl.lower() or lbl.lower() in key.lower() for lbl in labels if lbl):
+                match = inv
+                break
+        if match:
+            nb["neighbor_name"] = match.get("label") or nb["neighbor_name"]
+            nb["notes"] = f"Matched inventory {match.get('vendor','')} {match.get('model','')} ({match.get('device_type','')})"
+            nb["is_discovered"] = 1
+            nb["inventory_id"] = match.get("id", "")
+        else:
+            nb["is_discovered"] = 0
+    return neighbors
+
+
+def build_topology(session_id: str, refresh: bool = False) -> dict[str, Any]:
+    """Auto-generate a JointJS-compatible topology from the parsed source config.
+
+    The resulting graph contains source/target device nodes, per-interface media
+    nodes, inferred neighbor nodes, and VLAN/L2 segment nodes. It is persisted
+    in mc_net_sessions.topology_json and the neighbor list is also stored in
+    mc_net_topology_neighbors.
+    """
+    with _mc_conn() as conn:
+        row = conn.execute(
+            "SELECT src_device_name, tgt_device_name, src_config_raw, src_model, tgt_model, selected_coa, "
+            "topology_json FROM mc_net_sessions WHERE id=%s",
+            (session_id,),
+        ).fetchone()
+    if not row:
+        raise ValueError(f"Session not found: {session_id}")
+    src_name, tgt_name, raw_config, src_model, tgt_model, selected_coa, existing_json = row
+    src_label = src_name or src_model or "Source"
+    tgt_label = tgt_name or tgt_model or "Target"
+
+    if existing_json and not refresh:
+        try:
+            stored = json.loads(existing_json)
+            if stored.get("nodes"):
+                return {"session_id": session_id, "graph_json": stored, "source": "stored"}
+        except Exception:
+            pass
+
+    parsed = parse_source_config(raw_config) if raw_config else {}
+    vendor = parsed.get("vendor", "")
+    ifaces = parsed.get("interfaces", []) or []
+    device_type = _infer_device_type(parsed)
+
+    nodes: list[dict[str, Any]] = []
+    edges: list[dict[str, Any]] = []
+    created_ids: set[str] = set()
+
+    def _add_node(nid: str, ntype: str, label: str, x: int, y: int, config: dict | None = None) -> None:
+        if nid in created_ids:
+            return
+        created_ids.add(nid)
+        nodes.append({
+            "id": nid, "type": ntype, "label": label, "x": x, "y": y,
+            "config": config or {},
+        })
+
+    src_id = f"topo-src-{session_id}"
+    tgt_id = f"topo-tgt-{session_id}"
+    _add_node(src_id, device_type, src_label, 100, 260)
+    _add_node(tgt_id, device_type, tgt_label, 720, 260)
+    edges.append({"id": f"e-mig-{session_id}", "source": src_id, "target": tgt_id, "label": "migrates to", "config": {"dashed": True}})
+
+    # Interfaces on the source side
+    vlan_ids = _extract_vlan_ids(raw_config, vendor) if raw_config else set()
+    iface_y = 60
+    for iface in ifaces:
+        name = iface.get("name", "")
+        if not name or name.startswith("lo0"):
+            continue
+        in_id = f"topo-iface-{session_id}-{name.replace('/', '-').replace(':', '_')}"
+        ip = iface.get("ip", "") or ""
+        lbl = name
+        if ip:
+            lbl += f"\\n{ip}"
+        _add_node(in_id, _media_node_type(iface), lbl, 240, iface_y)
+        edges.append({"id": f"e-si-{in_id}", "source": src_id, "target": in_id, "label": iface.get("description", "")[:20]})
+        iface_y += 56
+        if iface_y > 460:
+            iface_y = 60
+
+    # VLAN / L2 segment nodes near the middle
+    vlan_y = 60
+    for vid in sorted(vlan_ids, key=lambda x: int(x) if x.isdigit() else x):
+        vn_id = f"topo-vlan-{session_id}-{vid}"
+        _add_node(vn_id, "vlan", f"VLAN {vid}", 480, vlan_y)
+        vlan_y += 56
+        if vlan_y > 460:
+            vlan_y = 60
+
+    # Neighbor nodes from config + optional enrichment
+    neighbors = discover_neighbors(session_id)
+    neigh_y = 60
+    for nb in neighbors:
+        key = nb.get("neighbor_ip") or nb.get("neighbor_name") or "unknown"
+        n_id = f"topo-neigh-{session_id}-{key.replace('/', '-').replace(' ', '_').replace('.', '_')[:40]}"
+        rel = nb.get("relationship", "")
+        ntype = "router" if rel in ("bgp_peer", "ospf_neighbor", "isis_neighbor") else "server"
+        label = nb.get("neighbor_name") or key
+        detail = nb.get("protocol_detail", "")
+        if detail and len(label + " " + detail) < 40:
+            label = f"{label}\\n{detail}"
+        _add_node(n_id, ntype, label, 920, neigh_y)
+        # Find best source interface by IP subnet match
+        src_iface = ""
+        for iface in ifaces:
+            if iface.get("ip") and nb.get("neighbor_ip") and _ip_in_network(nb["neighbor_ip"], iface["ip"]):
+                src_iface = iface["name"]
+                break
+        if src_iface:
+            iface_id = f"topo-iface-{session_id}-{src_iface.replace('/', '-').replace(':', '_')}"
+            if iface_id in created_ids:
+                edges.append({"id": f"e-in-{n_id}", "source": iface_id, "target": n_id, "label": rel.replace('_', ' ')})
+            else:
+                edges.append({"id": f"e-sn-{n_id}", "source": src_id, "target": n_id, "label": rel.replace('_', ' ')})
+        else:
+            edges.append({"id": f"e-sn-{n_id}", "source": src_id, "target": n_id, "label": rel.replace('_', ' ')})
+        nb["node_id"] = n_id
+        neigh_y += 56
+        if neigh_y > 460:
+            neigh_y = 60
+
+    graph = {"nodes": nodes, "edges": edges}
+    neighbors_json = json.dumps(neighbors)
+    topology_json = json.dumps(graph)
+
+    with _mc_conn() as conn:
+        conn.execute(
+            "UPDATE mc_net_sessions SET topology_json=%s, topology_neighbors_json=%s WHERE id=%s",
+            (topology_json, neighbors_json, session_id),
+        )
+        conn.execute("DELETE FROM mc_net_topology_neighbors WHERE session_id=%s", (session_id,))
+        for nb in neighbors:
+            conn.execute(
+                "INSERT INTO mc_net_topology_neighbors "
+                "(id, session_id, neighbor_name, neighbor_ip, relationship, source_interface, is_discovered, notes) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                (
+                    f"tnb-{session_id}-{uuid.uuid4().hex[:8]}",
+                    session_id,
+                    nb.get("neighbor_name", ""),
+                    nb.get("neighbor_ip", ""),
+                    nb.get("relationship", ""),
+                    nb.get("source_interface", ""),
+                    int(nb.get("is_discovered", 0) or 0),
+                    nb.get("notes", ""),
+                ),
+            )
+        conn.commit()
+
+    # RAG + KG indexing
+    _index_to_rag(
+        f"Network migration topology for {src_label} → {tgt_label}. "
+        f"Interfaces: {len(ifaces)}, neighbors: {len(neighbors)}, VLANs: {len(vlan_ids)}. "
+        f"Selected COA: {selected_coa or 'not selected'}.",
+        "build_topology",
+        session_id,
+    )
+    _update_kg(session_id)
+
+    return {"session_id": session_id, "graph_json": graph, "neighbors": neighbors, "source": "generated"}
 
 
 # ---------------------------------------------------------------------------
@@ -1934,7 +2553,7 @@ def load_device_config_from_db(device_id: str) -> str | None:
         with _nc_conn() as nc:
             row = nc.execute(
                 """SELECT config_text FROM ni_device_configs
-                   WHERE device_id=?
+                   WHERE device_id=%s
                    ORDER BY CASE config_type
                      WHEN 'running' THEN 1
                      WHEN 'startup' THEN 2
@@ -1946,6 +2565,755 @@ def load_device_config_from_db(device_id: str) -> str | None:
     except Exception:
         return None
     return row[0] if row else None
+
+
+# ---------------------------------------------------------------------------
+# Configuration-section mapping (AI-assisted, HITL-reviewed)
+# ---------------------------------------------------------------------------
+
+_CONFIG_SECTION_TYPES: tuple[str, ...] = (
+    "system", "interfaces", "routing-options", "protocols",
+    "policy-options", "firewall", "class-of-service", "services",
+    "snmp", "ntp", "syslog", "aaa", "management", "vlans", "unknown",
+)
+
+# Mapping of source section type -> likely target section type (vendor-agnostic).
+_SECTION_TYPE_MAP: dict[str, str] = {
+    "interfaces": "interfaces",
+    "routing-options": "routing-options",
+    "protocols": "protocols",
+    "policy-options": "policy-options",
+    "firewall": "firewall",
+    "class-of-service": "class-of-service",
+    "services": "services",
+    "snmp": "snmp",
+    "ntp": "ntp",
+    "syslog": "syslog",
+    "aaa": "aaa",
+    "system": "system",
+    "management": "management",
+    "vlans": "vlans",
+}
+
+
+def _detect_section_type_juniper(line: str) -> str:
+    """Return the top-level config section for a Juniper line.
+
+    Handles both `set` style and curly-brace hierarchical style.
+    """
+    stripped = line.strip()
+    parts = stripped.split()
+    if len(parts) >= 2 and parts[0].lower() == "set":
+        sec = parts[1].lower().rstrip(";")
+        return sec if sec in _CONFIG_SECTION_TYPES else "unknown"
+    # Curly-brace style: top-level sections look like "system {" or "interfaces {"
+    if parts:
+        first = parts[0].lower().rstrip(";")
+        if first in _CONFIG_SECTION_TYPES:
+            return first
+    return "unknown"
+
+
+def _detect_section_type_cisco(line: str) -> str:
+    """Return the section type for a Cisco/Arista block-style config line."""
+    lowered = line.strip().lower()
+    if lowered.startswith("interface "):
+        return "interfaces"
+    if lowered.startswith("router ") or lowered.startswith("ipv6 router "):
+        return "protocols"
+    if lowered.startswith("routing "):
+        return "routing-options"
+    if lowered.startswith("ip route ") or lowered.startswith("ipv6 route "):
+        return "routing-options"
+    if lowered.startswith("ip access-list ") or lowered.startswith("ipv6 access-list "):
+        return "firewall"
+    if lowered.startswith("route-map ") or lowered.startswith("ip prefix-list "):
+        return "policy-options"
+    if lowered.startswith("vlan ") or lowered.startswith("vlan database"):
+        return "vlans"
+    if lowered.startswith("hostname "):
+        return "system"
+    if lowered.startswith("banner ") or lowered.startswith("ip domain-") or lowered.startswith("service "):
+        return "system"
+    if lowered.startswith("snmp-") or lowered.startswith("snmp "):
+        return "snmp"
+    if lowered.startswith("ntp ") or lowered.startswith("clock "):
+        return "ntp"
+    if lowered.startswith("logging ") or lowered.startswith("syslog "):
+        return "syslog"
+    if lowered.startswith("aaa ") or lowered.startswith("username ") or lowered.startswith("enable "):
+        return "aaa"
+    if lowered.startswith("line ") or lowered.startswith("archive") or lowered.startswith("mgmt "):
+        return "management"
+    return "unknown"
+
+
+def _detect_section_type_arista(line: str) -> str:
+    """Arista EOS is Cisco-like with a few extra keywords."""
+    lowered = line.strip().lower()
+    if lowered.startswith("router ") or lowered.startswith("ipv6 route "):
+        return "protocols"
+    if lowered.startswith("ip routing") or lowered.startswith("vrf instance "):
+        return "routing-options"
+    if lowered.startswith("interface "):
+        return "interfaces"
+    if lowered.startswith("ip access-list ") or lowered.startswith("ipv6 access-list "):
+        return "firewall"
+    if lowered.startswith("route-map ") or lowered.startswith("ip prefix-list "):
+        return "policy-options"
+    if lowered.startswith("vlan "):
+        return "vlans"
+    if lowered.startswith("hostname "):
+        return "system"
+    return "unknown"
+
+
+def _section_detector(vendor: str):
+    if vendor == "juniper":
+        return _detect_section_type_juniper
+    if vendor in ("cisco_ios", "cisco_nxos"):
+        return _detect_section_type_cisco
+    if vendor == "arista":
+        return _detect_section_type_arista
+    # Generic: prefer Cisco-style block detection, then Juniper-style set detection.
+    return lambda line: _detect_section_type_cisco(line) or _detect_section_type_juniper(line)
+
+
+def _extract_config_sections(config_text: str, parsed: dict | None = None) -> list[dict]:
+    """Split a device config into semantic sections.
+
+    Returns a list of dicts:
+      {
+        "section_type": str,
+        "start_line": int,    # 1-based
+        "end_line": int,
+        "lines": [str],
+        "stanza_text": str,   # joined lines
+      }
+    """
+    vendor = (parsed or {}).get("vendor", "")
+    detector = _section_detector(vendor)
+    lines = config_text.splitlines()
+    sections: list[dict] = []
+    current: dict | None = None
+
+    for idx, raw in enumerate(lines, start=1):
+        stripped = raw.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        sec_type = detector(raw)
+        # Juniper: every line is a full command; start a new section on type change.
+        if vendor == "juniper":
+            # For curly-brace style, nested lines inherit the current top-level section.
+            if sec_type == "unknown" and current is not None:
+                sec_type = current["section_type"]
+            if current is None or current["section_type"] != sec_type:
+                if current is not None:
+                    sections.append(current)
+                current = {"section_type": sec_type, "start_line": idx, "end_line": idx, "lines": [raw], "stanza_text": raw}
+            else:
+                current["lines"].append(raw)
+                current["end_line"] = idx
+                current["stanza_text"] += "\n" + raw
+            continue
+
+        # Block-style vendors: section headers start a new block.
+        is_header = (
+            stripped.startswith("!")
+            or stripped.startswith("interface ")
+            or stripped.startswith("router ")
+            or stripped.startswith("routing ")
+            or stripped.startswith("ip access-list ")
+            or stripped.startswith("ipv6 access-list ")
+            or stripped.startswith("route-map ")
+            or stripped.startswith("ip prefix-list ")
+            or stripped.startswith("policy-map ")
+            or stripped.startswith("class-map ")
+            or stripped.startswith("vlan ")
+            or stripped.startswith("vrf ")
+            or stripped.startswith("vrf instance ")
+            or stripped.startswith("hostname ")
+            or stripped.startswith("banner ")
+            or stripped.startswith("line ")
+            or stripped.startswith("aaa ")
+            or stripped.startswith("archive")
+            or stripped.startswith("management ")
+            or stripped.startswith("system ")
+        )
+        if is_header or current is None:
+            if current is not None and current["lines"]:
+                sections.append(current)
+            current = {"section_type": sec_type, "start_line": idx, "end_line": idx, "lines": [raw], "stanza_text": raw}
+        else:
+            current["lines"].append(raw)
+            current["end_line"] = idx
+            current["stanza_text"] += "\n" + raw
+            # If a header also changes section type, update it.
+            if is_header:
+                current["section_type"] = sec_type
+
+    if current is not None and current["lines"]:
+        sections.append(current)
+
+    return sections
+
+
+def _target_vendor_from_model(tgt_model: str) -> str:
+    """Infer target vendor from model name or hardware profile."""
+    if not tgt_model:
+        return ""
+    lowered = tgt_model.lower()
+    if "mx" in lowered or "ex" in lowered or "qfx" in lowered or "srx" in lowered:
+        return "juniper"
+    if "nexus" in lowered or "catalyst" in lowered or "asr" in lowered or "csr" in lowered or "ios" in lowered:
+        return "cisco_ios" if "nx" not in lowered else "cisco_nxos"
+    if "eos" in lowered or "arista" in lowered or "dcs" in lowered:
+        return "arista"
+    if "timos" in lowered or "sr" in lowered:
+        return "nokia"
+    if "ironware" in lowered or "brocade" in lowered or "ruckus" in lowered:
+        return "brocade"
+    # Fallback: query hardware profile DB if available.
+    try:
+        with _nc_conn() as nc:
+            row = nc.execute(
+                "SELECT vendor FROM nc_hardware_profiles WHERE LOWER(model)=LOWER(%s) OR LOWER(id)=LOWER(%s) LIMIT 1",
+                (tgt_model, f"hw-{lowered.replace(' ', '-')}"),
+            ).fetchone()
+        if row:
+            return (row["vendor"] if isinstance(row, sqlite3.Row) else row[0]).lower()
+    except Exception:
+        pass
+    return ""
+
+
+def _build_default_questions(parsed: dict, src_vendor: str, tgt_vendor: str) -> list[dict]:
+    """Generate the initial yes/no question set for config mapping."""
+    hostname = (parsed.get("hostname", "source-device") or "source-device").strip().rstrip(";")
+    questions: list[dict] = []
+
+    # Hostname preservation.
+    questions.append({
+        "question_key": "preserve_hostname",
+        "question_text": f"Preserve the source hostname '{hostname}' on the target device?",
+        "default_answer": 0,
+        "user_answer": None,
+        "ai_relevance": "When 'yes', the target config keeps the original hostname. When 'no', a placeholder target hostname is used.",
+    })
+
+    # VRF/routing-instance naming.
+    if parsed.get("l3vpn_vrfs"):
+        questions.append({
+            "question_key": "preserve_vrf_names",
+            "question_text": "Preserve existing VRF / routing-instance names on the target device?",
+            "default_answer": 1,
+            "user_answer": None,
+            "ai_relevance": "When 'yes', VRF names are copied verbatim. When 'no', VRFs are renamed to a target convention.",
+        })
+
+    # Cross-vendor syntax conversion.
+    if src_vendor and tgt_vendor and src_vendor != tgt_vendor:
+        questions.append({
+            "question_key": "convert_vendor_syntax",
+            "question_text": f"Convert {src_vendor} configuration syntax to {tgt_vendor} style where possible?",
+            "default_answer": 1,
+            "user_answer": None,
+            "ai_relevance": "When 'yes', AI proposes vendor-specific target stanzas. When 'no', sections are flagged as 'manual'.",
+        })
+
+    # Firewall/filter migration.
+    if parsed.get("firewall_filters"):
+        questions.append({
+            "question_key": "migrate_firewall_filters",
+            "question_text": "Migrate all firewall / filter stanzas instead of dropping deprecated ones?",
+            "default_answer": 1,
+            "user_answer": None,
+            "ai_relevance": "When 'yes', filters are mapped to target syntax. When 'no', deprecated filters are removed.",
+        })
+
+    # Management interfaces.
+    questions.append({
+        "question_key": "preserve_mgmt_interfaces",
+        "question_text": "Preserve management / out-of-band interface configuration?",
+        "default_answer": 1,
+        "user_answer": None,
+        "ai_relevance": "When 'yes', mgmt/fxp/em0 stanzas are kept. When 'no', they are skipped to avoid target conflicts.",
+    })
+
+    # BGP neighbor details.
+    if parsed.get("bgp_neighbors"):
+        questions.append({
+            "question_key": "preserve_bgp_peers",
+            "question_text": "Keep existing BGP neighbor IPs, ASNs, and group names exactly?",
+            "default_answer": 1,
+            "user_answer": None,
+            "ai_relevance": "When 'yes', BGP neighbor definitions are copied with interface renames only. When 'no', AI may suggest redesign.",
+        })
+
+    return questions
+
+
+def _load_config_map_questions(session_id: str) -> list[dict]:
+    with _mc_conn() as mc:
+        rows = mc.execute(
+            "SELECT question_key, question_text, default_answer, user_answer, ai_relevance "
+            "FROM mc_net_config_questions WHERE session_id=%s ORDER BY id",
+            (session_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def _save_config_map_questions(session_id: str, questions: list[dict]) -> None:
+    with _mc_conn() as mc:
+        for q in questions:
+            mc.execute(
+                "INSERT INTO mc_net_config_questions (id, session_id, question_key, question_text, "
+                "default_answer, user_answer, ai_relevance) VALUES (%s,%s,%s,%s,%s,%s,%s) "
+                "ON CONFLICT(session_id, question_key) DO UPDATE SET "
+                "question_text=excluded.question_text, default_answer=excluded.default_answer, "
+                "user_answer=excluded.user_answer, ai_relevance=excluded.ai_relevance",
+                (str(uuid.uuid4()), session_id, q["question_key"], q["question_text"],
+                 q.get("default_answer"), q.get("user_answer"), q.get("ai_relevance", "")),
+            )
+        mc.commit()
+
+
+def generate_config_map_questions(session_id: str) -> dict:
+    """Return (and seed if missing) the yes/no questions for config mapping.
+
+    Returns {"questions": [...]} where each question has:
+      question_key, question_text, default_answer, user_answer, ai_relevance
+    """
+    existing = _load_config_map_questions(session_id)
+    if existing:
+        return {"questions": existing}
+
+    sess: dict = {}
+    parsed: dict = {}
+    try:
+        with _mc_conn() as mc:
+            row = mc.execute(
+                "SELECT src_model, tgt_model, src_config_raw FROM mc_net_sessions WHERE id=%s",
+                (session_id,),
+            ).fetchone()
+        if row:
+            sess = dict(row)
+    except Exception as e:
+        logger.warning("generate_config_map_questions: session load failed: %s", e)
+
+    if sess.get("src_config_raw"):
+        try:
+            parsed = parse_source_config(sess["src_config_raw"])
+        except Exception as e:
+            logger.warning("generate_config_map_questions: parse failed: %s", e)
+
+    src_vendor = parsed.get("vendor", "")
+    tgt_vendor = _target_vendor_from_model(sess.get("tgt_model", ""))
+    questions = _build_default_questions(parsed, src_vendor, tgt_vendor)
+    _save_config_map_questions(session_id, questions)
+    return {"questions": questions}
+
+
+def _get_question_answers(session_id: str) -> dict[str, int | None]:
+    """Return {question_key: user_answer|default_answer}."""
+    rows = _load_config_map_questions(session_id)
+    return {
+        r["question_key"]: (r["user_answer"] if r.get("user_answer") is not None else r.get("default_answer"))
+        for r in rows
+    }
+
+
+def _rule_based_config_mapping(
+    sections: list[dict],
+    parsed: dict,
+    port_map: dict[str, str],
+    src_vendor: str,
+    tgt_vendor: str,
+    answers: dict[str, int | None],
+) -> list[dict]:
+    """Deterministic fallback that maps sections when LLM is unavailable."""
+    deprecated_patterns = _get_deprecated_patterns(src_vendor)
+    preserve_hostname = bool(answers.get("preserve_hostname", 0))
+    convert_vendor = bool(answers.get("convert_vendor_syntax", 1))
+    preserve_mgmt = bool(answers.get("preserve_mgmt_interfaces", 1))
+    migrate_fw = bool(answers.get("migrate_firewall_filters", 1))
+
+    proposals: list[dict] = []
+    for sec in sections:
+        stype = sec["section_type"]
+        src_text = sec["stanza_text"]
+        lines = sec["lines"]
+
+        # Build a default target stanza by applying port renames and removing deprecated lines.
+        tgt_lines: list[str] = []
+        removed_reasons: list[str] = []
+        for line in lines:
+            removed = False
+            for pat, reason in deprecated_patterns:
+                if pat.search(line):
+                    removed = True
+                    removed_reasons.append(reason)
+                    break
+            if removed:
+                continue
+            # Apply port/interface renames.
+            out = line
+            for src_if, tgt_if in port_map.items():
+                if re.search(r"\b" + re.escape(src_if.split(".")[0]) + r"\b", out):
+                    out = re.sub(
+                        r"\b" + re.escape(src_if.split(".")[0]) + r"\b",
+                        tgt_if.split(".")[0],
+                        out,
+                    )
+            tgt_lines.append(out)
+
+        tgt_text = "\n".join(tgt_lines)
+
+        # Decide action and rationale.
+        action = "direct"
+        rationale = "Copy to target with interface renames applied."
+        confidence = 0.85
+
+        if stype == "interfaces":
+            action = "rename"
+            rationale = "Map source interfaces to target interfaces using the port map."
+            confidence = 0.90
+        elif stype == "system":
+            if not preserve_hostname and re.search(r"^\s*(hostname|set\s+system\s+host-name)", src_text, re.M | re.I):
+                tgt_text = re.sub(r"(hostname|set\s+system\s+host-name)\s+\S+", r"\1 <target-hostname>", tgt_text, flags=re.I)
+                rationale = "Source hostname replaced with target hostname."
+            else:
+                rationale = "System-level settings copied (hostname, banner, etc.)."
+        elif stype in ("protocols", "routing-options"):
+            if src_vendor != tgt_vendor and not convert_vendor:
+                action = "manual"
+                confidence = 0.55
+                rationale = f"Cross-vendor {stype} stanza requires manual syntax conversion from {src_vendor} to {tgt_vendor}."
+            else:
+                action = "direct" if src_vendor == tgt_vendor or convert_vendor else "manual"
+                rationale = f"{stype} stanza migrated; verify neighbor/interface references." if action == "direct" else f"{stype} syntax may need vendor-specific adjustments."
+                confidence = 0.80 if action == "direct" else 0.60
+        elif stype == "firewall":
+            if not migrate_fw:
+                action = "remove"
+                rationale = "User chose to drop deprecated firewall/filter stanzas."
+                confidence = 0.95
+            elif src_vendor != tgt_vendor:
+                action = "manual"
+                rationale = f"Firewall/filter syntax differs between {src_vendor} and {tgt_vendor}."
+                confidence = 0.60
+            else:
+                rationale = "Firewall/filter stanza copied with interface renames."
+        elif stype == "management":
+            if not preserve_mgmt:
+                action = "skip"
+                rationale = "Management interfaces skipped per user preference."
+                confidence = 0.95
+            else:
+                rationale = "Management/oob configuration preserved."
+        elif removed_reasons:
+            action = "remove"
+            rationale = f"Deprecated / platform-specific content removed: {removed_reasons[0]}"
+            confidence = 0.90
+
+        if action in ("manual", "remove", "skip"):
+            confidence = min(confidence, 0.65)
+
+        proposals.append({
+            "id": str(uuid.uuid4()),
+            "src_section_type": stype,
+            "src_stanza_text": src_text,
+            "src_lines_json": json.dumps([{"line_no": sec["start_line"] + i, "text": ln} for i, ln in enumerate(lines)]),
+            "tgt_section_type": _SECTION_TYPE_MAP.get(stype, stype),
+            "tgt_stanza_text": tgt_text if action not in ("remove", "skip") else "",
+            "mapping_action": action,
+            "confidence": round(confidence, 2),
+            "ai_rationale": rationale,
+            "ai_question_key": "",
+            "status": "pending",
+            "reviewer_note": "",
+        })
+
+    return proposals
+
+
+def _llm_config_mapping(
+    sections: list[dict],
+    parsed: dict,
+    port_map: dict[str, str],
+    src_vendor: str,
+    tgt_vendor: str,
+    answers: dict[str, int | None],
+    session_id: str,
+) -> list[dict]:
+    """Use LLM to propose section-level config mapping. Falls back to rule-based."""
+    try:
+        from tools.llm.router import LLMRouter  # type: ignore
+        from tools.llm.provider import LLMRequest  # type: ignore
+    except Exception as e:
+        logger.warning("_llm_config_mapping: LLM imports unavailable: %s", e)
+        return _rule_based_config_mapping(sections, parsed, port_map, src_vendor, tgt_vendor, answers)
+
+    # Trim section text to keep prompt size reasonable.
+    trimmed_sections = []
+    for sec in sections:
+        text = sec["stanza_text"]
+        if len(text) > 2000:
+            text = text[:2000] + "\n... [truncated for LLM prompt]"
+        trimmed_sections.append({
+            "section_type": sec["section_type"],
+            "start_line": sec["start_line"],
+            "end_line": sec["end_line"],
+            "stanza_text": text,
+        })
+
+    prompt = (
+        f"You are a senior network architect migrating a {src_vendor} device to a {tgt_vendor} device.\n\n"
+        f"Source hostname: {parsed.get('hostname','unknown')}\n"
+        f"User migration preferences (yes/no answers):\n{json.dumps(answers, indent=2)}\n\n"
+        f"Port map (source interface -> target interface):\n{json.dumps(port_map, indent=2)}\n\n"
+        "Source config sections:\n"
+        f"{json.dumps(trimmed_sections, indent=2)}\n\n"
+        "For each section, propose a target configuration stanza and classify the action as one of: "
+        "direct, rename, merge, split, remove, manual, skip.\n\n"
+        "Return valid JSON only, no markdown, no commentary:\n"
+        "{\n"
+        '  "sections": [\n'
+        "    {\n"
+        '      "src_section_type": "...",\n'
+        '      "tgt_section_type": "...",\n'
+        '      "tgt_stanza_text": "...",\n'
+        '      "mapping_action": "direct",\n'
+        '      "confidence": 0.92,\n'
+        '      "ai_rationale": "Tooltip explanation for HITL reviewer",\n'
+        '      "ai_question_key": ""\n'
+        "    }\n"
+        "  ]\n"
+        "}\n"
+    )
+
+    try:
+        router = LLMRouter()
+        req = LLMRequest(
+            messages=[{"role": "user", "content": prompt}],
+            system_prompt="You are a network architect. Respond with valid JSON only.",
+            effort="high",
+        )
+        resp = router.invoke("code_generation", req)
+        result = json.loads(resp.content)
+    except Exception as e:
+        logger.warning("_llm_config_mapping: LLM call failed: %s", e)
+        return _rule_based_config_mapping(sections, parsed, port_map, src_vendor, tgt_vendor, answers)
+
+    llm_sections = result.get("sections", [])
+    if not llm_sections:
+        return _rule_based_config_mapping(sections, parsed, port_map, src_vendor, tgt_vendor, answers)
+
+    # Enforce every returned section has required fields and generate an id.
+    proposals: list[dict] = []
+    for ls in llm_sections:
+        stype = ls.get("src_section_type", "unknown")
+        # Match back to original stanza if possible.
+        orig = next((s for s in sections if s["section_type"] == stype), None)
+        src_text = orig["stanza_text"] if orig else ""
+        src_lines = orig["lines"] if orig else []
+        proposals.append({
+            "id": str(uuid.uuid4()),
+            "src_section_type": stype,
+            "src_stanza_text": src_text,
+            "src_lines_json": json.dumps([{"line_no": (orig["start_line"] if orig else 1) + i, "text": ln} for i, ln in enumerate(src_lines)]),
+            "tgt_section_type": ls.get("tgt_section_type", _SECTION_TYPE_MAP.get(stype, stype)),
+            "tgt_stanza_text": ls.get("tgt_stanza_text", ""),
+            "mapping_action": ls.get("mapping_action", "manual"),
+            "confidence": max(0.0, min(1.0, float(ls.get("confidence", 0.7)))),
+            "ai_rationale": ls.get("ai_rationale", "AI-proposed target stanza."),
+            "ai_question_key": ls.get("ai_question_key", ""),
+            "status": "pending",
+            "reviewer_note": "",
+        })
+
+    # If LLM dropped sections, backfill with rule-based to ensure full coverage.
+    covered_types = {p["src_section_type"] for p in proposals}
+    for sec in sections:
+        if sec["section_type"] not in covered_types:
+            rule_props = _rule_based_config_mapping([sec], parsed, port_map, src_vendor, tgt_vendor, answers)
+            proposals.extend(rule_props)
+
+    return proposals
+
+
+def propose_config_mapping(
+    session_id: str,
+    answers: dict[str, int] | None = None,
+    use_llm: bool = True,
+) -> dict:
+    """Generate and persist section-level config mapping proposals.
+
+    Args:
+        session_id: Network migration session id.
+        answers: Optional override mapping {question_key: 1|0}. If provided, answers are saved.
+        use_llm: If True, try LLM; otherwise deterministic rule-based.
+
+    Returns:
+        {"proposals": [...], "questions": [...], "model": str|""}
+    """
+    # Ensure questions exist.
+    generate_config_map_questions(session_id)
+    if answers:
+        existing = _load_config_map_questions(session_id)
+        for q in existing:
+            if q["question_key"] in answers:
+                q["user_answer"] = answers[q["question_key"]]
+        _save_config_map_questions(session_id, existing)
+
+    # Load session and port map.
+    sess: dict = {}
+    with _mc_conn() as mc:
+        row = mc.execute("SELECT * FROM mc_net_sessions WHERE id=%s", (session_id,)).fetchone()
+        if row:
+            sess = dict(row)
+        port_rows = mc.execute("SELECT * FROM mc_net_port_map WHERE session_id=%s", (session_id,)).fetchall()
+    port_map = {r["src_interface"]: r["tgt_interface"] for r in port_rows if r.get("src_interface") and r.get("tgt_interface")}
+
+    if not sess:
+        return {"error": "Session not found", "proposals": [], "questions": [], "model": ""}
+
+    src_config_raw = sess.get("src_config_raw", "")
+    if not src_config_raw:
+        return {"error": "No source config imported", "proposals": [], "questions": [], "model": ""}
+
+    parsed = parse_source_config(src_config_raw)
+    src_vendor = parsed.get("vendor", "")
+    tgt_vendor = _target_vendor_from_model(sess.get("tgt_model", ""))
+
+    sections = _extract_config_sections(src_config_raw, parsed)
+    current_answers = _get_question_answers(session_id)
+
+    if use_llm:
+        proposals = _llm_config_mapping(sections, parsed, port_map, src_vendor, tgt_vendor, current_answers, session_id)
+        model = "llm"
+    else:
+        proposals = _rule_based_config_mapping(sections, parsed, port_map, src_vendor, tgt_vendor, current_answers)
+        model = "rule-based"
+
+    # Persist proposals (replace prior auto-generated pending proposals).
+    with _mc_conn() as mc:
+        mc.execute("DELETE FROM mc_net_config_map WHERE session_id=%s AND status='pending'", (session_id,))
+        for p in proposals:
+            mc.execute(
+                "INSERT INTO mc_net_config_map (id, session_id, src_section_type, src_stanza_text, "
+                "src_lines_json, tgt_section_type, tgt_stanza_text, mapping_action, confidence, "
+                "ai_rationale, ai_question_key, status, reviewer_note, applied_to_target) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                (p["id"], session_id, p["src_section_type"], p["src_stanza_text"],
+                 p["src_lines_json"], p["tgt_section_type"], p["tgt_stanza_text"],
+                 p["mapping_action"], p["confidence"], p["ai_rationale"],
+                 p["ai_question_key"], p["status"], p["reviewer_note"], 0),
+            )
+        mc.commit()
+
+    # Save LLM usage to audit trail.
+    if session_id:
+        try:
+            with _mc_conn() as mc:
+                mc.execute(
+                    "INSERT INTO mc_net_ai_sessions (id, session_id, role, message, model_used, created_at) "
+                    "VALUES (%s,%s,%s,%s,%s,%s)",
+                    (str(uuid.uuid4()), session_id, "assistant",
+                     f"[Config mapping] generated {len(proposals)} proposals via {model}",
+                     model, _now()),
+                )
+                mc.commit()
+        except Exception:
+            pass
+
+    questions = _load_config_map_questions(session_id)
+    return {"proposals": proposals, "questions": questions, "model": model, "count": len(proposals)}
+
+
+def get_config_map(session_id: str) -> dict:
+    """Return persisted mapping proposals and questions for a session."""
+    with _mc_conn() as mc:
+        rows = mc.execute(
+            "SELECT * FROM mc_net_config_map WHERE session_id=%s ORDER BY created_at, id", (session_id,)
+        ).fetchall()
+    proposals = [dict(r) for r in rows]
+    questions = _load_config_map_questions(session_id)
+    return {"proposals": proposals, "questions": questions}
+
+
+def decide_config_map_row(session_id: str, row_id: str, decision: str, note: str = "") -> dict:
+    """Approve / reject / skip a single mapping row."""
+    if decision not in ("approved", "rejected", "skipped", "pending"):
+        return {"error": "Invalid decision"}
+    with _mc_conn() as mc:
+        cur = mc.execute(
+            "UPDATE mc_net_config_map SET status=%s, reviewer_note=%s, updated_at=%s "
+            "WHERE session_id=%s AND id=%s",
+            (decision, note, _now(), session_id, row_id),
+        )
+        mc.commit()
+    return {"ok": True, "updated": cur.rowcount}
+
+
+def apply_approved_config_map(session_id: str) -> dict:
+    """Assemble target config from approved mapping rows and port map.
+
+    Returns {"target_config": str, "approved_count": int, "rejected_count": int, "skipped_count": int}
+    """
+    with _mc_conn() as mc:
+        rows = mc.execute(
+            "SELECT * FROM mc_net_config_map WHERE session_id=%s ORDER BY created_at, id", (session_id,)
+        ).fetchall()
+        sess_row = mc.execute("SELECT src_config_raw, tgt_model FROM mc_net_sessions WHERE id=%s", (session_id,)).fetchone()
+    if not sess_row:
+        return {"error": "Session not found"}
+
+    proposals = [dict(r) for r in rows]
+    approved = [p for p in proposals if p.get("status") == "approved"]
+
+    # Build target config by concatenating approved target stanzas in source order.
+    # We use the original line numbers stored in src_lines_json to recover ordering.
+    ordered: list[tuple[int, dict]] = []
+    for p in approved:
+        try:
+            lines = json.loads(p.get("src_lines_json") or "[]")
+            start_line = lines[0]["line_no"] if lines else 999999
+        except Exception:
+            start_line = 999999
+        ordered.append((start_line, p))
+    ordered.sort(key=lambda x: x[0])
+
+    target_parts: list[str] = []
+    for _, p in ordered:
+        if p.get("mapping_action") in ("remove", "skip"):
+            continue
+        tgt = (p.get("tgt_stanza_text") or "").strip()
+        if tgt:
+            target_parts.append(tgt)
+
+    target_config = "\n\n".join(target_parts)
+
+    # Mark as applied.
+    with _mc_conn() as mc:
+        mc.execute(
+            "UPDATE mc_net_config_map SET applied_to_target=1, updated_at=%s "
+            "WHERE session_id=%s AND status='approved'",
+            (_now(), session_id),
+        )
+        mc.execute(
+            "UPDATE mc_net_sessions SET target_config=%s, updated_at=%s WHERE id=%s",
+            (target_config, _now(), session_id),
+        )
+        mc.commit()
+
+    return {
+        "target_config": target_config,
+        "approved_count": len(approved),
+        "rejected_count": sum(1 for p in proposals if p.get("status") == "rejected"),
+        "skipped_count": sum(1 for p in proposals if p.get("status") == "skipped"),
+        "pending_count": sum(1 for p in proposals if p.get("status") == "pending"),
+    }
 
 
 def recommend_hardware(
@@ -1967,7 +3335,7 @@ def recommend_hardware(
                 dict(r) for r in nc.execute(
                     "SELECT id, vendor, model, device_type, throughput_gbps, rack_units, "
                     "power_typical_w, ports_json, eol_date, tags FROM nc_hardware_profiles "
-                    "WHERE device_type=? ORDER BY throughput_gbps DESC LIMIT 20",
+                    "WHERE device_type=%s ORDER BY throughput_gbps DESC LIMIT 20",
                     (dtype,),
                 ).fetchall()
             ]
@@ -2027,7 +3395,7 @@ def recommend_hardware(
             with _mc_conn() as mc:
                 mc.execute(
                     "INSERT INTO mc_net_ai_sessions (id, session_id, role, message, model_used, created_at) "
-                    "VALUES (?,?,?,?,?,?)",
+                    "VALUES (%s,%s,%s,%s,%s,%s)",
                     (str(uuid.uuid4()), session_id, "assistant",
                      f"[Hardware recommendation] {resp_text[:1000]}", model_used, _now()),
                 )
@@ -2065,13 +3433,13 @@ def ai_assist(session_id: str, engineer_prompt: str) -> dict:
         with _mc_conn() as mc:
             row = mc.execute(
                 "SELECT src_model, tgt_model, src_device_name, tgt_device_name, "
-                "src_config_raw, status FROM mc_net_sessions WHERE id=?", (session_id,)
+                "src_config_raw, status FROM mc_net_sessions WHERE id=%s", (session_id,)
             ).fetchone()
             if row:
                 sess = dict(row)
             history = [
                 dict(r) for r in mc.execute(
-                    "SELECT role, message FROM mc_net_ai_sessions WHERE session_id=? "
+                    "SELECT role, message FROM mc_net_ai_sessions WHERE session_id=%s "
                     "ORDER BY created_at DESC LIMIT 10",
                     (session_id,),
                 ).fetchall()
@@ -2145,12 +3513,12 @@ def ai_assist(session_id: str, engineer_prompt: str) -> dict:
         with _mc_conn() as mc:
             mc.execute(
                 "INSERT INTO mc_net_ai_sessions (id, session_id, role, message, model_used, created_at) "
-                "VALUES (?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s)",
                 (str(uuid.uuid4()), session_id, "engineer", engineer_prompt, "", _now()),
             )
             mc.execute(
                 "INSERT INTO mc_net_ai_sessions (id, session_id, role, message, model_used, created_at) "
-                "VALUES (?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s)",
                 (str(uuid.uuid4()), session_id, "assistant", response_text, model_used, _now()),
             )
             mc.commit()
@@ -2372,7 +3740,7 @@ def plan_protocol_migration(session_id: str, variant_overrides: dict | None = No
 
     with _mc_conn() as mc:
         sess = dict(mc.execute(
-            "SELECT src_config_raw, src_model, tgt_model FROM mc_net_sessions WHERE id=?",
+            "SELECT src_config_raw, src_model, tgt_model FROM mc_net_sessions WHERE id=%s",
             (session_id,),
         ).fetchone() or {})
 
@@ -2387,7 +3755,7 @@ def plan_protocol_migration(session_id: str, variant_overrides: dict | None = No
     try:
         with _nc_conn() as nc:
             hw = nc.execute(
-                "SELECT vendor FROM nc_hardware_profiles WHERE model=? LIMIT 1",
+                "SELECT vendor FROM nc_hardware_profiles WHERE model=%s LIMIT 1",
                 (sess.get("tgt_model", ""),),
             ).fetchone()
             if hw:
@@ -2441,7 +3809,7 @@ def plan_protocol_migration(session_id: str, variant_overrides: dict | None = No
                 "INSERT OR REPLACE INTO mc_net_protocol_plans "
                 "(id, session_id, protocol, migration_steps_json, risk_level, status, "
                 "variant, advanced_config, created_at, updated_at) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (str(uuid.uuid4()), session_id, protocol,
                  json.dumps(steps), risk, "draft",
                  variant_used, json.dumps(adv_cfg), now, now),
@@ -2467,19 +3835,19 @@ def build_parallel_timeline(session_id: str) -> list[dict]:
     try:
         with _mc_conn() as mc:
             row = mc.execute(
-                "SELECT src_config_raw, src_model, tgt_model FROM mc_net_sessions WHERE id=?",
+                "SELECT src_config_raw, src_model, tgt_model FROM mc_net_sessions WHERE id=%s",
                 (session_id,),
             ).fetchone()
             if row:
                 sess = dict(row)
             port_map = [
                 dict(r) for r in mc.execute(
-                    "SELECT optic_change FROM mc_net_port_map WHERE session_id=?", (session_id,)
+                    "SELECT optic_change FROM mc_net_port_map WHERE session_id=%s", (session_id,)
                 ).fetchall()
             ]
             compat_checks = [
                 dict(r) for r in mc.execute(
-                    "SELECT severity, status FROM mc_net_compat_checks WHERE session_id=?", (session_id,)
+                    "SELECT severity, status FROM mc_net_compat_checks WHERE session_id=%s", (session_id,)
                 ).fetchall()
             ]
     except Exception:
@@ -2581,13 +3949,13 @@ def build_parallel_timeline(session_id: str) -> list[dict]:
 
     now = _now()
     with _mc_conn() as mc:
-        mc.execute("DELETE FROM mc_net_parallel_timelines WHERE session_id=?", (session_id,))
+        mc.execute("DELETE FROM mc_net_parallel_timelines WHERE session_id=%s", (session_id,))
         for m in all_milestones:
             mc.execute(
                 "INSERT INTO mc_net_parallel_timelines "
                 "(id, session_id, milestone_name, description, days_before_cutover, "
                 "phase, duration_hours, status, created_at) "
-                "VALUES (?,?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (str(uuid.uuid4()), session_id,
                  m["milestone_name"], m.get("description", ""),
                  m["days_before_cutover"], m["phase"],
@@ -2605,7 +3973,7 @@ def _ensure_import_topology(label: str, nc_conn) -> str:
     """Return existing topology id by label, or create a new one."""
     import uuid as _uuid
     row = nc_conn.execute(
-        "SELECT id FROM topologies WHERE name = ? LIMIT 1", (label,)
+        "SELECT id FROM topologies WHERE name = %s LIMIT 1", (label,)
     ).fetchone()
     if row:
         return row["id"] if hasattr(row, "keys") else row[0]
@@ -2613,7 +3981,7 @@ def _ensure_import_topology(label: str, nc_conn) -> str:
     now = _now()
     nc_conn.execute(
         "INSERT INTO topologies (id, name, graph_json, classification, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s)",
         (topology_id, label, "{}", "CUI // SP-CTI", now, now),
     )
     nc_conn.commit()
@@ -2739,7 +4107,7 @@ def ingest_devices_topology(src_topology_id: str) -> dict:
     """
     with _nc_conn() as nc:
         row = nc.execute(
-            "SELECT id, name, graph_json FROM topologies WHERE id = ? LIMIT 1",
+            "SELECT id, name, graph_json FROM topologies WHERE id = %s LIMIT 1",
             (src_topology_id,),
         ).fetchone()
         if not row:

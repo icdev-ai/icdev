@@ -95,7 +95,7 @@ def _audit(conn, action, details="", actor="subcontractor_tracker"):
     try:
         conn.execute(
             "INSERT INTO audit_trail (event_type, actor, action, details, session_id) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s)",
             ("hook_event_logged", actor, action, details, "cpmp"),
         )
     except Exception:
@@ -106,7 +106,7 @@ def _record_status_change(conn, entity_type, entity_id, old_status, new_status, 
     """Record status change in cpmp_status_history (append-only, NIST AU-2)."""
     conn.execute(
         "INSERT INTO cpmp_status_history (entity_type, entity_id, old_status, new_status, changed_by, reason) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s)",
         (entity_type, entity_id, old_status, new_status, changed_by, reason),
     )
 
@@ -125,7 +125,7 @@ def create_subcontractor(contract_id, data):
         Dict with status and sub_id.
     """
     conn = _get_db()
-    if not conn.execute("SELECT id FROM cpmp_contracts WHERE id = ?", (contract_id,)).fetchone():
+    if not conn.execute("SELECT id FROM cpmp_contracts WHERE id = %s", (contract_id,)).fetchone():
         conn.close()
         return {"status": "error", "message": f"Contract {contract_id} not found"}
 
@@ -136,7 +136,7 @@ def create_subcontractor(contract_id, data):
         "subcontract_value, performance_rating, "
         "flow_down_complete, flowdown_verified, cybersecurity_compliant, cmmc_level, isr_ssr_current, "
         "status, notes, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
         (
             sub_id,
             contract_id,
@@ -183,7 +183,7 @@ def update_subcontractor(sub_id, data):
         Dict with status and updated_fields list.
     """
     conn = _get_db()
-    row = conn.execute("SELECT id, status FROM cpmp_subcontractors WHERE id = ?", (sub_id,)).fetchone()
+    row = conn.execute("SELECT id, status FROM cpmp_subcontractors WHERE id = %s", (sub_id,)).fetchone()
     if not row:
         conn.close()
         return {"status": "error", "message": f"Subcontractor {sub_id} not found"}
@@ -220,7 +220,7 @@ def update_subcontractor(sub_id, data):
     params.append(_now())
     params.append(sub_id)
 
-    conn.execute(f"UPDATE cpmp_subcontractors SET {', '.join(sets)} WHERE id = ?", params)  # nosec B608 -- table/column names are internal constants, not user input
+    conn.execute(f"UPDATE cpmp_subcontractors SET {', '.join(sets)} WHERE id = %s", params)  # nosec B608 -- table/column names are internal constants, not user input
 
     # Record status change if status was modified
     if "status" in data and data["status"] != old_status:
@@ -286,7 +286,7 @@ def compute_sb_compliance(contract_id):
 
     # Get all active subcontractors for this contract
     rows = conn.execute(
-        "SELECT business_size, subcontract_value FROM cpmp_subcontractors WHERE contract_id = ? AND status = 'active'",
+        "SELECT business_size, subcontract_value FROM cpmp_subcontractors WHERE contract_id = %s AND status = 'active'",
         (contract_id,),
     ).fetchall()
 
@@ -325,7 +325,7 @@ def compute_sb_compliance(contract_id):
 
     # Get goals from latest SB plan
     plan_row = conn.execute(
-        "SELECT * FROM cpmp_small_business_plan WHERE contract_id = ? ORDER BY created_at DESC LIMIT 1",
+        "SELECT * FROM cpmp_small_business_plan WHERE contract_id = %s ORDER BY created_at DESC LIMIT 1",
         (contract_id,),
     ).fetchone()
     conn.close()
@@ -386,7 +386,7 @@ def check_flowdown(contract_id):
         "SELECT id, company_name, cage_code, uei, business_size, subcontract_value, "
         "flow_down_complete, status "
         "FROM cpmp_subcontractors "
-        "WHERE contract_id = ? AND status = 'active' AND flow_down_complete = 0 "
+        "WHERE contract_id = %s AND status = 'active' AND flow_down_complete = 0 "
         "ORDER BY subcontract_value DESC",
         (contract_id,),
     ).fetchall()
@@ -426,8 +426,8 @@ def check_cybersecurity(contract_id):
         "SELECT id, company_name, cage_code, uei, business_size, subcontract_value, "
         "cybersecurity_compliant, cmmc_level, status "
         "FROM cpmp_subcontractors "
-        "WHERE contract_id = ? AND status = 'active' "
-        "AND subcontract_value > ? AND cybersecurity_compliant = 0 "
+        "WHERE contract_id = %s AND status = 'active' "
+        "AND subcontract_value > %s AND cybersecurity_compliant = 0 "
         "ORDER BY subcontract_value DESC",
         (contract_id, cyber_threshold),
     ).fetchall()
@@ -464,13 +464,13 @@ def create_sb_report(contract_id, reporting_period, report_type="isr"):
         return {"status": "error", "message": f"Invalid report_type: {report_type}. Must be 'isr' or 'ssr'."}
 
     conn = _get_db()
-    if not conn.execute("SELECT id FROM cpmp_contracts WHERE id = ?", (contract_id,)).fetchone():
+    if not conn.execute("SELECT id FROM cpmp_contracts WHERE id = %s", (contract_id,)).fetchone():
         conn.close()
         return {"status": "error", "message": f"Contract {contract_id} not found"}
 
     # Compute current actuals from subcontractor data
     rows = conn.execute(
-        "SELECT business_size, subcontract_value FROM cpmp_subcontractors WHERE contract_id = ? AND status = 'active'",
+        "SELECT business_size, subcontract_value FROM cpmp_subcontractors WHERE contract_id = %s AND status = 'active'",
         (contract_id,),
     ).fetchall()
 
@@ -488,7 +488,7 @@ def create_sb_report(contract_id, reporting_period, report_type="isr"):
     # Pull goals from latest existing plan (if any) to carry forward
     plan_row = conn.execute(
         "SELECT sb_goal_pct, sdb_goal_pct, wosb_goal_pct, hubzone_goal_pct, sdvosb_goal_pct "
-        "FROM cpmp_small_business_plan WHERE contract_id = ? ORDER BY created_at DESC LIMIT 1",
+        "FROM cpmp_small_business_plan WHERE contract_id = %s ORDER BY created_at DESC LIMIT 1",
         (contract_id,),
     ).fetchone()
 
@@ -526,7 +526,7 @@ def create_sb_report(contract_id, reporting_period, report_type="isr"):
         "hubzone_goal_pct, hubzone_actual_pct, hubzone_actual_dollars, "
         "sdvosb_goal_pct, sdvosb_actual_pct, sdvosb_actual_dollars, "
         "compliant, status, notes, metadata, created_at, updated_at, classification) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
         (
             report_id,
             contract_id,
@@ -589,13 +589,13 @@ def list_sb_reports(contract_id):
     # Handle both schema versions: reporting_period or period_start
     try:
         rows = conn.execute(
-            "SELECT * FROM cpmp_small_business_plan WHERE contract_id = ? "
+            "SELECT * FROM cpmp_small_business_plan WHERE contract_id = %s "
             "ORDER BY reporting_period DESC, created_at DESC",
             (contract_id,),
         ).fetchall()
     except Exception:
         rows = conn.execute(
-            "SELECT * FROM cpmp_small_business_plan WHERE contract_id = ? ORDER BY period_start DESC, created_at DESC",
+            "SELECT * FROM cpmp_small_business_plan WHERE contract_id = %s ORDER BY period_start DESC, created_at DESC",
             (contract_id,),
         ).fetchall()
     conn.close()
@@ -656,8 +656,8 @@ def detect_noncompliance(contract_id):
     cmmc_rows = conn.execute(
         "SELECT id, company_name, subcontract_value, cmmc_level "
         "FROM cpmp_subcontractors "
-        "WHERE contract_id = ? AND status = 'active' AND cmmc_level IS NULL "
-        "AND subcontract_value > ? "
+        "WHERE contract_id = %s AND status = 'active' AND cmmc_level IS NULL "
+        "AND subcontract_value > %s "
         "ORDER BY subcontract_value DESC",
         (contract_id, _CYBER_THRESHOLD),
     ).fetchall()
@@ -678,14 +678,14 @@ def detect_noncompliance(contract_id):
     try:
         latest_report = conn.execute(
             "SELECT created_at, reporting_period, report_type FROM cpmp_small_business_plan "
-            "WHERE contract_id = ? ORDER BY created_at DESC LIMIT 1",
+            "WHERE contract_id = %s ORDER BY created_at DESC LIMIT 1",
             (contract_id,),
         ).fetchone()
     except Exception:
         # Fallback for older schema with period_start/period_end
         latest_report = conn.execute(
             "SELECT created_at, period_start AS reporting_period FROM cpmp_small_business_plan "
-            "WHERE contract_id = ? ORDER BY created_at DESC LIMIT 1",
+            "WHERE contract_id = %s ORDER BY created_at DESC LIMIT 1",
             (contract_id,),
         ).fetchone()
     conn.close()

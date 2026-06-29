@@ -96,7 +96,7 @@ def declare_intent(name: str, source: str, destination: str,
         conn.execute(
             """INSERT INTO zig_sdn_intents
                (intent_id, name, source, destination, action, priority, compiled_rules, status, created_at)
-               VALUES (?,?,?,?,?,?,?,'active',?)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,'active',%s)
                ON CONFLICT(intent_id) DO UPDATE SET
                action=excluded.action, priority=excluded.priority,
                compiled_rules=excluded.compiled_rules""",
@@ -152,7 +152,7 @@ def adjust_posture(signals: dict | None = None) -> dict[str, Any]:
 
         conn.execute(
             "INSERT INTO zig_sdn_posture (posture, risk_score, signals_json, rules_adjusted, created_at) "
-            "VALUES (?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s)",
             (posture, risk_score, json.dumps(resolved), rules_adjusted, now),
         )
         conn.commit()

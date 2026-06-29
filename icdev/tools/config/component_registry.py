@@ -88,7 +88,7 @@ def log_component_audit(
                 """
                 INSERT INTO component_audit_log
                   (id, event_type, actor, tenant_id, component_key, profile_name, details, recorded_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     str(uuid.uuid4()),
@@ -395,7 +395,7 @@ class ComponentRegistry:
             with conn_factory() as conn:
                 row = conn.execute(
                     "SELECT enabled FROM tenant_component_overrides "
-                    "WHERE tenant_id = ? AND component_key = ?",
+                    "WHERE tenant_id = %s AND component_key = %s",
                     (tenant_id, key),
                 ).fetchone()
                 if row:
@@ -437,7 +437,7 @@ class ComponentRegistry:
                     """
                     INSERT INTO tenant_component_overrides
                       (id, tenant_id, component_key, enabled, updated_by, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    VALUES (%s, %s, %s, %s, %s, %s)
                     ON CONFLICT (tenant_id, component_key)
                     DO UPDATE SET
                       enabled = excluded.enabled,
@@ -483,7 +483,7 @@ class ComponentRegistry:
             with get_connection() as conn:
                 conn.execute(
                     "DELETE FROM tenant_component_overrides "
-                    "WHERE tenant_id = ? AND component_key = ?",
+                    "WHERE tenant_id = %s AND component_key = %s",
                     (tenant_id, component_key),
                 )
                 conn.commit()
@@ -513,7 +513,7 @@ class ComponentRegistry:
             with get_connection() as conn:
                 rows = conn.execute(
                     "SELECT component_key, enabled, updated_by, updated_at "
-                    "FROM tenant_component_overrides WHERE tenant_id = ?",
+                    "FROM tenant_component_overrides WHERE tenant_id = %s",
                     (tenant_id,),
                 ).fetchall()
             return [
@@ -759,7 +759,8 @@ def _has_route_decorator(blueprint_path: Path) -> bool:
     if not blueprint_path.exists():
         return False
     try:
-        tree = ast.parse(blueprint_path.read_text(encoding="utf-8"))
+        text = blueprint_path.read_text(encoding="utf-8-sig")
+        tree = ast.parse(text)
     except SyntaxError:
         return False
     for node in ast.walk(tree):

@@ -67,7 +67,7 @@ def log_receipt(session_id, team_id, tool_slug):
     conn.execute(
         """INSERT INTO ttx_api_log
            (session_id,team_id,tool_slug,endpoint,call_id,result_hash,called_at)
-           VALUES (?,?,?,?,?,?,datetime('now'))""",
+           VALUES (%s,%s,%s,%s,%s,%s,datetime('now'))""",
         (session_id, team_id, tool_slug, f"/api/{tool_slug}", call_id, result_hash),
     )
     conn.commit()
@@ -227,10 +227,10 @@ if rec["recommended_slug"] and rec["recommended_slug"] != pending_session["scena
     cfg = json.loads(pending_session.get("config_json") or "{}")
     cfg["scenario"] = scenario_data
     conn.execute(
-        "UPDATE ttx_sessions SET scenario_slug=?, config_json=? WHERE session_id=?",
+        "UPDATE ttx_sessions SET scenario_slug=%s, config_json=%s WHERE session_id=%s",
         (new_slug, json.dumps(cfg), SID),
     )
-    conn.execute("DELETE FROM ttx_injects WHERE session_id=? AND state='pending'", (SID,))
+    conn.execute("DELETE FROM ttx_injects WHERE session_id=%s AND state='pending'", (SID,))
     conn.commit()
     seed_injects(SID, scenario_data)
     ok(f"Scenario updated to: {new_slug}")
@@ -308,13 +308,13 @@ for t in db_teams:
             conn = get_connection()
             if acad_user:
                 conn.execute(
-                    "UPDATE ttx_team_members SET academy_username=?, academy_profile_json=? "
-                    "WHERE member_id=?",
+                    "UPDATE ttx_team_members SET academy_username=%s, academy_profile_json=%s "
+                    "WHERE member_id=%s",
                     (acad_user, json.dumps(profile), m["member_id"]),
                 )
             else:
                 conn.execute(
-                    "UPDATE ttx_team_members SET academy_profile_json=? WHERE member_id=?",
+                    "UPDATE ttx_team_members SET academy_profile_json=%s WHERE member_id=%s",
                     (json.dumps(profile), m["member_id"]),
                 )
 conn.commit()
@@ -830,15 +830,15 @@ conn = get_connection()
 for t in teams:
     tid          = t["team_id"]
     receipt_count = conn.execute(
-        "SELECT COUNT(*) FROM ttx_api_log WHERE session_id=? AND team_id=?",
+        "SELECT COUNT(*) FROM ttx_api_log WHERE session_id=%s AND team_id=%s",
         (SID, tid)
     ).fetchone()[0]
     total_score = conn.execute(
-        "SELECT COALESCE(SUM(total_pts),0) FROM ttx_scores WHERE team_id=?",
+        "SELECT COALESCE(SUM(total_pts),0) FROM ttx_scores WHERE team_id=%s",
         (tid,)
     ).fetchone()[0]
     tools_used  = conn.execute(
-        "SELECT DISTINCT tool_slug FROM ttx_api_log WHERE session_id=? AND team_id=?",
+        "SELECT DISTINCT tool_slug FROM ttx_api_log WHERE session_id=%s AND team_id=%s",
         (SID, tid)
     ).fetchall()
     tools_str   = ", ".join(r["tool_slug"] for r in tools_used) or "none"

@@ -162,7 +162,7 @@ def _audit(
         conn.execute(
             "INSERT INTO audit_trail "
             "(id, timestamp, event_type, actor, action, details, project_id, session_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 _gen_id("aud"),
                 _now(),
@@ -337,7 +337,7 @@ def add_gsa_rate(
             (id, labor_category, bls_soc_code, sin, schedule_contractor,
              hourly_rate, year, region, education_level, min_years_experience,
              source, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'gsa_schedule', ?)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'gsa_schedule', %s)
         """,
         (
             rid, labor_category, bls_soc_code, sin, schedule_contractor,
@@ -392,7 +392,7 @@ def add_market_rate(
             (id, labor_category, bls_soc_code, source,
              p25_hourly, median_hourly, p75_hourly, sample_size,
              year, region, notes, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """,
         (
             rid, labor_category, bls_soc_code, source,
@@ -458,7 +458,7 @@ def lookup_gsa_rate(
     if not rows and soc_code:
         rows = conn.execute(
             "SELECT hourly_rate, year, bls_soc_code FROM gsa_schedule_rates "
-            "WHERE labor_category = ? ORDER BY year DESC",
+            "WHERE labor_category = %s ORDER BY year DESC",
             (labor_category,),
         ).fetchall()
     conn.close()
@@ -542,7 +542,7 @@ def lookup_market_rate(
         # Drop both filters, just match labor_category
         row = conn.execute(
             "SELECT source, median_hourly, p25_hourly, p75_hourly, sample_size, year "
-            "FROM gsa_market_rates WHERE labor_category = ? "
+            "FROM gsa_market_rates WHERE labor_category = %s "
             "ORDER BY year DESC, sample_size DESC LIMIT 1",
             (labor_category,),
         ).fetchone()
@@ -682,8 +682,8 @@ def seed_gsa_catalog(year: int = 2026) -> Dict[str, Any]:
         contractor = f"seed-{lc[:8]}-{int(rate)}"
         existing = conn.execute(
             "SELECT 1 FROM gsa_schedule_rates "
-            "WHERE labor_category = ? AND bls_soc_code = ? AND sin = ? "
-            "AND schedule_contractor = ? AND year = ?",
+            "WHERE labor_category = %s AND bls_soc_code = %s AND sin = %s "
+            "AND schedule_contractor = %s AND year = %s",
             (lc, soc, sin, contractor, year),
         ).fetchone()
         if existing:
@@ -695,7 +695,7 @@ def seed_gsa_catalog(year: int = 2026) -> Dict[str, Any]:
                 (id, labor_category, bls_soc_code, sin, schedule_contractor,
                  hourly_rate, year, region, education_level, min_years_experience,
                  source, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, 'gsa_schedule', ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, NULL, NULL, NULL, 'gsa_schedule', %s)
             """,
             (_gen_id("gsa"), lc, soc, sin, contractor, rate, year, _now()),
         )
@@ -895,7 +895,7 @@ def generate_igce(
              total_estimated_cost, total_low_estimate, total_high_estimate,
              within_10pct_confidence, benchmark_source, benchmark_sample_size,
              notes, created_by, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'draft', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """,
         (
             igce_id, procurement_id, opportunity_id, solicitation, agency, title,
@@ -919,7 +919,7 @@ def generate_igce(
                  bls_soc_code, labor_category,
                  benchmark_source, benchmark_rate, benchmark_year, benchmark_n,
                  confidence, rationale, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 lid, igce_id, line["clin"], line["description"], line["unit"], line["quantity"],
@@ -973,7 +973,7 @@ def get_igce(igce_id: str) -> Dict[str, Any]:
     conn = _get_db()
     _ensure_tables(conn)
     row = conn.execute(
-        "SELECT * FROM igce_estimates WHERE id = ?", (igce_id,)
+        "SELECT * FROM igce_estimates WHERE id = %s", (igce_id,)
     ).fetchone()
     if not row:
         conn.close()
@@ -991,7 +991,7 @@ def get_igce(igce_id: str) -> Dict[str, Any]:
     }
 
     line_rows = conn.execute(
-        "SELECT * FROM igce_estimate_line_items WHERE igce_estimate_id = ? ORDER BY clin, created_at",
+        "SELECT * FROM igce_estimate_line_items WHERE igce_estimate_id = %s ORDER BY clin, created_at",
         (igce_id,),
     ).fetchall()
     lines = []
@@ -1080,7 +1080,7 @@ def add_igce_line(
     conn = _get_db()
     _ensure_tables(conn)
     existing = conn.execute(
-        "SELECT id FROM igce_estimates WHERE id = ?", (igce_estimate_id,)
+        "SELECT id FROM igce_estimates WHERE id = %s", (igce_estimate_id,)
     ).fetchone()
     if not existing:
         conn.close()
@@ -1097,7 +1097,7 @@ def add_igce_line(
              bls_soc_code, labor_category,
              benchmark_source, benchmark_rate, benchmark_year, benchmark_n,
              confidence, rationale, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, 'manual', ?, NULL, 0, NULL, ?, ?)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, NULL, NULL, %s, %s, %s, 'manual', %s, NULL, 0, NULL, %s, %s)
         """,
         (
             lid, igce_estimate_id, clin, description, unit, float(quantity),
@@ -1108,7 +1108,7 @@ def add_igce_line(
 
     # Recompute totals
     line_rows = conn.execute(
-        "SELECT extended_cost FROM igce_estimate_line_items WHERE igce_estimate_id = ?",
+        "SELECT extended_cost FROM igce_estimate_line_items WHERE igce_estimate_id = %s",
         (igce_estimate_id,),
     ).fetchall()
     new_total = sum(
@@ -1116,7 +1116,7 @@ def add_igce_line(
         for r in line_rows
     )
     conn.execute(
-        "UPDATE igce_estimates SET total_estimated_cost = ?, updated_at = ? WHERE id = ?",
+        "UPDATE igce_estimates SET total_estimated_cost = %s, updated_at = %s WHERE id = %s",
         (round(new_total, 2), now, igce_estimate_id),
     )
     _audit(conn, "igce.add_line", f"Added line {clin or '(no clin)'} to {igce_estimate_id}",
@@ -1155,7 +1155,7 @@ def calibrate_igce(
     conn = _get_db()
     _ensure_tables(conn)
     existing = conn.execute(
-        "SELECT id FROM igce_estimates WHERE id = ?", (igce_estimate_id,)
+        "SELECT id FROM igce_estimates WHERE id = %s", (igce_estimate_id,)
     ).fetchone()
     if not existing:
         conn.close()
@@ -1164,7 +1164,7 @@ def calibrate_igce(
     # Build a {clin: line} map for fast lookup
     line_rows = conn.execute(
         "SELECT clin, unit_cost_estimate, benchmark_source, confidence "
-        "FROM igce_estimate_line_items WHERE igce_estimate_id = ?",
+        "FROM igce_estimate_line_items WHERE igce_estimate_id = %s",
         (igce_estimate_id,),
     ).fetchall()
     line_map: Dict[str, Dict[str, Any]] = {}
@@ -1208,7 +1208,7 @@ def calibrate_igce(
                  estimated_unit_cost, actual_unit_cost, actual_vendor,
                  variance_pct, within_10pct, benchmark_source,
                  confidence_predicted, captured_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 cid, igce_estimate_id, procurement_id, clin,
@@ -1252,7 +1252,7 @@ def accuracy_report(limit: int = 10000) -> Dict[str, Any]:
     _ensure_tables(conn)
     rows = conn.execute(
         "SELECT variance_pct, within_10pct, benchmark_source, confidence_predicted "
-        "FROM igce_calibration_log ORDER BY captured_at DESC LIMIT ?",
+        "FROM igce_calibration_log ORDER BY captured_at DESC LIMIT %s",
         (limit,),
     ).fetchall()
     conn.close()

@@ -184,7 +184,7 @@ def _create_run_record(run_id: str, workflow_id: str, workflow_name: str, projec
         conn.execute(
             """INSERT INTO studio_workflow_runs
                (run_id, workflow_id, workflow_name, status, started_at, project_id)
-               VALUES (?, ?, ?, 'pending', ?, ?)""",
+               VALUES (%s, %s, %s, 'pending', %s, %s)""",
             (run_id, workflow_id, workflow_name, datetime.now(timezone.utc).isoformat(), project_id),
         )
         conn.commit()
@@ -197,8 +197,8 @@ def _update_run_status(run_id: str, status: str, summary_json: str | None = None
     try:
         conn.execute(
             """UPDATE studio_workflow_runs
-               SET status = ?, completed_at = ?, summary_json = ?
-               WHERE run_id = ?""",
+               SET status = %s, completed_at = %s, summary_json = %s
+               WHERE run_id = %s""",
             (status, datetime.now(timezone.utc).isoformat(), summary_json, run_id),
         )
         conn.commit()
@@ -213,7 +213,7 @@ def _create_step_record(run_id: str, step_id: str, step_name: str, tool: str) ->
         conn.execute(
             """INSERT INTO studio_workflow_run_steps
                (step_run_id, run_id, step_id, step_name, tool, status, started_at)
-               VALUES (?, ?, ?, ?, ?, 'running', ?)""",
+               VALUES (%s, %s, %s, %s, %s, 'running', %s)""",
             (step_run_id, run_id, step_id, step_name, tool, datetime.now(timezone.utc).isoformat()),
         )
         conn.commit()
@@ -227,9 +227,9 @@ def _update_step_record(step_run_id: str, result: dict) -> None:
     try:
         conn.execute(
             """UPDATE studio_workflow_run_steps
-               SET status = ?, exit_code = ?, stdout = ?, stderr = ?,
-                   duration_ms = ?, completed_at = ?
-               WHERE step_run_id = ?""",
+               SET status = %s, exit_code = %s, stdout = %s, stderr = %s,
+                   duration_ms = %s, completed_at = %s
+               WHERE step_run_id = %s""",
             (
                 result["status"],
                 result.get("exit_code"),
@@ -278,8 +278,8 @@ def approve_step(step_run_id: str, actor: str = "approver") -> bool:
         conn = get_connection()
         try:
             conn.execute(
-                "UPDATE studio_workflow_run_steps SET status='approved', stderr=?, completed_at=? "
-                "WHERE step_run_id=? AND status='awaiting_approval'",
+                "UPDATE studio_workflow_run_steps SET status='approved', stderr=%s, completed_at=%s "
+                "WHERE step_run_id=%s AND status='awaiting_approval'",
                 (f"Approved by {actor}", datetime.now(timezone.utc).isoformat(), step_run_id),
             )
             conn.commit()
@@ -304,8 +304,8 @@ def reject_step(step_run_id: str, reason: str = "", actor: str = "approver") -> 
         conn = get_connection()
         try:
             conn.execute(
-                "UPDATE studio_workflow_run_steps SET status='rejected', stderr=?, completed_at=? "
-                "WHERE step_run_id=? AND status='awaiting_approval'",
+                "UPDATE studio_workflow_run_steps SET status='rejected', stderr=%s, completed_at=%s "
+                "WHERE step_run_id=%s AND status='awaiting_approval'",
                 (reason or f"Rejected by {actor}", datetime.now(timezone.utc).isoformat(), step_run_id),
             )
             conn.commit()
@@ -410,7 +410,7 @@ def _worker(run_id: str, workflow_id: str, wf: dict, project_id: str, run_queue:
                         try:
                             _row = _conn.execute(
                                 "SELECT status, stderr FROM studio_workflow_run_steps "
-                                "WHERE step_run_id=?", (step_run_id,)
+                                "WHERE step_run_id=%s", (step_run_id,)
                             ).fetchone()
                             if _row and _row["status"] in ("approved", "rejected"):
                                 decision = _row["status"]
@@ -573,12 +573,12 @@ def list_runs(workflow_id: str | None = None, limit: int = 50) -> list:
     try:
         if workflow_id:
             rows = conn.execute(
-                "SELECT * FROM studio_workflow_runs WHERE workflow_id = ? ORDER BY started_at DESC LIMIT ?",
+                "SELECT * FROM studio_workflow_runs WHERE workflow_id = %s ORDER BY started_at DESC LIMIT %s",
                 (workflow_id, limit),
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT * FROM studio_workflow_runs ORDER BY started_at DESC LIMIT ?",
+                "SELECT * FROM studio_workflow_runs ORDER BY started_at DESC LIMIT %s",
                 (limit,),
             ).fetchall()
         return [dict(r) for r in rows]
@@ -593,7 +593,7 @@ def get_run(run_id: str) -> dict | None:
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT * FROM studio_workflow_runs WHERE run_id = ?", (run_id,)
+            "SELECT * FROM studio_workflow_runs WHERE run_id = %s", (run_id,)
         ).fetchone()
         return dict(row) if row else None
     finally:
@@ -604,7 +604,7 @@ def get_run_steps(run_id: str) -> list:
     conn = get_connection()
     try:
         rows = conn.execute(
-            "SELECT * FROM studio_workflow_run_steps WHERE run_id = ? ORDER BY started_at ASC",
+            "SELECT * FROM studio_workflow_run_steps WHERE run_id = %s ORDER BY started_at ASC",
             (run_id,),
         ).fetchall()
         return [dict(r) for r in rows]
@@ -615,8 +615,8 @@ def get_run_steps(run_id: str) -> list:
 def delete_run(run_id: str) -> bool:
     conn = get_connection()
     try:
-        conn.execute("DELETE FROM studio_workflow_run_steps WHERE run_id = ?", (run_id,))
-        cur = conn.execute("DELETE FROM studio_workflow_runs WHERE run_id = ?", (run_id,))
+        conn.execute("DELETE FROM studio_workflow_run_steps WHERE run_id = %s", (run_id,))
+        cur = conn.execute("DELETE FROM studio_workflow_runs WHERE run_id = %s", (run_id,))
         conn.commit()
         return cur.rowcount > 0
     finally:
@@ -628,13 +628,13 @@ def delete_all_runs(workflow_id: str | None = None) -> int:
     try:
         if workflow_id:
             run_ids = [r[0] for r in conn.execute(
-                "SELECT run_id FROM studio_workflow_runs WHERE workflow_id = ?", (workflow_id,)
+                "SELECT run_id FROM studio_workflow_runs WHERE workflow_id = %s", (workflow_id,)
             ).fetchall()]
             if run_ids:
                 placeholders = ",".join("?" * len(run_ids))
                 conn.execute(f"DELETE FROM studio_workflow_run_steps WHERE run_id IN ({placeholders})", run_ids)
             cur = conn.execute(
-                "DELETE FROM studio_workflow_runs WHERE workflow_id = ?", (workflow_id,)
+                "DELETE FROM studio_workflow_runs WHERE workflow_id = %s", (workflow_id,)
             )
         else:
             conn.execute("DELETE FROM studio_workflow_run_steps")

@@ -12,8 +12,7 @@ from .db import (
     migrate, get_or_create_user, get_user, update_user_role, list_missions, get_mission, get_mission_progress, start_mission, complete_mission,
     get_step_progress, complete_step, user_progress_summary,
     get_user_achievements, grant_achievement, update_user_xp,
-    create_guild, join_guild, get_guild_stats, get_leaderboard, refresh_leaderboard_cache,
-    get_user_skills, unlock_skill,
+    create_guild, join_guild, get_guild_stats, get_leaderboard, get_user_skills, unlock_skill,
     check_cert_eligibility, issue_certificate, get_user_certificates,
     verify_certificate_token,
     record_user_competency,
@@ -31,6 +30,8 @@ from .integrations import (
 bp = Blueprint("forge_academy", __name__)
 
 _initialized = False
+import threading as _threading
+_init_lock = _threading.Lock()
 
 
 @bp.app_context_processor
@@ -56,7 +57,11 @@ def _inject_fa_nav():
 
 def _ensure_init():
     global _initialized
-    if not _initialized:
+    if _initialized:
+        return
+    with _init_lock:
+        if _initialized:  # double-checked locking
+            return
         try:
             migrate()
             seed_mission_catalog()

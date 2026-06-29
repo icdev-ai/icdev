@@ -42,7 +42,7 @@ class TenantConnectionPool:
         try:
             conn = get_connection()
             row = conn.execute(
-                "SELECT db_host, db_name, db_port, slug, impact_level FROM tenants WHERE id = ?",
+                "SELECT db_host, db_name, db_port, slug, impact_level FROM tenants WHERE id = %s",
                 (tenant_id,),
             ).fetchone()
             conn.close()

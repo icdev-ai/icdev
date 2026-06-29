@@ -266,8 +266,11 @@ class CoWorkerThread(threading.Thread):
         # NOVA SOUL: inject identity preamble into dispatch context so
         # $soul_preamble is available to all step argument substitutions.
         try:
-            from icdev.tools.ace.soul_manager import build_identity_preamble
+            from icdev.tools.ace.soul_manager import build_identity_preamble, inject_user_profile_context
             preamble = build_identity_preamble(self.spec.role_id)
+            # Inject the launching user's world model context (Second Brain) if available.
+            user_id = getattr(self.spec, "user_id", None) or self._context.get("user_id") or "default"
+            preamble = inject_user_profile_context(preamble, user_id)
             if preamble:
                 self._ace_context["soul_preamble"] = preamble
                 self._audit("soul_preamble_injected", f"role={self.spec.role_id} len={len(preamble)}")
@@ -329,6 +332,7 @@ class CoWorkerThread(threading.Thread):
     def _run_step_mode(self, role: Any) -> None:
         """Execute the role's fixed ``steps`` list (the legacy default mode)."""
         executor = StepExecutor()
+        _markov_prev_step: str = ""  # Markov: tracks previous step name for transition recording
 
         # 4 & 5. Execute each step; poll inbox between steps
         for raw_step in role.steps:
@@ -342,6 +346,7 @@ class CoWorkerThread(threading.Thread):
                 break
 
             step = self._normalise_step(raw_step)
+            _markov_cur_step: str = getattr(raw_step, "name", "") or step.get("id", "")
             self._set_assigned_step(step.get("id", str(raw_step)))
 
             try:
@@ -350,6 +355,16 @@ class CoWorkerThread(threading.Thread):
                     "step_complete",
                     f"step={step.get('id')} result_type={type(result).__name__}",
                 )
+                # Markov: record successful step-to-step transition
+                if _markov_prev_step and _markov_cur_step:
+                    try:
+                        from icdev.tools.ace.markov_sequencer import get_sequencer as _get_seq
+                        _get_seq(self.spec.role_id).record_transition(
+                            _markov_prev_step, _markov_cur_step, success=True
+                        )
+                    except Exception:
+                        pass
+                _markov_prev_step = _markov_cur_step
             except (ToolPermissionDeniedError, TrustKernelDeniedError, ImportError, AttributeError) as exc:
                 # 5. Required step failure → HITL gate
                 if step.get("required", False):
@@ -357,6 +372,16 @@ class CoWorkerThread(threading.Thread):
                         return  # stop signalled during HITL wait
                 else:
                     self._audit("step_failed_optional", f"step={step.get('id')} reason={exc}")
+                # Markov: record failed step-to-step transition
+                if _markov_prev_step and _markov_cur_step:
+                    try:
+                        from icdev.tools.ace.markov_sequencer import get_sequencer as _get_seq
+                        _get_seq(self.spec.role_id).record_transition(
+                            _markov_prev_step, _markov_cur_step, success=False
+                        )
+                    except Exception:
+                        pass
+                _markov_prev_step = _markov_cur_step
                 continue
 
             # 6. Behavioral compliance check every monitor_interval steps

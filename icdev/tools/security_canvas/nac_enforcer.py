@@ -85,19 +85,19 @@ def evaluate_access(mac_address: str, ip_address: str = "",
 
         # Check managed device registry
         registered = conn.execute(
-            "SELECT * FROM zig_device_registry WHERE device_id=? OR hostname=?",
+            "SELECT * FROM zig_device_registry WHERE device_id=%s OR hostname=%s",
             (device_id, hostname),
         ).fetchone()
 
         # Check manual allowlist
         allowlisted = conn.execute(
-            "SELECT * FROM zig_nac_device_allowlist WHERE mac_address=?",
+            "SELECT * FROM zig_nac_device_allowlist WHERE mac_address=%s",
             (mac_address,),
         ).fetchone()
 
         # Count prior violations
         violations = conn.execute(
-            "SELECT COUNT(*) FROM zig_nac_events WHERE mac_address=? AND decision=?",
+            "SELECT COUNT(*) FROM zig_nac_events WHERE mac_address=%s AND decision=%s",
             (mac_address, NACDecision.QUARANTINE),
         ).fetchone()[0]
 
@@ -125,7 +125,7 @@ def evaluate_access(mac_address: str, ip_address: str = "",
         conn.execute(
             "INSERT INTO zig_nac_events "
             "(mac_address, ip_address, hostname, device_id, decision, reason, network_segment, violation_count, created_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (mac_address, ip_address, hostname, device_id, decision.value, reason, segment, violations, now),
         )
         conn.commit()
@@ -156,7 +156,7 @@ def authorize_device(mac_address: str, device_id: str = "", hostname: str = "",
         conn.execute(
             """INSERT INTO zig_nac_device_allowlist
                (mac_address, device_id, hostname, authorized_by, authorized_at, expires_at, notes)
-               VALUES (?,?,?,?,?,?,?)
+               VALUES (%s,%s,%s,%s,%s,%s,%s)
                ON CONFLICT(mac_address) DO UPDATE SET
                authorized_by=excluded.authorized_by,
                authorized_at=excluded.authorized_at,
@@ -181,7 +181,7 @@ def deploy_nac_policy() -> dict[str, Any]:
         _ensure_tables(conn)
         total_devices = conn.execute("SELECT COUNT(*) FROM zig_device_registry").fetchone()[0]
         unknown = conn.execute(
-            "SELECT COUNT(*) FROM zig_nac_events WHERE decision=?",
+            "SELECT COUNT(*) FROM zig_nac_events WHERE decision=%s",
             (NACDecision.PENDING_ENROLLMENT.value,),
         ).fetchone()[0]
     finally:

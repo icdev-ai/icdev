@@ -176,14 +176,14 @@ def handle_research_trigger_fitness(args: dict) -> dict:
     # Check dossier is approved first
     conn = _get_db()
     try:
-        row = conn.execute("SELECT * FROM research_dossiers WHERE id = ?", (dossier_id,)).fetchone()
+        row = conn.execute("SELECT * FROM research_dossiers WHERE id = %s", (dossier_id,)).fetchone()
         if not row:
             return {"error": f"Dossier not found: {dossier_id}"}
 
         session_id = row["session_id"]
 
         # Get session
-        session = conn.execute("SELECT * FROM research_sessions WHERE id = ?", (session_id,)).fetchone()
+        session = conn.execute("SELECT * FROM research_sessions WHERE id = %s", (session_id,)).fetchone()
         if not session:
             return {"error": f"Session not found: {session_id}"}
         if session["status"] != "reviewed":
@@ -197,7 +197,7 @@ def handle_research_trigger_fitness(args: dict) -> dict:
 
         now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         conn.execute(
-            "UPDATE research_sessions SET status = ?, updated_at = ? WHERE id = ?",
+            "UPDATE research_sessions SET status = %s, updated_at = %s WHERE id = %s",
             ("child_app_triggered", now, session_id),
         )
         conn.commit()

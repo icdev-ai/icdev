@@ -57,7 +57,7 @@ def resolve_canvas(run_id: str = "", hint: str = "") -> str:
             conn = get_connection()
             try:
                 row = conn.execute(
-                    "SELECT workflow_name FROM studio_workflow_runs WHERE run_id = ?",
+                    "SELECT workflow_name FROM studio_workflow_runs WHERE run_id = %s",
                     (run_id,),
                 ).fetchone()
                 if row:
@@ -91,7 +91,7 @@ def get_iac_artifacts(run_id: str) -> list[dict]:
             try:
                 row = conn.execute(
                     "SELECT stdout FROM studio_workflow_run_steps "
-                    "WHERE run_id = ? AND step_name = 'Generate IaC'",
+                    "WHERE run_id = %s AND step_name = 'Generate IaC'",
                     (run_id,),
                 ).fetchone()
                 if row and row["stdout"]:

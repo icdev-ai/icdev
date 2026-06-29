@@ -76,7 +76,7 @@ def _audit(event_type: str, actor: str, action: str, project_id: str = None, det
         conn.execute(
             """INSERT INTO audit_trail
                (project_id, event_type, actor, action, details, classification)
-               VALUES (?, ?, ?, ?, ?, 'CUI')""",
+               VALUES (%s, %s, %s, %s, %s, 'CUI')""",
             (project_id, event_type, actor, action, json.dumps(details) if details else None),
         )
         conn.commit()
@@ -127,7 +127,7 @@ def handle_project_create(args: dict) -> dict:
                (id, name, description, type, classification, status,
                 tech_stack_backend, tech_stack_frontend, tech_stack_database,
                 directory_path, created_by)
-               VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, 'icdev-core-mcp')""",
+               VALUES (%s, %s, %s, %s, %s, 'active', %s, %s, %s, %s, 'icdev-core-mcp')""",
             (
                 project_id,
                 name,
@@ -177,7 +177,7 @@ def handle_project_list(args: dict) -> dict:
     try:
         if status_filter:
             rows = conn.execute(
-                "SELECT * FROM projects WHERE status = ? ORDER BY created_at DESC",
+                "SELECT * FROM projects WHERE status = %s ORDER BY created_at DESC",
                 (status_filter,),
             ).fetchall()
         else:
@@ -219,7 +219,7 @@ def handle_project_status(args: dict) -> dict:
     conn = _get_db()
     try:
         # Core project info
-        row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+        row = conn.execute("SELECT * FROM projects WHERE id = %s", (project_id,)).fetchone()
         if not row:
             raise ValueError(f"Project not found: {project_id}")
 
@@ -242,22 +242,22 @@ def handle_project_status(args: dict) -> dict:
 
         # Compliance status
         ssp = conn.execute(
-            "SELECT version, status, approved_by, approved_at FROM ssp_documents WHERE project_id = ? ORDER BY created_at DESC LIMIT 1",
+            "SELECT version, status, approved_by, approved_at FROM ssp_documents WHERE project_id = %s ORDER BY created_at DESC LIMIT 1",
             (project_id,),
         ).fetchone()
 
         poam_counts = conn.execute(
-            "SELECT status, COUNT(*) as cnt FROM poam_items WHERE project_id = ? GROUP BY status",
+            "SELECT status, COUNT(*) as cnt FROM poam_items WHERE project_id = %s GROUP BY status",
             (project_id,),
         ).fetchall()
 
         stig_counts = conn.execute(
-            "SELECT severity, status, COUNT(*) as cnt FROM stig_findings WHERE project_id = ? GROUP BY severity, status",
+            "SELECT severity, status, COUNT(*) as cnt FROM stig_findings WHERE project_id = %s GROUP BY severity, status",
             (project_id,),
         ).fetchall()
 
         control_counts = conn.execute(
-            "SELECT implementation_status, COUNT(*) as cnt FROM project_controls WHERE project_id = ? GROUP BY implementation_status",
+            "SELECT implementation_status, COUNT(*) as cnt FROM project_controls WHERE project_id = %s GROUP BY implementation_status",
             (project_id,),
         ).fetchall()
 
@@ -283,17 +283,17 @@ def handle_project_status(args: dict) -> dict:
 
         # Security status (from audit trail scan events and SBOM)
         last_scan = conn.execute(
-            "SELECT created_at, details FROM audit_trail WHERE project_id = ? AND event_type = 'security_scan' ORDER BY created_at DESC LIMIT 1",
+            "SELECT created_at, details FROM audit_trail WHERE project_id = %s AND event_type = 'security_scan' ORDER BY created_at DESC LIMIT 1",
             (project_id,),
         ).fetchone()
 
         open_vulns = conn.execute(
-            "SELECT COUNT(*) as cnt FROM audit_trail WHERE project_id = ? AND event_type = 'vulnerability_found' AND created_at > COALESCE((SELECT MAX(created_at) FROM audit_trail WHERE project_id = ? AND event_type = 'vulnerability_resolved'), '1970-01-01')",
+            "SELECT COUNT(*) as cnt FROM audit_trail WHERE project_id = %s AND event_type = 'vulnerability_found' AND created_at > COALESCE((SELECT MAX(created_at) FROM audit_trail WHERE project_id = %s AND event_type = 'vulnerability_resolved'), '1970-01-01')",
             (project_id, project_id),
         ).fetchone()
 
         latest_sbom = conn.execute(
-            "SELECT version, component_count, vulnerability_count, generated_at FROM sbom_records WHERE project_id = ? ORDER BY generated_at DESC LIMIT 1",
+            "SELECT version, component_count, vulnerability_count, generated_at FROM sbom_records WHERE project_id = %s ORDER BY generated_at DESC LIMIT 1",
             (project_id,),
         ).fetchone()
 
@@ -311,8 +311,8 @@ def handle_project_status(args: dict) -> dict:
         # Deployment status (latest per environment)
         deployments_rows = conn.execute(
             """SELECT environment, version, status, deployed_by, health_check_passed, created_at, completed_at
-               FROM deployments WHERE project_id = ?
-               AND id IN (SELECT MAX(id) FROM deployments WHERE project_id = ? GROUP BY environment)
+               FROM deployments WHERE project_id = %s
+               AND id IN (SELECT MAX(id) FROM deployments WHERE project_id = %s GROUP BY environment)
                ORDER BY environment""",
             (project_id, project_id),
         ).fetchall()
@@ -332,17 +332,17 @@ def handle_project_status(args: dict) -> dict:
 
         # Test status (from metric snapshots and audit trail)
         last_test = conn.execute(
-            "SELECT created_at, details FROM audit_trail WHERE project_id = ? AND event_type IN ('test_executed', 'test_passed', 'test_failed') ORDER BY created_at DESC LIMIT 1",
+            "SELECT created_at, details FROM audit_trail WHERE project_id = %s AND event_type IN ('test_executed', 'test_passed', 'test_failed') ORDER BY created_at DESC LIMIT 1",
             (project_id,),
         ).fetchone()
 
         test_pass_rate = conn.execute(
-            "SELECT metric_value FROM metric_snapshots WHERE project_id = ? AND metric_name = 'test_pass_rate' ORDER BY collected_at DESC LIMIT 1",
+            "SELECT metric_value FROM metric_snapshots WHERE project_id = %s AND metric_name = 'test_pass_rate' ORDER BY collected_at DESC LIMIT 1",
             (project_id,),
         ).fetchone()
 
         test_coverage = conn.execute(
-            "SELECT metric_value FROM metric_snapshots WHERE project_id = ? AND metric_name = 'test_coverage' ORDER BY collected_at DESC LIMIT 1",
+            "SELECT metric_value FROM metric_snapshots WHERE project_id = %s AND metric_name = 'test_coverage' ORDER BY collected_at DESC LIMIT 1",
             (project_id,),
         ).fetchone()
 
@@ -388,7 +388,7 @@ def handle_task_dispatch(args: dict) -> dict:
             """INSERT INTO a2a_tasks
                (id, project_id, source_agent_id, target_agent_id, skill_id,
                 status, input_data, priority)
-               VALUES (?, ?, 'icdev-core-mcp', ?, ?, 'submitted', ?, ?)""",
+               VALUES (%s, %s, 'icdev-core-mcp', %s, %s, 'submitted', %s, %s)""",
             (task_id, project_id, target_agent_id, skill_id, input_data_str, priority),
         )
         conn.commit()
@@ -431,7 +431,7 @@ def handle_task_dispatch(args: dict) -> dict:
             conn2 = _get_db()
             try:
                 conn2.execute(
-                    "UPDATE a2a_tasks SET status = ? WHERE id = ?",
+                    "UPDATE a2a_tasks SET status = %s WHERE id = %s",
                     (dispatch_status, task_id),
                 )
                 conn2.commit()
@@ -470,7 +470,7 @@ def handle_agent_status(args: dict) -> dict:
     conn = _get_db()
     try:
         if agent_id:
-            rows = conn.execute("SELECT * FROM agents WHERE id = ?", (agent_id,)).fetchall()
+            rows = conn.execute("SELECT * FROM agents WHERE id = %s", (agent_id,)).fetchall()
         else:
             rows = conn.execute("SELECT * FROM agents ORDER BY name").fetchall()
 
@@ -485,7 +485,7 @@ def handle_agent_status(args: dict) -> dict:
 
             # Count active tasks for this agent
             task_count = conn.execute(
-                "SELECT COUNT(*) as cnt FROM a2a_tasks WHERE target_agent_id = ? AND status IN ('submitted', 'working')",
+                "SELECT COUNT(*) as cnt FROM a2a_tasks WHERE target_agent_id = %s AND status IN ('submitted', 'working')",
                 (row["id"],),
             ).fetchone()
 

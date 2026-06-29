@@ -51,3 +51,11 @@ personality:
   - tdd-first
   - security-conscious
   - compliance-aware
+rules:
+  - "Never name a Thread subclass attribute '_context' — Python 3.14 uses this for contextvars and it silently kills threads; use '_ace_context' instead."
+  - "Never add non-bootstrap topics to listen_topics — reactive callbacks on ALL queued events create circular deadlocks."
+  - "Never use blocking waits (time.sleep in hot loops, Queue.get without timeout) inside agent step callbacks."
+  - "Never run more than 8 parallel sub-agents from a single fan-out step without an explicit concurrency cap."
+  - "Never assume an agent loop completed successfully without inspecting AgentLoopResult.result_subtype."
+  - "Never use the same LLM to both execute and grade its own work — cross-grader enforcement is mandatory."
+  - "Never persist intermediate state to .tmp/ for cross-agent communication; use the A2A coordination bus."

@@ -95,7 +95,7 @@ def _get_app(conn, app_id):
     Raises:
         ValueError: If the application is not found.
     """
-    row = conn.execute("SELECT * FROM legacy_applications WHERE id = ?", (app_id,)).fetchone()
+    row = conn.execute("SELECT * FROM legacy_applications WHERE id = %s", (app_id,)).fetchone()
     if not row:
         raise ValueError(f"Legacy application '{app_id}' not found in database.")
     return dict(row)
@@ -224,7 +224,7 @@ def generate_api_docs(app_id, output_dir, db_path=None):
     try:
         app = _get_app(conn, app_id)
         apis = conn.execute(
-            "SELECT * FROM legacy_apis WHERE legacy_app_id = ? ORDER BY path, method",
+            "SELECT * FROM legacy_apis WHERE legacy_app_id = %s ORDER BY path, method",
             (app_id,),
         ).fetchall()
         apis = [dict(r) for r in apis]
@@ -395,7 +395,7 @@ def generate_data_dictionary(app_id, output_dir, db_path=None):
     try:
         app = _get_app(conn, app_id)
         schemas = conn.execute(
-            "SELECT * FROM legacy_db_schemas WHERE legacy_app_id = ? ORDER BY schema_name, table_name, column_name",
+            "SELECT * FROM legacy_db_schemas WHERE legacy_app_id = %s ORDER BY schema_name, table_name, column_name",
             (app_id,),
         ).fetchall()
         schemas = [dict(r) for r in schemas]
@@ -559,7 +559,7 @@ def generate_component_docs(app_id, output_dir, db_path=None):
     try:
         app = _get_app(conn, app_id)
         components = conn.execute(
-            "SELECT * FROM legacy_components WHERE legacy_app_id = ? ORDER BY component_type, name",
+            "SELECT * FROM legacy_components WHERE legacy_app_id = %s ORDER BY component_type, name",
             (app_id,),
         ).fetchall()
         components = [dict(r) for r in components]
@@ -743,7 +743,7 @@ def generate_dependency_map(app_id, output_dir, db_path=None):
             "FROM legacy_dependencies d "
             "LEFT JOIN legacy_components sc ON d.source_component_id = sc.id "
             "LEFT JOIN legacy_components tc ON d.target_component_id = tc.id "
-            "WHERE d.legacy_app_id = ? "
+            "WHERE d.legacy_app_id = %s "
             "ORDER BY sc.name, tc.name",
             (app_id,),
         ).fetchall()
@@ -751,7 +751,7 @@ def generate_dependency_map(app_id, output_dir, db_path=None):
 
         # Get all component names for the matrix
         components = conn.execute(
-            "SELECT id, name FROM legacy_components WHERE legacy_app_id = ? ORDER BY name",
+            "SELECT id, name FROM legacy_components WHERE legacy_app_id = %s ORDER BY name",
             (app_id,),
         ).fetchall()
         comp_map = {row["id"]: row["name"] for row in components}
@@ -980,7 +980,7 @@ def generate_tech_debt_report(app_id, output_dir, db_path=None):
     try:
         app = _get_app(conn, app_id)
         components = conn.execute(
-            "SELECT * FROM legacy_components WHERE legacy_app_id = ? ORDER BY name",
+            "SELECT * FROM legacy_components WHERE legacy_app_id = %s ORDER BY name",
             (app_id,),
         ).fetchall()
         components = [dict(r) for r in components]

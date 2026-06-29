@@ -62,6 +62,7 @@
 - [NLQ Compliance Queries (Phase 40)](manifest/nlq-compliance-queries.md)
 - [Git Worktree Parallel CI/CD (Phase 41)](manifest/git-worktree-parallel-ci-cd.md)
 - [Framework Planning Commands (Phase 42)](manifest/framework-planning-commands.md)
+- [Billing (Metering + Stripe)](manifest/billing.md)
 - [SaaS Multi-Tenancy (Phase 21)](manifest/saas-multi-tenancy.md)
 - [Marketplace (Phase 22)](manifest/marketplace.md)
 - [DevSecOps & Zero Trust Architecture (Phase 24-25)](manifest/devsecops-zero-trust-architecture.md)
@@ -1042,3 +1043,63 @@
 |------|------|-------------|-------|--------|
 | Iac Review | tools\devops\iac_review.py | Auto-registered: devops/iac_review.py | --json | JSON |
 | Firewall Config Review | tools\security\firewall_config_review.py | Auto-registered: security/firewall_config_review.py | --json | JSON |
+
+- [Workflow Forms Canvas (WFC)](manifest/workflow-forms-canvas.md)
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Ip Address Space | tools\network\ip_address_space.py | Auto-registered: network/ip_address_space.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Co Learning Store | tools\llm\co_learning_store.py | Auto-registered: llm/co_learning_store.py | --json | JSON |
+| Session Store | tools\llm\session_store.py | Auto-registered: llm/session_store.py | --json | JSON |
+| Tool Result Sanitizer | tools\llm\tool_result_sanitizer.py | Auto-registered: llm/tool_result_sanitizer.py | --json | JSON |
+| Episodic Distiller | tools\genesis\reflexes\episodic_distiller.py | Auto-registered: reflexes/episodic_distiller.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Technical Legal Review | tools\network\technical_legal_review.py | Auto-registered: network/technical_legal_review.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Output Redactor | tools\llm\output_redactor.py | Auto-registered: llm/output_redactor.py | --json | JSON |
+| Role Cost Caps | tools\llm\role_cost_caps.py | Auto-registered: llm/role_cost_caps.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Health Data | tools\canvas_health\health_data.py | Auto-registered: canvas_health/health_data.py | --json | JSON |
+| Tech Writing Assist | tools\document_intelligence\tech_writing_assist.py | Auto-registered: document_intelligence/tech_writing_assist.py | --json | JSON |
+| Api Contract Tester | tools\testing\api_contract_tester.py | Auto-registered: testing/api_contract_tester.py | --json | JSON |
+| Dep Health | tools\testing\dep_health.py | Auto-registered: testing/dep_health.py | --json | JSON |
+| Flaky Tracker | tools\testing\flaky_tracker.py | Auto-registered: testing/flaky_tracker.py | --json | JSON |
+| Visual Regression | tools\testing\visual_regression.py | Auto-registered: testing/visual_regression.py | --json | JSON |
+| Second Brain | tools\iqe\adapters\second_brain.py | Auto-registered: adapters/second_brain.py | --json | JSON |
+| Api Contract Reflex | tools\genesis\reflexes\api_contract_reflex.py | Auto-registered: reflexes/api_contract_reflex.py | --json | JSON |
+| Coherence To Kanban Reflex | tools\genesis\reflexes\coherence_to_kanban_reflex.py | Auto-registered: reflexes/coherence_to_kanban_reflex.py | --json | JSON |
+| Critical Task Watchdog Reflex | tools\genesis\reflexes\critical_task_watchdog_reflex.py | Auto-registered: reflexes/critical_task_watchdog_reflex.py | --json | JSON |
+| Dead Code Reflex | tools\genesis\reflexes\dead_code_reflex.py | Auto-registered: reflexes/dead_code_reflex.py | --json | JSON |
+| Dep Health Reflex | tools\genesis\reflexes\dep_health_reflex.py | Auto-registered: reflexes/dep_health_reflex.py | --json | JSON |
+| Flaky Tracker Reflex | tools\genesis\reflexes\flaky_tracker_reflex.py | Auto-registered: reflexes/flaky_tracker_reflex.py | --json | JSON |
+| Qa Agent Reflex | tools\genesis\reflexes\qa_agent_reflex.py | Auto-registered: reflexes/qa_agent_reflex.py | --json | JSON |
+| Route Perf Reflex | tools\genesis\reflexes\route_perf_reflex.py | Auto-registered: reflexes/route_perf_reflex.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Role Generator | tools\ace\role_generator.py | Auto-registered: ace/role_generator.py | --json | JSON |
+| Proactive Advisor | tools\second_brain\proactive_advisor.py | Auto-registered: second_brain/proactive_advisor.py | --json | JSON |
+| Role Advisor | tools\second_brain\role_advisor.py | Auto-registered: second_brain/role_advisor.py | --json | JSON |
+| Nightly Prep Reflex | tools\genesis\reflexes\nightly_prep_reflex.py | Auto-registered: reflexes/nightly_prep_reflex.py | --json | JSON |
+| Thought Leadership Reflex | tools\genesis\reflexes\thought_leadership_reflex.py | Auto-registered: reflexes/thought_leadership_reflex.py | --json | JSON |

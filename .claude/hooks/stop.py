@@ -260,6 +260,28 @@ def _auto_commit_and_push():
     if is_kanban or branch_name.startswith("kanban/"):
         return
 
+    # INTERACTIVE SESSIONS: pre-push route smoke for changed files
+    # Runs only when the server is up — skips gracefully if not.
+    try:
+        changed_result = run(["git", "diff", "HEAD~1", "HEAD", "--name-only"])
+        changed_files = [f for f in (changed_result.stdout or "").splitlines() if f.strip()]
+        if changed_files:
+            from tools.testing.route_smoke import run_smoke, _routes_for_changed_files
+            smoke_routes = _routes_for_changed_files(changed_files)
+            if smoke_routes:
+                smoke_ok, smoke_results = run_smoke(smoke_routes, verbose=False)
+                if not smoke_ok:
+                    failed = [r["route"] for r in smoke_results if not r.get("ok")]
+                    print(
+                        f"[stop-hook] Route smoke FAILED: {failed}\n"
+                        f"[stop-hook] Commit is local. Fix the routes above, then push manually:\n"
+                        f"[stop-hook]   git push origin {branch_name}",
+                        file=sys.stderr,
+                    )
+                    return
+    except Exception as exc:
+        print(f"[stop-hook] Route smoke skipped: {exc}", file=sys.stderr)
+
     # INTERACTIVE SESSIONS: run the unified validation suite, push only if green
     try:
         from tools.workflow.validated_commit import validate_working_tree

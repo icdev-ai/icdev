@@ -1,0 +1,278 @@
+<!-- CUI // SP-CTI — ACE Agent Session Replay -->
+{% extends "base.html" %}
+{% block title %}Agent Sessions — Co-Worker Engine — ICDEV™{% endblock %}
+
+{% block content %}
+<style>
+  .sessions-page { padding: 20px 28px; }
+
+  .filter-bar {
+    display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+    margin-bottom: 18px; padding: 12px 16px;
+    background: var(--bg-secondary, #1a1a2e);
+    border: 1px solid var(--border-color, #2a2a4a); border-radius: 6px;
+  }
+  .filter-bar select, .filter-bar input {
+    padding: 5px 10px; border-radius: 4px; font-size: 12px;
+    background: var(--bg-primary, #0f0f23);
+    border: 1px solid var(--border-color, #2a2a4a);
+    color: var(--text-primary, #e2e8f0);
+  }
+  .filter-bar label { font-size: 11px; color: var(--text-secondary, #7a8cb0); }
+  .filter-btn {
+    padding: 5px 14px; border-radius: 4px; font-size: 12px; cursor: pointer;
+    background: var(--accent-color, #4a9eff); color: #fff; border: none;
+  }
+  .filter-btn:hover { opacity: .88; }
+
+  .sessions-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .sessions-table th {
+    text-align: left; padding: 8px 12px;
+    border-bottom: 2px solid var(--border-color, #2a2a4a);
+    color: var(--text-secondary, #7a8cb0); font-size: 11px;
+    text-transform: uppercase; letter-spacing: .04em; font-weight: 600;
+  }
+  .sessions-table td { padding: 10px 12px; border-bottom: 1px solid var(--border-color, #2a2a4a); vertical-align: middle; }
+  .sessions-table tbody tr:last-child td { border-bottom: none; }
+  .sessions-table tbody tr:hover { background: rgba(255,255,255,.02); }
+
+  .session-id-link {
+    font-family: monospace; font-size: 12px; color: var(--accent-color, #4a9eff);
+    text-decoration: none;
+  }
+  .session-id-link:hover { text-decoration: underline; }
+
+  .badge-subtype {
+    display: inline-block; padding: 2px 8px; border-radius: 4px;
+    font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em;
+    white-space: nowrap;
+  }
+  .badge-success         { background: rgba(39,174,96,.2);  color: #27ae60; border: 1px solid #27ae60; }
+  .badge-error_max_turns { background: rgba(230,126,34,.2); color: #e67e22; border: 1px solid #e67e22; }
+  .badge-error_max_budget_tokens { background: rgba(155,89,182,.2); color: #9b59b6; border: 1px solid #9b59b6; }
+  .badge-error_max_budget_cost   { background: rgba(231,76,60,.2);  color: #e74c3c; border: 1px solid #e74c3c; }
+  .badge-error_during_execution  { background: rgba(192,57,43,.2);  color: #c0392b; border: 1px solid #c0392b; }
+  .badge-error_stop_event        { background: rgba(127,140,141,.2); color: #7f8c8d; border: 1px solid #7f8c8d; }
+  .badge-error_max_structured_output_retries { background: rgba(243,156,18,.2); color: #f39c12; border: 1px solid #f39c12; }
+  .badge-unknown { background: rgba(100,100,100,.2); color: #aaa; border: 1px solid #555; }
+
+  .token-cell { font-family: monospace; font-size: 11px; color: var(--text-secondary, #7a8cb0); }
+  .cost-cell  { font-family: monospace; font-size: 12px; }
+  .turns-cell { text-align: center; font-weight: 600; }
+
+  .pagination-bar {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-top: 14px; font-size: 12px; color: var(--text-secondary, #7a8cb0);
+  }
+  .pagination-btn {
+    padding: 4px 12px; border-radius: 4px; border: 1px solid var(--border-color, #2a2a4a);
+    background: var(--bg-secondary, #1a1a2e); color: var(--text-primary, #e2e8f0);
+    cursor: pointer; font-size: 12px;
+  }
+  .pagination-btn:disabled { opacity: .4; cursor: default; }
+  .pagination-btn:hover:not(:disabled) { background: rgba(255,255,255,.06); }
+
+  .empty-state {
+    text-align: center; padding: 48px 20px;
+    color: var(--text-secondary, #7a8cb0); font-size: 14px;
+  }
+  .empty-state .icon { font-size: 36px; margin-bottom: 12px; }
+
+  .stat-pills { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
+  .stat-pill {
+    display: flex; flex-direction: column; align-items: center;
+    padding: 10px 18px; border-radius: 6px;
+    background: var(--bg-secondary, #1a1a2e);
+    border: 1px solid var(--border-color, #2a2a4a); min-width: 90px;
+  }
+  .stat-pill .val { font-size: 22px; font-weight: 700; color: var(--text-primary, #e2e8f0); }
+  .stat-pill .lbl { font-size: 10px; color: var(--text-secondary, #7a8cb0); text-transform: uppercase; letter-spacing: .04em; margin-top: 2px; }
+</style>
+
+<div class="sessions-page">
+
+  <!-- Breadcrumbs -->
+  <div class="breadcrumbs">
+    <a href="/">Home</a>
+    <span class="separator">/</span>
+    <a href="/coworker">Co-Worker Engine</a>
+    <span class="separator">/</span>
+    <span>Agent Sessions</span>
+  </div>
+
+  <!-- Header -->
+  <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px; margin-bottom:20px;">
+    <div>
+      <h1 style="margin:0; font-size:22px; font-weight:700;">Agent Session Replay</h1>
+      <p style="margin:4px 0 0; color:var(--text-secondary,#7a8cb0); font-size:13px;">
+        Browse and replay saved agent loop sessions — tool call sequences, turn-by-turn message history, token and cost breakdown.
+      </p>
+    </div>
+    <div style="display:flex; gap:8px; align-items:center; flex-shrink:0;">
+      <button class="filter-btn" onclick="loadSessions()" style="background:var(--bg-secondary,#1a1a2e); border:1px solid var(--border-color,#2a2a4a); color:var(--text-primary,#e2e8f0);">&#8635; Refresh</button>
+    </div>
+  </div>
+
+  <!-- Summary stats -->
+  <div class="stat-pills" id="stat-pills">
+    <div class="stat-pill"><span class="val" id="stat-total">—</span><span class="lbl">Total Sessions</span></div>
+    <div class="stat-pill"><span class="val" id="stat-success" style="color:#27ae60">—</span><span class="lbl">Successful</span></div>
+    <div class="stat-pill"><span class="val" id="stat-errors" style="color:#e74c3c">—</span><span class="lbl">Errors</span></div>
+    <div class="stat-pill"><span class="val" id="stat-turns">—</span><span class="lbl">Avg Turns</span></div>
+    <div class="stat-pill"><span class="val" id="stat-cost">—</span><span class="lbl">Total Cost</span></div>
+  </div>
+
+  <!-- Filter bar -->
+  <div class="filter-bar">
+    <label>Result:</label>
+    <select id="f-subtype">
+      <option value="">All</option>
+      <option value="success">Success</option>
+      <option value="error_max_turns">Max Turns</option>
+      <option value="error_max_budget_tokens">Budget Tokens</option>
+      <option value="error_max_budget_cost">Budget Cost</option>
+      <option value="error_during_execution">Execution Error</option>
+      <option value="error_stop_event">Stop Event</option>
+    </select>
+    <label>Co-Worker:</label>
+    <input type="text" id="f-coworker" placeholder="coworker_id…" style="width:140px;">
+    <label>Instance:</label>
+    <input type="text" id="f-instance" placeholder="instance_id…" style="width:140px;">
+    <button class="filter-btn" onclick="loadSessions()">Search</button>
+  </div>
+
+  <!-- Table -->
+  <div style="overflow-x:auto;">
+    <table class="sessions-table">
+      <thead>
+        <tr>
+          <th>Session ID</th>
+          <th>Co-Worker</th>
+          <th>Instance</th>
+          <th>Result</th>
+          <th style="text-align:center;">Turns</th>
+          <th>Tokens In/Out</th>
+          <th>Cost</th>
+          <th>Created</th>
+        </tr>
+      </thead>
+      <tbody id="sessions-tbody">
+        <tr><td colspan="8" class="empty-state"><span class="icon">&#9203;</span><br>Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Pagination -->
+  <div class="pagination-bar">
+    <button class="pagination-btn" id="prev-btn" onclick="prevPage()" disabled>&#8592; Previous</button>
+    <span id="page-info">—</span>
+    <button class="pagination-btn" id="next-btn" onclick="nextPage()" disabled>Next &#8594;</button>
+  </div>
+
+  <!-- IQE widget -->
+  <div style="margin-top:32px;">
+    <h2 style="font-size:15px; font-weight:600; margin-bottom:12px;">Query Sessions (IQE)</h2>
+    {% include "includes/iqe_query_widget.html" %}
+  </div>
+
+</div>
+
+<script>
+const PAGE_SIZE = 50;
+let _offset = 0;
+let _total  = 0;
+
+function subtypeBadge(sub) {
+  const cls = sub ? 'badge-' + sub : 'badge-unknown';
+  const label = sub || 'unknown';
+  return '<span class="badge-subtype ' + cls + '">' + label.replace('error_', '') + '</span>';
+}
+
+function fmtCost(v) {
+  if (v == null) return '—';
+  return '$' + parseFloat(v).toFixed(4);
+}
+
+function fmtDate(s) {
+  if (!s) return '—';
+  const d = new Date(s.replace(' ', 'T') + (s.includes('+') ? '' : 'Z'));
+  if (isNaN(d)) return s;
+  return d.toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'});
+}
+
+function shortId(id) {
+  return id ? id.slice(0, 8) : '—';
+}
+
+function truncate(s, n) {
+  if (!s) return '—';
+  return s.length > n ? s.slice(0, n) + '…' : s;
+}
+
+async function loadSessions() {
+  const subtype   = document.getElementById('f-subtype').value;
+  const coworker  = document.getElementById('f-coworker').value.trim();
+  const instance  = document.getElementById('f-instance').value.trim();
+
+  const params = new URLSearchParams({limit: PAGE_SIZE, offset: _offset});
+  if (subtype)  params.append('subtype', subtype);
+  if (coworker) params.append('coworker_id', coworker);
+  if (instance) params.append('instance_id', instance);
+
+  const tbody = document.getElementById('sessions-tbody');
+  tbody.innerHTML = '<tr><td colspan="8" class="empty-state">Loading…</td></tr>';
+
+  try {
+    const res  = await fetch('/api/ace/sessions?' + params);
+    const data = await res.json();
+
+    if (data.error) {
+      tbody.innerHTML = '<tr><td colspan="8" class="empty-state" style="color:#e74c3c;">Error: ' + data.error + '</td></tr>';
+      return;
+    }
+
+    _total = data.total || 0;
+    const sessions = data.sessions || [];
+
+    // Update stats
+    document.getElementById('stat-total').textContent   = data.total_all != null ? data.total_all : _total;
+    document.getElementById('stat-success').textContent = data.success_count != null ? data.success_count : '—';
+    document.getElementById('stat-errors').textContent  = data.error_count != null ? data.error_count : '—';
+    document.getElementById('stat-turns').textContent   = data.avg_turns != null ? data.avg_turns.toFixed(1) : '—';
+    document.getElementById('stat-cost').textContent    = data.total_cost != null ? ('$' + parseFloat(data.total_cost).toFixed(4)) : '—';
+
+    if (!sessions.length) {
+      tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state"><div class="icon">&#128269;</div>No sessions found.</div></td></tr>';
+    } else {
+      tbody.innerHTML = sessions.map(function(s) {
+        return '<tr>' +
+          '<td><a class="session-id-link" href="/coworker/sessions/' + s.session_id + '" title="' + s.session_id + '">' + shortId(s.session_id) + '</a></td>' +
+          '<td style="font-size:12px;">' + truncate(s.coworker_id, 24) + '</td>' +
+          '<td style="font-size:12px; font-family:monospace;">' + truncate(s.instance_id, 16) + '</td>' +
+          '<td>' + subtypeBadge(s.result_subtype) + '</td>' +
+          '<td class="turns-cell">' + (s.turns != null ? s.turns : 0) + '</td>' +
+          '<td class="token-cell">' + ((s.total_input_tokens || 0)).toLocaleString() + ' / ' + ((s.total_output_tokens || 0)).toLocaleString() + '</td>' +
+          '<td class="cost-cell">' + fmtCost(s.total_cost_usd) + '</td>' +
+          '<td style="font-size:11px; white-space:nowrap;">' + fmtDate(s.created_at) + '</td>' +
+          '</tr>';
+      }).join('');
+    }
+
+    // Pagination
+    const start = _offset + 1;
+    const end   = _offset + sessions.length;
+    document.getElementById('page-info').textContent = sessions.length ? (start + '–' + end + ' of ' + _total) : '0 results';
+    document.getElementById('prev-btn').disabled = _offset === 0;
+    document.getElementById('next-btn').disabled = (_offset + PAGE_SIZE) >= _total;
+
+  } catch (e) {
+    tbody.innerHTML = '<tr><td colspan="8" class="empty-state" style="color:#e74c3c;">Network error: ' + e + '</td></tr>';
+  }
+}
+
+function prevPage() { if (_offset > 0) { _offset = Math.max(0, _offset - PAGE_SIZE); loadSessions(); } }
+function nextPage() { if (_offset + PAGE_SIZE < _total) { _offset += PAGE_SIZE; loadSessions(); } }
+
+document.addEventListener('DOMContentLoaded', loadSessions);
+</script>
+{% endblock %}

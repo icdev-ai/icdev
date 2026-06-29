@@ -363,6 +363,14 @@ def register_api_blueprints(app: "Flask") -> None:  # noqa: C901
         except ImportError as exc:
             logger.debug("proposal_genesis_api skipped: %s", exc)
 
+    # ACE Co-Worker Engine API — /api/ace/* routes (ace_api_bp not in component registry)
+    try:
+        from tools.ace.blueprint import ace_api_bp
+        _mount_inline(ace_api_bp)
+        logger.info("ace_api_bp registered at /api/ace/")
+    except Exception as exc:
+        logger.warning("ace_api_bp skipped: %s", exc)
+
     # AISG blueprint is registered by the canvas loop in create_app() (_CANVAS_DEFS).
     # Registering it here too caused Flask 3.x "already registered for this blueprint"
     # errors — same object re-registered on the same Flask app with a different url_prefix.

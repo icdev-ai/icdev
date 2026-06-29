@@ -335,7 +335,7 @@ def main():
     elif args.topology_id:
         db_path = BASE_DIR / "data" / "network_canvas.db"
         conn = get_connection(str(db_path))
-        row = conn.execute("SELECT graph_json FROM topologies WHERE id=?", (args.topology_id,)).fetchone()
+        row = conn.execute("SELECT graph_json FROM topologies WHERE id=%s", (args.topology_id,)).fetchone()
         if not row:
             print(f"Topology {args.topology_id} not found")
             sys.exit(1)
@@ -343,7 +343,7 @@ def main():
         styled = style_topology(data, skip_legend=args.skip_legend)
         if args.apply:
             conn.execute(
-                "UPDATE topologies SET graph_json=? WHERE id=?",
+                "UPDATE topologies SET graph_json=%s WHERE id=%s",
                 (json.dumps(styled), args.topology_id),
             )
             conn.commit()

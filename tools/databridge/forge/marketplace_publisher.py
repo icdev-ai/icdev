@@ -37,7 +37,7 @@ def publish_connector(
     db = db_path or str(DB_PATH)
     try:
         conn = _get_conn(db)
-        row = conn.execute("SELECT * FROM db_forge_connectors WHERE id = ?", (connector_id,)).fetchone()
+        row = conn.execute("SELECT * FROM db_forge_connectors WHERE id = %s", (connector_id,)).fetchone()
 
         if not row:
             conn.close()
@@ -66,22 +66,22 @@ def publish_connector(
         now = datetime.now(timezone.utc).isoformat()
         conn.execute(
             """UPDATE db_forge_connectors
-               SET status = 'published', published_slug = ?,
-                   marketplace_artifact_id = ?, updated_at = ?
-               WHERE id = ?""",
+               SET status = 'published', published_slug = %s,
+                   marketplace_artifact_id = %s, updated_at = %s
+               WHERE id = %s""",
             (slug, artifact_id, now, connector_id),
         )
 
         conn.execute(
             """INSERT INTO db_forge_promotions
                (connector_id, from_status, to_status, promoted_by, review_notes, promoted_at)
-               VALUES (?, 'promoted', 'published', 'marketplace_publisher', ?, ?)""",
+               VALUES (%s, 'promoted', 'published', 'marketplace_publisher', %s, %s)""",
             (connector_id, f"Published as {slug}", now),
         )
 
         conn.execute(
             """INSERT INTO audit_trail (id, event_type, actor, action, details, created_at)
-               VALUES (?, 'connector_forge_published', 'marketplace_publisher', 'publish', ?, ?)""",
+               VALUES (%s, 'connector_forge_published', 'marketplace_publisher', 'publish', %s, %s)""",
             (
                 f"audit-{uuid.uuid4().hex[:12]}",
                 json.dumps({"connector_id": connector_id, "slug": slug, "artifact_id": artifact_id}),

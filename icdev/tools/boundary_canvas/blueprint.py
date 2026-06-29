@@ -125,7 +125,7 @@ def create_boundary_blueprint():
         try:
             with get_connection() as conn:
                 conn.execute(
-                    "INSERT INTO bd_audit (design_id, user, action, detail, created_at) VALUES (?,?,?,?,?)",
+                    "INSERT INTO bd_audit (design_id, user, action, detail, created_at) VALUES (%s,%s,%s,%s,%s)",
                     (design_id, user_id, action, detail, now_isoformat()),
                 )
         except Exception:
@@ -179,7 +179,7 @@ def create_boundary_blueprint():
     def bdc_canvas(design_id):
         """Open existing boundary design canvas."""
         with get_connection() as conn:
-            design = _row_to_dict(conn.execute("SELECT * FROM boundary_designs WHERE id=?", (design_id,)).fetchone())
+            design = _row_to_dict(conn.execute("SELECT * FROM boundary_designs WHERE id=%s", (design_id,)).fetchone())
         if not design:
             abort(404)
         return render_template(
@@ -200,7 +200,7 @@ def create_boundary_blueprint():
         if template_id:
             with get_connection() as conn:
                 tpl = conn.execute(
-                    "SELECT name, graph_json FROM bd_templates WHERE id=?",
+                    "SELECT name, graph_json FROM bd_templates WHERE id=%s",
                     (template_id,),
                 ).fetchone()
             if tpl:
@@ -271,7 +271,7 @@ def create_boundary_blueprint():
         """PPS Matrix page for a specific boundary design."""
         with get_connection() as conn:
             design = _row_to_dict(
-                conn.execute("SELECT id, name FROM boundary_designs WHERE id=?", (design_id,)).fetchone()
+                conn.execute("SELECT id, name FROM boundary_designs WHERE id=%s", (design_id,)).fetchone()
             )
         if not design:
             return redirect("/boundary/")
@@ -283,7 +283,7 @@ def create_boundary_blueprint():
         """Compliance view page for a specific boundary design."""
         with get_connection() as conn:
             design = _row_to_dict(
-                conn.execute("SELECT id, name FROM boundary_designs WHERE id=?", (design_id,)).fetchone()
+                conn.execute("SELECT id, name FROM boundary_designs WHERE id=%s", (design_id,)).fetchone()
             )
         if not design:
             return redirect("/boundary/")
@@ -295,7 +295,7 @@ def create_boundary_blueprint():
         """Remediation page — gap analysis with recommended fixes."""
         with get_connection() as conn:
             design = _row_to_dict(
-                conn.execute("SELECT id, name FROM boundary_designs WHERE id=?", (design_id,)).fetchone()
+                conn.execute("SELECT id, name FROM boundary_designs WHERE id=%s", (design_id,)).fetchone()
             )
         if not design:
             return redirect("/boundary/")
@@ -318,7 +318,7 @@ def create_boundary_blueprint():
         if template_id:
             with get_connection() as conn:
                 ex = conn.execute(
-                    "SELECT id, name FROM boundary_designs WHERE template_id=? LIMIT 1", (template_id,)
+                    "SELECT id, name FROM boundary_designs WHERE template_id=%s LIMIT 1", (template_id,)
                 ).fetchone()
             if ex:
                 return jsonify({"id": ex["id"], "name": ex["name"]}), 200
@@ -328,7 +328,7 @@ def create_boundary_blueprint():
                 "INSERT INTO boundary_designs "
                 "(id, name, description, graph_json, template_id, "
                 "classification, created_at, updated_at) "
-                "VALUES (?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
                 (
                     design_id,
                     name,
@@ -353,7 +353,7 @@ def create_boundary_blueprint():
     def bdc_api_get_design(design_id):
         """Get a single boundary design."""
         with get_connection() as conn:
-            row = conn.execute("SELECT * FROM boundary_designs WHERE id=?", (design_id,)).fetchone()
+            row = conn.execute("SELECT * FROM boundary_designs WHERE id=%s", (design_id,)).fetchone()
         if not row:
             return jsonify({"error": "Not found"}), 404
         return jsonify(_row_to_dict(row))
@@ -365,7 +365,7 @@ def create_boundary_blueprint():
         data = request.get_json(force=True, silent=True) or {}
         now = now_isoformat()
         with get_connection() as conn:
-            existing = conn.execute("SELECT id FROM boundary_designs WHERE id=?", (design_id,)).fetchone()
+            existing = conn.execute("SELECT id FROM boundary_designs WHERE id=%s", (design_id,)).fetchone()
             if not existing:
                 return jsonify({"error": "Not found"}), 404
             updates = []
@@ -382,7 +382,7 @@ def create_boundary_blueprint():
             params.append(now)
             params.append(design_id)
             conn.execute(
-                f"UPDATE boundary_designs SET {', '.join(updates)} WHERE id=?",  # noqa: S608  # nosec B608 — columns from hardcoded allowlist
+                f"UPDATE boundary_designs SET {', '.join(updates)} WHERE id=%s",  # noqa: S608  # nosec B608 — columns from hardcoded allowlist
                 params,
             )
         _audit(design_id, "UPDATE", json.dumps(list(data.keys())))
@@ -436,10 +436,10 @@ def create_boundary_blueprint():
         with get_connection() as conn:
             for table in child_tables:
                 conn.execute(
-                    f"DELETE FROM {table} WHERE design_id=?",  # nosec B608 — table from hardcoded tuple
+                    f"DELETE FROM {table} WHERE design_id=%s",  # nosec B608 — table from hardcoded tuple
                     (design_id,),  # noqa: S608
                 )
-            conn.execute("DELETE FROM boundary_designs WHERE id=?", (design_id,))
+            conn.execute("DELETE FROM boundary_designs WHERE id=%s", (design_id,))
         _audit(design_id, "DELETE", "")
         return jsonify({"deleted": design_id})
 
@@ -452,8 +452,8 @@ def create_boundary_blueprint():
             ids = [r[0] for r in conn.execute("SELECT id FROM boundary_designs").fetchall()]
             for did in ids:
                 for table in child_tables:
-                    conn.execute(f"DELETE FROM {table} WHERE design_id=?", (did,))  # nosec B608
-                conn.execute("DELETE FROM boundary_designs WHERE id=?", (did,))
+                    conn.execute(f"DELETE FROM {table} WHERE design_id=%s", (did,))  # nosec B608
+                conn.execute("DELETE FROM boundary_designs WHERE id=%s", (did,))
         return jsonify({"deleted": len(ids)})
 
     # ====================================================================
@@ -469,7 +469,7 @@ def create_boundary_blueprint():
         chain_mode = "cod" if use_cod else ""
         with get_connection() as conn:
             row = conn.execute(
-                "SELECT graph_json FROM boundary_designs WHERE id=?",
+                "SELECT graph_json FROM boundary_designs WHERE id=%s",
                 (design_id,),
             ).fetchone()
             if not row:
@@ -481,7 +481,7 @@ def create_boundary_blueprint():
 
             # Fetch ISA tracker entries for this design
             isa_rows = conn.execute(
-                "SELECT * FROM bd_isa_tracker WHERE design_id=?",
+                "SELECT * FROM bd_isa_tracker WHERE design_id=%s",
                 (design_id,),
             ).fetchall()
             isa_tracker = [_row_to_dict(r) for r in isa_rows]
@@ -498,7 +498,7 @@ def create_boundary_blueprint():
                 "(id, design_id, assessment_type, findings_json, score, grade, "
                 "cat1_findings, cat2_findings, cat3_findings, "
                 "nist_coverage_json, created_at) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (
                     assess_id,
                     design_id,
@@ -572,7 +572,7 @@ def create_boundary_blueprint():
     def bdc_api_get_template(template_id):
         """Get a single template with full graph JSON."""
         with get_connection() as conn:
-            row = conn.execute("SELECT * FROM bd_templates WHERE id=?", (template_id,)).fetchone()
+            row = conn.execute("SELECT * FROM bd_templates WHERE id=%s", (template_id,)).fetchone()
         if not row:
             return jsonify({"error": "Not found"}), 404
         return jsonify(_row_to_dict(row))
@@ -587,7 +587,7 @@ def create_boundary_blueprint():
         """Generate PPS matrix for a boundary design."""
         with get_connection() as conn:
             row = conn.execute(
-                "SELECT graph_json FROM boundary_designs WHERE id=?",
+                "SELECT graph_json FROM boundary_designs WHERE id=%s",
                 (design_id,),
             ).fetchone()
         if not row:
@@ -609,7 +609,7 @@ def create_boundary_blueprint():
         """Get ISA lifecycle status for all interconnections in a design."""
         with get_connection() as conn:
             row = conn.execute(
-                "SELECT graph_json FROM boundary_designs WHERE id=?",
+                "SELECT graph_json FROM boundary_designs WHERE id=%s",
                 (design_id,),
             ).fetchone()
             if not row:
@@ -619,7 +619,7 @@ def create_boundary_blueprint():
             except Exception:
                 return jsonify({"error": "Bad graph data"}), 500
             isa_rows = conn.execute(
-                "SELECT * FROM bd_isa_tracker WHERE design_id=?",
+                "SELECT * FROM bd_isa_tracker WHERE design_id=%s",
                 (design_id,),
             ).fetchall()
             isa_tracker = [_row_to_dict(r) for r in isa_rows]
@@ -638,12 +638,12 @@ def create_boundary_blueprint():
 
         with get_connection() as conn:
             # Verify design exists
-            design = conn.execute("SELECT id FROM boundary_designs WHERE id=?", (design_id,)).fetchone()
+            design = conn.execute("SELECT id FROM boundary_designs WHERE id=%s", (design_id,)).fetchone()
             if not design:
                 return jsonify({"error": "Design not found"}), 404
 
             existing = conn.execute(
-                "SELECT id FROM bd_isa_tracker WHERE design_id=? AND interconnection_id=?",
+                "SELECT id FROM bd_isa_tracker WHERE design_id=%s AND interconnection_id=%s",
                 (design_id, interconnection_id),
             ).fetchone()
 
@@ -653,9 +653,9 @@ def create_boundary_blueprint():
 
             if existing:
                 conn.execute(
-                    "UPDATE bd_isa_tracker SET status=?, expiry_date=?, review_date=?, "
-                    "owner=?, isa_doc_id=?, notes=?, updated_at=? "
-                    "WHERE design_id=? AND interconnection_id=?",
+                    "UPDATE bd_isa_tracker SET status=%s, expiry_date=%s, review_date=%s, "
+                    "owner=%s, isa_doc_id=%s, notes=%s, updated_at=%s "
+                    "WHERE design_id=%s AND interconnection_id=%s",
                     (
                         status,
                         data.get("expiry_date"),
@@ -676,7 +676,7 @@ def create_boundary_blueprint():
                     "INSERT INTO bd_isa_tracker "
                     "(id, design_id, interconnection_id, isa_doc_id, status, "
                     "expiry_date, review_date, owner, notes, created_at, updated_at) "
-                    "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                     (
                         tracker_id,
                         design_id,
@@ -726,7 +726,7 @@ def create_boundary_blueprint():
         with get_connection() as conn:
             rows = conn.execute(
                 "SELECT id, version_number, change_summary, user_id, created_at "
-                "FROM bd_versions WHERE design_id=? ORDER BY version_number DESC",
+                "FROM bd_versions WHERE design_id=%s ORDER BY version_number DESC",
                 (design_id,),
             ).fetchall()
         return jsonify([_row_to_dict(r) for r in rows])
@@ -738,7 +738,7 @@ def create_boundary_blueprint():
         data = request.get_json(force=True, silent=True) or {}
         with get_connection() as conn:
             row = conn.execute(
-                "SELECT graph_json FROM boundary_designs WHERE id=?",
+                "SELECT graph_json FROM boundary_designs WHERE id=%s",
                 (design_id,),
             ).fetchone()
             if not row:
@@ -749,13 +749,13 @@ def create_boundary_blueprint():
             except Exception:
                 current_graph = {}
             ver_num = conn.execute(
-                "SELECT COALESCE(MAX(version_number), 0) + 1 FROM bd_versions WHERE design_id=?",
+                "SELECT COALESCE(MAX(version_number), 0) + 1 FROM bd_versions WHERE design_id=%s",
                 (design_id,),
             ).fetchone()[0]
             change_summary = data.get("change_summary", "")
             if not change_summary:
                 prev = conn.execute(
-                    "SELECT graph_json FROM bd_versions WHERE design_id=? ORDER BY version_number DESC LIMIT 1",
+                    "SELECT graph_json FROM bd_versions WHERE design_id=%s ORDER BY version_number DESC LIMIT 1",
                     (design_id,),
                 ).fetchone()
                 if prev:
@@ -768,7 +768,7 @@ def create_boundary_blueprint():
             now = now_isoformat()
             conn.execute(
                 "INSERT INTO bd_versions (id, design_id, version_number, graph_json, change_summary, user_id, created_at) "
-                "VALUES (?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s)",
                 (
                     ver_id,
                     design_id,
@@ -790,14 +790,14 @@ def create_boundary_blueprint():
         """Restore a boundary design to a previous version snapshot."""
         with get_connection() as conn:
             ver = conn.execute(
-                "SELECT graph_json, version_number FROM bd_versions WHERE id=? AND design_id=?",
+                "SELECT graph_json, version_number FROM bd_versions WHERE id=%s AND design_id=%s",
                 (version_id, design_id),
             ).fetchone()
             if not ver:
                 return jsonify({"error": "Version not found"}), 404
             now = now_isoformat()
             conn.execute(
-                "UPDATE boundary_designs SET graph_json=?, updated_at=? WHERE id=?",
+                "UPDATE boundary_designs SET graph_json=%s, updated_at=%s WHERE id=%s",
                 (ver[0], now, design_id),
             )
         _audit(design_id, "VERSION_RESTORE", f"restored to v{ver[1]}")
@@ -814,11 +814,11 @@ def create_boundary_blueprint():
             return jsonify({"error": "version_a and version_b required"}), 400
         with get_connection() as conn:
             ver_a = conn.execute(
-                "SELECT graph_json, version_number FROM bd_versions WHERE id=? AND design_id=?",
+                "SELECT graph_json, version_number FROM bd_versions WHERE id=%s AND design_id=%s",
                 (ver_a_id, design_id),
             ).fetchone()
             ver_b = conn.execute(
-                "SELECT graph_json, version_number FROM bd_versions WHERE id=? AND design_id=?",
+                "SELECT graph_json, version_number FROM bd_versions WHERE id=%s AND design_id=%s",
                 (ver_b_id, design_id),
             ).fetchone()
         if not ver_a or not ver_b:
@@ -861,7 +861,7 @@ def create_boundary_blueprint():
 
         with get_connection() as conn:
             row = conn.execute(
-                "SELECT name, graph_json FROM boundary_designs WHERE id=?",
+                "SELECT name, graph_json FROM boundary_designs WHERE id=%s",
                 (design_id,),
             ).fetchone()
         if not row:
@@ -882,7 +882,7 @@ def create_boundary_blueprint():
 
     def _bdc_fetch(design_id):
         with get_connection() as conn:
-            row = conn.execute("SELECT name, graph_json FROM boundary_designs WHERE id=?", (design_id,)).fetchone()
+            row = conn.execute("SELECT name, graph_json FROM boundary_designs WHERE id=%s", (design_id,)).fetchone()
         if not row:
             return None, None
         d = _row_to_dict(row)
@@ -1073,7 +1073,7 @@ def create_boundary_blueprint():
         with get_connection() as conn:
             isas = conn.execute(
                 "SELECT id, interconnection_id, expiry_date, status, owner "
-                "FROM bd_isa_tracker WHERE design_id=? AND status NOT IN ('expired','revoked')",
+                "FROM bd_isa_tracker WHERE design_id=%s AND status NOT IN ('expired','revoked')",
                 (design_id,),
             ).fetchall()
 
@@ -1110,7 +1110,7 @@ def create_boundary_blueprint():
 
                 # Check if this alert already exists (avoid duplicates)
                 existing = conn.execute(
-                    "SELECT id FROM bd_alerts WHERE isa_id=? AND alert_type=? AND acknowledged=0",
+                    "SELECT id FROM bd_alerts WHERE isa_id=%s AND alert_type=%s AND acknowledged=0",
                     (isa_dict["id"], alert_type),
                 ).fetchone()
                 if existing:
@@ -1120,7 +1120,7 @@ def create_boundary_blueprint():
                 conn.execute(
                     "INSERT INTO bd_alerts "
                     "(id, design_id, isa_id, alert_type, severity, days_until_expiry, message, created_at) "
-                    "VALUES (?,?,?,?,?,?,?,?)",
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
                     (alert_id, design_id, isa_dict["id"], alert_type, severity, days, message, now_isoformat()),
                 )
                 new_alerts.append(
@@ -1145,7 +1145,7 @@ def create_boundary_blueprint():
                 rows = conn.execute(
                     "SELECT a.*, i.interconnection_id, i.expiry_date, i.owner "
                     "FROM bd_alerts a LEFT JOIN bd_isa_tracker i ON a.isa_id=i.id "
-                    "WHERE a.design_id=? ORDER BY a.created_at DESC",
+                    "WHERE a.design_id=%s ORDER BY a.created_at DESC",
                     (design_id,),
                 ).fetchall()
             else:
@@ -1196,11 +1196,11 @@ def create_boundary_blueprint():
         """Acknowledge an alert, suppressing it from active lists."""
         user_id = session.get("user_id", "system")
         with get_connection() as conn:
-            row = conn.execute("SELECT id FROM bd_alerts WHERE id=?", (alert_id,)).fetchone()
+            row = conn.execute("SELECT id FROM bd_alerts WHERE id=%s", (alert_id,)).fetchone()
             if not row:
                 return jsonify({"error": "Alert not found"}), 404
             conn.execute(
-                "UPDATE bd_alerts SET acknowledged=1, acknowledged_by=?, acknowledged_at=? WHERE id=?",
+                "UPDATE bd_alerts SET acknowledged=1, acknowledged_by=%s, acknowledged_at=%s WHERE id=%s",
                 (user_id, now_isoformat(), alert_id),
             )
         return jsonify({"status": "acknowledged", "alert_id": alert_id})
@@ -1214,12 +1214,12 @@ def create_boundary_blueprint():
         Also incorporates supply chain risk from ISA status.
         """
         with get_connection() as conn:
-            row = conn.execute("SELECT graph_json FROM boundary_designs WHERE id=?", (design_id,)).fetchone()
+            row = conn.execute("SELECT graph_json FROM boundary_designs WHERE id=%s", (design_id,)).fetchone()
             if not row:
                 return jsonify({"error": "Not found"}), 404
 
             isas = conn.execute(
-                "SELECT interconnection_id, status, expiry_date FROM bd_isa_tracker WHERE design_id=?",
+                "SELECT interconnection_id, status, expiry_date FROM bd_isa_tracker WHERE design_id=%s",
                 (design_id,),
             ).fetchall()
 
@@ -1358,18 +1358,18 @@ def create_boundary_blueprint():
         with get_connection() as conn:
             if trigger and design_id:
                 rows = conn.execute(
-                    "SELECT * FROM bdc_runbooks WHERE trigger_event=? AND (design_id=? OR design_id IS NULL) "
+                    "SELECT * FROM bdc_runbooks WHERE trigger_event=%s AND (design_id=%s OR design_id IS NULL) "
                     "ORDER BY severity, title",
                     (trigger, design_id),
                 ).fetchall()
             elif trigger:
                 rows = conn.execute(
-                    "SELECT * FROM bdc_runbooks WHERE trigger_event=? ORDER BY severity, title",
+                    "SELECT * FROM bdc_runbooks WHERE trigger_event=%s ORDER BY severity, title",
                     (trigger,),
                 ).fetchall()
             elif design_id:
                 rows = conn.execute(
-                    "SELECT * FROM bdc_runbooks WHERE design_id=? OR design_id IS NULL ORDER BY severity, title",
+                    "SELECT * FROM bdc_runbooks WHERE design_id=%s OR design_id IS NULL ORDER BY severity, title",
                     (design_id,),
                 ).fetchall()
             else:
@@ -1391,7 +1391,7 @@ def create_boundary_blueprint():
     def bdc_api_get_runbook(runbook_id):
         """Get a single runbook by ID."""
         with get_connection() as conn:
-            row = conn.execute("SELECT * FROM bdc_runbooks WHERE id=?", (runbook_id,)).fetchone()
+            row = conn.execute("SELECT * FROM bdc_runbooks WHERE id=%s", (runbook_id,)).fetchone()
         if not row:
             return jsonify({"error": "Runbook not found"}), 404
         rb = _row_to_dict(row)
@@ -1424,7 +1424,7 @@ def create_boundary_blueprint():
             conn.execute(
                 "INSERT INTO bdc_runbooks "
                 "(id, design_id, title, trigger_event, severity, description, steps_json, owner, classification, created_at, updated_at) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (
                     rb_id,
                     data.get("design_id") or None,
@@ -1448,7 +1448,7 @@ def create_boundary_blueprint():
     def bdc_api_update_runbook(runbook_id):
         """Update an existing runbook."""
         with get_connection() as conn:
-            row = conn.execute("SELECT * FROM bdc_runbooks WHERE id=?", (runbook_id,)).fetchone()
+            row = conn.execute("SELECT * FROM bdc_runbooks WHERE id=%s", (runbook_id,)).fetchone()
             if not row:
                 return jsonify({"error": "Runbook not found"}), 404
             data = request.get_json(silent=True) or {}
@@ -1466,8 +1466,8 @@ def create_boundary_blueprint():
             else:
                 steps_json = json.dumps(steps if isinstance(steps, list) else [])
             conn.execute(
-                "UPDATE bdc_runbooks SET title=?, trigger_event=?, severity=?, description=?, "
-                "steps_json=?, owner=?, classification=?, updated_at=? WHERE id=?",
+                "UPDATE bdc_runbooks SET title=%s, trigger_event=%s, severity=%s, description=%s, "
+                "steps_json=%s, owner=%s, classification=%s, updated_at=%s WHERE id=%s",
                 (
                     title,
                     trigger,
@@ -1489,11 +1489,11 @@ def create_boundary_blueprint():
     def bdc_api_delete_runbook(runbook_id):
         """Delete a runbook."""
         with get_connection() as conn:
-            row = conn.execute("SELECT design_id FROM bdc_runbooks WHERE id=?", (runbook_id,)).fetchone()
+            row = conn.execute("SELECT design_id FROM bdc_runbooks WHERE id=%s", (runbook_id,)).fetchone()
             if not row:
                 return jsonify({"error": "Runbook not found"}), 404
             design_id = row["design_id"] or "global"
-            conn.execute("DELETE FROM bdc_runbooks WHERE id=?", (runbook_id,))
+            conn.execute("DELETE FROM bdc_runbooks WHERE id=%s", (runbook_id,))
             conn.commit()
         _audit(design_id, "runbook_deleted", f"id={runbook_id}")
         return jsonify({"status": "deleted"})
@@ -1504,7 +1504,7 @@ def create_boundary_blueprint():
         """List runbooks associated with a specific design (or global runbooks)."""
         with get_connection() as conn:
             rows = conn.execute(
-                "SELECT * FROM bdc_runbooks WHERE design_id=? OR design_id IS NULL ORDER BY severity, title",
+                "SELECT * FROM bdc_runbooks WHERE design_id=%s OR design_id IS NULL ORDER BY severity, title",
                 (design_id,),
             ).fetchall()
         runbooks = []
@@ -1531,7 +1531,7 @@ def create_boundary_blueprint():
                 d = _row_to_dict(r)
                 assess = conn.execute(
                     "SELECT score, grade, cat1_findings FROM bd_assessments "
-                    "WHERE design_id=? ORDER BY created_at DESC LIMIT 1",
+                    "WHERE design_id=%s ORDER BY created_at DESC LIMIT 1",
                     (d["id"],),
                 ).fetchone()
                 if assess:
@@ -1551,7 +1551,7 @@ def create_boundary_blueprint():
         """Latest assessment findings (control rows) for a boundary design."""
         with get_connection() as conn:
             row = conn.execute(
-                "SELECT findings_json FROM bd_assessments WHERE design_id=? ORDER BY created_at DESC LIMIT 1",
+                "SELECT findings_json FROM bd_assessments WHERE design_id=%s ORDER BY created_at DESC LIMIT 1",
                 (design_id,),
             ).fetchone()
         if not row:
@@ -1706,13 +1706,13 @@ def create_boundary_blueprint():
     @bdc_login_required
     def bdc_twin_page(design_id):
         conn = get_connection()
-        design = conn.execute("SELECT * FROM boundary_designs WHERE id=?", (design_id,)).fetchone()
+        design = conn.execute("SELECT * FROM boundary_designs WHERE id=%s", (design_id,)).fetchone()
         if not design:
             return render_template("404.html"), 404
         design = _row_to_dict(design)
         try:
             snapshots = conn.execute(
-                "SELECT * FROM compliance_snapshots WHERE project_id=? ORDER BY taken_at DESC LIMIT 20",
+                "SELECT * FROM compliance_snapshots WHERE project_id=%s ORDER BY taken_at DESC LIMIT 20",
                 (design_id,),
             ).fetchall()
         except Exception:
@@ -1785,7 +1785,7 @@ def create_boundary_blueprint():
     @bdc_login_required
     def bdc_api_twin_current_topology(design_id):
         conn = get_connection()
-        row = conn.execute("SELECT graph_json FROM boundary_designs WHERE id=?", (design_id,)).fetchone()
+        row = conn.execute("SELECT graph_json FROM boundary_designs WHERE id=%s", (design_id,)).fetchone()
         if not row:
             return jsonify({"error": "Design not found"}), 404
         try:
@@ -1849,14 +1849,14 @@ def create_boundary_blueprint():
             with _gc() as _conn:
                 if record_id:
                     rows = _conn.execute(
-                        "SELECT * FROM canvas_ai_decisions WHERE canvas_type='bdc' AND record_id=? "
-                        "ORDER BY created_at DESC LIMIT ?",
+                        "SELECT * FROM canvas_ai_decisions WHERE canvas_type='bdc' AND record_id=%s "
+                        "ORDER BY created_at DESC LIMIT %s",
                         (record_id, limit),
                     ).fetchall()
                 else:
                     rows = _conn.execute(
                         "SELECT * FROM canvas_ai_decisions WHERE canvas_type='bdc' "
-                        "ORDER BY created_at DESC LIMIT ?",
+                        "ORDER BY created_at DESC LIMIT %s",
                         (limit,),
                     ).fetchall()
             return jsonify({"ok": True, "canvas": "bdc", "decisions": [dict(r) for r in rows]})
@@ -1943,7 +1943,7 @@ def create_boundary_blueprint():
         """Run boundary governance framework check."""
         import uuid as _uuid_mod
         conn = get_connection()
-        row = conn.execute("SELECT graph_json FROM boundary_designs WHERE id=?", (design_id,)).fetchone()
+        row = conn.execute("SELECT graph_json FROM boundary_designs WHERE id=%s", (design_id,)).fetchone()
         if not row:
             conn.close()
             return jsonify({"error": "Not found"}), 404
@@ -1960,7 +1960,7 @@ def create_boundary_blueprint():
             "INSERT INTO bd_assessments "
             "(id, design_id, assessment_type, findings_json, score, grade, "
             "cat1_findings, cat2_findings, cat3_findings, nist_coverage_json, created_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (assess_id, design_id, "governance",
              json.dumps([{"title": c["title"], "severity": c["severity"], "status": c["status"]}
                          for c in result["checks"]]),

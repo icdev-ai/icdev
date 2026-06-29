@@ -81,7 +81,7 @@ def _compute_coverage(opp_id: str) -> Dict[str, Any]:
         rows = conn.execute(
             "SELECT compliance_status, COUNT(*) as cnt "
             "FROM pg_compliance_matrix "
-            "WHERE opportunity_id = ? "
+            "WHERE opportunity_id = %s "
             "GROUP BY compliance_status",
             (opp_id,),
         ).fetchall()
@@ -128,7 +128,7 @@ def _check_unmapped_sections(opp_id: str) -> Dict[str, Any]:
             LEFT JOIN pg_compliance_matrix cm
                 ON cm.opportunity_id = psd.opportunity_id
                 AND cm.section_reference = psd.section_id
-            WHERE psd.opportunity_id = ?
+            WHERE psd.opportunity_id = %s
             AND cm.id IS NULL
             AND psd.status IN ('draft', 'approved')
         """,
@@ -153,7 +153,7 @@ def _check_amendment_drift(opp_id: str) -> Dict[str, Any]:
             f"""
             SELECT ad.id, ad.amendment_number, ad.change_summary
             FROM pg_amendment_diffs ad
-            WHERE ad.opportunity_id = ?
+            WHERE ad.opportunity_id = %s
             AND ad.re_extracted = 1
             AND ad.matrix_updated = 0
             ORDER BY ad.created_at DESC
@@ -227,7 +227,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         conn.execute(
             "INSERT INTO pg_proposal_genesis_audit "
             "(id, event_type, reflex_name, risk_tier, details, success, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (
                 _generate_id("pgaudit"),
                 "trace_coverage",

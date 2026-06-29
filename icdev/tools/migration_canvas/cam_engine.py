@@ -58,7 +58,7 @@ def _find_sop(conn, sop_source: str, *keywords: str) -> tuple[str, str] | tuple[
                 for kw in keywords:
                     row = c.execute(
                         f"SELECT {id_col}, title FROM {table} "
-                        f"WHERE {status_col}=? AND lower(title) LIKE ? LIMIT 1",
+                        f"WHERE {status_col}=%s AND lower(title) LIKE %s LIMIT 1",
                         (status, f"%{kw.lower()}%"),
                     ).fetchone()
                     if row:
@@ -66,7 +66,7 @@ def _find_sop(conn, sop_source: str, *keywords: str) -> tuple[str, str] | tuple[
             # Fallback: any status
             for kw in keywords:
                 row = c.execute(
-                    f"SELECT {id_col}, title FROM {table} WHERE lower(title) LIKE ? LIMIT 1",
+                    f"SELECT {id_col}, title FROM {table} WHERE lower(title) LIKE %s LIMIT 1",
                     (f"%{kw.lower()}%",),
                 ).fetchone()
                 if row:
@@ -118,7 +118,7 @@ def get_project_detail(conn=None, project_id: str = "") -> dict | None:
     if owned:
         conn = _mc_conn()
     try:
-        row = conn.execute("SELECT * FROM mc_projects WHERE id=?", (project_id,)).fetchone()
+        row = conn.execute("SELECT * FROM mc_projects WHERE id=%s", (project_id,)).fetchone()
         if not row:
             return None
         project = _row_to_dict(row)
@@ -131,7 +131,7 @@ def get_project_detail(conn=None, project_id: str = "") -> dict | None:
 
         # Load phases with SOP links
         phase_rows = conn.execute(
-            "SELECT * FROM mc_project_phases WHERE project_id=? ORDER BY phase_num",
+            "SELECT * FROM mc_project_phases WHERE project_id=%s ORDER BY phase_num",
             (project_id,)
         ).fetchall()
         phases = []
@@ -139,7 +139,7 @@ def get_project_detail(conn=None, project_id: str = "") -> dict | None:
             ph = _row_to_dict(ph_row)
             # Load SOP links for this phase
             sop_rows = conn.execute(
-                "SELECT * FROM mc_project_phase_sops WHERE phase_id=? ORDER BY display_order",
+                "SELECT * FROM mc_project_phase_sops WHERE phase_id=%s ORDER BY display_order",
                 (ph["id"],)
             ).fetchall()
             linked_sops = []
@@ -163,7 +163,7 @@ def get_project_detail(conn=None, project_id: str = "") -> dict | None:
                 "  dm.status AS dm_status "
                 "FROM mc_app_inventory ai "
                 "LEFT JOIN mc_data_migration dm ON dm.app_id = ai.id "
-                "WHERE ai.session_id=? ORDER BY ai.name",
+                "WHERE ai.session_id=%s ORDER BY ai.name",
                 (session_id,)
             ).fetchall()
             components = [_row_to_dict(r) for r in comp_rows]
@@ -178,14 +178,14 @@ def get_project_detail(conn=None, project_id: str = "") -> dict | None:
 
         # Load wave plan
         wave_rows = conn.execute(
-            "SELECT * FROM mc_wave_plans WHERE design_id=? ORDER BY wave_number",
+            "SELECT * FROM mc_wave_plans WHERE design_id=%s ORDER BY wave_number",
             (project_id,)
         ).fetchall()
         project["waves"] = [_row_to_dict(r) for r in wave_rows]
 
         # Load AI opportunities
         ai_rows = conn.execute(
-            "SELECT * FROM mc_ai_opportunities WHERE project_id=? ORDER BY effort_days",
+            "SELECT * FROM mc_ai_opportunities WHERE project_id=%s ORDER BY effort_days",
             (project_id,)
         ).fetchall()
         project["ai_opportunities"] = [_row_to_dict(r) for r in ai_rows]
@@ -210,7 +210,7 @@ def _load_sop_steps(sop_source: str, sop_id: str) -> list[dict]:
     try:
         c = _canvas_conn(sop_source)
         try:
-            row = c.execute(f"SELECT {steps_col} FROM {table} WHERE {id_col}=?", (sop_id,)).fetchone()
+            row = c.execute(f"SELECT {steps_col} FROM {table} WHERE {id_col}=%s", (sop_id,)).fetchone()
             if not row:
                 return []
             raw = row[0] if row else None

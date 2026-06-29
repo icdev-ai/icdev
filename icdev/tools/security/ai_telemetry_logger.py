@@ -80,7 +80,7 @@ class AITelemetryLogger:
                     input_tokens, output_tokens, thinking_tokens,
                     latency_ms, cost_usd, classification, api_key_source,
                     injection_scan_result, logged_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     entry_id,
                     project_id,
@@ -131,7 +131,7 @@ class AITelemetryLogger:
             # Total volume in window
             row = conn.execute(
                 "SELECT COUNT(*), COALESCE(SUM(cost_usd), 0), COALESCE(SUM(input_tokens + output_tokens), 0) "
-                "FROM ai_telemetry WHERE logged_at >= ?",
+                "FROM ai_telemetry WHERE logged_at >= %s",
                 (cutoff,),
             ).fetchone()
             volume = row[0] if row else 0
@@ -140,7 +140,7 @@ class AITelemetryLogger:
 
             # Hourly average (from all-time data, excluding current window)
             row_all = conn.execute(
-                "SELECT COUNT(*), COALESCE(SUM(cost_usd), 0) FROM ai_telemetry WHERE logged_at < ?",
+                "SELECT COUNT(*), COALESCE(SUM(cost_usd), 0) FROM ai_telemetry WHERE logged_at < %s",
                 (cutoff,),
             ).fetchone()
             historical_count = row_all[0] if row_all else 0
@@ -148,7 +148,7 @@ class AITelemetryLogger:
             if historical_count > 0:
                 # Get time range of historical data
                 row_range = conn.execute(
-                    "SELECT MIN(logged_at), MAX(logged_at) FROM ai_telemetry WHERE logged_at < ?",
+                    "SELECT MIN(logged_at), MAX(logged_at) FROM ai_telemetry WHERE logged_at < %s",
                     (cutoff,),
                 ).fetchone()
                 if row_range and row_range[0] and row_range[1]:
@@ -187,7 +187,7 @@ class AITelemetryLogger:
 
             # Check for blocked injections in window
             blocked = conn.execute(
-                "SELECT COUNT(*) FROM ai_telemetry WHERE logged_at >= ? AND injection_scan_result = 'blocked'",
+                "SELECT COUNT(*) FROM ai_telemetry WHERE logged_at >= %s AND injection_scan_result = 'blocked'",
                 (cutoff,),
             ).fetchone()
             if blocked and blocked[0] > 0:
@@ -251,7 +251,7 @@ class AITelemetryLogger:
                     "COALESCE(AVG(output_tokens), 0), "
                     "COALESCE(SUM(CASE WHEN latency_ms < 0 OR output_tokens < 0 THEN 1 ELSE 0 END), 0), "
                     "COALESCE(AVG(cost_usd), 0) "
-                    "FROM ai_telemetry WHERE agent_id = ? AND logged_at >= ? AND logged_at < ?",
+                    "FROM ai_telemetry WHERE agent_id = %s AND logged_at >= %s AND logged_at < %s",
                     (aid, baseline_start, baseline_end),
                 ).fetchone()
 
@@ -268,10 +268,10 @@ class AITelemetryLogger:
                 # Baseline stddev (per-row for latency/tokens/cost)
                 stddev_row = conn.execute(
                     "SELECT "
-                    "COALESCE(AVG((latency_ms - ?) * (latency_ms - ?)), 1), "
-                    "COALESCE(AVG((output_tokens - ?) * (output_tokens - ?)), 1), "
-                    "COALESCE(AVG((cost_usd - ?) * (cost_usd - ?)), 0.0001) "
-                    "FROM ai_telemetry WHERE agent_id = ? AND logged_at >= ? AND logged_at < ?",
+                    "COALESCE(AVG((latency_ms - %s) * (latency_ms - %s)), 1), "
+                    "COALESCE(AVG((output_tokens - %s) * (output_tokens - %s)), 1), "
+                    "COALESCE(AVG((cost_usd - %s) * (cost_usd - %s)), 0.0001) "
+                    "FROM ai_telemetry WHERE agent_id = %s AND logged_at >= %s AND logged_at < %s",
                     (
                         baseline_latency,
                         baseline_latency,
@@ -294,7 +294,7 @@ class AITelemetryLogger:
                     "SELECT COUNT(*), COALESCE(AVG(latency_ms), 0), "
                     "COALESCE(AVG(output_tokens), 0), "
                     "COALESCE(AVG(cost_usd), 0) "
-                    "FROM ai_telemetry WHERE agent_id = ? AND logged_at >= ?",
+                    "FROM ai_telemetry WHERE agent_id = %s AND logged_at >= %s",
                     (aid, window_cutoff),
                 ).fetchone()
 

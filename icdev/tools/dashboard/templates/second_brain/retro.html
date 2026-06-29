@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}Weekly Retrospective{% endblock %}
+{% block content %}
+<div class="container-fluid py-4" style="max-width:800px">
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <div>
+      <h5 class="fw-semibold mb-0">📋 Weekly Retrospective</h5>
+      <div class="text-muted small">Auto-generated every Friday evening from kanban, git, and interactions.</div>
+    </div>
+    <div class="d-flex gap-2">
+      <button id="gen-retro" class="btn btn-sm" style="background:rgba(99,102,241,.15);border:1px solid rgba(99,102,241,.3);color:#a5b4fc;font-size:.75rem">
+        ↻ Generate Now
+      </button>
+      <a href="#" id="export-slides" class="btn btn-sm" style="background:rgba(52,211,153,.1);border:1px solid rgba(52,211,153,.2);color:#6ee7b7;font-size:.75rem">
+        📊 Export as Deck
+      </a>
+    </div>
+  </div>
+
+  {% if retro %}
+  <div class="card mb-3" style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08)">
+    <div class="card-body p-3">
+      <div class="fw-semibold small mb-1" style="color:#a5b4fc">Week ending {{ retro.week_ending }}</div>
+      <p class="text-muted small mb-3">{{ retro.summary }}</p>
+
+      {% if retro.done_tasks %}
+      <div class="mb-3">
+        <div class="fw-semibold small mb-1" style="color:#6ee7b7">✅ Completed Tasks ({{ retro.done_tasks|length }})</div>
+        <ul class="mb-0 ps-3" style="font-size:.75rem">
+          {% for t in retro.done_tasks[:8] %}
+          <li class="text-muted">{{ t.title }} <span style="font-size:.65rem">({{ t.date }})</span></li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+
+      {% if retro.commits %}
+      <div class="mb-3">
+        <div class="fw-semibold small mb-1" style="color:#93c5fd">💻 Commits ({{ retro.commits|length }})</div>
+        <ul class="mb-0 ps-3" style="font-size:.75rem">
+          {% for c in retro.commits[:8] %}
+          <li class="text-muted">{{ c }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+
+      {% if retro.interactions %}
+      <div class="mb-3">
+        <div class="fw-semibold small mb-1" style="color:#fcd34d">🤝 Customer / Stakeholder Touchpoints</div>
+        <ul class="mb-0 ps-3" style="font-size:.75rem">
+          {% for i in retro.interactions[:6] %}
+          <li class="text-muted">{{ i.title }} — <em>{{ i.contact }}</em> ({{ i.date }})</li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+
+      {% if retro.objective_progress %}
+      <div>
+        <div class="fw-semibold small mb-1" style="color:#f9a8d4">🎯 Objective Progress</div>
+        {% for o in retro.objective_progress %}
+        <div class="d-flex align-items-center gap-2 mb-1" style="font-size:.75rem">
+          <div class="text-muted" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ o.title }}</div>
+          <div class="progress" style="width:80px;height:6px;background:rgba(255,255,255,.1);border-radius:3px">
+            <div class="progress-bar" style="width:{{ o.pct }}%;background:#f9a8d4;border-radius:3px"></div>
+          </div>
+          <span style="font-size:.65rem;color:#f9a8d4;width:30px;text-align:right">{{ o.pct }}%</span>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="text-end">
+    <a href="/me/briefing/today" class="small text-muted text-decoration-none">← Back to briefing</a>
+  </div>
+  {% else %}
+  <div class="card" style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08)">
+    <div class="card-body text-center py-5">
+      <div class="text-muted small fst-italic">No retrospective yet — click "Generate Now" or wait for Friday evening.</div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+<script>
+document.getElementById('gen-retro')?.addEventListener('click', function() {
+  this.disabled = true; this.textContent = '↻ Generating…';
+  fetch('/me/api/second-brain/retro/generate', {method: 'POST'})
+    .then(r => r.json())
+    .then(d => { if (d.ok) location.reload(); else { this.disabled = false; this.textContent = '↻ Generate Now'; } })
+    .catch(() => { this.disabled = false; this.textContent = '↻ Generate Now'; });
+});
+
+document.getElementById('export-slides')?.addEventListener('click', function(e) {
+  e.preventDefault();
+  const orig = this.textContent;
+  this.textContent = '📊 Exporting…';
+  fetch('/me/api/second-brain/retro/export-slides', {method: 'POST'})
+    .then(r => {
+      if (!r.ok) return r.json().then(d => { throw new Error(d.error || 'failed'); });
+      return r.blob();
+    })
+    .then(blob => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'retro.pptx'; a.click();
+      URL.revokeObjectURL(url);
+      this.textContent = orig;
+    })
+    .catch(err => { alert('Export failed: ' + err.message); this.textContent = orig; });
+});
+</script>
+{% endblock %}

@@ -52,7 +52,7 @@ def _audit(conn, action, details=""):
     try:
         conn.execute(
             "INSERT INTO audit_trail (event_type, actor, action, details, session_id) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s)",
             ("hook_event_logged", "milestone_manager", action, details, "cpmp"),
         )
     except Exception:
@@ -106,7 +106,7 @@ def get_milestone(milestone_id):
             FROM   cpmp_milestones m
             LEFT JOIN cpmp_wbs         w ON w.id = m.wbs_id
             LEFT JOIN cpmp_evm_periods e ON e.id = m.evm_period_id
-            WHERE  m.id = ?
+            WHERE  m.id = %s
             """,
             (milestone_id,),
         ).fetchone()
@@ -140,7 +140,7 @@ def create_milestone(data):
                  baseline_date, forecast_date, actual_date, status,
                  evm_period_id, responsible_person, notes, metadata,
                  created_at, updated_at, classification)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             """,
             (
                 mid,
@@ -176,7 +176,7 @@ def update_milestone(milestone_id, data):
     conn = _get_db()
     try:
         row = conn.execute(
-            "SELECT id FROM cpmp_milestones WHERE id = ?", (milestone_id,)
+            "SELECT id FROM cpmp_milestones WHERE id = %s", (milestone_id,)
         ).fetchone()
         if not row:
             return {"status": "error", "message": "Milestone not found"}
@@ -195,7 +195,7 @@ def update_milestone(milestone_id, data):
         updates["updated_at"] = _now()
         set_clause = ", ".join(f"{k} = ?" for k in updates)
         conn.execute(
-            f"UPDATE cpmp_milestones SET {set_clause} WHERE id = ?",
+            f"UPDATE cpmp_milestones SET {set_clause} WHERE id = %s",
             list(updates.values()) + [milestone_id],
         )
         _audit(conn, "update_milestone", f"id={milestone_id} fields={list(updates)}")
@@ -212,13 +212,13 @@ def delete_milestone(milestone_id):
     conn = _get_db()
     try:
         row = conn.execute(
-            "SELECT id FROM cpmp_milestones WHERE id = ?", (milestone_id,)
+            "SELECT id FROM cpmp_milestones WHERE id = %s", (milestone_id,)
         ).fetchone()
         if not row:
             return {"status": "error", "message": "Milestone not found"}
-        conn.execute("DELETE FROM cpmp_milestone_deps WHERE predecessor_id = ? OR successor_id = ?",
+        conn.execute("DELETE FROM cpmp_milestone_deps WHERE predecessor_id = %s OR successor_id = %s",
                      (milestone_id, milestone_id))
-        conn.execute("DELETE FROM cpmp_milestones WHERE id = ?", (milestone_id,))
+        conn.execute("DELETE FROM cpmp_milestones WHERE id = %s", (milestone_id,))
         _audit(conn, "delete_milestone", f"id={milestone_id}")
         conn.commit()
         return {"status": "ok"}
@@ -244,7 +244,7 @@ def list_deps(contract_id):
             FROM   cpmp_milestone_deps d
             JOIN   cpmp_milestones p ON p.id = d.predecessor_id
             JOIN   cpmp_milestones s ON s.id = d.successor_id
-            WHERE  d.contract_id = ?
+            WHERE  d.contract_id = %s
             ORDER  BY d.created_at ASC
             """,
             (contract_id,),
@@ -275,7 +275,7 @@ def create_dep(data):
             """
             INSERT INTO cpmp_milestone_deps
                 (id, contract_id, predecessor_id, successor_id, lag_days, dep_type, notes, created_at, classification)
-            VALUES (?,?,?,?,?,?,?,?,?)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
             """,
             (
                 did,
@@ -303,11 +303,11 @@ def delete_dep(dep_id):
     conn = _get_db()
     try:
         row = conn.execute(
-            "SELECT id FROM cpmp_milestone_deps WHERE id = ?", (dep_id,)
+            "SELECT id FROM cpmp_milestone_deps WHERE id = %s", (dep_id,)
         ).fetchone()
         if not row:
             return {"status": "error", "message": "Dependency not found"}
-        conn.execute("DELETE FROM cpmp_milestone_deps WHERE id = ?", (dep_id,))
+        conn.execute("DELETE FROM cpmp_milestone_deps WHERE id = %s", (dep_id,))
         _audit(conn, "delete_dep", f"id={dep_id}")
         conn.commit()
         return {"status": "ok"}

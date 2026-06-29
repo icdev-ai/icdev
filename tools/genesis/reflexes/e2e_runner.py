@@ -119,7 +119,7 @@ def _create_run_task(conn) -> str:
         INSERT INTO kanban_tasks
             (id, title, description, task_type, priority, status,
              scheduled_at, created_at, updated_at, dispatch_source)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """,
         (
             task_id,
@@ -146,7 +146,7 @@ def _get_recent_run_history(conn, lookback_runs: int) -> list[dict]:
         WHERE title LIKE '%Playwright E2E Suite%'
           AND status = 'done'
         ORDER BY completed_at DESC
-        LIMIT ?
+        LIMIT %s
         """,
         (lookback_runs,),
     ).fetchall()

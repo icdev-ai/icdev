@@ -368,14 +368,14 @@ def seed_profile(scope: str, scope_id: str, directory: str = None, created_by: s
     try:
         # Determine next version
         row = conn.execute(
-            "SELECT MAX(version) as max_v FROM dev_profiles WHERE scope = ? AND scope_id = ?",
+            "SELECT MAX(version) as max_v FROM dev_profiles WHERE scope = %s AND scope_id = %s",
             (scope, scope_id),
         ).fetchone()
         next_version = (row["max_v"] or 0) + 1
 
         # Deactivate previous versions
         conn.execute(
-            "UPDATE dev_profiles SET is_active = 0 WHERE scope = ? AND scope_id = ? AND is_active = 1",
+            "UPDATE dev_profiles SET is_active = 0 WHERE scope = %s AND scope_id = %s AND is_active = 1",
             (scope, scope_id),
         )
 
@@ -384,7 +384,7 @@ def seed_profile(scope: str, scope_id: str, directory: str = None, created_by: s
             """INSERT INTO dev_profiles
                (id, scope, scope_id, version, profile_md, profile_yaml,
                 inherits_from, created_by, created_at, is_active, change_summary)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 1, %s)""",
             (
                 profile_id,
                 scope,

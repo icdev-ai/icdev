@@ -80,7 +80,7 @@ def _get_connection(db_path=None):
 
 
 def _verify_project(conn, project_id):
-    row = conn.execute("SELECT id, name FROM projects WHERE id = ?", (project_id,)).fetchone()
+    row = conn.execute("SELECT id, name FROM projects WHERE id = %s", (project_id,)).fetchone()
     if not row:
         raise ValueError(f"Project '{project_id}' not found in database.")
     return dict(row)
@@ -132,7 +132,7 @@ def _match_stereotype(stereotype: str) -> list:
 
 def _get_controls_for_family(family: str, conn) -> list:
     """Get all compliance_controls IDs for a given family code."""
-    rows = conn.execute("SELECT id FROM compliance_controls WHERE family = ? ORDER BY id", (family,)).fetchall()
+    rows = conn.execute("SELECT id FROM compliance_controls WHERE family = %s ORDER BY id", (family,)).fetchall()
     return [r["id"] for r in rows]
 
 
@@ -141,7 +141,7 @@ def _create_thread_link(conn, project_id, source_id, target_id, confidence=0.7, 
         """INSERT OR IGNORE INTO digital_thread_links
            (project_id, source_type, source_id, target_type, target_id,
             link_type, confidence, evidence, created_by)
-           VALUES (?, 'sysml_element', ?, 'nist_control', ?, 'maps_to', ?, ?, 'icdev-mbse-engine')""",
+           VALUES (%s, 'sysml_element', %s, 'nist_control', %s, 'maps_to', %s, %s, 'icdev-mbse-engine')""",
         (project_id, source_id, target_id, confidence, evidence),
     )
     return cur.rowcount > 0
@@ -170,7 +170,7 @@ def map_element_to_controls(project_id: str, element_id: str, db_path=None) -> d
     try:
         _verify_project(conn, project_id)
         row = conn.execute(
-            "SELECT * FROM sysml_elements WHERE id = ? AND project_id = ?", (element_id, project_id)
+            "SELECT * FROM sysml_elements WHERE id = %s AND project_id = %s", (element_id, project_id)
         ).fetchone()
         if not row:
             raise ValueError(f"SysML element '{element_id}' not found in project '{project_id}'.")
@@ -219,13 +219,13 @@ def map_all_elements(project_id: str, db_path=None) -> dict:
     try:
         _verify_project(conn, project_id)
         elements = conn.execute(
-            "SELECT id, name, element_type, description, stereotype FROM sysml_elements WHERE project_id = ? ORDER BY element_type, name",  # noqa: E501
+            "SELECT id, name, element_type, description, stereotype FROM sysml_elements WHERE project_id = %s ORDER BY element_type, name",  # noqa: E501
             (project_id,),
         ).fetchall()
         already = {
             r["source_id"]
             for r in conn.execute(
-                "SELECT DISTINCT source_id FROM digital_thread_links WHERE project_id = ? AND source_type = 'sysml_element' AND target_type = 'nist_control' AND link_type = 'maps_to'",  # noqa: E501
+                "SELECT DISTINCT source_id FROM digital_thread_links WHERE project_id = %s AND source_type = 'sysml_element' AND target_type = 'nist_control' AND link_type = 'maps_to'",  # noqa: E501
                 (project_id,),
             ).fetchall()
         }
@@ -271,14 +271,14 @@ def get_control_coverage_from_model(project_id: str, db_path=None) -> dict:
     conn = _get_connection(db_path)
     try:
         _verify_project(conn, project_id)
-        pc = conn.execute("SELECT control_id FROM project_controls WHERE project_id = ?", (project_id,)).fetchall()
+        pc = conn.execute("SELECT control_id FROM project_controls WHERE project_id = %s", (project_id,)).fetchall()
         all_ids = sorted({r["control_id"] for r in pc})
         if not all_ids:
             all_ids = [r["id"] for r in conn.execute("SELECT id FROM compliance_controls ORDER BY id").fetchall()]
         covered_set = {
             r["target_id"]
             for r in conn.execute(
-                "SELECT DISTINCT target_id FROM digital_thread_links WHERE project_id = ? AND source_type = 'sysml_element' AND target_type = 'nist_control' AND link_type = 'maps_to'",  # noqa: E501
+                "SELECT DISTINCT target_id FROM digital_thread_links WHERE project_id = %s AND source_type = 'sysml_element' AND target_type = 'nist_control' AND link_type = 'maps_to'",  # noqa: E501
                 (project_id,),
             ).fetchall()
         }
@@ -312,13 +312,13 @@ def get_unmapped_controls(project_id: str, db_path=None) -> dict:
     try:
         _verify_project(conn, project_id)
         ctrls = conn.execute(
-            "SELECT pc.control_id, cc.family, cc.title FROM project_controls pc LEFT JOIN compliance_controls cc ON pc.control_id = cc.id WHERE pc.project_id = ? ORDER BY pc.control_id",  # noqa: E501
+            "SELECT pc.control_id, cc.family, cc.title FROM project_controls pc LEFT JOIN compliance_controls cc ON pc.control_id = cc.id WHERE pc.project_id = %s ORDER BY pc.control_id",  # noqa: E501
             (project_id,),
         ).fetchall()
         mapped = {
             r["target_id"]
             for r in conn.execute(
-                "SELECT DISTINCT target_id FROM digital_thread_links WHERE project_id = ? AND source_type = 'sysml_element' AND target_type = 'nist_control' AND link_type = 'maps_to'",  # noqa: E501
+                "SELECT DISTINCT target_id FROM digital_thread_links WHERE project_id = %s AND source_type = 'sysml_element' AND target_type = 'nist_control' AND link_type = 'maps_to'",  # noqa: E501
                 (project_id,),
             ).fetchall()
         }
@@ -338,13 +338,13 @@ def get_unmapped_elements(project_id: str, db_path=None) -> dict:
     try:
         _verify_project(conn, project_id)
         elems = conn.execute(
-            "SELECT id, name, element_type, stereotype FROM sysml_elements WHERE project_id = ? ORDER BY element_type, name",  # noqa: E501
+            "SELECT id, name, element_type, stereotype FROM sysml_elements WHERE project_id = %s ORDER BY element_type, name",  # noqa: E501
             (project_id,),
         ).fetchall()
         mapped = {
             r["source_id"]
             for r in conn.execute(
-                "SELECT DISTINCT source_id FROM digital_thread_links WHERE project_id = ? AND source_type = 'sysml_element' AND target_type = 'nist_control' AND link_type = 'maps_to'",  # noqa: E501
+                "SELECT DISTINCT source_id FROM digital_thread_links WHERE project_id = %s AND source_type = 'sysml_element' AND target_type = 'nist_control' AND link_type = 'maps_to'",  # noqa: E501
                 (project_id,),
             ).fetchall()
         }
@@ -377,7 +377,7 @@ def generate_mapping_report(project_id: str, db_path=None) -> str:
             """SELECT dtl.source_id, dtl.target_id, dtl.confidence, dtl.evidence,
                       se.name AS element_name, se.element_type, se.stereotype
                FROM digital_thread_links dtl JOIN sysml_elements se ON dtl.source_id = se.id
-               WHERE dtl.project_id = ? AND dtl.source_type = 'sysml_element'
+               WHERE dtl.project_id = %s AND dtl.source_type = 'sysml_element'
                  AND dtl.target_type = 'nist_control' AND dtl.link_type = 'maps_to'
                ORDER BY se.element_type, se.name, dtl.target_id""",
             (project_id,),

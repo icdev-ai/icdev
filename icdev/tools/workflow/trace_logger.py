@@ -82,7 +82,7 @@ def start_trace(task_id: str, task_type: str = "", skill_used: str = "") -> str:
             """
             INSERT INTO agent_execution_traces
                 (trace_id, task_id, task_type, skill_used, outcome, events_json, started_at)
-            VALUES (?, ?, ?, ?, 'in_progress', '[]', ?)
+            VALUES (%s, %s, %s, %s, 'in_progress', '[]', %s)
             """,
             (trace_id, task_id, task_type, skill_used, _utcnow()),
         )
@@ -99,7 +99,7 @@ def log_event(trace_id: str, event_type: str, payload: dict[str, Any]) -> None:
         conn = _conn()
         _ensure_tables(conn)
         row = conn.execute(
-            "SELECT events_json FROM agent_execution_traces WHERE trace_id = ?",
+            "SELECT events_json FROM agent_execution_traces WHERE trace_id = %s",
             (trace_id,),
         ).fetchone()
         if not row:
@@ -107,7 +107,7 @@ def log_event(trace_id: str, event_type: str, payload: dict[str, Any]) -> None:
         events = json.loads(row[0] if isinstance(row, (list, tuple)) else row["events_json"])
         events.append(asdict(TraceEvent(event_type=event_type, payload=payload)))
         conn.execute(
-            "UPDATE agent_execution_traces SET events_json = ? WHERE trace_id = ?",
+            "UPDATE agent_execution_traces SET events_json = %s WHERE trace_id = %s",
             (json.dumps(events), trace_id),
         )
         conn.commit()
@@ -128,8 +128,8 @@ def close_trace(
         conn.execute(
             """
             UPDATE agent_execution_traces
-               SET outcome = ?, lesson_pattern = ?, improvement_notes = ?, completed_at = ?
-             WHERE trace_id = ?
+               SET outcome = %s, lesson_pattern = %s, improvement_notes = %s, completed_at = %s
+             WHERE trace_id = %s
             """,
             (outcome, lesson_pattern, improvement_notes, _utcnow(), trace_id),
         )
@@ -149,9 +149,9 @@ def get_traces_for_task_type(task_type: str, limit: int = 50) -> list[dict]:
             SELECT trace_id, task_id, task_type, skill_used, outcome,
                    lesson_pattern, improvement_notes, started_at, completed_at
               FROM agent_execution_traces
-             WHERE task_type = ? AND outcome != 'in_progress'
+             WHERE task_type = %s AND outcome != 'in_progress'
              ORDER BY completed_at DESC
-             LIMIT ?
+             LIMIT %s
             """,
             (task_type, limit),
         ).fetchall()
@@ -180,8 +180,8 @@ def get_recent_traces(limit: int = 100, outcome_filter: str | None = None) -> li
                 SELECT trace_id, task_id, task_type, skill_used, outcome,
                        lesson_pattern, improvement_notes, started_at, completed_at
                   FROM agent_execution_traces
-                 WHERE outcome = ?
-                 ORDER BY completed_at DESC LIMIT ?
+                 WHERE outcome = %s
+                 ORDER BY completed_at DESC LIMIT %s
                 """,
                 (outcome_filter, limit),
             ).fetchall()
@@ -192,7 +192,7 @@ def get_recent_traces(limit: int = 100, outcome_filter: str | None = None) -> li
                        lesson_pattern, improvement_notes, started_at, completed_at
                   FROM agent_execution_traces
                  WHERE outcome != 'in_progress'
-                 ORDER BY completed_at DESC LIMIT ?
+                 ORDER BY completed_at DESC LIMIT %s
                 """,
                 (limit,),
             ).fetchall()

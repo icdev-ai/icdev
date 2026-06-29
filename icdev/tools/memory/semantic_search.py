@@ -111,7 +111,7 @@ def search(query, limit=10, user_id=None, tenant_id=None):
 
     # Log access
     c.execute(
-        "INSERT INTO memory_access_log (query, results_count, search_type) VALUES (?, ?, ?)",
+        "INSERT INTO memory_access_log (query, results_count, search_type) VALUES (%s, %s, %s)",
         (query, min(limit, len(results)), "semantic"),
     )
     conn.commit()

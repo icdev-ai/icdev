@@ -101,7 +101,7 @@ def reconcile(loop_id: str, lessons: str = "", db_path: Optional[Path] = None) -
     """
     conn = _get_db(db_path)
     try:
-        loop = conn.execute("SELECT * FROM workflow_loops WHERE id = ?", (loop_id,)).fetchone()
+        loop = conn.execute("SELECT * FROM workflow_loops WHERE id = %s", (loop_id,)).fetchone()
         if not loop:
             return {"error": f"Loop {loop_id} not found"}
         if loop["status"] not in ("unifying", "applied", "applying"):
@@ -113,7 +113,7 @@ def reconcile(loop_id: str, lessons: str = "", db_path: Optional[Path] = None) -
 
         # 2. Acceptance criteria
         criteria = conn.execute(
-            "SELECT * FROM workflow_acceptance_criteria WHERE loop_id = ?",
+            "SELECT * FROM workflow_acceptance_criteria WHERE loop_id = %s",
             (loop_id,),
         ).fetchall()
         ac_total = len(criteria)
@@ -132,7 +132,7 @@ def reconcile(loop_id: str, lessons: str = "", db_path: Optional[Path] = None) -
             try:
                 found = conn.execute(
                     """SELECT COUNT(*) as cnt FROM audit_trail
-                       WHERE event_type LIKE ? AND project_id = ?
+                       WHERE event_type LIKE %s AND project_id = %s
                        ORDER BY created_at DESC LIMIT 1""",
                     (f"%{proc}%", loop["project_id"]),
                 ).fetchone()["cnt"]
@@ -208,7 +208,7 @@ def reconcile(loop_id: str, lessons: str = "", db_path: Optional[Path] = None) -
         artifact_missing: List[str] = []
         try:
             tasks = conn.execute(
-                "SELECT * FROM workflow_tasks WHERE loop_id = ?",
+                "SELECT * FROM workflow_tasks WHERE loop_id = %s",
                 (loop_id,),
             ).fetchall()
             project_dir = Path(loop.get("project_id", "") or ".")
@@ -273,7 +273,7 @@ def reconcile(loop_id: str, lessons: str = "", db_path: Optional[Path] = None) -
                (id, loop_id, planned_tasks, completed_tasks, deviations,
                 lessons_learned, process_checks, required_processes_invoked,
                 required_processes_total, overall_result, reconciled_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 recon_id,
                 loop_id,
@@ -325,7 +325,7 @@ def get_reconciliation(loop_id: str, db_path: Optional[Path] = None) -> Dict[str
     try:
         row = conn.execute(
             """SELECT * FROM workflow_reconciliations
-               WHERE loop_id = ? ORDER BY reconciled_at DESC LIMIT 1""",
+               WHERE loop_id = %s ORDER BY reconciled_at DESC LIMIT 1""",
             (loop_id,),
         ).fetchone()
         if not row:

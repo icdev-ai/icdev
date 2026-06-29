@@ -91,7 +91,7 @@ class PropagationVerifier:
 
         # Load propagation record
         prop = conn.execute(
-            "SELECT * FROM propagation_log WHERE id = ?",
+            "SELECT * FROM propagation_log WHERE id = %s",
             (propagation_id,),
         ).fetchone()
 
@@ -139,7 +139,7 @@ class PropagationVerifier:
             conn.execute(
                 """INSERT INTO propagation_verifications
                    (id, propagation_id, child_id, check_name, check_status, detail, verified_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s)""",
                 (
                     str(uuid.uuid4()),
                     propagation_id,
@@ -183,7 +183,7 @@ class PropagationVerifier:
         try:
             row = conn.execute(
                 """SELECT digest, verification_result FROM blueprint_digests
-                   WHERE entity_id = ? OR entity_type = 'capability'
+                   WHERE entity_id = %s OR entity_type = 'capability'
                    ORDER BY computed_at DESC LIMIT 1""",
                 (capability_id,),
             ).fetchone()
@@ -208,7 +208,7 @@ class PropagationVerifier:
         try:
             row = conn.execute(
                 """SELECT collected_at FROM child_telemetry
-                   WHERE child_id = ? ORDER BY collected_at DESC LIMIT 1""",
+                   WHERE child_id = %s ORDER BY collected_at DESC LIMIT 1""",
                 (child_id,),
             ).fetchone()
             if row:
@@ -246,7 +246,7 @@ class PropagationVerifier:
             # Look for degraded health after propagation
             row = conn.execute(
                 """SELECT health_status FROM child_telemetry
-                   WHERE child_id = ? AND collected_at > ?
+                   WHERE child_id = %s AND collected_at > %s
                    AND health_status IN ('degraded', 'unhealthy')
                    LIMIT 1""",
                 (child_id, completed_at),
@@ -295,19 +295,19 @@ class PropagationVerifier:
         if child_id:
             rows = conn.execute(
                 """SELECT * FROM propagation_verifications
-                   WHERE child_id = ? ORDER BY verified_at DESC LIMIT ?""",
+                   WHERE child_id = %s ORDER BY verified_at DESC LIMIT %s""",
                 (child_id, limit),
             ).fetchall()
         elif propagation_id:
             rows = conn.execute(
                 """SELECT * FROM propagation_verifications
-                   WHERE propagation_id = ? ORDER BY verified_at DESC LIMIT ?""",
+                   WHERE propagation_id = %s ORDER BY verified_at DESC LIMIT %s""",
                 (propagation_id, limit),
             ).fetchall()
         else:
             rows = conn.execute(
                 """SELECT * FROM propagation_verifications
-                   ORDER BY verified_at DESC LIMIT ?""",
+                   ORDER BY verified_at DESC LIMIT %s""",
                 (limit,),
             ).fetchall()
         conn.close()

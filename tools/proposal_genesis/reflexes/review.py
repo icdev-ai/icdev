@@ -110,7 +110,7 @@ def _simulate_review(opp_id: str, review_type: str) -> Dict[str, Any]:
     try:
         drafts = conn.execute(
             "SELECT id, section_text, section_id FROM proposal_section_drafts "
-            "WHERE opportunity_id = ? AND status IN ('draft', 'approved') "
+            "WHERE opportunity_id = %s AND status IN ('draft', 'approved') "
             f"ORDER BY created_at DESC LIMIT {_DRAFTS_FETCH_LIMIT}",
             (opp_id,),
         ).fetchall()
@@ -161,7 +161,7 @@ def _simulate_review(opp_id: str, review_type: str) -> Dict[str, Any]:
         conn.execute(
             "INSERT INTO pg_proposal_genesis_audit "
             "(id, event_type, reflex_name, risk_tier, opportunity_id, "
-            "details, success, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "details, success, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 _generate_id("pgaudit"),
                 f"color_review_{review_type}",
@@ -235,7 +235,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         conn = get_connection()
         try:
             qs_row = conn.execute(
-                "SELECT COUNT(*) as cnt FROM pg_proposal_quality_scores WHERE opportunity_id = ?",
+                "SELECT COUNT(*) as cnt FROM pg_proposal_quality_scores WHERE opportunity_id = %s",
                 (row["id"],),
             ).fetchone()
             has_quality = (qs_row["cnt"] or 0) > 0 if qs_row else False

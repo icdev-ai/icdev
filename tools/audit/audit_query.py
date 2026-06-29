@@ -16,8 +16,8 @@ def query_by_project(project_id: str, limit: int = 50, db_path: Path = None) -> 
     conn = get_connection(db_path=str(db_path))
     c = conn.cursor()
     c.execute(
-        """SELECT * FROM audit_trail WHERE project_id = ?
-           ORDER BY created_at DESC LIMIT ?""",
+        """SELECT * FROM audit_trail WHERE project_id = %s
+           ORDER BY created_at DESC LIMIT %s""",
         (project_id, limit),
     )
     rows = [dict(r) for r in c.fetchall()]
@@ -30,8 +30,8 @@ def query_by_type(event_type: str, limit: int = 50, db_path: Path = None) -> lis
     conn = get_connection(db_path=str(db_path))
     c = conn.cursor()
     c.execute(
-        """SELECT * FROM audit_trail WHERE event_type = ?
-           ORDER BY created_at DESC LIMIT ?""",
+        """SELECT * FROM audit_trail WHERE event_type = %s
+           ORDER BY created_at DESC LIMIT %s""",
         (event_type, limit),
     )
     rows = [dict(r) for r in c.fetchall()]
@@ -44,8 +44,8 @@ def query_by_actor(actor: str, limit: int = 50, db_path: Path = None) -> list:
     conn = get_connection(db_path=str(db_path))
     c = conn.cursor()
     c.execute(
-        """SELECT * FROM audit_trail WHERE actor = ?
-           ORDER BY created_at DESC LIMIT ?""",
+        """SELECT * FROM audit_trail WHERE actor = %s
+           ORDER BY created_at DESC LIMIT %s""",
         (actor, limit),
     )
     rows = [dict(r) for r in c.fetchall()]
@@ -57,7 +57,7 @@ def query_recent(limit: int = 50, db_path: Path = None) -> list:
     """Get most recent audit entries."""
     conn = get_connection(db_path=str(db_path))
     c = conn.cursor()
-    c.execute("SELECT * FROM audit_trail ORDER BY created_at DESC LIMIT ?", (limit,))
+    c.execute("SELECT * FROM audit_trail ORDER BY created_at DESC LIMIT %s", (limit,))
     rows = [dict(r) for r in c.fetchall()]
     conn.close()
     return rows
@@ -81,7 +81,7 @@ def verify_completeness(project_id: str, db_path: Path = None) -> dict:
     placeholders = ",".join(["?"] * len(required_events))
     c.execute(
         f"SELECT event_type, COUNT(*) FROM audit_trail "  # nosec B608
-        f"WHERE project_id = ? AND event_type IN ({placeholders}) "
+        f"WHERE project_id = %s AND event_type IN ({placeholders}) "
         "GROUP BY event_type",
         (project_id, *required_events),
     )

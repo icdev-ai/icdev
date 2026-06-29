@@ -1021,7 +1021,7 @@ def log_doc_view(doc_id: str, user_id: str = "anonymous",
         conn = _conn()
         conn.execute(
             "INSERT INTO dic_doc_views (view_id, doc_id, user_id, collection_id, tenant_id) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s)",
             (view_id, doc_id, user_id, collection_id, tenant_id),
         )
         conn.commit()

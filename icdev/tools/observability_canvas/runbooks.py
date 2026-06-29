@@ -68,7 +68,7 @@ def get_all_runbooks(category=None, severity=None):
 def get_runbook_by_id(runbook_id):
     """Return a single runbook dict or None."""
     with _get_conn() as conn:
-        row = conn.execute("SELECT * FROM odc_runbooks WHERE id=?", (runbook_id,)).fetchone()
+        row = conn.execute("SELECT * FROM odc_runbooks WHERE id=%s", (runbook_id,)).fetchone()
     return _runbook_to_dict(row)
 
 
@@ -87,7 +87,7 @@ def create_runbook(data):
                (id, title, category, trigger_condition, severity, description,
                 steps, nist_controls, tags, owner, estimated_duration_min,
                 classification, created_at, updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (
                 rb_id,
                 data.get("title", "Untitled Runbook"),
@@ -121,10 +121,10 @@ def update_runbook(runbook_id, data):
     with _get_conn() as conn:
         conn.execute(
             """UPDATE odc_runbooks SET
-               title=?, category=?, trigger_condition=?, severity=?,
-               description=?, steps=?, nist_controls=?, tags=?,
-               owner=?, estimated_duration_min=?, classification=?, updated_at=?
-               WHERE id=?""",
+               title=%s, category=%s, trigger_condition=%s, severity=%s,
+               description=%s, steps=%s, nist_controls=%s, tags=%s,
+               owner=%s, estimated_duration_min=%s, classification=%s, updated_at=%s
+               WHERE id=%s""",
             (
                 data.get("title", existing["title"]),
                 data.get("category", existing["category"]),
@@ -151,7 +151,7 @@ def delete_runbook(runbook_id):
     if not existing:
         return False
     with _get_conn() as conn:
-        conn.execute("DELETE FROM odc_runbooks WHERE id=?", (runbook_id,))
+        conn.execute("DELETE FROM odc_runbooks WHERE id=%s", (runbook_id,))
         conn.commit()
     return True
 
@@ -164,7 +164,7 @@ def record_execution(runbook_id):
     now = _now()
     with _get_conn() as conn:
         conn.execute(
-            "UPDATE odc_runbooks SET execution_count=execution_count+1, last_executed_at=?, updated_at=? WHERE id=?",
+            "UPDATE odc_runbooks SET execution_count=execution_count+1, last_executed_at=%s, updated_at=%s WHERE id=%s",
             (now, now, runbook_id),
         )
         conn.commit()
@@ -394,7 +394,7 @@ def seed_runbooks():
     with _get_conn() as conn:
         for rb in _SEED_RUNBOOKS:
             existing = conn.execute(
-                "SELECT id FROM odc_runbooks WHERE id=?", (rb["id"],)
+                "SELECT id FROM odc_runbooks WHERE id=%s", (rb["id"],)
             ).fetchone()
             if existing:
                 continue
@@ -404,7 +404,7 @@ def seed_runbooks():
                    (id, title, category, trigger_condition, severity, description,
                     steps, nist_controls, tags, owner, estimated_duration_min,
                     classification, created_at, updated_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (
                     rb["id"],
                     rb["title"],

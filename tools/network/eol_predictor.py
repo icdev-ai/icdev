@@ -105,7 +105,7 @@ def _compute_active_cves(conn, device_name: str):
     try:
         cur = conn.execute(
             "SELECT COUNT(*) FROM nc_vuln_findings "
-            "WHERE host LIKE ? AND severity IN ('critical','high')",
+            "WHERE host LIKE %s AND severity IN ('critical','high')",
             (f"%{device_name}%",),
         )
         row = cur.fetchone()
@@ -124,7 +124,7 @@ def _insert_prediction(conn, pred: dict) -> None:
              has_active_cves, active_cve_count,
              risk_score, risk_tier, nqe_source, model_version,
              predicted_at, created_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,CURRENT_TIMESTAMP)
         """,
         (
             pred["device_name"], pred.get("vendor"), pred.get("model"),

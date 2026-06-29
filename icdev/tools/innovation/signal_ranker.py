@@ -527,7 +527,7 @@ def _score_novelty(signal, conn):
         recent_signals = conn.execute(
             """SELECT title, description FROM innovation_signals
                WHERE status IN ('scored', 'queued', 'in_progress', 'completed')
-               AND id != ?
+               AND id != %s
                ORDER BY discovered_at DESC LIMIT 200""",
             (signal.get("id", ""),),
         ).fetchall()
@@ -721,7 +721,7 @@ def score_signal(signal_id, db_path=None):
 
     conn = _get_db(db_path)
     try:
-        row = conn.execute("SELECT * FROM innovation_signals WHERE id = ?", (signal_id,)).fetchone()
+        row = conn.execute("SELECT * FROM innovation_signals WHERE id = %s", (signal_id,)).fetchone()
         if not row:
             raise ValueError(f"Signal not found: {signal_id}")
 
@@ -761,10 +761,10 @@ def score_signal(signal_id, db_path=None):
         # Update DB: set score, score_breakdown, transition status new -> scored
         conn.execute(
             """UPDATE innovation_signals
-               SET innovation_score = ?,
-                   score_breakdown = ?,
+               SET innovation_score = %s,
+                   score_breakdown = %s,
                    status = 'scored'
-               WHERE id = ?""",
+               WHERE id = %s""",
             (
                 overall_score,
                 json.dumps(score_breakdown),
@@ -823,7 +823,7 @@ def score_all_new(db_path=None):
             """SELECT id FROM innovation_signals
                WHERE status = 'new'
                ORDER BY discovered_at ASC
-               LIMIT ?""",
+               LIMIT %s""",
             (max_signals,),
         ).fetchall()
     finally:
@@ -884,9 +884,9 @@ def get_top_signals(limit=20, min_score=0.5, db_path=None):
             """SELECT id, source, source_type, title, category, url,
                       innovation_score, score_breakdown, status, discovered_at
                FROM innovation_signals
-               WHERE innovation_score IS NOT NULL AND innovation_score >= ?
+               WHERE innovation_score IS NOT NULL AND innovation_score >= %s
                ORDER BY innovation_score DESC
-               LIMIT ?""",
+               LIMIT %s""",
             (min_score, limit),
         ).fetchall()
 
@@ -922,7 +922,7 @@ def get_top_signals(limit=20, min_score=0.5, db_path=None):
         ]:
             band_count = conn.execute(
                 """SELECT COUNT(*) as cnt FROM innovation_signals
-                   WHERE innovation_score IS NOT NULL AND innovation_score >= ?""",
+                   WHERE innovation_score IS NOT NULL AND innovation_score >= %s""",
                 (band_min,),
             ).fetchone()["cnt"]
             distribution[band_name] = band_count

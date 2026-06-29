@@ -849,7 +849,7 @@ def _log_audit(project_path: str, file_path: str, event_type: str, action: str) 
         c = conn.cursor()
         c.execute(
             """INSERT INTO audit_trail (project_id, event_type, actor, action, affected_files, classification)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s)""",
             (
                 None,  # Project ID could be looked up from path
                 event_type,

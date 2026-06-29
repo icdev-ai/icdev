@@ -129,10 +129,10 @@ def _get_publishable_drafts(limit: int = _MAX_DRAFTS_PER_RUN, min_quality: float
                 AND ppl.opportunity_id = psd.opportunity_id
                 AND ppl.link_type = 'cdrl_to_case_study'
             WHERE psd.status = 'approved'
-            AND (pqs.overall_score >= ? OR pqs.overall_score IS NULL)
+            AND (pqs.overall_score >= %s OR pqs.overall_score IS NULL)
             AND ppl.id IS NULL
             ORDER BY pqs.overall_score DESC, psd.created_at DESC
-            LIMIT ?
+            LIMIT %s
         """,
             (min_quality, limit),
         ).fetchall()
@@ -155,10 +155,10 @@ def _get_knowledge_blocks(opportunity_id: str) -> List[Dict]:
             AND domain_category IN (
                 SELECT DISTINCT domain_category
                 FROM proposal_section_drafts
-                WHERE opportunity_id = ?
+                WHERE opportunity_id = %s
             )
             ORDER BY usage_count DESC
-            LIMIT ?
+            LIMIT %s
         """,
             (opportunity_id, _MAX_KB_BLOCKS),
         ).fetchall()
@@ -414,7 +414,7 @@ def _stage_article(article: Dict, draft: Dict) -> Optional[str]:
             INSERT INTO pulse_posts
                 (id, title, slug, status, topic, body_markdown,
                  readability_score, author_id, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """,
             (
                 post_id,
@@ -454,7 +454,7 @@ def _create_pulse_link(
             INSERT INTO pg_pulse_proposal_links
                 (id, pulse_post_id, opportunity_id, section_id,
                  link_type, relevance_score, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
         """,
             (
                 link_id,
@@ -487,7 +487,7 @@ def _audit_publish(
             "INSERT INTO pg_proposal_genesis_audit "
             "(id, event_type, reflex_name, risk_tier, opportunity_id, "
             "details, success, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 _generate_id("pgaudit"),
                 event_type,

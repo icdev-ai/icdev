@@ -42,7 +42,7 @@ def validate_topology(topology_id: str, fix: bool = False) -> dict[str, Any]:
 
     conn = get_connection(str(BASE_DIR / "data" / "network_canvas.db"))
 
-    row = conn.execute("SELECT graph_json, name FROM topologies WHERE id = ?", (topology_id,)).fetchone()
+    row = conn.execute("SELECT graph_json, name FROM topologies WHERE id = %s", (topology_id,)).fetchone()
     if not row:
         conn.close()
         return {"error": f"Topology {topology_id} not found"}
@@ -127,7 +127,7 @@ def validate_topology(topology_id: str, fix: bool = False) -> dict[str, Any]:
 
     # ── Save fixes ────────────────────────────────────────────────────
     if fix and fixes:
-        conn.execute("UPDATE topologies SET graph_json = ? WHERE id = ?", (json.dumps(graph), topology_id))
+        conn.execute("UPDATE topologies SET graph_json = %s WHERE id = %s", (json.dumps(graph), topology_id))
         conn.commit()
 
     conn.close()

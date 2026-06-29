@@ -63,14 +63,14 @@ def detect_gaps(session_id: str, checks: dict = None, db_path=None) -> dict:
         checks = {"security": True, "compliance": True, "testability": True, "interfaces": True, "data": True}
 
     conn = _get_connection(db_path)
-    session = conn.execute("SELECT * FROM intake_sessions WHERE id = ?", (session_id,)).fetchone()
+    session = conn.execute("SELECT * FROM intake_sessions WHERE id = %s", (session_id,)).fetchone()
     if not session:
         conn.close()
         raise ValueError(f"Session '{session_id}' not found.")
 
     session_data = dict(session)
     reqs = conn.execute(
-        "SELECT * FROM intake_requirements WHERE session_id = ?",
+        "SELECT * FROM intake_requirements WHERE session_id = %s",
         (session_id,),
     ).fetchall()
     reqs = [dict(r) for r in reqs]
@@ -197,7 +197,7 @@ def detect_gaps(session_id: str, checks: dict = None, db_path=None) -> dict:
 
     # Update session
     conn.execute(
-        "UPDATE intake_sessions SET gap_count = ?, updated_at = ? WHERE id = ?",
+        "UPDATE intake_sessions SET gap_count = %s, updated_at = %s WHERE id = %s",
         (len(gaps), datetime.now(timezone.utc).isoformat(), session_id),
     )
     conn.commit()

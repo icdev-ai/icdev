@@ -317,7 +317,7 @@ def run(config: Dict[str, Any], trust) -> Dict[str, Any]:
             status = "review_needed"
 
         conn.execute(
-            "UPDATE appforge_challenges SET status = ?, pulse_post_id = ?, published_at = ? WHERE challenge_id = ?",
+            "UPDATE appforge_challenges SET status = %s, pulse_post_id = %s, published_at = %s WHERE challenge_id = %s",
             (status, post_id, utcnow_iso(), challenge["challenge_id"]),
         )
         conn.commit()

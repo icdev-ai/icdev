@@ -385,7 +385,7 @@ def detect_trends(session_id=None, db_path=None):
                           s.vertical_id
                    FROM research_challenges c
                    JOIN research_sessions s ON c.session_id = s.id
-                   WHERE c.session_id = ? AND c.last_seen >= ?
+                   WHERE c.session_id = %s AND c.last_seen >= %s
                    ORDER BY c.last_seen DESC""",
                 (session_id, cutoff),
             ).fetchall()
@@ -399,7 +399,7 @@ def detect_trends(session_id=None, db_path=None):
                           s.vertical_id
                    FROM research_challenges c
                    JOIN research_sessions s ON c.session_id = s.id
-                   WHERE c.last_seen >= ?
+                   WHERE c.last_seen >= %s
                    ORDER BY c.last_seen DESC""",
                 (cutoff,),
             ).fetchall()
@@ -558,7 +558,7 @@ def detect_trends(session_id=None, db_path=None):
                 existing = conn.execute(
                     """SELECT id, velocity, status, signal_count
                        FROM research_trends
-                       WHERE keyword_fingerprint = ?
+                       WHERE keyword_fingerprint = %s
                        ORDER BY detected_at DESC
                        LIMIT 1""",
                     (fingerprint,),
@@ -626,7 +626,7 @@ def detect_trends(session_id=None, db_path=None):
             """SELECT DISTINCT keyword_fingerprint
                FROM research_trends
                WHERE status IN ('emerging', 'active')
-                 AND last_seen < ?""",
+                 AND last_seen < %s""",
             (stale_cutoff,),
         ).fetchall()
         for row in stale_candidates:
@@ -637,7 +637,7 @@ def detect_trends(session_id=None, db_path=None):
                 # Insert a stale row to preserve history (append-only)
                 latest = conn.execute(
                     """SELECT * FROM research_trends
-                       WHERE keyword_fingerprint = ?
+                       WHERE keyword_fingerprint = %s
                        ORDER BY detected_at DESC LIMIT 1""",
                     (fp,),
                 ).fetchone()
@@ -767,7 +767,7 @@ def _store_trend(conn, trend):
             keyword_fingerprint, keywords, signal_count, velocity, acceleration,
             status, first_seen, last_seen, metadata, detected_at,
             classification)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
         (
             trend["id"],
             trend["name"],
@@ -862,7 +862,7 @@ def _cross_register_to_innovation(conn, detected_trends):
                    (id, source, source_type, title, description, url,
                     category, innovation_score, metadata, content_hash,
                     discovered_at, classification)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     sig_id,
                     source_label,

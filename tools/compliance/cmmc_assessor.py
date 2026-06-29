@@ -79,7 +79,7 @@ def _get_connection(db_path=None):
 
 def _get_project(conn, project_id):
     """Load project data from the projects table."""
-    row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+    row = conn.execute("SELECT * FROM projects WHERE id = %s", (project_id,)).fetchone()
     if not row:
         raise ValueError(f"Project '{project_id}' not found.")
     return dict(row)
@@ -92,7 +92,7 @@ def _log_audit_event(conn, project_id, action, details, file_path=None):
             """INSERT INTO audit_trail
                (project_id, event_type, actor, action, details,
                 affected_files, classification)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
             (
                 project_id,
                 "cmmc_assessed",
@@ -198,7 +198,7 @@ def _inherit_nist_implementations(project_id, practices, db_path=None):
         rows = conn.execute(
             """SELECT control_id, implementation_status
                FROM project_controls
-               WHERE project_id = ?""",
+               WHERE project_id = %s""",
             (project_id,),
         ).fetchall()
 
@@ -1192,7 +1192,7 @@ def run_cmmc_assessment(
                         practice_id, domain, status, evidence_description,
                         evidence_path, automation_result, nist_171_id,
                         notes, updated_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                     (
                         project_id,
                         now.isoformat(),

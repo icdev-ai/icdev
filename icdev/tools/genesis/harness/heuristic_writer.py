@@ -90,15 +90,15 @@ def extract_error_cases(reflex: str = "oracle_triage", limit: int = 10) -> list[
                    he.metadata_json, kt.title, kt.description
               FROM harness_eval he
               LEFT JOIN kanban_tasks kt ON he.task_id = kt.id
-             WHERE he.reflex = ?
+             WHERE he.reflex = %s
                AND he.confidence >= 0.65
-               AND he.created_at >= ?
+               AND he.created_at >= %s
                AND (
                    (he.decision IN ('promote', 'backlog') AND he.actual_outcome = 'false_positive')
                 OR (he.decision = 'dismiss' AND he.actual_outcome = 'resolved')
                )
              ORDER BY he.confidence DESC
-             LIMIT ?
+             LIMIT %s
             """,
             (reflex, cutoff, limit),
         ).fetchall()
