@@ -51,20 +51,22 @@ def ks_app(tmp_path):
     conn.commit()
     conn.close()
 
-    import tools.dashboard.app as _app_mod
-    import tools.dashboard.auth as _auth_mod
+    # Patch _auto_provision_env_key BEFORE the import so the module-level
+    # create_app() call (tools/dashboard/app.py:<module>) doesn't hit
+    # get_connection() before any test schema exists.
+    with patch("tools.dashboard.auth._auto_provision_env_key", return_value=None):
+        import tools.dashboard.app as _app_mod
+        import tools.dashboard.auth as _auth_mod
 
-    with (
-        patch.object(_app_mod, "DB_PATH", db_path),
-        patch.object(_auth_mod, "DB_PATH", db_path),
-        # Prevent 60+ PG queries from blocking the page load in unit tests.
-        patch("tools.rag.ingestion_manager.get_status", return_value=None),
-    ):
-        from tools.dashboard.app import create_app
-
-        app = create_app()
-        app.config["TESTING"] = True
-        yield app
+        with (
+            patch.object(_app_mod, "DB_PATH", db_path),
+            patch.object(_auth_mod, "DB_PATH", db_path),
+            # Prevent 60+ PG queries from blocking the page load in unit tests.
+            patch("tools.rag.ingestion_manager.get_status", return_value=None),
+        ):
+            app = _app_mod.create_app()
+            app.config["TESTING"] = True
+            yield app
 
 
 # ---------------------------------------------------------------------------

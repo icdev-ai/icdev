@@ -216,7 +216,7 @@ class TestFileFailureTasks(unittest.TestCase):
             TestFailure(test_name="dashboard > loads", spec_file="dash.spec.ts", error_message="500 error", severity="high"),
         ]
         with patch("tools.kanban.task_factory.create_tasks", return_value=["qa-fail-aaa", "qa-fail-bbb"]) as mock_create:
-            ids = file_failure_tasks(failures, "run-001")
+            file_failure_tasks(failures, "run-001")
         mock_create.assert_called_once()
         specs_passed = mock_create.call_args[0][0]
         assert len(specs_passed) == 2

@@ -1130,3 +1130,22 @@ speculative_decoding:
   verification_ratio: 0.7
   fallback_on_failure: true
   target_endpoint: "${OLLAMA_BASE_URL:-http://localhost:11434}"
+
+# ---------------------------------------------------------------------------
+# Agent Loop Defaults
+# Consumed by icdev/tools/llm/agent_loop._load_budget_defaults()
+# ---------------------------------------------------------------------------
+agent_loop:
+  budgets:
+    max_total_tokens: 128000          # hard cap on cumulative input+output tokens
+    max_cost_usd: 5.0                 # hard cap on cumulative USD cost per run
+    context_window_tokens: 64000      # soft threshold; triggers history compression
+    compression_budget_tokens: 48000  # target budget after compression
+    tool_timeout_seconds: 30.0        # per-tool execution timeout
+    tool_result_max_chars: 32768      # truncate large tool results to this many chars
+    llm_call_timeout_seconds: 120.0   # wrap each router.invoke() in this timeout
+    stall_threshold: 3                # abort after N turns with no novel tool call
+  memory:
+    enabled: true
+    top_k: 5
+    tier: "episodic|semantic"

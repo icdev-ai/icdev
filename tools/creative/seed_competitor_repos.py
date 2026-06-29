@@ -185,6 +185,98 @@ PAIN_POINTS = [
         "signal_source": "ruview-github",
         "source_repo": "https://github.com/ruvnet/RuView",
     },
+    # --- 2026-06-28 batch: sideshow / httpinspect / loopy / agentcn / trilium ---
+    {
+        "title": "ACE coworker output is text-only with no real-time visual rendering of agent artifacts",
+        "description": (
+            "The ACE /coworker canvas displays agent output as plain text or markdown. "
+            "Agents regularly produce HTML prototypes, Mermaid diagrams, code diffs, and "
+            "image artifacts that require a separate rendering step outside ICDEV. Sideshow "
+            "demonstrates live composable output cards (HTML, Mermaid, diff, image, code) "
+            "rendered in a browser panel with threaded user feedback that drives the next "
+            "agent iteration — eliminating the external rendering step entirely."
+        ),
+        "category": "ux",
+        "frequency": 75,
+        "severity": "high",
+        "keywords": ["ACE", "coworker", "rendering", "HTML", "Mermaid", "diagram", "output", "real-time"],
+        "competitor_ids": [],
+        "signal_source": "sideshow-github",
+        "source_repo": "https://github.com/modem-dev/sideshow",
+    },
+    {
+        "title": "ICDEV has no zero-instrumentation inter-service HTTP visibility for air-gapped deployments",
+        "description": (
+            "ICDEV's monitoring canvas relies on application-level logging and sidecar proxies "
+            "to observe inter-service traffic. In IL5/IL6 air-gapped environments, inserting a "
+            "proxy or modifying application code is often prohibited. httpinspect demonstrates "
+            "kernel-level eBPF/TCX capture that shows all HTTP traffic between services without "
+            "any application changes, proxy insertion, or network tap — directly applicable to "
+            "ZTA canvas traffic analysis and monitoring canvas observability in restricted networks."
+        ),
+        "category": "automation",
+        "frequency": 60,
+        "severity": "medium",
+        "keywords": ["monitoring", "HTTP", "eBPF", "observability", "air-gap", "IL5", "IL6", "ZTA", "zero-instrumentation"],
+        "competitor_ids": [],
+        "signal_source": "httpinspect-github",
+        "source_repo": "https://github.com/yeet-src/httpinspect",
+    },
+    {
+        "title": "ICDEV agent loops lack named loop stages with explicit feedback cycles and success criteria",
+        "description": (
+            "tools/llm/agent_loop.py runs agent steps but has no concept of named loop types, "
+            "structured before/after state capture, or explicit per-loop success criteria. Users "
+            "must manually re-run agents after providing feedback with no built-in refinement "
+            "stage tracking. Loopy demonstrates named loops with explicit 8-step guidance, "
+            "safety gates (HITL, no prod auto-changes), before/after examples, and a distributable "
+            "loop catalog that maps directly to ICDEV's goal workflow pattern."
+        ),
+        "category": "automation",
+        "frequency": 80,
+        "severity": "high",
+        "keywords": ["agent loop", "feedback", "refinement", "workflow", "HITL", "success criteria", "named loop"],
+        "competitor_ids": [],
+        "signal_source": "loopy-github",
+        "source_repo": "https://github.com/Forward-Future/loopy",
+    },
+    {
+        "title": "ICDEV onboarding requires 5-10 manual setup steps with no zero-config path for new users",
+        "description": (
+            "New ICDEV users must run /initialize, configure .env, set up MCP servers, apply a "
+            "profile, and seed a kanban board before they can use any canvas. agentcn demonstrates "
+            "a zero-config 'npx agentcn add <template>' model where a complete agent setup "
+            "(instructions + tools + workflow) is installed in one command with no manual "
+            "configuration. Adapting this recipe distribution model would reduce ICDEV onboarding "
+            "from 5-10 steps to 3 commands and surface the kanban starter card library."
+        ),
+        "category": "onboarding",
+        "frequency": 85,
+        "severity": "high",
+        "keywords": ["onboarding", "zero-config", "setup", "initialize", "UX", "DX", "recipe", "template"],
+        "competitor_ids": [],
+        "signal_source": "agentcn-github",
+        "source_repo": "https://github.com/shadcn-labs/agentcn",
+    },
+    {
+        "title": "Second Brain and Knowledge Graph lack hierarchical entity cloning and per-document encryption",
+        "description": (
+            "ICDEV's Second Brain canvas and knowledge graph store entities in a flat/tagged "
+            "structure. There is no concept of placing a single knowledge entity in multiple "
+            "hierarchical contexts simultaneously (cloning) without duplication. Additionally, "
+            "DIC documents are encrypted at the tenant/DB level but not per-document, making "
+            "selective sharing of individual documents with different clearance levels impossible. "
+            "Trilium demonstrates per-note AES encryption and hierarchical cloning at 100k+ note "
+            "scale — directly applicable to ICDEV's multi-clearance Gov/DoD knowledge base needs."
+        ),
+        "category": "security",
+        "frequency": 75,
+        "severity": "high",
+        "keywords": ["knowledge", "hierarchy", "cloning", "encryption", "per-document", "Second Brain", "KG", "DIC", "clearance"],
+        "competitor_ids": [],
+        "signal_source": "trilium-github",
+        "source_repo": "https://github.com/TriliumNext/Trilium",
+    },
 ]
 
 

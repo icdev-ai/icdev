@@ -73,7 +73,7 @@ class TestRouterExcludeModelIds:
 
         mock_response = _make_mock_response({"result": "ok"}, "model-a")
         with patch.object(LLMRouter, "invoke", return_value=mock_response) as m:
-            result = router.invoke("code_generation", LLMRequest(messages=[{"role": "user", "content": "hi"}]))
+            router.invoke("code_generation", LLMRequest(messages=[{"role": "user", "content": "hi"}]))
             # invoke was called without exclude_model_ids
             call_kwargs = m.call_args[1] if m.call_args else {}
             assert "exclude_model_ids" not in call_kwargs or call_kwargs.get("exclude_model_ids") is None
@@ -118,7 +118,7 @@ class TestGradeOutputQualityRouting:
         with patch(_ROUTER_PATH) as MockRouter:
             instance = MockRouter.return_value
             instance.invoke.return_value = mock_resp
-            result = grade_output_quality(
+            grade_output_quality(
                 er, user_prompt="do X", final_content="did X"
             )
             call_args = instance.invoke.call_args

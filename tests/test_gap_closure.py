@@ -153,7 +153,6 @@ class TestChatPreResponseRetrieval:
         src = (BASE_DIR / "tools" / "dashboard" / "chat_manager.py").read_text(encoding="utf-8")
         # The A-5 block should be inside an if-user-content block
         mem_search_pos = src.find("_mem_search")
-        user_check_pos = src.rfind('role') == -1 or src.rfind("user", 0, mem_search_pos)
         assert mem_search_pos > 0, "hybrid_search call must exist"
         # The retrieval block is inside `if user_content and msg.get("role") == "user":`
         assert 'role' in src[max(0, mem_search_pos - 2000):mem_search_pos], \

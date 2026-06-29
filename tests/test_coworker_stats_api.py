@@ -175,7 +175,6 @@ class TestEventBusWiring:
 
         received = []
 
-        orig_publish = eb.publish
         monkeypatch.setattr(eb, "publish", lambda iid, ev: received.append((iid, ev)))
 
         class FakeSpec:

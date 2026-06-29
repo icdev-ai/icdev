@@ -20,7 +20,7 @@ import pytest
 def test_profile_md_generator_imports():
     """Verify module can be imported without errors."""
     try:
-        import tools.builder.profile_md_generator
+        import tools.builder.profile_md_generator  # noqa: F401
     except ImportError as e:
         pytest.skip(f"Import dependency missing: {e}")
 

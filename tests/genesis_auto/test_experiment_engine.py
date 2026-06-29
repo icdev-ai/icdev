@@ -20,7 +20,7 @@ import pytest
 def test_experiment_engine_imports():
     """Verify module can be imported without errors."""
     try:
-        import tools.autoresearch.experiment_engine
+        import tools.autoresearch.experiment_engine  # noqa: F401
     except ImportError as e:
         pytest.skip(f"Import dependency missing: {e}")
 

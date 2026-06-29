@@ -20,7 +20,7 @@ import pytest
 def test_topology_imports():
     """Verify module can be imported without errors."""
     try:
-        import tools.agent.topology
+        import tools.agent.topology  # noqa: F401
     except ImportError as e:
         pytest.skip(f"Import dependency missing: {e}")
 

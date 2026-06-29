@@ -145,3 +145,69 @@ profiles:
       - dic
       - aiify
       - foundry
+
+# ── Zero-Config Starter Recipes (agentcn adaptation) ──────────────────────
+# Inspired by github.com/shadcn-labs/agentcn: single-command setup bundles.
+# Each recipe declares the 3 commands a new user needs to go from zero to running.
+# Used by: icdev init --recipe <name>  (prints the 3-command sequence)
+#          /quick-start dashboard page (shows setup card per recipe)
+recipes:
+  analyst:
+    display_name: "AI Analyst"
+    description: "Research + document intelligence + knowledge graph. Best for analysts who need AI-assisted research, summarization, and citation-grounded answers."
+    profile: local-dev
+    setup_commands:
+      - "icdev init"
+      - "icdev enable dic knowledge_graph research"
+      - "icdev profile apply local-dev"
+    default_components:
+      - dic
+      - knowledge_graph
+      - research
+    recommended_llm: claude-sonnet-4-6
+    min_il: IL2
+
+  developer:
+    display_name: "AI Developer"
+    description: "Innovation engine + ACE co-worker + kanban. Best for software engineers who want AI pair-programming with autonomous task tracking."
+    profile: local-dev
+    setup_commands:
+      - "icdev init"
+      - "icdev enable ace innovation kanban"
+      - "icdev profile apply local-dev"
+    default_components:
+      - ace
+      - innovation
+      - kanban
+    recommended_llm: claude-sonnet-4-6
+    min_il: IL2
+
+  compliance:
+    display_name: "Compliance Officer"
+    description: "FedRAMP + CMMC + NIST crosswalk + STIG automation. Best for compliance teams managing cATOs and control mappings."
+    profile: government
+    setup_commands:
+      - "icdev init"
+      - "icdev enable integrity sdc aimc fedramp"
+      - "icdev profile apply government"
+    default_components:
+      - integrity
+      - sdc
+      - aimc
+    recommended_llm: claude-sonnet-4-6
+    min_il: IL4
+
+  airgap:
+    display_name: "Air-Gapped Deployment"
+    description: "Full offline operation with local Ollama LLM. For IL5/IL6 environments with no internet access."
+    profile: air-gap
+    setup_commands:
+      - "icdev init"
+      - "icdev enable ndc ohc integrity"
+      - "icdev profile apply air-gap"
+    default_components:
+      - ndc
+      - ohc
+      - integrity
+    recommended_llm: llama3.1:8b
+    min_il: IL5

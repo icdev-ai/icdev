@@ -142,7 +142,7 @@ def test_export_json_valid(_soc2_db, tmp_path, monkeypatch):
 
     tid = f"json-{uuid.uuid4().hex[:8]}"
     out = tmp_path / "report.json"
-    data = export_report(tid, out, fmt="json")
+    export_report(tid, out, fmt="json")
 
     assert out.exists()
     parsed = json.loads(out.read_text(encoding="utf-8"))

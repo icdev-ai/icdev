@@ -183,7 +183,6 @@ class TestAuditLogAPI:
             content_type="application/json",
         )
         resp = client.get("/api/admin/audit/component-changes?component_key=ndc")
-        data = resp.get_json()
         # May be 0 if component_registry.py doesn't write to DB in test; just assert no error
         assert resp.status_code == 200
 

@@ -136,7 +136,7 @@ def _resolve_variables(
 def _render_string(template_str: str, context: dict[str, Any]) -> str:
     """Render a single Jinja2 string with the given context."""
     jinja2 = _import_jinja2()
-    env = jinja2.Environment()
+    env = jinja2.Environment(autoescape=False)  # nosec B701 — renders code templates, not HTML; autoescape would corrupt syntax
     return env.from_string(template_str).render(context)
 
 

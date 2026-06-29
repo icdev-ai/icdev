@@ -1270,7 +1270,7 @@ class TestDiffScopeCheck:
         with patch("tools.pulse.writeguard.run_full_quality_check", side_effect=_fake_quality_check), \
              patch("tools.pulse.writeguard.rewrite_content", side_effect=_fake_rewrite), \
              patch("tools.docgen.workflow._diff_scope_check", side_effect=_fake_scope_check):
-            result = stage6_writeguard(session["id"], "## Section\nOriginal text.", "network")
+            stage6_writeguard(session["id"], "## Section\nOriginal text.", "network")
 
         assert len(scope_calls) >= 1, "_diff_scope_check was never called"
 
@@ -1525,7 +1525,7 @@ class TestStage2SuggestClassification:
         with patch("tools.docgen.workflow.suggest_classification", return_value={
             "classification": "SECRET", "confidence": 0.92, "rationale": "SIPR refs"
         }), patch("tools.docgen.workflow.sm.set_field", mock_set_field):
-            result = stage2_suggest_classification("session-001", "SIPR config")
+            stage2_suggest_classification("session-001", "SIPR config")
 
         # Must have set_field called with suggested_classification
         calls_flat = str(mock_set_field.call_args_list)

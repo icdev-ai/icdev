@@ -156,7 +156,6 @@ def _make_score_conn(adv_row=None, surface_row=None):
         elif "nc_advisories" in sql and "IN (" in sql:
             result.fetchall = MagicMock(return_value=[_mock_row(adv)])
         elif "AVG(criticality)" in sql:
-            surface = surface_row or {"avg_crit": 3.5, "reachable_count": 2, "total": 4}
             m = MagicMock()
             m.__getitem__ = lambda s, k: [3.5, 2, 4][k]
             result.fetchone = MagicMock(return_value=m)
@@ -259,7 +258,7 @@ def test_approve_advisory_sets_status_approved():
     conn, stored = _make_approve_conn(advisory_id=5)
     with patch("tools.network.vuln_triage_engine.get_connection", return_value=conn):
         from tools.network.vuln_triage_engine import approve_advisory
-        result = approve_advisory(5, "analyst@example.com")
+        approve_advisory(5, "analyst@example.com")
     assert stored["status"] == "approved"
     assert stored["approved_by"] == "analyst@example.com"
 
@@ -268,7 +267,7 @@ def test_defer_advisory_sets_status_deferred():
     conn, stored = _make_approve_conn(advisory_id=5)
     with patch("tools.network.vuln_triage_engine.get_connection", return_value=conn):
         from tools.network.vuln_triage_engine import defer_advisory
-        result = defer_advisory(5, "analyst@example.com")
+        defer_advisory(5, "analyst@example.com")
     assert stored["status"] == "deferred"
 
 

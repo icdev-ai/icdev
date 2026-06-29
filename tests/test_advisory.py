@@ -430,7 +430,7 @@ class TestRunImpactAssessment(unittest.TestCase):
         with _patch_conn(self._mem), \
              patch("tools.network.advisory.get_nqe_client", return_value=self._mock_client()):
             from tools.network.advisory import run_impact_assessment
-            result = run_impact_assessment(self._adv_id, "net-001")
+            run_impact_assessment(self._adv_id, "net-001")
         row = self._mem.execute(
             "SELECT * FROM nc_advisory_assessments WHERE advisory_id = ?",
             (self._adv_id,),
