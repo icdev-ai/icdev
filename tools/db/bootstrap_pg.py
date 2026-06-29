@@ -84,6 +84,35 @@ def check() -> dict:
 def bootstrap() -> dict:
     if not SCHEMA_FILE.exists():
         raise SystemExit(f"consolidated schema not found: {SCHEMA_FILE}")
+
+    # Idempotency guard: if another job in the same CI run already bootstrapped
+    # (Test job creates tables via init_icdev_db.py before E2E runs), skip the
+    # schema load and only ensure migrations are marked. DuplicateTable errors
+    # were caused by unconditional CREATE TABLE execution on a non-empty DB.
+    state = check()
+    if state["bootstrapped"]:
+        conn = _raw_pg_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute("SET search_path TO public, pg_catalog")
+            from tools.db.migration_runner import MigrationRunner
+            runner = MigrationRunner(engine="postgresql")
+            versions = sorted({m["version"] for m in runner.discover_migrations()})
+            for v in versions:
+                cur.execute(
+                    "INSERT INTO public.schema_migrations (version, name, checksum, execution_time_ms) "
+                    "VALUES (%s, %s, '', 0) ON CONFLICT (version) DO NOTHING",
+                    (v, f"squashed-{v}"),
+                )
+            conn.commit()
+            return {
+                "status": "already_bootstrapped",
+                "tables": state["tables"],
+                "migrations_marked": len(versions),
+            }
+        finally:
+            conn.close()
+
     sql = _strip_psql_meta(SCHEMA_FILE.read_text(encoding="utf-8-sig"))  # utf-8-sig strips any BOM
 
     conn = _raw_pg_conn()
