@@ -41,6 +41,13 @@ CREATE TABLE IF NOT EXISTS proposal_opportunities (
     estimated_value_low REAL,
     estimated_value_high REAL,
     questions_due_date TEXT,
+    win_probability REAL,
+    capture_phase TEXT,
+    capture_notes TEXT,
+    win_themes TEXT,
+    key_discriminators TEXT,
+    ptw_low REAL,
+    ptw_high REAL,
     created_at TEXT
 );
 CREATE TABLE IF NOT EXISTS proposal_sections (
@@ -107,6 +114,20 @@ CREATE TABLE IF NOT EXISTS proposal_amendments (
     opportunity_id TEXT NOT NULL,
     version_number INTEGER,
     title TEXT,
+    created_at TEXT
+);
+CREATE TABLE IF NOT EXISTS proposal_section_drafts (
+    id TEXT PRIMARY KEY,
+    opportunity_id TEXT NOT NULL,
+    section_id TEXT NOT NULL,
+    status TEXT DEFAULT 'draft',
+    created_at TEXT
+);
+CREATE TABLE IF NOT EXISTS proposal_reviewer_assignments (
+    id TEXT PRIMARY KEY,
+    review_id TEXT NOT NULL,
+    reviewer_email TEXT,
+    role TEXT,
     created_at TEXT
 );
 """
@@ -242,6 +263,13 @@ class TestRenderedHtmlContainsActionBar:
             "estimated_value_low": None,
             "estimated_value_high": None,
             "questions_due_date": None,
+            "win_probability": None,
+            "capture_phase": None,
+            "capture_notes": None,
+            "win_themes": None,
+            "key_discriminators": None,
+            "ptw_low": None,
+            "ptw_high": None,
         },
         "sections": [],
         "volumes": [],
@@ -290,6 +318,7 @@ class TestRenderedHtmlContainsActionBar:
             "{% block content %}{% endblock %}"
         )
         env = Environment(
+            autoescape=True,
             loader=ChoiceLoader([
                 DictLoader({"base.html": stub_base}),
                 FileSystemLoader(str(_TEMPLATES_DIR)),
