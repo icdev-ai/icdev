@@ -62,6 +62,7 @@
 - [NLQ Compliance Queries (Phase 40)](manifest/nlq-compliance-queries.md)
 - [Git Worktree Parallel CI/CD (Phase 41)](manifest/git-worktree-parallel-ci-cd.md)
 - [Framework Planning Commands (Phase 42)](manifest/framework-planning-commands.md)
+- [Billing (Metering + Stripe)](manifest/billing.md)
 - [SaaS Multi-Tenancy (Phase 21)](manifest/saas-multi-tenancy.md)
 - [Marketplace (Phase 22)](manifest/marketplace.md)
 - [DevSecOps & Zero Trust Architecture (Phase 24-25)](manifest/devsecops-zero-trust-architecture.md)

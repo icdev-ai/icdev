@@ -106,6 +106,18 @@ CREATE TABLE IF NOT EXISTS proposal_question_responses (
     question_id TEXT,
     created_at TEXT
 );
+CREATE TABLE IF NOT EXISTS proposal_section_drafts (
+    id TEXT PRIMARY KEY,
+    section_id TEXT,
+    opportunity_id TEXT NOT NULL,
+    draft_content TEXT NOT NULL DEFAULT '',
+    draft_method TEXT,
+    confidence_score REAL DEFAULT 0.0,
+    domain_category TEXT,
+    status TEXT NOT NULL DEFAULT 'draft',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT
+);
 """
 
 _OPP_ID = "opp-drafts-test-01"
@@ -234,6 +246,7 @@ def _make_stub_opp():
         "proposal_manager": None,
         "bid_decision": None,
         "questions_due_date": None,
+        "win_probability": None,
     }
 
 
