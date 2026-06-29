@@ -123,7 +123,6 @@ def test_collector_idempotent(_soc2_db, monkeypatch):
 
 def test_export_html_valid(_soc2_db, tmp_path, monkeypatch):
     """export_report generates a non-empty HTML file with SOC 2 content."""
-    from tools.db import storage
     from tools.compliance.soc2_exporter import export_report
 
     tid = f"export-{uuid.uuid4().hex[:8]}"
@@ -139,12 +138,11 @@ def test_export_html_valid(_soc2_db, tmp_path, monkeypatch):
 
 def test_export_json_valid(_soc2_db, tmp_path, monkeypatch):
     """export_report --format json produces parseable JSON with controls list."""
-    from tools.db import storage
     from tools.compliance.soc2_exporter import export_report
 
     tid = f"json-{uuid.uuid4().hex[:8]}"
     out = tmp_path / "report.json"
-    data = export_report(tid, out, fmt="json")
+    export_report(tid, out, fmt="json")
 
     assert out.exists()
     parsed = json.loads(out.read_text(encoding="utf-8"))

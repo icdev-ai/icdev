@@ -2,14 +2,12 @@
 """Tests for PVM Patch Planner (pvm-pat-02)."""
 from __future__ import annotations
 
-import json
 import os
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 _REPO = Path(__file__).parent.parent
 if str(_REPO) not in sys.path:
@@ -223,7 +221,7 @@ def test_create_patch_plan_writes_append_only_rows():
         patch("tools.network.patch_planner._run_simulation", return_value={"simulation_status": "skipped", "blast_radius_json": "[]"}),
     ):
         from tools.network.patch_planner import create_patch_plan
-        result = create_patch_plan()
+        create_patch_plan()
 
     assert len(conn._plan_writes) >= 1
 

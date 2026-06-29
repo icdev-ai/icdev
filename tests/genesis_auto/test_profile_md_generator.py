@@ -9,7 +9,6 @@ and basic invocation patterns.
 
 import sys
 from pathlib import Path
-from unittest.mock import patch, MagicMock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -21,7 +20,7 @@ import pytest
 def test_profile_md_generator_imports():
     """Verify module can be imported without errors."""
     try:
-        import tools.builder.profile_md_generator
+        import tools.builder.profile_md_generator  # noqa: F401
     except ImportError as e:
         pytest.skip(f"Import dependency missing: {e}")
 

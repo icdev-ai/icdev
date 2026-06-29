@@ -719,7 +719,6 @@ def test_stage8_publish_no_ace_instance_skips_evidence_report(tmp_path):
 
 def test_stage8_publish_with_ace_instance_calls_evidence_report(tmp_path):
     """stage8_publish triggers evidence_report.generate() when ace_instance_id is set."""
-    import sqlite3 as _sqlite3
     from unittest.mock import patch as _patch, MagicMock
     from tools.docgen.session_manager import create_session, set_field
     from tools.docgen.workflow import stage8_publish
@@ -1025,7 +1024,7 @@ class TestApiPublish:
     def test_publish_html_export_writes_classification_banner(self, tmp_path):
         """_try_export_html writes classification banner to the HTML file."""
         from tools.docgen.workflow import _try_export_html
-        from tools.docgen.session_manager import create_session, add_artifact
+        from tools.docgen.session_manager import create_session
 
         session = create_session(title="HTML Banner Test", domain="network")
         out_dir = str(tmp_path / "html_out")
@@ -1115,7 +1114,7 @@ class TestContextCap:
 
     def test_context_cap_used_in_problem_text_slice(self):
         """The problem_text slice uses _ACE_CONTEXT_MAX_CHARS not a literal 2000."""
-        import ast, pathlib
+        import pathlib
         src = pathlib.Path("tools/docgen/workflow.py").read_text(encoding="utf-8")
         # Must not contain literal [:2000] after our change
         assert "[:2000]" not in src
@@ -1265,7 +1264,7 @@ class TestDiffScopeCheck:
         with patch("tools.pulse.writeguard.run_full_quality_check", side_effect=_fake_quality_check), \
              patch("tools.pulse.writeguard.rewrite_content", side_effect=_fake_rewrite), \
              patch("tools.docgen.workflow._diff_scope_check", side_effect=_fake_scope_check):
-            result = stage6_writeguard(session["id"], "## Section\nOriginal text.", "network")
+            stage6_writeguard(session["id"], "## Section\nOriginal text.", "network")
 
         assert len(scope_calls) >= 1, "_diff_scope_check was never called"
 
@@ -1462,7 +1461,6 @@ class TestSuggestClassification:
 
     def test_suggest_classification_llm_parses_response(self):
         """JSON parsing logic handles valid LLM response: clamping, uppercasing, rationale."""
-        import json
         # Verify the parsing logic in the function without hitting LLM by calling
         # suggest_classification with mocked router available via test-only helper.
         # Since local imports inside try/except catch ImportError, test the
@@ -1515,13 +1513,13 @@ class TestStage2SuggestClassification:
     def test_high_confidence_sets_suggested_classification(self):
         """Confidence >= 0.85 calls set_field with suggested_classification."""
         from tools.docgen.workflow import stage2_suggest_classification
-        from unittest.mock import MagicMock, call
+        from unittest.mock import MagicMock
 
         mock_set_field = MagicMock(return_value=True)
         with patch("tools.docgen.workflow.suggest_classification", return_value={
             "classification": "SECRET", "confidence": 0.92, "rationale": "SIPR refs"
         }), patch("tools.docgen.workflow.sm.set_field", mock_set_field):
-            result = stage2_suggest_classification("session-001", "SIPR config")
+            stage2_suggest_classification("session-001", "SIPR config")
 
         # Must have set_field called with suggested_classification
         calls_flat = str(mock_set_field.call_args_list)
@@ -1915,7 +1913,6 @@ class TestSemanticConflicts:
         from flask import Flask
         from tools.docgen.blueprint import docgen_bp
         from tools.docgen.session_manager import create_session
-        from unittest.mock import patch
 
         app = Flask(__name__)
         app.register_blueprint(docgen_bp)
