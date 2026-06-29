@@ -22,6 +22,7 @@ from icdev.tools.ace.step_executor import (
     TrustKernelDeniedError,
 )
 from icdev.tools.ace.team_assembler import CoWorkerSpec
+from icdev.tools.chat.chat_manager import ChatManager
 from tools.logging.icdev_logger import get_logger
 
 logger = get_logger("icdev.ace.coworker_thread")
@@ -187,7 +188,12 @@ class CoWorkerThread(threading.Thread):
         self.instance_id = instance_id
         self.message_bus = message_bus
         self.trust_kernel = trust_kernel
-        self._context: dict[str, Any] = {"instance_id": instance_id}
+        # NOTE: named _ace_context, not _context — Python 3.14's threading.Thread
+        # uses an internal `self._context` (a contextvars.Context) to manage
+        # contextvars across thread starts. Shadowing it with a plain dict
+        # silently kills the thread with no traceback. See memory
+        # feedback_ace_threading_context_conflict.md.
+        self._ace_context: dict[str, Any] = {"instance_id": instance_id}
         self._stop_event = threading.Event()
         self._step_count = 0
         self._monitor_interval: int = (
@@ -219,17 +225,27 @@ class CoWorkerThread(threading.Thread):
     # ------------------------------------------------------------------
 
     def _run_inner(self) -> None:
-        # 0. Enrich context with instance-level data from DB
+        # 0. Enrich context with instance-level data from DB.
+        #    ace_instances stores the launch config (including problem_text) in
+        #    its config_json column — there is no standalone problem_text column.
         try:
+            import json as _json
             from icdev.tools.db.storage import get_canvas_connection
             _conn = get_canvas_connection(_DB_ENV)
             try:
                 _row = _conn.execute(
-                    "SELECT problem_text FROM ace_instances WHERE id = %s",
+                    "SELECT config_json FROM ace_instances WHERE id = %s",
                     (self.instance_id,),
                 ).fetchone()
                 if _row:
-                    self._context["problem_text"] = dict(_row).get("problem_text", "")
+                    _cfg = dict(_row).get("config_json") or ""
+                    if isinstance(_cfg, str):
+                        try:
+                            _cfg = _json.loads(_cfg)
+                        except (ValueError, TypeError):
+                            _cfg = {}
+                    if isinstance(_cfg, dict):
+                        self._ace_context["problem_text"] = _cfg.get("problem_text", "")
             finally:
                 _conn.close()
         except Exception as _exc:
@@ -256,19 +272,69 @@ class CoWorkerThread(threading.Thread):
             user_id = getattr(self.spec, "user_id", None) or self._context.get("user_id") or "default"
             preamble = inject_user_profile_context(preamble, user_id)
             if preamble:
-                self._context["soul_preamble"] = preamble
+                self._ace_context["soul_preamble"] = preamble
                 self._audit("soul_preamble_injected", f"role={self.spec.role_id} len={len(preamble)}")
                 logger.debug("[SOUL] preamble injected for %s (%d chars)", self.spec.role_id, len(preamble))
         except Exception as exc:
             logger.warning("[SOUL] preamble injection failed for %s: %s", self.spec.role_id, exc)
 
-        # 2. Transition to working state
+        # 2. Confidence gate (NOVA TRUST) — if coworker trust_score < 0.6 (supervised
+        #    band) require human approval before the step loop begins.
+        try:
+            from icdev.tools.ace.trust_calibrator import (
+                get_trust_score,
+                TRUST_SUPERVISED,
+            )
+            _ts = get_trust_score(self.spec.role_id)
+            if _ts < TRUST_SUPERVISED:
+                logger.info(
+                    "ace_trust_gate: coworker=%s role=%s score=%.2f < 0.6 — "
+                    "HITL required (supervised band)",
+                    self.spec.coworker_id,
+                    self.spec.role_id,
+                    _ts,
+                )
+                self._set_state("hitl_pending")
+                self._audit(
+                    "hitl_pending",
+                    f"low_confidence: trust_score={_ts:.2f} (supervised band, threshold=0.6)",
+                )
+                while not self._stop_event.is_set():
+                    pending = HITLGate.get_pending(self.spec.coworker_id)
+                    if not pending:
+                        break
+                    time.sleep(_HITL_POLL_INTERVAL)
+                if self._stop_event.is_set():
+                    return
+                self._audit("hitl_resolved", "confidence gate cleared by human approval")
+                logger.info(
+                    "ace_trust_gate: HITL resolved for %s, proceeding",
+                    self.spec.coworker_id,
+                )
+        except Exception as _tg_exc:
+            logger.debug("ace_trust_gate: check skipped: %s", _tg_exc)
+
+        # 3. Transition to working state
         self._set_state("working")
 
+        # 4. Dispatch: agent mode runs an agentic LLM loop that re-prompts the
+        #    LLM after each tool call until it calls `done`; otherwise the
+        #    deterministic step list.
+        if getattr(role, "mode", "steps") == "agent":
+            self._run_agent_loop(role)
+        else:
+            self._run_step_mode(role)
+
+    # ------------------------------------------------------------------
+    # Step-mode loop (deterministic fixed step list)
+    # ------------------------------------------------------------------
+
+    def _run_step_mode(self, role: Any) -> None:
+        """Execute the role's fixed ``steps`` list (the legacy default mode)."""
         executor = StepExecutor()
         _markov_prev_step: str = ""  # Markov: tracks previous step name for transition recording
 
-        # 3 & 4. Execute each step; poll inbox between steps
+        # 4 & 5. Execute each step; poll inbox between steps
         for raw_step in role.steps:
             if self._stop_event.is_set():
                 break
@@ -284,7 +350,7 @@ class CoWorkerThread(threading.Thread):
             self._set_assigned_step(step.get("id", str(raw_step)))
 
             try:
-                result = executor.run(step, self._context, self.spec, self.trust_kernel)
+                result = executor.run(step, self._ace_context, self.spec, self.trust_kernel)
                 self._audit(
                     "step_complete",
                     f"step={step.get('id')} result_type={type(result).__name__}",
@@ -325,7 +391,175 @@ class CoWorkerThread(threading.Thread):
                 if self._check_behavioral_compliance(step_text, role):
                     return  # instance paused to hitl_pending
 
-        # 6. Broadcast completion and update state
+        self._finish_done(role, detail="all steps completed")
+
+    # ------------------------------------------------------------------
+    # Agent-mode loop (agentic LLM re-prompting with native tool use)
+    # ------------------------------------------------------------------
+
+    def _run_agent_loop(self, role: Any) -> None:
+        """Run an agentic LLM loop (mode=agent): LLM → tool_calls → result → re-prompt."""
+        self._role_ref = role  # for _on_agent_turn behavioral compliance checks
+
+        try:
+            from icdev.tools.llm.agent_loop import (
+                AgentLoopUnsupported,
+                run_agent_loop,
+            )
+            from icdev.tools.ace.agent_tools import AgentToolRegistry
+            from tools.llm.router import LLMRouter
+        except ImportError as exc:
+            self._set_state("failed")
+            self._audit("agent_loop_import_failed", str(exc))
+            logger.exception("agent_loop import failed for %s", self.spec.coworker_id)
+            return
+
+        # Build tool schema + handlers bound to this coworker's folder_access /
+        # icdev_tools / trust_tier scope.
+        registry = AgentToolRegistry(self.spec, self.instance_id, stop_event=self._stop_event)
+        agent_tools = list(getattr(role, "agent_tools", []) or [])
+        tools, tool_handlers = registry.build(agent_tools)
+        if not tools:
+            self._set_state("failed")
+            self._audit("agent_loop_no_tools", f"agent_tools={agent_tools!r} resolved to empty set")
+            return
+
+        tool_inventory = ", ".join(sorted(tool_handlers.keys()))
+        soul = self._ace_context.get("soul_preamble", "")
+        system_prompt = (
+            f"{getattr(role, 'description', '') or 'AI co-worker'}\n\n"
+            "You are running in an agentic loop. Call tools to make progress and "
+            "call `done` once the task is complete and verified. Available tools: "
+            f"{tool_inventory}.\n"
+        )
+        if soul:
+            system_prompt += f"\n{soul}\n"
+
+        problem_text = self._ace_context.get("problem_text", "")
+        user_prompt = (
+            f"INSTANCE: {self.instance_id}\n"
+            f"COWORKER: {self.spec.coworker_id} (role={self.spec.role_id})\n\n"
+            f"TASK:\n{problem_text or '(no task description provided)'}\n\n"
+            "Accomplish the task using the available tools, then call done."
+        )
+
+        try:
+            router = LLMRouter()
+        except Exception as exc:
+            self._set_state("failed")
+            self._audit("agent_loop_router_failed", str(exc))
+            logger.exception("agent_loop router init failed for %s", self.spec.coworker_id)
+            return
+
+        max_iter = int(getattr(role, "max_iterations", 12))
+        max_total_tokens = getattr(role, "agent_max_total_tokens", None)
+        max_cost_usd = getattr(role, "agent_max_cost_usd", None)
+        context_window_tokens = getattr(role, "agent_context_window_tokens", None)
+        compression_budget_tokens = getattr(role, "agent_compression_budget_tokens", None)
+        self._audit("agent_loop_start", f"tools={tool_inventory} max_iter={max_iter}")
+
+        try:
+            result = run_agent_loop(
+                router,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                tools=tools,
+                tool_handlers=tool_handlers,
+                llm_function=getattr(self.spec, "llm_function", "") or "code_generation",
+                max_iterations=max_iter,
+                stop_event=self._stop_event,
+                on_turn=self._on_agent_turn,
+                max_total_tokens=max_total_tokens,
+                max_cost_usd=max_cost_usd,
+                context_window_tokens=context_window_tokens,
+                compression_budget_tokens=compression_budget_tokens,
+            )
+        except AgentLoopUnsupported as exc:
+            # Provider can't do native tool use — fall back to step mode with audit.
+            self._audit("agent_loop_unsupported", str(exc))
+            logger.warning(
+                "ace agent_loop unsupported for %s: %s — falling back to step mode",
+                self.spec.coworker_id,
+                exc,
+            )
+            self._run_step_mode(role)
+            return
+        except Exception as exc:
+            self._set_state("failed")
+            self._audit("agent_loop_failed", str(exc))
+            logger.exception("agent_loop failed for %s", self.spec.coworker_id)
+            return
+
+        self._audit(
+            "agent_loop_complete",
+            f"done={result.done} truncated={result.truncated} turns={result.turns} "
+            f"tool_calls={len(result.tool_call_log)}",
+        )
+        detail = "agent loop done" if result.done else "agent loop truncated (max_iterations)"
+        self._finish_done(role, detail=detail)
+
+    def _on_agent_turn(self, turn: int, response: Any, messages: list[dict[str, Any]]) -> None:
+        """Persist + audit each agent-loop turn; periodic behavioral compliance check."""
+        text = getattr(response, "content", "") or ""
+        tool_calls = getattr(response, "tool_calls", None) or []
+        tool_summary = ", ".join(
+            f"{tc.get('name')}({list((tc.get('input') or {}).keys())})" for tc in tool_calls
+        ) or "(no tools)"
+        self._set_assigned_step(f"agent_turn_{turn + 1}")
+        self._audit("agent_turn", f"turn={turn + 1} tools={tool_summary}")
+        self._persist_agent_turn(turn + 1, text, tool_summary)
+
+        # Behavioral compliance check every monitor_interval turns.
+        self._step_count += 1
+        if self._monitor_interval > 0 and self._step_count % self._monitor_interval == 0:
+            if self._check_behavioral_compliance(text or tool_summary, getattr(self, "_role_ref", None)):
+                return  # paused to hitl_pending (state set by _trigger_compliance_hitl)
+
+    def _persist_agent_turn(self, turn: int, text: str, tool_summary: str) -> None:
+        """Write one agent-loop turn to ``ace_messages`` (best-effort).
+
+        Mirrors ``MessageBus._persist`` — the same table the dashboard's
+        ``/api/ace/<id>/messages`` endpoint reads — so agent-mode turns appear
+        in the co-worker chat view alongside step-mode messages. Uses the
+        canvas connection's placeholder style and a uuid id; ``created_at``
+        defaults to now() in the schema.
+        """
+        try:
+            import json as _json
+            import uuid as _uuid
+            from icdev.tools.db.storage import get_canvas_connection
+
+            conn = get_canvas_connection(_DB_ENV)
+            try:
+                conn.execute(
+                    "INSERT INTO ace_messages "
+                    "(id, instance_id, coworker_id, message_type, role, content, metadata_json) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        str(_uuid.uuid4()),
+                        self.instance_id,
+                        self.spec.coworker_id,
+                        "agent_turn",
+                        "assistant",
+                        f"{text}\n[tools: {tool_summary}]",
+                        _json.dumps(
+                            {"turn": turn, "tools": tool_summary},
+                            ensure_ascii=False,
+                        ),
+                    ),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+        except Exception as exc:
+            logger.debug("ace agent turn persist failed for %s: %s", self.spec.coworker_id, exc)
+
+    # ------------------------------------------------------------------
+    # Shared completion
+    # ------------------------------------------------------------------
+
+    def _finish_done(self, role: Any, detail: str = "completed") -> None:
+        """Broadcast done, set state=done, audit, and capture success pattern for green tier."""
         try:
             self.message_bus.broadcast(
                 self.spec.coworker_id,
@@ -340,7 +574,12 @@ class CoWorkerThread(threading.Thread):
             logger.warning("broadcast failed for %s: %s", self.spec.coworker_id, exc)
 
         self._set_state("done")
-        self._audit("coworker_done", "all steps completed")
+        self._audit("coworker_done", detail)
+        self._post_completion_chat_feedback(role, detail)
+
+        # Phase 3: capture success pattern for green-tier co-workers (SIPA-gated promotion)
+        if self.spec.trust_tier == "green":
+            self._capture_success_pattern(role)
 
     # ------------------------------------------------------------------
     # Inbox message handling
@@ -376,7 +615,7 @@ class CoWorkerThread(threading.Thread):
         for raw_vstep in verify_steps:
             vstep = self._normalise_step(raw_vstep)
             try:
-                executor.run(vstep, self._context, self.spec, self.trust_kernel)
+                executor.run(vstep, self._ace_context, self.spec, self.trust_kernel)
             except Exception as exc:
                 self._audit("verify_step_failed", f"step={vstep.get('id')} reason={exc}")
 
@@ -600,6 +839,155 @@ class CoWorkerThread(threading.Thread):
             logger.debug("ace audit write failed for %s/%s: %s", self.instance_id, action, _exc)
 
     # ------------------------------------------------------------------
+    # Chat feedback loop — write completion summary back to originating chat context
+    # ------------------------------------------------------------------
+
+    def _post_completion_chat_feedback(self, role: Any, detail: str) -> None:
+        """Write a co-worker completion summary into the originating chat context.
+
+        Reads trigger_ref from ace_instances.config_json.  Only writes when
+        trigger_source == 'chat' and trigger_ref is a non-empty context ID.
+        No-ops gracefully on any error so completion is never blocked.
+        """
+        try:
+            from icdev.tools.db.storage import get_canvas_connection
+
+            conn = get_canvas_connection(_DB_ENV)
+            try:
+                row = conn.execute(
+                    "SELECT config_json FROM ace_instances WHERE id = %s",
+                    (self.instance_id,),
+                ).fetchone()
+            finally:
+                conn.close()
+
+            if not row:
+                return
+
+            cfg: dict[str, Any] = {}
+            try:
+                cfg = json.loads(row[0] if isinstance(row, (tuple, list)) else dict(row).get("config_json", "{}") or "{}")
+            except Exception:
+                return
+
+            if cfg.get("trigger_source") != "chat":
+                return
+
+            ctx_id: str = cfg.get("trigger_ref", "")
+            if not ctx_id:
+                return
+
+            role_display = getattr(role, "display_name", None) or self.spec.role_id
+            problem_text = cfg.get("problem_text", "")
+            summary_lines = [
+                f"**Co-worker `{self.spec.coworker_id}` ({role_display}) completed.**",
+                f"Instance: `{self.instance_id}`",
+            ]
+            if problem_text:
+                excerpt = problem_text[:200].rstrip()
+                if len(problem_text) > 200:
+                    excerpt += "…"
+                summary_lines.append(f"Task: {excerpt}")
+            summary_lines.append(f"Detail: {detail}")
+            summary = "\n".join(summary_lines)
+
+            user_id = cfg.get("user_id", "system")
+            mgr = ChatManager(user_id=user_id, classification="CUI")
+            mgr.add_message(
+                ctx_id,
+                role="assistant",
+                content=summary,
+                content_type="action_card",
+                metadata={
+                    "source": "ace_coworker",
+                    "instance_id": self.instance_id,
+                    "coworker_id": self.spec.coworker_id,
+                    "role_id": self.spec.role_id,
+                },
+            )
+            logger.debug(
+                "ace_chat_feedback: wrote completion summary to ctx=%s for coworker=%s",
+                ctx_id,
+                self.spec.coworker_id,
+            )
+        except Exception as exc:
+            logger.debug(
+                "ace_chat_feedback: no-op for coworker=%s: %s",
+                self.spec.coworker_id,
+                exc,
+            )
+
+    # ------------------------------------------------------------------
+    # Phase 3: success pattern capture
+    # ------------------------------------------------------------------
+
+    def _capture_success_pattern(self, role: Any) -> None:
+        """Persist a success pattern to ace_skill_candidates for SIPA-gated promotion.
+
+        Only called for green-tier co-workers that completed all steps without
+        error.  Best-effort — never raises or crashes the caller.
+        """
+        try:
+            import yaml
+            import uuid as _uuid
+
+            from icdev.tools.db.storage import get_canvas_connection
+
+            # Derive candidate role_id: versioned slug so it doesn't overwrite the live role
+            role_id = getattr(role, "role_id", self.spec.role_id)
+            candidate_id = str(_uuid.uuid4())
+            candidate_role_id = f"{role_id}_success_{candidate_id[:8]}"
+
+            # Build a minimal candidate YAML from the role's current proven config
+            steps = [
+                (s.name if hasattr(s, "name") else str(s)) for s in getattr(role, "steps", [])
+            ]
+            spec: dict = {
+                "role_id": candidate_role_id,
+                "display_name": f"{getattr(role, 'display_name', role_id)} (Promoted)",
+                "description": (
+                    f"Auto-promoted success pattern from role '{role_id}', "
+                    f"instance '{self.instance_id}', coworker '{self.spec.coworker_id}'."
+                ),
+                "version": "1.0",
+                "source": "promoted_candidate",
+                "trust_tier": self.spec.trust_tier,
+                "steps": steps,
+                "llm_function": getattr(self.spec, "llm_function", ""),
+                "tool_permissions": list(getattr(self.spec, "tool_permissions", [])),
+                "folder_access": list(getattr(self.spec, "folder_access", [])),
+                "icdev_tools": list(getattr(self.spec, "icdev_tools", [])),
+                "communication": dict(getattr(role, "communication", {})),
+                "genesis_reflex": getattr(role, "genesis_reflex", ""),
+            }
+            candidate_yaml = yaml.dump(spec, allow_unicode=True, sort_keys=False)
+
+            now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            conn = get_canvas_connection(_DB_ENV)
+            try:
+                conn.execute(
+                    "INSERT INTO ace_skill_candidates "
+                    "(id, role_id, source_role, instance_id, candidate_yaml, trust_tier, status, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)",
+                    (candidate_id, candidate_role_id, role_id, self.instance_id, candidate_yaml, self.spec.trust_tier, now),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            self._audit(
+                "skill_candidate_captured",
+                f"candidate_id={candidate_id} source_role={role_id}",
+            )
+            logger.debug(
+                "[ACE skill] captured success pattern: candidate_id=%s role=%s",
+                candidate_id,
+                candidate_role_id,
+            )
+        except Exception as exc:
+            logger.debug("_capture_success_pattern failed for %s: %s", self.spec.coworker_id, exc)
+
+    # ------------------------------------------------------------------
     # Utility
     # ------------------------------------------------------------------
 
@@ -622,7 +1010,7 @@ class CoWorkerThread(threading.Thread):
                 "instance_id": self.instance_id,
                 "coworker_id": self.spec.coworker_id,
                 "llm_function": self.spec.llm_function or "code_generation",
-                "problem_text": self._context.get("problem_text", ""),
+                "problem_text": self._ace_context.get("problem_text", ""),
                 "role_description": self.spec.description or "",
             },
             "output_var": f"{step_name}_result",

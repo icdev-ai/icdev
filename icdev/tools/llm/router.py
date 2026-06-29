@@ -19,6 +19,8 @@ from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from tools.config.core_profile import profile_default
+
 try:
     import yaml
 except ImportError:
@@ -219,6 +221,7 @@ class LLMRouter:
                 len(self._config.get("routing", {})),
             )
             self._register_discovered_models()
+            self._apply_profile_defaults()
         except Exception as exc:
             logger.error("Failed to load LLM config: %s", exc)
             self._config = {}
@@ -1387,6 +1390,15 @@ class LLMRouter:
         if not cfg.get("enabled", False) and env_enabled not in ("true", "1", "yes"):
             return None
 
+        # Tool-use / agentic turns bypass two-tier. Two-tier (draft→review) is a
+        # text-generation pattern: the review step would strip the model's
+        # tool_calls and return refined prose, which breaks any agent loop that
+        # drives on `LLMResponse.tool_calls`. When the request carries tools,
+        # fall through to the normal chain so a tool-capable model is invoked
+        # directly and its tool_calls are preserved.
+        if getattr(request, "tools", None):
+            return None
+
         tier1 = _expand_env(cfg.get("tier1_model", "qwen3-local"))
         tier2 = _expand_env(cfg.get("tier2_model", "claude-sonnet"))
         planners = cfg.get("planner_functions", [])
@@ -1735,7 +1747,7 @@ class LLMRouter:
 
         # D286: Create trace span for LLM invocation
         try:
-            from tools.observability import get_tracer
+            from icdev.tools.observability import get_tracer
 
             tracer = get_tracer()
         except ImportError:
@@ -2488,3 +2500,45 @@ class LLMRouter:
                 "Auto-registered Ollama model: %s → logical '%s' (caps: %s)",
                 raw_name, logical, default_caps,
             )
+
+    def _apply_profile_defaults(self) -> None:
+        """Adjust the default routing chain from active core profile.
+
+        If ``ICDEV_LLM_DEFAULT_MODEL`` (or the active profile's default_model)
+        matches a configured model, prepend it to the default chain so the
+        profile's preferred model is tried first. If only a provider is given,
+        find the first model for that provider and prepend it.
+
+        This is intentionally limited to the default chain; function-specific
+        routes keep their explicit ordering unless no env var overrides them.
+        """
+        routing = self._config.setdefault("routing", {})
+        default_route = routing.setdefault("default", {})
+        chain: List[str] = list(default_route.get("chain", []))
+
+        preferred_model = profile_default("ICDEV_LLM_DEFAULT_MODEL", "")
+        models = self._config.get("models", {})
+
+        if preferred_model and preferred_model in models:
+            target = preferred_model
+        else:
+            preferred_provider = profile_default("ICDEV_LLM_PROVIDER", "")
+            if preferred_provider:
+                target = next(
+                    (name for name, cfg in models.items() if cfg.get("provider") == preferred_provider),
+                    "",
+                )
+            else:
+                target = ""
+
+        if not target or target not in models:
+            return
+
+        if chain:
+            if target in chain:
+                chain.remove(target)
+            chain.insert(0, target)
+        else:
+            chain = [target]
+        default_route["chain"] = chain
+        logger.info("Core profile promoted '%s' to first model in default chain", target)

@@ -64,39 +64,59 @@ providers:
     base_url: ${OLLAMA_CLOUD_BASE_URL:-https://ollama.com}
     api_key_env: OLLAMA_API_KEY
 
+  # Claude CLI bridge — routes through the locally authenticated Claude Code
+  # session. Used when ANTHROPIC_API_KEY is absent (this environment).
+  claude-cli:
+    type: cli
+    cli_binary: claude
+    backend: auto
+    soft_wait_seconds: 360
+
 # -----------------------------------------------------------------------
 # Model Registry
 # -----------------------------------------------------------------------
 models:
   # -- Anthropic direct API (user has Anthropic subscription, not Bedrock) --
   claude-opus:
-    provider: anthropic
-    model_id: claude-opus-4-6
+    provider: claude-cli  # CLI bridge — no ANTHROPIC_API_KEY needed in this environment
+    model_id: claude-opus-4-8
     max_output_tokens: 128000
     supports_thinking: true
     supports_tools: true
     supports_structured_output: true
     supports_vision: true
-    pricing: { input_per_1k: 0.005, output_per_1k: 0.025 }
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
 
   claude-sonnet:
-    provider: anthropic  # Anthropic direct API (not Bedrock) — ANTHROPIC_API_KEY
-    model_id: "claude-sonnet-4-5-20250929"
+    provider: claude-cli  # CLI bridge — no ANTHROPIC_API_KEY needed in this environment
+    model_id: claude-sonnet-4-6
     max_output_tokens: 64000
     supports_thinking: true
     supports_tools: true
     supports_structured_output: true
     supports_vision: true
-    pricing: { input_per_1k: 0.003, output_per_1k: 0.015 }
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
+  # Claude Sonnet via CLI bridge — used when ANTHROPIC_API_KEY is absent.
+  # Identical capabilities to claude-sonnet; routes through local claude CLI.
+  claude-sonnet-cli:
+    provider: claude-cli
+    model_id: claude-sonnet-4-6
+    max_output_tokens: 64000
+    supports_thinking: true
+    supports_tools: true
+    supports_structured_output: true
+    supports_vision: true
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
 
   claude-haiku:
-    provider: anthropic
+    provider: claude-cli  # CLI bridge — no ANTHROPIC_API_KEY needed in this environment
     model_id: claude-haiku-4-5-20251001
     max_output_tokens: 8192
     supports_thinking: false
     supports_tools: true
     supports_structured_output: false
-    pricing: { input_per_1k: 0.001, output_per_1k: 0.005 }
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
 
   # -- Anthropic Direct API --
   claude-opus-api:
@@ -216,21 +236,58 @@ models:
     supports_structured_output: true
     pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
 
-  # kimi-k2.6 via Ollama cloud (OLLAMA_API_KEY) — primary inference model
+  # Primary Ollama cloud model — kimi-k2.7-code (vision-capable, 3s TTFT, verified 2026-06-24)
   kimi-cloud:
     provider: ollama_cloud
-    model_id: "kimi-k2.6:cloud"
+    model_id: "kimi-k2.7-code"
     max_output_tokens: 32768
     supports_thinking: false
+    disable_thinking: false
+    supports_tools: true
+    supports_structured_output: true
+    supports_vision: true
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
+  # MiniMax M3 via Ollama cloud — vision-capable, 7s TTFT, strong multimodal reasoning
+  minimax-cloud:
+    provider: ollama_cloud
+    model_id: "minimax-m3"
+    max_output_tokens: 32768
+    supports_thinking: false
+    disable_thinking: false
+    supports_tools: true
+    supports_structured_output: true
+    supports_vision: true
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
+  # devstral-small-2:24b — fast text model (2.3s), no vision
+  devstral-cloud:
+    provider: ollama_cloud
+    model_id: "devstral-small-2:24b"
+    max_output_tokens: 32768
+    supports_thinking: false
+    disable_thinking: false
     supports_tools: true
     supports_structured_output: true
     pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
 
   kimi-local:
     provider: ollama
-    model_id: "kimi-k2.6:cloud"
+    model_id: "qwen3:8b"
     max_output_tokens: 32768
     supports_thinking: false
+    disable_thinking: true
+    supports_tools: true
+    supports_structured_output: true
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
+  # DeepSeek v3.2 via Ollama cloud — strong reasoning fallback
+  deepseek-cloud:
+    provider: ollama_cloud
+    model_id: "deepseek-v3.2"
+    max_output_tokens: 32768
+    supports_thinking: false
+    disable_thinking: true
     supports_tools: true
     supports_structured_output: true
     pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
@@ -364,7 +421,7 @@ task_categories:
     description: "Long-form prose, narrative, documentation"
 
   vision:
-    preferred: [gemma3-local, gemma4-local, llava-local, claude-sonnet, gpt-4o]
+    preferred: [kimi-cloud, minimax-cloud, claude-sonnet, gpt-4o]
     description: "Image analysis, screenshots, UI understanding"
 
   summarization:
@@ -475,7 +532,7 @@ routing:
     effort: low
 
   code_generation:
-    chain: [qwen3-local, claude-sonnet, gemini-2.5-pro, gpt-4o, codestral-local]
+    chain: [qwen3-local, kimi-cloud, claude-sonnet, gemini-2.5-pro, gpt-4o, codestral-local]
     effort: high
 
   saas_proxy:
@@ -490,8 +547,17 @@ routing:
     chain: [gemma3-local, llava-local, qwen3-local]
     effort: medium
 
+  # Network Diagram Analysis — kimi-k2.7-code primary (vision-verified); CLI bridge + local fallbacks
+  ndc_diagram_quick_scan:
+    chain: [kimi-cloud, minimax-cloud, deepseek-cloud, claude-sonnet-cli, qwen3-local]
+    effort: low
+
+  ndc_diagram_analysis:
+    chain: [kimi-cloud, minimax-cloud, deepseek-cloud, claude-sonnet-cli, qwen3-local]
+    effort: medium
+
   document_vision:
-    chain: [claude-sonnet, gpt-4o, gemini-2.5-flash, gemma3-local, llava-local]
+    chain: [kimi-cloud, minimax-cloud, claude-sonnet-cli, claude-sonnet, gpt-4o]
     effort: medium
 
   ui_analysis:
@@ -533,6 +599,12 @@ routing:
   ip_planning:
     chain: [qwen3-local, claude-haiku, gpt-4o-mini, gemini-2.0-flash, llama-local]
     effort: low
+
+  ndc_config_review:
+    # Use Ollama cloud (kimi-k2.6:cloud) first when OLLAMA_API_KEY is present,
+    # then fall back through cloud providers and local Ollama models.
+    chain: [kimi-cloud, kimi-local, qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
+    effort: medium
 
   # Panel fires N calls in parallel — use fast/cheap models to keep wall-clock latency low
   panel_persona_response:
@@ -675,6 +747,27 @@ routing:
     chain: [claude-sonnet, qwen3-local, gpt-4o, gemini-2.5-pro]
     effort: high
 
+  # Slide Deck Generator functions
+  slides_outline_planning:
+    chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
+    effort: medium
+
+  slides_content_generation:
+    chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
+    effort: medium
+
+  slides_content_revision:
+    chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
+    effort: medium
+
+  slides_visual_prompt:
+    chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
+    effort: low
+
+  slides_topic_research:
+    chain: [kimi-cloud, qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
+    effort: medium
+
   default:
     chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
     effort: medium
@@ -800,11 +893,12 @@ redaction:
     - pulse_rewrite
     - wg_rewrite
     - narrative_generation
+    - ndc_config_review  # config text is the analyzed artifact; redaction breaks JSON schema keys like "remediation"
 
 two_tier:
   enabled: true
   tier1_model: kimi-cloud       # Worker — kimi-k2.6 cloud first; qwen3-local (no-think) fallback
-  tier2_model: claude-sonnet-api  # Planner/Reviewer — Anthropic API (not Bedrock)
+  tier2_model: claude-sonnet  # Planner/Reviewer — CLI bridge (no ANTHROPIC_API_KEY in this environment)
 
   # Dual-model mode: swap tier1 + overrides for simultaneous VRAM residency
   # Toggle via: env ICDEV_DUAL_MODEL=true, or dashboard toggle, or API
@@ -851,7 +945,7 @@ two_tier:
   # Override tier1_model for specific functions
   function_model_overrides:
     pulse_draft: gemma3-local        # gemma3 for article writing (no thinking mode)
-    wg_rewrite: claude-sonnet-api    # Claude for WriteGuard rewriting (scanner path, Claude override)
+    wg_rewrite: claude-sonnet    # Claude for WriteGuard rewriting (scanner path, CLI bridge)
     pulse_rewrite: qwen3-local      # qwen3.5 for Pulse rewriting (think:false via provider)
 
 # -----------------------------------------------------------------------
@@ -873,6 +967,8 @@ rag:
       - ui_analysis
       - diagram_extraction
       - compliance_diagram
+      - ndc_diagram_quick_scan
+      - ndc_diagram_analysis
       - e2e_testing
       - playwright_execution
       - browser_automation
@@ -1021,6 +1117,19 @@ chain_orchestration:
           - Bull case (strong buy / buy)
           - Bear case (sell / strong sell)
           - Neutral case (hold / wait)
+
+# -----------------------------------------------------------------------
+# Agent Loop Primitive Budget Defaults (D-ALG-3)
+# -----------------------------------------------------------------------
+# Default hard/soft guardrails for the reusable run_agent_loop() primitive.
+# Per-role overrides can be set in role YAML as agent_max_total_tokens,
+# agent_max_cost_usd, agent_context_window_tokens, agent_compression_budget_tokens.
+agent_loop:
+  budgets:
+    max_total_tokens: 128000
+    context_window_tokens: 64000
+    compression_budget_tokens: 48000
+    max_cost_usd: 5.00
 
 # -----------------------------------------------------------------------
 # Response Cache + Context Caching (D-CACHE-1 through D-CACHE-10)
