@@ -1,5 +1,5 @@
 include pyproject.toml README.md CHANGELOG.md CONTRIBUTING.md LICENSE NOTICE
-include CLAUDE.md .mcp.json ruff.toml requirements.txt
+include CLAUDE.md .mcp.json ruff.toml requirements.txt .env.sample
 
 recursive-include icdev *.py *.html *.css *.js *.json *.yaml *.yml
 recursive-include icdev *.sql *.md *.txt *.LICENSE *.feature *.j2 *.toml *.ini

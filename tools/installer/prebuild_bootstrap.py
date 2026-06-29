@@ -43,6 +43,7 @@ SOURCES: list[tuple[str, str, str]] = [
     ("CLAUDE.md", "CLAUDE.md", "file"),
     (".mcp.json", "mcp.json", "file"),
     (".env.example", ".env.template", "file"),
+    (".env.sample", ".env.sample", "file"),
     (".claude/commands", "claude/commands", "dir"),
     (".claude/hooks", "claude/hooks", "dir"),
     (".claude/settings.json", "claude/settings.json.template", "file"),

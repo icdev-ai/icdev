@@ -12,50 +12,50 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Second Brain / AI Executive Assistant** — persona-adaptive onboarding, daily briefing digest, ACE SOUL injection, and `/me` canvas. 30+ features across `tools/second_brain/` including proactive advisor, retro engine, and Microsoft/Slack connectors; 77 tests; enabled via `ICDEV_SECOND_BRAIN_ENABLED=true` (#64).
 - **Co-Workers Canvas** (`/coworkers`) — config-driven roster of AI co-worker personas loaded from `args/chat_personas.yaml`; launch/terminate sessions with live status panel; paired with Reasoned Codegen Advisor MCP tool (`reasoned_codegen_advise`) and routing chain in `args/llm_config.yaml` (#66).
 - **External Repo Adaptations** — patterns from sideshow, loopy, trilium, and agentcn integrated into ICDEV™ architecture (#67).
-- **`.env.sample`** — comprehensive 60+ key sample environment file covering all LLM providers, canvas toggles, subsystem flags, and integrations; safe to commit (real `.env` stays gitignored).
-- **Kanban Branch-First Enforcement** — executor now requires a branch to exist before dispatch; `pr-watcher` webhook wired into kanban scheduler lifecycle.
+- **`.env.sample`** — comprehensive 60+ key sample environment file covering all LLM providers, canvas toggles, subsystem flags, and integrations; safe to commit.
+- **Kanban Branch-First Enforcement** — executor requires a branch before dispatch; `pr-watcher` webhook wired into kanban scheduler lifecycle.
 
 ### Fixed
 - 43 pre-existing Ruff lint errors (F401/F841/F821/W191/E101) resolved across the codebase.
-- Pre-existing Security Scan and Test CI failures resolved for clean CI baseline.
-- `_auto_provision_env_key` patched before module import in `ks_app` fixture to eliminate test-time key-provisioning race.
+- Pre-existing Security Scan and Test CI failures resolved for a clean CI baseline.
+- `_auto_provision_env_key` patched before module import in `ks_app` fixture.
 - Document Intelligence `freshness_engine` added to tool manifest.
 - QA defects, OIDC manifest entry, and tier gate module resolved (#65).
 - Broken test references in `test_proposals_detail_action_bar`, `test_proposals_detail_ai_drafts_tab`, and `test_govcon_capabilities`.
 
 ### Changed
-- README Quick Start (Option 2) updated to include `cp .env.sample .env` step for first-time contributors.
+- README Quick Start (Option 2) updated with `cp .env.sample .env` step for new contributors.
 
 ---
 
 ## [1.2.31] - 2026-06-21
 
 ### Added
-- **Enterprise-Configurable Platform** — component registration is now 100% registry-driven via `args/component_registry.yaml`; core profiles via `args/core_profiles.yaml`; tenant-level overrides in `tenant_component_overrides` (migration 207); append-only `component_audit_log` (migration 208).
+- **Enterprise-Configurable Platform** — component registration is now 100% registry-driven via `args/component_registry.yaml`; core profiles in `args/core_profiles.yaml`; tenant-level overrides in `tenant_component_overrides` (migration 207); append-only `component_audit_log` (migration 208).
 - **ACE File Access Broker** — `icdev/tools/ace/file_access_broker.py` enforces three-tier file access for co-worker agents: `zero_access` (`.env`, `*.pem`, `*.tfstate`), `read_only` (lock files, compliance catalogs), `no_delete` (`CLAUDE.md`, goals, IaC).
 - **ACE Skill Promoter & Soul Manager** — `skill_promoter.py` autonomously proposes new skills from co-worker discoveries queued for human review; `soul_manager.py` manages SOUL personality configs per co-worker role.
 - **ACE Agent Coordination** — `agent_coordination.py` + migration 222 bring cross-session advisory locks so concurrent co-worker and kanban agents negotiate file ownership; coordination state visible in HITL dashboard.
 - **Agent Loop Persistence** — migrations 220 (`agent_loop_sessions`) and 221 (`agent_hitl_pending`) give `run_agent_loop` durable session state: resume on restart, HITL item queue with approver assignments, cost/token tracking.
 - **Processify Canvas** — BPMN-style process design canvas at `/processify` with drag-and-drop swimlane editor, BPMN 2.0 primitives, JSON export, compliance overlay (maps lanes to NIST 800-53 process controls), and IQE query support.
-- **Canvas Health Dashboard** — real-time health panel at `tools/dashboard/templates/canvas_health/` showing record counts, last-indexed timestamp, IQE adapter status, missing ACE roles, and pending HITL items.
+- **Canvas Health Dashboard** — real-time health panel showing record counts, last-indexed timestamp, IQE adapter status, missing ACE roles, and pending HITL items.
 - **Updates Feed** — system-wide chronological feed of component config changes, migration runs, and reflex activity at `/updates`.
-- **Coworker HITL Workflow** — dedicated HITL queue UI at `templates/coworker/hitl.html` with approve/reject/comment, full audit trail, priority ranking, and bulk-action support.
+- **Coworker HITL Workflow** — dedicated HITL queue UI with approve/reject/comment, full audit trail, priority ranking, and bulk-action support.
 - **Billing Module** — `icdev/tools/billing/` adds tenant billing: usage metering (API calls, LLM tokens, storage), tier enforcement, invoice generation, and billing dashboard at `/billing`.
-- **Onboarding Wizard** — 5-step guided first-run setup (`onboarding.js` + `_onboarding_wizard.html`) covering DB backend, LLM provider, canvas selection, profile application, and dashboard tour.
+- **Onboarding Wizard** — 5-step guided first-run setup covering DB backend, LLM provider, canvas selection, profile application, and dashboard tour.
 - **Migration Topology Visualization** — interactive Sankey-style migration wave diagram at `/migration/topology` showing workloads, target environments, risk bands, and STIG compliance readiness.
-- **Network Topology Neighbors** — migration 218 adds `net_topology_neighbors` table with pre-computed neighbor sets for O(1) blast-radius lookup; `blueprint_helpers.py` updated to use materialized neighbor index.
-- **Capability Sheet Reflex** — `genesis/reflexes/capability_sheet_reflex.py` runs on a 6-hour cadence, auto-generating `.agents/skills/icdev-capability-sheet` from live tool manifests, MCP registrations, and canvas inventory.
-- **Child-App Flavor Templates** — `feat(phase-3)` generator overlay refactor adds flavor-specific Jinja2 templates for child-app scaffolding.
+- **Network Topology Neighbors** — migration 218 adds `net_topology_neighbors` table with pre-computed neighbor sets for O(1) blast-radius lookup.
+- **Capability Sheet Reflex** — 6-hour cadence reflex auto-generating `.agents/skills/icdev-capability-sheet` from live manifests, MCP registrations, and canvas inventory.
+- **Child-App Flavor Templates** — generator overlay refactor adds flavor-specific Jinja2 templates for child-app scaffolding.
 - **FathomDesk Market Data Integrity** — Phase 1 data integrity layer with disclaimer banner and naming reconciliation.
 
 ### Fixed
-- CMMI L3 assessor hardening: refined evidence-weight scoring for PA 3.1–3.6, automatic detection of process asset library gaps, and new HTML evidence report template.
+- CMMI L3 assessor hardening: refined evidence-weight scoring for PA 3.1–3.6, automatic detection of process asset library gaps, new HTML evidence report template.
 - Canvas auto-remediation confidence threshold raised to 0.75; sub-threshold findings surface as HITL items.
-- 264 Ruff auto-fix style and correctness issues resolved across 128 files; all CI lint gates green.
+- 264 Ruff style and correctness issues resolved across 128 files.
 
 ### Changed
-- AI platform MCP configs and skill files synced across Claude Code, Cursor, Windsurf, Amazon Q, Copilot, Gemini, Goose, Junie, and Cline after enterprise platform phase.
-- `icdev profile apply <name>` applies environment presets from `args/core_profiles.yaml`.
+- AI platform MCP configs and skill files synced across Claude Code, Cursor, Windsurf, Amazon Q, Copilot, Gemini, Goose, Junie, and Cline.
+- `icdev profile apply <name>` now applies environment presets from `args/core_profiles.yaml`.
 
 ---
 
