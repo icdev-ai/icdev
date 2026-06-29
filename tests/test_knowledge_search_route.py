@@ -59,6 +59,8 @@ def ks_app(tmp_path):
         patch.object(_auth_mod, "DB_PATH", db_path),
         # Prevent 60+ PG queries from blocking the page load in unit tests.
         patch("tools.rag.ingestion_manager.get_status", return_value=None),
+        # _auto_provision_env_key uses get_connection() (PG path) in CI; skip it.
+        patch("tools.dashboard.auth._auto_provision_env_key", return_value=None),
     ):
         from tools.dashboard.app import create_app
 
