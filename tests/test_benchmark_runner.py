@@ -2,8 +2,7 @@ from __future__ import annotations
 
 """Tests for icdev/tools/llm/benchmark_runner.py and _compute_auroc in eval_harness.py."""
 
-import types
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 

@@ -545,7 +545,7 @@ def generate_standards_watch(user_id: str, tenant_id: str = "default") -> list[d
         from tools.db.storage import get_connection
         from datetime import timedelta
         since = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
-        topic_filter = " OR ".join([f"content ILIKE %s"] * len(topics))
+        topic_filter = " OR ".join(["content ILIKE %s"] * len(topics))
         params = [f"%{t}%" for t in topics] + [since]
         with get_connection() as conn:
             rows = conn.execute(
@@ -662,7 +662,7 @@ def _fetch_open_tasks(user_id: str) -> list[dict]:
 def _fetch_relevant_cves(topics: list[str]) -> list[dict]:
     try:
         from tools.db.storage import get_connection
-        topic_filter = " OR ".join(f"description ILIKE %s" for _ in topics)
+        topic_filter = " OR ".join("description ILIKE %s" for _ in topics)
         params = [f"%{t}%" for t in topics]
         with get_connection() as conn:
             rows = conn.execute(
@@ -682,7 +682,7 @@ def _fetch_relevant_cves(topics: list[str]) -> list[dict]:
 def _fetch_research_items(topics: list[str]) -> list[dict]:
     try:
         from tools.db.storage import get_connection
-        topic_filter = " OR ".join(f"title ILIKE %s OR content ILIKE %s" for _ in topics)
+        topic_filter = " OR ".join("title ILIKE %s OR content ILIKE %s" for _ in topics)
         params = [p for t in topics for p in (f"%{t}%", f"%{t}%")]
         with get_connection() as conn:
             rows = conn.execute(
@@ -812,7 +812,7 @@ def generate_meeting_preps(
 ) -> list[dict[str, Any]]:
     """For each calendar event in the next 90 minutes with a known customer attendee,
     generate a 3-bullet prep card and store it in today's briefing."""
-    from datetime import date, timedelta as td
+    from datetime import date
 
     customers = _load_customers(user_id, tenant_id)
     customer_names = {c.get("name", "").lower(): c for c in customers}

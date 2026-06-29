@@ -12,7 +12,7 @@ def get_all_users() -> list[tuple[str, str]]:
     """Return (user_id, tenant_id) pairs with context_complete=1."""
     try:
         from tools.second_brain.constants import BRIEFING_ENV_FLAG
-        from tools.db.storage import get_canvas_connection, sql_placeholder
+        from tools.db.storage import get_canvas_connection
         with get_canvas_connection(BRIEFING_ENV_FLAG) as conn:
             rows = conn.execute(
                 "SELECT user_id, tenant_id FROM user_identity_profiles WHERE context_complete=1"
