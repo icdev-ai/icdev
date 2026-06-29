@@ -1532,6 +1532,32 @@ components:
     iqe_adapter: true
     nav_link: true
     seed_queries: context/iqe/queries/canvas_health/
+- key: cwk
+  kind: canvas
+  display_name: Co-Workers
+  description: AI co-worker roster — list, preview, and launch AI personas directly into the shared chat canvas.
+  env_flag: ICDEV_CWK_ENABLED
+  default_enabled: true
+  module: icdev.tools.coworkers.blueprint
+  blueprint_attr: coworkers_bp
+  url_prefix: /coworkers
+  min_il: IL4
+  min_tier: community
+  nav:
+    section: Canvases
+    label: Co-Workers
+    icon: "🤝"
+  rbac:
+    roles:
+      - admin
+      - user
+      - analyst
+      - developer
+  completeness:
+    template: tools/dashboard/templates/coworkers/index.html
+    blueprint: true
+    nav_link: true
+
 - key: second_brain
   kind: canvas
   display_name: My AI Assistant
