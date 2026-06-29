@@ -439,14 +439,15 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // ── Unified posture (canvas cards + heatmap) ─────────────────────────────
     fetch('/api/compliance/unified-posture').then(r => r.json()).then(function (d) {
-        populateSDC(d.sdc);
-        populateNDC(d.ndc);
-        populatePDC(d.pdc);
-        populateAIIFY(d.aiify);
-        populateAADC(d.aadc);
+        try { populateSDC(d.sdc); } catch (e) {}
+        try { populateNDC(d.ndc); } catch (e) {}
+        try { populatePDC(d.pdc); } catch (e) {}
+        try { populateAIIFY(d.aiify); } catch (e) {}
+        try { populateAADC(d.aadc); } catch (e) {}
         renderHeatmap(d.heatmap);
     }).catch(function () {
-        document.getElementById('heatmap-loading').textContent = 'Heatmap data unavailable.';
+        var hl = document.getElementById('heatmap-loading');
+        if (hl) hl.textContent = 'Heatmap data unavailable.';
     });
 
     // ── SDC ──────────────────────────────────────────────────────────────────
@@ -559,7 +560,10 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function renderHeatmap(families) {
+        var loading = document.getElementById('heatmap-loading');
+        if (loading) loading.remove();
         var container = document.getElementById('nist-heatmap');
+        if (!container) return;
         if (!families || families.length === 0) {
             container.innerHTML = '<div style="color:#999;font-size:0.85rem;padding:1rem;">No NIST control data available.</div>';
             return;

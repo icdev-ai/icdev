@@ -917,6 +917,8 @@
             });
         };
 
+        window.icdevMBOpen = open;
+
         document.addEventListener('keydown', function(e) {
             if (e.ctrlKey && e.shiftKey && e.key === 'Q') {
                 e.preventDefault();
@@ -933,6 +935,16 @@
     {% block body_end %}
     {% include "includes/_onboarding_wizard.html" ignore missing %}
     {% endblock %}
+
+    {# ── IQE Global Query Trigger FAB ─────────────────────────────────────── #}
+    <button id="iqe-fab" onclick="icdevMBOpen()"
+        aria-label="Open IQE global query bar"
+        style="position:fixed;bottom:140px;right:20px;z-index:1039;
+               background:var(--accent,#4f8ef7);color:#fff;border:none;border-radius:50%;
+               width:40px;height:40px;font-size:0.82rem;font-weight:700;cursor:pointer;
+               box-shadow:0 2px 10px rgba(0,0,0,0.35);display:flex;align-items:center;
+               justify-content:center;letter-spacing:.02em;"
+        title="IQE Query Bar (Ctrl+Shift+Q)">IQE</button>
 
     {# ── Second Brain: Universal Review FAB ──────────────────────────────── #}
     {# Appears on any canvas in the user's role affinity list.                #}

@@ -472,7 +472,7 @@ components:
     section: Canvases
     label: Mission Control
     links:
-    - label: Dashboard
+    - label: Mission Overview
       href: /mission-canvas/
       style: color:#00bcd4;
   iqe:
@@ -1478,7 +1478,7 @@ components:
     section: Canvases
     label: Workflow & Forms
     links:
-      - label: Dashboard
+      - label: Workflow Home
         href: /workflow-canvas/
       - label: Form Builder
         href: /workflow-canvas/forms
