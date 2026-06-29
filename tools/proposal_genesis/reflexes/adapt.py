@@ -90,7 +90,7 @@ def _get_team_size(opp_id: str) -> int:
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT COUNT(*) as cnt FROM pg_teaming_workshare WHERE opportunity_id = ?",
+            "SELECT COUNT(*) as cnt FROM pg_teaming_workshare WHERE opportunity_id = %s",
             (opp_id,),
         ).fetchone()
         partners = row["cnt"] if row else 0
@@ -205,7 +205,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         conn.execute(
             "INSERT INTO pg_proposal_genesis_audit "
             "(id, event_type, reflex_name, risk_tier, details, success, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (
                 _generate_id("pgaudit"),
                 "process_adaptation",

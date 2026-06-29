@@ -63,7 +63,7 @@ def ingest_file(
                (id, doc_template_id, filename, file_type, file_size_bytes,
                 content_hash, storage_path, ingestion_status, ingested_by,
                 ingested_at, updated_at)
-               VALUES (%s,?,?,?,?,?,?,'processing',?,?,%s)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,'processing',%s,%s,%s)""",
             (ingest_id, doc_template_id, fname, file_type, file_size,
              content_hash, str(storage_path), ingested_by, now, now),
         )
@@ -402,7 +402,7 @@ def _store_chunks(
                        (id, content, content_hash, source_type, source_id, source_table,
                         chunk_index, total_chunks, metadata, tier, classification,
                         created_at, updated_at)
-                       VALUES (%s,?,?,'wf_doc',?,?,?,?,?,'warm','CUI',?,%s)""",
+                       VALUES (%s,%s,%s,'wf_doc',%s,%s,%s,%s,%s,'warm','CUI',%s,%s)""",
                     (chunk_id, content, content_hash, ingest_id, "wf_ingested_files",
                      i, len(chunks), metadata, now, now),
                 )

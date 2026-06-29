@@ -114,7 +114,7 @@ def _record_advisory(context_id: str, turn_number: int):
 
 def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
     row = conn.execute(
-        "SELECT COUNT(*) as cnt FROM sqlite_master WHERE type='table' AND name=?",
+        "SELECT COUNT(*) as cnt FROM sqlite_master WHERE type='table' AND name=%s",
         (table_name,),
     ).fetchone()
     return (row[0] if isinstance(row, (tuple, list)) else row["cnt"]) > 0
@@ -135,7 +135,7 @@ def _check_governance_gaps(project_id: str) -> list:
         # Check oversight plan
         if _table_exists(conn, "ai_oversight_plans"):
             cnt = conn.execute(
-                "SELECT COUNT(*) as cnt FROM ai_oversight_plans WHERE project_id = ?",
+                "SELECT COUNT(*) as cnt FROM ai_oversight_plans WHERE project_id = %s",
                 (project_id,),
             ).fetchone()
             if (cnt[0] if isinstance(cnt, (tuple, list)) else cnt["cnt"]) == 0:
@@ -152,7 +152,7 @@ def _check_governance_gaps(project_id: str) -> list:
         if _table_exists(conn, "ai_ethics_reviews"):
             cnt = conn.execute(
                 "SELECT COUNT(*) as cnt FROM ai_ethics_reviews "
-                "WHERE project_id = ? AND review_type = 'impact_assessment'",
+                "WHERE project_id = %s AND review_type = 'impact_assessment'",
                 (project_id,),
             ).fetchone()
             if (cnt[0] if isinstance(cnt, (tuple, list)) else cnt["cnt"]) == 0:
@@ -168,7 +168,7 @@ def _check_governance_gaps(project_id: str) -> list:
         # Check model cards
         if _table_exists(conn, "ai_model_cards"):
             cnt = conn.execute(
-                "SELECT COUNT(*) as cnt FROM ai_model_cards WHERE project_id = ?",
+                "SELECT COUNT(*) as cnt FROM ai_model_cards WHERE project_id = %s",
                 (project_id,),
             ).fetchone()
             if (cnt[0] if isinstance(cnt, (tuple, list)) else cnt["cnt"]) == 0:
@@ -184,7 +184,7 @@ def _check_governance_gaps(project_id: str) -> list:
         # Check CAIO designation
         if _table_exists(conn, "ai_caio_registry"):
             cnt = conn.execute(
-                "SELECT COUNT(*) as cnt FROM ai_caio_registry WHERE project_id = ?",
+                "SELECT COUNT(*) as cnt FROM ai_caio_registry WHERE project_id = %s",
                 (project_id,),
             ).fetchone()
             if (cnt[0] if isinstance(cnt, (tuple, list)) else cnt["cnt"]) == 0:
@@ -200,7 +200,7 @@ def _check_governance_gaps(project_id: str) -> list:
         # Check reassessment schedule
         if _table_exists(conn, "ai_reassessment_schedule"):
             cnt = conn.execute(
-                "SELECT COUNT(*) as cnt FROM ai_reassessment_schedule WHERE project_id = ?",
+                "SELECT COUNT(*) as cnt FROM ai_reassessment_schedule WHERE project_id = %s",
                 (project_id,),
             ).fetchone()
             if (cnt[0] if isinstance(cnt, (tuple, list)) else cnt["cnt"]) == 0:

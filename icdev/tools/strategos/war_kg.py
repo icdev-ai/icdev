@@ -181,11 +181,11 @@ def ensure_war_graph(conn=None) -> str:
 
     try:
         row = conn.execute(
-            "SELECT id FROM kg_graphs WHERE id=?", (WAR_GRAPH_ID,)
+            "SELECT id FROM kg_graphs WHERE id=%s", (WAR_GRAPH_ID,)
         ).fetchone()
         if not row:
             conn.execute(
-                "INSERT INTO kg_graphs (id, name, description, created_at) VALUES (?,?,?,?)",
+                "INSERT INTO kg_graphs (id, name, description, created_at) VALUES (%s,%s,%s,%s)",
                 (
                     WAR_GRAPH_ID,
                     "STRATEGOS War Knowledge Graph",
@@ -229,16 +229,16 @@ def upsert_node(
 
     try:
         existing = conn.execute(
-            "SELECT id FROM kg_nodes WHERE id=?", (nid,)
+            "SELECT id FROM kg_nodes WHERE id=%s", (nid,)
         ).fetchone()
         if existing:
             conn.execute(
-                "UPDATE kg_nodes SET label=?, entity_type=?, properties=? WHERE id=?",
+                "UPDATE kg_nodes SET label=%s, entity_type=%s, properties=%s WHERE id=%s",
                 (label, entity_type, props_json, nid),
             )
         else:
             conn.execute(
-                "INSERT INTO kg_nodes (id, graph_id, label, entity_type, properties, created_at) VALUES (?,?,?,?,?,?)",
+                "INSERT INTO kg_nodes (id, graph_id, label, entity_type, properties, created_at) VALUES (%s,%s,%s,%s,%s,%s)",
                 (nid, WAR_GRAPH_ID, label, entity_type, props_json, now),
             )
         conn.commit()
@@ -271,7 +271,7 @@ def upsert_edge(
 
     try:
         existing = conn.execute(
-            "SELECT id FROM kg_edges WHERE source_id=? AND target_id=? AND relationship=?",
+            "SELECT id FROM kg_edges WHERE source_id=%s AND target_id=%s AND relationship=%s",
             (src_id, tgt_id, relationship),
         ).fetchone()
         if existing:
@@ -279,7 +279,7 @@ def upsert_edge(
         eid = str(uuid.uuid4())
         conn.execute(
             "INSERT INTO kg_edges (id, graph_id, source_id, target_id, relationship, properties, created_at) "
-            "VALUES (?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s)",
             (eid, WAR_GRAPH_ID, src_id, tgt_id, relationship, props_json, now),
         )
         conn.commit()

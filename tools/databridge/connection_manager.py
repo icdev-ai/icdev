@@ -174,7 +174,7 @@ def get_connection(
     db = db_path or str(DB_PATH)
     try:
         conn = _get_conn(db)
-        row = conn.execute("SELECT * FROM db_connections WHERE id = ?", (connection_id,)).fetchone()
+        row = conn.execute("SELECT * FROM db_connections WHERE id = %s", (connection_id,)).fetchone()
         conn.close()
         if row:
             return dict(row)
@@ -205,7 +205,7 @@ def update_connection(
     try:
         conn = _get_conn(db)
         conn.execute(
-            f"UPDATE db_connections SET {set_clause} WHERE id = ?",  # nosec B608 -- column names validated against allowlist above
+            f"UPDATE db_connections SET {set_clause} WHERE id = %s",  # nosec B608 -- column names validated against allowlist above
             values,
         )
         conn.commit()

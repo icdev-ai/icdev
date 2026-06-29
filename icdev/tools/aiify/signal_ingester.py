@@ -82,7 +82,7 @@ def ingest(min_innovation_score: float = 0.60) -> dict:
                 "SELECT id, category, title, description, innovation_score "
                 "FROM innovation_signals "
                 "WHERE category IN ('ai_tooling','agentic','external_framework_analysis','aiify_opportunity') "
-                "AND (innovation_score IS NULL OR innovation_score >= ?) "
+                "AND (innovation_score IS NULL OR innovation_score >= %s) "
                 "ORDER BY innovation_score DESC LIMIT 200",
                 (min_innovation_score,),
             ).fetchall()
@@ -125,7 +125,7 @@ def ingest(min_innovation_score: float = 0.60) -> dict:
 
                 # Skip if bridge record already exists
                 existing = aiify.execute(
-                    "SELECT id FROM aiify_innovation_bridge WHERE signal_id = ? AND opportunity_id = ?",
+                    "SELECT id FROM aiify_innovation_bridge WHERE signal_id = %s AND opportunity_id = %s",
                     (sig_id, opp_id),
                 ).fetchone()
                 if existing:
@@ -140,7 +140,7 @@ def ingest(min_innovation_score: float = 0.60) -> dict:
                     aiify.execute(
                         "INSERT INTO aiify_innovation_bridge "
                         "(signal_id, opportunity_id, pattern_type, match_reason, innovation_score, bridged_at) "
-                        "VALUES (?,?,?,?,?,?)",
+                        "VALUES (%s,%s,%s,%s,%s,%s)",
                         (sig_id, opp_id, opp["pattern_type"], match_reason,
                          sig.get("innovation_score"), _now()),
                     )

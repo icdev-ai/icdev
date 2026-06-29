@@ -756,13 +756,13 @@ def generate_dossier(session_id, db_path=None):
     conn = _get_db(db_path)
     try:
         # 1. Load session
-        session_row = conn.execute("SELECT * FROM research_sessions WHERE id = ?", (session_id,)).fetchone()
+        session_row = conn.execute("SELECT * FROM research_sessions WHERE id = %s", (session_id,)).fetchone()
         if not session_row:
             return {"error": f"Session not found: {session_id}"}
         session = dict(session_row)
 
         # 2. Load vertical config
-        vert_row = conn.execute("SELECT * FROM research_verticals WHERE id = ?", (session["vertical_id"],)).fetchone()
+        vert_row = conn.execute("SELECT * FROM research_verticals WHERE id = %s", (session["vertical_id"],)).fetchone()
         if not vert_row:
             return {"error": f"Vertical not found: {session['vertical_id']}"}
         vertical = dict(vert_row)
@@ -771,7 +771,7 @@ def generate_dossier(session_id, db_path=None):
         challenges = [
             dict(r)
             for r in conn.execute(
-                "SELECT * FROM research_challenges WHERE session_id = ? ORDER BY composite_score DESC",
+                "SELECT * FROM research_challenges WHERE session_id = %s ORDER BY composite_score DESC",
                 (session_id,),
             ).fetchall()
         ]
@@ -780,7 +780,7 @@ def generate_dossier(session_id, db_path=None):
         regulatory_maps = [
             dict(r)
             for r in conn.execute(
-                "SELECT * FROM research_regulatory_map WHERE session_id = ?",
+                "SELECT * FROM research_regulatory_map WHERE session_id = %s",
                 (session_id,),
             ).fetchall()
         ]
@@ -789,7 +789,7 @@ def generate_dossier(session_id, db_path=None):
         build_buy = [
             dict(r)
             for r in conn.execute(
-                "SELECT * FROM research_build_buy WHERE session_id = ?",
+                "SELECT * FROM research_build_buy WHERE session_id = %s",
                 (session_id,),
             ).fetchall()
         ]
@@ -798,7 +798,7 @@ def generate_dossier(session_id, db_path=None):
         capability_maps = [
             dict(r)
             for r in conn.execute(
-                "SELECT * FROM research_capability_map WHERE session_id = ?",
+                "SELECT * FROM research_capability_map WHERE session_id = %s",
                 (session_id,),
             ).fetchall()
         ]
@@ -807,7 +807,7 @@ def generate_dossier(session_id, db_path=None):
         signals = [
             dict(r)
             for r in conn.execute(
-                "SELECT * FROM research_signals WHERE session_id = ?",
+                "SELECT * FROM research_signals WHERE session_id = %s",
                 (session_id,),
             ).fetchall()
         ]
@@ -892,7 +892,7 @@ def generate_dossier(session_id, db_path=None):
              signal_count, challenge_count, critical_challenges, notable_challenges,
              regulatory_mappings, build_buy_analyses, capability_coverage,
              overall_opportunity_score, status, metadata, generated_at, classification)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'generated', ?, ?, 'CUI')""",
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'generated', %s, %s, 'CUI')""",
             (
                 dossier_id,
                 session_id,
@@ -924,8 +924,8 @@ def generate_dossier(session_id, db_path=None):
         # 12. UPDATE research_sessions status and dossier_id
         conn.execute(
             """UPDATE research_sessions
-               SET status = 'dossier_ready', dossier_id = ?, updated_at = ?
-               WHERE id = ?""",
+               SET status = 'dossier_ready', dossier_id = %s, updated_at = %s
+               WHERE id = %s""",
             (dossier_id, now, session_id),
         )
         conn.commit()
@@ -984,11 +984,11 @@ def get_dossier(dossier_id=None, session_id=None, db_path=None):
     conn = _get_db(db_path)
     try:
         if dossier_id:
-            row = conn.execute("SELECT * FROM research_dossiers WHERE id = ?", (dossier_id,)).fetchone()
+            row = conn.execute("SELECT * FROM research_dossiers WHERE id = %s", (dossier_id,)).fetchone()
         else:
             # Get latest dossier for session
             row = conn.execute(
-                "SELECT * FROM research_dossiers WHERE session_id = ? ORDER BY generated_at DESC LIMIT 1",
+                "SELECT * FROM research_dossiers WHERE session_id = %s ORDER BY generated_at DESC LIMIT 1",
                 (session_id,),
             ).fetchone()
 
@@ -1116,7 +1116,7 @@ def review_dossier(dossier_id, reviewer, status, review_notes=None, db_path=None
     conn = _get_db(db_path)
     try:
         # Fetch original dossier
-        row = conn.execute("SELECT * FROM research_dossiers WHERE id = ?", (dossier_id,)).fetchone()
+        row = conn.execute("SELECT * FROM research_dossiers WHERE id = %s", (dossier_id,)).fetchone()
         if not row:
             return {"error": f"Dossier not found: {dossier_id}"}
 
@@ -1133,7 +1133,7 @@ def review_dossier(dossier_id, reviewer, status, review_notes=None, db_path=None
              regulatory_mappings, build_buy_analyses, capability_coverage,
              overall_opportunity_score, status, reviewer, reviewed_at, review_notes,
              fitness_assessment_id, metadata, generated_at, classification)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'CUI')""",
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'CUI')""",
             (
                 new_id,
                 original["session_id"],
@@ -1169,8 +1169,8 @@ def review_dossier(dossier_id, reviewer, status, review_notes=None, db_path=None
         if status == "approved":
             conn.execute(
                 """UPDATE research_sessions
-                   SET status = 'reviewed', dossier_id = ?, updated_at = ?
-                   WHERE id = ?""",
+                   SET status = 'reviewed', dossier_id = %s, updated_at = %s
+                   WHERE id = %s""",
                 (new_id, now, original["session_id"]),
             )
 
@@ -1219,7 +1219,7 @@ def trigger_fitness(dossier_id, db_path=None):
     conn = _get_db(db_path)
     try:
         # Fetch the dossier
-        row = conn.execute("SELECT * FROM research_dossiers WHERE id = ?", (dossier_id,)).fetchone()
+        row = conn.execute("SELECT * FROM research_dossiers WHERE id = %s", (dossier_id,)).fetchone()
         if not row:
             return {"error": f"Dossier not found: {dossier_id}"}
 
@@ -1242,8 +1242,8 @@ def trigger_fitness(dossier_id, db_path=None):
              regulatory_mappings, build_buy_analyses, capability_coverage,
              overall_opportunity_score, status, reviewer, reviewed_at, review_notes,
              fitness_assessment_id, metadata, generated_at, classification)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'child_app_triggered',
-                    ?, ?, ?, ?, ?, ?, 'CUI')""",
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'child_app_triggered',
+                    %s, %s, %s, %s, %s, %s, 'CUI')""",
             (
                 new_id,
                 original["session_id"],
@@ -1277,8 +1277,8 @@ def trigger_fitness(dossier_id, db_path=None):
         # Update session status
         conn.execute(
             """UPDATE research_sessions
-               SET status = 'child_app_triggered', dossier_id = ?, updated_at = ?
-               WHERE id = ?""",
+               SET status = 'child_app_triggered', dossier_id = %s, updated_at = %s
+               WHERE id = %s""",
             (new_id, now, original["session_id"]),
         )
         conn.commit()

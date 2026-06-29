@@ -44,7 +44,7 @@ def _get_db(db_path: Optional[Path] = None) -> sqlite3.Connection:
 
 def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
     row = conn.execute(
-        "SELECT COUNT(*) as cnt FROM sqlite_master WHERE type='table' AND name=?",
+        "SELECT COUNT(*) as cnt FROM sqlite_master WHERE type='table' AND name=%s",
         (name,),
     ).fetchone()
     return (row[0] if isinstance(row, (tuple, list)) else row["cnt"]) > 0
@@ -64,7 +64,7 @@ def check_bridge_readiness(
     conn = _get_db(db_path)
     try:
         session = conn.execute(
-            "SELECT * FROM intake_sessions WHERE id = ?",
+            "SELECT * FROM intake_sessions WHERE id = %s",
             (session_id,),
         ).fetchone()
         if not session:
@@ -86,7 +86,7 @@ def check_bridge_readiness(
         story_count = 0
         if _table_exists(conn, "safe_decomposition"):
             row = conn.execute(
-                "SELECT COUNT(*) as cnt FROM safe_decomposition WHERE session_id = ?",
+                "SELECT COUNT(*) as cnt FROM safe_decomposition WHERE session_id = %s",
                 (session_id,),
             ).fetchone()
             story_count = row[0] if isinstance(row, (tuple, list)) else row["cnt"]
@@ -104,7 +104,7 @@ def check_bridge_readiness(
         if _table_exists(conn, "workflow_loops"):
             existing = conn.execute(
                 """SELECT id, status FROM workflow_loops
-                   WHERE project_id = ? AND phase_name LIKE ?
+                   WHERE project_id = %s AND phase_name LIKE %s
                    AND status NOT IN ('closed', 'abandoned')""",
                 (project_id, f"%{session_id[-8:]}%"),
             ).fetchone()
@@ -153,7 +153,7 @@ def bridge_intake_to_loop(
     conn = _get_db(db_path)
     try:
         session = conn.execute(
-            "SELECT * FROM intake_sessions WHERE id = ?",
+            "SELECT * FROM intake_sessions WHERE id = %s",
             (session_id,),
         ).fetchone()
         project_id = session["project_id"] or ""
@@ -174,7 +174,7 @@ def bridge_intake_to_loop(
             rows = conn.execute(
                 """SELECT id, title, acceptance_criteria, level
                    FROM safe_decomposition
-                   WHERE session_id = ? AND level IN ('story', 'feature', 'enabler')
+                   WHERE session_id = %s AND level IN ('story', 'feature', 'enabler')
                    ORDER BY created_at""",
                 (session_id,),
             ).fetchall()

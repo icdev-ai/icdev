@@ -25,9 +25,10 @@ NIST 800-53: AC-3, AC-6, ZTA Pillar 5.
 """
 
 import functools
+import os
 import uuid
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 
 from tools.logging.icdev_logger import get_logger
 
@@ -35,6 +36,19 @@ logger = get_logger("security.canvas_access")
 
 # Access level ordering (higher index = more permissive)
 _LEVEL_ORDER = {"read": 0, "write": 1, "admin": 2}
+
+# Impact level ordering for RBAC (higher = more sensitive)
+_IL_ORDER = {"IL2": 2, "IL4": 4, "IL5": 5, "IL6": 6}
+
+
+def _has_sufficient_il(min_il: str, user_impact_level: str) -> bool:
+    """Return True if the user's impact level meets the canvas minimum IL."""
+    try:
+        required = _IL_ORDER.get((min_il or "IL2").upper(), 4)
+        user = _IL_ORDER.get((user_impact_level or "IL4").upper(), 4)
+    except Exception:
+        return True
+    return user >= required
 
 
 def _now() -> str:
@@ -73,7 +87,7 @@ def grant_access(
             INSERT INTO canvas_access_grants
               (id, tenant_id, principal_type, principal_id, canvas_name,
                access_level, granted_by, granted_at, expires_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (tenant_id, principal_type, principal_id, canvas_name)
             DO UPDATE SET access_level = excluded.access_level,
                           granted_by   = excluded.granted_by,
@@ -104,9 +118,9 @@ def revoke_access(
         conn.execute(
             """
             UPDATE canvas_access_grants
-            SET revoked_at = ?
-            WHERE tenant_id = ? AND principal_type = ? AND principal_id = ?
-              AND canvas_name = ? AND revoked_at IS NULL
+            SET revoked_at = %s
+            WHERE tenant_id = %s AND principal_type = %s AND principal_id = %s
+              AND canvas_name = %s AND revoked_at IS NULL
             """,
             (now, tenant_id, principal_type, principal_id, canvas_name),
         )
@@ -165,10 +179,10 @@ def check_access(
             row = conn.execute(
                 """
                 SELECT access_level FROM canvas_access_grants
-                WHERE tenant_id = ? AND canvas_name = ?
-                  AND principal_type = 'user' AND principal_id = ?
+                WHERE tenant_id = %s AND canvas_name = %s
+                  AND principal_type = 'user' AND principal_id = %s
                   AND revoked_at IS NULL
-                  AND (expires_at IS NULL OR expires_at > ?)
+                  AND (expires_at IS NULL OR expires_at > %s)
                 LIMIT 1
                 """,
                 (tenant_id, canvas_name, user_id, now),
@@ -185,11 +199,11 @@ def check_access(
                 FROM canvas_access_grants cag
                 JOIN group_members gm ON cag.principal_id = gm.group_id
                 JOIN groups g ON g.id = gm.group_id
-                WHERE cag.tenant_id = ? AND cag.canvas_name = ?
-                  AND cag.principal_type = 'group' AND gm.user_id = ?
-                  AND g.tenant_id = ? AND g.status = 'active'
+                WHERE cag.tenant_id = %s AND cag.canvas_name = %s
+                  AND cag.principal_type = 'group' AND gm.user_id = %s
+                  AND g.tenant_id = %s AND g.status = 'active'
                   AND cag.revoked_at IS NULL
-                  AND (cag.expires_at IS NULL OR cag.expires_at > ?)
+                  AND (cag.expires_at IS NULL OR cag.expires_at > %s)
                 """,
                 (tenant_id, canvas_name, user_id, tenant_id, now),
             ).fetchall()
@@ -203,7 +217,7 @@ def check_access(
             resolved_role = user_role
             if not resolved_role:
                 user_row = conn.execute(
-                    "SELECT role FROM users WHERE id = ? AND tenant_id = ?",
+                    "SELECT role FROM users WHERE id = %s AND tenant_id = %s",
                     (user_id, tenant_id),
                 ).fetchone()
                 if user_row:
@@ -212,10 +226,10 @@ def check_access(
                 role_row = conn.execute(
                     """
                     SELECT access_level FROM canvas_access_grants
-                    WHERE tenant_id = ? AND canvas_name = ?
-                      AND principal_type = 'role' AND principal_id = ?
+                    WHERE tenant_id = %s AND canvas_name = %s
+                      AND principal_type = 'role' AND principal_id = %s
                       AND revoked_at IS NULL
-                      AND (expires_at IS NULL OR expires_at > ?)
+                      AND (expires_at IS NULL OR expires_at > %s)
                     LIMIT 1
                     """,
                     (tenant_id, canvas_name, resolved_role, now),
@@ -237,34 +251,33 @@ def check_access(
 # ---------------------------------------------------------------------------
 
 def seed_tenant_defaults(tenant_id: str, granted_by: str = "system") -> None:
-    """Auto-grant default_roles defined in canvas_registry.yaml for a new tenant.
+    """Auto-grant default_roles from args/component_registry.yaml for a tenant.
 
     Called from tenant_manager.py after tenant creation.
     """
     try:
-        from pathlib import Path
-        import yaml  # type: ignore[import-untyped]
-        registry_path = Path(__file__).resolve().parent.parent.parent / "args" / "canvas_registry.yaml"
-        with open(registry_path, encoding="utf-8") as fh:
-            registry = yaml.safe_load(fh) or {}
+        from tools.config.component_registry import get_registry
+
+        registry = get_registry()
     except Exception as exc:
-        logger.warning("Cannot load canvas_registry.yaml: %s", exc)
+        logger.warning("Cannot load component registry: %s", exc)
         return
 
-    for canvas in registry.get("canvases", []):
-        canvas_name = canvas.get("name")
-        for role in canvas.get("default_roles", []):
+    for comp in registry.iter_canvases():
+        if not comp.default_roles:
+            continue
+        for role in comp.default_roles:
             try:
                 grant_access(
                     tenant_id=tenant_id,
                     principal_type="role",
                     principal_id=role,
-                    canvas_name=canvas_name,
+                    canvas_name=comp.key,
                     access_level="read",
                     granted_by=granted_by,
                 )
             except Exception as exc:
-                logger.debug("Seed grant failed for %s/%s: %s", canvas_name, role, exc)
+                logger.debug("Seed grant failed for %s/%s: %s", comp.key, role, exc)
 
     logger.info("Seeded canvas default grants for tenant %s", tenant_id)
 
@@ -318,6 +331,82 @@ def require_canvas_access(canvas_name: str, min_level: str = "read"):
     return decorator
 
 
+def guard_component_access(
+    component_key: str,
+    min_il: str,
+) -> Any:
+    """Return a Flask ``before_request`` guard for a component blueprint.
+
+    Enforces, in order:
+      1. Authentication context (unless ``ICDEV_ENFORCE_CANVAS_ACCESS`` is off).
+      2. Minimum impact level (``min_il``) vs the user's ``impact_level``.
+      3. Explicit canvas access grant (seeded from component ``default_roles``).
+
+    Usage::
+
+        bp.before_request(guard_component_access("dic", "IL4", ["researcher"]))
+
+    The guard is designed to be backward-compatible: in local-dev mode without
+    an authenticated user it silently allows the request. Set
+    ``ICDEV_ENFORCE_CANVAS_ACCESS=true`` to hard-fail unauthenticated requests.
+    """
+
+    def _guard():
+        try:
+            from flask import g, request, abort
+        except ImportError:
+            return
+
+        user = getattr(g, "current_user", None) or {}
+        user_id = str(user.get("id", "") or user.get("user_id", "") or "")
+        tenant_id = str(
+            getattr(g, "tenant_id", None) or user.get("tenant_id", "") or ""
+        )
+
+        enforce = os.environ.get("ICDEV_ENFORCE_CANVAS_ACCESS", "").lower() in (
+            "true",
+            "1",
+            "yes",
+        )
+        if not user_id or not tenant_id:
+            if enforce:
+                logger.warning(
+                    "Canvas access denied (unauthenticated): %s %s",
+                    component_key,
+                    request.path,
+                )
+                abort(403)
+            return
+
+        if not _has_sufficient_il(min_il, user.get("impact_level", "")):
+            logger.warning(
+                "Canvas access denied (IL): %s user=%s required=%s got=%s",
+                component_key,
+                user_id,
+                min_il,
+                user.get("impact_level", ""),
+            )
+            abort(403)
+
+        if not check_access(
+            user_id,
+            tenant_id,
+            component_key,
+            required_level="read",
+            user_role=user.get("role"),
+        ):
+            logger.warning(
+                "Canvas access denied (grant): %s user=%s tenant=%s path=%s",
+                component_key,
+                user_id,
+                tenant_id,
+                request.path,
+            )
+            abort(403)
+
+    return _guard
+
+
 def _deny_response(canvas_name: str) -> None:
     """Abort with 403 in the appropriate format (JSON or HTML)."""
     try:
@@ -358,7 +447,7 @@ def _audit(action: str, tenant_id: str, principal_type: str, principal_id: str,
             conn.execute(
                 """
                 INSERT INTO audit_trail (event_type, actor, details, created_at)
-                VALUES (?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s)
                 """,
                 (
                     f"canvas_access_{action}",

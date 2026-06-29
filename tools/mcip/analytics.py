@@ -2,14 +2,14 @@
 """MCIP DAT analytics — ingestion, DTI scoring, and query helpers."""
 from __future__ import annotations
 
-import hashlib
-import logging
 import uuid
+import zlib
 from datetime import datetime, timedelta, timezone
 
 from tools.mcip.constants import DAT_SOURCE_TYPES, DTI_WEIGHTS, classify_dti
 
-logger = logging.getLogger(__name__)
+from tools.logging.icdev_logger import get_logger
+log = get_logger("mcip.analytics")
 
 
 def _now_iso() -> str:
@@ -45,14 +45,14 @@ def ingest_event(
             INSERT INTO mcip_dat_events
                 (id, source_type, content_hash, sender, recipient,
                  classification, tension_signal, ingested_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (event_id, source_type, content_hash, sender, recipient,
              classification, tension_signal, _now_iso()),
         )
         conn.commit()
     except Exception as exc:
-        logger.warning("mcip ingest_event error: %s", exc)
+        log.warning("mcip ingest_event error: %s", exc)
     finally:
         conn.close()
     return event_id
@@ -80,7 +80,7 @@ def compute_dti(window_hours: int = 6) -> dict:
                 """
                 SELECT COUNT(*) as cnt, AVG(tension_signal) as avg_sig
                 FROM mcip_dat_events
-                WHERE source_type = ? AND ingested_at >= ?
+                WHERE source_type = %s AND ingested_at >= %s
                 """,
                 (src, since),
             ).fetchone()
@@ -89,7 +89,7 @@ def compute_dti(window_hours: int = 6) -> dict:
             sub_scores[src] = float(avg_sig)
             event_count += int(cnt)
     except Exception as exc:
-        logger.warning("mcip compute_dti query error: %s", exc)
+        log.warning("mcip compute_dti query error: %s", exc)
     finally:
         conn.close()
 
@@ -113,7 +113,7 @@ def record_dti_score(score: float, sub_scores: dict, event_count: int) -> str:
             INSERT INTO mcip_dti_scores
                 (id, score, cable_sub, unsc_sub, backchannel_sub,
                  event_count, computed_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 row_id,
@@ -127,7 +127,7 @@ def record_dti_score(score: float, sub_scores: dict, event_count: int) -> str:
         )
         conn.commit()
     except Exception as exc:
-        logger.warning("mcip record_dti_score error: %s", exc)
+        log.warning("mcip record_dti_score error: %s", exc)
     finally:
         conn.close()
     return row_id
@@ -147,7 +147,7 @@ def get_current_dti() -> dict | None:
         if row:
             return dict(row)
     except Exception as exc:
-        logger.warning("mcip get_current_dti error: %s", exc)
+        log.warning("mcip get_current_dti error: %s", exc)
     finally:
         conn.close()
     return None
@@ -161,12 +161,12 @@ def get_dti_history(hours: int = 48) -> list[dict]:
     conn = _get_conn()
     try:
         rows = conn.execute(
-            "SELECT * FROM mcip_dti_scores WHERE computed_at >= ? ORDER BY computed_at DESC",
+            "SELECT * FROM mcip_dti_scores WHERE computed_at >= %s ORDER BY computed_at DESC",
             (since,),
         ).fetchall()
         return [dict(r) for r in rows]
     except Exception as exc:
-        logger.warning("mcip get_dti_history error: %s", exc)
+        log.warning("mcip get_dti_history error: %s", exc)
     finally:
         conn.close()
     return []
@@ -178,22 +178,22 @@ def get_recent_events(source_type: str | None = None, limit: int = 50) -> list[d
     try:
         if source_type:
             rows = conn.execute(
-                "SELECT * FROM mcip_dat_events WHERE source_type = ? ORDER BY ingested_at DESC LIMIT ?",
+                "SELECT * FROM mcip_dat_events WHERE source_type = %s ORDER BY ingested_at DESC LIMIT %s",
                 (source_type, limit),
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT * FROM mcip_dat_events ORDER BY ingested_at DESC LIMIT ?",
+                "SELECT * FROM mcip_dat_events ORDER BY ingested_at DESC LIMIT %s",
                 (limit,),
             ).fetchall()
         return [dict(r) for r in rows]
     except Exception as exc:
-        logger.warning("mcip get_recent_events error: %s", exc)
+        log.warning("mcip get_recent_events error: %s", exc)
     finally:
         conn.close()
     return []
 
 
 def content_hash(text: str) -> str:
-    """Deterministic SHA-256 hash for dedup of cable content."""
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+    """Deterministic CRC-32 fingerprint for dedup of cable content."""
+    return format(zlib.crc32(text.encode("utf-8")) & 0xFFFFFFFF, "08x")

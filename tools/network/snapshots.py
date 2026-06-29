@@ -62,7 +62,7 @@ def _fetch_design(conn: sqlite3.Connection, design_id: str) -> Optional[dict]:
     """Fetch topology row keyed by design_id."""
     row = conn.execute(
         "SELECT id, name, description, graph_json, template_id, "
-        "classification, created_at, updated_at FROM topologies WHERE id = ?",
+        "classification, created_at, updated_at FROM topologies WHERE id = %s",
         (design_id,),
     ).fetchone()
     return dict(row) if row else None
@@ -72,7 +72,7 @@ def _fetch_objects(conn: sqlite3.Connection, design_id: str) -> list:
     """Fetch all nc_objects (device configs) for this design."""
     rows = conn.execute(
         "SELECT id, topology_id, object_type, label, config_json, pos_x, pos_y "
-        "FROM nc_objects WHERE topology_id = ?",
+        "FROM nc_objects WHERE topology_id = %s",
         (design_id,),
     ).fetchall()
     return [dict(r) for r in rows]
@@ -158,7 +158,7 @@ def create_snapshot(
             "INSERT INTO nc_design_snapshots "
             "(snap_id, design_id, lab_run_id, manifest_json, blob_uri, "
             " sha256, classification, created_by, created_at, description, size_bytes) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 snap_id,
                 design_id,
@@ -193,8 +193,8 @@ def list_snapshots(design_id: Optional[str] = None, limit: int = 50) -> list:
             rows = conn.execute(
                 "SELECT snap_id, design_id, lab_run_id, sha256, classification, "
                 "created_by, created_at, description, size_bytes, blob_uri "
-                "FROM nc_design_snapshots WHERE design_id = ? "
-                "ORDER BY created_at DESC LIMIT ?",
+                "FROM nc_design_snapshots WHERE design_id = %s "
+                "ORDER BY created_at DESC LIMIT %s",
                 (design_id, int(limit)),
             ).fetchall()
         else:
@@ -202,7 +202,7 @@ def list_snapshots(design_id: Optional[str] = None, limit: int = 50) -> list:
                 "SELECT snap_id, design_id, lab_run_id, sha256, classification, "
                 "created_by, created_at, description, size_bytes, blob_uri "
                 "FROM nc_design_snapshots "
-                "ORDER BY created_at DESC LIMIT ?",
+                "ORDER BY created_at DESC LIMIT %s",
                 (int(limit),),
             ).fetchall()
         return [dict(r) for r in rows]
@@ -217,7 +217,7 @@ def get_snapshot(snap_id: str) -> dict:
         row = conn.execute(
             "SELECT snap_id, design_id, lab_run_id, manifest_json, blob_uri, "
             "sha256, classification, created_by, created_at, description, size_bytes "
-            "FROM nc_design_snapshots WHERE snap_id = ?",
+            "FROM nc_design_snapshots WHERE snap_id = %s",
             (snap_id,),
         ).fetchone()
         if not row:
@@ -238,7 +238,7 @@ def verify_snapshot(snap_id: str) -> dict:
     try:
         row = conn.execute(
             "SELECT snap_id, manifest_json, sha256 FROM nc_design_snapshots "
-            "WHERE snap_id = ?",
+            "WHERE snap_id = %s",
             (snap_id,),
         ).fetchone()
         if not row:
@@ -275,7 +275,7 @@ def restore_snapshot(snap_id: str, target_design_id: Optional[str] = None) -> di
                 "INSERT INTO topologies "
                 "(id, name, description, graph_json, template_id, classification, "
                 " created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     target_design_id,
                     (design.get("name") or "restored") + " (restored)",
@@ -291,8 +291,8 @@ def restore_snapshot(snap_id: str, target_design_id: Optional[str] = None) -> di
             existing = _fetch_design(conn, target_design_id)
             if existing:
                 conn.execute(
-                    "UPDATE topologies SET name = ?, description = ?, graph_json = ?, "
-                    "template_id = ?, classification = ?, updated_at = ? WHERE id = ?",
+                    "UPDATE topologies SET name = %s, description = %s, graph_json = %s, "
+                    "template_id = %s, classification = %s, updated_at = %s WHERE id = %s",
                     (
                         design.get("name") or existing["name"],
                         design.get("description") or "",
@@ -305,7 +305,7 @@ def restore_snapshot(snap_id: str, target_design_id: Optional[str] = None) -> di
                 )
                 # Remove existing objects for clean restore
                 conn.execute(
-                    "DELETE FROM nc_objects WHERE topology_id = ?",
+                    "DELETE FROM nc_objects WHERE topology_id = %s",
                     (target_design_id,),
                 )
             else:
@@ -313,7 +313,7 @@ def restore_snapshot(snap_id: str, target_design_id: Optional[str] = None) -> di
                     "INSERT INTO topologies "
                     "(id, name, description, graph_json, template_id, classification, "
                     " created_at, updated_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
                     (
                         target_design_id,
                         design.get("name") or "restored",
@@ -335,7 +335,7 @@ def restore_snapshot(snap_id: str, target_design_id: Optional[str] = None) -> di
             conn.execute(
                 "INSERT INTO nc_objects "
                 "(id, topology_id, object_type, label, config_json, pos_x, pos_y) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
                 (
                     new_obj_id,
                     target_design_id,

@@ -164,7 +164,7 @@ def register_model_version(
     try:
         # Get next version number
         row = conn.execute(
-            "SELECT MAX(version) as max_v FROM ft_model_versions WHERE model_name = ?",
+            "SELECT MAX(version) as max_v FROM ft_model_versions WHERE model_name = %s",
             (model_name,),
         ).fetchone()
         version = (row["max_v"] or 0) + 1
@@ -180,7 +180,7 @@ def register_model_version(
                (id, job_id, model_name, version, base_model, adapter_path,
                 gguf_path, ollama_model_name, adapter_hash, file_size_bytes,
                 status, classification, tenant_id, project_id, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'created', ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'created', %s, %s, %s, %s)""",
             (
                 mv_id,
                 job_id,

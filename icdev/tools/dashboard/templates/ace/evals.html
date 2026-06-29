@@ -1,0 +1,176 @@
+<!-- CUI // SP-CTI — ACE Agent Eval Results -->
+{% extends "base.html" %}
+{% block title %}Agent Evaluations — Co-Worker Engine — ICDEV™{% endblock %}
+
+{% block content %}
+<style>
+  .evals-page { padding: 20px 28px; max-width: 1100px; }
+  .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+  .page-title { font-size: 20px; font-weight: 700; }
+  .page-subtitle { font-size: 13px; color: var(--text-secondary, #7a8cb0); margin-top: 4px; }
+
+  .filter-bar { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+  .filter-select {
+    background: var(--bg-secondary, #1a1a2e); border: 1px solid var(--border-color, #2a2a4a);
+    color: var(--text-primary, #e2e8f0); padding: 6px 12px; border-radius: 5px; font-size: 13px;
+  }
+
+  .evals-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .evals-table th {
+    padding: 8px 12px; text-align: left; font-size: 11px; text-transform: uppercase;
+    letter-spacing: .04em; color: var(--text-secondary, #7a8cb0);
+    border-bottom: 1px solid var(--border-color, #2a2a4a);
+  }
+  .evals-table td {
+    padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,.04);
+    vertical-align: middle;
+  }
+  .evals-table tr:hover td { background: rgba(255,255,255,.02); }
+
+  .score-bar { display: flex; align-items: center; gap: 8px; }
+  .bar-track { width: 60px; height: 6px; background: rgba(255,255,255,.1); border-radius: 3px; }
+  .bar-fill  { height: 100%; border-radius: 3px; }
+  .bar-good  { background: #27ae60; }
+  .bar-mid   { background: #f39c12; }
+  .bar-bad   { background: #e74c3c; }
+
+  .badge-subtype { display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+  .badge-success { background: rgba(39,174,96,.2); color: #27ae60; border: 1px solid #27ae60; }
+  .badge-error   { background: rgba(231,76,60,.2); color: #e74c3c; border: 1px solid #e74c3c; }
+  .badge-unknown { background: rgba(100,100,100,.2); color: #aaa; border: 1px solid #555; }
+
+  .link { color: var(--accent-color, #4a9eff); text-decoration: none; }
+  .link:hover { text-decoration: underline; }
+
+  .loading-state { text-align: center; padding: 60px; color: var(--text-secondary, #7a8cb0); }
+  .empty-state   { text-align: center; padding: 60px; color: var(--text-secondary, #7a8cb0); }
+  .pagination { display: flex; gap: 8px; margin-top: 16px; justify-content: flex-end; align-items: center; }
+  .page-btn {
+    padding: 5px 12px; border-radius: 4px; font-size: 12px; cursor: pointer;
+    background: var(--bg-secondary, #1a1a2e); border: 1px solid var(--border-color, #2a2a4a);
+    color: var(--text-primary, #e2e8f0);
+  }
+  .page-btn:disabled { opacity: .4; cursor: default; }
+  .page-info { font-size: 12px; color: var(--text-secondary, #7a8cb0); }
+
+  .breadcrumbs { font-size: 12px; color: var(--text-secondary, #7a8cb0); margin-bottom: 16px; }
+  .breadcrumbs a { color: var(--accent-color, #4a9eff); text-decoration: none; }
+  .breadcrumbs .separator { margin: 0 6px; }
+</style>
+
+<div class="evals-page">
+  <div class="breadcrumbs">
+    <a href="/">Home</a>
+    <span class="separator">/</span>
+    <a href="/coworker">Co-Worker Engine</a>
+    <span class="separator">/</span>
+    <span>Agent Evaluations</span>
+  </div>
+
+  <div class="page-header">
+    <div>
+      <div class="page-title">Agent Evaluations</div>
+      <div class="page-subtitle">Rule-based quality metrics for completed agent sessions</div>
+    </div>
+    <a href="/coworker/evals/trends" class="link" style="font-size:13px;">Trends ›</a>
+  </div>
+
+  <div class="filter-bar">
+    <select class="filter-select" id="outcome-filter" onchange="loadEvals(0)">
+      <option value="">All outcomes</option>
+      <option value="success">Success</option>
+      <option value="error_max_turns">Max turns</option>
+      <option value="error_during_execution">Execution error</option>
+      <option value="error_stop_event">Stopped</option>
+    </select>
+  </div>
+
+  <div id="evals-content">
+    <div class="loading-state">Loading evaluations…</div>
+  </div>
+</div>
+
+<script>
+var _offset = 0, _limit = 50, _total = 0;
+
+function esc(s) {
+  if (!s) return '';
+  return s.toString().replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function fmtDate(s) {
+  if (!s) return '—';
+  try { return new Date(s.replace(' ', 'T') + 'Z').toLocaleString(); } catch(e) { return s; }
+}
+
+function barClass(v) {
+  if (v >= 0.7) return 'bar-good';
+  if (v >= 0.4) return 'bar-mid';
+  return 'bar-bad';
+}
+
+function scoreBar(v) {
+  var p = Math.round((v || 0) * 100);
+  return '<div class="score-bar">' +
+    '<div class="bar-track"><div class="bar-fill ' + barClass(v) + '" style="width:' + p + '%"></div></div>' +
+    '<span style="font-size:11px;">' + p + '%</span>' +
+  '</div>';
+}
+
+function outcomeBadge(o) {
+  var cls = o === 'success' ? 'badge-success' : (o && o.startsWith('error') ? 'badge-error' : 'badge-unknown');
+  return '<span class="badge-subtype ' + cls + '">' + esc(o || 'unknown') + '</span>';
+}
+
+function renderTable(evals) {
+  if (!evals.length) {
+    return '<div class="empty-state">No evaluations found. Score a session via POST /api/ace/sessions/&lt;id&gt;/eval.</div>';
+  }
+  var rows = evals.map(function(e) {
+    return '<tr>' +
+      '<td><a class="link" style="font-family:monospace;font-size:12px;" href="/coworker/sessions/' + esc(e.session_id) + '">' + esc((e.session_id || '').slice(0, 12)) + '…</a></td>' +
+      '<td>' + outcomeBadge(e.outcome) + '</td>' +
+      '<td>' + (e.turns_used || 0) + '</td>' +
+      '<td>' + scoreBar(e.efficiency_score || 0) + '</td>' +
+      '<td>' + scoreBar(e.reasoning_coverage || 0) + '</td>' +
+      '<td>' + scoreBar(1 - (e.tool_error_rate || 0)) + '</td>' +
+      '<td>$' + parseFloat(e.total_cost_usd || 0).toFixed(4) + '</td>' +
+      '<td style="font-size:12px;">' + fmtDate(e.graded_at) + '</td>' +
+    '</tr>';
+  });
+  return '<table class="evals-table">' +
+    '<thead><tr>' +
+      '<th>Session</th><th>Outcome</th><th>Turns</th>' +
+      '<th>Efficiency</th><th>Reasoning Cov.</th><th>Tool Success</th>' +
+      '<th>Cost</th><th>Graded</th>' +
+    '</tr></thead>' +
+    '<tbody>' + rows.join('') + '</tbody>' +
+  '</table>' +
+  '<div class="pagination">' +
+    '<button class="page-btn" onclick="loadEvals(_offset - _limit)" ' + (_offset <= 0 ? 'disabled' : '') + '>&#8592; Prev</button>' +
+    '<span class="page-info">' + (_offset + 1) + '–' + Math.min(_offset + evals.length, _total) + ' of ' + _total + '</span>' +
+    '<button class="page-btn" onclick="loadEvals(_offset + _limit)" ' + (_offset + evals.length >= _total ? 'disabled' : '') + '>Next &#8594;</button>' +
+  '</div>';
+}
+
+async function loadEvals(newOffset) {
+  if (newOffset < 0) newOffset = 0;
+  _offset = newOffset;
+  var outcome = document.getElementById('outcome-filter').value;
+  var params = new URLSearchParams({limit: _limit, offset: _offset});
+  if (outcome) params.set('outcome', outcome);
+
+  document.getElementById('evals-content').innerHTML = '<div class="loading-state">Loading…</div>';
+  try {
+    var res = await fetch('/api/ace/evals?' + params.toString());
+    var data = await res.json();
+    _total = data.total || 0;
+    document.getElementById('evals-content').innerHTML = renderTable(data.evals || []);
+  } catch(e) {
+    document.getElementById('evals-content').innerHTML = '<div class="loading-state" style="color:#e74c3c;">Load failed: ' + esc(String(e)) + '</div>';
+  }
+}
+
+document.addEventListener('DOMContentLoaded', function() { loadEvals(0); });
+</script>
+{% endblock %}

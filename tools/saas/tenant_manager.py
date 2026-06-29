@@ -44,6 +44,10 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger(__name__)
+
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
@@ -126,7 +130,7 @@ def _audit_platform(conn, tenant_id, actor, action, resource_type, resource_id=N
         """INSERT INTO audit_platform
            (tenant_id, event_type, action,
             details, ip_address, recorded_at)
-           VALUES (?, ?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s, %s)""",
         (
             tenant_id,
             resource_type,
@@ -189,7 +193,7 @@ def create_tenant(name, impact_level, tier, admin_email, admin_name=None, compar
 
     conn = get_platform_connection()
     try:
-        row = conn.execute("SELECT id FROM tenants WHERE slug = ? AND status != 'deleted'", (slug,)).fetchone()
+        row = conn.execute("SELECT id FROM tenants WHERE slug = %s AND status != 'deleted'", (slug,)).fetchone()
         if row:
             raise ValueError("A tenant with slug '{}' already exists (id={}).".format(slug, row[0]))
 
@@ -199,7 +203,7 @@ def create_tenant(name, impact_level, tier, admin_email, admin_name=None, compar
                (id, name, slug, status, tier, impact_level,
                 db_host, db_name, k8s_namespace, settings, compartments,
                 created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (tenant_id, name, slug, initial_status, tier_lower, il, None, None, None, json.dumps({}), compartments_json, now, now),
         )
 
@@ -208,7 +212,7 @@ def create_tenant(name, impact_level, tier, admin_email, admin_name=None, compar
             """INSERT INTO users
                (id, tenant_id, email, display_name, role, auth_method,
                 compartments, status, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 user_id,
                 tenant_id,
@@ -226,7 +230,7 @@ def create_tenant(name, impact_level, tier, admin_email, admin_name=None, compar
             """INSERT INTO api_keys
                (id, tenant_id, user_id, key_hash, key_prefix, name,
                 status, created_at, expires_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (key_id, tenant_id, user_id, key_hash, key_prefix, "initial-admin-key", "active", now, None),
         )
 
@@ -235,7 +239,7 @@ def create_tenant(name, impact_level, tier, admin_email, admin_name=None, compar
                (id, tenant_id, tier, status, max_projects, max_users,
                 allowed_il_levels, allowed_frameworks,
                 starts_at, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 subscription_id,
                 tenant_id,
@@ -317,7 +321,7 @@ def provision_tenant(tenant_id):
     """
     conn = get_platform_connection()
     try:
-        row = conn.execute("SELECT id, slug, status, impact_level FROM tenants WHERE id = ?", (tenant_id,)).fetchone()
+        row = conn.execute("SELECT id, slug, status, impact_level FROM tenants WHERE id = %s", (tenant_id,)).fetchone()
         if not row:
             raise ValueError("Tenant not found: {}".format(tenant_id))
 
@@ -338,9 +342,9 @@ def provision_tenant(tenant_id):
 
         conn.execute(
             """UPDATE tenants
-               SET db_host = ?, db_name = ?, k8s_namespace = ?,
-                   status = ?, updated_at = ?
-               WHERE id = ?""",
+               SET db_host = %s, db_name = %s, k8s_namespace = %s,
+                   status = %s, updated_at = %s
+               WHERE id = %s""",
             ("localhost-sqlite", db_name, k8s_namespace, TenantStatus.ACTIVE.value, now, tenant_id),
         )
 
@@ -355,6 +359,21 @@ def provision_tenant(tenant_id):
         )
 
         conn.commit()
+
+        try:
+            from tools.security.canvas_access import seed_tenant_defaults
+            seed_tenant_defaults(tenant_id, granted_by="system")
+        except Exception as _seed_exc:
+            logger.warning("seed_tenant_defaults failed for %s: %s", tenant_id, _seed_exc)
+
+        # Wire Prometheus metrics — best-effort
+        try:
+            import tools.observability.metrics as _obs_m
+            if _obs_m.active_tenants is not None:
+                _obs_m.active_tenants.inc()
+        except Exception:
+            pass
+
         return {
             "id": tenant_id,
             "slug": slug,
@@ -378,7 +397,7 @@ def approve_tenant(tenant_id, approver_id):
     """
     conn = get_platform_connection()
     try:
-        row = conn.execute("SELECT id, status FROM tenants WHERE id = ?", (tenant_id,)).fetchone()
+        row = conn.execute("SELECT id, status FROM tenants WHERE id = %s", (tenant_id,)).fetchone()
         if not row:
             raise ValueError("Tenant not found: {}".format(tenant_id))
         if row[1] != TenantStatus.PENDING.value:
@@ -387,9 +406,9 @@ def approve_tenant(tenant_id, approver_id):
         now = _utcnow()
         conn.execute(
             """UPDATE tenants
-               SET approved_by = ?, approved_at = ?,
-                   status = ?, updated_at = ?
-               WHERE id = ?""",
+               SET approved_by = %s, approved_at = %s,
+                   status = %s, updated_at = %s
+               WHERE id = %s""",
             (approver_id, now, TenantStatus.PROVISIONING.value, now, tenant_id),
         )
 
@@ -419,7 +438,7 @@ def list_tenants(status=None):
                 """SELECT id, name, slug, status, tier,
                           impact_level, db_host, db_name, k8s_namespace,
                           created_at, updated_at
-                   FROM tenants WHERE status = ?
+                   FROM tenants WHERE status = %s
                    ORDER BY created_at DESC""",
                 (status,),
             ).fetchall()
@@ -459,7 +478,7 @@ def get_tenant(tenant_id):
                       impact_level, db_host, db_name, k8s_namespace,
                       settings, artifact_config, bedrock_config, idp_config,
                       approved_by, approved_at, created_at, updated_at
-               FROM tenants WHERE id = ?""",
+               FROM tenants WHERE id = %s""",
             (tenant_id,),
         ).fetchone()
         if not row:
@@ -520,7 +539,7 @@ def update_tenant(tenant_id, **kwargs):
         existing = conn.execute(
             """SELECT id, settings, artifact_config, bedrock_config,
                       idp_config
-               FROM tenants WHERE id = ?""",
+               FROM tenants WHERE id = %s""",
             (tenant_id,),
         ).fetchone()
         if not existing:
@@ -580,7 +599,7 @@ def suspend_tenant(tenant_id):
     """Suspend a tenant.  Sets status to 'suspended'.  Reversible."""
     conn = get_platform_connection()
     try:
-        row = conn.execute("SELECT id, status FROM tenants WHERE id = ?", (tenant_id,)).fetchone()
+        row = conn.execute("SELECT id, status FROM tenants WHERE id = %s", (tenant_id,)).fetchone()
         if not row:
             raise ValueError("Tenant not found: {}".format(tenant_id))
         if row[1] == TenantStatus.DELETED.value:
@@ -588,7 +607,7 @@ def suspend_tenant(tenant_id):
 
         now = _utcnow()
         conn.execute(
-            "UPDATE tenants SET status = ?, updated_at = ? WHERE id = ?", (TenantStatus.SUSPENDED.value, now, tenant_id)
+            "UPDATE tenants SET status = %s, updated_at = %s WHERE id = %s", (TenantStatus.SUSPENDED.value, now, tenant_id)
         )
 
         _audit_platform(
@@ -596,6 +615,15 @@ def suspend_tenant(tenant_id):
         )
 
         conn.commit()
+
+        # Wire Prometheus metrics — best-effort
+        try:
+            import tools.observability.metrics as _obs_m
+            if _obs_m.active_tenants is not None:
+                _obs_m.active_tenants.dec()
+        except Exception:
+            pass
+
         return {"id": tenant_id, "status": TenantStatus.SUSPENDED.value, "updated_at": now}
     except Exception:
         conn.rollback()
@@ -608,7 +636,7 @@ def delete_tenant(tenant_id):
     """Soft-delete a tenant.  Sets status to 'deleted'.  Data is retained."""
     conn = get_platform_connection()
     try:
-        row = conn.execute("SELECT id, status FROM tenants WHERE id = ?", (tenant_id,)).fetchone()
+        row = conn.execute("SELECT id, status FROM tenants WHERE id = %s", (tenant_id,)).fetchone()
         if not row:
             raise ValueError("Tenant not found: {}".format(tenant_id))
         if row[1] == TenantStatus.DELETED.value:
@@ -616,14 +644,14 @@ def delete_tenant(tenant_id):
 
         now = _utcnow()
         conn.execute(
-            "UPDATE tenants SET status = ?, updated_at = ? WHERE id = ?", (TenantStatus.DELETED.value, now, tenant_id)
+            "UPDATE tenants SET status = %s, updated_at = %s WHERE id = %s", (TenantStatus.DELETED.value, now, tenant_id)
         )
 
-        conn.execute("UPDATE api_keys SET status = 'revoked' WHERE tenant_id = ?", (tenant_id,))
+        conn.execute("UPDATE api_keys SET status = 'revoked' WHERE tenant_id = %s", (tenant_id,))
 
         conn.execute(
             """UPDATE users SET status = 'deactivated'
-               WHERE tenant_id = ?""",
+               WHERE tenant_id = %s""",
             (tenant_id,),
         )
 
@@ -638,6 +666,15 @@ def delete_tenant(tenant_id):
         )
 
         conn.commit()
+
+        # Wire Prometheus metrics — best-effort
+        try:
+            import tools.observability.metrics as _obs_m
+            if _obs_m.active_tenants is not None:
+                _obs_m.active_tenants.dec()
+        except Exception:
+            pass
+
         return {"id": tenant_id, "status": TenantStatus.DELETED.value, "updated_at": now}
     except Exception:
         conn.rollback()
@@ -658,7 +695,7 @@ def get_tenant_db_path(tenant_id):
     """
     conn = get_platform_connection()
     try:
-        row = conn.execute("SELECT slug, db_host, db_name FROM tenants WHERE id = ?", (tenant_id,)).fetchone()
+        row = conn.execute("SELECT slug, db_host, db_name FROM tenants WHERE id = %s", (tenant_id,)).fetchone()
         if not row:
             raise ValueError("Tenant not found: {}".format(tenant_id))
 
@@ -684,7 +721,7 @@ def rotate_api_key(key_id, user_id):
     """
     conn = get_platform_connection()
     try:
-        row = conn.execute("SELECT id, tenant_id, user_id, status FROM api_keys WHERE id = ?", (key_id,)).fetchone()
+        row = conn.execute("SELECT id, tenant_id, user_id, status FROM api_keys WHERE id = %s", (key_id,)).fetchone()
         if not row:
             raise ValueError("API key not found: {}".format(key_id))
         if row[2] != user_id:
@@ -693,7 +730,7 @@ def rotate_api_key(key_id, user_id):
         tenant_id = row[1]
         now = _utcnow()
 
-        conn.execute("UPDATE api_keys SET status = 'revoked' WHERE id = ?", (key_id,))
+        conn.execute("UPDATE api_keys SET status = 'revoked' WHERE id = %s", (key_id,))
 
         new_key_id = "key-" + uuid.uuid4().hex[:12]
         full_key, key_prefix, key_hash = _generate_api_key()
@@ -702,7 +739,7 @@ def rotate_api_key(key_id, user_id):
             """INSERT INTO api_keys
                (id, tenant_id, user_id, key_hash, key_prefix, name,
                 status, created_at, expires_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (new_key_id, tenant_id, user_id, key_hash, key_prefix, "rotated-key", "active", now, None),
         )
 
@@ -740,7 +777,7 @@ def list_users(tenant_id):
     """List all users in a tenant."""
     conn = get_platform_connection()
     try:
-        row = conn.execute("SELECT id FROM tenants WHERE id = ?", (tenant_id,)).fetchone()
+        row = conn.execute("SELECT id FROM tenants WHERE id = %s", (tenant_id,)).fetchone()
         if not row:
             raise ValueError("Tenant not found: {}".format(tenant_id))
 
@@ -748,7 +785,7 @@ def list_users(tenant_id):
             """SELECT id, tenant_id, email, display_name, role,
                       auth_method, status, last_login,
                       created_at
-               FROM users WHERE tenant_id = ?
+               FROM users WHERE tenant_id = %s
                ORDER BY created_at""",
             (tenant_id,),
         ).fetchall()
@@ -787,7 +824,7 @@ def add_user(tenant_id, email, display_name, role, auth_method="api_key", compar
 
     conn = get_platform_connection()
     try:
-        tenant_row = conn.execute("SELECT id, status FROM tenants WHERE id = ?", (tenant_id,)).fetchone()
+        tenant_row = conn.execute("SELECT id, status FROM tenants WHERE id = %s", (tenant_id,)).fetchone()
         if not tenant_row:
             raise ValueError("Tenant not found: {}".format(tenant_id))
         if tenant_row[1] not in (TenantStatus.ACTIVE.value, TenantStatus.PROVISIONING.value):
@@ -799,7 +836,7 @@ def add_user(tenant_id, email, display_name, role, auth_method="api_key", compar
 
         sub_row = conn.execute(
             """SELECT max_users FROM subscriptions
-               WHERE tenant_id = ? AND status = 'active'""",
+               WHERE tenant_id = %s AND status = 'active'""",
             (tenant_id,),
         ).fetchone()
         if sub_row:
@@ -807,7 +844,7 @@ def add_user(tenant_id, email, display_name, role, auth_method="api_key", compar
             if max_users > 0:
                 current_count = conn.execute(
                     """SELECT COUNT(*) FROM users
-                       WHERE tenant_id = ? AND status = 'active'""",
+                       WHERE tenant_id = %s AND status = 'active'""",
                     (tenant_id,),
                 ).fetchone()[0]
                 if current_count >= max_users:
@@ -819,7 +856,7 @@ def add_user(tenant_id, email, display_name, role, auth_method="api_key", compar
 
         dup = conn.execute(
             """SELECT id FROM users
-               WHERE tenant_id = ? AND email = ? AND status = 'active'""",
+               WHERE tenant_id = %s AND email = %s AND status = 'active'""",
             (tenant_id, email),
         ).fetchone()
         if dup:
@@ -833,7 +870,7 @@ def add_user(tenant_id, email, display_name, role, auth_method="api_key", compar
             """INSERT INTO users
                (id, tenant_id, email, display_name, role, auth_method,
                 compartments, status, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (user_id, tenant_id, email, display_name, role_lower, auth_lower, compartments_json, "active", now),
         )
 
@@ -868,7 +905,7 @@ def remove_user(tenant_id, user_id):
     try:
         row = conn.execute(
             """SELECT id, email, role, status FROM users
-               WHERE id = ? AND tenant_id = ?""",
+               WHERE id = %s AND tenant_id = %s""",
             (user_id, tenant_id),
         ).fetchone()
         if not row:
@@ -880,13 +917,13 @@ def remove_user(tenant_id, user_id):
 
         conn.execute(
             """UPDATE users SET status = 'deactivated'
-               WHERE id = ?""",
+               WHERE id = %s""",
             (user_id,),
         )
 
         conn.execute(
             """UPDATE api_keys SET status = 'revoked'
-               WHERE user_id = ? AND tenant_id = ?""",
+               WHERE user_id = %s AND tenant_id = %s""",
             (user_id, tenant_id),
         )
 

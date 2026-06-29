@@ -278,7 +278,7 @@ class ReflexStateBase:
         conn = get_connection()
         try:
             row = conn.execute(
-                f"SELECT * FROM {self.state_table} WHERE reflex_name = ?",  # nosec B608 -- table/column names are internal constants, not user input
+                f"SELECT * FROM {self.state_table} WHERE reflex_name = %s",  # nosec B608 -- table/column names are internal constants, not user input
                 (self.name,),
             ).fetchone()
             if row:
@@ -289,7 +289,7 @@ class ReflexStateBase:
                 INSERT OR IGNORE INTO {self.state_table}
                     (reflex_name, enabled, consecutive_failures, circuit_breaker_open,
                      total_runs, total_successes, total_failures, updated_at)
-                VALUES (?, ?, 0, 0, 0, 0, 0, ?)
+                VALUES (%s, %s, 0, 0, 0, 0, 0, %s)
             """,
                 (self.name, 1 if self.config.get("enabled", True) else 0, now),
             )
@@ -317,11 +317,11 @@ class ReflexStateBase:
                 conn.execute(
                     f"""
                     UPDATE {self.state_table} SET
-                        last_run_at = ?, consecutive_failures = 0,
+                        last_run_at = %s, consecutive_failures = 0,
                         total_runs = total_runs + 1,
                         total_successes = total_successes + 1,
-                        last_metric_value = ?, last_error = NULL, updated_at = ?
-                    WHERE reflex_name = ?
+                        last_metric_value = %s, last_error = NULL, updated_at = %s
+                    WHERE reflex_name = %s
                 """,  # nosec B608 -- table/column names are internal constants, not user input
                     (now, metric_value, now, self.name),
                 )
@@ -337,7 +337,7 @@ class ReflexStateBase:
             try:
                 state = conn.execute(
                     f"SELECT consecutive_failures FROM {self.state_table} "  # nosec B608 -- table/column names are internal constants, not user input
-                    f"WHERE reflex_name = ?",
+                    f"WHERE reflex_name = %s",
                     (self.name,),
                 ).fetchone()
                 failures = (state["consecutive_failures"] if state else 0) + 1
@@ -346,13 +346,13 @@ class ReflexStateBase:
                 conn.execute(
                     f"""
                     UPDATE {self.state_table} SET
-                        last_run_at = ?, consecutive_failures = ?,
-                        circuit_breaker_open = ?,
-                        circuit_breaker_tripped_at = ?,
+                        last_run_at = %s, consecutive_failures = %s,
+                        circuit_breaker_open = %s,
+                        circuit_breaker_tripped_at = %s,
                         total_runs = total_runs + 1,
                         total_failures = total_failures + 1,
-                        last_error = ?, updated_at = ?
-                    WHERE reflex_name = ?
+                        last_error = %s, updated_at = %s
+                    WHERE reflex_name = %s
                 """,  # nosec B608 -- table/column names are internal constants, not user input
                     (now, failures, 1 if tripped else 0, now if tripped else None, error[:2000], now, self.name),
                 )
@@ -371,8 +371,8 @@ class ReflexStateBase:
                     f"""
                     UPDATE {self.state_table} SET
                         consecutive_failures = 0, circuit_breaker_open = 0,
-                        circuit_breaker_tripped_at = NULL, updated_at = ?
-                    WHERE reflex_name = ?
+                        circuit_breaker_tripped_at = NULL, updated_at = %s
+                    WHERE reflex_name = %s
                 """,  # nosec B608 -- table/column names are internal constants, not user input
                     (now, self.name),
                 )
@@ -392,8 +392,8 @@ class ReflexStateBase:
         try:
             conn.execute(
                 f"""
-                UPDATE {self.state_table} SET enabled = ?, updated_at = ?
-                WHERE reflex_name = ?
+                UPDATE {self.state_table} SET enabled = %s, updated_at = %s
+                WHERE reflex_name = %s
             """,  # nosec B608 -- table/column names are internal constants, not user input
                 (1 if enabled else 0, now, self.name),
             )
@@ -628,7 +628,7 @@ class DaemonBase(abc.ABC):
                 INSERT INTO daemon_checkpoints
                     (id, daemon_name, reflex_name, phase, partial_results,
                      created_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s)
                 ON CONFLICT(daemon_name, reflex_name) DO UPDATE SET
                     id = excluded.id,
                     phase = excluded.phase,
@@ -659,7 +659,7 @@ class DaemonBase(abc.ABC):
         conn = get_connection()
         try:
             row = conn.execute(
-                "SELECT * FROM daemon_checkpoints WHERE daemon_name = ? AND reflex_name = ?",
+                "SELECT * FROM daemon_checkpoints WHERE daemon_name = %s AND reflex_name = %s",
                 (self.daemon_name, reflex_name),
             ).fetchone()
             if not row:
@@ -679,7 +679,7 @@ class DaemonBase(abc.ABC):
         conn = get_connection()
         try:
             conn.execute(
-                "DELETE FROM daemon_checkpoints WHERE daemon_name = ? AND reflex_name = ?",
+                "DELETE FROM daemon_checkpoints WHERE daemon_name = %s AND reflex_name = %s",
                 (self.daemon_name, reflex_name),
             )
             conn.commit()
@@ -976,7 +976,7 @@ class DaemonBase(abc.ABC):
         conn = get_connection()
         try:
             row = conn.execute(
-                f"SELECT COUNT(*) as cnt FROM {audit_table} WHERE created_at > ?",  # nosec B608 -- table/column names are internal constants, not user input
+                f"SELECT COUNT(*) as cnt FROM {audit_table} WHERE created_at > %s",  # nosec B608 -- table/column names are internal constants, not user input
                 ((utcnow() - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ"),),
             ).fetchone()
             events_24h = row["cnt"] if row else 0

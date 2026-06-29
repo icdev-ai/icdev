@@ -12,7 +12,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from tools.db.storage import get_connection  # noqa: E402
+from tools.db.storage import get_connection, sql_placeholder  # noqa: E402
 
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
@@ -42,12 +42,12 @@ def _table_exists(conn, table_name: str) -> bool:
     try:
         if getattr(conn, "_backend", "sqlite") == "postgresql":
             row = conn.execute(
-                "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = ?",
+                "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = %s",
                 (table_name,),
             ).fetchone()
             return row is not None
         row = conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=%s",
             (table_name,),
         ).fetchone()
         return row is not None
@@ -62,6 +62,7 @@ def _table_exists(conn, table_name: str) -> bool:
 def debt_summary():
     """Overall compliance debt score, optionally filtered by project_id."""
     conn = _get_db()
+    ph = sql_placeholder(conn)
     try:
         project_id = request.args.get("project_id")
 
@@ -71,7 +72,7 @@ def debt_summary():
             q = "SELECT severity, COUNT(*) AS cnt FROM poam_items WHERE status NOT IN ('completed','accepted_risk')"
             params = []
             if project_id:
-                q += " AND project_id = ?"
+                q += f" AND project_id = {ph}"
                 params.append(project_id)
             q += " GROUP BY severity"
             for row in conn.execute(q, params).fetchall():
@@ -87,7 +88,7 @@ def debt_summary():
             )
             params = []
             if project_id:
-                q += " AND project_id = ?"
+                q += f" AND project_id = {ph}"
                 params.append(project_id)
             row = conn.execute(q, params).fetchone()
             control_debt = (row["cnt"] if row else 0) * CONTROL_WEIGHT
@@ -98,7 +99,7 @@ def debt_summary():
             q = "SELECT severity, COUNT(*) AS cnt FROM stig_findings WHERE status = 'Open'"
             params = []
             if project_id:
-                q += " AND project_id = ?"
+                q += f" AND project_id = {ph}"
                 params.append(project_id)
             q += " GROUP BY severity"
             for row in conn.execute(q, params).fetchall():
@@ -123,7 +124,7 @@ def debt_summary():
                 )
                 params = [today]
             if project_id:
-                q += " AND project_id = ?"
+                q += f" AND project_id = {ph}"
                 params.append(project_id)
             row = conn.execute(q, params).fetchone()
             ato_debt = (row["cnt"] if row else 0) * 10
@@ -144,7 +145,7 @@ def debt_summary():
                 t_params_opened = [today]
                 t_params_closed = [today]
             if project_id:
-                base_filter = " AND project_id = ?"
+                base_filter = f" AND project_id = {ph}"
                 t_params_opened.append(project_id)
                 t_params_closed.append(project_id)
 
@@ -190,6 +191,7 @@ def debt_summary():
 def debt_burndown():
     """Monthly burndown chart data for POAMs."""
     conn = _get_db()
+    ph = sql_placeholder(conn)
     try:
         project_id = request.args.get("project_id")
         months = int(request.args.get("months", 6))
@@ -201,7 +203,7 @@ def debt_burndown():
         base_filter = ""
         params_base = []
         if project_id:
-            base_filter = " AND project_id = ?"
+            base_filter = f" AND project_id = {ph}"
             params_base = [project_id]
 
         # Opened per month
@@ -293,6 +295,7 @@ def debt_burndown():
 def debt_poams():
     """POAM breakdown with filters and pagination."""
     conn = _get_db()
+    ph = sql_placeholder(conn)
     try:
         if not _table_exists(conn, "poam_items"):
             return jsonify({"poam_items": [], "total": 0, "page": 1, "per_page": 25})
@@ -328,17 +331,17 @@ def debt_poams():
             params = [today, today]
 
         if project_id:
-            q += " AND project_id = ?"
+            q += f" AND project_id = {ph}"
             params.append(project_id)
         if severity:
-            q += " AND severity = ?"
+            q += f" AND severity = {ph}"
             params.append(severity)
         if status:
-            q += " AND status = ?"
+            q += f" AND status = {ph}"
             params.append(status)
         if overdue and overdue.lower() in ("true", "1", "yes"):
             q += (
-                " AND milestone_date IS NOT NULL AND milestone_date < ? AND status NOT IN ('completed','accepted_risk')"
+                f" AND milestone_date IS NOT NULL AND milestone_date < {ph} AND status NOT IN ('completed','accepted_risk')"
             )
             params.append(today)
 
@@ -348,7 +351,7 @@ def debt_poams():
 
         # Sort and paginate
         q += " ORDER BY days_overdue DESC, severity, created_at DESC"
-        q += " LIMIT ? OFFSET ?"
+        q += f" LIMIT {ph} OFFSET {ph}"
         params.extend([per_page, (page - 1) * per_page])
 
         rows = conn.execute(q, params).fetchall()
@@ -374,6 +377,7 @@ def debt_poams():
 def debt_controls():
     """Unassessed/unimplemented controls grouped by family."""
     conn = _get_db()
+    ph = sql_placeholder(conn)
     try:
         if not _table_exists(conn, "project_controls"):
             return jsonify({"families": [], "total_needing_attention": 0})
@@ -401,7 +405,7 @@ def debt_controls():
 
         params = []
         if project_id:
-            q += " AND pc.project_id = ?" if has_cc else " AND project_id = ?"
+            q += f" AND pc.project_id = {ph}" if has_cc else f" AND project_id = {ph}"
             params.append(project_id)
 
         rows = conn.execute(q, params).fetchall()
@@ -509,6 +513,7 @@ def expiring_atos():
 def sla_compliance():
     """SLA compliance for POAM remediation by severity."""
     conn = _get_db()
+    ph = sql_placeholder(conn)
     try:
         if not _table_exists(conn, "poam_items"):
             return jsonify({"sla": []})
@@ -521,14 +526,14 @@ def sla_compliance():
             base_filter = ""
             params = [today, str(max_days)]
             if project_id:
-                base_filter = " AND project_id = ?"
+                base_filter = f" AND project_id = {ph}"
                 params.append(project_id)
 
             # Completed POAMs for this severity
             proj_params = params[2:] if project_id else []
             completed_q = (
                 "SELECT COUNT(*) AS cnt FROM poam_items "  # nosec B608 -- table/column names are internal constants, not user input
-                "WHERE severity = ? AND status = 'completed'" + base_filter
+                f"WHERE severity = {ph} AND status = 'completed'" + base_filter
             )
             if _is_pg(conn):
                 days_diff_expr = (
@@ -536,29 +541,29 @@ def sla_compliance():
                 )
                 within_sla_q = (
                     "SELECT COUNT(*) AS cnt FROM poam_items "  # nosec B608 -- table/column names are internal constants, not user input
-                    "WHERE severity = ? AND status = 'completed' "
+                    f"WHERE severity = {ph} AND status = 'completed' "
                     "AND completion_date IS NOT NULL AND created_at IS NOT NULL "
-                    f"AND {days_diff_expr} <= ?" + base_filter
+                    f"AND {days_diff_expr} <= {ph}" + base_filter
                 )
                 open_days_expr = "CAST(EXTRACT(EPOCH FROM (NOW() - created_at::timestamp)) / 86400 AS INTEGER)"
                 open_past_q = (
                     "SELECT COUNT(*) AS cnt FROM poam_items "  # nosec B608 -- table/column names are internal constants, not user input
-                    "WHERE severity = ? AND status NOT IN ('completed','accepted_risk') "
+                    f"WHERE severity = {ph} AND status NOT IN ('completed','accepted_risk') "
                     "AND created_at IS NOT NULL "
-                    f"AND {open_days_expr} > ?" + base_filter
+                    f"AND {open_days_expr} > {ph}" + base_filter
                 )
             else:
                 within_sla_q = (
                     "SELECT COUNT(*) AS cnt FROM poam_items "  # nosec B608 -- table/column names are internal constants, not user input
-                    "WHERE severity = ? AND status = 'completed' "
+                    f"WHERE severity = {ph} AND status = 'completed' "
                     "AND completion_date IS NOT NULL AND created_at IS NOT NULL "
-                    "AND CAST(julianday(completion_date) - julianday(created_at) AS INTEGER) <= ?" + base_filter
+                    f"AND CAST(julianday(completion_date) - julianday(created_at) AS INTEGER) <= {ph}" + base_filter
                 )
                 open_past_q = (
                     "SELECT COUNT(*) AS cnt FROM poam_items "  # nosec B608 -- table/column names are internal constants, not user input
-                    "WHERE severity = ? AND status NOT IN ('completed','accepted_risk') "
+                    f"WHERE severity = {ph} AND status NOT IN ('completed','accepted_risk') "
                     "AND created_at IS NOT NULL "
-                    "AND CAST(julianday(?) - julianday(created_at) AS INTEGER) > ?" + base_filter
+                    f"AND CAST(julianday({ph}) - julianday(created_at) AS INTEGER) > {ph}" + base_filter
                 )
 
             total_completed = conn.execute(completed_q, [sev] + proj_params).fetchone()["cnt"]

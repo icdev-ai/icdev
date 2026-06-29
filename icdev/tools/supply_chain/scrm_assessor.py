@@ -145,7 +145,7 @@ def _log_audit(conn, project_id, event_type, action, details):
         conn.execute(
             """INSERT INTO audit_trail
                (project_id, event_type, actor, action, details, classification)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s)""",
             (
                 project_id,
                 event_type,
@@ -206,7 +206,7 @@ def _score_dependency(conn, project_id, vendor_id):
     count = 0
     rows = conn.execute(
         """SELECT metadata FROM supply_chain_dependencies
-           WHERE project_id = ? AND metadata IS NOT NULL""",
+           WHERE project_id = %s AND metadata IS NOT NULL""",
         (project_id,),
     ).fetchall()
     for r in rows:
@@ -220,9 +220,9 @@ def _score_dependency(conn, project_id, vendor_id):
     # Also count direct vendor-type dependencies
     count += conn.execute(
         """SELECT COUNT(*) FROM supply_chain_dependencies
-           WHERE project_id = ?
-             AND ((source_type = 'vendor' AND source_id = ?)
-               OR (target_type = 'vendor' AND target_id = ?))""",
+           WHERE project_id = %s
+             AND ((source_type = 'vendor' AND source_id = %s)
+               OR (target_type = 'vendor' AND target_id = %s))""",
         (project_id, vendor_id, vendor_id),
     ).fetchone()[0]
 
@@ -256,7 +256,7 @@ def assess_vendor(project_id, vendor_id, db_path=None):
     conn = _get_connection(db_path)
     try:
         row = conn.execute(
-            "SELECT * FROM supply_chain_vendors WHERE id = ? AND project_id = ?",
+            "SELECT * FROM supply_chain_vendors WHERE id = %s AND project_id = %s",
             (vendor_id, project_id),
         ).fetchone()
         if not row:
@@ -358,7 +358,7 @@ def assess_vendor(project_id, vendor_id, db_path=None):
                 risk_category, risk_score, likelihood, impact,
                 mitigations, residual_risk, nist_161_controls,
                 assessed_by, assessed_at, next_assessment)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 assessment_id,
                 project_id,
@@ -381,8 +381,8 @@ def assess_vendor(project_id, vendor_id, db_path=None):
         # Update vendor risk tier
         conn.execute(
             """UPDATE supply_chain_vendors
-               SET scrm_risk_tier = ?, last_assessed = ?, updated_at = ?
-               WHERE id = ?""",
+               SET scrm_risk_tier = %s, last_assessed = %s, updated_at = %s
+               WHERE id = %s""",
             (risk_tier, now, now, vendor_id),
         )
         conn.commit()
@@ -422,7 +422,7 @@ def assess_project(project_id, db_path=None):
     conn = _get_connection(db_path)
     try:
         vendors = conn.execute(
-            "SELECT * FROM supply_chain_vendors WHERE project_id = ?",
+            "SELECT * FROM supply_chain_vendors WHERE project_id = %s",
             (project_id,),
         ).fetchall()
 
@@ -493,7 +493,7 @@ def get_prohibited_vendors(project_id, db_path=None):
     try:
         rows = conn.execute(
             """SELECT * FROM supply_chain_vendors
-               WHERE project_id = ? AND section_889_status = 'prohibited'
+               WHERE project_id = %s AND section_889_status = 'prohibited'
                ORDER BY vendor_name""",
             (project_id,),
         ).fetchall()

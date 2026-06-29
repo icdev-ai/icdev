@@ -119,7 +119,7 @@ def _ensure_tables() -> None:
                     "INSERT INTO ad_risk_profiles "
                     "(id, profile_name, max_position_pct, max_daily_budget, min_confidence_to_trade, "
                     "preferred_directions, max_portfolio_beta, max_daily_orders, is_active) "
-                    "VALUES (?,?,?,?,?,?,?,?,?)",
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                     (f"rp-{uuid.uuid4().hex[:12]}", name, pos_pct, budget, min_conf,
                      json.dumps(prefs), beta, max_ord, active),
                 )
@@ -203,7 +203,7 @@ def _fetch_latest_signal(ticker: str) -> dict | None:
     try:
         row = conn.execute(
             "SELECT ticker, direction, composite_score, confidence, component_scores, status, created_at "
-            "FROM ad_signals WHERE ticker = ? ORDER BY created_at DESC LIMIT 1",
+            "FROM ad_signals WHERE ticker = %s ORDER BY created_at DESC LIMIT 1",
             (ticker,),
         ).fetchone()
         if not row:
@@ -224,7 +224,7 @@ def _fetch_latest_run(ticker: str) -> dict | None:
     try:
         row = conn.execute(
             "SELECT id, result_json, created_at FROM ad_analysis_runs "
-            "WHERE ticker = ? AND status = 'completed' "
+            "WHERE ticker = %s AND status = 'completed' "
             "ORDER BY created_at DESC LIMIT 1",
             (ticker,),
         ).fetchone()
@@ -520,7 +520,7 @@ def run_expert_analysis(ticker: str) -> list[dict]:
             conn.execute(
                 "INSERT INTO ad_expert_opinions "
                 "(id, ticker, expert_key, expert_name, direction, conviction, reasoning, risk_profile, created_at) "
-                "VALUES (?,?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (f"op-{uuid.uuid4().hex[:12]}", ticker, op["expert_key"], op["expert_name"],
                  op["direction"], op["conviction"], op["reasoning"], op["risk_profile"], _now()),
             )
@@ -592,7 +592,7 @@ def synthesize_recommendation(ticker: str, opinions: list[dict]) -> dict:
         conn.execute(
             "INSERT INTO ad_cis_recommendations "
             "(id, ticker, final_direction, final_conviction, expert_votes, narrative, auto_trade, created_at) "
-            "VALUES (?,?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
             (rec_id, ticker, final_direction, final_conviction,
              json.dumps(votes), narrative, 1 if final_conviction >= 6 and final_direction == "BUY" else 0,
              _now()),
@@ -601,7 +601,7 @@ def synthesize_recommendation(ticker: str, opinions: list[dict]) -> dict:
         conn.execute(
             "INSERT INTO ad_expert_recommendations "
             "(id, ticker, direction, conviction, source, narrative, risk_profile, expert_votes, created_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (f"er-{uuid.uuid4().hex[:12]}", ticker, final_direction, final_conviction,
              "cis", narrative, active_name, json.dumps(votes), _now()),
         )
@@ -692,13 +692,13 @@ def set_active_risk_profile(name: str) -> dict:
     try:
         # Check target exists
         row = conn.execute(
-            "SELECT profile_name FROM ad_risk_profiles WHERE profile_name = ?", (name,)
+            "SELECT profile_name FROM ad_risk_profiles WHERE profile_name = %s", (name,)
         ).fetchone()
         if not row:
             return {"error": f"profile '{name}' does not exist",
                     "available": [p["profile_name"] for p in get_risk_profiles()]}
         conn.execute("UPDATE ad_risk_profiles SET is_active = 0")
-        conn.execute("UPDATE ad_risk_profiles SET is_active = 1, updated_at = ? WHERE profile_name = ?",
+        conn.execute("UPDATE ad_risk_profiles SET is_active = 1, updated_at = %s WHERE profile_name = %s",
                      (_now(), name))
         conn.commit()
         return {"activated": name, "status": "ok"}
@@ -778,7 +778,7 @@ def generate_daily_brief() -> dict:
         conn.execute(
             "INSERT INTO ad_daily_briefs "
             "(id, brief_date, market_summary, top_ideas, watchlist, risk_alerts, expert_highlights) "
-            "VALUES (?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s)",
             (f"db-{uuid.uuid4().hex[:12]}", brief["brief_date"], brief["market_summary"],
              json.dumps(brief["top_ideas"]), json.dumps(brief["watchlist"]),
              json.dumps(brief["risk_alerts"]), json.dumps(brief["expert_highlights"])),
@@ -803,7 +803,7 @@ def get_latest_recommendations(limit: int = 10) -> list[dict]:
     try:
         rows = conn.execute(
             "SELECT ticker, direction, conviction, source, narrative, risk_profile, created_at "
-            "FROM ad_expert_recommendations ORDER BY created_at DESC LIMIT ?",
+            "FROM ad_expert_recommendations ORDER BY created_at DESC LIMIT %s",
             (limit,),
         ).fetchall()
         if rows:
@@ -812,7 +812,7 @@ def get_latest_recommendations(limit: int = 10) -> list[dict]:
         rows = conn.execute(
             "SELECT ticker, final_direction AS direction, final_conviction AS conviction, "
             "'cis' AS source, narrative, created_at "
-            "FROM ad_cis_recommendations ORDER BY created_at DESC LIMIT ?",
+            "FROM ad_cis_recommendations ORDER BY created_at DESC LIMIT %s",
             (limit,),
         ).fetchall()
         return [dict(r) for r in rows]

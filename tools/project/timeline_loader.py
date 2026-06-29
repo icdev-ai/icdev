@@ -81,7 +81,7 @@ def get_project_timeline(project_id: str, db_conn=None) -> dict:
             """SELECT pi_number, status, progress_pct, start_date, end_date,
                       milestones, notes
                FROM project_pi_timeline
-               WHERE project_id = ?
+               WHERE project_id = %s
                ORDER BY pi_number""",
             (project_id,),
         ).fetchall()
@@ -199,7 +199,7 @@ def seed_project_timeline(project_id: str, contract_award_date: str = None, db_c
                 """INSERT OR IGNORE INTO project_pi_timeline
                    (project_id, pi_number, pi_name, pi_theme, pi_phase_group,
                     start_date, end_date, status, milestones, progress_pct, notes)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     project_id,
                     pi["pi_number"],
@@ -256,7 +256,7 @@ def update_pi_status(
     try:
         # Ensure the PI exists (seed if not)
         existing = conn.execute(
-            "SELECT id FROM project_pi_timeline WHERE project_id = ? AND pi_number = ?",
+            "SELECT id FROM project_pi_timeline WHERE project_id = %s AND pi_number = %s",
             (project_id, pi_number),
         ).fetchone()
 
@@ -278,7 +278,7 @@ def update_pi_status(
         params.extend([project_id, pi_number])
 
         conn.execute(
-            f"UPDATE project_pi_timeline SET {', '.join(fields)} WHERE project_id = ? AND pi_number = ?",
+            f"UPDATE project_pi_timeline SET {', '.join(fields)} WHERE project_id = %s AND pi_number = %s",
             tuple(params),
         )
         conn.commit()

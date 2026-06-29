@@ -54,7 +54,7 @@ def _get_profile(project_id: str) -> dict:
     """Get DevSecOps profile for project."""
     conn = _get_db()
     try:
-        row = conn.execute("SELECT * FROM devsecops_profiles WHERE project_id = ?", (project_id,)).fetchone()
+        row = conn.execute("SELECT * FROM devsecops_profiles WHERE project_id = %s", (project_id,)).fetchone()
         if not row:
             return {}
         return {

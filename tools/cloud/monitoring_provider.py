@@ -597,7 +597,7 @@ class LocalMonitoringProvider(MonitoringProvider):
             conn = get_connection(db_path=str(self._db_path))
             conn.execute(
                 "INSERT INTO local_metrics (namespace, metric_name, value, dimensions, recorded_at) "
-                "VALUES (?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s)",
                 (
                     namespace,
                     metric_name,
@@ -651,7 +651,7 @@ class LocalMonitoringProvider(MonitoringProvider):
             conn.execute(
                 "INSERT OR REPLACE INTO local_alarms "
                 "(name, namespace, metric_name, threshold, comparison, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s)",
                 (name, namespace, metric_name, threshold, comparison, datetime.now(timezone.utc).isoformat()),
             )
             conn.commit()

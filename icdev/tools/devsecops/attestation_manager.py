@@ -59,7 +59,7 @@ def _get_db():
 def _get_profile(project_id: str) -> dict:
     conn = _get_db()
     try:
-        row = conn.execute("SELECT * FROM devsecops_profiles WHERE project_id = ?", (project_id,)).fetchone()
+        row = conn.execute("SELECT * FROM devsecops_profiles WHERE project_id = %s", (project_id,)).fetchone()
         if not row:
             return {}
         return {
@@ -369,7 +369,7 @@ def get_attestation_status(project_id: str) -> dict:
         rows = conn.execute(
             """SELECT stage, tool, status, created_at
                FROM devsecops_pipeline_audit
-               WHERE project_id = ? AND stage IN ('image_signing', 'sbom_attestation')
+               WHERE project_id = %s AND stage IN ('image_signing', 'sbom_attestation')
                ORDER BY created_at DESC LIMIT 10""",
             (project_id,),
         ).fetchall()

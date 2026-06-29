@@ -10,7 +10,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from tools.db.storage import get_connection  # noqa: E402
+from tools.db.storage import get_connection, sql_placeholder  # noqa: E402
 
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
@@ -49,12 +49,12 @@ def _table_exists(conn, table_name: str) -> bool:
     try:
         if getattr(conn, "_backend", "sqlite") == "postgresql":
             row = conn.execute(
-                "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = ?",
+                "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = %s",
                 (table_name,),
             ).fetchone()
             return row is not None
         row = conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=%s",
             (table_name,),
         ).fetchone()
         return row is not None
@@ -66,6 +66,7 @@ def _table_exists(conn, table_name: str) -> bool:
 def stats():
     """GET /api/stig-manager/stats — Overall STIG statistics."""
     conn = _get_db()
+    ph = sql_placeholder(conn)
     try:
         if not _table_exists(conn, "stig_findings"):
             return jsonify(
@@ -84,7 +85,7 @@ def stats():
         where = ""
         params = []
         if project_id:
-            where = " WHERE project_id = ?"
+            where = f" WHERE project_id = {ph}"
             params = [project_id]
 
         # Total
@@ -135,7 +136,7 @@ def stats():
         # CAT1 Open
         cat1_where = " WHERE severity = 'CAT1' AND status = 'Open'"
         if project_id:
-            cat1_where += " AND project_id = ?"
+            cat1_where += f" AND project_id = {ph}"
         row = conn.execute(
             f"SELECT COUNT(*) FROM stig_findings{cat1_where}",  # nosec B608 -- table/column names are internal constants, not user input
             [project_id] if project_id else [],
@@ -163,6 +164,7 @@ def stats():
 def benchmarks():
     """GET /api/stig-manager/benchmarks — List distinct STIG benchmarks."""
     conn = _get_db()
+    ph = sql_placeholder(conn)
     try:
         if not _table_exists(conn, "stig_findings"):
             return jsonify({"benchmarks": []})
@@ -171,7 +173,7 @@ def benchmarks():
         where = ""
         params = []
         if project_id:
-            where = " WHERE project_id = ?"
+            where = f" WHERE project_id = {ph}"
             params = [project_id]
 
         rows = conn.execute(
@@ -220,6 +222,7 @@ def benchmarks():
 def findings():
     """GET /api/stig-manager/findings — Paginated findings list."""
     conn = _get_db()
+    ph = sql_placeholder(conn)
     try:
         if not _table_exists(conn, "stig_findings"):
             return jsonify({"findings": [], "total": 0, "page": 1, "per_page": 25})
@@ -235,19 +238,19 @@ def findings():
         conditions = []
         params = []
         if project_id:
-            conditions.append("project_id = ?")
+            conditions.append(f"project_id = {ph}")
             params.append(project_id)
         if stig_id:
-            conditions.append("stig_id = ?")
+            conditions.append(f"stig_id = {ph}")
             params.append(stig_id)
         if severity:
-            conditions.append("severity = ?")
+            conditions.append(f"severity = {ph}")
             params.append(severity)
         if status:
-            conditions.append("status = ?")
+            conditions.append(f"status = {ph}")
             params.append(status)
         if target_type:
-            conditions.append("target_type = ?")
+            conditions.append(f"target_type = {ph}")
             params.append(target_type)
 
         where = ""
@@ -271,7 +274,7 @@ def findings():
                 ORDER BY
                     CASE severity WHEN 'CAT1' THEN 1 WHEN 'CAT2' THEN 2 ELSE 3 END,
                     created_at DESC
-                LIMIT ? OFFSET ?""",  # nosec B608 -- table/column names are internal constants, not user input
+                LIMIT %s OFFSET %s""",  # nosec B608 -- table/column names are internal constants, not user input
             params + [per_page, offset],
         ).fetchall()
 
@@ -298,7 +301,7 @@ def finding_detail(finding_id):
             return jsonify({"error": "Table not found"}), 404
 
         row = conn.execute(
-            "SELECT * FROM stig_findings WHERE id = ?",
+            "SELECT * FROM stig_findings WHERE id = %s",
             (finding_id,),
         ).fetchone()
 
@@ -316,6 +319,7 @@ def finding_detail(finding_id):
 def coverage():
     """GET /api/stig-manager/coverage — Coverage heatmap data by target_type and severity."""
     conn = _get_db()
+    ph = sql_placeholder(conn)
     try:
         if not _table_exists(conn, "stig_findings"):
             return jsonify({"coverage": [], "targets": [], "severities": ["CAT1", "CAT2", "CAT3"]})
@@ -324,7 +328,7 @@ def coverage():
         where = ""
         params = []
         if project_id:
-            where = " WHERE project_id = ?"
+            where = f" WHERE project_id = {ph}"
             params = [project_id]
 
         rows = conn.execute(
@@ -380,6 +384,7 @@ def coverage():
 def cat1():
     """GET /api/stig-manager/cat1 — Open CAT1 findings (ATO blockers)."""
     conn = _get_db()
+    ph = sql_placeholder(conn)
     try:
         if not _table_exists(conn, "stig_findings"):
             return jsonify({"findings": [], "count": 0})
@@ -388,7 +393,7 @@ def cat1():
         where = " WHERE severity = 'CAT1' AND status = 'Open'"
         params = []
         if project_id:
-            where += " AND project_id = ?"
+            where += f" AND project_id = {ph}"
             params.append(project_id)
 
         rows = conn.execute(
@@ -437,15 +442,15 @@ def assess():
             return jsonify({"error": f"Invalid status. Must be one of: {valid_statuses}"}), 400
 
         # Verify finding exists
-        row = conn.execute("SELECT id FROM stig_findings WHERE id = ?", (finding_id,)).fetchone()
+        row = conn.execute("SELECT id FROM stig_findings WHERE id = %s", (finding_id,)).fetchone()
         if not row:
             return jsonify({"error": "Finding not found"}), 404
 
         conn.execute(
             """UPDATE stig_findings
-               SET status = ?, comments = ?, assessed_by = ?,
+               SET status = %s, comments = %s, assessed_by = %s,
                    assessed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-               WHERE id = ?""",
+               WHERE id = %s""",
             (new_status, comments, assessed_by, finding_id),
         )
         conn.commit()

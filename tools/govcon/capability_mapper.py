@@ -60,7 +60,7 @@ def _audit(conn, action, details="", actor="capability_mapper"):
     try:
         conn.execute(
             "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (str(uuid.uuid4()), _now(), "govcon.capability_map", actor, action, details, "govcon"),
         )
     except Exception:
@@ -250,7 +250,7 @@ def map_all_patterns(store=True):
                     conn.execute(
                         "INSERT INTO icdev_capability_map "
                         "(id, pattern_id, capability_id, coverage_score, grade, matched_keywords, created_at, metadata) "  # noqa: E501
-                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
                         (
                             str(uuid.uuid4()),
                             p_dict["id"],
@@ -284,7 +284,7 @@ def map_single_pattern(pattern_id, store=True):
     capabilities = load_capability_catalog()
     conn = _get_db()
 
-    pattern = conn.execute("SELECT * FROM rfp_requirement_patterns WHERE id = ?", (pattern_id,)).fetchone()
+    pattern = conn.execute("SELECT * FROM rfp_requirement_patterns WHERE id = %s", (pattern_id,)).fetchone()
 
     if not pattern:
         conn.close()
@@ -299,7 +299,7 @@ def map_single_pattern(pattern_id, store=True):
                 conn.execute(
                     "INSERT INTO icdev_capability_map "
                     "(id, pattern_id, capability_id, coverage_score, grade, matched_keywords, created_at, metadata) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
                     (
                         str(uuid.uuid4()),
                         pattern_id,
@@ -447,7 +447,7 @@ def get_compliance_matrix(opportunity_id):
 
     # Get shall statements for this opportunity
     stmts = conn.execute(
-        "SELECT * FROM rfp_shall_statements WHERE sam_opportunity_id = ? ORDER BY domain_category",
+        "SELECT * FROM rfp_shall_statements WHERE sam_opportunity_id = %s ORDER BY domain_category",
         (opportunity_id,),
     ).fetchall()
 

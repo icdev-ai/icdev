@@ -17,9 +17,23 @@
 # Env vars always override profile values (e.g., ICDEV_STORAGE_BACKEND).
 
 profiles:
+  community:
+    description: Free-tier community deployment. SQLite backend, community-supported canvases only.
+    storage_backend: sqlite
+    license_tier: community
+    llm:
+      provider: ollama
+      default_model: llama3.1:8b
+    airgap: false
+    default_enabled_components:
+      - ndc
+      - ohc
+      - logs
+
   local-dev:
     description: Local development on a single workstation. SQLite backend, cloud LLMs allowed, all canvases opt-in.
     storage_backend: sqlite
+    license_tier: professional
     llm:
       provider: anthropic
       default_model: claude-sonnet-4-6
@@ -36,6 +50,7 @@ profiles:
   air-gap:
     description: Disconnected environment. SQLite or local PostgreSQL, Ollama-only LLM routing, cloud features disabled.
     storage_backend: postgresql
+    license_tier: enterprise
     llm:
       provider: ollama
       default_model: llama3.1:8b
@@ -53,6 +68,7 @@ profiles:
   saas-il4:
     description: Multi-tenant SaaS at IL4/CUI. PostgreSQL backend, tenant isolation, cloud LLMs with BYOK.
     storage_backend: postgresql
+    license_tier: enterprise
     llm:
       provider: anthropic
       default_model: claude-sonnet-4-6
@@ -74,6 +90,7 @@ profiles:
   il6-secret:
     description: SIPR-only IL6/SECRET deployment. Air-gapped, NSA Type 1 encryption, no cloud dependencies.
     storage_backend: postgresql
+    license_tier: enterprise
     llm:
       provider: ollama
       default_model: llama3.1:8b
@@ -85,3 +102,46 @@ profiles:
       - sdc
       - mission_canvas
       - integrity
+
+  commercial:
+    description: Commercial enterprise deployment. No DoD markings, no classification banner, operator-branded.
+    storage_backend: postgresql
+    license_tier: professional
+    llm:
+      provider: anthropic
+      default_model: claude-sonnet-4-6
+    airgap: false
+    banner_mode: none
+    brand_path: args/brands/commercial.yaml
+    default_enabled_components:
+      - ndc
+      - aimc
+      - ohc
+      - dic
+      - aiify
+      - foundry
+      - admin_console
+
+  government:
+    description: DoD/IC government deployment. CUI banner, ICDEV™ branding, cloud LLMs with BYOK.
+    storage_backend: postgresql
+    license_tier: enterprise
+    llm:
+      provider: anthropic
+      default_model: claude-sonnet-4-6
+    airgap: false
+    enable_byok: true
+    enable_cui_banner: true
+    banner_mode: cui
+    brand_path: args/brands/government.yaml
+    default_enabled_components:
+      - ndc
+      - sdc
+      - aimc
+      - mission_canvas
+      - ohc
+      - integrity
+      - logs
+      - dic
+      - aiify
+      - foundry

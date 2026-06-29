@@ -1,4 +1,4 @@
-# [TEMPLATE: CUI // SP-CTI]
+﻿# [TEMPLATE: CUI // SP-CTI]
 """ICDEV™ Network Design Canvas — Flask Blueprint integration.
 
 Fully self-contained Blueprint mounted at /network/ inside the ICDEV dashboard.
@@ -7826,6 +7826,59 @@ def create_network_blueprint():
             "checked": {"ipam_blocks": ipam_count, "circuits": circuit_count},
         })
 
+    @bp.route("/conflicts")
+    @nc_login_required
+    def nc_conflicts_page():
+        """HITL conflict resolution UI."""
+        return render_template("network/conflicts.html")
+
+    @bp.route("/api/conflicts/resolve", methods=["POST"])
+    @nc_login_required
+    def nc_api_conflicts_resolve():
+        """Record a HITL conflict resolution action."""
+        import uuid as _uuid
+        from datetime import datetime, timezone
+        data = request.get_json(force=True) or {}
+        conflict_type = str(data.get("conflict_type") or "").strip()
+        detail = str(data.get("detail") or "").strip()
+        severity = str(data.get("severity") or "medium").strip()
+        action = str(data.get("action") or "acknowledged").strip()
+        note = str(data.get("note") or "").strip()
+        if not conflict_type or not detail:
+            return jsonify({"error": "conflict_type and detail are required"}), 400
+        if action not in ("acknowledged", "resolved"):
+            return jsonify({"error": "action must be acknowledged or resolved"}), 400
+        if severity not in ("high", "medium", "low"):
+            severity = "medium"
+        resolved_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        row_id = str(_uuid.uuid4())
+        conn = get_connection()
+        try:
+            conn.execute(
+                "INSERT INTO nc_conflict_resolutions (id, conflict_type, detail, severity, action, note, resolved_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (row_id, conflict_type, detail, severity, action, note, resolved_at),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        return jsonify({"ok": True, "id": row_id, "resolved_at": resolved_at})
+
+    @bp.route("/api/conflicts/resolutions", methods=["GET"])
+    @nc_login_required
+    def nc_api_conflicts_resolutions():
+        """Return all recorded conflict resolution actions, newest first."""
+        conn = get_connection()
+        try:
+            rows = conn.execute(
+                "SELECT id, conflict_type, detail, severity, action, note, resolved_at"
+                " FROM nc_conflict_resolutions ORDER BY resolved_at DESC LIMIT 200"
+            ).fetchall()
+        finally:
+            conn.close()
+        resolutions = [_row_to_dict(r) for r in rows]
+        return jsonify({"resolutions": resolutions})
+
     # ── Global Topology Canvas (JointJS read-only composite) ──────────────
     @bp.route("/global/canvas")
     @nc_login_required
@@ -13509,6 +13562,1012 @@ Planning rules:
     def nc_documents():
         """Document library — redirect to SOPs for now."""
         return redirect("/network/sops")
+
+    # ── Advisory History ───────────────────────────────────────────────────
+
+    @bp.route("/advisory-history")
+    @nc_login_required
+    def nc_advisory_history():
+        from tools.network.advisory import list_advisories, list_vendors
+        advisories = list_advisories(
+            vendor=request.args.get("vendor"),
+            severity=request.args.get("severity"),
+            status=request.args.get("status"),
+            date_from=request.args.get("date_from"),
+            date_to=request.args.get("date_to"),
+        )
+        vendors = list_vendors()
+        return render_template(
+            "network/advisory_history.html",
+            advisories=advisories,
+            vendors=vendors,
+        )
+
+    @bp.route("/api/advisories/export")
+    @nc_login_required
+    def nc_api_advisories_export():
+        import csv
+        import io
+        from flask import Response
+        from tools.network.advisory import list_advisories
+        items = list_advisories()
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(["CVE ID", "Vendor", "Severity", "Date", "Total Devices",
+                    "Impacted", "Remediation %", "Data Source", "HITL Status", "Status"])
+        for a in items:
+            w.writerow([
+                a.get("cve_id", ""), a.get("vendor", ""), a.get("severity", ""),
+                (a.get("published_date") or "")[:10], a.get("total_devices", 0),
+                a.get("impacted_devices", 0), a.get("remediation_pct", 0),
+                a.get("data_source", ""), a.get("hitl_status", ""), a.get("status", ""),
+            ])
+        return Response(buf.getvalue(), mimetype="text/csv",
+                        headers={"Content-Disposition": "attachment; filename=advisories.csv"})
+
+    # ── POAM ───────────────────────────────────────────────────────────────
+
+    @bp.route("/poam")
+    @nc_login_required
+    def nc_poam():
+        from tools.network.poam_generator import list_poam_items
+        from datetime import date
+        advisory_filter = request.args.get("advisory")
+        items = list_poam_items()
+        return render_template(
+            "network/poam.html",
+            items=items,
+            advisory_filter=advisory_filter,
+            today=date.today().isoformat(),
+        )
+
+    @bp.route("/api/poam/generate", methods=["POST"])
+    @nc_login_required
+    def nc_api_poam_generate():
+        from tools.network.poam_generator import generate_poam_item
+        data = request.get_json(silent=True) or {}
+        advisory_id = data.get("advisory_id", "")
+        try:
+            item = generate_poam_item(advisory_id, data)
+            return jsonify({"ok": True, "item": item})
+        except Exception as exc:
+            logger.exception("POAM generate failed")
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/poam/export")
+    @nc_login_required
+    def nc_api_poam_export():
+        from flask import Response
+        from tools.network.poam_generator import export_poam
+        fmt = request.args.get("format", "csv")
+        content, mimetype = export_poam(fmt)
+        ext = "json" if fmt == "json" else "csv"
+        return Response(content, mimetype=mimetype,
+                        headers={"Content-Disposition": f"attachment; filename=poam.{ext}"})
+
+    # ── Exceptions ─────────────────────────────────────────────────────────
+
+    @bp.route("/exceptions")
+    @nc_login_required
+    def nc_exceptions():
+        from tools.network.exception_registry import list_exceptions
+        from datetime import date
+        exceptions = list_exceptions()
+        return render_template(
+            "network/exceptions.html",
+            exceptions=exceptions,
+            today=date.today().isoformat(),
+        )
+
+    @bp.route("/exceptions/file")
+    @nc_login_required
+    def nc_exceptions_file_form():
+        """Redirect to exceptions page with file modal open."""
+        return redirect("/network/exceptions?open_modal=file")
+
+    @bp.route("/api/exception/file", methods=["POST"])
+    @nc_login_required
+    def nc_api_exception_file():
+        from tools.network.exception_registry import file_exception
+        data = request.get_json(silent=True) or {}
+        try:
+            exc = file_exception(data)
+            return jsonify({"ok": True, "exception": exc})
+        except Exception as e:
+            logger.exception("Exception filing failed")
+            return jsonify({"error": str(e)}), 500
+
+    @bp.route("/api/exception/<exc_id>/approve", methods=["POST"])
+    @nc_login_required
+    def nc_api_exception_approve(exc_id):
+        from tools.network.exception_registry import approve_exception
+        data = request.get_json(silent=True) or {}
+        level = data.get("level", "")
+        approver = data.get("approver", "")
+        if not level or not approver:
+            return jsonify({"error": "level and approver are required"}), 400
+        try:
+            exc = approve_exception(exc_id, level, approver)
+            return jsonify({"ok": True, "exception": exc})
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+        except Exception as e:
+            logger.exception("Exception approval failed")
+            return jsonify({"error": str(e)}), 500
+
+    # ── ATO Evidence Chain Export ──────────────────────────────────────────
+
+    def _gather_ato_evidence(advisory_id, conn):
+        """Collect all audit-chain rows for one advisory from available tables."""
+
+        def _q(sql, params=()):
+            try:
+                return [dict(r) for r in conn.execute(sql, params).fetchall()]
+            except Exception:
+                return []
+
+        def _q1(sql, params=()):
+            try:
+                row = conn.execute(sql, params).fetchone()
+                return dict(row) if row else None
+            except Exception:
+                return None
+
+        advisory = _q1("SELECT * FROM nc_advisories WHERE id = ?", (advisory_id,))
+
+        assessments = _q(
+            "SELECT * FROM nc_advisory_assessments WHERE advisory_id = ? ORDER BY created_at ASC",
+            (advisory_id,),
+        )
+
+        rem_actions = _q(
+            "SELECT * FROM nc_remediation_actions WHERE advisory_id = ? ORDER BY created_at ASC",
+            (advisory_id,),
+        )
+
+        rem_status_log: list = []
+        action_ids = [a.get("id") for a in rem_actions if a.get("id")]
+        if action_ids:
+            ph = ",".join("?" * len(action_ids))
+            rem_status_log = _q(
+                f"SELECT * FROM nc_remediation_status_log WHERE action_id IN ({ph}) ORDER BY created_at ASC",
+                action_ids,
+            )
+
+        poam_items = _q(
+            "SELECT * FROM nc_poam_items WHERE advisory_id = ? ORDER BY created_at ASC",
+            (advisory_id,),
+        )
+
+        poam_status_log: list = []
+        poam_ids = [p.get("id") for p in poam_items if p.get("id")]
+        if poam_ids:
+            ph = ",".join("?" * len(poam_ids))
+            poam_status_log = _q(
+                f"SELECT * FROM nc_poam_status_log WHERE poam_id IN ({ph}) ORDER BY created_at ASC",
+                poam_ids,
+            )
+
+        exceptions = _q(
+            "SELECT * FROM nc_exceptions WHERE advisory_id = ? ORDER BY created_at ASC",
+            (advisory_id,),
+        )
+
+        exception_approvals: list = []
+        exc_ids = [e.get("id") for e in exceptions if e.get("id")]
+        if exc_ids:
+            ph = ",".join("?" * len(exc_ids))
+            exception_approvals = _q(
+                f"SELECT * FROM nc_exception_approvals WHERE exception_id IN ({ph}) ORDER BY created_at ASC",
+                exc_ids,
+            )
+
+        audit_log = _q(
+            "SELECT * FROM nc_nqe_audit_log WHERE advisory_id = ? ORDER BY created_at ASC",
+            (advisory_id,),
+        )
+
+        return {
+            "advisory": advisory,
+            "assessments": assessments,
+            "remediation_actions": rem_actions,
+            "remediation_status_log": rem_status_log,
+            "poam_items": poam_items,
+            "poam_status_log": poam_status_log,
+            "exceptions": exceptions,
+            "exception_approvals": exception_approvals,
+            "audit_log": audit_log,
+        }
+
+    def _audit_ato_export(advisory_id, fmt, doc_hash):
+        """Append an audit-log entry for the export (best-effort; non-blocking)."""
+        try:
+            conn = get_connection()
+            conn.execute(
+                """INSERT INTO nc_nqe_audit_log
+                   (session_id, user_session, action, input_text, result_summary,
+                    raw_response_hash, advisory_id, created_at)
+                   VALUES (?,?,?,?,?,?,?,?)""",
+                (
+                    session.get("session_id", ""),
+                    session.get("user", ""),
+                    "export",
+                    fmt,
+                    f"ATO evidence chain export (format={fmt})",
+                    doc_hash,
+                    advisory_id,
+                    datetime.now(timezone.utc).isoformat(),
+                ),
+            )
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass
+
+    def _ato_safe(text):
+        """Coerce to latin-1-safe string for fpdf2 core fonts."""
+        _MAP = str.maketrans({
+            "—": "-", "–": "-", "→": "->", "←": "<-",
+            "≥": ">=", "≤": "<=", "°": "deg", "•": "*",
+            "’": "'", "‘": "'", "“": '"', "”": '"',
+            "™": "(TM)", "®": "(R)", "©": "(c)",
+            "×": "x", "÷": "/",
+        })
+        text = str(text).translate(_MAP)
+        return text.encode("latin-1", errors="replace").decode("latin-1")
+
+    def _build_ato_pdf(evidence, advisory_id):
+        """Return PDF bytes (fpdf2) or HTML bytes (fallback) for the evidence package."""
+        _CLASSIFICATION = "CUI // SP-CTI"
+        adv = evidence.get("advisory") or {}
+        meta = evidence.get("_meta", {})
+
+        def _cui_banner(pdf):
+            pdf.set_font("Helvetica", "B", 8)
+            pdf.set_fill_color(180, 30, 30)
+            pdf.set_text_color(255, 255, 255)
+            pdf.cell(0, 5, f"  {_CLASSIFICATION}", ln=True, fill=True)
+            pdf.set_text_color(0, 0, 0)
+
+        def _section_heading(pdf, title):
+            pdf.set_font("Helvetica", "B", 11)
+            pdf.set_fill_color(220, 230, 245)
+            pdf.set_text_color(20, 60, 120)
+            pdf.cell(0, 7, _ato_safe(title), ln=True, fill=True)
+            pdf.set_text_color(0, 0, 0)
+            pdf.ln(1)
+
+        def _kv_row(pdf, label, value):
+            pdf.set_font("Helvetica", "B", 8)
+            pdf.cell(60, 5, _ato_safe(str(label) + ":"), ln=False)
+            pdf.set_font("Helvetica", "", 8)
+            pdf.multi_cell(0, 5, _ato_safe(str(value)[:300]))
+
+        def _cui_footer_all(pdf):
+            total = pdf.page
+            for pno in range(1, total + 1):
+                pdf.page = pno
+                pdf.set_y(-12)
+                pdf.set_font("Helvetica", "B", 7)
+                pdf.set_fill_color(180, 30, 30)
+                pdf.set_text_color(255, 255, 255)
+                pdf.cell(0, 4,
+                         f"  {_CLASSIFICATION} | Page {pno} of {total} | ICDEV ATO Evidence Package",
+                         ln=True, fill=True)
+            pdf.page = total
+
+        try:
+            from fpdf import FPDF
+
+            pdf = FPDF(orientation="P", unit="mm", format="A4")
+            pdf.set_auto_page_break(auto=True, margin=18)
+            pdf.set_margins(15, 20, 15)
+
+            # ── Cover ─────────────────────────────────────────────────────
+            pdf.add_page()
+            _cui_banner(pdf)
+            pdf.ln(12)
+            pdf.set_font("Helvetica", "B", 20)
+            pdf.set_text_color(20, 60, 120)
+            pdf.cell(0, 12, "ATO Evidence Package", ln=True, align="C")
+            pdf.set_font("Helvetica", "B", 13)
+            pdf.set_text_color(50, 50, 50)
+            pdf.cell(0, 8, _ato_safe(f"Advisory ID: {advisory_id}  |  CVE: {adv.get('cve_id','N/A')}"), ln=True, align="C")
+            pdf.set_font("Helvetica", "", 11)
+            pdf.cell(0, 7, _ato_safe(f"Vendor: {adv.get('vendor','N/A')}  |  Severity: {str(adv.get('severity','N/A')).upper()}"), ln=True, align="C")
+            pdf.cell(0, 7, _ato_safe(f"Status: {adv.get('status','N/A')}"), ln=True, align="C")
+            pdf.ln(4)
+            pdf.set_font("Helvetica", "I", 8)
+            pdf.set_text_color(100, 100, 100)
+            pdf.cell(0, 5, _ato_safe(f"Exported: {meta.get('exported_at','')}"), ln=True, align="C")
+            pdf.cell(0, 5, _ato_safe(f"SHA-256: {meta.get('doc_hash_sha256','')}"), ln=True, align="C")
+            pdf.set_text_color(0, 0, 0)
+
+            # ── Sec 1: Advisory Record ─────────────────────────────────────
+            pdf.add_page()
+            _cui_banner(pdf)
+            pdf.ln(2)
+            _section_heading(pdf, "1. Advisory Record")
+            for label, key in [
+                ("CVE ID", "cve_id"), ("Vendor", "vendor"), ("Severity", "severity"),
+                ("Status", "status"), ("Published Date", "published_date"),
+                ("Total Devices", "total_devices"), ("Impacted Devices", "impacted_devices"),
+                ("Remediation %", "remediation_pct"), ("Data Source", "data_source"),
+                ("HITL Status", "hitl_status"), ("HITL Approved By", "hitl_approved_by"),
+                ("HITL Approved At", "hitl_approved_at"),
+                ("Source Doc Hash (SHA-256)", "source_doc_hash"),
+                ("Source Doc Format", "source_doc_format"),
+                ("Extraction Confidence", "extraction_confidence"),
+                ("Created", "created_at"), ("Updated", "updated_at"),
+            ]:
+                val = adv.get(key, "")
+                if val not in (None, "", 0):
+                    _kv_row(pdf, label, val)
+            if adv.get("description"):
+                pdf.ln(2)
+                pdf.set_font("Helvetica", "B", 8)
+                pdf.cell(0, 5, "Description:", ln=True)
+                pdf.set_font("Helvetica", "", 8)
+                pdf.multi_cell(0, 5, _ato_safe(str(adv["description"])[:1500]))
+
+            # ── Sec 2: Impact Assessments ──────────────────────────────────
+            for idx, asmt in enumerate(evidence.get("assessments", []), 1):
+                pdf.add_page()
+                _cui_banner(pdf)
+                pdf.ln(2)
+                _section_heading(pdf, f"2.{idx} Impact Assessment (ID: {asmt.get('id','')})")
+                for label, key in [
+                    ("Network ID", "network_id"), ("FWD Snapshot ID", "fwd_snapshot_id"),
+                    ("Data Source", "data_source"),
+                    ("NQL — Total Devices", "nql_total"), ("NQL — Impacted", "nql_impacted"),
+                    ("NQL — AI Generated", "nql_ai_generated"), ("NQL — Template Based", "nql_template_based"),
+                    ("Total Devices", "total_devices"), ("Impacted Count", "impacted_count"),
+                    ("Raw Response Hash (SHA-256)", "raw_response_hash"),
+                    ("AI Confidence", "ai_confidence"),
+                    ("Cross-Val Delta %", "cross_validation_delta_pct"),
+                    ("Cross-Val Warning", "cross_validation_warning"),
+                    ("HITL Approved By", "approved_by"), ("HITL Approved At", "approved_at"),
+                    ("Created", "created_at"),
+                ]:
+                    val = asmt.get(key, "")
+                    if val not in (None, ""):
+                        _kv_row(pdf, label, val)
+
+            # ── Sec 3: Remediation Actions ─────────────────────────────────
+            if evidence.get("remediation_actions"):
+                pdf.add_page()
+                _cui_banner(pdf)
+                pdf.ln(2)
+                _section_heading(pdf, "3. Remediation Actions")
+                for ra in evidence["remediation_actions"]:
+                    pdf.set_font("Helvetica", "BI", 9)
+                    pdf.cell(0, 6, _ato_safe(f"Action {ra.get('id','')[:24]}"), ln=True)
+                    for label, key in [
+                        ("Device ID", "device_id"), ("Action Type", "action_type"),
+                        ("Performed By", "performed_by"), ("Result", "result"),
+                        ("Notes", "notes"), ("Created", "created_at"),
+                    ]:
+                        val = ra.get(key, "")
+                        if val not in (None, ""):
+                            _kv_row(pdf, label, val)
+                    pdf.ln(2)
+                if evidence.get("remediation_status_log"):
+                    pdf.ln(2)
+                    _section_heading(pdf, "3a. Remediation Status Log")
+                    pdf.set_font("Helvetica", "", 8)
+                    for sl in evidence["remediation_status_log"]:
+                        pdf.cell(0, 5, _ato_safe(
+                            f"{sl.get('created_at','')} | action={sl.get('action_id','')} | "
+                            f"{sl.get('old_status','?')} -> {sl.get('new_status','')} | "
+                            f"by={sl.get('updated_by','')}"
+                        ), ln=True)
+
+            # ── Sec 4: POAM Items ──────────────────────────────────────────
+            if evidence.get("poam_items"):
+                pdf.add_page()
+                _cui_banner(pdf)
+                pdf.ln(2)
+                _section_heading(pdf, "4. POAM Items")
+                for pi in evidence["poam_items"]:
+                    pdf.set_font("Helvetica", "BI", 9)
+                    pdf.cell(0, 6, _ato_safe(f"POAM {pi.get('poam_id', pi.get('id',''))}"), ln=True)
+                    for label, key in [
+                        ("CVE", "cve_id"), ("Weakness", "weakness"), ("Control ID", "control_id"),
+                        ("Severity", "severity"), ("Status", "status"),
+                        ("Scheduled Completion", "scheduled_completion"),
+                        ("Responsible Party", "responsible_party"),
+                        ("Twin Validated", "twin_validated"), ("Resources", "resources"),
+                    ]:
+                        val = pi.get(key, "")
+                        if val not in (None, "", 0):
+                            _kv_row(pdf, label, val)
+                    pdf.ln(2)
+                if evidence.get("poam_status_log"):
+                    pdf.ln(2)
+                    _section_heading(pdf, "4a. POAM Status Log")
+                    pdf.set_font("Helvetica", "", 8)
+                    for sl in evidence["poam_status_log"]:
+                        pdf.cell(0, 5, _ato_safe(
+                            f"{sl.get('created_at','')} | poam={sl.get('poam_id','')} | "
+                            f"{sl.get('old_status','?')} -> {sl.get('new_status','')} | "
+                            f"by={sl.get('updated_by','')}"
+                        ), ln=True)
+
+            # ── Sec 5: Exceptions ──────────────────────────────────────────
+            if evidence.get("exceptions"):
+                pdf.add_page()
+                _cui_banner(pdf)
+                pdf.ln(2)
+                _section_heading(pdf, "5. Exceptions")
+                for ex in evidence["exceptions"]:
+                    pdf.set_font("Helvetica", "BI", 9)
+                    pdf.cell(0, 6, _ato_safe(f"Device: {ex.get('device_name','')}  [{ex.get('status','')}]"), ln=True)
+                    for label, key in [
+                        ("Exception Type", "exception_type"), ("Risk Level", "risk_level"),
+                        ("Expiry Date", "expiry_date"), ("Justification", "justification"),
+                        ("ISSO Approved By", "isso_approved_by"), ("ISSO Approved At", "isso_approved_at"),
+                        ("ISSM Approved By", "issm_approved_by"), ("ISSM Approved At", "issm_approved_at"),
+                        ("AO Approved By", "ao_approved_by"), ("AO Approved At", "ao_approved_at"),
+                        ("Compensating Controls", "compensating_controls"),
+                        ("Risk Acceptance Level", "risk_acceptance_level"),
+                        ("Filed By", "filed_by"), ("Created", "created_at"),
+                    ]:
+                        val = ex.get(key, "")
+                        if val not in (None, "", 0):
+                            _kv_row(pdf, label, val)
+                    pdf.ln(2)
+                if evidence.get("exception_approvals"):
+                    pdf.ln(2)
+                    _section_heading(pdf, "5a. Exception Approval Chain")
+                    pdf.set_font("Helvetica", "", 8)
+                    for ap in evidence["exception_approvals"]:
+                        pdf.cell(0, 5, _ato_safe(
+                            f"{ap.get('created_at','')} | exc={ap.get('exception_id','')} | "
+                            f"{ap.get('approver_role','')} {ap.get('approver','')} -> "
+                            f"{ap.get('decision','')} | {ap.get('conditions','')}"
+                        ), ln=True)
+
+            # ── Sec 6: NQE Audit Trail ─────────────────────────────────────
+            if evidence.get("audit_log"):
+                pdf.add_page()
+                _cui_banner(pdf)
+                pdf.ln(2)
+                _section_heading(pdf, "6. NQE Audit Trail")
+                pdf.set_font("Helvetica", "", 8)
+                for entry in evidence["audit_log"]:
+                    pdf.cell(0, 5, _ato_safe(
+                        f"{entry.get('created_at','')} | {entry.get('action','')} | "
+                        f"{str(entry.get('result_summary',''))[:100]}"
+                    ), ln=True)
+
+            # ── Hash integrity page ────────────────────────────────────────
+            pdf.add_page()
+            _cui_banner(pdf)
+            pdf.ln(4)
+            _section_heading(pdf, "Document Integrity")
+            _kv_row(pdf, "Document SHA-256", meta.get("doc_hash_sha256", ""))
+            _kv_row(pdf, "Exported At", meta.get("exported_at", ""))
+            _kv_row(pdf, "Classification", meta.get("classification", ""))
+            pdf.ln(4)
+            pdf.set_font("Helvetica", "I", 8)
+            pdf.set_text_color(100, 100, 100)
+            pdf.multi_cell(0, 5,
+                "The SHA-256 hash above was computed over the canonical JSON serialization "
+                "of all evidence fields. Re-compute to verify document integrity.")
+
+            _cui_footer_all(pdf)
+            return bytes(pdf.output())
+
+        except ImportError:
+            logger.warning("fpdf2 not installed — generating HTML fallback for ATO PDF")
+            adv_rows = "".join(
+                f"<tr><th>{k}</th><td>{v}</td></tr>"
+                for k, v in (adv or {}).items()
+                if v not in (None, "")
+            )
+            return (
+                f"<!DOCTYPE html><html><head><meta charset='utf-8'>"
+                f"<title>ATO Evidence — Advisory {advisory_id}</title>"
+                f"<style>body{{font-family:monospace;margin:2em}}"
+                f"table{{border-collapse:collapse;width:100%}}"
+                f"th,td{{border:1px solid #ccc;padding:4px 8px;text-align:left}}"
+                f"th{{background:#dde;width:220px}}"
+                f".cui{{background:#b41e1e;color:#fff;padding:4px 10px;font-weight:bold}}"
+                f"h2{{color:#1a3c78}}</style></head><body>"
+                f"<div class='cui'>CUI // SP-CTI</div>"
+                f"<h1>ATO Evidence Package — Advisory {advisory_id}</h1>"
+                f"<p>Exported: {meta.get('exported_at','')} | "
+                f"SHA-256: <code>{meta.get('doc_hash_sha256','')}</code></p>"
+                f"<h2>1. Advisory Record</h2><table>{adv_rows}</table>"
+                f"<p><em>Install fpdf2 for full multi-section PDF output.</em></p>"
+                f"<div class='cui'>CUI // SP-CTI</div></body></html>"
+            ).encode("utf-8")
+
+    def _build_ato_excel(evidence, advisory_id):
+        """Return (bytes, mimetype, extension) for Excel export.
+
+        Uses openpyxl when available; falls back to a ZIP archive of CSV sheets.
+        """
+        import csv
+        import io
+        import zipfile
+
+        SHEETS = [
+            ("Advisory",            [evidence.get("advisory")] if evidence.get("advisory") else []),
+            ("Assessments",         evidence.get("assessments", [])),
+            ("RemediationActions",  evidence.get("remediation_actions", [])),
+            ("RemediationStatusLog",evidence.get("remediation_status_log", [])),
+            ("POAMItems",           evidence.get("poam_items", [])),
+            ("POAMStatusLog",       evidence.get("poam_status_log", [])),
+            ("Exceptions",          evidence.get("exceptions", [])),
+            ("ExceptionApprovals",  evidence.get("exception_approvals", [])),
+            ("AuditLog",            evidence.get("audit_log", [])),
+        ]
+
+        try:
+            import openpyxl
+            from openpyxl.styles import Font, PatternFill
+
+            wb = openpyxl.Workbook()
+            wb.remove(wb.active)  # drop default blank sheet
+
+            _CUI_FILL = PatternFill("solid", fgColor="B41E1E")
+            _HEAD_FILL = PatternFill("solid", fgColor="DDE4F0")
+            _CUI_FONT = Font(bold=True, color="FFFFFF", size=9)
+            _HEAD_FONT = Font(bold=True, size=9)
+            _META = evidence.get("_meta", {})
+
+            for sheet_name, rows in SHEETS:
+                if not rows:
+                    continue
+                ws = wb.create_sheet(title=sheet_name[:31])
+                # CUI banner row
+                ws.append([f"CUI // SP-CTI | Advisory {advisory_id} | {_META.get('exported_at','')}"])
+                cui_cell = ws.cell(1, 1)
+                cui_cell.fill = _CUI_FILL
+                cui_cell.font = _CUI_FONT
+                ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max(len(rows[0]) if rows else 1, 1))
+                # Header row
+                headers = list(rows[0].keys()) if rows else []
+                ws.append(headers)
+                for col_idx, _ in enumerate(headers, 1):
+                    cell = ws.cell(2, col_idx)
+                    cell.fill = _HEAD_FILL
+                    cell.font = _HEAD_FONT
+                # Data rows
+                for row in rows:
+                    ws.append([str(v) if v is not None else "" for v in row.values()])
+                # Auto-width (capped)
+                for col in ws.columns:
+                    max_len = max((len(str(c.value or "")) for c in col), default=8)
+                    ws.column_dimensions[col[0].column_letter].width = min(max_len + 2, 60)
+
+            buf = io.BytesIO()
+            wb.save(buf)
+            return buf.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "xlsx"
+
+        except ImportError:
+            # Fallback: ZIP of CSV files (can be opened sheet-by-sheet)
+            logger.info("openpyxl not installed — generating ZIP-of-CSVs fallback for ATO Excel")
+            zip_buf = io.BytesIO()
+            with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+                for sheet_name, rows in SHEETS:
+                    if not rows:
+                        continue
+                    csv_buf = io.StringIO()
+                    writer = csv.DictWriter(csv_buf, fieldnames=list(rows[0].keys()))
+                    writer.writeheader()
+                    writer.writerows(rows)
+                    zf.writestr(f"{sheet_name}.csv", csv_buf.getvalue())
+            return zip_buf.getvalue(), "application/zip", "zip"
+
+    @bp.route("/api/advisory/<int:advisory_id>/export-ato", methods=["POST"])
+    @nc_login_required
+    def nc_api_advisory_export_ato(advisory_id: int):
+        """Export complete ATO evidence chain for one advisory.
+
+        Query param: format — json | pdf | excel (default: json)
+
+        Evidence chain:
+          1. nc_advisories row + source_doc_hash
+          2. nc_advisory_assessments (NQL queries, sha256 hashes, dual-query
+             reconciliation, HITL approval record)
+          3. nc_remediation_actions (all statuses)
+          4. nc_remediation_status_log
+          5. nc_poam_items + nc_poam_status_log
+          6. nc_exceptions + nc_exception_approvals + nc_nqe_audit_log
+        """
+        import hashlib
+        from flask import Response
+
+        fmt = request.args.get("format", "json").lower()
+        if fmt not in ("json", "pdf", "excel"):
+            return jsonify({"error": "format must be json, pdf, or excel"}), 400
+
+        conn = get_connection()
+        try:
+            evidence = _gather_ato_evidence(advisory_id, conn)
+        finally:
+            conn.close()
+
+        if evidence["advisory"] is None:
+            return jsonify({"error": f"Advisory {advisory_id} not found"}), 404
+
+        canonical = json.dumps(evidence, sort_keys=True, default=str)
+        doc_hash = hashlib.sha256(canonical.encode()).hexdigest()
+        evidence["_meta"] = {
+            "advisory_id": advisory_id,
+            "export_format": fmt,
+            "exported_at": datetime.now(timezone.utc).isoformat(),
+            "doc_hash_sha256": doc_hash,
+            "classification": "CUI // SP-CTI",
+        }
+
+        _audit_ato_export(advisory_id, fmt, doc_hash)
+
+        if fmt == "json":
+            return Response(
+                json.dumps(evidence, indent=2, default=str),
+                mimetype="application/json",
+                headers={"Content-Disposition": f"attachment; filename=ato-evidence-{advisory_id}.json"},
+            )
+        if fmt == "pdf":
+            pdf_bytes = _build_ato_pdf(evidence, advisory_id)
+            mimetype = "application/pdf" if pdf_bytes[:4] == b"%PDF" else "text/html"
+            ext = "pdf" if mimetype == "application/pdf" else "html"
+            return Response(
+                pdf_bytes,
+                mimetype=mimetype,
+                headers={"Content-Disposition": f"attachment; filename=ato-evidence-{advisory_id}.{ext}"},
+            )
+        # excel
+        xl_bytes, mimetype, ext = _build_ato_excel(evidence, advisory_id)
+        return Response(
+            xl_bytes,
+            mimetype=mimetype,
+            headers={"Content-Disposition": f"attachment; filename=ato-evidence-{advisory_id}.{ext}"},
+        )
+
+    # ── NQE Translator ─────────────────────────────────────────────────────
+
+    @bp.route("/nqe-translator", methods=["GET"])
+    def nqe_translator_page():
+        """Render the NQE query translator UI."""
+        return render_template("network/nqe_translator.html", page_title="NQE Translator")
+
+    @bp.route("/api/nqe/translate", methods=["POST"])
+    def api_nqe_translate():
+        """Translate plain-English text to NQL.
+
+        Request: {"text": str, "context": dict (optional advisory context)}
+        Response: {"nql": str, "confidence": float, "source": str}
+        """
+        data = request.get_json(force=True, silent=True) or {}
+        text = (data.get("text") or "").strip()
+        if not text:
+            return jsonify({"error": "text is required"}), 400
+
+        context = data.get("context") or {}
+
+        try:
+            from tools.network.nql_translator import nl_to_nql
+            nql = nl_to_nql(text, context=context or None)
+        except Exception as exc:
+            logger.exception("NQE translate error")
+            return jsonify({"error": str(exc)}), 500
+
+        # Confidence heuristic: deterministic context path → high; LLM path → medium
+        if context and any(context.get(k) for k in ("vendor", "affected_models", "affected_versions")):
+            confidence = 0.92
+            source = "deterministic"
+        elif nql and nql.startswith("foreach"):
+            confidence = 0.70
+            source = "llm_translation"
+        else:
+            confidence = 0.50
+            source = "fallback"
+
+        # Audit log
+        try:
+            from tools.db.storage import get_canvas_connection
+            conn = get_canvas_connection("NC_STORAGE_BACKEND")
+            conn.execute(
+                "INSERT INTO nc_nqe_audit_log (action, nql_query, user_confirmed, created_at) "
+                "VALUES (%s, %s, %s, NOW())",
+                ("translate", nql, False),
+            )
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass
+
+        return jsonify({"nql": nql, "confidence": confidence, "source": source})
+
+    @bp.route("/api/nqe/explain", methods=["POST"])
+    def api_nqe_explain():
+        """Return a plain-English explanation of an NQL query.
+
+        Request: {"nql": str}
+        Response: {"explanation": str}
+        """
+        data = request.get_json(force=True, silent=True) or {}
+        nql = (data.get("nql") or "").strip()
+        if not nql:
+            return jsonify({"error": "nql is required"}), 400
+
+        try:
+            from tools.llm.router import LLMRouter
+            from tools.llm.provider import LLMRequest
+
+            prompt = (
+                "Explain this NQL (Network Query Language) query in plain English "
+                "for a non-technical network administrator. Be concise (2-3 sentences).\n\n"
+                f"NQL:\n{nql}"
+            )
+            router = LLMRouter()
+            req = LLMRequest(messages=[{"role": "user", "content": prompt}], max_tokens=150, temperature=0.2)
+            resp = router.invoke("nql_explain", req)
+            explanation = (resp.content or "").strip()
+        except ImportError:
+            explanation = _nql_heuristic_explain(nql)
+        except Exception:
+            explanation = _nql_heuristic_explain(nql)
+
+        return jsonify({"explanation": explanation})
+
+    @bp.route("/api/nqe/run", methods=["POST"])
+    def api_nqe_run():
+        """Execute an NQL query and return results.
+
+        Requires explicit user confirmation (call audit-log endpoint first
+        with user_confirmed=true — enforced by the UI transparency gate).
+
+        Request: {"nql": str, "network_id": str|null}
+        Response: {"rows": list, "columns": list, "total": int, "source": str}
+        """
+        data = request.get_json(force=True, silent=True) or {}
+        nql = (data.get("nql") or "").strip()
+        network_id = data.get("network_id") or None
+
+        if not nql:
+            return jsonify({"error": "nql is required"}), 400
+
+        try:
+            from tools.network.nqe_client import FallbackNQEClient
+
+            client = FallbackNQEClient()
+            result = client.run_query(nql, network_id=network_id)
+            rows = result.get("rows", [])
+            columns = list(rows[0].keys()) if rows else []
+
+            # Audit execution
+            try:
+                from tools.db.storage import get_canvas_connection
+                conn = get_canvas_connection("NC_STORAGE_BACKEND")
+                conn.execute(
+                    "INSERT INTO nc_nqe_audit_log (action, nql_query, user_confirmed, row_count, created_at) "
+                    "VALUES (%s, %s, %s, %s, NOW())",
+                    ("run", nql, True, len(rows)),
+                )
+                conn.commit()
+                conn.close()
+            except Exception:
+                pass
+
+            return jsonify({
+                "rows": rows[:500],
+                "columns": columns,
+                "total": len(rows),
+                "source": result.get("source", "local"),
+            })
+        except Exception as exc:
+            logger.exception("NQE run error: nql=%r", nql)
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/nqe/collections", methods=["GET"])
+    def api_nqe_collections():
+        """Return the list of supported NQE collection paths.
+
+        Response: {"collections": [{"path": str, "description": str}]}
+        """
+        collections = [
+            {"path": "network.devices",          "description": "All network devices (hostname, OS, vendor, platform)"},
+            {"path": "network.interfaces",        "description": "Device interfaces with status and counters"},
+            {"path": "network.bgp_sessions",      "description": "BGP peering sessions and their state"},
+            {"path": "network.acls",              "description": "Access control lists and firewall rules"},
+            {"path": "network.paths",             "description": "End-to-end forwarding paths"},
+            {"path": "network.os_versions",       "description": "OS version inventory across all devices"},
+            {"path": "network.links",             "description": "Physical and logical links between nodes"},
+            {"path": "network.vlans",             "description": "VLAN definitions and membership"},
+            {"path": "network.prefixes",          "description": "IP prefix / subnet inventory"},
+            {"path": "network.ospf.neighbors",    "description": "OSPF adjacency table"},
+            {"path": "network.isis.adjacencies",  "description": "IS-IS adjacency table"},
+            {"path": "network.mpls.lsps",         "description": "MPLS label-switched paths"},
+        ]
+        return jsonify({"collections": collections})
+
+    @bp.route("/api/nqe/audit-log", methods=["POST"])
+    def api_nqe_audit_log():
+        """Append a transparency-gate audit event.
+
+        Request: {"action": str, "nql": str, "user_confirmed": bool}
+        Response: {"id": str, "recorded": true}
+        """
+        data = request.get_json(force=True, silent=True) or {}
+        action = (data.get("action") or "").strip()
+        nql = (data.get("nql") or "").strip()
+        user_confirmed = bool(data.get("user_confirmed", False))
+
+        if not action:
+            return jsonify({"error": "action is required"}), 400
+
+        row_id = None
+        try:
+            from tools.db.storage import get_canvas_connection
+            conn = get_canvas_connection("NC_STORAGE_BACKEND")
+            cur = conn.execute(
+                "INSERT INTO nc_nqe_audit_log (action, nql_query, user_confirmed, created_at) "
+                "VALUES (%s, %s, %s, NOW()) RETURNING id",
+                (action, nql, user_confirmed),
+            )
+            row = cur.fetchone()
+            row_id = str(row[0] if isinstance(row, (list, tuple)) else row.get("id", "")) if row else None
+            conn.commit()
+            conn.close()
+        except Exception as exc:
+            logger.warning("NQE audit-log insert failed: %s", exc)
+
+        return jsonify({"id": row_id or "n/a", "recorded": True})
+
+    @bp.route("/api/nqe/cross-validate", methods=["POST"])
+    def api_nqe_cross_validate():
+        """Dual-query cross-validation: translate using two strategies and compare.
+
+        Strategy A uses structured context (deterministic); strategy B is context-free
+        (LLM/fallback). A high divergence score means the two strategies disagree and
+        a human must review and approve before execution.
+
+        Request:  {"text": str, "context": dict (optional)}
+        Response: {
+            "nql_primary":      str,   # strategy A result
+            "nql_secondary":    str,   # strategy B result
+            "divergence_score": float, # 0.0 identical → 1.0 completely different
+            "require_hitl":     bool,  # True when divergence_score >= 0.6
+            "message":          str
+        }
+        """
+        data = request.get_json(force=True, silent=True) or {}
+        text = (data.get("text") or "").strip()
+        if not text:
+            return jsonify({"error": "text is required"}), 400
+
+        context = data.get("context") or {}
+
+        try:
+            from tools.network.nql_translator import nl_to_nql
+            nql_primary = nl_to_nql(text, context=context or None)
+            nql_secondary = nl_to_nql(text)  # context-free → always LLM/fallback
+        except Exception as exc:
+            logger.exception("NQE cross-validate translation error")
+            return jsonify({"error": str(exc)}), 500
+
+        divergence = _nql_divergence_score(nql_primary, nql_secondary)
+        require_hitl = divergence >= 0.6
+
+        if require_hitl:
+            message = (
+                f"The two translation strategies produced divergent queries "
+                f"(divergence {divergence:.0%}). Human approval is required before execution."
+            )
+        elif divergence >= 0.3:
+            message = (
+                f"Minor divergence detected ({divergence:.0%}). "
+                "Review both queries before running."
+            )
+        else:
+            message = "Both translation strategies agree. Safe to proceed."
+
+        return jsonify({
+            "nql_primary": nql_primary,
+            "nql_secondary": nql_secondary,
+            "divergence_score": divergence,
+            "require_hitl": require_hitl,
+            "message": message,
+        })
+
+    @bp.route("/api/nqe/hitl-approve", methods=["POST"])
+    def api_nqe_hitl_approve():
+        """Record a HITL approval for a cross-validated NQE query pair.
+
+        Request:  {"nql_primary": str, "nql_secondary": str, "approved_by": str, "notes": str}
+        Response: {"approved": true, "approved_by": str, "recorded": true}
+        """
+        data = request.get_json(force=True, silent=True) or {}
+        nql_primary = (data.get("nql_primary") or "").strip()
+        nql_secondary = (data.get("nql_secondary") or "").strip()
+        approved_by = (data.get("approved_by") or "").strip()
+        notes = (data.get("notes") or "").strip()
+
+        if not approved_by:
+            return jsonify({"error": "approved_by is required"}), 400
+
+        import json as _json
+        audit_payload = _json.dumps({
+            "nql_primary": nql_primary,
+            "nql_secondary": nql_secondary,
+            "notes": notes,
+        })
+
+        try:
+            from tools.db.storage import get_canvas_connection
+            conn = get_canvas_connection("NC_STORAGE_BACKEND")
+            conn.execute(
+                "INSERT INTO nc_nqe_audit_log (action, nql_query, user_confirmed, created_at) "
+                "VALUES (%s, %s, %s, NOW())",
+                ("hitl_approve", audit_payload, True),
+            )
+            conn.commit()
+            conn.close()
+        except Exception as exc:
+            logger.warning("NQE hitl-approve audit insert failed: %s", exc)
+
+        return jsonify({"approved": True, "approved_by": approved_by, "recorded": True})
+
+    # ── NQE helpers ────────────────────────────────────────────────────────
+
+    def _nql_divergence_score(nql_a: str, nql_b: str) -> float:
+        """Return divergence in [0.0, 1.0] between two NQL strings (Jaccard distance).
+
+        0.0 = identical, 1.0 = completely different.
+        Collection mismatch is boosted to ≥ 0.8 since different primary collections
+        almost certainly query different facts.
+        """
+        import re as _re
+
+        def _collection(nql):
+            m = _re.search(r"\bin\s+(network\.\S+)", nql, _re.I)
+            return m.group(1).lower() if m else ""
+
+        col_a = _collection(nql_a)
+        col_b = _collection(nql_b)
+
+        tok_a = set(_re.findall(r"[\w.]+", nql_a.lower()))
+        tok_b = set(_re.findall(r"[\w.]+", nql_b.lower()))
+
+        if not tok_a or not tok_b:
+            return 1.0
+
+        jaccard = len(tok_a & tok_b) / len(tok_a | tok_b)
+        divergence = 1.0 - jaccard
+
+        if col_a and col_b and col_a != col_b:
+            divergence = max(divergence, 0.8)
+
+        return round(divergence, 3)
+
+    def _nql_heuristic_explain(nql: str) -> str:
+        """Generate a simple heuristic explanation from NQL structure."""
+        import re as _re
+        nql = nql.strip()
+        m = _re.search(r"\bin\s+(network\.\S+)", nql, _re.I)
+        collection = m.group(1) if m else "network"
+        where_m = _re.search(r"\bwhere\s+(.+?)(?:\bselect\b|$)", nql, _re.I | _re.DOTALL)
+        where_clause = where_m.group(1).strip() if where_m else ""
+        base = f"Queries the '{collection}' collection"
+        if where_clause:
+            base += f" filtered by: {where_clause[:120]}"
+        return base + "."
+
+
+    # ── PVM Predictive Vulnerability Management routes ────────────────────
+    from tools.network.routes.pvm import register_pvm_routes
+
+    register_pvm_routes(bp)
+
+    # ── PNA Predictive Network Analytics routes ───────────────────────────
+    from tools.network.routes.pna import register_pna_routes
+
+    register_pna_routes(bp)
 
     # ── Done ───────────────────────────────────────────────────────────────
     logger.info("Network Design Canvas Blueprint created (%d routes)", len(bp.deferred_functions))

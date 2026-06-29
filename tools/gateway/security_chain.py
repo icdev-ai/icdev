@@ -302,12 +302,12 @@ def _rate_check_db(rate_key: str, limit: int, window: float, now: float) -> Tupl
         conn.execute(_RATE_LIMIT_TABLE_DDL)
         window_start = now - window
         count = conn.execute(
-            "SELECT COUNT(*) FROM gateway_rate_limits WHERE rate_key = ? AND requested_at >= ?",
+            "SELECT COUNT(*) FROM gateway_rate_limits WHERE rate_key = %s AND requested_at >= %s",
             (rate_key, window_start),
         ).fetchone()[0]
         if count < limit:
             conn.execute(
-                "INSERT INTO gateway_rate_limits (rate_key, requested_at) VALUES (?, ?)",
+                "INSERT INTO gateway_rate_limits (rate_key, requested_at) VALUES (%s, %s)",
                 (rate_key, now),
             )
             conn.commit()

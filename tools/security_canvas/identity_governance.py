@@ -94,7 +94,7 @@ def establish_federation(partner: str, protocol: str = "saml2",
         conn.execute(
             """INSERT INTO zig_federation_trusts
                (trust_id, partner, protocol, metadata_url, status, established_at, created_at)
-               VALUES (?,?,?,?,'active',?,?)
+               VALUES (%s,%s,%s,%s,'active',%s,%s)
                ON CONFLICT(trust_id) DO UPDATE SET
                protocol=excluded.protocol, metadata_url=excluded.metadata_url,
                status='active', established_at=excluded.established_at""",
@@ -142,7 +142,7 @@ def run_certification_campaign(scope: str = "privileged",
         conn.execute(
             "INSERT INTO zig_access_certifications "
             "(campaign_id, scope, reviewers, total_items, certified, revoked, status, due_at, created_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (campaign_id, scope, json.dumps(revs), len(items), certified, revoked,
              status, due_at, now.isoformat()),
         )
@@ -202,7 +202,7 @@ def analyze_entitlements(accounts: list[dict] | None = None) -> dict[str, Any]:
         for f in findings:
             conn.execute(
                 "INSERT INTO zig_entitlement_findings "
-                "(account_id, finding_type, detail, severity, created_at) VALUES (?,?,?,?,?)",
+                "(account_id, finding_type, detail, severity, created_at) VALUES (%s,%s,%s,%s,%s)",
                 (f["account_id"], f["finding_type"], f["detail"], f["severity"], now),
             )
         conn.commit()

@@ -320,7 +320,7 @@ def _check_category_rate_limit(category: str, max_per_hour: int, db_path: Path =
     try:
         count = conn.execute(
             """SELECT COUNT(*) FROM deviation_rule_events
-               WHERE category = ?
+               WHERE category = %s
                  AND final_decision = 'auto_heal'
                  AND created_at > datetime('now', '-1 hour')""",
             (category,),
@@ -340,7 +340,7 @@ def _log_deviation_event(result: dict, db_path: Path = None):
             """INSERT INTO deviation_rule_events
                (category, confidence, original_decision, final_decision,
                 category_overrode, matched_keywords, reason, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 result["classification"].get("category", "none"),
                 result["confidence"],
@@ -401,7 +401,7 @@ def get_stats(db_path: Path = None) -> dict:
         # Decision distribution
         for decision in ["auto_heal", "suggest", "escalate"]:
             row = conn.execute(
-                "SELECT COUNT(*) FROM deviation_rule_events WHERE final_decision = ?",
+                "SELECT COUNT(*) FROM deviation_rule_events WHERE final_decision = %s",
                 (decision,),
             ).fetchone()
             stats["decisions"][decision] = row[0] if row else 0

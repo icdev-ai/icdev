@@ -77,14 +77,14 @@ def create_session(theater: str, scenario: str = "") -> dict[str, Any]:
         now = _now_utc()
         conn.execute(
             "INSERT INTO sg_ipb_sessions (id, theater, scenario, status, created_at, updated_at) "
-            "VALUES (?, ?, ?, 'active', ?, ?)",
+            "VALUES (%s, %s, %s, 'active', %s, %s)",
             (session_id, theater, scenario, now, now),
         )
         for i, name in enumerate(STEP_NAMES, start=1):
             conn.execute(
                 "INSERT INTO sg_ipb_steps "
                 "(id, session_id, step_num, step_name, status, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, 'pending', ?, ?)",
+                "VALUES (%s, %s, %s, %s, 'pending', %s, %s)",
                 (str(uuid.uuid4()), session_id, i, name, now, now),
             )
         conn.commit()
@@ -188,7 +188,7 @@ def list_sessions(limit: int = 20) -> list[dict]:
     try:
         rows = conn.execute(
             "SELECT id, theater, scenario, status, created_at "  # nosec B608
-            "FROM sg_ipb_sessions ORDER BY created_at DESC LIMIT ?",
+            "FROM sg_ipb_sessions ORDER BY created_at DESC LIMIT %s",
             (limit,),
         ).fetchall()
         cols = ("id", "theater", "scenario", "status", "created_at")

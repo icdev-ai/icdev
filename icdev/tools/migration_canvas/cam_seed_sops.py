@@ -66,13 +66,13 @@ def _canvas_conn(canvas: str):
 
 
 def _insert_mc_sop(conn, sop: dict) -> bool:
-    existing = conn.execute("SELECT id FROM mc_sops WHERE id=?", (sop["id"],)).fetchone()
+    existing = conn.execute("SELECT id FROM mc_sops WHERE id=%s", (sop["id"],)).fetchone()
     if existing:
         return False
     conn.execute(
         "INSERT OR IGNORE INTO mc_sops "
         "(id, title, sop_type, description, purpose, scope, steps, approval_status, classification) "
-        "VALUES (?,?,?,?,?,?,?,?,?)",
+        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
         (
             sop["id"],
             sop["title"],
@@ -90,13 +90,13 @@ def _insert_mc_sop(conn, sop: dict) -> bool:
 
 
 def _insert_ddc_sop(conn, sop: dict) -> bool:
-    existing = conn.execute("SELECT id FROM ddc_sops WHERE id=?", (sop["id"],)).fetchone()
+    existing = conn.execute("SELECT id FROM ddc_sops WHERE id=%s", (sop["id"],)).fetchone()
     if existing:
         return False
     conn.execute(
         "INSERT OR IGNORE INTO ddc_sops "
         "(id, title, category, description, purpose, scope, steps_json, status, classification) "
-        "VALUES (?,?,?,?,?,?,?,?,?)",
+        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
         (
             sop["id"],
             sop["title"],
@@ -114,7 +114,7 @@ def _insert_ddc_sop(conn, sop: dict) -> bool:
 
 
 def _insert_idc_sop(conn, sop: dict) -> bool:
-    existing = conn.execute("SELECT id FROM idc_sops WHERE id=?", (sop["id"],)).fetchone()
+    existing = conn.execute("SELECT id FROM idc_sops WHERE id=%s", (sop["id"],)).fetchone()
     if existing:
         return False
     raw_cat = sop.get("category", "general")
@@ -122,7 +122,7 @@ def _insert_idc_sop(conn, sop: dict) -> bool:
     conn.execute(
         "INSERT OR IGNORE INTO idc_sops "
         "(id, title, category, description, purpose, scope, steps, status, classification) "
-        "VALUES (?,?,?,?,?,?,?,?,?)",
+        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
         (
             sop["id"],
             sop["title"],
@@ -140,13 +140,13 @@ def _insert_idc_sop(conn, sop: dict) -> bool:
 
 
 def _insert_ndc_sop(conn, sop: dict) -> bool:
-    existing = conn.execute("SELECT sop_id FROM ndc_sops WHERE sop_id=?", (sop["id"],)).fetchone()
+    existing = conn.execute("SELECT sop_id FROM ndc_sops WHERE sop_id=%s", (sop["id"],)).fetchone()
     if existing:
         return False
     conn.execute(
         "INSERT OR IGNORE INTO ndc_sops "
         "(sop_id, title, category, description, steps, status, classification) "
-        "VALUES (?,?,?,?,?,?,?)",
+        "VALUES (%s,%s,%s,%s,%s,%s,%s)",
         (
             sop["id"],
             sop["title"],

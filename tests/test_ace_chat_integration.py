@@ -1,12 +1,13 @@
 # CUI // SP-CTI
 """Integration tests for ACE chat trigger pipeline.
 
-Tests five key scenarios:
+Tests six key scenarios:
 1. Explicit @team trigger fires ACEController.launch()
 2. Implicit trigger from 200+ char messages with 4+ RICOAS signals
 3. Short casual messages do NOT trigger ACE
 4. Chat manager stores coworker_instance_id in context_config
 5. CLI bridge get_coworker_instances() returns instances for a context_id
+6. coworker_thread._post_completion_chat_feedback() writes action_card to chat context
 """
 from __future__ import annotations
 
@@ -180,19 +181,157 @@ def test_chat_manager_stores_coworker_link(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_cli_bridge_get_coworker_instances():
-    """get_coworker_instances() returns instance list from dashboard API."""
+    """get_coworker_instances() returns instances matching trigger_ref from canvas DB."""
+    import sqlite3
     import tools.chat.cli_bridge as bridge_mod
 
-    mock_response = {
-        "instances": [
-            {"instance_id": "ace-bridge001", "state": "complete"},
-        ]
-    }
+    # Build an in-memory SQLite DB with one matching instance and one non-matching
+    conn = sqlite3.connect(":memory:")
+    conn.executescript("""
+        CREATE TABLE ace_instances (
+            id TEXT PRIMARY KEY, state TEXT, created_at TEXT, config_json TEXT
+        );
+        CREATE TABLE ace_coworkers (
+            id TEXT PRIMARY KEY, instance_id TEXT, role_id TEXT, display_name TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+    """)
+    conn.execute(
+        "INSERT INTO ace_instances VALUES (?, ?, ?, ?)",
+        ("ace-bridge001", "complete", "2026-01-01T00:00:00",
+         '{"trigger_ref": "ctx-005", "trigger_source": "chat"}'),
+    )
+    conn.execute(
+        "INSERT INTO ace_instances VALUES (?, ?, ?, ?)",
+        ("ace-bridge002", "active", "2026-01-02T00:00:00",
+         '{"trigger_ref": "ctx-999", "trigger_source": "chat"}'),
+    )
+    conn.execute(
+        "INSERT INTO ace_coworkers VALUES (?, ?, ?, ?, ?)",
+        ("cw-01", "ace-bridge001", "ai_developer", "AI Developer", "2026-01-01"),
+    )
+    conn.commit()
 
-    with patch.object(bridge_mod, "_http", return_value=mock_response) as mock_http:
+    with patch("tools.db.storage.get_canvas_connection", return_value=conn):
         result = bridge_mod.get_coworker_instances("ctx-005")
 
-    mock_http.assert_called_once_with("GET", "/api/chat/ctx-005/coworker-instances")
     assert len(result) == 1
     assert result[0]["instance_id"] == "ace-bridge001"
     assert result[0]["state"] == "complete"
+    assert result[0]["team_manifest"][0]["role_id"] == "ai_developer"
+
+
+# ---------------------------------------------------------------------------
+# 6. coworker_thread._post_completion_chat_feedback() → chat add_message
+# ---------------------------------------------------------------------------
+
+def test_coworker_done_writes_chat_message():
+    """_post_completion_chat_feedback() calls ChatManager.add_message() with action_card."""
+    import icdev.tools.ace.coworker_thread as cwt_mod
+
+    # Minimal config_json stored in ace_instances for a chat-triggered run
+    config_json = json.dumps({
+        "trigger_source": "chat",
+        "trigger_ref": "ctx-done-001",
+        "user_id": "user-ace",
+        "problem_text": "Build a REST API for user management.",
+        "project_id": "",
+    })
+
+    # Stub get_canvas_connection to return a fake row
+    fake_conn = MagicMock()
+    fake_conn.execute.return_value.fetchone.return_value = (config_json,)
+    fake_conn.__enter__ = lambda s: s
+    fake_conn.__exit__ = MagicMock(return_value=False)
+
+    mock_add_message = MagicMock(return_value=42)
+
+    spec = MagicMock()
+    spec.coworker_id = "cw-test-001"
+    spec.role_id = "software_engineer"
+    spec.trust_tier = "yellow"
+
+    thread = cwt_mod.CoWorkerThread.__new__(cwt_mod.CoWorkerThread)
+    thread.instance_id = "inst-done-001"
+    thread.spec = spec
+
+    role = MagicMock()
+    role.display_name = "Software Engineer"
+
+    with patch("icdev.tools.db.storage.get_canvas_connection", return_value=fake_conn), \
+         patch("icdev.tools.chat.chat_manager.ChatManager.add_message", mock_add_message):
+        thread._post_completion_chat_feedback(role, "all steps completed")
+
+    mock_add_message.assert_called_once()
+    args, kwargs = mock_add_message.call_args
+    ctx_id = args[0] if args else kwargs.get("context_id")
+    assert ctx_id == "ctx-done-001"
+    assert kwargs.get("role") == "assistant"
+    assert kwargs.get("content_type") == "action_card"
+    assert "cw-test-001" in kwargs.get("content", "")
+
+
+def test_coworker_done_no_op_when_not_chat_trigger():
+    """_post_completion_chat_feedback() is a no-op when trigger_source != 'chat'."""
+    import icdev.tools.ace.coworker_thread as cwt_mod
+
+    config_json = json.dumps({
+        "trigger_source": "dashboard",
+        "trigger_ref": "",
+        "user_id": "user-dash",
+        "problem_text": "Some task.",
+    })
+
+    fake_conn = MagicMock()
+    fake_conn.execute.return_value.fetchone.return_value = (config_json,)
+    fake_conn.__enter__ = lambda s: s
+    fake_conn.__exit__ = MagicMock(return_value=False)
+
+    mock_add_message = MagicMock()
+
+    spec = MagicMock()
+    spec.coworker_id = "cw-dash-001"
+    spec.role_id = "analyst"
+    spec.trust_tier = "yellow"
+
+    thread = cwt_mod.CoWorkerThread.__new__(cwt_mod.CoWorkerThread)
+    thread.instance_id = "inst-dash-001"
+    thread.spec = spec
+
+    role = MagicMock()
+    role.display_name = "Analyst"
+
+    with patch("icdev.tools.db.storage.get_canvas_connection", return_value=fake_conn), \
+         patch("icdev.tools.chat.chat_manager.ChatManager.add_message", mock_add_message):
+        thread._post_completion_chat_feedback(role, "all steps completed")
+
+    mock_add_message.assert_not_called()
+
+
+def test_coworker_done_no_op_when_instance_missing():
+    """_post_completion_chat_feedback() is a no-op when ace_instances row is absent."""
+    import icdev.tools.ace.coworker_thread as cwt_mod
+
+    fake_conn = MagicMock()
+    fake_conn.execute.return_value.fetchone.return_value = None
+    fake_conn.__enter__ = lambda s: s
+    fake_conn.__exit__ = MagicMock(return_value=False)
+
+    mock_add_message = MagicMock()
+
+    spec = MagicMock()
+    spec.coworker_id = "cw-missing-001"
+    spec.role_id = "analyst"
+    spec.trust_tier = "yellow"
+
+    thread = cwt_mod.CoWorkerThread.__new__(cwt_mod.CoWorkerThread)
+    thread.instance_id = "inst-missing-001"
+    thread.spec = spec
+
+    role = MagicMock()
+
+    with patch("icdev.tools.db.storage.get_canvas_connection", return_value=fake_conn), \
+         patch("icdev.tools.chat.chat_manager.ChatManager.add_message", mock_add_message):
+        thread._post_completion_chat_feedback(role, "done")
+
+    mock_add_message.assert_not_called()

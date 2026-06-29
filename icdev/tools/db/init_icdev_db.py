@@ -6790,6 +6790,34 @@ CREATE INDEX IF NOT EXISTS idx_rag_parent_cache_hash
 CREATE INDEX IF NOT EXISTS idx_rag_parent_cache_expires
     ON rag_parent_cache(expires_at);
 
+-- RAG provenance ledger — append-only AIA chain-of-custody log (D-AIDP, NIST AU-3)
+-- event_type='ingest': chunk bound to source document with hash verification
+-- event_type='chain_of_custody': LLM invocation audit block (model, hyperparams, prompt hash, signature)
+CREATE TABLE IF NOT EXISTS rag_provenance_ledger (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    chunk_uuid TEXT NOT NULL,
+    parent_doc_uuid TEXT,
+    sha256_hash TEXT,
+    token_count INTEGER DEFAULT 0,
+    classification_label TEXT,
+    version_tree_ref TEXT,
+    model_id TEXT,
+    hyperparams_json TEXT DEFAULT '{}',
+    prompt_sha256 TEXT,
+    signature TEXT,
+    event_type TEXT NOT NULL DEFAULT 'ingest'
+        CHECK(event_type IN ('ingest', 'chain_of_custody')),
+    ingest_timestamp TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_rag_prov_chunk
+    ON rag_provenance_ledger(chunk_uuid);
+CREATE INDEX IF NOT EXISTS idx_rag_prov_parent_doc
+    ON rag_provenance_ledger(parent_doc_uuid);
+CREATE INDEX IF NOT EXISTS idx_rag_prov_event_type
+    ON rag_provenance_ledger(event_type);
+
 -- ============================================================
 -- FINE-TUNING SUBSYSTEM (Phase 64 Extension, D-FT-1 through D-FT-22)
 -- ============================================================
@@ -10809,6 +10837,44 @@ CREATE INDEX IF NOT EXISTS idx_centralized_logs_component ON centralized_logs(co
 CREATE INDEX IF NOT EXISTS idx_centralized_logs_ts        ON centralized_logs(ts);
 CREATE INDEX IF NOT EXISTS idx_centralized_logs_level     ON centralized_logs(level);
 
+-- ============================================================
+-- TENANT COMPONENT OVERRIDES (Phase 5 enterprise-configurable platform)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS tenant_component_overrides (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    component_key TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0, 1)),
+    updated_by TEXT DEFAULT 'system',
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(tenant_id, component_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_tenant_component_overrides_tenant ON tenant_component_overrides(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_tenant_component_overrides_key ON tenant_component_overrides(component_key);
+
+-- ============================================================
+-- COMPONENT AUDIT LOG (Phase 5 enterprise-configurable platform)
+-- ============================================================
+-- Append-only record of enable/disable actions, profile applies, and
+-- tenant-level component overrides. Kept separate from audit_trail because
+-- component events have a stable, narrow schema.
+CREATE TABLE IF NOT EXISTS component_audit_log (
+    id TEXT PRIMARY KEY,
+    event_type TEXT NOT NULL,
+    actor TEXT NOT NULL DEFAULT 'system',
+    tenant_id TEXT,
+    component_key TEXT,
+    profile_name TEXT,
+    details TEXT DEFAULT '{}',
+    classification TEXT DEFAULT 'CUI',
+    recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_component_audit_log_event ON component_audit_log(event_type);
+CREATE INDEX IF NOT EXISTS idx_component_audit_log_component ON component_audit_log(component_key);
+CREATE INDEX IF NOT EXISTS idx_component_audit_log_recorded_at ON component_audit_log(recorded_at);
+
 """
 
 
@@ -11241,7 +11307,7 @@ def init_db(db_path=None):
         _seed_conn.execute(
             "INSERT OR IGNORE INTO intake_sessions "
             "(id, customer_name, customer_org, session_status, classification, context_summary) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s)",
             (
                 "sess-9cc6891cb548",
                 "E2E Test User",

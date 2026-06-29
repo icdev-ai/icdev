@@ -96,7 +96,7 @@ def upsert_person(contract_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
 
         if person_id:
             existing = conn.execute(
-                "SELECT id FROM pma_personnel WHERE id = ? AND contract_id = ?",
+                "SELECT id FROM pma_personnel WHERE id = %s AND contract_id = %s",
                 (person_id, contract_id),
             ).fetchone()
         else:
@@ -106,18 +106,18 @@ def upsert_person(contract_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
         if existing:
             conn.execute(
                 """UPDATE pma_personnel SET
-                    name             = COALESCE(?, name),
-                    role             = COALESCE(?, role),
-                    poly_expiry      = COALESCE(?, poly_expiry),
-                    secret_expiry    = COALESCE(?, secret_expiry),
-                    ts_expiry        = COALESCE(?, ts_expiry),
-                    backup_person_id = COALESCE(?, backup_person_id),
-                    key_person       = COALESCE(?, key_person),
-                    lcat             = COALESCE(?, lcat),
-                    status           = COALESCE(?, status),
-                    clearance_level  = COALESCE(?, clearance_level),
-                    updated_at       = ?
-                WHERE id = ?""",
+                    name             = COALESCE(%s, name),
+                    role             = COALESCE(%s, role),
+                    poly_expiry      = COALESCE(%s, poly_expiry),
+                    secret_expiry    = COALESCE(%s, secret_expiry),
+                    ts_expiry        = COALESCE(%s, ts_expiry),
+                    backup_person_id = COALESCE(%s, backup_person_id),
+                    key_person       = COALESCE(%s, key_person),
+                    lcat             = COALESCE(%s, lcat),
+                    status           = COALESCE(%s, status),
+                    clearance_level  = COALESCE(%s, clearance_level),
+                    updated_at       = %s
+                WHERE id = %s""",
                 (
                     data.get("name"), data.get("role"),
                     data.get("poly_expiry"), data.get("secret_expiry"), data.get("ts_expiry"),
@@ -137,7 +137,7 @@ def upsert_person(contract_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
                     (id, name, role, contract_id, poly_expiry, secret_expiry, ts_expiry,
                      backup_person_id, key_person, lcat, status, clearance_level,
                      created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     person_id, name, data.get("role"), contract_id,
                     data.get("poly_expiry"), data.get("secret_expiry"), data.get("ts_expiry"),
@@ -191,7 +191,7 @@ def update_person(person_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
     _ensure_schema(conn)
     try:
         existing = conn.execute(
-            "SELECT id FROM pma_personnel WHERE id = ?", (person_id,)
+            "SELECT id FROM pma_personnel WHERE id = %s", (person_id,)
         ).fetchone()
         if not existing:
             return {"status": "error", "message": f"Person {person_id} not found"}
@@ -199,17 +199,17 @@ def update_person(person_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
         now = _now_iso()
         conn.execute(
             """UPDATE pma_personnel SET
-                status           = COALESCE(?, status),
-                backup_person_id = COALESCE(?, backup_person_id),
-                role             = COALESCE(?, role),
-                lcat             = COALESCE(?, lcat),
-                clearance_level  = COALESCE(?, clearance_level),
-                poly_expiry      = COALESCE(?, poly_expiry),
-                secret_expiry    = COALESCE(?, secret_expiry),
-                ts_expiry        = COALESCE(?, ts_expiry),
-                key_person       = COALESCE(?, key_person),
-                updated_at       = ?
-            WHERE id = ?""",
+                status           = COALESCE(%s, status),
+                backup_person_id = COALESCE(%s, backup_person_id),
+                role             = COALESCE(%s, role),
+                lcat             = COALESCE(%s, lcat),
+                clearance_level  = COALESCE(%s, clearance_level),
+                poly_expiry      = COALESCE(%s, poly_expiry),
+                secret_expiry    = COALESCE(%s, secret_expiry),
+                ts_expiry        = COALESCE(%s, ts_expiry),
+                key_person       = COALESCE(%s, key_person),
+                updated_at       = %s
+            WHERE id = %s""",
             (
                 data.get("status"), data.get("backup_person_id"),
                 data.get("role"), data.get("lcat"), data.get("clearance_level"),
@@ -241,7 +241,7 @@ def get_expiring_personnel(contract_id: str, days: int = 90) -> List[Dict[str, A
         today_iso = today.isoformat()
 
         rows = conn.execute(
-            "SELECT * FROM pma_personnel WHERE contract_id = ?", (contract_id,)
+            "SELECT * FROM pma_personnel WHERE contract_id = %s", (contract_id,)
         ).fetchall()
 
         results: List[Dict[str, Any]] = []
@@ -282,7 +282,7 @@ def get_key_persons(contract_id: str) -> List[Dict[str, Any]]:
     _ensure_schema(conn)
     try:
         rows = conn.execute(
-            "SELECT * FROM pma_personnel WHERE contract_id = ? AND key_person = 1 ORDER BY name",
+            "SELECT * FROM pma_personnel WHERE contract_id = %s AND key_person = 1 ORDER BY name",
             (contract_id,),
         ).fetchall()
         return [dict(r) for r in rows]
@@ -302,7 +302,7 @@ def get_personnel_alerts(contract_id: str) -> List[Dict[str, Any]]:
             """SELECT a.*, p.name AS person_name, p.role AS person_role
                FROM pma_credential_alerts a
                JOIN pma_personnel p ON p.id = a.person_id
-               WHERE p.contract_id = ?
+               WHERE p.contract_id = %s
                  AND (a.status IS NULL OR a.status = 'open')
                ORDER BY a.days_remaining ASC""",
             (contract_id,),
@@ -325,7 +325,7 @@ def update_alert(alert_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
     _ensure_schema(conn)
     try:
         existing = conn.execute(
-            "SELECT id FROM pma_credential_alerts WHERE id = ?", (alert_id,)
+            "SELECT id FROM pma_credential_alerts WHERE id = %s", (alert_id,)
         ).fetchone()
         if not existing:
             return {"status": "error", "message": f"Alert {alert_id} not found"}
@@ -336,14 +336,14 @@ def update_alert(alert_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
 
         conn.execute(
             """UPDATE pma_credential_alerts SET
-                status          = COALESCE(?, status),
-                acknowledged_at = COALESCE(?, acknowledged_at)
-            WHERE id = ?""",
+                status          = COALESCE(%s, status),
+                acknowledged_at = COALESCE(%s, acknowledged_at)
+            WHERE id = %s""",
             (new_status, ack_at, alert_id),
         )
         conn.commit()
         row = conn.execute(
-            "SELECT status, acknowledged_at FROM pma_credential_alerts WHERE id = ?",
+            "SELECT status, acknowledged_at FROM pma_credential_alerts WHERE id = %s",
             (alert_id,),
         ).fetchone()
         result: Dict[str, Any] = {

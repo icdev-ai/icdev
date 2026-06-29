@@ -18,6 +18,7 @@ PostgreSQL SQL so existing code works without changes:
     - GROUP_CONCAT → string_agg
     - GLOB → ~ (regex)
     - last_insert_rowid() → lastval()
+    - %s → ? (reverse, for SQLite fallback when runtime uses psycopg2 style)
 
 Configuration:
     ICDEV_STORAGE_BACKEND=postgresql|sqlite  (default: postgresql)
@@ -37,7 +38,7 @@ Configuration:
 Usage:
     from tools.db.storage import get_connection
     conn = get_connection()
-    rows = conn.execute("SELECT * FROM projects WHERE id = ?", (pid,)).fetchall()
+    rows = conn.execute("SELECT * FROM projects WHERE id = %s", (pid,)).fetchall()
     conn.commit()
     conn.close()
 
@@ -52,6 +53,8 @@ import re
 import sqlite3
 from pathlib import Path
 from typing import Any, Optional
+
+from tools.config.core_profile import profile_default
 
 # Regex for table name extraction used by column-level masking.
 _RE_FROM_TABLE = re.compile(r"\bFROM\b\s+([\w\"\.]+)", re.IGNORECASE)
@@ -105,7 +108,8 @@ DB_PATH = os.environ.get("ICDEV_DB_PATH", _default_db_path())
 
 # Backend detection — PostgreSQL is the primary backend (PG-primary policy).
 # SQLite is an init-only fallback used when PG is unreachable or explicitly pinned.
-_BACKEND = os.environ.get("ICDEV_STORAGE_BACKEND", "postgresql").lower()
+# Respect the active core profile if no explicit env var is set.
+_BACKEND = profile_default("ICDEV_STORAGE_BACKEND", "postgresql").lower()
 
 # ---------------------------------------------------------------------------
 # Audit logging flags — disabled by default (overhead on every query).
@@ -164,13 +168,78 @@ def get_fts5_tables() -> dict[str, list[str]]:
     return dict(FTS5_TABLES)
 
 
-def translate_sql(sql: str, backend: str = "postgresql") -> str:
-    """Translate SQLite SQL to PostgreSQL SQL.
+def _translate_pg_to_sqlite(sql: str) -> str:
+    """Translate PostgreSQL-style %s placeholders to SQLite-style ?.
 
-    For SQLite backend, returns SQL unchanged.
+    Only converts bare %s parameter placeholders outside SQL string literals,
+    identifiers, and comments. This lets runtime modules write psycopg2-native
+    %s placeholders while keeping the SQLite fallback functional.
+    """
+    out: list[str] = []
+    i = 0
+    n = len(sql)
+    while i < n:
+        ch = sql[i]
+        # Single-quoted SQL string literal (handle '' escape)
+        if ch == "'":
+            j = i + 1
+            while j < n:
+                if sql[j] == "'":
+                    if j + 1 < n and sql[j + 1] == "'":
+                        j += 2
+                        continue
+                    break
+                j += 1
+            out.append(sql[i : j + 1])
+            i = j + 1
+            continue
+        # Double-quoted SQL identifier (handle "" escape)
+        if ch == '"':
+            j = i + 1
+            while j < n:
+                if sql[j] == '"':
+                    if j + 1 < n and sql[j + 1] == '"':
+                        j += 2
+                        continue
+                    break
+                j += 1
+            out.append(sql[i : j + 1])
+            i = j + 1
+            continue
+        # Line comment
+        if ch == "-" and i + 1 < n and sql[i + 1] == "-":
+            j = i + 2
+            while j < n and sql[j] != "\n":
+                j += 1
+            out.append(sql[i:j])
+            i = j
+            continue
+        # Block comment
+        if ch == "/" and i + 1 < n and sql[i + 1] == "*":
+            j = i + 2
+            while j < n - 1 and not (sql[j] == "*" and sql[j + 1] == "/"):
+                j += 1
+            out.append(sql[i : j + 2])
+            i = j + 2
+            continue
+        # Bare %s parameter placeholder
+        if ch == "%" and i + 1 < n and sql[i + 1] == "s":
+            out.append("?")
+            i += 2
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+def translate_sql(sql: str, backend: str = "postgresql") -> str:
+    """Translate SQL between SQLite and PostgreSQL dialects.
+
+    PostgreSQL path: SQLite → PostgreSQL (?, datetime(), etc.).
+    SQLite path:    PostgreSQL → SQLite (%s → ?).
     """
     if backend == "sqlite":
-        return sql
+        return _translate_pg_to_sqlite(sql)
 
     original = sql
 
@@ -278,6 +347,15 @@ def translate_sql(sql: str, backend: str = "postgresql") -> str:
     sql = _escape_pct_in_literals(sql)
 
     # 7b. ? placeholder → %s
+    # WARNING: this translation masks source code that uses SQLite-style ?
+    # placeholders in runtime modules. Log so the silent translation is
+    # visible in server logs and doesn't become a hidden load-bearing shim.
+    if "?" in sql:
+        import logging as _logging
+        _logging.getLogger(__name__).warning(
+            "translate_sql: bare ? placeholder detected in SQL — use %%s for "
+            "psycopg2 directly. SQL (first 120 chars): %.120s", sql
+        )
     sql = sql.replace("?", "%s")
 
     # 8. DDL translations (CREATE TABLE / CREATE INDEX)
@@ -680,7 +758,7 @@ def _write_rls_audit(table_name: str, tenant_id: Optional[str]) -> None:
         _ac = _sq.connect(os.environ.get("ICDEV_DB_PATH", DB_PATH), timeout=5)
         _ac.execute(
             "INSERT INTO rls_audit (table_name, action, tenant_id, details, recorded_at)"
-            " VALUES (?, ?, ?, ?, ?)",
+            " VALUES (%s, %s, %s, %s, %s)",
             (table_name, "rls_filter", tenant_id, "{}", datetime.now(timezone.utc).isoformat()),
         )
         _ac.commit()
@@ -698,7 +776,7 @@ def _write_column_audit(table_name: str, role: str, masked_cols: list) -> None:
         _ac = _sq.connect(os.environ.get("ICDEV_DB_PATH", DB_PATH), timeout=5)
         _ac.execute(
             "INSERT INTO column_mask_audit (table_name, role, masked_columns, recorded_at)"
-            " VALUES (?, ?, ?, ?)",
+            " VALUES (%s, %s, %s, %s)",
             (table_name, role, _js.dumps(masked_cols), datetime.now(timezone.utc).isoformat()),
         )
         _ac.commit()
@@ -925,12 +1003,14 @@ class StorageCursor:
             compartments = getattr(ctx, "compartments", frozenset()) or frozenset()
             lac_labels = {c for c in compartments if c.upper().startswith("LAC_")} or None
             coi_tags = {c for c in compartments if c.upper().startswith("COI_")} or None
+            ph = "%s" if getattr(self, "_backend", "sqlite") == "postgresql" else "?"
             new_sql, extra, n_before = inject_row_predicate(
                 sql,
                 tenant_id=tenant_id,
                 classifications=classifications,
                 lac_labels=lac_labels,
                 coi_tags=coi_tags,
+                placeholder=ph,
             )
             if extra:
                 # n_before == -1  → UPDATE/DELETE: APPEND extra_params after all existing params.
@@ -1288,6 +1368,57 @@ def _attach_flask_security_context(conn: "StorageConnection") -> None:
         pass
 
 
+def _resolve_zone_dsn_env() -> str | None:
+    """Return the pg_dsn_env value for the active ICDEV_DATA_ZONE, or None.
+
+    When ICDEV_DATA_ZONE is set, look up the zone row in data_residency_zones
+    and return its pg_dsn_env column value (the name of an env var that holds
+    the zone-specific PostgreSQL DSN).  Returns None if the zone is not found
+    or the table does not yet exist (e.g. during initial migration).
+    """
+    zone_id = os.environ.get("ICDEV_DATA_ZONE")
+    if not zone_id:
+        return None
+    try:
+        import psycopg2
+        import psycopg2.extras
+
+        db_url = os.environ.get("ICDEV_DATABASE_URL")
+        ssl_kwargs = _pg_ssl_kwargs()
+        _pg_timeout = int(os.environ.get("ICDEV_PG_CONNECT_TIMEOUT", "10"))
+        _pg_options = _pg_session_options()
+        if db_url:
+            conn = psycopg2.connect(
+                db_url, connect_timeout=_pg_timeout, options=_pg_options,
+                cursor_factory=psycopg2.extras.RealDictCursor, **ssl_kwargs,
+            )
+        else:
+            conn = psycopg2.connect(
+                host=os.environ.get("ICDEV_PG_HOST", "localhost"),
+                port=int(os.environ.get("ICDEV_PG_PORT", "5432")),
+                user=os.environ.get("ICDEV_PG_USER", "icdev"),
+                password=os.environ.get("ICDEV_PG_PASSWORD", "icdev_dev_2026"),
+                dbname=os.environ.get("ICDEV_PG_DATABASE", "icdev"),
+                connect_timeout=_pg_timeout, options=_pg_options,
+                cursor_factory=psycopg2.extras.RealDictCursor,
+                **ssl_kwargs,
+            )
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT pg_dsn_env FROM data_residency_zones WHERE id = %s",
+                    (zone_id,),
+                )
+                row = cur.fetchone()
+        conn.close()
+        if row:
+            return row["pg_dsn_env"]
+        get_logger(__name__).warning("ICDEV_DATA_ZONE=%r not found in data_residency_zones", zone_id)
+    except Exception as exc:  # noqa: BLE001
+        get_logger(__name__).warning("Could not resolve data zone DSN (%s)", exc)
+    return None
+
+
 def get_connection(db_path: str = None) -> StorageConnection:
     """Return a StorageConnection for the configured backend.
 
@@ -1297,12 +1428,48 @@ def get_connection(db_path: str = None) -> StorageConnection:
     so that operations (task creation, notifications) are not silently
     lost during PG outages.
 
+    When ICDEV_DATA_RESIDENCY_ENABLED=true and Flask g.tenant_id is set,
+    delegates to get_zone_connection() for per-tenant PG routing.
+
+    When ICDEV_DATA_ZONE is set, the zone's pg_dsn_env column names an env
+    var that overrides ICDEV_DATABASE_URL for that connection, routing it to
+    the zone-specific PostgreSQL instance.
+
     Returns a StorageConnection wrapper that transparently handles
     SQL translation between SQLite and PostgreSQL. When called inside a
     Flask request context the connection is automatically scoped to the
     authenticated user's tenant and classification via set_security_context.
     """
     backend = os.environ.get("ICDEV_STORAGE_BACKEND", "postgresql").lower()
+
+    # Per-tenant data-residency routing: delegate to zone_router when enabled
+    # and a tenant is active in the current Flask request context.
+    if os.environ.get("ICDEV_DATA_RESIDENCY_ENABLED", "").lower() in ("true", "1"):
+        try:
+            from flask import g, has_request_context
+            if has_request_context():
+                tenant_id = getattr(g, "tenant_id", None)
+                if tenant_id:
+                    from tools.db.zone_router import get_zone_connection
+                    return get_zone_connection(tenant_id)
+        except (ImportError, RuntimeError):
+            pass
+
+    # Data-residency zone override: when ICDEV_DATA_ZONE is set, the zone row's
+    # pg_dsn_env names an env var that holds the zone-specific PG DSN.
+    zone_dsn_env = _resolve_zone_dsn_env()
+    if zone_dsn_env:
+        zone_db_url = os.environ.get(zone_dsn_env)
+        if zone_db_url:
+            try:
+                raw_conn = _get_pg_connection(zone_db_url)
+                conn = StorageConnection(raw_conn, "postgresql")
+                _attach_flask_security_context(conn)
+                return conn
+            except Exception as exc:  # noqa: BLE001
+                get_logger(__name__).warning(
+                    "Zone DSN from %s unreachable (%s), falling back to default", zone_dsn_env, exc
+                )
 
     # A db_path ending in '.db' selects a dedicated SQLite file ONLY when the
     # process backend is pinned to sqlite.  On a PostgreSQL-primary stack the

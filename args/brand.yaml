@@ -1,0 +1,31 @@
+# CUI // SP-CTI
+# ICDEV™ Brand Configuration — white-label / commercial override
+#
+# All values can be overridden by environment variables:
+#   ICDEV_BRAND_PRODUCT_NAME  → product_name
+#   ICDEV_BRAND_PRODUCT_SHORT → product_short
+#   ICDEV_BRAND_PRIMARY_COLOR → primary_color
+#
+# For white-label deployments, copy this file and point ICDEV_BRAND_PATH
+# at your override:  ICDEV_BRAND_PATH=/etc/acme/brand.yaml
+
+product_name: "ICDEV™"
+product_short: "ICDEV"
+tagline: "AI-Native Defense & Enterprise Platform"
+version: "1.2.30"
+
+# Paths relative to tools/dashboard/static/
+logo_path: "img/icdev-logo.svg"
+logo_width: "120px"
+favicon_path: "img/favicon.ico"
+
+# Brand colors — used to set CSS custom properties at runtime
+# These override --accent-blue and --accent-purple in style.css
+primary_color: "#2563eb"
+secondary_color: "#7c3aed"
+
+# Footer / legal
+copyright: "© 2026 ICDEV. All rights reserved."
+support_url: ""
+docs_url: ""
+privacy_url: ""

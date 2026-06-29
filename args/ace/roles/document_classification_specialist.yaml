@@ -13,7 +13,7 @@ version: '1.1'
 trust_tier: yellow
 default_count: 1
 max_instances: 3
-canvas: document_intelligence
+canvas: dic
 steps:
 - ingest_document
 - detect_content_domain
@@ -86,3 +86,10 @@ personality:
   - intake-focused
   - routing-aware
   - pre-screening
+rules:
+  - "Never mark a document with a lower classification level than any of its source materials."
+  - "Never apply classification markings without referencing the governing SCG, classification guide, or authority."
+  - "Never omit required CAPCO portion marks from individual paragraphs in classified products."
+  - "Never auto-declassify a document; flag it for authorized declassification review."
+  - "Never conflate SBU (Sensitive But Unclassified) categories — CUI, LES, and FOUO have distinct handling rules."
+  - "Never produce a classification decision without documenting the reason, date, and classifier identity."

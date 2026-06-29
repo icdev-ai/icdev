@@ -26,10 +26,27 @@ DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db
 proposal_genesis_api = Blueprint("proposal_genesis_api", __name__, url_prefix="/api/proposal-genesis")
 
 
+class _PGCompatConn:
+    """Silently pre-translate ? → %s for PG so translate_sql never warns."""
+    def __init__(self, conn):
+        self._conn = conn
+        self._pg = getattr(conn, "_backend", "sqlite") == "postgresql"
+    def _fix(self, sql):
+        return sql.replace("?", "%s") if self._pg and "?" in sql else sql
+    def execute(self, sql, params=()):
+        return self._conn.execute(self._fix(sql), params)
+    def executemany(self, sql, seq):
+        return self._conn.executemany(self._fix(sql), seq)
+    def commit(self): return self._conn.commit()
+    def rollback(self): return self._conn.rollback()
+    def close(self): return self._conn.close()
+    def __getattr__(self, name): return getattr(self._conn, name)
+
+
 def _get_db():
     conn = get_connection(db_path=str(DB_PATH))
     conn.execute("PRAGMA journal_mode=WAL")
-    return conn
+    return _PGCompatConn(conn)
 
 
 def _run_daemon_cmd(args_list, timeout=30):
@@ -155,7 +172,7 @@ def api_pg_quality_scores():
             "SELECT pqs.*, po.title AS opportunity_title "
             "FROM pg_proposal_quality_scores pqs "
             "LEFT JOIN proposal_opportunities po ON po.id = pqs.opportunity_id "
-            "ORDER BY pqs.created_at DESC LIMIT ?",
+            "ORDER BY pqs.created_at DESC LIMIT %s",
             (limit,),
         ).fetchall()
         scores = [dict(r) for r in rows]
@@ -180,7 +197,7 @@ def api_pg_audit():
             "details, success, duration_ms, metric_name, metric_value, "
             "created_at as timestamp "
             "FROM pg_proposal_genesis_audit "
-            "ORDER BY created_at DESC LIMIT ?",
+            "ORDER BY created_at DESC LIMIT %s",
             (limit,),
         ).fetchall()
         events = []
@@ -205,7 +222,7 @@ def api_pg_pulse_links():
     conn = _get_db()
     try:
         rows = conn.execute(
-            "SELECT * FROM pg_pulse_proposal_links ORDER BY created_at DESC LIMIT ?",
+            "SELECT * FROM pg_pulse_proposal_links ORDER BY created_at DESC LIMIT %s",
             (limit,),
         ).fetchall()
         links = [dict(r) for r in rows]
@@ -413,7 +430,7 @@ def api_pg_capture_plans():
             "SELECT cp.*, po.title AS opportunity_title, po.agency, po.naics_code "
             "FROM pg_capture_plans cp "
             "LEFT JOIN proposal_opportunities po ON po.id = cp.opportunity_id "
-            "ORDER BY cp.updated_at DESC LIMIT ?",
+            "ORDER BY cp.updated_at DESC LIMIT %s",
             (limit,),
         ).fetchall()
         plans = [dict(r) for r in rows]
@@ -442,13 +459,13 @@ def api_pg_capture_plan_gates(plan_id):
     conn = _get_db()
     try:
         plan = conn.execute(
-            "SELECT id, opportunity_id, current_phase FROM pg_capture_plans WHERE id = ?",
+            "SELECT id, opportunity_id, current_phase FROM pg_capture_plans WHERE id = %s",
             (plan_id,),
         ).fetchone()
         if not plan:
             return jsonify({"error": "not_found"}), 404
         rows = conn.execute(
-            "SELECT * FROM pg_capture_gate_decisions WHERE capture_plan_id = ? ORDER BY created_at DESC",
+            "SELECT * FROM pg_capture_gate_decisions WHERE capture_plan_id = %s ORDER BY created_at DESC",
             (plan_id,),
         ).fetchall()
         gates = [dict(r) for r in rows]
@@ -483,7 +500,7 @@ def api_pg_capture_plan_advance(plan_id):
     conn = _get_db()
     try:
         plan = conn.execute(
-            "SELECT id, opportunity_id, current_phase FROM pg_capture_plans WHERE id = ?",
+            "SELECT id, opportunity_id, current_phase FROM pg_capture_plans WHERE id = %s",
             (plan_id,),
         ).fetchone()
         if not plan:
@@ -512,13 +529,13 @@ def api_pg_capture_plan_advance(plan_id):
         conn.execute(
             "INSERT INTO pg_capture_gate_decisions "
             "(id, capture_plan_id, opportunity_id, from_phase, to_phase, decision, rationale, decided_by, gate_criteria_met, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (gate_id, plan_id, opp_id, current, to_phase, decision, rationale, decided_by, criteria_met, now),
         )
 
         if decision == "advance":
             conn.execute(
-                "UPDATE pg_capture_plans SET current_phase = ?, updated_at = ? WHERE id = ?",
+                "UPDATE pg_capture_plans SET current_phase = %s, updated_at = %s WHERE id = %s",
                 (new_phase, now, plan_id),
             )
 
@@ -569,7 +586,7 @@ def api_pg_teaming_assessments():
             "FROM pg_teaming_assessments ta "
             "LEFT JOIN pg_teaming_partners tp ON tp.id = ta.partner_id "
             "LEFT JOIN proposal_opportunities po ON po.id = ta.opportunity_id "
-            "ORDER BY ta.fit_score DESC LIMIT ?",
+            "ORDER BY ta.fit_score DESC LIMIT %s",
             (limit,),
         ).fetchall()
         assessments = [dict(r) for r in rows]
@@ -596,7 +613,7 @@ def api_pg_crm_accounts():
             ") AS latest_engagement_score "
             "FROM pg_crm_accounts ca "
             "WHERE ca.status IN ('active', 'prospect') "
-            "ORDER BY ca.updated_at DESC LIMIT ?",
+            "ORDER BY ca.updated_at DESC LIMIT %s",
             (limit,),
         ).fetchall()
         accounts = [dict(r) for r in rows]
@@ -621,7 +638,7 @@ def api_pg_crm_interactions():
             "FROM pg_crm_interactions ci "
             "LEFT JOIN pg_crm_accounts ca ON ca.id = ci.account_id "
             "LEFT JOIN proposal_opportunities po ON po.id = ci.opportunity_id "
-            "ORDER BY ci.interaction_date DESC LIMIT ?",
+            "ORDER BY ci.interaction_date DESC LIMIT %s",
             (limit,),
         ).fetchall()
         interactions = [dict(r) for r in rows]
@@ -645,7 +662,7 @@ def api_pg_engagement_scores():
             "SELECT es.*, ca.name AS account_name "
             "FROM pg_crm_engagement_scores es "
             "LEFT JOIN pg_crm_accounts ca ON ca.id = es.account_id "
-            "ORDER BY es.score DESC LIMIT ?",
+            "ORDER BY es.score DESC LIMIT %s",
             (limit,),
         ).fetchall()
         scores = [dict(r) for r in rows]
@@ -805,7 +822,7 @@ def api_pg_published_articles():
             "pp.readability_score, pp.author_id, pp.created_at, pp.updated_at "
             "FROM pulse_posts pp "
             "WHERE pp.author_id = 'pg_publish' "
-            "ORDER BY pp.created_at DESC LIMIT ?",
+            "ORDER BY pp.created_at DESC LIMIT %s",
             (limit,),
         ).fetchall()
         articles = [dict(r) for r in rows]
@@ -827,7 +844,7 @@ def api_pg_case_study_links():
             "FROM pg_pulse_proposal_links ppl "
             "LEFT JOIN proposal_opportunities po ON po.id = ppl.opportunity_id "
             "WHERE ppl.link_type = 'cdrl_to_case_study' "
-            "ORDER BY ppl.created_at DESC LIMIT ?",
+            "ORDER BY ppl.created_at DESC LIMIT %s",
             (limit,),
         ).fetchall()
         links = [dict(r) for r in rows]
@@ -853,7 +870,7 @@ def api_pg_contract_health():
             "billed_value, pop_start, pop_end, cpars_rating_current "
             "FROM cpmp_contracts "
             "WHERE status IN ('active', 'option_pending') "
-            "ORDER BY health_score ASC LIMIT ?",
+            "ORDER BY health_score ASC LIMIT %s",
             (limit,),
         ).fetchall()
         contracts = [dict(r) for r in rows]
@@ -878,7 +895,7 @@ def api_pg_cpars_predictions():
             "FROM pg_proposal_genesis_audit "
             "WHERE reflex_name = 'monitor' "
             "AND event_type = 'contract_monitored' "
-            "ORDER BY created_at DESC LIMIT ?",
+            "ORDER BY created_at DESC LIMIT %s",
             (limit,),
         ).fetchall()
         predictions = []
@@ -913,7 +930,7 @@ def api_pg_overdue_deliverables():
             "JOIN cpmp_contracts c ON c.id = d.contract_id "
             "WHERE c.status IN ('active', 'option_pending') "
             "AND d.status = 'overdue' "
-            "ORDER BY d.days_overdue DESC LIMIT ?",
+            "ORDER BY d.days_overdue DESC LIMIT %s",
             (limit,),
         ).fetchall()
         deliverables = [dict(r) for r in rows]
@@ -942,7 +959,7 @@ def api_pg_cdrl_generations():
             "FROM cpmp_cdrl_generations cg "
             "LEFT JOIN cpmp_deliverables d ON d.id = cg.deliverable_id "
             "LEFT JOIN cpmp_contracts c ON c.id = cg.contract_id "
-            "ORDER BY cg.created_at DESC LIMIT ?",
+            "ORDER BY cg.created_at DESC LIMIT %s",
             (limit,),
         ).fetchall()
         generations = [dict(r) for r in rows]
@@ -968,7 +985,7 @@ def api_pg_bid_decisions():
             "o.title AS opportunity_title, o.agency, o.naics_code "
             "FROM pg_bid_decisions bd "
             "LEFT JOIN sam_gov_opportunities o ON o.id = bd.opportunity_id "
-            "ORDER BY bd.created_at DESC LIMIT ?",
+            "ORDER BY bd.created_at DESC LIMIT %s",
             (limit,),
         ).fetchall()
         decisions = []
@@ -1002,7 +1019,7 @@ def api_pg_win_loss_records():
             "o.title AS opportunity_title, o.agency "
             "FROM pg_win_loss_records wl "
             "LEFT JOIN sam_gov_opportunities o ON o.id = wl.opportunity_id "
-            "ORDER BY wl.created_at DESC LIMIT ?",
+            "ORDER BY wl.created_at DESC LIMIT %s",
             (limit,),
         ).fetchall()
         records = []
@@ -1067,7 +1084,7 @@ def api_pg_training_pairs():
             "SELECT id, source_type, source_id, pair_count, "
             "content_hash, created_at "
             "FROM pg_training_pair_sources "
-            "ORDER BY created_at DESC LIMIT ?",
+            "ORDER BY created_at DESC LIMIT %s",
             (limit,),
         ).fetchall()
         pairs = [dict(r) for r in rows]

@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import logging
 import sys
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -34,7 +33,8 @@ BASE_DIR = Path(__file__).resolve().parents[2]
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-logger = logging.getLogger("conflict_mesh.etl")
+from tools.logging.icdev_logger import get_logger
+log = get_logger("conflict_mesh.etl")
 
 _VALID_EVENT_TYPES = frozenset({
     "frontline_position", "narrative_event", "cyber_op",
@@ -99,7 +99,7 @@ class ETLPipeline:
                     self._upsert(conn, evt, now)
                     result.inserted += 1
                 except Exception as exc:
-                    logger.warning("Failed to upsert event %s: %s", evt.get("id"), exc)
+                    log.warning("Failed to upsert event %s: %s", evt.get("id"), exc)
                     result.errors += 1
             conn.commit()
         finally:
@@ -121,7 +121,7 @@ class ETLPipeline:
             """
             INSERT INTO sg_conflict_events
                 (id, event_type, geometry, event_date, source, metadata, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT(id) DO UPDATE SET
                 event_type = excluded.event_type,
                 geometry   = excluded.geometry,

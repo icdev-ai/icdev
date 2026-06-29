@@ -127,12 +127,12 @@ def _get_latest_drafts(conn, opp_id: str | None = None) -> list[dict]:
                JOIN (
                    SELECT section_id, MAX(created_at) as max_created
                    FROM proposal_section_drafts
-                   WHERE opportunity_id = ?
+                   WHERE opportunity_id = %s
                      AND status IN ('draft', 'reviewed', 'approved')
                    GROUP BY section_id
                ) latest ON d.section_id = latest.section_id AND d.created_at = latest.max_created
                LEFT JOIN proposal_sections s ON d.section_id = s.id
-               WHERE d.opportunity_id = ?
+               WHERE d.opportunity_id = %s
                  AND d.status IN ('draft', 'reviewed', 'approved')
                ORDER BY s.section_number""",
             (opp_id, opp_id),
@@ -144,12 +144,12 @@ def _get_latest_drafts(conn, opp_id: str | None = None) -> list[dict]:
                JOIN (
                    SELECT section_id, MAX(created_at) as max_created
                    FROM proposal_section_drafts
-                   WHERE opportunity_id IN (?, ?, ?)
+                   WHERE opportunity_id IN (%s, %s, %s)
                      AND status IN ('draft', 'reviewed', 'approved')
                    GROUP BY section_id
                ) latest ON d.section_id = latest.section_id AND d.created_at = latest.max_created
                LEFT JOIN proposal_sections s ON d.section_id = s.id
-               WHERE d.opportunity_id IN (?, ?, ?)
+               WHERE d.opportunity_id IN (%s, %s, %s)
                  AND d.status IN ('draft', 'reviewed', 'approved')
                ORDER BY d.opportunity_id, s.section_number""",
             (*_TARGET_OPP_IDS, *_TARGET_OPP_IDS),
@@ -164,7 +164,7 @@ def _insert_review(conn, opp_id: str, overall_rating: str, summary: str) -> str:
         """INSERT INTO proposal_reviews
            (id, opportunity_id, review_type, status, scheduled_date,
             started_at, completed_at, lead_reviewer, participants, summary, overall_rating, created_at)
-           VALUES (?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, 'completed', %s, %s, %s, %s, %s, %s, %s, %s)""",
         (rev_id, opp_id, "red_team", now, now, now, "ICDEV WriteGuard", "", summary, overall_rating, now),
     )
     return rev_id
@@ -184,7 +184,7 @@ def _insert_finding(
         """INSERT INTO proposal_review_findings
            (id, review_id, section_id, finding_type, severity, description,
             recommendation, status, assigned_to, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s, %s, %s, 'open', %s, %s)""",
         (_uuid(), rev_id, sec_id, finding_type, severity, description, recommendation, "ICDEV WriteGuard", now),
     )
 
@@ -199,7 +199,7 @@ def _insert_reviewed_draft(conn, draft: dict, review_notes: str) -> str:
             confidence, domain_category, generation_model, status, reviewed_by,
             reviewed_at, review_notes, reviewer_notes, metadata, created_at,
             updated_at, classification)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
         (
             new_id,
             draft.get("section_id"),
@@ -230,13 +230,13 @@ def _insert_reviewed_draft(conn, draft: dict, review_notes: str) -> str:
 def _update_section_status(conn, sec_id: str, new_status: str, old_status: str, reason: str) -> None:
     now = _utcnow_iso()
     conn.execute(
-        "UPDATE proposal_sections SET status = ?, updated_at = ? WHERE id = ?",
+        "UPDATE proposal_sections SET status = %s, updated_at = %s WHERE id = %s",
         (new_status, now, sec_id),
     )
     conn.execute(
         """INSERT INTO proposal_status_history
            (entity_type, entity_id, old_status, new_status, changed_by, reason, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s, %s, %s)""",
         ("section", sec_id, old_status, new_status, "ICDEV WriteGuard", reason, now),
     )
 

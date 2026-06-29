@@ -112,7 +112,7 @@ def ingest_il5_event(
             INSERT INTO {IL5_TABLE}
                 (id, source_id, content_hash, classification, impact_level,
                  ingested_at, source_published_at, display_latency_s, sla_met, metadata)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 event_id,
@@ -183,7 +183,7 @@ def check_sla_compliance(
     try:
         conn.execute(_CREATE_TABLE_SQL)
         row = conn.execute(
-            f"SELECT sla_met, display_latency_s FROM {IL5_TABLE} WHERE id=?",
+            f"SELECT sla_met, display_latency_s FROM {IL5_TABLE} WHERE id=%s",
             (event_id,),
         ).fetchone()
         if row is None:

@@ -36,3 +36,10 @@ personality:
   - link-checker
   - ui-validator
   - route-auditor
+rules:
+  - "Never mark a UI page as healthy without capturing a Playwright screenshot as evidence."
+  - "Never accept a 200 HTTP response as proof that a page renders correctly — check the DOM for error states."
+  - "Never skip the mobile/responsive viewport check when performing UI health validation."
+  - "Never overlook console errors in the Playwright browser log — JS exceptions indicate real rendering failures."
+  - "Never report a route as healthy if the page requires authentication and the check ran unauthenticated."
+  - "Never close a UI health alert without re-running the check and confirming the fix is visible in a screenshot."

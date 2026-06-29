@@ -84,7 +84,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 overdue = conn.execute(
                     "SELECT cve_id, severity, component, triaged_at FROM cve_triage "
                     "WHERE status = 'open' AND severity = 'critical' "
-                    "AND triaged_at < datetime('now', '-' || ? || ' days')",
+                    "AND triaged_at < datetime('now', '-' || %s || ' days')",
                     (str(max_critical_age),),
                 ).fetchall()
                 for row in overdue:
@@ -104,7 +104,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 overdue_high = conn.execute(
                     "SELECT cve_id, component, triaged_at FROM cve_triage "
                     "WHERE status = 'open' AND severity = 'high' "
-                    "AND triaged_at < datetime('now', '-' || ? || ' days')",
+                    "AND triaged_at < datetime('now', '-' || %s || ' days')",
                     (str(max_high_age),),
                 ).fetchall()
                 for row in overdue_high:

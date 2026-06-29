@@ -124,7 +124,7 @@ def _query_ledger_direct(chunk_uuid: str) -> dict[str, Any]:
                        version_tree_ref,
                        ingest_timestamp
                 FROM   rag_provenance_ledger
-                WHERE  chunk_uuid = ?
+                WHERE  chunk_uuid = %s
                   AND  event_type = 'ingest'
                 ORDER  BY created_at DESC
                 LIMIT  1

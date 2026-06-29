@@ -39,7 +39,7 @@ def _log_audit(conn, project_id, action, details=None):
     conn.execute(
         """INSERT INTO audit_trail
            (project_id, event_type, actor, action, details, classification, created_at)
-           VALUES (?, 'xacta_sync_completed', 'icdev-xacta-sync', ?, ?, 'CUI', datetime('now'))""",
+           VALUES (%s, 'xacta_sync_completed', 'icdev-xacta-sync', %s, %s, 'CUI', datetime('now'))""",
         (project_id, action, json.dumps(details) if details else None),
     )
     conn.commit()
@@ -50,49 +50,49 @@ def _load_project_data(conn, project_id):
     data = {}
 
     # Project info
-    row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+    row = conn.execute("SELECT * FROM projects WHERE id = %s", (project_id,)).fetchone()
     if not row:
         raise ValueError(f"Project '{project_id}' not found.")
     data["project"] = dict(row)
 
     # Control implementations
     rows = conn.execute(
-        "SELECT * FROM project_controls WHERE project_id = ? ORDER BY control_id",
+        "SELECT * FROM project_controls WHERE project_id = %s ORDER BY control_id",
         (project_id,),
     ).fetchall()
     data["controls"] = [dict(r) for r in rows]
 
     # CSSP assessments
     rows = conn.execute(
-        "SELECT * FROM cssp_assessments WHERE project_id = ? ORDER BY requirement_id",
+        "SELECT * FROM cssp_assessments WHERE project_id = %s ORDER BY requirement_id",
         (project_id,),
     ).fetchall()
     data["cssp_assessments"] = [dict(r) for r in rows]
 
     # STIG findings
     rows = conn.execute(
-        "SELECT * FROM stig_findings WHERE project_id = ? ORDER BY severity, finding_id",
+        "SELECT * FROM stig_findings WHERE project_id = %s ORDER BY severity, finding_id",
         (project_id,),
     ).fetchall()
     data["stig_findings"] = [dict(r) for r in rows]
 
     # POA&M items
     rows = conn.execute(
-        "SELECT * FROM poam_items WHERE project_id = ? ORDER BY severity",
+        "SELECT * FROM poam_items WHERE project_id = %s ORDER BY severity",
         (project_id,),
     ).fetchall()
     data["poam_items"] = [dict(r) for r in rows]
 
     # Certification status
     row = conn.execute(
-        "SELECT * FROM cssp_certifications WHERE project_id = ?",
+        "SELECT * FROM cssp_certifications WHERE project_id = %s",
         (project_id,),
     ).fetchone()
     data["certification"] = dict(row) if row else None
 
     # Vulnerability management
     rows = conn.execute(
-        "SELECT * FROM cssp_vuln_management WHERE project_id = ? ORDER BY scan_date DESC LIMIT 10",
+        "SELECT * FROM cssp_vuln_management WHERE project_id = %s ORDER BY scan_date DESC LIMIT 10",
         (project_id,),
     ).fetchall()
     data["vuln_scans"] = [dict(r) for r in rows]
@@ -163,7 +163,7 @@ def _sync_via_api(project_id, data, db_path=None):
                 conn.execute(
                     """INSERT OR REPLACE INTO cssp_certifications
                        (project_id, status, xacta_system_id, last_xacta_sync, updated_at)
-                       VALUES (?, ?, ?, datetime('now'), datetime('now'))""",
+                       VALUES (%s, %s, %s, datetime('now'), datetime('now'))""",
                     (
                         project_id,
                         cert_status.get("certification_status", "in_progress"),
@@ -265,7 +265,7 @@ def sync_to_xacta(project_id, mode="hybrid", output_dir=None, db_path=None):
             """INSERT OR REPLACE INTO cssp_certifications
                (project_id, last_xacta_sync, updated_at)
                VALUES (
-                   ?,
+                   %s,
                    datetime('now'),
                    datetime('now')
                )

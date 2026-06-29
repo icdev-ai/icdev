@@ -113,12 +113,6 @@ Recent Activity:
   2024-01-15 10:20 - code.commit by developer
 ```
 
-## Example
-```
-/icdev-status abc123-uuid --format table
-/icdev-status --all --format brief
-```
-
 ## Error Handling
 - If project not found: show available projects
 - If database unavailable: report connection error

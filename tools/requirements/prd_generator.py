@@ -60,13 +60,13 @@ def _pct(value: float | None) -> str:
 
 
 def _load_session(conn, session_id: str) -> dict | None:
-    row = conn.execute("SELECT * FROM intake_sessions WHERE id = ?", (session_id,)).fetchone()
+    row = conn.execute("SELECT * FROM intake_sessions WHERE id = %s", (session_id,)).fetchone()
     return dict(row) if row else None
 
 
 def _load_requirements(conn, session_id: str) -> list[dict]:
     rows = conn.execute(
-        "SELECT * FROM intake_requirements WHERE session_id = ? ORDER BY priority, created_at",
+        "SELECT * FROM intake_requirements WHERE session_id = %s ORDER BY priority, created_at",
         (session_id,),
     ).fetchall()
     return [dict(r) for r in rows]
@@ -74,7 +74,7 @@ def _load_requirements(conn, session_id: str) -> list[dict]:
 
 def _load_conversation(conn, session_id: str) -> list[dict]:
     rows = conn.execute(
-        "SELECT * FROM intake_conversation WHERE session_id = ? ORDER BY turn_number",
+        "SELECT * FROM intake_conversation WHERE session_id = %s ORDER BY turn_number",
         (session_id,),
     ).fetchall()
     return [dict(r) for r in rows]
@@ -82,7 +82,7 @@ def _load_conversation(conn, session_id: str) -> list[dict]:
 
 def _load_readiness(conn, session_id: str) -> dict | None:
     row = conn.execute(
-        "SELECT * FROM readiness_scores WHERE session_id = ? ORDER BY scored_at DESC LIMIT 1",
+        "SELECT * FROM readiness_scores WHERE session_id = %s ORDER BY scored_at DESC LIMIT 1",
         (session_id,),
     ).fetchone()
     return dict(row) if row else None
@@ -90,7 +90,7 @@ def _load_readiness(conn, session_id: str) -> dict | None:
 
 def _load_decomposition(conn, session_id: str) -> list[dict]:
     rows = conn.execute(
-        "SELECT * FROM safe_decomposition WHERE session_id = ? ORDER BY level, wsjf_score DESC",
+        "SELECT * FROM safe_decomposition WHERE session_id = %s ORDER BY level, wsjf_score DESC",
         (session_id,),
     ).fetchall()
     return [dict(r) for r in rows]
@@ -98,13 +98,13 @@ def _load_decomposition(conn, session_id: str) -> list[dict]:
 
 def _load_selected_coa(conn, session_id: str) -> dict | None:
     row = conn.execute(
-        "SELECT * FROM coa_definitions WHERE session_id = ? AND status = 'selected' LIMIT 1",
+        "SELECT * FROM coa_definitions WHERE session_id = %s AND status = 'selected' LIMIT 1",
         (session_id,),
     ).fetchone()
     if not row:
         # Fall back to recommended (balanced)
         row = conn.execute(
-            "SELECT * FROM coa_definitions WHERE session_id = ? ORDER BY "
+            "SELECT * FROM coa_definitions WHERE session_id = %s ORDER BY "
             "CASE coa_type WHEN 'balanced' THEN 0 WHEN 'comprehensive' THEN 1 "
             "WHEN 'speed' THEN 2 ELSE 3 END LIMIT 1",
             (session_id,),
@@ -114,7 +114,7 @@ def _load_selected_coa(conn, session_id: str) -> dict | None:
 
 def _load_all_coas(conn, session_id: str) -> list[dict]:
     rows = conn.execute(
-        "SELECT * FROM coa_definitions WHERE session_id = ? ORDER BY "
+        "SELECT * FROM coa_definitions WHERE session_id = %s ORDER BY "
         "CASE coa_type WHEN 'speed' THEN 0 WHEN 'balanced' THEN 1 "
         "WHEN 'comprehensive' THEN 2 ELSE 3 END, created_at DESC",
         (session_id,),
@@ -131,7 +131,7 @@ def _load_all_coas(conn, session_id: str) -> list[dict]:
 
 def _load_documents(conn, session_id: str) -> list[dict]:
     rows = conn.execute(
-        "SELECT * FROM intake_documents WHERE session_id = ? ORDER BY uploaded_at",
+        "SELECT * FROM intake_documents WHERE session_id = %s ORDER BY uploaded_at",
         (session_id,),
     ).fetchall()
     return [dict(r) for r in rows]

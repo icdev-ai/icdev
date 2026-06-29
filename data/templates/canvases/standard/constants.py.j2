@@ -1,0 +1,32 @@
+# CUI // SP-CTI
+"""{{ display_name }} — constants."""
+
+from __future__ import annotations
+
+CANVAS_KEY = "{{ key }}"
+DISPLAY_NAME = "{{ display_name }}"
+ENV_FLAG = "{{ env_flag }}"
+URL_PREFIX = "{{ url_prefix }}"
+
+INTENT_RULES: list[str] = [
+    "overview",
+    "status",
+    "search",
+    "export",
+]
+
+OBJECT_TYPES: list[str] = [
+    "{{ key }}_item",
+    "{{ key }}_event",
+]
+
+VALID_STATUS: list[str] = [
+    "active",
+    "inactive",
+    "archived",
+]
+
+IQE_COLLECTIONS: list[str] = [
+    f"{CANVAS_KEY}.items",
+    f"{CANVAS_KEY}.events",
+]

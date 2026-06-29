@@ -139,7 +139,7 @@ def _builtin_template():
 
 def _get_project_data(conn, project_id):
     """Load project record from database."""
-    row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+    row = conn.execute("SELECT * FROM projects WHERE id = %s", (project_id,)).fetchone()
     if not row:
         raise ValueError(f"Project '{project_id}' not found in database.")
     return dict(row)
@@ -220,7 +220,7 @@ def _get_sbd_assessments(conn, project_id):
     """Retrieve all SbD assessment results for a project."""
     rows = conn.execute(
         """SELECT * FROM sbd_assessments
-           WHERE project_id = ?
+           WHERE project_id = %s
            ORDER BY domain, requirement_id""",
         (project_id,),
     ).fetchall()
@@ -231,7 +231,7 @@ def _get_stig_findings(conn, project_id):
     """Retrieve STIG finding counts grouped by severity and status for cross-reference."""
     rows = conn.execute(
         """SELECT severity, status, COUNT(*) as cnt
-           FROM stig_findings WHERE project_id = ?
+           FROM stig_findings WHERE project_id = %s
            GROUP BY severity, status""",
         (project_id,),
     ).fetchall()
@@ -242,7 +242,7 @@ def _get_sbom_records(conn, project_id):
     """Retrieve SBOM records for supply chain status cross-reference."""
     rows = conn.execute(
         """SELECT * FROM sbom_records
-           WHERE project_id = ?
+           WHERE project_id = %s
            ORDER BY generated_at DESC""",
         (project_id,),
     ).fetchall()
@@ -861,7 +861,7 @@ def _log_audit_event(conn, project_id, action, details, file_path):
             """INSERT INTO audit_trail
                (project_id, event_type, actor, action, details,
                 affected_files, classification)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
             (
                 project_id,
                 "sbd_report_generated",
@@ -955,7 +955,7 @@ def generate_sbd_report(project_id, output_path=None, db_path=None):
         # Determine version number by counting existing SbD audit events
         report_count_row = conn.execute(
             """SELECT COUNT(*) as cnt FROM audit_trail
-               WHERE project_id = ? AND event_type = 'sbd_report_generated'""",
+               WHERE project_id = %s AND event_type = 'sbd_report_generated'""",
             (project_id,),
         ).fetchone()
         report_count = report_count_row["cnt"] if report_count_row else 0

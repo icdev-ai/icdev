@@ -8,7 +8,7 @@ All endpoints require 'admin' role.
 
 import sqlite3
 from datetime import datetime, timezone
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection, sql_placeholder
 
 from flask import Blueprint, jsonify, render_template, request
 
@@ -84,7 +84,7 @@ def _detect_admin_creation_anomaly(
         try:
             # 1. Total active admin count
             rows = conn.execute(
-                "SELECT COUNT(*) FROM dashboard_users WHERE role = ? AND status = 'active'",
+                "SELECT COUNT(*) FROM dashboard_users WHERE role = %s AND status = 'active'",
                 ("admin",),
             ).fetchone()
             admin_count = rows[0] if rows else 0
@@ -97,7 +97,7 @@ def _detect_admin_creation_anomaly(
                 """
                 SELECT COUNT(*) FROM dashboard_users
                 WHERE role = 'admin'
-                  AND created_at >= datetime(?, ?)
+                  AND created_at >= datetime(%s, %s)
                 """,
                 (now_ts, f"-{_ADMIN_BURST_WINDOW_SECONDS} seconds"),
             ).fetchone()
@@ -266,16 +266,17 @@ def api_auth_log():
     event_type = request.args.get("event_type")
 
     conn = _get_db()
+    ph = sql_placeholder(conn)
     try:
         query = "SELECT * FROM dashboard_auth_log WHERE 1=1"
         params = []
         if user_id:
-            query += " AND user_id = ?"
+            query += f" AND user_id = {ph}"
             params.append(user_id)
         if event_type:
-            query += " AND event_type = ?"
+            query += f" AND event_type = {ph}"
             params.append(event_type)
-        query += " ORDER BY created_at DESC LIMIT ?"
+        query += f" ORDER BY created_at DESC LIMIT {ph}"
         params.append(limit)
 
         rows = conn.execute(query, params).fetchall()

@@ -174,7 +174,7 @@ def _audit(conn, action, details="", actor="ai_clause_compliance"):
     try:
         conn.execute(
             "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (str(uuid.uuid4()), now_isoformat(), "govcon.ai_clause", actor, action, details, "proposal_genesis"),
         )
     except Exception:
@@ -191,7 +191,7 @@ def _get_rfp_text(conn, opportunity_id):
     # Try SAM.gov opportunity description
     try:
         row = conn.execute(
-            "SELECT description FROM sam_gov_opportunities WHERE id = ?",
+            "SELECT description FROM sam_gov_opportunities WHERE id = %s",
             (opportunity_id,),
         ).fetchone()
         if row and row["description"]:
@@ -202,7 +202,7 @@ def _get_rfp_text(conn, opportunity_id):
     # Try shall statements (requirement text)
     try:
         stmts = conn.execute(
-            "SELECT statement_text FROM rfp_shall_statements WHERE opportunity_id = ?",
+            "SELECT statement_text FROM rfp_shall_statements WHERE opportunity_id = %s",
             (opportunity_id,),
         ).fetchall()
         for s in stmts:
@@ -214,7 +214,7 @@ def _get_rfp_text(conn, opportunity_id):
     # Try proposal sections content
     try:
         sections = conn.execute(
-            "SELECT content FROM proposal_sections WHERE opportunity_id = ?",
+            "SELECT content FROM proposal_sections WHERE opportunity_id = %s",
             (opportunity_id,),
         ).fetchall()
         for s in sections:
@@ -578,7 +578,7 @@ def generate_compliance_bundle(opportunity_id, clause_type="gsar_552_239_7001"):
                 "INSERT INTO pg_ai_clause_compliance "
                 "(id, opportunity_id, clause_type, artifact_type, artifact_status, "
                 "artifact_content, source_tool, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     artifact_id,
                     opportunity_id,
@@ -687,7 +687,7 @@ def get_bundle_status(opportunity_id):
         "source_disclosure_generated, system_card_generated, american_ai_certified, "
         "ip_rights_documented, bundle_path, status, created_at, updated_at "
         "FROM pg_ai_clause_compliance "
-        "WHERE opportunity_id = ? "
+        "WHERE opportunity_id = %s "
         "ORDER BY clause_type",
         (opportunity_id,),
     ).fetchall()

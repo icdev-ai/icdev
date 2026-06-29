@@ -1,0 +1,8 @@
+# IQE-FC-002: Failed forecast jobs
+# Surfaces jobs that failed inference or loading so operators can investigate.
+
+foreach j in forecast.jobs
+where j.status == "failed"
+select j.id, j.context, j.model_id, j.error_message, j.created_at
+order by j.created_at desc
+limit 50

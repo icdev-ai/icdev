@@ -27,11 +27,28 @@ except ImportError:
 prod_audit_api = Blueprint("prod_audit_api", __name__, url_prefix="/api/prod-audit")
 
 
+class _PGCompatConn:
+    """Silently pre-translate ? → %s for PG so translate_sql never warns."""
+    def __init__(self, conn):
+        self._conn = conn
+        self._pg = getattr(conn, "_backend", "sqlite") == "postgresql"
+    def _fix(self, sql):
+        return sql.replace("?", "%s") if self._pg and "?" in sql else sql
+    def execute(self, sql, params=()):
+        return self._conn.execute(self._fix(sql), params)
+    def executemany(self, sql, seq):
+        return self._conn.executemany(self._fix(sql), seq)
+    def commit(self): return self._conn.commit()
+    def rollback(self): return self._conn.rollback()
+    def close(self): return self._conn.close()
+    def __getattr__(self, name): return getattr(self._conn, name)
+
+
 def _get_db() -> sqlite3.Connection:
     if get_db_connection:
-        return get_db_connection(DB_PATH)
+        return _PGCompatConn(get_db_connection(DB_PATH))
     conn = get_connection(db_path=str(DB_PATH))
-    return conn
+    return _PGCompatConn(conn)
 
 
 # ── Audit History ───────────────────────────────────────────────
@@ -48,7 +65,7 @@ def audit_history():
         rows = conn.execute(
             "SELECT id, overall_pass, total_checks, passed, failed, warned, skipped, "
             "categories_run, duration_ms, created_at FROM production_audits "
-            "ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            "ORDER BY created_at DESC LIMIT %s OFFSET %s",
             (limit, offset),
         ).fetchall()
 
@@ -104,7 +121,7 @@ def remediation_log():
             f"SELECT id, source_audit_id, check_id, check_name, category, confidence, "  # nosec B608 -- table/column names are internal constants, not user input
             f"tier, status, fix_strategy, message, duration_ms, "
             f"verification_status, dry_run, created_at "
-            f"FROM remediation_audit_log {where} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            f"FROM remediation_audit_log {where} ORDER BY created_at DESC LIMIT %s OFFSET %s",
             params + (limit, offset),
         ).fetchall()
 

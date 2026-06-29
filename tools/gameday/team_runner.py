@@ -22,8 +22,15 @@ from .constants import (
     MEMBER_TIME_BUDGET_MINUTES,
     ORCHESTRATOR_TIME_BUDGET_MINUTES,
     OLLAMA_BASE_URL,
+    TEAM_ROLES,
 )
 from .db import save_artifact, get_team
+
+try:
+    from icdev.tools.llm.agent_loop import run_agent_loop
+    _AGENT_LOOP_AVAILABLE = True
+except ImportError:
+    _AGENT_LOOP_AVAILABLE = False
 
 log = get_logger(__name__)
 
@@ -130,11 +137,32 @@ class TeamRunner:
             } if member_outputs else None
 
             prompt = _build_prompt(self.team_key, member_cfg["role"], scenario)
+
+            # Try agent loop first (budget guardrails + tool_use); fall back to direct call
+            agent_loop_content: str | None = None
+            if _AGENT_LOOP_AVAILABLE:
+                try:
+                    loop_result = run_agent_loop(
+                        task=prompt,
+                        tools=_get_member_tools(TEAM_ROLES.get(self.team_key, "")),
+                        max_tokens=2048,
+                        max_steps=5,
+                        model=member_cfg.get("model", DEFAULT_AGENT_MODEL),
+                    )
+                    agent_loop_content = (
+                        loop_result.get("content")
+                        or loop_result.get("text")
+                        or str(loop_result)
+                    )
+                except Exception as _exc:
+                    log.debug("agent_loop unavailable for member step, falling back: %s", _exc)
+
             result = agent.run(
                 prompt,
                 context=context,
                 tournament_id=tournament_id,
                 round_id=round_id,
+                agent_loop_content=agent_loop_content,
             )
             member_outputs.append(result)
 
@@ -228,6 +256,36 @@ class TeamRunner:
             "member_outputs":     member_outputs,
             "training_pairs":     training_pairs,
         }
+
+
+def _get_member_tools(role: str) -> list[dict]:
+    """Return tool definitions appropriate for the given team member role."""
+    base_tools = [
+        {
+            "name": "search_knowledge",
+            "description": "Search the ICDEV knowledge base for relevant information",
+            "parameters": {"query": {"type": "string", "description": "Search query"}},
+        }
+    ]
+    role_tools = {
+        "adversary": [
+            {"name": "run_threat_model", "description": "Run a threat model on a target", "parameters": {"target": {"type": "string"}}},
+            {"name": "analyze_ttps",     "description": "Analyze TTPs for a scenario", "parameters": {"scenario": {"type": "string"}}},
+        ],
+        "defender": [
+            {"name": "check_controls",   "description": "Check NIST 800-53 controls status", "parameters": {"control_family": {"type": "string"}}},
+            {"name": "run_stig_check",   "description": "Run STIG compliance check", "parameters": {"target": {"type": "string"}}},
+        ],
+        "innovator": [
+            {"name": "run_readiness_check", "description": "Run agent readiness check", "parameters": {"repo_path": {"type": "string"}}},
+            {"name": "delegate_to_ace",     "description": "Delegate a task to an ACE co-worker", "parameters": {"role": {"type": "string"}, "task": {"type": "string"}}},
+        ],
+        "compliance": [
+            {"name": "assess_nist_controls", "description": "Assess NIST control compliance", "parameters": {"controls": {"type": "array"}}},
+            {"name": "generate_poam",        "description": "Generate a POA&M entry", "parameters": {"finding": {"type": "string"}, "control": {"type": "string"}}},
+        ],
+    }
+    return base_tools + role_tools.get(role, [])
 
 
 def _role_to_artifact_type(team_key: str, role: str) -> str:

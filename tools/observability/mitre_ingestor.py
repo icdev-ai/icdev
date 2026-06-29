@@ -177,7 +177,7 @@ def ingest(
             tid = tech["technique_id"]
             try:
                 existing = conn.execute(
-                    "SELECT id FROM odc_mitre_techniques WHERE technique_id = ?",
+                    "SELECT id FROM odc_mitre_techniques WHERE technique_id = %s",
                     (tid,),
                 ).fetchone()
                 if existing:
@@ -195,7 +195,7 @@ def ingest(
                 conn.execute(
                     "INSERT INTO odc_mitre_techniques "
                     "(id, technique_id, name, tactic, sigma_template, ingested_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    "VALUES (%s, %s, %s, %s, %s, %s)",
                     (
                         str(uuid.uuid4()),
                         tid,

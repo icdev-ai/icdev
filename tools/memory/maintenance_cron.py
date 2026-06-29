@@ -129,7 +129,7 @@ def embed_unembedded(db_path=None):
                     emb = provider.embed(text)
                     blob = struct.pack(f"{len(emb)}f", *emb)
                     c.execute(
-                        "UPDATE memory_entries SET embedding = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                        "UPDATE memory_entries SET embedding = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s",
                         (blob, ids[j]),
                     )
                     embedded += 1
@@ -139,7 +139,7 @@ def embed_unembedded(db_path=None):
                 for j, emb_data in enumerate(response.data):
                     blob = struct.pack(f"{len(emb_data.embedding)}f", *emb_data.embedding)
                     c.execute(
-                        "UPDATE memory_entries SET embedding = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                        "UPDATE memory_entries SET embedding = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s",
                         (blob, ids[j]),
                     )
                     embedded += 1
@@ -173,9 +173,9 @@ def prune_stale(days=None, db_path=None):
     placeholders = ",".join("?" * len(prune_types))
     c.execute(
         f"""DELETE FROM memory_entries
-           WHERE importance <= ?
+           WHERE importance <= %s
              AND type IN ({placeholders})
-             AND created_at < datetime('now', ? || ' days')""",  # nosec B608 -- table/column names are internal constants, not user input
+             AND created_at < datetime('now', %s || ' days')""",  # nosec B608 -- table/column names are internal constants, not user input
         [min_importance] + prune_types + [str(-prune_days)],
     )
     pruned = c.rowcount

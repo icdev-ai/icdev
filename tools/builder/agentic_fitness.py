@@ -461,7 +461,7 @@ def persist_assessment(
                 """INSERT INTO agentic_fitness_assessments
                    (id, project_id, component_name, spec_text, scores,
                     overall_score, recommendation, rationale, assessed_by, classification)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     assessment_id,
                     project_id,

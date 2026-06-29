@@ -35,24 +35,27 @@ proc = subprocess.Popen(
 def relay_stdin():
     try:
         while True:
-            chunk = sys.stdin.buffer.read(4096)
+            chunk = sys.stdin.buffer.read1(4096)  # read1 returns immediately with available bytes
             if not chunk:
                 break
-            log(f"STDIN→server: {chunk[:200]}")
+            log(f"STDIN→server ({len(chunk)}B): {chunk}")  # log full bytes
             proc.stdin.write(chunk)
             proc.stdin.flush()
     except Exception as e:
         log(f"stdin relay error: {e}")
     finally:
-        try: proc.stdin.close()
-        except: pass
+        try:
+            proc.stdin.close()
+        except Exception:
+            pass
 
 def relay_stdout():
     try:
         while True:
-            chunk = proc.stdout.read(4096)
+            chunk = proc.stdout.read1(4096)  # read1 returns immediately with available bytes
             if not chunk:
                 break
+            log(f"server→STDOUT ({len(chunk)}B): {chunk[:300]}")
             sys.stdout.buffer.write(chunk)
             sys.stdout.buffer.flush()
     except Exception as e:

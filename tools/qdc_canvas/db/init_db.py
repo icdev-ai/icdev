@@ -100,7 +100,7 @@ CREATE INDEX IF NOT EXISTS idx_qdc_versions_design ON qdc_versions(design_id);
 CREATE TABLE IF NOT EXISTS qdc_audit (
     id              TEXT PRIMARY KEY,
     design_id       TEXT,
-    user            TEXT,
+    "user"          TEXT,
     action          TEXT,
     detail          TEXT,
     classification  TEXT DEFAULT 'CUI',
@@ -406,7 +406,7 @@ def _seed_templates(conn):
         conn.execute(
             "INSERT INTO qdc_templates "
             "(id, name, category, description, graph_json, compliance_target, tags) "
-            "VALUES (?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s)",
             t,
         )
     conn.commit()
@@ -536,7 +536,7 @@ def _seed_snippets(conn):
         conn.execute(
             "INSERT INTO qdc_snippets "
             "(id, name, category, description, graph_json, node_count, tags) "
-            "VALUES (?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s)",
             (f"snp-{_uid()}", name, cat, desc, json.dumps({"nodes": nodes, "edges": edges}), nc, tags),
         )
     conn.commit()
@@ -683,7 +683,7 @@ def _seed_runbooks(conn):
             "INSERT INTO qdc_runbooks "
             "(id, name, trigger_gate, steps_json, body_markdown, "
             "auto_executable, confidence_threshold, created_at, updated_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (f"rb-{_uid()}", name, trigger, steps, body, auto, conf, now, now),
         )
     conn.commit()
@@ -773,7 +773,7 @@ def _seed_sops(conn):
             "INSERT INTO qdc_sops "
             "(id, sop_number, title, version, frequency, audience, "
             "body_markdown, approval_status, classification, created_at, updated_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (f"sop-{_uid()}", sop_num, title, 1, freq, audience, body, "draft", "CUI", now, now),
         )
     conn.commit()

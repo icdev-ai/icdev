@@ -61,7 +61,7 @@ def get_history():
     conn = _get_db()
     try:
         rows = conn.execute(
-            "SELECT * FROM nlq_queries ORDER BY created_at DESC LIMIT ?",
+            "SELECT * FROM nlq_queries ORDER BY created_at DESC LIMIT %s",
             (limit,),
         ).fetchall()
         return jsonify(

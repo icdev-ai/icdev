@@ -35,7 +35,7 @@ def list_projects(status_filter: str = None, output_format: str = "brief") -> di
     try:
         if status_filter:
             rows = conn.execute(
-                "SELECT * FROM projects WHERE status = ? ORDER BY created_at DESC",
+                "SELECT * FROM projects WHERE status = %s ORDER BY created_at DESC",
                 (status_filter,),
             ).fetchall()
         else:

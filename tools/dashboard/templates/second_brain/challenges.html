@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}My Challenges{% endblock %}
+{% block content %}
+{% set me_page = 'challenges' %}
+<div class="d-flex" style="min-height:calc(100vh - 60px)">
+
+  <!-- Sidebar -->
+  <aside class="flex-shrink-0 py-3 px-2" style="width:200px;border-right:1px solid rgba(255,255,255,.08);display:flex;flex-direction:column">
+    <div class="text-uppercase fw-semibold px-2 mb-3" style="font-size:.65rem;letter-spacing:.1em;color:#6b7280">My Assistant</div>
+    {% for href,icon,label,key in [('/me','🧠','Overview','home'),('/me/profile','👤','Profile','profile'),('/me/customers','🏢','Customers','customers'),('/me/objectives','🎯','Objectives','objectives'),('/me/challenges','⚡','Challenges','challenges'),('/me/briefing/today','📋',"Today's Briefing",'briefing'),('/me/integrations','🔗','Integrations','integrations')] %}
+    <a href="{{ href }}" class="d-block px-3 py-2 rounded mb-1 text-decoration-none small {% if me_page != key %}text-secondary{% endif %}" {% if me_page == key %}style="background:rgba(37,99,235,.15);color:#60a5fa;font-weight:600"{% endif %}>{{ icon }} {{ label }}</a>
+    {% endfor %}
+  </aside>
+
+  <!-- Main -->
+  <main class="flex-grow-1 p-4" style="min-width:0;max-width:760px">
+
+    <div class="d-flex align-items-start justify-content-between flex-wrap gap-3 mb-4">
+      <div>
+        <h4 class="fw-bold mb-1">⚡ My Challenges</h4>
+        <p class="text-muted small mb-0">What slows you down. The AI uses these to prioritize suggestions and surface mitigation strategies in your daily briefing.</p>
+      </div>
+      <button class="btn btn-sm" id="btn-ai-advice" style="background:rgba(99,102,241,.15);border:1px solid rgba(99,102,241,.3);color:#a5b4fc" data-bs-toggle="tooltip" title="Generate specific, context-aware mitigations for your active challenges based on your real objectives and tasks">
+        🧠 Get AI Advice
+      </button>
+    </div>
+    <!-- AI mitigation panel (hidden until triggered) -->
+    <div id="ai-mitigate-panel" class="rounded-3 mb-4 p-3 d-none" style="background:rgba(99,102,241,.07);border:1px solid rgba(99,102,241,.2)">
+      <div class="fw-semibold small mb-2" style="color:#a5b4fc">🧠 AI Mitigation Suggestions</div>
+      <div id="ai-mitigate-body" class="small text-muted">Loading…</div>
+    </div>
+
+    <form id="challenges-form">
+      <div class="row g-2 mb-4">
+        {% set active_keys = challenges | map(attribute='challenge_key') | list %}
+        {% for key in challenge_keys %}
+        {% set label = challenge_labels.get(key, key) %}
+        {% set desc = challenge_descriptions.get(key, '') %}
+        {% set is_active = key in active_keys %}
+        <div class="col-md-6">
+          <label class="d-block rounded-3 p-3 cursor-pointer" style="cursor:pointer;background:{% if is_active %}rgba(245,158,11,.1){% else %}rgba(255,255,255,.04){% endif %};border:1px solid {% if is_active %}rgba(245,158,11,.4){% else %}rgba(255,255,255,.08){% endif %};transition:all .15s">
+            <div class="d-flex align-items-start gap-2">
+              <input class="form-check-input mt-1 flex-shrink-0" type="checkbox" name="challenge" value="{{ key }}" {% if is_active %}checked{% endif %} style="margin-top:2px">
+              <div>
+                <div class="fw-semibold small">{{ label }}</div>
+                <div class="text-muted" style="font-size:.77rem;margin-top:2px">{{ desc }}</div>
+              </div>
+            </div>
+          </label>
+        </div>
+        {% endfor %}
+      </div>
+
+      <div class="rounded-3 mb-4 p-3" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08)">
+        <label class="form-label small fw-semibold">✏️ Anything else?</label>
+        <textarea name="custom_challenge" class="form-control form-control-sm" rows="2" placeholder="Describe a specific challenge not listed above — the AI will factor it into your briefing and suggestions." style="background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.12);color:inherit"></textarea>
+      </div>
+
+      <button type="submit" class="btn btn-primary btn-sm" id="btn-save-challenges">Save Challenges</button>
+      <span class="small text-muted ms-3" id="chall-status"></span>
+    </form>
+
+    {% if challenges %}
+    <hr style="border-color:rgba(255,255,255,.08)" class="my-4">
+    <div class="fw-semibold small mb-3">Active Challenges</div>
+    <div class="d-flex flex-column gap-2">
+      {% for c in challenges %}
+      <div class="d-flex align-items-center justify-content-between rounded-3 px-3 py-2" style="background:rgba(245,158,11,.07);border:1px solid rgba(245,158,11,.18)">
+        <div>
+          <span class="fw-semibold small">{{ challenge_labels.get(c.challenge_key, c.challenge_key or 'Custom') }}</span>
+          {% if c.custom_description and not c.challenge_key %}<span class="text-muted small ms-2">{{ c.custom_description }}</span>{% endif %}
+        </div>
+        <span class="badge {% if c.severity == 'high' %}bg-danger{% elif c.severity == 'medium' %}bg-warning text-dark{% else %}bg-secondary{% endif %}" style="font-size:.72rem">{{ c.severity }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+  </main>
+</div>
+
+{% include "includes/iqe_query_widget.html" %}
+
+<script>
+document.getElementById('challenges-form').addEventListener('submit', function(e) {
+  e.preventDefault();
+  const btn = document.getElementById('btn-save-challenges');
+  const status = document.getElementById('chall-status');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  const selected = [...document.querySelectorAll('input[name="challenge"]:checked')].map(el => ({challenge_key: el.value, severity: 'medium'}));
+  const custom = document.querySelector('[name="custom_challenge"]').value.trim();
+  if (custom) selected.push({challenge_key: null, custom_description: custom, severity: 'medium'});
+  fetch('/me/api/second-brain/profile', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({challenges: selected})
+  }).then(r=>r.json()).then(d => {
+    if(d.ok) { status.textContent='✓ Saved'; status.style.color='#34d399'; setTimeout(()=>location.reload(),800); }
+    else { status.textContent='Error: '+d.error; status.style.color='#f87171'; btn.disabled=false; btn.textContent='Save Challenges'; }
+  });
+});
+
+// Live card highlight on checkbox toggle
+document.querySelectorAll('input[name="challenge"]').forEach(cb => {
+  cb.addEventListener('change', function() {
+    const card = this.closest('label');
+    if (this.checked) {
+      card.style.background = 'rgba(245,158,11,.1)';
+      card.style.borderColor = 'rgba(245,158,11,.4)';
+    } else {
+      card.style.background = 'rgba(255,255,255,.04)';
+      card.style.borderColor = 'rgba(255,255,255,.08)';
+    }
+  });
+});
+
+window.addEventListener('load', () => document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => new bootstrap.Tooltip(el)));
+
+document.getElementById('btn-ai-advice')?.addEventListener('click', function() {
+  const btn = this;
+  const panel = document.getElementById('ai-mitigate-panel');
+  const body = document.getElementById('ai-mitigate-body');
+  btn.disabled = true; btn.textContent = '🧠 Generating…';
+  panel.classList.remove('d-none');
+  body.innerHTML = '<span class="text-muted">Analysing your objectives, tasks, and customers…</span>';
+  fetch('/me/api/second-brain/challenges/mitigate', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'})
+    .then(r => r.json())
+    .then(d => {
+      if (!d.ok || !d.mitigations || !d.mitigations.length) {
+        body.innerHTML = '<span class="text-muted">No active challenges to mitigate, or profile not complete yet.</span>';
+        return;
+      }
+      body.innerHTML = d.mitigations.map(m => `
+        <div class="mb-3">
+          <div class="fw-semibold mb-1" style="color:#c4b5fd">⚡ ${m.description}</div>
+          <div style="white-space:pre-line;line-height:1.65">${m.mitigations}</div>
+        </div>`).join('<hr style="border-color:rgba(255,255,255,.07)">');
+    })
+    .catch(err => { body.innerHTML = `<span class="text-danger">Error: ${err}</span>`; })
+    .finally(() => { btn.disabled=false; btn.innerHTML='🧠 Get AI Advice'; });
+});
+</script>
+{% endblock %}

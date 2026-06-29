@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}Updates{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+    fetch('/api/user/prefs/seen-version', {method: 'PATCH', headers: {'Content-Type': 'application/json'}})
+        .then(function() {
+            var badge = document.getElementById('nav-release-badge');
+            if (badge) badge.remove();
+        }).catch(function() {});
+})();
+
+function regenSheet() {
+    var btn = document.getElementById('btn-regen-sheet');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Regenerating…';
+    fetch('/api/capability-sheet/regenerate', {method: 'POST'})
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-check-circle me-1"></i>Done';
+            setTimeout(function() {
+                btn.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>Regenerate';
+            }, 3000);
+        })
+        .catch(function() {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-exclamation-triangle me-1"></i>Failed';
+            setTimeout(function() {
+                btn.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>Regenerate';
+            }, 3000);
+        });
+}
+</script>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+  <div class="d-flex align-items-center mb-4">
+    <h1 class="mb-0 me-3">Platform Updates</h1>
+    <span class="badge bg-primary">Changelog</span>
+  </div>
+
+  <div class="card shadow-sm border-0 mb-4" style="background:linear-gradient(135deg,#1F3864 0%,#2E4A7A 100%);">
+    <div class="card-body d-flex align-items-center justify-content-between flex-wrap gap-3 py-3">
+      <div>
+        <div class="text-white fw-semibold mb-1"><i class="bi bi-file-earmark-spreadsheet me-2"></i>ICDEV™ Capabilities &amp; Solutions</div>
+        <div class="text-white-50 small">28 challenges · 33 capabilities · 21 canvases · includes So What column</div>
+      </div>
+      <div class="d-flex gap-2">
+        <a href="/api/capability-sheet/download" class="btn btn-light btn-sm fw-semibold">
+          <i class="bi bi-download me-1"></i>Download Excel
+        </a>
+        <button id="btn-regen-sheet" class="btn btn-outline-light btn-sm" onclick="regenSheet()">
+          <i class="bi bi-arrow-clockwise me-1"></i>Regenerate
+        </button>
+      </div>
+    </div>
+  </div>
+
+  {% if error %}
+  <div class="alert alert-warning">{{ error }}</div>
+  {% elif not releases %}
+  <div class="alert alert-info">No releases found in CHANGELOG.md.</div>
+  {% else %}
+
+  <div class="row g-3">
+    {% for rel in releases %}
+    <div class="col-12">
+      <div class="card shadow-sm">
+        <div class="card-header d-flex align-items-center gap-2">
+          <span class="badge bg-secondary font-monospace">v{{ rel.version }}</span>
+          {% if rel.date %}
+          <span class="text-muted small">{{ rel.date }}</span>
+          {% endif %}
+        </div>
+        <div class="card-body">
+          {% if rel.sections %}
+            {% for section_name, items in rel.sections.items() %}
+            <div class="mb-3">
+              <h6 class="text-uppercase fw-semibold mb-2
+                {%- if section_name == 'Added' %} text-success
+                {%- elif section_name == 'Changed' %} text-primary
+                {%- elif section_name in ('Fixed', 'Security') %} text-danger
+                {%- elif section_name == 'Removed' %} text-warning
+                {%- else %} text-secondary
+                {%- endif %}">
+                {% if section_name == 'Added' %}+{% elif section_name == 'Fixed' %}✓{% elif section_name == 'Changed' %}~{% elif section_name == 'Removed' %}-{% else %}•{% endif %}
+                {{ section_name }}
+              </h6>
+              <ul class="mb-0 ps-3">
+                {% for item in items %}
+                <li class="mb-1 small">{{ item }}</li>
+                {% endfor %}
+              </ul>
+            </div>
+            {% endfor %}
+          {% else %}
+          <p class="text-muted small mb-0">No details recorded for this release.</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% include "includes/iqe_query_widget.html" ignore missing %}
+</div>
+{% endblock %}

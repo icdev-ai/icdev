@@ -253,7 +253,7 @@ class TelemetryCollector:
                     uptime_hours, error_rate, compliance_scores_json,
                     learned_behaviors_json, response_time_ms,
                     raw_response, endpoint_url, classification)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'CUI')""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'CUI')""",
                 (
                     telemetry["child_id"],
                     telemetry["collected_at"],
@@ -290,7 +290,7 @@ class TelemetryCollector:
             self._ensure_table(conn)
             row = conn.execute(
                 """SELECT * FROM child_telemetry
-                   WHERE child_id = ?
+                   WHERE child_id = %s
                    ORDER BY collected_at DESC
                    LIMIT 1""",
                 (child_id,),
@@ -326,8 +326,8 @@ class TelemetryCollector:
                           response_time_ms, compliance_scores_json,
                           collected_at
                    FROM child_telemetry
-                   WHERE child_id = ?
-                   AND collected_at >= datetime('now', ?)
+                   WHERE child_id = %s
+                   AND collected_at >= datetime('now', %s)
                    ORDER BY collected_at DESC""",
                 (child_id, f"-{hours} hours"),
             ).fetchall()

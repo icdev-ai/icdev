@@ -58,7 +58,7 @@ def _get_generation_n(conn, task_type: str) -> int:
     """Return the next generation number for a given task_type."""
     try:
         row = conn.execute(
-            "SELECT MAX(generation_n) FROM agent_improvement_artifacts WHERE task_type = ?",
+            "SELECT MAX(generation_n) FROM agent_improvement_artifacts WHERE task_type = %s",
             (task_type,),
         ).fetchone()
         val = row[0] if row else None
@@ -171,7 +171,7 @@ def generate_improvement_artifact(
                     (artifact_id, task_type, skill_used, generation_n,
                      improvement_text, composite_score, baseline_score,
                      evidence_traces, status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'pending')
                 """,
                 (
                     artifact_id,
@@ -216,7 +216,7 @@ def get_latest_improvement(task_type: str) -> str:
             """
             SELECT improvement_text, generation_n
               FROM agent_improvement_artifacts
-             WHERE task_type = ? AND status = 'pending'
+             WHERE task_type = %s AND status = 'pending'
              ORDER BY generation_n DESC
              LIMIT 1
             """,
@@ -229,7 +229,7 @@ def get_latest_improvement(task_type: str) -> str:
         # Mark as applied
         conn.execute(
             "UPDATE agent_improvement_artifacts SET applied_count = applied_count + 1, "
-            "applied_at = ? WHERE task_type = ? AND generation_n = ?",
+            "applied_at = %s WHERE task_type = %s AND generation_n = %s",
             (_utcnow(), task_type, gen),
         )
         conn.commit()

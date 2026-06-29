@@ -539,20 +539,41 @@ def _save_post(run_id: str, post_data: dict, cluster: dict) -> str:
     return post_id
 
 
+_MAX_REWRITE_ATTEMPTS = 3
+
+
 def _handle_rewrite(run_id: str, post_id: str, body: str, quality: dict, auto_rewrite: bool):
-    """Handle rewrite logic (auto or manual prep). Returns (quality, rewrite_data)."""
+    """Handle rewrite logic (auto or manual prep). Returns (quality, rewrite_data).
+
+    Auto mode loops up to _MAX_REWRITE_ATTEMPTS times, stopping early when
+    quality passes.  The final rewrite_data carries 'rewrite_attempts' so
+    callers can surface the iteration count.
+    """
     rewrite_data = None
     if auto_rewrite and not quality.get("passed", False):
-        logger.info("[%s] Quality check failed — triggering Claude Sonnet rewrite...", run_id)
-        rewrite_data = _auto_rewrite(run_id, post_id, body, quality)
-        if rewrite_data and rewrite_data.get("status") == "rewritten":
-            quality = _run_quality_check(run_id, post_id, rewrite_data.get("body_markdown", ""))
+        current_body = body
+        for attempt in range(1, _MAX_REWRITE_ATTEMPTS + 1):
             logger.info(
-                "[%s] Post-rewrite quality: %s (score: %.1f)",
+                "[%s] Quality check failed — triggering rewrite (attempt %d/%d)...",
                 run_id,
+                attempt,
+                _MAX_REWRITE_ATTEMPTS,
+            )
+            rewrite_data = _auto_rewrite(run_id, post_id, current_body, quality)
+            if not rewrite_data or rewrite_data.get("status") != "rewritten":
+                break
+            rewrite_data["rewrite_attempts"] = attempt
+            current_body = rewrite_data.get("body_markdown", current_body)
+            quality = _run_quality_check(run_id, post_id, current_body)
+            logger.info(
+                "[%s] Post-rewrite quality (attempt %d): %s (score: %.1f)",
+                run_id,
+                attempt,
                 "PASSED" if quality["passed"] else "STILL NEEDS REVIEW",
                 quality["overall_score"],
             )
+            if quality.get("passed", False):
+                break
     elif not auto_rewrite and not quality.get("passed", False):
         logger.info("[%s] Quality failed — preparing rewrite instructions", run_id)
         try:
@@ -1257,7 +1278,7 @@ def enrich_post_with_capabilities(post_id: str) -> dict:
     # Store capabilities_referenced
     with get_connection() as conn:
         conn.execute(
-            "UPDATE pulse_posts SET capabilities_referenced = ? WHERE id = ?",
+            "UPDATE pulse_posts SET capabilities_referenced = %s WHERE id = %s",
             (json.dumps(caps_ref), post_id),
         )
 

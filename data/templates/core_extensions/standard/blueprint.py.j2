@@ -1,0 +1,62 @@
+# CUI // SP-CTI
+"""{{ display_name }} — Flask Blueprint.
+
+Core extension gated by {{ env_flag }}=true.
+Access restricted to: {{ default_roles }}.
+
+Auto-generated from template: data/templates/core_extensions/standard
+"""
+
+from __future__ import annotations
+
+import os
+from datetime import datetime, timezone
+
+from flask import Blueprint, abort, g, jsonify, render_template
+
+from tools.logging.icdev_logger import get_logger
+
+log = get_logger(__name__)
+
+_ENABLED = os.environ.get("{{ env_flag }}", "false").lower() in ("true", "1", "yes")
+
+_ALLOWED_ROLES = {r.strip() for r in "{{ default_roles }}".split(",")}
+
+
+def _require_role():
+    """Abort 403 unless the current user has an allowed role."""
+    user = getattr(g, "current_user", None) or {}
+    role = str(user.get("role", "") or "")
+    enforce = os.environ.get("ICDEV_ENFORCE_CANVAS_ACCESS", "").lower() in ("true", "1", "yes")
+    if enforce and role not in _ALLOWED_ROLES:
+        abort(403, "Insufficient role for {{ display_name }}")
+
+
+def create_{{ key | replace('-', '_') }}_blueprint() -> Blueprint | None:
+    if not _ENABLED:
+        log.info("{{ display_name }} disabled via {{ env_flag }}=false")
+        return None
+
+    bp = Blueprint("{{ key | replace('-', '_') }}", __name__,
+                   template_folder="../../tools/dashboard/templates")
+
+    bp.before_request(_require_role)
+
+    @bp.route("{{ url_prefix or '/' }}/")
+    @bp.route("{{ url_prefix or '/' }}")
+    def index():
+        return jsonify({
+            "extension": "{{ key }}",
+            "display_name": "{{ display_name }}",
+            "status": "ok",
+        })
+
+    @bp.route("/api/{{ key | replace('_', '-') }}/status")
+    def api_status():
+        return jsonify({
+            "extension": "{{ key }}",
+            "enabled": True,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        })
+
+    return bp

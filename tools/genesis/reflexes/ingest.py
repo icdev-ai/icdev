@@ -125,7 +125,7 @@ def _compute_adaptive_cap(feed_name: str, current_batch_size: int) -> int:
             """
             SELECT SUBSTR(created_at, 1, 10) AS day, COUNT(*) AS cnt
               FROM innovation_signals
-             WHERE source = ?
+             WHERE source = %s
              GROUP BY SUBSTR(created_at, 1, 10)
              ORDER BY day DESC
              LIMIT 60
@@ -157,7 +157,7 @@ def _load_recent_titles(limit: int = 100) -> List[str]:
     try:
         conn = get_connection()
         rows = conn.execute(
-            "SELECT title FROM innovation_signals ORDER BY created_at DESC LIMIT ?",
+            "SELECT title FROM innovation_signals ORDER BY created_at DESC LIMIT %s",
             (limit,),
         ).fetchall()
         conn.close()
@@ -217,7 +217,7 @@ def _ingest_to_knowledge_graph(entries: List[Dict], feed_name: str, category: st
 
             # Check for duplicates
             row = conn.execute(
-                "SELECT COUNT(*) as cnt FROM innovation_signals WHERE content_hash = ?", (content_hash,)
+                "SELECT COUNT(*) as cnt FROM innovation_signals WHERE content_hash = %s", (content_hash,)
             ).fetchone()
             if row and (row["cnt"] if isinstance(row, dict) else row[0]) > 0:
                 continue
@@ -228,7 +228,7 @@ def _ingest_to_knowledge_graph(entries: List[Dict], feed_name: str, category: st
                 """INSERT INTO innovation_signals
                    (id, source, source_type, title, description, content_hash,
                     innovation_score, status, discovered_at, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     signal_id,
                     f"genesis_ingest:{feed_name}",

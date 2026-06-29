@@ -670,7 +670,7 @@ def _insert_block(conn, block: dict) -> str:
             id, title, content, category, domain, naics_codes, volume_type,
             keywords, usage_count, win_rate, last_used_at, created_by, status,
             created_at, updated_at, classification
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """,
         (
             kb_id,

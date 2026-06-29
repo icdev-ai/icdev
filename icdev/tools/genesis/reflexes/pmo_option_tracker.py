@@ -70,7 +70,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 """SELECT id FROM kanban_tasks
                    WHERE dispatch_source = 'pmo_option_tracker'
                      AND status NOT IN ('done', 'dismissed')
-                     AND title LIKE ?""",
+                     AND title LIKE %s""",
                 (f"%Option {option_num}%{contract_number}%",),
             ).fetchone()
             if existing:
@@ -106,7 +106,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 """INSERT INTO kanban_tasks
                    (id, task_type, title, description, status, priority, target_date,
                     tags, dispatch_source, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, 'suggested', ?, ?, ?, 'pmo_option_tracker', ?, ?)""",
+                   VALUES (%s, %s, %s, %s, 'suggested', %s, %s, %s, 'pmo_option_tracker', %s, %s)""",
                 (
                     task_id,
                     "chore",

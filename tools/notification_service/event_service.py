@@ -99,6 +99,15 @@ def _ai_event_narrative(event_kind: str, facts: dict) -> str | None:
 # Notification channel registry (extensible via args/notification_config.yaml)
 # ---------------------------------------------------------------------------
 
+# Narrative / digest limits used by event-driven notifications and tests
+_NARRATIVE_MAX_TOKENS  = 512
+_NARRATIVE_TEMPERATURE = 0.3
+_TASK_AUDIT_LIMIT      = 5
+_GENESIS_REFLEX_LIMIT  = 5
+_AIIFY_TOP_OPPS_LIMIT  = 5
+_KANBAN_DIGEST_LIMIT   = 10
+_ORACLE_HORIZON_FALLBACK = 24
+
 CHANNEL_REGISTRY = {
     "email":   "smtp",
     "slack":   "webhook",
@@ -162,12 +171,12 @@ def notify_kanban_event(
         # --- DB: fetch task and recent audit rows ---
         task_row = conn.execute(
             "SELECT id, title, status, actor, attempts, created_at, updated_at "
-            "FROM kanban_tasks WHERE id = ?",
+            "FROM kanban_tasks WHERE id = %s",
             (task_id,),
         ).fetchone()
         audit_rows = conn.execute(
             "SELECT event, created_at FROM audit_trail "
-            "WHERE resource_id = ? ORDER BY created_at DESC LIMIT 5",
+            "WHERE resource_id = %s ORDER BY created_at DESC LIMIT 5",
             (task_id,),
         ).fetchall()
 
@@ -211,7 +220,7 @@ def notify_kanban_event(
             if ch == "audit":
                 conn.execute(
                     "INSERT INTO audit_trail (resource_type, resource_id, event, actor, detail) "
-                    "VALUES ('kanban_notification', ?, ?, 'system', ?)",
+                    "VALUES ('kanban_notification', %s, %s, 'system', %s)",
                     (task_id, event_type, rendered),
                 )
                 conn.commit()
@@ -260,17 +269,17 @@ def notify_genesis_milestone(
     try:
         # --- DB: design metadata + latest phase row ---
         design_row = conn.execute(
-            "SELECT id, name, status, current_phase, created_at FROM genesis_designs WHERE id = ?",
+            "SELECT id, name, status, current_phase, created_at FROM genesis_designs WHERE id = %s",
             (design_id,),
         ).fetchone()
         phase_row = conn.execute(
             "SELECT phase, status, started_at, completed_at FROM genesis_phase_log "
-            "WHERE design_id = ? ORDER BY started_at DESC LIMIT 1",
+            "WHERE design_id = %s ORDER BY started_at DESC LIMIT 1",
             (design_id,),
         ).fetchone()
         reflex_rows = conn.execute(
             "SELECT name, confidence, fired_at FROM genesis_reflexes "
-            "WHERE design_id = ? ORDER BY fired_at DESC LIMIT 3",
+            "WHERE design_id = %s ORDER BY fired_at DESC LIMIT 3",
             (design_id,),
         ).fetchall()
 
@@ -312,7 +321,7 @@ def notify_genesis_milestone(
             if ch == "audit":
                 conn.execute(
                     "INSERT INTO audit_trail (resource_type, resource_id, event, actor, detail) "
-                    "VALUES ('genesis_notification', ?, ?, 'system', ?)",
+                    "VALUES ('genesis_notification', %s, %s, 'system', %s)",
                     (design_id, milestone_type, rendered),
                 )
                 conn.commit()
@@ -367,12 +376,12 @@ def notify_oracle_alert(
             prediction_ids,
         ).fetchall()
         lens_row = conn.execute(
-            "SELECT lens_id, name, horizon_days FROM oracle_lenses WHERE lens_id = ?",
+            "SELECT lens_id, name, horizon_days FROM oracle_lenses WHERE lens_id = %s",
             (lens_id,),
         ).fetchone()
         cat1_count = conn.execute(
             "SELECT COUNT(*) as cnt FROM oracle_predictions "
-            "WHERE lens_id = ? AND severity IN ('critical','high') AND outcome = 'pending'",
+            "WHERE lens_id = %s AND severity IN ('critical','high') AND outcome = 'pending'",
             (lens_id,),
         ).fetchone()
 
@@ -413,7 +422,7 @@ def notify_oracle_alert(
             if ch == "audit":
                 conn.execute(
                     "INSERT INTO audit_trail (resource_type, resource_id, event, actor, detail) "
-                    "VALUES ('oracle_notification', ?, ?, 'oracle', ?)",
+                    "VALUES ('oracle_notification', %s, %s, 'oracle', %s)",
                     (lens_id, alert_type, json.dumps({"rendered": rendered, "pred_ids": prediction_ids})),
                 )
                 conn.commit()

@@ -443,7 +443,7 @@ def check_dedup(hypothesis: str, domain: str, threshold: float = 0.85) -> dict:
         with get_connection() as conn:
             rows = conn.execute(
                 "SELECT hypothesis, content_hash FROM experiment_candidates "
-                "WHERE domain = ? AND status NOT IN ('deduped', 'failed') "
+                "WHERE domain = %s AND status NOT IN ('deduped', 'failed') "
                 "ORDER BY created_at DESC LIMIT 50",
                 (domain,),
             ).fetchall()

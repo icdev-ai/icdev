@@ -249,7 +249,7 @@ def record_quality_score(
         """INSERT INTO model_quality_scores
            (id, model_id, function_name, quality_score, response_time_ms,
             token_count, evaluation_method, evaluator, metadata_json, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
         (entry_id, model_id, function_name, score, response_time_ms, token_count, method, evaluator, meta_json, now),
     )
     conn.commit()
@@ -277,7 +277,7 @@ def get_baseline(model_id: str, function_name: str, baseline_days: int = 30) -> 
     # Find earliest record date
     row = conn.execute(
         """SELECT MIN(created_at) as earliest FROM model_quality_scores
-           WHERE model_id = ? AND function_name = ?""",
+           WHERE model_id = %s AND function_name = %s""",
         (model_id, function_name),
     ).fetchone()
 
@@ -290,7 +290,7 @@ def get_baseline(model_id: str, function_name: str, baseline_days: int = 30) -> 
     rows = conn.execute(
         """SELECT quality_score, response_time_ms, token_count
            FROM model_quality_scores
-           WHERE model_id = ? AND function_name = ? AND created_at <= ?
+           WHERE model_id = %s AND function_name = %s AND created_at <= %s
            ORDER BY created_at""",
         (model_id, function_name, cutoff),
     ).fetchall()
@@ -341,7 +341,7 @@ def reset_baseline(model_id: str, function_name: str) -> dict:
     cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
     cur = conn.execute(
         """DELETE FROM model_quality_scores
-           WHERE model_id = ? AND function_name = ? AND created_at < ?""",
+           WHERE model_id = %s AND function_name = %s AND created_at < %s""",
         (model_id, function_name, cutoff),
     )
     conn.commit()
@@ -407,7 +407,7 @@ def detect_drift(
         recent_rows = conn.execute(
             """SELECT quality_score, response_time_ms, token_count
                FROM model_quality_scores
-               WHERE model_id = ? AND function_name = ? AND created_at >= ?
+               WHERE model_id = %s AND function_name = %s AND created_at >= %s
                ORDER BY created_at""",
             (mid, fname, window_start),
         ).fetchall()
@@ -420,7 +420,7 @@ def detect_drift(
         baseline_rows = conn.execute(
             """SELECT quality_score, response_time_ms, token_count
                FROM model_quality_scores
-               WHERE model_id = ? AND function_name = ? AND created_at <= ?""",
+               WHERE model_id = %s AND function_name = %s AND created_at <= %s""",
             (mid, fname, baseline_cutoff),
         ).fetchall()
 
@@ -527,7 +527,7 @@ def _record_drift_event(
            (id, model_id, function_name, drift_type,
             baseline_value, current_value, deviation_pct,
             severity, action_taken, window_start, window_end, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
         (
             event_id,
             model_id,
@@ -593,7 +593,7 @@ def get_model_health(model_id: Optional[str] = None) -> dict:
         rows = conn.execute(
             """SELECT quality_score, response_time_ms, token_count, created_at
                FROM model_quality_scores
-               WHERE model_id = ? AND function_name = ?
+               WHERE model_id = %s AND function_name = %s
                ORDER BY created_at DESC LIMIT 50""",
             (mid, fname),
         ).fetchall()
@@ -617,7 +617,7 @@ def get_model_health(model_id: Optional[str] = None) -> dict:
         drift_rows = conn.execute(
             """SELECT drift_type, severity, deviation_pct, created_at
                FROM model_drift_events
-               WHERE model_id = ? AND function_name = ? AND created_at >= ?
+               WHERE model_id = %s AND function_name = %s AND created_at >= %s
                ORDER BY created_at DESC""",
             (mid, fname, recent_24h),
         ).fetchall()
@@ -695,7 +695,7 @@ def get_drift_history(limit: int = 50, model_id: Optional[str] = None) -> List[d
                    baseline_value, current_value, deviation_pct,
                    severity, action_taken, window_start, window_end, created_at
             FROM model_drift_events {where_clause}
-            ORDER BY created_at DESC LIMIT ?""",  # nosec B608
+            ORDER BY created_at DESC LIMIT %s""",  # nosec B608
         params + [limit],
     ).fetchall()
 
@@ -710,7 +710,7 @@ def run_gate() -> dict:
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
     rows = conn.execute(
         """SELECT COUNT(*) as cnt FROM model_drift_events
-           WHERE severity = 'critical' AND created_at >= ?""",
+           WHERE severity = 'critical' AND created_at >= %s""",
         (cutoff,),
     ).fetchone()
 

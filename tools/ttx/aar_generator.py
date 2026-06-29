@@ -17,7 +17,7 @@ def generate_aar(session_id: int) -> str:
     """Generate a Markdown AAR for a completed session."""
     conn = get_connection()
     session = conn.execute(
-        "SELECT * FROM ttx_sessions WHERE session_id = ?", (session_id,)
+        "SELECT * FROM ttx_sessions WHERE session_id = %s", (session_id,)
     ).fetchone()
     if not session:
         return f"# AAR Error\nSession {session_id} not found."
@@ -26,11 +26,11 @@ def generate_aar(session_id: int) -> str:
     teams = {
         r["team_id"]: dict(r)
         for r in conn.execute(
-            "SELECT * FROM ttx_teams WHERE session_id = ?", (session_id,)
+            "SELECT * FROM ttx_teams WHERE session_id = %s", (session_id,)
         ).fetchall()
     }
     injects = conn.execute(
-        "SELECT * FROM ttx_injects WHERE session_id = ? ORDER BY sequence_num, at_minute",
+        "SELECT * FROM ttx_injects WHERE session_id = %s ORDER BY sequence_num, at_minute",
         (session_id,),
     ).fetchall()
     lb = get_leaderboard(session_id)
@@ -81,7 +81,7 @@ def generate_aar(session_id: int) -> str:
             """SELECT r.*, s.receipt_pts, s.judge_pts, s.time_bonus_pts, s.total_pts, s.judge_rationale_json
                FROM ttx_responses r
                LEFT JOIN ttx_scores s ON s.response_id = r.response_id
-               WHERE r.inject_id = ?
+               WHERE r.inject_id = %s
                ORDER BY r.submitted_at""",
             (inj["inject_id"],),
         ).fetchall()
@@ -109,11 +109,11 @@ def generate_aar(session_id: int) -> str:
     _h("|------|----------------|---------------|")
     for team_id, team in teams.items():
         receipt_count = conn.execute(
-            "SELECT COALESCE(SUM(receipt_count), 0) FROM ttx_scores WHERE team_id = ?",
+            "SELECT COALESCE(SUM(receipt_count), 0) FROM ttx_scores WHERE team_id = %s",
             (team_id,),
         ).fetchone()[0] or 0
         tools_used = conn.execute(
-            "SELECT DISTINCT tool_slug FROM ttx_api_log WHERE team_id = ?",
+            "SELECT DISTINCT tool_slug FROM ttx_api_log WHERE team_id = %s",
             (team_id,),
         ).fetchall()
         tool_list = ", ".join(r["tool_slug"] for r in tools_used) or "None"
@@ -155,7 +155,7 @@ def _collect_aadc_scores(conn, session_id: int, injects, teams: dict) -> list[di
             """SELECT r.team_id, s.judge_pts, s.judge_rationale_json
                FROM ttx_responses r
                LEFT JOIN ttx_scores s ON s.response_id = r.response_id
-               WHERE r.inject_id = ?""",
+               WHERE r.inject_id = %s""",
             (inj["inject_id"],),
         ).fetchall()
         for resp in responses:
@@ -177,6 +177,82 @@ def _collect_aadc_scores(conn, session_id: int, injects, teams: dict) -> list[di
                 "failed": ", ".join(failed_ids) if failed_ids else "none",
             })
     return results
+
+
+def generate_aar_via_docgen(session_data: dict, tournament_data: dict | None = None) -> dict:
+    """Generate AAR via DocGen workflow engine with fallback to direct generation.
+
+    Returns: {"content": str, "artifact_id": str | None, "via_docgen": bool}
+    """
+    import time
+    try:
+        import requests
+        base = "http://localhost:5050"
+
+        session_resp = requests.post(
+            f"{base}/api/docgen/sessions",
+            json={
+                "doc_type": "aar",
+                "source": {
+                    "type": "ttx_session",
+                    "session_id": session_data.get("session_id"),
+                    "scenario_name": session_data.get("scenario_name", "Unknown"),
+                    "teams": session_data.get("teams", []),
+                    "inject_count": session_data.get("inject_count", 0),
+                    "duration_minutes": session_data.get("duration_minutes", 60),
+                },
+                "template": "mil_aar_std",
+                "il_level": "IL4",
+            },
+            timeout=10,
+        )
+        if session_resp.status_code not in (200, 201):
+            raise ValueError(f"DocGen session create failed: {session_resp.status_code}")
+
+        docgen_session_id = session_resp.json().get("session_id")
+
+        workflow_resp = requests.post(
+            f"{base}/api/docgen/workflow/run",
+            json={
+                "session_id": docgen_session_id,
+                "workflow_config": {
+                    "doc_type": "aar",
+                    "sections": [
+                        "executive_summary", "timeline",
+                        "team_performance", "lessons_learned", "recommendations",
+                    ],
+                    "parallel": True,
+                    "template": "mil_aar_std",
+                },
+            },
+            timeout=10,
+        )
+        if workflow_resp.status_code not in (200, 201):
+            raise ValueError(f"DocGen workflow start failed: {workflow_resp.status_code}")
+
+        workflow_id = workflow_resp.json().get("workflow_id")
+
+        for _ in range(12):
+            time.sleep(5)
+            status_resp = requests.get(
+                f"{base}/api/docgen/workflow/{workflow_id}/status", timeout=5
+            )
+            if status_resp.json().get("status") in ("complete", "review"):
+                break
+
+        doc_resp = requests.get(
+            f"{base}/api/docgen/sessions/{docgen_session_id}/document", timeout=10
+        )
+        content = doc_resp.json().get("content", "")
+        artifact_id = doc_resp.json().get("artifact_id")
+
+        return {"content": content, "artifact_id": artifact_id, "via_docgen": True}
+
+    except Exception as exc:
+        log.info("DocGen AAR unavailable (%s); using direct generation", exc)
+        session_id = session_data.get("session_id")
+        content = generate_aar(session_id) if session_id else "# AAR\n*No session ID provided.*"
+        return {"content": content, "artifact_id": None, "via_docgen": False}
 
 
 def export_aar_pdf(session_id: int, output_path: Path | None = None) -> Path | None:

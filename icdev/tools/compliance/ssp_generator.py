@@ -80,7 +80,7 @@ def _load_nist_controls():
 
 def _get_project_data(conn, project_id):
     """Load project record from database."""
-    row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+    row = conn.execute("SELECT * FROM projects WHERE id = %s", (project_id,)).fetchone()
     if not row:
         raise ValueError(f"Project '{project_id}' not found in database.")
     return dict(row)
@@ -89,7 +89,7 @@ def _get_project_data(conn, project_id):
 def _get_control_implementations(conn, project_id):
     """Get all control mappings for a project."""
     rows = conn.execute(
-        "SELECT * FROM project_controls WHERE project_id = ? ORDER BY control_id",
+        "SELECT * FROM project_controls WHERE project_id = %s ORDER BY control_id",
         (project_id,),
     ).fetchall()
     return [dict(r) for r in rows]
@@ -99,7 +99,7 @@ def _get_stig_summary(conn, project_id):
     """Get STIG findings summary."""
     rows = conn.execute(
         """SELECT severity, status, COUNT(*) as cnt
-           FROM stig_findings WHERE project_id = ?
+           FROM stig_findings WHERE project_id = %s
            GROUP BY severity, status""",
         (project_id,),
     ).fetchall()
@@ -110,7 +110,7 @@ def _get_poam_summary(conn, project_id):
     """Get POAM items summary."""
     rows = conn.execute(
         """SELECT severity, status, COUNT(*) as cnt
-           FROM poam_items WHERE project_id = ?
+           FROM poam_items WHERE project_id = %s
            GROUP BY severity, status""",
         (project_id,),
     ).fetchall()
@@ -127,7 +127,7 @@ def _get_fips199_categorization(conn, project_id):
             """SELECT confidentiality_impact, integrity_impact, availability_impact,
                       overall_categorization, baseline_selected, status
                FROM fips199_categorizations
-               WHERE project_id = ? AND status IN ('approved', 'draft')
+               WHERE project_id = %s AND status IN ('approved', 'draft')
                ORDER BY CASE status WHEN 'approved' THEN 1 ELSE 2 END,
                         categorization_date DESC
                LIMIT 1""",
@@ -242,7 +242,7 @@ def _load_pre_generated_narratives(conn, project_id):
         return narratives
     try:
         rows = conn.execute(
-            "SELECT control_id, narrative_text FROM control_narratives WHERE project_id = ? ORDER BY control_id",
+            "SELECT control_id, narrative_text FROM control_narratives WHERE project_id = %s ORDER BY control_id",
             (project_id,),
         ).fetchall()
         for row in rows:
@@ -364,7 +364,7 @@ def _log_audit_event(conn, project_id, action, details, file_path):
             """INSERT INTO audit_trail
                (project_id, event_type, actor, action, details,
                 affected_files, classification)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
             (
                 project_id,
                 "ssp_generated",
@@ -451,7 +451,7 @@ def generate_ssp(
         # Determine version number
         existing = conn.execute(
             """SELECT MAX(CAST(version AS REAL)) as max_ver
-               FROM ssp_documents WHERE project_id = ?""",
+               FROM ssp_documents WHERE project_id = %s""",
             (project_id,),
         ).fetchone()
         max_ver = existing["max_ver"] if existing and existing["max_ver"] else 0.0
@@ -462,7 +462,7 @@ def generate_ssp(
             """INSERT INTO ssp_documents
                (project_id, version, system_name, content, file_path,
                 classification, status)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
             (
                 project_id,
                 new_version,

@@ -181,7 +181,7 @@ class OSINTPrivacySanitizer:
                 """
                 INSERT INTO osint_privacy_audit
                 (id, timestamp, source, url_hash, pii_found, entity_types, detection_count)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     audit_event["id"],

@@ -280,7 +280,7 @@ def _audit(conn, action, details="", actor="question_generator"):
     try:
         conn.execute(
             "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (_uuid(), _now(), "govcon.question_generator", actor, action, details, "govcon"),
         )
     except Exception:
@@ -454,7 +454,7 @@ def generate_questions(opp_id, rfp_text=None, db_path=None):
         # Get RFP text — try opportunity description first, then assemble from shall statements
         if not rfp_text:
             # Check sam_gov_opportunities for description
-            opp = conn.execute("SELECT * FROM proposal_opportunities WHERE id = ?", (opp_id,)).fetchone()
+            opp = conn.execute("SELECT * FROM proposal_opportunities WHERE id = %s", (opp_id,)).fetchone()
             if not opp:
                 return {"status": "error", "error": f"Opportunity {opp_id} not found"}
 
@@ -462,14 +462,14 @@ def generate_questions(opp_id, rfp_text=None, db_path=None):
             # Get SAM.gov description if linked
             if opp["sam_gov_opportunity_id"]:
                 sam = conn.execute(
-                    "SELECT description FROM sam_gov_opportunities WHERE id = ?", (opp["sam_gov_opportunity_id"],)
+                    "SELECT description FROM sam_gov_opportunities WHERE id = %s", (opp["sam_gov_opportunity_id"],)
                 ).fetchone()
                 if sam and sam["description"]:
                     parts.append(sam["description"])
 
             # Get shall statements
             stmts = conn.execute(
-                "SELECT statement_text FROM rfp_shall_statements WHERE proposal_opportunity_id = ?", (opp_id,)
+                "SELECT statement_text FROM rfp_shall_statements WHERE proposal_opportunity_id = %s", (opp_id,)
             ).fetchall()
             for s in stmts:
                 parts.append(s["statement_text"])
@@ -537,13 +537,13 @@ def generate_and_store(opp_id, rfp_text=None, db_path=None, created_by="question
     try:
         # Get existing hashes for dedup against already-stored questions
         existing = conn.execute(
-            "SELECT content_hash FROM proposal_questions WHERE opportunity_id = ?", (opp_id,)
+            "SELECT content_hash FROM proposal_questions WHERE opportunity_id = %s", (opp_id,)
         ).fetchall()
         existing_hashes = {r["content_hash"] for r in existing if r["content_hash"]}
 
         # Get current max question number
         max_num_row = conn.execute(
-            "SELECT MAX(question_number) as m FROM proposal_questions WHERE opportunity_id = ?", (opp_id,)
+            "SELECT MAX(question_number) as m FROM proposal_questions WHERE opportunity_id = %s", (opp_id,)
         ).fetchone()
         next_num = (max_num_row["m"] or 0) + 1
 
@@ -560,7 +560,7 @@ def generate_and_store(opp_id, rfp_text=None, db_path=None, created_by="question
                    (id, opportunity_id, question_number, question_text, category, priority,
                     source, rfp_section_ref, status, ambiguity_trigger, content_hash,
                     created_by, classification, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, 'auto', ?, 'draft', ?, ?, ?, 'CUI', ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, 'auto', %s, 'draft', %s, %s, %s, 'CUI', %s, %s)""",
                 (
                     q_id,
                     opp_id,
@@ -581,7 +581,7 @@ def generate_and_store(opp_id, rfp_text=None, db_path=None, created_by="question
 
         # Update question count on opportunity
         conn.execute(
-            "UPDATE proposal_opportunities SET question_count = (SELECT COUNT(*) FROM proposal_questions WHERE opportunity_id = ?), updated_at = ? WHERE id = ?",
+            "UPDATE proposal_opportunities SET question_count = (SELECT COUNT(*) FROM proposal_questions WHERE opportunity_id = %s), updated_at = %s WHERE id = %s",
             (opp_id, _now(), opp_id),
         )
 
@@ -608,7 +608,7 @@ def list_questions(opp_id, db_path=None):
     conn = _get_db(db_path)
     try:
         rows = conn.execute(
-            "SELECT * FROM proposal_questions WHERE opportunity_id = ? ORDER BY question_number", (opp_id,)
+            "SELECT * FROM proposal_questions WHERE opportunity_id = %s ORDER BY question_number", (opp_id,)
         ).fetchall()
         questions = [dict(r) for r in rows]
 

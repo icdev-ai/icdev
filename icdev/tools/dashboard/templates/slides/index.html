@@ -9,7 +9,14 @@
 <div class="page-header" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
     <div>
         <h1>Slide Deck Generator</h1>
-        <p class="subtitle">Agentic PPTX generation from ICDEV™ live data — canvases, kanban, genesis, and capabilities</p>
+        <p class="subtitle">
+            Agentic PPTX generation from ICDEV™ live data or any topic — AI-researched, themed, and citable.
+            {% if decks %}
+            <span style="display:inline-block; margin-left:12px; padding:3px 10px; background:rgba(212,160,23,0.12); border:1px solid rgba(212,160,23,0.3); border-radius:12px; font-size:12px; color:#D4A017; font-weight:600;">
+                {{ decks | length }} deck{{ 's' if decks | length != 1 else '' }} · {{ decks | sum(attribute='slide_count') }} slides
+            </span>
+            {% endif %}
+        </p>
     </div>
     <a href="/slides/new" class="btn btn-primary">+ Generate New Deck</a>
 </div>
@@ -34,7 +41,7 @@
     </div>
 </div>
 
-<!-- Deck Table -->
+<!-- Deck Cards -->
 <div class="card">
     <div class="card-header" style="display:flex; align-items:center; justify-content:space-between;">
         <h3 style="margin:0;">Recent Decks</h3>
@@ -47,56 +54,87 @@
             </select>
         </div>
     </div>
-    <div class="card-body" style="padding:0;">
+    <div class="card-body">
         {% if decks %}
-        <table class="table" id="decks-table">
-            <thead>
-                <tr>
-                    <th>Title</th>
-                    <th>Type</th>
-                    <th>Theme</th>
-                    <th>Slides</th>
-                    <th>Status</th>
-                    <th>Created</th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-            {% for deck in decks %}
-                <tr data-status="{{ deck.status }}">
-                    <td><a href="/slides/{{ deck.deck_id }}">{{ deck.title | truncate(60) }}</a></td>
-                    <td><span class="badge badge-info">{{ deck.deck_type | replace('_', ' ') | title }}</span></td>
-                    <td>{{ deck.theme | replace('_', ' ') | title }}</td>
-                    <td>{{ deck.slide_count }}</td>
-                    <td>
-                        {% if deck.status == 'completed' %}
-                            <span class="badge badge-success">Completed</span>
-                        {% elif deck.status == 'auto' %}
-                            <span class="badge badge-primary">Auto</span>
-                        {% elif deck.status == 'running' %}
-                            <span class="badge badge-warning">Running…</span>
+        <div id="decks-grid" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(280px,1fr)); gap:16px;">
+        {% for deck in decks %}
+        {% set theme_bg = {
+            'midnight_executive': '#0A1628',
+            'navy_gold': '#0A2244',
+            'slate_amber': '#1e2a3a',
+            'forest_green': '#1a3a2a',
+            'crimson_silver': '#2a1020',
+            'dark_tech': '#1a1a2e',
+        }.get(deck.theme, '#0A1628') %}
+        {% set theme_accent = {
+            'midnight_executive': '#C8A951',
+            'navy_gold': '#D4A017',
+            'slate_amber': '#F59E0B',
+            'forest_green': '#6ee7b7',
+            'crimson_silver': '#e2e8f0',
+            'dark_tech': '#60a5fa',
+        }.get(deck.theme, '#C8A951') %}
+        <div class="deck-card" data-status="{{ deck.status }}"
+             style="background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:10px; overflow:hidden; display:flex; flex-direction:column; transition:box-shadow 0.2s;"
+             onmouseover="this.style.boxShadow='0 4px 20px rgba(0,0,0,0.3)'"
+             onmouseout="this.style.boxShadow=''">
+
+            <!-- Themed accent bar -->
+            <div style="background:{{ theme_bg }}; border-bottom:3px solid {{ theme_accent }}; padding:16px 16px 12px;">
+                <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:8px;">
+                    <div style="color:{{ theme_accent }}; font-weight:700; font-size:14px; line-height:1.3; flex:1;">
+                        {{ deck.title | truncate(55) }}
+                    </div>
+                    <div style="flex-shrink:0;">
+                        {% if deck.status == 'completed' or deck.status == 'auto' %}
+                        <span style="display:inline-block; width:8px; height:8px; background:#51cf66; border-radius:50%; box-shadow:0 0 4px #51cf66;"></span>
+                        {% elif deck.status in ('running', 'gathering', 'planning', 'generating', 'graphics', 'building') %}
+                        <span style="display:inline-block; width:8px; height:8px; background:#F59E0B; border-radius:50%; animation:pulse 1.5s infinite;" title="{{ deck.status | title }}"></span>
                         {% elif deck.status == 'failed' %}
-                            <span class="badge badge-danger">Failed</span>
-                        {% else %}
-                            <span class="badge">{{ deck.status }}</span>
+                        <span style="display:inline-block; width:8px; height:8px; background:#ff6b6b; border-radius:50%;"></span>
                         {% endif %}
-                    </td>
-                    <td>{{ deck.created_at.strftime('%Y-%m-%d %H:%M') if deck.created_at else '—' }}</td>
-                    <td>
-                        <a href="/slides/{{ deck.deck_id }}" class="btn btn-sm btn-secondary">View</a>
-                        {% if deck.status in ('completed', 'auto') %}
-                        <a href="/slides/api/{{ deck.deck_id }}/download" class="btn btn-sm btn-primary">↓ PPTX</a>
-                        {% endif %}
-                    </td>
-                </tr>
-            {% endfor %}
-            </tbody>
-        </table>
+                    </div>
+                </div>
+                <div style="margin-top:8px; display:flex; flex-wrap:wrap; gap:5px;">
+                    <span style="background:rgba(255,255,255,0.08); color:{{ theme_accent }}; font-size:10px; padding:2px 7px; border-radius:10px; font-weight:600; border:1px solid rgba(255,255,255,0.1);">
+                        {{ deck.theme | replace('_', ' ') | title }}
+                    </span>
+                    <span style="background:rgba(255,255,255,0.08); color:#C8D2DC; font-size:10px; padding:2px 7px; border-radius:10px; border:1px solid rgba(255,255,255,0.1);">
+                        {{ (deck.tone or 'professional') | replace('_', ' ') | title }}
+                    </span>
+                    <span style="background:rgba(255,255,255,0.08); color:#C8D2DC; font-size:10px; padding:2px 7px; border-radius:10px; border:1px solid rgba(255,255,255,0.1);">
+                        {{ deck.deck_type | replace('_', ' ') | title }}
+                    </span>
+                </div>
+            </div>
+
+            <!-- Card body -->
+            <div style="padding:12px 16px; flex:1; display:flex; flex-direction:column; gap:6px;">
+                {% if deck.occasion %}
+                <div style="font-size:12px; color:var(--text-secondary); font-style:italic;">{{ deck.occasion | truncate(50) }}</div>
+                {% endif %}
+                <div style="display:flex; align-items:center; gap:12px; font-size:12px; color:var(--text-secondary);">
+                    <span>🗂 {{ deck.slide_count }} slides</span>
+                    <span>{{ deck.created_at[:10] if (deck.created_at and deck.created_at is string) else (deck.created_at.strftime('%Y-%m-%d') if deck.created_at else '—') }}</span>
+                </div>
+            </div>
+
+            <!-- Card actions -->
+            <div style="padding:10px 16px 14px; display:flex; gap:6px; flex-wrap:wrap; border-top:1px solid var(--border-color);">
+                <a href="/slides/{{ deck.deck_id }}" class="btn btn-sm btn-secondary" style="flex:1; text-align:center;">View</a>
+                {% if deck.status in ('completed', 'auto') %}
+                <a href="/slides/{{ deck.deck_id }}/present" class="btn btn-sm" style="flex:1; text-align:center; background:{{ theme_accent }}; color:#000; font-weight:700;">▶ Present</a>
+                <a href="/slides/api/{{ deck.deck_id }}/download" class="btn btn-sm btn-secondary" title="Download PPTX">↓</a>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+        </div>
         {% else %}
         <div style="padding:48px; text-align:center; color:var(--text-secondary);">
             <div style="font-size:48px; margin-bottom:12px;">🎨</div>
             <div style="font-size:18px; font-weight:600; margin-bottom:8px;">No decks yet</div>
-            <div style="margin-bottom:20px;">Generate your first ICDEV™ slide deck from live data.</div>
+            <div style="margin-bottom:20px;">Generate your first ICDEV™ slide deck from live data or any topic.</div>
             <a href="/slides/new" class="btn btn-primary">Generate New Deck</a>
         </div>
         {% endif %}
@@ -106,11 +144,20 @@
 <!-- IQE Query Widget -->
 {% include "includes/iqe_query_widget.html" %}
 
+<style>
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+}
+</style>
 <script>
 function filterDecks() {
     var val = document.getElementById('filter-status').value;
-    document.querySelectorAll('#decks-table tbody tr').forEach(function(row) {
-        row.style.display = (!val || row.dataset.status === val) ? '' : 'none';
+    document.querySelectorAll('#decks-grid .deck-card').forEach(function(card) {
+        var status = card.dataset.status;
+        var visible = !val || status === val ||
+            (val === 'completed' && ['completed','auto'].includes(status));
+        card.style.display = visible ? '' : 'none';
     });
 }
 </script>

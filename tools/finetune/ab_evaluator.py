@@ -113,8 +113,8 @@ def compare_models(
     """
     conn = _get_db(db_path)
     try:
-        mv_a = conn.execute("SELECT * FROM ft_model_versions WHERE id = ?", (model_a_id,)).fetchone()
-        mv_b = conn.execute("SELECT * FROM ft_model_versions WHERE id = ?", (model_b_id,)).fetchone()
+        mv_a = conn.execute("SELECT * FROM ft_model_versions WHERE id = %s", (model_a_id,)).fetchone()
+        mv_b = conn.execute("SELECT * FROM ft_model_versions WHERE id = %s", (model_b_id,)).fetchone()
 
         if not mv_a:
             return {"success": False, "error": f"Model A not found: {model_a_id}"}
@@ -192,7 +192,7 @@ def compare_models(
                 comparison_model, comparison_scores,
                 statistical_significance, pass_threshold,
                 classification, tenant_id, project_id, evaluated_at)
-               VALUES (?, ?, 'ab_comparison', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, 'ab_comparison', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 eval_id,
                 model_a_id,

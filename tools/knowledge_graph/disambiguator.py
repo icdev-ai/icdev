@@ -148,7 +148,7 @@ def find_duplicates(
         # Fetch nodes
         if graph_id:
             rows = conn.execute(
-                "SELECT id, graph_id, label, entity_type, properties, embedding FROM kg_nodes WHERE graph_id = ?",
+                "SELECT id, graph_id, label, entity_type, properties, embedding FROM kg_nodes WHERE graph_id = %s",
                 (graph_id,),
             ).fetchall()
         else:
@@ -350,11 +350,11 @@ def merge_entities(
     try:
         # Fetch both nodes
         source_row = conn.execute(
-            "SELECT id, graph_id, label, entity_type, properties FROM kg_nodes WHERE id = ?",
+            "SELECT id, graph_id, label, entity_type, properties FROM kg_nodes WHERE id = %s",
             (source_id,),
         ).fetchone()
         target_row = conn.execute(
-            "SELECT id, graph_id, label, entity_type, properties FROM kg_nodes WHERE id = ?",
+            "SELECT id, graph_id, label, entity_type, properties FROM kg_nodes WHERE id = %s",
             (target_id,),
         ).fetchone()
 
@@ -397,7 +397,7 @@ def merge_entities(
 
         # Update target node properties
         conn.execute(
-            "UPDATE kg_nodes SET properties = ?, centrality = centrality WHERE id = ?",
+            "UPDATE kg_nodes SET properties = %s, centrality = centrality WHERE id = %s",
             (json.dumps(merged_props, ensure_ascii=False), target_id),
         )
 
@@ -406,7 +406,7 @@ def merge_entities(
 
         # Edges where source is the source_id
         rows = conn.execute(
-            "SELECT id, source_id, target_id FROM kg_edges WHERE source_id = ?",
+            "SELECT id, source_id, target_id FROM kg_edges WHERE source_id = %s",
             (source_id,),
         ).fetchall()
         for row in rows:
@@ -414,17 +414,17 @@ def merge_entities(
             new_target = edge["target_id"]
             # Avoid self-loops
             if new_target == target_id:
-                conn.execute("DELETE FROM kg_edges WHERE id = ?", (edge["id"],))
+                conn.execute("DELETE FROM kg_edges WHERE id = %s", (edge["id"],))
             else:
                 conn.execute(
-                    "UPDATE kg_edges SET source_id = ? WHERE id = ?",
+                    "UPDATE kg_edges SET source_id = %s WHERE id = %s",
                     (target_id, edge["id"]),
                 )
             edges_updated += 1
 
         # Edges where source is the target_id column
         rows = conn.execute(
-            "SELECT id, source_id, target_id FROM kg_edges WHERE target_id = ?",
+            "SELECT id, source_id, target_id FROM kg_edges WHERE target_id = %s",
             (source_id,),
         ).fetchall()
         for row in rows:
@@ -432,21 +432,21 @@ def merge_entities(
             new_source = edge["source_id"]
             # Avoid self-loops
             if new_source == target_id:
-                conn.execute("DELETE FROM kg_edges WHERE id = ?", (edge["id"],))
+                conn.execute("DELETE FROM kg_edges WHERE id = %s", (edge["id"],))
             else:
                 conn.execute(
-                    "UPDATE kg_edges SET target_id = ? WHERE id = ?",
+                    "UPDATE kg_edges SET target_id = %s WHERE id = %s",
                     (target_id, edge["id"]),
                 )
             edges_updated += 1
 
         # Delete source node
-        conn.execute("DELETE FROM kg_nodes WHERE id = ?", (source_id,))
+        conn.execute("DELETE FROM kg_nodes WHERE id = %s", (source_id,))
 
         # Update graph entity_count
         source_graph_id = source["graph_id"]
         conn.execute(
-            "UPDATE kg_graphs SET entity_count = entity_count - 1, updated_at = ? WHERE id = ?",
+            "UPDATE kg_graphs SET entity_count = entity_count - 1, updated_at = %s WHERE id = %s",
             (_now(), source_graph_id),
         )
 
@@ -498,7 +498,7 @@ def add_alias(
     conn = _get_db(db_path)
     try:
         row = conn.execute(
-            "SELECT id, graph_id, label, entity_type, properties FROM kg_nodes WHERE id = ?",
+            "SELECT id, graph_id, label, entity_type, properties FROM kg_nodes WHERE id = %s",
             (node_id,),
         ).fetchone()
 
@@ -525,7 +525,7 @@ def add_alias(
 
         # Persist
         conn.execute(
-            "UPDATE kg_nodes SET properties = ? WHERE id = ?",
+            "UPDATE kg_nodes SET properties = %s WHERE id = %s",
             (json.dumps(props, ensure_ascii=False), node_id),
         )
         conn.commit()
@@ -587,7 +587,7 @@ def resolve_ambiguous(
         # Fetch candidate nodes
         if graph_id:
             rows = conn.execute(
-                "SELECT id, graph_id, label, entity_type, properties FROM kg_nodes WHERE graph_id = ?",
+                "SELECT id, graph_id, label, entity_type, properties FROM kg_nodes WHERE graph_id = %s",
                 (graph_id,),
             ).fetchall()
         else:
@@ -667,7 +667,7 @@ def resolve_ambiguous(
 
                 # Fetch connected edges for additional context
                 edge_rows = conn.execute(
-                    "SELECT relationship, properties FROM kg_edges WHERE source_id = ? OR target_id = ?",
+                    "SELECT relationship, properties FROM kg_edges WHERE source_id = %s OR target_id = %s",
                     (cand["id"], cand["id"]),
                 ).fetchall()
                 for edge_row in edge_rows:

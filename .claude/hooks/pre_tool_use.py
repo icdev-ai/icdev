@@ -96,6 +96,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "ad_news_scenario_links",
         "ad_news_clusters",
         "ad_news_patterns",
+        # FathomDesk macro regime classification store (migration 021, NIST AU — append-only signal log)
+        "ad_macro_regimes",
         # FathomDesk Trading Oracle (append-only predictions + convergence)
         "ad_trading_predictions",
         "ad_trading_convergence_events",
@@ -154,6 +156,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # Phase 35 — Innovation Engine (D206)
         "innovation_signals",
         "innovation_triage_log",
+        # ACF normalized innovation engine outputs (append-only)
+        "innovation_signal",
         # Phase 39 — Observability
         "agent_executions",
         # Phase 40 — NLQ
@@ -166,6 +170,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "tool_chain_events",
         "agent_trust_scores",
         "agent_output_violations",
+        # Agentic AI safety_layer SIEM event sink (append-only, best-effort forwarder)
+        "siem_events",
         # Phase 46 — Observability, Traceability & XAI (D280-D290)
         "otel_spans",
         "prov_entities",
@@ -200,6 +206,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # Phase 64 — RAG Subsystem (D-RAG-8, D-RAG-11)
         "rag_ingestion_log",
         "rag_retrieval_log",
+        # RAG provenance ledger — append-only AIA chain-of-custody (D-AIDP, NIST AU-3)
+        "rag_provenance_ledger",
         # Phase 69 — Codebase Assistant (D-CA-6)
         "codebase_qa_cache",
         # Genesis v2.0 (D-GEN-6, D-GEN-10)
@@ -230,6 +238,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "creative_feature_gaps",
         "creative_specs",
         "creative_trends",
+        # ACF normalized creative engine inputs (append-only)
+        "creative_gap",
         # GovCon Intelligence (Phase 59, D361-D373)
         "sam_gov_quota_events",
         "rfp_shall_statements",
@@ -408,6 +418,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # FathomDesk Value Compass (migration 048 — F&G + Buffett snapshots, NIST AU)
         "ad_fear_greed_snapshots",
         "ad_buffett_snapshots",
+        # Strategos interdiction analysis results (migration 058, NIST AU — append-only ranked outputs)
+        "sg_interdiction_results",
         # Strategos Analyst Annotation Layer (migration 060, NIST AU — append-only annotation store)
         "sg_analyst_annotations",
         # DES execution audit log (NIST AU — append-only)
@@ -424,6 +436,10 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "wf_citations",
         # WNE artifact store (migration 084, NIST AU — append-only)
         "wne_artifacts",
+        # Genesis reflex output artifact store (migration 188, NIST AU — append-only reflex output log)
+        "genesis_outputs",
+        # Genesis design phase-transition log (migration 189, NIST AU — append-only phase audit)
+        "genesis_phase_log",
         # Genesis reflex run log (migration 116, NIST AU — cooldown tracking + audit)
         "genesis_reflex_log",
         # NMCE — AI conversation audit trail (migration canvas, NIST AU)
@@ -476,8 +492,9 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "dd_mapping_transforms",
         # Slide Deck Generator — generation audit trail (NIST AU, append-only)
         "slides_audit",
-        # ACE (Autonomous Collaborative Engine) — step execution audit trail (NIST AU, append-only)
+        # ACE (Autonomous Collaborative Engine) — step execution audit trail + skill candidates (NIST AU, append-only)
         "ace_audit_log",
+        "ace_skill_candidates",
         # SIPA Software Integrity & Provenance Assessor (sipa-, NIST AU — assessment evidence is immutable)
         "integrity_capabilities",
         "integrity_findings",
@@ -493,6 +510,47 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "cwk_sessions",
         # EQO Centralized Logging (eqo-log-01, migration 181) — log rows are immutable evidence (NIST AU)
         "centralized_logs",
+        # Enterprise-configurable platform (Phase 5) — component enable/profile/override audit
+        "component_audit_log",
+        # MCIP DAT — DTI snapshots are append-only audit trail (NIST AU-9, issue-18)
+        "mcip_dti_scores",
+        # ECR SSO — session records are append-only NIST AU (sso_providers is mutable)
+        "sso_sessions",
+        # ECR SOC 2 — evidence records are immutable compliance evidence (NIST AU-9, migration 211)
+        "evidence_items",
+        # ECR DRES — zone assignments are append-only audit trail (NIST AU-9, migration 212)
+        "tenant_zone_assignments",
+        # ECR DRES-03 — GDPR erasure audit log (append-only NIST AU, immutable evidence of erasure)
+        "erasure_audit",
+        # ECR Billing (migration 213) — usage events are immutable billing audit records (NIST AU-9)
+        "usage_events",
+        # ECR API Keys (migration 215) — keys are append-only; revocation sets revoked_at, never deletes (NIST AU-9)
+        "api_keys",
+        # IDR — conflict resolution trail is append-only (resolution recorded in-place, rows never deleted — NIST AU)
+        "idr_conflicts",
+        # NQE / Forward Networks Integration (migration 220, 222 — NIST AU)
+        "nc_advisory_assessments",   # impact assessment results — proof chain for ATO
+        "nc_nqe_audit_log",          # every translate/run/approve action traced
+        "nc_remediation_status_log", # every status transition for remediation actions
+        "nc_poam_items",             # formal POAM entries (FedRAMP/DoD format)
+        "nc_poam_status_log",        # POAM milestone/status change log
+        "nc_exceptions",             # filed exceptions for unmitigated vulnerabilities
+        "nc_exception_approvals",    # AO/ISSO/ISSM approval chain for exceptions
+        # PVM — Predictive Vulnerability Management (migration 221)
+        "nc_vuln_predictions",       # time-series risk scores per CVE (NIST AU)
+        "nc_patch_plans",            # AI-generated patch schedules (immutable once created)
+        # PNA — Predictive Network Analytics (migration 222)
+        "nc_eol_predictions",        # device end-of-life/support risk scores
+        "nc_bgp_predictions",        # BGP session instability forecasts
+        "nc_compliance_drift",       # STIG/compliance baseline drift predictions
+        "nc_capacity_predictions",   # bandwidth saturation forecasts
+        "nc_change_risk",            # pre-change failure probability scores
+        "nc_supply_chain_risk",      # vendor supply-chain risk aggregation
+        # TimesFM Forecasting microservice (migration 219) — forecast audit log append-only NIST AU
+        "forecast_audit",
+        # ACE QA Agent (NIST AU — test evidence is immutable)
+        "ace_qa_runs",
+        "ace_qa_failures",
     ]
 
     if tool_name == "Bash":

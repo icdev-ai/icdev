@@ -76,7 +76,7 @@ def _record_advisory(context_id: str, turn_number: int):
 
 def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
     row = conn.execute(
-        "SELECT COUNT(*) as cnt FROM sqlite_master WHERE type='table' AND name=?",
+        "SELECT COUNT(*) as cnt FROM sqlite_master WHERE type='table' AND name=%s",
         (name,),
     ).fetchone()
     return (row[0] if isinstance(row, (tuple, list)) else row["cnt"]) > 0
@@ -101,7 +101,7 @@ def _check_code_quality(project_id: str) -> dict | None:
             """SELECT maintainability_score, avg_complexity, total_smells,
                       total_functions, dead_code_pct, scanned_at
                FROM code_quality_metrics
-               WHERE project_id = ?
+               WHERE project_id = %s
                ORDER BY scanned_at DESC LIMIT 1""",
             (project_id,),
         ).fetchone()

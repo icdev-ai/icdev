@@ -178,7 +178,7 @@ def get_forge_status(connector_id: str, db_path: Optional[str] = None) -> Dict[s
     db = db_path or str(DB_PATH)
     try:
         conn = _get_conn(db)
-        row = conn.execute("SELECT * FROM db_forge_connectors WHERE id = ?", (connector_id,)).fetchone()
+        row = conn.execute("SELECT * FROM db_forge_connectors WHERE id = %s", (connector_id,)).fetchone()
         conn.close()
         if row:
             return dict(row)
@@ -193,7 +193,7 @@ def forge_validate(connector_id: str, db_path: Optional[str] = None) -> Dict[str
     try:
         conn = _get_conn(db)
         row = conn.execute(
-            "SELECT connector_name, generated_code FROM db_forge_connectors WHERE id = ?",
+            "SELECT connector_name, generated_code FROM db_forge_connectors WHERE id = %s",
             (connector_id,),
         ).fetchone()
         conn.close()
@@ -254,7 +254,7 @@ def _store_spec(
             """INSERT INTO db_forge_specs
                (id, input_type, input_source, raw_input, parsed_manifest,
                 detected_protocol, target_base_class, tenant_id, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 spec_id,
                 input_type,
@@ -302,7 +302,7 @@ def _store_connector(
                (id, connector_name, connector_type, base_class, protocol,
                 generated_code, code_hash, version, status, spec_id,
                 tenant_id, project_id, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, 1, 'sandboxed', ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, 1, 'sandboxed', %s, %s, %s, %s, %s)""",
             (
                 connector_id,
                 connector_name,
@@ -338,7 +338,7 @@ def _store_validations(
             conn.execute(
                 """INSERT INTO db_forge_validations
                    (connector_id, stage, passed, details, duration_ms, run_at)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s)""",
                 (
                     connector_id,
                     gate["stage"],
@@ -360,7 +360,7 @@ def _audit(db_path: str, event_type: str, details: str) -> None:
         conn = _get_conn(db_path)
         conn.execute(
             """INSERT INTO audit_trail (id, event_type, actor, action, details, created_at)
-               VALUES (?, ?, 'connector_forge_agent', ?, ?, ?)""",
+               VALUES (%s, %s, 'connector_forge_agent', %s, %s, %s)""",
             (
                 f"audit-{uuid.uuid4().hex[:12]}",
                 event_type,

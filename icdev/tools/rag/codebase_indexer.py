@@ -529,7 +529,7 @@ def _store_record(
         """INSERT INTO codebase_index
                (id, file_path, file_hash, file_type, module, symbols,
                 last_indexed_at, chunk_count, classification)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
            ON CONFLICT(id) DO UPDATE SET
                file_hash      = excluded.file_hash,
                file_type      = excluded.file_type,
@@ -618,7 +618,7 @@ def scan_codebase(
                     rel = str(fp)
                 rec_id = hashlib.sha256(rel.encode("utf-8")).hexdigest()[:_HASH_DIGEST_LEN]
                 row = conn.execute(
-                    "SELECT file_hash FROM codebase_index WHERE id = ?",
+                    "SELECT file_hash FROM codebase_index WHERE id = %s",
                     (rec_id,),
                 ).fetchone()
                 if row and row[0] == file_hash:

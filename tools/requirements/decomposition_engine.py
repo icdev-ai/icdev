@@ -262,7 +262,7 @@ def decompose_requirements(
     conn = _get_connection(db_path)
 
     # Verify session exists
-    session = conn.execute("SELECT * FROM intake_sessions WHERE id = ?", (session_id,)).fetchone()
+    session = conn.execute("SELECT * FROM intake_sessions WHERE id = %s", (session_id,)).fetchone()
     if not session:
         conn.close()
         raise ValueError(f"Session '{session_id}' not found.")
@@ -272,7 +272,7 @@ def decompose_requirements(
 
     # Load all non-rejected requirements for the session
     reqs = conn.execute(
-        "SELECT * FROM intake_requirements WHERE session_id = ? AND status != 'rejected'",
+        "SELECT * FROM intake_requirements WHERE session_id = %s AND status != 'rejected'",
         (session_id,),
     ).fetchall()
     reqs = [dict(r) for r in reqs]
@@ -321,7 +321,7 @@ def decompose_requirements(
                 description, acceptance_criteria, t_shirt_size, story_points,
                 pi_target, wsjf_score, ato_impact_tier, source_requirement_ids,
                 status, classification, created_at)
-               VALUES (?, ?, ?, NULL, 'epic', ?, ?, ?, ?, NULL, NULL, ?, ?, ?, 'draft', 'CUI', ?)""",
+               VALUES (%s, %s, %s, NULL, 'epic', %s, %s, %s, %s, NULL, NULL, %s, %s, %s, 'draft', 'CUI', %s)""",
             (
                 epic_id,
                 session_id,
@@ -376,7 +376,7 @@ def decompose_requirements(
                         description, acceptance_criteria, t_shirt_size, story_points,
                         pi_target, wsjf_score, ato_impact_tier, source_requirement_ids,
                         status, classification, created_at)
-                       VALUES (?, ?, ?, ?, 'feature', ?, ?, ?, ?, NULL, NULL, ?, ?, ?, 'draft', 'CUI', ?)""",
+                       VALUES (%s, %s, %s, %s, 'feature', %s, %s, %s, %s, NULL, NULL, %s, %s, %s, 'draft', 'CUI', %s)""",
                     (
                         feature_id,
                         session_id,
@@ -429,7 +429,7 @@ def decompose_requirements(
                             description, acceptance_criteria, t_shirt_size, story_points,
                             pi_target, wsjf_score, ato_impact_tier, source_requirement_ids,
                             status, classification, created_at)
-                           VALUES (?, ?, ?, ?, 'story', ?, ?, ?, ?, ?, NULL, ?, ?, ?, 'draft', 'CUI', ?)""",
+                           VALUES (%s, %s, %s, %s, 'story', %s, %s, %s, %s, %s, NULL, %s, %s, %s, 'draft', 'CUI', %s)""",
                         (
                             story_id,
                             session_id,
@@ -466,7 +466,7 @@ def decompose_requirements(
 
                     # Update requirement status to decomposed
                     conn.execute(
-                        "UPDATE intake_requirements SET status = 'decomposed', updated_at = ? WHERE id = ?",
+                        "UPDATE intake_requirements SET status = 'decomposed', updated_at = %s WHERE id = %s",
                         (datetime.now().isoformat(), req["id"]),
                     )
 
@@ -493,7 +493,7 @@ def decompose_requirements(
                         description, acceptance_criteria, t_shirt_size, story_points,
                         pi_target, wsjf_score, ato_impact_tier, source_requirement_ids,
                         status, classification, created_at)
-                       VALUES (?, ?, ?, ?, 'enabler', ?, ?, ?, ?, NULL, NULL, ?, ?, ?, 'draft', 'CUI', ?)""",
+                       VALUES (%s, %s, %s, %s, 'enabler', %s, %s, %s, %s, NULL, NULL, %s, %s, %s, 'draft', 'CUI', %s)""",
                     (
                         enabler_id,
                         session_id,
@@ -529,7 +529,7 @@ def decompose_requirements(
     # Update session decomposed count
     total_items = sum(counts.values())
     conn.execute(
-        "UPDATE intake_sessions SET decomposed_count = ?, updated_at = ? WHERE id = ?",
+        "UPDATE intake_sessions SET decomposed_count = %s, updated_at = %s WHERE id = %s",
         (total_items, datetime.now().isoformat(), session_id),
     )
 
@@ -576,19 +576,19 @@ def get_decomposition(session_id, level=None, db_path=None):
     """
     conn = _get_connection(db_path)
 
-    session = conn.execute("SELECT * FROM intake_sessions WHERE id = ?", (session_id,)).fetchone()
+    session = conn.execute("SELECT * FROM intake_sessions WHERE id = %s", (session_id,)).fetchone()
     if not session:
         conn.close()
         raise ValueError(f"Session '{session_id}' not found.")
 
     if level:
         rows = conn.execute(
-            "SELECT * FROM safe_decomposition WHERE session_id = ? AND level = ? ORDER BY created_at",
+            "SELECT * FROM safe_decomposition WHERE session_id = %s AND level = %s ORDER BY created_at",
             (session_id, level),
         ).fetchall()
     else:
         rows = conn.execute(
-            "SELECT * FROM safe_decomposition WHERE session_id = ? ORDER BY created_at",
+            "SELECT * FROM safe_decomposition WHERE session_id = %s ORDER BY created_at",
             (session_id,),
         ).fetchall()
 
@@ -651,7 +651,7 @@ def detect_parallel_groups(session_id, db_path=None):
         """SELECT id, title, level, parent_id, acceptance_criteria,
                   parallel_group
            FROM safe_decomposition
-           WHERE session_id = ?
+           WHERE session_id = %s
            ORDER BY level, parent_id, created_at""",
         (session_id,),
     ).fetchall()
@@ -693,7 +693,7 @@ def detect_parallel_groups(session_id, db_path=None):
             group_index += 1
             for item in independent:
                 conn_write.execute(
-                    "UPDATE safe_decomposition SET parallel_group = ? WHERE id = ?",
+                    "UPDATE safe_decomposition SET parallel_group = %s WHERE id = %s",
                     (group_id, item["id"]),
                 )
             groups.append(

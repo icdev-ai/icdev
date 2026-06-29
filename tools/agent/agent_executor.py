@@ -60,7 +60,7 @@ def log_execution(execution_id: str, request: AgentPromptRequest, response: Agen
                (execution_id, project_id, agent_type, model, prompt_hash,
                 status, retry_count, duration_ms, input_tokens, output_tokens,
                 output_path, error_message, classification)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 execution_id,
                 request.project_dir,

@@ -86,7 +86,7 @@ class CSPHealthChecker:
             conn.execute(
                 "INSERT INTO cloud_provider_status "
                 "(id, provider, service, status, latency_ms, error_message, checked_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
                 (
                     entry_id,
                     provider_name,
@@ -185,7 +185,7 @@ class CSPHealthChecker:
             cutoff = (cutoff - timedelta(hours=hours)).isoformat()
 
             rows = conn.execute(
-                "SELECT * FROM cloud_provider_status WHERE checked_at >= ? ORDER BY checked_at DESC LIMIT 500",
+                "SELECT * FROM cloud_provider_status WHERE checked_at >= %s ORDER BY checked_at DESC LIMIT 500",
                 (cutoff,),
             ).fetchall()
             conn.close()

@@ -58,7 +58,7 @@ def _get_stig_counts(conn: sqlite3.Connection, device_label: str) -> Dict[str, i
     rows = conn.execute(
         """SELECT severity, COUNT(*) AS c
            FROM ndc_stig_findings
-           WHERE device = ? AND status = 'open'
+           WHERE device = %s AND status = 'open'
            GROUP BY severity""",
         (device_label,),
     ).fetchall()
@@ -151,7 +151,7 @@ def scan_devices(
                           firmware_version, eol_date, eos_date, purchase_cost,
                           replacement_cost, site, rack_location, criticality_score,
                           downstream_count, annual_maintenance_cost, notes
-                   FROM ni_devices WHERE id = ?""",
+                   FROM ni_devices WHERE id = %s""",
                 (device_id,),
             ).fetchall()
         else:
@@ -253,7 +253,7 @@ def simulate_eol_dates(
                 vals = (near, near, did)
             else:
                 vals = (mid, far, did)
-            conn.execute("UPDATE ni_devices SET eol_date=?, eos_date=? WHERE id=?", vals)
+            conn.execute("UPDATE ni_devices SET eol_date=%s, eos_date=%s WHERE id=%s", vals)
             updated += 1
         conn.commit()
     finally:

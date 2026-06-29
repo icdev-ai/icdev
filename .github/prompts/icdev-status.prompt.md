@@ -94,9 +94,3 @@ Recent Activity:
   2024-01-15 10:25 - test.execute passed
   2024-01-15 10:20 - code.commit by developer
 ```
-
-## Example
-```
-#prompt:icdev-status abc123-uuid --format table
-#prompt:icdev-status --all --format brief
-```

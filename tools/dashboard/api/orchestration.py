@@ -15,7 +15,7 @@ import os
 import sqlite3
 import sys
 import time
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection, sql_placeholder
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -46,12 +46,12 @@ def _table_exists(conn, table_name):
     try:
         if _is_pg(conn):
             row = conn.execute(
-                "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public' AND table_name=?",
+                "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public' AND table_name=%s",
                 (table_name,),
             ).fetchone()
         else:
             row = conn.execute(
-                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?",
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=%s",
                 (table_name,),
             ).fetchone()
         return row[0] > 0
@@ -62,6 +62,8 @@ def _table_exists(conn, table_name):
 def _safe_count(conn, sql, params=()):
     """Execute a count query, returning 0 if table doesn't exist."""
     try:
+        if sql_placeholder(conn) == "%s" and "?" in sql:
+            sql = sql.replace("?", "%s")
         row = conn.execute(sql, params).fetchone()
         return row[0] if row else 0
     except sqlite3.OperationalError:
@@ -71,6 +73,8 @@ def _safe_count(conn, sql, params=()):
 def _safe_query(conn, sql, params=()):
     """Execute a query, returning empty list if table doesn't exist."""
     try:
+        if sql_placeholder(conn) == "%s" and "?" in sql:
+            sql = sql.replace("?", "%s")
         return [dict(r) for r in conn.execute(sql, params).fetchall()]
     except sqlite3.OperationalError:
         return []

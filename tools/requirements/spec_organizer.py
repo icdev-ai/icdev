@@ -714,7 +714,7 @@ def register_spec(spec_dir: Path, project_id: str = None, db_path=None) -> dict:
 
     # Check for existing entry by spec_dir
     existing = conn.execute(
-        "SELECT id FROM spec_registry WHERE spec_dir = ?",
+        "SELECT id FROM spec_registry WHERE spec_dir = %s",
         (str(spec_dir),),
     ).fetchone()
 
@@ -722,13 +722,13 @@ def register_spec(spec_dir: Path, project_id: str = None, db_path=None) -> dict:
         entry_id = existing["id"]
         conn.execute(
             """UPDATE spec_registry
-               SET project_id = ?,
-                   spec_path = ?,
-                   issue_number = ?,
-                   run_id = ?,
-                   title = ?,
-                   updated_at = ?
-               WHERE id = ?""",
+               SET project_id = %s,
+                   spec_path = %s,
+                   issue_number = %s,
+                   run_id = %s,
+                   title = %s,
+                   updated_at = %s
+               WHERE id = %s""",
             (
                 project_id,
                 str(spec_file),
@@ -745,7 +745,7 @@ def register_spec(spec_dir: Path, project_id: str = None, db_path=None) -> dict:
             """INSERT INTO spec_registry
                (id, project_id, spec_path, spec_dir, issue_number, run_id,
                 title, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 entry_id,
                 project_id,
@@ -761,7 +761,7 @@ def register_spec(spec_dir: Path, project_id: str = None, db_path=None) -> dict:
 
     conn.commit()
 
-    row = conn.execute("SELECT * FROM spec_registry WHERE id = ?", (entry_id,)).fetchone()
+    row = conn.execute("SELECT * FROM spec_registry WHERE id = %s", (entry_id,)).fetchone()
     conn.close()
 
     result = dict(row) if row else {}

@@ -672,7 +672,9 @@ def _rule_orphan_db_table() -> List[Dict[str, Any]]:
     # schemas defined under icdev/tools/ (e.g. aac_scans in
     # icdev/tools/ai_augmentation/db/init_db.py) must also be covered so
     # seed/adapter references in tools/ don't false-fire as orphans.
-    schema_roots = [tools_dir, BASE_DIR / "apps", BASE_DIR / "icdev"]
+    # migrations/ (root) holds raw SQL migration files that create tables
+    # referenced by production code (e.g. rag_queries, rag_citations).
+    schema_roots = [tools_dir, BASE_DIR / "apps", BASE_DIR / "icdev", BASE_DIR / "migrations"]
 
     created: Set[str] = set()
     referenced: Dict[str, str] = {}  # table → first referencing file
@@ -1212,7 +1214,7 @@ def _prediction_already_open(conn: Any, pred_id: str) -> bool:
     dismissed it and we respect that signal."""
     try:
         row = conn.execute(
-            "SELECT outcome FROM oracle_predictions WHERE id = ? LIMIT 1",
+            "SELECT outcome FROM oracle_predictions WHERE id = %s LIMIT 1",
             (pred_id,),
         ).fetchone()
         if row is None:
@@ -1250,7 +1252,7 @@ def _write_gap_prediction(
             "(id, lens_id, lens_name, prediction_text, confidence, "
             " created_at, subject_type, subject_id, prediction_type, "
             " severity, horizon_days, evidence_json, classification) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 pred_id,
                 "internal_awareness",
@@ -1357,13 +1359,13 @@ def get_stats() -> Dict[str, Any]:
     try:
         row = conn.execute(
             "SELECT COUNT(*) AS cnt FROM oracle_predictions "
-            "WHERE lens_name = ? AND subject_type = ?",
+            "WHERE lens_name = %s AND subject_type = %s",
             (LENS_NAME, "gap"),
         ).fetchone()
         total = dict(row).get("cnt", 0) if row else 0
         rows = conn.execute(
             "SELECT prediction_type, COUNT(*) AS cnt FROM oracle_predictions "
-            "WHERE lens_name = ? AND subject_type = ? "
+            "WHERE lens_name = %s AND subject_type = %s "
             "GROUP BY prediction_type ORDER BY cnt DESC",
             (LENS_NAME, "gap"),
         ).fetchall()

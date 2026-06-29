@@ -846,6 +846,51 @@ _SIGNATURE_CATEGORIES_MSG: dict[str, str] = {
 }
 
 
+def _load_safe_dynamic_import_modules() -> frozenset:
+    """Load known_safe_dynamic_import_modules from integrity_config.yaml.
+
+    Returns module paths (forward-slash, repo-relative) whose dynamic_import
+    known_bad_signature findings are suppressed in Mode A self-scans only.
+    """
+    try:
+        data = _load_config()
+        return frozenset(data.get("known_safe_dynamic_import_modules") or [])
+    except Exception:
+        return frozenset()
+
+
+def _is_safe_dynamic_import(file_path: Optional[str], safe_set: frozenset) -> bool:
+    """True when file_path matches an entry in known_safe_dynamic_import_modules."""
+    if not file_path or not safe_set:
+        return False
+    normalised = Path(file_path).as_posix()
+    return any(normalised.endswith(m.replace("\\", "/")) for m in safe_set)
+
+
+def _load_safe_persistence_modules() -> frozenset:
+    """Load known_safe_persistence_modules from integrity_config.yaml.
+
+    Returns module paths whose 'persistence' category known_bad_signature
+    findings are suppressed in Mode A self-scans only.  Intended for files
+    where the persistence-detector rule fires on a static string that contains
+    persistence-related text (e.g. SOP command strings) but the Python module
+    itself never executes any persistence mechanism.
+    """
+    try:
+        data = _load_config()
+        return frozenset(data.get("known_safe_persistence_modules") or [])
+    except Exception:
+        return frozenset()
+
+
+def _is_safe_persistence_module(file_path: Optional[str], safe_set: frozenset) -> bool:
+    """True when file_path matches an entry in known_safe_persistence_modules."""
+    if not file_path or not safe_set:
+        return False
+    normalised = Path(file_path).as_posix()
+    return any(normalised.endswith(m.replace("\\", "/")) for m in safe_set)
+
+
 def _normalize_signatures(hits: list[dict], root: Path, engine: str) -> list[dict]:
     """Unified signature hits -> integrity_findings tuples (known_bad_signature).
 
@@ -889,6 +934,8 @@ def run_signature_scan(assessment_id: int, staged_path: Optional[str] = None, co
     """
     staged = _staged_dir(assessment_id, staged_path)
 
+    safe_dyn = _load_safe_dynamic_import_modules()
+
     def _body(c: Any) -> dict:
         hits = _detect_signatures(staged)        # Semgrep (reused engine)
         engine = "semgrep"
@@ -896,6 +943,16 @@ def run_signature_scan(assessment_id: int, staged_path: Optional[str] = None, co
             hits = _signature_fallback_scan(staged)
             engine = "regex_fallback"
         normalized = _normalize_signatures(hits, staged, engine)
+        # Suppress dynamic_import findings for first-party modules whose module
+        # names come from a trusted FORGE config (not user-controlled).
+        if safe_dyn:
+            normalized = [
+                f for f in normalized
+                if not (
+                    (f.get("detail") or {}).get("category") == "dynamic_import"
+                    and _is_safe_dynamic_import(f.get("file_path"), safe_dyn)
+                )
+            ]
         finding_ids = _persist(c, assessment_id, normalized)
         return {
             "scanner": "semgrep",

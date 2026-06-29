@@ -64,7 +64,7 @@ def _log_audit(conn, project_id, event_type, action, details):
         conn.execute(
             """INSERT INTO audit_trail
                (project_id, event_type, actor, action, details, classification)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s)""",
             (
                 project_id,
                 event_type,
@@ -122,7 +122,7 @@ def add_vendor(
             """INSERT INTO supply_chain_vendors
                (id, project_id, vendor_name, vendor_type, country_of_origin,
                 scrm_risk_tier, section_889_status, last_assessed, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 vendor_id,
                 project_id,
@@ -189,7 +189,7 @@ def add_dependency(
             """INSERT INTO supply_chain_dependencies
                (project_id, source_type, source_id, target_type, target_id,
                 dependency_type, criticality, metadata, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 project_id,
                 source_type,
@@ -233,7 +233,7 @@ def build_graph(project_id, db_path=None):
             """SELECT source_type, source_id, target_type, target_id,
                       dependency_type, criticality
                FROM supply_chain_dependencies
-               WHERE project_id = ?""",
+               WHERE project_id = %s""",
             (project_id,),
         ).fetchall()
 
@@ -287,7 +287,7 @@ def _bfs(project_id, component, direction, db_path=None):
         rows = conn.execute(
             """SELECT source_type, source_id, target_type, target_id, criticality
                FROM supply_chain_dependencies
-               WHERE project_id = ?""",
+               WHERE project_id = %s""",
             (project_id,),
         ).fetchall()
 
@@ -397,7 +397,7 @@ def propagate_impact(project_id, component, impact_type, severity, db_path=None)
         rows = conn.execute(
             """SELECT source_type, source_id, target_type, target_id, criticality
                FROM supply_chain_dependencies
-               WHERE project_id = ?""",
+               WHERE project_id = %s""",
             (project_id,),
         ).fetchall()
 
@@ -486,7 +486,7 @@ def get_critical_path(project_id, db_path=None):
         rows = conn.execute(
             """SELECT source_type, source_id, target_type, target_id
                FROM supply_chain_dependencies
-               WHERE project_id = ?""",
+               WHERE project_id = %s""",
             (project_id,),
         ).fetchall()
 

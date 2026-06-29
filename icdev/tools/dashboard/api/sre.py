@@ -381,7 +381,7 @@ def api_sre_process_alert():
         conn = get_connection()
         try:
             conn.execute(
-                "INSERT INTO audit_trail (event_type, action, details, created_at) VALUES (?, ?, ?, ?)",
+                "INSERT INTO audit_trail (event_type, action, details, created_at) VALUES (%s, %s, %s, %s)",
                 (
                     "self_heal_triggered",
                     "sre_chain_processed",
@@ -467,7 +467,7 @@ def api_sre_dora():
         try:
             row = conn.execute(
                 "SELECT COUNT(*) FROM audit_trail WHERE event_type IN ('deployment_initiated', 'deploy', 'ci_deploy') "
-                "AND created_at >= ?",
+                "AND created_at >= %s",
                 (cutoff,),
             ).fetchone()
             deploy_count = row[0] if row else 0
@@ -480,7 +480,7 @@ def api_sre_dora():
         try:
             row = conn.execute(
                 "SELECT COUNT(*) FROM audit_trail WHERE event_type IN ('deploy_failed', 'deploy_rollback', 'rollback') "
-                "AND created_at >= ?",
+                "AND created_at >= %s",
                 (cutoff,),
             ).fetchone()
             failed_deploys = row[0] if row else 0
@@ -494,7 +494,7 @@ def api_sre_dora():
         try:
             rows = conn.execute(
                 "SELECT mttr_seconds FROM sre_incidents WHERE status IN ('resolved', 'postmortem', 'closed') "
-                "AND resolved_at >= ? AND mttr_seconds IS NOT NULL",
+                "AND resolved_at >= %s AND mttr_seconds IS NOT NULL",
                 (cutoff,),
             ).fetchall()
             if rows:
@@ -508,7 +508,7 @@ def api_sre_dora():
         try:
             row = conn.execute(
                 "SELECT AVG(CAST((julianday(created_at) - julianday(datetime(created_at, '-1 hour'))) * 24 AS REAL)) "
-                "FROM audit_trail WHERE event_type IN ('deployment_initiated', 'deploy') AND created_at >= ?",
+                "FROM audit_trail WHERE event_type IN ('deployment_initiated', 'deploy') AND created_at >= %s",
                 (cutoff,),
             ).fetchone()
             lead_time_hours = round(row[0], 1) if row and row[0] else 1.0

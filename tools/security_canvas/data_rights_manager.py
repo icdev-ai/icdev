@@ -98,7 +98,7 @@ def protect_document(title: str, classification: str = "CUI", owner: str = "syst
         conn.execute(
             "INSERT INTO zig_drm_documents "
             "(doc_id, title, classification, owner, policy_json, content_hash, status, created_at) "
-            "VALUES (?,?,?,?,?,?,'active',?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,'active',%s)",
             (doc_id, title, classification, owner, json.dumps(policy), content_hash, now),
         )
         conn.commit()
@@ -122,7 +122,7 @@ def grant_access(doc_id: str, recipient: str, rights: list[str] | None = None,
     try:
         _ensure_tables(conn)
         doc = conn.execute(
-            "SELECT classification, policy_json FROM zig_drm_documents WHERE doc_id=?",
+            "SELECT classification, policy_json FROM zig_drm_documents WHERE doc_id=%s",
             (doc_id,),
         ).fetchone()
         if not doc:
@@ -141,7 +141,7 @@ def grant_access(doc_id: str, recipient: str, rights: list[str] | None = None,
         conn.execute(
             "INSERT INTO zig_drm_grants "
             "(grant_id, doc_id, recipient, rights, expires_at, revoked, created_at) "
-            "VALUES (?,?,?,?,?,0,?)",
+            "VALUES (%s,%s,%s,%s,%s,0,%s)",
             (grant_id, doc_id, recipient, json.dumps(effective), expires_at, now.isoformat()),
         )
         conn.commit()
@@ -164,7 +164,7 @@ def check_access(doc_id: str, recipient: str, action: str) -> dict[str, Any]:
         _ensure_tables(conn)
         grant = conn.execute(
             "SELECT rights, expires_at, revoked FROM zig_drm_grants "
-            "WHERE doc_id=? AND recipient=? ORDER BY created_at DESC LIMIT 1",
+            "WHERE doc_id=%s AND recipient=%s ORDER BY created_at DESC LIMIT 1",
             (doc_id, recipient),
         ).fetchone()
 
@@ -181,7 +181,7 @@ def check_access(doc_id: str, recipient: str, action: str) -> dict[str, Any]:
 
         conn.execute(
             "INSERT INTO zig_drm_access_log (doc_id, recipient, action, allowed, reason, created_at) "
-            "VALUES (?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s)",
             (doc_id, recipient, action, int(allowed), reason, now),
         )
         conn.commit()
@@ -198,12 +198,12 @@ def revoke_access(doc_id: str, recipient: str = "") -> dict[str, Any]:
         _ensure_tables(conn)
         if recipient:
             n = conn.execute(
-                "UPDATE zig_drm_grants SET revoked=1 WHERE doc_id=? AND recipient=?",
+                "UPDATE zig_drm_grants SET revoked=1 WHERE doc_id=%s AND recipient=%s",
                 (doc_id, recipient),
             ).rowcount
         else:
             n = conn.execute(
-                "UPDATE zig_drm_grants SET revoked=1 WHERE doc_id=?", (doc_id,)
+                "UPDATE zig_drm_grants SET revoked=1 WHERE doc_id=%s", (doc_id,)
             ).rowcount
         conn.commit()
         return {"doc_id": doc_id, "revoked_grants": n}

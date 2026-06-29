@@ -235,14 +235,14 @@ def record_decision(finding_hash):
     try:
         # UPSERT — finding_hash is PK. The translator turns this into ON CONFLICT for PG.
         existing = conn.execute(
-            "SELECT decision FROM finding_approvals WHERE finding_hash = ?",
+            "SELECT decision FROM finding_approvals WHERE finding_hash = %s",
             (finding_hash,),
         ).fetchone()
         if existing:
             conn.execute(
-                "UPDATE finding_approvals SET decision = ?, decision_by = ?, "
-                "decision_at = ?, decision_rationale = ?, updated_at = ? "
-                "WHERE finding_hash = ?",
+                "UPDATE finding_approvals SET decision = %s, decision_by = %s, "
+                "decision_at = %s, decision_rationale = %s, updated_at = %s "
+                "WHERE finding_hash = %s",
                 (decision, reviewer, now, rationale, now, finding_hash),
             )
         else:
@@ -251,7 +251,7 @@ def record_decision(finding_hash):
                 "(finding_hash, canvas_source, rule_id, severity, title, "
                 "affected_entity, decision, decision_by, decision_at, "
                 "decision_rationale, classification, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     finding_hash,
                     target["canvas_source"],
@@ -308,7 +308,7 @@ def _format_plan(rule_id: str, plan: dict) -> str:
 def _upsert_approval_row(conn, target: dict, now: str) -> None:
     """Ensure a row exists in finding_approvals for the given finding (no-op if present)."""
     existing = conn.execute(
-        "SELECT finding_hash FROM finding_approvals WHERE finding_hash = ?",
+        "SELECT finding_hash FROM finding_approvals WHERE finding_hash = %s",
         (target["finding_hash"],),
     ).fetchone()
     if not existing:
@@ -316,7 +316,7 @@ def _upsert_approval_row(conn, target: dict, now: str) -> None:
             "INSERT INTO finding_approvals "
             "(finding_hash, canvas_source, rule_id, severity, title, "
             "affected_entity, decision, classification, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 target["finding_hash"],
                 target["canvas_source"],
@@ -381,7 +381,7 @@ def attach_plan(finding_hash):
 
         # Preserve any existing GitHub issue URL appended after the plan
         existing_row = conn.execute(
-            "SELECT decision_rationale FROM finding_approvals WHERE finding_hash = ?",
+            "SELECT decision_rationale FROM finding_approvals WHERE finding_hash = %s",
             (finding_hash,),
         ).fetchone()
         issue_suffix = ""
@@ -393,8 +393,8 @@ def attach_plan(finding_hash):
                     issue_suffix += f"\n\n{line}"
 
         conn.execute(
-            "UPDATE finding_approvals SET decision_rationale = ?, updated_at = ? "
-            "WHERE finding_hash = ?",
+            "UPDATE finding_approvals SET decision_rationale = %s, updated_at = %s "
+            "WHERE finding_hash = %s",
             (plan_text + issue_suffix, now, finding_hash),
         )
         conn.commit()
@@ -503,7 +503,7 @@ def file_github_issue(finding_hash):
     try:
         _upsert_approval_row(conn, target, now)
         existing_row = conn.execute(
-            "SELECT decision_rationale FROM finding_approvals WHERE finding_hash = ?",
+            "SELECT decision_rationale FROM finding_approvals WHERE finding_hash = %s",
             (finding_hash,),
         ).fetchone()
         old = ""
@@ -511,8 +511,8 @@ def file_github_issue(finding_hash):
             old = dict(existing_row).get("decision_rationale") or ""
         new_rationale = old + f"\n\n[GITHUB ISSUE] {github_url}"
         conn.execute(
-            "UPDATE finding_approvals SET decision_rationale = ?, updated_at = ? "
-            "WHERE finding_hash = ?",
+            "UPDATE finding_approvals SET decision_rationale = %s, updated_at = %s "
+            "WHERE finding_hash = %s",
             (new_rationale, now, finding_hash),
         )
         conn.commit()
@@ -690,7 +690,7 @@ def import_from_simulation():
     try:
         session_row = conn.execute(
             "SELECT id, canvas_type, topology_id, mode, created_at, metadata "
-            "FROM nc_simulation_sessions WHERE id = ?",
+            "FROM nc_simulation_sessions WHERE id = %s",
             (session_id,),
         ).fetchone()
         if not session_row:
@@ -699,7 +699,7 @@ def import_from_simulation():
 
         run_rows = conn.execute(
             "SELECT id, run_at, steps, summary FROM nc_simulation_runs "
-            "WHERE session_id = ? ORDER BY run_at DESC LIMIT 10",
+            "WHERE session_id = %s ORDER BY run_at DESC LIMIT 10",
             (session_id,),
         ).fetchall()
         runs = [dict(r) for r in run_rows]
@@ -712,7 +712,7 @@ def import_from_simulation():
 
         for f in findings:
             existing = conn.execute(
-                "SELECT finding_hash FROM finding_approvals WHERE finding_hash = ?",
+                "SELECT finding_hash FROM finding_approvals WHERE finding_hash = %s",
                 (f["finding_hash"],),
             ).fetchone()
             if existing:
@@ -728,7 +728,7 @@ def import_from_simulation():
                 "INSERT INTO finding_approvals "
                 "(finding_hash, canvas_source, rule_id, severity, title, "
                 "affected_entity, decision, classification, created_at, updated_at, decision_rationale) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     f["finding_hash"],
                     "tfw_simulation",

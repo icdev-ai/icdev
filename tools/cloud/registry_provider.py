@@ -516,7 +516,7 @@ class LocalDockerProvider(RegistryProvider):
             now = datetime.now(timezone.utc).isoformat()
             conn = get_connection(db_path=str(self._db_path))
             conn.execute(
-                "INSERT OR IGNORE INTO local_repositories (name, created_at) VALUES (?, ?)",
+                "INSERT OR IGNORE INTO local_repositories (name, created_at) VALUES (%s, %s)",
                 (name, now),
             )
             conn.commit()
@@ -540,7 +540,7 @@ class LocalDockerProvider(RegistryProvider):
         try:
             conn = get_connection(db_path=str(self._db_path))
             rows = conn.execute(
-                "SELECT * FROM local_images WHERE repository = ? ORDER BY pushed_at DESC",
+                "SELECT * FROM local_images WHERE repository = %s ORDER BY pushed_at DESC",
                 (repository,),
             ).fetchall()
             conn.close()
@@ -555,7 +555,7 @@ class LocalDockerProvider(RegistryProvider):
         try:
             conn = get_connection(db_path=str(self._db_path))
             cursor = conn.execute(
-                "DELETE FROM local_images WHERE repository = ? AND tag = ?",
+                "DELETE FROM local_images WHERE repository = %s AND tag = %s",
                 (repository, tag),
             )
             conn.commit()

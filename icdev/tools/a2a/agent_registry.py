@@ -77,7 +77,7 @@ def register_agent(
 
         c.execute(
             """INSERT INTO agents (id, name, description, url, status, capabilities, last_heartbeat)
-               VALUES (?, ?, ?, ?, 'active', ?, CURRENT_TIMESTAMP)
+               VALUES (%s, %s, %s, %s, 'active', %s, CURRENT_TIMESTAMP)
                ON CONFLICT(id) DO UPDATE SET
                name = excluded.name,
                description = excluded.description,
@@ -89,7 +89,7 @@ def register_agent(
         )
         conn.commit()
 
-        c.execute("SELECT * FROM agents WHERE id = ?", (agent_id,))
+        c.execute("SELECT * FROM agents WHERE id = %s", (agent_id,))
         row = c.fetchone()
         result = row_to_dict(row)
         print(f"Agent registered: {agent_id} ({name}) at {url}")
@@ -111,7 +111,7 @@ def deregister_agent(agent_id: str, db_path: Path = None) -> bool:
     conn = _get_db(db_path)
     try:
         c = conn.cursor()
-        c.execute("UPDATE agents SET status = 'inactive' WHERE id = ?", (agent_id,))
+        c.execute("UPDATE agents SET status = 'inactive' WHERE id = %s", (agent_id,))
         conn.commit()
         changed = c.rowcount > 0
         if changed:
@@ -151,7 +151,7 @@ def get_agent(agent_id: str, db_path: Path = None) -> Optional[dict]:
     conn = _get_db(db_path)
     try:
         c = conn.cursor()
-        c.execute("SELECT * FROM agents WHERE id = ?", (agent_id,))
+        c.execute("SELECT * FROM agents WHERE id = %s", (agent_id,))
         row = c.fetchone()
         return row_to_dict(row)
     finally:
@@ -171,7 +171,7 @@ def heartbeat(agent_id: str, db_path: Path = None) -> bool:
     try:
         c = conn.cursor()
         c.execute(
-            "UPDATE agents SET last_heartbeat = CURRENT_TIMESTAMP WHERE id = ?",
+            "UPDATE agents SET last_heartbeat = CURRENT_TIMESTAMP WHERE id = %s",
             (agent_id,),
         )
         conn.commit()
@@ -250,7 +250,7 @@ def discover_agents_healthy(staleness_seconds: int = 120, db_path: Path = None) 
             """SELECT * FROM agents
                WHERE status = 'active'
                  AND last_heartbeat IS NOT NULL
-                 AND (julianday('now') - julianday(last_heartbeat)) * 86400 <= ?
+                 AND (julianday('now') - julianday(last_heartbeat)) * 86400 <= %s
                ORDER BY name""",
             (staleness_seconds,),
         )
@@ -276,7 +276,7 @@ def get_agent_load(agent_id: str, db_path: Path = None) -> dict:
         # Count non-terminal tasks assigned to this agent
         c.execute(
             """SELECT COUNT(*) as cnt FROM a2a_tasks
-               WHERE target_agent_id = ?
+               WHERE target_agent_id = %s
                  AND status IN ('submitted', 'working')""",
             (agent_id,),
         )
@@ -285,7 +285,7 @@ def get_agent_load(agent_id: str, db_path: Path = None) -> dict:
         # Count recently completed tasks (last hour)
         c.execute(
             """SELECT COUNT(*) as cnt FROM a2a_tasks
-               WHERE target_agent_id = ?
+               WHERE target_agent_id = %s
                  AND status = 'completed'
                  AND completed_at IS NOT NULL
                  AND (julianday('now') - julianday(completed_at)) * 86400 <= 3600""",

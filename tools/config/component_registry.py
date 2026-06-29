@@ -39,8 +39,71 @@ from tools.logging.icdev_logger import get_logger
 
 logger = get_logger("icdev.component_registry")
 
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
+def _find_repo_root() -> Path:
+    """Resolve the repository root by locating ``args/component_registry.yaml``.
+
+    Works whether this module is imported from the canonical ``icdev.tools.*
+    package (nested under ``icdev/``) or the legacy root ``tools.*`` shim.
+    """
+    here = Path(__file__).resolve()
+    for parent in here.parents:
+        candidate = parent / "args" / "component_registry.yaml"
+        if candidate.is_file():
+            return parent
+    # Fallback to the naive parent-of-parent heuristic.
+    return here.parent.parent.parent
+
+
+BASE_DIR = _find_repo_root()
 DEFAULT_REGISTRY_PATH = BASE_DIR / "args" / "component_registry.yaml"
+
+
+# ---------------------------------------------------------------------------
+# Audit helper
+# ---------------------------------------------------------------------------
+
+def log_component_audit(
+    event_type: str,
+    actor: str = "system",
+    tenant_id: str | None = None,
+    component_key: str | None = None,
+    profile_name: str | None = None,
+    details: dict[str, Any] | None = None,
+) -> None:
+    """Append a component-configuration event to ``component_audit_log``.
+
+    Failures are logged at debug level and swallowed; audit logging must not
+    break the action it is observing.
+    """
+    try:
+        import json
+        import uuid
+        from datetime import datetime, timezone
+
+        from tools.db.storage import get_connection
+
+        now = datetime.now(timezone.utc).isoformat()
+        with get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO component_audit_log
+                  (id, event_type, actor, tenant_id, component_key, profile_name, details, recorded_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    str(uuid.uuid4()),
+                    event_type,
+                    actor,
+                    tenant_id or None,
+                    component_key or None,
+                    profile_name or None,
+                    json.dumps(details or {}),
+                    now,
+                ),
+            )
+            conn.commit()
+    except Exception as exc:
+        logger.debug("component_audit_log write failed for %s: %s", event_type, exc)
 
 
 # ---------------------------------------------------------------------------
@@ -64,6 +127,7 @@ class Component:
     blueprint_attr: str | None
     url_prefix: str
     min_il: str
+    min_tier: str  # community | professional | enterprise
     default_roles: list[str]
     nav: dict[str, Any]
     iqe: dict[str, Any]
@@ -221,6 +285,10 @@ class ComponentRegistry:
         blueprint_attr = str(blueprint_attr).strip() if blueprint_attr else ""
         url_prefix = str(raw.get("url_prefix", f"/{key}")).strip()
         min_il = str(raw.get("min_il", "IL2")).strip()
+        _valid_tiers = ("community", "professional", "enterprise")
+        min_tier = str(raw.get("min_tier", "community")).strip().lower()
+        if min_tier not in _valid_tiers:
+            min_tier = "community"
         default_roles = list(raw.get("default_roles", []) or [])
         nav = dict(raw.get("nav", {}) or {})
         iqe = dict(raw.get("iqe", {}) or {})
@@ -245,6 +313,7 @@ class ComponentRegistry:
             blueprint_attr=blueprint_attr or None,
             url_prefix=url_prefix,
             min_il=min_il,
+            min_tier=min_tier,
             default_roles=default_roles,
             nav=nav,
             iqe=iqe,
@@ -292,11 +361,173 @@ class ComponentRegistry:
         return iter(self.list_enabled(kind))
 
     def is_enabled(self, key: str) -> bool:
-        """Return True if the named component is enabled."""
+        """Return True if the named component is enabled by env/default."""
         comp = self._by_key.get(key)
         if comp is None:
             return False
         return comp.is_enabled(self._env)
+
+    def is_enabled_for_tenant(
+        self,
+        key: str,
+        tenant_id: str,
+        conn_factory: Any | None = None,
+    ) -> bool:
+        """Return True if the component is enabled for the given tenant.
+
+        Resolution order:
+          1. Explicit tenant override from ``tenant_component_overrides``
+             (if the table exists). A value of ``1`` enables, ``0`` disables,
+             and a missing row falls through.
+          2. Environment flag + ``default_enabled``.
+        """
+        env_enabled = self.is_enabled(key)
+        if not tenant_id or key not in self._by_key:
+            return env_enabled
+        if conn_factory is None:
+            try:
+                from tools.db.storage import get_connection
+
+                conn_factory = get_connection
+            except Exception:
+                return env_enabled
+        try:
+            with conn_factory() as conn:
+                row = conn.execute(
+                    "SELECT enabled FROM tenant_component_overrides "
+                    "WHERE tenant_id = %s AND component_key = %s",
+                    (tenant_id, key),
+                ).fetchone()
+                if row:
+                    if isinstance(row, (tuple, list)):
+                        value = row[0]
+                    else:
+                        value = row["enabled"]
+                    return bool(int(value))
+        except Exception as exc:
+            logger.debug(
+                "Tenant override lookup failed for %s/%s: %s", tenant_id, key, exc
+            )
+        return env_enabled
+
+    def set_tenant_component_override(
+        self,
+        tenant_id: str,
+        component_key: str,
+        enabled: bool,
+        updated_by: str = "system",
+    ) -> bool:
+        """Set a tenant-level enablement override for a component.
+
+        Returns True if the write succeeded. Falls back to False if the table is
+        missing or the DB is unavailable.
+        """
+        if not tenant_id or not component_key:
+            return False
+        try:
+            import uuid
+            from datetime import datetime, timezone
+
+            from tools.db.storage import get_connection
+
+            override_id = str(uuid.uuid4())
+            now = datetime.now(timezone.utc).isoformat()
+            with get_connection() as conn:
+                conn.execute(
+                    """
+                    INSERT INTO tenant_component_overrides
+                      (id, tenant_id, component_key, enabled, updated_by, updated_at)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (tenant_id, component_key)
+                    DO UPDATE SET
+                      enabled = excluded.enabled,
+                      updated_by = excluded.updated_by,
+                      updated_at = excluded.updated_at
+                    """,
+                    (
+                        override_id,
+                        tenant_id,
+                        component_key,
+                        1 if enabled else 0,
+                        updated_by,
+                        now,
+                    ),
+                )
+                conn.commit()
+            log_component_audit(
+                event_type="tenant_override_set",
+                actor=updated_by,
+                tenant_id=tenant_id,
+                component_key=component_key,
+                details={"enabled": enabled},
+            )
+            return True
+        except Exception as exc:
+            logger.warning(
+                "Tenant override write failed for %s/%s: %s",
+                tenant_id,
+                component_key,
+                exc,
+            )
+            return False
+
+    def clear_tenant_component_override(
+        self, tenant_id: str, component_key: str
+    ) -> bool:
+        """Remove a tenant-level override so env/default settings apply again."""
+        if not tenant_id or not component_key:
+            return False
+        try:
+            from tools.db.storage import get_connection
+
+            with get_connection() as conn:
+                conn.execute(
+                    "DELETE FROM tenant_component_overrides "
+                    "WHERE tenant_id = %s AND component_key = %s",
+                    (tenant_id, component_key),
+                )
+                conn.commit()
+            log_component_audit(
+                event_type="tenant_override_clear",
+                actor="system",
+                tenant_id=tenant_id,
+                component_key=component_key,
+            )
+            return True
+        except Exception as exc:
+            logger.warning(
+                "Tenant override clear failed for %s/%s: %s",
+                tenant_id,
+                component_key,
+                exc,
+            )
+            return False
+
+    def list_tenant_overrides(self, tenant_id: str) -> list[dict[str, Any]]:
+        """Return all tenant-level component overrides for a tenant."""
+        if not tenant_id:
+            return []
+        try:
+            from tools.db.storage import get_connection
+
+            with get_connection() as conn:
+                rows = conn.execute(
+                    "SELECT component_key, enabled, updated_by, updated_at "
+                    "FROM tenant_component_overrides WHERE tenant_id = %s",
+                    (tenant_id,),
+                ).fetchall()
+            return [
+                {
+                    "component_key": r[0],
+                    "enabled": bool(int(r[1])),
+                    "updated_by": r[2],
+                    "updated_at": r[3],
+                }
+                for r in rows
+            ]
+        except Exception as exc:
+            logger.warning("Tenant override list failed for %s: %s", tenant_id, exc)
+            return []
 
     def get_blueprint(self, key: str) -> Any | None:
         """Resolve and return the Flask blueprint for a component."""
@@ -371,15 +602,74 @@ class ComponentRegistry:
                 mapping[c.key] = (str(adapter), list(collections))
         return mapping
 
+    @staticmethod
+    def _normalize_nav_links(
+        nav: dict[str, Any], url_prefix: str
+    ) -> list[dict[str, Any]]:
+        """Return sanitized nav links for a component.
+
+        If the registry entry does not declare explicit links, generate a single
+        "Dashboard" link pointing at the component's ``url_prefix``.
+        """
+        links = nav.get("links")
+        if not links:
+            href = url_prefix or "/"
+            if not href.endswith("/"):
+                href = f"{href}/"
+            return [
+                {
+                    "label": "Dashboard",
+                    "href": href,
+                    "style": "",
+                    "icon": "",
+                    "enabled": True,
+                }
+            ]
+        result: list[dict[str, Any]] = []
+        for link in links:
+            if not isinstance(link, dict):
+                continue
+            label = str(link.get("label", "")).strip()
+            href = str(link.get("href", "")).strip()
+            if not label or not href:
+                continue
+            result.append(
+                {
+                    "label": label,
+                    "href": href,
+                    "style": str(link.get("style", "")).strip(),
+                    "icon": str(link.get("icon", "")).strip(),
+                    "enabled": bool(link.get("enabled", True)),
+                }
+            )
+        return result
+
     def get_nav_context(self) -> dict[str, Any]:
         """Return navigation tree derived from registry entries.
 
-        Structure: {"sections": {"Section Name": {"label": ..., "items": [
-            {"key": ..., "display_name": ..., "href": ..., "enabled": ...}
-        ]}}}
+        Structure::
 
-        Full link-level navigation remains in templates; this context is the
-        seed for Phase 5-6 templatization.
+            {"sections": {"Section Name": {"groups": [
+                {"label": ..., "items": [
+                    {
+                        "key": ...,
+                        "display_name": ...,
+                        "kind": ...,
+                        "url_prefix": ...,
+                        "min_il": ...,
+                        "default_roles": [...],
+                        "enabled": ...,
+                        "links": [
+                            {"label": ..., "href": ..., "style": ..., "icon": ..., "enabled": ...}
+                        ],
+                    }
+                ]}
+            ]}}}
+
+        Components that share the same section and label are grouped so templates
+        can render a single section header with links from multiple components
+        (e.g., ``Agentic AI`` containing both ``agentic_ai_canvas`` and
+        ``demo_runner``).
         """
         sections: dict[str, dict[str, Any]] = {}
         for c in self._components:
@@ -387,19 +677,30 @@ class ComponentRegistry:
             label = c.nav.get("label")
             if not section:
                 continue
-            sections.setdefault(section, {"items": []})
-            if label and label not in sections[section]:
-                sections[section]["label"] = label
-            sections[section]["items"].append(
+            sec = sections.setdefault(section, {"groups": {}})
+            groups: dict[str, Any] = sec["groups"]
+            group_key = label or c.display_name
+            if group_key not in groups:
+                groups[group_key] = {"label": group_key, "items": []}
+            groups[group_key]["items"].append(
                 {
                     "key": c.key,
                     "display_name": c.display_name,
                     "kind": c.kind,
                     "url_prefix": c.url_prefix,
+                    "min_il": c.min_il,
+                    "min_tier": c.min_tier,
+                    "default_roles": list(c.default_roles),
                     "enabled": c.is_enabled(self._env),
+                    "links": self._normalize_nav_links(c.nav, c.url_prefix),
                 }
             )
-        return {"sections": sections}
+        return {
+            "sections": {
+                section: {"groups": list(groups["groups"].values())}
+                for section, groups in sections.items()
+            }
+        }
 
     def get_url_prefixes(self) -> dict[str, str]:
         """Return component key → url_prefix (legacy _CANVAS_ROUTES replacement)."""
@@ -445,6 +746,7 @@ class CanvasCompletenessReport:
     key: str
     passed: bool
     items: tuple[CanvasCompletenessItem, ...]
+    min_tier: str = "community"
 
 
 def _file_exists(path: Path | str | None) -> bool:
@@ -531,12 +833,47 @@ def validate_canvas_completeness(
     root = Path(repo_root or BASE_DIR).resolve()
     completeness = comp.completeness
 
-    # Point 1: main page template
+    # Point 1: main page template — check declared path, then common legacy fallbacks.
+    # Legacy canvases may use index.html, dashboard.html, or live in a differently named dir.
+    module_path_tmp = comp.module or ""
+    module_dir_tmp = _module_dir_from_module(module_path_tmp)
+    _module_leaf = module_dir_tmp.split("/")[-1] if "/" in module_dir_tmp else module_dir_tmp
+
     template_path_str = completeness.get("template") or f"tools/dashboard/templates/{key}/page.html"
     template_path = root / template_path_str
     page_present = template_path.exists()
 
-    # Point 2: icdev mirror
+    if not page_present:
+        # Try common alternative names and directory conventions
+        _tmpl_candidates = [
+            f"tools/dashboard/templates/{_module_leaf}/page.html",
+            f"tools/dashboard/templates/{_module_leaf}/index.html",
+            f"tools/dashboard/templates/{key}/index.html",
+            f"tools/dashboard/templates/{key}/dashboard.html",
+        ]
+        for _cand in _tmpl_candidates:
+            if (root / _cand).exists():
+                template_path_str = _cand
+                template_path = root / _cand
+                page_present = True
+                break
+        # Last resort: any .html in the template dir (e.g. trust.html for ace)
+        if not page_present:
+            for _leaf in (_module_leaf, key):
+                _tmpl_dir = root / "tools" / "dashboard" / "templates" / _leaf
+                if _tmpl_dir.is_dir():
+                    _html_files = sorted(
+                        f for f in _tmpl_dir.glob("*.html")
+                        if f.name not in ("base.html", "login.html", "error.html")
+                    )
+                    if _html_files:
+                        template_path = _html_files[0]
+                        template_path_str = str(template_path.relative_to(root)).replace("\\", "/")
+                        page_present = True
+                        break
+
+    # Point 2: icdev mirror — only required if a main template was found.
+    # Existing canvases without a web template don't need the icdev mirror.
     icdev_template_path = root / "icdev" / template_path_str
     mirror_present = icdev_template_path.exists()
 
@@ -561,9 +898,20 @@ def validate_canvas_completeness(
     constants_present = constants_path.exists()
 
     # Point 6: DB migration directory
+    # Check declared path and common legacy fallback (db/ without /migrations sub-dir).
     migration_path_str = completeness.get("db_migration")
     migration_path = root / migration_path_str if migration_path_str else None
-    migration_present = _file_exists(migration_path) if migration_path_str else None
+    migration_present: bool | None = None
+    if migration_path_str:
+        migration_present = _file_exists(migration_path)
+        if not migration_present:
+            # Fallback: check parent db/ directory (older canvases don't have /migrations)
+            _db_parent = Path(migration_path_str).parent
+            if _db_parent.name == "migrations":
+                _db_parent = _db_parent.parent
+            if (root / _db_parent).exists():
+                migration_present = True
+                migration_path_str = str(_db_parent)
 
     # Point 7: nav link
     nav_link_present = bool(completeness.get("nav_link")) or bool(comp.nav.get("section"))
@@ -577,6 +925,19 @@ def validate_canvas_completeness(
     seed_queries_path = root / seed_queries_str if seed_queries_str else None
     iqe_adapter_present = _file_exists(iqe_adapter_path) if iqe_adapter_module else None
     seed_queries_present = _file_exists(seed_queries_path) if seed_queries_str else None
+
+    # Fallback: search common IQE seed-query directory name variants when not found.
+    if not seed_queries_present and iqe_adapter_present:
+        _iqe_query_root = root / "context" / "iqe" / "queries"
+        if _iqe_query_root.exists():
+            _name_variants = [key, key + "_canvas", key.replace("_canvas", ""), _module_leaf]
+            for _var in _name_variants:
+                _cand = _iqe_query_root / _var
+                if _cand.exists() and any(_cand.iterdir()):
+                    seed_queries_present = True
+                    seed_queries_path = _cand
+                    break
+
     iqe_present = iqe_adapter_present is True and seed_queries_present is True
 
     items: list[CanvasCompletenessItem] = [
@@ -585,11 +946,13 @@ def validate_canvas_completeness(
             required=True,
             present=page_present,
             path=str(template_path.relative_to(root)) if page_present else template_path_str,
-            message="tools/dashboard/templates/{key}/page.html exists" if page_present else f"missing {template_path_str}",
+            message="page template exists" if page_present else f"missing {template_path_str}",
         ),
         CanvasCompletenessItem(
             point="icdev_mirror",
-            required=True,
+            # Only required when a main template exists; legacy canvases without
+            # a template don't need the icdev/ mirror (companion sync would create it).
+            required=page_present,
             present=mirror_present,
             path=str(icdev_template_path.relative_to(root)) if mirror_present else f"icdev/{template_path_str}",
             message="icdev mirror exists" if mirror_present else f"missing icdev/{template_path_str}",
@@ -643,6 +1006,7 @@ def validate_canvas_completeness(
         key=key,
         passed=passed,
         items=tuple(items),
+        min_tier=comp.min_tier,
     )
 
 

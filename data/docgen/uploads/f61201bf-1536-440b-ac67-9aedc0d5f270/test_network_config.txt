@@ -1,0 +1,34 @@
+﻿hostname CORE-RTR-01
+!
+version 15.7
+!
+no service password-encryption
+service timestamps debug datetime msec
+!
+enable password cisco123
+!
+username admin privilege 15 password 0 admin
+!
+ip ssh version 1
+no ip ssh version 2
+!
+snmp-server community public RO
+snmp-server community private RW
+!
+interface GigabitEthernet0/0
+ ip address 10.0.1.1 255.255.255.0
+ no shutdown
+!
+interface GigabitEthernet0/1
+ ip address 192.168.1.1 255.255.255.0
+ no shutdown
+!
+banner motd ^
+WARNING: Unauthorized access prohibited
+^
+!
+line vty 0 4
+ transport input telnet
+ login local
+!
+end

@@ -6,18 +6,25 @@
       "Edit",
       "Glob",
       "Grep",
-      "Bash(*)"
+      "Bash(*)",
+      "PowerShell(*)"
     ],
     "deny": [
-      "Bash(git push --force:*)",
-      "Bash(git push -f:*)",
-      "Bash(rm -rf:*)",
-      "Bash(git reset --hard:*)",
-      "Bash(DROP TABLE:*)",
-      "Bash(TRUNCATE:*)",
-      "Bash(drop table:*)",
-      "Bash(truncate:*)"
-    ]
+      "Bash(git push *)",
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(git push -u*)",
+      "Bash(git branch -d *)",
+      "Bash(git branch -D *)",
+      "Bash(git branch --delete *)",
+      "Bash(rm -rf *)",
+      "Bash(git reset --hard*)",
+      "Bash(DROP TABLE*)",
+      "Bash(TRUNCATE*)",
+      "Bash(drop table*)",
+      "Bash(truncate*)"
+    ],
+    "defaultMode": "acceptEdits"
   },
   "hooks": {
     "PreToolUse": [

@@ -139,7 +139,7 @@ def log_usage(
             INSERT INTO agent_token_usage
                 (agent_id, project_id, model_id, input_tokens, output_tokens,
                  thinking_tokens, duration_ms, task_id, cost_estimate_usd, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 agent_id,
@@ -220,7 +220,7 @@ def get_cost_estimate(project_id: str, db_path: Path = None) -> Dict:
                 COALESCE(SUM(cost_estimate_usd), 0.0) AS total_cost,
                 COUNT(*)                              AS count
             FROM agent_token_usage
-            WHERE project_id = ?
+            WHERE project_id = %s
             GROUP BY model_id
             ORDER BY total_cost DESC
             """,
@@ -349,9 +349,9 @@ def _get_monthly_spend(agent_id: str, month: str = None, db_path: Path = None) -
         row = conn.execute(
             """SELECT COALESCE(SUM(cost_estimate_usd), 0.0) AS total
                FROM agent_token_usage
-               WHERE agent_id = ?
-                 AND created_at >= ?
-                 AND created_at < ?""",
+               WHERE agent_id = %s
+                 AND created_at >= %s
+                 AND created_at < %s""",
             (agent_id, start, end),
         ).fetchone()
         return round(row["total"], 6) if row else 0.0
@@ -456,8 +456,8 @@ def get_all_budgets(db_path: Path = None) -> Dict:
         rows = conn.execute(
             """SELECT agent_id, COALESCE(SUM(cost_estimate_usd), 0.0) AS total
                FROM agent_token_usage
-               WHERE created_at >= ?
-                 AND created_at < ?
+               WHERE created_at >= %s
+                 AND created_at < %s
                GROUP BY agent_id
                ORDER BY total DESC""",
             (start, end),

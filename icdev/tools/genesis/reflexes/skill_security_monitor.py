@@ -160,7 +160,7 @@ def _create_card(
             "INSERT INTO kanban_tasks "
             "(id, task_type, title, description, status, priority, "
             " dispatch_source, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 task_id,
                 "fix",

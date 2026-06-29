@@ -56,7 +56,7 @@ def _audit(conn, action, details="", actor="cpmp_api"):
     try:
         conn.execute(
             "INSERT INTO audit_trail (event_type, actor, action, details, session_id) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s)",
             ("hook_event_logged", actor, action, details, "cpmp"),
         )
     except Exception:
@@ -70,7 +70,7 @@ def _classification():
 def _cor_access_log(conn, user_id, contract_id, action):
     try:
         conn.execute(
-            "INSERT INTO cpmp_cor_access_log (user_id, contract_id, action) VALUES (?, ?, ?)",
+            "INSERT INTO cpmp_cor_access_log (user_id, contract_id, action) VALUES (%s, %s, %s)",
             (user_id, contract_id, action),
         )
     except Exception:
@@ -158,7 +158,7 @@ def _mac_check_parent_contract(contract_id, conn):
     """Check MAC read access on the parent contract. Returns 403 response or None."""
     try:
         row = conn.execute(
-            "SELECT classification, compartments FROM cpmp_contracts WHERE id = ?",
+            "SELECT classification, compartments FROM cpmp_contracts WHERE id = %s",
             (contract_id,),
         ).fetchone()
         if not row:
@@ -1055,7 +1055,7 @@ def _get_cor_contracts(cor_email):
     """Get contracts where the COR email matches."""
     conn = _get_db()
     rows = conn.execute(
-        "SELECT * FROM cpmp_contracts WHERE cor_email = ? ORDER BY created_at DESC",
+        "SELECT * FROM cpmp_contracts WHERE cor_email = %s ORDER BY created_at DESC",
         (cor_email,),
     ).fetchall()
     conn.close()
@@ -2145,7 +2145,7 @@ def upsert_int_coverage(contract_id):
                    (id, contract_id, discipline, coverage_area, status, confidence,
                     source_type, notes, last_assessed, persistent_since, metadata,
                     created_at, updated_at, classification)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                    ON CONFLICT(id) DO NOTHING""",
                 (
                     cid, contract_id,
@@ -2165,7 +2165,7 @@ def upsert_int_coverage(contract_id):
             _audit(conn, "upsert_coverage", f"contract={contract_id} cov={cid}")
             record = _row_to_dict(
                 conn.execute(
-                    "SELECT * FROM cpmp_int_coverage WHERE id = ?", (cid,)
+                    "SELECT * FROM cpmp_int_coverage WHERE id = %s", (cid,)
                 ).fetchone()
             )
             return jsonify({"status": "ok", "coverage": record}), 201
@@ -2184,12 +2184,12 @@ def list_int_coverage(contract_id):
         try:
             if status_filter and status_filter in _COVERAGE_STATUSES:
                 rows = conn.execute(
-                    "SELECT * FROM cpmp_int_coverage WHERE contract_id = ? AND status = ? ORDER BY discipline, coverage_area",
+                    "SELECT * FROM cpmp_int_coverage WHERE contract_id = %s AND status = %s ORDER BY discipline, coverage_area",
                     (contract_id, status_filter),
                 ).fetchall()
             else:
                 rows = conn.execute(
-                    "SELECT * FROM cpmp_int_coverage WHERE contract_id = ? ORDER BY discipline, coverage_area",
+                    "SELECT * FROM cpmp_int_coverage WHERE contract_id = %s ORDER BY discipline, coverage_area",
                     (contract_id,),
                 ).fetchall()
             return jsonify({"status": "ok", "coverage": [_row_to_dict(r) for r in rows], "count": len(rows)})
@@ -2206,7 +2206,7 @@ def list_coverage_gaps(contract_id):
         conn = _get_db()
         try:
             rows = conn.execute(
-                "SELECT * FROM cpmp_int_coverage WHERE contract_id = ? AND status IN ('gap', 'partial') ORDER BY discipline, coverage_area",
+                "SELECT * FROM cpmp_int_coverage WHERE contract_id = %s AND status IN ('gap', 'partial') ORDER BY discipline, coverage_area",
                 (contract_id,),
             ).fetchall()
             return jsonify({"status": "ok", "gaps": [_row_to_dict(r) for r in rows], "count": len(rows)})
@@ -2225,9 +2225,9 @@ def list_persistent_gaps(contract_id):
         try:
             rows = conn.execute(
                 "SELECT * FROM cpmp_int_coverage "
-                "WHERE contract_id = ? AND status IN ('gap', 'partial') "
+                "WHERE contract_id = %s AND status IN ('gap', 'partial') "
                 "AND persistent_since IS NOT NULL "
-                "AND persistent_since <= datetime('now', ? || ' days') "
+                "AND persistent_since <= datetime('now', %s || ' days') "
                 "ORDER BY persistent_since",
                 (contract_id, f"-{days}"),
             ).fetchall()
@@ -2252,7 +2252,7 @@ def generate_collection_requirements(contract_id, coverage_id):
         try:
             cov_row = conn.execute(
                 "SELECT id, discipline, coverage_area, status FROM cpmp_int_coverage "
-                "WHERE id = ? AND contract_id = ?",
+                "WHERE id = %s AND contract_id = %s",
                 (coverage_id, contract_id),
             ).fetchone()
             if not cov_row:
@@ -2271,7 +2271,7 @@ def generate_collection_requirements(contract_id, coverage_id):
                     "INSERT INTO cpmp_collection_requirements "
                     "(id, coverage_id, contract_id, requirement_text, discipline, priority, "
                     "status, ai_generated, created_at, updated_at, classification) "
-                    "VALUES (?, ?, ?, ?, ?, ?, 'open', 1, ?, ?, 'CUI')",
+                    "VALUES (%s, %s, %s, %s, %s, %s, 'open', 1, %s, %s, 'CUI')",
                     (rid, coverage_id, contract_id, text, discipline, priority, now, now),
                 )
                 created.append({
@@ -2301,7 +2301,7 @@ def list_coverage_requirements(coverage_id):
         conn = _get_db()
         try:
             rows = conn.execute(
-                "SELECT * FROM cpmp_collection_requirements WHERE coverage_id = ? ORDER BY priority, created_at",
+                "SELECT * FROM cpmp_collection_requirements WHERE coverage_id = %s ORDER BY priority, created_at",
                 (coverage_id,),
             ).fetchall()
             return jsonify({"status": "ok", "requirements": [_row_to_dict(r) for r in rows], "count": len(rows)})
@@ -2323,7 +2323,7 @@ def update_collection_requirement(requirement_id):
         conn = _get_db()
         try:
             row = conn.execute(
-                "SELECT * FROM cpmp_collection_requirements WHERE id = ?",
+                "SELECT * FROM cpmp_collection_requirements WHERE id = %s",
                 (requirement_id,),
             ).fetchone()
             if not row:
@@ -2345,14 +2345,14 @@ def update_collection_requirement(requirement_id):
             set_clause = ", ".join(f"{k} = ?" for k in updates)
             values = list(updates.values()) + [requirement_id]
             conn.execute(
-                f"UPDATE cpmp_collection_requirements SET {set_clause} WHERE id = ?",
+                f"UPDATE cpmp_collection_requirements SET {set_clause} WHERE id = %s",
                 values,
             )
             conn.commit()
             _audit(conn, "update_requirement", f"req={requirement_id} status={new_status}")
             updated = _row_to_dict(
                 conn.execute(
-                    "SELECT * FROM cpmp_collection_requirements WHERE id = ?",
+                    "SELECT * FROM cpmp_collection_requirements WHERE id = %s",
                     (requirement_id,),
                 ).fetchone()
             )

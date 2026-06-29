@@ -288,7 +288,7 @@ def save_anomaly_run(
             conn.execute(
                 "INSERT INTO dd_anomaly_runs "
                 "(run_id, profile_id, overall_risk, findings_json, classification, run_at) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s)",
                 (run_id, profile_id, result.get("overall_risk", "none"), payload, classification, now),
             )
 
@@ -300,7 +300,7 @@ def save_anomaly_run(
                 )
             except Exception:
                 conn.execute(
-                    "UPDATE dd_explore_profiles SET anomaly_json = ? WHERE profile_id = ?",
+                    "UPDATE dd_explore_profiles SET anomaly_json = %s WHERE profile_id = %s",
                     (payload, profile_id),
                 )
 
@@ -324,7 +324,7 @@ def get_latest_run(profile_id: str) -> dict | None:
         except Exception:
             row = conn.execute(
                 "SELECT findings_json, overall_risk, classification, run_at FROM dd_anomaly_runs "
-                "WHERE profile_id = ? ORDER BY run_at DESC LIMIT 1",
+                "WHERE profile_id = %s ORDER BY run_at DESC LIMIT 1",
                 (profile_id,),
             ).fetchone()
     finally:

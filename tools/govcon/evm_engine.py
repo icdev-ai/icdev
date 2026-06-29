@@ -85,7 +85,7 @@ def _audit(conn, action, details="", actor="evm_engine"):
     try:
         conn.execute(
             "INSERT INTO audit_trail (event_type, actor, action, details, session_id) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s)",
             ("hook_event_logged", actor, action, details, "cpmp"),
         )
     except Exception:
@@ -190,7 +190,7 @@ def record_period(contract_id, wbs_id, period_date, pv, ev, ac, source="manual")
     conn = _get_db()
 
     # Validate contract exists
-    contract = conn.execute("SELECT id FROM cpmp_contracts WHERE id = ?", (contract_id,)).fetchone()
+    contract = conn.execute("SELECT id FROM cpmp_contracts WHERE id = %s", (contract_id,)).fetchone()
     if not contract:
         conn.close()
         return {"status": "error", "message": f"Contract {contract_id} not found"}
@@ -198,7 +198,7 @@ def record_period(contract_id, wbs_id, period_date, pv, ev, ac, source="manual")
     # Validate WBS exists and belongs to contract
     wbs = conn.execute(
         "SELECT id, budget_at_completion, pv_cumulative, ev_cumulative, ac_cumulative "
-        "FROM cpmp_wbs WHERE id = ? AND contract_id = ?",
+        "FROM cpmp_wbs WHERE id = %s AND contract_id = %s",
         (wbs_id, contract_id),
     ).fetchone()
     if not wbs:
@@ -231,7 +231,7 @@ def record_period(contract_id, wbs_id, period_date, pv, ev, ac, source="manual")
         "cpi, spi, cv, sv, "
         "eac, etc, vac, tcpi, "
         "source, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
         (
             period_id,
             contract_id,
@@ -259,8 +259,8 @@ def record_period(contract_id, wbs_id, period_date, pv, ev, ac, source="manual")
 
     # Update WBS cumulative values
     conn.execute(
-        "UPDATE cpmp_wbs SET pv_cumulative = ?, ev_cumulative = ?, ac_cumulative = ?, "
-        "percent_complete = ?, updated_at = ? WHERE id = ?",
+        "UPDATE cpmp_wbs SET pv_cumulative = %s, ev_cumulative = %s, ac_cumulative = %s, "
+        "percent_complete = %s, updated_at = %s WHERE id = %s",
         (pv_cum, ev_cum, ac_cum, round(pct_complete, 2), _now(), wbs_id),
     )
 
@@ -303,7 +303,7 @@ def aggregate_contract_evm(contract_id):
     conn = _get_db()
 
     contract = conn.execute(
-        "SELECT id, contract_number, title FROM cpmp_contracts WHERE id = ?",
+        "SELECT id, contract_number, title FROM cpmp_contracts WHERE id = %s",
         (contract_id,),
     ).fetchone()
     if not contract:
@@ -312,7 +312,7 @@ def aggregate_contract_evm(contract_id):
 
     # Get total BAC from all WBS elements
     bac_row = conn.execute(
-        "SELECT COALESCE(SUM(budget_at_completion), 0) AS total_bac FROM cpmp_wbs WHERE contract_id = ?",
+        "SELECT COALESCE(SUM(budget_at_completion), 0) AS total_bac FROM cpmp_wbs WHERE contract_id = %s",
         (contract_id,),
     ).fetchone()
     total_bac = bac_row["total_bac"]
@@ -325,10 +325,10 @@ def aggregate_contract_evm(contract_id):
         "FROM cpmp_evm_periods e "
         "INNER JOIN ("
         "    SELECT wbs_id, MAX(period_date) AS max_period "
-        "    FROM cpmp_evm_periods WHERE contract_id = ? "
+        "    FROM cpmp_evm_periods WHERE contract_id = %s "
         "    GROUP BY wbs_id"
         ") latest ON e.wbs_id = latest.wbs_id AND e.period_date = latest.max_period "
-        "WHERE e.contract_id = ?",
+        "WHERE e.contract_id = %s",
         (contract_id, contract_id),
     ).fetchall()
 
@@ -385,7 +385,7 @@ def generate_scurve_data(contract_id):
     conn = _get_db()
 
     contract = conn.execute(
-        "SELECT id, contract_number FROM cpmp_contracts WHERE id = ?",
+        "SELECT id, contract_number FROM cpmp_contracts WHERE id = %s",
         (contract_id,),
     ).fetchone()
     if not contract:
@@ -399,7 +399,7 @@ def generate_scurve_data(contract_id):
         "       SUM(ev) AS ev_cumulative, "
         "       SUM(ac) AS ac_cumulative "
         "FROM cpmp_evm_periods "
-        "WHERE contract_id = ? "
+        "WHERE contract_id = %s "
         "GROUP BY period_date "
         "ORDER BY period_date ASC",
         (contract_id,),
@@ -451,7 +451,7 @@ def forecast_monte_carlo(contract_id, iterations=None):
     conn = _get_db()
 
     contract = conn.execute(
-        "SELECT id, contract_number FROM cpmp_contracts WHERE id = ?",
+        "SELECT id, contract_number FROM cpmp_contracts WHERE id = %s",
         (contract_id,),
     ).fetchone()
     if not contract:
@@ -460,7 +460,7 @@ def forecast_monte_carlo(contract_id, iterations=None):
 
     # Get total BAC
     bac_row = conn.execute(
-        "SELECT COALESCE(SUM(budget_at_completion), 0) AS total_bac FROM cpmp_wbs WHERE contract_id = ?",
+        "SELECT COALESCE(SUM(budget_at_completion), 0) AS total_bac FROM cpmp_wbs WHERE contract_id = %s",
         (contract_id,),
     ).fetchone()
     total_bac = bac_row["total_bac"]
@@ -471,7 +471,7 @@ def forecast_monte_carlo(contract_id, iterations=None):
     # Collect all CPI values across periods for this contract
     cpi_rows = conn.execute(
         "SELECT cpi FROM cpmp_evm_periods "
-        "WHERE contract_id = ? AND cpi IS NOT NULL AND cpi > 0 "
+        "WHERE contract_id = %s AND cpi IS NOT NULL AND cpi > 0 "
         "ORDER BY period_date ASC",
         (contract_id,),
     ).fetchall()
@@ -597,14 +597,14 @@ def generate_ipmdar_data(contract_id):
     """
     conn = _get_db()
 
-    contract = conn.execute("SELECT * FROM cpmp_contracts WHERE id = ?", (contract_id,)).fetchone()
+    contract = conn.execute("SELECT * FROM cpmp_contracts WHERE id = %s", (contract_id,)).fetchone()
     if not contract:
         conn.close()
         return {"status": "error", "message": f"Contract {contract_id} not found"}
 
     # All WBS elements for the contract
     wbs_rows = conn.execute(
-        "SELECT * FROM cpmp_wbs WHERE contract_id = ? ORDER BY wbs_number",
+        "SELECT * FROM cpmp_wbs WHERE contract_id = %s ORDER BY wbs_number",
         (contract_id,),
     ).fetchall()
 
@@ -612,7 +612,7 @@ def generate_ipmdar_data(contract_id):
     format_1 = []
     for wbs in wbs_rows:
         latest = conn.execute(
-            "SELECT * FROM cpmp_evm_periods WHERE contract_id = ? AND wbs_id = ? ORDER BY period_date DESC LIMIT 1",
+            "SELECT * FROM cpmp_evm_periods WHERE contract_id = %s AND wbs_id = %s ORDER BY period_date DESC LIMIT 1",
             (contract_id, wbs["id"]),
         ).fetchone()
 
@@ -648,7 +648,7 @@ def generate_ipmdar_data(contract_id):
     for wbs in wbs_rows:
         periods = conn.execute(
             "SELECT period_date, pv FROM cpmp_evm_periods "
-            "WHERE contract_id = ? AND wbs_id = ? ORDER BY period_date ASC",
+            "WHERE contract_id = %s AND wbs_id = %s ORDER BY period_date ASC",
             (contract_id, wbs["id"]),
         ).fetchall()
         format_3.append(

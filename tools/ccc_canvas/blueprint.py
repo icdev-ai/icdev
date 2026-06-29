@@ -152,7 +152,7 @@ def create_ccc_blueprint() -> Blueprint:
             status_f = request.args.get("status", "")
             if status_f:
                 try:
-                    rows = conn.execute("SELECT * FROM ccc_circuits WHERE status=? ORDER BY carrier", (status_f,)).fetchall()
+                    rows = conn.execute("SELECT * FROM ccc_circuits WHERE status=%s ORDER BY carrier", (status_f,)).fetchall()
                 except Exception:
                     rows = conn.execute("SELECT * FROM ccc_circuits WHERE status=%s ORDER BY carrier", (status_f,)).fetchall()
             else:
@@ -214,7 +214,7 @@ def create_ccc_blueprint() -> Blueprint:
             set_clause = ", ".join(f"{k}=?" for k in updates)
             vals = list(updates.values()) + [circuit_id]
             try:
-                conn.execute(f"UPDATE ccc_circuits SET {set_clause} WHERE circuit_id=?", vals)
+                conn.execute(f"UPDATE ccc_circuits SET {set_clause} WHERE circuit_id=%s", vals)
             except Exception:
                 set_clause = ", ".join(f"{k}=%s" for k in updates)
                 conn.execute(f"UPDATE ccc_circuits SET {set_clause} WHERE circuit_id=%s", vals)
@@ -389,7 +389,7 @@ def create_ccc_blueprint() -> Blueprint:
         conn = get_connection()
         try:
             try:
-                xc = conn.execute("SELECT * FROM ccc_cross_connects WHERE id=?", (xc_id,)).fetchone()
+                xc = conn.execute("SELECT * FROM ccc_cross_connects WHERE id=%s", (xc_id,)).fetchone()
             except Exception:
                 xc = conn.execute("SELECT * FROM ccc_cross_connects WHERE id=%s", (xc_id,)).fetchone()
             if not xc:
@@ -411,7 +411,7 @@ def create_ccc_blueprint() -> Blueprint:
             _loa_id = loa_result.get("loa_id") or loa_result.get("loa_number")  # noqa: F841
             # Fetch the numeric id for generate_loa_for_facility
             try:
-                loa_row = conn.execute("SELECT id FROM ccc_loa_requests WHERE loa_number=?", (loa_result.get("loa_number"),)).fetchone()
+                loa_row = conn.execute("SELECT id FROM ccc_loa_requests WHERE loa_number=%s", (loa_result.get("loa_number"),)).fetchone()
             except Exception:
                 loa_row = conn.execute("SELECT id FROM ccc_loa_requests WHERE loa_number=%s", (loa_result.get("loa_number"),)).fetchone()
             loa_numeric_id = loa_row[0] if loa_row else None

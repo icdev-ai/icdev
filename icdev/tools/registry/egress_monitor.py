@@ -103,7 +103,7 @@ class EgressMonitor:
             conn.execute(
                 """INSERT INTO child_telemetry
                    (id, child_id, metric_type, metric_data, health_status, collected_at)
-                   VALUES (?, ?, 'egress', ?, ?, ?)""",
+                   VALUES (%s, %s, 'egress', %s, %s, %s)""",
                 (
                     telemetry_id,
                     egress_data["child_id"],
@@ -133,7 +133,7 @@ class EgressMonitor:
         conn = self._get_db()
         row = conn.execute(
             """SELECT metric_data FROM child_telemetry
-               WHERE child_id = ? AND metric_type = 'egress'
+               WHERE child_id = %s AND metric_type = 'egress'
                ORDER BY collected_at DESC LIMIT 1""",
             (child_id,),
         ).fetchone()
@@ -194,8 +194,8 @@ class EgressMonitor:
 
         rows = conn.execute(
             """SELECT metric_data, collected_at FROM child_telemetry
-               WHERE child_id = ? AND metric_type = 'egress'
-               AND collected_at > ?
+               WHERE child_id = %s AND metric_type = 'egress'
+               AND collected_at > %s
                ORDER BY collected_at DESC""",
             (child_id, cutoff),
         ).fetchall()

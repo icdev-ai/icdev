@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 # CUI // SP-CTI
 from __future__ import annotations
 
@@ -1041,7 +1041,7 @@ def import_skill(source_path, tenant_id, imported_by, skillhub_url=None):
                 has_executable_content, scan_status, gate_results,
                 review_required, trust_score, status, imported_by,
                 tenant_id, metadata, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 import_id,
                 skillhub_url,
@@ -1167,7 +1167,7 @@ def promote_import(import_id, promoted_by):
 
     conn = _get_db()
     try:
-        row = conn.execute("SELECT * FROM openclaw_imports WHERE id = ?", (import_id,)).fetchone()
+        row = conn.execute("SELECT * FROM openclaw_imports WHERE id = %s", (import_id,)).fetchone()
 
         if not row:
             return {"error": f"Import not found: {import_id}"}
@@ -1305,9 +1305,9 @@ CUI // SP-CTI
         now = _utcnow()
         conn.execute(
             """UPDATE openclaw_imports
-               SET status = 'promoted', promoted_by = ?, promoted_at = ?,
-                   marketplace_asset_id = ?, updated_at = ?
-               WHERE id = ?""",
+               SET status = 'promoted', promoted_by = %s, promoted_at = %s,
+                   marketplace_asset_id = %s, updated_at = %s
+               WHERE id = %s""",
             (promoted_by, now, asset_id, now, import_id),
         )
         conn.commit()
@@ -1360,7 +1360,7 @@ def reject_import(import_id, rejected_by, reason):
     conn = _get_db()
     try:
         row = conn.execute(
-            "SELECT id, status, quarantine_path FROM openclaw_imports WHERE id = ?",
+            "SELECT id, status, quarantine_path FROM openclaw_imports WHERE id = %s",
             (import_id,),
         ).fetchone()
 
@@ -1374,9 +1374,9 @@ def reject_import(import_id, rejected_by, reason):
         now = _utcnow()
         conn.execute(
             """UPDATE openclaw_imports
-               SET status = 'rejected', rejected_by = ?, rejected_reason = ?,
-                   updated_at = ?
-               WHERE id = ?""",
+               SET status = 'rejected', rejected_by = %s, rejected_reason = %s,
+                   updated_at = %s
+               WHERE id = %s""",
             (rejected_by, reason, now, import_id),
         )
         conn.commit()
@@ -1520,7 +1520,7 @@ def revoke_import(import_id, revoked_by, reason):
     conn = _get_db()
     try:
         row = conn.execute(
-            "SELECT id, status, marketplace_asset_id FROM openclaw_imports WHERE id = ?",
+            "SELECT id, status, marketplace_asset_id FROM openclaw_imports WHERE id = %s",
             (import_id,),
         ).fetchone()
 
@@ -1547,9 +1547,9 @@ def revoke_import(import_id, revoked_by, reason):
         # Update import record back to rejected
         conn.execute(
             """UPDATE openclaw_imports
-               SET status = 'rejected', rejected_by = ?, rejected_reason = ?,
-                   updated_at = ?
-               WHERE id = ?""",
+               SET status = 'rejected', rejected_by = %s, rejected_reason = %s,
+                   updated_at = %s
+               WHERE id = %s""",
             (revoked_by, f"REVOKED: {reason}", now, import_id),
         )
         conn.commit()
@@ -1605,11 +1605,11 @@ def export_skill(asset_id, version_id, output_path, exported_by):
     conn = _get_db()
     try:
         # Load asset
-        asset = conn.execute("SELECT * FROM marketplace_assets WHERE id = ?", (asset_id,)).fetchone()
+        asset = conn.execute("SELECT * FROM marketplace_assets WHERE id = %s", (asset_id,)).fetchone()
         if not asset:
             return {"error": f"Asset not found: {asset_id}"}
 
-        version = conn.execute("SELECT * FROM marketplace_versions WHERE id = ?", (version_id,)).fetchone()
+        version = conn.execute("SELECT * FROM marketplace_versions WHERE id = %s", (version_id,)).fetchone()
         if not version:
             return {"error": f"Version not found: {version_id}"}
 
@@ -1700,7 +1700,7 @@ def export_skill(asset_id, version_id, output_path, exported_by):
             """INSERT INTO openclaw_exports
                (id, asset_id, version_id, output_path, exported_by,
                 review_status, stripping_log, sha256_hash, status, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 export_id,
                 asset_id,
@@ -1765,7 +1765,7 @@ def list_quarantine(status_filter=None):
                 "SELECT id, skill_name, openclaw_author, scan_status, status, "
                 "trust_score, has_executable_content, review_required, created_at, "
                 "rejected_by, rejected_reason, gate_results, quarantine_path "
-                "FROM openclaw_imports WHERE status = ? ORDER BY created_at DESC",
+                "FROM openclaw_imports WHERE status = %s ORDER BY created_at DESC",
                 (status_filter,),
             ).fetchall()
         else:
@@ -1831,7 +1831,7 @@ def list_exports(status_filter=None):
         if status_filter:
             rows = conn.execute(
                 "SELECT id, asset_id, version_id, exported_by, review_status, "
-                "status, created_at FROM openclaw_exports WHERE status = ? "
+                "status, created_at FROM openclaw_exports WHERE status = %s "
                 "ORDER BY created_at DESC",
                 (status_filter,),
             ).fetchall()
@@ -1938,7 +1938,7 @@ def gate_check():
         config = _load_config()
         max_age = config.get("import", {}).get("quarantine_max_age_days", 30)
         rows = conn.execute(
-            "SELECT COUNT(*) FROM openclaw_imports WHERE status = 'quarantined' AND created_at < datetime('now', ?)",
+            "SELECT COUNT(*) FROM openclaw_imports WHERE status = 'quarantined' AND created_at < datetime('now', %s)",
             (f"-{max_age} days",),
         ).fetchone()
         overdue = rows[0] if rows else 0

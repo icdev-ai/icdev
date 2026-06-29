@@ -21,7 +21,6 @@ Usage (format detection):
 
 from __future__ import annotations
 
-import logging
 from tools.logging.icdev_logger import get_logger
 from pathlib import Path
 from typing import TYPE_CHECKING

@@ -326,7 +326,7 @@ def transition(
         conn.execute(
             "INSERT INTO kanban_status_transitions "
             "(id, task_id, from_status, to_status, actor, reason, recorded_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (
                 "kst-" + _secrets.token_hex(6),
                 task_id,
@@ -341,6 +341,15 @@ def transition(
         conn.close()
     except Exception:
         pass
+
+    # Wire Prometheus metrics — best-effort, never block on metric errors
+    if to_state in TERMINAL_STATES:
+        try:
+            import tools.observability.metrics as _obs_m
+            if _obs_m.kanban_tasks_total is not None:
+                _obs_m.kanban_tasks_total.labels(status=db_status).inc()
+        except Exception:
+            pass
 
     return TransitionResult(
         task_id=task_id,

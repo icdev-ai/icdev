@@ -426,7 +426,7 @@ class RAGRetriever:
                    (query_hash, query_text, results_count, top_score,
                     retrieval_mode, vector_top_k, final_top_k, rerank_used,
                     source_types_queried, duration_ms, tenant_id, project_id)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     query_hash,
                     query_text,

@@ -364,7 +364,7 @@ def _populate_kg_ontology(
 
     # Delete stale rows for this graph
     try:
-        conn.execute("DELETE FROM kg_ontology WHERE graph_id = ?", (graph_id,))
+        conn.execute("DELETE FROM kg_ontology WHERE graph_id = %s", (graph_id,))
     except Exception:
         return 0
 
@@ -405,7 +405,7 @@ def _populate_kg_ontology(
         conn.executemany(
             "INSERT INTO kg_ontology "
             "(id, graph_id, subject_type, predicate, object_type, path_distance, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             rows_to_insert,
         )
 
@@ -428,7 +428,7 @@ def _persist_graph(
         """INSERT OR REPLACE INTO kg_graphs
            (id, project_id, name, description, entity_count, edge_count,
             metadata, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
         (
             graph_id,
             project_id,
@@ -474,7 +474,7 @@ def _persist_graph(
         conn.execute(
             """INSERT INTO kg_nodes
                (id, graph_id, label, entity_type, ontology_id, properties, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
             (
                 node_id,
                 graph_id,
@@ -495,7 +495,7 @@ def _persist_graph(
             """INSERT INTO kg_edges
                (id, graph_id, source_id, target_id, relationship, weight,
                 properties, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 _gen_id("ke"),
                 graph_id,
@@ -643,7 +643,7 @@ def ingest_from_table(
             return {"status": "error", "error": f"Table '{table_name}' not found"}
 
         # Validate column exists
-        cursor = conn.execute(f"PRAGMA table_info({table_name})")  # noqa: S608
+        cursor = conn.execute(f"PRAGMA table_info({table_name})")  # noqa: S608  # nosec B608 — table_name from validated registry, not user input
         columns = [r[1] if isinstance(r, tuple) else r["name"] for r in cursor.fetchall()]
         if content_column not in columns:
             # Fallback: try common content columns
@@ -674,7 +674,7 @@ def ingest_from_table(
         col_list = ", ".join(select_cols)
 
         rows = conn.execute(
-            f"SELECT {col_list} FROM {table_name} LIMIT ?",  # noqa: S608  # nosec B608 -- table/column names are internal constants, not user input
+            f"SELECT {col_list} FROM {table_name} LIMIT %s",  # noqa: S608  # nosec B608 -- table/column names are internal constants, not user input
             (limit,),
         ).fetchall()
 

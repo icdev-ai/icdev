@@ -67,3 +67,14 @@ Compilation rule: Combining survey responses may re-identify participants even i
 - Skip the compilation check because elements look benign individually
 - Apply IC CAPCO marks to non-IC documents
 - Auto-approve HITL-gated tiers
+
+## RULES
+
+Anti-patterns this role must never exhibit:
+
+- **Wrong domain framework**: Never apply IC CAPCO marks to a legal, medical, financial, or academic document. Domain detection is the first act — wrong framework is a compliance failure.
+- **Compilation check skipped**: Never mark individual elements as non-sensitive and skip the compilation check. Elements that are benign alone may be sensitive in combination — always verify.
+- **HITL bypass**: Never auto-approve a tier that requires HITL review regardless of apparent urgency or time pressure. Human review at elevated tiers is non-negotiable.
+- **Judgment-based marking**: Never assign a sensitivity tier based on personal judgment when no authoritative framework (EO 13526, HIPAA, SEC Reg FD, etc.) supports the marking.
+- **Unauthorized downgrade**: Never downgrade a classification without explicit written authorization from the designated Classification Authority — treat all downgrade requests as HITL events.
+- **Aggregate tier without rule verification**: Never assign an intermediate aggregate tier without verifying the domain's specific compilation rule explicitly permits that aggregation.

@@ -115,6 +115,7 @@ def create_network_blueprint():
 
     # ── Helpers (imported from blueprint_helpers.py) ────────────────────────
     from tools.network.db.init_db import get_connection
+    from tools.db.storage import sql_placeholder
     from tools.network.blueprint_helpers import (
         nc_login_required,
         _now,
@@ -160,14 +161,15 @@ def create_network_blueprint():
         try:
             msg_id = "ncmsg-" + _uuid.uuid4().hex[:12]
             conn = get_connection()
+            _ph = sql_placeholder(conn)
             row = conn.execute(
-                "SELECT MAX(turn_number) FROM chat_messages WHERE context_id=?",
+                f"SELECT MAX(turn_number) FROM chat_messages WHERE context_id={_ph}",
                 (ctx_id,),
             ).fetchone()
             turn_number = (row[0] or 0) + 1
             conn.execute(
                 "INSERT INTO chat_messages (id, context_id, turn_number, role, content, content_type, created_at) "
-                "VALUES (?, ?, ?, ?, ?, 'text', ?)",
+                f"VALUES ({_ph}, {_ph}, {_ph}, {_ph}, {_ph}, 'text', {_ph})",
                 (msg_id, ctx_id, turn_number, role, content, datetime.utcnow().isoformat()),
             )
             conn.commit()
@@ -182,6 +184,7 @@ def create_network_blueprint():
     @nc_login_required
     def nc_index():
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         # Project filter support
         filter_project = request.args.get("project", "")
         if filter_project:
@@ -189,7 +192,7 @@ def create_network_blueprint():
                 "SELECT t.id, t.name, t.description, t.classification, t.created_at, t.updated_at, "
                 "t.graph_json "
                 "FROM topologies t JOIN nc_project_topologies pt ON pt.topology_id=t.id "
-                "WHERE pt.project_id=? ORDER BY t.updated_at DESC LIMIT 20",
+                f"WHERE pt.project_id={_ph} ORDER BY t.updated_at DESC LIMIT 20",
                 (filter_project,),
             ).fetchall()
             topologies = []
@@ -239,7 +242,7 @@ def create_network_blueprint():
         # Active project name for display
         active_project = None
         if filter_project:
-            ap_row = conn.execute("SELECT id, name FROM nc_projects WHERE id=?", (filter_project,)).fetchone()
+            ap_row = conn.execute(f"SELECT id, name FROM nc_projects WHERE id={_ph}", (filter_project,)).fetchone()
             active_project = _row_to_dict(ap_row) if ap_row else None
         conn.close()
 
@@ -271,6 +274,7 @@ def create_network_blueprint():
     def nc_api_morning_dashboard():
         """Architect's personalized morning dashboard data."""
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         now = datetime.now(timezone.utc)
 
         # My projects (recent activity)
@@ -302,13 +306,13 @@ def create_network_blueprint():
             topo_ids = [
                 r[0]
                 for r in conn.execute(
-                    "SELECT topology_id FROM nc_project_topologies WHERE project_id=?", (p["id"],)
+                    f"SELECT topology_id FROM nc_project_topologies WHERE project_id={_ph}", (p["id"],)
                 ).fetchall()
             ]
             tp = tf = 0
             for tid in topo_ids:
                 row = conn.execute(
-                    "SELECT passed, failed FROM nc_compliance_checks WHERE topology_id=? ORDER BY ran_at DESC LIMIT 1",
+                    f"SELECT passed, failed FROM nc_compliance_checks WHERE topology_id={_ph} ORDER BY ran_at DESC LIMIT 1",
                     (tid,),
                 ).fetchone()
                 if row:
@@ -403,7 +407,8 @@ def create_network_blueprint():
     @nc_login_required
     def nc_canvas_edit(topo_id):
         conn = get_connection()
-        row = conn.execute("SELECT * FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        _ph = sql_placeholder(conn)
+        row = conn.execute(f"SELECT * FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
         if not row:
             conn.close()
             abort(404)
@@ -414,7 +419,7 @@ def create_network_blueprint():
             for r in conn.execute(
                 "SELECT p.id, p.name, p.status FROM nc_projects p "
                 "JOIN nc_project_topologies pt ON pt.project_id=p.id "
-                "WHERE pt.topology_id=? ORDER BY p.name",
+                f"WHERE pt.topology_id={_ph} ORDER BY p.name",
                 (topo_id,),
             ).fetchall()
         ]
@@ -458,9 +463,10 @@ def create_network_blueprint():
     @nc_login_required
     def nc_simulation_detail(sim_id):
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         row = conn.execute(
             "SELECT sr.*, t.name AS topology_name FROM simulation_results sr "
-            "JOIN topologies t ON t.id=sr.topology_id WHERE sr.id=?",
+            f"JOIN topologies t ON t.id=sr.topology_id WHERE sr.id={_ph}",
             (sim_id,),
         ).fetchone()
         conn.close()
@@ -477,7 +483,8 @@ def create_network_blueprint():
     @nc_login_required
     def nc_template_edit(tpl_id):
         conn = get_connection()
-        row = conn.execute("SELECT * FROM nc_templates WHERE id=?", (tpl_id,)).fetchone()
+        _ph = sql_placeholder(conn)
+        row = conn.execute(f"SELECT * FROM nc_templates WHERE id={_ph}", (tpl_id,)).fetchone()
         conn.close()
         if not row:
             abort(404)
@@ -499,14 +506,15 @@ def create_network_blueprint():
     @nc_login_required
     def nc_versions_page(topo_id):
         conn = get_connection()
-        topo = conn.execute("SELECT id, name FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        _ph = sql_placeholder(conn)
+        topo = conn.execute(f"SELECT id, name FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
         if not topo:
             conn.close()
             abort(404)
         versions = [
             _row_to_dict(r)
             for r in conn.execute(
-                "SELECT * FROM nc_versions WHERE topology_id=? ORDER BY version_num", (topo_id,)
+                f"SELECT * FROM nc_versions WHERE topology_id={_ph} ORDER BY version_num", (topo_id,)
             ).fetchall()
         ]
         conn.close()
@@ -516,7 +524,8 @@ def create_network_blueprint():
     @nc_login_required
     def nc_montecarlo_page(topo_id):
         conn = get_connection()
-        topo = conn.execute("SELECT id, name, graph_json FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        _ph = sql_placeholder(conn)
+        topo = conn.execute(f"SELECT id, name, graph_json FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
         if not topo:
             conn.close()
             abort(404)
@@ -524,7 +533,7 @@ def create_network_blueprint():
         scenarios = [
             _row_to_dict(r)
             for r in conn.execute(
-                "SELECT * FROM nc_mc_scenarios WHERE topology_id=? ORDER BY created_at DESC", (topo_id,)
+                f"SELECT * FROM nc_mc_scenarios WHERE topology_id={_ph} ORDER BY created_at DESC", (topo_id,)
             ).fetchall()
         ]
 
@@ -555,14 +564,14 @@ def create_network_blueprint():
                 sid = str(_uuid.uuid4())
                 conn.execute(
                     "INSERT INTO nc_mc_scenarios (id, topology_id, name, scenario_type, description, config_json, created_at) "
-                    "VALUES (?,?,?,?,?,?,?)",
+                    f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
                     (sid, topo_id, name, stype, desc, cfg, now),
                 )
             conn.commit()
             scenarios = [
                 _row_to_dict(r)
                 for r in conn.execute(
-                    "SELECT * FROM nc_mc_scenarios WHERE topology_id=? ORDER BY created_at DESC", (topo_id,)
+                    f"SELECT * FROM nc_mc_scenarios WHERE topology_id={_ph} ORDER BY created_at DESC", (topo_id,)
                 ).fetchall()
             ]
             try:
@@ -577,7 +586,7 @@ def create_network_blueprint():
             for r in conn.execute(
                 "SELECT r.id, r.iterations, r.ran_at, s.name AS scenario_name, s.scenario_type "
                 "FROM nc_mc_runs r JOIN nc_mc_scenarios s ON s.id=r.scenario_id "
-                "WHERE r.topology_id=? ORDER BY r.ran_at DESC LIMIT 20",
+                f"WHERE r.topology_id={_ph} ORDER BY r.ran_at DESC LIMIT 20",
                 (topo_id,),
             ).fetchall()
         ]
@@ -598,24 +607,25 @@ def create_network_blueprint():
     @nc_login_required
     def nc_compliance_page(topo_id):
         conn = get_connection()
-        topo = conn.execute("SELECT id, name, graph_json FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        _ph = sql_placeholder(conn)
+        topo = conn.execute(f"SELECT id, name, graph_json FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
         if not topo:
             conn.close()
             abort(404)
 
-        profile = conn.execute("SELECT * FROM nc_compliance_profiles WHERE topology_id=?", (topo_id,)).fetchone()
+        profile = conn.execute(f"SELECT * FROM nc_compliance_profiles WHERE topology_id={_ph}", (topo_id,)).fetchone()
         if not profile:
             pid = str(_uuid.uuid4())
-            conn.execute("INSERT INTO nc_compliance_profiles (id, topology_id) VALUES (?,?)", (pid, topo_id))
+            conn.execute(f"INSERT INTO nc_compliance_profiles (id, topology_id) VALUES ({_ph},{_ph})", (pid, topo_id))
             conn.commit()
-            profile = conn.execute("SELECT * FROM nc_compliance_profiles WHERE id=?", (pid,)).fetchone()
+            profile = conn.execute(f"SELECT * FROM nc_compliance_profiles WHERE id={_ph}", (pid,)).fetchone()
         profile = _row_to_dict(profile)
 
         audits = [
             _row_to_dict(r)
             for r in conn.execute(
                 "SELECT id, check_type, passed, failed, ran_at FROM nc_compliance_checks "
-                "WHERE topology_id=? ORDER BY ran_at DESC LIMIT 10",
+                f"WHERE topology_id={_ph} ORDER BY ran_at DESC LIMIT 10",
                 (topo_id,),
             ).fetchall()
         ]
@@ -623,7 +633,7 @@ def create_network_blueprint():
         open_findings = [
             _row_to_dict(r)
             for r in conn.execute(
-                "SELECT * FROM nc_compliance_findings WHERE topology_id=? AND status='open' ORDER BY severity, rule_id",
+                f"SELECT * FROM nc_compliance_findings WHERE topology_id={_ph} AND status='open' ORDER BY severity, rule_id",
                 (topo_id,),
             ).fetchall()
         ]
@@ -649,13 +659,14 @@ def create_network_blueprint():
     @nc_login_required
     def nc_circuits():
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         filter_project = request.args.get("project", "")
         if filter_project:
             circuits = [
                 _row_to_dict(r)
                 for r in conn.execute(
                     "SELECT * FROM nc_circuits WHERE topology_id IN "
-                    "(SELECT topology_id FROM nc_project_topologies WHERE project_id=?) "
+                    f"(SELECT topology_id FROM nc_project_topologies WHERE project_id={_ph}) "
                     "ORDER BY updated_at DESC",
                     (filter_project,),
                 ).fetchall()
@@ -675,7 +686,7 @@ def create_network_blueprint():
         ]
         active_project = None
         if filter_project:
-            ap_row = conn.execute("SELECT id, name FROM nc_projects WHERE id=?", (filter_project,)).fetchone()
+            ap_row = conn.execute(f"SELECT id, name FROM nc_projects WHERE id={_ph}", (filter_project,)).fetchone()
             active_project = _row_to_dict(ap_row) if ap_row else None
         conn.close()
         return render_template(
@@ -706,13 +717,14 @@ def create_network_blueprint():
     @nc_login_required
     def nc_ipam():
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         filter_project = request.args.get("project", "")
         if filter_project:
             blocks = [
                 _row_to_dict(r)
                 for r in conn.execute(
                     "SELECT * FROM nc_ipam_blocks WHERE topology_id IN "
-                    "(SELECT topology_id FROM nc_project_topologies WHERE project_id=?) "
+                    f"(SELECT topology_id FROM nc_project_topologies WHERE project_id={_ph}) "
                     "ORDER BY network",
                     (filter_project,),
                 ).fetchall()
@@ -724,7 +736,7 @@ def create_network_blueprint():
         ]
         active_project = None
         if filter_project:
-            ap_row = conn.execute("SELECT id, name FROM nc_projects WHERE id=?", (filter_project,)).fetchone()
+            ap_row = conn.execute(f"SELECT id, name FROM nc_projects WHERE id={_ph}", (filter_project,)).fetchone()
             active_project = _row_to_dict(ap_row) if ap_row else None
         conn.close()
         return render_template(
@@ -797,6 +809,7 @@ def create_network_blueprint():
     @nc_login_required
     def nc_projects():
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         projects = [
             _row_to_dict(r)
             for r in conn.execute(
@@ -815,7 +828,7 @@ def create_network_blueprint():
             topo_ids = [
                 r[0]
                 for r in conn.execute(
-                    "SELECT topology_id FROM nc_project_topologies WHERE project_id=?", (pid,)
+                    f"SELECT topology_id FROM nc_project_topologies WHERE project_id={_ph}", (pid,)
                 ).fetchall()
             ]
             # Compliance: latest audit pass/fail across topologies
@@ -823,14 +836,14 @@ def create_network_blueprint():
             open_findings = 0
             for tid in topo_ids:
                 row = conn.execute(
-                    "SELECT passed, failed FROM nc_compliance_checks WHERE topology_id=? ORDER BY ran_at DESC LIMIT 1",
+                    f"SELECT passed, failed FROM nc_compliance_checks WHERE topology_id={_ph} ORDER BY ran_at DESC LIMIT 1",
                     (tid,),
                 ).fetchone()
                 if row:
                     total_passed += row[0] or 0
                     total_failed += row[1] or 0
                 of = conn.execute(
-                    "SELECT COUNT(*) FROM nc_compliance_findings WHERE topology_id=? AND status='open'", (tid,)
+                    f"SELECT COUNT(*) FROM nc_compliance_findings WHERE topology_id={_ph} AND status='open'", (tid,)
                 ).fetchone()
                 open_findings += of[0] if of else 0
             total_checks = total_passed + total_failed
@@ -839,7 +852,7 @@ def create_network_blueprint():
             # Cost: sum of circuit monthly costs
             cost_row = conn.execute(
                 "SELECT COALESCE(SUM(monthly_cost_usd), 0) FROM nc_circuits WHERE topology_id IN "
-                "(SELECT topology_id FROM nc_project_topologies WHERE project_id=?)",
+                f"(SELECT topology_id FROM nc_project_topologies WHERE project_id={_ph})",
                 (pid,),
             ).fetchone()
             p["monthly_cost"] = cost_row[0] if cost_row else 0
@@ -847,7 +860,7 @@ def create_network_blueprint():
             ne_rows = conn.execute(
                 "SELECT t.graph_json FROM topologies t "
                 "JOIN nc_project_topologies pt ON pt.topology_id=t.id "
-                "WHERE pt.project_id=?",
+                f"WHERE pt.project_id={_ph}",
                 (pid,),
             ).fetchall()
             total_nodes = total_edges = 0
@@ -863,7 +876,7 @@ def create_network_blueprint():
             # Last simulation date
             sim_row = conn.execute(
                 "SELECT MAX(ran_at) FROM simulation_results WHERE topology_id IN "
-                "(SELECT topology_id FROM nc_project_topologies WHERE project_id=?)",
+                f"(SELECT topology_id FROM nc_project_topologies WHERE project_id={_ph})",
                 (pid,),
             ).fetchone()
             p["last_sim"] = sim_row[0] if sim_row and sim_row[0] else None
@@ -900,9 +913,10 @@ def create_network_blueprint():
     @nc_login_required
     def nc_project_detail(proj_id):
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         proj = conn.execute(
             "SELECT p.*, c.name AS customer_name FROM nc_projects p "
-            "LEFT JOIN nc_customers c ON c.id=p.customer_id WHERE p.id=?",
+            f"LEFT JOIN nc_customers c ON c.id=p.customer_id WHERE p.id={_ph}",
             (proj_id,),
         ).fetchone()
         if not proj:
@@ -914,7 +928,7 @@ def create_network_blueprint():
             "SELECT t.id, t.name, t.description, t.classification, "
             "t.updated_at, t.graph_json "
             "FROM topologies t JOIN nc_project_topologies pt ON pt.topology_id=t.id "
-            "WHERE pt.project_id=? ORDER BY t.updated_at DESC",
+            f"WHERE pt.project_id={_ph} ORDER BY t.updated_at DESC",
             (proj_id,),
         ).fetchall():
             t = _row_to_dict(r)
@@ -929,7 +943,7 @@ def create_network_blueprint():
             _row_to_dict(r)
             for r in conn.execute(
                 "SELECT * FROM nc_circuits WHERE topology_id IN "
-                "(SELECT topology_id FROM nc_project_topologies WHERE project_id=?) "
+                f"(SELECT topology_id FROM nc_project_topologies WHERE project_id={_ph}) "
                 "ORDER BY circuit_id",
                 (proj_id,),
             ).fetchall()
@@ -944,7 +958,7 @@ def create_network_blueprint():
             tid = t["id"]
             audit_row = conn.execute(
                 "SELECT passed, failed, ran_at FROM nc_compliance_checks "
-                "WHERE topology_id=? ORDER BY ran_at DESC LIMIT 1",
+                f"WHERE topology_id={_ph} ORDER BY ran_at DESC LIMIT 1",
                 (tid,),
             ).fetchone()
             passed = (audit_row[0] or 0) if audit_row else 0
@@ -955,14 +969,14 @@ def create_network_blueprint():
             agg_passed += passed
             agg_failed += failed
             of_row = conn.execute(
-                "SELECT COUNT(*) FROM nc_compliance_findings WHERE topology_id=? AND status='open'", (tid,)
+                f"SELECT COUNT(*) FROM nc_compliance_findings WHERE topology_id={_ph} AND status='open'", (tid,)
             ).fetchone()
             open_f = of_row[0] if of_row else 0
             total_open_findings += open_f
             # Findings by severity
             sev_rows = conn.execute(
                 "SELECT severity, COUNT(*) FROM nc_compliance_findings "
-                "WHERE topology_id=? AND status='open' "
+                f"WHERE topology_id={_ph} AND status='open' "
                 "GROUP BY severity",
                 (tid,),
             ).fetchall()
@@ -1012,14 +1026,14 @@ def create_network_blueprint():
         # ── P1: Activity feed from nc_audit ───────────────────────────────
         topo_ids = [t["id"] for t in topos]
         if topo_ids:
-            placeholders = ",".join("?" for _ in topo_ids)
+            placeholders = ",".join(_ph for _ in topo_ids)
             activity = [
                 _row_to_dict(r)
                 for r in conn.execute(
                     "SELECT action, entity_type, entity_id, details, "
                     "user_id, ts FROM nc_audit "
                     "WHERE entity_id IN (" + placeholders + ") "  # nosec B608
-                    "OR (entity_type='project' AND entity_id=?) "
+                    f"OR (entity_type='project' AND entity_id={_ph}) "
                     "ORDER BY ts DESC LIMIT 30",
                     topo_ids + [proj_id],
                 ).fetchall()
@@ -1030,7 +1044,7 @@ def create_network_blueprint():
                 for r in conn.execute(
                     "SELECT action, entity_type, entity_id, details, "
                     "user_id, ts FROM nc_audit "
-                    "WHERE entity_type='project' AND entity_id=? "
+                    f"WHERE entity_type='project' AND entity_id={_ph} "
                     "ORDER BY ts DESC LIMIT 30",
                     (proj_id,),
                 ).fetchall()
@@ -1044,25 +1058,25 @@ def create_network_blueprint():
         milestones = [
             _row_to_dict(r)
             for r in conn.execute(
-                "SELECT * FROM nc_project_milestones WHERE project_id=? ORDER BY due_date", (proj_id,)
+                f"SELECT * FROM nc_project_milestones WHERE project_id={_ph} ORDER BY due_date", (proj_id,)
             ).fetchall()
         ]
         notes = [
             _row_to_dict(r)
             for r in conn.execute(
-                "SELECT * FROM nc_project_notes WHERE project_id=? ORDER BY created_at DESC", (proj_id,)
+                f"SELECT * FROM nc_project_notes WHERE project_id={_ph} ORDER BY created_at DESC", (proj_id,)
             ).fetchall()
         ]
         project_tags = [
             r[0]
             for r in conn.execute(
-                "SELECT tag FROM nc_tags WHERE entity_type='project' AND entity_id=? ORDER BY tag", (proj_id,)
+                f"SELECT tag FROM nc_tags WHERE entity_type='project' AND entity_id={_ph} ORDER BY tag", (proj_id,)
             ).fetchall()
         ]
         # Assignees per topology
         topo_assignees = {}
         for r in conn.execute(
-            "SELECT topology_id, assignee FROM nc_project_topologies WHERE project_id=? AND assignee != ''", (proj_id,)
+            f"SELECT topology_id, assignee FROM nc_project_topologies WHERE project_id={_ph} AND assignee != ''", (proj_id,)
         ).fetchall():
             topo_assignees[r[0]] = r[1]
 
@@ -1076,17 +1090,17 @@ def create_network_blueprint():
                 "SELECT br.*, rb.name AS board_name, rb.short_name "
                 "FROM nc_board_reviews br "
                 "JOIN nc_review_boards rb ON rb.id=br.board_id "
-                "WHERE br.project_id=? ORDER BY rb.sort_order, br.phase",
+                f"WHERE br.project_id={_ph} ORDER BY rb.sort_order, br.phase",
                 (proj_id,),
             ).fetchall()
         ]
         project_phases = [
             _row_to_dict(r)
             for r in conn.execute(
-                "SELECT * FROM nc_project_phases WHERE project_id=? ORDER BY phase_num", (proj_id,)
+                f"SELECT * FROM nc_project_phases WHERE project_id={_ph} ORDER BY phase_num", (proj_id,)
             ).fetchall()
         ]
-        safe_bridge = conn.execute("SELECT * FROM nc_safe_bridge WHERE project_id=?", (proj_id,)).fetchone()
+        safe_bridge = conn.execute(f"SELECT * FROM nc_safe_bridge WHERE project_id={_ph}", (proj_id,)).fetchone()
         safe_bridge = _row_to_dict(safe_bridge) if safe_bridge else None
         if safe_bridge and safe_bridge.get("roi_json"):
             try:
@@ -1097,7 +1111,7 @@ def create_network_blueprint():
         # Migration phases with linked SOPs and parsed steps
         migration_phases_raw = [
             _row_to_dict(r) for r in conn.execute(
-                "SELECT * FROM nc_migration_phases WHERE project_id=? ORDER BY phase_num",
+                "SELECT * FROM nc_migration_phases WHERE project_id={_ph} ORDER BY phase_num",
                 (proj_id,)
             ).fetchall()
         ]
@@ -1109,7 +1123,7 @@ def create_network_blueprint():
                               s.rollback AS sop_rollback, s.escalation
                        FROM nc_phase_documents pd
                        LEFT JOIN ndc_sops s ON s.sop_id = pd.doc_id
-                       WHERE pd.phase_id = ?
+                       WHERE pd.phase_id = {_ph}
                        ORDER BY pd.display_order""",
                     (mphase['id'],)
                 ).fetchall()
@@ -1159,7 +1173,7 @@ def create_network_blueprint():
             try:
                 graph = json.loads(
                     conn.execute(
-                        "SELECT graph_json FROM topologies WHERE id=?", (first_topo_id,)
+                        f"SELECT graph_json FROM topologies WHERE id={_ph}", (first_topo_id,)
                     ).fetchone()[0]
                 )
                 nodes = graph.get("nodes", [])
@@ -1171,7 +1185,7 @@ def create_network_blueprint():
                     target_node_id = eol_nodes[0].get("id")
                     # Resolve topology node_id → ni_devices.id for tool calls
                     dev_row = conn.execute(
-                        "SELECT id FROM ni_devices WHERE node_id=?",
+                        f"SELECT id FROM ni_devices WHERE node_id={_ph}",
                         (target_node_id,),
                     ).fetchone()
                     target_device_id_for_tools = dev_row["id"] if dev_row else target_node_id
@@ -1273,6 +1287,7 @@ def create_network_blueprint():
     @nc_login_required
     def nc_project_compare():
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         projects = [
             _row_to_dict(r)
             for r in conn.execute(
@@ -1291,7 +1306,7 @@ def create_network_blueprint():
             topo_ids = [
                 r[0]
                 for r in conn.execute(
-                    "SELECT topology_id FROM nc_project_topologies WHERE project_id=?", (pid,)
+                    f"SELECT topology_id FROM nc_project_topologies WHERE project_id={_ph}", (pid,)
                 ).fetchall()
             ]
 
@@ -1300,7 +1315,7 @@ def create_network_blueprint():
             open_findings = cat1 = cat2 = cat3 = 0
             for tid in topo_ids:
                 row = conn.execute(
-                    "SELECT passed, failed FROM nc_compliance_checks WHERE topology_id=? ORDER BY ran_at DESC LIMIT 1",
+                    f"SELECT passed, failed FROM nc_compliance_checks WHERE topology_id={_ph} ORDER BY ran_at DESC LIMIT 1",
                     (tid,),
                 ).fetchone()
                 if row:
@@ -1308,7 +1323,7 @@ def create_network_blueprint():
                     total_failed += row[1] or 0
                 sev_rows = conn.execute(
                     "SELECT severity, COUNT(*) FROM nc_compliance_findings "
-                    "WHERE topology_id=? AND status='open' "
+                    f"WHERE topology_id={_ph} AND status='open' "
                     "GROUP BY severity",
                     (tid,),
                 ).fetchall()
@@ -1329,7 +1344,7 @@ def create_network_blueprint():
                 "SELECT COALESCE(SUM(monthly_cost_usd), 0) "
                 "FROM nc_circuits WHERE topology_id IN "
                 "(SELECT topology_id FROM nc_project_topologies "
-                " WHERE project_id=?)",
+                f" WHERE project_id={_ph})",
                 (pid,),
             ).fetchone()
             circuit_cost = cost_row[0] if cost_row else 0
@@ -1338,7 +1353,7 @@ def create_network_blueprint():
             capex = 0
             total_devices = 0
             for tid in topo_ids:
-                trow = conn.execute("SELECT graph_json FROM topologies WHERE id=?", (tid,)).fetchone()
+                trow = conn.execute(f"SELECT graph_json FROM topologies WHERE id={_ph}", (tid,)).fetchone()
                 if trow:
                     try:
                         g = json.loads(trow["graph_json"])
@@ -1353,7 +1368,7 @@ def create_network_blueprint():
             ne_rows = conn.execute(
                 "SELECT t.graph_json FROM topologies t "
                 "JOIN nc_project_topologies pt ON pt.topology_id=t.id "
-                "WHERE pt.project_id=?",
+                f"WHERE pt.project_id={_ph}",
                 (pid,),
             ).fetchall()
             total_nodes = total_edges = 0
@@ -1370,7 +1385,7 @@ def create_network_blueprint():
                 "SELECT result_json FROM nc_mc_runs "
                 "WHERE topology_id IN "
                 "(SELECT topology_id FROM nc_project_topologies "
-                " WHERE project_id=?) "
+                f" WHERE project_id={_ph}) "
                 "ORDER BY ran_at DESC LIMIT 1",
                 (pid,),
             ).fetchone()
@@ -1415,7 +1430,8 @@ def create_network_blueprint():
         data = request.get_json(force=True, silent=True) or {}
         new_name = data.get("name", "")
         conn = get_connection()
-        orig = conn.execute("SELECT * FROM nc_projects WHERE id=?", (pid,)).fetchone()
+        _ph = sql_placeholder(conn)
+        orig = conn.execute(f"SELECT * FROM nc_projects WHERE id={_ph}", (pid,)).fetchone()
         if not orig:
             conn.close()
             return jsonify({"error": "Project not found"}), 404
@@ -1426,7 +1442,7 @@ def create_network_blueprint():
         conn.execute(
             "INSERT INTO nc_projects "
             "(id, name, customer_id, description, status, owner, "
-            " created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)",
+            f" created_at, updated_at) VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
             (
                 new_pid,
                 new_name or f"{orig['name']} (Copy)",
@@ -1441,10 +1457,10 @@ def create_network_blueprint():
 
         # Deep-copy topologies
         topo_map = {}  # old_id -> new_id
-        orig_topos = conn.execute("SELECT topology_id FROM nc_project_topologies WHERE project_id=?", (pid,)).fetchall()
+        orig_topos = conn.execute(f"SELECT topology_id FROM nc_project_topologies WHERE project_id={_ph}", (pid,)).fetchall()
         for row in orig_topos:
             old_tid = row[0]
-            topo = conn.execute("SELECT * FROM topologies WHERE id=?", (old_tid,)).fetchone()
+            topo = conn.execute(f"SELECT * FROM topologies WHERE id={_ph}", (old_tid,)).fetchone()
             if not topo:
                 continue
             topo = _row_to_dict(topo)
@@ -1454,7 +1470,7 @@ def create_network_blueprint():
                 "INSERT INTO topologies "
                 "(id, name, description, graph_json, template_id, "
                 " classification, created_at, updated_at) "
-                "VALUES (?,?,?,?,?,?,?,?)",
+                f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
                 (
                     new_tid,
                     f"{topo['name']} (Copy)",
@@ -1466,16 +1482,16 @@ def create_network_blueprint():
                     now,
                 ),
             )
-            conn.execute("INSERT INTO nc_project_topologies (project_id, topology_id) VALUES (?,?)", (new_pid, new_tid))
+            conn.execute(f"INSERT INTO nc_project_topologies (project_id, topology_id) VALUES ({_ph},{_ph})", (new_pid, new_tid))
 
             # Copy compliance profile
-            profile = conn.execute("SELECT * FROM nc_compliance_profiles WHERE topology_id=?", (old_tid,)).fetchone()
+            profile = conn.execute(f"SELECT * FROM nc_compliance_profiles WHERE topology_id={_ph}", (old_tid,)).fetchone()
             if profile:
                 conn.execute(
                     "INSERT INTO nc_compliance_profiles "
                     "(id, topology_id, regimes, classification, "
                     " environment, auto_audit, created_at, updated_at) "
-                    "VALUES (?,?,?,?,?,?,?,?)",
+                    f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
                     (
                         str(_uuid.uuid4()),
                         new_tid,
@@ -1489,7 +1505,7 @@ def create_network_blueprint():
                 )
 
             # Copy circuits
-            circuits = conn.execute("SELECT * FROM nc_circuits WHERE topology_id=?", (old_tid,)).fetchall()
+            circuits = conn.execute(f"SELECT * FROM nc_circuits WHERE topology_id={_ph}", (old_tid,)).fetchall()
             for c in circuits:
                 c = _row_to_dict(c)
                 conn.execute(
@@ -1499,7 +1515,7 @@ def create_network_blueprint():
                     " customer, site, monthly_cost_usd, "
                     " contract_start, contract_end, sla_uptime_pct, "
                     " install_status, notes, created_at, updated_at) "
-                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
                     (
                         str(_uuid.uuid4()),
                         new_tid,
@@ -1523,7 +1539,7 @@ def create_network_blueprint():
                 )
 
             # Copy IPAM blocks
-            blocks = conn.execute("SELECT * FROM nc_ipam_blocks WHERE topology_id=?", (old_tid,)).fetchall()
+            blocks = conn.execute(f"SELECT * FROM nc_ipam_blocks WHERE topology_id={_ph}", (old_tid,)).fetchall()
             for b in blocks:
                 b = _row_to_dict(b)
                 conn.execute(
@@ -1531,7 +1547,7 @@ def create_network_blueprint():
                     "(id, topology_id, network, vlan_id, vrf, "
                     " description, site_id, gateway, "
                     " utilization_pct, created_at) "
-                    "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
                     (
                         str(_uuid.uuid4()),
                         new_tid,
@@ -1597,9 +1613,10 @@ def create_network_blueprint():
         graph = json.dumps(data.get("graph_json", {"nodes": [], "edges": []}))
         now = _now()
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         conn.execute(
             "INSERT INTO topologies (id, name, description, graph_json, template_id, classification, created_at, updated_at) "
-            "VALUES (?,?,?,?,?,?,?,?)",
+            f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
             (
                 topo_id,
                 name,
@@ -1693,7 +1710,8 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_get_topology(topo_id):
         conn = get_connection()
-        row = conn.execute("SELECT * FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        _ph = sql_placeholder(conn)
+        row = conn.execute(f"SELECT * FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
         conn.close()
         if not row:
             return jsonify({"error": "Not found"}), 404
@@ -1709,19 +1727,20 @@ def create_network_blueprint():
     def nc_api_update_topology(topo_id):
         data = request.get_json(force=True, silent=True) or {}
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         fields, values = [], []
         for k in ["name", "description", "graph_json", "classification"]:
             if k in data:
                 val = json.dumps(data[k]) if k == "graph_json" and isinstance(data[k], dict) else data[k]
-                fields.append(f"{k}=?")
+                fields.append(f"{k}={_ph}")
                 values.append(val)
         if not fields:
             conn.close()
             return jsonify({"error": "No fields"}), 400
-        fields.append("updated_at=?")
+        fields.append("updated_at={_ph}")
         values.append(_now())
         values.append(topo_id)
-        conn.execute(f"UPDATE topologies SET {', '.join(fields)} WHERE id=?", values)  # nosec B608 -- table/column names are internal constants, not user input
+        conn.execute(f"UPDATE topologies SET {', '.join(fields)} WHERE id={_ph}", values)  # nosec B608 -- table/column names are internal constants, not user input
         conn.commit()
         conn.close()
         _audit("UPDATE", "topology", topo_id)
@@ -1780,7 +1799,8 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_delete_topology(topo_id):
         conn = get_connection()
-        conn.execute("DELETE FROM topologies WHERE id=?", (topo_id,))
+        _ph = sql_placeholder(conn)
+        conn.execute(f"DELETE FROM topologies WHERE id={_ph}", (topo_id,))
         conn.commit()
         conn.close()
         _audit("DELETE", "topology", topo_id)
@@ -1799,7 +1819,8 @@ def create_network_blueprint():
         from tools.http.client import request as _req_request
 
         conn = get_connection()
-        row = conn.execute("SELECT * FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        _ph = sql_placeholder(conn)
+        row = conn.execute(f"SELECT * FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
         conn.close()
         if not row:
             return jsonify({"error": "Topology not found"}), 404
@@ -1965,7 +1986,8 @@ def create_network_blueprint():
         from tools.http.client import request as _req_request
 
         conn = get_connection()
-        row = conn.execute("SELECT * FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        _ph = sql_placeholder(conn)
+        row = conn.execute(f"SELECT * FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
         if not row:
             conn.close()
             return jsonify({"error": "Topology not found"}), 404
@@ -1973,7 +1995,7 @@ def create_network_blueprint():
         try:
             ipam_rows = conn.execute(
                 "SELECT network, description, vlan_id, vrf, gateway "
-                "FROM nc_ipam_blocks WHERE topology_id=? ORDER BY network",
+                f"FROM nc_ipam_blocks WHERE topology_id={_ph} ORDER BY network",
                 (topo_id,),
             ).fetchall()
         except Exception:
@@ -2281,7 +2303,8 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_simulate(topo_id):
         conn = get_connection()
-        row = conn.execute("SELECT graph_json FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        _ph = sql_placeholder(conn)
+        row = conn.execute(f"SELECT graph_json FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
         conn.close()
         if not row:
             return jsonify({"error": "Topology not found"}), 404
@@ -2306,9 +2329,10 @@ def create_network_blueprint():
         sim_id = str(_uuid.uuid4())
         now = _now()
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         conn.execute(
             "INSERT INTO simulation_results (id, topology_id, sim_type, input_json, result_json, ran_at) "
-            "VALUES (?,?,?,?,?,?)",
+            f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
             (sim_id, topo_id, sim_type, json.dumps(data), json.dumps(result), now),
         )
         conn.commit()
@@ -2342,7 +2366,8 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_get_template(tpl_id):
         conn = get_connection()
-        row = conn.execute("SELECT * FROM nc_templates WHERE id=?", (tpl_id,)).fetchone()
+        _ph = sql_placeholder(conn)
+        row = conn.execute(f"SELECT * FROM nc_templates WHERE id={_ph}", (tpl_id,)).fetchone()
         conn.close()
         if not row:
             return jsonify({"error": "Not found"}), 404
@@ -2362,9 +2387,10 @@ def create_network_blueprint():
     def nc_api_get_template_docs(tpl_id):
         """Get SOP/runbook markdown documentation for a template."""
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         rows = conn.execute(
             "SELECT id, template_id, doc_type, title, body_markdown, created_at "
-            "FROM nc_template_docs WHERE template_id = ? ORDER BY created_at",
+            f"FROM nc_template_docs WHERE template_id = {_ph} ORDER BY created_at",
             (tpl_id,),
         ).fetchall()
         conn.close()
@@ -2375,14 +2401,15 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_load_template(tpl_id):
         conn = get_connection()
-        row = conn.execute("SELECT * FROM nc_templates WHERE id=?", (tpl_id,)).fetchone()
+        _ph = sql_placeholder(conn)
+        row = conn.execute(f"SELECT * FROM nc_templates WHERE id={_ph}", (tpl_id,)).fetchone()
         if not row:
             conn.close()
             return jsonify({"error": "Not found"}), 404
         tpl = _row_to_dict(row)
         # Idempotency: return existing topology for this template rather than duplicating
         existing = conn.execute(
-            "SELECT id, name FROM topologies WHERE template_id=? LIMIT 1", (tpl_id,)
+            f"SELECT id, name FROM topologies WHERE template_id={_ph} LIMIT 1", (tpl_id,)
         ).fetchone()
         if existing:
             conn.close()
@@ -2393,7 +2420,7 @@ def create_network_blueprint():
         name = f"{tpl['name']} (copy)"
         conn.execute(
             "INSERT INTO topologies (id, name, description, graph_json, template_id, classification, created_at, updated_at) "
-            "VALUES (?,?,?,?,?,?,?,?)",
+            f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
             (topo_id, name, tpl.get("description", ""), tpl["graph_json"], tpl_id, "public", now, now),
         )
         conn.commit()
@@ -2405,7 +2432,8 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_update_template(tpl_id):
         conn = get_connection()
-        row = conn.execute("SELECT id FROM nc_templates WHERE id=?", (tpl_id,)).fetchone()
+        _ph = sql_placeholder(conn)
+        row = conn.execute(f"SELECT id FROM nc_templates WHERE id={_ph}", (tpl_id,)).fetchone()
         if not row:
             conn.close()
             return jsonify({"error": "Template not found"}), 404
@@ -2413,13 +2441,13 @@ def create_network_blueprint():
         fields, values = [], []
         for k in ["name", "description", "category"]:
             if k in data:
-                fields.append(f"{k}=?")
+                fields.append(f"{k}={_ph}")
                 values.append(data[k])
         if "tags" in data:
-            fields.append("tags=?")
+            fields.append(f"tags={_ph}")
             values.append(json.dumps(data["tags"]) if isinstance(data["tags"], list) else data["tags"])
         if "graph_json" in data:
-            fields.append("graph_json=?")
+            fields.append(f"graph_json={_ph}")
             values.append(
                 json.dumps(data["graph_json"]) if isinstance(data["graph_json"], dict) else data["graph_json"]
             )
@@ -2427,7 +2455,7 @@ def create_network_blueprint():
             conn.close()
             return jsonify({"error": "No fields to update"}), 400
         values.append(tpl_id)
-        conn.execute(f"UPDATE nc_templates SET {', '.join(fields)} WHERE id=?", values)  # nosec B608 -- table/column names are internal constants, not user input
+        conn.execute(f"UPDATE nc_templates SET {', '.join(fields)} WHERE id={_ph}", values)  # nosec B608 -- table/column names are internal constants, not user input
         conn.commit()
         conn.close()
         _audit("UPDATE_TEMPLATE", "template", tpl_id, json.dumps(list(data.keys())))
@@ -2471,7 +2499,8 @@ def create_network_blueprint():
     def nc_api_get_snippet(snippet_id):
         """Return full snippet including graph_json for insertion onto canvas."""
         conn = get_connection()
-        row = conn.execute("SELECT * FROM nc_enclave_snippets WHERE id=?", (snippet_id,)).fetchone()
+        _ph = sql_placeholder(conn)
+        row = conn.execute(f"SELECT * FROM nc_enclave_snippets WHERE id={_ph}", (snippet_id,)).fetchone()
         conn.close()
         if not row:
             return jsonify({"error": "Snippet not found"}), 404
@@ -2496,7 +2525,8 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_export(topo_id):
         conn = get_connection()
-        row = conn.execute("SELECT * FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        _ph = sql_placeholder(conn)
+        row = conn.execute(f"SELECT * FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
         conn.close()
         if not row:
             return jsonify({"error": "Not found"}), 404
@@ -2518,7 +2548,8 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_export_visio(topo_id):
         conn = get_connection()
-        row = conn.execute("SELECT * FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        _ph = sql_placeholder(conn)
+        row = conn.execute(f"SELECT * FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
         conn.close()
         if not row:
             return jsonify({"error": "Not found"}), 404
@@ -2541,13 +2572,14 @@ def create_network_blueprint():
         comments for reference only.
         """
         conn = get_connection()
-        row = conn.execute("SELECT * FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        _ph = sql_placeholder(conn)
+        row = conn.execute(f"SELECT * FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
         if not row:
             conn.close()
             return jsonify({"error": "Not found"}), 404
         topo = _row_to_dict(row)
         boundary_rows = conn.execute(
-            "SELECT label, classification, node_ids FROM nc_boundaries WHERE topology_id=?",
+            f"SELECT label, classification, node_ids FROM nc_boundaries WHERE topology_id={_ph}",
             (topo_id,),
         ).fetchall()
         conn.close()
@@ -2579,13 +2611,14 @@ def create_network_blueprint():
         rules (security-group / NACL / firewall policy inputs).
         """
         conn = get_connection()
-        row = conn.execute("SELECT * FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        _ph = sql_placeholder(conn)
+        row = conn.execute(f"SELECT * FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
         if not row:
             conn.close()
             return jsonify({"error": "Not found"}), 404
         topo = _row_to_dict(row)
         boundary_rows = conn.execute(
-            "SELECT label, classification, node_ids FROM nc_boundaries WHERE topology_id=?",
+            f"SELECT label, classification, node_ids FROM nc_boundaries WHERE topology_id={_ph}",
             (topo_id,),
         ).fetchall()
         conn.close()
@@ -2623,7 +2656,8 @@ def create_network_blueprint():
         import base64
 
         conn = get_connection()
-        row = conn.execute("SELECT * FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        _ph = sql_placeholder(conn)
+        row = conn.execute(f"SELECT * FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
         conn.close()
         if not row:
             return jsonify({"error": "Not found"}), 404
@@ -2668,7 +2702,8 @@ def create_network_blueprint():
     def nc_api_export_device_configs_preview(topo_id):
         """Return a list of configurable nodes and their OS type for UI preview."""
         conn = get_connection()
-        row = conn.execute("SELECT graph_json FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        _ph = sql_placeholder(conn)
+        row = conn.execute(f"SELECT graph_json FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
         conn.close()
         if not row:
             return jsonify({"error": "Not found"}), 404
@@ -2684,7 +2719,8 @@ def create_network_blueprint():
     def nc_api_export_vsdx(topo_id):
         """Export topology as modern Visio .vsdx file with embedded metadata."""
         conn = get_connection()
-        row = conn.execute("SELECT * FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        _ph = sql_placeholder(conn)
+        row = conn.execute(f"SELECT * FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
         conn.close()
         if not row:
             return jsonify({"error": "Not found"}), 404
@@ -2713,7 +2749,8 @@ def create_network_blueprint():
     def nc_api_export_csv(topo_id):
         """Export topology as Ops CSV bundle (device inventory, circuits, cables, IP, peering)."""
         conn = get_connection()
-        row = conn.execute("SELECT * FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        _ph = sql_placeholder(conn)
+        row = conn.execute(f"SELECT * FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
         conn.close()
         if not row:
             return jsonify({"error": "Not found"}), 404
@@ -2747,7 +2784,8 @@ def create_network_blueprint():
     def nc_api_export_inventory(topo_id):
         """Return JSON inventory of all devices with full metadata."""
         conn = get_connection()
-        row = conn.execute("SELECT * FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        _ph = sql_placeholder(conn)
+        row = conn.execute(f"SELECT * FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
         conn.close()
         if not row:
             return jsonify({"error": "Not found"}), 404
@@ -2809,9 +2847,10 @@ def create_network_blueprint():
         topo_id = str(_uuid.uuid4())
         now = _now()
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         conn.execute(
             "INSERT INTO topologies (id, name, description, graph_json, classification, created_at, updated_at) "
-            "VALUES (?,?,?,?,?,?,?)",
+            f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
             (topo_id, name, f"Imported from {fmt}", json.dumps(graph), "public", now, now),
         )
         conn.commit()
@@ -2819,7 +2858,8 @@ def create_network_blueprint():
         # Phase 1: auto-classify imported nodes
         graph = _classify_imported_nodes(graph)
         conn = get_connection()
-        conn.execute("UPDATE topologies SET graph_json=? WHERE id=?", (json.dumps(graph), topo_id))
+        _ph = sql_placeholder(conn)
+        conn.execute(f"UPDATE topologies SET graph_json={_ph} WHERE id={_ph}", (json.dumps(graph), topo_id))
         conn.commit()
         conn.close()
         _audit("IMPORT", "topology", topo_id, fmt)
@@ -2894,6 +2934,7 @@ def create_network_blueprint():
             return jsonify({"error": "files array required"}), 400
 
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         now = _now()
         results = []
         for f in files:
@@ -2918,12 +2959,12 @@ def create_network_blueprint():
                 "INSERT INTO topologies "
                 "(id, name, description, graph_json, "
                 " classification, created_at, updated_at) "
-                "VALUES (?,?,?,?,?,?,?)",
+                f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
                 (topo_id, name, f"Bulk import ({fmt})", json.dumps(graph), "public", now, now),
             )
             if project_id:
                 conn.execute(
-                    "INSERT OR IGNORE INTO nc_project_topologies (project_id, topology_id) VALUES (?,?)",
+                    f"INSERT OR IGNORE INTO nc_project_topologies (project_id, topology_id) VALUES ({_ph},{_ph})",
                     (project_id, topo_id),
                 )
             results.append(
@@ -2958,12 +2999,13 @@ def create_network_blueprint():
             return jsonify({"error": "Need 2+ topology_ids"}), 400
 
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         merged_nodes = []
         merged_edges = []
         offset_x = 0
 
         for tid in topo_ids:
-            row = conn.execute("SELECT name, graph_json FROM topologies WHERE id=?", (tid,)).fetchone()
+            row = conn.execute(f"SELECT name, graph_json FROM topologies WHERE id={_ph}", (tid,)).fetchone()
             if not row:
                 continue
             try:
@@ -3017,7 +3059,7 @@ def create_network_blueprint():
             "INSERT INTO topologies "
             "(id, name, description, graph_json, "
             " classification, created_at, updated_at) "
-            "VALUES (?,?,?,?,?,?,?)",
+            f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
             (topo_id, name, f"Stitched from {len(topo_ids)} topologies", json.dumps(merged_graph), "public", now, now),
         )
         conn.commit()
@@ -3058,11 +3100,12 @@ def create_network_blueprint():
         topo_id = str(_uuid.uuid4())
         now = _now()
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         conn.execute(
             "INSERT INTO topologies "
             "(id, name, description, graph_json, "
             " classification, created_at, updated_at) "
-            "VALUES (?,?,?,?,?,?,?)",
+            f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
             (topo_id, name, f"Audit import ({fmt})", json.dumps(graph), "CUI", now, now),
         )
         conn.commit()
@@ -3075,7 +3118,7 @@ def create_network_blueprint():
         conn.execute(
             "INSERT INTO nc_compliance_checks "
             "(id, topology_id, check_type, passed, failed, "
-            " findings_json, ran_at) VALUES (?,?,?,?,?,?,?)",
+            f" findings_json, ran_at) VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
             (audit_id, topo_id, "fisma_high,stig", total_p, total_f, json.dumps(audit_result["findings"]), now),
         )
         conn.commit()
@@ -3115,7 +3158,8 @@ def create_network_blueprint():
         if not topo_id:
             return jsonify({"error": "topology_id required"}), 400
         conn = get_connection()
-        row = conn.execute("SELECT graph_json FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        _ph = sql_placeholder(conn)
+        row = conn.execute(f"SELECT graph_json FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
         if not row:
             conn.close()
             return jsonify({"error": "Not found"}), 404
@@ -3133,7 +3177,7 @@ def create_network_blueprint():
                 if n["type"] != old_type:
                     changed += 1
         conn.execute(
-            "UPDATE topologies SET graph_json=?, updated_at=? WHERE id=?", (json.dumps(graph), _now(), topo_id)
+            f"UPDATE topologies SET graph_json={_ph}, updated_at={_ph} WHERE id={_ph}", (json.dumps(graph), _now(), topo_id)
         )
         conn.commit()
         conn.close()
@@ -3159,7 +3203,8 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_get_device_profile(pid):
         conn = get_connection()
-        row = conn.execute("SELECT * FROM nc_device_profiles WHERE id=?", (pid,)).fetchone()
+        _ph = sql_placeholder(conn)
+        row = conn.execute(f"SELECT * FROM nc_device_profiles WHERE id={_ph}", (pid,)).fetchone()
         conn.close()
         if not row:
             return jsonify({"error": "Not found"}), 404
@@ -3180,11 +3225,12 @@ def create_network_blueprint():
         if isinstance(commands, dict):
             commands = json.dumps(commands)
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         conn.execute(
             "INSERT INTO nc_device_profiles "
             "(id, vendor, platform, description, commands_json, "
             " is_builtin, created_by, created_at) "
-            "VALUES (?,?,?,?,?,0,?,?)",
+            f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},0,{_ph},{_ph})",
             (
                 pid,
                 data.get("vendor", "Custom"),
@@ -3205,7 +3251,8 @@ def create_network_blueprint():
     def nc_api_update_device_profile(pid):
         data = request.get_json(force=True, silent=True) or {}
         conn = get_connection()
-        row = conn.execute("SELECT is_builtin FROM nc_device_profiles WHERE id=?", (pid,)).fetchone()
+        _ph = sql_placeholder(conn)
+        row = conn.execute(f"SELECT is_builtin FROM nc_device_profiles WHERE id={_ph}", (pid,)).fetchone()
         if not row:
             conn.close()
             return jsonify({"error": "Not found"}), 404
@@ -3218,23 +3265,23 @@ def create_network_blueprint():
                 v = data[k]
                 if k == "commands_json" and isinstance(v, dict):
                     v = json.dumps(v)
-                fields.append(f"{k}=?")
+                fields.append(f"{k}={_ph}")
                 values.append(v)
         # Allow adding commands to built-in profiles
         if row[0] and "commands" in data:
-            existing = conn.execute("SELECT commands_json FROM nc_device_profiles WHERE id=?", (pid,)).fetchone()
+            existing = conn.execute(f"SELECT commands_json FROM nc_device_profiles WHERE id={_ph}", (pid,)).fetchone()
             try:
                 cmds = json.loads(existing[0] or "{}")
             except Exception:
                 cmds = {}
             cmds.update(data["commands"])
-            fields.append("commands_json=?")
+            fields.append(f"commands_json={_ph}")
             values.append(json.dumps(cmds))
         if fields:
             values.append(pid)
             conn.execute(
                 f"UPDATE nc_device_profiles "  # nosec B608
-                f"SET {', '.join(fields)} WHERE id=?",
+                f"SET {', '.join(fields)} WHERE id={_ph}",
                 values,
             )
             conn.commit()
@@ -3245,11 +3292,12 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_delete_device_profile(pid):
         conn = get_connection()
-        row = conn.execute("SELECT is_builtin FROM nc_device_profiles WHERE id=?", (pid,)).fetchone()
+        _ph = sql_placeholder(conn)
+        row = conn.execute(f"SELECT is_builtin FROM nc_device_profiles WHERE id={_ph}", (pid,)).fetchone()
         if row and row[0]:
             conn.close()
             return jsonify({"error": "Cannot delete built-in profile"}), 403
-        conn.execute("DELETE FROM nc_device_profiles WHERE id=?", (pid,))
+        conn.execute(f"DELETE FROM nc_device_profiles WHERE id={_ph}", (pid,))
         conn.commit()
         conn.close()
         return jsonify({"ok": True})
@@ -3291,6 +3339,7 @@ def create_network_blueprint():
         if isinstance(bl, list):
             bl = json.dumps(bl)
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         conn.execute(
             "INSERT INTO nc_discovery_configs "
             "(id, name, profile_id, targets, credential_ref, "
@@ -3298,7 +3347,7 @@ def create_network_blueprint():
             " max_concurrent, timeout_per_cmd, timeout_per_device, "
             " hop_limit, max_devices, whitelist_subnets, "
             " blacklist_subnets, created_at) "
-            "VALUES (?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?)",
+            f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},1,{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
             (
                 cid,
                 data.get("name", "Discovery Scan"),
@@ -3326,7 +3375,8 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_delete_discovery_config(cid):
         conn = get_connection()
-        conn.execute("DELETE FROM nc_discovery_configs WHERE id=?", (cid,))
+        _ph = sql_placeholder(conn)
+        conn.execute(f"DELETE FROM nc_discovery_configs WHERE id={_ph}", (cid,))
         conn.commit()
         conn.close()
         return jsonify({"ok": True})
@@ -3337,11 +3387,12 @@ def create_network_blueprint():
     def nc_api_list_collected_configs():
         device_ip = request.args.get("device_ip", "")
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         if device_ip:
             rows = conn.execute(
                 "SELECT id, device_ip, hostname, command_name, "
                 "collected_at FROM nc_collected_configs "
-                "WHERE device_ip=? ORDER BY collected_at DESC",
+                f"WHERE device_ip={_ph} ORDER BY collected_at DESC",
                 (device_ip,),
             ).fetchall()
         else:
@@ -3357,7 +3408,8 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_get_collected_config(cid):
         conn = get_connection()
-        row = conn.execute("SELECT * FROM nc_collected_configs WHERE id=?", (cid,)).fetchone()
+        _ph = sql_placeholder(conn)
+        row = conn.execute(f"SELECT * FROM nc_collected_configs WHERE id={_ph}", (cid,)).fetchone()
         conn.close()
         if not row:
             return jsonify({"error": "Not found"}), 404
@@ -3378,16 +3430,17 @@ def create_network_blueprint():
         if isinstance(parsed, dict):
             parsed = json.dumps(parsed)
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         # Dedup: keep latest per device_ip + command_name
         conn.execute(
-            "DELETE FROM nc_collected_configs WHERE device_ip=? AND command_name=?",
+            f"DELETE FROM nc_collected_configs WHERE device_ip={_ph} AND command_name={_ph}",
             (data.get("device_ip", ""), data.get("command_name", "manual")),
         )
         conn.execute(
             "INSERT INTO nc_collected_configs "
             "(id, device_ip, hostname, profile_id, command_name, "
             " output_text, parsed_json, collected_at, topology_id) "
-            "VALUES (?,?,?,?,?,?,?,?,?)",
+            f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
             (
                 cid,
                 data.get("device_ip", ""),
@@ -3413,9 +3466,10 @@ def create_network_blueprint():
     def nc_api_list_device_geo():
         topo_id = request.args.get("topology_id", "")
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         if topo_id:
             rows = conn.execute(
-                "SELECT * FROM nc_device_geo WHERE topology_id=? ORDER BY site_name, label", (topo_id,)
+                f"SELECT * FROM nc_device_geo WHERE topology_id={_ph} ORDER BY site_name, label", (topo_id,)
             ).fetchall()
         else:
             rows = conn.execute(
@@ -3433,9 +3487,10 @@ def create_network_blueprint():
         """Set geolocation for a device (deduped by topology+node)."""
         data = request.get_json(force=True, silent=True) or {}
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         # Dedup
         conn.execute(
-            "DELETE FROM nc_device_geo WHERE topology_id=? AND node_id=?",
+            f"DELETE FROM nc_device_geo WHERE topology_id={_ph} AND node_id={_ph}",
             (data.get("topology_id"), data.get("node_id")),
         )
         gid = str(_uuid.uuid4())
@@ -3444,7 +3499,7 @@ def create_network_blueprint():
             "(id, topology_id, node_id, label, site_name, "
             " latitude, longitude, city, state, country, "
             " facility, created_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
             (
                 gid,
                 data.get("topology_id"),
@@ -3471,17 +3526,18 @@ def create_network_blueprint():
         data = request.get_json(force=True, silent=True) or {}
         devices = data.get("devices", [])
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         count = 0
         for d in devices:
             conn.execute(
-                "DELETE FROM nc_device_geo WHERE topology_id=? AND node_id=?", (d.get("topology_id"), d.get("node_id"))
+                f"DELETE FROM nc_device_geo WHERE topology_id={_ph} AND node_id={_ph}", (d.get("topology_id"), d.get("node_id"))
             )
             conn.execute(
                 "INSERT INTO nc_device_geo "
                 "(id, topology_id, node_id, label, site_name, "
                 " latitude, longitude, city, state, country, "
                 " facility, created_at) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
                 (
                     str(_uuid.uuid4()),
                     d.get("topology_id"),
@@ -3506,7 +3562,8 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_delete_device_geo(gid):
         conn = get_connection()
-        conn.execute("DELETE FROM nc_device_geo WHERE id=?", (gid,))
+        _ph = sql_placeholder(conn)
+        conn.execute(f"DELETE FROM nc_device_geo WHERE id={_ph}", (gid,))
         conn.commit()
         conn.close()
         return jsonify({"ok": True})
@@ -3570,6 +3627,7 @@ def create_network_blueprint():
     def nc_api_chart_compliance_trend():
         """Compliance score trend over time (from history + current)."""
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         # Get history
         rows = conn.execute(
             "SELECT project_id, compliance_pct, recorded_at FROM nc_compliance_history ORDER BY recorded_at"
@@ -3588,7 +3646,7 @@ def create_network_blueprint():
         # Add project names
         projects = {}
         for pid in by_project:
-            name_row = conn.execute("SELECT name FROM nc_projects WHERE id=?", (pid,)).fetchone()
+            name_row = conn.execute(f"SELECT name FROM nc_projects WHERE id={_ph}", (pid,)).fetchone()
             projects[pid] = {
                 "name": name_row[0] if name_row else pid[:8],
                 "data": by_project[pid],
@@ -3601,6 +3659,7 @@ def create_network_blueprint():
     def nc_api_chart_compliance_snapshot():
         """Record current compliance scores for all projects (for trending)."""
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         now = _now()
         recorded = 0
         for p in conn.execute("SELECT id FROM nc_projects").fetchall():
@@ -3608,25 +3667,25 @@ def create_network_blueprint():
             tids = [
                 r[0]
                 for r in conn.execute(
-                    "SELECT topology_id FROM nc_project_topologies WHERE project_id=?", (pid,)
+                    f"SELECT topology_id FROM nc_project_topologies WHERE project_id={_ph}", (pid,)
                 ).fetchall()
             ]
             tp = tf = cat1 = findings = 0
             for tid in tids:
                 row = conn.execute(
-                    "SELECT passed, failed FROM nc_compliance_checks WHERE topology_id=? ORDER BY ran_at DESC LIMIT 1",
+                    f"SELECT passed, failed FROM nc_compliance_checks WHERE topology_id={_ph} ORDER BY ran_at DESC LIMIT 1",
                     (tid,),
                 ).fetchone()
                 if row:
                     tp += row[0] or 0
                     tf += row[1] or 0
                 of = conn.execute(
-                    "SELECT COUNT(*) FROM nc_compliance_findings WHERE topology_id=? AND status='open'", (tid,)
+                    f"SELECT COUNT(*) FROM nc_compliance_findings WHERE topology_id={_ph} AND status='open'", (tid,)
                 ).fetchone()
                 findings += of[0] if of else 0
                 c1 = conn.execute(
                     "SELECT COUNT(*) FROM nc_compliance_findings "
-                    "WHERE topology_id=? AND status='open' "
+                    f"WHERE topology_id={_ph} AND status='open' "
                     "AND severity='CAT1'",
                     (tid,),
                 ).fetchone()
@@ -3637,7 +3696,7 @@ def create_network_blueprint():
                 conn.execute(
                     "INSERT INTO nc_compliance_history "
                     "(id, project_id, compliance_pct, open_findings, "
-                    " cat1_count, recorded_at) VALUES (?,?,?,?,?,?)",
+                    f" cat1_count, recorded_at) VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
                     (str(_uuid.uuid4()), pid, pct, findings, cat1, now),
                 )
                 recorded += 1
@@ -3732,6 +3791,7 @@ def create_network_blueprint():
         """Create a new network build: project + topology + phases + workflow in one call."""
         data = request.get_json(force=True, silent=True) or {}
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         now = _now()
 
         # Step 1: Create project
@@ -3739,7 +3799,7 @@ def create_network_blueprint():
         conn.execute(
             "INSERT INTO nc_projects "
             "(id, name, customer_id, description, status, owner, "
-            " created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)",
+            f" created_at, updated_at) VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
             (
                 pid,
                 data.get("name", "New Network Build"),
@@ -3760,7 +3820,7 @@ def create_network_blueprint():
         conn.execute(
             "INSERT INTO topologies "
             "(id, name, description, graph_json, classification, "
-            " created_at, updated_at) VALUES (?,?,?,?,?,?,?)",
+            f" created_at, updated_at) VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
             (
                 topo_id,
                 data.get("topology_name", data.get("name", "New Topology")),
@@ -3771,14 +3831,14 @@ def create_network_blueprint():
                 now,
             ),
         )
-        conn.execute("INSERT INTO nc_project_topologies (project_id, topology_id) VALUES (?,?)", (pid, topo_id))
+        conn.execute(f"INSERT INTO nc_project_topologies (project_id, topology_id) VALUES ({_ph},{_ph})", (pid, topo_id))
 
         # Step 3: Initialize phases
         for num, name in [(1, "Concept"), (2, "Design"), (3, "Approval"), (4, "Post-Deploy")]:
             conn.execute(
                 "INSERT INTO nc_project_phases "
                 "(id, project_id, phase_num, phase_name, status, "
-                " entered_at, created_at) VALUES (?,?,?,?,?,?,?)",
+                f" entered_at, created_at) VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
                 (
                     str(_uuid.uuid4()),
                     pid,
@@ -3795,11 +3855,11 @@ def create_network_blueprint():
         conn.execute(
             "INSERT INTO nc_case_workflows "
             "(id, project_id, current_state, lifecycle_json, "
-            " created_at, updated_at) VALUES (?,?,?,?,?,?)",
+            f" created_at, updated_at) VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
             (wid, pid, "concept", json.dumps(_NDC_LIFECYCLE), now, now),
         )
         conn.execute(
-            "INSERT INTO nc_case_history (workflow_id, from_state, to_state, comment, changed_at) VALUES (?,?,?,?,?)",
+            f"INSERT INTO nc_case_history (workflow_id, from_state, to_state, comment, changed_at) VALUES ({_ph},{_ph},{_ph},{_ph},{_ph})",
             (wid, "", "concept", "Created via New Build Wizard", now),
         )
 
@@ -3862,6 +3922,7 @@ def create_network_blueprint():
     def nc_api_run_alert_check():
         """Evaluate all enabled alert rules against current data."""
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         rules = [_row_to_dict(r) for r in conn.execute("SELECT * FROM nc_alert_rules WHERE enabled=1").fetchall()]
         now = _now()
         new_events = 0
@@ -3887,7 +3948,7 @@ def create_network_blueprint():
                         "INSERT INTO nc_alert_events "
                         "(id, rule_id, rule_name, severity, message, "
                         " entity_type, entity_id, created_at) "
-                        "VALUES (?,?,?,?,?,?,?,?)",
+                        f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
                         (
                             str(_uuid.uuid4()),
                             rule["id"],
@@ -3906,7 +3967,7 @@ def create_network_blueprint():
                     tids = [
                         r[0]
                         for r in conn.execute(
-                            "SELECT topology_id FROM nc_project_topologies WHERE project_id=?", (p[0],)
+                            f"SELECT topology_id FROM nc_project_topologies WHERE project_id={_ph}", (p[0],)
                         ).fetchall()
                     ]
                     tp = tf = 0
@@ -3914,7 +3975,7 @@ def create_network_blueprint():
                         row = conn.execute(
                             "SELECT passed, failed "
                             "FROM nc_compliance_checks "
-                            "WHERE topology_id=? "
+                            f"WHERE topology_id={_ph} "
                             "ORDER BY ran_at DESC LIMIT 1",
                             (tid,),
                         ).fetchone()
@@ -3953,19 +4014,20 @@ def create_network_blueprint():
         """Run cross-module validation for a project.
         Checks peering↔capacity, compliance→findings, discovery→drift."""
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         findings = []
 
         # 1. Peering ↔ Capacity: check if peering ports fit device inventory
         peers = [
             _row_to_dict(r)
-            for r in conn.execute("SELECT * FROM nc_peering_agreements WHERE project_id=?", (pid,)).fetchall()
+            for r in conn.execute(f"SELECT * FROM nc_peering_agreements WHERE project_id={_ph}", (pid,)).fetchall()
         ]
         ports = [
             _row_to_dict(r)
             for r in conn.execute(
                 "SELECT * FROM nc_port_inventory WHERE topology_id IN "
                 "(SELECT topology_id FROM nc_project_topologies "
-                " WHERE project_id=?)",
+                f" WHERE project_id={_ph})",
                 (pid,),
             ).fetchall()
         ]
@@ -3982,12 +4044,12 @@ def create_network_blueprint():
         # 2. Compliance → auto-flag if CAT1 findings exist
         topo_ids = [
             r[0]
-            for r in conn.execute("SELECT topology_id FROM nc_project_topologies WHERE project_id=?", (pid,)).fetchall()
+            for r in conn.execute(f"SELECT topology_id FROM nc_project_topologies WHERE project_id={_ph}", (pid,)).fetchall()
         ]
         cat1_count = 0
         for tid in topo_ids:
             c1 = conn.execute(
-                "SELECT COUNT(*) FROM nc_compliance_findings WHERE topology_id=? AND status='open' AND severity='CAT1'",
+                f"SELECT COUNT(*) FROM nc_compliance_findings WHERE topology_id={_ph} AND status='open' AND severity='CAT1'",
                 (tid,),
             ).fetchone()
             cat1_count += c1[0] if c1 else 0
@@ -4037,11 +4099,12 @@ def create_network_blueprint():
     def nc_api_add_favorite():
         data = request.get_json(force=True, silent=True) or {}
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         try:
             conn.execute(
                 "INSERT OR IGNORE INTO nc_favorites "
                 "(id, entity_type, entity_id, label, user_id, "
-                " created_at) VALUES (?,?,?,?,?,?)",
+                f" created_at) VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
                 (
                     str(_uuid.uuid4()),
                     data.get("entity_type", ""),
@@ -4099,6 +4162,7 @@ def create_network_blueprint():
         if isinstance(locs, list):
             locs = json.dumps(locs)
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         conn.execute(
             "INSERT INTO nc_peering_agreements "
             "(id, peer_name, peer_asn, our_asn, peering_type, "
@@ -4108,7 +4172,7 @@ def create_network_blueprint():
             " traffic_commit, ratio_limit, sla_uptime_pct, "
             " noc_contact, noc_email, noc_phone, legal_entity, "
             " notes, project_id, created_at, updated_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
             (
                 pid,
                 data.get("peer_name", ""),
@@ -4148,6 +4212,7 @@ def create_network_blueprint():
     def nc_api_update_peering(aid):
         data = request.get_json(force=True, silent=True) or {}
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         allowed = [
             "peer_name",
             "peer_asn",
@@ -4175,21 +4240,21 @@ def create_network_blueprint():
         fields, values = [], []
         for k in allowed:
             if k in data:
-                fields.append(f"{k}=?")
+                fields.append(f"{k}={_ph}")
                 values.append(data[k])
         if "locations" in data:
             locs = data["locations"]
             if isinstance(locs, list):
                 locs = json.dumps(locs)
-            fields.append("locations=?")
+            fields.append(f"locations={_ph}")
             values.append(locs)
         if fields:
-            fields.append("updated_at=?")
+            fields.append("updated_at={_ph}")
             values.append(_now())
             values.append(aid)
             conn.execute(
                 f"UPDATE nc_peering_agreements "  # nosec B608
-                f"SET {', '.join(fields)} WHERE id=?",
+                f"SET {', '.join(fields)} WHERE id={_ph}",
                 values,
             )
             conn.commit()
@@ -4200,8 +4265,9 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_delete_peering(aid):
         conn = get_connection()
-        conn.execute("DELETE FROM nc_peering_sessions WHERE agreement_id=?", (aid,))
-        conn.execute("DELETE FROM nc_peering_agreements WHERE id=?", (aid,))
+        _ph = sql_placeholder(conn)
+        conn.execute(f"DELETE FROM nc_peering_sessions WHERE agreement_id={_ph}", (aid,))
+        conn.execute(f"DELETE FROM nc_peering_agreements WHERE id={_ph}", (aid,))
         conn.commit()
         conn.close()
         return jsonify({"ok": True})
@@ -4298,18 +4364,19 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_peering_cost_benefit(aid):
         conn = get_connection()
-        agr = conn.execute("SELECT * FROM nc_peering_agreements WHERE id=?", (aid,)).fetchone()
+        _ph = sql_placeholder(conn)
+        agr = conn.execute(f"SELECT * FROM nc_peering_agreements WHERE id={_ph}", (aid,)).fetchone()
         if not agr:
             conn.close()
             return jsonify({"error": "Not found"}), 404
         agr = _row_to_dict(agr)
         # Get traffic data
-        sessions = conn.execute("SELECT id FROM nc_peering_sessions WHERE agreement_id=?", (aid,)).fetchall()
+        sessions = conn.execute(f"SELECT id FROM nc_peering_sessions WHERE agreement_id={_ph}", (aid,)).fetchall()
         total_in = total_out = 0
         for s in sessions:
             t = conn.execute(
                 "SELECT inbound_mbps, outbound_mbps "
-                "FROM nc_peering_traffic WHERE session_id=? "
+                f"FROM nc_peering_traffic WHERE session_id={_ph} "
                 "ORDER BY measured_at DESC LIMIT 1",
                 (s[0],),
             ).fetchone()
@@ -4419,9 +4486,10 @@ def create_network_blueprint():
         if asn is None:
             return jsonify({"error": "asn is required"}), 400
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         try:
             try:
-                cur = conn.execute("SELECT * FROM nc_partners WHERE asn = ? LIMIT 1", (asn,))
+                cur = conn.execute(f"SELECT * FROM nc_partners WHERE asn = {_ph} LIMIT 1", (asn,))
             except Exception:
                 cur = conn.cursor()
                 cur.execute("SELECT * FROM nc_partners WHERE asn = %s LIMIT 1", (asn,))
@@ -4477,11 +4545,12 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_list_amendments(aid):
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         try:
             try:
                 rows = conn.execute("SELECT * FROM nc_agreement_amendments WHERE agreement_id=%s ORDER BY amendment_number", (aid,)).fetchall()
             except Exception:
-                rows = conn.execute("SELECT * FROM nc_agreement_amendments WHERE agreement_id=? ORDER BY amendment_number", (aid,)).fetchall()
+                rows = conn.execute(f"SELECT * FROM nc_agreement_amendments WHERE agreement_id={_ph} ORDER BY amendment_number", (aid,)).fetchall()
             return jsonify([_row_to_dict(r) for r in rows])
         finally:
             conn.close()
@@ -4536,16 +4605,17 @@ def create_network_blueprint():
         if isinstance(pb, dict):
             pb = json.dumps(pb)
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         # Dedup by device_label + topology
         conn.execute(
-            "DELETE FROM nc_port_inventory WHERE device_label=? AND topology_id=?",
+            f"DELETE FROM nc_port_inventory WHERE device_label={_ph} AND topology_id={_ph}",
             (data.get("device_label"), data.get("topology_id")),
         )
         rid = str(_uuid.uuid4())
         conn.execute(
             "INSERT INTO nc_port_inventory "
             "(id, device_label, topology_id, total_ports, used_ports, "
-            " port_breakdown, last_updated) VALUES (?,?,?,?,?,?,?)",
+            f" port_breakdown, last_updated) VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
             (
                 rid,
                 data.get("device_label", ""),
@@ -4686,12 +4756,13 @@ def create_network_blueprint():
     def nc_api_list_racks():
         fid = request.args.get("facility_id", "")
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         if fid:
             rows = conn.execute(
                 "SELECT r.*, f.name AS facility_name "
                 "FROM nc_racks r "
                 "LEFT JOIN nc_facilities f ON f.id=r.facility_id "
-                "WHERE r.facility_id=? ORDER BY r.rack_name",
+                f"WHERE r.facility_id={_ph} ORDER BY r.rack_name",
                 (fid,),
             ).fetchall()
         else:
@@ -4748,12 +4819,13 @@ def create_network_blueprint():
         """Cross-layer feasibility check for a project.
         Checks: peering, ports, fiber, facilities (rack/power/cooling)."""
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         checks = []
 
         # Peering
         peer_count = conn.execute(
             "SELECT COUNT(*) FROM nc_peering_agreements "
-            "WHERE project_id=? AND status IN "
+            f"WHERE project_id={_ph} AND status IN "
             "('agreement_signed','technical_design','implemented','operational')",
             (pid,),
         ).fetchone()[0]
@@ -4771,7 +4843,7 @@ def create_network_blueprint():
             "SELECT * FROM nc_port_inventory "
             "WHERE topology_id IN "
             "(SELECT topology_id FROM nc_project_topologies "
-            " WHERE project_id=?)",
+            f" WHERE project_id={_ph})",
             (pid,),
         ).fetchall()
         ports_avail = sum((r["total_ports"] or 0) - (r["used_ports"] or 0) for r in port_rows)
@@ -4802,7 +4874,7 @@ def create_network_blueprint():
             f = _row_to_dict(f)
             avail_ru = (f.get("total_racks", 0) or 0) * 42 - sum(
                 r["used_ru"] or 0
-                for r in conn.execute("SELECT used_ru FROM nc_racks WHERE facility_id=?", (f["id"],)).fetchall()
+                for r in conn.execute(f"SELECT used_ru FROM nc_racks WHERE facility_id={_ph}", (f["id"],)).fetchall()
             )
             avail_power = (f.get("total_power_kw", 0) or 0) - (f.get("used_power_kw", 0) or 0)
             avail_cooling = (f.get("total_cooling_tons", 0) or 0) - (f.get("used_cooling_tons", 0) or 0)
@@ -4874,12 +4946,13 @@ def create_network_blueprint():
         cost = int(data.get("cost_score", 5) or 5)
         total = round((imp * 0.4 + feas * 0.35 + cost * 0.25), 2)
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         conn.execute(
             "INSERT INTO nc_innovation_ideas "
             "(id, title, description, category, submitted_by, "
             " impact_score, feasibility_score, cost_score, "
             " total_score, status, created_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
             (
                 iid,
                 data.get("title", ""),
@@ -4903,7 +4976,8 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_vote_idea(iid):
         conn = get_connection()
-        conn.execute("UPDATE nc_innovation_ideas SET votes=votes+1 WHERE id=?", (iid,))
+        _ph = sql_placeholder(conn)
+        conn.execute(f"UPDATE nc_innovation_ideas SET votes=votes+1 WHERE id={_ph}", (iid,))
         conn.commit()
         conn.close()
         return jsonify({"ok": True})
@@ -4913,17 +4987,18 @@ def create_network_blueprint():
     def nc_api_update_idea(iid):
         data = request.get_json(force=True, silent=True) or {}
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         allowed = ["status", "project_id"]
         fields, values = [], []
         for k in allowed:
             if k in data:
-                fields.append(f"{k}=?")
+                fields.append(f"{k}={_ph}")
                 values.append(data[k])
         if fields:
             values.append(iid)
             conn.execute(
                 f"UPDATE nc_innovation_ideas "  # nosec B608
-                f"SET {', '.join(fields)} WHERE id=?",
+                f"SET {', '.join(fields)} WHERE id={_ph}",
                 values,
             )
             conn.commit()
@@ -4934,7 +5009,8 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_delete_idea(iid):
         conn = get_connection()
-        conn.execute("DELETE FROM nc_innovation_ideas WHERE id=?", (iid,))
+        _ph = sql_placeholder(conn)
+        conn.execute(f"DELETE FROM nc_innovation_ideas WHERE id={_ph}", (iid,))
         conn.commit()
         conn.close()
         return jsonify({"ok": True})
@@ -4959,11 +5035,12 @@ def create_network_blueprint():
         data = request.get_json(force=True, silent=True) or {}
         tid = str(_uuid.uuid4())
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         conn.execute(
             "INSERT INTO nc_tech_radar "
             "(id, technology, ring, category, description, "
             " updated_by, created_at, updated_at) "
-            "VALUES (?,?,?,?,?,?,?,?)",
+            f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
             (
                 tid,
                 data.get("technology", ""),
@@ -4984,23 +5061,24 @@ def create_network_blueprint():
     def nc_api_update_tech_radar(tid):
         data = request.get_json(force=True, silent=True) or {}
         conn = get_connection()
-        old = conn.execute("SELECT ring FROM nc_tech_radar WHERE id=?", (tid,)).fetchone()
+        _ph = sql_placeholder(conn)
+        old = conn.execute(f"SELECT ring FROM nc_tech_radar WHERE id={_ph}", (tid,)).fetchone()
         new_ring = data.get("ring", "")
         fields, values = [], []
         for k in ["technology", "ring", "category", "description", "updated_by"]:
             if k in data:
-                fields.append(f"{k}=?")
+                fields.append(f"{k}={_ph}")
                 values.append(data[k])
         if new_ring and old and new_ring != old[0]:
-            fields.append("moved_from=?")
+            fields.append(f"moved_from={_ph}")
             values.append(old[0])
         if fields:
-            fields.append("updated_at=?")
+            fields.append("updated_at={_ph}")
             values.append(_now())
             values.append(tid)
             conn.execute(
                 f"UPDATE nc_tech_radar "  # nosec B608
-                f"SET {', '.join(fields)} WHERE id=?",
+                f"SET {', '.join(fields)} WHERE id={_ph}",
                 values,
             )
             conn.commit()
@@ -5011,7 +5089,8 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_delete_tech_radar(tid):
         conn = get_connection()
-        conn.execute("DELETE FROM nc_tech_radar WHERE id=?", (tid,))
+        _ph = sql_placeholder(conn)
+        conn.execute(f"DELETE FROM nc_tech_radar WHERE id={_ph}", (tid,))
         conn.commit()
         conn.close()
         return jsonify({"ok": True})
@@ -5022,12 +5101,13 @@ def create_network_blueprint():
     def nc_api_list_lessons():
         pid = request.args.get("project_id", "")
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         if pid:
             rows = conn.execute(
                 "SELECT ll.*, p.name AS project_name "
                 "FROM nc_lessons_learned ll "
                 "LEFT JOIN nc_projects p ON p.id=ll.project_id "
-                "WHERE ll.project_id=? ORDER BY ll.created_at DESC",
+                f"WHERE ll.project_id={_ph} ORDER BY ll.created_at DESC",
                 (pid,),
             ).fetchall()
         else:
@@ -5046,11 +5126,12 @@ def create_network_blueprint():
         data = request.get_json(force=True, silent=True) or {}
         lid = str(_uuid.uuid4())
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         conn.execute(
             "INSERT INTO nc_lessons_learned "
             "(id, project_id, title, category, what_happened, "
             " root_cause, lesson, recommendation, submitted_by, "
-            " created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            f" created_at) VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
             (
                 lid,
                 data.get("project_id"),
@@ -5072,7 +5153,8 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_delete_lesson(lid):
         conn = get_connection()
-        conn.execute("DELETE FROM nc_lessons_learned WHERE id=?", (lid,))
+        _ph = sql_placeholder(conn)
+        conn.execute(f"DELETE FROM nc_lessons_learned WHERE id={_ph}", (lid,))
         conn.commit()
         conn.close()
         return jsonify({"ok": True})
@@ -5095,11 +5177,12 @@ def create_network_blueprint():
         data = request.get_json(force=True, silent=True) or {}
         rid = str(_uuid.uuid4())
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         conn.execute(
             "INSERT INTO nc_replacement_map "
             "(id, old_vendor, old_model, new_vendor, new_model, "
             " new_cost, migration_effort, notes, is_builtin, created_at) "
-            "VALUES (?,?,?,?,?,?,?,?,0,?)",
+            f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},0,{_ph})",
             (
                 rid,
                 data.get("old_vendor", ""),
@@ -5120,7 +5203,8 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_delete_replacement(rid):
         conn = get_connection()
-        conn.execute("DELETE FROM nc_replacement_map WHERE id=?", (rid,))
+        _ph = sql_placeholder(conn)
+        conn.execute(f"DELETE FROM nc_replacement_map WHERE id={_ph}", (rid,))
         conn.commit()
         conn.close()
         return jsonify({"ok": True})
@@ -5129,8 +5213,9 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_list_refresh_plan(pid):
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         rows = conn.execute(
-            "SELECT * FROM nc_refresh_plans WHERE project_id=? ORDER BY target_year, priority DESC", (pid,)
+            f"SELECT * FROM nc_refresh_plans WHERE project_id={_ph} ORDER BY target_year, priority DESC", (pid,)
         ).fetchall()
         items = [_row_to_dict(r) for r in rows]
         # Budget summary by year
@@ -5154,12 +5239,13 @@ def create_network_blueprint():
         data = request.get_json(force=True, silent=True) or {}
         rid = str(_uuid.uuid4())
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         conn.execute(
             "INSERT INTO nc_refresh_plans "
             "(id, project_id, device_label, old_model, eol_date, "
             " priority, replacement_model, replacement_cost, "
             " target_year, status, notes, created_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
             (
                 rid,
                 pid,
@@ -5183,7 +5269,8 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_delete_refresh_item(rid):
         conn = get_connection()
-        conn.execute("DELETE FROM nc_refresh_plans WHERE id=?", (rid,))
+        _ph = sql_placeholder(conn)
+        conn.execute(f"DELETE FROM nc_refresh_plans WHERE id={_ph}", (rid,))
         conn.commit()
         conn.close()
         return jsonify({"ok": True})
@@ -5195,9 +5282,10 @@ def create_network_blueprint():
         Scans all project topologies for EOL/EOS devices and creates
         refresh items with replacement suggestions from the map."""
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         topo_ids = [
             r[0]
-            for r in conn.execute("SELECT topology_id FROM nc_project_topologies WHERE project_id=?", (pid,)).fetchall()
+            for r in conn.execute(f"SELECT topology_id FROM nc_project_topologies WHERE project_id={_ph}", (pid,)).fetchall()
         ]
 
         # Load replacement map
@@ -5210,7 +5298,7 @@ def create_network_blueprint():
         now = datetime.now(timezone.utc)
         items_created = 0
         for tid in topo_ids:
-            row = conn.execute("SELECT graph_json FROM topologies WHERE id=?", (tid,)).fetchone()
+            row = conn.execute(f"SELECT graph_json FROM topologies WHERE id={_ph}", (tid,)).fetchone()
             if not row:
                 continue
             try:
@@ -5250,7 +5338,7 @@ def create_network_blueprint():
                     "(id, project_id, device_label, old_model, "
                     " eol_date, priority, replacement_model, "
                     " replacement_cost, target_year, status, "
-                    " created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                    f" created_at) VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
                     (
                         str(_uuid.uuid4()),
                         pid,
@@ -5421,14 +5509,15 @@ def create_network_blueprint():
         metric = data.get("metric", 10)
 
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         # Get current routes from src device
         src_routes = [
             _row_to_dict(r)
-            for r in conn.execute("SELECT * FROM nc_routing_entries WHERE device_ip=?", (src,)).fetchall()
+            for r in conn.execute(f"SELECT * FROM nc_routing_entries WHERE device_ip={_ph}", (src,)).fetchall()
         ]
         dst_routes = [
             _row_to_dict(r)
-            for r in conn.execute("SELECT * FROM nc_routing_entries WHERE device_ip=?", (dst,)).fetchall()
+            for r in conn.execute(f"SELECT * FROM nc_routing_entries WHERE device_ip={_ph}", (dst,)).fetchall()
         ]
         conn.close()
 
@@ -5501,7 +5590,8 @@ def create_network_blueprint():
 
         # Load profile commands
         conn = get_connection()
-        prof_row = conn.execute("SELECT commands_json FROM nc_device_profiles WHERE id=?", (profile_id,)).fetchone()
+        _ph = sql_placeholder(conn)
+        prof_row = conn.execute(f"SELECT commands_json FROM nc_device_profiles WHERE id={_ph}", (profile_id,)).fetchone()
         if not prof_row:
             conn.close()
             return jsonify({"error": "Profile not found"}), 404
@@ -5520,14 +5610,14 @@ def create_network_blueprint():
                     continue
                 # Dedup
                 conn.execute(
-                    "DELETE FROM nc_collected_configs WHERE device_ip=? AND command_name=?", (device_ip, cmd_name)
+                    f"DELETE FROM nc_collected_configs WHERE device_ip={_ph} AND command_name={_ph}", (device_ip, cmd_name)
                 )
                 conn.execute(
                     "INSERT INTO nc_collected_configs "
                     "(id, device_ip, hostname, profile_id, "
                     " command_name, output_text, parsed_json, "
                     " collected_at, topology_id) "
-                    "VALUES (?,?,?,?,?,?,?,?,?)",
+                    f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
                     (str(_uuid.uuid4()), device_ip, hostname, profile_id, cmd_name, output, "{}", now, topology_id),
                 )
                 results.append(
@@ -5567,7 +5657,7 @@ def create_network_blueprint():
                             output = net_connect.send_command(cli_cmd, read_timeout=timeout)
                             # Dedup and store
                             conn.execute(
-                                "DELETE FROM nc_collected_configs WHERE device_ip=? AND command_name=?",
+                                f"DELETE FROM nc_collected_configs WHERE device_ip={_ph} AND command_name={_ph}",
                                 (device_ip, cmd_name),
                             )
                             conn.execute(
@@ -5575,7 +5665,7 @@ def create_network_blueprint():
                                 "(id, device_ip, hostname, profile_id, "
                                 " command_name, output_text, parsed_json, "
                                 " collected_at, topology_id) "
-                                "VALUES (?,?,?,?,?,?,?,?,?)",
+                                f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
                                 (
                                     str(_uuid.uuid4()),
                                     device_ip,
@@ -5660,18 +5750,19 @@ def create_network_blueprint():
         graph = _classify_imported_nodes(graph)
 
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         now = _now()
         topo_id = str(_uuid.uuid4())
         conn.execute(
             "INSERT INTO topologies "
             "(id, name, description, graph_json, classification, "
-            " created_at, updated_at) VALUES (?,?,?,?,?,?,?)",
+            f" created_at, updated_at) VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
             (topo_id, name, f"Data extraction ({fmt})", json.dumps(graph), "public", now, now),
         )
 
         if project_id:
             conn.execute(
-                "INSERT OR IGNORE INTO nc_project_topologies (project_id, topology_id) VALUES (?,?)",
+                f"INSERT OR IGNORE INTO nc_project_topologies (project_id, topology_id) VALUES ({_ph},{_ph})",
                 (project_id, topo_id),
             )
 
@@ -5705,7 +5796,7 @@ def create_network_blueprint():
                     conn.execute(
                         "INSERT OR IGNORE INTO nc_ipam_blocks "
                         "(id, topology_id, network, description, "
-                        " created_at) VALUES (?,?,?,?,?)",
+                        f" created_at) VALUES ({_ph},{_ph},{_ph},{_ph},{_ph})",
                         (str(_uuid.uuid4()), topo_id, network, f"Extracted from {label}", now),
                     )
                     ipam_extracted += 1
@@ -5725,7 +5816,7 @@ def create_network_blueprint():
                     "INSERT INTO nc_circuits "
                     "(id, topology_id, circuit_id, carrier, "
                     " circuit_type, bandwidth, install_status, "
-                    " created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
+                    f" created_at, updated_at) VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
                     (
                         str(_uuid.uuid4()),
                         topo_id,
@@ -5747,7 +5838,7 @@ def create_network_blueprint():
         conn.execute(
             "INSERT INTO nc_compliance_checks "
             "(id, topology_id, check_type, passed, failed, "
-            " findings_json, ran_at) VALUES (?,?,?,?,?,?,?)",
+            f" findings_json, ran_at) VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
             (str(_uuid.uuid4()), topo_id, "fisma_high", total_p, total_f, json.dumps(audit_result["findings"]), now),
         )
 
@@ -5802,9 +5893,10 @@ def create_network_blueprint():
         if not entries:
             return jsonify({"error": "entries required"}), 400
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         now = _now()
         # Dedup: remove existing entries for this device before inserting
-        conn.execute("DELETE FROM nc_routing_entries WHERE device_ip=?", (device_ip,))
+        conn.execute(f"DELETE FROM nc_routing_entries WHERE device_ip={_ph}", (device_ip,))
         count = 0
         for e in entries:
             conn.execute(
@@ -5812,7 +5904,7 @@ def create_network_blueprint():
                 "(id, device_ip, hostname, prefix, next_hop, "
                 " protocol, metric, admin_distance, interface, "
                 " vrf, address_family, collected_at, topology_id) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
                 (
                     str(_uuid.uuid4()),
                     device_ip,
@@ -5839,9 +5931,10 @@ def create_network_blueprint():
     def nc_api_list_routing_entries():
         device_ip = request.args.get("device_ip", "")
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         if device_ip:
             rows = conn.execute(
-                "SELECT * FROM nc_routing_entries WHERE device_ip=? ORDER BY prefix", (device_ip,)
+                f"SELECT * FROM nc_routing_entries WHERE device_ip={_ph} ORDER BY prefix", (device_ip,)
             ).fetchall()
         else:
             rows = conn.execute("SELECT * FROM nc_routing_entries ORDER BY device_ip, prefix LIMIT 500").fetchall()
@@ -5858,9 +5951,10 @@ def create_network_blueprint():
         device_ips = data.get("device_ips", [])
         name = data.get("name", "Routing Topology")
         conn = get_connection()
+        _ph = sql_placeholder(conn)
 
         if device_ips:
-            placeholders = ",".join("?" for _ in device_ips)
+            placeholders = ",".join(_ph for _ in device_ips)
             rows = conn.execute(
                 f"SELECT * FROM nc_routing_entries "  # nosec B608
                 f"WHERE device_ip IN ({placeholders}) "
@@ -5947,7 +6041,7 @@ def create_network_blueprint():
             "INSERT INTO topologies "
             "(id, name, description, graph_json, "
             " classification, created_at, updated_at) "
-            "VALUES (?,?,?,?,?,?,?)",
+            f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
             (
                 topo_id,
                 name,
@@ -5977,7 +6071,8 @@ def create_network_blueprint():
         """Sync collected config data into canvas device properties.
         Matches by hostname or IP address."""
         conn = get_connection()
-        row = conn.execute("SELECT graph_json FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        _ph = sql_placeholder(conn)
+        row = conn.execute(f"SELECT graph_json FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
         if not row:
             conn.close()
             return jsonify({"error": "Not found"}), 404
@@ -5991,7 +6086,7 @@ def create_network_blueprint():
         configs = conn.execute(
             "SELECT device_ip, hostname, command_name, parsed_json "
             "FROM nc_collected_configs "
-            "WHERE topology_id=? OR topology_id IS NULL "
+            f"WHERE topology_id={_ph} OR topology_id IS NULL "
             "ORDER BY collected_at DESC",
             (topo_id,),
         ).fetchall()
@@ -6050,7 +6145,7 @@ def create_network_blueprint():
             updated += 1
 
         now = _now()
-        conn.execute("UPDATE topologies SET graph_json=?, updated_at=? WHERE id=?", (json.dumps(graph), now, topo_id))
+        conn.execute(f"UPDATE topologies SET graph_json={_ph}, updated_at={_ph} WHERE id={_ph}", (json.dumps(graph), now, topo_id))
         conn.commit()
         conn.close()
         return jsonify(
@@ -6079,11 +6174,12 @@ def create_network_blueprint():
         cid = str(_uuid.uuid4())
         now = _now()
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         conn.execute(
             "INSERT INTO nc_circuits (id, topology_id, circuit_id, carrier, circuit_type, bandwidth, "
             "handoff_a, handoff_z, customer, site, monthly_cost_usd, contract_start, contract_end, "
             "sla_uptime_pct, install_status, notes, created_at, updated_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
             (
                 cid,
                 data.get("topology_id"),
@@ -6115,7 +6211,8 @@ def create_network_blueprint():
     def nc_api_update_circuit(cid):
         data = request.get_json(force=True, silent=True) or {}
         conn = get_connection()
-        row = conn.execute("SELECT id FROM nc_circuits WHERE id=?", (cid,)).fetchone()
+        _ph = sql_placeholder(conn)
+        row = conn.execute(f"SELECT id FROM nc_circuits WHERE id={_ph}", (cid,)).fetchone()
         if not row:
             conn.close()
             return jsonify({"error": "Not found"}), 404
@@ -6139,15 +6236,15 @@ def create_network_blueprint():
         fields, values = [], []
         for k in allowed:
             if k in data:
-                fields.append(f"{k}=?")
+                fields.append(f"{k}={_ph}")
                 values.append(data[k])
         if not fields:
             conn.close()
             return jsonify({"error": "No fields"}), 400
-        fields.append("updated_at=?")
+        fields.append("updated_at={_ph}")
         values.append(_now())
         values.append(cid)
-        conn.execute(f"UPDATE nc_circuits SET {', '.join(fields)} WHERE id=?", values)  # nosec B608 -- table/column names are internal constants, not user input
+        conn.execute(f"UPDATE nc_circuits SET {', '.join(fields)} WHERE id={_ph}", values)  # nosec B608 -- table/column names are internal constants, not user input
         conn.commit()
         conn.close()
         _audit("UPDATE", "circuit", cid)
@@ -6157,7 +6254,8 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_delete_circuit(cid):
         conn = get_connection()
-        conn.execute("DELETE FROM nc_circuits WHERE id=?", (cid,))
+        _ph = sql_placeholder(conn)
+        conn.execute(f"DELETE FROM nc_circuits WHERE id={_ph}", (cid,))
         conn.commit()
         conn.close()
         _audit("DELETE", "circuit", cid)
@@ -6182,9 +6280,10 @@ def create_network_blueprint():
         cid = str(_uuid.uuid4())
         now = _now()
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         conn.execute(
             "INSERT INTO nc_customers (id, name, customer_type, contact_name, contact_email, contract_ref, notes, created_at) "
-            "VALUES (?,?,?,?,?,?,?,?)",
+            f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
             (
                 cid,
                 data.get("name", ""),
@@ -6206,17 +6305,18 @@ def create_network_blueprint():
     def nc_api_update_customer(cid):
         data = request.get_json(force=True, silent=True) or {}
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         allowed = ["name", "customer_type", "contact_name", "contact_email", "contract_ref", "notes"]
         fields, values = [], []
         for k in allowed:
             if k in data:
-                fields.append(f"{k}=?")
+                fields.append(f"{k}={_ph}")
                 values.append(data[k])
         if not fields:
             conn.close()
             return jsonify({"error": "No fields"}), 400
         values.append(cid)
-        conn.execute(f"UPDATE nc_customers SET {', '.join(fields)} WHERE id=?", values)  # nosec B608 -- table/column names are internal constants, not user input
+        conn.execute(f"UPDATE nc_customers SET {', '.join(fields)} WHERE id={_ph}", values)  # nosec B608 -- table/column names are internal constants, not user input
         conn.commit()
         conn.close()
         _audit("UPDATE", "customer", cid)
@@ -6226,8 +6326,9 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_delete_customer(cid):
         conn = get_connection()
-        conn.execute("DELETE FROM nc_sites WHERE customer_id=?", (cid,))
-        conn.execute("DELETE FROM nc_customers WHERE id=?", (cid,))
+        _ph = sql_placeholder(conn)
+        conn.execute(f"DELETE FROM nc_sites WHERE customer_id={_ph}", (cid,))
+        conn.execute(f"DELETE FROM nc_customers WHERE id={_ph}", (cid,))
         conn.commit()
         conn.close()
         _audit("DELETE", "customer", cid)
@@ -6251,9 +6352,10 @@ def create_network_blueprint():
         sid = str(_uuid.uuid4())
         now = _now()
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         conn.execute(
             "INSERT INTO nc_sites (id, customer_id, name, address, city, state, country, site_type, classification, created_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?)",
+            f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
             (
                 sid,
                 data.get("customer_id"),
@@ -6277,17 +6379,18 @@ def create_network_blueprint():
     def nc_api_update_site(sid):
         data = request.get_json(force=True, silent=True) or {}
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         allowed = ["customer_id", "name", "address", "city", "state", "country", "site_type", "classification"]
         fields, values = [], []
         for k in allowed:
             if k in data:
-                fields.append(f"{k}=?")
+                fields.append(f"{k}={_ph}")
                 values.append(data[k])
         if not fields:
             conn.close()
             return jsonify({"error": "No fields"}), 400
         values.append(sid)
-        conn.execute(f"UPDATE nc_sites SET {', '.join(fields)} WHERE id=?", values)  # nosec B608 -- table/column names are internal constants, not user input
+        conn.execute(f"UPDATE nc_sites SET {', '.join(fields)} WHERE id={_ph}", values)  # nosec B608 -- table/column names are internal constants, not user input
         conn.commit()
         conn.close()
         _audit("UPDATE", "site", sid)
@@ -6297,7 +6400,8 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_delete_site(sid):
         conn = get_connection()
-        conn.execute("DELETE FROM nc_sites WHERE id=?", (sid,))
+        _ph = sql_placeholder(conn)
+        conn.execute(f"DELETE FROM nc_sites WHERE id={_ph}", (sid,))
         conn.commit()
         conn.close()
         _audit("DELETE", "site", sid)
@@ -6322,9 +6426,10 @@ def create_network_blueprint():
         bid = str(_uuid.uuid4())
         now = _now()
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         conn.execute(
             "INSERT INTO nc_ipam_blocks (id, topology_id, network, vlan_id, vrf, description, site_id, gateway, utilization_pct, created_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?)",
+            f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
             (
                 bid,
                 data.get("topology_id"),
@@ -6360,17 +6465,18 @@ def create_network_blueprint():
     def nc_api_update_ipam(bid):
         data = request.get_json(force=True, silent=True) or {}
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         allowed = ["network", "vlan_id", "vrf", "description", "site_id", "gateway", "utilization_pct", "topology_id"]
         fields, values = [], []
         for k in allowed:
             if k in data:
-                fields.append(f"{k}=?")
+                fields.append(f"{k}={_ph}")
                 values.append(data[k])
         if not fields:
             conn.close()
             return jsonify({"error": "No fields"}), 400
         values.append(bid)
-        conn.execute(f"UPDATE nc_ipam_blocks SET {', '.join(fields)} WHERE id=?", values)  # nosec B608 -- table/column names are internal constants, not user input
+        conn.execute(f"UPDATE nc_ipam_blocks SET {', '.join(fields)} WHERE id={_ph}", values)  # nosec B608 -- table/column names are internal constants, not user input
         conn.commit()
         conn.close()
         _audit("UPDATE", "ipam_block", bid)
@@ -6380,7 +6486,8 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_delete_ipam(bid):
         conn = get_connection()
-        conn.execute("DELETE FROM nc_ipam_blocks WHERE id=?", (bid,))
+        _ph = sql_placeholder(conn)
+        conn.execute(f"DELETE FROM nc_ipam_blocks WHERE id={_ph}", (bid,))
         conn.commit()
         conn.close()
         _audit("DELETE", "ipam_block", bid)
@@ -6405,10 +6512,11 @@ def create_network_blueprint():
         cid = str(_uuid.uuid4())
         now = _now()
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         conn.execute(
             "INSERT INTO nc_cables (id, topology_id, cable_id, cable_type, src_device, src_port, "
             "dst_device, dst_port, patch_panel, length_m, status, notes, created_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
             (
                 cid,
                 data.get("topology_id"),
@@ -6435,6 +6543,7 @@ def create_network_blueprint():
     def nc_api_update_cable(cid):
         data = request.get_json(force=True, silent=True) or {}
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         allowed = [
             "cable_id",
             "cable_type",
@@ -6451,13 +6560,13 @@ def create_network_blueprint():
         fields, values = [], []
         for k in allowed:
             if k in data:
-                fields.append(f"{k}=?")
+                fields.append(f"{k}={_ph}")
                 values.append(data[k])
         if not fields:
             conn.close()
             return jsonify({"error": "No fields"}), 400
         values.append(cid)
-        conn.execute(f"UPDATE nc_cables SET {', '.join(fields)} WHERE id=?", values)  # nosec B608 -- table/column names are internal constants, not user input
+        conn.execute(f"UPDATE nc_cables SET {', '.join(fields)} WHERE id={_ph}", values)  # nosec B608 -- table/column names are internal constants, not user input
         conn.commit()
         conn.close()
         _audit("UPDATE", "cable", cid)
@@ -6467,7 +6576,8 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_delete_cable(cid):
         conn = get_connection()
-        conn.execute("DELETE FROM nc_cables WHERE id=?", (cid,))
+        _ph = sql_placeholder(conn)
+        conn.execute(f"DELETE FROM nc_cables WHERE id={_ph}", (cid,))
         conn.commit()
         conn.close()
         _audit("DELETE", "cable", cid)
@@ -6482,7 +6592,8 @@ def create_network_blueprint():
     def nc_api_cable_plant_report(topo_id):
         """Export cable plant report as CSV from edge cableData annotations."""
         conn = get_connection()
-        row = conn.execute("SELECT graph_json, name FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        _ph = sql_placeholder(conn)
+        row = conn.execute(f"SELECT graph_json, name FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
         conn.close()
         if not row:
             return jsonify({"error": "Topology not found"}), 404
@@ -6560,12 +6671,13 @@ def create_network_blueprint():
         cid = str(_uuid.uuid4())
         now = _now()
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         conn.execute(
             "INSERT INTO nc_cross_connects (id, topology_id, xconn_id, facility, meet_me_room, "
             "src_device, src_port, dst_device, dst_port, media_type, bandwidth, "
             "provider_a, provider_z, loa_status, monthly_cost_usd, install_date, "
             "status, notes, created_at, updated_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
             (
                 cid,
                 data.get("topology_id"),
@@ -6599,7 +6711,8 @@ def create_network_blueprint():
     def nc_api_update_cross_connect(cid):
         data = request.get_json(force=True, silent=True) or {}
         conn = get_connection()
-        row = conn.execute("SELECT id FROM nc_cross_connects WHERE id=?", (cid,)).fetchone()
+        _ph = sql_placeholder(conn)
+        row = conn.execute(f"SELECT id FROM nc_cross_connects WHERE id={_ph}", (cid,)).fetchone()
         if not row:
             conn.close()
             return jsonify({"error": "Not found"}), 404
@@ -6625,15 +6738,15 @@ def create_network_blueprint():
         fields, values = [], []
         for k in allowed:
             if k in data:
-                fields.append(f"{k}=?")
+                fields.append(f"{k}={_ph}")
                 values.append(data[k])
         if not fields:
             conn.close()
             return jsonify({"error": "No fields"}), 400
-        fields.append("updated_at=?")
+        fields.append("updated_at={_ph}")
         values.append(_now())
         values.append(cid)
-        conn.execute(f"UPDATE nc_cross_connects SET {', '.join(fields)} WHERE id=?", values)  # nosec B608 -- table/column names are internal constants, not user input
+        conn.execute(f"UPDATE nc_cross_connects SET {', '.join(fields)} WHERE id={_ph}", values)  # nosec B608 -- table/column names are internal constants, not user input
         conn.commit()
         conn.close()
         _audit("UPDATE", "cross_connect", cid)
@@ -6643,7 +6756,8 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_delete_cross_connect(cid):
         conn = get_connection()
-        conn.execute("DELETE FROM nc_cross_connects WHERE id=?", (cid,))
+        _ph = sql_placeholder(conn)
+        conn.execute(f"DELETE FROM nc_cross_connects WHERE id={_ph}", (cid,))
         conn.commit()
         conn.close()
         _audit("DELETE", "cross_connect", cid)
@@ -6657,9 +6771,10 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_list_versions(topo_id):
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         rows = conn.execute(
             "SELECT id, topology_id, version_num, label, phase, created_by, notes, created_at "
-            "FROM nc_versions WHERE topology_id=? ORDER BY version_num",
+            f"FROM nc_versions WHERE topology_id={_ph} ORDER BY version_num",
             (topo_id,),
         ).fetchall()
         conn.close()
@@ -6669,18 +6784,19 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_create_version(topo_id):
         conn = get_connection()
-        topo = conn.execute("SELECT graph_json FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        _ph = sql_placeholder(conn)
+        topo = conn.execute(f"SELECT graph_json FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
         if not topo:
             conn.close()
             return jsonify({"error": "Topology not found"}), 404
         data = request.get_json(force=True, silent=True) or {}
-        last = conn.execute("SELECT MAX(version_num) FROM nc_versions WHERE topology_id=?", (topo_id,)).fetchone()[0]
+        last = conn.execute(f"SELECT MAX(version_num) FROM nc_versions WHERE topology_id={_ph}", (topo_id,)).fetchone()[0]
         ver_num = (last or 0) + 1
         vid = str(_uuid.uuid4())
         now = _now()
         conn.execute(
             "INSERT INTO nc_versions (id, topology_id, version_num, label, phase, graph_json, created_by, notes, created_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?)",
+            f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
             (
                 vid,
                 topo_id,
@@ -6707,8 +6823,9 @@ def create_network_blueprint():
         if not v1_id or not v2_id:
             return jsonify({"error": "version_a and version_b required"}), 400
         conn = get_connection()
-        r1 = conn.execute("SELECT graph_json, label, phase FROM nc_versions WHERE id=?", (v1_id,)).fetchone()
-        r2 = conn.execute("SELECT graph_json, label, phase FROM nc_versions WHERE id=?", (v2_id,)).fetchone()
+        _ph = sql_placeholder(conn)
+        r1 = conn.execute(f"SELECT graph_json, label, phase FROM nc_versions WHERE id={_ph}", (v1_id,)).fetchone()
+        r2 = conn.execute(f"SELECT graph_json, label, phase FROM nc_versions WHERE id={_ph}", (v2_id,)).fetchone()
         conn.close()
         if not r1 or not r2:
             return jsonify({"error": "Version not found"}), 404
@@ -6744,7 +6861,8 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_bom(topo_id):
         conn = get_connection()
-        row = conn.execute("SELECT graph_json, name FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        _ph = sql_placeholder(conn)
+        row = conn.execute(f"SELECT graph_json, name FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
         conn.close()
         if not row:
             return jsonify({"error": "Not found"}), 404
@@ -6784,7 +6902,8 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_capacity_plan(topo_id):
         conn = get_connection()
-        row = conn.execute("SELECT graph_json FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        _ph = sql_placeholder(conn)
+        row = conn.execute(f"SELECT graph_json FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
         conn.close()
         if not row:
             return jsonify({"error": "Not found"}), 404
@@ -6851,7 +6970,8 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_compliance_check(topo_id):
         conn = get_connection()
-        row = conn.execute("SELECT graph_json FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        _ph = sql_placeholder(conn)
+        row = conn.execute(f"SELECT graph_json FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
         if not row:
             conn.close()
             return jsonify({"error": "Not found"}), 404
@@ -6907,7 +7027,7 @@ def create_network_blueprint():
         now = _now()
         conn.execute(
             "INSERT INTO nc_compliance_checks (id, topology_id, check_type, passed, failed, findings_json, ran_at) "
-            "VALUES (?,?,?,?,?,?,?)",
+            f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
             (check_id, topo_id, "full", passed, failed, json.dumps(findings), now),
         )
         conn.commit()
@@ -6941,23 +7061,24 @@ def create_network_blueprint():
     def nc_api_update_compliance_profile(topo_id):
         data = request.get_json(force=True, silent=True) or {}
         conn = get_connection()
-        profile = conn.execute("SELECT id FROM nc_compliance_profiles WHERE topology_id=?", (topo_id,)).fetchone()
+        _ph = sql_placeholder(conn)
+        profile = conn.execute(f"SELECT id FROM nc_compliance_profiles WHERE topology_id={_ph}", (topo_id,)).fetchone()
         if not profile:
             pid = str(_uuid.uuid4())
-            conn.execute("INSERT INTO nc_compliance_profiles (id, topology_id) VALUES (?,?)", (pid, topo_id))
+            conn.execute(f"INSERT INTO nc_compliance_profiles (id, topology_id) VALUES ({_ph},{_ph})", (pid, topo_id))
             conn.commit()
-            profile = conn.execute("SELECT id FROM nc_compliance_profiles WHERE id=?", (pid,)).fetchone()
+            profile = conn.execute(f"SELECT id FROM nc_compliance_profiles WHERE id={_ph}", (pid,)).fetchone()
         fields, values = [], []
         for k in ["regimes", "classification", "environment", "auto_audit"]:
             if k in data:
                 val = json.dumps(data[k]) if k == "regimes" and isinstance(data[k], list) else data[k]
-                fields.append(f"{k}=?")
+                fields.append(f"{k}={_ph}")
                 values.append(val)
         if fields:
-            fields.append("updated_at=?")
+            fields.append("updated_at={_ph}")
             values.append(_now())
             values.append(profile["id"])
-            conn.execute(f"UPDATE nc_compliance_profiles SET {', '.join(fields)} WHERE id=?", values)  # nosec B608 -- table/column names are internal constants, not user input
+            conn.execute(f"UPDATE nc_compliance_profiles SET {', '.join(fields)} WHERE id={_ph}", values)  # nosec B608 -- table/column names are internal constants, not user input
             conn.commit()
         conn.close()
         return jsonify({"ok": True})
@@ -6966,11 +7087,12 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_run_compliance_audit(topo_id):
         conn = get_connection()
-        topo = conn.execute("SELECT graph_json FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        _ph = sql_placeholder(conn)
+        topo = conn.execute(f"SELECT graph_json FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
         if not topo:
             conn.close()
             return jsonify({"error": "Topology not found"}), 404
-        profile = conn.execute("SELECT * FROM nc_compliance_profiles WHERE topology_id=?", (topo_id,)).fetchone()
+        profile = conn.execute(f"SELECT * FROM nc_compliance_profiles WHERE topology_id={_ph}", (topo_id,)).fetchone()
         if profile:
             try:
                 regimes = json.loads(profile["regimes"] or "[]")
@@ -7005,19 +7127,19 @@ def create_network_blueprint():
         total_failed = sum(s["failed"] for s in result["scores"].values())
         conn.execute(
             "INSERT INTO nc_compliance_checks (id, topology_id, check_type, passed, failed, findings_json, ran_at) "
-            "VALUES (?,?,?,?,?,?,?)",
+            f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
             (audit_id, topo_id, ",".join(regimes), total_passed, total_failed, json.dumps(result["findings"]), now),
         )
         existing_rule_ids = set()
         for r in conn.execute(
-            "SELECT rule_id FROM nc_compliance_findings WHERE topology_id=? AND status='open'", (topo_id,)
+            f"SELECT rule_id FROM nc_compliance_findings WHERE topology_id={_ph} AND status='open'", (topo_id,)
         ).fetchall():
             existing_rule_ids.add(r["rule_id"])
         new_rule_ids = set()
         for f in result["findings"]:
             new_rule_ids.add(f["rule_id"])
             exists = conn.execute(
-                "SELECT id FROM nc_compliance_findings WHERE topology_id=? AND rule_id=? AND status='open'",
+                f"SELECT id FROM nc_compliance_findings WHERE topology_id={_ph} AND rule_id={_ph} AND status='open'",
                 (topo_id, f["rule_id"]),
             ).fetchone()
             if not exists:
@@ -7025,7 +7147,7 @@ def create_network_blueprint():
                 conn.execute(
                     "INSERT INTO nc_compliance_findings (id, topology_id, audit_id, rule_id, regime, severity, "
                     "title, description, affected_entity, affected_type, fix_action, created_at) "
-                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                    f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
                     (
                         fid,
                         topo_id,
@@ -7044,8 +7166,8 @@ def create_network_blueprint():
         remediated_rules = existing_rule_ids - new_rule_ids
         for rid in remediated_rules:
             conn.execute(
-                "UPDATE nc_compliance_findings SET status='remediated', remediated_at=? "
-                "WHERE topology_id=? AND rule_id=? AND status='open'",
+                f"UPDATE nc_compliance_findings SET status='remediated', remediated_at={_ph} "
+                f"WHERE topology_id={_ph} AND rule_id={_ph} AND status='open'",
                 (now, topo_id, rid),
             )
         conn.commit()
@@ -7063,7 +7185,8 @@ def create_network_blueprint():
         if not finding_id:
             return jsonify({"error": "finding_id required"}), 400
         conn = get_connection()
-        finding = conn.execute("SELECT * FROM nc_compliance_findings WHERE id=?", (finding_id,)).fetchone()
+        _ph = sql_placeholder(conn)
+        finding = conn.execute(f"SELECT * FROM nc_compliance_findings WHERE id={_ph}", (finding_id,)).fetchone()
         if not finding:
             conn.close()
             return jsonify({"error": "Finding not found"}), 404
@@ -7075,7 +7198,7 @@ def create_network_blueprint():
         if not fix_action:
             conn.close()
             return jsonify({"error": "No automated fix available"}), 400
-        topo = conn.execute("SELECT graph_json FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        topo = conn.execute(f"SELECT graph_json FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
         if not topo:
             conn.close()
             return jsonify({"error": "Topology not found"}), 404
@@ -7088,14 +7211,14 @@ def create_network_blueprint():
         applied, detail = apply_compliance_fix(graph, fix_action)
         action = fix_action.get("action", "")
         if not applied and action == "create_version":
-            last = conn.execute("SELECT MAX(version_num) FROM nc_versions WHERE topology_id=?", (topo_id,)).fetchone()[
+            last = conn.execute(f"SELECT MAX(version_num) FROM nc_versions WHERE topology_id={_ph}", (topo_id,)).fetchone()[
                 0
             ]
             ver_num = (last or 0) + 1
             vid = str(_uuid.uuid4())
             conn.execute(
                 "INSERT INTO nc_versions (id, topology_id, version_num, label, phase, graph_json, created_at) "
-                "VALUES (?,?,?,?,?,?,?)",
+                f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
                 (
                     vid,
                     topo_id,
@@ -7111,10 +7234,10 @@ def create_network_blueprint():
         if applied:
             if action != "create_version":
                 conn.execute(
-                    "UPDATE topologies SET graph_json=?, updated_at=? WHERE id=?", (json.dumps(graph), _now(), topo_id)
+                    f"UPDATE topologies SET graph_json={_ph}, updated_at={_ph} WHERE id={_ph}", (json.dumps(graph), _now(), topo_id)
                 )
             conn.execute(
-                "UPDATE nc_compliance_findings SET status='remediated', remediated_at=? WHERE id=?",
+                f"UPDATE nc_compliance_findings SET status='remediated', remediated_at={_ph} WHERE id={_ph}",
                 (_now(), finding_id),
             )
             conn.commit()
@@ -7128,15 +7251,16 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_compliance_export(topo_id):
         conn = get_connection()
-        topo = conn.execute("SELECT name FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        _ph = sql_placeholder(conn)
+        topo = conn.execute(f"SELECT name FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
         if not topo:
             conn.close()
             return jsonify({"error": "Not found"}), 404
-        profile = conn.execute("SELECT * FROM nc_compliance_profiles WHERE topology_id=?", (topo_id,)).fetchone()
+        profile = conn.execute(f"SELECT * FROM nc_compliance_profiles WHERE topology_id={_ph}", (topo_id,)).fetchone()
         findings = [
             _row_to_dict(r)
             for r in conn.execute(
-                "SELECT * FROM nc_compliance_findings WHERE topology_id=? ORDER BY severity, rule_id", (topo_id,)
+                f"SELECT * FROM nc_compliance_findings WHERE topology_id={_ph} ORDER BY severity, rule_id", (topo_id,)
             ).fetchall()
         ]
         conn.close()
@@ -7172,7 +7296,8 @@ def create_network_blueprint():
           {"format": "json" | "html"}   // default "json"
         """
         conn = get_connection()
-        topo = conn.execute("SELECT name, graph_json FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        _ph = sql_placeholder(conn)
+        topo = conn.execute(f"SELECT name, graph_json FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
         if not topo:
             conn.close()
             return jsonify({"error": "Topology not found"}), 404
@@ -7184,7 +7309,7 @@ def create_network_blueprint():
             return jsonify({"error": "Bad graph data"}), 500
 
         profile = conn.execute(
-            "SELECT * FROM nc_compliance_profiles WHERE topology_id=?",
+            f"SELECT * FROM nc_compliance_profiles WHERE topology_id={_ph}",
             (topo_id,),
         ).fetchone()
         conn.close()
@@ -7236,7 +7361,8 @@ def create_network_blueprint():
         color (green/yellow/red).
         """
         conn = get_connection()
-        topo = conn.execute("SELECT graph_json, name FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        _ph = sql_placeholder(conn)
+        topo = conn.execute(f"SELECT graph_json, name FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
         if not topo:
             conn.close()
             return jsonify({"error": "Topology not found"}), 404
@@ -7276,7 +7402,7 @@ def create_network_blueprint():
             "INSERT INTO nc_stig_imports "
             "(id, topology_id, filename, format, stig_name, stig_version, "
             "total_hosts, matched_hosts, result_json, imported_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?)",
+            f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
             (
                 import_id,
                 topo_id,
@@ -7298,7 +7424,7 @@ def create_network_blueprint():
         conn.execute(
             "INSERT INTO nc_compliance_checks "
             "(id, topology_id, check_type, passed, failed, findings_json, ran_at) "
-            "VALUES (?,?,?,?,?,?,?)",
+            f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
             (
                 audit_id,
                 topo_id,
@@ -7317,7 +7443,7 @@ def create_network_blueprint():
                 rule_id = f.get("rule_id") or f.get("vuln_id", "UNKNOWN")
                 exists = conn.execute(
                     "SELECT id FROM nc_compliance_findings "
-                    "WHERE topology_id=? AND rule_id=? AND affected_entity=? AND status='open'",
+                    f"WHERE topology_id={_ph} AND rule_id={_ph} AND affected_entity={_ph} AND status='open'",
                     (topo_id, rule_id, device["label"]),
                 ).fetchone()
                 if not exists:
@@ -7325,7 +7451,7 @@ def create_network_blueprint():
                         "INSERT INTO nc_compliance_findings "
                         "(id, topology_id, audit_id, rule_id, regime, severity, "
                         "title, description, affected_entity, affected_type, created_at) "
-                        "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                        f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
                         (
                             fid,
                             topo_id,
@@ -7359,10 +7485,11 @@ def create_network_blueprint():
     def nc_api_stig_import_history(topo_id):
         """List previous STIG import records for a topology."""
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         rows = conn.execute(
             "SELECT id, filename, format, stig_name, stig_version, "
             "total_hosts, matched_hosts, imported_at "
-            "FROM nc_stig_imports WHERE topology_id=? ORDER BY imported_at DESC LIMIT 20",
+            f"FROM nc_stig_imports WHERE topology_id={_ph} ORDER BY imported_at DESC LIMIT 20",
             (topo_id,),
         ).fetchall()
         conn.close()
@@ -7427,8 +7554,9 @@ def create_network_blueprint():
         if not topo_a_id or not topo_b_id:
             return jsonify({"error": "topology_a and topology_b required"}), 400
         conn = get_connection()
-        a_row = conn.execute("SELECT name, graph_json FROM topologies WHERE id=?", (topo_a_id,)).fetchone()
-        b_row = conn.execute("SELECT name, graph_json FROM topologies WHERE id=?", (topo_b_id,)).fetchone()
+        _ph = sql_placeholder(conn)
+        a_row = conn.execute(f"SELECT name, graph_json FROM topologies WHERE id={_ph}", (topo_a_id,)).fetchone()
+        b_row = conn.execute(f"SELECT name, graph_json FROM topologies WHERE id={_ph}", (topo_b_id,)).fetchone()
         conn.close()
         if not a_row or not b_row:
             return jsonify({"error": "Topology not found"}), 404
@@ -7525,7 +7653,8 @@ def create_network_blueprint():
         """Auto-generate SAFe Feature + Stories from network project.
         Stores in nc_safe_bridge and returns the decomposition."""
         conn = get_connection()
-        proj = conn.execute("SELECT * FROM nc_projects WHERE id=?", (pid,)).fetchone()
+        _ph = sql_placeholder(conn)
+        proj = conn.execute(f"SELECT * FROM nc_projects WHERE id={_ph}", (pid,)).fetchone()
         if not proj:
             conn.close()
             return jsonify({"error": "Not found"}), 404
@@ -7536,7 +7665,7 @@ def create_network_blueprint():
             "SELECT t.id, t.name, t.classification, t.graph_json "
             "FROM topologies t "
             "JOIN nc_project_topologies pt ON pt.topology_id=t.id "
-            "WHERE pt.project_id=?",
+            f"WHERE pt.project_id={_ph}",
             (pid,),
         ).fetchall():
             t = _row_to_dict(r)
@@ -7552,7 +7681,7 @@ def create_network_blueprint():
                 "SELECT circuit_id, circuit_type, bandwidth "
                 "FROM nc_circuits WHERE topology_id IN "
                 "(SELECT topology_id FROM nc_project_topologies "
-                " WHERE project_id=?)",
+                f" WHERE project_id={_ph})",
                 (pid,),
             ).fetchall()
         ]
@@ -7601,7 +7730,7 @@ def create_network_blueprint():
             e["wsjf_score"] = round(4 / tshirt_pts.get(e["t_shirt_size"], 2), 1)
 
         # Update SAFe bridge
-        bridge = conn.execute("SELECT id FROM nc_safe_bridge WHERE project_id=?", (pid,)).fetchone()
+        bridge = conn.execute(f"SELECT id FROM nc_safe_bridge WHERE project_id={_ph}", (pid,)).fetchone()
         now = _now()
         decomposition = {
             "feature": feature,
@@ -7611,13 +7740,13 @@ def create_network_blueprint():
         decomp_json = json.dumps(decomposition)
         if bridge:
             conn.execute(
-                "UPDATE nc_safe_bridge SET safe_feature_id=?, updated_at=? WHERE project_id=?", (decomp_json, now, pid)
+                f"UPDATE nc_safe_bridge SET safe_feature_id={_ph}, updated_at={_ph} WHERE project_id={_ph}", (decomp_json, now, pid)
             )
         else:
             conn.execute(
                 "INSERT INTO nc_safe_bridge "
                 "(id, project_id, safe_feature_id, created_at, "
-                " updated_at) VALUES (?,?,?,?,?)",
+                f" updated_at) VALUES ({_ph},{_ph},{_ph},{_ph},{_ph})",
                 (str(_uuid.uuid4()), pid, decomp_json, now, now),
             )
         conn.commit()
@@ -7654,7 +7783,8 @@ def create_network_blueprint():
             return jsonify({"error": "coa_id must be 1, 2, or 3"}), 400
 
         conn = get_connection()
-        proj = conn.execute("SELECT id FROM nc_projects WHERE id=?", (pid,)).fetchone()
+        _ph = sql_placeholder(conn)
+        proj = conn.execute(f"SELECT id FROM nc_projects WHERE id={_ph}", (pid,)).fetchone()
         if not proj:
             conn.close()
             return jsonify({"error": "Project not found"}), 404
@@ -7669,7 +7799,7 @@ def create_network_blueprint():
         })
 
         conn.execute(
-            "UPDATE nc_projects SET selected_coa=?, coa_feedback=?, coa_json=? WHERE id=?",
+            f"UPDATE nc_projects SET selected_coa={_ph}, coa_feedback={_ph}, coa_json={_ph} WHERE id={_ph}",
             (coa_id, feedback, coa_json, pid),
         )
         conn.commit()
@@ -7695,6 +7825,7 @@ def create_network_blueprint():
     def nc_api_global_topology():
         """Aggregate topology data across all projects for global view."""
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         projects = []
         try:
             proj_rows = conn.execute(
@@ -7711,7 +7842,7 @@ def create_network_blueprint():
                 topo_rows = conn.execute(
                     "SELECT t.id, t.name, t.graph_json FROM topologies t "
                     "JOIN nc_project_topologies pt ON pt.topology_id = t.id "
-                    "WHERE pt.project_id = ?", (pid,)
+                    f"WHERE pt.project_id = {_ph}", (pid,)
                 ).fetchall()
             except Exception:
                 topo_rows = []
@@ -7760,10 +7891,11 @@ def create_network_blueprint():
         import uuid as _uid
         body = request.json or {}
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         try:
             conn.execute(
                 "INSERT INTO nc_interconnects (id, src_project_id, dst_project_id, circuit_id, "
-                "protocol, bandwidth, notes, created_at) VALUES (?,?,?,?,?,?,?,datetime('now'))",
+                f"protocol, bandwidth, notes, created_at) VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},datetime('now'))",
                 (str(_uid.uuid4())[:12], body.get("src_project_id"), body.get("dst_project_id"),
                  body.get("circuit_id", ""), body.get("protocol", ""), body.get("bandwidth", ""),
                  body.get("notes", "")),
@@ -7780,7 +7912,8 @@ def create_network_blueprint():
     def nc_api_delete_interconnect(ic_id):
         """Delete an interconnect."""
         conn = get_connection()
-        conn.execute("DELETE FROM nc_interconnects WHERE id = ?", (ic_id,))
+        _ph = sql_placeholder(conn)
+        conn.execute(f"DELETE FROM nc_interconnects WHERE id = {_ph}", (ic_id,))
         conn.commit()
         conn.close()
         return jsonify({"ok": True})
@@ -7825,6 +7958,60 @@ def create_network_blueprint():
             "conflicts": conflicts,
             "checked": {"ipam_blocks": ipam_count, "circuits": circuit_count},
         })
+
+    @bp.route("/conflicts")
+    @nc_login_required
+    def nc_conflicts_page():
+        """HITL conflict resolution UI."""
+        return render_template("network/conflicts.html")
+
+    @bp.route("/api/conflicts/resolve", methods=["POST"])
+    @nc_login_required
+    def nc_api_conflicts_resolve():
+        """Record a HITL conflict resolution action."""
+        import uuid as _uuid
+        from datetime import datetime, timezone
+        data = request.get_json(force=True) or {}
+        conflict_type = str(data.get("conflict_type") or "").strip()
+        detail = str(data.get("detail") or "").strip()
+        severity = str(data.get("severity") or "medium").strip()
+        action = str(data.get("action") or "acknowledged").strip()
+        note = str(data.get("note") or "").strip()
+        if not conflict_type or not detail:
+            return jsonify({"error": "conflict_type and detail are required"}), 400
+        if action not in ("acknowledged", "resolved"):
+            return jsonify({"error": "action must be acknowledged or resolved"}), 400
+        if severity not in ("high", "medium", "low"):
+            severity = "medium"
+        resolved_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        row_id = str(_uuid.uuid4())
+        conn = get_connection()
+        _ph = sql_placeholder(conn)
+        try:
+            conn.execute(
+                "INSERT INTO nc_conflict_resolutions (id, conflict_type, detail, severity, action, note, resolved_at)"
+                f" VALUES ({_ph}, {_ph}, {_ph}, {_ph}, {_ph}, {_ph}, {_ph})",
+                (row_id, conflict_type, detail, severity, action, note, resolved_at),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        return jsonify({"ok": True, "id": row_id, "resolved_at": resolved_at})
+
+    @bp.route("/api/conflicts/resolutions", methods=["GET"])
+    @nc_login_required
+    def nc_api_conflicts_resolutions():
+        """Return all recorded conflict resolution actions, newest first."""
+        conn = get_connection()
+        try:
+            rows = conn.execute(
+                "SELECT id, conflict_type, detail, severity, action, note, resolved_at"
+                " FROM nc_conflict_resolutions ORDER BY resolved_at DESC LIMIT 200"
+            ).fetchall()
+        finally:
+            conn.close()
+        resolutions = [_row_to_dict(r) for r in rows]
+        return jsonify({"resolutions": resolutions})
 
     # ── Global Topology Canvas (JointJS read-only composite) ──────────────
     @bp.route("/global/canvas")
@@ -7926,7 +8113,8 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_list_groups(topo_id):
         conn = get_connection()
-        rows = conn.execute("SELECT * FROM nc_groups WHERE topology_id=? ORDER BY created_at", (topo_id,)).fetchall()
+        _ph = sql_placeholder(conn)
+        rows = conn.execute(f"SELECT * FROM nc_groups WHERE topology_id={_ph} ORDER BY created_at", (topo_id,)).fetchall()
         conn.close()
         return jsonify([_row_to_dict(r) for r in rows])
 
@@ -7943,7 +8131,8 @@ def create_network_blueprint():
         auto_nodes = []
         if group_type == "full" and csp in CSP_GROUP_DEFAULTS:
             conn = get_connection()
-            topo = conn.execute("SELECT graph_json FROM topologies WHERE id=?", (topo_id,)).fetchone()
+            _ph = sql_placeholder(conn)
+            topo = conn.execute(f"SELECT graph_json FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
             if topo:
                 try:
                     graph = json.loads(topo["graph_json"])
@@ -7963,17 +8152,18 @@ def create_network_blueprint():
                     )
                     auto_nodes.append(nid)
                 conn.execute(
-                    "UPDATE topologies SET graph_json=?, updated_at=? WHERE id=?", (json.dumps(graph), now, topo_id)
+                    f"UPDATE topologies SET graph_json={_ph}, updated_at={_ph} WHERE id={_ph}", (json.dumps(graph), now, topo_id)
                 )
                 conn.commit()
             conn.close()
         csp_labels = {"aws": "AWS", "azure": "Azure", "gcp": "GCP", "oci": "OCI", "ibm": "IBM Cloud"}
         label = data.get("label", csp_labels.get(csp, csp.upper()))
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         conn.execute(
             "INSERT INTO nc_groups (id, topology_id, parent_id, csp, group_type, label, description, "
             "auto_nodes_json, pos_x, pos_y, width, height, color, collapsed, created_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
             (
                 gid,
                 topo_id,
@@ -8002,6 +8192,7 @@ def create_network_blueprint():
     def nc_api_update_group(topo_id, gid):
         data = request.get_json(force=True, silent=True) or {}
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         allowed = [
             "parent_id",
             "label",
@@ -8017,13 +8208,13 @@ def create_network_blueprint():
         fields, values = [], []
         for k in allowed:
             if k in data:
-                fields.append(f"{k}=?")
+                fields.append(f"{k}={_ph}")
                 values.append(data[k])
         if not fields:
             conn.close()
             return jsonify({"error": "No fields"}), 400
         values.append(gid)
-        conn.execute(f"UPDATE nc_groups SET {', '.join(fields)} WHERE id=?", values)  # nosec B608 -- table/column names are internal constants, not user input
+        conn.execute(f"UPDATE nc_groups SET {', '.join(fields)} WHERE id={_ph}", values)  # nosec B608 -- table/column names are internal constants, not user input
         conn.commit()
         conn.close()
         return jsonify({"ok": True})
@@ -8032,12 +8223,13 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_delete_group(topo_id, gid):
         conn = get_connection()
-        group = conn.execute("SELECT auto_nodes_json FROM nc_groups WHERE id=?", (gid,)).fetchone()
+        _ph = sql_placeholder(conn)
+        group = conn.execute(f"SELECT auto_nodes_json FROM nc_groups WHERE id={_ph}", (gid,)).fetchone()
         if group:
             try:
                 auto_ids = set(json.loads(group["auto_nodes_json"] or "[]"))
                 if auto_ids:
-                    topo = conn.execute("SELECT graph_json FROM topologies WHERE id=?", (topo_id,)).fetchone()
+                    topo = conn.execute(f"SELECT graph_json FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
                     if topo:
                         graph = json.loads(topo["graph_json"])
                         graph["nodes"] = [n for n in graph["nodes"] if n["id"] not in auto_ids]
@@ -8045,13 +8237,13 @@ def create_network_blueprint():
                             e for e in graph["edges"] if e["source"] not in auto_ids and e["target"] not in auto_ids
                         ]
                         conn.execute(
-                            "UPDATE topologies SET graph_json=?, updated_at=? WHERE id=?",
+                            f"UPDATE topologies SET graph_json={_ph}, updated_at={_ph} WHERE id={_ph}",
                             (json.dumps(graph), _now(), topo_id),
                         )
             except Exception:
                 pass
-        conn.execute("DELETE FROM nc_groups WHERE parent_id=?", (gid,))
-        conn.execute("DELETE FROM nc_groups WHERE id=?", (gid,))
+        conn.execute(f"DELETE FROM nc_groups WHERE parent_id={_ph}", (gid,))
+        conn.execute(f"DELETE FROM nc_groups WHERE id={_ph}", (gid,))
         conn.commit()
         conn.close()
         _audit("DELETE", "group", gid)
@@ -8118,8 +8310,9 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_list_boundaries(topo_id):
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         rows = conn.execute(
-            "SELECT * FROM nc_boundaries WHERE topology_id=? ORDER BY created_at",
+            f"SELECT * FROM nc_boundaries WHERE topology_id={_ph} ORDER BY created_at",
             (topo_id,),
         ).fetchall()
         conn.close()
@@ -8153,7 +8346,8 @@ def create_network_blueprint():
         node_types = []
         if node_ids:
             conn = get_connection()
-            topo = conn.execute("SELECT graph_json FROM topologies WHERE id=?", (topo_id,)).fetchone()
+            _ph = sql_placeholder(conn)
+            topo = conn.execute(f"SELECT graph_json FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
             conn.close()
             if topo:
                 try:
@@ -8185,12 +8379,13 @@ def create_network_blueprint():
 
         now = _now()
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         conn.execute(
             "INSERT INTO nc_boundaries "
             "(id, topology_id, label, classification, color, fill_opacity, "
             "node_ids, stig_tags, pos_x, pos_y, width, height, snap_grid, notes, "
             "created_at, updated_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
             (
                 bid,
                 topo_id,
@@ -8233,6 +8428,7 @@ def create_network_blueprint():
     def nc_api_update_boundary(topo_id, bid):
         data = request.get_json(force=True, silent=True) or {}
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         allowed = [
             "label",
             "classification",
@@ -8253,15 +8449,15 @@ def create_network_blueprint():
                 v = data[k]
                 if k in ("node_ids", "stig_tags") and isinstance(v, list):
                     v = json.dumps(v)
-                fields.append(f"{k}=?")
+                fields.append(f"{k}={_ph}")
                 values.append(v)
         if not fields:
             conn.close()
             return jsonify({"error": "No fields"}), 400
-        fields.append("updated_at=?")
+        fields.append("updated_at={_ph}")
         values.append(_now())
         values.append(bid)
-        conn.execute(f"UPDATE nc_boundaries SET {', '.join(fields)} WHERE id=?", values)  # nosec B608 -- table/column names are internal constants, not user input
+        conn.execute(f"UPDATE nc_boundaries SET {', '.join(fields)} WHERE id={_ph}", values)  # nosec B608 -- table/column names are internal constants, not user input
         conn.commit()
         conn.close()
         return jsonify({"ok": True})
@@ -8270,7 +8466,8 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_delete_boundary(topo_id, bid):
         conn = get_connection()
-        conn.execute("DELETE FROM nc_boundaries WHERE id=? AND topology_id=?", (bid, topo_id))
+        _ph = sql_placeholder(conn)
+        conn.execute(f"DELETE FROM nc_boundaries WHERE id={_ph} AND topology_id={_ph}", (bid, topo_id))
         conn.commit()
         conn.close()
         _audit("DELETE", "boundary", bid)
@@ -8294,7 +8491,8 @@ def create_network_blueprint():
         padding = data.get("padding", 40)
 
         conn = get_connection()
-        topo = conn.execute("SELECT graph_json FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        _ph = sql_placeholder(conn)
+        topo = conn.execute(f"SELECT graph_json FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
         conn.close()
         if not topo:
             return jsonify({"error": "Topology not found"}), 404
@@ -8346,12 +8544,13 @@ def create_network_blueprint():
         bid = str(_uuid.uuid4())
         now = _now()
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         conn.execute(
             "INSERT INTO nc_boundaries "
             "(id, topology_id, label, classification, color, fill_opacity, "
             "node_ids, stig_tags, pos_x, pos_y, width, height, snap_grid, notes, "
             "created_at, updated_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
             (
                 bid,
                 topo_id,
@@ -8399,8 +8598,9 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_list_mc_scenarios(topo_id):
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         rows = conn.execute(
-            "SELECT * FROM nc_mc_scenarios WHERE topology_id=? ORDER BY created_at DESC", (topo_id,)
+            f"SELECT * FROM nc_mc_scenarios WHERE topology_id={_ph} ORDER BY created_at DESC", (topo_id,)
         ).fetchall()
         conn.close()
         return jsonify([_row_to_dict(r) for r in rows])
@@ -8412,9 +8612,10 @@ def create_network_blueprint():
         sid = str(_uuid.uuid4())
         now = _now()
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         conn.execute(
             "INSERT INTO nc_mc_scenarios (id, topology_id, name, scenario_type, description, config_json, created_at) "
-            "VALUES (?,?,?,?,?,?,?)",
+            f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
             (
                 sid,
                 topo_id,
@@ -8434,13 +8635,14 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_run_mc(scenario_id):
         conn = get_connection()
-        scenario = conn.execute("SELECT * FROM nc_mc_scenarios WHERE id=?", (scenario_id,)).fetchone()
+        _ph = sql_placeholder(conn)
+        scenario = conn.execute(f"SELECT * FROM nc_mc_scenarios WHERE id={_ph}", (scenario_id,)).fetchone()
         if not scenario:
             conn.close()
             return jsonify({"error": "Scenario not found"}), 404
         scenario = _row_to_dict(scenario)
         topo_id = scenario["topology_id"]
-        topo = conn.execute("SELECT graph_json FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        topo = conn.execute(f"SELECT graph_json FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
         if not topo:
             conn.close()
             return jsonify({"error": "Topology not found"}), 404
@@ -8466,7 +8668,7 @@ def create_network_blueprint():
         now = _now()
         conn.execute(
             "INSERT INTO nc_mc_runs (id, scenario_id, topology_id, iterations, result_json, ai_recommendations, ran_at) "
-            "VALUES (?,?,?,?,?,?,?)",
+            f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
             (
                 run_id,
                 scenario_id,
@@ -8486,11 +8688,12 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_list_mc_runs(topo_id):
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         rows = conn.execute(
             "SELECT r.id, r.scenario_id, r.iterations, r.ran_at, r.ai_recommendations, "
             "s.name AS scenario_name, s.scenario_type "
             "FROM nc_mc_runs r JOIN nc_mc_scenarios s ON s.id=r.scenario_id "
-            "WHERE r.topology_id=? ORDER BY r.ran_at DESC",
+            f"WHERE r.topology_id={_ph} ORDER BY r.ran_at DESC",
             (topo_id,),
         ).fetchall()
         conn.close()
@@ -8500,7 +8703,8 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_get_mc_run(topo_id, run_id):
         conn = get_connection()
-        row = conn.execute("SELECT * FROM nc_mc_runs WHERE id=? AND topology_id=?", (run_id, topo_id)).fetchone()
+        _ph = sql_placeholder(conn)
+        row = conn.execute(f"SELECT * FROM nc_mc_runs WHERE id={_ph} AND topology_id={_ph}", (run_id, topo_id)).fetchone()
         conn.close()
         if not row:
             return jsonify({"error": "Not found"}), 404
@@ -8549,9 +8753,10 @@ def create_network_blueprint():
                             includes.append(f"args/{f.name}")
             file_size = zip_path.stat().st_size
             conn = get_connection()
+            _ph = sql_placeholder(conn)
             conn.execute(
                 "INSERT INTO nc_backups (id, backup_type, file_path, file_size_bytes, includes_json, notes, created_at) "
-                "VALUES (?,?,?,?,?,?,?)",
+                f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
                 (
                     backup_id,
                     data.get("backup_type", "manual"),
@@ -8573,7 +8778,8 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_restore_backup(backup_id):
         conn = get_connection()
-        row = conn.execute("SELECT * FROM nc_backups WHERE id=?", (backup_id,)).fetchone()
+        _ph = sql_placeholder(conn)
+        row = conn.execute(f"SELECT * FROM nc_backups WHERE id={_ph}", (backup_id,)).fetchone()
         conn.close()
         if not row:
             return jsonify({"error": "Backup not found"}), 404
@@ -8607,7 +8813,8 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_save_as(topo_id):
         conn = get_connection()
-        row = conn.execute("SELECT * FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        _ph = sql_placeholder(conn)
+        row = conn.execute(f"SELECT * FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
         if not row:
             conn.close()
             return jsonify({"error": "Not found"}), 404
@@ -8617,7 +8824,7 @@ def create_network_blueprint():
         name = data.get("name", f"{row['name']} (copy)")
         conn.execute(
             "INSERT INTO topologies (id, name, description, graph_json, template_id, classification, created_at, updated_at) "
-            "VALUES (?,?,?,?,?,?,?,?)",
+            f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
             (new_id, name, row["description"], row["graph_json"], row["template_id"], row["classification"], now, now),
         )
         conn.commit()
@@ -8648,7 +8855,8 @@ def create_network_blueprint():
         }
 
         conn = get_connection()
-        row = conn.execute("SELECT * FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        _ph = sql_placeholder(conn)
+        row = conn.execute(f"SELECT * FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
         if not row:
             conn.close()
             return jsonify({"error": "Not found"}), 404
@@ -8663,7 +8871,7 @@ def create_network_blueprint():
 
         # Load nc_groups to identify cluster membership
         group_rows = conn.execute(
-            "SELECT id, auto_nodes_json FROM nc_groups WHERE topology_id=?", (topo_id,)
+            f"SELECT id, auto_nodes_json FROM nc_groups WHERE topology_id={_ph}", (topo_id,)
         ).fetchall()
 
         node_type_map = {n["id"]: n.get("type", "") for n in nodes}
@@ -8770,7 +8978,7 @@ def create_network_blueprint():
         # Create the lab topology
         conn.execute(
             "INSERT INTO topologies (id, name, description, graph_json, template_id, classification, created_at, updated_at) "
-            "VALUES (?,?,?,?,?,?,?,?)",
+            f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
             (
                 new_id,
                 lab_name,
@@ -8788,7 +8996,7 @@ def create_network_blueprint():
         conn.execute(
             "INSERT INTO nc_lab_clones "
             "(clone_id, parent_design_id, lineage, redaction_log, created_at, classification) "
-            "VALUES (?,?,?,?,?,?)",
+            f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
             (
                 clone_id,
                 topo_id,
@@ -8806,14 +9014,14 @@ def create_network_blueprint():
 
         # Save a version snapshot on the source topology linking to the new lab
         last_ver = conn.execute(
-            "SELECT MAX(version_num) FROM nc_versions WHERE topology_id=?", (topo_id,)
+            f"SELECT MAX(version_num) FROM nc_versions WHERE topology_id={_ph}", (topo_id,)
         ).fetchone()[0]
         ver_num = (last_ver or 0) + 1
         vid = str(_uuid.uuid4())
         conn.execute(
             "INSERT INTO nc_versions "
             "(id, topology_id, version_num, label, phase, graph_json, created_by, notes, created_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?)",
+            f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
             (
                 vid,
                 topo_id,
@@ -8843,7 +9051,8 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_save_as_template(topo_id):
         conn = get_connection()
-        row = conn.execute("SELECT * FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        _ph = sql_placeholder(conn)
+        row = conn.execute(f"SELECT * FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
         if not row:
             conn.close()
             return jsonify({"error": "Not found"}), 404
@@ -8853,7 +9062,7 @@ def create_network_blueprint():
         category = data.get("category", "Custom")
         tags = json.dumps(data.get("tags", ["custom", "user-created"]))
         conn.execute(
-            "INSERT INTO nc_templates (id, name, category, description, graph_json, tags) VALUES (?,?,?,?,?,?)",
+            f"INSERT INTO nc_templates (id, name, category, description, graph_json, tags) VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
             (tpl_id, name, category, data.get("description", row["description"] or ""), row["graph_json"], tags),
         )
         conn.commit()
@@ -9257,10 +9466,11 @@ Rules:
                     tgt_model = tgt_candidates[0] if tgt_candidates else "Target Device"
                     migration_session_id = "nmig-" + _uuid.uuid4().hex[:12]
                     with get_connection() as _mc:
+                        _ph = sql_placeholder(_mc)
                         _mc.execute(
-                            "INSERT INTO mc_net_sessions "
-                            "(id, src_model, tgt_model, src_device_name, tgt_device_name, created_at, updated_at) "
-                            "VALUES (?,?,?,?,?,?,?)",
+                            f"INSERT INTO mc_net_sessions "
+                            f"(id, src_model, tgt_model, src_device_name, tgt_device_name, created_at, updated_at) "
+                            f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
                             (migration_session_id, src_model, tgt_model,
                              src_model, tgt_model,
                              datetime.utcnow().isoformat(), datetime.utcnow().isoformat()),
@@ -9278,10 +9488,11 @@ Rules:
                 _short = (description[:120] + "…") if len(description) > 120 else description
                 _hist_gj = json.dumps(graph_json) if graph_json else None
                 with get_connection() as _hc:
+                    _ph = sql_placeholder(_hc)
                     _hc.execute(
-                        "INSERT INTO nc_ai_history "
-                        "(id, description, short_desc, node_count, edge_count, provider, is_migration, graph_json, created_at) "
-                        "VALUES (?,?,?,?,?,?,?,?,?)",
+                        f"INSERT INTO nc_ai_history "
+                        f"(id, description, short_desc, node_count, edge_count, provider, is_migration, graph_json, created_at) "
+                        f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
                         (_hist_id, description, _short,
                          len(graph_json["nodes"]), len(graph_json["edges"]),
                          used_provider, int(is_migration), _hist_gj,
@@ -9411,8 +9622,9 @@ Rules:
             if context_id:
                 try:
                     conn = get_connection()
+                    _ph = sql_placeholder(conn)
                     rows = conn.execute(
-                        "SELECT role, content FROM chat_messages WHERE context_id=? "
+                        f"SELECT role, content FROM chat_messages WHERE context_id={_ph} "
                         "ORDER BY turn_number DESC LIMIT 10",
                         (context_id,),
                     ).fetchall()
@@ -9529,9 +9741,10 @@ Respond with ONLY this JSON (no other text):
         """Return the last N AI generation history entries."""
         limit = min(int(request.args.get("limit", 30)), 100)
         with get_connection() as conn:
+            _ph = sql_placeholder(conn)
             rows = conn.execute(
                 "SELECT id, short_desc, node_count, edge_count, provider, is_migration, created_at "
-                "FROM nc_ai_history ORDER BY created_at DESC LIMIT ?",
+                f"FROM nc_ai_history ORDER BY created_at DESC LIMIT {_ph}",
                 (limit,),
             ).fetchall()
         entries = [
@@ -9549,9 +9762,10 @@ Respond with ONLY this JSON (no other text):
     def nc_api_ai_history_get(hist_id):
         """Return full description + graph_json for a history entry."""
         with get_connection() as conn:
+            _ph = sql_placeholder(conn)
             row = conn.execute(
                 "SELECT id, description, node_count, edge_count, provider, is_migration, graph_json, created_at "
-                "FROM nc_ai_history WHERE id=?",
+                f"FROM nc_ai_history WHERE id={_ph}",
                 (hist_id,),
             ).fetchone()
         if not row:
@@ -9569,7 +9783,8 @@ Respond with ONLY this JSON (no other text):
     def nc_api_ai_history_delete(hist_id):
         """Delete a single history entry."""
         with get_connection() as conn:
-            conn.execute("DELETE FROM nc_ai_history WHERE id=?", (hist_id,))
+            _ph = sql_placeholder(conn)
+            conn.execute(f"DELETE FROM nc_ai_history WHERE id={_ph}", (hist_id,))
             conn.commit()
         return jsonify({"ok": True})
 
@@ -9582,8 +9797,9 @@ Respond with ONLY this JSON (no other text):
     def nc_api_ato_generate(topo_id):
         """Generate a partial ATO package from a topology (or region)."""
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         topo = conn.execute(
-            "SELECT id, name, graph_json, classification FROM topologies WHERE id=?",
+            f"SELECT id, name, graph_json, classification FROM topologies WHERE id={_ph}",
             (topo_id,),
         ).fetchone()
         if not topo:
@@ -9597,7 +9813,7 @@ Respond with ONLY this JSON (no other text):
 
         # Load regimes from compliance profile or request
         profile = conn.execute(
-            "SELECT regimes, classification, environment FROM nc_compliance_profiles WHERE topology_id=?",
+            f"SELECT regimes, classification, environment FROM nc_compliance_profiles WHERE topology_id={_ph}",
             (topo_id,),
         ).fetchone()
         if profile:
@@ -9618,12 +9834,12 @@ Respond with ONLY this JSON (no other text):
         # Load groups for region filtering
         groups = []
         if region_id:
-            rows = conn.execute("SELECT * FROM nc_groups WHERE topology_id=?", (topo_id,)).fetchall()
+            rows = conn.execute(f"SELECT * FROM nc_groups WHERE topology_id={_ph}", (topo_id,)).fetchall()
             groups = [_row_to_dict(r) for r in rows]
 
         # Check for as-built version
         as_built = conn.execute(
-            "SELECT id FROM nc_versions WHERE topology_id=? AND label='As-Built' LIMIT 1",
+            f"SELECT id FROM nc_versions WHERE topology_id={_ph} AND label='As-Built' LIMIT 1",
             (topo_id,),
         ).fetchone()
         has_as_built = as_built is not None
@@ -9658,7 +9874,7 @@ Respond with ONLY this JSON (no other text):
             "(id, topology_id, region_id, system_name, classification, regimes, "
             "package_json, summary_json, overall_readiness, stig_pass_rate, "
             "compliance_score, created_by, created_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
             (
                 pkg_id,
                 topo_id,
@@ -9693,11 +9909,12 @@ Respond with ONLY this JSON (no other text):
     def nc_api_ato_list(topo_id):
         """List all generated ATO packages for a topology."""
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         rows = conn.execute(
             "SELECT id, topology_id, region_id, system_name, classification, "
             "regimes, summary_json, overall_readiness, stig_pass_rate, "
             "compliance_score, created_by, created_at "
-            "FROM nc_ato_packages WHERE topology_id=? ORDER BY created_at DESC",
+            f"FROM nc_ato_packages WHERE topology_id={_ph} ORDER BY created_at DESC",
             (topo_id,),
         ).fetchall()
         conn.close()
@@ -9720,8 +9937,9 @@ Respond with ONLY this JSON (no other text):
     def nc_api_ato_detail(topo_id, pkg_id):
         """Get the full ATO package (all artifacts) by package ID."""
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         row = conn.execute(
-            "SELECT package_json FROM nc_ato_packages WHERE id=? AND topology_id=?",
+            f"SELECT package_json FROM nc_ato_packages WHERE id={_ph} AND topology_id={_ph}",
             (pkg_id, topo_id),
         ).fetchone()
         conn.close()
@@ -9737,8 +9955,9 @@ Respond with ONLY this JSON (no other text):
     def nc_api_ato_delete(topo_id, pkg_id):
         """Delete an ATO package."""
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         conn.execute(
-            "DELETE FROM nc_ato_packages WHERE id=? AND topology_id=?",
+            f"DELETE FROM nc_ato_packages WHERE id={_ph} AND topology_id={_ph}",
             (pkg_id, topo_id),
         )
         conn.commit()
@@ -9763,8 +9982,9 @@ Respond with ONLY this JSON (no other text):
         """
         metric = request.args.get("metric", "bandwidth")
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         topo = conn.execute(
-            "SELECT id, graph_json FROM topologies WHERE id=?",
+            f"SELECT id, graph_json FROM topologies WHERE id={_ph}",
             (topo_id,),
         ).fetchone()
         if not topo:
@@ -9798,7 +10018,7 @@ Respond with ONLY this JSON (no other text):
             # Pull latest compliance findings for this topology
             rows = conn.execute(
                 "SELECT affected_entity, severity, status FROM nc_compliance_findings "
-                "WHERE topology_id=? AND status='open' "
+                f"WHERE topology_id={_ph} AND status='open' "
                 "ORDER BY created_at DESC",
                 (topo_id,),
             ).fetchall()
@@ -9823,7 +10043,7 @@ Respond with ONLY this JSON (no other text):
         elif metric == "stig":
             # STIG import results — per-host pass rate
             stig_rows = conn.execute(
-                "SELECT result_json FROM nc_stig_imports WHERE topology_id=? ORDER BY imported_at DESC LIMIT 1",
+                f"SELECT result_json FROM nc_stig_imports WHERE topology_id={_ph} ORDER BY imported_at DESC LIMIT 1",
                 (topo_id,),
             ).fetchone()
             host_compliance = {}
@@ -9913,7 +10133,8 @@ Respond with ONLY this JSON (no other text):
     def nc_api_tech_debt(topo_id):
         """Analyze lifecycle/tech debt across all devices in a topology."""
         conn = get_connection()
-        row = conn.execute("SELECT graph_json, name FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        _ph = sql_placeholder(conn)
+        row = conn.execute(f"SELECT graph_json, name FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
         conn.close()
         if not row:
             return jsonify({"error": "Not found"}), 404
@@ -10057,7 +10278,8 @@ Respond with ONLY this JSON (no other text):
         """Assess IPv6 readiness of a topology: device capability,
         addressing gaps, migration status."""
         conn = get_connection()
-        row = conn.execute("SELECT graph_json, name FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        _ph = sql_placeholder(conn)
+        row = conn.execute(f"SELECT graph_json, name FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
         conn.close()
         if not row:
             return jsonify({"error": "Not found"}), 404
@@ -10207,8 +10429,9 @@ Respond with ONLY this JSON (no other text):
     def nc_pps_page(topo_id):
         """PPS Matrix Generator page — select two enclaves or device pair."""
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         topo = conn.execute(
-            "SELECT id, name, graph_json, classification FROM topologies WHERE id=?",
+            f"SELECT id, name, graph_json, classification FROM topologies WHERE id={_ph}",
             (topo_id,),
         ).fetchone()
         if not topo:
@@ -10221,7 +10444,7 @@ Respond with ONLY this JSON (no other text):
             graph = {"nodes": [], "edges": []}
 
         groups = [
-            _row_to_dict(r) for r in conn.execute("SELECT * FROM nc_groups WHERE topology_id=?", (topo_id,)).fetchall()
+            _row_to_dict(r) for r in conn.execute(f"SELECT * FROM nc_groups WHERE topology_id={_ph}", (topo_id,)).fetchall()
         ]
         conn.close()
 
@@ -10241,7 +10464,8 @@ Respond with ONLY this JSON (no other text):
     def nc_api_pps_enclaves(topo_id):
         """Return enclaves and nodes available for pair selection."""
         conn = get_connection()
-        topo = conn.execute("SELECT graph_json FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        _ph = sql_placeholder(conn)
+        topo = conn.execute(f"SELECT graph_json FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
         if not topo:
             conn.close()
             return jsonify({"error": "Topology not found"}), 404
@@ -10252,7 +10476,7 @@ Respond with ONLY this JSON (no other text):
             graph = {"nodes": [], "edges": []}
 
         groups = [
-            _row_to_dict(r) for r in conn.execute("SELECT * FROM nc_groups WHERE topology_id=?", (topo_id,)).fetchall()
+            _row_to_dict(r) for r in conn.execute(f"SELECT * FROM nc_groups WHERE topology_id={_ph}", (topo_id,)).fetchall()
         ]
         conn.close()
 
@@ -10271,7 +10495,8 @@ Respond with ONLY this JSON (no other text):
           }
         """
         conn = get_connection()
-        topo = conn.execute("SELECT graph_json FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        _ph = sql_placeholder(conn)
+        topo = conn.execute(f"SELECT graph_json FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
         if not topo:
             conn.close()
             return jsonify({"error": "Topology not found"}), 404
@@ -10297,7 +10522,7 @@ Respond with ONLY this JSON (no other text):
             return jsonify({"error": "Bad graph JSON"}), 500
 
         groups = [
-            _row_to_dict(r) for r in conn.execute("SELECT * FROM nc_groups WHERE topology_id=?", (topo_id,)).fetchall()
+            _row_to_dict(r) for r in conn.execute(f"SELECT * FROM nc_groups WHERE topology_id={_ph}", (topo_id,)).fetchall()
         ]
         conn.close()
 
@@ -10327,7 +10552,8 @@ Respond with ONLY this JSON (no other text):
           }
         """
         conn = get_connection()
-        topo = conn.execute("SELECT graph_json FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        _ph = sql_placeholder(conn)
+        topo = conn.execute(f"SELECT graph_json FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
         if not topo:
             conn.close()
             return jsonify({"error": "Topology not found"}), 404
@@ -10353,7 +10579,7 @@ Respond with ONLY this JSON (no other text):
             return jsonify({"error": "Bad graph JSON"}), 500
 
         groups = [
-            _row_to_dict(r) for r in conn.execute("SELECT * FROM nc_groups WHERE topology_id=?", (topo_id,)).fetchall()
+            _row_to_dict(r) for r in conn.execute(f"SELECT * FROM nc_groups WHERE topology_id={_ph}", (topo_id,)).fetchall()
         ]
         conn.close()
 
@@ -10560,7 +10786,7 @@ Respond with ONLY this JSON (no other text):
                 "INSERT INTO showcase_demo_runs "
                 "(run_id, audience, scenarios_json, status, result_json, "
                 "scenarios_passed, scenarios_total, elapsed_ms, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (run_id, audience, json.dumps(scenarios or "all"),
                  status, json.dumps(result_payload, default=str),
                  passed, total, elapsed_ms,
@@ -10600,7 +10826,7 @@ Respond with ONLY this JSON (no other text):
                 "SELECT run_id, audience, scenarios_json, status, result_json, scenarios_passed, "
                 "scenarios_total, elapsed_ms, created_at "
                 "FROM showcase_demo_runs WHERE audience IN ('exec','tech','engineer') "
-                "ORDER BY created_at DESC LIMIT ?",
+                "ORDER BY created_at DESC LIMIT %s",
                 (limit,),
             ).fetchall()
             conn.close()
@@ -10710,7 +10936,8 @@ Respond with ONLY this JSON (no other text):
     @nc_login_required
     def nc_api_get_hardware_profile(pid):
         conn = get_connection()
-        row = conn.execute("SELECT * FROM nc_hardware_profiles WHERE id=?", (pid,)).fetchone()
+        _ph = sql_placeholder(conn)
+        row = conn.execute(f"SELECT * FROM nc_hardware_profiles WHERE id={_ph}", (pid,)).fetchone()
         conn.close()
         if not row:
             return jsonify({"error": "Not found"}), 404
@@ -10728,11 +10955,12 @@ Respond with ONLY this JSON (no other text):
         data = request.get_json(force=True, silent=True) or {}
         pid = "hw-" + str(_uuid.uuid4())[:8]
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         conn.execute(
             "INSERT INTO nc_hardware_profiles (id, vendor, model, model_family, device_type, "
             "form_factor, rack_units, weight_kg, power_typical_w, power_max_w, throughput_gbps, "
             "ports_json, replacement_cost, eol_date, eos_date, tags, is_builtin, created_by) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?)",
+            f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},0,{_ph})",
             (pid, data.get("vendor", ""), data.get("model", ""), data.get("model_family", ""),
              data.get("device_type", "router"), data.get("form_factor", "rack"),
              data.get("rack_units", 1), data.get("weight_kg"),
@@ -10749,14 +10977,15 @@ Respond with ONLY this JSON (no other text):
     @nc_login_required
     def nc_api_delete_hardware_profile(pid):
         conn = get_connection()
-        row = conn.execute("SELECT is_builtin FROM nc_hardware_profiles WHERE id=?", (pid,)).fetchone()
+        _ph = sql_placeholder(conn)
+        row = conn.execute(f"SELECT is_builtin FROM nc_hardware_profiles WHERE id={_ph}", (pid,)).fetchone()
         if not row:
             conn.close()
             return jsonify({"error": "Not found"}), 404
         if row["is_builtin"]:
             conn.close()
             return jsonify({"error": "Cannot delete built-in profile"}), 403
-        conn.execute("DELETE FROM nc_hardware_profiles WHERE id=?", (pid,))
+        conn.execute(f"DELETE FROM nc_hardware_profiles WHERE id={_ph}", (pid,))
         conn.commit()
         conn.close()
         return jsonify({"deleted": pid})
@@ -10804,10 +11033,11 @@ Respond with ONLY this JSON (no other text):
         data = request.get_json(force=True, silent=True) or {}
         cid = "nc-" + str(_uuid.uuid4())[:8]
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         conn.execute(
             "INSERT INTO nc_naming_conventions (id, name, description, pattern, "
             "fields_json, separator, max_length, case_rule, example, is_builtin) "
-            "VALUES (?,?,?,?,?,?,?,?,?,0)",
+            f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},0)",
             (cid, data.get("name", ""), data.get("description", ""),
              data.get("pattern", ""), data.get("fields_json", "[]"),
              data.get("separator", ""), data.get("max_length", 63),
@@ -10822,7 +11052,8 @@ Respond with ONLY this JSON (no other text):
     def nc_api_update_naming_convention(cid):
         data = request.get_json(force=True, silent=True) or {}
         conn = get_connection()
-        row = conn.execute("SELECT id FROM nc_naming_conventions WHERE id=?", (cid,)).fetchone()
+        _ph = sql_placeholder(conn)
+        row = conn.execute(f"SELECT id FROM nc_naming_conventions WHERE id={_ph}", (cid,)).fetchone()
         if not row:
             conn.close()
             return jsonify({"error": "Not found"}), 404
@@ -10830,11 +11061,11 @@ Respond with ONLY this JSON (no other text):
         params = []
         for col in ("name", "description", "pattern", "fields_json", "separator", "max_length", "case_rule", "example"):
             if col in data:
-                updates.append(f"{col} = ?")
+                updates.append(f"{col} = {_ph}")
                 params.append(data[col])
         if updates:
             params.append(cid)
-            conn.execute(f"UPDATE nc_naming_conventions SET {', '.join(updates)} WHERE id = ?", params)  # nosec B608 — columns from hardcoded whitelist
+            conn.execute(f"UPDATE nc_naming_conventions SET {', '.join(updates)} WHERE id = {_ph}", params)  # nosec B608 — columns from hardcoded whitelist
             conn.commit()
         conn.close()
         return jsonify({"updated": cid})
@@ -10843,15 +11074,16 @@ Respond with ONLY this JSON (no other text):
     @nc_login_required
     def nc_api_delete_naming_convention(cid):
         conn = get_connection()
-        row = conn.execute("SELECT is_builtin FROM nc_naming_conventions WHERE id=?", (cid,)).fetchone()
+        _ph = sql_placeholder(conn)
+        row = conn.execute(f"SELECT is_builtin FROM nc_naming_conventions WHERE id={_ph}", (cid,)).fetchone()
         if not row:
             conn.close()
             return jsonify({"error": "Not found"}), 404
         if row["is_builtin"]:
             conn.close()
             return jsonify({"error": "Cannot delete built-in convention"}), 403
-        conn.execute("DELETE FROM nc_naming_conventions WHERE id=?", (cid,))
-        conn.execute("DELETE FROM nc_naming_sequences WHERE convention_id=?", (cid,))
+        conn.execute(f"DELETE FROM nc_naming_conventions WHERE id={_ph}", (cid,))
+        conn.execute(f"DELETE FROM nc_naming_sequences WHERE convention_id={_ph}", (cid,))
         conn.commit()
         conn.close()
         return jsonify({"deleted": cid})
@@ -11023,6 +11255,7 @@ Respond with ONLY this JSON (no other text):
     def nc_enterprise_summary_api():
         """Enterprise summary API — aggregate metrics."""
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         total_topos = conn.execute("SELECT COUNT(*) FROM topologies").fetchone()[0]
         total_devices = 0
         total_interconnects = 0
@@ -11082,7 +11315,7 @@ Respond with ONLY this JSON (no other text):
         try:
             for status in ("pending", "approved", "rejected"):
                 cnt = conn.execute(
-                    "SELECT COUNT(*) FROM nc_governance_reviews WHERE status = ?", (status,)
+                    f"SELECT COUNT(*) FROM nc_governance_reviews WHERE status = {_ph}", (status,)
                 ).fetchone()
                 board_reviews[status] = cnt[0] if cnt else 0
         except Exception:
@@ -11239,10 +11472,11 @@ Respond with ONLY this JSON (no other text):
         now = _now()
         steps_json = json.dumps(body.get("steps") or [])
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         conn.execute(
             "INSERT INTO ndc_runbooks (id, title, trigger_event, severity, owner, "
             "topology_id, description, steps_json, classification, created_at, updated_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
             (
                 rid, title, trigger, severity,
                 body.get("owner", ""), body.get("topology_id") or None,
@@ -11260,7 +11494,8 @@ Respond with ONLY this JSON (no other text):
     def nc_api_runbook_get(rb_id):
         """Get a single NDC runbook by ID."""
         conn = get_connection()
-        row = conn.execute("SELECT * FROM ndc_runbooks WHERE id=?", (rb_id,)).fetchone()
+        _ph = sql_placeholder(conn)
+        row = conn.execute(f"SELECT * FROM ndc_runbooks WHERE id={_ph}", (rb_id,)).fetchone()
         conn.close()
         if not row:
             return jsonify({"error": "not found"}), 404
@@ -11276,7 +11511,8 @@ Respond with ONLY this JSON (no other text):
     def nc_api_runbook_update(rb_id):
         """Update an existing NDC runbook."""
         conn = get_connection()
-        row = conn.execute("SELECT id FROM ndc_runbooks WHERE id=?", (rb_id,)).fetchone()
+        _ph = sql_placeholder(conn)
+        row = conn.execute(f"SELECT id FROM ndc_runbooks WHERE id={_ph}", (rb_id,)).fetchone()
         if not row:
             conn.close()
             return jsonify({"error": "not found"}), 404
@@ -11290,8 +11526,8 @@ Respond with ONLY this JSON (no other text):
             severity = "high"
         steps_json = json.dumps(body.get("steps") or [])
         conn.execute(
-            "UPDATE ndc_runbooks SET title=?, trigger_event=?, severity=?, owner=?, "
-            "topology_id=?, description=?, steps_json=?, classification=?, updated_at=? WHERE id=?",
+            f"UPDATE ndc_runbooks SET title={_ph}, trigger_event={_ph}, severity={_ph}, owner={_ph}, "
+            f"topology_id={_ph}, description={_ph}, steps_json={_ph}, classification={_ph}, updated_at={_ph} WHERE id={_ph}",
             (
                 (body.get("title") or "").strip() or "Untitled",
                 trigger, severity,
@@ -11310,11 +11546,12 @@ Respond with ONLY this JSON (no other text):
     def nc_api_runbook_delete(rb_id):
         """Delete an NDC runbook."""
         conn = get_connection()
-        row = conn.execute("SELECT id FROM ndc_runbooks WHERE id=?", (rb_id,)).fetchone()
+        _ph = sql_placeholder(conn)
+        row = conn.execute(f"SELECT id FROM ndc_runbooks WHERE id={_ph}", (rb_id,)).fetchone()
         if not row:
             conn.close()
             return jsonify({"error": "not found"}), 404
-        conn.execute("DELETE FROM ndc_runbooks WHERE id=?", (rb_id,))
+        conn.execute(f"DELETE FROM ndc_runbooks WHERE id={_ph}", (rb_id,))
         conn.commit()
         _audit(conn, "runbook_deleted", "ndc_runbook", rb_id, rb_id)
         conn.close()
@@ -11427,11 +11664,12 @@ Respond with ONLY this JSON (no other text):
         sha = hashlib.sha256(pcap_bytes).hexdigest()
         expiry = (datetime.now(timezone.utc) + timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
         now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        _ph = sql_placeholder(conn)
         conn.execute(
-            """UPDATE nc_packet_captures
-               SET status='complete', size_bytes=?, sha256=?, expiry_at=?,
-                   stopped_at=?, pcap_data=?
-               WHERE id=?""",
+            f"""UPDATE nc_packet_captures
+               SET status='complete', size_bytes={_ph}, sha256={_ph}, expiry_at={_ph},
+                   stopped_at={_ph}, pcap_data={_ph}
+               WHERE id={_ph}""",
             (len(pcap_bytes), sha, expiry, now, pcap_bytes, cap_id),
         )
 
@@ -11454,19 +11692,20 @@ Respond with ONLY this JSON (no other text):
 
         # If no lab_run provided, auto-create a stub run for this topology
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         if not lab_run_id:
             lab_run_id = str(_uuid.uuid4())
             conn.execute(
-                """INSERT INTO nc_lab_runs (id, topology_id, name, backend, status, started_at)
-                   VALUES (?, ?, ?, 'stub', 'running', ?)""",
+                f"""INSERT INTO nc_lab_runs (id, topology_id, name, backend, status, started_at)
+                   VALUES ({_ph}, {_ph}, {_ph}, 'stub', 'running', {_ph})""",
                 (lab_run_id, topo_id, f"Auto-run {now[:10]}", now),
             )
 
         conn.execute(
-            """INSERT INTO nc_packet_captures
+            f"""INSERT INTO nc_packet_captures
                (id, link_id, lab_run_id, topology_id, src_label, dst_label,
                 protocol, status, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, 'running', ?)""",
+               VALUES ({_ph}, {_ph}, {_ph}, {_ph}, {_ph}, {_ph}, {_ph}, 'running', {_ph})""",
             (
                 cap_id,
                 link_id,
@@ -11490,14 +11729,15 @@ Respond with ONLY this JSON (no other text):
         link_id = request.args.get("link_id", "")
         topo_id = request.args.get("topology_id", "")
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         if link_id:
             rows = conn.execute(
-                "SELECT * FROM nc_packet_captures WHERE link_id=? ORDER BY created_at DESC",
+                f"SELECT * FROM nc_packet_captures WHERE link_id={_ph} ORDER BY created_at DESC",
                 (link_id,),
             ).fetchall()
         elif topo_id:
             rows = conn.execute(
-                "SELECT * FROM nc_packet_captures WHERE topology_id=? ORDER BY created_at DESC",
+                f"SELECT * FROM nc_packet_captures WHERE topology_id={_ph} ORDER BY created_at DESC",
                 (topo_id,),
             ).fetchall()
         else:
@@ -11517,8 +11757,9 @@ Respond with ONLY this JSON (no other text):
     def nc_api_capture_get(cap_id):
         """Poll a single capture; auto-finalizes stub captures after 5 s."""
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         row = conn.execute(
-            "SELECT * FROM nc_packet_captures WHERE id=?", (cap_id,)
+            f"SELECT * FROM nc_packet_captures WHERE id={_ph}", (cap_id,)
         ).fetchone()
         if not row:
             conn.close()
@@ -11543,7 +11784,7 @@ Respond with ONLY this JSON (no other text):
                 _finalize_capture(conn, cap_id)
                 conn.commit()
                 row2 = conn.execute(
-                    "SELECT * FROM nc_packet_captures WHERE id=?", (cap_id,)
+                    f"SELECT * FROM nc_packet_captures WHERE id={_ph}", (cap_id,)
                 ).fetchone()
                 d = _row_to_dict(row2)
                 d.pop("pcap_data", None)
@@ -11556,8 +11797,9 @@ Respond with ONLY this JSON (no other text):
     def nc_api_capture_stop(cap_id):
         """Stop a running capture."""
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         row = conn.execute(
-            "SELECT id, status FROM nc_packet_captures WHERE id=?", (cap_id,)
+            f"SELECT id, status FROM nc_packet_captures WHERE id={_ph}", (cap_id,)
         ).fetchone()
         if not row:
             conn.close()
@@ -11576,8 +11818,9 @@ Respond with ONLY this JSON (no other text):
         from flask import Response
 
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         row = conn.execute(
-            "SELECT * FROM nc_packet_captures WHERE id=?", (cap_id,)
+            f"SELECT * FROM nc_packet_captures WHERE id={_ph}", (cap_id,)
         ).fetchone()
         if not row:
             conn.close()
@@ -11589,7 +11832,7 @@ Respond with ONLY this JSON (no other text):
             _finalize_capture(conn, cap_id)
             conn.commit()
             row = conn.execute(
-                "SELECT * FROM nc_packet_captures WHERE id=?", (cap_id,)
+                f"SELECT * FROM nc_packet_captures WHERE id={_ph}", (cap_id,)
             ).fetchone()
             d = _row_to_dict(row)
 
@@ -11655,8 +11898,9 @@ Respond with ONLY this JSON (no other text):
     @nc_login_required
     def nc_twin_page(topo_id):
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         topo = conn.execute(
-            "SELECT * FROM topologies WHERE id = ?", (topo_id,)
+            f"SELECT * FROM topologies WHERE id = {_ph}", (topo_id,)
         ).fetchone()
         if not topo:
             return render_template("404.html"), 404
@@ -11664,7 +11908,7 @@ Respond with ONLY this JSON (no other text):
 
         try:
             snaps = conn.execute(
-                "SELECT * FROM network_twin_snapshots WHERE project_id = ? ORDER BY created_at DESC LIMIT 20",
+                f"SELECT * FROM network_twin_snapshots WHERE project_id = {_ph} ORDER BY created_at DESC LIMIT 20",
                 (topo_id,),
             ).fetchall()
         except Exception:
@@ -11730,8 +11974,9 @@ Respond with ONLY this JSON (no other text):
         if not src_query or not dst_query:
             return jsonify({"error": "src and dst are required"}), 400
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         try:
-            row = conn.execute("SELECT graph_json FROM topologies WHERE id=?", (topo_id,)).fetchone()
+            row = conn.execute(f"SELECT graph_json FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
         finally:
             conn.close()
         if not row or not row["graph_json"]:
@@ -11764,7 +12009,8 @@ Respond with ONLY this JSON (no other text):
     @nc_login_required
     def nc_api_twin_current_topology(topo_id):
         conn = get_connection()
-        row = conn.execute("SELECT graph_json FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        _ph = sql_placeholder(conn)
+        row = conn.execute(f"SELECT graph_json FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
         if not row:
             return jsonify({"error": "Topology not found"}), 404
         try:
@@ -11830,7 +12076,7 @@ Respond with ONLY this JSON (no other text):
 
             # Build adapters for topology node/edge data
             def _nodes_adapter(c):
-                row = c.execute("SELECT graph_json FROM topologies WHERE id=?", (topo_id,)).fetchone()
+                row = c.execute("SELECT graph_json FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
                 if not row:
                     return []
                 import json as _json
@@ -11860,7 +12106,7 @@ Respond with ONLY this JSON (no other text):
                 return result
 
             def _edges_adapter(c):
-                row = c.execute("SELECT graph_json FROM topologies WHERE id=?", (topo_id,)).fetchone()
+                row = c.execute("SELECT graph_json FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
                 if not row:
                     return []
                 import json as _json
@@ -11910,11 +12156,12 @@ Respond with ONLY this JSON (no other text):
         from datetime import datetime, timezone
 
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         try:
             if request.method == "GET":
                 row = conn.execute(
                     "SELECT domain_type, domain_label, security_policy, routing_policy, vpn_policy"
-                    " FROM nc_security_domain_policies WHERE topology_id=? AND node_id=?",
+                    f" FROM nc_security_domain_policies WHERE topology_id={_ph} AND node_id={_ph}",
                     (topo_id, node_id),
                 ).fetchone()
                 if not row:
@@ -11935,21 +12182,21 @@ Respond with ONLY this JSON (no other text):
                 vpn = _json.dumps(data.get("vpn_policy") or {})
                 now = datetime.now(timezone.utc).isoformat()
                 existing = conn.execute(
-                    "SELECT id FROM nc_security_domain_policies WHERE topology_id=? AND node_id=?",
+                    f"SELECT id FROM nc_security_domain_policies WHERE topology_id={_ph} AND node_id={_ph}",
                     (topo_id, node_id),
                 ).fetchone()
                 if existing:
                     conn.execute(
                         "UPDATE nc_security_domain_policies"
-                        " SET domain_type=?, domain_label=?, security_policy=?, routing_policy=?, vpn_policy=?, updated_at=?"
-                        " WHERE topology_id=? AND node_id=?",
+                        f" SET domain_type={_ph}, domain_label={_ph}, security_policy={_ph}, routing_policy={_ph}, vpn_policy={_ph}, updated_at={_ph}"
+                        f" WHERE topology_id={_ph} AND node_id={_ph}",
                         (domain_type, domain_label, sec, route, vpn, now, topo_id, node_id),
                     )
                 else:
                     conn.execute(
                         "INSERT INTO nc_security_domain_policies"
                         " (id, topology_id, node_id, domain_type, domain_label, security_policy, routing_policy, vpn_policy, created_at, updated_at)"
-                        " VALUES (?,?,?,?,?,?,?,?,?,?)",
+                        f" VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
                         (str(uuid.uuid4()), topo_id, node_id, domain_type, domain_label, sec, route, vpn, now, now),
                     )
                 conn.commit()
@@ -12096,6 +12343,7 @@ Respond with ONLY this JSON (no other text):
 
         try:
             conn = get_connection()
+            _ph = sql_placeholder(conn)
             engine_cls = None
             try:
                 from tools.network.traffic_flow import TrafficFlowEngine
@@ -12111,7 +12359,7 @@ Respond with ONLY this JSON (no other text):
 
             # Verify flow belongs to this topology
             flow_row = conn.execute(
-                "SELECT * FROM nc_traffic_flows WHERE id = ? AND topology_id = ?",
+                f"SELECT * FROM nc_traffic_flows WHERE id = {_ph} AND topology_id = {_ph}",
                 (flow_id, topo_id),
             ).fetchone()
             if not flow_row:
@@ -12162,16 +12410,17 @@ Respond with ONLY this JSON (no other text):
         phase_id = data.get("phase_id")
 
         conn = _gc()
+        _ph = sql_placeholder(conn)
         try:
             row = conn.execute(
-                "SELECT id FROM nc_traffic_flows WHERE id=? AND topology_id=?",
+                f"SELECT id FROM nc_traffic_flows WHERE id={_ph} AND topology_id={_ph}",
                 (flow_id, topo_id),
             ).fetchone()
             if not row:
                 return jsonify({"error": "flow not found"}), 404
 
             conn.execute(
-                "UPDATE nc_traffic_flows SET phase_id=? WHERE id=?",
+                f"UPDATE nc_traffic_flows SET phase_id={_ph} WHERE id={_ph}",
                 (phase_id, flow_id),
             )
             conn.commit()
@@ -12216,8 +12465,9 @@ Planning rules:
         subnet allocation so the feature works regardless of API keys.
         """
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         topo = conn.execute(
-            "SELECT id, name, graph_json FROM topologies WHERE id=?",
+            f"SELECT id, name, graph_json FROM topologies WHERE id={_ph}",
             (topo_id,),
         ).fetchone()
         conn.close()
@@ -12399,10 +12649,11 @@ Planning rules:
     def nc_api_ai_context_messages(ctx_id):
         """Return up to 50 messages for an AI context, ordered by turn_number."""
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         try:
             rows = conn.execute(
                 "SELECT id, role, content, turn_number FROM chat_messages"
-                " WHERE context_id = ? ORDER BY turn_number ASC LIMIT 50",
+                f" WHERE context_id = {_ph} ORDER BY turn_number ASC LIMIT 50",
                 (ctx_id,),
             ).fetchall()
             messages = [
@@ -12421,11 +12672,12 @@ Planning rules:
     @nc_login_required
     def nc_subnet_calc():
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         project_id = request.args.get("project", "")
         projects = [_row_to_dict(r) for r in conn.execute("SELECT id, name FROM nc_projects ORDER BY name").fetchall()]
         if project_id:
             rows = conn.execute(
-                "SELECT * FROM nc_subnet_calc_history WHERE project_id=? ORDER BY created_at DESC",
+                f"SELECT * FROM nc_subnet_calc_history WHERE project_id={_ph} ORDER BY created_at DESC",
                 (project_id,),
             ).fetchall()
         else:
@@ -12455,9 +12707,10 @@ Planning rules:
         pid = str(_uuid.uuid4())
         now = _now()
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         conn.execute(
             "INSERT INTO nc_projects (id, name, description, status, owner, created_at, updated_at) "
-            "VALUES (?,?,?,?,?,?,?)",
+            f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
             (pid, name, data.get("description", ""), data.get("status", "draft"), data.get("owner", ""), now, now),
         )
         conn.commit()
@@ -12478,10 +12731,11 @@ Planning rules:
     @nc_login_required
     def nc_api_list_subnet_calc():
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         project_id = request.args.get("project", "")
         if project_id:
             rows = conn.execute(
-                "SELECT * FROM nc_subnet_calc_history WHERE project_id=? ORDER BY created_at DESC",
+                f"SELECT * FROM nc_subnet_calc_history WHERE project_id={_ph} ORDER BY created_at DESC",
                 (project_id,),
             ).fetchall()
         else:
@@ -12541,17 +12795,18 @@ Planning rules:
         entry_id = str(_uuid.uuid4())
         now = _now()
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         # Dedup: INSERT OR REPLACE (UNIQUE on cidr+project_id)
         existing = conn.execute(
-            "SELECT id FROM nc_subnet_calc_history WHERE cidr=? AND project_id=?",
+            f"SELECT id FROM nc_subnet_calc_history WHERE cidr={_ph} AND project_id={_ph}",
             (str(net.with_prefixlen), project_id),
         ).fetchone()
         if existing:
             entry_id = existing[0]
             conn.execute(
-                "UPDATE nc_subnet_calc_history SET network_addr=?,broadcast=?,first_host=?,last_host=?,"
-                "total_hosts=?,usable_hosts=?,prefix_len=?,subnet_mask=?,wildcard_mask=?,address_family=?,"
-                "ip_class=?,notes=?,created_at=? WHERE id=?",
+                f"UPDATE nc_subnet_calc_history SET network_addr={_ph},broadcast={_ph},first_host={_ph},last_host={_ph},"
+                f"total_hosts={_ph},usable_hosts={_ph},prefix_len={_ph},subnet_mask={_ph},wildcard_mask={_ph},address_family={_ph},"
+                f"ip_class={_ph},notes={_ph},created_at={_ph} WHERE id={_ph}",
                 (str(net.network_address), broadcast, first_addr, last_addr,
                  total_hosts, usable, prefix_len, subnet_mask, wildcard,
                  af, ip_class, data.get("notes", ""), now, entry_id),
@@ -12562,7 +12817,7 @@ Planning rules:
                 "(id,project_id,cidr,network_addr,broadcast,first_host,last_host,"
                 "total_hosts,usable_hosts,prefix_len,subnet_mask,wildcard_mask,"
                 "address_family,ip_class,notes,created_at) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
                 (entry_id, project_id, str(net.with_prefixlen),
                  str(net.network_address), broadcast, first_addr, last_addr,
                  total_hosts, usable, prefix_len, subnet_mask, wildcard,
@@ -12577,7 +12832,8 @@ Planning rules:
     @nc_login_required
     def nc_api_delete_subnet_calc(entry_id):
         conn = get_connection()
-        conn.execute("DELETE FROM nc_subnet_calc_history WHERE id=?", (entry_id,))
+        _ph = sql_placeholder(conn)
+        conn.execute(f"DELETE FROM nc_subnet_calc_history WHERE id={_ph}", (entry_id,))
         conn.commit()
         conn.close()
         _audit("DELETE", "subnet_calc", entry_id)
@@ -12590,8 +12846,9 @@ Planning rules:
     def nc_migration_phases(topo_id):
         """Three-panel migration phases view: Current → Phase N → Final/To-Be."""
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         topo = conn.execute(
-            "SELECT id, name, graph_json FROM topologies WHERE id=?", (topo_id,)
+            f"SELECT id, name, graph_json FROM topologies WHERE id={_ph}", (topo_id,)
         ).fetchone()
         if not topo:
             conn.close()
@@ -12599,13 +12856,13 @@ Planning rules:
 
         # Fetch migration phases linked to any project that uses this topology
         phases = conn.execute(
-            """
+            f"""
             SELECT mp.id, mp.phase_num, mp.title, mp.description,
                    mp.duration_days, mp.parallel_run, mp.rollback_criteria,
                    mp.maintenance_window, mp.dependencies, mp.status
             FROM nc_migration_phases mp
             JOIN nc_project_topologies pt ON pt.project_id = mp.project_id
-            WHERE pt.topology_id = ?
+            WHERE pt.topology_id = {_ph}
             ORDER BY mp.phase_num
             """,
             (topo_id,),
@@ -12641,8 +12898,9 @@ Planning rules:
         )
 
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         topo_row = conn.execute(
-            "SELECT graph_json, name FROM topologies WHERE id=?", (topo_id,)
+            f"SELECT graph_json, name FROM topologies WHERE id={_ph}", (topo_id,)
         ).fetchone()
         if not topo_row:
             conn.close()
@@ -12652,14 +12910,14 @@ Planning rules:
         current_graph = _json.loads(graph_json) if graph_json else {"nodes": [], "edges": []}
 
         phases = conn.execute(
-            """
+            f"""
             SELECT mp.id, mp.phase_num, mp.title, mp.description,
                    mp.duration_days, mp.parallel_run, mp.rollback_criteria,
                    mp.maintenance_window, mp.dependencies, mp.status,
                    mp.properties_json
             FROM nc_migration_phases mp
             JOIN nc_project_topologies pt ON pt.project_id = mp.project_id
-            WHERE pt.topology_id = ?
+            WHERE pt.topology_id = {_ph}
             ORDER BY mp.phase_num
             """,
             (topo_id,),
@@ -12751,8 +13009,9 @@ Planning rules:
         )
 
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         topo_row = conn.execute(
-            "SELECT graph_json, name FROM topologies WHERE id=?", (topo_id,)
+            f"SELECT graph_json, name FROM topologies WHERE id={_ph}", (topo_id,)
         ).fetchone()
         if not topo_row:
             conn.close()
@@ -12885,16 +13144,18 @@ Planning rules:
             return jsonify({"error": "project_id is required"}), 400
 
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         try:
             phase_ids = []
             for ph in phases_data:
                 pid = str(_uuid.uuid4())
                 conn.execute(
-                    """INSERT INTO nc_migration_phases
+                    f"""INSERT INTO nc_migration_phases
                        (id, project_id, phase_num, title, description,
                         duration_days, parallel_run, rollback_criteria,
                         maintenance_window, classification, impact_level, status)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,?,'planned')""",
+                       VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},'planned')""",
+
                     (
                         pid,
                         project_id,
@@ -12927,10 +13188,11 @@ Planning rules:
                             link_id = str(_uuid.uuid4())
                             try:
                                 conn.execute(
-                                    """INSERT OR IGNORE INTO nc_phase_documents
+                                    f"""INSERT OR IGNORE INTO nc_phase_documents
                                        (id, phase_id, project_id, doc_source, doc_id,
                                         doc_title, doc_type, relevance_note, display_order)
-                                       VALUES (?,?,?,?,?,?,?,?,0)""",
+                                       VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},0)""",
+
                                     (link_id, pid, project_id, "sop",
                                      sop_row["sop_id"], sop_row["title"],
                                      "sop", "auto-linked by keyword match"),
@@ -12971,35 +13233,36 @@ Planning rules:
             return jsonify({"error": f"status must be one of {sorted(valid_statuses)}"}), 400
 
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         try:
             phase_row = conn.execute(
-                "SELECT * FROM nc_migration_phases WHERE id=?", (phase_id,)
+                f"SELECT * FROM nc_migration_phases WHERE id={_ph}", (phase_id,)
             ).fetchone()
             if not phase_row:
                 return jsonify({"error": "phase not found"}), 404
             phase = dict(phase_row)
 
-            update_fields = ["status=?"]
+            update_fields = [f"status={_ph}"]
             update_vals: list = [new_status]
             classification = data.get("classification")
             impact_level = data.get("impact_level")
             if classification:
-                update_fields.append("classification=?")
+                update_fields.append(f"classification={_ph}")
                 update_vals.append(classification)
             if impact_level:
-                update_fields.append("impact_level=?")
+                update_fields.append(f"impact_level={_ph}")
                 update_vals.append(impact_level)
             update_vals.extend([phase_id])
 
             conn.execute(
-                f"UPDATE nc_migration_phases SET {', '.join(update_fields)} WHERE id=?",
+                f"UPDATE nc_migration_phases SET {', '.join(update_fields)} WHERE id={_ph}",
                 update_vals,
             )
 
             snapshot_id = None
             if new_status == "completed":
                 topo_row = conn.execute(
-                    "SELECT graph_json FROM topologies WHERE id=?", (topo_id,)
+                    f"SELECT graph_json FROM topologies WHERE id={_ph}", (topo_id,)
                 ).fetchone()
                 if topo_row:
                     current_graph = _json.loads(topo_row[0] or "{}") or {"nodes": [], "edges": []}
@@ -13008,13 +13271,14 @@ Planning rules:
                     post_graph = generate_phase_graph(current_graph, phase_meta)
                     snapshot_id = str(_uuid.uuid4())
                     conn.execute(
-                        """INSERT INTO nc_topology_snapshots (id, topo_id, phase_id, label, graph_json)
-                           VALUES (?,?,?,?,?)""",
+                        f"""INSERT INTO nc_topology_snapshots (id, topo_id, phase_id, label, graph_json)
+                           VALUES ({_ph},{_ph},{_ph},{_ph},{_ph})""",
+
                         (
                             snapshot_id,
                             topo_id,
                             phase_id,
-                            f"Phase {phase.get('phase_num', '?')} Complete",
+                            f"Phase {phase.get('phase_num', f'{_ph}')} Complete",
                             _json.dumps(post_graph),
                         ),
                     )
@@ -13174,13 +13438,15 @@ Planning rules:
             return jsonify({"error": f"Missing fields: {missing}"}), 400
 
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         try:
             doc_id = str(_uuid.uuid4())
             conn.execute(
-                """INSERT INTO nc_phase_documents
+                f"""INSERT INTO nc_phase_documents
                    (id, phase_id, project_id, doc_source, doc_id,
                     doc_title, doc_type, relevance_note, display_order)
-                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                   VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})""",
+
                 (
                     doc_id,
                     data["phase_id"],
@@ -13202,8 +13468,9 @@ Planning rules:
     def migration_hub_unlink_doc(doc_link_id: str):
         """Remove a document link from a migration phase."""
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         try:
-            conn.execute("DELETE FROM nc_phase_documents WHERE id = ?", (doc_link_id,))
+            conn.execute(f"DELETE FROM nc_phase_documents WHERE id = {_ph}", (doc_link_id,))
             conn.commit()
             return jsonify({"status": "deleted"})
         finally:
@@ -13215,23 +13482,24 @@ Planning rules:
     def nc_project_dashboard(project_id):
         """Unified 4-panel view: phases + canvas + SOPs per phase + traffic flows."""
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         try:
             project_row = conn.execute(
-                "SELECT * FROM nc_projects WHERE id=?", (project_id,)
+                f"SELECT * FROM nc_projects WHERE id={_ph}", (project_id,)
             ).fetchone()
             if not project_row:
                 return "Project not found", 404
             project = dict(project_row)
 
             phases = [dict(r) for r in conn.execute(
-                "SELECT * FROM nc_migration_phases WHERE project_id=? ORDER BY phase_num",
+                "SELECT * FROM nc_migration_phases WHERE project_id={_ph} ORDER BY phase_num",
                 (project_id,),
             ).fetchall()]
 
             topo_row = conn.execute(
                 "SELECT t.id, t.name, t.graph_json FROM topologies t "
                 "JOIN nc_project_topologies pt ON pt.topology_id = t.id "
-                "WHERE pt.project_id=? LIMIT 1",
+                f"WHERE pt.project_id={_ph} LIMIT 1",
                 (project_id,),
             ).fetchone()
             topology = dict(topo_row) if topo_row else None
@@ -13239,7 +13507,7 @@ Planning rules:
 
             snapshots = [dict(r) for r in conn.execute(
                 "SELECT id, phase_id, label, created_at FROM nc_topology_snapshots "
-                "WHERE topo_id=? ORDER BY created_at DESC",
+                "WHERE topo_id={_ph} ORDER BY created_at DESC",
                 (topo_id,),
             ).fetchall()] if topo_id else []
 
@@ -13264,7 +13532,7 @@ Planning rules:
                 placeholders = ",".join("?" * len(phase_ids))
                 flow_rows = conn.execute(
                     f"SELECT id, name, source_zone, destination_zone, classification, phase_id "
-                    f"FROM nc_traffic_flows WHERE topology_id=? AND phase_id IN ({placeholders})",
+                    f"FROM nc_traffic_flows WHERE topology_id={_ph} AND phase_id IN ({placeholders})",
                     [topo_id] + phase_ids,
                 ).fetchall()
                 for r in flow_rows:
@@ -13297,16 +13565,17 @@ Planning rules:
         try:
             from tools.db.storage import get_connection as _gc
             with _gc() as _conn:
+                _ph = sql_placeholder(_conn)
                 if record_id:
                     rows = _conn.execute(
-                        "SELECT * FROM canvas_ai_decisions WHERE canvas_type='ndc' AND record_id=? "
-                        "ORDER BY created_at DESC LIMIT ?",
+                        f"SELECT * FROM canvas_ai_decisions WHERE canvas_type='ndc' AND record_id={_ph} "
+                        f"ORDER BY created_at DESC LIMIT {_ph}",
                         (record_id, limit),
                     ).fetchall()
                 else:
                     rows = _conn.execute(
                         "SELECT * FROM canvas_ai_decisions WHERE canvas_type='ndc' "
-                        "ORDER BY created_at DESC LIMIT ?",
+                        f"ORDER BY created_at DESC LIMIT {_ph}",
                         (limit,),
                     ).fetchall()
             return jsonify({"ok": True, "canvas": "ndc", "decisions": [dict(r) for r in rows]})
@@ -13368,7 +13637,8 @@ Planning rules:
     @nc_login_required
     def nc_project_presentation(pid):
         conn = get_connection()
-        proj = conn.execute("SELECT * FROM nc_projects WHERE id=?", (pid,)).fetchone()
+        _ph = sql_placeholder(conn)
+        proj = conn.execute(f"SELECT * FROM nc_projects WHERE id={_ph}", (pid,)).fetchone()
         if not proj:
             conn.close()
             abort(404)
@@ -13380,9 +13650,10 @@ Planning rules:
     @nc_login_required
     def nc_api_project_presentation(pid):
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         proj = conn.execute(
             "SELECT p.*, c.name AS customer_name FROM nc_projects p "
-            "LEFT JOIN nc_customers c ON c.id=p.customer_id WHERE p.id=?", (pid,)
+            f"LEFT JOIN nc_customers c ON c.id=p.customer_id WHERE p.id={_ph}", (pid,)
         ).fetchone()
         if not proj:
             conn.close()
@@ -13392,7 +13663,7 @@ Planning rules:
         for r in conn.execute(
             "SELECT t.id, t.name, t.classification, t.graph_json "
             "FROM topologies t JOIN nc_project_topologies pt ON pt.topology_id=t.id "
-            "WHERE pt.project_id=?", (pid,)
+            f"WHERE pt.project_id={_ph}", (pid,)
         ).fetchall():
             t = _row_to_dict(r)
             try:
@@ -13406,22 +13677,22 @@ Planning rules:
             _row_to_dict(r)
             for r in conn.execute(
                 "SELECT * FROM nc_circuits WHERE topology_id IN "
-                "(SELECT topology_id FROM nc_project_topologies WHERE project_id=?)", (pid,)
+                f"(SELECT topology_id FROM nc_project_topologies WHERE project_id={_ph})", (pid,)
             ).fetchall()
         ]
         milestones = [
             _row_to_dict(r)
-            for r in conn.execute("SELECT * FROM nc_project_milestones WHERE project_id=?", (pid,)).fetchall()
+            for r in conn.execute(f"SELECT * FROM nc_project_milestones WHERE project_id={_ph}", (pid,)).fetchall()
         ]
         reviews = [
             _row_to_dict(r)
             for r in conn.execute(
                 "SELECT br.*, rb.name AS board_name "
                 "FROM nc_board_reviews br JOIN nc_review_boards rb ON rb.id=br.board_id "
-                "WHERE br.project_id=? ORDER BY br.phase", (pid,)
+                f"WHERE br.project_id={_ph} ORDER BY br.phase", (pid,)
             ).fetchall()
         ]
-        safe_bridge = conn.execute("SELECT * FROM nc_safe_bridge WHERE project_id=?", (pid,)).fetchone()
+        safe_bridge = conn.execute(f"SELECT * FROM nc_safe_bridge WHERE project_id={_ph}", (pid,)).fetchone()
         safe_bridge = _row_to_dict(safe_bridge) if safe_bridge else None
         roi = {}
         if safe_bridge and safe_bridge.get("roi_json"):
@@ -13431,7 +13702,7 @@ Planning rules:
                 pass
         agg_audit = conn.execute(
             "SELECT SUM(passed), SUM(failed) FROM nc_compliance_checks "
-            "WHERE topology_id IN (SELECT topology_id FROM nc_project_topologies WHERE project_id=?)", (pid,)
+            f"WHERE topology_id IN (SELECT topology_id FROM nc_project_topologies WHERE project_id={_ph})", (pid,)
         ).fetchone()
         passed = agg_audit[0] or 0
         failed = agg_audit[1] or 0
@@ -13439,13 +13710,13 @@ Planning rules:
         compliance_pct = round(passed * 100 / total) if total else None
         cat1 = conn.execute(
             "SELECT COUNT(*) FROM nc_compliance_findings "
-            "WHERE topology_id IN (SELECT topology_id FROM nc_project_topologies WHERE project_id=?) "
+            f"WHERE topology_id IN (SELECT topology_id FROM nc_project_topologies WHERE project_id={_ph}) "
             "AND status='open' AND severity='CAT1'", (pid,)
         ).fetchone()[0] or 0
         # Pre-compute CapEx before closing connection
         total_capex = 0
         for t in topos:
-            trow = conn.execute("SELECT graph_json FROM topologies WHERE id=?", (t["id"],)).fetchone()
+            trow = conn.execute(f"SELECT graph_json FROM topologies WHERE id={_ph}", (t["id"],)).fetchone()
             if trow and trow[0]:
                 try:
                     nodes = json.loads(trow[0]).get("nodes", [])
@@ -13509,6 +13780,1279 @@ Planning rules:
     def nc_documents():
         """Document library — redirect to SOPs for now."""
         return redirect("/network/sops")
+
+    # ── Advisory History ───────────────────────────────────────────────────
+
+    @bp.route("/advisory-history")
+    @nc_login_required
+    def nc_advisory_history():
+        from tools.network.advisory import list_advisories, list_vendors
+        advisories = list_advisories(
+            vendor=request.args.get("vendor"),
+            severity=request.args.get("severity"),
+            status=request.args.get("status"),
+            date_from=request.args.get("date_from"),
+            date_to=request.args.get("date_to"),
+        )
+        vendors = list_vendors()
+        return render_template(
+            "network/advisory_history.html",
+            advisories=advisories,
+            vendors=vendors,
+        )
+
+    @bp.route("/api/advisories/export")
+    @nc_login_required
+    def nc_api_advisories_export():
+        import csv
+        import io
+        from flask import Response
+        from tools.network.advisory import list_advisories
+        items = list_advisories()
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(["CVE ID", "Vendor", "Severity", "Date", "Total Devices",
+                    "Impacted", "Remediation %", "Data Source", "HITL Status", "Status"])
+        for a in items:
+            w.writerow([
+                a.get("cve_id", ""), a.get("vendor", ""), a.get("severity", ""),
+                (a.get("published_date") or "")[:10], a.get("total_devices", 0),
+                a.get("impacted_devices", 0), a.get("remediation_pct", 0),
+                a.get("data_source", ""), a.get("hitl_status", ""), a.get("status", ""),
+            ])
+        return Response(buf.getvalue(), mimetype="text/csv",
+                        headers={"Content-Disposition": "attachment; filename=advisories.csv"})
+
+    # ── POAM ───────────────────────────────────────────────────────────────
+
+    @bp.route("/poam")
+    @nc_login_required
+    def nc_poam():
+        from tools.network.poam_generator import list_poam_items
+        from datetime import date
+        advisory_filter = request.args.get("advisory")
+        items = list_poam_items()
+        return render_template(
+            "network/poam.html",
+            items=items,
+            advisory_filter=advisory_filter,
+            today=date.today().isoformat(),
+        )
+
+    @bp.route("/api/poam/generate", methods=["POST"])
+    @nc_login_required
+    def nc_api_poam_generate():
+        from tools.network.poam_generator import generate_poam_item
+        data = request.get_json(silent=True) or {}
+        advisory_id = data.get("advisory_id", "")
+        try:
+            item = generate_poam_item(advisory_id, data)
+            return jsonify({"ok": True, "item": item})
+        except Exception as exc:
+            logger.exception("POAM generate failed")
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/poam/export")
+    @nc_login_required
+    def nc_api_poam_export():
+        from flask import Response
+        from tools.network.poam_generator import export_poam
+        fmt = request.args.get("format", "csv")
+        content, mimetype = export_poam(fmt)
+        ext = "json" if fmt == "json" else "csv"
+        return Response(content, mimetype=mimetype,
+                        headers={"Content-Disposition": f"attachment; filename=poam.{ext}"})
+
+    # ── Exceptions ─────────────────────────────────────────────────────────
+
+    @bp.route("/exceptions")
+    @nc_login_required
+    def nc_exceptions():
+        from tools.network.exception_registry import list_exceptions
+        from datetime import date
+        exceptions = list_exceptions()
+        return render_template(
+            "network/exceptions.html",
+            exceptions=exceptions,
+            today=date.today().isoformat(),
+        )
+
+    @bp.route("/exceptions/file")
+    @nc_login_required
+    def nc_exceptions_file_form():
+        """Redirect to exceptions page with file modal open."""
+        return redirect("/network/exceptions?open_modal=file")
+
+    @bp.route("/api/exception/file", methods=["POST"])
+    @nc_login_required
+    def nc_api_exception_file():
+        from tools.network.exception_registry import file_exception
+        data = request.get_json(silent=True) or {}
+        try:
+            exc = file_exception(data)
+            return jsonify({"ok": True, "exception": exc})
+        except Exception as e:
+            logger.exception("Exception filing failed")
+            return jsonify({"error": str(e)}), 500
+
+    @bp.route("/api/exception/<exc_id>/approve", methods=["POST"])
+    @nc_login_required
+    def nc_api_exception_approve(exc_id):
+        from tools.network.exception_registry import approve_exception
+        data = request.get_json(silent=True) or {}
+        level = data.get("level", "")
+        approver = data.get("approver", "")
+        if not level or not approver:
+            return jsonify({"error": "level and approver are required"}), 400
+        try:
+            exc = approve_exception(exc_id, level, approver)
+            return jsonify({"ok": True, "exception": exc})
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+        except Exception as e:
+            logger.exception("Exception approval failed")
+            return jsonify({"error": str(e)}), 500
+
+    # ── ATO Evidence Chain Export ──────────────────────────────────────────
+
+    def _gather_ato_evidence(advisory_id, conn):
+        """Collect all audit-chain rows for one advisory from available tables."""
+
+        def _q(sql, params=()):
+            try:
+                return [dict(r) for r in conn.execute(sql, params).fetchall()]
+            except Exception:
+                return []
+
+        def _q1(sql, params=()):
+            try:
+                row = conn.execute(sql, params).fetchone()
+                return dict(row) if row else None
+            except Exception:
+                return None
+
+        advisory = _q1("SELECT * FROM nc_advisories WHERE id = {_ph}", (advisory_id,))
+
+        assessments = _q(
+            "SELECT * FROM nc_advisory_assessments WHERE advisory_id = ? ORDER BY created_at ASC",
+            (advisory_id,),
+        )
+
+        rem_actions = _q(
+            "SELECT * FROM nc_remediation_actions WHERE advisory_id = ? ORDER BY created_at ASC",
+            (advisory_id,),
+        )
+
+        rem_status_log: list = []
+        action_ids = [a.get("id") for a in rem_actions if a.get("id")]
+        if action_ids:
+            ph = ",".join("?" * len(action_ids))
+            rem_status_log = _q(
+                f"SELECT * FROM nc_remediation_status_log WHERE action_id IN ({ph}) ORDER BY created_at ASC",
+                action_ids,
+            )
+
+        poam_items = _q(
+            "SELECT * FROM nc_poam_items WHERE advisory_id = ? ORDER BY created_at ASC",
+            (advisory_id,),
+        )
+
+        poam_status_log: list = []
+        poam_ids = [p.get("id") for p in poam_items if p.get("id")]
+        if poam_ids:
+            ph = ",".join("?" * len(poam_ids))
+            poam_status_log = _q(
+                f"SELECT * FROM nc_poam_status_log WHERE poam_id IN ({ph}) ORDER BY created_at ASC",
+                poam_ids,
+            )
+
+        exceptions = _q(
+            "SELECT * FROM nc_exceptions WHERE advisory_id = ? ORDER BY created_at ASC",
+            (advisory_id,),
+        )
+
+        exception_approvals: list = []
+        exc_ids = [e.get("id") for e in exceptions if e.get("id")]
+        if exc_ids:
+            ph = ",".join("?" * len(exc_ids))
+            exception_approvals = _q(
+                f"SELECT * FROM nc_exception_approvals WHERE exception_id IN ({ph}) ORDER BY created_at ASC",
+                exc_ids,
+            )
+
+        audit_log = _q(
+            "SELECT * FROM nc_nqe_audit_log WHERE advisory_id = ? ORDER BY created_at ASC",
+            (advisory_id,),
+        )
+
+        return {
+            "advisory": advisory,
+            "assessments": assessments,
+            "remediation_actions": rem_actions,
+            "remediation_status_log": rem_status_log,
+            "poam_items": poam_items,
+            "poam_status_log": poam_status_log,
+            "exceptions": exceptions,
+            "exception_approvals": exception_approvals,
+            "audit_log": audit_log,
+        }
+
+    def _audit_ato_export(advisory_id, fmt, doc_hash):
+        """Append an audit-log entry for the export (best-effort; non-blocking)."""
+        try:
+            conn = get_connection()
+            _ph = sql_placeholder(conn)
+            conn.execute(
+                f"""INSERT INTO nc_nqe_audit_log
+                   (session_id, user_session, action, input_text, result_summary,
+                    raw_response_hash, advisory_id, created_at)
+                   VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})""",
+
+                (
+                    session.get("session_id", ""),
+                    session.get("user", ""),
+                    "export",
+                    fmt,
+                    f"ATO evidence chain export (format={fmt})",
+                    doc_hash,
+                    advisory_id,
+                    datetime.now(timezone.utc).isoformat(),
+                ),
+            )
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass
+
+    def _ato_safe(text):
+        """Coerce to latin-1-safe string for fpdf2 core fonts."""
+        _MAP = str.maketrans({
+            "—": "-", "–": "-", "→": "->", "←": "<-",
+            "≥": ">=", "≤": "<=", "°": "deg", "•": "*",
+            "’": "'", "‘": "'", "“": '"', "”": '"',
+            "™": "(TM)", "®": "(R)", "©": "(c)",
+            "×": "x", "÷": "/",
+        })
+        text = str(text).translate(_MAP)
+        return text.encode("latin-1", errors="replace").decode("latin-1")
+
+    def _build_ato_pdf(evidence, advisory_id):
+        """Return PDF bytes (fpdf2) or HTML bytes (fallback) for the evidence package."""
+        _CLASSIFICATION = "CUI // SP-CTI"
+        adv = evidence.get("advisory") or {}
+        meta = evidence.get("_meta", {})
+
+        def _cui_banner(pdf):
+            pdf.set_font("Helvetica", "B", 8)
+            pdf.set_fill_color(180, 30, 30)
+            pdf.set_text_color(255, 255, 255)
+            pdf.cell(0, 5, f"  {_CLASSIFICATION}", ln=True, fill=True)
+            pdf.set_text_color(0, 0, 0)
+
+        def _section_heading(pdf, title):
+            pdf.set_font("Helvetica", "B", 11)
+            pdf.set_fill_color(220, 230, 245)
+            pdf.set_text_color(20, 60, 120)
+            pdf.cell(0, 7, _ato_safe(title), ln=True, fill=True)
+            pdf.set_text_color(0, 0, 0)
+            pdf.ln(1)
+
+        def _kv_row(pdf, label, value):
+            pdf.set_font("Helvetica", "B", 8)
+            pdf.cell(60, 5, _ato_safe(str(label) + ":"), ln=False)
+            pdf.set_font("Helvetica", "", 8)
+            pdf.multi_cell(0, 5, _ato_safe(str(value)[:300]))
+
+        def _cui_footer_all(pdf):
+            total = pdf.page
+            for pno in range(1, total + 1):
+                pdf.page = pno
+                pdf.set_y(-12)
+                pdf.set_font("Helvetica", "B", 7)
+                pdf.set_fill_color(180, 30, 30)
+                pdf.set_text_color(255, 255, 255)
+                pdf.cell(0, 4,
+                         f"  {_CLASSIFICATION} | Page {pno} of {total} | ICDEV ATO Evidence Package",
+                         ln=True, fill=True)
+            pdf.page = total
+
+        try:
+            from fpdf import FPDF
+
+            pdf = FPDF(orientation="P", unit="mm", format="A4")
+            pdf.set_auto_page_break(auto=True, margin=18)
+            pdf.set_margins(15, 20, 15)
+
+            # ── Cover ─────────────────────────────────────────────────────
+            pdf.add_page()
+            _cui_banner(pdf)
+            pdf.ln(12)
+            pdf.set_font("Helvetica", "B", 20)
+            pdf.set_text_color(20, 60, 120)
+            pdf.cell(0, 12, "ATO Evidence Package", ln=True, align="C")
+            pdf.set_font("Helvetica", "B", 13)
+            pdf.set_text_color(50, 50, 50)
+            pdf.cell(0, 8, _ato_safe(f"Advisory ID: {advisory_id}  |  CVE: {adv.get('cve_id','N/A')}"), ln=True, align="C")
+            pdf.set_font("Helvetica", "", 11)
+            pdf.cell(0, 7, _ato_safe(f"Vendor: {adv.get('vendor','N/A')}  |  Severity: {str(adv.get('severity','N/A')).upper()}"), ln=True, align="C")
+            pdf.cell(0, 7, _ato_safe(f"Status: {adv.get('status','N/A')}"), ln=True, align="C")
+            pdf.ln(4)
+            pdf.set_font("Helvetica", "I", 8)
+            pdf.set_text_color(100, 100, 100)
+            pdf.cell(0, 5, _ato_safe(f"Exported: {meta.get('exported_at','')}"), ln=True, align="C")
+            pdf.cell(0, 5, _ato_safe(f"SHA-256: {meta.get('doc_hash_sha256','')}"), ln=True, align="C")
+            pdf.set_text_color(0, 0, 0)
+
+            # ── Sec 1: Advisory Record ─────────────────────────────────────
+            pdf.add_page()
+            _cui_banner(pdf)
+            pdf.ln(2)
+            _section_heading(pdf, "1. Advisory Record")
+            for label, key in [
+                ("CVE ID", "cve_id"), ("Vendor", "vendor"), ("Severity", "severity"),
+                ("Status", "status"), ("Published Date", "published_date"),
+                ("Total Devices", "total_devices"), ("Impacted Devices", "impacted_devices"),
+                ("Remediation %", "remediation_pct"), ("Data Source", "data_source"),
+                ("HITL Status", "hitl_status"), ("HITL Approved By", "hitl_approved_by"),
+                ("HITL Approved At", "hitl_approved_at"),
+                ("Source Doc Hash (SHA-256)", "source_doc_hash"),
+                ("Source Doc Format", "source_doc_format"),
+                ("Extraction Confidence", "extraction_confidence"),
+                ("Created", "created_at"), ("Updated", "updated_at"),
+            ]:
+                val = adv.get(key, "")
+                if val not in (None, "", 0):
+                    _kv_row(pdf, label, val)
+            if adv.get("description"):
+                pdf.ln(2)
+                pdf.set_font("Helvetica", "B", 8)
+                pdf.cell(0, 5, "Description:", ln=True)
+                pdf.set_font("Helvetica", "", 8)
+                pdf.multi_cell(0, 5, _ato_safe(str(adv["description"])[:1500]))
+
+            # ── Sec 2: Impact Assessments ──────────────────────────────────
+            for idx, asmt in enumerate(evidence.get("assessments", []), 1):
+                pdf.add_page()
+                _cui_banner(pdf)
+                pdf.ln(2)
+                _section_heading(pdf, f"2.{idx} Impact Assessment (ID: {asmt.get('id','')})")
+                for label, key in [
+                    ("Network ID", "network_id"), ("FWD Snapshot ID", "fwd_snapshot_id"),
+                    ("Data Source", "data_source"),
+                    ("NQL — Total Devices", "nql_total"), ("NQL — Impacted", "nql_impacted"),
+                    ("NQL — AI Generated", "nql_ai_generated"), ("NQL — Template Based", "nql_template_based"),
+                    ("Total Devices", "total_devices"), ("Impacted Count", "impacted_count"),
+                    ("Raw Response Hash (SHA-256)", "raw_response_hash"),
+                    ("AI Confidence", "ai_confidence"),
+                    ("Cross-Val Delta %", "cross_validation_delta_pct"),
+                    ("Cross-Val Warning", "cross_validation_warning"),
+                    ("HITL Approved By", "approved_by"), ("HITL Approved At", "approved_at"),
+                    ("Created", "created_at"),
+                ]:
+                    val = asmt.get(key, "")
+                    if val not in (None, ""):
+                        _kv_row(pdf, label, val)
+
+            # ── Sec 3: Remediation Actions ─────────────────────────────────
+            if evidence.get("remediation_actions"):
+                pdf.add_page()
+                _cui_banner(pdf)
+                pdf.ln(2)
+                _section_heading(pdf, "3. Remediation Actions")
+                for ra in evidence["remediation_actions"]:
+                    pdf.set_font("Helvetica", "BI", 9)
+                    pdf.cell(0, 6, _ato_safe(f"Action {ra.get('id','')[:24]}"), ln=True)
+                    for label, key in [
+                        ("Device ID", "device_id"), ("Action Type", "action_type"),
+                        ("Performed By", "performed_by"), ("Result", "result"),
+                        ("Notes", "notes"), ("Created", "created_at"),
+                    ]:
+                        val = ra.get(key, "")
+                        if val not in (None, ""):
+                            _kv_row(pdf, label, val)
+                    pdf.ln(2)
+                if evidence.get("remediation_status_log"):
+                    pdf.ln(2)
+                    _section_heading(pdf, "3a. Remediation Status Log")
+                    pdf.set_font("Helvetica", "", 8)
+                    for sl in evidence["remediation_status_log"]:
+                        pdf.cell(0, 5, _ato_safe(
+                            f"{sl.get('created_at','')} | action={sl.get('action_id','')} | "
+                            f"{sl.get('old_status','?')} -> {sl.get('new_status','')} | "
+                            f"by={sl.get('updated_by','')}"
+                        ), ln=True)
+
+            # ── Sec 4: POAM Items ──────────────────────────────────────────
+            if evidence.get("poam_items"):
+                pdf.add_page()
+                _cui_banner(pdf)
+                pdf.ln(2)
+                _section_heading(pdf, "4. POAM Items")
+                for pi in evidence["poam_items"]:
+                    pdf.set_font("Helvetica", "BI", 9)
+                    pdf.cell(0, 6, _ato_safe(f"POAM {pi.get('poam_id', pi.get('id',''))}"), ln=True)
+                    for label, key in [
+                        ("CVE", "cve_id"), ("Weakness", "weakness"), ("Control ID", "control_id"),
+                        ("Severity", "severity"), ("Status", "status"),
+                        ("Scheduled Completion", "scheduled_completion"),
+                        ("Responsible Party", "responsible_party"),
+                        ("Twin Validated", "twin_validated"), ("Resources", "resources"),
+                    ]:
+                        val = pi.get(key, "")
+                        if val not in (None, "", 0):
+                            _kv_row(pdf, label, val)
+                    pdf.ln(2)
+                if evidence.get("poam_status_log"):
+                    pdf.ln(2)
+                    _section_heading(pdf, "4a. POAM Status Log")
+                    pdf.set_font("Helvetica", "", 8)
+                    for sl in evidence["poam_status_log"]:
+                        pdf.cell(0, 5, _ato_safe(
+                            f"{sl.get('created_at','')} | poam={sl.get('poam_id','')} | "
+                            f"{sl.get('old_status','?')} -> {sl.get('new_status','')} | "
+                            f"by={sl.get('updated_by','')}"
+                        ), ln=True)
+
+            # ── Sec 5: Exceptions ──────────────────────────────────────────
+            if evidence.get("exceptions"):
+                pdf.add_page()
+                _cui_banner(pdf)
+                pdf.ln(2)
+                _section_heading(pdf, "5. Exceptions")
+                for ex in evidence["exceptions"]:
+                    pdf.set_font("Helvetica", "BI", 9)
+                    pdf.cell(0, 6, _ato_safe(f"Device: {ex.get('device_name','')}  [{ex.get('status','')}]"), ln=True)
+                    for label, key in [
+                        ("Exception Type", "exception_type"), ("Risk Level", "risk_level"),
+                        ("Expiry Date", "expiry_date"), ("Justification", "justification"),
+                        ("ISSO Approved By", "isso_approved_by"), ("ISSO Approved At", "isso_approved_at"),
+                        ("ISSM Approved By", "issm_approved_by"), ("ISSM Approved At", "issm_approved_at"),
+                        ("AO Approved By", "ao_approved_by"), ("AO Approved At", "ao_approved_at"),
+                        ("Compensating Controls", "compensating_controls"),
+                        ("Risk Acceptance Level", "risk_acceptance_level"),
+                        ("Filed By", "filed_by"), ("Created", "created_at"),
+                    ]:
+                        val = ex.get(key, "")
+                        if val not in (None, "", 0):
+                            _kv_row(pdf, label, val)
+                    pdf.ln(2)
+                if evidence.get("exception_approvals"):
+                    pdf.ln(2)
+                    _section_heading(pdf, "5a. Exception Approval Chain")
+                    pdf.set_font("Helvetica", "", 8)
+                    for ap in evidence["exception_approvals"]:
+                        pdf.cell(0, 5, _ato_safe(
+                            f"{ap.get('created_at','')} | exc={ap.get('exception_id','')} | "
+                            f"{ap.get('approver_role','')} {ap.get('approver','')} -> "
+                            f"{ap.get('decision','')} | {ap.get('conditions','')}"
+                        ), ln=True)
+
+            # ── Sec 6: NQE Audit Trail ─────────────────────────────────────
+            if evidence.get("audit_log"):
+                pdf.add_page()
+                _cui_banner(pdf)
+                pdf.ln(2)
+                _section_heading(pdf, "6. NQE Audit Trail")
+                pdf.set_font("Helvetica", "", 8)
+                for entry in evidence["audit_log"]:
+                    pdf.cell(0, 5, _ato_safe(
+                        f"{entry.get('created_at','')} | {entry.get('action','')} | "
+                        f"{str(entry.get('result_summary',''))[:100]}"
+                    ), ln=True)
+
+            # ── Hash integrity page ────────────────────────────────────────
+            pdf.add_page()
+            _cui_banner(pdf)
+            pdf.ln(4)
+            _section_heading(pdf, "Document Integrity")
+            _kv_row(pdf, "Document SHA-256", meta.get("doc_hash_sha256", ""))
+            _kv_row(pdf, "Exported At", meta.get("exported_at", ""))
+            _kv_row(pdf, "Classification", meta.get("classification", ""))
+            pdf.ln(4)
+            pdf.set_font("Helvetica", "I", 8)
+            pdf.set_text_color(100, 100, 100)
+            pdf.multi_cell(0, 5,
+                "The SHA-256 hash above was computed over the canonical JSON serialization "
+                "of all evidence fields. Re-compute to verify document integrity.")
+
+            _cui_footer_all(pdf)
+            return bytes(pdf.output())
+
+        except ImportError:
+            logger.warning("fpdf2 not installed — generating HTML fallback for ATO PDF")
+            adv_rows = "".join(
+                f"<tr><th>{k}</th><td>{v}</td></tr>"
+                for k, v in (adv or {}).items()
+                if v not in (None, "")
+            )
+            return (
+                f"<!DOCTYPE html><html><head><meta charset='utf-8'>"
+                f"<title>ATO Evidence — Advisory {advisory_id}</title>"
+                f"<style>body{{font-family:monospace;margin:2em}}"
+                f"table{{border-collapse:collapse;width:100%}}"
+                f"th,td{{border:1px solid #ccc;padding:4px 8px;text-align:left}}"
+                f"th{{background:#dde;width:220px}}"
+                f".cui{{background:#b41e1e;color:#fff;padding:4px 10px;font-weight:bold}}"
+                f"h2{{color:#1a3c78}}</style></head><body>"
+                f"<div class='cui'>CUI // SP-CTI</div>"
+                f"<h1>ATO Evidence Package — Advisory {advisory_id}</h1>"
+                f"<p>Exported: {meta.get('exported_at','')} | "
+                f"SHA-256: <code>{meta.get('doc_hash_sha256','')}</code></p>"
+                f"<h2>1. Advisory Record</h2><table>{adv_rows}</table>"
+                f"<p><em>Install fpdf2 for full multi-section PDF output.</em></p>"
+                f"<div class='cui'>CUI // SP-CTI</div></body></html>"
+            ).encode("utf-8")
+
+    def _build_ato_excel(evidence, advisory_id):
+        """Return (bytes, mimetype, extension) for Excel export.
+
+        Uses openpyxl when available; falls back to a ZIP archive of CSV sheets.
+        """
+        import csv
+        import io
+        import zipfile
+
+        SHEETS = [
+            ("Advisory",            [evidence.get("advisory")] if evidence.get("advisory") else []),
+            ("Assessments",         evidence.get("assessments", [])),
+            ("RemediationActions",  evidence.get("remediation_actions", [])),
+            ("RemediationStatusLog",evidence.get("remediation_status_log", [])),
+            ("POAMItems",           evidence.get("poam_items", [])),
+            ("POAMStatusLog",       evidence.get("poam_status_log", [])),
+            ("Exceptions",          evidence.get("exceptions", [])),
+            ("ExceptionApprovals",  evidence.get("exception_approvals", [])),
+            ("AuditLog",            evidence.get("audit_log", [])),
+        ]
+
+        try:
+            import openpyxl
+            from openpyxl.styles import Font, PatternFill
+
+            wb = openpyxl.Workbook()
+            wb.remove(wb.active)  # drop default blank sheet
+
+            _CUI_FILL = PatternFill("solid", fgColor="B41E1E")
+            _HEAD_FILL = PatternFill("solid", fgColor="DDE4F0")
+            _CUI_FONT = Font(bold=True, color="FFFFFF", size=9)
+            _HEAD_FONT = Font(bold=True, size=9)
+            _META = evidence.get("_meta", {})
+
+            for sheet_name, rows in SHEETS:
+                if not rows:
+                    continue
+                ws = wb.create_sheet(title=sheet_name[:31])
+                # CUI banner row
+                ws.append([f"CUI // SP-CTI | Advisory {advisory_id} | {_META.get('exported_at','')}"])
+                cui_cell = ws.cell(1, 1)
+                cui_cell.fill = _CUI_FILL
+                cui_cell.font = _CUI_FONT
+                ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max(len(rows[0]) if rows else 1, 1))
+                # Header row
+                headers = list(rows[0].keys()) if rows else []
+                ws.append(headers)
+                for col_idx, _ in enumerate(headers, 1):
+                    cell = ws.cell(2, col_idx)
+                    cell.fill = _HEAD_FILL
+                    cell.font = _HEAD_FONT
+                # Data rows
+                for row in rows:
+                    ws.append([str(v) if v is not None else "" for v in row.values()])
+                # Auto-width (capped)
+                for col in ws.columns:
+                    max_len = max((len(str(c.value or "")) for c in col), default=8)
+                    ws.column_dimensions[col[0].column_letter].width = min(max_len + 2, 60)
+
+            buf = io.BytesIO()
+            wb.save(buf)
+            return buf.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "xlsx"
+
+        except ImportError:
+            # Fallback: ZIP of CSV files (can be opened sheet-by-sheet)
+            logger.info("openpyxl not installed — generating ZIP-of-CSVs fallback for ATO Excel")
+            zip_buf = io.BytesIO()
+            with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+                for sheet_name, rows in SHEETS:
+                    if not rows:
+                        continue
+                    csv_buf = io.StringIO()
+                    writer = csv.DictWriter(csv_buf, fieldnames=list(rows[0].keys()))
+                    writer.writeheader()
+                    writer.writerows(rows)
+                    zf.writestr(f"{sheet_name}.csv", csv_buf.getvalue())
+            return zip_buf.getvalue(), "application/zip", "zip"
+
+    @bp.route("/api/advisory/<int:advisory_id>/export-ato", methods=["POST"])
+    @nc_login_required
+    def nc_api_advisory_export_ato(advisory_id: int):
+        """Export complete ATO evidence chain for one advisory.
+
+        Query param: format — json | pdf | excel (default: json)
+
+        Evidence chain:
+          1. nc_advisories row + source_doc_hash
+          2. nc_advisory_assessments (NQL queries, sha256 hashes, dual-query
+             reconciliation, HITL approval record)
+          3. nc_remediation_actions (all statuses)
+          4. nc_remediation_status_log
+          5. nc_poam_items + nc_poam_status_log
+          6. nc_exceptions + nc_exception_approvals + nc_nqe_audit_log
+        """
+        import hashlib
+        from flask import Response
+
+        fmt = request.args.get("format", "json").lower()
+        if fmt not in ("json", "pdf", "excel"):
+            return jsonify({"error": "format must be json, pdf, or excel"}), 400
+
+        conn = get_connection()
+        try:
+            evidence = _gather_ato_evidence(advisory_id, conn)
+        finally:
+            conn.close()
+
+        if evidence["advisory"] is None:
+            return jsonify({"error": f"Advisory {advisory_id} not found"}), 404
+
+        canonical = json.dumps(evidence, sort_keys=True, default=str)
+        doc_hash = hashlib.sha256(canonical.encode()).hexdigest()
+        evidence["_meta"] = {
+            "advisory_id": advisory_id,
+            "export_format": fmt,
+            "exported_at": datetime.now(timezone.utc).isoformat(),
+            "doc_hash_sha256": doc_hash,
+            "classification": "CUI // SP-CTI",
+        }
+
+        _audit_ato_export(advisory_id, fmt, doc_hash)
+
+        if fmt == "json":
+            return Response(
+                json.dumps(evidence, indent=2, default=str),
+                mimetype="application/json",
+                headers={"Content-Disposition": f"attachment; filename=ato-evidence-{advisory_id}.json"},
+            )
+        if fmt == "pdf":
+            pdf_bytes = _build_ato_pdf(evidence, advisory_id)
+            mimetype = "application/pdf" if pdf_bytes[:4] == b"%PDF" else "text/html"
+            ext = "pdf" if mimetype == "application/pdf" else "html"
+            return Response(
+                pdf_bytes,
+                mimetype=mimetype,
+                headers={"Content-Disposition": f"attachment; filename=ato-evidence-{advisory_id}.{ext}"},
+            )
+        # excel
+        xl_bytes, mimetype, ext = _build_ato_excel(evidence, advisory_id)
+        return Response(
+            xl_bytes,
+            mimetype=mimetype,
+            headers={"Content-Disposition": f"attachment; filename=ato-evidence-{advisory_id}.{ext}"},
+        )
+
+    # ── NQE Translator ─────────────────────────────────────────────────────
+
+    @bp.route("/nqe-translator", methods=["GET"])
+    def nqe_translator_page():
+        """Render the NQE query translator UI."""
+        return render_template("network/nqe_translator.html", page_title="NQE Translator")
+
+    @bp.route("/api/nqe/translate", methods=["POST"])
+    def api_nqe_translate():
+        """Translate plain-English text to NQL.
+
+        Request: {"text": str, "context": dict (optional advisory context)}
+        Response: {"nql": str, "confidence": float, "source": str}
+        """
+        data = request.get_json(force=True, silent=True) or {}
+        text = (data.get("text") or "").strip()
+        if not text:
+            return jsonify({"error": "text is required"}), 400
+
+        context = data.get("context") or {}
+
+        try:
+            from tools.network.nql_translator import nl_to_nql
+            nql = nl_to_nql(text, context=context or None)
+        except Exception as exc:
+            logger.exception("NQE translate error")
+            return jsonify({"error": str(exc)}), 500
+
+        # Confidence heuristic: deterministic context path → high; LLM path → medium
+        if context and any(context.get(k) for k in ("vendor", "affected_models", "affected_versions")):
+            confidence = 0.92
+            source = "deterministic"
+        elif nql and nql.startswith("foreach"):
+            confidence = 0.70
+            source = "llm_translation"
+        else:
+            confidence = 0.50
+            source = "fallback"
+
+        # Audit log
+        try:
+            from tools.db.storage import get_canvas_connection
+            conn = get_canvas_connection("NC_STORAGE_BACKEND")
+            conn.execute(
+                "INSERT INTO nc_nqe_audit_log (action, nql_query, user_confirmed, created_at) "
+                "VALUES (%s, %s, %s, NOW())",
+                ("translate", nql, False),
+            )
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass
+
+        return jsonify({"nql": nql, "confidence": confidence, "source": source})
+
+    @bp.route("/api/nqe/explain", methods=["POST"])
+    def api_nqe_explain():
+        """Return a plain-English explanation of an NQL query.
+
+        Request: {"nql": str}
+        Response: {"explanation": str}
+        """
+        data = request.get_json(force=True, silent=True) or {}
+        nql = (data.get("nql") or "").strip()
+        if not nql:
+            return jsonify({"error": "nql is required"}), 400
+
+        try:
+            from tools.llm.router import LLMRouter
+            from tools.llm.provider import LLMRequest
+
+            prompt = (
+                "Explain this NQL (Network Query Language) query in plain English "
+                "for a non-technical network administrator. Be concise (2-3 sentences).\n\n"
+                f"NQL:\n{nql}"
+            )
+            router = LLMRouter()
+            req = LLMRequest(messages=[{"role": "user", "content": prompt}], max_tokens=150, temperature=0.2)
+            resp = router.invoke("nql_explain", req)
+            explanation = (resp.content or "").strip()
+        except ImportError:
+            explanation = _nql_heuristic_explain(nql)
+        except Exception:
+            explanation = _nql_heuristic_explain(nql)
+
+        return jsonify({"explanation": explanation})
+
+    @bp.route("/api/nqe/run", methods=["POST"])
+    def api_nqe_run():
+        """Execute an NQL query and return results.
+
+        Requires explicit user confirmation (call audit-log endpoint first
+        with user_confirmed=true — enforced by the UI transparency gate).
+
+        Request: {"nql": str, "network_id": str|null}
+        Response: {"rows": list, "columns": list, "total": int, "source": str}
+        """
+        data = request.get_json(force=True, silent=True) or {}
+        nql = (data.get("nql") or "").strip()
+        network_id = data.get("network_id") or None
+
+        if not nql:
+            return jsonify({"error": "nql is required"}), 400
+
+        try:
+            from tools.network.nqe_client import FallbackNQEClient
+
+            client = FallbackNQEClient()
+            result = client.run_query(nql, network_id=network_id)
+            rows = result.get("rows", [])
+            columns = list(rows[0].keys()) if rows else []
+
+            # Audit execution
+            try:
+                from tools.db.storage import get_canvas_connection
+                conn = get_canvas_connection("NC_STORAGE_BACKEND")
+                conn.execute(
+                    "INSERT INTO nc_nqe_audit_log (action, nql_query, user_confirmed, row_count, created_at) "
+                    "VALUES (%s, %s, %s, %s, NOW())",
+                    ("run", nql, True, len(rows)),
+                )
+                conn.commit()
+                conn.close()
+            except Exception:
+                pass
+
+            return jsonify({
+                "rows": rows[:500],
+                "columns": columns,
+                "total": len(rows),
+                "source": result.get("source", "local"),
+            })
+        except Exception as exc:
+            logger.exception("NQE run error: nql=%r", nql)
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/nqe/collections", methods=["GET"])
+    def api_nqe_collections():
+        """Return the list of supported NQE collection paths.
+
+        Response: {"collections": [{"path": str, "description": str}]}
+        """
+        collections = [
+            {"path": "network.devices",          "description": "All network devices (hostname, OS, vendor, platform)"},
+            {"path": "network.interfaces",        "description": "Device interfaces with status and counters"},
+            {"path": "network.bgp_sessions",      "description": "BGP peering sessions and their state"},
+            {"path": "network.acls",              "description": "Access control lists and firewall rules"},
+            {"path": "network.paths",             "description": "End-to-end forwarding paths"},
+            {"path": "network.os_versions",       "description": "OS version inventory across all devices"},
+            {"path": "network.links",             "description": "Physical and logical links between nodes"},
+            {"path": "network.vlans",             "description": "VLAN definitions and membership"},
+            {"path": "network.prefixes",          "description": "IP prefix / subnet inventory"},
+            {"path": "network.ospf.neighbors",    "description": "OSPF adjacency table"},
+            {"path": "network.isis.adjacencies",  "description": "IS-IS adjacency table"},
+            {"path": "network.mpls.lsps",         "description": "MPLS label-switched paths"},
+        ]
+        return jsonify({"collections": collections})
+
+    @bp.route("/api/nqe/audit-log", methods=["POST"])
+    def api_nqe_audit_log():
+        """Append a transparency-gate audit event.
+
+        Request: {"action": str, "nql": str, "user_confirmed": bool}
+        Response: {"id": str, "recorded": true}
+        """
+        data = request.get_json(force=True, silent=True) or {}
+        action = (data.get("action") or "").strip()
+        nql = (data.get("nql") or "").strip()
+        user_confirmed = bool(data.get("user_confirmed", False))
+
+        if not action:
+            return jsonify({"error": "action is required"}), 400
+
+        row_id = None
+        try:
+            from tools.db.storage import get_canvas_connection
+            conn = get_canvas_connection("NC_STORAGE_BACKEND")
+            cur = conn.execute(
+                "INSERT INTO nc_nqe_audit_log (action, nql_query, user_confirmed, created_at) "
+                "VALUES (%s, %s, %s, NOW()) RETURNING id",
+                (action, nql, user_confirmed),
+            )
+            row = cur.fetchone()
+            row_id = str(row[0] if isinstance(row, (list, tuple)) else row.get("id", "")) if row else None
+            conn.commit()
+            conn.close()
+        except Exception as exc:
+            logger.warning("NQE audit-log insert failed: %s", exc)
+
+        return jsonify({"id": row_id or "n/a", "recorded": True})
+
+    @bp.route("/api/nqe/cross-validate", methods=["POST"])
+    def api_nqe_cross_validate():
+        """Dual-query cross-validation: translate using two strategies and compare.
+
+        Strategy A uses structured context (deterministic); strategy B is context-free
+        (LLM/fallback). A high divergence score means the two strategies disagree and
+        a human must review and approve before execution.
+
+        Request:  {"text": str, "context": dict (optional)}
+        Response: {
+            "nql_primary":      str,   # strategy A result
+            "nql_secondary":    str,   # strategy B result
+            "divergence_score": float, # 0.0 identical → 1.0 completely different
+            "require_hitl":     bool,  # True when divergence_score >= 0.6
+            "message":          str
+        }
+        """
+        data = request.get_json(force=True, silent=True) or {}
+        text = (data.get("text") or "").strip()
+        if not text:
+            return jsonify({"error": "text is required"}), 400
+
+        context = data.get("context") or {}
+
+        try:
+            from tools.network.nql_translator import nl_to_nql
+            nql_primary = nl_to_nql(text, context=context or None)
+            nql_secondary = nl_to_nql(text)  # context-free → always LLM/fallback
+        except Exception as exc:
+            logger.exception("NQE cross-validate translation error")
+            return jsonify({"error": str(exc)}), 500
+
+        divergence = _nql_divergence_score(nql_primary, nql_secondary)
+        require_hitl = divergence >= 0.6
+
+        if require_hitl:
+            message = (
+                f"The two translation strategies produced divergent queries "
+                f"(divergence {divergence:.0%}). Human approval is required before execution."
+            )
+        elif divergence >= 0.3:
+            message = (
+                f"Minor divergence detected ({divergence:.0%}). "
+                "Review both queries before running."
+            )
+        else:
+            message = "Both translation strategies agree. Safe to proceed."
+
+        return jsonify({
+            "nql_primary": nql_primary,
+            "nql_secondary": nql_secondary,
+            "divergence_score": divergence,
+            "require_hitl": require_hitl,
+            "message": message,
+        })
+
+    @bp.route("/api/nqe/hitl-approve", methods=["POST"])
+    def api_nqe_hitl_approve():
+        """Record a HITL approval for a cross-validated NQE query pair.
+
+        Request:  {"nql_primary": str, "nql_secondary": str, "approved_by": str, "notes": str}
+        Response: {"approved": true, "approved_by": str, "recorded": true}
+        """
+        data = request.get_json(force=True, silent=True) or {}
+        nql_primary = (data.get("nql_primary") or "").strip()
+        nql_secondary = (data.get("nql_secondary") or "").strip()
+        approved_by = (data.get("approved_by") or "").strip()
+        notes = (data.get("notes") or "").strip()
+
+        if not approved_by:
+            return jsonify({"error": "approved_by is required"}), 400
+
+        import json as _json
+        audit_payload = _json.dumps({
+            "nql_primary": nql_primary,
+            "nql_secondary": nql_secondary,
+            "notes": notes,
+        })
+
+        try:
+            from tools.db.storage import get_canvas_connection
+            conn = get_canvas_connection("NC_STORAGE_BACKEND")
+            conn.execute(
+                "INSERT INTO nc_nqe_audit_log (action, nql_query, user_confirmed, created_at) "
+                "VALUES (%s, %s, %s, NOW())",
+                ("hitl_approve", audit_payload, True),
+            )
+            conn.commit()
+            conn.close()
+        except Exception as exc:
+            logger.warning("NQE hitl-approve audit insert failed: %s", exc)
+
+        return jsonify({"approved": True, "approved_by": approved_by, "recorded": True})
+
+    # ── NQE helpers ────────────────────────────────────────────────────────
+
+    def _nql_divergence_score(nql_a: str, nql_b: str) -> float:
+        """Return divergence in [0.0, 1.0] between two NQL strings (Jaccard distance).
+
+        0.0 = identical, 1.0 = completely different.
+        Collection mismatch is boosted to ≥ 0.8 since different primary collections
+        almost certainly query different facts.
+        """
+        import re as _re
+
+        def _collection(nql):
+            m = _re.search(r"\bin\s+(network\.\S+)", nql, _re.I)
+            return m.group(1).lower() if m else ""
+
+        col_a = _collection(nql_a)
+        col_b = _collection(nql_b)
+
+        tok_a = set(_re.findall(r"[\w.]+", nql_a.lower()))
+        tok_b = set(_re.findall(r"[\w.]+", nql_b.lower()))
+
+        if not tok_a or not tok_b:
+            return 1.0
+
+        jaccard = len(tok_a & tok_b) / len(tok_a | tok_b)
+        divergence = 1.0 - jaccard
+
+        if col_a and col_b and col_a != col_b:
+            divergence = max(divergence, 0.8)
+
+        return round(divergence, 3)
+
+    def _nql_heuristic_explain(nql: str) -> str:
+        """Generate a simple heuristic explanation from NQL structure."""
+        import re as _re
+        nql = nql.strip()
+        m = _re.search(r"\bin\s+(network\.\S+)", nql, _re.I)
+        collection = m.group(1) if m else "network"
+        where_m = _re.search(r"\bwhere\s+(.+?)(?:\bselect\b|$)", nql, _re.I | _re.DOTALL)
+        where_clause = where_m.group(1).strip() if where_m else ""
+        base = f"Queries the '{collection}' collection"
+        if where_clause:
+            base += f" filtered by: {where_clause[:120]}"
+        return base + "."
+
+
+    # ── Compliance Audit landing ───────────────────────────────────────────
+    @bp.route("/compliance-audit")
+    def nc_compliance_audit_index():
+        """List topologies so the user can pick one to audit."""
+        conn = get_connection()
+        topos = [
+            dict(r) if hasattr(r, "keys") else {"id": r[0], "name": r[1]}
+            for r in conn.execute(
+                "SELECT id, name FROM topologies ORDER BY name"
+            ).fetchall()
+        ]
+        conn.close()
+        return render_template("network/compliance_audit_index.html", topologies=topos)
+
+    # ── Config Review ─────────────────────────────────────────────────────
+    @bp.route("/config-review")
+    def nc_config_review():
+        """Configuration Review Assistant — upload and AI-review device configs."""
+        from tools.network.constants import CONFIG_REVIEW_ROLES
+        return render_template("network/config_review.html", roles=CONFIG_REVIEW_ROLES)
+
+    # ── Diagram Analysis ──────────────────────────────────────────────────
+    @bp.route("/diagram-analysis")
+    def nc_diagram_analysis():
+        """Network Diagram Analysis — upload PNG/PDF/draw.io for AI analysis."""
+        from tools.network.constants import DIAGRAM_ANALYSIS_INDUSTRIES
+        return render_template("network/diagram_analysis.html", industries=DIAGRAM_ANALYSIS_INDUSTRIES)
+
+    # ── Migration Phases landing (alias → hub) ────────────────────────────
+    @bp.route("/migration-phases")
+    def nc_migration_phases_hub():
+        """Redirect bare /migration-phases to the Migration Hub."""
+        from flask import redirect
+        return redirect("/network/migration-hub")
+
+    # ── PVM Predictive Vulnerability Management routes ────────────────────
+    from tools.network.routes.pvm import register_pvm_routes
+
+    register_pvm_routes(bp)
+
+    # ── PNA Predictive Network Analytics routes ───────────────────────────
+    from tools.network.routes.pna import register_pna_routes
+
+    register_pna_routes(bp)
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Federal Network Peering — IP Address Space & Routing Policy (Step 3)
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/api/ip-space-definitions", methods=["POST"])
+    @nc_login_required
+    def nc_api_create_ip_space_definition():
+        from tools.network.ip_address_space import create_ip_space_definition
+        data = request.get_json(force=True) or {}
+        required = ("initiating_party_name", "responding_party_name")
+        missing = [f for f in required if not data.get(f)]
+        if missing:
+            return jsonify({"error": f"Missing required fields: {missing}"}), 400
+        conn = get_connection()
+        try:
+            result = create_ip_space_definition(
+                conn,
+                initiating_party_name=data["initiating_party_name"],
+                responding_party_name=data["responding_party_name"],
+                initiating_party_org=data.get("initiating_party_org", ""),
+                responding_party_org=data.get("responding_party_org", ""),
+                peering_request_id=data.get("peering_request_id"),
+                asn_exchange_id=data.get("asn_exchange_id"),
+                initial_prefixes=data.get("initial_prefixes"),
+            )
+            _audit("CREATE", "ip_space_definition", result["definition_id"], conn)
+            return jsonify({"ok": True, "definition": result}), 201
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+        finally:
+            conn.close()
+
+    @bp.route("/api/ip-space-definitions", methods=["GET"])
+    @nc_login_required
+    def nc_api_list_ip_space_definitions():
+        from tools.network.ip_address_space import list_ip_space_definitions
+        conn = get_connection()
+        try:
+            return jsonify(list_ip_space_definitions(
+                conn,
+                workflow_id=request.args.get("workflow_id"),
+                status=request.args.get("status"),
+                peering_request_id=request.args.get("peering_request_id"),
+                limit=min(int(request.args.get("limit", 100)), 500),
+            ))
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+        finally:
+            conn.close()
+
+    @bp.route("/api/ip-space-definitions/<did>", methods=["GET"])
+    @nc_login_required
+    def nc_api_get_ip_space_definition(did):
+        from tools.network.ip_address_space import get_ip_space_definition
+        conn = get_connection()
+        try:
+            rec = get_ip_space_definition(conn, did)
+            if not rec:
+                return jsonify({"error": f"Definition {did} not found"}), 404
+            return jsonify(rec)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+        finally:
+            conn.close()
+
+    @bp.route("/api/ip-space-definitions/<did>/prefixes", methods=["POST"])
+    @nc_login_required
+    def nc_api_add_ip_space_prefix(did):
+        from tools.network.ip_address_space import add_prefix
+        data = request.get_json(force=True) or {}
+        if not data.get("prefix"):
+            return jsonify({"error": "prefix is required"}), 400
+        conn = get_connection()
+        try:
+            result = add_prefix(
+                conn, did,
+                prefix=data["prefix"],
+                party_role=data.get("party_role", "initiating"),
+                prefix_type=data.get("prefix_type", "aggregate"),
+                description=data.get("description", ""),
+                is_customer_prefix=bool(data.get("is_customer_prefix", False)),
+            )
+            _audit("ADD_PREFIX", "ip_space_definition", did, conn)
+            return jsonify({"ok": True, "definition": result})
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+        finally:
+            conn.close()
+
+    @bp.route("/api/ip-space-definitions/<did>/prefixes/<int:idx>", methods=["DELETE"])
+    @nc_login_required
+    def nc_api_remove_ip_space_prefix(did, idx):
+        from tools.network.ip_address_space import remove_prefix
+        conn = get_connection()
+        try:
+            result = remove_prefix(conn, did, idx)
+            _audit("REMOVE_PREFIX", "ip_space_definition", did, conn)
+            return jsonify({"ok": True, "definition": result})
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+        finally:
+            conn.close()
+
+    @bp.route("/api/ip-space-definitions/<did>/routing-policy", methods=["PUT"])
+    @nc_login_required
+    def nc_api_set_ip_space_routing_policy(did):
+        from tools.network.ip_address_space import set_routing_policy
+        data = request.get_json(force=True) or {}
+        conn = get_connection()
+        try:
+            result = set_routing_policy(
+                conn, did,
+                max_prefixes_initiating=data.get("max_prefixes_initiating"),
+                max_prefixes_responding=data.get("max_prefixes_responding"),
+                min_prefix_length_v4=data.get("min_prefix_length_v4"),
+                max_prefix_length_v4=data.get("max_prefix_length_v4"),
+                min_prefix_length_v6=data.get("min_prefix_length_v6"),
+                max_prefix_length_v6=data.get("max_prefix_length_v6"),
+                accepted_communities=data.get("accepted_communities"),
+                rejected_communities=data.get("rejected_communities"),
+                local_preference=data.get("local_preference"),
+                med=data.get("med"),
+                no_export=data.get("no_export"),
+                prefix_filter_action=data.get("prefix_filter_action"),
+                notes=data.get("notes"),
+            )
+            _audit("SET_ROUTING_POLICY", "ip_space_definition", did, conn)
+            return jsonify({"ok": True, "definition": result})
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+        finally:
+            conn.close()
+
+    @bp.route("/api/ip-space-definitions/<did>/submit", methods=["POST"])
+    @nc_login_required
+    def nc_api_submit_ip_space_definition(did):
+        from tools.network.ip_address_space import submit_definition
+        conn = get_connection()
+        try:
+            result = submit_definition(conn, did)
+            _audit("SUBMIT", "ip_space_definition", did, conn)
+            return jsonify({"ok": True, "definition": result})
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+        finally:
+            conn.close()
+
+    @bp.route("/api/ip-space-definitions/<did>/acknowledge", methods=["POST"])
+    @nc_login_required
+    def nc_api_acknowledge_ip_space_definition(did):
+        from tools.network.ip_address_space import acknowledge_definition
+        conn = get_connection()
+        try:
+            result = acknowledge_definition(conn, did)
+            _audit("ACKNOWLEDGE", "ip_space_definition", did, conn)
+            return jsonify({"ok": True, "definition": result})
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+        finally:
+            conn.close()
+
+    @bp.route("/api/ip-space-definitions/<did>/approve", methods=["POST"])
+    @nc_login_required
+    def nc_api_approve_ip_space_definition(did):
+        from tools.network.ip_address_space import approve_definition
+        data = request.get_json(force=True) or {}
+        party_role = data.get("party_role")
+        if not party_role:
+            return jsonify({"error": "party_role is required"}), 400
+        conn = get_connection()
+        try:
+            result = approve_definition(conn, did,
+                                        party_role=party_role,
+                                        notes=data.get("notes", ""))
+            _audit("APPROVE", "ip_space_definition", did, conn)
+            return jsonify({"ok": True, "definition": result})
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+        finally:
+            conn.close()
+
+    @bp.route("/api/ip-space-definitions/<did>/reject", methods=["POST"])
+    @nc_login_required
+    def nc_api_reject_ip_space_definition(did):
+        from tools.network.ip_address_space import reject_definition
+        data = request.get_json(force=True) or {}
+        conn = get_connection()
+        try:
+            result = reject_definition(conn, did, reason=data.get("reason", ""))
+            _audit("REJECT", "ip_space_definition", did, conn)
+            return jsonify({"ok": True, "definition": result})
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+        finally:
+            conn.close()
+
+    @bp.route("/api/ip-space-definitions/<did>/document", methods=["GET"])
+    @nc_login_required
+    def nc_api_ip_space_definition_document(did):
+        from tools.network.ip_address_space import generate_definition_document
+        conn = get_connection()
+        try:
+            doc = generate_definition_document(conn, did)
+            fmt = request.args.get("format", "text")
+            if fmt == "json":
+                return jsonify({"ok": True, "definition_id": did, "document": doc})
+            return doc, 200, {"Content-Type": "text/plain; charset=utf-8"}
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 404
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+        finally:
+            conn.close()
 
     # ── Done ───────────────────────────────────────────────────────────────
     logger.info("Network Design Canvas Blueprint created (%d routes)", len(bp.deferred_functions))

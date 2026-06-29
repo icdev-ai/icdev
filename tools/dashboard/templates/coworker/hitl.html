@@ -1,0 +1,82 @@
+{# -*- CUI // SP-CTI -*- HITL gate panel — included in coworker/instance.html #}
+{# Renders pending HITL decisions for a co-worker instance.              #}
+{# Host page must POST to /api/ace/<instance_id>/hitl to approve/reject. #}
+{% if pending_hitl %}
+<section class="hitl-panel" style="margin-top:1.25rem;">
+  <h3 style="font-size:0.95rem; color:var(--text-primary); margin:0 0 0.6rem;">
+    &#9888; Human Approval Required
+  </h3>
+  {% for req in pending_hitl %}
+  <div class="hitl-card" id="hitl-{{ loop.index }}">
+    <div class="hitl-detail">{{ req.detail }}</div>
+    <div class="hitl-meta" style="font-size:0.75rem; color:var(--text-muted); margin-bottom:0.5rem;">
+      Co-Worker: <strong>{{ req.coworker_id }}</strong> &bull; Requested: {{ req.created_at }}
+    </div>
+    <div class="hitl-actions">
+      <button class="btn-hitl-approve" data-instance="{{ instance_id }}"
+              data-coworker="{{ req.coworker_id }}" data-detail="{{ req.detail }}">
+        Approve
+      </button>
+      <button class="btn-hitl-reject" data-instance="{{ instance_id }}"
+              data-coworker="{{ req.coworker_id }}" data-detail="{{ req.detail }}">
+        Reject
+      </button>
+    </div>
+  </div>
+  {% endfor %}
+</section>
+
+<style>
+.hitl-panel { border:1px solid rgba(239,68,68,0.4); border-radius:8px;
+              background:rgba(239,68,68,0.06); padding:0.85rem 1rem; }
+.hitl-card  { margin-bottom:0.75rem; padding-bottom:0.75rem;
+              border-bottom:1px solid rgba(239,68,68,0.2); }
+.hitl-card:last-child { margin-bottom:0; padding-bottom:0; border-bottom:none; }
+.hitl-detail { font-size:0.88rem; color:var(--text-primary); margin-bottom:0.35rem; }
+.hitl-actions { display:flex; gap:0.5rem; }
+.btn-hitl-approve, .btn-hitl-reject {
+  padding:0.3rem 0.85rem; border-radius:5px; border:1px solid;
+  font-size:0.8rem; font-weight:600; cursor:pointer;
+}
+.btn-hitl-approve { background:rgba(34,197,94,0.15); color:#86efac;
+                    border-color:rgba(34,197,94,0.4); }
+.btn-hitl-approve:hover { background:rgba(34,197,94,0.28); }
+.btn-hitl-reject  { background:rgba(239,68,68,0.12); color:#fca5a5;
+                    border-color:rgba(239,68,68,0.35); }
+.btn-hitl-reject:hover { background:rgba(239,68,68,0.22); }
+</style>
+
+<script>
+(function () {
+  function _hitlPost(btn, approved) {
+    var instance  = btn.dataset.instance;
+    var coworker  = btn.dataset.coworker;
+    var detail    = btn.dataset.detail;
+    btn.disabled  = true;
+    btn.textContent = approved ? 'Approving…' : 'Rejecting…';
+    fetch('/api/ace/' + instance + '/hitl', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({coworker_id: coworker, detail: detail, approved: approved}),
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      var card = btn.closest('.hitl-card');
+      if (card) card.style.opacity = '0.4';
+      setTimeout(function() { location.reload(); }, 800);
+    })
+    .catch(function(e) {
+      btn.disabled = false;
+      btn.textContent = approved ? 'Approve' : 'Reject';
+      alert('HITL action failed: ' + e);
+    });
+  }
+  document.querySelectorAll('.btn-hitl-approve').forEach(function(b) {
+    b.addEventListener('click', function() { _hitlPost(b, true); });
+  });
+  document.querySelectorAll('.btn-hitl-reject').forEach(function(b) {
+    b.addEventListener('click', function() { _hitlPost(b, false); });
+  });
+})();
+</script>
+{% endif %}

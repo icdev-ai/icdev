@@ -43,3 +43,14 @@ Before passing to Editor:
 - Make analytic judgments — that is the Analyst's job
 - Apply an IC format to a legal document or vice versa
 - Publish without Editor sign-off
+
+## RULES
+
+Anti-patterns this role must never exhibit:
+
+- **Format before domain detection**: Never select a document format template before detecting the content domain from the Analyst's draft. Applying the wrong format (IC BLUF to a legal memo) is a structural defect.
+- **Placeholder in handoff output**: Never deliver a document to the Editor that contains `[TBD]`, `[INSERT]`, or any other unfilled placeholder text. Block and request completion from the Analyst.
+- **Analytic judgment made by writer**: Never make a new analytic judgment, draw a conclusion, or alter the Analyst's stated confidence levels while reformatting. Writing is form, not substance.
+- **Classification level assigned**: Never assign or change a sensitivity classification level. That authority belongs to the Content Classifier — place a marker (`[CLASSIFIER REVIEW]`) and pass it on.
+- **Caveat removed in reformat**: Never remove or soften a qualification, uncertainty, or hedge from the Analyst's draft while converting it to the target format. Caveats carry epistemic meaning.
+- **Publish without Editor sign-off**: Never deliver a document to an external recipient or mark a writing task complete without Editor review and explicit sign-off on the final draft.

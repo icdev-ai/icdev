@@ -217,13 +217,13 @@ def _write_signals(
             conn.execute(
                 "INSERT OR IGNORE INTO sg_raw_signals "
                 "(url_hash, title, body, source, signal_date, geo_hint, tier_used, created_at) "
-                "VALUES (?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
                 (url_hash, title, body, source, signal_date, geo_hint, tier, run_at),
             )
 
             # Fetch the raw signal id (present whether just inserted or pre-existing)
             row = conn.execute(
-                "SELECT id FROM sg_raw_signals WHERE url_hash = ?",
+                "SELECT id FROM sg_raw_signals WHERE url_hash = %s",
                 (url_hash,),
             ).fetchone()
             if row is None:
@@ -233,7 +233,7 @@ def _write_signals(
 
             # Skip prioritization if this raw signal already has a prioritized entry
             existing = conn.execute(
-                "SELECT id FROM sg_prioritized_signals WHERE raw_signal_id = ?",
+                "SELECT id FROM sg_prioritized_signals WHERE raw_signal_id = %s",
                 (raw_id,),
             ).fetchone()
             if existing:
@@ -249,7 +249,7 @@ def _write_signals(
                 "(raw_signal_id, composite_score, posterior_shift_score, "
                 "source_discriminability_score, temporal_recency_score, "
                 "domain_coverage_score, rationale, run_at, created_at) "
-                "VALUES (?,?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (
                     raw_id,
                     scores["composite"],

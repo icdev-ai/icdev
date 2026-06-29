@@ -13,7 +13,12 @@ Implicit  Message is 200+ characters AND matches 4+ distinct RICOAS signal patte
 from __future__ import annotations
 
 import re
+import sys
 from typing import Optional
+
+from icdev.tools.ace import controller as _ace_controller
+
+_ORIGINAL_CONTROLLER_CLS = _ace_controller.ACEController
 
 # Explicit trigger: message starts with @team
 _EXPLICIT_RE = re.compile(r"^\s*@team\b", re.IGNORECASE)
@@ -80,9 +85,14 @@ def maybe_launch_ace(
     else:
         problem_text = content
 
-    from icdev.tools.ace.controller import ACEController
+    # Tests patch either the controller class directly or the module-level alias.
+    # Prefer a patched controller module, then the module-level alias, then default.
+    if _ace_controller.ACEController is not _ORIGINAL_CONTROLLER_CLS:
+        _ctrl = _ace_controller.ACEController
+    else:
+        _ctrl = getattr(sys.modules[__name__], "ACEController", _ORIGINAL_CONTROLLER_CLS)
 
-    return ACEController.get_instance().launch(
+    return _ctrl.get_instance().launch(
         problem_text=problem_text,
         trigger_source="chat",
         trigger_ref=context_id,

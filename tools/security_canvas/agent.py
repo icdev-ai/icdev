@@ -56,7 +56,7 @@ def on_ndc_topology_saved(topology_id: str) -> dict:
         # Run assessment
         with get_connection() as conn:
             row = conn.execute(
-                "SELECT graph_json FROM security_designs WHERE id=?",
+                "SELECT graph_json FROM security_designs WHERE id=%s",
                 (design_id,),
             ).fetchone()
             if not row:
@@ -74,7 +74,7 @@ def on_ndc_topology_saved(topology_id: str) -> dict:
                 "source_entity_id, total_threats, total_controls, "
                 "risk_score, posture_grade, findings_json, "
                 "recommendations_json, ran_at) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (
                     assess_id,
                     design_id,
@@ -281,7 +281,7 @@ def on_pdc_pipeline_saved(
                 "source_entity_id, total_threats, total_controls, "
                 "risk_score, posture_grade, findings_json, "
                 "recommendations_json, ran_at) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (
                     assess_id,
                     None,
@@ -329,7 +329,7 @@ def on_idc_design_saved(design_id: str) -> dict:
         # Load IDC graph
         with get_idc_conn() as idc_conn:
             row = idc_conn.execute(
-                "SELECT name, graph_json FROM infra_designs WHERE id=?",
+                "SELECT name, graph_json FROM infra_designs WHERE id=%s",
                 (design_id,),
             ).fetchone()
         if not row:
@@ -422,13 +422,13 @@ def on_idc_design_saved(design_id: str) -> dict:
         with get_sdc_conn() as sdc_conn:
             # Upsert derived SDC design
             existing = sdc_conn.execute(
-                "SELECT id FROM security_designs WHERE name=?",
+                "SELECT id FROM security_designs WHERE name=%s",
                 (f"[IDC] {design_name}",),
             ).fetchone()
             if existing:
                 sdc_design_id = existing[0]
                 sdc_conn.execute(
-                    "UPDATE security_designs SET graph_json=?, updated_at=? WHERE id=?",
+                    "UPDATE security_designs SET graph_json=%s, updated_at=%s WHERE id=%s",
                     (json.dumps(sdc_graph), now, sdc_design_id),
                 )
             else:
@@ -436,7 +436,7 @@ def on_idc_design_saved(design_id: str) -> dict:
                 sdc_conn.execute(
                     "INSERT INTO security_designs "
                     "(id, name, description, classification, graph_json, created_at, updated_at) "
-                    "VALUES (?,?,?,?,?,?,?)",
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s)",
                     (
                         sdc_design_id,
                         f"[IDC] {design_name}",
@@ -455,7 +455,7 @@ def on_idc_design_saved(design_id: str) -> dict:
                 "source_entity_id, total_threats, total_controls, "
                 "risk_score, posture_grade, findings_json, "
                 "recommendations_json, ran_at) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (
                     assess_id,
                     sdc_design_id,
@@ -526,7 +526,7 @@ def on_ddc_design_saved(design_id: str) -> dict:
 
         with get_ddc_conn() as ddc_conn:
             row = ddc_conn.execute(
-                "SELECT name, graph_json FROM data_designs WHERE id=?",
+                "SELECT name, graph_json FROM data_designs WHERE id=%s",
                 (design_id,),
             ).fetchone()
         if not row:
@@ -595,7 +595,7 @@ def on_ddc_design_saved(design_id: str) -> dict:
                 "source_entity_id, total_threats, total_controls, "
                 "risk_score, posture_grade, findings_json, "
                 "recommendations_json, ran_at) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (
                     assess_id,
                     None,
@@ -645,7 +645,7 @@ def on_bdc_design_saved(design_id: str) -> dict:
 
         with get_bdc_conn() as bdc_conn:
             row = bdc_conn.execute(
-                "SELECT name, graph_json FROM boundary_designs WHERE id=?",
+                "SELECT name, graph_json FROM boundary_designs WHERE id=%s",
                 (design_id,),
             ).fetchone()
         if not row:
@@ -718,7 +718,7 @@ def on_bdc_design_saved(design_id: str) -> dict:
                 "source_entity_id, total_threats, total_controls, "
                 "risk_score, posture_grade, findings_json, "
                 "recommendations_json, ran_at) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (
                     assess_id,
                     None,
@@ -777,7 +777,7 @@ def on_odc_design_saved(design_id: str) -> dict:
 
         with get_odc_conn() as odc_conn:
             row = odc_conn.execute(
-                "SELECT name, graph_json FROM observability_designs WHERE id=?",
+                "SELECT name, graph_json FROM observability_designs WHERE id=%s",
                 (design_id,),
             ).fetchone()
         if not row:
@@ -844,7 +844,7 @@ def on_odc_design_saved(design_id: str) -> dict:
                 "source_entity_id, total_threats, total_controls, "
                 "risk_score, posture_grade, findings_json, "
                 "recommendations_json, ran_at) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (
                     assess_id,
                     None,
@@ -904,7 +904,7 @@ def on_mdc_design_saved(design_id: str) -> dict:
 
         with get_mdc_conn() as mdc_conn:
             row = mdc_conn.execute(
-                "SELECT name, graph_json FROM migration_designs WHERE id=?",
+                "SELECT name, graph_json FROM migration_designs WHERE id=%s",
                 (design_id,),
             ).fetchone()
         if not row:
@@ -995,7 +995,7 @@ def on_mdc_design_saved(design_id: str) -> dict:
                 "source_entity_id, total_threats, total_controls, "
                 "risk_score, posture_grade, findings_json, "
                 "recommendations_json, ran_at) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (
                     assess_id,
                     None,
@@ -1047,7 +1047,7 @@ def auto_assess(design_id: str, trigger_source: str = "auto") -> dict:
 
         with get_connection() as conn:
             row = conn.execute(
-                "SELECT graph_json FROM security_designs WHERE id=?",
+                "SELECT graph_json FROM security_designs WHERE id=%s",
                 (design_id,),
             ).fetchone()
             if not row:
@@ -1069,7 +1069,7 @@ def auto_assess(design_id: str, trigger_source: str = "auto") -> dict:
                 "(id, design_id, assessment_type, trigger_source, "
                 "total_threats, total_controls, risk_score, posture_grade, "
                 "findings_json, recommendations_json, ran_at) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (
                     assess_id,
                     design_id,

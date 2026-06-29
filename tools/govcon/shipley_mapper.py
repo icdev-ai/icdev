@@ -372,7 +372,7 @@ def _audit(conn, event_type, action, details):
         conn.execute(
             "INSERT INTO audit_trail "
             "(id, timestamp, event_type, actor, action, details, project_id, session_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
             (_gen_id("aud"), _now(), event_type, "shipley_mapper", action, det, None, None),
         )
     except Exception:
@@ -380,7 +380,7 @@ def _audit(conn, event_type, action, details):
             conn.execute(
                 "INSERT INTO audit_trail "
                 "(project_id, event_type, actor, action, details, session_id) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s)",
                 (None, event_type, "shipley_mapper", action, det, None),
             )
         except Exception:
@@ -391,7 +391,7 @@ def _safe_table_exists(conn, table_name):
     """Check if a table exists in the database."""
     try:
         rows = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=%s",
             (table_name,),
         ).fetchall()
         return len(rows) > 0

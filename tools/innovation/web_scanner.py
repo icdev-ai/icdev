@@ -647,7 +647,7 @@ def store_signals(signals, db_path=None):
 
             # Check for duplicate by content hash
             existing = conn.execute(
-                "SELECT id FROM innovation_signals WHERE content_hash = ?",
+                "SELECT id FROM innovation_signals WHERE content_hash = %s",
                 (signal.get("content_hash", ""),),
             ).fetchone()
 
@@ -660,7 +660,7 @@ def store_signals(signals, db_path=None):
                    (id, source, source_type, title, description, url,
                     metadata, community_score, content_hash, discovered_at,
                     status, category)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', NULL)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'new', NULL)""",
                 (
                     signal["id"],
                     signal["source"],
@@ -843,7 +843,7 @@ def get_scan_history(days=7, db_path=None):
             """SELECT source, DATE(discovered_at) as scan_date, COUNT(*) as count,
                       status, category
                FROM innovation_signals
-               WHERE discovered_at >= ?
+               WHERE discovered_at >= %s
                GROUP BY source, scan_date, status
                ORDER BY scan_date DESC""",
             (cutoff,),
@@ -864,7 +864,7 @@ def get_scan_history(days=7, db_path=None):
             )
 
         total = conn.execute(
-            "SELECT COUNT(*) as total FROM innovation_signals WHERE discovered_at >= ?",
+            "SELECT COUNT(*) as total FROM innovation_signals WHERE discovered_at >= %s",
             (cutoff,),
         ).fetchone()["total"]
 

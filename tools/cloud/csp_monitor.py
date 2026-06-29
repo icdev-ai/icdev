@@ -214,7 +214,7 @@ def _store_signal(conn: sqlite3.Connection, signal: Dict) -> bool:
     """Store innovation signal with deduplication. Returns True if new."""
     # Check for existing signal with same content_hash
     existing = conn.execute(
-        "SELECT id FROM innovation_signals WHERE content_hash = ?", (signal["content_hash"],)
+        "SELECT id FROM innovation_signals WHERE content_hash = %s", (signal["content_hash"],)
     ).fetchone()
     if existing:
         logger.debug("Duplicate signal skipped: %s", signal["content_hash"][:12])
@@ -224,7 +224,7 @@ def _store_signal(conn: sqlite3.Connection, signal: Dict) -> bool:
         "INSERT INTO innovation_signals "
         "(id, source, source_type, title, description, url, metadata, "
         "community_score, content_hash, discovered_at, status, category) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
         (
             signal["id"],
             signal["source"],
@@ -245,7 +245,7 @@ def _store_signal(conn: sqlite3.Connection, signal: Dict) -> bool:
 
 def _check_table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
     """Check if a DB table exists."""
-    cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table_name,))
+    cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=%s", (table_name,))
     return cursor.fetchone() is not None
 
 
@@ -653,7 +653,7 @@ class CSPMonitor:
             cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
             rows = conn.execute(
                 "SELECT * FROM innovation_signals WHERE source = 'csp_monitor' "
-                "AND discovered_at >= ? ORDER BY discovered_at DESC LIMIT 500",
+                "AND discovered_at >= %s ORDER BY discovered_at DESC LIMIT 500",
                 (cutoff,),
             ).fetchall()
             conn.close()
@@ -756,7 +756,7 @@ class CSPMonitor:
                 return {"status": "error", "message": "innovation_signals table not found"}
 
             row = conn.execute(
-                "SELECT * FROM innovation_signals WHERE id = ? AND source = 'csp_monitor'", (signal_id,)
+                "SELECT * FROM innovation_signals WHERE id = %s AND source = 'csp_monitor'", (signal_id,)
             ).fetchone()
             if not row:
                 conn.close()
@@ -767,7 +767,7 @@ class CSPMonitor:
             change_type = row["source_type"]
 
             # For now, mark signal as reviewed and log the registry update
-            conn.execute("UPDATE innovation_signals SET status = 'reviewed' WHERE id = ?", (signal_id,))
+            conn.execute("UPDATE innovation_signals SET status = 'reviewed' WHERE id = %s", (signal_id,))
             conn.commit()
             conn.close()
 
@@ -803,7 +803,7 @@ class CSPMonitor:
             cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
             rows = conn.execute(
                 "SELECT * FROM innovation_signals WHERE source = 'csp_monitor' "
-                "AND discovered_at >= ? ORDER BY discovered_at DESC",
+                "AND discovered_at >= %s ORDER BY discovered_at DESC",
                 (cutoff,),
             ).fetchall()
             conn.close()

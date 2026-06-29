@@ -110,7 +110,7 @@ def new_canvas():
         name = "Untitled Infrastructure"
         if template_id:
             tpl = conn.execute(
-                "SELECT name, graph_json FROM idc_templates WHERE id = ?",
+                "SELECT name, graph_json FROM idc_templates WHERE id = %s",
                 (template_id,),
             ).fetchone()
             if tpl:
@@ -123,7 +123,7 @@ def new_canvas():
             "INSERT INTO infra_designs "
             "(id, name, description, graph_json, template_id, "
             "classification, created_at, updated_at) "
-            "VALUES (?,?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
             (design_id, name, "", json.dumps(graph), template_id, "CUI", now, now),
         )
         conn.commit()
@@ -171,7 +171,7 @@ def canvas(design_id):
     """Open the infrastructure canvas editor."""
     conn = _get_conn()
     try:
-        row = conn.execute("SELECT * FROM infra_designs WHERE id = ?", (design_id,)).fetchone()
+        row = conn.execute("SELECT * FROM infra_designs WHERE id = %s", (design_id,)).fetchone()
         if not row:
             return "Design not found", 404
         design = dict(row)
@@ -191,7 +191,7 @@ def idc_remediation_page(design_id):
     """Remediation page — gap analysis with recommended fixes."""
     conn = _get_conn()
     try:
-        row = conn.execute("SELECT id, name FROM infra_designs WHERE id=?", (design_id,)).fetchone()
+        row = conn.execute("SELECT id, name FROM infra_designs WHERE id=%s", (design_id,)).fetchone()
         if not row:
             from flask import redirect
 
@@ -251,7 +251,7 @@ def twin_dashboard():
 
             snap_row = conn.execute(
                 "SELECT id, version_number, change_summary, created_at, graph_json "
-                "FROM idc_versions WHERE design_id = ? ORDER BY version_number DESC LIMIT 1",
+                "FROM idc_versions WHERE design_id = %s ORDER BY version_number DESC LIMIT 1",
                 (design_id,),
             ).fetchone()
 
@@ -261,7 +261,7 @@ def twin_dashboard():
             else:
                 snap = None
                 base = conn.execute(
-                    "SELECT graph_json FROM infra_designs WHERE id = ?", (design_id,)
+                    "SELECT graph_json FROM infra_designs WHERE id = %s", (design_id,)
                 ).fetchone()
                 graph_json = dict(base)["graph_json"] if base else "{}"
 
@@ -269,7 +269,7 @@ def twin_dashboard():
 
             assessment_row = conn.execute(
                 "SELECT findings_json, score, created_at FROM idc_assessments "
-                "WHERE design_id = ? ORDER BY created_at DESC LIMIT 1",
+                "WHERE design_id = %s ORDER BY created_at DESC LIMIT 1",
                 (design_id,),
             ).fetchone()
 
@@ -387,7 +387,7 @@ def emit_run():
         conn = _get_conn()
         try:
             row = conn.execute(
-                "SELECT graph_json FROM infra_designs WHERE id = ?", (project,)
+                "SELECT graph_json FROM infra_designs WHERE id = %s", (project,)
             ).fetchone()
         finally:
             conn.close()
@@ -513,7 +513,7 @@ def create_design():
             "INSERT INTO infra_designs "
             "(id, name, description, graph_json, template_id, "
             "classification, created_at, updated_at) "
-            "VALUES (?,?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
             (
                 design_id,
                 data.get("name", "Untitled Infrastructure"),
@@ -539,7 +539,7 @@ def get_design(design_id):
     """Get a design by ID."""
     conn = _get_conn()
     try:
-        row = conn.execute("SELECT * FROM infra_designs WHERE id = ?", (design_id,)).fetchone()
+        row = conn.execute("SELECT * FROM infra_designs WHERE id = %s", (design_id,)).fetchone()
         if not row:
             return jsonify({"error": "Not found"}), 404
         d = dict(row)
@@ -556,9 +556,9 @@ def save_design(design_id):
     conn = _get_conn()
     try:
         conn.execute(
-            "UPDATE infra_designs SET name = ?, description = ?, "
-            "graph_json = ?, classification = ?, updated_at = ? "
-            "WHERE id = ?",
+            "UPDATE infra_designs SET name = %s, description = %s, "
+            "graph_json = %s, classification = %s, updated_at = %s "
+            "WHERE id = %s",
             (
                 data.get("name"),
                 data.get("description", ""),
@@ -616,8 +616,8 @@ def delete_design(design_id):
     conn = _get_conn()
     try:
         for tbl in _IDC_CHILD_TABLES:
-            conn.execute(f"DELETE FROM {tbl} WHERE design_id=?", (design_id,))  # nosec B608
-        conn.execute("DELETE FROM infra_designs WHERE id=?", (design_id,))
+            conn.execute(f"DELETE FROM {tbl} WHERE design_id=%s", (design_id,))  # nosec B608
+        conn.execute("DELETE FROM infra_designs WHERE id=%s", (design_id,))
         conn.commit()
     finally:
         conn.close()
@@ -632,8 +632,8 @@ def delete_all_designs():
         ids = [r[0] for r in conn.execute("SELECT id FROM infra_designs").fetchall()]
         for did in ids:
             for tbl in _IDC_CHILD_TABLES:
-                conn.execute(f"DELETE FROM {tbl} WHERE design_id=?", (did,))  # nosec B608
-            conn.execute("DELETE FROM infra_designs WHERE id=?", (did,))
+                conn.execute(f"DELETE FROM {tbl} WHERE design_id=%s", (did,))  # nosec B608
+            conn.execute("DELETE FROM infra_designs WHERE id=%s", (did,))
         conn.commit()
     finally:
         conn.close()
@@ -648,7 +648,7 @@ def run_assessment(design_id):
     chain_mode = "cot" if use_cot else ""
     conn = _get_conn()
     try:
-        row = conn.execute("SELECT graph_json FROM infra_designs WHERE id = ?", (design_id,)).fetchone()
+        row = conn.execute("SELECT graph_json FROM infra_designs WHERE id = %s", (design_id,)).fetchone()
         if not row:
             return jsonify({"error": "Not found"}), 404
 
@@ -662,7 +662,7 @@ def run_assessment(design_id):
         conn.execute(
             "INSERT INTO idc_assessments "
             "(id, design_id, assessment_type, findings_json, score, "
-            "created_at) VALUES (?,?,?,?,?,?)",
+            "created_at) VALUES (%s,%s,%s,%s,%s,%s)",
             (
                 assess_id,
                 design_id,
@@ -699,7 +699,7 @@ def run_auto_fix(design_id):
 
     conn = _get_conn()
     try:
-        row = conn.execute("SELECT graph_json FROM infra_designs WHERE id = ?", (design_id,)).fetchone()
+        row = conn.execute("SELECT graph_json FROM infra_designs WHERE id = %s", (design_id,)).fetchone()
         if not row:
             return jsonify({"error": "Not found"}), 404
 
@@ -714,7 +714,7 @@ def run_auto_fix(design_id):
 
         # Save updated graph
         conn.execute(
-            "UPDATE infra_designs SET graph_json = ?, updated_at = ? WHERE id = ?",
+            "UPDATE infra_designs SET graph_json = %s, updated_at = %s WHERE id = %s",
             (json.dumps(graph), _utcnow(), design_id),
         )
         conn.commit()
@@ -797,7 +797,7 @@ def idc_api_list_versions(design_id):
     try:
         rows = conn.execute(
             "SELECT id, version_number, change_summary, user_id, created_at "
-            "FROM idc_versions WHERE design_id=? ORDER BY version_number DESC",
+            "FROM idc_versions WHERE design_id=%s ORDER BY version_number DESC",
             (design_id,),
         ).fetchall()
         return jsonify([dict(r) for r in rows])
@@ -812,7 +812,7 @@ def idc_api_create_version(design_id):
     conn = _get_conn()
     try:
         row = conn.execute(
-            "SELECT graph_json FROM infra_designs WHERE id=?",
+            "SELECT graph_json FROM infra_designs WHERE id=%s",
             (design_id,),
         ).fetchone()
         if not row:
@@ -823,13 +823,13 @@ def idc_api_create_version(design_id):
         except Exception:
             current_graph = {}
         ver_num = conn.execute(
-            "SELECT COALESCE(MAX(version_number), 0) + 1 FROM idc_versions WHERE design_id=?",
+            "SELECT COALESCE(MAX(version_number), 0) + 1 FROM idc_versions WHERE design_id=%s",
             (design_id,),
         ).fetchone()[0]
         change_summary = data.get("change_summary", "")
         if not change_summary:
             prev = conn.execute(
-                "SELECT graph_json FROM idc_versions WHERE design_id=? ORDER BY version_number DESC LIMIT 1",
+                "SELECT graph_json FROM idc_versions WHERE design_id=%s ORDER BY version_number DESC LIMIT 1",
                 (design_id,),
             ).fetchone()
             if prev:
@@ -842,7 +842,7 @@ def idc_api_create_version(design_id):
         now = _utcnow()
         conn.execute(
             "INSERT INTO idc_versions (id, design_id, version_number, graph_json, change_summary, user_id, created_at) "
-            "VALUES (?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s)",
             (
                 ver_id,
                 design_id,
@@ -865,14 +865,14 @@ def idc_api_restore_version(design_id, version_id):
     conn = _get_conn()
     try:
         ver = conn.execute(
-            "SELECT graph_json, version_number FROM idc_versions WHERE id=? AND design_id=?",
+            "SELECT graph_json, version_number FROM idc_versions WHERE id=%s AND design_id=%s",
             (version_id, design_id),
         ).fetchone()
         if not ver:
             return jsonify({"error": "Version not found"}), 404
         now = _utcnow()
         conn.execute(
-            "UPDATE infra_designs SET graph_json=?, updated_at=? WHERE id=?",
+            "UPDATE infra_designs SET graph_json=%s, updated_at=%s WHERE id=%s",
             (ver["graph_json"], now, design_id),
         )
         conn.commit()
@@ -894,11 +894,11 @@ def idc_api_diff_versions(design_id):
     conn = _get_conn()
     try:
         ver_a = conn.execute(
-            "SELECT graph_json, version_number FROM idc_versions WHERE id=? AND design_id=?",
+            "SELECT graph_json, version_number FROM idc_versions WHERE id=%s AND design_id=%s",
             (ver_a_id, design_id),
         ).fetchone()
         ver_b = conn.execute(
-            "SELECT graph_json, version_number FROM idc_versions WHERE id=? AND design_id=?",
+            "SELECT graph_json, version_number FROM idc_versions WHERE id=%s AND design_id=%s",
             (ver_b_id, design_id),
         ).fetchone()
     finally:
@@ -943,7 +943,7 @@ def export_vsdx_file(design_id):
     conn = _get_conn()
     try:
         row = conn.execute(
-            "SELECT name, graph_json FROM infra_designs WHERE id = ?",
+            "SELECT name, graph_json FROM infra_designs WHERE id = %s",
             (design_id,),
         ).fetchone()
         if not row:
@@ -970,7 +970,7 @@ def _idc_fetch_design(design_id: str):
     conn = _get_conn()
     try:
         row = conn.execute(
-            "SELECT name, graph_json FROM infra_designs WHERE id = ?",
+            "SELECT name, graph_json FROM infra_designs WHERE id = %s",
             (design_id,),
         ).fetchone()
         if not row:
@@ -1202,7 +1202,7 @@ def idc_import_cloud():
         design_id = body.get("design_id")
         if design_id:
             # Merge into existing design
-            row = conn.execute("SELECT graph_json FROM infra_designs WHERE id = ?", (design_id,)).fetchone()
+            row = conn.execute("SELECT graph_json FROM infra_designs WHERE id = %s", (design_id,)).fetchone()
             if not row:
                 return jsonify({"error": "Design not found"}), 404
             existing = json.loads(row["graph_json"])
@@ -1210,7 +1210,7 @@ def idc_import_cloud():
             new_nodes = [n for n in graph["nodes"] if n["id"] not in existing_ids]
             existing["nodes"].extend(new_nodes)
             conn.execute(
-                "UPDATE infra_designs SET graph_json = ?, updated_at = ? WHERE id = ?",
+                "UPDATE infra_designs SET graph_json = %s, updated_at = %s WHERE id = %s",
                 (json.dumps(existing), _utcnow(), design_id),
             )
             conn.commit()
@@ -1223,7 +1223,7 @@ def idc_import_cloud():
             conn.execute(
                 "INSERT INTO infra_designs "
                 "(id, name, description, graph_json, classification, created_at, updated_at) "
-                "VALUES (?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s)",
                 (
                     design_id,
                     name[:200],
@@ -1461,14 +1461,14 @@ def idc_api_ai_trace():
         with _gc() as _conn:
             if record_id:
                 rows = _conn.execute(
-                    "SELECT * FROM canvas_ai_decisions WHERE canvas_type='idc' AND record_id=? "
-                    "ORDER BY created_at DESC LIMIT ?",
+                    "SELECT * FROM canvas_ai_decisions WHERE canvas_type='idc' AND record_id=%s "
+                    "ORDER BY created_at DESC LIMIT %s",
                     (record_id, limit),
                 ).fetchall()
             else:
                 rows = _conn.execute(
                     "SELECT * FROM canvas_ai_decisions WHERE canvas_type='idc' "
-                    "ORDER BY created_at DESC LIMIT ?",
+                    "ORDER BY created_at DESC LIMIT %s",
                     (limit,),
                 ).fetchall()
         return jsonify({"ok": True, "canvas": "idc", "decisions": [dict(r) for r in rows]})
@@ -1570,7 +1570,7 @@ def _compute_infra_governance(graph_data: dict) -> dict:
 def idc_api_governance(design_id):
     """Run infrastructure governance framework check."""
     conn = _get_conn()
-    row = conn.execute("SELECT graph_json FROM infra_designs WHERE id=?", (design_id,)).fetchone()
+    row = conn.execute("SELECT graph_json FROM infra_designs WHERE id=%s", (design_id,)).fetchone()
     if not row:
         conn.close()
         return jsonify({"error": "Not found"}), 404
@@ -1585,7 +1585,7 @@ def idc_api_governance(design_id):
     assess_id = f"ia-{uuid.uuid4().hex[:10]}"
     conn.execute(
         "INSERT INTO idc_assessments (id, design_id, assessment_type, findings_json, score, created_at) "
-        "VALUES (?,?,?,?,?,?)",
+        "VALUES (%s,%s,%s,%s,%s,%s)",
         (assess_id, design_id, "governance",
          json.dumps([{"title": c["title"], "severity": c["severity"], "status": c["status"]}
                      for c in result["checks"]]),

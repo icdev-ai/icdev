@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block title %}IDR Conflicts — {{ session.title }} — ICDEV™{% endblock %}
+{% block content %}
+<div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;margin-bottom:12px;">{{ session.classification or 'CUI // SP-CTI' }}</div>
+
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+  <div>
+    <a href="/docgen/{{ session.id }}" style="color:#7a8cb0;font-size:12px;text-decoration:none;">← Back to Session</a>
+    <h2 style="margin:4px 0 0;color:#eaeaea;font-size:18px;">⚠ Conflict Resolution — {{ session.title }}</h2>
+    <p style="color:#7a8cb0;font-size:12px;margin:4px 0 0;">
+      AI flagged topology discrepancies across your team's diagrams. Review each conflict and pick the canonical version.
+    </p>
+  </div>
+  <div style="text-align:right;">
+    <div style="font-size:22px;font-weight:bold;color:{% if pending_conflicts %}#e94560{% else %}#52c41a{% endif %};">
+      {{ pending_conflicts|length }}
+    </div>
+    <div style="font-size:11px;color:#7a8cb0;">pending</div>
+  </div>
+</div>
+
+{% if pending_conflicts %}
+<div style="background:#3a1a0a;border:1px solid #8a3a1a;border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#ffa07a;">
+  ⚠ <strong>{{ pending_conflicts|length }} unresolved</strong> — this session cannot advance past Stage 3 until all conflicts are resolved.
+</div>
+{% else %}
+<div style="background:#0a2a1a;border:1px solid #1a5a2a;border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#52c41a;">
+  ✅ All conflicts resolved — you may advance to Stage 4 (Synthesis).
+  <a href="/docgen/{{ session.id }}" style="color:#7ab3f0;margin-left:10px;">← Return to session</a>
+</div>
+{% endif %}
+
+<!-- Pending conflicts -->
+{% if pending_conflicts %}
+<h3 style="color:#e94560;font-size:14px;margin-bottom:12px;">Pending Resolution ({{ pending_conflicts|length }})</h3>
+{% for c in pending_conflicts %}
+<div class="conflict-card" id="conflict-{{ c.id }}" style="background:#0d1b2e;border:1px solid #8a3a1a;border-radius:8px;padding:16px;margin-bottom:14px;">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
+    <div>
+      <span style="color:#eaeaea;font-size:14px;font-weight:600;">{{ c.node_label }}</span>
+      <span style="background:#5a1a0a;color:#ffa07a;font-size:10px;padding:2px 7px;border-radius:3px;margin-left:8px;">{{ c.conflict_type }}</span>
+    </div>
+    <span style="color:#7a8cb0;font-size:11px;">{{ c.created_at[:19] if c.created_at else '' }}</span>
+  </div>
+  <!-- Side-by-side comparison -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+    <div style="background:#0a1525;border:1px solid #1e3a6e;border-radius:6px;padding:12px;">
+      <div style="color:#7ab3f0;font-size:11px;margin-bottom:6px;">Source A</div>
+      <div style="color:#eaeaea;font-size:12px;font-weight:600;margin-bottom:4px;">{{ c.source_a }}</div>
+      <pre style="color:#b8d0e8;font-size:11px;background:#050d1f;padding:6px 8px;border-radius:4px;overflow-x:auto;white-space:pre-wrap;word-break:break-all;">{{ c.source_a_value or '—' }}</pre>
+    </div>
+    <div style="background:#0a1525;border:1px solid #1e3a6e;border-radius:6px;padding:12px;">
+      <div style="color:#7ab3f0;font-size:11px;margin-bottom:6px;">Source B</div>
+      <div style="color:#eaeaea;font-size:12px;font-weight:600;margin-bottom:4px;">{{ c.source_b }}</div>
+      <pre style="color:#b8d0e8;font-size:11px;background:#050d1f;padding:6px 8px;border-radius:4px;overflow-x:auto;white-space:pre-wrap;word-break:break-all;">{{ c.source_b_value or '—' }}</pre>
+    </div>
+  </div>
+  <!-- Resolution controls -->
+  <div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap;">
+    <button onclick="resolveConflict('{{ c.id }}','a')"
+      style="background:#0f3460;color:#7ab3f0;padding:7px 14px;border:1px solid #1e3a6e;border-radius:4px;cursor:pointer;font-size:12px;">
+      ✓ Use Source A
+    </button>
+    <button onclick="resolveConflict('{{ c.id }}','b')"
+      style="background:#0f3460;color:#7ab3f0;padding:7px 14px;border:1px solid #1e3a6e;border-radius:4px;cursor:pointer;font-size:12px;">
+      ✓ Use Source B
+    </button>
+    <div style="flex:1;min-width:180px;">
+      <input type="text" id="notes-{{ c.id }}" placeholder="Optional resolution notes…"
+        style="width:100%;box-sizing:border-box;background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:7px 10px;border-radius:4px;font-size:12px;">
+    </div>
+    <button onclick="resolveConflict('{{ c.id }}','manual')"
+      style="background:#1a3a1a;color:#52c41a;padding:7px 14px;border:1px solid #2a5a2a;border-radius:4px;cursor:pointer;font-size:12px;">
+      ✎ Manual Override
+    </button>
+  </div>
+  <div id="resolve-status-{{ c.id }}" style="color:#7ab3f0;font-size:11px;margin-top:6px;display:none;"></div>
+</div>
+{% endfor %}
+{% endif %}
+
+<!-- Resolved conflicts -->
+{% if resolved_conflicts %}
+<h3 style="color:#52c41a;font-size:14px;margin:20px 0 12px;">Resolved ({{ resolved_conflicts|length }})</h3>
+<div style="opacity:.7;">
+{% for c in resolved_conflicts %}
+<div style="background:#0a1a0a;border:1px solid #1a4a2a;border-radius:6px;padding:10px 14px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;">
+  <div>
+    <span style="color:#b8d0e8;font-size:12px;">{{ c.node_label }}</span>
+    <span style="background:#1a2a3a;color:#7a8cb0;font-size:10px;padding:1px 6px;border-radius:3px;margin-left:6px;">{{ c.conflict_type }}</span>
+    <span style="color:#52c41a;font-size:11px;margin-left:8px;">→ {{ c.resolution }}</span>
+    {% if c.resolution_notes %}
+    <span style="color:#7a8cb0;font-size:11px;margin-left:6px;">({{ c.resolution_notes }})</span>
+    {% endif %}
+  </div>
+  <span style="color:#5a6e8c;font-size:10px;">{{ c.resolved_by }} · {{ c.resolved_at[:16] if c.resolved_at else '' }}</span>
+</div>
+{% endfor %}
+</div>
+{% endif %}
+
+<script>
+function resolveConflict(conflictId, resolution) {
+  var notes = document.getElementById('notes-' + conflictId);
+  var statusEl = document.getElementById('resolve-status-' + conflictId);
+  statusEl.style.display = 'block';
+  statusEl.textContent = 'Saving…';
+  fetch('/docgen/api/conflicts/' + conflictId + '/resolve', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      resolution: resolution,
+      resolved_by: 'dashboard',
+      notes: notes ? notes.value.trim() : ''
+    })
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    if (d.resolved) {
+      statusEl.textContent = '✓ Resolved';
+      statusEl.style.color = '#52c41a';
+      document.getElementById('conflict-' + conflictId).style.opacity = '0.4';
+      setTimeout(function() { location.reload(); }, 800);
+    } else {
+      statusEl.textContent = 'Error: ' + (d.error || 'failed');
+      statusEl.style.color = '#e94560';
+    }
+  }).catch(function() { statusEl.textContent = 'Network error.'; statusEl.style.color = '#e94560'; });
+}
+</script>
+{% endblock %}

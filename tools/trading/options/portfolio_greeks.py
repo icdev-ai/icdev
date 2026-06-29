@@ -54,7 +54,7 @@ def compute_portfolio_greeks(
 
     rows = conn.execute(
         "SELECT qty, last_greeks_json FROM ad_sandbox_option_positions"
-        " WHERE user_id = ? AND qty != 0",
+        " WHERE user_id = %s AND qty != 0",
         (user_id,),
     ).fetchall()
 

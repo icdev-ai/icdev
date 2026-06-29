@@ -74,7 +74,7 @@ def trace_query_handler(args: dict):
 
         if trace_id:
             rows = conn.execute(
-                "SELECT * FROM otel_spans WHERE trace_id = ? ORDER BY start_time",
+                "SELECT * FROM otel_spans WHERE trace_id = %s ORDER BY start_time",
                 (trace_id,),
             ).fetchall()
         else:
@@ -88,7 +88,7 @@ def trace_query_handler(args: dict):
             where = "WHERE " + " AND ".join(clauses) if clauses else ""
             params.append(limit)
             rows = conn.execute(
-                f"SELECT * FROM otel_spans {where} ORDER BY start_time DESC LIMIT ?",  # nosec B608 -- table/column names are internal constants, not user input
+                f"SELECT * FROM otel_spans {where} ORDER BY start_time DESC LIMIT %s",  # nosec B608 -- table/column names are internal constants, not user input
                 params,
             ).fetchall()
 

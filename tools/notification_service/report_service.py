@@ -16,6 +16,16 @@ from .event_service import (
     render_template, render_to_string, send, sendmail, notify, emit, publish, dispatch, _now_iso,
 )
 
+# Narrative / digest limits and thresholds
+_NARRATIVE_MAX_TOKENS      = 512
+_NARRATIVE_TEMPERATURE     = 0.3
+_REGRESSION_SIGNIFICANCE_PTS = 3.0
+_GATE_ROWS_LIMIT           = 5
+_TOP_OPPS_ROADMAP_LIMIT    = 5
+_TOP_OPPS_SCAN_LIMIT       = 5
+_MODULE_ROWS_LIMIT         = 10
+_SUMMARISE_FINDINGS_COUNT  = 5
+
 CANVAS_REPORT_TEMPLATES = {
     "assessment_complete": (
         "Canvas **$canvas_name** assessment complete.\n"
@@ -149,17 +159,17 @@ def deliver_canvas_report(
         assessment_row = conn.execute(
             "SELECT id, design_id, score, cat1_findings, cat2_findings, cat3_findings, "
             "findings_json, assessment_type, created_at "
-            "FROM canvas_assessments WHERE id = ?",
+            "FROM canvas_assessments WHERE id = %s",
             (assessment_id,),
         ).fetchone()
         prev_row = conn.execute(
             "SELECT score FROM canvas_assessments "
-            "WHERE design_id = ? AND id != ? ORDER BY created_at DESC LIMIT 1",
+            "WHERE design_id = %s AND id != %s ORDER BY created_at DESC LIMIT 1",
             ((assessment_row or {}).get("design_id", ""), assessment_id),
         ).fetchone()
         gate_rows = conn.execute(
             "SELECT gate_id, status, finding_count FROM canvas_gate_results "
-            "WHERE assessment_id = ? ORDER BY finding_count DESC LIMIT 5",
+            "WHERE assessment_id = %s ORDER BY finding_count DESC LIMIT 5",
             (assessment_id,),
         ).fetchall()
 
@@ -224,7 +234,7 @@ def deliver_canvas_report(
             if ch == "audit":
                 conn.execute(
                     "INSERT INTO audit_trail (resource_type, resource_id, event, actor, detail) "
-                    "VALUES ('canvas_report', ?, 'report_delivered', 'system', ?)",
+                    "VALUES ('canvas_report', %s, 'report_delivered', 'system', %s)",
                     (assessment_id, rendered),
                 )
                 conn.commit()
@@ -281,7 +291,7 @@ def deliver_assessment_summary(
                 "SELECT COUNT(*) as total, "
                 "SUM(CASE WHEN status IN ('not_a_finding','not_applicable') THEN 1 ELSE 0 END) as naf, "
                 "SUM(CASE WHEN status = 'open' THEN 1 ELSE 0 END) as open_cnt "
-                "FROM govlift_stig_checks WHERE workload_id = ?",
+                "FROM govlift_stig_checks WHERE workload_id = %s",
                 (project_id,),
             ).fetchone()
             total = int((stig_row or {}).get("total", 0))
@@ -296,7 +306,7 @@ def deliver_assessment_summary(
                 "SUM(CASE WHEN status='open' THEN 1 ELSE 0 END) as open_cnt, "
                 "SUM(CASE WHEN status='closed' THEN 1 ELSE 0 END) as closed_cnt, "
                 "SUM(CASE WHEN status='open' AND due_date <= DATE('now','+30 days') THEN 1 ELSE 0 END) as due_soon "
-                "FROM poam_items WHERE project_id = ?",
+                "FROM poam_items WHERE project_id = %s",
                 (project_id,),
             ).fetchone()
             vars_ = {
@@ -309,7 +319,7 @@ def deliver_assessment_summary(
             control_rows = conn.execute(
                 "SELECT COUNT(*) as total, "
                 "SUM(CASE WHEN status='implemented' THEN 1 ELSE 0 END) as passed "
-                "FROM compliance_controls WHERE project_id = ? AND framework = ?",
+                "FROM compliance_controls WHERE project_id = %s AND framework = %s",
                 (project_id, framework),
             ).fetchone()
             vars_ = {
@@ -348,7 +358,7 @@ def deliver_assessment_summary(
             if ch == "audit":
                 conn.execute(
                     "INSERT INTO audit_trail (resource_type, resource_id, event, actor, detail) "
-                    "VALUES ('compliance_report', ?, ?, 'system', ?)",
+                    "VALUES ('compliance_report', %s, %s, 'system', %s)",
                     (project_id, f"{framework}_summary", rendered),
                 )
                 conn.commit()
@@ -451,7 +461,7 @@ def deliver_posture_digest(
             if ch == "audit":
                 conn.execute(
                     "INSERT INTO audit_trail (resource_type, resource_id, event, actor, detail) "
-                    "VALUES ('posture_digest', 'global', ?, 'system', ?)",
+                    "VALUES ('posture_digest', 'global', %s, 'system', %s)",
                     (digest_type, rendered),
                 )
                 conn.commit()
@@ -507,7 +517,7 @@ def deliver_aiify_phase_report(
             "o.module_path, s.composite_score, s.value_score, s.feasibility_score "
             "FROM aiify_opportunities o "
             "JOIN aiify_scores s ON s.opportunity_id = o.opportunity_id "
-            "WHERE o.roadmap_id = ? AND o.phase = ? "
+            "WHERE o.roadmap_id = %s AND o.phase = %s "
             "ORDER BY s.composite_score DESC",
             (roadmap_id, phase),
         ).fetchall()
@@ -517,7 +527,7 @@ def deliver_aiify_phase_report(
             "SELECT o.pattern_type, COUNT(*) as opp_count, AVG(s.composite_score) as avg_score "
             "FROM aiify_opportunities o "
             "JOIN aiify_scores s ON s.opportunity_id = o.opportunity_id "
-            "WHERE o.roadmap_id = ? AND o.phase = ? "
+            "WHERE o.roadmap_id = %s AND o.phase = %s "
             "GROUP BY o.pattern_type ORDER BY opp_count DESC",
             (roadmap_id, phase),
         ).fetchall()
@@ -582,7 +592,7 @@ def deliver_aiify_phase_report(
             if ch == "audit":
                 conn.execute(
                     "INSERT INTO audit_trail (resource_type, resource_id, event, actor, detail) "
-                    "VALUES ('aiify_phase_report', ?, 'report_delivered', 'system', ?)",
+                    "VALUES ('aiify_phase_report', %s, 'report_delivered', 'system', %s)",
                     (roadmap_id, rendered),
                 )
                 conn.commit()
@@ -621,7 +631,49 @@ def _summarise_findings(findings_json: str | None) -> str:
         return "none"
     try:
         findings = json.loads(findings_json)
-        top = [f.get("title", "finding") for f in (findings[:3] if isinstance(findings, list) else [])]
+        top = [f.get("title", "finding") for f in (findings[:_SUMMARISE_FINDINGS_COUNT] if isinstance(findings, list) else [])]
         return "; ".join(top) or "none"
     except Exception:
         return "parse error"
+
+
+def _compute_regression_threshold(cfg: dict | None) -> float:
+    """Adaptive regression significance threshold from historical score deltas.
+
+    Config keys:
+      enabled: bool
+      min_samples: int
+      sigma_fraction: float
+      fallback_regression_pts: float
+      adaptive_bounds: {"regression_floor": float, "regression_ceil": float}
+    """
+    cfg = cfg or {}
+    if not cfg.get("enabled", True):
+        return float(cfg.get("fallback_regression_pts", _REGRESSION_SIGNIFICANCE_PTS))
+    min_samples = int(cfg.get("min_samples", 5))
+    fallback = float(cfg.get("fallback_regression_pts", _REGRESSION_SIGNIFICANCE_PTS))
+    sigma_fraction = float(cfg.get("sigma_fraction", 0.5))
+    bounds = cfg.get("adaptive_bounds", {}) or {}
+    floor = float(bounds.get("regression_floor", 0.5))
+    ceil = float(bounds.get("regression_ceil", 10.0))
+    try:
+        conn = get_connection()
+        try:
+            row = conn.execute(
+                "SELECT AVG(delta) as mean_s, AVG(delta*delta) - AVG(delta)*AVG(delta) as var_s, COUNT(*) as n "
+                "FROM ("
+                "  SELECT ABS(score - LAG(score) OVER (ORDER BY run_at)) as delta "
+                "  FROM canvas_assessments WHERE score IS NOT NULL"
+                ")"
+            ).fetchone()
+            var_s = float((row or {}).get("var_s", 0.0) or 0.0)
+            n = int((row or {}).get("n", 0) or 0)
+            if n < min_samples:
+                return fallback
+            std_dev = max(0.0, var_s) ** 0.5
+            threshold = sigma_fraction * std_dev
+            return max(floor, min(ceil, threshold))
+        finally:
+            conn.close()
+    except Exception:
+        return fallback

@@ -1,0 +1,7 @@
+collection: canvas_health.e2e_coverage
+query: "Which canvases are missing E2E specs?"
+description: "List canvases that have no Playwright E2E spec file in tests/e2e/. These are candidates for [QA-GAP] kanban tasks."
+example_questions:
+  - "Which canvases have no E2E tests?"
+  - "Show E2E coverage gaps"
+  - "What canvas specs need to be written?"

@@ -47,7 +47,7 @@ def record_coverage(
         conn.execute(
             "INSERT INTO mitre_coverage "
             "(id, technique_id, signal_source, state, last_observed_at, project_id, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (row_id, technique_id, signal_source, state, last_observed_at, project_id, now),
         )
         conn.commit()
@@ -70,14 +70,14 @@ def get_coverage(
         if signal_source is not None:
             row = conn.execute(
                 "SELECT * FROM mitre_coverage "
-                "WHERE technique_id = ? AND project_id = ? AND signal_source = ? "
+                "WHERE technique_id = %s AND project_id = %s AND signal_source = %s "
                 "ORDER BY created_at DESC LIMIT 1",
                 (technique_id, project_id, signal_source),
             ).fetchone()
         else:
             row = conn.execute(
                 "SELECT * FROM mitre_coverage "
-                "WHERE technique_id = ? AND project_id = ? "
+                "WHERE technique_id = %s AND project_id = %s "
                 "ORDER BY created_at DESC LIMIT 1",
                 (technique_id, project_id),
             ).fetchone()
@@ -110,15 +110,15 @@ def list_coverage(
         if state is not None:
             rows = conn.execute(
                 "SELECT * FROM mitre_coverage "
-                "WHERE project_id = ? AND state = ? "
-                "ORDER BY created_at DESC LIMIT ?",
+                "WHERE project_id = %s AND state = %s "
+                "ORDER BY created_at DESC LIMIT %s",
                 (project_id, state, limit),
             ).fetchall()
         else:
             rows = conn.execute(
                 "SELECT * FROM mitre_coverage "
-                "WHERE project_id = ? "
-                "ORDER BY created_at DESC LIMIT ?",
+                "WHERE project_id = %s "
+                "ORDER BY created_at DESC LIMIT %s",
                 (project_id, limit),
             ).fetchall()
         if not rows:
@@ -150,7 +150,7 @@ def coverage_summary(project_id: str) -> dict[str, int]:
                            ORDER BY created_at DESC
                        ) AS rn
                 FROM mitre_coverage
-                WHERE project_id = ?
+                WHERE project_id = %s
             ) ranked
             WHERE rn = 1
             GROUP BY state

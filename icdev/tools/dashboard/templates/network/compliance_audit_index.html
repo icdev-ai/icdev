@@ -1,0 +1,27 @@
+{% extends "network/base.html" %}
+{% block title %}Compliance Audit — Network Design Canvas{% endblock %}
+
+{% block content %}
+<div style="max-width:900px;margin:2rem auto;padding:0 1rem;color:#eaeaea;">
+  <h1 style="font-size:1.6rem;margin-bottom:0.5rem;">Compliance Audit</h1>
+  <p style="color:#999;margin-bottom:2rem;">Select a topology to run a compliance audit against FISMA-High, STIG, and other regimes.</p>
+
+  {% if topologies %}
+  <div style="display:flex;flex-direction:column;gap:0.75rem;">
+    {% for t in topologies %}
+    <a href="/network/compliance/{{ t.id }}"
+       style="display:flex;align-items:center;justify-content:space-between;background:#1a1a2e;border:1px solid #333;border-radius:8px;padding:1rem 1.25rem;color:#eaeaea;text-decoration:none;transition:border-color 0.15s;"
+       onmouseover="this.style.borderColor='#7c3aed'" onmouseout="this.style.borderColor='#333'">
+      <span style="font-weight:600;">{{ t.name }}</span>
+      <span style="color:#7c3aed;font-size:0.85rem;">Run Audit →</span>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div style="background:#1a1a2e;border:1px solid #333;border-radius:8px;padding:2rem;text-align:center;color:#999;">
+    <p style="font-size:1rem;margin:0 0 1rem;">No topologies found.</p>
+    <a href="/network/canvas/new" style="color:#7c3aed;">Create your first topology →</a>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -2,7 +2,7 @@
 """User Risk Engine — ZIG User Pillar, Activities p2-02, p2-05.
 
 Continuous user risk scoring with behavioral analytics wired into the access
-decision. Each user carries a live risk score derived from authentication
+decision. Each user carries a live risk score computed from authentication
 signals, behavioral deviation, and threat context; the score raises or lowers
 the assurance required for subsequent access (risk-adaptive authentication).
 
@@ -95,26 +95,26 @@ def score_user_risk(account_id: str, signals: dict | None = None) -> dict[str, A
         conn.execute(
             "INSERT INTO zig_user_risk_scores "
             "(account_id, risk_score, risk_band, factors_json, action, created_at) "
-            "VALUES (?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s)",
             (account_id, risk_score, action, json.dumps(factors), action, now),
         )
         # Update rolling behavior profile (avg risk)
         prof = conn.execute(
-            "SELECT avg_risk, sample_count FROM zig_user_behavior_profile WHERE account_id=?",
+            "SELECT avg_risk, sample_count FROM zig_user_behavior_profile WHERE account_id=%s",
             (account_id,),
         ).fetchone()
         if prof:
             n = (prof["sample_count"] or 0) + 1
             avg = ((prof["avg_risk"] or 0) * (n - 1) + risk_score) / n
             conn.execute(
-                "UPDATE zig_user_behavior_profile SET avg_risk=?, sample_count=?, updated_at=? "
-                "WHERE account_id=?",
+                "UPDATE zig_user_behavior_profile SET avg_risk=%s, sample_count=%s, updated_at=%s "
+                "WHERE account_id=%s",
                 (round(avg, 4), n, now, account_id),
             )
         else:
             conn.execute(
                 "INSERT INTO zig_user_behavior_profile "
-                "(account_id, avg_risk, sample_count, updated_at) VALUES (?,?,?,?)",
+                "(account_id, avg_risk, sample_count, updated_at) VALUES (%s,%s,%s,%s)",
                 (account_id, risk_score, 1, now),
             )
         conn.commit()

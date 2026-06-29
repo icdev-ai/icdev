@@ -65,7 +65,7 @@ def log_request(
             """INSERT INTO usage_records
                (tenant_id, user_id, endpoint, method, tokens_used,
                 status_code, duration_ms, metadata, recorded_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 tenant_id,
                 user_id,

@@ -71,7 +71,7 @@ def _project_mentions_ai(project_id: str, conn) -> bool:
         # Check requirements text for any session linked to this project
         rows = conn.execute(
             "SELECT raw_text FROM intake_requirements WHERE session_id IN ("
-            "SELECT id FROM intake_sessions WHERE project_id = ?)",
+            "SELECT id FROM intake_sessions WHERE project_id = %s)",
             (project_id,),
         ).fetchall()
         all_text = " ".join(
@@ -82,7 +82,7 @@ def _project_mentions_ai(project_id: str, conn) -> bool:
 
         # Check session context_summary
         ctx_rows = conn.execute(
-            "SELECT context_summary FROM intake_sessions WHERE project_id = ?", (project_id,)
+            "SELECT context_summary FROM intake_sessions WHERE project_id = %s", (project_id,)
         ).fetchall()
         for row in ctx_rows:
             ctx = row[0] if isinstance(row, (tuple, list)) else (dict(row).get("context_summary") or "")
@@ -112,7 +112,7 @@ def _table_exists(conn, table_name: str) -> bool:
         ).fetchone()
     else:
         row = conn.execute(
-            "SELECT COUNT(*) as cnt FROM sqlite_master WHERE type='table' AND name=?",
+            "SELECT COUNT(*) as cnt FROM sqlite_master WHERE type='table' AND name=%s",
             (table_name,),
         ).fetchone()
     return (row[0] if isinstance(row, (tuple, list)) else row["cnt"]) > 0
@@ -149,7 +149,7 @@ def score_ai_governance_readiness(project_id: str, conn: sqlite3.Connection = No
     # 1. inventory_registered — ai_use_case_inventory has entries
     if _table_exists(conn, "ai_use_case_inventory"):
         count = conn.execute(
-            "SELECT COUNT(*) as cnt FROM ai_use_case_inventory WHERE project_id = ?",
+            "SELECT COUNT(*) as cnt FROM ai_use_case_inventory WHERE project_id = %s",
             (project_id,),
         ).fetchone()
         cnt = count[0] if isinstance(count, (tuple, list)) else count["cnt"]
@@ -169,7 +169,7 @@ def score_ai_governance_readiness(project_id: str, conn: sqlite3.Connection = No
     # 2. model_cards_present — ai_model_cards has entries
     if _table_exists(conn, "ai_model_cards"):
         count = conn.execute(
-            "SELECT COUNT(*) as cnt FROM ai_model_cards WHERE project_id = ?",
+            "SELECT COUNT(*) as cnt FROM ai_model_cards WHERE project_id = %s",
             (project_id,),
         ).fetchone()
         cnt = count[0] if isinstance(count, (tuple, list)) else count["cnt"]
@@ -189,7 +189,7 @@ def score_ai_governance_readiness(project_id: str, conn: sqlite3.Connection = No
     # 3. oversight_plan_exists — ai_oversight_plans has entries
     if _table_exists(conn, "ai_oversight_plans"):
         count = conn.execute(
-            "SELECT COUNT(*) as cnt FROM ai_oversight_plans WHERE project_id = ?",
+            "SELECT COUNT(*) as cnt FROM ai_oversight_plans WHERE project_id = %s",
             (project_id,),
         ).fetchone()
         cnt = count[0] if isinstance(count, (tuple, list)) else count["cnt"]
@@ -209,7 +209,7 @@ def score_ai_governance_readiness(project_id: str, conn: sqlite3.Connection = No
     # 4. impact_assessment_done — ai_ethics_reviews with review_type='impact_assessment'
     if _table_exists(conn, "ai_ethics_reviews"):
         count = conn.execute(
-            "SELECT COUNT(*) as cnt FROM ai_ethics_reviews WHERE project_id = ? AND review_type = 'impact_assessment'",
+            "SELECT COUNT(*) as cnt FROM ai_ethics_reviews WHERE project_id = %s AND review_type = 'impact_assessment'",
             (project_id,),
         ).fetchone()
         cnt = count[0] if isinstance(count, (tuple, list)) else count["cnt"]
@@ -229,7 +229,7 @@ def score_ai_governance_readiness(project_id: str, conn: sqlite3.Connection = No
     # 5. caio_designated — ai_caio_registry has entries
     if _table_exists(conn, "ai_caio_registry"):
         count = conn.execute(
-            "SELECT COUNT(*) as cnt FROM ai_caio_registry WHERE project_id = ?",
+            "SELECT COUNT(*) as cnt FROM ai_caio_registry WHERE project_id = %s",
             (project_id,),
         ).fetchone()
         cnt = count[0] if isinstance(count, (tuple, list)) else count["cnt"]
@@ -250,7 +250,7 @@ def score_ai_governance_readiness(project_id: str, conn: sqlite3.Connection = No
     if _table_exists(conn, "framework_applicability"):
         count = conn.execute(
             "SELECT COUNT(*) as cnt FROM framework_applicability "
-            "WHERE project_id = ? AND framework_id IN "
+            "WHERE project_id = %s AND framework_id IN "
             "('nist_ai_rmf', 'iso42001', 'owasp_llm', 'atlas')",
             (project_id,),
         ).fetchone()

@@ -66,6 +66,10 @@ _GUIDED_PREFIXES = ("m-isso", "m-issm", "m-ciso", "m-pm", "m-analyst", "m-leader
 _AADC_PREFIXES = ("m-secops-05", "m-ciso-02", "m-issm-02")
 _EXECUTIVE_PREFIXES = ("m-leadership-", "m-exec-primer", "m-leader")
 _ANALYST_PREFIXES = ("m-analyst-",)
+_ACE_PREFIXES = ("m-ace-", "m-coworker-")
+_DOCGEN_PREFIXES = ("m-docgen-",)
+_READINESS_PREFIXES = ("m-readiness-", "m-agentready-")
+_GOVERNANCE_PREFIXES = ("m-gov-", "m-transparency-", "m-accountability-")
 
 _SENSEI_SYSTEM_AADC = """You are FORGE Sensei — guiding a learner through an AADC (Agentic AI Design Canvas) mission.
 The learner is working on a visual agentic system design that must pass compliance checks.
@@ -76,6 +80,50 @@ Rules:
 - Keep responses under 140 words.
 - Ops-center tone: terse, specific, no padding.
 - End with the single action they need to take next.
+"""
+
+_SENSEI_SYSTEM_ACE = """You are FORGE Sensei — guiding a learner through ACE Co-Worker Engine missions.
+ACE is ICDEV's agentic co-worker system: 6 roles (ai_developer, agent_developer, security_analyst, data_engineer, devops_engineer, compliance_officer), ThreadPoolExecutor step loops, and mandatory HITL gates.
+
+Rules:
+- Be specific about which ACE role applies to the learner's current step.
+- Reference the delegation model: task card -> role assignment -> step loop -> HITL approval -> result.
+- Keep responses under 140 words.
+- Ops-center tone: terse, specific, action-oriented.
+- End with the exact configuration change or delegation pattern the learner should try next.
+"""
+
+_SENSEI_SYSTEM_DOCGEN = """You are FORGE Sensei — guiding a learner through DocGen workflow missions.
+DocGen is ICDEV's document generation system: session_manager (session lifecycle) + workflow.py (parallel section writers, merge, post-process).
+
+Rules:
+- Reference the specific DocGen stage the learner is in: session creation, section dispatch, merge, or post-process.
+- Distinguish between session state (pending/active/complete) and workflow state (running/merged/failed).
+- Keep responses under 130 words.
+- Methodical, precise tone — document quality is the metric.
+- End with the specific API call or configuration the learner needs next.
+"""
+
+_SENSEI_SYSTEM_READINESS = """You are FORGE Sensei — guiding a learner through Agent Readiness missions.
+The 11-pillar readiness checker assesses: code quality, documentation, testing, structure, dependencies, configuration, security (pillars 1-7, ported from kodustech/agent-readiness), plus IL classification, NIST controls, STIG compliance, append-only audit (pillars 8-11, ICDEV extensions).
+
+Rules:
+- Identify which pillar is failing and why (percentage, specific criterion ID).
+- Give a precise remediation action — file path, what to add, what check it satisfies.
+- Keep responses under 130 words.
+- Technical, diagnostic tone — like a readiness inspector reviewing a finding.
+- End with the exact command or file change that will move the needle.
+"""
+
+_SENSEI_SYSTEM_GOVERNANCE = """You are FORGE Sensei — guiding a learner through AI Governance missions (Transparency, Accountability, Governance Intake).
+Frameworks covered: OMB M-25-21 (AI inventory, oversight), OMB M-26-04, NIST AI 600-1 (model cards, fairness, confabulation), GAO-21-519SP, CAIO designation requirements.
+
+Rules:
+- Reference the specific framework obligation and section number when relevant.
+- Use plain English for the concept; cite the framework for the obligation.
+- Keep responses under 150 words.
+- Policy-advisor tone: clear, authoritative, action-oriented.
+- End with the specific artifact or configuration the learner needs to produce next.
 """
 
 _FALLBACK_CODING: dict[str, str] = {
@@ -127,6 +175,32 @@ _FALLBACK_ANALYST: dict[str, str] = {
     "analyst":     "Each pipeline stage feeds the next. In the configure step, set your domain and data source first — every downstream stage depends on that decision.",
 }
 
+_FALLBACK_ACE: dict[str, str] = {
+    "ace-01":       "Look at the role YAML. Each ACE role has a system_prompt, listen_topics, and steps list. Your co-worker isn't starting because one of those three is missing or malformed.",
+    "ace-02":       "HITL gates fire when the step output matches a trigger pattern. Check your approval_required config — it needs both a trigger_field and an approver_role.",
+    "ace-03":       "Creator-verifier pairs: the verifier's listen_topics must include the creator's output topic. Check that the topic strings match exactly — no typos.",
+    "ace-capstone": "Wire the delegation chain step by step. First get the creator to produce output. Then confirm the verifier receives it. Then add the approval gate. Never wire all three at once.",
+}
+
+_FALLBACK_DOCGEN: dict[str, str] = {
+    "docgen-01": "Sessions need a doc_type and a source_brief to start. Check your POST body to /api/docgen/sessions — both fields are required before the state transitions to 'active'.",
+    "docgen-02": "The workflow dispatches section writers in parallel. If sections are empty, check that your workflow config maps section names to writer functions — the mapping is the bridge.",
+    "docgen-03": "DocGen portfolio artifacts need a cert_token field for the certificate to recognize them. Add it to your session metadata when creating the session.",
+}
+
+_FALLBACK_READINESS: dict[str, str] = {
+    "readiness-01": "Run the check with --json and look at the pillar_scores dict. The lowest percentage pillar is your first target. Most repos fail STIG compliance (pillar 10) first.",
+    "readiness-02": "STIG compliance pillar needs STIG marker comments in your code: # STIG V-XXXXX. IL classification needs a CUI header on every sensitive file. Start with those two.",
+    "readiness-03": "Wire the checker as a CI gate: run_readiness_check(repo_path) -> check overall_readiness_score -> fail the pipeline if < 0.7. The anomaly detection output tells you which pillar regressed.",
+}
+
+_FALLBACK_GOVERNANCE: dict[str, str] = {
+    "gov-01":       "An AI inventory entry needs: system name, owner, purpose, risk tier, and data classification. OMB M-25-21 Section 5(a) requires all five. Start with one real system and complete all five fields.",
+    "gov-02":       "An oversight plan has three components: who can shut the system down, under what conditions, and in how long. CAIO designation just adds: who signs off on that authority. Wire those four fields first.",
+    "gov-03":       "The 6-pillar RICOAS intake reads your system description and scores: requirements clarity, boundary definition, impact classification, control mapping, supply chain risk, and operational readiness. Low scores on pillar 3 (impact) block the rest.",
+    "gov-capstone":  "Governance portfolio: inventory -> model card -> oversight plan -> intake score. Each artifact links to the next via the system_id. Get that ID right in Step 1 — it propagates through everything.",
+}
+
 
 def get_hint(
     question: str,
@@ -145,6 +219,10 @@ def get_hint(
     is_guided = any(mission_slug.startswith(p) for p in _GUIDED_PREFIXES)
     is_executive = any(mission_slug.startswith(p) for p in _EXECUTIVE_PREFIXES)
     is_analyst = any(mission_slug.startswith(p) for p in _ANALYST_PREFIXES)
+    is_ace = any(mission_slug.startswith(p) for p in _ACE_PREFIXES)
+    is_docgen = any(mission_slug.startswith(p) for p in _DOCGEN_PREFIXES)
+    is_readiness = any(mission_slug.startswith(p) for p in _READINESS_PREFIXES)
+    is_governance = any(mission_slug.startswith(p) for p in _GOVERNANCE_PREFIXES)
 
     # Auto-enable CoT for complex concept explanations
     if not chain_mode and _is_complex_concept(question, mission_slug):
@@ -188,6 +266,18 @@ def get_hint(
     elif is_analyst:
         system = _SENSEI_SYSTEM_ANALYST
         prompt = f"Mission: {mission_slug}\nContext: {context[:500]}\nLearner asks: {question}"
+    elif is_ace:
+        system = _SENSEI_SYSTEM_ACE
+        prompt = f"Mission: {mission_slug}\nContext: {context[:500]}\nLearner asks: {question}"
+    elif is_docgen:
+        system = _SENSEI_SYSTEM_DOCGEN
+        prompt = f"Mission: {mission_slug}\nContext: {context[:500]}\nLearner asks: {question}"
+    elif is_readiness:
+        system = _SENSEI_SYSTEM_READINESS
+        prompt = f"Mission: {mission_slug}\nContext: {context[:500]}\nLearner asks: {question}"
+    elif is_governance:
+        system = _SENSEI_SYSTEM_GOVERNANCE
+        prompt = f"Mission: {mission_slug}\nContext: {context[:500]}\nLearner asks: {question}"
     else:
         system = _SENSEI_SYSTEM_GUIDED if is_guided else _SENSEI_SYSTEM_CODING
         prompt = f"Mission: {mission_slug}\nContext: {context[:500]}\nLearner asks: {question}"
@@ -222,12 +312,14 @@ def get_hint(
         return txt
     except Exception as exc:
         _log.info("FORGE Sensei LLM unavailable (%s); using fallback hint", exc)
-        return _fallback_hint(mission_slug, is_guided, is_aadc, is_executive, is_analyst)
+        return _fallback_hint(mission_slug, is_guided, is_aadc, is_executive, is_analyst,
+                              is_ace, is_docgen, is_readiness, is_governance)
 
 
 def _is_complex_concept(question: str, mission_slug: str) -> bool:
     """Heuristic: enable CoT for capstone, multi-agent, AADC, and long questions."""
-    complex_slugs = ("capstone", "multi", "aadc", "strands", "mcp", "agentic")
+    complex_slugs = ("capstone", "multi", "aadc", "strands", "mcp", "agentic",
+                     "ace", "docgen", "readiness", "governance", "transparency", "accountability")
     if any(fragment in mission_slug for fragment in complex_slugs):
         return True
     if len(question) > 120:
@@ -270,7 +362,7 @@ def _run_debate_mode(router, req, prompt: str, mission_slug: str) -> str:
         return "\n".join(lines)
     except Exception as exc:
         _log.warning("Debate mode failed (%s); falling back to standard hint", exc)
-        return _fallback_hint(mission_slug, False, False, False, False)
+        return _fallback_hint(mission_slug, False, False, False, False, False, False, False, False)
 
 
 _FALLBACK_AADC: dict[str, str] = {
@@ -281,7 +373,9 @@ _FALLBACK_AADC: dict[str, str] = {
 
 
 def _fallback_hint(mission_slug: str, is_guided: bool, is_aadc: bool = False,
-                   is_executive: bool = False, is_analyst: bool = False) -> str:
+                   is_executive: bool = False, is_analyst: bool = False,
+                   is_ace: bool = False, is_docgen: bool = False,
+                   is_readiness: bool = False, is_governance: bool = False) -> str:
     if is_aadc:
         for key, hint in _FALLBACK_AADC.items():
             if key in mission_slug:
@@ -300,6 +394,26 @@ def _fallback_hint(mission_slug: str, is_guided: bool, is_aadc: bool = False,
                 return hint
         return ("Every intelligence pipeline has a data quality gate at the front. "
                 "If your output is noisy, trace back to the source — the problem is almost always there.")
+    if is_ace:
+        for key, hint in _FALLBACK_ACE.items():
+            if key in mission_slug:
+                return hint
+        return "Check the co-worker role YAML — role, steps, and listen_topics must all be present before the delegation loop can start."
+    if is_docgen:
+        for key, hint in _FALLBACK_DOCGEN.items():
+            if key in mission_slug:
+                return hint
+        return "DocGen needs a session before it can run a workflow. Create the session first, get the session_id, then POST to /workflow/run with that ID."
+    if is_readiness:
+        for key, hint in _FALLBACK_READINESS.items():
+            if key in mission_slug:
+                return hint
+        return "Run the readiness check with --json. The pillar with the lowest percentage is your target. Fix that pillar's top failing criterion first."
+    if is_governance:
+        for key, hint in _FALLBACK_GOVERNANCE.items():
+            if key in mission_slug:
+                return hint
+        return "Every governance artifact needs a system_id anchor. Create the inventory entry first — every other artifact (model card, oversight plan, intake score) references it."
     table = _FALLBACK_GUIDED if is_guided else _FALLBACK_CODING
     for key, hint in table.items():
         if key in mission_slug:

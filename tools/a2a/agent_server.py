@@ -407,7 +407,7 @@ class A2AAgentServer:
             c.execute(
                 """INSERT INTO a2a_tasks (id, skill_id, status, input_data, output_data,
                    created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s)
                    ON CONFLICT(id) DO UPDATE SET
                    status = excluded.status,
                    output_data = excluded.output_data,
@@ -433,7 +433,7 @@ class A2AAgentServer:
                 latest = task.history[-1]
                 c.execute(
                     """INSERT INTO a2a_task_history (task_id, status, message, timestamp)
-                       VALUES (?, ?, ?, ?)""",
+                       VALUES (%s, %s, %s, %s)""",
                     (task.id, latest.status, latest.message, latest.timestamp),
                 )
 
@@ -442,7 +442,7 @@ class A2AAgentServer:
                 c.execute(
                     """INSERT OR IGNORE INTO a2a_task_artifacts
                        (task_id, name, content_type, data, classification)
-                       VALUES (?, ?, ?, ?, ?)""",
+                       VALUES (%s, %s, %s, %s, %s)""",
                     (
                         task.id,
                         artifact.name,
@@ -464,14 +464,14 @@ class A2AAgentServer:
         conn = self._get_db()
         try:
             c = conn.cursor()
-            c.execute("SELECT * FROM a2a_tasks WHERE id = ?", (task_id,))
+            c.execute("SELECT * FROM a2a_tasks WHERE id = %s", (task_id,))
             row = c.fetchone()
             if not row:
                 return None
 
             # Load history
             c.execute(
-                "SELECT status, message, timestamp FROM a2a_task_history WHERE task_id = ? ORDER BY id",
+                "SELECT status, message, timestamp FROM a2a_task_history WHERE task_id = %s ORDER BY id",
                 (task_id,),
             )
             history = [
@@ -480,7 +480,7 @@ class A2AAgentServer:
 
             # Load artifacts
             c.execute(
-                "SELECT name, content_type, data, classification FROM a2a_task_artifacts WHERE task_id = ?",
+                "SELECT name, content_type, data, classification FROM a2a_task_artifacts WHERE task_id = %s",
                 (task_id,),
             )
             artifacts = [

@@ -20,8 +20,7 @@ steps:
 communication:
   protocol: a2a
   listen_topics:
-  - task.assigned
-  - alert.fired
+  - task.assigned              # bootstrap only — alert.fired handled by reactive step trigger
   emit_topics:
   - incident.rca.ready
   - incident.escalated
@@ -38,3 +37,11 @@ personality:
   - alert-aware
   - rca-focused
   - escalation-aware
+rules:
+  - "Never modify or delete evidence artifacts during an active incident investigation — preserve chain of custody."
+  - "Never issue public or stakeholder communications about an incident without ISSO/CISO authorization."
+  - "Never close an incident without a completed root-cause analysis and documented lessons-learned entry."
+  - "Never apply remediations to production systems without first isolating and imaging the affected host."
+  - "Never assume an incident is contained until lateral movement has been ruled out across all impacted segments."
+  - "Never treat a false positive as closed without documenting the indicator suppression rationale."
+  - "Never skip the post-incident detection-rule tuning step — every incident should improve the detection baseline."

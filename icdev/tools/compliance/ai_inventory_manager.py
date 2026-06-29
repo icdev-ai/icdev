@@ -88,7 +88,7 @@ def register_ai_component(
                (project_id, name, purpose, risk_level, classification,
                 deployment_status, responsible_official, oversight_role,
                 appeal_mechanism, last_assessed, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 project_id,
                 name,
@@ -110,7 +110,7 @@ def register_ai_component(
             conn.execute(
                 """INSERT INTO audit_trail
                    (project_id, event_type, actor, action, details, classification)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s)""",
                 (
                     project_id,
                     "ai_inventory_registered",
@@ -141,7 +141,7 @@ def list_inventory(project_id: str, db_path: Path = DB_PATH) -> Dict:
     try:
         _ensure_table(conn)
         rows = conn.execute(
-            "SELECT * FROM ai_use_case_inventory WHERE project_id = ? ORDER BY name",
+            "SELECT * FROM ai_use_case_inventory WHERE project_id = %s ORDER BY name",
             (project_id,),
         ).fetchall()
 

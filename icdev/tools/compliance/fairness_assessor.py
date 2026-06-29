@@ -127,7 +127,7 @@ def assess_fairness(
                 try:
                     for table in ["xai_assessments", "shap_attributions"]:
                         row = conn.execute(
-                            f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = ?",  # nosec B608 -- table/column names are internal constants, not user input
+                            f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = %s",  # nosec B608 -- table/column names are internal constants, not user input
                             (project_id,),
                         ).fetchone()
                         if row and row["cnt"] > 0:
@@ -140,7 +140,7 @@ def assess_fairness(
             elif dim["check_type"] == "monitoring":
                 try:
                     row = conn.execute(
-                        "SELECT COUNT(*) as cnt FROM ai_telemetry WHERE project_id = ?",
+                        "SELECT COUNT(*) as cnt FROM ai_telemetry WHERE project_id = %s",
                         (project_id,),
                     ).fetchone()
                     if row and row["cnt"] > 0:
@@ -154,7 +154,7 @@ def assess_fairness(
                 try:
                     row = conn.execute(
                         """SELECT COUNT(*) as cnt FROM ai_ethics_reviews
-                           WHERE project_id = ? AND review_type = 'bias_testing_policy'""",
+                           WHERE project_id = %s AND review_type = 'bias_testing_policy'""",
                         (project_id,),
                     ).fetchone()
                     if row and row["cnt"] > 0:
@@ -168,7 +168,7 @@ def assess_fairness(
                 try:
                     row = conn.execute(
                         """SELECT COUNT(*) as cnt FROM ai_ethics_reviews
-                           WHERE project_id = ? AND pre_deployment_review = 1""",
+                           WHERE project_id = %s AND pre_deployment_review = 1""",
                         (project_id,),
                     ).fetchone()
                     if row and row["cnt"] > 0:
@@ -182,7 +182,7 @@ def assess_fairness(
                 try:
                     row = conn.execute(
                         """SELECT COUNT(*) as cnt FROM ai_oversight_plans
-                           WHERE project_id = ?""",
+                           WHERE project_id = %s""",
                         (project_id,),
                     ).fetchone()
                     if row and row["cnt"] > 0:
@@ -196,7 +196,7 @@ def assess_fairness(
                 try:
                     row = conn.execute(
                         """SELECT COUNT(*) as cnt FROM ai_accountability_appeals
-                           WHERE project_id = ?""",
+                           WHERE project_id = %s""",
                         (project_id,),
                     ).fetchone()
                     if row and row["cnt"] > 0:
@@ -256,7 +256,7 @@ def assess_fairness(
             conn.execute(
                 """INSERT INTO fairness_assessments
                    (project_id, dimension, status, evidence, score, assessed_at)
-                   VALUES (?, ?, ?, ?, ?, ?)
+                   VALUES (%s, %s, %s, %s, %s, %s)
                    ON CONFLICT(project_id, dimension) DO UPDATE SET
                        status=excluded.status,
                        evidence=excluded.evidence,
@@ -286,7 +286,7 @@ def evaluate_gate(project_id: str, db_path: Path = DB_PATH) -> Dict:
         rows = conn.execute(
             """SELECT COUNT(*) as total,
                       SUM(CASE WHEN status = 'satisfied' THEN 1 ELSE 0 END) as satisfied
-               FROM fairness_assessments WHERE project_id = ?""",
+               FROM fairness_assessments WHERE project_id = %s""",
             (project_id,),
         ).fetchone()
 

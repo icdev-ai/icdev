@@ -18,6 +18,8 @@ Runs RICOAS Phase 1 — conversational requirements intake:
 
 All operations produce classification-marked output per project settings and record audit trail entries.
 
+See [REFERENCE.md](REFERENCE.md) for step-by-step commands (Steps 1–10).
+
 ## Error Handling
 - If session creation fails: check project exists, report error, suggest --new flag
 - If document extraction finds 0 requirements: suggest different document type or manual entry

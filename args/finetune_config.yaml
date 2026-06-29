@@ -261,3 +261,13 @@ quality_feedback:
     adaptive_bounds:
       floor_min: 0.05                # clamp adaptive floor lower bound
       floor_max: 0.80                # clamp adaptive floor upper bound
+
+# ── FSDP Multi-GPU Training (D-FT-FSDP) ────────────────────────────
+fsdp:
+  sharding_strategy: "full_shard"     # full_shard | shard_grad_op | no_shard | hybrid_shard
+  precision: "bf16"                   # bf16 | fp16 | fp32
+  gradient_accumulation_steps: 4
+  cpu_offload: false                  # offload params/grads to CPU (saves GPU VRAM)
+  activation_checkpointing: false     # trade compute for memory
+  bucket_cap_mb: 25                   # gradient bucket size for all-reduce
+  min_num_params: 100000              # min params to wrap in FSDP (skip tiny modules)

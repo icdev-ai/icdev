@@ -158,7 +158,7 @@ def get_trust_state(category: str) -> Dict[str, Any]:
     conn = _get_connection()
     try:
         row = conn.execute(
-            "SELECT * FROM autonomy_trust_state WHERE category = ?",
+            "SELECT * FROM autonomy_trust_state WHERE category = %s",
             (category,),
         ).fetchone()
         if row:
@@ -179,7 +179,7 @@ def get_trust_state(category: str) -> Dict[str, Any]:
         conn.execute(
             "INSERT INTO autonomy_trust_state "
             "(category, alpha, beta, ceiling, current_tier, last_updated) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s)",
             (category, alpha, beta_val, ceiling, _mean_to_tier(mean, config), now_iso()),
         )
         conn.commit()
@@ -251,7 +251,7 @@ def observe(category: str, success: bool, source: str = "daemon", details: Dict 
             "(id, category, outcome, alpha_before, beta_before, alpha_after, "
             "beta_after, mean_before, mean_after, tier_before, tier_after, "
             "source, details, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 obs_id,
                 category,
@@ -273,10 +273,10 @@ def observe(category: str, success: bool, source: str = "daemon", details: Dict 
         # Update trust state
         conn.execute(
             "UPDATE autonomy_trust_state SET "
-            "alpha = ?, beta = ?, total_observations = total_observations + 1, "
-            "total_successes = total_successes + ?, total_failures = total_failures + ?, "
-            "current_tier = ?, last_updated = ? "
-            "WHERE category = ?",
+            "alpha = %s, beta = %s, total_observations = total_observations + 1, "
+            "total_successes = total_successes + %s, total_failures = total_failures + %s, "
+            "current_tier = %s, last_updated = %s "
+            "WHERE category = %s",
             (
                 alpha_after,
                 beta_after,
@@ -360,7 +360,7 @@ def should_act(category: str, required_tier: str = None) -> Dict[str, Any]:
             "INSERT INTO autonomy_actions "
             "(id, category, action_type, decision, trust_mean, thompson_sample, "
             "tier_required, tier_current, details, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 action_id,
                 category,
@@ -540,9 +540,9 @@ def main():
         conn = _get_connection()
         try:
             conn.execute(
-                "UPDATE autonomy_trust_state SET alpha = ?, beta = ?, "
+                "UPDATE autonomy_trust_state SET alpha = %s, beta = %s, "
                 "total_observations = 0, total_successes = 0, total_failures = 0, "
-                "current_tier = 'observer', last_updated = ? WHERE category = ?",
+                "current_tier = 'observer', last_updated = %s WHERE category = %s",
                 (prior["alpha"], prior["beta"], now_iso(), args.reset),
             )
             conn.commit()

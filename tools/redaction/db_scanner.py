@@ -110,7 +110,7 @@ class DBScanner:
     def _scan_table(self, conn, table: str) -> Optional[Dict[str, Any]]:
         """Scan a single table."""
         # Check if table exists
-        exists = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone()
+        exists = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=%s", (table,)).fetchone()
         if not exists:
             return None
 
@@ -135,7 +135,7 @@ class DBScanner:
             try:
                 samples = conn.execute(  # nosec B608 — col/table from PRAGMA, not user input
                     f"SELECT {col} FROM {table} WHERE {col} IS NOT NULL "  # nosec B608 -- table/column names are internal constants, not user input
-                    f"AND {col} != '' ORDER BY RANDOM() LIMIT ?",
+                    f"AND {col} != '' ORDER BY RANDOM() LIMIT %s",
                     (self._sample_size,),
                 ).fetchall()
 

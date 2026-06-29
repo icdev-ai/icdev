@@ -31,7 +31,7 @@ def _open_degradation_card_exists(reflex: str, metric: str) -> bool:
         row = conn.execute(
             """
             SELECT id FROM kanban_tasks
-             WHERE title LIKE ?
+             WHERE title LIKE %s
                AND status NOT IN ('done', 'dismissed')
              LIMIT 1
             """,
@@ -74,6 +74,38 @@ def _build_skill_prompt(task_type: str, colearn_enabled: bool) -> str:
     return base_prompt
 
 
+def _try_auto_release_prompt(reflex: str, dry_run: bool = False) -> bool:
+    """Check for a draft prompt version for this reflex and activate it if found.
+
+    Returns True when a draft was found and activated (or would be, in dry_run).
+    Logs the release to the audit log.  Never raises — failures are logged + return False.
+    """
+    try:
+        conn = _conn()
+        row = conn.execute(
+            "SELECT prompt_name, version FROM prompt_versions "
+            "WHERE prompt_name = %s AND status = 'draft' "
+            "ORDER BY version DESC LIMIT 1",
+            (reflex,),
+        ).fetchone()
+        if row is None:
+            return False
+        prompt_name = row["prompt_name"] if isinstance(row, dict) else row[0]
+        version = row["version"] if isinstance(row, dict) else row[1]
+        if dry_run:
+            LOG.info(
+                "[harness] [dry-run] auto-release: would activate %s v%s", prompt_name, version
+            )
+            return True
+        from tools.llm.prompt_registry import activate_prompt
+        activate_prompt(prompt_name, version, actor="harness-auto-release")
+        LOG.info("[harness] auto-released draft prompt %s v%s", prompt_name, version)
+        return True
+    except Exception as exc:
+        LOG.debug("[harness] auto-release check failed for %s: %s", reflex, exc)
+        return False
+
+
 def _create_degradation_card(
     alert: dict,
     echo_context: str = "",
@@ -107,8 +139,8 @@ def _create_degradation_card(
         conn.execute(
             """
             INSERT INTO kanban_tasks
-                (id, title, description, status, priority, source, created_at, updated_at)
-            VALUES (?, ?, ?, 'backlog', ?, 'harness_reflex', ?, ?)
+                (id, title, description, status, priority, dispatch_source, created_at, updated_at)
+            VALUES (%s, %s, %s, 'backlog', %s, 'harness_reflex', %s, %s)
             """,
             (
                 task_id,
@@ -135,7 +167,7 @@ def _create_review_card() -> None:
     try:
         conn = _conn()
         row = conn.execute(
-            "SELECT id FROM kanban_tasks WHERE title = ? AND status NOT IN ('done','dismissed') LIMIT 1",
+            "SELECT id FROM kanban_tasks WHERE title = %s AND status NOT IN ('done','dismissed') LIMIT 1",
             (title,),
         ).fetchone()
         if row:
@@ -144,8 +176,8 @@ def _create_review_card() -> None:
         conn.execute(
             """
             INSERT INTO kanban_tasks
-                (id, title, description, status, priority, source, created_at, updated_at)
-            VALUES (?, ?, ?, 'backlog', 'high', 'harness_reflex', ?, ?)
+                (id, title, description, status, priority, dispatch_source, created_at, updated_at)
+            VALUES (%s, %s, %s, 'backlog', 'high', 'harness_reflex', %s, %s)
             """,
             (
                 task_id,
@@ -176,7 +208,7 @@ def _create_meta_review_card(meta_result: dict) -> None:
     try:
         conn = _conn()
         row = conn.execute(
-            "SELECT id FROM kanban_tasks WHERE title = ? AND status NOT IN ('done','dismissed') LIMIT 1",
+            "SELECT id FROM kanban_tasks WHERE title = %s AND status NOT IN ('done','dismissed') LIMIT 1",
             (title,),
         ).fetchone()
         if row:
@@ -195,8 +227,8 @@ def _create_meta_review_card(meta_result: dict) -> None:
         conn.execute(
             """
             INSERT INTO kanban_tasks
-                (id, title, description, status, priority, source, created_at, updated_at)
-            VALUES (?, ?, ?, 'backlog', 'high', 'harness_reflex', ?, ?)
+                (id, title, description, status, priority, dispatch_source, created_at, updated_at)
+            VALUES (%s, %s, %s, 'backlog', 'high', 'harness_reflex', %s, %s)
             """,
             (task_id, title, body, _utcnow(), _utcnow()),
         )
@@ -255,14 +287,23 @@ def run(config: dict[str, Any], trust: Any) -> dict[str, Any]:
         echo_context = _get_echo_context(reflex) if colearn_enabled else ""
         skill_prompt = _build_skill_prompt(reflex, colearn_enabled)
 
+        # C-1 Auto-release: if a draft prompt version exists for this reflex,
+        # activate it instead of (or before) creating a degradation card.
+        _auto_released = _try_auto_release_prompt(reflex, dry_run=dry_run)
+
         if not dry_run:
-            card_id = _create_degradation_card(
-                alert, echo_context=echo_context, skill_prompt=skill_prompt
-            )
-            if card_id:
-                new_cards.append(card_id)
+            if not _auto_released:
+                # No draft to auto-release — create the degradation card as usual.
+                card_id = _create_degradation_card(
+                    alert, echo_context=echo_context, skill_prompt=skill_prompt
+                )
+                if card_id:
+                    new_cards.append(card_id)
         else:
-            LOG.info("[harness] [dry-run] would create card for %s.%s", reflex, metric)
+            if _auto_released:
+                LOG.info("[harness] [dry-run] would auto-release draft prompt for %s", reflex)
+            else:
+                LOG.info("[harness] [dry-run] would create card for %s.%s", reflex, metric)
             new_cards.append(f"dry-run:{reflex}.{metric}")
 
         # Co-learning pass: when precision or ECE gate fires for oracle_triage,

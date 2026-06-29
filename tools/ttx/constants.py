@@ -22,6 +22,10 @@ RIBBON_DEFS = {
     "strategist":      {"icon": "🎯", "label": "Strategist",      "desc": "Highest COA inject score"},
     "safety_architect":{"icon": "🛡️", "label": "Safety Architect","desc": "Highest AADC compliance score across design challenges"},
     "model_architect": {"icon": "🏛️", "label": "Model Architect", "desc": "Highest AIMC governance score in the Model Governance inject"},
+    "ace_orchestrator":  {"icon": "🤝", "label": "ACE Orchestrator",  "desc": "Highest ACE delegation quality score"},
+    "doc_sprinter":      {"icon": "📄", "label": "Doc Sprinter",       "desc": "Fastest high-quality DocGen output"},
+    "readiness_king":    {"icon": "✅", "label": "Readiness King",     "desc": "Highest agent readiness score gain"},
+    "governance_pillar": {"icon": "⚖️", "label": "Governance Pillar",  "desc": "Highest AI governance compliance score"},
 }
 
 # ICDEV tool slugs that produce scoreable receipts
@@ -43,6 +47,16 @@ SCOREABLE_TOOLS = (
     "aimc.gov_assess",     # POST /ai-ml/api/designs/<id>/assess-gov
     "aimc.adapt_recommend",# POST /ai-ml/api/adapt/recommend
     "aimc.deploy_plan",    # POST /ai-ml/api/deploy/plan
+    "ace.delegate",
+    "ace.inspect",
+    "docgen.session",
+    "docgen.workflow",
+    "readiness.check",
+    "readiness.remediate",
+    "transparency.inventory",
+    "transparency.card",
+    "accountability.plan",
+    "pna.predict",
 )
 
 # Maps tool slug → ICDEV API endpoint (relative to http://localhost:5050)
@@ -64,6 +78,16 @@ TOOL_ENDPOINTS: dict[str, str] = {
     "aimc.gov_assess":          "/ai-ml/api/designs/{design_id}/assess-gov",
     "aimc.adapt_recommend":     "/ai-ml/api/adapt/recommend",
     "aimc.deploy_plan":         "/ai-ml/api/deploy/plan",
+    "ace.delegate":             "/ace/api/coworker/delegate",
+    "ace.inspect":              "/ace/api/coworker/{coworker_id}/result",
+    "docgen.session":           "/docgen/api/sessions",
+    "docgen.workflow":          "/docgen/api/workflow/run",
+    "readiness.check":          "/readiness/api/check",
+    "readiness.remediate":      "/readiness/api/remediate",
+    "transparency.inventory":   "/ai-transparency/api/inventory",
+    "transparency.card":        "/ai-transparency/api/model-card",
+    "accountability.plan":      "/ai-accountability/api/plan",
+    "pna.predict":              "/network/api/pna/predict",
 }
 
 # Ontology mappings for the Knowledge Graph ontology bridge

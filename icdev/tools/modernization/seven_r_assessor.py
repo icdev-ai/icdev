@@ -214,14 +214,14 @@ def _get_app_profile(app_id, db_path=None):
     conn = _get_db(db_path)
     try:
         # --- Core application row ---
-        row = conn.execute("SELECT * FROM legacy_applications WHERE id = ?", (app_id,)).fetchone()
+        row = conn.execute("SELECT * FROM legacy_applications WHERE id = %s", (app_id,)).fetchone()
         if row is None:
             raise ValueError(f"Application '{app_id}' not found in legacy_applications.")
         profile = dict(row)
 
         # --- Component aggregates ---
         comp_rows = conn.execute(
-            "SELECT * FROM legacy_components WHERE legacy_app_id = ?",
+            "SELECT * FROM legacy_components WHERE legacy_app_id = %s",
             (app_id,),
         ).fetchall()
 
@@ -275,7 +275,7 @@ def _get_app_profile(app_id, db_path=None):
 
         # --- Dependency aggregates ---
         dep_rows = conn.execute(
-            "SELECT * FROM legacy_dependencies WHERE legacy_app_id = ?",
+            "SELECT * FROM legacy_dependencies WHERE legacy_app_id = %s",
             (app_id,),
         ).fetchall()
         dependencies = [dict(r) for r in dep_rows]
@@ -295,7 +295,7 @@ def _get_app_profile(app_id, db_path=None):
 
         # --- API aggregates ---
         api_rows = conn.execute(
-            "SELECT * FROM legacy_apis WHERE legacy_app_id = ?",
+            "SELECT * FROM legacy_apis WHERE legacy_app_id = %s",
             (app_id,),
         ).fetchall()
         profile["apis"] = [dict(r) for r in api_rows]
@@ -303,7 +303,7 @@ def _get_app_profile(app_id, db_path=None):
 
         # --- DB schema aggregates ---
         db_rows = conn.execute(
-            "SELECT * FROM legacy_db_schemas WHERE legacy_app_id = ?",
+            "SELECT * FROM legacy_db_schemas WHERE legacy_app_id = %s",
             (app_id,),
         ).fetchall()
         db_schemas = [dict(r) for r in db_rows]
@@ -1092,7 +1092,7 @@ def _get_ui_complexity(app_id, project_id, db_path=None):
     """
     try:
         conn = _get_db(db_path)
-        row = conn.execute("SELECT metadata FROM legacy_applications WHERE id = ?", (app_id,)).fetchone()
+        row = conn.execute("SELECT metadata FROM legacy_applications WHERE id = %s", (app_id,)).fetchone()
         conn.close()
 
         if row and row["metadata"]:
@@ -1320,7 +1320,7 @@ def _persist_assessment(assessment, db_path=None):
                 retain_score, recommended_strategy, cost_estimate_hours,
                 risk_score, timeline_weeks, ato_impact, tech_debt_reduction,
                 scoring_weights, evidence, assessed_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 assessment["id"],
                 assessment["legacy_app_id"],
@@ -1383,7 +1383,7 @@ def generate_decision_matrix(app_id, db_path=None):
     try:
         row = conn.execute(
             """SELECT * FROM migration_assessments
-               WHERE legacy_app_id = ?
+               WHERE legacy_app_id = %s
                ORDER BY assessed_at DESC LIMIT 1""",
             (app_id,),
         ).fetchone()

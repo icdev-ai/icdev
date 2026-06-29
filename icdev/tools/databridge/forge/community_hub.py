@@ -84,7 +84,7 @@ def _log_audit(conn, event_type, action, details):
         conn.execute(
             """INSERT INTO audit_trail
                (project_id, event_type, actor, action, details, classification)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s)""",
             (
                 "",
                 event_type,
@@ -206,7 +206,7 @@ def rate_connector(connector_id, user_id, rating, review_text=None, db_path=None
         conn.execute(
             """INSERT INTO forge_hub_ratings
                (id, connector_id, user_id, rating, review_text, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)
+               VALUES (%s, %s, %s, %s, %s, %s, %s)
                ON CONFLICT(connector_id, user_id) DO UPDATE SET
                    rating = excluded.rating,
                    review_text = excluded.review_text,
@@ -336,7 +336,7 @@ def compute_trust_score(connector_id, db_path=None):
         conn.execute(
             """INSERT INTO forge_hub_trust_scores
                (id, connector_id, trust_score, breakdown, computed_at)
-               VALUES (?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s)""",
             (score_id, connector_id, trust_score, json.dumps(breakdown), now),
         )
         conn.commit()

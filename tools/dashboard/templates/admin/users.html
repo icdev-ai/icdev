@@ -91,9 +91,17 @@
     if (form) {
         form.addEventListener('submit', function(e) {
             e.preventDefault();
-            var email = document.getElementById('new-email').value;
-            var name = document.getElementById('new-name').value;
+            var email = document.getElementById('new-email').value.trim();
+            var name = document.getElementById('new-name').value.trim();
             var role = document.getElementById('new-role').value;
+            var resultEl = document.getElementById('create-result');
+            if (!email || !name) {
+                resultEl.innerHTML = '<span style="color:#f88;">Email and Display Name are required.</span>';
+                if (!email) document.getElementById('new-email').focus();
+                else document.getElementById('new-name').focus();
+                return;
+            }
+            resultEl.innerHTML = '';
             fetch('/admin/api/users', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},

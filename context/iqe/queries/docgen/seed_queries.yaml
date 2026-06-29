@@ -1,0 +1,12 @@
+# IQE seed queries for the IDR Doc Regeneration canvas
+queries:
+  - "Show all active doc regeneration sessions"
+  - "List sessions with pending conflict resolution"
+  - "Find network domain sessions in reviewing stage"
+  - "Show sessions that failed or have errors"
+  - "List all published artifacts from security domain sessions"
+  - "Find conflicts not yet resolved for session"
+  - "Show diagram analyses with errors"
+  - "List sessions created this month"
+  - "Find sessions using the standard guide domain profile"
+  - "Show all upload errors across sessions"

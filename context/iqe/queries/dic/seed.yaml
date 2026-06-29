@@ -22,3 +22,9 @@ queries:
     query: "foreach o in dic.generated_outputs where o.output_type == \"study_guide\" orderby o.created_at desc select o.id, o.collection_id, o.provider, o.created_at"
   - label: Recent FAQs
     query: "foreach o in dic.generated_outputs where o.output_type == \"faq\" orderby o.created_at desc select o.id, o.collection_id, o.provider, o.created_at"
+  - label: All tech writer documents
+    query: "foreach d in dic.techwriter_docs select d.doc_id, d.title, d.template_type, d.writeguard_mode, d.created_at"
+  - label: Architecture documents
+    query: "foreach d in dic.techwriter_docs where d.template_type in [\"ARCH_NETWORK\",\"ARCH_APPLICATION\",\"ARCH_SYSTEM\"] select d.doc_id, d.title, d.template_type, d.created_at"
+  - label: SOPs and runbooks
+    query: "foreach d in dic.techwriter_docs where d.template_type in [\"SOP\",\"RUNBOOK\"] select d.doc_id, d.title, d.writeguard_mode, d.created_at"

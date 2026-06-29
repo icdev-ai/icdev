@@ -615,7 +615,7 @@ def log_platform_audit(
             cursor.execute(
                 "INSERT INTO audit_platform (tenant_id, user_id, event_type, "
                 "action, details, ip_address, user_agent) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
                 (tenant_id, user_id, event_type, action, details_json, ip_address, user_agent),
             )
         conn.commit()
@@ -666,7 +666,7 @@ def ensure_env_key_registered():
     cursor = conn.cursor()
     try:
         # Already registered?
-        cursor.execute("SELECT id FROM api_keys WHERE key_hash = ?", (key_hash,))
+        cursor.execute("SELECT id FROM api_keys WHERE key_hash = %s", (key_hash,))
         if cursor.fetchone():
             return {"status": "ok", "message": "Env key already registered"}
 
@@ -687,7 +687,7 @@ def ensure_env_key_registered():
 
         cursor.execute(
             "INSERT INTO api_keys (id, tenant_id, user_id, key_hash, key_prefix, "
-            "name, scopes, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "name, scopes, status) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
             (key_id, tenant_id, user_id, key_hash, key_prefix, "env-dashboard-key", "admin", "active"),
         )
         conn.commit()
@@ -751,34 +751,34 @@ def seed_demo_data():
 
         # 1. Create tenant
         cursor.execute(
-            "INSERT INTO tenants (id, name, slug, status, tier, impact_level) VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO tenants (id, name, slug, status, tier, impact_level) VALUES (%s, %s, %s, %s, %s, %s)",
             (tenant_id, "ICDEV™ Demo", "icdev-demo", "active", "starter", "IL4"),
         )
 
         # 2. Create admin user
         cursor.execute(
-            "INSERT INTO users (id, tenant_id, email, display_name, role, status) VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO users (id, tenant_id, email, display_name, role, status) VALUES (%s, %s, %s, %s, %s, %s)",
             (user_id, tenant_id, "admin@icdev.local", "Demo Admin", "tenant_admin", "active"),
         )
 
         # 3. Create API key
         cursor.execute(
             "INSERT INTO api_keys (id, tenant_id, user_id, key_hash, key_prefix, "
-            "name, status) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "name, status) VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (key_id, tenant_id, user_id, key_hash, key_prefix, "Demo key", "active"),
         )
 
         # 4. Create subscription
         cursor.execute(
             "INSERT INTO subscriptions (id, tenant_id, tier, max_projects, max_users, "
-            "status) VALUES (?, ?, ?, ?, ?, ?)",
+            "status) VALUES (%s, %s, %s, %s, %s, %s)",
             (sub_id, tenant_id, "starter", 5, 3, "active"),
         )
 
         # 5. Audit event
         try:
             cursor.execute(
-                "INSERT INTO audit_platform (tenant_id, user_id, event_type, action, details) VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO audit_platform (tenant_id, user_id, event_type, action, details) VALUES (%s, %s, %s, %s, %s)",
                 (
                     tenant_id,
                     user_id,

@@ -98,17 +98,17 @@ def _content_hash(text: str) -> str:
 
 def _load_graph(conn: sqlite3.Connection, graph_id: str) -> Dict[str, Any]:
     """Load graph with nodes and edges from DB."""
-    graph = conn.execute("SELECT * FROM kg_graphs WHERE id = ?", (graph_id,)).fetchone()
+    graph = conn.execute("SELECT * FROM kg_graphs WHERE id = %s", (graph_id,)).fetchone()
     if not graph:
         return {"error": f"Graph not found: {graph_id}"}
 
     nodes = conn.execute(
-        "SELECT id, label, entity_type, centrality, properties FROM kg_nodes WHERE graph_id = ?",
+        "SELECT id, label, entity_type, centrality, properties FROM kg_nodes WHERE graph_id = %s",
         (graph_id,),
     ).fetchall()
 
     edges = conn.execute(
-        "SELECT id, source_id, target_id, relationship, weight FROM kg_edges WHERE graph_id = ?",
+        "SELECT id, source_id, target_id, relationship, weight FROM kg_edges WHERE graph_id = %s",
         (graph_id,),
     ).fetchall()
 
@@ -422,7 +422,7 @@ def generate_pairs_from_graph(
                 ch = _content_hash(pair.get("system_prompt", "") + pair["user_input"] + pair["expected_output"])
                 # Check dedup
                 existing = conn.execute(
-                    "SELECT id FROM ft_dataset_examples WHERE content_hash = ? AND dataset_id = ?",
+                    "SELECT id FROM ft_dataset_examples WHERE content_hash = %s AND dataset_id = %s",
                     (ch, dataset_id),
                 ).fetchone()
                 if existing:
@@ -432,7 +432,7 @@ def generate_pairs_from_graph(
                     """INSERT INTO ft_dataset_examples
                        (dataset_id, system_prompt, user_input, expected_output,
                         source, quality_score, content_hash, classification, created_at)
-                       VALUES (?, ?, ?, ?, ?, 0.7, ?, 'CUI', ?)""",
+                       VALUES (%s, %s, %s, %s, %s, 0.7, %s, 'CUI', %s)""",
                     (
                         dataset_id,
                         pair.get("system_prompt", ""),

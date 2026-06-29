@@ -147,7 +147,7 @@ def _load_designs(project_id: str) -> dict:
             ))
             if is_uuid:
                 rows = conn.execute(
-                    "SELECT id, name, graph_json FROM pdc_designs WHERE id=?",
+                    "SELECT id, name, graph_json FROM pdc_designs WHERE id=%s",
                     (project_id,),
                 ).fetchall()
             else:

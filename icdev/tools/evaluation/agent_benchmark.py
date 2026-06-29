@@ -490,7 +490,7 @@ def _store_result(result: BenchmarkResult, scan_id: str, project_id: Optional[st
                (id, scan_id, project_id, agent_type, scenario_id, scenario_name,
                 category, outcome_passed, methodology_passed, composite_score,
                 duration_ms, details_json, classification, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'CUI', ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'CUI', %s)""",
             (
                 entry_id,
                 scan_id,
@@ -588,7 +588,7 @@ def get_trend(project_id: Optional[str] = None, limit: int = 10) -> Dict:
                FROM agent_benchmark_results
                GROUP BY scan_id, agent_type
                ORDER BY scan_time DESC
-               LIMIT ?""",
+               LIMIT %s""",
             (limit * 4,),  # 4 agent types × N scans
         ).fetchall()
     except Exception:

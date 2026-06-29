@@ -86,14 +86,14 @@ def import_community_connector(
                (id, connector_name, connector_type, base_class, protocol,
                 generated_code, code_hash, version, status, published_slug,
                 tenant_id, created_at, updated_at)
-               VALUES (?, ?, 'saas_api', 'imported', 'rest', ?, ?, 1, 'sandboxed',
-                       ?, ?, ?, ?)""",
+               VALUES (%s, %s, 'saas_api', 'imported', 'rest', %s, %s, 1, 'sandboxed',
+                       %s, %s, %s, %s)""",
             (connector_id, connector_name, code, code_hash, slug, tenant_id, now, now),
         )
 
         conn.execute(
             """INSERT INTO audit_trail (id, event_type, actor, action, details, created_at)
-               VALUES (?, 'connector_forge_imported', 'import_handler', 'import', ?, ?)""",
+               VALUES (%s, 'connector_forge_imported', 'import_handler', 'import', %s, %s)""",
             (
                 f"audit-{uuid.uuid4().hex[:12]}",
                 json.dumps({"connector_id": connector_id, "slug": slug, "connector_name": connector_name}),

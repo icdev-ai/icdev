@@ -111,7 +111,7 @@ def _get_db(db_path: Optional[str] = None) -> sqlite3.Connection:
 def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
     """Check if a table exists in the database."""
     cur = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=%s",
         (table_name,),
     )
     return cur.fetchone() is not None
@@ -187,7 +187,7 @@ def _aggregate_cross_engine_data(session_id: str, db_path: Optional[str] = None)
 
     try:
         # Session info
-        row = conn.execute("SELECT * FROM research_sessions WHERE id = ?", (session_id,)).fetchone()
+        row = conn.execute("SELECT * FROM research_sessions WHERE id = %s", (session_id,)).fetchone()
         if row:
             result["session"] = dict(row)
 
@@ -196,7 +196,7 @@ def _aggregate_cross_engine_data(session_id: str, db_path: Optional[str] = None)
             """SELECT id, source, source_type, title, body, url, author,
                       upvotes, citations, sentiment, keywords, metadata
                FROM research_signals
-               WHERE session_id = ?
+               WHERE session_id = %s
                ORDER BY upvotes DESC LIMIT 50""",
             (session_id,),
         ).fetchall()
@@ -226,7 +226,7 @@ def _aggregate_cross_engine_data(session_id: str, db_path: Optional[str] = None)
                       composite_score, keywords, market_demand,
                       regulatory_pressure, technical_complexity
                FROM research_challenges
-               WHERE session_id = ?
+               WHERE session_id = %s
                ORDER BY composite_score DESC LIMIT 20""",
             (session_id,),
         ).fetchall()
@@ -517,7 +517,7 @@ def _store_forecasts(
                     prediction_type, confidence, surprise_score, composite_rank,
                     time_horizon, supporting_evidence, cross_engine_sources,
                     llm_model, llm_raw_response, metadata, generated_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (
                     fid,
                     session_id,
@@ -729,9 +729,9 @@ def get_forecasts(
                       llm_model, outcome, outcome_date, outcome_notes,
                       metadata, generated_at
                FROM research_forecasts
-               WHERE session_id = ?
+               WHERE session_id = %s
                ORDER BY composite_rank DESC
-               LIMIT ?""",
+               LIMIT %s""",
             (session_id, limit),
         ).fetchall()
         return [dict(r) for r in rows]

@@ -386,7 +386,7 @@ def analyze_device(device_id: str, use_llm: bool = True) -> Dict[str, Any]:
     conn.row_factory = sqlite3.Row
     row = conn.execute(
         """SELECT config_text, config_type FROM ni_device_configs
-           WHERE device_id = ?
+           WHERE device_id = %s
            ORDER BY CASE config_type
              WHEN 'running' THEN 1
              WHEN 'startup' THEN 2

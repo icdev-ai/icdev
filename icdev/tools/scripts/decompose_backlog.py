@@ -21,7 +21,7 @@ def create_subtask(conn, parent_id, title, description, task_type="build", prior
     conn.execute(
         """
         INSERT INTO kanban_tasks (id, title, description, task_type, priority, status, created_at, updated_at, depends_on_task_id, source_prediction_id, dispatch_source)
-        VALUES (?, ?, ?, ?, ?, 'backlog', ?, ?, ?, ?, 'manual_decompose')
+        VALUES (%s, %s, %s, %s, %s, 'backlog', %s, %s, %s, %s, 'manual_decompose')
         """,
         (task_id, title, description, task_type, priority, now_iso(), now_iso(), depends_on, parent_id),
     )
@@ -30,7 +30,7 @@ def create_subtask(conn, parent_id, title, description, task_type="build", prior
 
 def mark_decomposed(conn, task_id):
     conn.execute(
-        "UPDATE kanban_tasks SET status='decomposed', updated_at=? WHERE id=?",
+        "UPDATE kanban_tasks SET status='decomposed', updated_at=%s WHERE id=%s",
         (now_iso(), task_id),
     )
 

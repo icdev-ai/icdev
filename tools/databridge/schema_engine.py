@@ -57,14 +57,14 @@ def register_schema(
 
         # Upsert: update if exists, insert otherwise
         existing = conn.execute(
-            "SELECT id FROM db_inferred_schemas WHERE connection_id = ? AND table_name = ?",
+            "SELECT id FROM db_inferred_schemas WHERE connection_id = %s AND table_name = %s",
             (connection_id, table_name),
         ).fetchone()
 
         if existing:
             conn.execute(
-                "UPDATE db_inferred_schemas SET schema_json = ?, updated_at = ? "
-                "WHERE connection_id = ? AND table_name = ?",
+                "UPDATE db_inferred_schemas SET schema_json = %s, updated_at = %s "
+                "WHERE connection_id = %s AND table_name = %s",
                 (schema_json, now, connection_id, table_name),
             )
         else:
@@ -72,7 +72,7 @@ def register_schema(
             conn.execute(
                 "INSERT INTO db_inferred_schemas "
                 "(id, connection_id, table_name, schema_json, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s)",
                 (schema_id, connection_id, table_name, schema_json, now, now),
             )
 
@@ -99,7 +99,7 @@ def get_schema(
         conn = _get_conn(db)
         _ensure_table(conn)
         row = conn.execute(
-            "SELECT schema_json FROM db_inferred_schemas WHERE connection_id = ? AND table_name = ?",
+            "SELECT schema_json FROM db_inferred_schemas WHERE connection_id = %s AND table_name = %s",
             (connection_id, table_name),
         ).fetchone()
         conn.close()

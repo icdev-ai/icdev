@@ -45,7 +45,7 @@ def list_exportable(min_improvement: float = 0.005) -> dict:
                 "SELECT er.id, er.experiment_id, er.domain, er.hypothesis, "
                 "er.metric_delta, er.improvement_pct, er.decision, er.created_at "
                 "FROM experiment_results er "
-                "WHERE er.decision = 'keep' AND er.improvement_pct >= ? "
+                "WHERE er.decision = 'keep' AND er.improvement_pct >= %s "
                 "ORDER BY er.improvement_pct DESC LIMIT 50",
                 (min_improvement,),
             ).fetchall()
@@ -73,7 +73,7 @@ def export_experiment_as_asset(
         with _get_db() as conn:
             # Get experiment result
             result_row = conn.execute(
-                "SELECT * FROM experiment_results WHERE experiment_id = ? "
+                "SELECT * FROM experiment_results WHERE experiment_id = %s "
                 "AND decision = 'keep' ORDER BY created_at DESC LIMIT 1",
                 (experiment_id,),
             ).fetchone()
@@ -88,7 +88,7 @@ def export_experiment_as_asset(
 
             # Get experiment candidate
             candidate_row = conn.execute(
-                "SELECT * FROM experiment_candidates WHERE id = ?",
+                "SELECT * FROM experiment_candidates WHERE id = %s",
                 (experiment_id,),
             ).fetchone()
             candidate_data = dict(candidate_row) if candidate_row else {}
@@ -144,7 +144,7 @@ def export_experiment_as_asset(
                     "(id, tenant_id, name, asset_type, description, slug, "
                     "publisher_user, impact_level, status, classification, "
                     "created_at, updated_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                     (
                         asset_id,
                         tenant_id,
@@ -168,7 +168,7 @@ def export_experiment_as_asset(
                 conn.execute(
                     "INSERT INTO audit_trail (id, event_type, actor, action, "
                     "details, project_id, session_id, created_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
                     (
                         f"at-{uuid.uuid4().hex[:12]}",
                         "autoresearch.marketplace_export",

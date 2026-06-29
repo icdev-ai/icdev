@@ -46,7 +46,7 @@ def seed_injects(session_id: int, scenario: dict) -> list[dict[str, Any]]:
                (inject_id, session_id, slug, title, body_md,
                 at_minute, sequence_num, depends_on_slug,
                 state, config_json, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'pending', %s, %s)""",
             (
                 inject_id,
                 session_id,
@@ -74,13 +74,13 @@ def dispatch_inject(inject_id: str) -> bool:
     conn = get_connection()
     conn.execute(
         """UPDATE ttx_injects
-           SET state = 'dispatched', dispatched_at = ?
-           WHERE inject_id = ? AND state = 'pending'""",
+           SET state = 'dispatched', dispatched_at = %s
+           WHERE inject_id = %s AND state = 'pending'""",
         (_now(), inject_id),
     )
     conn.commit()
     row = conn.execute(
-        "SELECT state FROM ttx_injects WHERE inject_id = ?", (inject_id,)
+        "SELECT state FROM ttx_injects WHERE inject_id = %s", (inject_id,)
     ).fetchone()
     return bool(row and row["state"] == "dispatched")
 
@@ -88,7 +88,7 @@ def dispatch_inject(inject_id: str) -> bool:
 def close_inject(inject_id: str) -> None:
     conn = get_connection()
     conn.execute(
-        "UPDATE ttx_injects SET state = 'closed', closed_at = ? WHERE inject_id = ?",
+        "UPDATE ttx_injects SET state = 'closed', closed_at = %s WHERE inject_id = %s",
         (_now(), inject_id),
     )
     conn.commit()
@@ -102,7 +102,7 @@ def get_dispatched_injects(session_id: int) -> list[dict[str, Any]]:
     conn = get_connection()
     rows = conn.execute(
         """SELECT * FROM ttx_injects
-           WHERE session_id = ? AND state IN ('dispatched', 'closed')
+           WHERE session_id = %s AND state IN ('dispatched', 'closed')
            ORDER BY sequence_num, dispatched_at""",
         (session_id,),
     ).fetchall()
@@ -112,7 +112,7 @@ def get_dispatched_injects(session_id: int) -> list[dict[str, Any]]:
 def get_pending_injects(session_id: int) -> list[dict[str, Any]]:
     conn = get_connection()
     rows = conn.execute(
-        "SELECT * FROM ttx_injects WHERE session_id = ? AND state = 'pending' ORDER BY sequence_num, at_minute",
+        "SELECT * FROM ttx_injects WHERE session_id = %s AND state = 'pending' ORDER BY sequence_num, at_minute",
         (session_id,),
     ).fetchall()
     return [dict(r) for r in rows]
@@ -121,7 +121,7 @@ def get_pending_injects(session_id: int) -> list[dict[str, Any]]:
 def get_inject_by_id(inject_id: str) -> dict[str, Any] | None:
     conn = get_connection()
     row = conn.execute(
-        "SELECT * FROM ttx_injects WHERE inject_id = ?", (inject_id,)
+        "SELECT * FROM ttx_injects WHERE inject_id = %s", (inject_id,)
     ).fetchone()
     return dict(row) if row else None
 
@@ -129,7 +129,7 @@ def get_inject_by_id(inject_id: str) -> dict[str, Any] | None:
 def get_all_injects(session_id: int) -> list[dict[str, Any]]:
     conn = get_connection()
     rows = conn.execute(
-        "SELECT * FROM ttx_injects WHERE session_id = ? ORDER BY sequence_num, at_minute",
+        "SELECT * FROM ttx_injects WHERE session_id = %s ORDER BY sequence_num, at_minute",
         (session_id,),
     ).fetchall()
     return [dict(r) for r in rows]
@@ -148,7 +148,7 @@ def unlock_next_async(session_id: int, team_id: int) -> dict[str, Any] | None:
     conn = get_connection()
     pending = conn.execute(
         """SELECT * FROM ttx_injects
-           WHERE session_id = ? AND state = 'pending'
+           WHERE session_id = %s AND state = 'pending'
            ORDER BY sequence_num LIMIT 1""",
         (session_id,),
     ).fetchone()
@@ -163,14 +163,14 @@ def unlock_next_async(session_id: int, team_id: int) -> dict[str, Any] | None:
 
     # Check if team has a response for the dependency inject
     dep_inject = conn.execute(
-        "SELECT inject_id FROM ttx_injects WHERE session_id = ? AND slug = ?",
+        "SELECT inject_id FROM ttx_injects WHERE session_id = %s AND slug = %s",
         (session_id, dep_slug),
     ).fetchone()
     if not dep_inject:
         return None
 
     has_response = conn.execute(
-        "SELECT 1 FROM ttx_responses WHERE team_id = ? AND inject_id = ?",
+        "SELECT 1 FROM ttx_responses WHERE team_id = %s AND inject_id = %s",
         (team_id, dep_inject["inject_id"]),
     ).fetchone()
     if has_response:

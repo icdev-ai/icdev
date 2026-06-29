@@ -1110,3 +1110,17 @@ response_cache:
     ddc:
       ttl_seconds: 7200
       context_cache: true
+
+# ---------------------------------------------------------------------------
+# Speculative Decoding (Ollama path only — auto-detected)
+# ---------------------------------------------------------------------------
+speculative_decoding:
+  enabled: auto           # auto | true | false
+                          # auto: probes Ollama /api/tags at startup; activates if a
+                          #   dspark/eagle3/dflash draft model is already loaded.
+                          #   Zero cost for non-Ollama providers (no network call).
+  draft_model: ""         # leave blank to auto-discover; or pin e.g. deepseek-ai/dspark_qwen3_4b_block7
+  draft_tokens: 5
+  verification_ratio: 0.7
+  fallback_on_failure: true
+  target_endpoint: "${OLLAMA_BASE_URL:-http://localhost:11434}"

@@ -777,7 +777,7 @@ def create_run(ticker: str, conn: StorageConnection | None = None) -> str:
     c = conn or get_conn()
     run_id = f"run-{_uid()}"
     c.execute(
-        "INSERT INTO ad_analysis_runs (id, ticker, status, created_at) VALUES (?, ?, 'running', ?)",
+        "INSERT INTO ad_analysis_runs (id, ticker, status, created_at) VALUES (%s, %s, 'running', %s)",
         (run_id, ticker, _now()),
     )
     c.commit()
@@ -793,7 +793,7 @@ def complete_run(
     """Mark a run as completed and store result JSON."""
     c = conn or get_conn()
     c.execute(
-        "UPDATE ad_analysis_runs SET status='completed', result_json=?, duration_ms=?, completed_at=? WHERE id=?",
+        "UPDATE ad_analysis_runs SET status='completed', result_json=%s, duration_ms=%s, completed_at=%s WHERE id=%s",
         (json.dumps(result, default=str), duration_ms, _now(), run_id),
     )
     c.commit()
@@ -806,7 +806,7 @@ def get_runs(
     """Get recent analysis runs."""
     c = conn or get_conn()
     rows = c.execute(
-        "SELECT * FROM ad_analysis_runs ORDER BY created_at DESC LIMIT ?",
+        "SELECT * FROM ad_analysis_runs ORDER BY created_at DESC LIMIT %s",
         (limit,),
     ).fetchall()
     return [dict(r) for r in rows]
@@ -827,7 +827,7 @@ def save_analyst_report(
     c.execute(
         "INSERT INTO ad_analyst_reports "
         "(id, run_id, analyst_type, findings_json, score, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s)",
         (
             f"rpt-{_uid()}",
             run_id,
@@ -856,7 +856,7 @@ def save_debate(
         "INSERT INTO ad_debate_records "
         "(id, run_id, bull_thesis, bear_thesis, bull_conviction, "
         "bear_conviction, net_score, consensus, synthesis, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
         (
             f"dbt-{_uid()}",
             run_id,
@@ -886,7 +886,7 @@ def save_perspective_score(
         "INSERT INTO ad_perspective_scores "
         "(id, ticker, run_id, net_score, consensus, signal, "
         "bull_conviction, bear_conviction, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
         (
             f"ps-{_uid()}",
             perspective.get("ticker", ""),
@@ -921,7 +921,7 @@ def save_signal(
         "INSERT INTO ad_signals "
         "(id, ticker, direction, composite_score, confidence, "
         "component_scores, run_id, status, price_at_add, current_price, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, 'pending', %s, %s, %s)",
         (
             sig_id,
             signal.get("ticker", ""),
@@ -970,7 +970,7 @@ def refresh_signal_prices(conn: StorageConnection | None = None) -> int:
         drift = (day_seed % 200 - 100) / 1000  # -10% to +10%
         adjusted = round(price * (1 + drift), 2)
         c.execute(
-            "UPDATE ad_signals SET current_price = ? WHERE id = ?",
+            "UPDATE ad_signals SET current_price = %s WHERE id = %s",
             (adjusted, sig["id"]),
         )
         updated += 1
@@ -993,23 +993,23 @@ def get_signals(
     if ranked:
         if status:
             rows = c.execute(  # nosec B608 — column names hardcoded, status/limit parameterized
-                "SELECT * FROM ad_signals WHERE status=? ORDER BY (composite_score * signal_decay_weight) DESC LIMIT ?",
+                "SELECT * FROM ad_signals WHERE status=%s ORDER BY (composite_score * signal_decay_weight) DESC LIMIT %s",
                 (status, limit),
             ).fetchall()
         else:
             rows = c.execute(  # nosec B608 — column names hardcoded, limit parameterized
-                "SELECT * FROM ad_signals ORDER BY (composite_score * signal_decay_weight) DESC LIMIT ?",
+                "SELECT * FROM ad_signals ORDER BY (composite_score * signal_decay_weight) DESC LIMIT %s",
                 (limit,),
             ).fetchall()
     else:
         if status:
             rows = c.execute(
-                "SELECT * FROM ad_signals WHERE status=? ORDER BY created_at DESC LIMIT ?",
+                "SELECT * FROM ad_signals WHERE status=%s ORDER BY created_at DESC LIMIT %s",
                 (status, limit),
             ).fetchall()
         else:
             rows = c.execute(
-                "SELECT * FROM ad_signals ORDER BY created_at DESC LIMIT ?",
+                "SELECT * FROM ad_signals ORDER BY created_at DESC LIMIT %s",
                 (limit,),
             ).fetchall()
     return [dict(r) for r in rows]
@@ -1023,7 +1023,7 @@ def update_signal_status(
     """Update signal status (approve/reject/execute)."""
     c = conn or get_conn()
     c.execute(
-        "UPDATE ad_signals SET status=?, actioned_at=? WHERE id=?",
+        "UPDATE ad_signals SET status=%s, actioned_at=%s WHERE id=%s",
         (status, _now(), signal_id),
     )
     c.commit()
@@ -1042,7 +1042,7 @@ def save_risk(
     c.execute(
         "INSERT INTO ad_risk_assessments "
         "(id, run_id, passed, checks_json, warnings, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s)",
         (
             f"rsk-{_uid()}",
             run_id,
@@ -1071,7 +1071,7 @@ def save_decision(
     c.execute(
         "INSERT INTO ad_trade_decisions "
         "(id, run_id, ticker, action, approved, reason, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s, %s)",
         (
             f"dec-{_uid()}",
             run_id,
@@ -1100,7 +1100,7 @@ def save_article_link(
     c.execute(
         "INSERT INTO ad_pulse_articles "
         "(id, run_id, ticker, article_topic, status, created_at) "
-        "VALUES (?, ?, ?, ?, 'draft', ?)",
+        "VALUES (%s, %s, %s, %s, 'draft', %s)",
         (art_id, run_id, ticker, topic, _now()),
     )
     c.commit()
@@ -1124,7 +1124,7 @@ def save_macro_context(
         "INSERT INTO ad_macro_context "
         "(id, run_id, macro_score, regime, supply_chain_risk, "
         "geopolitical_risk, data_source, summary, context_json, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
         (
             f"mac-{_uid()}",
             run_id,
@@ -1159,7 +1159,7 @@ def save_macro_indicators(
             c.execute(
                 "INSERT INTO ad_macro_indicators "
                 "(id, run_id, name, value, score, signal, label, weight, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     f"mi-{_uid()}",
                     run_id,
@@ -1194,7 +1194,7 @@ def save_macro_sector_impact(
             "INSERT INTO ad_macro_sector_impact "
             "(id, run_id, sector, impact_score, direction, "
             "rate_effect, oil_effect, dxy_effect, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 f"ms-{_uid()}",
                 run_id,
@@ -1235,7 +1235,7 @@ def save_transaction_cost(
         "(id, order_id, ticker, direction, qty, estimated_price, "
         "round_trip_cost_pct, expected_alpha_pct, net_alpha_pct, "
         "cost_exceeds_alpha, avg_daily_volume, bid_ask_spread, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
         (
             rec_id,
             order_id,
@@ -1261,7 +1261,7 @@ def get_monthly_turnover(conn: StorageConnection | None = None) -> float:
     c = conn or get_conn()
     month_prefix = datetime.now(timezone.utc).strftime("%Y-%m")
     row = c.execute(
-        "SELECT COALESCE(SUM(qty * COALESCE(fill_price, 100)), 0) FROM ad_orders WHERE created_at LIKE ?",
+        "SELECT COALESCE(SUM(qty * COALESCE(fill_price, 100)), 0) FROM ad_orders WHERE created_at LIKE %s",
         (f"{month_prefix}%",),
     ).fetchone()
     return float(row[0]) if row else 0.0
@@ -1274,7 +1274,7 @@ def get_macro_context(
     """Get macro context for a run, including indicators and sector impacts."""
     c = conn or get_conn()
     row = c.execute(
-        "SELECT * FROM ad_macro_context WHERE run_id=?",
+        "SELECT * FROM ad_macro_context WHERE run_id=%s",
         (run_id,),
     ).fetchone()
     if not row:
@@ -1288,13 +1288,13 @@ def get_macro_context(
             result["context"] = None
 
     indicators = c.execute(
-        "SELECT * FROM ad_macro_indicators WHERE run_id=? ORDER BY weight DESC",
+        "SELECT * FROM ad_macro_indicators WHERE run_id=%s ORDER BY weight DESC",
         (run_id,),
     ).fetchall()
     result["indicators"] = [dict(i) for i in indicators]
 
     sectors = c.execute(
-        "SELECT * FROM ad_macro_sector_impact WHERE run_id=?",
+        "SELECT * FROM ad_macro_sector_impact WHERE run_id=%s",
         (run_id,),
     ).fetchall()
     result["sector_impacts"] = [dict(s) for s in sectors]
@@ -1309,12 +1309,12 @@ def get_portfolio(conn: StorageConnection | None = None) -> dict:
     if not row:
         pid = f"pf-{_uid()}"
         c.execute(
-            "INSERT INTO ad_portfolios (id, name, cash_balance) VALUES (?, 'Default', 100000.0)",
+            "INSERT INTO ad_portfolios (id, name, cash_balance) VALUES (%s, 'Default', 100000.0)",
             (pid,),
         )
         c.commit()
         row = c.execute(
-            "SELECT * FROM ad_portfolios WHERE id=?",
+            "SELECT * FROM ad_portfolios WHERE id=%s",
             (pid,),
         ).fetchone()
     return dict(row)
@@ -1333,7 +1333,7 @@ def save_portfolio_snapshot(
     c = conn or get_conn()
     portfolio = get_portfolio(c)
     positions = c.execute(
-        "SELECT * FROM ad_positions WHERE portfolio_id=?",
+        "SELECT * FROM ad_positions WHERE portfolio_id=%s",
         (portfolio["id"],),
     ).fetchall()
 
@@ -1345,7 +1345,7 @@ def save_portfolio_snapshot(
         "INSERT INTO ad_portfolio_snapshots "
         "(id, run_id, total_value, cash_balance, position_count, "
         "total_unrealized_pnl, macro_regime, macro_score, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
         (
             snap_id,
             run_id,
@@ -1366,7 +1366,7 @@ def save_portfolio_snapshot(
             "INSERT INTO ad_position_history "
             "(id, snapshot_id, ticker, qty, avg_cost, market_value, "
             "unrealized_pnl, weight_pct, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 f"ph-{_uid()}",
                 snap_id,
@@ -1390,7 +1390,7 @@ def get_portfolio_timeline(
     """Get portfolio value snapshots over time."""
     c = conn or get_conn()
     rows = c.execute(
-        "SELECT * FROM ad_portfolio_snapshots ORDER BY created_at DESC LIMIT ?",
+        "SELECT * FROM ad_portfolio_snapshots ORDER BY created_at DESC LIMIT %s",
         (limit,),
     ).fetchall()
     return [dict(r) for r in rows]
@@ -1411,8 +1411,8 @@ def get_signal_history(
         "FROM ad_signals s "
         "JOIN ad_analysis_runs r ON s.run_id = r.id "
         "LEFT JOIN ad_macro_context m ON m.run_id = s.run_id "
-        "WHERE s.ticker = ? "
-        "ORDER BY s.created_at DESC LIMIT ?",
+        "WHERE s.ticker = %s "
+        "ORDER BY s.created_at DESC LIMIT %s",
         (ticker, limit),
     ).fetchall()
     results = []
@@ -1439,8 +1439,8 @@ def get_analyst_contribution_history(
         "r.ticker "
         "FROM ad_analyst_reports ar "
         "JOIN ad_analysis_runs r ON ar.run_id = r.id "
-        "WHERE r.ticker = ? "
-        "ORDER BY ar.created_at DESC LIMIT ?",
+        "WHERE r.ticker = %s "
+        "ORDER BY ar.created_at DESC LIMIT %s",
         (ticker, limit * 6),  # 6 analysts per run
     ).fetchall()
     return [dict(r) for r in rows]
@@ -1455,7 +1455,7 @@ def get_macro_regime_history(
     rows = c.execute(
         "SELECT id, run_id, macro_score, regime, supply_chain_risk, "
         "geopolitical_risk, data_source, created_at "
-        "FROM ad_macro_context ORDER BY created_at DESC LIMIT ?",
+        "FROM ad_macro_context ORDER BY created_at DESC LIMIT %s",
         (limit,),
     ).fetchall()
     return [dict(r) for r in rows]
@@ -1469,7 +1469,7 @@ def get_runs_for_ticker(
     """Get all analysis runs for a specific ticker."""
     c = conn or get_conn()
     rows = c.execute(
-        "SELECT * FROM ad_analysis_runs WHERE ticker = ? ORDER BY created_at DESC LIMIT ?",
+        "SELECT * FROM ad_analysis_runs WHERE ticker = %s ORDER BY created_at DESC LIMIT %s",
         (ticker, limit),
     ).fetchall()
     results = []
@@ -1506,7 +1506,7 @@ def save_chain_snapshot(
         "INSERT INTO ad_option_chain_snapshots "
         "(id, ticker, spot_price, atm_iv, ivr_pct, iv_percentile, "
         "iv_52w_high, iv_52w_low, expiration_count, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
         (
             snap_id,
             ticker.upper(),
@@ -1533,7 +1533,7 @@ def get_chain_snapshots(
     c = conn or get_conn()
     rows = c.execute(
         "SELECT * FROM ad_option_chain_snapshots "
-        "WHERE ticker = ? ORDER BY created_at DESC LIMIT ?",
+        "WHERE ticker = %s ORDER BY created_at DESC LIMIT %s",
         (ticker.upper(), limit),
     ).fetchall()
     return [dict(r) for r in rows]
@@ -1550,8 +1550,8 @@ def get_debate_history(
         "SELECT d.*, r.ticker "
         "FROM ad_debate_records d "
         "JOIN ad_analysis_runs r ON d.run_id = r.id "
-        "WHERE r.ticker = ? "
-        "ORDER BY d.created_at DESC LIMIT ?",
+        "WHERE r.ticker = %s "
+        "ORDER BY d.created_at DESC LIMIT %s",
         (ticker, limit),
     ).fetchall()
     results = []

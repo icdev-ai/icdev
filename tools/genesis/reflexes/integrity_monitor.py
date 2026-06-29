@@ -134,7 +134,7 @@ def _high_risk_signatures(conn: Any, assessment_id: int) -> Dict[str, Dict[str, 
     rows = conn.execute(
         f"SELECT finding_type, severity, file_path, line, detail "
         f"FROM integrity_findings "
-        f"WHERE assessment_id = ? AND finding_type IN ({placeholders})",
+        f"WHERE assessment_id = %s AND finding_type IN ({placeholders})",
         (assessment_id, *HIGH_RISK_FINDING_TYPES),
     ).fetchall()
     out: Dict[str, Dict[str, Any]] = {}
@@ -157,7 +157,7 @@ def _high_risk_signatures(conn: Any, assessment_id: int) -> Dict[str, Dict[str, 
 def _prior_assessment_ids(conn: Any, source_ref: str, current_id: int) -> List[int]:
     """All assessment ids for this source created before the current one (the baseline)."""
     rows = conn.execute(
-        "SELECT id FROM integrity_assessments WHERE source_ref = ? AND id < ? ORDER BY id",
+        "SELECT id FROM integrity_assessments WHERE source_ref = %s AND id < %s ORDER BY id",
         (source_ref, current_id),
     ).fetchall()
     return [r["id"] for r in rows]
@@ -181,7 +181,7 @@ def _open_card_exists(conn: Any, title: str) -> bool:
     placeholders = ", ".join("?" * len(_OPEN_STATUSES))
     try:
         row = conn.execute(
-            f"SELECT 1 FROM kanban_tasks WHERE title = ? AND status IN ({placeholders}) LIMIT 1",
+            f"SELECT 1 FROM kanban_tasks WHERE title = %s AND status IN ({placeholders}) LIMIT 1",
             (title, *_OPEN_STATUSES),
         ).fetchone()
         return row is not None
@@ -194,6 +194,7 @@ _ALLOWLIST_KEY: Dict[str, str] = {
     "process_exec": "known_safe_process_exec_modules",
     "filesystem": "known_safe_filesystem_modules",
     "env_secret": "known_safe_env_vars",
+    "dynamic_import": "known_safe_dynamic_import_modules",
 }
 
 _ALLOWLIST_VERIFY: Dict[str, str] = {
@@ -216,6 +217,13 @@ _ALLOWLIST_VERIFY: Dict[str, str] = {
         "import yaml; d=yaml.safe_load(open('args/integrity_config.yaml')); "
         "keys=d.get('known_safe_env_vars') or []; "
         "print('AUTHORIZED' if '{rel_path}' in keys else 'NOT AUTHORIZED')"
+        "\""
+    ),
+    "dynamic_import": (
+        "python -c \""
+        "import yaml; d=yaml.safe_load(open('args/integrity_config.yaml')); "
+        "mods=d.get('known_safe_dynamic_import_modules') or []; "
+        "print('AUTHORIZED' if any('{rel_path}' in m for m in mods) else 'NOT AUTHORIZED')"
         "\""
     ),
 }
@@ -314,7 +322,7 @@ def _open_card(
             "INSERT INTO kanban_tasks "
             "(id, title, description, task_type, priority, status, executor_type, "
             " dispatch_source, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 task_id,
                 title,
@@ -478,7 +486,7 @@ def _source_ref_of(conn: Any, assessment_id: int, fallback: str) -> str:
     """Read the assessment's stored ``source_ref`` (stable across runs) for baseline keying."""
     try:
         row = conn.execute(
-            "SELECT source_ref FROM integrity_assessments WHERE id = ?",
+            "SELECT source_ref FROM integrity_assessments WHERE id = %s",
             (assessment_id,),
         ).fetchone()
         if row is not None:

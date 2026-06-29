@@ -100,15 +100,15 @@ def register(intent: Optional[str] = None) -> Dict[str, Any]:
     _ensure_table(conn)
     try:
         existing = conn.execute(
-            "SELECT started_at FROM agent_sessions WHERE session_id = ?", (sid,)
+            "SELECT started_at FROM agent_sessions WHERE session_id = %s", (sid,)
         ).fetchone()
         started = (dict(existing).get("started_at") if existing else None) or now
         # portable upsert: delete-then-insert keeps it backend-agnostic
-        conn.execute("DELETE FROM agent_sessions WHERE session_id = ?", (sid,))
+        conn.execute("DELETE FROM agent_sessions WHERE session_id = %s", (sid,))
         conn.execute(
             "INSERT INTO agent_sessions "
             "(session_id, agent_type, pid, host, cwd, started_at, last_heartbeat, current_intent, status) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active')",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'active')",
             (sid, get_agent_type(), os.getpid(), socket.gethostname(),
              os.getcwd(), started, now, intent),
         )
@@ -134,12 +134,12 @@ def heartbeat(intent: Optional[str] = None) -> bool:
     try:
         if intent is not None:
             n = conn.execute(
-                "UPDATE agent_sessions SET last_heartbeat = ?, current_intent = ?, status='active' "
-                "WHERE session_id = ?", (_now(), intent, sid),
+                "UPDATE agent_sessions SET last_heartbeat = %s, current_intent = %s, status='active' "
+                "WHERE session_id = %s", (_now(), intent, sid),
             )
         else:
             n = conn.execute(
-                "UPDATE agent_sessions SET last_heartbeat = ?, status='active' WHERE session_id = ?",
+                "UPDATE agent_sessions SET last_heartbeat = %s, status='active' WHERE session_id = %s",
                 (_now(), sid),
             )
         conn.commit()
@@ -200,7 +200,7 @@ def end_session() -> bool:
     _ensure_table(conn)
     try:
         conn.execute(
-            "UPDATE agent_sessions SET status='ended', last_heartbeat=? WHERE session_id = ?",
+            "UPDATE agent_sessions SET status='ended', last_heartbeat=%s WHERE session_id = %s",
             (_now(), get_session_id()),
         )
         conn.commit()
@@ -227,7 +227,7 @@ def reap_stale(ttl_seconds: int = SESSION_TTL_SECONDS) -> int:
             if hb is None or hb < cutoff:
                 dead.append(d["session_id"])
         for sid in dead:
-            conn.execute("DELETE FROM agent_sessions WHERE session_id = ?", (sid,))
+            conn.execute("DELETE FROM agent_sessions WHERE session_id = %s", (sid,))
         conn.commit()
         return len(dead)
     except Exception:

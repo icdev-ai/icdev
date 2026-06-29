@@ -76,6 +76,9 @@ def profile_env_overrides(profile: dict[str, Any]) -> dict[str, str]:
     if profile.get("airgap") and not os.environ.get("ICDEV_AIRGAP"):
         overrides["ICDEV_AIRGAP"] = "true"
 
+    if profile.get("disable_cloud_features") and not os.environ.get("ICDEV_DISABLE_CLOUD_FEATURES"):
+        overrides["ICDEV_DISABLE_CLOUD_FEATURES"] = "true"
+
     if profile.get("enable_byok") and not os.environ.get("ICDEV_BYOK_ENABLED"):
         overrides["ICDEV_BYOK_ENABLED"] = "true"
 
@@ -84,6 +87,19 @@ def profile_env_overrides(profile: dict[str, Any]) -> dict[str, str]:
 
     if profile.get("classification") and not os.environ.get("ICDEV_CLASSIFICATION"):
         overrides["ICDEV_CLASSIFICATION"] = profile["classification"]
+
+    if profile.get("banner_mode") and not os.environ.get("ICDEV_BANNER_MODE"):
+        overrides["ICDEV_BANNER_MODE"] = profile["banner_mode"]
+
+    license_tier = profile.get("license_tier")
+    if license_tier and not os.environ.get("ICDEV_LICENSE_TIER"):
+        overrides["ICDEV_LICENSE_TIER"] = license_tier
+
+    if profile.get("brand_path") and not os.environ.get("ICDEV_BRAND_PATH"):
+        # Resolve relative paths against repo root so .env entries are portable
+        raw = profile["brand_path"]
+        resolved = str(BASE_DIR / raw) if not Path(raw).is_absolute() else raw
+        overrides["ICDEV_BRAND_PATH"] = resolved
 
     llm = profile.get("llm", {})
     if llm.get("provider") and not os.environ.get("ICDEV_LLM_PROVIDER"):

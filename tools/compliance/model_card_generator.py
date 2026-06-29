@@ -58,8 +58,8 @@ def _get_ai_bom_data(conn: sqlite3.Connection, project_id: str, model_name: str)
     """Pull model info from AI BOM if available."""
     try:
         row = conn.execute(
-            """SELECT * FROM ai_bom WHERE project_id = ?
-               AND (component_name LIKE ? OR component_name LIKE ?)
+            """SELECT * FROM ai_bom WHERE project_id = %s
+               AND (component_name LIKE %s OR component_name LIKE %s)
                ORDER BY created_at DESC LIMIT 1""",
             (project_id, f"%{model_name}%", f"%{model_name.replace('-', '_')}%"),
         ).fetchone()
@@ -74,7 +74,7 @@ def _get_telemetry_summary(conn: sqlite3.Connection, project_id: str) -> Dict:
         row = conn.execute(
             """SELECT COUNT(*) as total_calls,
                       COUNT(DISTINCT model) as models_used
-               FROM ai_telemetry WHERE project_id = ?""",
+               FROM ai_telemetry WHERE project_id = %s""",
             (project_id,),
         ).fetchone()
         return dict(row) if row else {}
@@ -86,7 +86,7 @@ def _get_xai_data(conn: sqlite3.Connection, project_id: str) -> Dict:
     """Pull XAI assessment data."""
     try:
         row = conn.execute(
-            """SELECT * FROM xai_assessments WHERE project_id = ?
+            """SELECT * FROM xai_assessments WHERE project_id = %s
                ORDER BY created_at DESC LIMIT 1""",
             (project_id,),
         ).fetchone()
@@ -199,7 +199,7 @@ def generate_model_card(
 
         # Get current version
         existing = conn.execute(
-            "SELECT version FROM model_cards WHERE project_id = ? AND model_name = ?",
+            "SELECT version FROM model_cards WHERE project_id = %s AND model_name = %s",
             (project_id, model_name),
         ).fetchone()
         version = (existing["version"] + 1) if existing else 1
@@ -207,7 +207,7 @@ def generate_model_card(
         conn.execute(
             """INSERT OR REPLACE INTO model_cards
                (project_id, model_name, card_data, card_hash, version, created_at)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s)""",
             (project_id, model_name, card_json, card_hash, version, now),
         )
         conn.commit()
@@ -217,7 +217,7 @@ def generate_model_card(
             conn.execute(
                 """INSERT INTO audit_trail
                    (project_id, event_type, actor, action, details, classification)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s)""",
                 (
                     project_id,
                     "model_card_generated",
@@ -249,7 +249,7 @@ def list_model_cards(project_id: str, db_path: Path = DB_PATH) -> Dict:
     try:
         _ensure_table(conn)
         rows = conn.execute(
-            "SELECT model_name, version, card_hash, created_at FROM model_cards WHERE project_id = ?",
+            "SELECT model_name, version, card_hash, created_at FROM model_cards WHERE project_id = %s",
             (project_id,),
         ).fetchall()
         return {

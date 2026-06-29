@@ -41,7 +41,7 @@ def create_group(design_id: str, node_ids: list[str],
         conn.execute(
             "INSERT INTO aadc_parallel_groups "
             "(id, design_id, label, color, node_ids_json, created_at, updated_at) "
-            "VALUES (?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s)",
             (gid, design_id, label[:100], color, json.dumps(node_ids), now, now),
         )
         conn.commit()
@@ -56,7 +56,7 @@ def list_groups(design_id: str) -> list[dict]:
     conn = _conn()
     try:
         rows = conn.execute(
-            "SELECT * FROM aadc_parallel_groups WHERE design_id=? ORDER BY created_at",
+            "SELECT * FROM aadc_parallel_groups WHERE design_id=%s ORDER BY created_at",
             (design_id,),
         ).fetchall()
         result = []
@@ -77,7 +77,7 @@ def update_group(design_id: str, group_id: str,
     conn = _conn()
     try:
         row = conn.execute(
-            "SELECT * FROM aadc_parallel_groups WHERE id=? AND design_id=?",
+            "SELECT * FROM aadc_parallel_groups WHERE id=%s AND design_id=%s",
             (group_id, design_id),
         ).fetchone()
         if not row:
@@ -86,8 +86,8 @@ def update_group(design_id: str, group_id: str,
         new_node_ids = node_ids if node_ids is not None else json.loads(d["node_ids_json"])
         new_label = label if label is not None else d["label"]
         conn.execute(
-            "UPDATE aadc_parallel_groups SET node_ids_json=?, label=?, updated_at=? "
-            "WHERE id=? AND design_id=?",
+            "UPDATE aadc_parallel_groups SET node_ids_json=%s, label=%s, updated_at=%s "
+            "WHERE id=%s AND design_id=%s",
             (json.dumps(new_node_ids), new_label, now, group_id, design_id),
         )
         conn.commit()
@@ -102,7 +102,7 @@ def delete_group(design_id: str, group_id: str) -> dict:
     conn = _conn()
     try:
         conn.execute(
-            "DELETE FROM aadc_parallel_groups WHERE id=? AND design_id=?",
+            "DELETE FROM aadc_parallel_groups WHERE id=%s AND design_id=%s",
             (group_id, design_id),
         )
         conn.commit()

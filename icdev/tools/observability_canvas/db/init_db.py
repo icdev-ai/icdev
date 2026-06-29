@@ -35,10 +35,9 @@ def get_connection():
     """
     if _OC_BACKEND == "postgresql":
         try:
-            from tools.db.storage import get_connection as _icdev_conn
-
-            conn = _icdev_conn(db_path=os.environ.get("OC_PG_DATABASE", "observability_canvas"))
-            return conn
+            from tools.db.storage import get_canvas_connection
+            # Canvas tables lack classification/tenant_id — bypass RLS via get_canvas_connection.
+            return get_canvas_connection("OC_STORAGE_BACKEND")
         except ImportError:
             pass
     # SQLite (default) — per-canvas DB, distinct from icdev.db

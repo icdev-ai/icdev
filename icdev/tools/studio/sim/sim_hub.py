@@ -107,7 +107,7 @@ def get_ft_dataset_counts() -> dict[str, int]:
         from tools.db.storage import get_connection
         conn = get_connection()
         rows = conn.execute(
-            "SELECT name, example_count FROM ft_datasets WHERE name LIKE ?",
+            "SELECT name, example_count FROM ft_datasets WHERE name LIKE %s",
             ("icdev-%-sim",),
         ).fetchall()
         conn.close()

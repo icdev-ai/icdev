@@ -47,7 +47,7 @@ def profile_vendor(vendor_name):
 
     # Aggregate awards
     awards = conn.execute(
-        "SELECT * FROM govcon_awards WHERE awardee_name LIKE ? ORDER BY award_date DESC",
+        "SELECT * FROM govcon_awards WHERE awardee_name LIKE %s ORDER BY award_date DESC",
         (f"%{vendor_name}%",),
     ).fetchall()
 

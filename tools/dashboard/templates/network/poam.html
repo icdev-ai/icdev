@@ -1,0 +1,165 @@
+{% extends "network/base.html" %}
+{% block title %}POAM — Network Canvas{% endblock %}
+{% block content %}
+<style>
+.badge-sev { display:inline-block; padding:2px 8px; border-radius:10px; font-size:0.75rem; font-weight:600; text-transform:uppercase; }
+.badge-sev.critical { background:#3d0000; color:#ff6b6b; }
+.badge-sev.high { background:#3d1a00; color:#ff9a3d; }
+.badge-sev.medium { background:#3d3200; color:#ffd93d; }
+.badge-sev.low { background:#003d1a; color:#6bffb8; }
+.badge-sev.informational { background:#1a1a3d; color:#9ab4ff; }
+.badge-status { display:inline-block; padding:2px 8px; border-radius:10px; font-size:0.75rem; font-weight:600; text-transform:uppercase; }
+.badge-status.open { background:var(--bg-hover); color:var(--text-dim); }
+.badge-status.in-progress { background:#1a2a3d; color:#9ab4ff; }
+.badge-status.completed { background:#003d1a; color:#6bffb8; }
+.badge-status.delayed { background:#3d1a00; color:#ff9a3d; }
+.badge-status.cancelled { background:#3d0000; color:#ff6b6b; }
+.twin-badge { display:inline-block; padding:2px 6px; border-radius:4px; font-size:0.72rem; font-weight:600; }
+.twin-badge.yes { background:#003d1a; color:#6bffb8; }
+.twin-badge.no { background:var(--bg-hover); color:var(--text-dim); }
+.empty-state { text-align:center; padding:60px 20px; color:var(--text-dim); }
+</style>
+
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Plan of Action &amp; Milestones (POAM)</h1>
+    <p class="page-subtitle">FedRAMP-aligned remediation tracking for network advisories</p>
+  </div>
+  <div class="page-actions">
+    <button class="btn btn-secondary" onclick="exportPoam('csv')">Export CSV</button>
+    <button class="btn btn-secondary" onclick="exportPoam('json')">Export JSON</button>
+    <button class="btn btn-primary" onclick="generatePoam()">+ Generate POAM Item</button>
+  </div>
+</div>
+
+{% if advisory_filter %}
+<div style="background:var(--bg-hover);padding:10px 16px;border-radius:6px;margin-bottom:1rem;font-size:0.85rem;">
+  Filtered by advisory: <strong>{{ advisory_filter }}</strong>
+  <a href="/network/poam" style="margin-left:12px;color:var(--accent-blue);">Clear filter</a>
+</div>
+{% endif %}
+
+<!-- Summary stats -->
+<div class="stats-bar" style="margin-bottom:1.2rem;">
+  <div class="stat-card">
+    <div class="stat-value">{{ items|length }}</div>
+    <div class="stat-label">Total Items</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value">{{ items|selectattr('status','equalto','open')|list|length }}</div>
+    <div class="stat-label">Open</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value">{{ items|selectattr('status','equalto','in-progress')|list|length }}</div>
+    <div class="stat-label">In Progress</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value">{{ items|selectattr('status','equalto','completed')|list|length }}</div>
+    <div class="stat-label">Completed</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value">{{ items|selectattr('twin_validated')|list|length }}</div>
+    <div class="stat-label">Twin Validated</div>
+  </div>
+</div>
+
+<!-- POAM Table -->
+<section class="panel panel-wide">
+  <div class="panel-header">
+    <h2 class="panel-title">POAM Items</h2>
+  </div>
+  <div style="overflow-x:auto;">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>POAM ID</th>
+          <th>CVE</th>
+          <th>Weakness</th>
+          <th>Control ID</th>
+          <th>Severity</th>
+          <th>Affected Assets</th>
+          <th>Scheduled Completion</th>
+          <th>Status</th>
+          <th>Twin Validated</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if not items %}
+        <tr>
+          <td colspan="9">
+            <div class="empty-state">
+              <div style="font-size:1rem;font-weight:600;margin-bottom:4px;">No POAM items found</div>
+              <div style="font-size:0.85rem;">Generate POAM items from advisories using the button above.</div>
+            </div>
+          </td>
+        </tr>
+        {% endif %}
+        {% for item in items %}
+        <tr>
+          <td><strong>{{ item.poam_id }}</strong></td>
+          <td>{{ item.cve_id or '—' }}</td>
+          <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ item.weakness }}">{{ item.weakness or '—' }}</td>
+          <td>{{ item.control_id or '—' }}</td>
+          <td><span class="badge-sev {{ item.severity }}">{{ item.severity }}</span></td>
+          <td style="text-align:right;">{{ item.affected_assets|length if item.affected_assets is iterable and item.affected_assets is not string else 0 }}</td>
+          <td>{{ (item.scheduled_completion or '')[:10] or '—' }}</td>
+          <td><span class="badge-status {{ item.status.replace('-', '') if item.status else 'open' }}">{{ item.status or 'open' }}</span></td>
+          <td><span class="twin-badge {{ 'yes' if item.twin_validated else 'no' }}">{{ 'Yes' if item.twin_validated else 'No' }}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- Generate POAM Modal -->
+<div id="gen-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1000;align-items:center;justify-content:center;">
+  <div style="background:var(--bg-card);border-radius:8px;padding:1.5rem;width:460px;max-width:90vw;">
+    <h3 style="margin:0 0 1rem;">Generate POAM Item</h3>
+    <label style="display:block;margin-bottom:10px;font-size:0.85rem;">Advisory ID
+      <input id="gp-advisory-id" type="text" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:4px;background:var(--bg-card);color:var(--text-primary);margin-top:4px;">
+    </label>
+    <label style="display:block;margin-bottom:10px;font-size:0.85rem;">Weakness Description
+      <input id="gp-weakness" type="text" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:4px;background:var(--bg-card);color:var(--text-primary);margin-top:4px;">
+    </label>
+    <label style="display:block;margin-bottom:10px;font-size:0.85rem;">Control ID (e.g. SI-2)
+      <input id="gp-control" type="text" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:4px;background:var(--bg-card);color:var(--text-primary);margin-top:4px;">
+    </label>
+    <label style="display:block;margin-bottom:16px;font-size:0.85rem;">Scheduled Completion
+      <input id="gp-completion" type="date" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:4px;background:var(--bg-card);color:var(--text-primary);margin-top:4px;">
+    </label>
+    <div style="display:flex;gap:10px;justify-content:flex-end;">
+      <button class="btn btn-secondary" onclick="closeGenModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitGenPoam()">Generate</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function exportPoam(fmt) {
+  window.location = '/network/api/poam/export?format=' + fmt;
+}
+function generatePoam() {
+  document.getElementById('gen-modal').style.display = 'flex';
+}
+function closeGenModal() {
+  document.getElementById('gen-modal').style.display = 'none';
+}
+async function submitGenPoam() {
+  const body = {
+    advisory_id: document.getElementById('gp-advisory-id').value,
+    weakness: document.getElementById('gp-weakness').value,
+    control_id: document.getElementById('gp-control').value,
+    scheduled_completion: document.getElementById('gp-completion').value,
+  };
+  const r = await fetch('/network/api/poam/generate', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body),
+  });
+  if (r.ok) { closeGenModal(); location.reload(); }
+  else { const d = await r.json(); alert('Error: ' + (d.error || 'Unknown error')); }
+}
+</script>
+{% endblock %}

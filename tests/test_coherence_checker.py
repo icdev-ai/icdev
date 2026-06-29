@@ -5,6 +5,7 @@
 Tests the 7 coherence checks and cross-subsystem impact analysis.
 """
 
+import pytest
 import textwrap
 from pathlib import Path
 
@@ -186,6 +187,7 @@ conn.execute(
 class TestSchemaCodeCheck:
     """Tests for schema-code coherence check."""
 
+    @pytest.mark.timeout(120)
     def test_check_runs_without_error(self):
         result = check_schema_code()
         assert isinstance(result, CoherenceCheck)
@@ -500,6 +502,7 @@ class TestRuffLintGate:
 class TestCoherenceReport:
     """Tests for the aggregate report."""
 
+    @pytest.mark.timeout(300)
     def test_run_all_checks(self):
         report = run_checks()
         assert isinstance(report, CoherenceReport)
@@ -523,6 +526,7 @@ class TestCoherenceReport:
         assert report.total_checks == 1
         assert report.checks[0].status == "warn"
 
+    @pytest.mark.timeout(300)
     def test_autofix_mode(self):
         """Test that --fix mode runs without error and includes total_fixes."""
         report = run_checks(autofix=True)

@@ -62,7 +62,7 @@ def create_assessment(
             "(id, target_id, target_name, strike_time, method, physical_damage, "
             " functional_defeat, confidence, collection_method, analyst_notes, "
             " theater, classification, created_by, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 bda_id,
                 target_id or None,
@@ -110,7 +110,7 @@ def list_assessments(theater: str = "", limit: int = 50) -> list[dict]:
                 "SELECT id, target_id, target_name, strike_time, method, "  # nosec B608
                 "physical_damage, functional_defeat, confidence, collection_method, "
                 "analyst_notes, theater, created_by, created_at "
-                "FROM sg_bda_assessments ORDER BY created_at DESC LIMIT ?",
+                "FROM sg_bda_assessments ORDER BY created_at DESC LIMIT %s",
                 (limit,),
             ).fetchall()
         cols = ("id", "target_id", "target_name", "strike_time", "method",

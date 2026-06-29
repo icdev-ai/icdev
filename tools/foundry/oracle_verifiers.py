@@ -26,7 +26,7 @@ Lenses
 ``route_not_listed``
     Are the page route(s) implied by the concept's ``canvas_contract`` already
     registered in the dashboard (``app.py`` ``@*.route`` decorators **or**
-    ``_CANVAS_DEFS`` canvas keys)?
+    ``args/component_registry.yaml`` canvas url_prefix entries)?
       * every page route registered  -> ``passed=True``
       * any page route missing       -> ``passed=False`` (route not yet listed)
 
@@ -216,8 +216,9 @@ def _load_manifest_entries(manifest_dir: Path) -> list[tuple[str, list[str]]]:
 def _load_registered_routes(app_path: Path) -> set[str]:
     """Return the set of normalized routes the dashboard registers.
 
-    Sourced from explicit ``@*.route(...)`` decorators **and** the ``_CANVAS_DEFS``
-    canvas keys (each registered as a ``/<key>`` blueprint url_prefix).
+    Sourced from explicit ``@*.route(...)`` decorators in app.py **and** from the
+    component registry's canvas url_prefix entries. The registry replaces the
+    legacy hardcoded ``_CANVAS_DEFS`` list.
     """
     key = _stat_key(app_path)
     cached = _ROUTES_CACHE.get(key)
@@ -234,11 +235,25 @@ def _load_registered_routes(app_path: Path) -> set[str]:
     for m in _ROUTE_DECORATOR_RE.finditer(src):
         routes.add(_norm_route(m.group(1)))
 
-    # _CANVAS_DEFS keys → /<key> page routes (blueprint url_prefix convention).
-    defs_match = re.search(r"_CANVAS_DEFS\s*=\s*\[(.*?)\n\]", src, re.DOTALL)
-    if defs_match:
-        for km in _CANVAS_DEF_KEY_RE.finditer(defs_match.group(1)):
-            routes.add(_norm_route("/" + km.group(1)))
+    # Registry-driven canvas url_prefixes (replaces _CANVAS_DEFS parsing).
+    try:
+        repo_root = app_path.resolve().parent.parent.parent
+        if str(repo_root) not in sys.path:
+            sys.path.insert(0, str(repo_root))
+        from tools.config.component_registry import get_registry
+
+        registry = get_registry()
+        for canvas_key, prefix in registry.get_url_prefixes().items():
+            if prefix:
+                routes.add(_norm_route(prefix))
+            else:
+                # Empty url_prefix means the blueprint defines its own routes;
+                # fall back to the legacy convention of /<canvas_key>.
+                routes.add(_norm_route(f"/{canvas_key}"))
+    except Exception:
+        # If the registry is unavailable, decorator-derived routes still give
+        # a partial answer; fail soft rather than blocking the verifier.
+        pass
 
     _ROUTES_CACHE[key] = routes
     return routes
@@ -374,7 +389,7 @@ def route_not_listed(
             "passed": False,
             "confidence": round(len(missing) / total, 4),
             "detail": (
-                f"{len(missing)}/{total} page route(s) not registered in app.py/_CANVAS_DEFS: "
+                f"{len(missing)}/{total} page route(s) not registered in app.py/component_registry: "
                 f"{', '.join(missing)}"
             ),
         }

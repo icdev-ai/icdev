@@ -1,0 +1,870 @@
+{% extends "network/base.html" %}
+{% block title %}Security Advisory Wizard — Network Design Canvas{% endblock %}
+
+{% block head %}
+<style>
+/* ── Wizard shell ──────────────────────────────────────────────────── */
+.adv-page { padding: 24px; max-width: 1100px; margin: 0 auto; }
+.adv-page-header { margin-bottom: 24px; }
+.adv-page-header h1 { font-size: 1.5rem; font-weight: 700; color: var(--text); margin: 0 0 4px; }
+.adv-page-header p { font-size: 0.85rem; color: var(--text-dim); margin: 0; }
+
+/* ── Progress bar ──────────────────────────────────────────────────── */
+.adv-progress { display: flex; gap: 0; margin-bottom: 32px; }
+.adv-step-tab {
+  flex: 1; padding: 12px 8px; text-align: center; cursor: pointer;
+  background: var(--bg2); border: 1px solid var(--border); border-right: none;
+  font-size: 0.78rem; font-weight: 600; color: var(--text-dim);
+  transition: background 0.2s, color 0.2s;
+  position: relative; user-select: none;
+}
+.adv-step-tab:first-child { border-radius: 8px 0 0 8px; }
+.adv-step-tab:last-child  { border-radius: 0 8px 8px 0; border-right: 1px solid var(--border); }
+.adv-step-tab.active  { background: var(--accent); color: #fff; border-color: var(--accent); }
+.adv-step-tab.done    { background: #1a3a2a; color: #4ade80; border-color: #2d5a3a; }
+.adv-step-num {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; border-radius: 50%; font-size: 0.72rem; font-weight: 700;
+  background: rgba(255,255,255,0.15); margin-right: 6px;
+}
+.adv-step-tab.done .adv-step-num::before  { content: "✓"; }
+.adv-step-tab:not(.done) .adv-step-num { counter-increment: none; }
+
+/* ── Step panels ───────────────────────────────────────────────────── */
+.adv-panel { display: none; }
+.adv-panel.active { display: block; }
+
+/* ── Upload zone ───────────────────────────────────────────────────── */
+.adv-drop-zone {
+  border: 2px dashed var(--border); border-radius: 12px;
+  padding: 48px 32px; text-align: center; cursor: pointer;
+  background: var(--bg2); transition: border-color 0.2s, background 0.2s;
+}
+.adv-drop-zone.dragover { border-color: var(--accent); background: rgba(79,195,247,0.06); }
+.adv-drop-zone .dz-icon { font-size: 2.5rem; margin-bottom: 12px; color: var(--text-dim); }
+.adv-drop-zone .dz-main { font-size: 1rem; font-weight: 600; color: var(--text); margin-bottom: 6px; }
+.adv-drop-zone .dz-sub  { font-size: 0.8rem; color: var(--text-dim); }
+.adv-drop-zone .dz-hint { font-size: 0.75rem; color: var(--text-dim); margin-top: 8px; font-style: italic; }
+.adv-drop-file-btn { display: none; }
+
+/* ── Editable field cards ──────────────────────────────────────────── */
+.adv-fields-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; margin-top: 20px; }
+.adv-field-card {
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 14px;
+}
+.adv-field-card label { display: block; font-size: 0.72rem; font-weight: 700; color: var(--text-dim); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em; }
+.adv-field-card input, .adv-field-card textarea, .adv-field-card select {
+  width: 100%; background: var(--bg3); color: var(--text); border: 1px solid var(--border);
+  border-radius: 4px; padding: 7px 9px; font-size: 0.85rem; box-sizing: border-box;
+}
+.adv-field-card textarea { resize: vertical; min-height: 60px; }
+
+/* ── Severity badge ────────────────────────────────────────────────── */
+.sev-badge {
+  display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 0.75rem; font-weight: 700; text-transform: uppercase;
+}
+.sev-critical { background: #3a0e0e; color: #f87171; border: 1px solid #7f1d1d; }
+.sev-high     { background: #3a1a0e; color: #fb923c; border: 1px solid #7c2d12; }
+.sev-medium   { background: #3a2e0e; color: #facc15; border: 1px solid #713f12; }
+.sev-low      { background: #0e2a3a; color: #38bdf8; border: 1px solid #0c4a6e; }
+
+/* ── Impact count card ─────────────────────────────────────────────── */
+.adv-impact-hero {
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 12px;
+  padding: 28px 32px; display: flex; align-items: center; gap: 24px; margin-bottom: 20px;
+}
+.adv-impact-count { font-size: 3.5rem; font-weight: 800; color: var(--text); line-height: 1; }
+.adv-impact-label { font-size: 1rem; color: var(--text-dim); margin-top: 4px; }
+.adv-impact-total { font-size: 0.8rem; color: var(--text-dim); }
+
+/* ── Source badge ──────────────────────────────────────────────────── */
+.src-badge {
+  display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px;
+  border-radius: 12px; font-size: 0.72rem; font-weight: 700;
+}
+.src-live     { background: #0a2a1a; color: #4ade80; border: 1px solid #16a34a; }
+.src-internal { background: #2a2a0a; color: #facc15; border: 1px solid #ca8a04; }
+.src-dot { width: 7px; height: 7px; border-radius: 50%; }
+.src-live .src-dot     { background: #4ade80; }
+.src-internal .src-dot { background: #facc15; }
+
+/* ── Device table ──────────────────────────────────────────────────── */
+.adv-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.adv-table th { text-align: left; padding: 8px 12px; background: var(--bg3); color: var(--text-dim); font-weight: 700; font-size: 0.72rem; text-transform: uppercase; border-bottom: 1px solid var(--border); }
+.adv-table td { padding: 9px 12px; border-bottom: 1px solid var(--border); color: var(--text); vertical-align: middle; }
+.adv-table tr:last-child td { border-bottom: none; }
+.adv-table tr:hover td { background: rgba(255,255,255,0.03); }
+
+/* ── Technical details toggle ──────────────────────────────────────── */
+.adv-tech-toggle { font-size: 0.78rem; color: var(--accent); cursor: pointer; text-decoration: underline; white-space: nowrap; }
+.adv-tech-panel { display: none; margin-top: 12px; }
+.adv-tech-panel.open { display: block; }
+.adv-nql-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.adv-nql-box { background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; padding: 12px; }
+.adv-nql-box h4 { font-size: 0.75rem; color: var(--text-dim); margin: 0 0 8px; text-transform: uppercase; font-weight: 700; }
+.adv-nql-box pre { font-size: 0.75rem; color: #a5f3fc; margin: 0; white-space: pre-wrap; word-break: break-word; }
+.adv-json-box { background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; padding: 12px; margin-top: 10px; }
+.adv-json-box pre { font-size: 0.72rem; color: var(--text-dim); margin: 0; white-space: pre-wrap; word-break: break-word; max-height: 200px; overflow-y: auto; }
+
+/* ── Twin cards ────────────────────────────────────────────────────── */
+.adv-twin-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
+.adv-twin-card {
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 14px;
+}
+.adv-twin-card .tc-header { font-size: 0.72rem; font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
+.adv-twin-card .tc-device { font-size: 0.9rem; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+.adv-twin-card .tc-verdict { font-size: 0.8rem; font-weight: 700; }
+.tc-pass { color: #4ade80; }
+.tc-warn { color: #facc15; }
+.tc-fail { color: #f87171; }
+.adv-resolved-badge { display: inline-block; padding: 2px 10px; border-radius: 10px; font-size: 0.72rem; font-weight: 700; margin-top: 8px; }
+.resolved-yes { background: #0a2a1a; color: #4ade80; border: 1px solid #16a34a; }
+.resolved-no  { background: #2a0a0a; color: #f87171; border: 1px solid #7f1d1d; }
+
+/* ── Twin interactive — verdict badges, blast radius, policy violations */
+.tc-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 12px; border-radius: 14px; font-size: 0.78rem; font-weight: 700;
+  margin: 6px 0 2px;
+}
+.tc-badge-pass { background: #0a2a1a; color: #4ade80; border: 1px solid #16a34a; }
+.tc-badge-warn { background: #2a1e00; color: #facc15; border: 1px solid #ca8a04; }
+.tc-badge-fail { background: #2a0a0a; color: #f87171; border: 1px solid #7f1d1d; }
+.tc-badge-dot  { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.tc-badge-pass .tc-badge-dot { background: #4ade80; }
+.tc-badge-warn .tc-badge-dot { background: #facc15; }
+.tc-badge-fail .tc-badge-dot { background: #f87171; }
+.tc-disconnected {
+  margin-top: 8px; padding: 8px 10px;
+  background: var(--bg3); border: 1px solid var(--border); border-radius: 6px;
+  font-size: 0.78rem; color: var(--text-dim); font-style: italic;
+}
+.tc-expand-section { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 8px; }
+.tc-expand-toggle {
+  font-size: 0.75rem; color: var(--accent); cursor: pointer; user-select: none;
+  padding: 2px 0; display: flex; align-items: center; gap: 4px;
+}
+.tc-expand-toggle::before { content: '\25B6\00A0'; font-size: 0.63rem; }
+.tc-expand-toggle[data-expanded="true"]::before { content: '\25BC\00A0'; }
+.tc-expand-toggle:hover { opacity: 0.8; }
+.tc-expand-count { color: var(--text-dim); font-weight: 400; }
+.tc-expand-panel { display: none; margin-top: 6px; }
+.tc-expand-panel.open { display: block; }
+.tc-expand-empty { font-size: 0.75rem; color: var(--text-dim); margin: 4px 0; }
+.blast-table { width: 100%; border-collapse: collapse; font-size: 0.75rem; }
+.blast-table th { padding: 5px 8px; background: var(--bg3); color: var(--text-dim); font-size: 0.68rem; text-transform: uppercase; font-weight: 700; text-align: left; border-bottom: 1px solid var(--border); }
+.blast-table td { padding: 5px 8px; border-bottom: 1px solid var(--border); color: var(--text); }
+.blast-table tr:last-child td { border-bottom: none; }
+.blast-crit-high   { color: #f87171; font-weight: 700; }
+.blast-crit-medium { color: #facc15; font-weight: 600; }
+.blast-crit-low    { color: #4ade80; }
+.nist-chip {
+  display: inline-block; padding: 2px 6px; border-radius: 3px;
+  font-size: 0.68rem; font-weight: 700; font-family: monospace;
+  background: #0e1e2e; color: #38bdf8; border: 1px solid #0c4a6e;
+  white-space: nowrap; flex-shrink: 0;
+}
+.policy-list  { list-style: none; padding: 0; margin: 4px 0 0; }
+.policy-item  { padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 0.75rem; display: flex; align-items: flex-start; gap: 8px; }
+.policy-item:last-child { border-bottom: none; }
+.policy-item-text   { flex: 1; color: var(--text); line-height: 1.4; }
+.policy-family      { display: block; font-size: 0.68rem; font-weight: 700; color: var(--text-dim); text-transform: uppercase; margin-bottom: 2px; }
+.policy-item-status { font-size: 0.68rem; font-weight: 700; white-space: nowrap; padding-top: 1px; }
+.policy-status-fail { color: #f87171; }
+.policy-status-warn { color: #facc15; }
+
+/* ── Remediation plan ──────────────────────────────────────────────── */
+.adv-rem-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.adv-rem-table th { padding: 8px 10px; background: var(--bg3); color: var(--text-dim); font-weight: 700; font-size: 0.72rem; text-transform: uppercase; border-bottom: 1px solid var(--border); text-align: left; }
+.adv-rem-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.adv-rem-table tr:last-child td { border-bottom: none; }
+.adv-rem-table input[type="text"], .adv-rem-table input[type="date"], .adv-rem-table select {
+  background: var(--bg3); color: var(--text); border: 1px solid var(--border);
+  border-radius: 4px; padding: 5px 8px; font-size: 0.8rem; width: 100%;
+}
+
+/* ── Shared ────────────────────────────────────────────────────────── */
+.panel-box { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 20px; margin-bottom: 16px; }
+.panel-box h3 { font-size: 1rem; font-weight: 700; color: var(--text); margin: 0 0 16px; }
+.adv-actions { display: flex; gap: 10px; margin-top: 20px; align-items: center; }
+.adv-upload-progress { margin-top: 14px; display: none; }
+.adv-upload-bar { height: 4px; background: var(--bg3); border-radius: 2px; overflow: hidden; }
+.adv-upload-fill { height: 100%; width: 0%; background: var(--accent); transition: width 0.3s; }
+.adv-upload-msg { font-size: 0.8rem; color: var(--text-dim); margin-top: 6px; }
+.adv-warn-banner { background: #2a1a00; border: 1px solid #ca8a04; border-radius: 6px; padding: 10px 14px; font-size: 0.8rem; color: #facc15; margin-top: 12px; display: none; }
+.adv-warn-banner.show { display: block; }
+.empty-state-text { font-size: 0.85rem; color: var(--text-dim); padding: 24px; text-align: center; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="adv-page">
+  <div class="adv-page-header">
+    <h1>Security Advisory Wizard</h1>
+    <p>Upload a vendor security advisory and let ICDEV™ find impacted devices, test in the digital twin, and generate a remediation plan — no NQL knowledge required.</p>
+  </div>
+
+  <!-- Progress bar -->
+  <div class="adv-progress" id="adv-progress">
+    <div class="adv-step-tab active" onclick="advGoToStep(1)" id="adv-tab-1">
+      <span class="adv-step-num">1</span>Upload Advisory
+    </div>
+    <div class="adv-step-tab" onclick="advGoToStep(2)" id="adv-tab-2">
+      <span class="adv-step-num">2</span>Find Impacted Devices
+    </div>
+    <div class="adv-step-tab" onclick="advGoToStep(3)" id="adv-tab-3">
+      <span class="adv-step-num">3</span>Test in Digital Twin
+    </div>
+    <div class="adv-step-tab" onclick="advGoToStep(4)" id="adv-tab-4">
+      <span class="adv-step-num">4</span>Remediation Plan
+    </div>
+  </div>
+
+  <!-- ── Step 1: Upload Advisory ─────────────────────────────────────── -->
+  <div class="adv-panel active" id="adv-panel-1">
+    <div class="panel-box">
+      <h3>Upload Security Advisory</h3>
+      <div class="adv-drop-zone" id="adv-drop-zone"
+           onclick="document.getElementById('adv-file-input').click()"
+           ondragover="advDragOver(event)" ondragleave="advDragLeave(event)" ondrop="advDrop(event)">
+        <div class="dz-icon">📄</div>
+        <div class="dz-main">Drop your advisory document here, or click to browse</div>
+        <div class="dz-sub">Accepts PDF, DOCX, .eml, .msg</div>
+        <div class="dz-hint">Works with Cisco PSIRT, Juniper SIRT, and most vendor formats</div>
+      </div>
+      <input type="file" id="adv-file-input" class="adv-drop-file-btn" accept=".pdf,.docx,.eml,.msg" onchange="advFileSelected(this.files[0])">
+
+      <div class="adv-upload-progress" id="adv-upload-progress">
+        <div class="adv-upload-bar"><div class="adv-upload-fill" id="adv-upload-fill"></div></div>
+        <div class="adv-upload-msg" id="adv-upload-msg">Extracting fields…</div>
+      </div>
+    </div>
+
+    <div class="panel-box" id="adv-fields-panel" style="display:none;">
+      <h3>Review Extracted Fields <span id="adv-extract-badge" style="font-size:0.75rem;font-weight:400;color:var(--text-dim);"></span></h3>
+      <div class="adv-fields-grid">
+        <div class="adv-field-card">
+          <label>CVE ID</label>
+          <input type="text" id="f-cve-id" placeholder="CVE-2024-XXXXX">
+        </div>
+        <div class="adv-field-card">
+          <label>Vendor</label>
+          <input type="text" id="f-vendor" placeholder="e.g. Cisco">
+        </div>
+        <div class="adv-field-card">
+          <label>Severity</label>
+          <select id="f-severity">
+            <option value="Critical">Critical</option>
+            <option value="High" selected>High</option>
+            <option value="Medium">Medium</option>
+            <option value="Low">Low</option>
+          </select>
+        </div>
+        <div class="adv-field-card">
+          <label>Affected Models (comma-separated)</label>
+          <input type="text" id="f-models" placeholder="e.g. ASR-9001, ASR-9006">
+        </div>
+        <div class="adv-field-card">
+          <label>Affected Versions (comma-separated)</label>
+          <input type="text" id="f-versions" placeholder="e.g. 7.3.1, 7.3.2">
+        </div>
+        <div class="adv-field-card" style="grid-column: span 2;">
+          <label>Advisory Summary</label>
+          <textarea id="f-summary" rows="3" placeholder="Brief description of the vulnerability…"></textarea>
+        </div>
+      </div>
+      <div class="adv-actions">
+        <button class="btn btn-primary" onclick="advStep1Next()">Continue to Impact Analysis →</button>
+        <span id="adv-s1-err" style="color:var(--red);font-size:0.82rem;"></span>
+      </div>
+    </div>
+
+    <!-- Manual entry fallback -->
+    <div class="panel-box" id="adv-manual-panel" style="display:none;">
+      <h3>Enter Advisory Details Manually</h3>
+      <p style="font-size:0.82rem;color:var(--text-dim);margin-bottom:16px;">No file uploaded — fill in the fields below to continue.</p>
+      <div class="adv-actions">
+        <button class="btn btn-secondary" onclick="advShowManualFields()">Fill In Manually</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Step 2: Find Impacted Devices ───────────────────────────────── -->
+  <div class="adv-panel" id="adv-panel-2">
+    <div class="adv-impact-hero" id="adv-impact-hero">
+      <div>
+        <div class="adv-impact-count" id="adv-impact-count">—</div>
+        <div class="adv-impact-label">devices are at risk</div>
+        <div class="adv-impact-total" id="adv-impact-total"></div>
+      </div>
+      <div style="margin-left:auto;text-align:right;">
+        <div id="adv-sev-badge"></div>
+        <div style="margin-top:8px;" id="adv-src-badge"></div>
+        <div style="margin-top:6px;" id="adv-recon-warn"></div>
+      </div>
+    </div>
+
+    <div class="panel-box" id="adv-devices-panel">
+      <h3>Impacted Device List</h3>
+      <div id="adv-device-table-wrap">
+        <div class="empty-state-text">Running analysis…</div>
+      </div>
+      <div style="margin-top:14px;">
+        <span class="adv-tech-toggle" onclick="advToggleTech()">▶ View technical details (NQL queries + proof)</span>
+        <div class="adv-tech-panel" id="adv-tech-panel">
+          <div class="adv-nql-grid">
+            <div class="adv-nql-box">
+              <h4>AI-Generated NQL (Q1)</h4>
+              <pre id="adv-q1-nql">—</pre>
+            </div>
+            <div class="adv-nql-box">
+              <h4>Template NQL (Q2 — authoritative)</h4>
+              <pre id="adv-q2-nql">—</pre>
+            </div>
+          </div>
+          <div class="adv-json-box">
+            <h4 style="font-size:0.72rem;color:var(--text-dim);font-weight:700;text-transform:uppercase;margin:0 0 8px;">Raw JSON Proof</h4>
+            <pre id="adv-raw-json">—</pre>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="adv-actions">
+      <button class="btn btn-secondary" onclick="advGoToStep(1)">← Back</button>
+      <button class="btn btn-primary" id="adv-s2-next" onclick="advStep2Next()">Test in Digital Twin →</button>
+    </div>
+  </div>
+
+  <!-- ── Step 3: Digital Twin Simulation ─────────────────────────────── -->
+  <div class="adv-panel" id="adv-panel-3">
+    <div class="panel-box">
+      <h3>Digital Twin Simulation Results</h3>
+      <p style="font-size:0.82rem;color:var(--text-dim);margin-bottom:16px;">Each device is tested in the digital twin before you schedule patching in the real network.</p>
+      <div id="adv-twin-rows">
+        <div class="empty-state-text">Running twin simulation…</div>
+      </div>
+      <div id="adv-twin-resolved" style="margin-top:16px;display:none;">
+        <strong style="font-size:0.9rem;color:var(--text);">Advisory resolved in simulation?</strong>
+        <span id="adv-twin-resolved-badge" style="margin-left:10px;"></span>
+      </div>
+    </div>
+
+    <div class="adv-actions">
+      <button class="btn btn-secondary" onclick="advGoToStep(2)">← Back</button>
+      <button class="btn btn-primary" id="adv-s3-next" onclick="advStep3Next()" disabled>Proceed to Remediation Plan →</button>
+      <span id="adv-s3-note" style="font-size:0.78rem;color:var(--text-dim);">Enabled when twin simulation passes for all devices.</span>
+    </div>
+  </div>
+
+  <!-- ── Step 4: Remediation Plan ────────────────────────────────────── -->
+  <div class="adv-panel" id="adv-panel-4">
+    <div class="panel-box">
+      <h3>Remediation Plan</h3>
+      <p style="font-size:0.82rem;color:var(--text-dim);margin-bottom:16px;">Review each device, select the action, assign an owner, and set a due date. Approve when ready to create work items.</p>
+      <div id="adv-rem-wrap">
+        <div class="empty-state-text">Building remediation plan…</div>
+      </div>
+    </div>
+
+    <div class="adv-warn-banner" id="adv-hitl-banner">
+      ⚠ HITL approval required — all changes will be queued for human review before execution.
+    </div>
+
+    <div class="adv-actions">
+      <button class="btn btn-secondary" onclick="advGoToStep(3)">← Back</button>
+      <button class="btn btn-primary" id="adv-approve-btn" onclick="advApprove()">Approve &amp; Create Work Items</button>
+      <span id="adv-s4-msg" style="font-size:0.82rem;color:var(--text-dim);"></span>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+/* ── Wizard state ──────────────────────────────────────────────────── */
+const ADV = {
+  step: 1,
+  advisory_id: null,
+  assessment: null,
+  devices: [],    // [{hostname, location, current_version}]
+  twin_results: [], // [{hostname, ndc_verdict, fwd_verdict}]
+  q1_nql: "",
+  q2_nql: "",
+  raw_proof: null,
+};
+
+/* ── Step navigation ───────────────────────────────────────────────── */
+function advGoToStep(n) {
+  if (n > ADV.step && n > 1) return; // can't skip forward beyond current
+  [1,2,3,4].forEach(i => {
+    document.getElementById('adv-panel-' + i).classList.toggle('active', i === n);
+    const tab = document.getElementById('adv-tab-' + i);
+    tab.classList.toggle('active', i === n);
+    tab.classList.toggle('done', i < n);
+  });
+  ADV.step = n;
+}
+
+/* ── Step 1 — Upload ───────────────────────────────────────────────── */
+function advDragOver(e) {
+  e.preventDefault();
+  document.getElementById('adv-drop-zone').classList.add('dragover');
+}
+function advDragLeave(e) {
+  document.getElementById('adv-drop-zone').classList.remove('dragover');
+}
+function advDrop(e) {
+  e.preventDefault();
+  document.getElementById('adv-drop-zone').classList.remove('dragover');
+  const file = e.dataTransfer.files[0];
+  if (file) advFileSelected(file);
+}
+
+function advFileSelected(file) {
+  if (!file) return;
+  const allowed = ['.pdf','.docx','.eml','.msg'];
+  const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
+  if (!allowed.includes(ext)) {
+    alert('Unsupported file type. Please upload a PDF, DOCX, .eml, or .msg file.');
+    return;
+  }
+
+  // Show progress
+  const prog = document.getElementById('adv-upload-progress');
+  const fill = document.getElementById('adv-upload-fill');
+  const msg  = document.getElementById('adv-upload-msg');
+  prog.style.display = 'block';
+  fill.style.width = '0%';
+  msg.textContent = 'Uploading and extracting fields…';
+
+  // Animate bar
+  let pct = 0;
+  const ticker = setInterval(() => {
+    pct = Math.min(pct + 8, 85);
+    fill.style.width = pct + '%';
+  }, 120);
+
+  const fd = new FormData();
+  fd.append('file', file);
+
+  fetch(NC_BASE + '/api/advisory/upload', { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+      clearInterval(ticker);
+      fill.style.width = '100%';
+      if (data.error) {
+        msg.textContent = 'Error: ' + data.error;
+        return;
+      }
+      msg.textContent = 'Extraction complete.';
+      advPopulateFields(data);
+    })
+    .catch(err => {
+      clearInterval(ticker);
+      msg.textContent = 'Upload failed: ' + err.message;
+    });
+}
+
+function advPopulateFields(data) {
+  document.getElementById('f-cve-id').value    = data.cve_id || '';
+  document.getElementById('f-vendor').value    = data.vendor || '';
+  document.getElementById('f-models').value    = (data.affected_models || []).join(', ');
+  document.getElementById('f-versions').value  = (data.affected_versions || []).join(', ');
+  document.getElementById('f-summary').value   = data.advisory_text || '';
+  const sev = data.severity || 'High';
+  document.getElementById('f-severity').value  = sev;
+  const conf = data.extraction_confidence;
+  if (conf != null) {
+    document.getElementById('adv-extract-badge').textContent =
+      '(AI confidence: ' + Math.round(conf * 100) + '%)';
+  }
+  if (data.advisory_id) ADV.advisory_id = data.advisory_id;
+  document.getElementById('adv-fields-panel').style.display = '';
+  document.getElementById('adv-manual-panel').style.display = 'none';
+}
+
+function advShowManualFields() {
+  document.getElementById('adv-fields-panel').style.display = '';
+  document.getElementById('adv-manual-panel').style.display = 'none';
+}
+
+function advStep1Next() {
+  const cve = document.getElementById('f-cve-id').value.trim();
+  const err = document.getElementById('adv-s1-err');
+  if (!cve) { err.textContent = 'CVE ID is required.'; return; }
+  err.textContent = '';
+
+  // Mark step 1 as done, advance to step 2 and run assessment
+  ADV.step = 1;
+  advGoToStep(2);
+  advRunAssessment();
+}
+
+/* ── Step 2 — Impact Assessment ────────────────────────────────────── */
+function advRunAssessment() {
+  const payload = {
+    cve_id:            document.getElementById('f-cve-id').value.trim(),
+    vendor:            document.getElementById('f-vendor').value.trim(),
+    severity:          document.getElementById('f-severity').value,
+    affected_models:   document.getElementById('f-models').value.split(',').map(s => s.trim()).filter(Boolean),
+    affected_versions: document.getElementById('f-versions').value.split(',').map(s => s.trim()).filter(Boolean),
+    advisory_text:     document.getElementById('f-summary').value.trim(),
+    advisory_id:       ADV.advisory_id,
+  };
+
+  fetch(NC_BASE + '/api/advisory/assess', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) {
+        document.getElementById('adv-device-table-wrap').innerHTML =
+          '<div class="empty-state-text" style="color:var(--red);">Error: ' + data.error + '</div>';
+        return;
+      }
+      ADV.assessment  = data;
+      ADV.advisory_id = data.advisory_id;
+      ADV.devices     = data.impacted_devices || [];
+      ADV.q1_nql      = data.nql_q1 || data.nql_impacted || '';
+      ADV.q2_nql      = data.nql_q2 || data.nql_impacted || '';
+      ADV.raw_proof   = data;
+      advRenderStep2(data);
+    })
+    .catch(err => {
+      document.getElementById('adv-device-table-wrap').innerHTML =
+        '<div class="empty-state-text" style="color:var(--red);">Request failed: ' + err.message + '</div>';
+    });
+}
+
+function advRenderStep2(data) {
+  // Hero count
+  document.getElementById('adv-impact-count').textContent = data.impacted_count;
+  document.getElementById('adv-impact-total').textContent =
+    'out of ' + data.total_devices + ' total devices';
+
+  // Severity badge
+  const sev = document.getElementById('f-severity').value;
+  const sevClass = { Critical:'sev-critical', High:'sev-high', Medium:'sev-medium', Low:'sev-low' }[sev] || 'sev-high';
+  document.getElementById('adv-sev-badge').innerHTML =
+    '<span class="sev-badge ' + sevClass + '">' + sev + '</span>';
+
+  // Source badge
+  const isLive = (data.source || '').includes('fwd');
+  document.getElementById('adv-src-badge').innerHTML = isLive
+    ? '<span class="src-badge src-live"><span class="src-dot"></span>Forward Networks live</span>'
+    : '<span class="src-badge src-internal"><span class="src-dot"></span>ICDEV internal</span>';
+
+  // Reconciliation warning
+  if (data.reconciliation_warning) {
+    document.getElementById('adv-recon-warn').innerHTML =
+      '<span style="font-size:0.75rem;color:#facc15;">⚠ AI and template counts differ — review NQL</span>';
+  }
+
+  // Device table
+  const devices = data.impacted_devices || [];
+  if (devices.length === 0) {
+    document.getElementById('adv-device-table-wrap').innerHTML =
+      '<div class="empty-state-text">No impacted devices found in this network.</div>';
+  } else {
+    let rows = devices.map(d => {
+      const name = typeof d === 'string' ? d : (d.hostname || d.name || JSON.stringify(d));
+      const loc  = typeof d === 'object' ? (d.location || d.site || '—') : '—';
+      const ver  = typeof d === 'object' ? (d.os_version || d.current_version || '—') : '—';
+      return `<tr>
+        <td>${_esc(name)}</td><td>${_esc(loc)}</td><td>${_esc(ver)}</td>
+      </tr>`;
+    }).join('');
+    document.getElementById('adv-device-table-wrap').innerHTML = `
+      <table class="adv-table">
+        <thead><tr><th>Device Name</th><th>Location</th><th>Current Version</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  }
+
+  // NQL panels
+  document.getElementById('adv-q1-nql').textContent = data.nql_q1 || data.nql_impacted || '—';
+  document.getElementById('adv-q2-nql').textContent = data.nql_q2 || data.nql_impacted || '—';
+  document.getElementById('adv-raw-json').textContent = JSON.stringify(data, null, 2);
+}
+
+function advToggleTech() {
+  const panel = document.getElementById('adv-tech-panel');
+  const toggle = document.querySelector('.adv-tech-toggle');
+  const open = panel.classList.toggle('open');
+  toggle.textContent = (open ? '▼ ' : '▶ ') + 'View technical details (NQL queries + proof)';
+}
+
+function advStep2Next() {
+  advGoToStep(3);
+  advRunTwinSim();
+}
+
+/* ── Step 3 — Twin Simulation ──────────────────────────────────────── */
+function advRunTwinSim() {
+  const payload = {
+    advisory_id: ADV.advisory_id,
+    devices: ADV.devices,
+  };
+
+  fetch(NC_BASE + '/api/advisory/twin-simulate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) {
+        document.getElementById('adv-twin-rows').innerHTML =
+          '<div class="empty-state-text" style="color:var(--red);">Error: ' + data.error + '</div>';
+        return;
+      }
+      ADV.twin_results = data.results || [];
+      advRenderStep3(data);
+    })
+    .catch(err => {
+      document.getElementById('adv-twin-rows').innerHTML =
+        '<div class="empty-state-text" style="color:var(--red);">Request failed: ' + err.message + '</div>';
+    });
+}
+
+function advRenderStep3(data) {
+  const results = data.results || [];
+  if (results.length === 0) {
+    document.getElementById('adv-twin-rows').innerHTML =
+      '<div class="empty-state-text">No devices to simulate.</div>';
+    document.getElementById('adv-s3-next').disabled = false;
+    return;
+  }
+
+  const VERDICT_META = {
+    PASS: { label: 'Safe to patch',    cls: 'tc-badge-pass' },
+    WARN: { label: 'Review needed',    cls: 'tc-badge-warn' },
+    FAIL: { label: 'Do not patch yet', cls: 'tc-badge-fail' },
+  };
+
+  let html = '';
+  results.forEach((r, idx) => {
+    const ndcMeta      = VERDICT_META[r.ndc_verdict] || VERDICT_META.WARN;
+    const fwdConnected = r.fwd_connected !== false;
+    const fwdMeta      = fwdConnected ? (VERDICT_META[r.fwd_verdict] || VERDICT_META.WARN) : null;
+    const ndcBlast     = r.ndc_blast_radius      || _mockBlastRadius(r.hostname, 'ndc');
+    const fwdBlast     = r.fwd_blast_radius      || (fwdConnected ? _mockBlastRadius(r.hostname, 'fwd') : []);
+    const ndcViols     = r.ndc_policy_violations || _mockPolicyViolations(r.ndc_verdict || 'WARN');
+    const fwdViols     = r.fwd_policy_violations || (fwdConnected ? _mockPolicyViolations(r.fwd_verdict || 'WARN') : []);
+
+    const fwdBody = fwdConnected
+      ? `<div class="tc-badge ${fwdMeta.cls}"><span class="tc-badge-dot"></span>${_esc(fwdMeta.label)}</div>
+        ${_tcExpand('fwd-blast-' + idx, 'Blast radius', fwdBlast, _blastTableHtml(fwdBlast))}
+        ${_tcExpand('fwd-policy-' + idx, 'Policy violations', fwdViols, _policyListHtml(fwdViols))}`
+      : '<div class="tc-disconnected">Not connected &mdash; Forward Networks unavailable</div>';
+
+    html += `<div class="adv-twin-row">
+      <div class="adv-twin-card">
+        <div class="tc-header">NDC Digital Twin</div>
+        <div class="tc-device">${_esc(r.hostname)}</div>
+        <div class="tc-badge ${ndcMeta.cls}"><span class="tc-badge-dot"></span>${_esc(ndcMeta.label)}</div>
+        ${_tcExpand('ndc-blast-' + idx, 'Blast radius', ndcBlast, _blastTableHtml(ndcBlast))}
+        ${_tcExpand('ndc-policy-' + idx, 'Policy violations', ndcViols, _policyListHtml(ndcViols))}
+      </div>
+      <div class="adv-twin-card">
+        <div class="tc-header">Forward Networks Twin</div>
+        <div class="tc-device">${_esc(r.hostname)}</div>
+        ${fwdBody}
+      </div>
+    </div>`;
+  });
+  document.getElementById('adv-twin-rows').innerHTML = html;
+
+  const allPass = results.every(r =>
+    r.ndc_verdict === 'PASS' && (r.fwd_connected === false || r.fwd_verdict === 'PASS')
+  );
+  document.getElementById('adv-twin-resolved').style.display = '';
+  document.getElementById('adv-twin-resolved-badge').innerHTML = allPass
+    ? '<span class="adv-resolved-badge resolved-yes">&#10003; Resolved in simulation</span>'
+    : '<span class="adv-resolved-badge resolved-no">&#10007; Issues remain</span>';
+
+  const btn = document.getElementById('adv-s3-next');
+  btn.disabled = !allPass;
+  document.getElementById('adv-s3-note').textContent = allPass
+    ? '' : 'Enabled when twin simulation passes for all devices.';
+}
+
+function advToggleExpand(id) {
+  const panel  = document.getElementById('tc-panel-' + id);
+  const toggle = document.getElementById('tc-toggle-' + id);
+  if (!panel) return;
+  const open = panel.classList.toggle('open');
+  toggle.dataset.expanded = String(open);
+}
+
+function _tcExpand(id, label, items, contentHtml) {
+  const count  = (items || []).length;
+  const isViol = label.includes('violation');
+  const countTxt = count === 0
+    ? 'none'
+    : count + (isViol ? ' violation' + (count === 1 ? '' : 's') : ' affected');
+  return `<div class="tc-expand-section">
+    <div class="tc-expand-toggle" data-expanded="false" id="tc-toggle-${id}" onclick="advToggleExpand('${id}')">
+      ${_esc(label)} <span class="tc-expand-count">(${countTxt})</span>
+    </div>
+    <div class="tc-expand-panel" id="tc-panel-${id}">${contentHtml}</div>
+  </div>`;
+}
+
+function _blastTableHtml(devices) {
+  if (!devices || !devices.length)
+    return '<p class="tc-expand-empty">No downstream impact detected.</p>';
+  const rows = devices.map(d => {
+    const crit = (d.criticality || 'low').toLowerCase();
+    return `<tr>
+      <td>${_esc(d.hostname || d.name || '—')}</td>
+      <td>${_esc(d.role || '—')}</td>
+      <td class="blast-crit-${crit}">${_esc(d.criticality || '—')}</td>
+    </tr>`;
+  }).join('');
+  return `<table class="blast-table">
+    <thead><tr><th>Device</th><th>Role</th><th>Criticality</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+function _policyListHtml(violations) {
+  if (!violations || !violations.length)
+    return '<p class="tc-expand-empty">No policy violations detected.</p>';
+  const items = violations.map(v => {
+    const sCls = v.status === 'FAIL' ? 'policy-status-fail' : 'policy-status-warn';
+    return `<li class="policy-item">
+      <span class="nist-chip">${_esc(v.control_id || '—')}</span>
+      <span class="policy-item-text">
+        <span class="policy-family">${_esc(v.family || '')}</span>
+        ${_esc(v.description || '')}
+      </span>
+      <span class="policy-item-status ${sCls}">${_esc(v.status || '')}</span>
+    </li>`;
+  }).join('');
+  return `<ul class="policy-list">${items}</ul>`;
+}
+
+function _mockBlastRadius(hostname, twin) {
+  const roles = ['Core Router', 'Access Switch', 'Firewall', 'Load Balancer', 'DNS Server'];
+  const crits = ['High', 'Medium', 'Low'];
+  const seed  = ((hostname || '').charCodeAt(0) || 65) + (twin === 'fwd' ? 3 : 0);
+  const count = (seed % 3) + 1;
+  const base  = (hostname || 'device').replace(/\d+$/, '');
+  return Array.from({length: count}, (_, i) => ({
+    hostname:    base + (10 + (seed + i) % 20),
+    role:        roles[(seed + i) % roles.length],
+    criticality: crits[(seed + i) % crits.length],
+  }));
+}
+
+function _mockPolicyViolations(verdict) {
+  if (verdict === 'PASS') return [];
+  const pool = [
+    { control_id: 'SI-2', family: 'System & Info Integrity',  description: 'Flaw remediation not applied within required window', status: verdict },
+    { control_id: 'CM-6', family: 'Configuration Management', description: 'Non-compliant configuration baseline detected', status: verdict === 'FAIL' ? 'FAIL' : 'WARN' },
+    { control_id: 'CM-3', family: 'Configuration Management', description: 'Change control process deviation', status: 'WARN' },
+    { control_id: 'RA-5', family: 'Risk Assessment',          description: 'Vulnerability scan finding unresolved', status: verdict },
+  ];
+  return verdict === 'FAIL' ? pool.slice(0, 3) : pool.slice(0, 2);
+}
+
+function advStep3Next() {
+  advGoToStep(4);
+  advBuildRemPlan();
+}
+
+/* ── Step 4 — Remediation Plan ─────────────────────────────────────── */
+function advBuildRemPlan() {
+  const devices = ADV.devices.length ? ADV.devices : ADV.twin_results;
+  if (!devices.length) {
+    document.getElementById('adv-rem-wrap').innerHTML =
+      '<div class="empty-state-text">No devices to remediate.</div>';
+    document.getElementById('adv-hitl-banner').classList.add('show');
+    return;
+  }
+
+  let rows = devices.map((d, i) => {
+    const name = typeof d === 'string' ? d : (d.hostname || d.name || 'Device ' + (i+1));
+    const ver  = typeof d === 'object' ? (d.os_version || d.current_version || '—') : '—';
+    return `<tr>
+      <td>${_esc(name)}</td>
+      <td>${_esc(ver)}</td>
+      <td><input type="text" id="rem-target-${i}" placeholder="e.g. 17.9.4"></td>
+      <td><select id="rem-action-${i}">
+        <option value="patch">Patch</option>
+        <option value="upgrade">Upgrade</option>
+        <option value="replace">Replace</option>
+        <option value="mitigate">Mitigate (ACL/workaround)</option>
+        <option value="defer">Defer</option>
+      </select></td>
+      <td><input type="text" id="rem-owner-${i}" placeholder="Owner name"></td>
+      <td><input type="date" id="rem-due-${i}"></td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('adv-rem-wrap').innerHTML = `
+    <table class="adv-rem-table">
+      <thead><tr>
+        <th>Device</th><th>Current Version</th><th>Target Version</th>
+        <th>Action</th><th>Owner</th><th>Due Date</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+
+  document.getElementById('adv-hitl-banner').classList.add('show');
+  ADV._rem_count = devices.length;
+  ADV._rem_devices = devices;
+}
+
+function advApprove() {
+  const devices = ADV._rem_devices || [];
+  const plan = devices.map((d, i) => {
+    const name = typeof d === 'string' ? d : (d.hostname || d.name || 'Device ' + (i+1));
+    return {
+      device:          name,
+      target_version:  document.getElementById('rem-target-' + i)?.value || '',
+      action:          document.getElementById('rem-action-' + i)?.value || 'patch',
+      owner:           document.getElementById('rem-owner-' + i)?.value || '',
+      due_date:        document.getElementById('rem-due-' + i)?.value || '',
+    };
+  });
+
+  const msg = document.getElementById('adv-s4-msg');
+  msg.textContent = 'Submitting…';
+  document.getElementById('adv-approve-btn').disabled = true;
+
+  fetch(NC_BASE + '/api/advisory/approve', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ advisory_id: ADV.advisory_id, plan }),
+  })
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) {
+        msg.textContent = 'Error: ' + data.error;
+        document.getElementById('adv-approve-btn').disabled = false;
+        return;
+      }
+      msg.textContent = '✓ ' + (data.work_items_created || plan.length) + ' work items created and queued for review.';
+    })
+    .catch(err => {
+      msg.textContent = 'Failed: ' + err.message;
+      document.getElementById('adv-approve-btn').disabled = false;
+    });
+}
+
+/* ── Utility ────────────────────────────────────────────────────────── */
+function _esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+/* On page load: show manual fallback if no file yet */
+document.addEventListener('DOMContentLoaded', function() {
+  document.getElementById('adv-manual-panel').style.display = '';
+});
+</script>
+{% endblock %}

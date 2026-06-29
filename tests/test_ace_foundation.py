@@ -55,8 +55,9 @@ def test_role_loader_missing_raises(role_loader):
 # 2. Problem classifier — fallback + domain scoring
 # ---------------------------------------------------------------------------
 
-def test_problem_classifier_fallback(role_loader):
+def test_problem_classifier_fallback(role_loader, monkeypatch):
     """Short/ambiguous input falls back to default team [ai_developer, qa_manager]."""
+    monkeypatch.setattr(ProblemClassifierLens, "_llm_suggest_roles", lambda self: [])
     lens = ProblemClassifierLens("hi", role_loader=role_loader)
     manifest = lens.run()
     role_ids = {s.role_id for s in manifest.slots}
@@ -64,8 +65,9 @@ def test_problem_classifier_fallback(role_loader):
     assert "qa_manager" in role_ids
 
 
-def test_problem_classifier_build_request(role_loader):
+def test_problem_classifier_build_request(role_loader, monkeypatch):
     """'Build a REST API' scores the build domain above zero and includes ai_developer."""
+    monkeypatch.setattr(ProblemClassifierLens, "_llm_suggest_roles", lambda self: [])
     text = "Build a REST API for managing user accounts."
     lens = ProblemClassifierLens(text, role_loader=role_loader)
     analysis = lens.analyze()

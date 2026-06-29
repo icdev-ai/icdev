@@ -153,7 +153,7 @@ def _record_scan(
                (id, asset_id, version_id, gate_name, status,
                 findings_count, critical_count, high_count,
                 medium_count, low_count, details)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 scan_id,
                 asset_id,
@@ -1119,7 +1119,7 @@ def get_scan_summary(version_id, db_path=None):
             """SELECT gate_name, status, findings_count, critical_count,
                       high_count, medium_count, low_count, scanned_at
                FROM marketplace_scan_results
-               WHERE version_id = ?
+               WHERE version_id = %s
                ORDER BY scanned_at DESC""",
             (version_id,),
         ).fetchall()

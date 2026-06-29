@@ -388,7 +388,7 @@ def run_normalization(limit: int = 500) -> Dict[str, Any]:
     else:
         raw_rows = conn.execute(
             "SELECT id, title, body, source, signal_date, geo_hint "
-            "FROM sg_raw_signals WHERE processed = 0 LIMIT ?",
+            "FROM sg_raw_signals WHERE processed = 0 LIMIT %s",
             (limit,),
         ).fetchall()
     conn.close()
@@ -477,7 +477,7 @@ def _insert_normalized(norm: Dict[str, Any]) -> None:
         conn.execute(
             "INSERT INTO sg_osint_normalized "
             "(raw_signal_id, timestamp, source, latitude, longitude, event_type, confidence, geo_hint, title, created_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (
                 norm["raw_signal_id"], norm["timestamp"], norm["source"],
                 norm["latitude"], norm["longitude"], norm["event_type"],
@@ -493,7 +493,7 @@ def _mark_processed(raw_id: int) -> None:
     if is_pg():
         conn.execute("UPDATE sg_raw_signals SET processed = 1 WHERE id = %s", (raw_id,))
     else:
-        conn.execute("UPDATE sg_raw_signals SET processed = 1 WHERE id = ?", (raw_id,))
+        conn.execute("UPDATE sg_raw_signals SET processed = 1 WHERE id = %s", (raw_id,))
     conn.commit()
     conn.close()
 

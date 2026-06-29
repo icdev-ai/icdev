@@ -96,7 +96,7 @@ class InternalChatAdapter(BaseChannelAdapter):
             conn.execute(
                 "INSERT OR IGNORE INTO agent_chat_turns "
                 "(session_id, role, content, created_at) "
-                "VALUES (?, 'agent', ?, datetime('now'))",
+                "VALUES (%s, 'agent', %s, datetime('now'))",
                 (thread_id, text),
             )
             conn.commit()

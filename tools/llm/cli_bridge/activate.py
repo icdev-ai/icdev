@@ -166,8 +166,8 @@ def cli_bridge_enabled() -> bool:
     1. Context override (set via :func:`cli_bridge_override`)
     2. ``should_enable()`` auto-detection (air-gapped or no cloud key)
 
-    Note: The ``ICDEV_CLI_BRIDGE`` env var is intentionally NOT consulted here.
-    Use ``cli_bridge_override()`` for per-request overrides.
+    The legacy ``ICDEV_CLI_BRIDGE`` env-var toggle is intentionally no longer
+    consulted — the context-scoped override is the sole per-request override path.
     """
     override = _cli_bridge_override.get()
     if override is not None:

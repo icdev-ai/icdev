@@ -47,7 +47,7 @@ def _audit(conn, action, details="", actor="compliance_populator"):
     try:
         conn.execute(
             "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (str(uuid.uuid4()), _now(), "govcon.compliance_matrix", actor, action, details, "govcon"),
         )
     except Exception:
@@ -87,8 +87,8 @@ def populate_compliance_matrix(opportunity_id):
             try:
                 # Insert or update compliance item
                 existing = conn.execute(
-                    "SELECT id FROM proposal_compliance_items WHERE requirement_text = ? AND section_id IN "
-                    "(SELECT id FROM proposal_sections WHERE opportunity_id = ?)",
+                    "SELECT id FROM proposal_compliance_items WHERE requirement_text = %s AND section_id IN "
+                    "(SELECT id FROM proposal_sections WHERE opportunity_id = %s)",
                     (item["statement"][:200], opportunity_id),
                 ).fetchone()
 
@@ -97,7 +97,7 @@ def populate_compliance_matrix(opportunity_id):
                         "INSERT INTO proposal_compliance_items "
                         "(id, section_id, requirement_id, requirement_text, compliance_status, "
                         "compliance_notes, evidence_reference, created_at, updated_at) "
-                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
                         (
                             str(uuid.uuid4()),
                             "",  # Will be linked when section is created

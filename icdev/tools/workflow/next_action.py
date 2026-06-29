@@ -94,7 +94,7 @@ def recommend(project_id: str, db_path: Optional[Path] = None) -> Dict[str, Any]
         # 1. Open loops needing attention
         open_loops = conn.execute(
             """SELECT * FROM workflow_loops
-               WHERE project_id = ? AND status NOT IN ('closed', 'abandoned')
+               WHERE project_id = %s AND status NOT IN ('closed', 'abandoned')
                ORDER BY created_at ASC""",
             (project_id,),
         ).fetchall()
@@ -161,7 +161,7 @@ def recommend(project_id: str, db_path: Optional[Path] = None) -> Dict[str, Any]
         try:
             ssp = conn.execute(
                 """SELECT MAX(generated_at) as latest FROM compliance_artifacts
-                   WHERE project_id = ? AND artifact_type = 'ssp'""",
+                   WHERE project_id = %s AND artifact_type = 'ssp'""",
                 (project_id,),
             ).fetchone()
             if ssp and ssp["latest"]:
@@ -183,7 +183,7 @@ def recommend(project_id: str, db_path: Optional[Path] = None) -> Dict[str, Any]
         try:
             vulns = conn.execute(
                 """SELECT COUNT(*) as cnt FROM security_findings
-                   WHERE project_id = ? AND severity IN ('critical', 'high')
+                   WHERE project_id = %s AND severity IN ('critical', 'high')
                    AND status = 'open'""",
                 (project_id,),
             ).fetchone()

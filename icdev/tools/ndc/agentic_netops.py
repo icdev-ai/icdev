@@ -93,7 +93,7 @@ def _log_agent_action(conn, agent: str, scenario: str, trigger: str,
                (timestamp,agent_name,scenario,trigger_event,analysis_json,
                 decision,action_taken,outcome,mitre_mapping,kanban_task_id,
                 llm_model,response_time_ms)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (_NOW_UTC.isoformat(), agent, scenario, trigger,
              json.dumps(analysis), decision, action, outcome,
              mitre, task_id, model, elapsed_ms),
@@ -119,7 +119,7 @@ def _create_kanban_task(title: str, description: str, priority: str = "high",
             """INSERT OR IGNORE INTO tasks
                (task_id, title, description, status, priority, canvas,
                 epic_key, depends_on_task_id, scheduled_at, created_at, updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (task_id, title, description, "backlog", priority, canvas,
              epic_key, depends_on or None, now, now, now),
         )
@@ -161,7 +161,7 @@ def run_threat_response(limit: int = 10) -> dict:
                       mitre_tactic, mitre_technique
                FROM ndc_syslog_events
                WHERE severity IN ('critical','warning') AND mitre_technique != ''
-               ORDER BY timestamp LIMIT ?""",
+               ORDER BY timestamp LIMIT %s""",
             (limit,),
         ).fetchall()
 
@@ -469,7 +469,7 @@ def run_modernization_advisor() -> dict:
                 )
                 # Update DB with task_id
                 try:
-                    conn.execute("UPDATE ndc_stig_findings SET kanban_task_id=? WHERE id=?",
+                    conn.execute("UPDATE ndc_stig_findings SET kanban_task_id=%s WHERE id=%s",
                                  (task_id, fid))
                 except Exception:
                     pass

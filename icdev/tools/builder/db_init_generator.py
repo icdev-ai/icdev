@@ -1324,6 +1324,29 @@ RAG_TABLES: Dict[str, str] = {
             expires_at TIMESTAMP,
             source TEXT DEFAULT 'parent'
         );"""),
+    "rag_queries": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS rag_queries (
+            id TEXT PRIMARY KEY,
+            query_text TEXT NOT NULL,
+            lens TEXT DEFAULT 'default',
+            status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'running', 'done', 'failed')),
+            agent_id TEXT,
+            tenant_id TEXT DEFAULT '',
+            classification TEXT DEFAULT 'CUI',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            completed_at TIMESTAMP
+        );"""),
+    "rag_citations": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS rag_citations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            query_id TEXT NOT NULL REFERENCES rag_queries(id),
+            source_doc TEXT NOT NULL,
+            citation_text TEXT,
+            confidence REAL DEFAULT 0.0,
+            tenant_id TEXT DEFAULT '',
+            classification TEXT DEFAULT 'CUI',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );"""),
 }
 
 

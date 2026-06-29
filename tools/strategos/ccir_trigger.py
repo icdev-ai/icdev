@@ -161,7 +161,7 @@ def evaluate_ccirs(lookback_hours: int = 12, threshold: float = 0.15) -> dict[st
                 conn.execute(
                     "INSERT INTO sg_ccir_trigger_events "
                     "(id, ccir_id, signal_source, signal_text, match_score, resolved, created_at) "
-                    "VALUES (?, ?, ?, ?, ?, 0, ?)",
+                    "VALUES (%s, %s, %s, %s, %s, 0, %s)",
                     (
                         event_id,
                         ccir["id"],

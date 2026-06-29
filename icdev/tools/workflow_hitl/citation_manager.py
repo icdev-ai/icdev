@@ -34,7 +34,7 @@ def add_citation(
             """INSERT INTO wf_citations
                (id, instance_id, stage, source_doc, source_type, doc_version,
                 section, page_number, excerpt, cited_by, cited_in_type, cited_in_id, created_at)
-               VALUES (%s,?,?,?,?,?,?,?,?,?,?,?,%s)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (cite_id, instance_id, stage, source_doc, source_type, doc_version,
              section, page_number, excerpt, cited_by, cited_in_type, cited_in_id, _now()),
         )

@@ -1,0 +1,486 @@
+<!-- CUI // SP-CTI — ACE Agent Session Detail -->
+{% extends "base.html" %}
+{% block title %}Session {{ session_id[:8] }} — Agent Sessions — ICDEV™{% endblock %}
+
+{% block content %}
+<style>
+  .detail-page { padding: 20px 28px; max-width: 1100px; }
+
+  .meta-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 10px; margin-bottom: 20px;
+  }
+  .meta-card {
+    padding: 12px 14px; border-radius: 6px;
+    background: var(--bg-secondary, #1a1a2e);
+    border: 1px solid var(--border-color, #2a2a4a);
+  }
+  .meta-card .lbl { font-size: 10px; color: var(--text-secondary, #7a8cb0); text-transform: uppercase; letter-spacing: .04em; }
+  .meta-card .val { font-size: 15px; font-weight: 600; margin-top: 3px; word-break: break-all; }
+  .meta-card .val.mono { font-family: monospace; font-size: 12px; }
+
+  .badge-subtype {
+    display: inline-block; padding: 2px 8px; border-radius: 4px;
+    font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em;
+  }
+  .badge-success         { background: rgba(39,174,96,.2);  color: #27ae60; border: 1px solid #27ae60; }
+  .badge-error_max_turns { background: rgba(230,126,34,.2); color: #e67e22; border: 1px solid #e67e22; }
+  .badge-error_max_budget_tokens { background: rgba(155,89,182,.2); color: #9b59b6; border: 1px solid #9b59b6; }
+  .badge-error_max_budget_cost   { background: rgba(231,76,60,.2);  color: #e74c3c; border: 1px solid #e74c3c; }
+  .badge-error_during_execution  { background: rgba(192,57,43,.2);  color: #c0392b; border: 1px solid #c0392b; }
+  .badge-error_stop_event        { background: rgba(127,140,141,.2); color: #7f8c8d; border: 1px solid #7f8c8d; }
+  .badge-error_max_structured_output_retries { background: rgba(243,156,18,.2); color: #f39c12; border: 1px solid #f39c12; }
+  .badge-unknown { background: rgba(100,100,100,.2); color: #aaa; border: 1px solid #555; }
+
+  .turn-block {
+    margin-bottom: 16px; border: 1px solid var(--border-color, #2a2a4a); border-radius: 6px; overflow: hidden;
+  }
+  .turn-header {
+    padding: 8px 14px; background: var(--bg-secondary, #1a1a2e);
+    display: flex; align-items: center; gap: 12px;
+    border-bottom: 1px solid var(--border-color, #2a2a4a);
+    font-size: 12px; font-weight: 600; color: var(--text-secondary, #7a8cb0);
+  }
+  .turn-header .turn-num { color: var(--text-primary, #e2e8f0); font-size: 13px; }
+
+  .msg-section { padding: 12px 16px; }
+  .msg-section + .msg-section { border-top: 1px solid rgba(255,255,255,.05); }
+
+  .role-tag {
+    display: inline-block; font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .06em; padding: 2px 7px; border-radius: 3px; margin-bottom: 6px;
+  }
+  .role-user      { background: rgba(74,158,255,.15); color: #4a9eff; border: 1px solid rgba(74,158,255,.3); }
+  .role-assistant { background: rgba(39,174,96,.12);  color: #27ae60; border: 1px solid rgba(39,174,96,.3); }
+  .role-system    { background: rgba(127,140,141,.15); color: #7f8c8d; border: 1px solid rgba(127,140,141,.3); }
+
+  .msg-text {
+    font-size: 13px; line-height: 1.6; white-space: pre-wrap; word-break: break-word;
+    color: var(--text-primary, #e2e8f0);
+  }
+
+  .tool-calls-section { padding: 10px 16px; }
+  .tool-call-card {
+    margin-bottom: 8px; border: 1px solid var(--border-color, #2a2a4a); border-radius: 4px; overflow: hidden;
+  }
+  .tool-call-header {
+    padding: 6px 12px; background: rgba(74,158,255,.08);
+    display: flex; justify-content: space-between; align-items: center;
+    border-bottom: 1px solid var(--border-color, #2a2a4a);
+    font-size: 12px;
+  }
+  .tool-name { font-family: monospace; font-weight: 600; color: #4a9eff; }
+  .tool-error-tag { color: #e74c3c; font-size: 11px; font-weight: 600; }
+  .tool-call-body { padding: 8px 12px; }
+  .tool-call-input {
+    font-family: monospace; font-size: 11px; color: var(--text-secondary, #7a8cb0);
+    background: var(--bg-primary, #0f0f23); padding: 6px 10px; border-radius: 3px;
+    margin-bottom: 6px; white-space: pre-wrap; word-break: break-all; max-height: 120px; overflow-y: auto;
+  }
+  .tool-result-text {
+    font-size: 12px; color: var(--text-primary, #e2e8f0);
+    background: rgba(255,255,255,.03); padding: 6px 10px; border-radius: 3px;
+    white-space: pre-wrap; word-break: break-word; max-height: 200px; overflow-y: auto;
+  }
+  .tool-result-error { color: #e74c3c; }
+
+  .collapsible-header {
+    display: flex; align-items: center; gap: 8px; cursor: pointer;
+    padding: 10px 0; font-size: 13px; font-weight: 600;
+    color: var(--text-secondary, #7a8cb0); border-bottom: 1px solid var(--border-color, #2a2a4a);
+    margin-bottom: 12px; user-select: none;
+  }
+  .collapsible-header:hover { color: var(--text-primary, #e2e8f0); }
+  .collapse-icon { font-size: 10px; transition: transform .2s; }
+  .collapsed .collapse-icon { transform: rotate(-90deg); }
+
+  .section-heading { font-size: 15px; font-weight: 600; margin: 24px 0 12px; }
+
+  .loading-state { text-align: center; padding: 60px 20px; color: var(--text-secondary, #7a8cb0); }
+  .error-state { text-align: center; padding: 60px 20px; color: #e74c3c; }
+</style>
+
+<div class="detail-page">
+
+  <!-- Breadcrumbs -->
+  <div class="breadcrumbs">
+    <a href="/">Home</a>
+    <span class="separator">/</span>
+    <a href="/coworker">Co-Worker Engine</a>
+    <span class="separator">/</span>
+    <a href="/coworker/sessions">Agent Sessions</a>
+    <span class="separator">/</span>
+    <span>{{ session_id[:8] }}…</span>
+  </div>
+
+  <div id="page-content">
+    <div class="loading-state">Loading session…</div>
+  </div>
+  <div id="eval-container"></div>
+  <div id="suggestions-container"></div>
+  <div id="compare-section" style="margin-top:16px;">
+    <button onclick="showCompareWidget()" style="background:transparent;color:#7a8cb0;border:1px solid #2a2a4a;padding:6px 14px;border-radius:5px;cursor:pointer;font-size:12px;">Compare with baseline session…</button>
+    <div id="compare-widget" style="display:none;margin-top:10px;border:1px solid var(--border-color,#2a2a4a);border-radius:6px;padding:16px;background:var(--bg-secondary,#1a1a2e);">
+      <div style="margin-bottom:10px;font-weight:600;font-size:14px;">Session Comparison</div>
+      <div style="display:flex;gap:8px;margin-bottom:12px;">
+        <input id="compare-baseline-input" type="text" placeholder="Baseline session ID…" style="flex:1;background:#0f0f1e;border:1px solid #2a2a4a;color:#e2e8f0;padding:6px 10px;border-radius:4px;font-size:12px;">
+        <button onclick="runCompare()" style="background:#3498db;color:#fff;border:none;padding:6px 14px;border-radius:4px;cursor:pointer;font-size:12px;">Compare</button>
+      </div>
+      <div id="compare-output"></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+var SESSION_ID = {{ session_id | tojson }};
+
+function subtypeBadge(sub) {
+  var cls = sub ? 'badge-' + sub : 'badge-unknown';
+  return '<span class="badge-subtype ' + cls + '">' + (sub || 'unknown') + '</span>';
+}
+
+function fmtDate(s) {
+  if (!s) return '—';
+  var d = new Date(s.replace(' ', 'T') + (s.includes('+') ? '' : 'Z'));
+  return isNaN(d) ? s : d.toLocaleString();
+}
+
+function esc(s) {
+  if (!s) return '';
+  return s.toString()
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function renderToolCall(tc) {
+  var errorTag = tc.is_error ? '<span class="tool-error-tag">ERROR</span>' : '';
+  var inputStr = tc.input ? JSON.stringify(tc.input, null, 2) : '';
+  var resultCls = tc.is_error ? 'tool-result-text tool-result-error' : 'tool-result-text';
+  return '<div class="tool-call-card">' +
+    '<div class="tool-call-header">' +
+      '<span class="tool-name">' + esc(tc.name) + '</span>' +
+      errorTag +
+    '</div>' +
+    '<div class="tool-call-body">' +
+      (inputStr ? '<div class="tool-call-input">' + esc(inputStr) + '</div>' : '') +
+      '<div class="' + resultCls + '">' + esc(tc.result || '(no result)') + '</div>' +
+    '</div>' +
+  '</div>';
+}
+
+function renderTurn(turn, idx) {
+  var toolCallsHtml = (turn.tool_calls || []).map(renderToolCall).join('');
+  var toolSection = toolCallsHtml
+    ? '<div class="tool-calls-section">' +
+        '<div style="font-size:11px; color:var(--text-secondary,#7a8cb0); margin-bottom:6px; text-transform:uppercase; letter-spacing:.04em;">Tool Calls (' + turn.tool_calls.length + ')</div>' +
+        toolCallsHtml +
+      '</div>'
+    : '';
+
+  var userSection = turn.user_input != null
+    ? '<div class="msg-section">' +
+        '<span class="role-tag role-user">User</span>' +
+        '<div class="msg-text">' + esc(turn.user_input) + '</div>' +
+      '</div>'
+    : '';
+
+  var assistantSection = turn.assistant_text
+    ? '<div class="msg-section">' +
+        '<span class="role-tag role-assistant">Assistant</span>' +
+        '<div class="msg-text">' + esc(turn.assistant_text) + '</div>' +
+      '</div>'
+    : '';
+
+  var toolCountTag = (turn.tool_calls && turn.tool_calls.length)
+    ? '<span style="background:rgba(74,158,255,.12); color:#4a9eff; padding:2px 8px; border-radius:3px; font-size:11px;">' +
+        turn.tool_calls.length + ' tool call' + (turn.tool_calls.length !== 1 ? 's' : '') +
+      '</span>'
+    : '';
+
+  return '<div class="turn-block">' +
+    '<div class="turn-header">' +
+      '<span class="turn-num">Turn ' + (idx + 1) + '</span>' +
+      toolCountTag +
+    '</div>' +
+    userSection +
+    toolSection +
+    assistantSection +
+  '</div>';
+}
+
+function toggleCollapsible(el) {
+  var body = el.nextElementSibling;
+  var collapsed = el.classList.toggle('collapsed');
+  body.style.display = collapsed ? 'none' : '';
+}
+
+async function loadSession() {
+  var content = document.getElementById('page-content');
+  try {
+    var res  = await fetch('/api/ace/sessions/' + SESSION_ID);
+    var data = await res.json();
+
+    if (data.error) {
+      content.innerHTML = '<div class="error-state">Error: ' + esc(data.error) + '</div>';
+      return;
+    }
+
+    var s = data;
+    var sub = s.result_subtype || '';
+
+    var metaHtml =
+      '<div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px; margin-bottom:20px; margin-top:10px;">' +
+        '<div>' +
+          '<h1 style="margin:0; font-size:20px; font-weight:700; font-family:monospace;">' + esc(SESSION_ID) + '</h1>' +
+          '<div style="margin-top:6px;">' + subtypeBadge(sub) + '</div>' +
+        '</div>' +
+        '<a href="/coworker/sessions" style="font-size:12px; color:var(--accent-color,#4a9eff); text-decoration:none;">&#8592; All Sessions</a>' +
+      '</div>' +
+      '<div class="meta-grid">' +
+        '<div class="meta-card"><div class="lbl">Co-Worker</div><div class="val mono">' + esc(s.coworker_id || '—') + '</div></div>' +
+        '<div class="meta-card"><div class="lbl">Instance</div><div class="val mono">' + esc(s.instance_id || '—') + '</div></div>' +
+        '<div class="meta-card"><div class="lbl">LLM Function</div><div class="val mono">' + esc(s.llm_function || '—') + '</div></div>' +
+        '<div class="meta-card"><div class="lbl">Turns</div><div class="val">' + (s.turns != null ? s.turns : 0) + '</div></div>' +
+        '<div class="meta-card"><div class="lbl">Tokens In</div><div class="val">' + ((s.total_input_tokens || 0)).toLocaleString() + '</div></div>' +
+        '<div class="meta-card"><div class="lbl">Tokens Out</div><div class="val">' + ((s.total_output_tokens || 0)).toLocaleString() + '</div></div>' +
+        '<div class="meta-card"><div class="lbl">Cost</div><div class="val">$' + parseFloat(s.total_cost_usd || 0).toFixed(4) + '</div></div>' +
+        '<div class="meta-card"><div class="lbl">Created</div><div class="val" style="font-size:12px;">' + fmtDate(s.created_at) + '</div></div>' +
+      '</div>';
+
+    var turnsArr = s.turns_parsed || [];
+    var turnsHtml = turnsArr.map(renderTurn).join('');
+    var timelineHtml = turnsHtml
+      ? '<h2 class="section-heading">Turn-by-Turn Replay (' + turnsArr.length + ' turns)</h2>' + turnsHtml
+      : '<div style="text-align:center; padding:40px; color:var(--text-secondary,#7a8cb0);">No turn data available for this session.</div>';
+
+    var systemPrompt = s.system_prompt || '';
+    var sysHtml = systemPrompt
+      ? '<div style="margin-top:24px;">' +
+          '<div class="collapsible-header" onclick="toggleCollapsible(this)">' +
+            '<span class="collapse-icon">&#9660;</span>' +
+            ' System Prompt' +
+          '</div>' +
+          '<pre style="font-size:12px; white-space:pre-wrap; word-break:break-word; color:var(--text-secondary,#7a8cb0); padding:12px; background:var(--bg-secondary,#1a1a2e); border-radius:4px; max-height:300px; overflow-y:auto;">' + esc(systemPrompt) + '</pre>' +
+        '</div>'
+      : '';
+
+    content.innerHTML = metaHtml + timelineHtml + sysHtml;
+    loadEval();
+
+  } catch(e) {
+    content.innerHTML = '<div class="error-state">Network error: ' + esc(String(e)) + '</div>';
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Eval section
+// ---------------------------------------------------------------------------
+var _evalLoaded = false;
+
+function evalScoreBar(v, label) {
+  var p = Math.round((v || 0) * 100);
+  var clr = p >= 70 ? '#27ae60' : p >= 40 ? '#f39c12' : '#e74c3c';
+  return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">' +
+    '<span style="font-size:12px;width:160px;color:var(--text-secondary,#7a8cb0);">' + esc(label) + '</span>' +
+    '<div style="flex:1;max-width:160px;height:6px;background:rgba(255,255,255,.1);border-radius:3px;">' +
+      '<div style="width:' + p + '%;height:100%;background:' + clr + ';border-radius:3px;"></div>' +
+    '</div>' +
+    '<span style="font-size:12px;">' + p + '%</span>' +
+  '</div>';
+}
+
+function renderEvalPanel(e) {
+  var boolTag = function(v, yes, no) {
+    return v
+      ? '<span style="color:#27ae60;font-weight:600;">' + (yes || 'Yes') + '</span>'
+      : '<span style="color:var(--text-secondary,#7a8cb0);">' + (no || 'No') + '</span>';
+  };
+  return '<div style="border:1px solid var(--border-color,#2a2a4a);border-radius:6px;padding:18px;background:var(--bg-secondary,#1a1a2e);margin-top:20px;">' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">' +
+      '<div style="font-size:15px;font-weight:600;">Eval Metrics</div>' +
+      '<span style="font-size:11px;color:var(--text-secondary,#7a8cb0);">graded ' + fmtDate(e.graded_at) + ' · v' + esc(e.grading_version || '1.0') + '</span>' +
+    '</div>' +
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">' +
+      '<div>' +
+        '<div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-secondary,#7a8cb0);margin-bottom:8px;">Performance</div>' +
+        evalScoreBar(e.efficiency_score || 0, 'Efficiency') +
+        evalScoreBar(1 - (e.tool_error_rate || 0), 'Tool success rate') +
+        evalScoreBar(e.tool_precision || 0, 'Tool precision') +
+      '</div>' +
+      '<div>' +
+        '<div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-secondary,#7a8cb0);margin-bottom:8px;">Reasoning (CoT/CoD)</div>' +
+        evalScoreBar(e.reasoning_coverage || 0, 'Reasoning coverage') +
+        '<div style="margin-bottom:6px;font-size:12px;color:var(--text-secondary,#7a8cb0);">Avg reasoning chars: <strong style="color:var(--text-primary,#e2e8f0);">' + Math.round(e.avg_reasoning_chars || 0) + '</strong></div>' +
+        '<div style="margin-bottom:6px;font-size:12px;color:var(--text-secondary,#7a8cb0);">Plan stated: ' + boolTag(e.plan_stated) + '</div>' +
+        '<div style="font-size:12px;color:var(--text-secondary,#7a8cb0);">Error recovery reasoning: ' + boolTag(e.has_error_recovery_reasoning) + '</div>' +
+      '</div>' +
+    '</div>' +
+    '<div style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,.05);display:flex;gap:20px;font-size:12px;color:var(--text-secondary,#7a8cb0);">' +
+      '<span>Scope violations: <strong style="color:' + (e.scope_violations ? '#e74c3c' : '#27ae60') + ';">' + (e.scope_violations || 0) + '</strong></span>' +
+      '<span>Trust denials: <strong style="color:' + (e.trust_denials ? '#e74c3c' : '#27ae60') + ';">' + (e.trust_denials || 0) + '</strong></span>' +
+    '</div>' +
+  '</div>';
+}
+
+async function loadEval() {
+  if (_evalLoaded) return;
+  var container = document.getElementById('eval-container');
+  if (!container) return;
+  try {
+    var res = await fetch('/api/ace/sessions/' + SESSION_ID + '/eval');
+    if (res.status === 404) {
+      container.innerHTML =
+        '<div style="margin-top:20px;border:1px dashed var(--border-color,#2a2a4a);border-radius:6px;padding:20px;text-align:center;">' +
+          '<div style="color:var(--text-secondary,#7a8cb0);font-size:13px;margin-bottom:10px;">No eval yet for this session.</div>' +
+          '<button onclick="runEval()" style="padding:7px 18px;border-radius:5px;background:rgba(74,158,255,.15);border:1px solid rgba(74,158,255,.4);color:#4a9eff;font-size:13px;cursor:pointer;font-weight:600;">Run Eval</button>' +
+        '</div>';
+      return;
+    }
+    var data = await res.json();
+    if (data.error) {
+      container.innerHTML = '<div style="margin-top:20px;color:#e74c3c;font-size:13px;">Eval error: ' + esc(data.error) + '</div>';
+      return;
+    }
+    container.innerHTML = renderEvalPanel(data);
+    _evalLoaded = true;
+    loadSuggestions();
+  } catch(e) {
+    container.innerHTML = '<div style="margin-top:20px;color:var(--text-secondary,#7a8cb0);font-size:12px;">(eval load failed)</div>';
+  }
+}
+
+async function runEval() {
+  var container = document.getElementById('eval-container');
+  if (!container) return;
+  container.innerHTML = '<div style="margin-top:20px;text-align:center;padding:20px;color:var(--text-secondary,#7a8cb0);">Running eval…</div>';
+  try {
+    var res = await fetch('/api/ace/sessions/' + SESSION_ID + '/eval', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({})});
+    var data = await res.json();
+    if (data.error) {
+      container.innerHTML = '<div style="margin-top:20px;color:#e74c3c;font-size:13px;">Eval failed: ' + esc(data.error) + '</div>';
+      return;
+    }
+    container.innerHTML = renderEvalPanel(data);
+    _evalLoaded = true;
+    loadSuggestions();
+  } catch(e) {
+    container.innerHTML = '<div style="margin-top:20px;color:#e74c3c;font-size:13px;">Eval error: ' + esc(String(e)) + '</div>';
+  }
+}
+
+async function loadSuggestions() {
+  var suggestionsDiv = document.getElementById('suggestions-container');
+  if (!suggestionsDiv) return;
+  try {
+    var res = await fetch('/api/ace/sessions/' + SESSION_ID + '/eval/suggestions');
+    var data = await res.json();
+    if (data.error || !data.suggestions || !data.suggestions.length) {
+      suggestionsDiv.innerHTML = '';
+      return;
+    }
+    suggestionsDiv.innerHTML = renderSuggestions(data.suggestions);
+  } catch(e) {
+    suggestionsDiv.innerHTML = '';
+  }
+}
+
+function renderSuggestions(suggestions) {
+  if (!suggestions || !suggestions.length) return '';
+  var sevColor = {high: '#e74c3c', medium: '#f39c12', low: '#7f8c8d'};
+  var sevBg    = {high: 'rgba(231,76,60,.1)', medium: 'rgba(243,156,18,.1)', low: 'rgba(127,140,141,.1)'};
+
+  var items = suggestions.map(function(s) {
+    var clr = sevColor[s.severity] || '#aaa';
+    var bg  = sevBg[s.severity]   || 'rgba(100,100,100,.08)';
+    return '<div style="border:1px solid ' + clr + ';border-radius:5px;padding:12px 14px;margin-bottom:8px;background:' + bg + ';">' +
+      '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:6px;">' +
+        '<strong style="font-size:13px;color:var(--text-primary,#e2e8f0);">' + esc(s.issue) + '</strong>' +
+        '<span style="font-size:10px;font-weight:700;text-transform:uppercase;color:' + clr + ';white-space:nowrap;border:1px solid ' + clr + ';padding:2px 6px;border-radius:3px;">' + esc(s.severity) + '</span>' +
+      '</div>' +
+      '<div style="font-size:12px;color:var(--text-secondary,#7a8cb0);">' + esc(s.suggestion) + '</div>' +
+      '<div style="font-size:10px;color:' + clr + ';margin-top:5px;text-transform:uppercase;letter-spacing:.04em;">Fix: ' + esc(s.field) + '</div>' +
+    '</div>';
+  }).join('');
+
+  return '<div style="border:1px solid var(--border-color,#2a2a4a);border-radius:6px;padding:18px;background:var(--bg-secondary,#1a1a2e);margin-top:16px;">' +
+    '<div style="font-size:15px;font-weight:600;margin-bottom:14px;">Improvement Suggestions</div>' +
+    items +
+    '<div style="margin-top:14px;text-align:right;">' +
+      '<button id="rerun-btn" onclick="rerun()" style="background:#2ecc71;color:#fff;border:none;padding:8px 18px;border-radius:5px;cursor:pointer;font-weight:600;">Apply Suggestions &amp; Re-run</button>' +
+    '</div>' +
+  '</div>';
+}
+
+async function rerun() {
+  var btn = document.getElementById('rerun-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Launching…'; }
+  try {
+    var res = await fetch('/api/ace/sessions/' + SESSION_ID + '/rerun', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({apply_suggestions: true})
+    });
+    var data = await res.json();
+    if (data.error) { alert('Re-run failed: ' + data.error); return; }
+    var dest = data.new_instance_id || data.new_session_id;
+    if (dest) window.location.href = '/coworker/live/' + dest;
+  } catch(e) {
+    alert('Re-run failed: ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Apply Suggestions & Re-run'; }
+  }
+}
+
+function showCompareWidget() {
+  var w = document.getElementById('compare-widget');
+  if (w) w.style.display = (w.style.display === 'none' ? '' : 'none');
+}
+
+async function runCompare() {
+  var inp = document.getElementById('compare-baseline-input');
+  var baseline = (inp && inp.value || '').trim();
+  if (!baseline) { alert('Enter a baseline session ID'); return; }
+  var out = document.getElementById('compare-output');
+  if (out) out.innerHTML = '<em style="color:#7a8cb0;">Loading…</em>';
+  try {
+    var res = await fetch('/api/ace/sessions/' + SESSION_ID + '/eval/compare?baseline=' + encodeURIComponent(baseline));
+    var data = await res.json();
+    if (data.error) { if (out) out.innerHTML = '<span style="color:#e74c3c;">' + esc(data.error) + '</span>'; return; }
+    if (out) out.innerHTML = renderCompare(data);
+  } catch(e) {
+    if (out) out.innerHTML = '<span style="color:#e74c3c;">' + esc(e.message) + '</span>';
+  }
+}
+
+function renderCompare(data) {
+  var rows = (data.fields || []).map(function(f) {
+    var color = f.improved === true ? '#2ecc71' : f.improved === false ? '#e74c3c' : '#7a8cb0';
+    var arrow = f.improved === true ? '▲' : f.improved === false ? '▼' : '—';
+    var delta = f.delta !== null && f.delta !== undefined ? (f.delta > 0 ? '+' : '') + f.delta : '';
+    return '<tr>' +
+      '<td style="padding:5px 8px;font-size:12px;color:var(--text-secondary,#7a8cb0);">' + esc(f.name) + '</td>' +
+      '<td style="padding:5px 8px;font-size:12px;text-align:right;">' + esc(String(f.a_value)) + '</td>' +
+      '<td style="padding:5px 8px;font-size:12px;text-align:right;">' + esc(String(f.b_value)) + '</td>' +
+      '<td style="padding:5px 8px;font-size:12px;text-align:right;color:' + color + ';">' + arrow + ' ' + esc(delta) + '</td>' +
+    '</tr>';
+  }).join('');
+  var badge = data.overall_improved
+    ? '<span style="color:#2ecc71;font-weight:700;">Overall: IMPROVED ▲</span>'
+    : '<span style="color:#e74c3c;font-weight:700;">Overall: REGRESSED ▼</span>';
+  return '<div style="font-size:13px;margin-bottom:8px;">' + badge +
+    ' &nbsp;(' + (data.improvements||0) + ' improved, ' + (data.regressions||0) + ' regressed)</div>' +
+    '<table style="width:100%;border-collapse:collapse;">' +
+    '<thead><tr>' +
+    '<th style="text-align:left;padding:5px 8px;font-size:11px;color:#7a8cb0;">Field</th>' +
+    '<th style="text-align:right;padding:5px 8px;font-size:11px;color:#7a8cb0;">Baseline</th>' +
+    '<th style="text-align:right;padding:5px 8px;font-size:11px;color:#7a8cb0;">This run</th>' +
+    '<th style="text-align:right;padding:5px 8px;font-size:11px;color:#7a8cb0;">Delta</th>' +
+    '</tr></thead><tbody>' + rows + '</tbody></table>';
+}
+
+document.addEventListener('DOMContentLoaded', loadSession);
+</script>
+{% endblock %}

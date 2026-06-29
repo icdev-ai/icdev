@@ -89,7 +89,7 @@ def create_job(
             INSERT INTO cli_llm_jobs (
                 id, function, prompt, system_prompt, model_id, backend, status,
                 context_id, tenant_id, classification, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)
+            ) VALUES (%s, %s, %s, %s, %s, %s, 'pending', %s, %s, %s, %s, %s)
             """,
             (
                 job_id,
@@ -122,7 +122,7 @@ def claim_job(backend: str) -> Optional[Dict[str, Any]]:
             cur = conn.execute(
                 """
                 SELECT id FROM cli_llm_jobs
-                WHERE status = 'pending' AND backend = ?
+                WHERE status = 'pending' AND backend = %s
                 ORDER BY created_at ASC, id ASC
                 LIMIT 1
                 """,
@@ -137,8 +137,8 @@ def claim_job(backend: str) -> Optional[Dict[str, Any]]:
             upd = conn.execute(
                 """
                 UPDATE cli_llm_jobs
-                SET status = 'running', claimed_at = ?, updated_at = ?
-                WHERE id = ? AND status = 'pending'
+                SET status = 'running', claimed_at = %s, updated_at = %s
+                WHERE id = %s AND status = 'pending'
                 """,
                 (now, now, job_id),
             )
@@ -166,9 +166,9 @@ def complete_job(
             cur = conn.execute(
                 """
                 UPDATE cli_llm_jobs
-                SET status = 'done', result = ?, input_tokens = ?, output_tokens = ?,
-                    completed_at = ?, updated_at = ?
-                WHERE id = ?
+                SET status = 'done', result = %s, input_tokens = %s, output_tokens = %s,
+                    completed_at = %s, updated_at = %s
+                WHERE id = %s
                 """,
                 (result, input_tokens or 0, output_tokens or 0, now, now, job_id),
             )
@@ -186,8 +186,8 @@ def fail_job(job_id: str, error: str) -> bool:
             cur = conn.execute(
                 """
                 UPDATE cli_llm_jobs
-                SET status = 'error', error = ?, completed_at = ?, updated_at = ?
-                WHERE id = ?
+                SET status = 'error', error = %s, completed_at = %s, updated_at = %s
+                WHERE id = %s
                 """,
                 (error, now, now, job_id),
             )
@@ -263,10 +263,10 @@ def reap_stale_jobs(max_age_seconds: Optional[int] = None) -> int:
             cur = conn.execute(
                 """
                 UPDATE cli_llm_jobs
-                SET status = 'error', error = ?, completed_at = ?, updated_at = ?
+                SET status = 'error', error = %s, completed_at = %s, updated_at = %s
                 WHERE status = 'running'
                   AND COALESCE(claimed_at, created_at) IS NOT NULL
-                  AND COALESCE(claimed_at, created_at) < ?
+                  AND COALESCE(claimed_at, created_at) < %s
                 """,
                 (reason, now, now, cutoff_ts),
             )
@@ -290,7 +290,7 @@ def get_job(job_id: str) -> Optional[Dict[str, Any]]:
     try:
         with get_connection() as conn:
             cur = conn.execute(
-                "SELECT * FROM cli_llm_jobs WHERE id = ?",
+                "SELECT * FROM cli_llm_jobs WHERE id = %s",
                 (job_id,),
             )
             return _row_to_dict(cur, cur.fetchone())

@@ -38,3 +38,14 @@ When in healthcare context:
 - Commit to roadmap dates without dependency analysis
 - Skip regulatory impact assessment for regulated domains
 - Ignore CPARS history when predicting govcon win probability
+
+## RULES
+
+Anti-patterns this role must never exhibit:
+
+- **PRD before discovery**: Never write a PRD or scope a feature without first conducting discovery backed by real user data, usage analytics, or validated research — assumptions are not discovery.
+- **Roadmap date without dependency analysis**: Never commit to a delivery date without mapping the dependency chain. An undiscovered blocker at T-2 weeks is a PM failure.
+- **Output metric as success**: Never measure product success by features shipped, stories closed, or velocity. Only outcome metrics count: user behavior changes, revenue impact, compliance achievement.
+- **Regulatory skip in governed domains**: Never scope a feature in a regulated domain (FDA SaMD, HIPAA, govcon CDRL) without a regulatory impact assessment — this is a blocking requirement, not an afterthought.
+- **Solution before problem**: Never propose a solution before documenting the problem it solves, the user who has it, and the evidence that it is real.
+- **Undiscovered stakeholder concern absorbed silently**: Never incorporate a stakeholder concern that changes scope without creating a formal change request and updating the dependency analysis.

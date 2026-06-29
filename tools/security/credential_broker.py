@@ -143,7 +143,7 @@ class CredentialBroker:
             """INSERT INTO credential_broker_log
                (id, agent_id, function, provider, scope, action, token_hash,
                 reason, ttl_seconds, expires_at, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 str(uuid.uuid4()),
                 agent_id,
@@ -226,7 +226,7 @@ class CredentialBroker:
             """INSERT INTO credential_active_tokens
                (token_hash, agent_id, function, provider, scope,
                 issued_at, expires_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
             (token_hash, agent_id, function, provider, scope, _now(), expires_str),
         )
         self._log_event(
@@ -261,14 +261,14 @@ class CredentialBroker:
         cursor = conn.execute(
             """SELECT token_hash, function, provider, scope
                FROM credential_active_tokens
-               WHERE agent_id = ? AND revoked = 0
-               AND expires_at > ?""",
+               WHERE agent_id = %s AND revoked = 0
+               AND expires_at > %s""",
             (agent_id, now),
         )
         revoked = []
         for row in cursor.fetchall():
             conn.execute(
-                "UPDATE credential_active_tokens SET revoked = 1, revoked_at = ? WHERE token_hash = ?",
+                "UPDATE credential_active_tokens SET revoked = 1, revoked_at = %s WHERE token_hash = %s",
                 (now, row["token_hash"]),
             )
             self._log_event(
@@ -292,7 +292,7 @@ class CredentialBroker:
         conn = self._get_db()
         row = conn.execute(
             """SELECT * FROM credential_active_tokens
-               WHERE token_hash = ? AND revoked = 0""",
+               WHERE token_hash = %s AND revoked = 0""",
             (token_hash,),
         ).fetchone()
         conn.close()
@@ -320,13 +320,13 @@ class CredentialBroker:
         if agent_id:
             rows = conn.execute(
                 """SELECT * FROM credential_broker_log
-                   WHERE agent_id = ? ORDER BY created_at DESC LIMIT ?""",
+                   WHERE agent_id = %s ORDER BY created_at DESC LIMIT %s""",
                 (agent_id, limit),
             ).fetchall()
         else:
             rows = conn.execute(
                 """SELECT * FROM credential_broker_log
-                   ORDER BY created_at DESC LIMIT ?""",
+                   ORDER BY created_at DESC LIMIT %s""",
                 (limit,),
             ).fetchall()
         conn.close()
@@ -337,7 +337,7 @@ class CredentialBroker:
         conn = self._get_db()
         now = _now()
         active = conn.execute(
-            "SELECT COUNT(*) FROM credential_active_tokens WHERE revoked = 0 AND expires_at > ?",
+            "SELECT COUNT(*) FROM credential_active_tokens WHERE revoked = 0 AND expires_at > %s",
             (now,),
         ).fetchone()[0]
         total_grants = conn.execute(
@@ -376,7 +376,7 @@ class CredentialBroker:
             conn = self._get_db()
             cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ")
             recent_denials = conn.execute(
-                "SELECT COUNT(*) FROM credential_broker_log WHERE action = 'deny' AND created_at > ?",
+                "SELECT COUNT(*) FROM credential_broker_log WHERE action = 'deny' AND created_at > %s",
                 (cutoff,),
             ).fetchone()[0]
             conn.close()
@@ -400,7 +400,7 @@ class CredentialBroker:
             conn = self._get_db()
             row = conn.execute(
                 """SELECT trust_score, trust_level FROM agent_trust_scores
-                   WHERE agent_id = ? ORDER BY created_at DESC LIMIT 1""",
+                   WHERE agent_id = %s ORDER BY created_at DESC LIMIT 1""",
                 (agent_id,),
             ).fetchone()
             conn.close()

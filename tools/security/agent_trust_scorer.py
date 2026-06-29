@@ -165,7 +165,7 @@ class AgentTrustScorer:
         try:
             conn = get_connection(db_path=str(self._db_path))
             row = conn.execute(
-                "SELECT trust_score FROM agent_trust_scores WHERE agent_id = ? ORDER BY created_at DESC LIMIT 1",
+                "SELECT trust_score FROM agent_trust_scores WHERE agent_id = %s ORDER BY created_at DESC LIMIT 1",
                 (agent_id,),
             ).fetchone()
             conn.close()
@@ -238,7 +238,7 @@ class AgentTrustScorer:
             rows = conn.execute(
                 "SELECT trust_score, previous_score, score_delta, factor_json, "
                 "trigger_event, created_at FROM agent_trust_scores "
-                "WHERE agent_id = ? ORDER BY created_at DESC LIMIT ?",
+                "WHERE agent_id = %s ORDER BY created_at DESC LIMIT %s",
                 (agent_id, limit),
             ).fetchall()
             conn.close()
@@ -346,7 +346,7 @@ class AgentTrustScorer:
         try:
             row = conn.execute(
                 f"SELECT COUNT(*) FROM {table} "  # nosec B608 -- table/column names are internal constants, not user input
-                f"WHERE {agent_col} = ? AND {condition} AND created_at >= ?",
+                f"WHERE {agent_col} = %s AND {condition} AND created_at >= %s",
                 (agent_id, cutoff),
             ).fetchone()
             return row[0] if row else 0
@@ -380,7 +380,7 @@ class AgentTrustScorer:
                 """INSERT INTO agent_trust_scores
                    (id, agent_id, project_id, trust_score, previous_score,
                     score_delta, factor_json, trigger_event, classification, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'CUI', ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'CUI', %s)""",
                 (
                     entry_id,
                     agent_id,

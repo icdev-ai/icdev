@@ -75,7 +75,7 @@ def _is_on_cooldown(conn, user_id: str, alert_type: str, cooldown_hours: int) ->
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=cooldown_hours)).isoformat()
     row = conn.execute(
         "SELECT 1 FROM ad_coach_alerts"
-        " WHERE user_id = ? AND alert_type = ? AND fired_at > ?"
+        " WHERE user_id = %s AND alert_type = %s AND fired_at > %s"
         " LIMIT 1",
         (user_id, alert_type, cutoff),
     ).fetchone()
@@ -93,7 +93,7 @@ def _insert_alert(
     now = datetime.now(timezone.utc).isoformat()
     conn.execute(
         "INSERT INTO ad_coach_alerts (id, user_id, alert_type, message, fired_at, metrics_json)"
-        " VALUES (?, ?, ?, ?, ?, ?)",
+        " VALUES (%s, %s, %s, %s, %s, %s)",
         (alert_id, user_id, alert_type, message, now, json.dumps(metrics)),
     )
     conn.commit()

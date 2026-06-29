@@ -124,7 +124,7 @@ def capture(
     try:
         # Dedup within buffer
         existing = conn.execute(
-            "SELECT id FROM memory_buffer WHERE content_hash = ?",
+            "SELECT id FROM memory_buffer WHERE content_hash = %s",
             (content_hash,),
         ).fetchone()
         if existing:
@@ -135,7 +135,7 @@ def capture(
             """INSERT INTO memory_buffer
                (content, content_hash, type, importance, source,
                 user_id, tenant_id, session_id, tool_name, metadata)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 content,
                 content_hash,
@@ -206,12 +206,12 @@ def flush_buffer(db_path=None):
                 # Check dedup against memory_entries
                 if row["user_id"]:
                     existing = conn.execute(
-                        "SELECT id FROM memory_entries WHERE content_hash = ? AND user_id = ?",
+                        "SELECT id FROM memory_entries WHERE content_hash = %s AND user_id = %s",
                         (row["content_hash"], row["user_id"]),
                     ).fetchone()
                 else:
                     existing = conn.execute(
-                        "SELECT id FROM memory_entries WHERE content_hash = ? AND user_id IS NULL",
+                        "SELECT id FROM memory_entries WHERE content_hash = %s AND user_id IS NULL",
                         (row["content_hash"],),
                     ).fetchone()
 
@@ -224,7 +224,7 @@ def flush_buffer(db_path=None):
                     """INSERT INTO memory_entries
                        (content, type, importance, content_hash,
                         user_id, tenant_id, source)
-                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                       VALUES (%s, %s, %s, %s, %s, %s, %s)""",
                     (
                         row["content"],
                         row["type"],

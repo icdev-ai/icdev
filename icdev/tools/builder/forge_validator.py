@@ -778,6 +778,198 @@ def _check_atlas(project_dir: Path) -> List[GotchaCheck]:
     return checks
 
 
+def _check_child_app_templates(project_dir: Path) -> List[GotchaCheck]:
+    """Check Template Layer: child-app flavor templates are well-formed.
+
+    Only applies when the project being validated contains the parent
+    template directory (`data/templates/child_apps/`). Child apps generated
+    from these flavors are expected to satisfy the files/validators declared
+    in each flavor's manifest.yaml.
+    """
+    checks = []
+    templates_dir = project_dir / "data" / "templates" / "child_apps"
+    if not templates_dir.is_dir():
+        checks.append(
+            GotchaCheck(
+                check_id="FORGE-TPL-00",
+                check_name="Child-app templates directory present",
+                layer="templates",
+                status="pass",
+                expected="data/templates/child_apps/ (optional)",
+                actual="Not present (skipped)",
+                fix_suggestion="",
+                message="Child-app template validation skipped: no data/templates/child_apps/ directory",
+            )
+        )
+        return checks
+
+    flavors = sorted([d for d in templates_dir.iterdir() if d.is_dir()])
+    if not flavors:
+        checks.append(
+            GotchaCheck(
+                check_id="FORGE-TPL-00",
+                check_name="Child-app flavor directories present",
+                layer="templates",
+                status="warn",
+                expected="At least one flavor directory under data/templates/child_apps/",
+                actual="0 flavor directories",
+                fix_suggestion="Add flavor templates: minimal, compliance, ai-lab, govcon",
+                message="No child-app flavor templates found",
+            )
+        )
+        return checks
+
+    import yaml
+
+    for flavor_dir in flavors:
+        manifest_path = flavor_dir / "manifest.yaml"
+        if not manifest_path.exists():
+            checks.append(
+                GotchaCheck(
+                    check_id=f"FORGE-TPL-{flavor_dir.name}-01",
+                    check_name=f"Flavor manifest exists ({flavor_dir.name})",
+                    layer="templates",
+                    status="fail",
+                    expected=f"{flavor_dir.name}/manifest.yaml",
+                    actual="Missing",
+                    fix_suggestion=f"Create data/templates/child_apps/{flavor_dir.name}/manifest.yaml describing the flavor",
+                    message=f"Flavor '{flavor_dir.name}' has no manifest.yaml",
+                )
+            )
+            continue
+
+        try:
+            manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            checks.append(
+                GotchaCheck(
+                    check_id=f"FORGE-TPL-{flavor_dir.name}-02",
+                    check_name=f"Flavor manifest parses ({flavor_dir.name})",
+                    layer="templates",
+                    status="fail",
+                    expected="Valid YAML manifest",
+                    actual=f"Parse error: {exc}",
+                    fix_suggestion=f"Fix YAML syntax in {manifest_path}",
+                    message=f"Flavor '{flavor_dir.name}' manifest.yaml is not valid YAML: {exc}",
+                )
+            )
+            continue
+
+        if not isinstance(manifest, dict):
+            checks.append(
+                GotchaCheck(
+                    check_id=f"FORGE-TPL-{flavor_dir.name}-02",
+                    check_name=f"Flavor manifest structure ({flavor_dir.name})",
+                    layer="templates",
+                    status="fail",
+                    expected="Mapping with name, kind, files",
+                    actual=f"Top-level type: {type(manifest).__name__}",
+                    fix_suggestion="Ensure manifest.yaml is a YAML mapping",
+                    message=f"Flavor '{flavor_dir.name}' manifest is not a mapping",
+                )
+            )
+            continue
+
+        required_keys = {"name", "kind", "files"}
+        missing_keys = required_keys - set(manifest.keys())
+        if missing_keys:
+            checks.append(
+                GotchaCheck(
+                    check_id=f"FORGE-TPL-{flavor_dir.name}-03",
+                    check_name=f"Flavor manifest required keys ({flavor_dir.name})",
+                    layer="templates",
+                    status="fail",
+                    expected=f"Keys: {sorted(required_keys)}",
+                    actual=f"Missing: {sorted(missing_keys)}",
+                    fix_suggestion=f"Add {sorted(missing_keys)} to {manifest_path}",
+                    message=f"Flavor '{flavor_dir.name}' manifest missing keys: {sorted(missing_keys)}",
+                )
+            )
+            continue
+
+        checks.append(
+            GotchaCheck(
+                check_id=f"FORGE-TPL-{flavor_dir.name}-03",
+                check_name=f"Flavor manifest required keys ({flavor_dir.name})",
+                layer="templates",
+                status="pass",
+                expected="name, kind, files present",
+                actual="All required keys present",
+                fix_suggestion="",
+                message=f"Flavor '{flavor_dir.name}' manifest has required keys",
+            )
+        )
+
+        files = manifest.get("files", [])
+        missing_src: List[str] = []
+        for fdef in files:
+            if not isinstance(fdef, dict):
+                continue
+            src = fdef.get("src")
+            if not src:
+                continue
+            src_path = flavor_dir / src
+            if not src_path.exists() and not (flavor_dir / (src + ".j2")).exists():
+                missing_src.append(src)
+
+        if missing_src:
+            checks.append(
+                GotchaCheck(
+                    check_id=f"FORGE-TPL-{flavor_dir.name}-04",
+                    check_name=f"Flavor template source files exist ({flavor_dir.name})",
+                    layer="templates",
+                    status="fail",
+                    expected="All src paths in manifest files[] exist in flavor dir",
+                    actual=f"Missing: {', '.join(missing_src[:5])}",
+                    fix_suggestion=f"Add missing template files to data/templates/child_apps/{flavor_dir.name}/",
+                    message=f"Flavor '{flavor_dir.name}' missing template source files: {missing_src[:5]}",
+                )
+            )
+        else:
+            checks.append(
+                GotchaCheck(
+                    check_id=f"FORGE-TPL-{flavor_dir.name}-04",
+                    check_name=f"Flavor template source files exist ({flavor_dir.name})",
+                    layer="templates",
+                    status="pass",
+                    expected="All src paths in manifest files[] exist",
+                    actual=f"{len(files)} file mapping(s) valid",
+                    fix_suggestion="",
+                    message=f"Flavor '{flavor_dir.name}' template source files all present",
+                )
+            )
+
+        validators = manifest.get("validators", [])
+        if validators:
+            checks.append(
+                GotchaCheck(
+                    check_id=f"FORGE-TPL-{flavor_dir.name}-05",
+                    check_name=f"Flavor validators declared ({flavor_dir.name})",
+                    layer="templates",
+                    status="pass",
+                    expected="At least one validator",
+                    actual=f"{len(validators)} validator(s)",
+                    fix_suggestion="",
+                    message=f"Flavor '{flavor_dir.name}' declares {len(validators)} validator(s)",
+                )
+            )
+        else:
+            checks.append(
+                GotchaCheck(
+                    check_id=f"FORGE-TPL-{flavor_dir.name}-05",
+                    check_name=f"Flavor validators declared ({flavor_dir.name})",
+                    layer="templates",
+                    status="warn",
+                    expected="At least one validator",
+                    actual="0 validators",
+                    fix_suggestion="Add file_exists / python_syntax validators to manifest.yaml",
+                    message=f"Flavor '{flavor_dir.name}' has no validators declared",
+                )
+            )
+
+    return checks
+
+
 def _check_coherence(project_dir: Path) -> List[GotchaCheck]:
     """Check Meta: FORGE-11 — Implementation coherence validation."""
     checks = []
@@ -851,6 +1043,7 @@ CHECK_REGISTRY = {
     "database": _check_database,
     "anvil": _check_atlas,
     "coherence": _check_coherence,
+    "child_app_templates": _check_child_app_templates,
 }
 
 
@@ -952,7 +1145,7 @@ def _format_human(report: GotchaReport) -> str:
     # Layer summary
     lines.append("")
     lines.append("  Layer Summary:")
-    layer_order = ["goals", "orchestration", "tools", "args", "context", "hardprompts", "meta"]
+    layer_order = ["goals", "orchestration", "tools", "args", "context", "hardprompts", "templates", "meta"]
     layer_labels = {
         "goals": "1. Goals",
         "orchestration": "2. Orchestration",
@@ -960,6 +1153,7 @@ def _format_human(report: GotchaReport) -> str:
         "args": "4. Args",
         "context": "5. Context",
         "hardprompts": "6. Hard Prompts",
+        "templates": "   Templates",
         "meta": "   Meta Checks",
     }
     for layer in layer_order:

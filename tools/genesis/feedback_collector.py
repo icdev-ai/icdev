@@ -236,7 +236,7 @@ def collect_all() -> Dict[str, Any]:
             """
             INSERT INTO genesis_audit
                 (id, event_type, details, created_at)
-            VALUES (?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s)
         """,
             (
                 f"aud-{uuid.uuid4().hex[:10]}",

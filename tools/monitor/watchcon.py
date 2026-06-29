@@ -80,7 +80,7 @@ def backfill_tiers(db_path: Path = None) -> int:
     for row_id, severity in rows:
         tier = classify_tier(severity or "info")
         conn.execute(
-            "UPDATE alerts SET watchcon_tier = ? WHERE id = ?", (tier, row_id)
+            "UPDATE alerts SET watchcon_tier = %s WHERE id = %s", (tier, row_id)
         )
         updated += 1
     conn.commit()
@@ -96,7 +96,7 @@ def get_alerts_by_tier(tier: int, db_path: Path = None, limit: int = 100) -> lis
     rows = conn.execute(
         "SELECT id, project_id, severity, source, title, description, status, "
         "watchcon_tier, created_at "
-        "FROM alerts WHERE watchcon_tier = ? ORDER BY created_at DESC LIMIT ?",
+        "FROM alerts WHERE watchcon_tier = %s ORDER BY created_at DESC LIMIT %s",
         (tier, limit),
     ).fetchall()
     cols = ["id", "project_id", "severity", "source", "title", "description",
@@ -121,7 +121,7 @@ def insert_alert(
     _ensure_column(conn)
     cur = conn.execute(
         "INSERT INTO alerts (project_id, severity, source, title, description, watchcon_tier) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s)",
         (project_id, severity.lower(), source, title, description, tier),
     )
     conn.commit()

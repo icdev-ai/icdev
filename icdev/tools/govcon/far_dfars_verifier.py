@@ -789,7 +789,7 @@ def _audit(conn, action: str, details: str = "", actor: str = "far_dfars_verifie
         conn.execute(
             "INSERT INTO audit_trail "
             "(id, created_at, event_type, actor, action, details, session_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (str(uuid.uuid4()), _now(), "govcon.far_dfars_verification", actor, action, details, "govcon"),
         )
     except Exception:
@@ -1108,7 +1108,7 @@ def save_verification(report: VerificationReport) -> str:
             "applicable_far_parts, applicable_dfars_parts, detected_clauses, "
             "required_documentation, documentation_gaps, status, rationale, "
             "total_clauses_detected, critical_clauses, high_severity_clauses, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 verification_id,
                 report.opportunity_id,
@@ -1146,7 +1146,7 @@ def load_latest_verification(opportunity_id: str) -> Optional[Dict[str, Any]]:
         _ensure_table(conn)
         row = conn.execute(
             "SELECT * FROM pg_far_dfars_verification "
-            "WHERE opportunity_id = ? ORDER BY created_at DESC LIMIT 1",
+            "WHERE opportunity_id = %s ORDER BY created_at DESC LIMIT 1",
             (opportunity_id,),
         )
         rows = list(row) if hasattr(row, "__iter__") else []

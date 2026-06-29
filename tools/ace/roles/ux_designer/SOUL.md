@@ -20,3 +20,14 @@
 - Lead with the user problem being solved, not the solution proposed.
 - Show, don't tell — use screenshots and wireframes over verbal descriptions.
 - When presenting design options, frame each in terms of the user trade-off, not the implementation effort.
+
+## RULES
+
+Anti-patterns this role must never exhibit:
+
+- **New JS framework without design review**: Never introduce a new JavaScript framework or UI library without a formal design review against the existing HTMX + Jinja2 patterns. New dependencies have long-term maintenance costs.
+- **UI task done without Playwright validation**: Never mark a UI change done without capturing Playwright screenshots that confirm the feature renders correctly. Visual regression can only be caught visually.
+- **Color as the sole information carrier**: Never use color alone to convey meaning (error, warning, status). WCAG 2.1 AA requires a non-color alternative (icon, label, pattern) for every color-coded signal.
+- **New pattern instead of existing token**: Never design a new spacing, color, or typography pattern when an existing token in `templates/base.html` covers the use case. Consistency beats novelty.
+- **Screen design before user journey**: Never begin designing a screen before mapping the user journey that leads to it. Screen-first design optimizes the interaction locally, not the flow globally.
+- **Pixel values for adaptive properties**: Never use fixed pixel values for font sizes, spacing, or line heights where `rem` or `em` would honor the user's accessibility settings.

@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>E2E Full Pipeline — SOP-NET-042 Runbook</title>
+  <style>
+    body{font-family:Arial,sans-serif;margin:0;padding:0;background:#fff;color:#111;}
+    .cls-banner{background:#0d2b4e;color:#4fc3f7;border:2px solid #1565c0;padding:6px 12px;font-size:13px;font-weight:bold;text-align:center;letter-spacing:1px;}
+    .doc-body{max-width:900px;margin:24px auto;padding:0 24px;}
+    h1,h2,h3{border-bottom:1px solid #e0e0e0;padding-bottom:4px;}
+    h1{font-size:22px;border-bottom:2px solid #ccc;padding-bottom:8px;}
+    .content{line-height:1.7;}
+    .content table{border-collapse:collapse;width:100%;}
+    .content th,.content td{border:1px solid #ccc;padding:6px 10px;}
+    .content th{background:#f0f4f8;}
+    .content ul,.content ol{padding-left:20px;}
+    .content code{background:#f5f5f5;padding:2px 4px;border-radius:3px;}
+    .content pre{background:#f5f5f5;padding:12px;border-radius:4px;overflow-x:auto;}
+  </style>
+</head>
+<body>
+  <div class="cls-banner">CUI</div>
+  <div class="doc-body">
+    <h1>E2E Full Pipeline — SOP-NET-042 Runbook</h1>
+    <div class="content"><h2>Overview</h2>
+<p><strong>Overview</strong></p>
+<p>Generate a runbook for a network environment. CRITICAL: 1 CAT1/critical findings from config/IaC review require immediate remediation. Finding (CAT1): Cleartext/Weak SNMPv2c Community String Present — The device still has 'snmp-server community public RO' configured. This is a well-known default community string that allows unauthenticated read access to the device, bypassing the intended SNMPv3-on Finding (CAT2): TACACS+ Key Stored as Type 7 Obfuscated String — The TACACS+ shared key is shown as 'key 7 ENCRYPTED_KEY_HERE'. Type 7 is a trivially reversible obfuscation, not encryption. An attacker with config access can recover the key instantly. Finding (CAT2): WAN ACL Permits SMTP (TCP/25) from Any Source — ACL line 50 permits TCP any to 10.10.0.50 eq 25. SMTP is unencrypted and commonly abused for spam/relay attacks. Exposing it directly from the Internet without anti-spoofing or rate-limiting is a sign Include operational procedures, risk mitigations, and remediation steps. Cite all facts. </p>
+<p>Source document content:
+--- Source: test_sop.txt ---
+﻿STANDARD OPERATING PROCEDURE
+SOP-NET-042: Enterprise Network Configuration and Security Baseline</p>
+<p>Classification: CUI // SP-CTI
+Version: 2.1
+Effective Date: 2026-06-01
+Author: Network Engineering Team
+Approving Authority: Chief Information Security Officer</p>
+<ol>
+<li>
+<p>PURPOSE
+This SOP establishes the configuration baseline and security requirements for all enterprise network devices including routers, switches, and firewalls deployed within the classified enclave. Compliance with this SOP is mandatory for all IL4 and IL5 network infrastructure.</p>
+</li>
+<li>
+<p>SCOPE
+Applies to all Cisco IOS-based routers and switches, Palo Alto firewalls, and F5 load balancers within the ICDEV enterprise network boundary. Excludes guest wireless networks and contractor DMZ segments.</p>
+</li>
+<li>
+<p>NETWORK TOPOLOGY OVERVIEW
+The enterprise network is organized into three security zones:</p>
+</li>
+<li>Core Zone (192.168.0.0/16): Classified processing, IL5 enclave</li>
+<li>DMZ Zone (10.10.0.0/24): Internet-facing services, IL4</li>
+<li>Management Zone (172.16.0.0/24): Out-of-band management, restricted access</li>
+</ol>
+<p>Primary data center is located at Site Alpha with DR failover at Site Bravo. WAN connectivity uses MPLS with BGP routing between sites. Internet egress is controlled via two Palo Alto PA-5220 firewalls in active-passive HA.</p>
+<ol>
+<li>ROUTER BASELINE CONFIGURATION
+4.1 Authentication Requirements</li>
+<li>All VTY lines must use AAA authentication with TACACS+ primary, local fallback</li>
+<li>SSH version 2 only; Telnet disabled on all interfaces</li>
+<li>Minimum RSA key size: 2048 bits</li>
+<li>Login block-for 300 attempts 5 within 60 seconds</li>
+</ol>
+<p>4.2 Access Control
+  - ACLs applied on all untrusted interfaces (inbound)
+  - RFC 3330 bogon filtering on all external interfaces
+  - ICMP rate-limited to 100 packets/second
+  - NetFlow enabled on all WAN interfaces, exported to SIEM collector at 172.16.0.200</p>
+<p>4.3 Logging Requirements
+  - Syslog to 172.16.0.100 (SIEM) and 172.16.0.101 (backup)
+  - Log level: informational (level 6) minimum
+  - Timestamps: service timestamps log datetime msec localtime
+  - Archive config on change with 30-day retention</p>
+<ol>
+<li>SWITCH BASELINE CONFIGURATION
+5.1 Layer 2 Security</li>
+<li>Port security enabled on all access ports (max 2 MACs)</li>
+<li>BPDU Guard enabled on all access ports</li>
+<li>Dynamic ARP Inspection on all VLANs except native</li>
+<li>DHCP Snooping enabled, trusted uplinks only</li>
+<li>802.1X port-based authentication required for workstation ports</li>
+</ol>
+<p>5.2 VLAN Architecture
+  - VLAN 10: Management (172.16.0.0/24)
+  - VLAN 20: Servers (192.168.10.0/24)
+  - VLAN 30: Workstations (192.168.20.0/24)
+  - VLAN 40: VoIP (192.168.30.0/24)
+  - VLAN 99: Native/unused (no traffic, disabled)</p>
+<ol>
+<li>FIREWALL POLICY BASELINE
+6.1 Default Deny Policy
+  All traffic is denied by default. Explicit permit rules are required for all flows.</li>
+</ol>
+<p>6.2 Inbound Rules (Internet to DMZ)
+  - TCP/443 to web servers (10.10.0.10-20): PERMITTED
+  - TCP/25 to mail gateway (10.10.0.50): PERMITTED
+  - All other inbound: DENIED, logged</p>
+<p>6.3 Known Deficiencies
+  - CAT1 FINDING: Management access from DMZ not fully blocked (ticket NW-2024-089)
+  - HIGH: NTP not synchronized to authoritative source on 3 devices
+  - MEDIUM: SNMP v2c still in use on legacy switches (EOL migration in progress)</p>
+<ol>
+<li>CHANGE MANAGEMENT
+All network changes require:</li>
+<li>Change ticket in ServiceNow with network engineering approval</li>
+<li>Pre-change backup of device configuration</li>
+<li>Maintenance window (Saturday 0200-0600 local)</li>
+<li>Post-change verification checklist completion</li>
+<li>
+<p>Rollback plan documented before implementation</p>
+</li>
+<li>
+<p>REFERENCES</p>
+</li>
+<li>NIST SP 800-53 Rev 5 (SC, AC, AU controls)</li>
+<li>DoD STIGs: Cisco IOS Router L3, Cisco IOS Switch L2</li>
+<li>CJCSI 6510.01F: Information Assurance and Computer Network Defense</li>
+</ol>
+<p><em>Synthesized from source document content:</em></p>
+<p>--- Source: test_sop.txt ---
+﻿STANDARD OPERATING PROCEDURE
+SOP-NET-042: Enterprise Network Configuration and Security Baseline</p>
+<p>Classification: CUI // SP-CTI
+Version: 2.1
+Effective Date: 2026-06-01
+Author: Network Engineering Team
+Approving Authority: Chief Information Security Officer</p>
+<ol>
+<li>
+<p>PURPOSE
+This SOP establishes the configuration baseline and security requirements for all enterprise network devices including routers, switches, and firewalls deployed within the classified enclave. Compliance with this SOP is mandatory for all IL4 and IL5 network infrastructure.</p>
+</li>
+<li>
+<p>SCOPE
+Applies to all Cisco IOS-based routers and switches, Palo Alto firewalls, and F5 load balancers within the ICDEV enterprise network boundary. Excludes guest wireless networks and contractor DMZ segments.</p>
+</li>
+<li>
+<p>NETWORK TOPOLOGY OVERVIEW
+The enterprise network is organized into three security zones:</p>
+</li>
+<li>Core Zone (192.168.0.0/16): Classified processing, IL5 enclave</li>
+<li>DMZ Zone (10.10.0.0/24): Internet-facing services, IL4</li>
+<li>Management Zone (172.16.0.0/24): Out-of-band management, restricted access</li>
+</ol>
+<p>Primary data center is located at Site Alpha with DR failover at Site Bravo. WAN connectivity uses MPLS with BGP routing between sites. Internet egress is controlled via two Palo Alto PA-5220 firewalls in active-passive HA.</p>
+<ol>
+<li>ROUTER BASELINE CONFIGURATION
+4.1 Authentication Requirements</li>
+<li>All VTY lines must use AAA authentication with TACACS+ primary, local fallback</li>
+<li>SSH version 2 only; Telnet disabled on all interfaces</li>
+<li>Minimum RSA key size: 2048 bits</li>
+<li>Login block-for 300 attempts 5 within 60 seconds</li>
+</ol>
+<p>4.2 Access Control
+  - ACLs applied on all untrusted interfaces (inbound)
+  - RFC 3330 bogon filtering on all external interfaces
+  - ICMP rate-limited to 100 packets/second
+  - NetFlow enabled on all WAN interfaces, exported to SIEM collector at 172.16.0.200</p>
+<p>4.3 Logging Requirements
+  - Syslog to 172.16.0.100 (SIEM) and 172.16.0.101 (backup)
+  - Log level: informational (level 6) minimum
+  - Timestamps: service timestamps log datetime msec localtime
+  - Archive config on change with 30-day retention</p>
+<ol>
+<li>SWITCH BASELINE CONFIGURATION
+5.1 Layer 2 Security</li>
+<li>Port security enabled on all access ports (max 2 MACs)</li>
+<li>BPDU Guard enabled on all access ports</li>
+<li>Dynamic ARP Inspection on all VLANs except native</li>
+<li>DHCP Snooping enabled, trusted uplinks only</li>
+<li>802.1X port-based authentication required for workstation ports</li>
+</ol>
+<p>5.2 VLAN Architecture
+  - VLAN 10: Management (172.16.0.0/24)
+  - VLAN 20: Servers (192.168.10.0/24)
+  - VLAN 30: Workstations (192.168.20.0/24)
+  - VLAN 40: VoIP (192.168.30.0/24)
+  - VLAN 99: Native/unused (no traffic, disabled)</p>
+<ol>
+<li>FIREWALL POLICY BASELINE
+6.1 Default Deny Policy
+  All traffic is denied by default. Explicit permit rules are required for all flows.</li>
+</ol>
+<p>6.2 Inbound Rules (Internet to DMZ)
+  - TCP/443 to web servers (10.10.0.10-20): PERMITTED
+  - TCP/25 to mail gateway (10.10.0.50): PERMITTED
+  - All other inbound: DENIED, logged</p>
+<p>6.3 Kno</p>
+<hr />
+<h2>Appendix: Compliance Framework Applicability</h2>
+<p><strong>Impact Level:</strong> MODERATE  |  <strong>Classification:</strong> CUI</p>
+<table>
+<thead>
+<tr>
+<th>Framework</th>
+<th>Applicability</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>NIST SP 800-53 Rev 5 Moderate</td>
+<td>Required</td>
+</tr>
+<tr>
+<td>FedRAMP Moderate</td>
+<td>Required</td>
+</tr>
+<tr>
+<td>CMMC Level 2</td>
+<td>Required</td>
+</tr>
+</tbody>
+</table>
+<p><em>Crosswalk coverage: N/A control mappings loaded.</em></p>
+<p><em>This document was generated by ICDEV™ Intelligent Documentation Regeneration (IDR).</em>
+<em>Control implementation narratives: /compliance/crosswalk</em></p></div>
+  </div>
+  <div class="cls-banner">CUI</div>
+</body>
+</html>

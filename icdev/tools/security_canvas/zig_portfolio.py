@@ -34,7 +34,7 @@ def _latest_scores_for_target(target_id: str) -> list:
         for slug in pillar_slugs:
             row = conn.execute(
                 "SELECT pillar_slug, score, maturity_level, assessment_run_at "
-                "FROM zig_maturity_scores WHERE target_id=? AND pillar_slug=? "
+                "FROM zig_maturity_scores WHERE target_id=%s AND pillar_slug=%s "
                 "ORDER BY created_at DESC LIMIT 1",
                 (target_id, slug),
             ).fetchone()
@@ -154,7 +154,7 @@ def compare_targets(target_ids: list) -> dict:
         name_map = {}
         for tid in target_ids:
             row = conn.execute(
-                "SELECT id, name FROM zig_targets WHERE id=?", (tid,)
+                "SELECT id, name FROM zig_targets WHERE id=%s", (tid,)
             ).fetchone()
             if row:
                 name_map[tid] = row["name"]
@@ -193,7 +193,7 @@ def get_target_assessment(target_id: str) -> dict:
     try:
         row = conn.execute(
             "SELECT id, name, description, system_type, classification, status "
-            "FROM zig_targets WHERE id=?",
+            "FROM zig_targets WHERE id=%s",
             (target_id,),
         ).fetchone()
         if row:

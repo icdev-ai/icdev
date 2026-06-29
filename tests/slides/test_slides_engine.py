@@ -5,6 +5,7 @@ Tests the core pipeline components without requiring LLM calls or DB connections
 Uses mocks for LLM router and DB.
 """
 import json
+import os
 import sys
 from pathlib import Path
 from unittest.mock import patch
@@ -22,8 +23,9 @@ class TestSlidesConstants:
 
     def test_themes_not_empty(self):
         from tools.slides.constants import THEMES
-        assert len(THEMES) == 3
+        assert len(THEMES) >= 8
         assert "midnight_executive" in THEMES
+        assert "fun_fiesta" in THEMES
 
     def test_check_constraints_are_strings(self):
         from tools.slides.constants import CHECK_DECK_TYPE, CHECK_DECK_STATUS, CHECK_THEME
@@ -113,6 +115,36 @@ class TestContentAgentParser:
         assert len(result["bullets"]) > 0
 
 
+# ── Research Connector ──────────────────────────────────────────────────────────
+
+class TestResearchConnector:
+    def test_research_airgap_returns_summary(self):
+        from unittest.mock import patch
+        from tools.slides.research_connector import research_topic
+        with patch(
+            "tools.slides.research_connector._llm_research",
+            return_value={"summary": "Air-gap summary.", "sources": [{"title": "KG Node", "url": "/kg/1"}]},
+        ):
+            result = research_topic(
+                "sustainable aviation", occasion="keynote", target_audience="analysts", airgap=True
+            )
+        assert result["summary"] == "Air-gap summary."
+        assert result["sources"]
+        assert result["citation_style"] == "inline_links"
+
+    def test_format_citations_inline_links(self):
+        from tools.slides.research_connector import format_citations
+        sources = [{"title": "Example", "url": "https://example.com"}]
+        citations = format_citations(sources, "inline_links")
+        assert "Example" in citations[0]
+        assert "https://example.com" in citations[0]
+
+    def test_inline_citations_short(self):
+        from tools.slides.research_connector import inline_citations
+        sources = [{"title": "Example", "url": "https://example.com"}]
+        assert inline_citations(sources) == ["[1](https://example.com)"]
+
+
 # ── Source Connectors ─────────────────────────────────────────────────────────
 
 class TestCanvasSource:
@@ -183,6 +215,34 @@ class TestPptxBuilder:
         assert Path(path).stat().st_size > 1000
 
 
+class TestExports:
+    def test_export_pdf_creates_file(self, tmp_path):
+        from tools.slides import export_pdf
+        slides = [
+            {"title": "Title", "slide_type": "title", "bullets": [], "speaker_notes": ""},
+            {"title": "Content", "slide_type": "content", "bullets": ["A", "B"], "speaker_notes": "Notes."},
+        ]
+        path = export_pdf.build_pdf(slides, theme="fun_fiesta", title="PDF Test", output_dir=tmp_path)
+        assert Path(path).exists()
+        assert Path(path).suffix == ".pdf"
+        assert Path(path).stat().st_size > 100
+
+    def test_export_html_creates_file(self, tmp_path):
+        from tools.slides import export_html
+        slides = [
+            {"title": "Title", "slide_type": "title", "bullets": [], "speaker_notes": ""},
+            {"title": "Content", "slide_type": "content", "bullets": ["A", "B"], "speaker_notes": "Notes."},
+        ]
+        path = export_html.build_html(
+            slides, theme="creative_aurora", title="HTML Test", output_dir=tmp_path,
+            deck_meta={"occasion": "demo", "tone": "visionary", "target_audience": "execs"},
+        )
+        assert Path(path).exists()
+        assert Path(path).suffix == ".html"
+        html_text = Path(path).read_text(encoding="utf-8")
+        assert " visionary " in html_text or 'tone&quot;' in html_text or "execs" in html_text
+
+
 # ── Engine (mocked) ───────────────────────────────────────────────────────────
 
 class TestDeckEngine:
@@ -221,3 +281,132 @@ class TestDeckEngine:
         assert result.status == "completed"
         assert len(result.slides) == 3
         assert result.pptx_path.endswith(".pptx")
+
+
+# ── Graphics Generator ──────────────────────────────────────────────────────────
+
+class TestGraphicsGenerator:
+    def test_generate_creates_native_asset(self, tmp_path):
+        """GraphicsGenerator.generate now delegates to the unified native dispatcher."""
+        from tools.slides.graphics_generator import GraphicsGenerator
+        with patch.dict(os.environ, {"SLIDES_IMAGE_PROVIDER": "slides_svg"}, clear=False), patch(
+            "tools.viz.asset_generator._available_providers", return_value=["slides_svg"]
+        ):
+            gen = GraphicsGenerator(output_dir=tmp_path)
+            path = gen.generate(
+                title="Test Slide",
+                bullets=["Bullet one", "Bullet two"],
+                visual_context="a professional diagram",
+                theme="midnight_executive",
+                tone="professional",
+            )
+        assert path is not None
+        assert Path(path).exists()
+        assert Path(path).suffix in (".png", ".svg")
+
+    def test_disabled_returns_none(self, tmp_path):
+        from tools.slides.graphics_generator import GraphicsGenerator
+        with patch.dict(os.environ, {"SLIDES_IMAGE_ENABLED": "false"}, clear=False):
+            gen = GraphicsGenerator(output_dir=tmp_path)
+            assert gen.generate("Title", []) is None
+
+    def test_provider_list_includes_native_backends(self):
+        from tools.slides.constants import IMAGE_PROVIDERS
+        assert "matplotlib" in IMAGE_PROVIDERS
+        assert "ollama_cloud" in IMAGE_PROVIDERS
+
+    def test_cloud_providers_fall_back_in_air_gap_mode(self, tmp_path):
+        """A cloud-only provider env should fall back to native assets in air-gap mode."""
+        from tools.slides.graphics_generator import GraphicsGenerator
+        from tools.viz.asset_generator import is_air_gap_media_mode
+
+        env = {
+            "SLIDES_IMAGE_PROVIDER": "gpt_image_2",
+            "ICDEV_STORAGE_BACKEND": "sqlite",
+        }
+        with patch.dict(os.environ, env, clear=False), patch(
+            "tools.viz.asset_generator._available_providers", return_value=["slides_svg"]
+        ):
+            assert is_air_gap_media_mode() is True
+            gen = GraphicsGenerator(output_dir=tmp_path)
+            path = gen.generate(
+                title="Air Gap Slide",
+                bullets=["Point one"],
+                visual_context="a diagram",
+                theme="midnight_executive",
+            )
+        assert path is not None
+        assert Path(path).exists()
+
+
+# ── Rich Slide Generators ─────────────────────────────────────────────────────
+
+class TestRichSlideGenerators:
+    def test_extract_type_hint_parses_correctly(self):
+        from tools.slides.content_agent import _extract_type_hint
+        title, hint = _extract_type_hint("Data Pipeline [TYPE:mermaid_diagram]")
+        assert title == "Data Pipeline"
+        assert hint == "mermaid_diagram"
+
+    def test_extract_type_hint_no_hint_unchanged(self):
+        from tools.slides.content_agent import _extract_type_hint
+        title, hint = _extract_type_hint("Plain Title Slide")
+        assert title == "Plain Title Slide"
+        assert hint is None
+
+    def test_extract_type_hint_three_animation(self):
+        from tools.slides.content_agent import _extract_type_hint
+        title, hint = _extract_type_hint("Architecture Overview [TYPE:three_animation]")
+        assert title == "Architecture Overview"
+        assert hint == "three_animation"
+
+    def test_mermaid_fallback_when_llm_unavailable(self):
+        from tools.slides.content_agent import _generate_mermaid_slide
+        with patch("tools.llm.router.LLMRouter") as MockRouter:
+            MockRouter.return_value.invoke.side_effect = Exception("no LLM")
+            result = _generate_mermaid_slide("Data Flow", {}, "professional")
+        assert result["slide_type"] == "mermaid_diagram"
+        assert result["mermaid_code"] is not None
+        assert "A[" in result["mermaid_code"] or "flowchart" in result["mermaid_code"]
+        assert result["three_scene_config"] is None
+        assert result["excalidraw_elements"] is None
+
+    def test_three_fallback_returns_valid_config(self):
+        from tools.slides.content_agent import _generate_three_scene_slide
+        with patch("tools.llm.router.LLMRouter") as MockRouter:
+            MockRouter.return_value.invoke.side_effect = Exception("no LLM")
+            result = _generate_three_scene_slide("AI Architecture", {}, "bold", "investment_deck")
+        assert result["slide_type"] == "three_animation"
+        cfg = result["three_scene_config"]
+        assert isinstance(cfg, dict)
+        assert "objects" in cfg
+        assert "lights" in cfg
+        assert "camera" in cfg
+
+    def test_excalidraw_fallback_returns_valid_elements(self):
+        from tools.slides.content_agent import _generate_excalidraw_slide
+        with patch("tools.llm.router.LLMRouter") as MockRouter:
+            MockRouter.return_value.invoke.side_effect = Exception("no LLM")
+            result = _generate_excalidraw_slide("How It Works", {}, "creative")
+        assert result["slide_type"] == "excalidraw_sketch"
+        elems = result["excalidraw_elements"]
+        assert isinstance(elems, list)
+        assert len(elems) > 0
+        assert all("type" in e for e in elems)
+
+    def test_new_slide_types_in_constants(self):
+        from tools.slides.constants import SLIDE_TYPES, CHECK_SLIDE_TYPE
+        assert "mermaid_diagram" in SLIDE_TYPES
+        assert "three_animation" in SLIDE_TYPES
+        assert "excalidraw_sketch" in SLIDE_TYPES
+        assert "card_grid" in SLIDE_TYPES
+        assert "mermaid_diagram" in CHECK_SLIDE_TYPE
+
+    def test_audience_modes_defined(self):
+        from tools.slides.constants import AUDIENCE_MODES, AUDIENCE_MODE_HINTS
+        assert len(AUDIENCE_MODES) >= 5
+        assert "investor" in AUDIENCE_MODES
+        assert "government" in AUDIENCE_MODES
+        for mode in AUDIENCE_MODES:
+            assert mode in AUDIENCE_MODE_HINTS
+            assert "narrative" in AUDIENCE_MODE_HINTS[mode]

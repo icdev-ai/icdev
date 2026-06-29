@@ -75,11 +75,11 @@ def _router_config(
     banner: str = _BANNER_MOTD,
 ) -> str:
     lines: list[str] = []
-    lines.append(f"!")
+    lines.append("!")
     lines.append(f"hostname {hostname}")
-    lines.append(f"!")
-    lines.append(f"ip domain-name icdev.local")
-    lines.append(f"!")
+    lines.append("!")
+    lines.append("ip domain-name icdev.local")
+    lines.append("!")
 
     # Loopback
     if loopback:
@@ -87,8 +87,8 @@ def _router_config(
         lines += [
             f"interface {loopback}",
             f" ip address {lo_ip} 255.255.255.255",
-            f" no shutdown",
-            f"!",
+            " no shutdown",
+            "!",
         ]
 
     # Physical interfaces
@@ -100,38 +100,38 @@ def _router_config(
             f"interface {iface}",
             f" description Link-to-segment-{i+1}",
             f" ip address {ip} {mask}",
-            f" no shutdown",
-            f"!",
+            " no shutdown",
+            "!",
         ]
 
     # VLANs (for switches)
     for vid, vname in vlans:
-        lines += [f"vlan {vid}", f" name {vname}", f"!"]
+        lines += [f"vlan {vid}", f" name {vname}", "!"]
 
     # Static routes
     lines.append(f"ip route 0.0.0.0 0.0.0.0 10.{device_index}.1.254")
-    lines.append(f"!")
+    lines.append("!")
 
     # ACL
-    lines.append(f"ip access-list extended MGMT-IN")
+    lines.append("ip access-list extended MGMT-IN")
     for entry in acl_entries:
         lines.append(f" {entry}")
-    lines.append(f"!")
+    lines.append("!")
 
     # SNMP
     lines += [
-        f"snmp-server community icdev-ro RO",
-        f"snmp-server trap-source Loopback0" if loopback else f"snmp-server trap-source {interfaces[0]}",
-        f"snmp-server host 10.0.0.10 version 2c icdev-ro",
-        f"!",
+        "snmp-server community icdev-ro RO",
+        "snmp-server trap-source Loopback0" if loopback else f"snmp-server trap-source {interfaces[0]}",
+        "snmp-server host 10.0.0.10 version 2c icdev-ro",
+        "!",
     ]
 
     # Banner
     lines += [
-        f"banner motd ^C",
+        "banner motd ^C",
         banner,
-        f"^C",
-        f"!",
+        "^C",
+        "!",
     ]
 
     lines.append("end")
@@ -145,30 +145,30 @@ def _switch_config(
     vlans: list[tuple[str, str]],
     acl_entries: list[str],
 ) -> str:
-    lines: list[str] = [f"!", f"hostname {hostname}", f"!"]
+    lines: list[str] = ["!", f"hostname {hostname}", "!"]
 
     for vid, vname in vlans:
-        lines += [f"vlan {vid}", f" name {vname}", f"!"]
+        lines += [f"vlan {vid}", f" name {vname}", "!"]
 
     for i, iface in enumerate(interfaces):
         vid, _ = vlans[i % len(vlans)]
         lines += [
             f"interface {iface}",
-            f" switchport mode access",
+            " switchport mode access",
             f" switchport access vlan {vid}",
-            f" spanning-tree portfast",
-            f" no shutdown",
-            f"!",
+            " spanning-tree portfast",
+            " no shutdown",
+            "!",
         ]
 
     # SVI for management VLAN
     mgmt_ip = f"10.{device_index}.10.1"
     lines += [
-        f"interface Vlan10",
-        f" description MGMT-SVI",
+        "interface Vlan10",
+        " description MGMT-SVI",
         f" ip address {mgmt_ip} 255.255.255.0",
-        f" no shutdown",
-        f"!",
+        " no shutdown",
+        "!",
     ]
 
     lines.append("end")

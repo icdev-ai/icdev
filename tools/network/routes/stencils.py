@@ -120,7 +120,7 @@ def register_stencil_routes(bp: Blueprint) -> None:
             vendor_filter = request.args.get("vendor", "")
             if vendor_filter:
                 rows = conn.execute(
-                    "SELECT * FROM nc_stencil_libraries WHERE vendor=? ORDER BY imported_at DESC",
+                    "SELECT * FROM nc_stencil_libraries WHERE vendor=%s ORDER BY imported_at DESC",
                     (vendor_filter,),
                 ).fetchall()
             else:
@@ -137,12 +137,12 @@ def register_stencil_routes(bp: Blueprint) -> None:
         conn = _get_conn()
         try:
             lib = conn.execute(
-                "SELECT id FROM nc_stencil_libraries WHERE id=?", (lib_id,)
+                "SELECT id FROM nc_stencil_libraries WHERE id=%s", (lib_id,)
             ).fetchone()
             if not lib:
                 return jsonify({"error": "Library not found"}), 404
-            conn.execute("DELETE FROM nc_stencil_shapes WHERE library_id=?", (lib_id,))
-            conn.execute("DELETE FROM nc_stencil_libraries WHERE id=?", (lib_id,))
+            conn.execute("DELETE FROM nc_stencil_shapes WHERE library_id=%s", (lib_id,))
+            conn.execute("DELETE FROM nc_stencil_libraries WHERE id=%s", (lib_id,))
             conn.commit()
             return jsonify({"ok": True})
         finally:
@@ -184,7 +184,7 @@ def register_stencil_routes(bp: Blueprint) -> None:
                 f"JOIN nc_stencil_libraries l ON l.id=s.library_id "
                 f"{where_sql} "
                 f"ORDER BY l.vendor, s.category, s.name "
-                f"LIMIT ? OFFSET ?",
+                f"LIMIT %s OFFSET %s",
                 params + [limit, offset],
             ).fetchall()
             shapes = [dict(r) for r in rows]
@@ -197,7 +197,7 @@ def register_stencil_routes(bp: Blueprint) -> None:
         conn = _get_conn()
         try:
             row = conn.execute(
-                "SELECT icon_data, icon_type FROM nc_stencil_shapes WHERE id=?",
+                "SELECT icon_data, icon_type FROM nc_stencil_shapes WHERE id=%s",
                 (shape_id,),
             ).fetchone()
         finally:

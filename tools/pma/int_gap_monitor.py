@@ -71,7 +71,7 @@ def get_persistent_gaps(days: int = 14, conn=None) -> List[Dict[str, Any]]:
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     rows = conn.execute(
         "SELECT * FROM pma_int_gaps "
-        "WHERE status NOT IN ('resolved', 'cancelled') AND created_at <= ?",
+        "WHERE status NOT IN ('resolved', 'cancelled') AND created_at <= %s",
         (cutoff,),
     ).fetchall()
     return [dict(r) for r in rows]
@@ -95,7 +95,7 @@ def generate_collection_requirements(
 
     existing = conn.execute(
         "SELECT id FROM pma_collection_requirements "
-        "WHERE coverage_id = ? AND discipline = ? AND status != 'cancelled'",
+        "WHERE coverage_id = %s AND discipline = %s AND status != 'cancelled'",
         (coverage_id, discipline),
     ).fetchone()
 
@@ -114,7 +114,7 @@ def generate_collection_requirements(
         "INSERT INTO pma_collection_requirements "
         "(id, gap_id, coverage_id, discipline, priority, requirement_text, "
         " status, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, 'open', ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s, 'open', %s, %s)",
         (req_id, gap["id"], coverage_id, discipline, priority, req_text, now, now),
     )
     return {"inserted": True, "requirement_id": req_id, "priority": priority}
@@ -140,7 +140,7 @@ def get_untasked_critical_gaps_over_30_days(
             continue
         tasked = conn.execute(
             "SELECT id FROM pma_collection_requirements "
-            "WHERE gap_id = ? AND status = 'tasked'",
+            "WHERE gap_id = %s AND status = 'tasked'",
             (gap["id"],),
         ).fetchone()
         if not tasked:

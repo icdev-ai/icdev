@@ -11,12 +11,13 @@ Usage:
 """
 
 import argparse
+import importlib
 import json
 import os  # noqa: F811 — needed directly (not just as _os)
 import sys
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
 
@@ -28,7 +29,7 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from tools.logging.icdev_logger import get_logger  # noqa: E402
-from tools.db.storage import get_connection  # noqa: E402
+from tools.db.storage import get_connection, sql_placeholder  # noqa: E402
 
 from flask import (
     Flask,
@@ -56,6 +57,7 @@ from tools.dashboard.config import (  # noqa: E402
     HOST,
     DEBUG,
 )
+from tools.dashboard.brand import brand_context_processor  # noqa: E402
 from tools.dashboard.auth import register_dashboard_auth, validate_api_key, log_auth_event, require_role  # noqa: E402
 from tools.dashboard.websocket import init_socketio, get_socketio  # noqa: E402
 from tools.dashboard.findings_aggregator import (  # noqa: E402
@@ -70,6 +72,8 @@ except ImportError:
     _track_request = None
 # Air-gap mode: hide cloud-dependent pages (Pulse, ClawHub, Genesis, GovCon, etc.)
 _AIRGAP_MODE = os.environ.get("ICDEV_AIRGAP", "").lower() in ("true", "1", "yes")
+# Demo mode: read-only enforcement (POST/PUT/DELETE to /api/* blocked except onboarding + IQE)
+_DEMO_MODE = os.environ.get("ICDEV_DEMO_MODE", "").lower() in ("true", "1", "yes")
 # Pages disabled in air-gap mode (routes → friendly message instead of 404)
 _AIRGAP_DISABLED_ROUTES = frozenset(
     {
@@ -87,7 +91,7 @@ _AIRGAP_DISABLED_ROUTES = frozenset(
         "/fathomdesk",
     }
 )
-# Legacy canvas feature flags (derived from env — registration handled by _CANVAS_DEFS loop below)
+# Legacy canvas feature flags (derived from the component registry — see _CANVAS_FLAGS below)
 _HAS_STRATEGOS = os.environ.get("ICDEV_STRATEGOS_ENABLED", "true").lower() in ("true", "1", "yes")
 _HAS_NETWORK = os.environ.get("ICDEV_NETWORK_ENABLED", "false").lower() == "true"
 _HAS_PIPELINE = os.environ.get("ICDEV_PIPELINE_ENABLED", "false").lower() == "true"
@@ -135,91 +139,74 @@ _HAS_FINETUNE_API = True
 _HAS_CHAT_API = True
 from tools.dashboard.ux_helpers import register_ux_filters  # noqa: E402
 
+# ── Component Registry (single source of truth) ─────────────────────────────
+# Replaces legacy _CANVAS_DEFS / _APP_DEFS hardcoded lists with data from
+# args/component_registry.yaml. See tools/config/component_registry.py.
+from tools.config.component_registry import get_registry  # noqa: E402
+
+_REGISTRY = get_registry()
+
+
+def _get_active_tier_safe() -> str:
+    """Return the active license tier; falls back to 'community' if unavailable."""
+    try:
+        from tools.billing.tier import get_active_tier
+        return get_active_tier()
+    except Exception:
+        return "community"
+
+
+# URL prefixes for all canvases; used by base.html to highlight the Canvases menu.
+_CANVAS_URL_PREFIXES = tuple(
+    comp.url_prefix
+    for comp in _REGISTRY.iter_canvases()
+    if comp.url_prefix
+)
+
 # ── Design Canvases (conditional registration) ────────────────────────────
-_CANVAS_FLAGS = {}
-_CANVAS_BLUEPRINTS = {}
+_CANVAS_FLAGS: dict[str, bool] = {}
+_CANVAS_BLUEPRINTS: dict[str, object] = {}
 
-_CANVAS_DEFS = [
-    ("idc", "ICDEV_IDC_ENABLED", "tools.infra_canvas.blueprint", "infra_bp"),
-    ("ndc", "ICDEV_NDC_ENABLED", "tools.network.blueprint", "create_network_blueprint"),
-    ("sdc", "ICDEV_SDC_ENABLED", "tools.security_canvas.blueprint", "create_security_blueprint"),
-    ("bdc", "ICDEV_BDC_ENABLED", "tools.boundary_canvas.blueprint", "create_boundary_blueprint"),
-    ("pdc", "ICDEV_PDC_ENABLED", "tools.pipeline.blueprint", "create_pipeline_blueprint"),
-    ("odc", "ICDEV_ODC_ENABLED", "tools.observability_canvas.blueprint", "create_observability_blueprint"),
-    ("ddc", "ICDEV_DDC_ENABLED", "tools.data_canvas.blueprint", "create_data_canvas_blueprint"),
-    ("qdc", "ICDEV_QDC_ENABLED", "tools.qdc_canvas.blueprint", "qdc_bp"),
-    ("mdc", "ICDEV_MIGRATION_CANVAS_ENABLED", "tools.migration_canvas.blueprint", "create_migration_blueprint"),
-    ("aadc", "ICDEV_AADC_ENABLED", "tools.agentic_ai_canvas.blueprint", "aadc_bp"),
-    ("aimc", "ICDEV_AIML_CANVAS_ENABLED", "tools.aiml_canvas.blueprint", "create_aiml_blueprint"),
-    ("ohc", "ICDEV_OPS_HUB_ENABLED", "tools.ops_hub.blueprint", "create_ops_hub_blueprint"),
-    ("iop", "ICDEV_INFO_OPS_ENABLED", "tools.info_ops.blueprint", "create_info_ops_blueprint"),
-    ("mission_canvas", "ICDEV_MISSION_CANVAS_ENABLED", "tools.mission_canvas.blueprint", "create_mission_canvas_blueprint"),
-    ("nocc", "ICDEV_NOCC_ENABLED", "tools.noc_canvas.blueprint", "create_noc_canvas_blueprint"),
-    ("pmc", "ICDEV_PMC_ENABLED", "tools.pmc_canvas.blueprint", "create_pmc_blueprint"),
-    ("ccc", "ICDEV_CCC_ENABLED", "tools.ccc_canvas.blueprint", "create_ccc_blueprint"),
-    ("dsoc", "ICDEV_DSOC_ENABLED", "tools.dsoc_canvas.blueprint", "create_dsoc_blueprint"),
-    ("aiify",  "ICDEV_AIIFY_ENABLED",  "tools.aiify.blueprint", "aiify_bp"),
-    ("aiify_compat", "ICDEV_AIIFY_ENABLED", "tools.aiify.blueprint", "aiify_compat_bp"),
-    ("dic", "ICDEV_DIC_ENABLED", "tools.document_intelligence.blueprint", "dic_bp"),
-    ("demo_runner", "ICDEV_DEMO_RUNNER_ENABLED", "tools.showcase.blueprint", "demo_runner_bp"),
-    ("slides", "ICDEV_SLIDES_ENABLED", "tools.slides.blueprint", "slides_bp"),
-    ("ace", "ICDEV_ACE_ENABLED", "icdev.tools.ace.blueprint", "ace_bp"),
-    ("aisg", "ICDEV_AISG_ENABLED", "tools.aisg.blueprint", "bp"),
-    ("integrity", "ICDEV_INTEGRITY_ENABLED", "tools.integrity.blueprint", "create_integrity_blueprint"),
-    ("foundry", "ICDEV_FOUNDRY_ENABLED", "tools.foundry.blueprint", "create_foundry_blueprint"),
-    ("logs", "ICDEV_LOGS_ENABLED", "tools.logging.blueprint", "create_logs_blueprint"),
-]
-
-_CANVAS_DEFAULTS_TRUE = {"ndc", "sdc", "aimc", "mission_canvas", "ohc", "integrity", "logs"}
-
-for _key, _env, _mod, _attr in _CANVAS_DEFS:
-    _default = "true" if _key in _CANVAS_DEFAULTS_TRUE else "false"
-    _enabled = os.environ.get(_env, _default).lower() in ("true", "1", "yes")
-    _CANVAS_FLAGS[_key] = False
-    if _enabled:
-        try:
-            import importlib as _il
-
-            _m = _il.import_module(_mod)
-            _bp = getattr(_m, _attr, None)
-            if callable(_bp) and not hasattr(_bp, "name"):
-                _bp = _bp()
-            if _bp:
-                _CANVAS_BLUEPRINTS[_key] = _bp
-                _CANVAS_FLAGS[_key] = True
-        except Exception as _exc:
-            get_logger("icdev.dashboard").warning(
-                "Canvas %s import failed (%s): %s", _key.upper(), _mod, _exc
-            )
+for _comp in _REGISTRY.iter_enabled(kind="canvas"):
+    try:
+        _bp = _comp.get_blueprint()
+        if _bp:
+            _CANVAS_BLUEPRINTS[_comp.key] = _bp
+            _CANVAS_FLAGS[_comp.key] = True
+    except Exception as _exc:
+        get_logger("icdev.dashboard").warning(
+            "Canvas %s import failed (%s): %s", _comp.key.upper(), _comp.module, _exc
+        )
 
 # ── Application Modules (conditional registration) ─────────────────────────
 _APP_FLAGS: dict[str, bool] = {}
 _APP_BLUEPRINTS: dict[str, object] = {}
 
-_APP_DEFS = [
-    ("hitl_workflow", "ICDEV_HITL_ENABLED",          "tools.workflow_hitl.blueprint", "create_wf_page_blueprint"),
-    ("forge_academy", "ICDEV_FORGE_ACADEMY_ENABLED",  "apps.forge_academy.blueprint",  "academy_bp"),
-    ("gameday",       "ICDEV_GAMEDAY_ENABLED",         "apps.ai_gameday.blueprint",     "bp"),
-    ("innovation",    "ICDEV_INNOVATION_ENABLED",      "apps.innovation.blueprint",     "innovation_bp"),
-]
+for _comp in _REGISTRY.iter_enabled(kind="child_app"):
+    try:
+        _bp = _comp.get_blueprint()
+        if _bp:
+            _APP_BLUEPRINTS[_comp.key] = _bp
+            _APP_FLAGS[_comp.key] = True
+    except Exception as _exc:
+        get_logger("icdev.dashboard").warning(
+            "App module %s import failed (%s): %s", _comp.key, _comp.module, _exc
+        )
 
-for _key, _env, _mod, _attr in _APP_DEFS:
-    _enabled = os.environ.get(_env, "false").lower() in ("true", "1", "yes")
-    _APP_FLAGS[_key] = False
-    if _enabled:
-        try:
-            import importlib as _il
-            _m = _il.import_module(_mod)
-            _bp = getattr(_m, _attr, None)
-            if callable(_bp) and not hasattr(_bp, "name"):
-                _bp = _bp()
-            if _bp:
-                _APP_BLUEPRINTS[_key] = _bp
-                _APP_FLAGS[_key] = True
-        except Exception as _exc:
-            get_logger("icdev.dashboard").warning(
-                "App module %s import failed (%s): %s", _key, _mod, _exc
-            )
+# ── Core Extensions (registry-driven, e.g. admin_console) ──────────────────
+_CORE_EXT_BLUEPRINTS: dict[str, object] = {}
+
+for _comp in _REGISTRY.iter_enabled(kind="core_extension"):
+    if not getattr(_comp, "blueprint_attr", None):
+        continue
+    try:
+        _bp = _comp.get_blueprint()
+        if _bp:
+            _CORE_EXT_BLUEPRINTS[_comp.key] = _bp
+    except Exception as _exc:
+        get_logger("icdev.dashboard").warning(
+            "Core extension %s import failed (%s): %s", _comp.key, _comp.module, _exc
+        )
 
 # ---------------------------------------------------------------------------
 # GovCon/CPMP/Proposals page registration (D-CHILD-6: isolated)
@@ -482,7 +469,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
         try:
             if cor_email:
                 rows = conn.execute(
-                    "SELECT * FROM cpmp_contracts WHERE cor_email = ? ORDER BY created_at DESC",
+                    "SELECT * FROM cpmp_contracts WHERE cor_email = %s ORDER BY created_at DESC",
                     (cor_email,),
                 ).fetchall()
                 contracts = [dict(r) for r in rows]
@@ -539,7 +526,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
             try:
                 conn.execute(
                     "INSERT INTO cpmp_cor_access_log (user_id, contract_id, action) "
-                    "VALUES (?, ?, ?)",
+                    "VALUES (%s, %s, %s)",
                     (
                         cor_email,
                         contract_id,
@@ -713,7 +700,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
         """Proposal Opportunity Detail — 6-tab view with sections, compliance, reviews."""
         conn = _get_db()
         try:
-            opp = conn.execute("SELECT * FROM proposal_opportunities WHERE id = ?", (opp_id,)).fetchone()
+            opp = conn.execute("SELECT * FROM proposal_opportunities WHERE id = %s", (opp_id,)).fetchone()
             if not opp:
                 return render_template("404.html", message="Opportunity not found"), 404
             opp = dict(opp)
@@ -729,9 +716,9 @@ def _register_govcon_pages(app: "Flask", _get_db):
                        SELECT section_id, id, status,
                               ROW_NUMBER() OVER (PARTITION BY section_id ORDER BY created_at DESC) as rn
                        FROM proposal_section_drafts
-                       WHERE opportunity_id = ?
+                       WHERE opportunity_id = %s
                    ) latest_draft ON s.id = latest_draft.section_id AND latest_draft.rn = 1
-                   WHERE s.opportunity_id = ?
+                   WHERE s.opportunity_id = %s
                    ORDER BY v.volume_number, s.section_number""",
                     (opp_id, opp_id),
                 ).fetchall()
@@ -749,19 +736,19 @@ def _register_govcon_pages(app: "Flask", _get_db):
             volumes = [
                 dict(r)
                 for r in conn.execute(
-                    "SELECT * FROM proposal_volumes WHERE opportunity_id = ? ORDER BY volume_number", (opp_id,)
+                    "SELECT * FROM proposal_volumes WHERE opportunity_id = %s ORDER BY volume_number", (opp_id,)
                 ).fetchall()
             ]
             compliance_items = [
                 dict(r)
                 for r in conn.execute(
-                    "SELECT * FROM proposal_compliance_matrix WHERE opportunity_id = ?", (opp_id,)
+                    "SELECT * FROM proposal_compliance_matrix WHERE opportunity_id = %s", (opp_id,)
                 ).fetchall()
             ]
             reviews = [
                 dict(r)
                 for r in conn.execute(
-                    "SELECT * FROM proposal_reviews WHERE opportunity_id = ? ORDER BY scheduled_date", (opp_id,)
+                    "SELECT * FROM proposal_reviews WHERE opportunity_id = %s ORDER BY scheduled_date", (opp_id,)
                 ).fetchall()
             ]
             findings = [
@@ -769,7 +756,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 for r in conn.execute(
                     """SELECT f.*, r.review_type FROM proposal_review_findings f
                    JOIN proposal_reviews r ON f.review_id = r.id
-                   WHERE r.opportunity_id = ?""",
+                   WHERE r.opportunity_id = %s""",
                     (opp_id,),
                 ).fetchall()
             ]
@@ -817,7 +804,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 all_asgns = conn.execute(
                     """SELECT a.* FROM proposal_reviewer_assignments a
                        JOIN proposal_reviews r ON a.review_id = r.id
-                       WHERE r.opportunity_id = ? ORDER BY a.created_at DESC""",
+                       WHERE r.opportunity_id = %s ORDER BY a.created_at DESC""",
                     (opp_id,),
                 ).fetchall()
                 for a in all_asgns:
@@ -848,7 +835,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
             questions = [
                 dict(r)
                 for r in conn.execute(
-                    "SELECT * FROM proposal_questions WHERE opportunity_id = ? ORDER BY question_number ASC",
+                    "SELECT * FROM proposal_questions WHERE opportunity_id = %s ORDER BY question_number ASC",
                     (opp_id,),
                 ).fetchall()
             ]
@@ -869,7 +856,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
             amendments = [
                 dict(r)
                 for r in conn.execute(
-                    "SELECT * FROM proposal_amendments WHERE opportunity_id = ? ORDER BY version_number ASC",
+                    "SELECT * FROM proposal_amendments WHERE opportunity_id = %s ORDER BY version_number ASC",
                     (opp_id,),
                 ).fetchall()
             ]
@@ -877,7 +864,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
             for q in questions:
                 if q.get("status") == "answered":
                     resp = conn.execute(
-                        "SELECT * FROM proposal_question_responses WHERE question_id = ? ORDER BY created_at DESC LIMIT 1",
+                        "SELECT * FROM proposal_question_responses WHERE question_id = %s ORDER BY created_at DESC LIMIT 1",
                         (q["id"],),
                     ).fetchone()
                     if resp:
@@ -912,13 +899,13 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 """SELECT s.*, v.volume_number, v.title as volume_title
                    FROM proposal_sections s
                    LEFT JOIN proposal_volumes v ON s.volume_id = v.id
-                   WHERE s.id = ? AND s.opportunity_id = ?""",
+                   WHERE s.id = %s AND s.opportunity_id = %s""",
                 (sec_id, opp_id),
             ).fetchone()
             if not section:
                 return render_template("404.html", message="Section not found"), 404
             section = dict(section)
-            opp = conn.execute("SELECT title FROM proposal_opportunities WHERE id = ?", (opp_id,)).fetchone()
+            opp = conn.execute("SELECT title FROM proposal_opportunities WHERE id = %s", (opp_id,)).fetchone()
             opp_title = opp["title"] if opp else "Unknown"
             from tools.dashboard.api.proposals import SECTION_TRANSITIONS
 
@@ -934,7 +921,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
             # Latest draft for this section
             draft_row = conn.execute(
                 """SELECT * FROM proposal_section_drafts
-                   WHERE section_id = ?
+                   WHERE section_id = %s
                    ORDER BY created_at DESC LIMIT 1""", (sec_id,)
             ).fetchone()
             draft = None
@@ -963,7 +950,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
             section["compliance_items"] = [
                 dict(r)
                 for r in conn.execute(
-                    "SELECT * FROM proposal_compliance_matrix WHERE proposal_section_id = ?", (sec_id,)
+                    "SELECT * FROM proposal_compliance_matrix WHERE proposal_section_id = %s", (sec_id,)
                 ).fetchall()
             ]
             section["findings"] = [
@@ -971,7 +958,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 for r in conn.execute(
                     """SELECT f.*, r.review_type FROM proposal_review_findings f
                    JOIN proposal_reviews r ON f.review_id = r.id
-                   WHERE f.section_id = ?""",
+                   WHERE f.section_id = %s""",
                     (sec_id,),
                 ).fetchall()
             ]
@@ -979,7 +966,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 """SELECT d.*, s.title as depends_on_title, s.status as depends_on_status
                    FROM proposal_section_dependencies d
                    JOIN proposal_sections s ON d.depends_on_section_id = s.id
-                   WHERE d.section_id = ?""",
+                   WHERE d.section_id = %s""",
                 (sec_id,),
             ).fetchall()
             dep_list = []
@@ -1003,7 +990,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
             section["history"] = [
                 dict(r)
                 for r in conn.execute(
-                    "SELECT * FROM proposal_status_history WHERE entity_id = ? ORDER BY created_at DESC", (sec_id,)
+                    "SELECT * FROM proposal_status_history WHERE entity_id = %s ORDER BY created_at DESC", (sec_id,)
                 ).fetchall()
             ]
             return render_template("proposals/section_detail.html", section=section, opp_title=opp_title, draft=draft)
@@ -1029,7 +1016,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
             for row in raw_opps:
                 opp = dict(row)
                 reviews = conn.execute(
-                    "SELECT * FROM proposal_reviews WHERE opportunity_id = ?", (opp["id"],)
+                    "SELECT * FROM proposal_reviews WHERE opportunity_id = %s", (opp["id"],)
                 ).fetchall()
                 rev_map = {r["review_type"]: dict(r) for r in reviews}
                 opp["review_map"] = rev_map
@@ -1045,7 +1032,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 crit = conn.execute(
                     """SELECT COUNT(*) as cnt FROM proposal_review_findings f
                        JOIN proposal_reviews r ON f.review_id = r.id
-                       WHERE r.opportunity_id = ? AND f.severity = 'critical' AND f.status IN ('open','in_progress')""",
+                       WHERE r.opportunity_id = %s AND f.severity = 'critical' AND f.status IN ('open','in_progress')""",
                     (opp["id"],),
                 ).fetchone()
                 opp["critical_open"] = crit["cnt"] if crit else 0
@@ -1081,25 +1068,25 @@ def _register_govcon_pages(app: "Flask", _get_db):
         """Proposal Language Settings — glossary, wall of truth, taxonomy, style templates."""
         conn = _get_db()
         try:
-            opp = conn.execute("SELECT * FROM proposal_opportunities WHERE id = ?", (opp_id,)).fetchone()
+            opp = conn.execute("SELECT * FROM proposal_opportunities WHERE id = %s", (opp_id,)).fetchone()
             if not opp:
                 return render_template("404.html", message="Opportunity not found"), 404
             opp = dict(opp)
             glossary = [
                 dict(r) for r in conn.execute(
-                    "SELECT * FROM wg_glossary WHERE scope = 'project' AND scope_id = ? AND is_active = 1 ORDER BY term_type, term",
+                    "SELECT * FROM wg_glossary WHERE scope = 'project' AND scope_id = %s AND is_active = 1 ORDER BY term_type, term",
                     (opp_id,),
                 ).fetchall()
             ]
             taxonomy = [
                 dict(r) for r in conn.execute(
-                    "SELECT * FROM proposal_taxonomy WHERE opportunity_id = ? AND is_active = 1 ORDER BY label",
+                    "SELECT * FROM proposal_taxonomy WHERE opportunity_id = %s AND is_active = 1 ORDER BY label",
                     (opp_id,),
                 ).fetchall()
             ]
             style_guides = [
                 dict(r) for r in conn.execute(
-                    "SELECT id, guide_name, version, created_at FROM wg_style_guides WHERE scope = 'project' AND scope_id = ? AND is_active = 1 ORDER BY guide_name",
+                    "SELECT id, guide_name, version, created_at FROM wg_style_guides WHERE scope = 'project' AND scope_id = %s AND is_active = 1 ORDER BY guide_name",
                     (opp_id,),
                 ).fetchall()
             ]
@@ -1119,7 +1106,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
         """Black-hat / PTW workspace — competitor intelligence + price-to-win (prop-cap-13)."""
         conn = _get_db()
         try:
-            opp = conn.execute("SELECT * FROM proposal_opportunities WHERE id = ?", (opp_id,)).fetchone()
+            opp = conn.execute("SELECT * FROM proposal_opportunities WHERE id = %s", (opp_id,)).fetchone()
             if not opp:
                 return render_template("404.html", message="Opportunity not found"), 404
             opp = dict(opp)
@@ -1141,7 +1128,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 """)
                 conn.commit()
                 bh_rows = conn.execute(
-                    "SELECT * FROM proposal_blackhat_assessments WHERE opportunity_id = ? ORDER BY created_at DESC",
+                    "SELECT * FROM proposal_blackhat_assessments WHERE opportunity_id = %s ORDER BY created_at DESC",
                     (opp_id,),
                 ).fetchall()
                 assessments = [dict(r) for r in bh_rows]
@@ -1177,25 +1164,25 @@ def _register_govcon_pages(app: "Flask", _get_db):
         """Compliance gap drill-down — all not_addressed requirements (prop-cmp-10)."""
         conn = _get_db()
         try:
-            opp = conn.execute("SELECT * FROM proposal_opportunities WHERE id = ?", (opp_id,)).fetchone()
+            opp = conn.execute("SELECT * FROM proposal_opportunities WHERE id = %s", (opp_id,)).fetchone()
             if not opp:
                 return render_template("404.html", message="Opportunity not found"), 404
             opp = dict(opp)
             orphaned = conn.execute(
                 """SELECT * FROM proposal_compliance_matrix
-                   WHERE opportunity_id = ? AND (proposal_section_id IS NULL OR proposal_section_id = '')
+                   WHERE opportunity_id = %s AND (proposal_section_id IS NULL OR proposal_section_id = '')
                      AND compliance_status != 'not_applicable'
                    ORDER BY sort_order""",
                 (opp_id,),
             ).fetchall()
             orphaned = [dict(r) for r in orphaned]
             compliance_total = conn.execute(
-                "SELECT COUNT(*) as cnt FROM proposal_compliance_matrix WHERE opportunity_id = ?",
+                "SELECT COUNT(*) as cnt FROM proposal_compliance_matrix WHERE opportunity_id = %s",
                 (opp_id,),
             ).fetchone()["cnt"]
             sections = conn.execute(
                 """SELECT s.id, s.section_number, s.title FROM proposal_sections s
-                   WHERE s.opportunity_id = ? ORDER BY s.section_number""",
+                   WHERE s.opportunity_id = %s ORDER BY s.section_number""",
                 (opp_id,),
             ).fetchall()
             sections = [dict(s) for s in sections]
@@ -1333,7 +1320,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
             min_frequency = 3
             try:
                 rows = conn.execute(
-                    "SELECT * FROM rfp_requirement_patterns WHERE frequency >= ? ORDER BY frequency DESC LIMIT 30",
+                    "SELECT * FROM rfp_requirement_patterns WHERE frequency >= %s ORDER BY frequency DESC LIMIT 30",
                     (min_frequency,),
                 ).fetchall()
                 patterns = [dict(r) for r in rows]
@@ -1623,12 +1610,68 @@ def _get_chat_models() -> tuple[list[dict], str]:
     return result, default_model
 
 
-def create_app() -> Flask:
+def _aggregate_chat_sources(conn, tenant_id: str, context_id: str) -> list[dict]:
+    """Aggregate chat-upload RAG chunks by source_id.
+
+    Parses JSON metadata in Python so no SQLite-only json_extract() appears
+    in the SQL — making the query run on PostgreSQL without modification.
+    Mirrors the logic of the original GROUP-BY json_extract query.
+    """
+    import json as _json
+    from tools.db.storage import sql_placeholder as _sqlph
+    ph = _sqlph(conn)
+
+    params: list = ["chat_upload"]
+    sql = (
+        "SELECT source_id, metadata, created_at "
+        "FROM rag_chunks "
+        f"WHERE source_type = {ph}"
+    )
+    if tenant_id:
+        sql += f" AND tenant_id = {ph}"
+        params.append(tenant_id)
+    sql += " ORDER BY created_at DESC"
+
+    rows = conn.execute(sql, params).fetchall()
+
+    agg: dict = {}
+    for row in rows:
+        r = dict(row)
+        sid = r["source_id"]
+        try:
+            meta = _json.loads(r.get("metadata") or "{}")
+        except (ValueError, TypeError):
+            meta = {}
+        row_ctx = meta.get("context_id", "")
+        if context_id and row_ctx != context_id:
+            continue
+        if sid not in agg:
+            agg[sid] = {
+                "source_id": sid,
+                "filename": meta.get("filename", ""),
+                "context_id": row_ctx,
+                "chunk_count": 0,
+                "indexed_at": r.get("created_at"),
+            }
+        agg[sid]["chunk_count"] += 1
+        if not agg[sid]["filename"] and meta.get("filename"):
+            agg[sid]["filename"] = meta.get("filename", "")
+        cur_ts = r.get("created_at")
+        if cur_ts and (not agg[sid]["indexed_at"] or cur_ts > agg[sid]["indexed_at"]):
+            agg[sid]["indexed_at"] = cur_ts
+
+    result = sorted(agg.values(), key=lambda x: x.get("indexed_at") or "", reverse=True)
+    return result[:50]
+
+
+def create_app(testing: bool = False) -> Flask:
     app = Flask(
         __name__,
         template_folder=str(Path(__file__).resolve().parent / "templates"),
         static_folder=str(Path(__file__).resolve().parent / "static"),
     )
+    if testing:
+        app.config["TESTING"] = True
 
     # Auto-reload templates on change (no server restart needed)
     app.config["TEMPLATES_AUTO_RELOAD"] = True
@@ -1641,6 +1684,13 @@ def create_app() -> Flask:
 
     # Register UX filters (glossary, timestamps, error recovery, quick paths)
     register_ux_filters(app)
+
+    # Register CLI bridge toggle middleware (silences 404 in cli_bridge_indicator)
+    try:
+        from tools.dashboard.api.cli_bridge_api import register_cli_bridge
+        register_cli_bridge(app)
+    except Exception as _exc:
+        app.logger.warning("CLI bridge middleware skipped: %s", _exc)
 
     # Register dashboard auth middleware (D169-D172)
     register_dashboard_auth(app)
@@ -1678,18 +1728,12 @@ def create_app() -> Flask:
     except Exception as _exc:
         app.logger.warning("Budget services skipped: %s", _exc)
 
-    # Liveness probe — used by /start, container healthchecks, and uptime monitors.
-    # Cheap, no DB call. For deeper checks see /api/platform/health.
-    @app.route("/health", methods=["GET"])
-    def health():
-        return (
-            {
-                "status": "ok",
-                "service": "icdev-dashboard",
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            },
-            200,
-        )
+    # Health / readiness / liveness probes (ECR-OBS-03)
+    try:
+        from tools.observability.health_blueprint import health_bp as _health_bp
+        app.register_blueprint(_health_bp)
+    except Exception as _exc:
+        app.logger.warning("Health blueprint skipped: %s", _exc)
 
     @app.route("/api/_introspect/routes", methods=["GET"])
     def _introspect_routes():
@@ -1834,8 +1878,8 @@ def create_app() -> Flask:
                     "SELECT id, title, message, severity, created_at "
                     "FROM notifications "
                     "WHERE source = 'genesis.kanban' "
-                    "  AND created_at > ? "
-                    "ORDER BY created_at DESC LIMIT ?",
+                    "  AND created_at > %s "
+                    "ORDER BY created_at DESC LIMIT %s",
                     (cutoff, limit),
                 ).fetchall()
             events = []
@@ -1991,6 +2035,17 @@ def create_app() -> Flask:
             _route_map = {}
 
         theme_pref = flask_request.cookies.get("icdev_theme", "dark")
+
+        # ECR-CL-02: unseen-release badge — compare brand.version to cookie-stored last seen
+        _unseen_release = False
+        try:
+            from tools.dashboard.brand import get_brand as _get_brand_ctx
+            _bv = _get_brand_ctx().get("version", "")
+            _seen_ver = flask_request.cookies.get("icdev_seen_version", "")
+            _unseen_release = bool(_bv) and _seen_ver != _bv
+        except Exception:
+            pass
+
         return {
             "cui_banner_top": CUI_BANNER_TOP,
             "cui_banner_bottom": CUI_BANNER_BOTTOM,
@@ -2033,7 +2088,20 @@ def create_app() -> Flask:
             "gameday_enabled": _APP_FLAGS.get("gameday", False),
             "airgap_mode": _AIRGAP_MODE,
             "route_module_map": _route_map,
+            "nav_tree": _REGISTRY.get_nav_context(),
+            "component_registry": _REGISTRY,
+            "canvas_menu_active": any(
+                flask_request.path.startswith(prefix)
+                for prefix in _CANVAS_URL_PREFIXES
+            ),
+            # License tier context — used by nav lock indicators and tier_gate.html
+            "active_tier": _get_active_tier_safe(),
+            "tier_order": {"community": 0, "professional": 1, "enterprise": 2},
+            "unseen_release": _unseen_release,
         }
+
+    # ---- Brand + banner context processor (DSW-1) ----
+    app.context_processor(brand_context_processor)
 
     # ---- Air-gap route guard: friendly message for disabled pages ----
     if _AIRGAP_MODE:
@@ -2055,6 +2123,36 @@ def create_app() -> Flask:
                         "airgap_unavailable.html",
                         feature_name=disabled.strip("/").replace("-", " ").title(),
                     ), 200
+
+    # ---- ECR-DEMO-03: Demo mode read-only guard ----
+    if _DEMO_MODE:
+
+        @app.before_request
+        def _demo_mode_guard():
+            if flask_request.method not in ("POST", "PUT", "DELETE", "PATCH"):
+                return None
+            path = flask_request.path
+            if not path.startswith("/api/"):
+                return None
+            # Allow onboarding wizard and IQE queries through
+            if path.startswith("/api/onboarding/") or path == "/api/iqe-query":
+                return None
+            from tools.dashboard.brand import get_brand
+            upgrade_url = get_brand().get("support_url", "")
+            return jsonify({"error": "Demo mode: read-only", "upgrade_url": upgrade_url}), 403
+
+    # ---- ECR-BILL-02: API call metering (fire-and-forget after_request) ----
+    @app.after_request
+    def _meter_api_call(response):
+        try:
+            if flask_request.path.startswith("/api/"):
+                from flask import g as _g
+                _tenant = getattr(_g, "tenant_id", None) or "system"
+                from tools.billing.metering import record_usage as _rec
+                _rec(_tenant, "api_call")
+        except Exception:
+            pass
+        return response
 
     # ---- Auto-register A2A agents from card files ----
     try:
@@ -2127,7 +2225,7 @@ def create_app() -> Flask:
             _seed_conn.execute(
                 "INSERT OR IGNORE INTO intake_sessions "
                 "(id, customer_name, customer_org, session_status, classification, context_summary) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s)",
                 ("sess-9cc6891cb548", "E2E Test User", "ICDEV CI", "active", "CUI", "{}"),
             )
             _seed_conn.commit()
@@ -2179,29 +2277,14 @@ def create_app() -> Flask:
             cards = []
         return render_template("canvas_compliance.html", cards=cards)
 
-    # ---- Design Canvases (all 8) ----
-    _CANVAS_ROUTES = {
-        "idc": "/infra",
-        "ndc": "/network",
-        "sdc": "/security",
-        "bdc": "/boundary",
-        "pdc": "/devops",
-        "odc": "/observability",
-        "ddc": "/data",
-        "qdc": "/quality",
-        "mdc": "/migration-canvas",
-        "aimc": "/ai-ml",
-        "ohc": "",
-        "iop": "/info-ops",
-        "mission_canvas": "/mission-canvas",
-        "nocc": "",
-        "pmc": "",
-        "ccc": "",
-        "dsoc": "",
-        "integrity": "",
-        "foundry": "",
-        "logs": "",
-    }
+    # ---- Design Canvases (registry-driven) ----
+    try:
+        from tools.security.canvas_access import guard_component_access
+    except Exception as _guard_exc:
+        app.logger.warning("Canvas access guard unavailable: %s", _guard_exc)
+        guard_component_access = None  # type: ignore[assignment]
+
+    _CANVAS_ROUTES = _REGISTRY.get_url_prefixes()
     for _ck, _cbp in _CANVAS_BLUEPRINTS.items():
         try:
             prefix = _CANVAS_ROUTES.get(_ck, f"/{_ck}")
@@ -2210,6 +2293,15 @@ def create_app() -> Flask:
             else:
                 app.register_blueprint(_cbp)
             app.logger.info("Canvas %s registered at %s/", _ck.upper(), prefix)
+
+            # Attach RBAC + canvas-access guard (backward-compatible unless
+            # ICDEV_ENFORCE_CANVAS_ACCESS is set).
+            if guard_component_access:
+                _comp_meta = _REGISTRY.get(_ck)
+                if _comp_meta:
+                    _cbp.before_request(
+                        guard_component_access(_ck, _comp_meta.min_il)
+                    )
         except Exception as exc:
             app.logger.warning("Canvas %s registration failed: %s", _ck.upper(), exc)
 
@@ -2250,8 +2342,8 @@ def create_app() -> Flask:
         app.logger.warning("Supply Chain blueprint failed to register: %s", _exc)
 
     # ---- SIPA Software Integrity & Provenance Assessor Blueprint ----
-    # Registered via the _CANVAS_DEFS loop above (key "integrity", empty url_prefix
-    # in _CANVAS_ROUTES so the blueprint's explicit /integrity + /api/integrity
+    # Registered via the registry-driven canvas loop above (key "integrity",
+    # empty url_prefix so the blueprint's explicit /integrity + /api/integrity
     # paths are not double-prefixed). No manual registration here.
 
     # ---- Strategos Blueprint ----
@@ -2301,8 +2393,9 @@ def create_app() -> Flask:
                 return resp
 
             app.add_url_rule("/dat", "dat_page_alias", _dat_page_alias)
+            app.add_url_rule("/mcip", "mcip_page_alias", _dat_page_alias)
             app.add_url_rule("/api/dat/dti", "dat_dti_api", _dat_dti_api)
-            app.logger.info("DAT aliases registered at /dat and /api/dat/dti")
+            app.logger.info("DAT aliases registered at /dat, /mcip, and /api/dat/dti")
         except Exception as _exc:
             app.logger.warning("Strategos blueprint failed to register: %s", _exc)
     else:
@@ -2352,13 +2445,21 @@ def create_app() -> Flask:
     except Exception as _exc:
         app.logger.warning("TA Patterns blueprint failed to register: %s", _exc)
 
-    # ---- App Module Blueprints (_APP_DEFS — page blueprints for workflow, academy, etc.) ----
+    # ---- App Module Blueprints (registry-driven child_app components) ----
     for _ak, _abp in _APP_BLUEPRINTS.items():
         try:
             app.register_blueprint(_abp)
             app.logger.info("App module %s registered", _ak)
         except Exception as _exc:
             app.logger.warning("App module %s registration failed: %s", _ak, _exc)
+
+    # ---- Core Extension Blueprints (registry-driven, e.g. admin_console) ----
+    for _ek, _ebp in _CORE_EXT_BLUEPRINTS.items():
+        try:
+            app.register_blueprint(_ebp)
+            app.logger.info("Core extension %s registered", _ek)
+        except Exception as _exc:
+            app.logger.warning("Core extension %s registration failed: %s", _ek, _exc)
 
     # ---- HITL Workflow API Blueprint (always registered when importable; gated per-route) ----
     try:
@@ -2448,6 +2549,108 @@ def create_app() -> Flask:
     except Exception as _exc:
         app.logger.warning("SaaS Portal blueprint failed to register: %s", _exc)
 
+    # ---- Enterprise SSO Blueprint (SAML 2.0 + OIDC) ----
+    try:
+        from tools.auth.blueprint import bp as _auth_bp
+        app.register_blueprint(_auth_bp)
+        app.logger.info("Enterprise SSO blueprint registered at /auth/saml")
+    except Exception as _exc:
+        app.logger.warning("Enterprise SSO blueprint failed to register: %s", _exc)
+
+    # ---- Onboarding API Blueprint ----
+    try:
+        from tools.auth.blueprint import onboarding_bp as _onboarding_bp
+        app.register_blueprint(_onboarding_bp)
+        app.logger.info("Onboarding API blueprint registered at /api/onboarding")
+    except Exception as _exc:
+        app.logger.warning("Onboarding API blueprint failed to register: %s", _exc)
+
+    # ---- Stripe Webhook Blueprint (no auth, signature-verified) ----
+    try:
+        from tools.admin.blueprint import create_stripe_webhook_blueprint as _stripe_wh_factory
+        _stripe_wh_bp = _stripe_wh_factory()
+        app.register_blueprint(_stripe_wh_bp)
+        app.logger.info("Stripe webhook blueprint registered at /webhooks/stripe")
+    except Exception as _exc:
+        app.logger.warning("Stripe webhook blueprint failed to register: %s", _exc)
+
+    # ---- Centralized Logs viewer ----
+    try:
+        from tools.logging.blueprint import create_logs_blueprint as _create_logs_bp
+        _logs_bp = _create_logs_bp()
+        if _logs_bp is not None:
+            app.register_blueprint(_logs_bp)
+            app.logger.info("Logs blueprint registered at /logs")
+        else:
+            app.logger.info("Logs blueprint disabled (ICDEV_LOGS_ENABLED=false)")
+    except Exception as _exc:
+        app.logger.warning("Logs blueprint failed to register: %s", _exc)
+
+    # ---- Platform Updates (CHANGELOG.md viewer) ----
+    try:
+        from tools.dashboard.changelog import parse_changelog as _parse_changelog
+        import os as _os
+
+        @app.route("/updates")
+        def updates_page():
+            _changelog_path = _os.path.join(_os.path.dirname(__file__), "..", "..", "CHANGELOG.md")
+            try:
+                releases = _parse_changelog(_changelog_path)
+            except Exception as _exc:
+                app.logger.warning("Failed to parse CHANGELOG.md: %s", _exc)
+                releases = []
+                return render_template("updates/page.html", releases=releases, error=str(_exc))
+            return render_template("updates/page.html", releases=releases, error=None)
+
+        app.logger.info("Updates route registered at /updates")
+
+        @app.route("/api/capability-sheet/download")
+        def capability_sheet_download():
+            import yaml as _yaml
+            from flask import send_file as _send_file, abort as _abort
+            _yaml_path = _os.path.join(_os.path.dirname(__file__), "..", "..", "..", "args", "capability_sheet.yaml")
+            try:
+                with open(_yaml_path, encoding="utf-8") as _f:
+                    _meta = _yaml.safe_load(_f).get("meta", {})
+                _xl_path = _meta.get("output_path", "")
+                if not _xl_path or not _os.path.exists(_xl_path):
+                    _abort(404, "Capability sheet not found — run the generator first.")
+                return _send_file(_xl_path, as_attachment=True, download_name="ICDEV_Capabilities_Challenges_Solutions.xlsx")
+            except Exception as _exc:
+                app.logger.warning("capability-sheet download failed: %s", _exc)
+                _abort(500, str(_exc))
+
+        @app.route("/api/capability-sheet/regenerate", methods=["POST"])
+        def capability_sheet_regenerate():
+            import subprocess as _sp
+            import sys as _sys
+            _root = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))))
+            _runner = _os.path.join(_root, "icdev", "tools", "showcase", "capability_sheet_generator.py")
+            try:
+                _res = _sp.run([_sys.executable, _runner], cwd=_root, capture_output=True, text=True, timeout=60)
+                if _res.returncode == 0:
+                    return jsonify({"ok": True, "message": _res.stdout.strip()})
+                return jsonify({"ok": False, "error": _res.stderr.strip()}), 500
+            except Exception as _exc:
+                return jsonify({"ok": False, "error": str(_exc)}), 500
+
+        app.logger.info("Capability sheet routes registered")
+    except Exception as _exc:
+        app.logger.warning("Updates route failed to register: %s", _exc)
+
+    # ---- ECR-CL-02: Mark current version as seen ----
+    @app.route("/api/user/prefs/seen-version", methods=["PATCH"])
+    def api_user_prefs_seen_version():
+        try:
+            from tools.dashboard.brand import get_brand as _get_brand_sv
+            _brand_ver = _get_brand_sv().get("version", "")
+        except Exception as _exc:
+            app.logger.warning("seen-version PATCH failed: %s", _exc)
+            return jsonify({"error": str(_exc)}), 500
+        resp = jsonify({"ok": True, "seen_version": _brand_ver})
+        resp.set_cookie("icdev_seen_version", _brand_ver, max_age=31536000, samesite="Lax")
+        return resp
+
     # ---- Convenience JSON routes that match the spec ----
 
     @app.route("/api/alerts", methods=["GET"])
@@ -2522,7 +2725,7 @@ def create_app() -> Flask:
                     continue
                 try:
                     rows = conn.execute(
-                        f"SELECT {id_col}, {ts_col}, {label_col} FROM {table} ORDER BY {ts_col} DESC LIMIT ?",  # nosec B608
+                        f"SELECT {id_col}, {ts_col}, {label_col} FROM {table} ORDER BY {ts_col} DESC LIMIT %s",  # nosec B608
                         (limit,),
                     ).fetchall()
                     for r in rows:
@@ -2574,37 +2777,32 @@ def create_app() -> Flask:
                 canvas_compliance = _cached_entry["canvas_compliance"]
                 overall_score = _cached_entry["overall_score"]
             else:
-                _CANVAS_DBS = [
-                    ("Security", BASE_DIR / "data" / "security_canvas.db"),
-                    ("Network", BASE_DIR / "data" / "network_canvas.db"),
-                    ("Pipeline", BASE_DIR / "data" / "pipeline_canvas.db"),
-                    ("Infra", BASE_DIR / "data" / "infra_canvas.db"),
-                    ("Data", BASE_DIR / "data" / "data_canvas.db"),
-                    ("Boundary", BASE_DIR / "data" / "boundary_canvas.db"),
-                    ("Observability", BASE_DIR / "data" / "observability_canvas.db"),
-                    ("Agentic AI", BASE_DIR / "data" / "agentic_ai_canvas.db"),
-                    ("AI/ML", BASE_DIR / "data" / "aiml_canvas.db"),
-                    ("QDC", BASE_DIR / "data" / "qdc_canvas.db"),
-                    ("Migration", BASE_DIR / "data" / "migration_canvas.db"),
-                ]
+                # Map dashboard-facing canvas names to the canvas init_db module
+                # that exports a backend-aware get_connection().  This respects each
+                # canvas's own STORAGE_BACKEND / PG_DATABASE env vars so the dashboard
+                # reads from PostgreSQL when the canvas is configured for PG instead
+                # of the stale per-canvas SQLite file.
+                _CANVAS_MODULES = {
+                    "Security": "tools.security_canvas.db.init_db",
+                    "Network": "tools.network.db.init_db",
+                    "Pipeline": "tools.pipeline.db.init_db",
+                    "Infra": "tools.infra_canvas.db.init_db",
+                    "Data": "tools.data_canvas.db.init_db",
+                    "Boundary": "tools.boundary_canvas.db.init_db",
+                    "Observability": "tools.observability_canvas.db.init_db",
+                    "Agentic AI": "tools.agentic_ai_canvas.db.init_db",
+                    "AI/ML": "tools.aiml_canvas.db.init_db",
+                    "QDC": "tools.qdc_canvas.db.init_db",
+                    "Migration": "tools.migration_canvas.db.init_db",
+                }
 
                 canvas_compliance = []
                 overall_scores = []
 
-                # OPT-47 — latest-per-design scoring. Old code averaged every
-                # assessment row ever written, which let stale failed assessments
-                # from days or weeks ago drag scores down forever (e.g. Infra was
-                # pinned at 61.5 for 18 identical rows from 2026-04-03 even after
-                # new 100.0 rows landed). The subquery below picks the most recent
-                # assessment per design_id, then averages across designs. That
-                # reflects the *current* state of the canvas, not historical noise.
-                #
-                # Network and Pipeline canvases are unchanged — they use
-                # status-based open/closed counts on a direct findings table, not
-                # historical assessment rows.
+                # OPT-47 — latest-per-design scoring. Pick the most recent assessment
+                # per design_id, then average across designs. Works on both SQLite
+                # and PostgreSQL (correlated subquery form).
                 def _latest_per_design_avg(cc, table: str, score_col: str = "score") -> float:
-                    """Average of the latest score per design_id. Works on SQLite
-                    and on the Postgres storage layer (correlated subquery form)."""
                     q = (
                         f"SELECT AVG({score_col}) FROM {table} a1 "  # nosec B608
                         f"WHERE created_at = ("
@@ -2616,147 +2814,156 @@ def create_app() -> Flask:
                         r = cc.execute(q).fetchone()
                         return float(r[0] or 0)
                     except Exception:
-                        # Fall back to historical average if the subquery form isn't
-                        # supported by this backend.
                         fallback = cc.execute(f"SELECT AVG({score_col}) FROM {table}").fetchone()  # nosec B608
                         return float(fallback[0] or 0)
 
-                for canvas_name, db_path in _CANVAS_DBS:
-                    if not db_path.exists():
+                def _open_canvas_connection(canvas_name):
+                    """Open a backend-aware canvas connection with RLS disabled."""
+                    mod_name = _CANVAS_MODULES.get(canvas_name)
+                    if not mod_name:
+                        return None
+                    try:
+                        mod = importlib.import_module(mod_name)
+                        cconn = mod.get_connection()
+                        try:
+                            cconn.set_security_context(None)  # rls-bypass: canvas tables lack tenant_id/classification; module-level canvas connection disables RLS
+                        except Exception:
+                            pass
+                        return cconn
+                    except Exception:
+                        return None
+
+                for canvas_name in _CANVAS_MODULES:
+                    cconn = _open_canvas_connection(canvas_name)
+                    if not cconn:
                         continue
                     try:
-                        cconn = get_connection(str(db_path))
-                        try:
-                            if canvas_name == "Security":
-                                # Security stores risk_score (inverted) in sc_assessments.
-                                # Pick the latest risk_score per design_id, invert, average.
-                                try:
-                                    r = cconn.execute(
-                                        "SELECT AVG(risk_score) FROM sc_assessments a1 "
-                                        "WHERE ran_at = (SELECT MAX(ran_at) FROM sc_assessments a2 "
-                                        "WHERE a2.design_id = a1.design_id)"
-                                    ).fetchone()
-                                    avg_risk = float(r[0] or 0)
-                                except Exception:
-                                    avg_risk = float(cconn.execute(
-                                        "SELECT AVG(risk_score) FROM sc_assessments"
-                                    ).fetchone()[0] or 0)
-                                total_threats = int(cconn.execute(
-                                    "SELECT COUNT(*) FROM sc_assessments"
+                        if canvas_name == "Security":
+                            try:
+                                r = cconn.execute(
+                                    "SELECT AVG(risk_score) FROM sc_assessments a1 "
+                                    "WHERE ran_at = (SELECT MAX(ran_at) FROM sc_assessments a2 "
+                                    "WHERE a2.design_id = a1.design_id)"
+                                ).fetchone()
+                                avg_risk = float(r[0] or 0)
+                            except Exception:
+                                avg_risk = float(cconn.execute(
+                                    "SELECT AVG(risk_score) FROM sc_assessments"
                                 ).fetchone()[0] or 0)
-                                score = round(max(0.0, 100.0 - avg_risk), 1)
-                                open_f = total_threats
-                                closed_f = 0
-                            elif canvas_name in ("Network", "Pipeline"):
-                                checks_tbl = "nc_compliance_checks" if canvas_name == "Network" else "pc_compliance_checks"
-                                findings_tbl = "nc_compliance_findings" if canvas_name == "Network" else "pc_compliance_findings"
-                                try:
-                                    r = cconn.execute(
-                                        f"SELECT SUM(passed) as p, SUM(failed) as f FROM {checks_tbl}"  # nosec B608
-                                    ).fetchone()
-                                    passed_c = int(r["p"] or 0)
-                                    failed_c = int(r["f"] or 0)
-                                    total_c = passed_c + failed_c
-                                    if total_c == 0:
-                                        raise ValueError("no checks")
-                                    score = round(passed_c / total_c * 100, 1)
-                                    open_f = failed_c
-                                    closed_f = passed_c
-                                except Exception:
-                                    # Fall back to findings table if checks table absent
-                                    open_f = cconn.execute(
-                                        f"SELECT COUNT(*) as cnt FROM {findings_tbl} WHERE status = 'open'"  # nosec B608
-                                    ).fetchone()["cnt"]
-                                    closed_f = cconn.execute(
-                                        f"SELECT COUNT(*) as cnt FROM {findings_tbl} WHERE status != 'open'"  # nosec B608
-                                    ).fetchone()["cnt"]
-                                    total_f = open_f + closed_f
-                                    score = round((closed_f / total_f * 100) if total_f > 0 else 100.0, 1)
-                            elif canvas_name in ("Infra", "Data"):
-                                tbl = "idc_assessments" if canvas_name == "Infra" else "dd_assessments"
-                                score = round(_latest_per_design_avg(cconn, tbl), 1)
-                                open_f = 0
-                                closed_f = 0
-                            elif canvas_name == "Boundary":
-                                # Latest-per-design score; sum the cat counts across the latest rows
-                                try:
-                                    score = round(_latest_per_design_avg(cconn, "bd_assessments"), 1)
-                                    cat_row = cconn.execute(
-                                        "SELECT SUM(cat1_findings) as c1, SUM(cat2_findings) as c2, "
-                                        "SUM(cat3_findings) as c3 FROM bd_assessments a1 "
-                                        "WHERE created_at = (SELECT MAX(created_at) FROM bd_assessments a2 "
-                                        "WHERE a2.design_id = a1.design_id)"
-                                    ).fetchone()
-                                    open_f = int((cat_row["c1"] or 0) + (cat_row["c2"] or 0) + (cat_row["c3"] or 0))
-                                except Exception:
-                                    row = cconn.execute(
-                                        "SELECT SUM(cat1_findings) as cat1, SUM(cat2_findings) as cat2, "
-                                        "SUM(cat3_findings) as cat3, AVG(score) as avg_score FROM bd_assessments"
-                                    ).fetchone()
-                                    score = round(float(row["avg_score"] or 0), 1)
-                                    open_f = int((row["cat1"] or 0) + (row["cat2"] or 0) + (row["cat3"] or 0))
-                                closed_f = 0
-                            elif canvas_name == "Observability":
-                                score = round(_latest_per_design_avg(cconn, "od_assessments"), 1)
-                                open_f = 0
-                                closed_f = 0
-                            elif canvas_name == "Agentic AI":
-                                score = round(_latest_per_design_avg(cconn, "aadc_assessments"), 1)
-                                open_f = 0
-                                closed_f = 0
-                            elif canvas_name == "AI/ML":
-                                score = round(_latest_per_design_avg(cconn, "aiml_assessments"), 1)
-                                open_f = 0
-                                closed_f = 0
-                            elif canvas_name == "QDC":
-                                score = round(_latest_per_design_avg(cconn, "qdc_assessments"), 1)
-                                open_f = 0
-                                closed_f = 0
-                            elif canvas_name == "Migration":
-                                # Validation rows always write score=0 (engine bug); derive
-                                # score from CAT findings using migration_engine formula:
-                                # score = max(0, 100 - cat1*20 - cat2*10 - cat3*5)
-                                try:
-                                    cat_row = cconn.execute(
-                                        "SELECT SUM(cat1_findings) as c1, SUM(cat2_findings) as c2, "
-                                        "SUM(cat3_findings) as c3 FROM mc_assessments a1 "
-                                        "WHERE assessment_type = 'validation' "
-                                        "AND created_at = (SELECT MAX(created_at) FROM mc_assessments a2 "
-                                        "WHERE a2.design_id = a1.design_id AND a2.assessment_type = 'validation')"
-                                    ).fetchone()
-                                    c1 = int(cat_row["c1"] or 0)
-                                    c2 = int(cat_row["c2"] or 0)
-                                    c3 = int(cat_row["c3"] or 0)
-                                    score = round(max(0.0, 100.0 - c1 * 20 - c2 * 10 - c3 * 5), 1)
-                                    open_f = c1 + c2 + c3
-                                except Exception:
-                                    row = cconn.execute(
-                                        "SELECT SUM(cat1_findings) as cat1, SUM(cat2_findings) as cat2, "
-                                        "SUM(cat3_findings) as cat3 FROM mc_assessments"
-                                    ).fetchone()
-                                    c1 = int(row["cat1"] or 0)
-                                    c2 = int(row["cat2"] or 0)
-                                    c3 = int(row["cat3"] or 0)
-                                    score = round(max(0.0, 100.0 - c1 * 20 - c2 * 10 - c3 * 5), 1)
-                                    open_f = c1 + c2 + c3
-                                closed_f = 0
-                            else:
-                                continue
+                            total_threats = int(cconn.execute(
+                                "SELECT COUNT(*) FROM sc_assessments"
+                            ).fetchone()[0] or 0)
+                            score = round(max(0.0, 100.0 - avg_risk), 1)
+                            open_f = total_threats
+                            closed_f = 0
+                        elif canvas_name in ("Network", "Pipeline"):
+                            checks_tbl = "nc_compliance_checks" if canvas_name == "Network" else "pc_compliance_checks"
+                            findings_tbl = "nc_compliance_findings" if canvas_name == "Network" else "pc_compliance_findings"
+                            try:
+                                r = cconn.execute(
+                                    f"SELECT SUM(passed) as p, SUM(failed) as f FROM {checks_tbl}"  # nosec B608
+                                ).fetchone()
+                                passed_c = int(r["p"] or 0)
+                                failed_c = int(r["f"] or 0)
+                                total_c = passed_c + failed_c
+                                if total_c == 0:
+                                    raise ValueError("no checks")
+                                score = round(passed_c / total_c * 100, 1)
+                                open_f = failed_c
+                                closed_f = passed_c
+                            except Exception:
+                                open_f = cconn.execute(
+                                    f"SELECT COUNT(*) as cnt FROM {findings_tbl} WHERE status = 'open'"  # nosec B608
+                                ).fetchone()["cnt"]
+                                closed_f = cconn.execute(
+                                    f"SELECT COUNT(*) as cnt FROM {findings_tbl} WHERE status != 'open'"  # nosec B608
+                                ).fetchone()["cnt"]
+                                total_f = open_f + closed_f
+                                score = round((closed_f / total_f * 100) if total_f > 0 else 100.0, 1)
+                        elif canvas_name in ("Infra", "Data"):
+                            tbl = "idc_assessments" if canvas_name == "Infra" else "dd_assessments"
+                            score = round(_latest_per_design_avg(cconn, tbl), 1)
+                            open_f = 0
+                            closed_f = 0
+                        elif canvas_name == "Boundary":
+                            try:
+                                score = round(_latest_per_design_avg(cconn, "bd_assessments"), 1)
+                                cat_row = cconn.execute(
+                                    "SELECT SUM(cat1_findings) as c1, SUM(cat2_findings) as c2, "
+                                    "SUM(cat3_findings) as c3 FROM bd_assessments a1 "
+                                    "WHERE created_at = (SELECT MAX(created_at) FROM bd_assessments a2 "
+                                    "WHERE a2.design_id = a1.design_id)"
+                                ).fetchone()
+                                open_f = int((cat_row["c1"] or 0) + (cat_row["c2"] or 0) + (cat_row["c3"] or 0))
+                            except Exception:
+                                row = cconn.execute(
+                                    "SELECT SUM(cat1_findings) as cat1, SUM(cat2_findings) as cat2, "
+                                    "SUM(cat3_findings) as cat3, AVG(score) as avg_score FROM bd_assessments"
+                                ).fetchone()
+                                score = round(float(row["avg_score"] or 0), 1)
+                                open_f = int((row["cat1"] or 0) + (row["cat2"] or 0) + (row["cat3"] or 0))
+                            closed_f = 0
+                        elif canvas_name == "Observability":
+                            score = round(_latest_per_design_avg(cconn, "od_assessments"), 1)
+                            open_f = 0
+                            closed_f = 0
+                        elif canvas_name == "Agentic AI":
+                            score = round(_latest_per_design_avg(cconn, "aadc_assessments"), 1)
+                            open_f = 0
+                            closed_f = 0
+                        elif canvas_name == "AI/ML":
+                            score = round(_latest_per_design_avg(cconn, "aiml_assessments"), 1)
+                            open_f = 0
+                            closed_f = 0
+                        elif canvas_name == "QDC":
+                            score = round(_latest_per_design_avg(cconn, "qdc_assessments"), 1)
+                            open_f = 0
+                            closed_f = 0
+                        elif canvas_name == "Migration":
+                            try:
+                                cat_row = cconn.execute(
+                                    "SELECT SUM(cat1_findings) as c1, SUM(cat2_findings) as c2, "
+                                    "SUM(cat3_findings) as c3 FROM mc_assessments a1 "
+                                    "WHERE assessment_type = 'validation' "
+                                    "AND created_at = (SELECT MAX(created_at) FROM mc_assessments a2 "
+                                    "WHERE a2.design_id = a1.design_id AND a2.assessment_type = 'validation')"
+                                ).fetchone()
+                                c1 = int(cat_row["c1"] or 0)
+                                c2 = int(cat_row["c2"] or 0)
+                                c3 = int(cat_row["c3"] or 0)
+                                score = round(max(0.0, 100.0 - c1 * 20 - c2 * 10 - c3 * 5), 1)
+                                open_f = c1 + c2 + c3
+                            except Exception:
+                                row = cconn.execute(
+                                    "SELECT SUM(cat1_findings) as cat1, SUM(cat2_findings) as cat2, "
+                                    "SUM(cat3_findings) as cat3 FROM mc_assessments"
+                                ).fetchone()
+                                c1 = int(row["cat1"] or 0)
+                                c2 = int(row["cat2"] or 0)
+                                c3 = int(row["cat3"] or 0)
+                                score = round(max(0.0, 100.0 - c1 * 20 - c2 * 10 - c3 * 5), 1)
+                                open_f = c1 + c2 + c3
+                            closed_f = 0
+                        else:
+                            continue
 
-                            canvas_compliance.append(
-                                {
-                                    "name": canvas_name,
-                                    "score": score,
-                                    "open_findings": open_f,
-                                    "closed_findings": closed_f,
-                                }
-                            )
-                            if score > 0:
-                                overall_scores.append(score)
-                        finally:
-                            cconn.close()
+                        canvas_compliance.append(
+                            {
+                                "name": canvas_name,
+                                "score": score,
+                                "open_findings": open_f,
+                                "closed_findings": closed_f,
+                            }
+                        )
+                        if score > 0:
+                            overall_scores.append(score)
                     except Exception:
-                        pass  # Graceful if canvas DB has no data yet
+                        pass  # Graceful if canvas has no data / table missing
+                    finally:
+                        try:
+                            cconn.close()
+                        except Exception:
+                            pass
 
                 # GovLift STIG checks (stored in main icdev.db, not a canvas DB)
                 try:
@@ -2782,11 +2989,10 @@ def create_app() -> Flask:
                 except Exception:
                     pass  # GovLift tables may not be initialized yet
 
-                # ZIG Zero Trust maturity (security_canvas.db — zig_* tables)
+                # ZIG Zero Trust maturity (security_canvas backend — zig_* tables)
                 try:
-                    zig_db_path = BASE_DIR / "data" / "security_canvas.db"
-                    if zig_db_path.exists():
-                        zconn = get_connection(str(zig_db_path))
+                    zconn = _open_canvas_connection("Security")
+                    if zconn:
                         try:
                             r = zconn.execute(
                                 "SELECT AVG(score) FROM zig_maturity_scores m1 "
@@ -2836,6 +3042,10 @@ def create_app() -> Flask:
                     from tools.aiify.posture import compute_posture as _aiify_cp
                     from tools.aiify.db.init_db import get_connection as _aiify_cn
                     _ac = _aiify_cn()
+                    try:
+                        _ac.set_security_context(None)  # rls-bypass: aiify canvas tables lack tenant_id/classification; use canvas connection with RLS disabled
+                    except Exception:
+                        pass
                     try:
                         _ap = _aiify_cp(_ac)
                     finally:
@@ -2905,6 +3115,38 @@ def create_app() -> Flask:
             total_agents = conn.execute("SELECT COUNT(*) as cnt FROM agents").fetchone()["cnt"]
             active_agents = conn.execute("SELECT COUNT(*) as cnt FROM agents WHERE status = 'active'").fetchone()["cnt"]
 
+            # ----------------------------------------------------------------
+            # 5b. POA&M / STIG open-closed counts for the home bar chart
+            # live.js renders #chart-compliance from d.compliance.poam / d.compliance.stig
+            # ----------------------------------------------------------------
+            poam_open = 0
+            poam_closed = 0
+            try:
+                poam_row = conn.execute(
+                    "SELECT "
+                    "SUM(CASE WHEN status IN ('open', 'in_progress') THEN 1 ELSE 0 END) as open_cnt, "
+                    "SUM(CASE WHEN status IN ('completed', 'accepted_risk') THEN 1 ELSE 0 END) as closed_cnt "
+                    "FROM poam_items"
+                ).fetchone()
+                poam_open = int(poam_row["open_cnt"] or 0)
+                poam_closed = int(poam_row["closed_cnt"] or 0)
+            except Exception:
+                pass
+
+            stig_open = 0
+            stig_closed = 0
+            try:
+                stig_row = conn.execute(
+                    "SELECT "
+                    "SUM(CASE WHEN status = 'Open' THEN 1 ELSE 0 END) as open_cnt, "
+                    "SUM(CASE WHEN status IN ('NotAFinding', 'Not_Applicable') THEN 1 ELSE 0 END) as closed_cnt "
+                    "FROM stig_findings"
+                ).fetchone()
+                stig_open = int(stig_row["open_cnt"] or 0)
+                stig_closed = int(stig_row["closed_cnt"] or 0)
+            except Exception:
+                pass
+
             return jsonify(
                 {
                     "task_statuses": [dict(r) for r in task_statuses],
@@ -2912,6 +3154,8 @@ def create_app() -> Flask:
                     "compliance": {
                         "canvases": canvases_with_oracle,
                         "overall_score": overall_score,
+                        "poam": {"open": poam_open, "closed": poam_closed},
+                        "stig": {"open": stig_open, "closed": stig_closed},
                     },
                     "agent_health": {
                         "total": total_agents,
@@ -2934,91 +3178,90 @@ def create_app() -> Flask:
             return jsonify({"canvases": _cached_entry["data"]})
 
         _TREND_CANVASES = [
-            (
-                "Security",
-                BASE_DIR / "data" / "security_canvas.db",
-                "sc_assessments",
-                "risk_score",
-                "ran_at",
-                "inverted",
-            ),
+            ("Security", "tools.security_canvas.db.init_db", "sc_assessments", "risk_score", "ran_at", "inverted"),
             ("Network", None, None, None, None, "skip"),
             ("Pipeline", None, None, None, None, "skip"),
-            ("Infra", BASE_DIR / "data" / "infra_canvas.db", "idc_assessments", "score", "created_at", "direct"),
-            ("Data", BASE_DIR / "data" / "data_canvas.db", "dd_assessments", "score", "created_at", "direct"),
-            ("Boundary", BASE_DIR / "data" / "boundary_canvas.db", "bd_assessments", "score", "created_at", "direct"),
-            (
-                "Observability",
-                BASE_DIR / "data" / "observability_canvas.db",
-                "od_assessments",
-                "score",
-                "created_at",
-                "direct",
-            ),
-            (
-                "Agentic AI",
-                BASE_DIR / "data" / "agentic_ai_canvas.db",
-                "aadc_assessments",
-                "score",
-                "created_at",
-                "direct",
-            ),
-            ("AI/ML", BASE_DIR / "data" / "aiml_canvas.db", "aiml_assessments", "score", "created_at", "direct"),
-            ("QDC", BASE_DIR / "data" / "qdc_canvas.db", "qdc_assessments", "score", "created_at", "direct"),
+            ("Infra", "tools.infra_canvas.db.init_db", "idc_assessments", "score", "created_at", "direct"),
+            ("Data", "tools.data_canvas.db.init_db", "dd_assessments", "score", "created_at", "direct"),
+            ("Boundary", "tools.boundary_canvas.db.init_db", "bd_assessments", "score", "created_at", "direct"),
+            ("Observability", "tools.observability_canvas.db.init_db", "od_assessments", "score", "created_at", "direct"),
+            ("Agentic AI", "tools.agentic_ai_canvas.db.init_db", "aadc_assessments", "score", "created_at", "direct"),
+            ("AI/ML", "tools.aiml_canvas.db.init_db", "aiml_assessments", "score", "created_at", "direct"),
+            ("QDC", "tools.qdc_canvas.db.init_db", "qdc_assessments", "score", "created_at", "direct"),
             ("Migration", None, None, None, None, "skip"),
             ("GovLift", None, None, None, None, "skip"),
         ]
 
+        def _trend_canvas_conn(module_name):
+            if not module_name:
+                return None
+            try:
+                mod = importlib.import_module(module_name)
+                cconn = mod.get_connection()
+                try:
+                    cconn.set_security_context(None)  # rls-bypass: canvas tables lack tenant_id/classification; use module-level canvas connection with RLS disabled
+                except Exception:
+                    pass
+                return cconn
+            except Exception:
+                return None
+
+        _cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+
         results = []
-        for canvas_name, db_path, table, score_col, ts_col, mode in _TREND_CANVASES:
-            if mode == "skip" or db_path is None or not db_path.exists():
+        for canvas_name, module_name, table, score_col, ts_col, mode in _TREND_CANVASES:
+            if mode == "skip" or not module_name:
+                results.append({"name": canvas_name, "scores": [], "direction": "flat", "delta": 0.0})
+                continue
+            cconn = _trend_canvas_conn(module_name)
+            if not cconn:
                 results.append({"name": canvas_name, "scores": [], "direction": "flat", "delta": 0.0})
                 continue
             try:
-                cconn = get_connection(str(db_path))
-                try:
-                    # score_col/ts_col/table come from _TREND_CANVASES constant
-                    # defined above — a module-internal whitelist of 7-tuples,
-                    # not user input. Safe to interpolate.
-                    rows = cconn.execute(
-                        f"SELECT {score_col} as raw_score, DATE({ts_col}) as day "  # nosec B608 -- whitelist from _TREND_CANVASES
-                        f"FROM {table} "  # nosec B608
-                        f"WHERE {ts_col} >= DATE('now', '-30 days') "  # nosec B608
-                        f"ORDER BY {ts_col} DESC LIMIT 30"  # nosec B608
-                    ).fetchall()
-                    scores = []
-                    for r in rows:
-                        raw = float(r["raw_score"] or 0)
-                        s = round(max(0.0, 100.0 - raw), 1) if mode == "inverted" else round(raw, 1)
-                        scores.append({"score": s, "date": r["day"]})
-                    # Direction: compare latest to oldest in window (up to 7 days ago)
-                    direction = "flat"
-                    delta = 0.0
-                    if len(scores) >= 2:
-                        latest = scores[0]["score"]
-                        oldest = scores[-1]["score"]
-                        delta = round(latest - oldest, 1)
-                        if delta >= 2.0:
-                            direction = "up"
-                        elif delta <= -2.0:
-                            direction = "down"
-                    results.append({"name": canvas_name, "scores": scores, "direction": direction, "delta": delta})
-                finally:
-                    cconn.close()
+                ph = sql_placeholder(cconn)
+                rows = cconn.execute(
+                    f"SELECT {score_col} as raw_score, DATE({ts_col}) as day "  # nosec B608 -- whitelist from _TREND_CANVASES
+                    f"FROM {table} "  # nosec B608
+                    f"WHERE {ts_col} >= {ph} "  # nosec B608
+                    f"ORDER BY {ts_col} DESC LIMIT 30",  # nosec B608
+                    (_cutoff,),
+                ).fetchall()
+                scores = []
+                for r in rows:
+                    raw = float(r["raw_score"] or 0)
+                    s = round(max(0.0, 100.0 - raw), 1) if mode == "inverted" else round(raw, 1)
+                    scores.append({"score": s, "date": r["day"]})
+                direction = "flat"
+                delta = 0.0
+                if len(scores) >= 2:
+                    latest = scores[0]["score"]
+                    oldest = scores[-1]["score"]
+                    delta = round(latest - oldest, 1)
+                    if delta >= 2.0:
+                        direction = "up"
+                    elif delta <= -2.0:
+                        direction = "down"
+                results.append({"name": canvas_name, "scores": scores, "direction": direction, "delta": delta})
             except Exception:
                 results.append({"name": canvas_name, "scores": [], "direction": "flat", "delta": 0.0})
+            finally:
+                try:
+                    cconn.close()
+                except Exception:
+                    pass
 
         # ZIG trend — daily average of pillar scores from zig_maturity_scores
         try:
-            zig_db_path = BASE_DIR / "data" / "security_canvas.db"
-            if zig_db_path.exists():
-                zconn = get_connection(str(zig_db_path))
+            zconn = _trend_canvas_conn("tools.security_canvas.db.init_db")
+            if zconn:
                 try:
+                    ph = sql_placeholder(zconn)
                     rows = zconn.execute(
                         "SELECT AVG(score) * 100 as raw_score, DATE(assessment_run_at) as day "
                         "FROM zig_maturity_scores "
-                        "WHERE assessment_run_at >= DATE('now', '-30 days') "
-                        "GROUP BY DATE(assessment_run_at) ORDER BY day DESC LIMIT 30"
+                        "WHERE assessment_run_at >= %s "
+                        "GROUP BY DATE(assessment_run_at) ORDER BY day DESC LIMIT 30",
+                        (_cutoff,),
                     ).fetchall()
                     scores = [{"score": round(float(r["raw_score"] or 0), 1), "date": r["day"]} for r in rows]
                     direction, delta = "flat", 0.0
@@ -3035,28 +3278,31 @@ def create_app() -> Flask:
 
         # AI-ify trend — per-scan average composite_score grouped by day
         try:
-            aiify_db_path = BASE_DIR / "data" / "aiify_canvas.db"
-            if aiify_db_path.exists():
-                aconn = get_connection(str(aiify_db_path))
-                try:
-                    rows = aconn.execute(
-                        "SELECT AVG(s.composite_score) * 100 as raw_score, DATE(sc.created_at) as day "
-                        "FROM aiify_scores s "
-                        "JOIN aiify_opportunities o ON o.opportunity_id = s.opportunity_id "
-                        "JOIN aiify_scans sc ON sc.scan_id = o.scan_id "
-                        "WHERE sc.created_at >= DATE('now', '-30 days') "
-                        "GROUP BY DATE(sc.created_at) ORDER BY day DESC LIMIT 30"
-                    ).fetchall()
-                    scores = [{"score": round(float(r["raw_score"] or 0), 1), "date": r["day"]} for r in rows]
-                    direction, delta = "flat", 0.0
-                    if len(scores) >= 2:
-                        delta = round(scores[0]["score"] - scores[-1]["score"], 1)
-                        direction = "up" if delta >= 2.0 else "down" if delta <= -2.0 else "flat"
-                    results.append({"name": "AI-ify", "scores": scores, "direction": direction, "delta": delta})
-                finally:
-                    aconn.close()
-            else:
-                results.append({"name": "AI-ify", "scores": [], "direction": "flat", "delta": 0.0})
+            from tools.aiify.db.init_db import get_connection as _aiify_trend_cn
+            aconn = _aiify_trend_cn()
+            try:
+                aconn.set_security_context(None)  # rls-bypass: aiify canvas tables lack tenant_id/classification; use canvas connection with RLS disabled
+            except Exception:
+                pass
+            try:
+                ph = sql_placeholder(aconn)
+                rows = aconn.execute(
+                    "SELECT AVG(s.composite_score) * 100 as raw_score, DATE(sc.created_at) as day "
+                    "FROM aiify_scores s "
+                    "JOIN aiify_opportunities o ON o.opportunity_id = s.opportunity_id "
+                    "JOIN aiify_scans sc ON sc.scan_id = o.scan_id "
+                    f"WHERE sc.created_at >= {ph} "
+                    "GROUP BY DATE(sc.created_at) ORDER BY day DESC LIMIT 30",
+                    (_cutoff,),
+                ).fetchall()
+                scores = [{"score": round(float(r["raw_score"] or 0), 1), "date": r["day"]} for r in rows]
+                direction, delta = "flat", 0.0
+                if len(scores) >= 2:
+                    delta = round(scores[0]["score"] - scores[-1]["score"], 1)
+                    direction = "up" if delta >= 2.0 else "down" if delta <= -2.0 else "flat"
+                results.append({"name": "AI-ify", "scores": scores, "direction": direction, "delta": delta})
+            finally:
+                aconn.close()
         except Exception:
             results.append({"name": "AI-ify", "scores": [], "direction": "flat", "delta": 0.0})
 
@@ -3071,7 +3317,7 @@ def create_app() -> Flask:
             # STIG by severity (donut)
             stig_sev = conn.execute(
                 "SELECT severity, status, COUNT(*) as cnt "
-                "FROM stig_findings WHERE project_id = ? "
+                "FROM stig_findings WHERE project_id = %s "
                 "GROUP BY severity, status",
                 (project_id,),
             ).fetchall()
@@ -3079,7 +3325,7 @@ def create_app() -> Flask:
             # POAM by severity (bar)
             poam_sev = conn.execute(
                 "SELECT severity, status, COUNT(*) as cnt "
-                "FROM poam_items WHERE project_id = ? "
+                "FROM poam_items WHERE project_id = %s "
                 "GROUP BY severity, status",
                 (project_id,),
             ).fetchall()
@@ -3087,7 +3333,7 @@ def create_app() -> Flask:
             # Deployment history (line — status over time)
             deploys = conn.execute(
                 "SELECT DATE(created_at) as day, status, COUNT(*) as cnt "
-                "FROM deployments WHERE project_id = ? "
+                "FROM deployments WHERE project_id = %s "
                 "GROUP BY DATE(created_at), status ORDER BY day",
                 (project_id,),
             ).fetchall()
@@ -3095,7 +3341,7 @@ def create_app() -> Flask:
             # Alert trend for project
             alerts = conn.execute(
                 "SELECT DATE(created_at) as day, severity, COUNT(*) as cnt "
-                "FROM alerts WHERE project_id = ? "
+                "FROM alerts WHERE project_id = %s "
                 "GROUP BY DATE(created_at), severity ORDER BY day",
                 (project_id,),
             ).fetchall()
@@ -3254,50 +3500,50 @@ def create_app() -> Flask:
         conn = _get_db()
         try:
             # Project info
-            project = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+            project = conn.execute("SELECT * FROM projects WHERE id = %s", (project_id,)).fetchone()
             if not project:
                 return render_template("404.html", message="Project not found"), 404
             project = dict(project)
 
             # SSP documents
             ssps = conn.execute(
-                "SELECT * FROM ssp_documents WHERE project_id = ? ORDER BY created_at DESC",
+                "SELECT * FROM ssp_documents WHERE project_id = %s ORDER BY created_at DESC",
                 (project_id,),
             ).fetchall()
 
             # POAM items
             poams = conn.execute(
-                "SELECT * FROM poam_items WHERE project_id = ? ORDER BY severity, created_at DESC",
+                "SELECT * FROM poam_items WHERE project_id = %s ORDER BY severity, created_at DESC",
                 (project_id,),
             ).fetchall()
 
             # STIG findings
             stigs = conn.execute(
-                "SELECT * FROM stig_findings WHERE project_id = ? ORDER BY severity, created_at DESC",
+                "SELECT * FROM stig_findings WHERE project_id = %s ORDER BY severity, created_at DESC",
                 (project_id,),
             ).fetchall()
 
             # SBOM records
             sboms = conn.execute(
-                "SELECT * FROM sbom_records WHERE project_id = ? ORDER BY generated_at DESC",
+                "SELECT * FROM sbom_records WHERE project_id = %s ORDER BY generated_at DESC",
                 (project_id,),
             ).fetchall()
 
             # Deployments
             deployments = conn.execute(
-                "SELECT * FROM deployments WHERE project_id = ? ORDER BY created_at DESC",
+                "SELECT * FROM deployments WHERE project_id = %s ORDER BY created_at DESC",
                 (project_id,),
             ).fetchall()
 
             # Audit trail
             audit_entries = conn.execute(
-                "SELECT * FROM audit_trail WHERE project_id = ? ORDER BY created_at DESC LIMIT 50",
+                "SELECT * FROM audit_trail WHERE project_id = %s ORDER BY created_at DESC LIMIT 50",
                 (project_id,),
             ).fetchall()
 
             # Alerts
             alerts = conn.execute(
-                "SELECT * FROM alerts WHERE project_id = ? ORDER BY created_at DESC LIMIT 20",
+                "SELECT * FROM alerts WHERE project_id = %s ORDER BY created_at DESC LIMIT 20",
                 (project_id,),
             ).fetchall()
 
@@ -3413,49 +3659,10 @@ def create_app() -> Flask:
         from tools.iqe.parser import parse as _iqe_parse, IQESyntaxError as _IQESyntaxError
         from tools.iqe.executor import execute_query
 
-        _CANVAS_MAP = {
-            "ndc":        ("tools.iqe.adapters.ndc",         ["network.topologies", "network.devices", "network.objects", "network.circuits", "network.sites", "network.ai_decisions", "network.partners", "network.agreements_expiring"]),
-            "sdc":        ("tools.iqe.adapters.security",    ["attack.nodes", "attack.edges", "attack.paths", "security.ai_decisions"]),
-            "pdc":        ("tools.iqe.adapters.pipeline",    ["pipeline.snapshots", "pipeline.nodes", "pipeline.edges", "pipeline.ai_decisions"]),
-            "ddc":        ("tools.iqe.adapters.data",        ["data.lineage.edges", "data.classifications", "data.ai_decisions"]),
-            "idc":        ("tools.iqe.adapters.infra",       ["infra.resources", "infra.snapshots", "infra.ai_decisions"]),
-            "odc":        ("tools.iqe.adapters.observability", ["mitre.techniques", "mitre.coverage", "mitre.gaps", "observability.ai_decisions"]),
-            "bdc":        ("tools.iqe.adapters.bdc",         ["bdc.designs", "bdc.assessments", "bdc.isas", "bdc.alerts", "bdc.ai_decisions"]),
-            "cam":        ("tools.iqe.adapters.cam",          ["cam.projects", "cam.phases", "cam.app_components", "cam.ai_opportunities"]),
-            "mc":         ("tools.iqe.adapters.mc",          ["mc.designs", "mc.waves", "mc.assessments", "mc.ai_decisions"]),
-            "aadc":       ("tools.iqe.adapters.aadc",        ["aadc.designs", "aadc.assessments", "aadc.artifacts", "aadc.ai_decisions"]),
-            "aimc":       ("tools.iqe.adapters.aimc",        ["aimc.designs", "aimc.nodes", "aimc.assessments", "aimc.artifacts", "aimc.ai_decisions"]),
-            "ohc":        ("tools.iqe.adapters.ohc",         ["ohc.experiments", "ohc.runs", "ohc.models", "ohc.datasets", "ohc.adapters", "ohc.drift_events"]),
-            "nocc":       ("tools.iqe.adapters.nocc",        ["noc.alarms", "noc.incidents", "noc.rfcs", "noc.mops", "noc.maintenance_windows", "noc.sla_records"]),
-            "pmc":        ("tools.iqe.adapters.pmc",         ["pmc.peers", "pmc.ix_memberships", "pmc.prefixes", "pmc.peering_requests", "pmc.route_policies"]),
-            "ccc":        ("tools.iqe.adapters.ccc",         ["ccc.circuits", "ccc.cross_connects", "ccc.loa", "ccc.capacity_plans", "ccc.dwdm_spans", "ccc.xc_orders"]),
-            "dsoc":       ("tools.iqe.adapters.dsoc",        ["dsoc.flowspec_rules", "dsoc.rtbh_entries", "dsoc.scrubbing_centers", "dsoc.threats", "dsoc.mitigations", "dsoc.bgp_hijacks"]),
-            "govlift":    ("tools.iqe.adapters.govlift",     ["govlift.workloads", "govlift.waves", "govlift.migrations", "govlift.stig", "govlift.audit"]),
-            "compliance": ("tools.iqe.adapters.compliance",  ["compliance.snapshots", "compliance.controls", "compliance.violations"]),
-            "kanban":     ("tools.iqe.adapters.core_kanban", ["kanban.tasks", "kanban.epics"]),
-            "agents":        ("tools.iqe.adapters.core_agents",    ["agents.registry"]),
-            "projects":      ("tools.iqe.adapters.core_agents",    ["projects.list"]),
-            "qdc":            ("tools.iqe.adapters.qdc",            ["qdc.designs", "qdc.assessments", "qdc.gate_results", "qdc.ai_decisions"]),
-            "ai_observatory": ("tools.iqe.adapters.ai_observatory", ["observatory.decisions", "observatory.confabulation_flags"]),
-            "ontology":      ("tools.iqe.adapters.ontology",       ["ontology.classes", "ontology.closure", "ontology.alignments"]),
-            "cache_savings": ("tools.iqe.adapters.cache_savings",  ["cache.stats", "cache.entries"]),
-            "strategos":      ("tools.iqe.adapters.strategos",       ["strategos.signals", "strategos.conflict_events", "strategos.leadership_briefs", "strategos.sio_assessments"]),
-            "supply_chain":   ("tools.iqe.adapters.supply_chain",    ["supply_chain.vendors", "supply_chain.scrm_risks", "supply_chain.cve_triage", "supply_chain.isa_agreements"]),
-            "aiify":            ("tools.iqe.adapters.aiify", ["aiify.opportunities", "aiify.scans", "aiify.roadmaps", "aiify.posture"]),
-            "aisg":             ("tools.iqe.adapters.aisg",  ["aisg.roadmaps", "aisg.skills", "aisg.roi", "aisg.patterns"]),
-            "dic":              ("tools.iqe.adapters.dic",   ["dic.drift_events", "dic.regen_queue", "dic.ssp_fragments"]),
-            "integrity":        ("tools.iqe.adapters.integrity", ["integrity.assessments", "integrity.capabilities", "integrity.findings", "integrity.verdicts"]),
-            "demo_runner":    ("tools.iqe.adapters.demo_runner",     ["demo_runner.runs", "demo_runner.scenarios", "demo_runner.results"]),
-            "sdc_demo":       ("tools.iqe.adapters.sdc_demo",        ["sdc_demo.runs", "sdc_demo.scenarios", "sdc_demo.threat_summary", "sdc_demo.workflow_steps"]),
-            "innovation":     ("tools.iqe.adapters.innovation",      ["innovation.ideas", "innovation.assessments", "innovation.pilots"]),
-            "mission_canvas": ("tools.iqe.adapters.mission_canvas",  ["mission.sessions", "mission.twins", "mission.evidence", "mission.alerts"]),
-            "govcon":         ("tools.iqe.adapters.govcon",           ["govcon.opportunities", "govcon.awards", "govcon.blackhat", "govcon.competitors"]),
-            "slides":         ("tools.iqe.adapters.slides",            ["slides.decks", "slides.slides"]),
-            "cpmp":           ("tools.iqe.adapters.cpmp",              ["cpmp.contracts", "cpmp.deliverables", "cpmp.clins", "cpmp.cpars", "cpmp.evm"]),
-            "ace":            ("tools.iqe.adapters.ace",                ["ace.instances", "ace.coworkers", "ace.messages"]),
-            "logs":           ("tools.iqe.adapters.logs",               ["logs.entries"]),
-            "foundry":        ("tools.iqe.adapters.foundry",            ["foundry.concepts", "foundry.signals", "foundry.runs", "foundry.outcomes"]),
-        }
+        _CANVAS_MAP = _REGISTRY.get_iqe_mapping()
+        # Supplement with app.py-registered canvases not in component_registry.yaml
+        _CANVAS_MAP.setdefault("updates", ("tools.iqe.adapters.updates", ["updates.releases"]))
+        _CANVAS_MAP.setdefault("logs", ("tools.iqe.adapters.logs", ["logs.entries", "logs.errors"]))
 
         data = flask_request.get_json(silent=True) or {}
         question = (data.get("question") or "").strip()
@@ -3657,14 +3864,14 @@ def create_app() -> Flask:
             session = None
             session_err = None
             try:
-                session = conn.execute("SELECT * FROM intake_sessions WHERE id = ?", (session_id,)).fetchone()
+                session = conn.execute("SELECT * FROM intake_sessions WHERE id = %s", (session_id,)).fetchone()
             except Exception as exc:
                 session_err = str(exc)
                 app.logger.warning("chat_session: intake_sessions lookup failed for %s: %s", session_id, session_err)
             if not session:
                 # Fallback: try chat_contexts directly (session may exist as a standalone context)
                 try:
-                    ctx = conn.execute("SELECT * FROM chat_contexts WHERE id = ?", (session_id,)).fetchone()
+                    ctx = conn.execute("SELECT * FROM chat_contexts WHERE id = %s", (session_id,)).fetchone()
                     if ctx:
                         # Fabricate a minimal session dict so the template can render
                         ctx_d = dict(ctx)
@@ -3685,7 +3892,7 @@ def create_app() -> Flask:
             try:
                 messages = conn.execute(
                     "SELECT turn_number, role, content, content_type, created_at "
-                    "FROM intake_conversation WHERE session_id = ? ORDER BY turn_number",
+                    "FROM intake_conversation WHERE session_id = %s ORDER BY turn_number",
                     (session_id,),
                 ).fetchall()
             except Exception as exc:
@@ -3694,7 +3901,7 @@ def create_app() -> Flask:
             auto_context_id = None
             try:
                 ctx_row = conn.execute(
-                    "SELECT id FROM chat_contexts WHERE intake_session_id = ? LIMIT 1",
+                    "SELECT id FROM chat_contexts WHERE intake_session_id = %s LIMIT 1",
                     (session_id,),
                 ).fetchone()
                 if ctx_row:
@@ -3740,7 +3947,7 @@ def create_app() -> Flask:
         conn = _get_db()
         try:
             session = conn.execute(
-                "SELECT * FROM intake_sessions WHERE id = ?", (session_id,)
+                "SELECT * FROM intake_sessions WHERE id = %s", (session_id,)
             ).fetchone()
             if not session:
                 app.logger.warning("intake_requirements_view: session %s not found", session_id)
@@ -3748,13 +3955,13 @@ def create_app() -> Flask:
             session = dict(session)
 
             reqs = conn.execute(
-                "SELECT * FROM intake_requirements WHERE session_id = ? ORDER BY priority, created_at",
+                "SELECT * FROM intake_requirements WHERE session_id = %s ORDER BY priority, created_at",
                 (session_id,),
             ).fetchall()
             reqs = [dict(r) for r in reqs]
 
             readiness_row = conn.execute(
-                "SELECT readiness_score, readiness_breakdown FROM intake_sessions WHERE id = ?",
+                "SELECT readiness_score, readiness_breakdown FROM intake_sessions WHERE id = %s",
                 (session_id,),
             ).fetchone()
         finally:
@@ -3844,7 +4051,7 @@ def create_app() -> Flask:
         conn = _get_db()
         try:
             _sess_row = conn.execute(
-                "SELECT customer_name FROM intake_sessions WHERE id = ?", (session_id,)
+                "SELECT customer_name FROM intake_sessions WHERE id = %s", (session_id,)
             ).fetchone()
             session_customer = (_sess_row["customer_name"] if _sess_row else "") or ""
         except Exception:
@@ -4202,7 +4409,7 @@ def create_app() -> Flask:
                         "FROM proposal_section_drafts d "
                         "JOIN proposal_sections s ON d.section_id = s.id "
                         "JOIN proposal_opportunities o ON s.opportunity_id = o.id "
-                        "WHERE d.id = ? ORDER BY d.created_at DESC LIMIT 1",
+                        "WHERE d.id = %s ORDER BY d.created_at DESC LIMIT 1",
                         (sec_id,),
                     ).fetchone()
                     if row:
@@ -4210,7 +4417,7 @@ def create_app() -> Flask:
                         preload_title = row["opp_title"]
                 elif opp_id:
                     opp = conn.execute(
-                        "SELECT title FROM proposal_opportunities WHERE id = ?", (opp_id,)
+                        "SELECT title FROM proposal_opportunities WHERE id = %s", (opp_id,)
                     ).fetchone()
                     if opp:
                         preload_title = opp["title"]
@@ -4218,7 +4425,7 @@ def create_app() -> Flask:
                         "SELECT d.draft_content, s.title as section_title, s.section_number "
                         "FROM proposal_section_drafts d "
                         "JOIN proposal_sections s ON d.section_id = s.id "
-                        "WHERE s.opportunity_id = ? "
+                        "WHERE s.opportunity_id = %s "
                         "AND d.created_at = ("
                         "  SELECT MAX(d2.created_at) FROM proposal_section_drafts d2 "
                         "  WHERE d2.section_id = d.section_id"
@@ -4591,7 +4798,7 @@ def create_app() -> Flask:
         try:
             # Fetch job
             try:
-                job = conn.execute("SELECT * FROM translation_jobs WHERE id = ?", (job_id,)).fetchone()
+                job = conn.execute("SELECT * FROM translation_jobs WHERE id = %s", (job_id,)).fetchone()
                 job = dict(job) if job else None
             except Exception:
                 job = None
@@ -4605,7 +4812,7 @@ def create_app() -> Flask:
                     """SELECT unit_name, unit_kind, source_file, status,
                               source_complexity, target_complexity,
                               repair_count, candidate_selected, created_at
-                       FROM translation_units WHERE job_id = ?
+                       FROM translation_units WHERE job_id = %s
                        ORDER BY created_at""",
                     (job_id,),
                 ).fetchall()
@@ -4617,7 +4824,7 @@ def create_app() -> Flask:
             try:
                 validations = conn.execute(
                     """SELECT check_type, passed, score, findings, created_at
-                       FROM translation_validations WHERE job_id = ?
+                       FROM translation_validations WHERE job_id = %s
                        ORDER BY created_at""",
                     (job_id,),
                 ).fetchall()
@@ -4630,7 +4837,7 @@ def create_app() -> Flask:
                 deps = conn.execute(
                     """SELECT source_import, target_import, mapping_source,
                               confidence, domain
-                       FROM translation_dependency_mappings WHERE job_id = ?
+                       FROM translation_dependency_mappings WHERE job_id = %s
                        ORDER BY domain, source_import""",
                     (job_id,),
                 ).fetchall()
@@ -4972,7 +5179,7 @@ def create_app() -> Flask:
                 try:
                     total = conn.execute(f"SELECT COUNT(*) as cnt FROM {table}").fetchone()["cnt"]  # nosec B608 -- table/column names are internal constants, not user input
                     impl = conn.execute(
-                        f"SELECT COUNT(*) as cnt FROM {table} WHERE {col} = ?",  # nosec B608 -- table/column from internal frameworks list, not user input
+                        f"SELECT COUNT(*) as cnt FROM {table} WHERE {col} = %s",  # nosec B608 -- table/column from internal frameworks list, not user input
                         (val,),
                     ).fetchone()["cnt"]
                     result["frameworks"].append({"name": name, "total": total, "implemented": impl, "status": "Active"})
@@ -4981,7 +5188,7 @@ def create_app() -> Flask:
                     try:
                         total = conn.execute("SELECT COUNT(*) as cnt FROM project_controls").fetchone()["cnt"]
                         impl = conn.execute(
-                            "SELECT COUNT(*) as cnt FROM project_controls WHERE implementation_status = ?",
+                            "SELECT COUNT(*) as cnt FROM project_controls WHERE implementation_status = %s",
                             (val,),
                         ).fetchone()["cnt"]
                         result["frameworks"].append({"name": name, "total": total, "implemented": impl, "status": "Active"})
@@ -5091,10 +5298,10 @@ def create_app() -> Flask:
                     ).fetchone()[0]
                     for family, _ in NIST_FAMILIES:
                         total = sc.execute(
-                            "SELECT COUNT(*) FROM sc_controls WHERE control_family = ?", (family,)
+                            "SELECT COUNT(*) FROM sc_controls WHERE control_family = %s", (family,)
                         ).fetchone()[0]
                         impl = sc.execute(
-                            "SELECT COUNT(*) FROM sc_controls WHERE control_family = ?"
+                            "SELECT COUNT(*) FROM sc_controls WHERE control_family = %s"
                             " AND implementation_status IN ('implemented','tested')",
                             (family,),
                         ).fetchone()[0]
@@ -5272,12 +5479,12 @@ def create_app() -> Flask:
             with get_connection(db_path=str(DB_PATH)) as mc:
                 for family, _ in NIST_FAMILIES:
                     total = mc.execute(
-                        "SELECT COUNT(*) as cnt FROM project_controls WHERE control_id LIKE ?",
+                        "SELECT COUNT(*) as cnt FROM project_controls WHERE control_id LIKE %s",
                         (f"{family}-%",),
                     ).fetchone()["cnt"]
                     impl = mc.execute(
                         "SELECT COUNT(*) as cnt FROM project_controls"
-                        " WHERE control_id LIKE ? AND implementation_status = 'implemented'",
+                        " WHERE control_id LIKE %s AND implementation_status = 'implemented'",
                         (f"{family}-%",),
                     ).fetchone()["cnt"]
                     if total > 0:
@@ -5436,7 +5643,7 @@ def create_app() -> Flask:
             coas = [
                 dict(r)
                 for r in conn.execute(
-                    "SELECT * FROM coa_definitions WHERE simulation_scenario_id = ? ORDER BY coa_type",
+                    "SELECT * FROM coa_definitions WHERE simulation_scenario_id = %s ORDER BY coa_type",
                     (scenario_id,),
                 ).fetchall()
             ]
@@ -5451,7 +5658,7 @@ def create_app() -> Flask:
         try:
             conn = _get_db()
             conn.execute(
-                "UPDATE coa_definitions SET status = 'selected', selected_at = datetime('now') WHERE id = ?", (coa_id,)
+                "UPDATE coa_definitions SET status = 'selected', selected_at = datetime('now') WHERE id = %s", (coa_id,)
             )
             conn.commit()
             conn.close()
@@ -5464,7 +5671,7 @@ def create_app() -> Flask:
         """Reject a COA."""
         try:
             conn = _get_db()
-            conn.execute("UPDATE coa_definitions SET status = 'rejected' WHERE id = ?", (coa_id,))
+            conn.execute("UPDATE coa_definitions SET status = 'rejected' WHERE id = %s", (coa_id,))
             conn.commit()
             conn.close()
             return jsonify({"status": "rejected", "coa_id": coa_id})
@@ -5986,7 +6193,7 @@ def create_app() -> Flask:
             conn = _cmap_conn()
             _pg = getattr(conn, "_backend", "sqlite") == "postgresql"
             stats["total"] = (conn.execute(
-                "SELECT COUNT(*) AS n FROM kg_nodes WHERE graph_id = ?",
+                "SELECT COUNT(*) AS n FROM kg_nodes WHERE graph_id = %s",
                 (_COMPONENTS_MAP_GRAPH_ID,),
             ).fetchone() or {}).get("n", 0)
             if _pg:
@@ -5994,7 +6201,7 @@ def create_app() -> Flask:
                     "SELECT "
                     "SUM(CASE WHEN (properties::jsonb)->>'enabled' = 'false' THEN 1 ELSE 0 END) AS dis, "
                     "SUM(CASE WHEN (properties::jsonb)->>'enabled' != 'false' THEN 1 ELSE 0 END) AS en "
-                    "FROM kg_nodes WHERE graph_id = ?",
+                    "FROM kg_nodes WHERE graph_id = %s",
                     (_COMPONENTS_MAP_GRAPH_ID,),
                 ).fetchone() or {}
             else:
@@ -6002,7 +6209,7 @@ def create_app() -> Flask:
                     "SELECT "
                     "SUM(CASE WHEN json_extract(properties, '$.enabled') = 'false' THEN 1 ELSE 0 END) AS dis, "
                     "SUM(CASE WHEN json_extract(properties, '$.enabled') != 'false' THEN 1 ELSE 0 END) AS en "
-                    "FROM kg_nodes WHERE graph_id = ?",
+                    "FROM kg_nodes WHERE graph_id = %s",
                     (_COMPONENTS_MAP_GRAPH_ID,),
                 ).fetchone() or {}
             stats["enabled"] = int(row.get("en") or stats["total"])
@@ -6364,7 +6571,7 @@ def create_app() -> Flask:
             # component graph hasn't been indexed yet, and gives the
             # coherence_checker's api_wiring rule a visible DB call.
             _graph_row = conn.execute(
-                "SELECT COUNT(*) AS cnt FROM kg_nodes WHERE graph_id = ?",
+                "SELECT COUNT(*) AS cnt FROM kg_nodes WHERE graph_id = %s",
                 (_COMPONENTS_MAP_GRAPH_ID,),
             ).fetchone()
             graph_node_count = dict(_graph_row).get("cnt", 0) if _graph_row else 0
@@ -6501,7 +6708,7 @@ def create_app() -> Flask:
             # user_id. Keep user_id out of the INSERT entirely.
             conn.execute(
                 "INSERT INTO icdev_qa_sessions (id, title, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s)",
                 (session_id, title, now, now),
             )
             conn.commit()
@@ -6515,7 +6722,7 @@ def create_app() -> Flask:
         try:
             _ensure_ask_icdev_tables(conn)
             row = conn.execute(
-                "SELECT id, title, created_at, updated_at FROM icdev_qa_sessions WHERE id = ?",
+                "SELECT id, title, created_at, updated_at FROM icdev_qa_sessions WHERE id = %s",
                 (session_id,),
             ).fetchone()
             if not row:
@@ -6523,7 +6730,7 @@ def create_app() -> Flask:
             session = dict(row)
             rows = conn.execute(
                 "SELECT id, turn, role, content, citations_json, created_at "
-                "FROM icdev_qa_messages WHERE session_id = ? ORDER BY turn ASC",
+                "FROM icdev_qa_messages WHERE session_id = %s ORDER BY turn ASC",
                 (session_id,),
             ).fetchall()
             messages = []
@@ -6544,8 +6751,8 @@ def create_app() -> Flask:
         conn = _get_db()
         try:
             _ensure_ask_icdev_tables(conn)
-            conn.execute("DELETE FROM icdev_qa_messages WHERE session_id = ?", (session_id,))
-            conn.execute("DELETE FROM icdev_qa_sessions WHERE id = ?", (session_id,))
+            conn.execute("DELETE FROM icdev_qa_messages WHERE session_id = %s", (session_id,))
+            conn.execute("DELETE FROM icdev_qa_sessions WHERE id = %s", (session_id,))
             conn.commit()
             return jsonify({"deleted": session_id})
         finally:
@@ -6566,7 +6773,7 @@ def create_app() -> Flask:
             _ensure_ask_icdev_tables(conn)
             # Verify session exists
             session_row = conn.execute(
-                "SELECT id, title FROM icdev_qa_sessions WHERE id = ?",
+                "SELECT id, title FROM icdev_qa_sessions WHERE id = %s",
                 (session_id,),
             ).fetchone()
             if not session_row:
@@ -6575,7 +6782,7 @@ def create_app() -> Flask:
             # Get next turn number
             row = conn.execute(
                 "SELECT COALESCE(MAX(turn), -1) AS max_turn FROM icdev_qa_messages "
-                "WHERE session_id = ?",
+                "WHERE session_id = %s",
                 (session_id,),
             ).fetchone()
             next_turn = (dict(row).get("max_turn", -1) + 1) if row else 0
@@ -6587,7 +6794,7 @@ def create_app() -> Flask:
             conn.execute(
                 "INSERT INTO icdev_qa_messages "
                 "(id, session_id, turn, role, content, citations_json, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
                 (user_msg_id, session_id, next_turn, "user", user_content, "{}", now),
             )
             conn.commit()
@@ -6645,7 +6852,7 @@ def create_app() -> Flask:
             conn.execute(
                 "INSERT INTO icdev_qa_messages "
                 "(id, session_id, turn, role, content, citations_json, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
                 (
                     assistant_msg_id,
                     session_id,
@@ -6657,7 +6864,7 @@ def create_app() -> Flask:
                 ),
             )
             conn.execute(
-                "UPDATE icdev_qa_sessions SET updated_at = ? WHERE id = ?",
+                "UPDATE icdev_qa_sessions SET updated_at = %s WHERE id = %s",
                 (datetime.now(timezone.utc).isoformat(), session_id),
             )
             conn.commit()
@@ -6781,13 +6988,13 @@ def create_app() -> Flask:
         examples = []
         try:
             conn = _get_db()
-            row = conn.execute("SELECT * FROM ft_datasets WHERE id = ?", (dataset_id,)).fetchone()
+            row = conn.execute("SELECT * FROM ft_datasets WHERE id = %s", (dataset_id,)).fetchone()
             if row:
                 dataset = dict(row)
             examples = [
                 dict(r)
                 for r in conn.execute(
-                    "SELECT * FROM ft_dataset_examples WHERE dataset_id = ? ORDER BY id DESC LIMIT 200",
+                    "SELECT * FROM ft_dataset_examples WHERE dataset_id = %s ORDER BY id DESC LIMIT 200",
                     (dataset_id,),
                 ).fetchall()
             ]
@@ -6811,7 +7018,7 @@ def create_app() -> Flask:
                 examples = [
                     dict(r)
                     for r in conn.execute(
-                        "SELECT * FROM ft_dataset_examples WHERE dataset_id = ? ORDER BY id DESC LIMIT 200",
+                        "SELECT * FROM ft_dataset_examples WHERE dataset_id = %s ORDER BY id DESC LIMIT 200",
                         (selected_dataset_id,),
                     ).fetchall()
                 ]
@@ -6844,7 +7051,7 @@ def create_app() -> Flask:
         loss_history = []
         try:
             conn = _get_db()
-            row = conn.execute("SELECT * FROM ft_training_jobs WHERE id = ?", (job_id,)).fetchone()
+            row = conn.execute("SELECT * FROM ft_training_jobs WHERE id = %s", (job_id,)).fetchone()
             if row:
                 job = dict(row)
                 try:
@@ -6854,7 +7061,7 @@ def create_app() -> Flask:
             events = [
                 dict(r)
                 for r in conn.execute(
-                    "SELECT * FROM ft_training_job_events WHERE job_id = ? ORDER BY created_at DESC",
+                    "SELECT * FROM ft_training_job_events WHERE job_id = %s ORDER BY created_at DESC",
                     (job_id,),
                 ).fetchall()
             ]
@@ -6887,20 +7094,20 @@ def create_app() -> Flask:
         promotions = []
         try:
             conn = _get_db()
-            row = conn.execute("SELECT * FROM ft_model_versions WHERE id = ?", (model_id,)).fetchone()
+            row = conn.execute("SELECT * FROM ft_model_versions WHERE id = %s", (model_id,)).fetchone()
             if row:
                 model = dict(row)
             evaluations = [
                 dict(r)
                 for r in conn.execute(
-                    "SELECT * FROM ft_evaluations WHERE model_version_id = ? ORDER BY evaluated_at DESC",
+                    "SELECT * FROM ft_evaluations WHERE model_version_id = %s ORDER BY evaluated_at DESC",
                     (model_id,),
                 ).fetchall()
             ]
             promotions = [
                 dict(r)
                 for r in conn.execute(
-                    "SELECT * FROM ft_promotion_log WHERE model_version_id = ? ORDER BY created_at DESC",
+                    "SELECT * FROM ft_promotion_log WHERE model_version_id = %s ORDER BY created_at DESC",
                     (model_id,),
                 ).fetchall()
             ]
@@ -7193,7 +7400,7 @@ def create_app() -> Flask:
         try:
             conn = _get_db()
             row = conn.execute(
-                "SELECT id, body_markdown, readability_score FROM pulse_posts WHERE id = ?",
+                "SELECT id, body_markdown, readability_score FROM pulse_posts WHERE id = %s",
                 (post_id,),
             ).fetchone()
             conn.close()
@@ -7214,8 +7421,8 @@ def create_app() -> Flask:
                     if result.get("status") == "evaluated":
                         conn2 = _get_db()
                         conn2.execute(
-                            "UPDATE pulse_posts SET judge_color = ?, judge_composite = ?, "
-                            "judge_combined = ? WHERE id = ?",
+                            "UPDATE pulse_posts SET judge_color = %s, judge_composite = %s, "
+                            "judge_combined = %s WHERE id = %s",
                             (
                                 result["color_rating"]["color"],
                                 result["composite_score"],
@@ -7420,7 +7627,7 @@ def create_app() -> Flask:
             permanent = flask_request.args.get("permanent", "false").lower() == "true"
             if permanent:
                 with _get_db() as conn:
-                    conn.execute("DELETE FROM pulse_posts WHERE id = ?", (post_id,))
+                    conn.execute("DELETE FROM pulse_posts WHERE id = %s", (post_id,))
                     conn.commit()
                 return jsonify({"status": "deleted", "post_id": post_id, "permanent": True})
             now = datetime.now(timezone.utc).isoformat()
@@ -7991,7 +8198,7 @@ def create_app() -> Flask:
             with _get_db() as conn:
                 if cap_slug:
                     rows = conn.execute(
-                        "SELECT * FROM pulse_capability_graph WHERE capability_slug = ? ORDER BY confidence DESC",
+                        "SELECT * FROM pulse_capability_graph WHERE capability_slug = %s ORDER BY confidence DESC",
                         (cap_slug,),
                     ).fetchall()
                 else:
@@ -8039,7 +8246,7 @@ def create_app() -> Flask:
 
         try:
             conn = _get_db()
-            row = conn.execute("SELECT hero_image_path FROM pulse_posts WHERE id = ?", (post_id,)).fetchone()
+            row = conn.execute("SELECT hero_image_path FROM pulse_posts WHERE id = %s", (post_id,)).fetchone()
             conn.close()
             if not row or not row["hero_image_path"]:
                 return "No image", 404
@@ -8059,7 +8266,7 @@ def create_app() -> Flask:
 
         try:
             conn = _get_db()
-            row = conn.execute("SELECT id, title, topic FROM pulse_posts WHERE id = ?", (post_id,)).fetchone()
+            row = conn.execute("SELECT id, title, topic FROM pulse_posts WHERE id = %s", (post_id,)).fetchone()
             conn.close()
             if not row:
                 return jsonify({"error": "Post not found"}), 404
@@ -8074,7 +8281,7 @@ def create_app() -> Flask:
                     if result.get("success"):
                         conn2 = _get_db()
                         conn2.execute(
-                            "UPDATE pulse_posts SET hero_image_path = ?, hero_image_method = ?, hero_image_prompt = ? WHERE id = ?",
+                            "UPDATE pulse_posts SET hero_image_path = %s, hero_image_method = %s, hero_image_prompt = %s WHERE id = %s",
                             (result["path"], result["method"], result.get("prompt", ""), pid),
                         )
                         conn2.commit()
@@ -8096,7 +8303,7 @@ def create_app() -> Flask:
         try:
             conn = _get_db()
             row = conn.execute(
-                "SELECT generated_video_path, generated_video_method FROM pulse_posts WHERE id = ?",
+                "SELECT generated_video_path, generated_video_method FROM pulse_posts WHERE id = %s",
                 (post_id,),
             ).fetchone()
             conn.close()
@@ -8122,7 +8329,7 @@ def create_app() -> Flask:
 
         try:
             conn = _get_db()
-            row = conn.execute("SELECT id, title, topic FROM pulse_posts WHERE id = ?", (post_id,)).fetchone()
+            row = conn.execute("SELECT id, title, topic FROM pulse_posts WHERE id = %s", (post_id,)).fetchone()
             conn.close()
             if not row:
                 return jsonify({"error": "Post not found"}), 404
@@ -8137,8 +8344,8 @@ def create_app() -> Flask:
                     if result.get("success"):
                         conn2 = _get_db()
                         conn2.execute(
-                            "UPDATE pulse_posts SET generated_video_path = ?, "
-                            "generated_video_method = ?, generated_video_duration = ? WHERE id = ?",
+                            "UPDATE pulse_posts SET generated_video_path = %s, "
+                            "generated_video_method = %s, generated_video_duration = %s WHERE id = %s",
                             (result["path"], result["method"], result.get("duration_sec", 0), pid),
                         )
                         conn2.commit()
@@ -8243,6 +8450,51 @@ def create_app() -> Flask:
             conn.close()
         return render_template("filesync.html", stats=stats, jobs=jobs, log_entries=log_entries)
 
+    try:
+        from tools.security.exceptions import TierAccessDenied as _TierAccessDenied
+
+        @app.errorhandler(_TierAccessDenied)
+        def tier_gate_handler(e):
+            from tools.billing.tier import get_active_tier as _get_active_tier
+            _active = _get_active_tier()
+            if flask_request.is_json or flask_request.path.startswith("/api/"):
+                return jsonify({
+                    "error": "TierAccessDenied",
+                    "canvas": e.canvas_key,
+                    "required_tier": e.required_tier,
+                    "active_tier": _active,
+                    "message": str(e),
+                }), 403
+            return render_template(
+                "errors/tier_gate.html",
+                canvas_key=e.canvas_key,
+                required_tier=e.required_tier,
+                active_tier=_active,
+            ), 403
+    except ImportError:
+        pass
+
+    @app.route("/api/license/tier", methods=["GET"])
+    def api_license_tier():
+        """Return active tier, available features, and locked features."""
+        from tools.billing.tier import get_active_tier as _gat, tier_satisfies as _ts
+        _active = _gat()
+        _available: list[str] = []
+        _locked: list[str] = []
+        try:
+            for _comp in _REGISTRY.iter_canvases():
+                if _ts(_active, _comp.min_tier):
+                    _available.append(_comp.key)
+                else:
+                    _locked.append(_comp.key)
+        except Exception:
+            pass
+        return jsonify({
+            "active_tier": _active,
+            "available_features": sorted(_available),
+            "locked_features": sorted(_locked),
+        })
+
     @app.errorhandler(401)
     def unauthorized(e):
         if flask_request.is_json or flask_request.path.startswith("/api/"):
@@ -8258,6 +8510,40 @@ def create_app() -> Flask:
     @app.errorhandler(404)
     def not_found(e):
         return render_template("404.html", message="Page not found"), 404
+
+    @app.errorhandler(500)
+    def internal_error(e):
+        if flask_request.is_json or flask_request.path.startswith("/api/"):
+            return jsonify({"error": "Internal server error", "message": str(e)}), 500
+        return render_template("500.html", message=str(e)), 500
+
+    # -------------------------------------------------------------------
+    # Health check endpoints (P2 — monitoring / load-balancer)
+    # -------------------------------------------------------------------
+
+    @app.route("/api/health")
+    def api_health():
+        try:
+            from tools.db.storage import get_connection as _gc
+            _gc().execute("SELECT 1").fetchone()
+            db_ok = True
+        except Exception:
+            db_ok = False
+        return jsonify({"status": "ok" if db_ok else "degraded", "db": db_ok})
+
+    @app.route("/api/status")
+    def api_status():
+        return jsonify({
+            "status": "running",
+            "service": "ICDEV™ Dashboard",
+            "version": "1.0",
+        })
+
+    @app.route("/robots.txt")
+    def robots_txt():
+        from flask import Response
+        body = "User-agent: *\nDisallow: /\n"
+        return Response(body, mimetype="text/plain")
 
     # -------------------------------------------------------------------
     # CLI Generator (cherry-picked from icdev main)
@@ -8744,7 +9030,7 @@ def create_app() -> Flask:
                 conn.execute(
                     "INSERT INTO contact_submissions "
                     "(id, name, email, organization, role, interest, message, status, created_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
                     (
                         sub_id,
                         name,
@@ -8799,7 +9085,7 @@ def create_app() -> Flask:
         conn = _get_db()
         try:
             conn.execute(
-                "UPDATE contact_submissions SET status = ?, notes = ?, updated_at = ? WHERE id = ?",
+                "UPDATE contact_submissions SET status = %s, notes = %s, updated_at = %s WHERE id = %s",
                 (new_status, notes, now, lead_id),
             )
             conn.commit()
@@ -8861,7 +9147,7 @@ def create_app() -> Flask:
             try:
                 conn = _get_db()
                 row = conn.execute(
-                    "SELECT * FROM genesis_runs WHERE app_key = ? ORDER BY started_at DESC LIMIT 1",
+                    "SELECT * FROM genesis_runs WHERE app_key = %s ORDER BY started_at DESC LIMIT 1",
                     (app_key,),
                 ).fetchone()
                 conn.close()
@@ -8916,7 +9202,7 @@ def create_app() -> Flask:
                 conn = _get_db()
                 conn.execute(
                     "INSERT INTO audit_trail (event_type, action, details, created_at) "
-                    "VALUES (?, ?, ?, datetime('now'))",
+                    "VALUES (%s, %s, %s, datetime('now'))",
                     ("config_changed", f"genesis_reflex:{name}", json.dumps({"app": app_key, "reflex": name})),
                 )
                 conn.commit()
@@ -8997,12 +9283,12 @@ def create_app() -> Flask:
             try:
                 if status_filter:
                     rows = conn.execute(
-                        "SELECT * FROM genesis_gkp WHERE promotion_status = ? ORDER BY created_at DESC LIMIT ?",
+                        "SELECT * FROM genesis_gkp WHERE promotion_status = %s ORDER BY created_at DESC LIMIT %s",
                         (status_filter, limit),
                     ).fetchall()
                 else:
                     rows = conn.execute(
-                        "SELECT * FROM genesis_gkp ORDER BY created_at DESC LIMIT ?",
+                        "SELECT * FROM genesis_gkp ORDER BY created_at DESC LIMIT %s",
                         (limit,),
                     ).fetchall()
                 gkps = [dict(r) for r in rows]
@@ -9035,7 +9321,7 @@ def create_app() -> Flask:
         try:
             conn = _genesis_db(app_key)
             try:
-                row = conn.execute("SELECT * FROM genesis_gkp WHERE id = ?", (gkp_id,)).fetchone()
+                row = conn.execute("SELECT * FROM genesis_gkp WHERE id = %s", (gkp_id,)).fetchone()
                 if not row:
                     return jsonify({"error": "GKP not found"}), 404
                 return jsonify(dict(row))
@@ -9055,7 +9341,7 @@ def create_app() -> Flask:
                 conn = _genesis_db(app_key)
                 try:
                     conn.execute(
-                        "UPDATE genesis_gkp SET promotion_status = 'promoted', promoted_at = datetime('now') WHERE id = ?",
+                        "UPDATE genesis_gkp SET promotion_status = 'promoted', promoted_at = datetime('now') WHERE id = %s",
                         (gkp_id,),
                     )
                     conn.commit()
@@ -9095,7 +9381,7 @@ def create_app() -> Flask:
             try:
                 conn = _genesis_db(app_key)
                 try:
-                    conn.execute("UPDATE genesis_gkp SET promotion_status = 'rejected' WHERE id = ?", (gkp_id,))
+                    conn.execute("UPDATE genesis_gkp SET promotion_status = 'rejected' WHERE id = %s", (gkp_id,))
                     conn.commit()
                     return jsonify({"status": "rejected", "gkp_id": gkp_id, "reason": reason})
                 finally:
@@ -9335,12 +9621,12 @@ def create_app() -> Flask:
         try:
             if severity:
                 rows = conn.execute(
-                    "SELECT * FROM review_board_findings WHERE severity = ? ORDER BY created_at DESC LIMIT ?",
+                    "SELECT * FROM review_board_findings WHERE severity = %s ORDER BY created_at DESC LIMIT %s",
                     (severity, limit),
                 ).fetchall()
             else:
                 rows = conn.execute(
-                    "SELECT * FROM review_board_findings ORDER BY created_at DESC LIMIT ?",
+                    "SELECT * FROM review_board_findings ORDER BY created_at DESC LIMIT %s",
                     (limit,),
                 ).fetchall()
             return jsonify({"findings": [dict(r) for r in rows], "count": len(rows)})
@@ -9372,7 +9658,7 @@ def create_app() -> Flask:
                 conn = _get_db()
                 conn.execute(
                     "INSERT INTO audit_trail (event_type, action, details, created_at) "
-                    "VALUES (?, ?, ?, datetime('now'))",
+                    "VALUES (%s, %s, %s, datetime('now'))",
                     ("config_changed", f"review_board_reflex:{name}", json.dumps({"returncode": result.returncode})),
                 )
                 conn.commit()
@@ -9654,27 +9940,8 @@ def create_app() -> Flask:
         context_id = flask_request.args.get("context_id", "")
         try:
             with get_connection() as conn:
-                rows = conn.execute(
-                    """
-                    SELECT DISTINCT source_id,
-                           MAX(json_extract(metadata, '$.filename')) AS filename,
-                           MAX(json_extract(metadata, '$.context_id')) AS context_id,
-                           COUNT(*) AS chunk_count,
-                           MAX(created_at) AS indexed_at
-                    FROM rag_chunks
-                    WHERE source_type = 'chat_upload'
-                      AND (? = '' OR tenant_id = ?)
-                      AND (? = '' OR json_extract(metadata, '$.context_id') = ?)
-                    GROUP BY source_id
-                    ORDER BY indexed_at DESC
-                    LIMIT 50
-                    """,
-                    (tenant_id, tenant_id, context_id, context_id),
-                ).fetchall()
-                return jsonify({
-                    "sources": [dict(r) for r in rows],
-                    "total": len(rows),
-                })
+                sources = _aggregate_chat_sources(conn, tenant_id, context_id)
+                return jsonify({"sources": sources, "total": len(sources)})
         except Exception as exc:
             app.logger.warning("api_chat_sources error: %s", exc)
             return jsonify({"sources": [], "total": 0})
@@ -9782,7 +10049,7 @@ def create_app() -> Flask:
             with get_connection() as _conn:
                 _uc_init_table(_conn)
                 _row = _conn.execute(
-                    "SELECT * FROM use_case_overrides WHERE id=?", (use_case_id,)
+                    "SELECT * FROM use_case_overrides WHERE id=%s", (use_case_id,)
                 ).fetchone()
         except Exception:
             _row = None
@@ -9805,7 +10072,7 @@ def create_app() -> Flask:
                         (id,label,description,icon,badge,agent_model,ricoas,
                          boost_threshold,system_prompt,seed_message,
                          canvas_wiring,quick_actions,updated_at,updated_by)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                     ON CONFLICT(id) DO UPDATE SET
                         label=excluded.label, description=excluded.description,
                         icon=excluded.icon, badge=excluded.badge,
@@ -9840,7 +10107,7 @@ def create_app() -> Flask:
         try:
             with get_connection() as _conn:
                 _uc_init_table(_conn)
-                _conn.execute("DELETE FROM use_case_overrides WHERE id=?", (use_case_id,))
+                _conn.execute("DELETE FROM use_case_overrides WHERE id=%s", (use_case_id,))
                 _conn.commit()
         except Exception as _exc:
             return jsonify({"error": str(_exc)}), 500
@@ -10194,7 +10461,7 @@ def create_app() -> Flask:
 
             conn = _get_db()
             conn.cursor().execute(
-                "UPDATE openclaw_imports SET trust_score = MIN(1.0, MAX(0.0, trust_score + ?)), updated_at = datetime('now') WHERE id = ?",
+                "UPDATE openclaw_imports SET trust_score = MIN(1.0, MAX(0.0, trust_score + %s)), updated_at = datetime('now') WHERE id = %s",
                 (bump, import_id),
             )
             conn.commit()
@@ -10269,7 +10536,7 @@ def create_app() -> Flask:
 
             conn = _get_db()
             conn.cursor().execute(
-                "UPDATE openclaw_imports SET trust_score = ?, updated_at = datetime('now') WHERE id = ?",
+                "UPDATE openclaw_imports SET trust_score = %s, updated_at = datetime('now') WHERE id = %s",
                 (trust_score, import_id),
             )
             conn.commit()
@@ -10541,7 +10808,7 @@ def create_app() -> Flask:
             pattern = f"{prefix_esc}{ek_esc}-%"
             rows = conn.execute(
                 "SELECT status, COUNT(*) AS n FROM kanban_tasks "
-                "WHERE id LIKE ? ESCAPE '\\' GROUP BY status",
+                "WHERE id LIKE %s ESCAPE '\\' GROUP BY status",
                 (pattern,),
             ).fetchall()
             counts = {dict(r)["status"]: int(dict(r)["n"]) for r in rows}
@@ -10565,7 +10832,7 @@ def create_app() -> Flask:
             })
         in_flight_rows = conn.execute(
             "SELECT id, title, status, priority, updated_at "
-            "FROM kanban_tasks WHERE id LIKE ? ESCAPE '\\' "
+            "FROM kanban_tasks WHERE id LIKE %s ESCAPE '\\' "
             "  AND status IN ('in_progress','scheduled') "
             "ORDER BY updated_at DESC LIMIT 15",
             (f"{prefix_esc}%",),
@@ -10573,7 +10840,7 @@ def create_app() -> Flask:
         fail_rows = conn.execute(
             "SELECT id, title, status, failure_count, "
             "       last_failure_reason, updated_at "
-            "FROM kanban_tasks WHERE id LIKE ? ESCAPE '\\' "
+            "FROM kanban_tasks WHERE id LIKE %s ESCAPE '\\' "
             "  AND last_failure_reason IS NOT NULL "
             "ORDER BY updated_at DESC LIMIT 10",
             (f"{prefix_esc}%",),
@@ -10737,7 +11004,7 @@ def create_app() -> Flask:
                     "       last_failure_reason, updated_at "
                     "FROM kanban_tasks "
                     "WHERE last_failure_reason IS NOT NULL "
-                    "  AND updated_at > ? "
+                    "  AND updated_at > %s "
                     "  AND status IN ('backlog','failed','scheduled') "
                     "ORDER BY updated_at DESC LIMIT 10",
                     (cutoff_iso,),
@@ -10964,6 +11231,29 @@ def create_app() -> Flask:
 
     if _track_request is not None:
         _track_request(app)
+
+    # ---- ECR-OBS-01: Prometheus /metrics endpoint ----
+    try:
+        from tools.observability.metrics import (
+            wire_flask_metrics as _wire_metrics,
+            registry as _prom_registry,
+            generate_latest as _gen_latest,
+            CONTENT_TYPE_LATEST as _PROM_CT,
+        )
+
+        _wire_metrics(app)
+
+        @app.route("/metrics", methods=["GET"])
+        def prometheus_metrics():
+            if _prom_registry is None or _gen_latest is None:
+                return Response("# prometheus_client not installed\n",
+                                status=503, mimetype="text/plain")
+            data = _gen_latest(_prom_registry)
+            return Response(data, status=200, mimetype=_PROM_CT)
+
+        _wire_metrics(app)
+    except Exception as _prom_exc:
+        app.logger.debug("Prometheus metrics init skipped: %s", _prom_exc)
 
     return app
 

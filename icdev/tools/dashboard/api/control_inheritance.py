@@ -75,12 +75,12 @@ def _table_exists(conn, table_name: str) -> bool:
     try:
         if getattr(conn, "_backend", "sqlite") == "postgresql":
             row = conn.execute(
-                "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = ?",
+                "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = %s",
                 (table_name,),
             ).fetchone()
             return row is not None
         row = conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=%s",
             (table_name,),
         ).fetchone()
         return row is not None
@@ -128,7 +128,7 @@ def get_model():
             control_count = 0
             if has_controls:
                 row = conn.execute(
-                    "SELECT COUNT(*) FROM compliance_controls WHERE family = ?",
+                    "SELECT COUNT(*) FROM compliance_controls WHERE family = %s",
                     (code,),
                 ).fetchone()
                 control_count = row[0] if row else 0
@@ -185,7 +185,7 @@ def get_summary():
 
                 if has_project and project_id:
                     pc = conn.execute(
-                        "SELECT implementation_status FROM project_controls WHERE project_id = ? AND control_id = ?",
+                        "SELECT implementation_status FROM project_controls WHERE project_id = %s AND control_id = %s",
                         (project_id, row["id"]),
                     ).fetchone()
                     if pc:
@@ -280,7 +280,7 @@ def list_controls():
                 pc = conn.execute(
                     "SELECT implementation_status, responsible_role "
                     "FROM project_controls "
-                    "WHERE project_id = ? AND control_id = ?",
+                    "WHERE project_id = %s AND control_id = %s",
                     (project_id, row["id"]),
                 ).fetchone()
                 if pc:
@@ -335,7 +335,7 @@ def gap_analysis():
                 pc = conn.execute(
                     "SELECT implementation_status, responsible_role "
                     "FROM project_controls "
-                    "WHERE project_id = ? AND control_id = ?",
+                    "WHERE project_id = %s AND control_id = %s",
                     (project_id, row["id"]),
                 ).fetchone()
                 if pc:

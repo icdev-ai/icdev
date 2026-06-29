@@ -91,7 +91,7 @@ def _record_advisory(context_id: str, turn_number: int):
 
 def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
     row = conn.execute(
-        "SELECT COUNT(*) as cnt FROM sqlite_master WHERE type='table' AND name=?",
+        "SELECT COUNT(*) as cnt FROM sqlite_master WHERE type='table' AND name=%s",
         (name,),
     ).fetchone()
     return (row[0] if isinstance(row, (tuple, list)) else row["cnt"]) > 0
@@ -113,7 +113,7 @@ def _check_intake_enrichment(session_id: str, project_id: str) -> dict | None:
             return None
 
         session = conn.execute(
-            "SELECT * FROM intake_sessions WHERE id = ?",
+            "SELECT * FROM intake_sessions WHERE id = %s",
             (session_id,),
         ).fetchone()
 
@@ -125,7 +125,7 @@ def _check_intake_enrichment(session_id: str, project_id: str) -> dict | None:
         # Check requirement count
         if _table_exists(conn, "intake_requirements"):
             req_count = conn.execute(
-                "SELECT COUNT(*) as cnt FROM intake_requirements WHERE session_id = ?",
+                "SELECT COUNT(*) as cnt FROM intake_requirements WHERE session_id = %s",
                 (session_id,),
             ).fetchone()
             req_n = req_count[0] if isinstance(req_count, (tuple, list)) else req_count["cnt"]
@@ -144,7 +144,7 @@ def _check_intake_enrichment(session_id: str, project_id: str) -> dict | None:
         # Check gap detection status
         if _table_exists(conn, "intake_gaps"):
             gap_count = conn.execute(
-                "SELECT COUNT(*) as cnt FROM intake_gaps WHERE session_id = ? AND severity = 'critical'",
+                "SELECT COUNT(*) as cnt FROM intake_gaps WHERE session_id = %s AND severity = 'critical'",
                 (session_id,),
             ).fetchone()
             gaps = gap_count[0] if isinstance(gap_count, (tuple, list)) else gap_count["cnt"]
@@ -154,7 +154,7 @@ def _check_intake_enrichment(session_id: str, project_id: str) -> dict | None:
         # Suggest readiness scoring if enough requirements
         if _table_exists(conn, "intake_requirements"):
             req_count = conn.execute(
-                "SELECT COUNT(*) as cnt FROM intake_requirements WHERE session_id = ?",
+                "SELECT COUNT(*) as cnt FROM intake_requirements WHERE session_id = %s",
                 (session_id,),
             ).fetchone()
             req_n = req_count[0] if isinstance(req_count, (tuple, list)) else req_count["cnt"]
@@ -168,7 +168,7 @@ def _check_intake_enrichment(session_id: str, project_id: str) -> dict | None:
         if project_id and _table_exists(conn, "boundary_assessments"):
             red_count = conn.execute(
                 """SELECT COUNT(*) as cnt FROM boundary_assessments
-                   WHERE project_id = ? AND impact_tier = 'RED'
+                   WHERE project_id = %s AND impact_tier = 'RED'
                    AND status != 'resolved'""",
                 (project_id,),
             ).fetchone()

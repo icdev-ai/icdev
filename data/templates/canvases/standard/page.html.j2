@@ -1,0 +1,54 @@
+{% raw %}{% extends "includes/_canvas_shell.html" %}
+{% block title %}{% endraw %}{{ display_name }}{% raw %}{% endblock %}
+
+{# ── Opt into a left filter pane — change to true to enable ── #}
+{% block canvas_has_left %}false{% endblock %}
+
+{% block canvas_header %}
+<h4 class="canvas-title">{% endraw %}{{ display_name }}{% raw %}</h4>
+<span class="badge bg-secondary ms-2">{% endraw %}{{ key }}{% raw %}</span>
+<div class="canvas-header-actions ms-auto">
+  <span class="text-muted small">
+    <code>{% endraw %}{{ env_flag }}{% raw %}</code>
+  </span>
+</div>
+{% endblock %}
+
+{% block canvas_left %}
+<p class="pane-section-label">Filters</p>
+{# Add filter controls here #}
+{% endblock %}
+
+{% block canvas_content %}{% endraw %}
+<div class="row g-3">
+  <div class="col-lg-8">
+    <div class="card">
+      <div class="card-header fw-semibold">{{ display_name }} Data</div>
+      <div class="card-body">
+        <div id="{{ key }}-data-container">
+          <p class="text-muted">Loading…</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-4">
+    {% raw %}{% include "includes/iqe_query_widget.html" ignore missing %}{% endraw %}
+  </div>
+</div>
+
+{% raw %}{% endblock %}
+
+{% block extra_js %}{% endraw %}
+<script>
+(function() {
+  fetch('/api/{{ key }}/stats')
+    .then(r => r.json())
+    .then(d => {
+      document.getElementById('{{ key }}-data-container').innerHTML =
+        '<pre class="small">' + JSON.stringify(d, null, 2) + '</pre>';
+    })
+    .catch(() => {});
+})();
+</script>
+{% raw %}{% endblock %}{% endraw %}

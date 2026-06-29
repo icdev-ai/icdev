@@ -1,0 +1,8 @@
+# IQE-FC-003: Completed forecast jobs
+# Shows successfully completed forecasts with sample counts.
+
+foreach j in forecast.jobs
+where j.status == "completed"
+select j.id, j.source, j.context, j.input_rows, j.model_id, j.completed_at
+order by j.completed_at desc
+limit 50

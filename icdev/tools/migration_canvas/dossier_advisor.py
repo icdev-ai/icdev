@@ -97,11 +97,11 @@ def get_guidance_for_step(
             f"""
             SELECT rc.title, rc.description, rc.severity, rc.category
             FROM   research_challenges rc
-            WHERE  rc.session_id = ?
+            WHERE  rc.session_id = %s
               AND  rc.category IN ({placeholders})
               AND  rc.composite_score IS NOT NULL
             ORDER  BY rc.composite_score DESC
-            LIMIT  ?
+            LIMIT  %s
             """,
             [TARGET_SESSION_ID, *categories, top_k],
         ).fetchall()

@@ -98,7 +98,7 @@ class XAIAssessor(BaseAssessor):
         try:
             conn = get_connection()
             count = conn.execute(
-                "SELECT COUNT(*) FROM otel_spans WHERE project_id = ?",
+                "SELECT COUNT(*) FROM otel_spans WHERE project_id = %s",
                 (project_id,),
             ).fetchone()[0]
             conn.close()
@@ -111,7 +111,7 @@ class XAIAssessor(BaseAssessor):
         try:
             conn = get_connection()
             count = conn.execute(
-                "SELECT COUNT(*) FROM otel_spans WHERE project_id = ? AND name = 'mcp.tool_call'",
+                "SELECT COUNT(*) FROM otel_spans WHERE project_id = %s AND name = 'mcp.tool_call'",
                 (project_id,),
             ).fetchone()[0]
             conn.close()
@@ -126,7 +126,7 @@ class XAIAssessor(BaseAssessor):
             # Look for spans with parent_span_id (indicates linked hierarchy)
             count = conn.execute(
                 """SELECT COUNT(*) FROM otel_spans
-                   WHERE project_id = ? AND parent_span_id IS NOT NULL""",
+                   WHERE project_id = %s AND parent_span_id IS NOT NULL""",
                 (project_id,),
             ).fetchone()[0]
             conn.close()
@@ -139,7 +139,7 @@ class XAIAssessor(BaseAssessor):
         try:
             conn = get_connection()
             count = conn.execute(
-                "SELECT COUNT(*) FROM prov_entities WHERE project_id = ?",
+                "SELECT COUNT(*) FROM prov_entities WHERE project_id = %s",
                 (project_id,),
             ).fetchone()[0]
             conn.close()
@@ -161,7 +161,7 @@ class XAIAssessor(BaseAssessor):
             cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
             count = conn.execute(
                 """SELECT COUNT(*) FROM shap_attributions
-                   WHERE project_id = ? AND analyzed_at > ?""",
+                   WHERE project_id = %s AND analyzed_at > %s""",
                 (project_id, cutoff),
             ).fetchone()[0]
             conn.close()
@@ -174,7 +174,7 @@ class XAIAssessor(BaseAssessor):
         try:
             conn = get_connection()
             count = conn.execute(
-                "SELECT COUNT(*) FROM decision_records WHERE project_id = ?",
+                "SELECT COUNT(*) FROM decision_records WHERE project_id = %s",
                 (project_id,),
             ).fetchone()[0]
             conn.close()
@@ -206,7 +206,7 @@ class XAIAssessor(BaseAssessor):
             cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
             count = conn.execute(
                 """SELECT COUNT(*) FROM ai_telemetry
-                   WHERE project_id = ? AND logged_at > ?""",
+                   WHERE project_id = %s AND logged_at > %s""",
                 (project_id, cutoff),
             ).fetchone()[0]
             conn.close()
@@ -219,7 +219,7 @@ class XAIAssessor(BaseAssessor):
         try:
             conn = get_connection()
             count = conn.execute(
-                "SELECT COUNT(*) FROM agent_trust_scores WHERE project_id = ?",
+                "SELECT COUNT(*) FROM agent_trust_scores WHERE project_id = %s",
                 (project_id,),
             ).fetchone()[0]
             conn.close()

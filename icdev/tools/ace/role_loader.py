@@ -9,7 +9,7 @@ from typing import Any
 
 import yaml
 
-_ROLES_DIR = Path(__file__).parent.parent.parent / "args" / "ace" / "roles"
+_ROLES_DIR = Path(__file__).parents[3] / "args" / "ace" / "roles"
 _REQUIRED_FIELDS = {"role_id", "steps", "trust_tier", "tool_permissions"}
 _CACHE_TTL = 60  # seconds
 
@@ -32,12 +32,13 @@ class RoleStep:
         if isinstance(raw, str):
             return cls(name=raw)
         if isinstance(raw, dict):
-            if "name" not in raw:
-                raise ValueError(f"Structured step missing 'name' field: {raw!r}")
+            name = raw.get("name") or raw.get("id")
+            if not name:
+                raise ValueError(f"Structured step missing 'name' or 'id' field: {raw!r}")
             return cls(
-                name=raw["name"],
+                name=str(name),
                 tool=raw.get("tool", ""),
-                params=dict(raw.get("params") or {}),
+                params=dict(raw.get("params") or raw.get("args") or {}),
                 condition=raw.get("condition"),
             )
         raise TypeError(f"Expected str or dict for step, got {type(raw)!r}")
@@ -60,6 +61,16 @@ class RoleTemplate:
     # Extended fields (optional — absent in legacy role YAMLs)
     canvas: str = ""
     personality: dict[str, Any] = field(default_factory=dict)
+    # Phase 2: filesystem + routine access scope (absent in legacy roles → empty)
+    folder_access: list[dict[str, Any]] = field(default_factory=list)
+    icdev_tools: list[str] = field(default_factory=list)
+    # Agent mode: when mode=="agent" the co-worker runs an agentic LLM loop
+    # (icdev.tools.llm.agent_loop) that re-prompts the LLM after each tool call
+    # until it calls `done`, instead of the fixed steps list. Defaults preserve
+    # the legacy deterministic step-list behaviour.
+    mode: str = "steps"
+    agent_tools: list[str] = field(default_factory=list)
+    max_iterations: int = 12
 
     def __post_init__(self) -> None:
         # Expose listen_topics at top level for dispatcher hot-path
@@ -89,6 +100,11 @@ class RoleTemplate:
             genesis_reflex=data.get("genesis_reflex", ""),
             canvas=data.get("canvas", ""),
             personality=dict(data.get("personality") or {}),
+            folder_access=list(data.get("folder_access") or []),
+            icdev_tools=list(data.get("icdev_tools") or []),
+            mode=str(data.get("mode", "steps")),
+            agent_tools=list(data.get("agent_tools") or []),
+            max_iterations=int(data.get("max_iterations", 12)),
         )
 
 

@@ -127,7 +127,7 @@ class ChainAnchor:
                 for r in rows:
                     try:
                         reg = conn.execute(
-                            "SELECT id FROM source_citation_registry WHERE source_table='audit_trail' AND source_record_id=?",
+                            "SELECT id FROM source_citation_registry WHERE source_table='audit_trail' AND source_record_id=%s",
                             (str(r["id"]),),
                         ).fetchone()
                         if reg:
@@ -185,7 +185,7 @@ class ChainAnchor:
         try:
             conn = self._get_db()
             conn.execute(
-                "INSERT INTO govchain_pending_operations (operation_type, payload_hash, status) VALUES (?, ?, ?)",
+                "INSERT INTO govchain_pending_operations (operation_type, payload_hash, status) VALUES (%s, %s, %s)",
                 (f"{operation_type}:{json.dumps(metadata)}", payload_hash, "pending"),
             )
             conn.commit()
@@ -287,7 +287,7 @@ class ChainAnchor:
 
                 try:
                     conn.execute(
-                        "UPDATE govchain_pending_operations SET status=?, updated_at=? WHERE id=?",
+                        "UPDATE govchain_pending_operations SET status=%s, updated_at=%s WHERE id=%s",
                         (new_status, __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(), op_id),
                     )
                     conn.commit()

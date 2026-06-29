@@ -65,7 +65,7 @@ def _get_connection(db_path=None):
 
 def _get_project(conn, project_id):
     """Load project record from database."""
-    row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+    row = conn.execute("SELECT * FROM projects WHERE id = %s", (project_id,)).fetchone()
     if not row:
         raise ValueError(f"Project '{project_id}' not found in database.")
     return dict(row)
@@ -76,7 +76,7 @@ def _log_audit_event(conn, project_id, action, details, file_path=None):
     try:
         conn.execute(
             """INSERT INTO audit_trail (project_id, event_type, actor, action, details,
-                affected_files, classification) VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                affected_files, classification) VALUES (%s, %s, %s, %s, %s, %s, %s)""",
             (
                 project_id,
                 "maintenance_audit",
@@ -278,7 +278,7 @@ def _collect_staleness_stats(conn, project_id):
     """Query dependency_inventory for staleness statistics."""
     rows = conn.execute(
         "SELECT language, package_name, current_version, latest_version, days_stale, scope "
-        "FROM dependency_inventory WHERE project_id = ?",
+        "FROM dependency_inventory WHERE project_id = %s",
         (project_id,),
     ).fetchall()
     if not rows:
@@ -337,7 +337,7 @@ def _collect_vulnerability_stats(conn, project_id):
     rows = conn.execute(
         "SELECT severity, sla_category, sla_deadline, status, fix_available, "
         "exploit_available, cve_id, title FROM dependency_vulnerabilities "
-        "WHERE project_id = ? AND status NOT IN ('remediated','false_positive')",
+        "WHERE project_id = %s AND status NOT IN ('remediated','false_positive')",
         (project_id,),
     ).fetchall()
     zero_sev = {"critical": 0, "high": 0, "medium": 0, "low": 0, "unknown": 0}
@@ -413,7 +413,7 @@ def _generate_trend_analysis(conn, project_id, lookback_days=90):
     rows = conn.execute(
         "SELECT audit_date, maintenance_score, total_dependencies, vulnerable_count, "
         "outdated_count, avg_staleness_days, critical_vulns, high_vulns "
-        "FROM maintenance_audits WHERE project_id = ? AND audit_date >= ? ORDER BY audit_date ASC",
+        "FROM maintenance_audits WHERE project_id = %s AND audit_date >= %s ORDER BY audit_date ASC",
         (project_id, cutoff),
     ).fetchall()
     previous = [
@@ -891,7 +891,7 @@ def run_maintenance_audit(project_id, output_dir=None, offline=False, db_path=No
                 "vulnerable_count, critical_vulns, high_vulns, medium_vulns, low_vulns, "
                 "avg_staleness_days, max_staleness_days, sla_compliant_pct, overdue_critical, "
                 "overdue_high, maintenance_score, languages_audited, report_path, classification) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (
                     project_id,
                     staleness_stats["total_dependencies"],

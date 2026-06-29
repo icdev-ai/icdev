@@ -35,6 +35,15 @@ tool_permissions:
 - Grep
 - Glob
 genesis_reflex: kanban
+# Phase 2: controlled filesystem + routine access scope
+folder_access:
+  - path: ".tmp/ace/"
+    mode: "rw"
+  - path: "reports/"
+    mode: "r"
+icdev_tools:
+  - "python tools/testing/health_check.py --json"
+  - "python tools/db/storage.py --health --json"
 personality:
   domain: Software Development & Engineering
   supported_verticals:
@@ -67,3 +76,11 @@ personality:
   - tdd-first
   - security-conscious
   - compliance-aware
+rules:
+  - "Never write code without first reading the relevant source files and existing tests."
+  - "Never skip the test phase — every implementation must land with corresponding tests (TDD red-green)."
+  - "Never hardcode credentials, model IDs, or environment-specific paths in source files."
+  - "Never use direct sqlite3.connect() calls; always route through get_connection() or get_canvas_connection()."
+  - "Never introduce a new dependency without verifying it is already in requirements.txt or explicitly approved."
+  - "Never commit without running ruff check and confirming zero new violations."
+  - "Never bypass coherence or SIPA gates using --no-verify or skip flags."

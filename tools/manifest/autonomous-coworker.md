@@ -80,6 +80,7 @@ python -c "from tools.ace.trust_calibrator import run_weekly_recalibration; prin
 | `eval_builder` | `tools/evolution/eval_builder.py` | Builds EvalDataset from golden JSONL / kanban history / synthetic LLM examples. |
 | `fitness` | `tools/evolution/fitness.py` | Multi-dimensional LLM judge (correctness, procedure_following, conciseness). Fast heuristic mode for inner loop; full LLM judge for holdout. |
 | `artifact_evolver` | `tools/evolution/artifact_evolver.py` | GEPA-style text mutation orchestrator. Loads skill → generates N candidates → validates (size/growth/structure gates) → scores → promotes winner as oracle_prediction. NEVER auto-merges. |
+| `skill_generator` | `tools/nova/skill_generator.py` | Auto-generate ICDEV™ skill specs from session history patterns (adapt-hermes-04). Reads memory_entries session turns via FTS5, identifies high-frequency command patterns, generates skill YAML/markdown via scanner-tier LLM (template fallback), and queues results in `agent_improvement_artifacts` for Continuous Harness SELA evaluation. | --analyze, --generate PATTERN, --list-queued, --limit N, --min-count N, --dry-run, --json | {patterns}, {skill_id, queued, spec_preview}, {queued[]} |
 | `evolution reflex` | `tools/genesis/reflexes/evolution.py` | Weekly Genesis reflex. Runs SELA on all `icdev-*.md` skills. |
 
 **Config:** `args/nova_sela_config.yaml`

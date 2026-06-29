@@ -418,7 +418,7 @@ def run(run_id: str = "", project_id: str = "default", canvas: str = _CANVAS) ->
         conn = get_connection()
         try:
             conn.execute(
-                "UPDATE ndc_topologies SET ztp_status='generated', updated_at=? WHERE id=?",
+                "UPDATE ndc_topologies SET ztp_status='generated', updated_at=%s WHERE id=%s",
                 (datetime.now(timezone.utc).isoformat(), topo["id"]),
             )
             conn.commit()

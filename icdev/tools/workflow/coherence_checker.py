@@ -52,7 +52,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+
+# Ensure the repository root is importable regardless of how this module is
+# imported (the canonical package lives under ``icdev/``, so the repo root is
+# one level higher than the naive parent-of-parent heuristic).
+_repo_root = str(PROJECT_ROOT)
+if _repo_root not in sys.path:
+    sys.path.insert(0, _repo_root)
 
 # ---------------------------------------------------------------------------
 # Result types (follows claude_dir_validator.py pattern)
@@ -3638,6 +3645,331 @@ def check_spec_discipline(changed_files: Optional[List[Path]] = None) -> Coheren
     )
 
 
+def check_component_registry(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
+    """Verify args/component_registry.yaml is loadable and internally consistent."""
+    import yaml
+
+    registry_path = PROJECT_ROOT / "args" / "component_registry.yaml"
+    expected = ["components list loadable", "no duplicate keys", "module paths exist"]
+
+    if not registry_path.exists():
+        return CoherenceCheck(
+            check_id="component_registry",
+            check_name="Component Registry Loadable",
+            status="fail",
+            expected=expected,
+            actual=["Registry file missing"],
+            missing=[str(registry_path)],
+            extra=[],
+            message=f"component_registry.yaml not found at {registry_path}",
+        )
+
+    try:
+        data = yaml.safe_load(registry_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return CoherenceCheck(
+            check_id="component_registry",
+            check_name="Component Registry Loadable",
+            status="fail",
+            expected=expected,
+            actual=[f"YAML parse error: {exc}"],
+            missing=[str(registry_path)],
+            extra=[],
+            message=f"component_registry.yaml is not valid YAML: {exc}",
+        )
+
+    components = data.get("components", []) if isinstance(data, dict) else []
+    if not components:
+        return CoherenceCheck(
+            check_id="component_registry",
+            check_name="Component Registry Loadable",
+            status="fail",
+            expected=expected,
+            actual=["components list empty or missing"],
+            missing=["components"],
+            extra=[],
+            message="component_registry.yaml has no components list",
+        )
+
+    keys = [c.get("key") for c in components if isinstance(c, dict)]
+    duplicates = {k for k in keys if keys.count(k) > 1}
+    missing_modules: List[str] = []
+    for comp in components:
+        if not isinstance(comp, dict):
+            continue
+        module = comp.get("module")
+        if not module:
+            continue
+        module_path = PROJECT_ROOT / (module.replace(".", "/") + ".py")
+        if not module_path.exists():
+            missing_modules.append(str(module_path.relative_to(PROJECT_ROOT)))
+
+    if duplicates or missing_modules:
+        return CoherenceCheck(
+            check_id="component_registry",
+            check_name="Component Registry Loadable",
+            status="fail",
+            expected=expected,
+            actual=[f"{len(keys)} components"],
+            missing=sorted(duplicates) + sorted(missing_modules),
+            extra=[],
+            message=(
+                f"Registry has {len(duplicates)} duplicate key(s) and "
+                f"{len(missing_modules)} missing module file(s)"
+            ),
+        )
+
+    return CoherenceCheck(
+        check_id="component_registry",
+        check_name="Component Registry Loadable",
+        status="pass",
+        expected=expected,
+        actual=[f"{len(keys)} components, no duplicates, module files present"],
+        missing=[],
+        extra=[],
+        message=f"component_registry.yaml loads cleanly with {len(keys)} components",
+    )
+
+
+def check_canvas_completeness(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
+    """Run the 8-point completeness gate against every registered canvas."""
+    missing_issues: List[str] = []
+    try:
+        from tools.config.component_registry import get_registry
+
+        registry = get_registry()
+        for comp in registry.iter_canvases():
+            report = registry.validate_canvas_completeness(comp.key)
+            if not report.passed:
+                for item in report.items:
+                    if not item.present:
+                        missing_issues.append(f"{comp.key}: {item.point} ({item.path or item.message})")
+    except Exception as exc:
+        return CoherenceCheck(
+            check_id="canvas_completeness",
+            check_name="Canvas Completeness Gate",
+            status="fail",
+            expected=["All canvases pass 8-point completeness gate"],
+            actual=[f"Validator error: {exc}"],
+            missing=[str(exc)],
+            extra=[],
+            message=f"Canvas completeness validator failed to run: {exc}",
+        )
+
+    if missing_issues:
+        return CoherenceCheck(
+            check_id="canvas_completeness",
+            check_name="Canvas Completeness Gate",
+            status="warn",
+            expected=["All canvases pass 8-point completeness gate"],
+            actual=[f"{len(missing_issues)} missing component(s)"],
+            missing=sorted(missing_issues),
+            extra=[],
+            message=f"{len(missing_issues)} canvas completeness issue(s) found (legacy canvases may need registry updates)",
+        )
+
+    return CoherenceCheck(
+        check_id="canvas_completeness",
+        check_name="Canvas Completeness Gate",
+        status="pass",
+        expected=["All canvases pass 8-point completeness gate"],
+        actual=["All canvases complete"],
+        missing=[],
+        extra=[],
+        message="All registered canvases pass the 8-point completeness gate",
+    )
+
+
+def check_nav_sync(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
+    """Verify base.html uses the registry-driven nav_tree context."""
+    base_html = PROJECT_ROOT / "tools" / "dashboard" / "templates" / "base.html"
+    if not base_html.exists():
+        return CoherenceCheck(
+            check_id="nav_sync",
+            check_name="Navigation Registry Sync",
+            status="fail",
+            expected=["tools/dashboard/templates/base.html renders nav_tree"],
+            actual=["base.html missing"],
+            missing=[str(base_html)],
+            extra=[],
+            message="base.html not found",
+        )
+
+    content = base_html.read_text(encoding="utf-8")
+    has_nav_tree = "nav_tree" in content
+    has_old_canvases_block = re.search(
+        r'<li class="nav-section-label">Canvases</li>', content
+    ) is not None
+
+    if not has_nav_tree:
+        return CoherenceCheck(
+            check_id="nav_sync",
+            check_name="Navigation Registry Sync",
+            status="fail",
+            expected=["base.html uses nav_tree from registry"],
+            actual=["nav_tree not referenced"],
+            missing=["nav_tree loop in base.html"],
+            extra=[],
+            message="base.html does not reference nav_tree; navigation is not registry-driven",
+        )
+
+    if has_old_canvases_block:
+        return CoherenceCheck(
+            check_id="nav_sync",
+            check_name="Navigation Registry Sync",
+            status="warn",
+            expected=["No hardcoded Canvases section"],
+            actual=["Hardcoded 'Canvases' nav-section-label still present"],
+            missing=[],
+            extra=["Hardcoded Canvases block"],
+            message="base.html still contains a hardcoded Canvases section alongside nav_tree",
+        )
+
+    return CoherenceCheck(
+        check_id="nav_sync",
+        check_name="Navigation Registry Sync",
+        status="pass",
+        expected=["base.html renders nav_tree"],
+        actual=["nav_tree referenced, no hardcoded Canvases block"],
+        missing=[],
+        extra=[],
+        message="base.html is registry-driven via nav_tree",
+    )
+
+
+def check_iqe_map_sync(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
+    """Verify every canvas with an IQE entry has a matching adapter module."""
+    try:
+        from tools.config.component_registry import get_registry
+
+        registry = get_registry()
+        mapping = registry.get_iqe_mapping()
+    except Exception as exc:
+        return CoherenceCheck(
+            check_id="iqe_map_sync",
+            check_name="IQE Adapter Map Sync",
+            status="fail",
+            expected=["Registry IQE mapping matches adapter modules"],
+            actual=[f"Could not load registry: {exc}"],
+            missing=[str(exc)],
+            extra=[],
+            message=f"Could not load component registry for IQE sync: {exc}",
+        )
+
+    missing_files: List[str] = []
+    empty_collections: List[str] = []
+    for key, (adapter_module, collections) in mapping.items():
+        module_path = PROJECT_ROOT / (adapter_module.replace(".", "/") + ".py")
+        canonical_path = PROJECT_ROOT / "icdev" / (adapter_module.replace(".", "/") + ".py")
+        if not module_path.exists() and not canonical_path.exists():
+            missing_files.append(f"{key}: {adapter_module}.py")
+            continue
+        if not collections:
+            empty_collections.append(f"{key}: collections empty in registry")
+
+    if missing_files:
+        return CoherenceCheck(
+            check_id="iqe_map_sync",
+            check_name="IQE Adapter Map Sync",
+            status="fail",
+            expected=["All registry IQE adapter modules exist and have collections"],
+            actual=[f"{len(mapping)} canvas adapter mapping(s)"],
+            missing=sorted(missing_files) + sorted(empty_collections),
+            extra=[],
+            message=(
+                f"{len(missing_files)} missing adapter file(s), "
+                f"{len(empty_collections)} empty collection list(s)"
+            ),
+        )
+
+    if empty_collections:
+        return CoherenceCheck(
+            check_id="iqe_map_sync",
+            check_name="IQE Adapter Map Sync",
+            status="warn",
+            expected=["All registry IQE adapter modules exist and have collections"],
+            actual=[f"{len(mapping)} canvas adapter mapping(s)"],
+            missing=sorted(empty_collections),
+            extra=[],
+            message=f"All adapter files exist; {len(empty_collections)} have empty collection lists",
+        )
+
+    return CoherenceCheck(
+        check_id="iqe_map_sync",
+        check_name="IQE Adapter Map Sync",
+        status="pass",
+        expected=["All registry IQE adapter modules exist and have collections"],
+        actual=[f"{len(mapping)} canvas adapter mapping(s) valid"],
+        missing=[],
+        extra=[],
+        message=f"All {len(mapping)} IQE adapter mappings are valid",
+    )
+
+
+def check_profile_sync(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
+    """Verify core_profiles.yaml is loadable and contains required profiles."""
+    import yaml
+
+    profile_path = PROJECT_ROOT / "args" / "core_profiles.yaml"
+    required = {"local-dev", "air-gap", "saas-il4", "il6-secret"}
+
+    if not profile_path.exists():
+        return CoherenceCheck(
+            check_id="profile_sync",
+            check_name="Core Profile Sync",
+            status="fail",
+            expected=sorted(required),
+            actual=["core_profiles.yaml missing"],
+            missing=[str(profile_path)],
+            extra=[],
+            message="core_profiles.yaml not found",
+        )
+
+    try:
+        data = yaml.safe_load(profile_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return CoherenceCheck(
+            check_id="profile_sync",
+            check_name="Core Profile Sync",
+            status="fail",
+            expected=sorted(required),
+            actual=[f"Parse error: {exc}"],
+            missing=[str(profile_path)],
+            extra=[],
+            message=f"core_profiles.yaml is not valid YAML: {exc}",
+        )
+
+    profiles = data.get("profiles", {}) if isinstance(data, dict) else {}
+    missing = sorted(required - set(profiles.keys()))
+
+    active = __import__("os").environ.get("ICDEV_CORE_PROFILE")
+    if active and active not in profiles:
+        missing.append(f"active profile '{active}' not found")
+
+    if missing:
+        return CoherenceCheck(
+            check_id="profile_sync",
+            check_name="Core Profile Sync",
+            status="fail",
+            expected=sorted(required),
+            actual=sorted(profiles.keys()),
+            missing=missing,
+            extra=[],
+            message=f"Missing core profile(s): {missing}",
+        )
+
+    return CoherenceCheck(
+        check_id="profile_sync",
+        check_name="Core Profile Sync",
+        status="pass",
+        expected=sorted(required),
+        actual=sorted(profiles.keys()),
+        missing=[],
+        extra=[],
+        message=f"Core profiles present: {', '.join(sorted(profiles.keys()))}",
+    )
+
+
 # ---------------------------------------------------------------------------
 # Check Registry & Orchestrator
 # ---------------------------------------------------------------------------
@@ -3671,6 +4003,11 @@ CHECK_REGISTRY = {
     "ace_yaml_listen_topics": check_ace_yaml_listen_topics,
     "skill_security": check_skill_security,
     "spec_discipline": check_spec_discipline,
+    "component_registry": check_component_registry,
+    "canvas_completeness": check_canvas_completeness,
+    "nav_sync": check_nav_sync,
+    "iqe_map_sync": check_iqe_map_sync,
+    "profile_sync": check_profile_sync,
 }
 
 
@@ -3702,6 +4039,11 @@ _FIX_REGISTRY: Dict[str, str] = {
     "security_context": "skip",  # RLS bypass documentation and wiring fixes require human judgment
     "canvas_placeholder_style": "skip",  # SQL placeholder fixes require human judgment (search+replace in SQL strings)
     "ace_yaml_listen_topics": "skip",  # YAML restructuring requires human judgment
+    "component_registry": "skip",  # registry schema issues require human editing
+    "canvas_completeness": "skip",  # missing canvas components must be created by hand
+    "nav_sync": "skip",  # template changes require human review
+    "iqe_map_sync": "skip",  # adapter wiring requires human review
+    "profile_sync": "skip",  # profile YAML changes require human review
 }
 
 

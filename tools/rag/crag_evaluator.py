@@ -557,7 +557,7 @@ class CRAGScorer:
             target_db = db_path or (BASE_DIR / "data" / "rag" / "rag_vectors.db")
             with get_connection(target_db) as conn:
                 rows = conn.execute(
-                    "SELECT COUNT(*) FROM rag_chunks WHERE content LIKE ? COLLATE NOCASE",
+                    "SELECT COUNT(*) FROM rag_chunks WHERE content LIKE %s COLLATE NOCASE",
                     (f"%{entity}%",),
                 ).fetchone()
                 return int(rows[0]) if rows else 0
@@ -832,7 +832,7 @@ class CRAGBenchmarkRunner:
                 """INSERT OR REPLACE INTO rag_evaluation_campaigns
                    (id, name, scoring_mode, test_set_path, task_type,
                     total_cases, aggregate_crag_score, status, details, completed_at)
-                   VALUES (?, ?, 'crag', ?, ?, ?, ?, 'completed', ?, ?)""",
+                   VALUES (%s, %s, 'crag', %s, %s, %s, %s, 'completed', %s, %s)""",
                 (
                     campaign_id,
                     campaign_name,
@@ -851,7 +851,7 @@ class CRAGBenchmarkRunner:
                     """INSERT OR REPLACE INTO rag_evaluation_results
                        (id, campaign_id, query, question_type, entity_popularity,
                         crag_score, answer, ground_truth, is_false_premise, details)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                     (
                         r["id"],
                         campaign_id,

@@ -1715,7 +1715,7 @@ def noc_incident_create(args: dict) -> dict:
                 conn.execute(
                     "INSERT INTO noc_incidents (incident_number, title, severity, status, "
                     "affected_circuit, affected_carrier, root_cause, sla_breach, opened_by, "
-                    "assigned_to, classification) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                    "assigned_to, classification) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                     (incident_number, title, severity, "open", affected_circuit,
                      affected_carrier, root_cause, sla_breach, opened_by, assigned_to,
                      "CUI // SP-CTI"),
@@ -1802,7 +1802,7 @@ def ccc_circuit_ingest(args: dict) -> dict:
             conn.execute(
                 "INSERT OR REPLACE INTO ccc_circuits"
                 " (circuit_id, circuit_type, carrier, bandwidth_gbps, utilization_pct, mrr_usd)"
-                " VALUES (?, ?, ?, ?, ?, ?)",
+                " VALUES (%s, %s, %s, %s, %s, %s)",
                 values,
             )
         except Exception:
@@ -2002,6 +2002,27 @@ def handle_ace_status(args: dict) -> dict:
         }
     except Exception as exc:
         logger.warning("handle_ace_status: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_ace_abort(args: dict) -> dict:
+    """Abort a running ACE co-worker instance."""
+    instance_id = args.get("instance_id", "")
+    if not instance_id:
+        return {"error": "instance_id is required"}
+    try:
+        from icdev.tools.ace.controller import ACEController
+
+        ACEController.get_instance().abort(instance_id)
+        return {"instance_id": instance_id, "state": "cancelled", "aborted": True}
+    except ImportError:
+        return {
+            "error": "ACEController not yet available (ace-runtime not shipped)",
+            "instance_id": instance_id,
+            "state": "unavailable",
+        }
+    except Exception as exc:
+        logger.warning("handle_ace_abort: %s", exc)
         return {"error": str(exc)}
 
 
@@ -2365,4 +2386,74 @@ def handle_nova_trust_summary(args: dict) -> dict:
         return {"roles": rows, "total": len(rows)}
     except Exception as exc:
         logger.warning("handle_nova_trust_summary: %s", exc)
+        return {"error": str(exc)}
+
+
+# ── PVM — Predictive Vulnerability Management ─────────────────────────────────
+
+def handle_pvm_predict_risk(args: dict) -> dict:
+    """Score one CVE advisory and write to nc_vuln_predictions."""
+    try:
+        advisory_id = int(args["advisory_id"])
+        from tools.network.vuln_predictor import predict_advisory_risk
+        return predict_advisory_risk(advisory_id)
+    except Exception as exc:
+        logger.warning("handle_pvm_predict_risk: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_pvm_predict_all(args: dict) -> dict:
+    """Score all open advisories and return predictions."""
+    try:
+        from tools.network.vuln_predictor import predict_all_open_advisories
+        results = predict_all_open_advisories()
+        return {"predictions": results, "total": len(results)}
+    except Exception as exc:
+        logger.warning("handle_pvm_predict_all: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_pvm_top_risks(args: dict) -> dict:
+    """Return top-N advisories by latest composite risk score."""
+    try:
+        limit = int(args.get("limit", 20))
+        from tools.network.vuln_predictor import get_top_risks
+        rows = get_top_risks(limit=limit)
+        return {"risks": rows, "total": len(rows)}
+    except Exception as exc:
+        logger.warning("handle_pvm_top_risks: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_pvm_map_attack_surface(args: dict) -> dict:
+    """Run NQE+CVE attack surface correlation pass."""
+    try:
+        network_id = args.get("network_id")
+        from tools.network.attack_surface_mapper import map_attack_surface
+        return map_attack_surface(network_id=network_id)
+    except Exception as exc:
+        logger.warning("handle_pvm_map_attack_surface: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_pvm_score_triage(args: dict) -> dict:
+    """4-factor Bayesian triage scoring with HITL gate."""
+    try:
+        advisory_ids = args.get("advisory_ids") or []
+        advisory_ids = [int(x) for x in advisory_ids]
+        from tools.network.vuln_triage_engine import score_advisories
+        return score_advisories(advisory_ids=advisory_ids if advisory_ids else None)
+    except Exception as exc:
+        logger.warning("handle_pvm_score_triage: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_pvm_create_patch_plan(args: dict) -> dict:
+    """Create an AI patch plan for approved advisories."""
+    try:
+        approved_by = args.get("approved_by", "mcp")
+        from tools.network.patch_planner import create_patch_plan
+        return create_patch_plan(approved_by=approved_by)
+    except Exception as exc:
+        logger.warning("handle_pvm_create_patch_plan: %s", exc)
         return {"error": str(exc)}

@@ -14,9 +14,12 @@ handles missing/invalid entries gracefully.
 
 from __future__ import annotations
 
+import contextlib
+import sqlite3
+
 import pytest
 
-from tools.config.component_registry import ComponentRegistry, get_registry, reset_registry_singleton
+from tools.config.component_registry import ComponentRegistry, get_registry, log_component_audit, reset_registry_singleton
 
 
 # ---------------------------------------------------------------------------
@@ -248,8 +251,8 @@ def test_registry_counts(registry):
     assert len(registry.list_all(kind="canvas")) == 28
     assert len(registry.list_all(kind="child_app")) == 4
     assert len(registry.list_all(kind="feature")) == 8
-    assert len(registry.list_all(kind="core_extension")) == 14
-    assert len(registry) == 54
+    assert len(registry.list_all(kind="core_extension")) == 15  # +admin_console
+    assert len(registry) == 55  # +admin_console
 
 
 def test_component_enablement_uses_primary_env_flag(registry):
@@ -327,17 +330,146 @@ def test_registry_singleton_reset():
 
 
 def test_nav_context_has_sections(registry):
-    """Navigation context groups enabled/disabled components by section."""
+    """Navigation context groups enabled/disabled components by section/label."""
     ctx = registry.get_nav_context()
     sections = ctx["sections"]
     assert "Canvases" in sections
     assert "Build" in sections
     assert "Ops" in sections
-    # Every canvas with nav.section contributes at least one item.
-    canvas_items = [item for section in sections.values() for item in section["items"]]
+    # Components are grouped by label within each section.
+    canvas_items = [
+        item
+        for section in sections.values()
+        for group in section["groups"]
+        for item in group["items"]
+    ]
     canvas_keys = {item["key"] for item in canvas_items}
     assert "dic" in canvas_keys
     assert "ndc" in canvas_keys
+
+
+def test_nav_context_links_have_required_keys(registry):
+    """Every nav link declares at least label and href."""
+    ctx = registry.get_nav_context()
+    for section in ctx["sections"].values():
+        for group in section["groups"]:
+            for item in group["items"]:
+                assert item["links"], f"{item['key']} has no nav links"
+                for link in item["links"]:
+                    assert link["label"], f"{item['key']} has a link without label"
+                    assert link["href"], f"{item['key']} has a link without href"
+
+
+def test_nav_context_default_dashboard_for_components_without_links(registry):
+    """A component with no explicit nav.links falls back to a Dashboard link."""
+    # The rag feature toggle has nav metadata but no explicit links.
+    ctx = registry.get_nav_context()
+    rag = None
+    for section in ctx["sections"].values():
+        for group in section["groups"]:
+            for item in group["items"]:
+                if item["key"] == "rag":
+                    rag = item
+    assert rag is not None
+    assert rag["links"][0]["label"] == "Dashboard"
+
+
+# ---------------------------------------------------------------------------
+# Tenant component overrides
+# ---------------------------------------------------------------------------
+
+
+def _sqlite_conn_factory(db_path):
+    """Return a get_connection-style factory bound to a SQLite file."""
+    def _factory():
+        conn = sqlite3.connect(str(db_path), check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        return contextlib.closing(conn)
+    return _factory
+
+
+def test_tenant_component_override_falls_back_to_env(icdev_db, monkeypatch):
+    """No tenant override means env/default decides enablement."""
+    reset_registry_singleton()
+    from tools.db import storage
+    monkeypatch.setattr(
+        storage, "get_connection", _sqlite_conn_factory(icdev_db)
+    )
+    env = {"ICDEV_DIC_ENABLED": "true"}
+    registry = ComponentRegistry(env=env)
+    assert registry.is_enabled("dic") is True
+    assert registry.is_enabled_for_tenant("dic", "tenant-a") is True
+    reset_registry_singleton()
+
+
+def test_tenant_component_override_can_disable_and_re_enable(icdev_db, monkeypatch):
+    """Tenant override can both disable and re-enable a component."""
+    reset_registry_singleton()
+    from tools.db import storage
+    monkeypatch.setattr(
+        storage, "get_connection", _sqlite_conn_factory(icdev_db)
+    )
+    env = {"ICDEV_DIC_ENABLED": "true"}
+    registry = ComponentRegistry(env=env)
+
+    assert registry.is_enabled_for_tenant("dic", "tenant-b") is True
+
+    registry.set_tenant_component_override(
+        "tenant-b", "dic", False, updated_by="test"
+    )
+    assert registry.is_enabled_for_tenant("dic", "tenant-b") is False
+
+    registry.set_tenant_component_override("tenant-b", "dic", True)
+    assert registry.is_enabled_for_tenant("dic", "tenant-b") is True
+
+    registry.clear_tenant_component_override("tenant-b", "dic")
+    assert registry.is_enabled_for_tenant("dic", "tenant-b") is True
+
+    overrides = registry.list_tenant_overrides("tenant-b")
+    assert not overrides
+    reset_registry_singleton()
+
+
+def test_tenant_component_override_emits_audit_log(icdev_db, monkeypatch):
+    """set_tenant_component_override and clear_tenant_component_override are audited."""
+    reset_registry_singleton()
+    from tools.db import storage
+    monkeypatch.setattr(
+        storage, "get_connection", _sqlite_conn_factory(icdev_db)
+    )
+    registry = ComponentRegistry(env={"ICDEV_DIC_ENABLED": "true"})
+
+    registry.set_tenant_component_override(
+        "tenant-c", "dic", False, updated_by="audit-tester"
+    )
+    registry.clear_tenant_component_override("tenant-c", "dic")
+
+    with _sqlite_conn_factory(icdev_db)() as conn:
+        rows = conn.execute(
+            "SELECT event_type, actor, component_key FROM component_audit_log "
+            "WHERE tenant_id = ? ORDER BY recorded_at",
+            ("tenant-c",),
+        ).fetchall()
+
+    assert len(rows) == 2
+    assert rows[0]["event_type"] == "tenant_override_set"
+    assert rows[0]["actor"] == "audit-tester"
+    assert rows[0]["component_key"] == "dic"
+    assert rows[1]["event_type"] == "tenant_override_clear"
+    assert rows[1]["component_key"] == "dic"
+    reset_registry_singleton()
+
+
+def test_log_component_audit_swallows_errors(monkeypatch):
+    """Audit failures do not propagate to callers."""
+    from tools.db import storage
+
+    def _broken_factory():
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(storage, "get_connection", _broken_factory)
+    # Should not raise.
+    log_component_audit(event_type="test", component_key="dic")
 
 
 # ---------------------------------------------------------------------------
@@ -377,8 +509,8 @@ def test_validate_canvas_completeness_info_ops_reports_items(registry):
     assert "page_template" in points
     assert "blueprint_route" in points
     assert "nav_link" in points
-    # The legacy info_ops canvas uses index.html, not page.html, so this point is expected to be absent.
-    assert points["page_template"].present is False
+    # info_ops uses index.html; the validator finds it via the legacy-name fallback scan.
+    assert points["page_template"].present is True
 
 
 def test_validate_canvas_completeness_synthetic_canvas_passes(tmp_path, monkeypatch):

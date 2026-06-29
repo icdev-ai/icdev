@@ -103,7 +103,7 @@ def add_supply_node(
             """INSERT INTO sg_supply_nodes
                (node_id, label, node_type, criticality, substitutability,
                 controlled_by, lat, lon, metadata_json, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 node_id, label, node_type, criticality, substitutability,
                 controlled_by, lat, lon,
@@ -115,7 +115,7 @@ def add_supply_node(
         conn.execute(
             """INSERT OR IGNORE INTO sg_kg_nodes
                (node_id, node_type, label, created_at)
-               VALUES (?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s)""",
             (node_id, "supply", label, now),
         )
         conn.commit()
@@ -139,13 +139,13 @@ def add_supply_edge(
     try:
         conn.execute(
             """INSERT INTO sg_supply_edges (id, source_id, target_id, edge_type, weight, created_at)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s)""",
             (edge_id, source_id, target_id, edge_type, weight, now),
         )
         # Mirror to sg_kg_edges
         conn.execute(
             """INSERT OR IGNORE INTO sg_kg_edges (id, source_id, target_id, relation, created_at)
-               VALUES (?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s)""",
             (str(uuid.uuid4()), source_id, target_id, edge_type, now),
         )
         conn.commit()
@@ -222,7 +222,7 @@ def propagate_impact_sg(node_id: str, severity: str = "critical") -> dict:
         if degraded_unit_ids:
             for uid in degraded_unit_ids:
                 row = conn.execute(
-                    "SELECT unit_name, unit_type, nation FROM sg_orbat_units WHERE id=?",
+                    "SELECT unit_name, unit_type, nation FROM sg_orbat_units WHERE id=%s",
                     (uid,),
                 ).fetchone()
                 if row:
@@ -235,7 +235,7 @@ def propagate_impact_sg(node_id: str, severity: str = "critical") -> dict:
 
         # Fetch node metadata for composite scoring inputs
         node_row = conn.execute(
-            "SELECT criticality, substitutability FROM sg_supply_nodes WHERE node_id=?",
+            "SELECT criticality, substitutability FROM sg_supply_nodes WHERE node_id=%s",
             (node_id,),
         ).fetchone()
         criticality = node_row["criticality"] if node_row else "medium"
@@ -329,7 +329,7 @@ def _persist_results(run_id: str, ranked: list[dict], computed_at: str) -> None:
                    (id, run_id, node_id, rank, blast_radius,
                     criticality_score, substitutability_inverse, composite_score,
                     affected_units_json, computed_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     str(uuid.uuid4()),
                     run_id,
@@ -364,9 +364,9 @@ def get_latest_ranked_targets(top_n: int = 10) -> list[dict]:
                       n.label, n.node_type, n.criticality, n.lat, n.lon, n.controlled_by
                FROM sg_interdiction_results r
                LEFT JOIN sg_supply_nodes n ON n.node_id = r.node_id
-               WHERE r.run_id = ?
+               WHERE r.run_id = %s
                ORDER BY r.rank
-               LIMIT ?""",
+               LIMIT %s""",
             (run["run_id"], top_n),
         ).fetchall()
         return [dict(r) for r in rows]
@@ -392,24 +392,24 @@ def write_interdicts_edge(event_id: str, supply_node_id: str) -> dict:
         # Upsert event node in KG
         conn.execute(
             """INSERT OR IGNORE INTO sg_kg_nodes (node_id, node_type, label, created_at)
-               VALUES (?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s)""",
             (event_id, "event", f"ConflictEvent:{event_id[:8]}", now),
         )
         # Upsert supply node in KG (may already exist)
         node_row = conn.execute(
-            "SELECT label FROM sg_supply_nodes WHERE node_id=?", (supply_node_id,)
+            "SELECT label FROM sg_supply_nodes WHERE node_id=%s", (supply_node_id,)
         ).fetchone()
         if node_row:
             conn.execute(
                 """INSERT OR IGNORE INTO sg_kg_nodes (node_id, node_type, label, created_at)
-                   VALUES (?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s)""",
                 (supply_node_id, "supply", node_row["label"], now),
             )
         # Write INTERDICTS edge
         conn.execute(
             """INSERT OR IGNORE INTO sg_kg_edges
                (id, source_id, target_id, relation, created_at)
-               VALUES (?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s)""",
             (edge_id, event_id, supply_node_id, "INTERDICTS", now),
         )
         conn.commit()
@@ -451,12 +451,12 @@ def auto_write_interdicts_from_conflict_events() -> int:
         conn2 = get_connection()
         try:
             exists = conn2.execute(
-                "SELECT 1 FROM sg_supply_nodes WHERE node_id=?", (target_node,)
+                "SELECT 1 FROM sg_supply_nodes WHERE node_id=%s", (target_node,)
             ).fetchone()
             if not exists:
                 continue
             already = conn2.execute(
-                "SELECT 1 FROM sg_kg_edges WHERE source_id=? AND target_id=? AND relation='INTERDICTS'",
+                "SELECT 1 FROM sg_kg_edges WHERE source_id=%s AND target_id=%s AND relation='INTERDICTS'",
                 (ev["id"], target_node),
             ).fetchone()
         finally:

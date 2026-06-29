@@ -1,0 +1,5 @@
+# NQE: Interfaces with input/output errors
+# Collection: nqe.interfaces
+foreach i in network.interfaces
+where i.counters.input_errors > 0 or i.counters.output_errors > 0
+select { i.device, i.name, i.status, i.counters.input_errors, i.counters.output_errors }

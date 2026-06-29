@@ -36,7 +36,7 @@ def refresh_leaderboard(tournament_id: int) -> list[dict]:
                AVG(COALESCE(e.innovation_score, 0.0)) AS avg_innovation
            FROM gd_ai_teams t
            LEFT JOIN gd_ai_judge_evals e ON e.team_id = t.id
-           WHERE t.tournament_id = ?
+           WHERE t.tournament_id = %s
            GROUP BY t.id
            ORDER BY t.total_score DESC""",
         (tournament_id,),
@@ -107,7 +107,7 @@ def get_round_scores(tournament_id: int) -> list[dict]:
                   e.routed_to_suggested, e.ethics_blocked
            FROM gd_ai_judge_evals e
            JOIN gd_ai_rounds r ON r.id = e.round_id
-           WHERE r.tournament_id = ?
+           WHERE r.tournament_id = %s
            ORDER BY r.round_num, e.total_score DESC""",
         (tournament_id,),
     ).fetchall()
@@ -120,7 +120,7 @@ def get_team_detail(tournament_id: int, team_key: str) -> dict[str, Any]:
 
     # Team row
     team = conn.execute(
-        "SELECT * FROM gd_ai_teams WHERE tournament_id = ? AND team_key = ?",
+        "SELECT * FROM gd_ai_teams WHERE tournament_id = %s AND team_key = %s",
         (tournament_id, team_key),
     ).fetchone()
     if not team:
@@ -131,7 +131,7 @@ def get_team_detail(tournament_id: int, team_key: str) -> dict[str, Any]:
         """SELECT r.round_num, e.*
            FROM gd_ai_judge_evals e
            JOIN gd_ai_rounds r ON r.id = e.round_id
-           WHERE r.tournament_id = ? AND e.team_key = ?
+           WHERE r.tournament_id = %s AND e.team_key = %s
            ORDER BY r.round_num""",
         (tournament_id, team_key),
     ).fetchall()
@@ -143,7 +143,7 @@ def get_team_detail(tournament_id: int, team_key: str) -> dict[str, Any]:
                   SUBSTR(a.content, 1, 300) AS content_excerpt
            FROM gd_ai_artifacts a
            JOIN gd_ai_rounds r ON r.id = a.round_id
-           WHERE r.tournament_id = ? AND a.team_key = ?
+           WHERE r.tournament_id = %s AND a.team_key = %s
            ORDER BY a.created_at DESC LIMIT 20""",
         (tournament_id, team_key),
     ).fetchall()

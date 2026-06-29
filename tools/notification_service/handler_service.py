@@ -40,6 +40,8 @@ _AGENT_ERRORS_LIMIT        = 5     # recent agent errors in incident notificatio
 _AGENT_METRICS_LIMIT       = 10    # agent metrics in incident notification
 _CMMC_GAPS_LIMIT           = 10    # CMMC practice gaps in assessment notification
 _HANDLER_ERRORS_SLICE      = 3     # narrative slice for error messages
+_MODULE_ROWS_LIMIT         = 10    # module rows in summary notifications
+_SUMMARISE_FINDINGS_COUNT  = 5     # number of findings in summary strings
 
 # ---------------------------------------------------------------------------
 # AI-ification (aiify-opp-5592): optional LLM-synthesized handler narrative.
@@ -122,10 +124,10 @@ def handle_task_status_change_notify(
     conn = get_connection()
     try:
         task = conn.execute(
-            "SELECT id, title, actor, updated_at FROM kanban_tasks WHERE id = ?", (task_id,)
+            "SELECT id, title, actor, updated_at FROM kanban_tasks WHERE id = %s", (task_id,)
         ).fetchone()
         history = conn.execute(
-            "SELECT event, created_at FROM audit_trail WHERE resource_id = ? "
+            "SELECT event, created_at FROM audit_trail WHERE resource_id = %s "
             f"ORDER BY created_at DESC LIMIT {_TASK_AUDIT_HISTORY_LIMIT}", (task_id,)
         ).fetchall()
         rendered = render_template(
@@ -154,10 +156,10 @@ def handle_canvas_assessment_handler(canvas_id: str, recipient: str, ai_narrativ
     try:
         assessment = conn.execute(
             "SELECT id, score, cat1_findings, created_at FROM canvas_assessments "
-            f"WHERE design_id = ? ORDER BY created_at DESC LIMIT {_CANVAS_ASSESSMENT_LIMIT}", (canvas_id,)
+            f"WHERE design_id = %s ORDER BY created_at DESC LIMIT {_CANVAS_ASSESSMENT_LIMIT}", (canvas_id,)
         ).fetchone()
         design = conn.execute(
-            "SELECT name, classification FROM canvas_designs WHERE id = ?", (canvas_id,)
+            "SELECT name, classification FROM canvas_designs WHERE id = %s", (canvas_id,)
         ).fetchone()
         rendered = render_template(
             "handlers/canvas_assessment.html", assessment=assessment, design=design
@@ -186,10 +188,10 @@ def handle_oracle_prediction_handler(prediction_id: str, recipient: str, ai_narr
     try:
         prediction = conn.execute(
             "SELECT id, title, severity, confidence, lens_id, created_at "
-            "FROM oracle_predictions WHERE id = ?", (prediction_id,)
+            "FROM oracle_predictions WHERE id = %s", (prediction_id,)
         ).fetchone()
         lens = conn.execute(
-            "SELECT name, horizon_days FROM oracle_lenses WHERE lens_id = ?",
+            "SELECT name, horizon_days FROM oracle_lenses WHERE lens_id = %s",
             ((prediction or {}).get("lens_id", ""),)
         ).fetchone()
         rendered = render_template(
@@ -220,15 +222,15 @@ def handle_genesis_reflex_handler(
     conn = get_connection()
     try:
         reflex = conn.execute(
-            "SELECT id, name, confidence, fired_at FROM genesis_reflexes WHERE id = ?",
+            "SELECT id, name, confidence, fired_at FROM genesis_reflexes WHERE id = %s",
             (reflex_id,)
         ).fetchone()
         design = conn.execute(
-            "SELECT name, status, current_phase FROM genesis_designs WHERE id = ?",
+            "SELECT name, status, current_phase FROM genesis_designs WHERE id = %s",
             (design_id,)
         ).fetchone()
         events = conn.execute(
-            "SELECT phase, status FROM genesis_phase_log WHERE design_id = ? "
+            "SELECT phase, status FROM genesis_phase_log WHERE design_id = %s "
             f"ORDER BY started_at DESC LIMIT {_GENESIS_PHASE_LIMIT}", (design_id,)
         ).fetchall()
         rendered = render_to_string(
@@ -265,11 +267,11 @@ def handle_stig_finding_handler(
     try:
         finding = conn.execute(
             "SELECT check_id, check_name, severity, status, remediation "
-            "FROM govlift_stig_checks WHERE check_id = ? AND workload_id = ?",
+            "FROM govlift_stig_checks WHERE check_id = %s AND workload_id = %s",
             (check_id, workload_id)
         ).fetchone()
         workload = conn.execute(
-            "SELECT name, classification FROM govlift_workloads WHERE id = ?", (workload_id,)
+            "SELECT name, classification FROM govlift_workloads WHERE id = %s", (workload_id,)
         ).fetchone()
         rendered = render_template(
             "handlers/stig_finding.html", finding=finding, workload=workload
@@ -301,14 +303,14 @@ def handle_poam_deadline_handler(
     try:
         poam = conn.execute(
             "SELECT id, title, severity, due_date, owner, status, milestone "
-            "FROM poam_items WHERE id = ? AND project_id = ?", (poam_id, project_id)
+            "FROM poam_items WHERE id = %s AND project_id = %s", (poam_id, project_id)
         ).fetchone()
         finding = conn.execute(
-            "SELECT title, severity FROM stig_findings WHERE id = ? LIMIT 1",
+            "SELECT title, severity FROM stig_findings WHERE id = %s LIMIT 1",
             ((poam or {}).get("finding_ref", ""),)
         ).fetchone()
         owner = conn.execute(
-            "SELECT email, name FROM users WHERE username = ?",
+            "SELECT email, name FROM users WHERE username = %s",
             ((poam or {}).get("owner", ""),)
         ).fetchone()
         rendered = render_template(
@@ -340,17 +342,17 @@ def handle_zig_pillar_handler(pillar_slug: str, recipient: str, ai_narrative: bo
     try:
         scores = conn.execute(
             "SELECT pillar_slug, score, maturity_level, complete_activities, activity_count "
-            "FROM zig_maturity_scores WHERE pillar_slug = ? "
+            "FROM zig_maturity_scores WHERE pillar_slug = %s "
             "ORDER BY assessment_run_at DESC LIMIT 1", (pillar_slug,)
         ).fetchone()
         caps = conn.execute(
             "SELECT title, implementation_status, phase FROM zig_capabilities "
-            "WHERE pillar_slug = ? ORDER BY phase", (pillar_slug,)
+            "WHERE pillar_slug = %s ORDER BY phase", (pillar_slug,)
         ).fetchall()
         activities = conn.execute(
             "SELECT a.title, c.status FROM zig_activities a "
             "LEFT JOIN zig_activity_completions c ON c.activity_id = a.id "
-            "WHERE a.capability_id IN (SELECT id FROM zig_capabilities WHERE pillar_slug = ?) "
+            "WHERE a.capability_id IN (SELECT id FROM zig_capabilities WHERE pillar_slug = %s) "
             "ORDER BY a.phase", (pillar_slug,)
         ).fetchall()
         rendered = render_template(
@@ -388,15 +390,15 @@ def handle_aiify_opportunity_handler(
     try:
         opportunity = conn.execute(
             "SELECT opportunity_id, function_name, pattern_type, module_path "
-            "FROM aiify_opportunities WHERE opportunity_id = ? AND scan_id = ?",
+            "FROM aiify_opportunities WHERE opportunity_id = %s AND scan_id = %s",
             (opportunity_id, scan_id),
         ).fetchone()
         scores = conn.execute(
             "SELECT composite_score, value_score, feasibility_score, risk_score "
-            "FROM aiify_scores WHERE opportunity_id = ?", (opportunity_id,)
+            "FROM aiify_scores WHERE opportunity_id = %s", (opportunity_id,)
         ).fetchone()
         _rm_row = conn.execute(
-            "SELECT roadmap_id, phases FROM aiify_roadmaps WHERE scan_id = ?",
+            "SELECT roadmap_id, phases FROM aiify_roadmaps WHERE scan_id = %s",
             (int(scan_id),),
         ).fetchone()
         roadmap = None
@@ -452,17 +454,17 @@ def handle_aiify_scan_complete_handler(
         scan = conn.execute(
             "SELECT scan_id, input_ref, total_files, total_loc, status, "
             "overall_verdict, overall_ai_readiness, completed_at "
-            "FROM aiify_scans WHERE scan_id = ?", (scan_id,)
+            "FROM aiify_scans WHERE scan_id = %s", (scan_id,)
         ).fetchone()
         top_opps = conn.execute(
             "SELECT o.opportunity_id, o.function_name, o.pattern_type, s.composite_score "
             "FROM aiify_opportunities o "
             "LEFT JOIN aiify_scores s ON s.opportunity_id = o.opportunity_id "
-            "WHERE o.scan_id = ? ORDER BY s.composite_score DESC LIMIT {_SCAN_TOP_OPPS_LIMIT}", (scan_id,)
+            "WHERE o.scan_id = %s ORDER BY s.composite_score DESC LIMIT {_SCAN_TOP_OPPS_LIMIT}", (scan_id,)
         ).fetchall()
         roadmap = conn.execute(
             "SELECT roadmap_id, title, total_effort_days "
-            "FROM aiify_roadmaps WHERE roadmap_id = ?", (roadmap_id,)
+            "FROM aiify_roadmaps WHERE roadmap_id = %s", (roadmap_id,)
         ).fetchone()
         score_summary = conn.execute(
             "SELECT COUNT(*) as opp_count, "
@@ -470,7 +472,7 @@ def handle_aiify_scan_complete_handler(
             "AVG(s.composite_score) as avg_score "
             "FROM aiify_scores s "
             "JOIN aiify_opportunities o ON o.opportunity_id = s.opportunity_id "
-            "WHERE o.scan_id = ?", (scan_id,)
+            "WHERE o.scan_id = %s", (scan_id,)
         ).fetchone()
         rendered = render_template(
             "handlers/aiify_scan_complete.html",
@@ -515,7 +517,7 @@ def handle_aiify_roadmap_handler(
     try:
         roadmap = conn.execute(
             "SELECT roadmap_id, title, total_effort_days, phases, created_at "
-            "FROM aiify_roadmaps WHERE roadmap_id = ?", (roadmap_id,)
+            "FROM aiify_roadmaps WHERE roadmap_id = %s", (roadmap_id,)
         ).fetchone()
         _phases = (roadmap or {}).get("phases") or []
         if isinstance(_phases, str):
@@ -548,7 +550,7 @@ def handle_aiify_roadmap_handler(
         ][:_ROADMAP_TOP_OPPS_LIMIT]
         scan = conn.execute(
             "SELECT total_files, overall_verdict, overall_ai_readiness "
-            "FROM aiify_scans WHERE scan_id = ?", (scan_id,)
+            "FROM aiify_scans WHERE scan_id = %s", (scan_id,)
         ).fetchone()
         rendered = render_template(
             "handlers/aiify_roadmap.html",
@@ -592,16 +594,16 @@ def handle_cmmc_assessment_handler(
     try:
         assessment = conn.execute(
             "SELECT id, level, overall_score, status, assessed_at "
-            "FROM cmmc_assessments WHERE id = ? AND system_id = ?",
+            "FROM cmmc_assessments WHERE id = %s AND system_id = %s",
             (assessment_id, system_id),
         ).fetchone()
         system = conn.execute(
-            "SELECT name, classification, boundary FROM cmmc_systems WHERE id = ?",
+            "SELECT name, classification, boundary FROM cmmc_systems WHERE id = %s",
             (system_id,),
         ).fetchone()
         gaps = conn.execute(
             "SELECT practice_id, domain, status, gap_description "
-            "FROM cmmc_practice_gaps WHERE assessment_id = ? ORDER BY domain LIMIT {_CMMC_GAPS_LIMIT}",
+            "FROM cmmc_practice_gaps WHERE assessment_id = %s ORDER BY domain LIMIT {_CMMC_GAPS_LIMIT}",
             (assessment_id,),
         ).fetchall()
         rendered = render_template(
@@ -648,18 +650,18 @@ def handle_supply_chain_risk_handler(
     try:
         sbom = conn.execute(
             "SELECT id, component_name, version, vendor, component_type "
-            "FROM sbom_components WHERE id = ? AND component_name = ?",
+            "FROM sbom_components WHERE id = %s AND component_name = %s",
             (sbom_id, component_name),
         ).fetchone()
         vulns = conn.execute(
             "SELECT cve_id, cvss_score, severity, affected_versions, fixed_version "
-            "FROM supply_chain_vulnerabilities WHERE sbom_id = ? "
+            "FROM supply_chain_vulnerabilities WHERE sbom_id = %s "
             "ORDER BY cvss_score DESC LIMIT 5",
             (sbom_id,),
         ).fetchall()
         risk = conn.execute(
             "SELECT risk_level, exploitability, patch_available, last_assessed "
-            "FROM supply_chain_risk_scores WHERE sbom_id = ? "
+            "FROM supply_chain_risk_scores WHERE sbom_id = %s "
             "ORDER BY last_assessed DESC LIMIT 1",
             (sbom_id,),
         ).fetchone()
@@ -703,14 +705,14 @@ def handle_agent_incident_handler(
     conn = get_connection()
     try:
         agent = conn.execute(
-            "SELECT id, name, status, last_heartbeat FROM agents WHERE id = ?", (agent_id,)
+            "SELECT id, name, status, last_heartbeat FROM agents WHERE id = %s", (agent_id,)
         ).fetchone()
         errors = conn.execute(
-            "SELECT error_msg, created_at FROM agent_errors WHERE agent_id = ? "
+            "SELECT error_msg, created_at FROM agent_errors WHERE agent_id = %s "
             f"ORDER BY created_at DESC LIMIT {_AGENT_ERRORS_LIMIT}", (agent_id,)
         ).fetchall()
         metrics = conn.execute(
-            "SELECT metric_name, value FROM agent_metrics WHERE agent_id = ? "
+            "SELECT metric_name, value FROM agent_metrics WHERE agent_id = %s "
             f"ORDER BY recorded_at DESC LIMIT {_AGENT_METRICS_LIMIT}", (agent_id,)
         ).fetchall()
         rendered = render_to_string(

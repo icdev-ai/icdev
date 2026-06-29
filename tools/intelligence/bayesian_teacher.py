@@ -324,7 +324,7 @@ def score_training_pairs(
             """SELECT id, system_prompt, user_input, expected_output,
                       quality_score, compliance_score, relevance_score
                FROM ft_dataset_examples
-               WHERE dataset_id = ? AND status IN ('pending', 'unapproved')
+               WHERE dataset_id = %s AND status IN ('pending', 'unapproved')
                ORDER BY created_at DESC
                LIMIT 500""",
             (dataset_id,),
@@ -390,7 +390,7 @@ def score_training_pairs(
                     """INSERT INTO bayesian_teaching_scores
                        (candidate_id, candidate_type, info_gain_score,
                         dimensions, threshold_band, context_id, scored_at)
-                       VALUES (?, 'training_pair', ?, ?, ?, ?, ?)""",
+                       VALUES (%s, 'training_pair', %s, %s, %s, %s, %s)""",
                     (
                         s["candidate_id"],
                         s["info_gain_score"],
@@ -662,7 +662,7 @@ def optimal_compliance_order(
                 """INSERT INTO bayesian_teaching_scores
                    (candidate_id, candidate_type, info_gain_score,
                     dimensions, threshold_band, context_id, scored_at)
-                   VALUES (?, 'compliance_ordering', ?, ?, 'auto_select', ?, ?)""",
+                   VALUES (%s, 'compliance_ordering', %s, %s, 'auto_select', %s, %s)""",
                 (
                     f"order-{project_id or 'global'}",
                     round(cumulative_gain / max(len(control_ids), 1), 4),

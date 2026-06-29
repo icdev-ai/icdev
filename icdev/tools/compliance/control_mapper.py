@@ -66,7 +66,7 @@ def _load_nist_controls():
 
 def _verify_project_exists(conn, project_id):
     """Verify that a project exists in the database."""
-    row = conn.execute("SELECT id, name FROM projects WHERE id = ?", (project_id,)).fetchone()
+    row = conn.execute("SELECT id, name FROM projects WHERE id = %s", (project_id,)).fetchone()
     if not row:
         raise ValueError(f"Project '{project_id}' not found in database.")
     return dict(row)
@@ -92,7 +92,7 @@ def create_mapping(
 
         # Upsert: update if exists, insert if not
         existing = conn.execute(
-            "SELECT id FROM project_controls WHERE project_id = ? AND control_id = ?",
+            "SELECT id FROM project_controls WHERE project_id = %s AND control_id = %s",
             (project_id, control_id.upper()),
         ).fetchone()
 
@@ -101,10 +101,10 @@ def create_mapping(
         if existing:
             conn.execute(
                 """UPDATE project_controls
-                   SET implementation_status = ?, implementation_description = ?,
-                       responsible_role = ?, evidence_path = ?,
-                       last_assessed = ?, updated_at = ?
-                   WHERE id = ?""",
+                   SET implementation_status = %s, implementation_description = %s,
+                       responsible_role = %s, evidence_path = %s,
+                       last_assessed = %s, updated_at = %s
+                   WHERE id = %s""",
                 (
                     implementation_status,
                     description,
@@ -124,7 +124,7 @@ def create_mapping(
                    (project_id, control_id, implementation_status,
                     implementation_description, responsible_role,
                     evidence_path, last_assessed, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     project_id,
                     control_id.upper(),
@@ -360,7 +360,7 @@ def generate_matrix(project_id, output_path=None, db_path=None):
         # Default output to project compliance directory
         conn = _get_connection(db_path)
         try:
-            row = conn.execute("SELECT directory_path FROM projects WHERE id = ?", (project_id,)).fetchone()
+            row = conn.execute("SELECT directory_path FROM projects WHERE id = %s", (project_id,)).fetchone()
             if row and row["directory_path"]:
                 output_dir = Path(row["directory_path"]) / "compliance"
             else:

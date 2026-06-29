@@ -1,0 +1,102 @@
+# CUI // SP-CTI
+"""{{ display_name }} — Flask Blueprint.
+
+Auto-generated from template: data/templates/canvases/standard
+"""
+
+from __future__ import annotations
+
+import os
+from datetime import datetime, timezone
+
+from flask import Blueprint, abort, g, jsonify, render_template, request
+
+from tools.logging.icdev_logger import get_logger
+from {{ module_package }}.constants import CANVAS_KEY, DISPLAY_NAME, IQE_COLLECTIONS
+
+log = get_logger(__name__)
+
+_ENABLED = os.environ.get("{{ env_flag }}", "false").lower() in ("true", "1", "yes")
+
+
+def create_{{ key }}_blueprint() -> Blueprint | None:
+    if not _ENABLED:
+        log.info("%s disabled via {{ env_flag }}=false", DISPLAY_NAME)
+        return None
+
+    bp = Blueprint(
+        CANVAS_KEY,
+        __name__,
+        template_folder="../../tools/dashboard/templates",
+    )
+
+    @bp.before_request
+    def _rbac_guard():
+        """Enforce canvas access using RBAC grants."""
+        try:
+            from tools.security.canvas_access import guard_component_access
+            guard_component_access(CANVAS_KEY, min_il="{{ min_il | default('IL4') }}")
+        except ImportError:
+            pass
+
+    # ------------------------------------------------------------------ #
+    # Pages
+    # ------------------------------------------------------------------ #
+
+    @bp.route("{{ url_prefix }}/")
+    @bp.route("{{ url_prefix }}")
+    def index():
+        return render_template(
+            "{{ key }}/page.html",
+            canvas_key=CANVAS_KEY,
+            display_name=DISPLAY_NAME,
+        )
+
+    # ------------------------------------------------------------------ #
+    # Data API
+    # ------------------------------------------------------------------ #
+
+    @bp.route("/api/{{ key }}/data", methods=["GET"])
+    def api_data():
+        """Return paginated canvas data."""
+        limit = min(int(request.args.get("limit", 50)), 500)
+        offset = int(request.args.get("offset", 0))
+        try:
+            from tools.db.storage import get_connection
+            with get_connection() as conn:
+                rows = conn.execute(
+                    "SELECT * FROM {{ key }}_items ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                    (limit, offset),
+                ).fetchall()
+            return jsonify({"items": [dict(r) for r in rows], "limit": limit, "offset": offset})
+        except Exception as exc:
+            log.warning("api_data error: %s", exc)
+            return jsonify({"items": [], "error": str(exc)}), 200
+
+    @bp.route("/api/{{ key }}/query", methods=["POST"])
+    def api_iqe_query():
+        """IQE query endpoint for this canvas."""
+        payload = request.get_json(silent=True) or {}
+        query = payload.get("query", "")
+        collection = payload.get("collection", f"{CANVAS_KEY}.items")
+        if collection not in IQE_COLLECTIONS:
+            abort(400, f"Unknown collection: {collection}")
+        try:
+            from tools.iqe.executor import query_collection
+            results = query_collection(collection, query)
+            return jsonify({"results": results, "collection": collection, "query": query})
+        except Exception as exc:
+            log.warning("iqe_query error: %s", exc)
+            return jsonify({"results": [], "error": str(exc)}), 200
+
+    @bp.route("/api/{{ key }}/stats", methods=["GET"])
+    def api_stats():
+        return jsonify({
+            "canvas": CANVAS_KEY,
+            "display_name": DISPLAY_NAME,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "classification": "CUI // SP-CTI",
+            "iqe_collections": IQE_COLLECTIONS,
+        })
+
+    return bp

@@ -118,7 +118,7 @@ class MCPOAuthVerifier:
             conn = get_connection(db_path=str(self.db_path))
 
             row = conn.execute(
-                "SELECT ak.*, u.email, u.role FROM api_keys ak JOIN users u ON ak.user_id = u.id WHERE ak.key_hash = ? AND ak.is_active = 1",  # noqa: E501
+                "SELECT ak.*, u.email, u.role FROM api_keys ak JOIN users u ON ak.user_id = u.id WHERE ak.key_hash = %s AND ak.is_active = 1",  # noqa: E501
                 (key_hash,),
             ).fetchone()
             conn.close()

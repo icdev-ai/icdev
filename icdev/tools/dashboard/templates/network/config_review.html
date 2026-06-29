@@ -1,0 +1,545 @@
+{% extends "network/base.html" %}
+{% block title %}NDC — Config Review{% endblock %}
+
+{% block head %}
+<style>
+  .cr-container { max-width: 1400px; margin: 2rem auto; padding: 0 1rem; color: #eaeaea; }
+  .cr-header { margin-bottom: 1.5rem; }
+  .cr-header h1 { font-size: 1.6rem; margin: 0 0 0.25rem; }
+  .cr-header p { color: #999; margin: 0; font-size: 0.9rem; }
+
+  .cr-panel { background: #1a1a2e; border: 1px solid #333; border-radius: 8px; padding: 1.25rem; margin-bottom: 1.5rem; }
+  .cr-panel h2 { font-size: 1.1rem; margin: 0 0 1rem; color: #e0e0e0; }
+
+  .cr-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+  @media (max-width: 900px) { .cr-grid-2 { grid-template-columns: 1fr; } }
+
+  .cr-textarea { width: 100%; min-height: 260px; background: #0f0f1a; color: #d0d0d0; border: 1px solid #333; border-radius: 6px; padding: 0.75rem; font-family: monospace; font-size: 0.85rem; resize: vertical; }
+  .cr-dropzone { border: 2px dashed #5a5a7a; border-radius: 6px; padding: 1.5rem; text-align: center; cursor: pointer; background: #0f0f1a; transition: border-color 0.2s, background 0.2s; }
+  .cr-dropzone.drag-over { border-color: #7c3aed; background: #1e1e3a; }
+  .cr-dropzone input[type=file] { display: none; }
+
+  .cr-role-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 0.75rem; }
+  .cr-role-card { background: #1e1e3a; border: 1px solid #333; border-radius: 6px; padding: 1rem; cursor: pointer; transition: border-color 0.2s, background 0.2s; }
+  .cr-role-card:hover { border-color: #7c3aed; }
+  .cr-role-card.active { border-color: #7c3aed; background: #2a1f4a; }
+  .cr-role-icon { font-size: 1.5rem; margin-bottom: 0.5rem; }
+  .cr-role-title { font-weight: 600; font-size: 0.95rem; }
+  .cr-role-desc { font-size: 0.78rem; color: #aaa; margin-top: 0.25rem; }
+
+  .cr-questions { display: none; }
+  .cr-question { display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 0; border-bottom: 1px solid #2a2a4a; }
+  .cr-question-text { flex: 1; font-size: 0.9rem; }
+  .cr-yesno { display: flex; gap: 0.5rem; }
+  .cr-yesno button { padding: 0.35rem 0.9rem; border: 1px solid #444; background: #1a1a2e; color: #aaa; border-radius: 4px; cursor: pointer; font-size: 0.8rem; }
+  .cr-yesno button.active-yes { background: #14532d; color: #86efac; border-color: #166534; }
+  .cr-yesno button.active-no { background: #450a0a; color: #fca5a5; border-color: #7f1d1d; }
+
+  .cr-prompts { display: none; }
+  .cr-prompt-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 0.75rem; }
+  .cr-prompt-card { background: #1e1e3a; border: 1px solid #333; border-radius: 6px; padding: 0.9rem; cursor: pointer; }
+  .cr-prompt-card:hover { border-color: #7c3aed; }
+  .cr-prompt-card.active { border-color: #7c3aed; background: #2a1f4a; }
+  .cr-prompt-title { font-weight: 600; font-size: 0.9rem; margin-bottom: 0.35rem; }
+  .cr-prompt-preview { font-size: 0.78rem; color: #aaa; }
+
+  .cr-btn { padding: 0.5rem 1rem; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85rem; }
+  .cr-btn-primary { background: #7c3aed; color: #fff; }
+  .cr-btn-primary:hover { background: #6d28d9; }
+  .cr-btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+  .cr-btn-secondary { background: #2a2a4a; color: #ddd; }
+
+  .cr-status { font-size: 0.85rem; color: #999; min-height: 1.5rem; margin: 0.75rem 0; }
+  .cr-progress { display: none; width: 100%; height: 6px; background: #2a2a4a; border-radius: 3px; overflow: hidden; margin: 0.5rem 0; }
+  .cr-progress-bar { height: 100%; width: 0%; background: linear-gradient(90deg, #7c3aed, #a78bfa); transition: width 0.3s ease; }
+  .cr-progress-meta { display: flex; justify-content: space-between; font-size: 0.75rem; color: #aaa; margin-top: 0.25rem; }
+
+  .cr-tabs { display: flex; gap: 0.25rem; border-bottom: 1px solid #333; margin-bottom: 1rem; }
+  .cr-tab { padding: 0.6rem 1rem; background: transparent; border: none; color: #999; cursor: pointer; font-size: 0.85rem; }
+  .cr-tab.active { color: #eaeaea; border-bottom: 2px solid #7c3aed; }
+  .cr-tab-content { display: none; }
+  .cr-tab-content.active { display: block; }
+
+  .cr-findings { display: flex; flex-direction: column; gap: 0.75rem; }
+  .cr-finding { background: #0f0f1a; border: 1px solid #2a2a4a; border-radius: 6px; padding: 0.9rem; }
+  .cr-finding-header { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; flex-wrap: wrap; }
+  .cr-finding-title { font-weight: 600; font-size: 0.95rem; }
+  .cr-sev { font-size: 0.7rem; padding: 0.15rem 0.4rem; border-radius: 3px; text-transform: uppercase; font-weight: 700; }
+  .cr-sev-CAT1, .cr-sev-high { background: #450a0a; color: #fca5a5; }
+  .cr-sev-CAT2, .cr-sev-medium { background: #713f12; color: #fde047; }
+  .cr-sev-CAT3, .cr-sev-low { background: #1e3a8a; color: #93c5fd; }
+  .cr-sev-info { background: #1f2937; color: #d1d5db; }
+  .cr-finding-detail { font-size: 0.85rem; color: #ccc; line-height: 1.5; }
+  .cr-finding-detail p { margin: 0.25rem 0; }
+  .cr-snippet { background: #0a0a12; border: 1px solid #2a2a4a; border-radius: 4px; padding: 0.6rem; font-family: monospace; font-size: 0.78rem; white-space: pre-wrap; color: #a5b4fc; margin-top: 0.5rem; }
+
+  .cr-template-box { background: #0f0f1a; border: 1px solid #2a2a4a; border-radius: 6px; padding: 0.9rem; }
+  .cr-template-box pre { white-space: pre-wrap; font-family: monospace; font-size: 0.78rem; color: #d0d0d0; }
+
+  .cr-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; margin: 1rem 0; }
+
+  .cr-iqe { margin-top: 1.5rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="cr-container">
+  <div class="cr-header">
+    <h1>Network Configuration Review</h1>
+    <p>Upload or paste a device configuration, select your role, answer a few yes/no questions, and get AI-guided security, optimization, and remediation guidance.</p>
+  </div>
+
+  <!-- Input -->
+  <div class="cr-panel">
+    <h2>1. Device Configuration</h2>
+    <div class="cr-grid-2">
+      <div>
+        <label style="display:block; margin-bottom:0.5rem; color:#aaa; font-size:0.85rem;">Paste configuration text</label>
+        <textarea id="cr-config-text" class="cr-textarea" placeholder="Paste Cisco IOS, NX-OS, or Juniper JunOS configuration here..."></textarea>
+      </div>
+      <div>
+        <label style="display:block; margin-bottom:0.5rem; color:#aaa; font-size:0.85rem;">Or upload a file</label>
+        <div class="cr-dropzone" id="cr-dropzone">
+          <div style="font-size:1.8rem; margin-bottom:0.5rem;">📁</div>
+          <p style="margin:0.25rem 0;"><strong>Drag & drop a .cfg / .conf / .txt file here</strong></p>
+          <p style="margin:0; font-size:0.8rem; color:#888;">or click to browse</p>
+          <input type="file" id="cr-file" accept=".cfg,.conf,.txt,.log" />
+        </div>
+        <div id="cr-file-name" style="margin-top:0.5rem; font-size:0.8rem; color:#7c3aed;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Role -->
+  <div class="cr-panel">
+    <h2>2. Select Your Role</h2>
+    <div class="cr-role-grid" id="cr-roles">
+      {% for key, role in roles.items() %}
+      <div class="cr-role-card" data-role="{{ key }}" onclick="selectRole('{{ key }}')">
+        <div class="cr-role-icon">{{ role.icon }}</div>
+        <div class="cr-role-title">{{ role.label }}</div>
+        <div class="cr-role-desc">{{ role.focus }}</div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- Questions -->
+  <div class="cr-panel cr-questions" id="cr-questions-panel">
+    <h2>3. Context Questions <span style="font-size:0.8rem; color:#999; font-weight:normal;">(answers shape the AI recommendations)</span></h2>
+    <div id="cr-questions-list"></div>
+  </div>
+
+  <!-- Prompts -->
+  <div class="cr-panel cr-prompts" id="cr-prompts-panel">
+    <h2>4. Guided Prompts <span style="font-size:0.8rem; color:#999; font-weight:normal;">(click the focus you want, then run the review)</span></h2>
+    <div class="cr-prompt-grid" id="cr-prompts-list"></div>
+  </div>
+
+  <!-- Run -->
+  <div class="cr-actions">
+    <button id="cr-run" class="cr-btn cr-btn-primary" onclick="runReview()" disabled>▶ Run AI Review</button>
+    <button class="cr-btn cr-btn-secondary" onclick="resetReview()">Reset</button>
+  </div>
+  <div class="cr-status" id="cr-status">Select a role and provide a configuration to begin.</div>
+  <div class="cr-progress" id="cr-progress">
+    <div class="cr-progress-bar" id="cr-progress-bar"></div>
+  </div>
+  <div class="cr-progress-meta" id="cr-progress-meta" style="display:none;">
+    <span id="cr-progress-phase">Waiting...</span>
+    <span id="cr-progress-percent">0%</span>
+  </div>
+
+  <!-- Results -->
+  <div id="cr-results" style="display:none;">
+    <div class="cr-tabs">
+      <button class="cr-tab active" data-tab="security" onclick="switchTab('security')">Security / Compliance</button>
+      <button class="cr-tab" data-tab="optimization" onclick="switchTab('optimization')">Optimization</button>
+      <button class="cr-tab" data-tab="remediation" onclick="switchTab('remediation')">Remediation</button>
+      <button class="cr-tab" data-tab="template" onclick="switchTab('template')">Sample Template</button>
+      <button class="cr-tab" data-tab="explanation" onclick="switchTab('explanation')">Explanation</button>
+    </div>
+
+    <div id="tab-security" class="cr-tab-content active">
+      <div class="cr-actions">
+        <button class="cr-btn cr-btn-secondary" onclick="copyFindings('security')">Copy findings</button>
+      </div>
+      <div class="cr-findings" id="findings-security"></div>
+    </div>
+    <div id="tab-optimization" class="cr-tab-content">
+      <div class="cr-actions">
+        <button class="cr-btn cr-btn-secondary" onclick="copyFindings('optimization')">Copy findings</button>
+      </div>
+      <div class="cr-findings" id="findings-optimization"></div>
+    </div>
+    <div id="tab-remediation" class="cr-tab-content">
+      <div class="cr-actions">
+        <button class="cr-btn cr-btn-secondary" onclick="copyFindings('remediation')">Copy findings</button>
+        <button class="cr-btn cr-btn-primary" onclick="exportConfig()">⬇ Export starter config</button>
+        <button class="cr-btn cr-btn-primary" onclick="exportTopology()">⬇ Open as topology</button>
+      </div>
+      <div class="cr-findings" id="findings-remediation"></div>
+    </div>
+    <div id="tab-template" class="cr-tab-content">
+      <div class="cr-template-box"><pre id="cr-template-pre"></pre></div>
+      <div class="cr-actions">
+        <button class="cr-btn cr-btn-secondary" onclick="copyText('cr-template-pre')">Copy template</button>
+      </div>
+    </div>
+    <div id="tab-explanation" class="cr-tab-content">
+      <div class="cr-template-box"><pre id="cr-explanation-pre"></pre></div>
+    </div>
+  </div>
+
+  <!-- IQE -->
+  <div class="cr-iqe">
+    {% set iqe_canvas = 'ndc' %}
+    {% set iqe_api_route = '/network/api/iqe-query' %}
+    {% set iqe_title = 'Query Network Canvas' %}
+    {% set iqe_examples = [
+      {'label': 'Config reviews', 'query': 'show config reviews created today'},
+      {'label': 'CAT1 findings', 'query': 'show config review findings with severity CAT1'},
+      {'label': 'Recent devices', 'query': 'show network devices'},
+    ] %}
+    {% include 'includes/iqe_query_widget.html' %}
+  </div>
+</div>
+
+<script>
+let currentReview = null;
+let currentRole = null;
+let currentPromptTitle = '';
+let currentAnswers = {};
+let currentResult = null;
+let currentQuestions = [];
+
+const roles = {{ roles | tojson }};
+const questionsByRole = {{ questions_by_role | tojson }};
+
+function selectRole(roleKey) {
+  currentRole = roleKey;
+  document.querySelectorAll('.cr-role-card').forEach(c => c.classList.remove('active'));
+  document.querySelector(`.cr-role-card[data-role="${roleKey}"]`).classList.add('active');
+  renderQuestions(questionsByRole[roleKey] || []);
+  document.getElementById('cr-questions-panel').style.display = 'block';
+  document.getElementById('cr-prompts-panel').style.display = 'none';
+  document.getElementById('cr-status').textContent = `Role selected: ${roles[roleKey].label}. Answer context questions, then run the review.`;
+  updateRunButton();
+}
+
+function renderQuestions(questions) {
+  currentQuestions = questions || [];
+  const container = document.getElementById('cr-questions-list');
+  container.innerHTML = '';
+  currentQuestions.forEach((q, idx) => {
+    currentAnswers[q.id] = currentAnswers[q.id] || 'unknown';
+    const div = document.createElement('div');
+    div.className = 'cr-question';
+    div.innerHTML = `
+      <div class="cr-question-text">${idx + 1}. ${q.question}</div>
+      <div class="cr-yesno">
+        <button class="${currentAnswers[q.id] === 'yes' ? 'active-yes' : ''}" onclick="setAnswer('${q.id}', 'yes', this)">Yes</button>
+        <button class="${currentAnswers[q.id] === 'no' ? 'active-no' : ''}" onclick="setAnswer('${q.id}', 'no', this)">No</button>
+        <button class="${currentAnswers[q.id] === 'unknown' || !currentAnswers[q.id] ? 'active' : ''}" onclick="setAnswer('${q.id}', 'unknown', this)">N/A</button>
+      </div>`;
+    container.appendChild(div);
+  });
+}
+
+function setAnswer(qid, val, btn) {
+  currentAnswers[qid] = val;
+  const row = btn.parentElement.parentElement;
+  row.querySelectorAll('button').forEach(b => { b.className = b.className.replace(/active-\w+/g, '').replace(/active(?![-\w])/g, ''); });
+  if (val === 'yes') btn.classList.add('active-yes');
+  else if (val === 'no') btn.classList.add('active-no');
+  else btn.classList.add('active');
+}
+
+const dropzone = document.getElementById('cr-dropzone');
+const fileInput = document.getElementById('cr-file');
+dropzone.addEventListener('click', () => fileInput.click());
+dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('drag-over'); });
+dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag-over'));
+dropzone.addEventListener('drop', e => {
+  e.preventDefault(); dropzone.classList.remove('drag-over');
+  if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', () => { if (fileInput.files.length) handleFile(fileInput.files[0]); });
+
+function handleFile(file) {
+  document.getElementById('cr-file-name').textContent = file.name;
+  const reader = new FileReader();
+  reader.onload = ev => { document.getElementById('cr-config-text').value = ev.target.result; };
+  reader.readAsText(file);
+}
+
+function updateRunButton() {
+  const hasConfig = document.getElementById('cr-config-text').value.trim().length > 0;
+  document.getElementById('cr-run').disabled = !(currentRole && hasConfig);
+}
+
+document.getElementById('cr-config-text').addEventListener('input', updateRunButton);
+
+let _crEventSource = null;
+let _crPollTimer = null;
+let _crLastProgress = null;
+
+function _crResetProgress() {
+  _crLastProgress = null;
+  const bar = document.getElementById('cr-progress-bar');
+  const wrap = document.getElementById('cr-progress');
+  const meta = document.getElementById('cr-progress-meta');
+  bar.style.width = '0%';
+  wrap.style.display = 'none';
+  meta.style.display = 'none';
+  if (_crEventSource) { _crEventSource.close(); _crEventSource = null; }
+  if (_crPollTimer) { clearInterval(_crPollTimer); _crPollTimer = null; }
+}
+
+function _crApplyProgress(payload, fromFallback) {
+  if (!payload || payload.operation_type !== 'ndc_config_review' || payload.operation_id !== currentReview.id) return;
+  _crLastProgress = payload;
+  const status = document.getElementById('cr-status');
+  const wrap = document.getElementById('cr-progress');
+  const bar = document.getElementById('cr-progress-bar');
+  const meta = document.getElementById('cr-progress-meta');
+  const phase = document.getElementById('cr-progress-phase');
+  const pct = document.getElementById('cr-progress-percent');
+  wrap.style.display = 'block';
+  meta.style.display = 'flex';
+  bar.style.width = (payload.percent || 0) + '%';
+  phase.textContent = payload.detail || payload.phase || 'Working...';
+  pct.textContent = (payload.percent || 0) + '%';
+  if (payload.status === 'completed' || payload.status === 'failed') {
+    if (_crEventSource) { _crEventSource.close(); _crEventSource = null; }
+    if (_crPollTimer) { clearInterval(_crPollTimer); _crPollTimer = null; }
+  }
+  if (payload.status === 'failed') {
+    status.textContent = 'Error: ' + (payload.detail || 'Review failed');
+  }
+}
+
+function _crStartSSE(reviewId) {
+  if (typeof EventSource === 'undefined') return false;
+  try {
+    const es = new EventSource('/api/events/progress');
+    _crEventSource = es;
+    es.onmessage = (ev) => {
+      try {
+        const data = JSON.parse(ev.data);
+        _crApplyProgress(data, false);
+      } catch (e) { /* ignore malformed */ }
+    };
+    es.onerror = () => {
+      if (_crEventSource) { _crEventSource.close(); _crEventSource = null; }
+    };
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function _crStartPolling(reviewId) {
+  if (_crPollTimer) return;
+  const poll = async () => {
+    if (!currentReview) return;
+    try {
+      const r = await fetch(NC_BASE + '/api/config-review/' + reviewId + '/progress');
+      const data = await r.json();
+      _crApplyProgress(data, true);
+    } catch (e) { /* ignore */ }
+  };
+  poll();
+  _crPollTimer = setInterval(poll, 1500);
+}
+
+async function runReview() {
+  const configText = document.getElementById('cr-config-text').value.trim();
+  if (!configText) { alert('Paste or upload a configuration first.'); return; }
+  if (!currentRole) { alert('Select a role first.'); return; }
+
+  const status = document.getElementById('cr-status');
+  const runBtn = document.getElementById('cr-run');
+  runBtn.disabled = true;
+  _crResetProgress();
+  status.textContent = 'Creating review session...';
+
+  try {
+    // Create review.
+    const createResp = await fetch(NC_BASE + '/api/config-review', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ config_text: configText, role: currentRole }),
+    });
+    const createData = await createResp.json();
+    if (createData.error) throw new Error(createData.error);
+    currentReview = createData;
+
+    // Store questions locally (server returned them).
+    roles[currentRole]._cached_questions = createData.questions;
+    currentQuestions = createData.questions;
+    renderQuestions(currentQuestions);
+    renderPrompts(createData.prompts);
+    document.getElementById('cr-prompts-panel').style.display = 'block';
+
+    // Subscribe to progress (SSE preferred, polling fallback).
+    const sseStarted = _crStartSSE(createData.id);
+    if (!sseStarted) _crStartPolling(createData.id);
+    // If no SSE event arrives within 3s, also start polling as a safety net.
+    setTimeout(() => {
+      if (!_crLastProgress && currentReview && currentReview.id === createData.id) {
+        _crStartPolling(createData.id);
+      }
+    }, 3000);
+
+    status.textContent = 'Analysis started...';
+    const analyzeResp = await fetch(NC_BASE + '/api/config-review/' + createData.id + '/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ answers: currentAnswers, prompt_title: currentPromptTitle }),
+    });
+    const analyzeData = await analyzeResp.json();
+    if (analyzeData.error) throw new Error(analyzeData.error);
+    currentResult = analyzeData.result;
+    renderResults(currentResult);
+    status.textContent = 'Review complete.';
+  } catch (err) {
+    status.textContent = 'Error: ' + err.message;
+    console.error(err);
+  } finally {
+    _crResetProgress();
+    runBtn.disabled = false;
+  }
+}
+
+function renderPrompts(prompts) {
+  const container = document.getElementById('cr-prompts-list');
+  container.innerHTML = '';
+  prompts.forEach((p, i) => {
+    const div = document.createElement('div');
+    div.className = 'cr-prompt-card' + (i === 0 ? ' active' : '');
+    div.innerHTML = `<div class="cr-prompt-title">${escapeHtml(p.title)}</div><div class="cr-prompt-preview">${escapeHtml(p.preview)}</div>`;
+    div.onclick = () => {
+      document.querySelectorAll('.cr-prompt-card').forEach(c => c.classList.remove('active'));
+      div.classList.add('active');
+      currentPromptTitle = p.title;
+    };
+    container.appendChild(div);
+    if (i === 0) currentPromptTitle = p.title;
+  });
+}
+
+function renderResults(result) {
+  document.getElementById('cr-results').style.display = 'block';
+  document.getElementById('findings-security').innerHTML = renderFindings(result.security_compliance || [], 'security');
+  document.getElementById('findings-optimization').innerHTML = renderFindings(result.optimization || [], 'optimization');
+  document.getElementById('findings-remediation').innerHTML = renderRemediation(result.remediation || []);
+  document.getElementById('cr-template-pre').textContent = result.sample_template || '(no template returned)';
+  document.getElementById('cr-explanation-pre').textContent = result.explanation || '(no explanation returned)';
+  switchTab('security');
+}
+
+function renderFindings(items, category) {
+  if (!items.length) return '<div style="color:#888; font-size:0.9rem;">No findings in this category.</div>';
+  return items.map(item => {
+    const sev = (item.severity || 'info').toString();
+    const snippet = item.sample_config_snippet ? `<div class="cr-snippet">${escapeHtml(item.sample_config_snippet)}</div>` : '';
+    return `
+      <div class="cr-finding">
+        <div class="cr-finding-header">
+          <span class="cr-finding-title">${escapeHtml(item.title)}</span>
+          <span class="cr-sev cr-sev-${sev}">${sev}</span>
+        </div>
+        <div class="cr-finding-detail">${markdownish(item.detail || '')}</div>
+        ${item.remediation ? `<div class="cr-finding-detail"><strong>Recommendation:</strong> ${markdownish(item.remediation)}</div>` : ''}
+        ${item.references && item.references.length ? `<div class="cr-finding-detail"><strong>References:</strong> ${escapeHtml(item.references.join(', '))}</div>` : ''}
+        ${snippet}
+      </div>`;
+  }).join('');
+}
+
+function renderRemediation(items) {
+  if (!items.length) return '<div style="color:#888; font-size:0.9rem;">No remediation steps.</div>';
+  return items.map(item => {
+    const sev = (item.priority || 'medium').toString();
+    const steps = (item.steps || []).map((s, i) => `${i + 1}. ${escapeHtml(s)}`).join('\n');
+    const snippet = item.sample_config_snippet ? `<div class="cr-snippet">${escapeHtml(item.sample_config_snippet)}</div>` : '';
+    return `
+      <div class="cr-finding">
+        <div class="cr-finding-header">
+          <span class="cr-finding-title">${escapeHtml(item.title)}</span>
+          <span class="cr-sev cr-sev-${sev}">${sev}</span>
+        </div>
+        <div class="cr-finding-detail"><pre style="margin:0; font-family:inherit; white-space:pre-wrap;">${steps}</pre></div>
+        ${item.verification ? `<div class="cr-finding-detail"><strong>Verification:</strong> ${escapeHtml(item.verification)}</div>` : ''}
+        ${snippet}
+      </div>`;
+  }).join('');
+}
+
+function switchTab(tab) {
+  document.querySelectorAll('.cr-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+  document.querySelectorAll('.cr-tab-content').forEach(c => c.classList.toggle('active', c.id === 'tab-' + tab));
+}
+
+function escapeHtml(text) {
+  if (!text) return '';
+  return text.toString().replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function markdownish(text) {
+  if (!text) return '';
+  return escapeHtml(text).replace(/\n/g, '<br>');
+}
+
+async function exportConfig() {
+  if (!currentReview) return;
+  const r = await fetch(NC_BASE + '/api/config-review/' + currentReview.id + '/export-config', {method: 'POST'});
+  const d = await r.json();
+  if (d.error) { alert(d.error); return; }
+  downloadText(d.config, `starter-config-${d.vendor}.txt`);
+}
+
+async function exportTopology() {
+  if (!currentReview) return;
+  const r = await fetch(NC_BASE + '/api/config-review/' + currentReview.id + '/export-topology', {method: 'POST'});
+  const d = await r.json();
+  if (d.error) { alert(d.error); return; }
+  const url = '/network/canvas/new?seed=' + encodeURIComponent(JSON.stringify(d.graph));
+  window.open(url, '_blank');
+}
+
+function copyFindings(category) {
+  const items = (currentResult && currentResult[category]) || [];
+  const text = items.map(i => `- ${i.title}\n  ${i.detail || ''}`).join('\n');
+  navigator.clipboard.writeText(text || 'No findings.');
+}
+
+function copyText(elId) {
+  const text = document.getElementById(elId).textContent;
+  navigator.clipboard.writeText(text);
+}
+
+function downloadText(text, filename) {
+  const blob = new Blob([text], {type: 'text/plain'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function resetReview() {
+  document.getElementById('cr-config-text').value = '';
+  document.getElementById('cr-file-name').textContent = '';
+  document.querySelectorAll('.cr-role-card').forEach(c => c.classList.remove('active'));
+  document.getElementById('cr-questions-panel').style.display = 'none';
+  document.getElementById('cr-prompts-panel').style.display = 'none';
+  document.getElementById('cr-results').style.display = 'none';
+  currentReview = null; currentRole = null; currentPromptTitle = ''; currentAnswers = {}; currentResult = null;
+  _crLastProgress = null;
+  _crResetProgress();
+  updateRunButton();
+}
+</script>
+{% endblock %}

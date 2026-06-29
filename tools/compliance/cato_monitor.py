@@ -107,7 +107,7 @@ def _log_audit_event(conn, project_id, action, details):
         conn.execute(
             """INSERT INTO audit_trail
                (project_id, event_type, actor, action, details, classification)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s)""",
             (
                 project_id,
                 "cato_evidence_collected",
@@ -131,7 +131,7 @@ def _verify_project(conn, project_id):
     Raises:
         ValueError if project not found.
     """
-    row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+    row = conn.execute("SELECT * FROM projects WHERE id = %s", (project_id,)).fetchone()
     if not row:
         raise ValueError(f"Project '{project_id}' not found in database.")
     return dict(row)
@@ -212,29 +212,29 @@ def collect_evidence(
         # Upsert: the table has UNIQUE(project_id, control_id, evidence_type, evidence_source)
         existing = conn.execute(
             """SELECT id FROM cato_evidence
-               WHERE project_id = ? AND control_id = ?
-               AND evidence_type = ? AND evidence_source = ?""",
+               WHERE project_id = %s AND control_id = %s
+               AND evidence_type = %s AND evidence_source = %s""",
             (project_id, control_id, evidence_type, evidence_source),
         ).fetchone()
 
         if existing:
             # Mark old record as superseded if hash changed, else just refresh
             conn.execute(
-                "SELECT evidence_hash, status FROM cato_evidence WHERE id = ?",
+                "SELECT evidence_hash, status FROM cato_evidence WHERE id = %s",
                 (existing["id"],),
             ).fetchone()
 
             conn.execute(
                 """UPDATE cato_evidence
-                   SET evidence_path = ?,
-                       evidence_hash = ?,
-                       collected_at = ?,
-                       expires_at = ?,
+                   SET evidence_path = %s,
+                       evidence_hash = %s,
+                       collected_at = %s,
+                       expires_at = %s,
                        is_fresh = 1,
-                       freshness_check_at = ?,
+                       freshness_check_at = %s,
                        status = 'current',
-                       automation_frequency = ?
-                   WHERE id = ?""",
+                       automation_frequency = %s
+                   WHERE id = %s""",
                 (
                     str(evidence_path) if evidence_path else None,
                     evidence_hash,
@@ -254,7 +254,7 @@ def collect_evidence(
                    (project_id, control_id, evidence_type, evidence_source,
                     evidence_path, evidence_hash, collected_at, expires_at,
                     is_fresh, freshness_check_at, status, automation_frequency)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 'current', ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 1, %s, 'current', %s)""",
                 (
                     project_id,
                     control_id,
@@ -330,7 +330,7 @@ def check_evidence_freshness(project_id, db_path=None):
             """SELECT id, control_id, evidence_type, evidence_source,
                       collected_at, expires_at, status, automation_frequency
                FROM cato_evidence
-               WHERE project_id = ?""",
+               WHERE project_id = %s""",
             (project_id,),
         ).fetchall()
 
@@ -379,8 +379,8 @@ def check_evidence_freshness(project_id, db_path=None):
             # Update record
             conn.execute(
                 """UPDATE cato_evidence
-                   SET status = ?, is_fresh = ?, freshness_check_at = ?
-                   WHERE id = ?""",
+                   SET status = %s, is_fresh = %s, freshness_check_at = %s
+                   WHERE id = %s""",
                 (new_status, is_fresh, now_str, row_id),
             )
 
@@ -455,7 +455,7 @@ def auto_reassess(project_id, project_dir=None, db_path=None):
             """SELECT id, control_id, evidence_type, evidence_source,
                       evidence_path, automation_frequency
                FROM cato_evidence
-               WHERE project_id = ? AND status IN ('stale', 'expired')
+               WHERE project_id = %s AND status IN ('stale', 'expired')
                ORDER BY control_id""",
             (project_id,),
         ).fetchall()
@@ -526,7 +526,7 @@ def auto_reassess(project_id, project_dir=None, db_path=None):
                 try:
                     stig_row = conn.execute(
                         """SELECT COUNT(*) as cnt FROM stig_findings
-                           WHERE project_id = ?
+                           WHERE project_id = %s
                            AND assessed_at > datetime('now', '-7 days')""",
                         (project_id,),
                     ).fetchone()
@@ -551,14 +551,14 @@ def auto_reassess(project_id, project_dir=None, db_path=None):
 
                 conn.execute(
                     """UPDATE cato_evidence
-                       SET evidence_path = ?,
-                           evidence_hash = ?,
-                           collected_at = ?,
-                           expires_at = ?,
+                       SET evidence_path = %s,
+                           evidence_hash = %s,
+                           collected_at = %s,
+                           expires_at = %s,
                            is_fresh = 1,
-                           freshness_check_at = ?,
+                           freshness_check_at = %s,
                            status = 'current'
-                       WHERE id = ?""",
+                       WHERE id = %s""",
                     (
                         new_path,
                         new_hash,
@@ -629,7 +629,7 @@ def compute_cato_readiness(project_id, db_path=None):
             """SELECT control_id, evidence_type, status, is_fresh,
                       automation_frequency
                FROM cato_evidence
-               WHERE project_id = ?""",
+               WHERE project_id = %s""",
             (project_id,),
         ).fetchall()
 
@@ -676,7 +676,7 @@ def compute_cato_readiness(project_id, db_path=None):
         # Also check project_controls for total mapped controls
         try:
             ctrl_row = conn.execute(
-                "SELECT COUNT(DISTINCT control_id) as cnt FROM project_controls WHERE project_id = ?",
+                "SELECT COUNT(DISTINCT control_id) as cnt FROM project_controls WHERE project_id = %s",
                 (project_id,),
             ).fetchone()
             mapped_controls = ctrl_row["cnt"] if ctrl_row else 0
@@ -737,7 +737,7 @@ def get_cato_dashboard_data(project_id, db_path=None):
         rows = conn.execute(
             """SELECT status, COUNT(*) as cnt
                FROM cato_evidence
-               WHERE project_id = ?
+               WHERE project_id = %s
                GROUP BY status""",
             (project_id,),
         ).fetchall()
@@ -759,9 +759,9 @@ def get_cato_dashboard_data(project_id, db_path=None):
             """SELECT id, control_id, evidence_type, evidence_source,
                       expires_at, automation_frequency, status
                FROM cato_evidence
-               WHERE project_id = ?
-               AND expires_at <= ?
-               AND expires_at > ?
+               WHERE project_id = %s
+               AND expires_at <= %s
+               AND expires_at > %s
                AND status != 'expired'
                ORDER BY expires_at ASC""",
             (project_id, cutoff, now_str),
@@ -793,7 +793,7 @@ def get_cato_dashboard_data(project_id, db_path=None):
             """SELECT DISTINCT control_id, status, evidence_type, evidence_source,
                       expires_at
                FROM cato_evidence
-               WHERE project_id = ? AND status IN ('stale', 'expired')
+               WHERE project_id = %s AND status IN ('stale', 'expired')
                ORDER BY status DESC, control_id""",
             (project_id,),
         ).fetchall()
@@ -816,7 +816,7 @@ def get_cato_dashboard_data(project_id, db_path=None):
         trend_rows = conn.execute(
             """SELECT DATE(collected_at) as day, COUNT(*) as cnt
                FROM cato_evidence
-               WHERE project_id = ? AND collected_at >= ?
+               WHERE project_id = %s AND collected_at >= %s
                GROUP BY DATE(collected_at)
                ORDER BY day""",
             (project_id, thirty_days_ago),
@@ -828,7 +828,7 @@ def get_cato_dashboard_data(project_id, db_path=None):
         type_rows = conn.execute(
             """SELECT evidence_type, COUNT(*) as cnt
                FROM cato_evidence
-               WHERE project_id = ?
+               WHERE project_id = %s
                GROUP BY evidence_type""",
             (project_id,),
         ).fetchall()
@@ -889,9 +889,9 @@ def expire_old_evidence(project_id, db_path=None):
         rows = conn.execute(
             """SELECT id, control_id, evidence_type, evidence_source, expires_at
                FROM cato_evidence
-               WHERE project_id = ?
+               WHERE project_id = %s
                AND status NOT IN ('expired', 'superseded')
-               AND expires_at <= ?""",
+               AND expires_at <= %s""",
             (project_id, now_str),
         ).fetchall()
 
@@ -899,8 +899,8 @@ def expire_old_evidence(project_id, db_path=None):
         for row in rows:
             conn.execute(
                 """UPDATE cato_evidence
-                   SET status = 'expired', is_fresh = 0, freshness_check_at = ?
-                   WHERE id = ?""",
+                   SET status = 'expired', is_fresh = 0, freshness_check_at = %s
+                   WHERE id = %s""",
                 (now_str, row["id"]),
             )
             expired_ids.append(row["id"])
@@ -964,7 +964,7 @@ def check_zta_posture(project_id, db_path=None):
             maturity_rows = conn.execute(
                 """SELECT pillar, score, maturity_level
                    FROM zta_maturity_scores
-                   WHERE project_id = ?
+                   WHERE project_id = %s
                    ORDER BY created_at DESC""",
                 (project_id,),
             ).fetchall()
@@ -989,7 +989,7 @@ def check_zta_posture(project_id, db_path=None):
             posture_rows = conn.execute(
                 """SELECT status, COUNT(*) as cnt
                    FROM zta_posture_evidence
-                   WHERE project_id = ?
+                   WHERE project_id = %s
                    GROUP BY status""",
                 (project_id,),
             ).fetchall()
@@ -1071,7 +1071,7 @@ def collect_mosa_evidence(project_id, db_path=None):
                 """SELECT overall_modularity_score, approved_icd_count,
                           total_icd_required, tsp_current
                    FROM mosa_modularity_metrics
-                   WHERE project_id = ?
+                   WHERE project_id = %s
                    ORDER BY assessment_date DESC LIMIT 1""",
                 (project_id,),
             ).fetchone()
@@ -1119,7 +1119,7 @@ def get_evidence_for_control(project_id, control_id, db_path=None):
                       evidence_path, evidence_hash, collected_at, expires_at,
                       is_fresh, freshness_check_at, status, automation_frequency
                FROM cato_evidence
-               WHERE project_id = ? AND control_id = ?
+               WHERE project_id = %s AND control_id = %s
                ORDER BY collected_at DESC""",
             (project_id, control_id),
         ).fetchall()

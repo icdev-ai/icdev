@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Canvas Health Dashboard{% endblock %}
+{% block content %}
+<div class="cui-banner">CUI // SP-CTI</div>
+
+<div class="container-fluid py-3">
+  <div class="d-flex align-items-center mb-3 gap-3">
+    <h2 class="mb-0">Canvas Health</h2>
+    <span class="badge bg-success fs-6">{{ green }} green</span>
+    <span class="badge bg-warning text-dark fs-6">{{ amber }} amber</span>
+    <span class="badge bg-danger fs-6">{{ red }} red</span>
+    <span class="text-muted ms-auto small">{{ total }} canvases total</span>
+    <a href="/health/canvases" class="btn btn-sm btn-outline-secondary">Refresh</a>
+  </div>
+
+  {% if red > 0 %}
+  <div class="alert alert-danger py-2 mb-3">
+    <strong>{{ red }} canvas(es) have critical coherence violations</strong> — RLS bypass required. File a fix via Kanban or run <code>python tools/workflow/coherence_checker.py --check canvas_rls_bypass</code>.
+  </div>
+  {% endif %}
+
+  <div class="table-responsive">
+    <table class="table table-sm table-hover align-middle border">
+      <thead class="table-dark">
+        <tr>
+          <th>Canvas</th>
+          <th>Status</th>
+          <th>Route</th>
+          <th class="text-center">Blueprint</th>
+          <th class="text-center">E2E Spec</th>
+          <th class="text-center">IQE Adapter</th>
+          <th class="text-center">RLS OK</th>
+          <th class="text-center">Enabled</th>
+          <th>Issues</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in canvases %}
+        <tr class="{% if c.status == 'green' %}table-success{% elif c.status == 'amber' %}table-warning{% else %}table-danger{% endif %}">
+          <td>
+            <strong>{{ c.display_name }}</strong>
+            <div class="text-muted small font-monospace">{{ c.key }}</div>
+          </td>
+          <td>
+            {% if c.status == 'green' %}
+              <span class="badge bg-success">green</span>
+            {% elif c.status == 'amber' %}
+              <span class="badge bg-warning text-dark">amber</span>
+            {% else %}
+              <span class="badge bg-danger">red</span>
+            {% endif %}
+          </td>
+          <td><a href="{{ c.route }}" class="font-monospace small">{{ c.route }}</a></td>
+          <td class="text-center">{% if c.blueprint_exists %}✅{% else %}❌{% endif %}</td>
+          <td class="text-center">{% if c.e2e_exists %}✅{% else %}❌{% endif %}</td>
+          <td class="text-center">{% if c.iqe_exists %}✅{% else %}❌{% endif %}</td>
+          <td class="text-center">{% if c.rls_ok %}✅{% else %}<span class="text-danger fw-bold">❌</span>{% endif %}</td>
+          <td class="text-center">{% if c.enabled %}<span class="badge bg-primary">on</span>{% else %}<span class="badge bg-secondary">off</span>{% endif %}</td>
+          <td class="small text-muted">
+            {% if c.issues %}{{ c.issues | join(', ') }}{% else %}&mdash;{% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="9" class="text-center text-muted">No canvases found in component registry.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="text-muted small mt-2">
+    Data computed at request time from <code>args/component_registry.yaml</code> and static file checks. No DB queries.
+  </div>
+</div>
+
+{% include "includes/iqe_query_widget.html" %}
+{% endblock %}

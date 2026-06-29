@@ -1156,7 +1156,7 @@ class TeamOrchestrator:
 
             conn.execute(
                 """INSERT INTO agent_workflows (id, name, project_id, status, created_by, aggregated_result)
-                   VALUES (?, ?, ?, ?, ?, ?)
+                   VALUES (%s, %s, %s, %s, %s, %s)
                    ON CONFLICT(id) DO UPDATE SET
                    name = excluded.name,
                    status = excluded.status,
@@ -1178,7 +1178,7 @@ class TeamOrchestrator:
                        (id, workflow_id, agent_id, skill_id, description,
                         depends_on, status, input_data, output_data,
                         error_message, attempt_count, duration_ms)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                        ON CONFLICT(id) DO UPDATE SET
                        status = excluded.status,
                        output_data = excluded.output_data,
@@ -1214,10 +1214,10 @@ class TeamOrchestrator:
         try:
             conn.execute(
                 """UPDATE agent_subtasks
-                   SET status = ?, output_data = ?, error_message = ?,
-                       attempt_count = ?, duration_ms = ?,
+                   SET status = %s, output_data = %s, error_message = %s,
+                       attempt_count = %s, duration_ms = %s,
                        updated_at = CURRENT_TIMESTAMP
-                   WHERE id = ? AND workflow_id = ?""",
+                   WHERE id = %s AND workflow_id = %s""",
                 (
                     subtask.status,
                     json.dumps(subtask.output_data) if subtask.output_data else None,
@@ -1405,7 +1405,7 @@ class TeamOrchestrator:
         conn = _get_db(self._db_path)
         try:
             c = conn.cursor()
-            c.execute("SELECT * FROM agent_workflows WHERE id = ?", (workflow_id,))
+            c.execute("SELECT * FROM agent_workflows WHERE id = %s", (workflow_id,))
             wf_row = c.fetchone()
             if not wf_row:
                 return {}
@@ -1418,7 +1418,7 @@ class TeamOrchestrator:
                     pass
 
             c.execute(
-                "SELECT * FROM agent_subtasks WHERE workflow_id = ? ORDER BY created_at",
+                "SELECT * FROM agent_subtasks WHERE workflow_id = %s ORDER BY created_at",
                 (workflow_id,),
             )
             subtasks = []

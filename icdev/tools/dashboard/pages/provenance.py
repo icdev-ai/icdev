@@ -30,7 +30,7 @@ def _get_db():
 def _table_exists(conn, table_name):
     try:
         row = conn.execute(
-            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?",
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=%s",
             (table_name,),
         ).fetchone()
         return row[0] > 0
@@ -66,7 +66,7 @@ def list_provenance():
                       source_hash, anchor_hash, merkle_root, blockchain_tx_id,
                       classification, trust_score, created_at
                FROM source_citation_registry
-               WHERE project_id = ?
+               WHERE project_id = %s
                ORDER BY created_at DESC""",
             (project_id,),
         ).fetchall()
@@ -122,7 +122,7 @@ def provenance_graph():
             rows = conn.execute(
                 """SELECT id, citation_type, source_table, source_doc, source_hash,
                           merkle_root, blockchain_tx_id, trust_score
-                   FROM source_citation_registry WHERE project_id = ?""",
+                   FROM source_citation_registry WHERE project_id = %s""",
                 (project_id,),
             ).fetchall()
             for r in rows:
@@ -140,7 +140,7 @@ def provenance_graph():
         # Audit trail nodes
         if _table_exists(conn, "audit_trail"):
             rows = conn.execute(
-                "SELECT id, event_type, action, actor, hash, previous_hash, signature FROM audit_trail WHERE project_id = ? ORDER BY id LIMIT 50",
+                "SELECT id, event_type, action, actor, hash, previous_hash, signature FROM audit_trail WHERE project_id = %s ORDER BY id LIMIT 50",
                 (project_id,),
             ).fetchall()
             for r in rows:

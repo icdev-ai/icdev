@@ -364,7 +364,7 @@ def ingest_config(
         conn.execute(
             "INSERT INTO ni_device_configs (id, device_id, config_type, "
             "config_text, config_hash, source, version) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (
                 config_id,
                 hostname or device_ip or config_id,

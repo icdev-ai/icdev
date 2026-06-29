@@ -906,6 +906,59 @@ def appendices(doc):
     )
 
 
+# ── IDR export entry point ────────────────────────────────────────────────────
+
+def generate_docx(title: str, content: str, output_path: str) -> str:
+    """Generate a styled DOCX from arbitrary text content.
+
+    Called by the IDR publish pipeline (tools/docgen/workflow._try_export_docx).
+
+    Parameters
+    ----------
+    title:       Document title — rendered as an H1 cover heading.
+    content:     Plain text body.  Blank lines become paragraph breaks;
+                 lines starting with "# " / "## " become H1 / H2 headings;
+                 lines starting with "- " / "* " become bullets.
+    output_path: Absolute or relative path for the output .docx file.
+
+    Returns
+    -------
+    str  — the resolved output path.
+    """
+    doc = Document()
+    _setup(doc)
+
+    # Cover heading
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    r = p.add_run(title)
+    r.font.name = "Calibri"
+    r.font.size = Pt(28)
+    r.font.bold = True
+    r.font.color.rgb = NAVY
+    _gold_rule(p)
+    _spacer(doc)
+
+    # Body — rudimentary Markdown-ish parsing
+    for line in content.splitlines():
+        stripped = line.rstrip()
+        if not stripped:
+            _spacer(doc)
+        elif stripped.startswith("## "):
+            _h2(doc, stripped[3:])
+        elif stripped.startswith("# "):
+            _h1(doc, stripped[2:])
+        elif stripped.startswith(("- ", "* ")):
+            _bullet(doc, stripped[2:])
+        else:
+            _body(doc, stripped)
+
+    out = Path(output_path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    doc.save(str(out))
+    return str(out)
+
+
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 def main():

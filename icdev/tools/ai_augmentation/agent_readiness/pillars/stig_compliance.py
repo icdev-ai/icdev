@@ -67,6 +67,28 @@ def _load_thresholds() -> dict[str, Any]:
 # NLP extractor — Claude Haiku for natural-language STIG reference detection
 # ---------------------------------------------------------------------------
 
+def _parse_nlp_json(text: str) -> Optional[dict]:
+    """Extract a JSON object from NLP response text.
+
+    Tolerates prose prefixes, markdown fences, and nested braces by using a
+    non-greedy object match. Returns None when no valid dict-shaped JSON is
+    found.
+    """
+    if not text or not isinstance(text, str):
+        return None
+    # Strip markdown code fences if present.
+    cleaned = re.sub(r"```(?:json)?\s*|\s*```", "", text, flags=re.IGNORECASE)
+    # Non-greedy match for the first complete JSON object.
+    json_match = re.search(r'\{.*?\}', cleaned, re.DOTALL)
+    if not json_match:
+        return None
+    try:
+        result = json.loads(json_match.group())
+        return result if isinstance(result, dict) else None
+    except json.JSONDecodeError:
+        return None
+
+
 def _nlp_extract_stig_refs(text: str, task: str) -> Optional[dict]:
     """Extract STIG references from text using Claude Haiku NLP.
 
@@ -103,10 +125,7 @@ def _nlp_extract_stig_refs(text: str, task: str) -> Optional[dict]:
         model_id = thresholds["nlp_extractor_model"]
         model_cfg = {"max_output_tokens": thresholds["nlp_extractor_max_tokens"]}
         response = provider.invoke(request, model_id, model_cfg)
-        result_text = response.content.strip()
-        json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
-        if json_match:
-            return json.loads(json_match.group())
+        return _parse_nlp_json(response.content)
     except Exception:  # noqa: BLE001
         pass
     return None
@@ -432,12 +451,12 @@ def _check_external_stig_scanner(repo: pathlib.Path) -> CriterionResult:
 PILLAR = Pillar(
     id="stig-compliance",
     name="STIG Compliance Markers",
-    description="STIG V-IDs in code/config, documentation references, checklist artifacts, and CAT I tracking.",
+    description="STIG V-IDs in code/config, documentation references, checklist artifacts, CAT I tracking, and optional external scanner.",
     criteria=[
         Criterion("stig-vids-in-code", "STIG V-IDs in code", "STIG V-IDs referenced in source or config files.", "stig-compliance", 3, _check_stig_vids_in_code),
         Criterion("stig-in-docs", "STIG in docs", "STIG references appear in project documentation.", "stig-compliance", 2, _check_stig_in_docs),
         Criterion("stig-checklist", "STIG checklist", "A STIG checklist (.ckl, XCCDF) or compliance artifact exists.", "stig-compliance", 4, _check_stig_checklist),
         Criterion("cat1-remediation", "CAT I remediation", "CAT severity markers show active STIG tracking.", "stig-compliance", 4, _check_cat1_remediation),
-        Criterion("external-stig-scanner", "External STIG scanner", "External STIG scanner ran with post-death PID verification.", "stig-compliance", 3, _check_external_stig_scanner),
+        Criterion("external-stig-scanner", "External STIG scanner", "An external STIG scanner (OpenSCAP) is available and passes a death gate.", "stig-compliance", 3, _check_external_stig_scanner),
     ],
 )

@@ -69,7 +69,7 @@ def _get_connection(db_path=None):
 
 def _get_project(conn, project_id):
     """Load project data from the projects table."""
-    row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+    row = conn.execute("SELECT * FROM projects WHERE id = %s", (project_id,)).fetchone()
     if not row:
         raise ValueError(f"Project '{project_id}' not found.")
     return dict(row)
@@ -121,7 +121,7 @@ def _log_audit_event(conn, project_id, action, details, file_path=None):
             """INSERT INTO audit_trail
                (project_id, event_type, actor, action, details,
                 affected_files, classification)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
             (
                 project_id,
                 "ivv_assessed",
@@ -1552,7 +1552,7 @@ def _ivv_upsert_assessment(conn, project_id, req, now, ivv_status, evidence, det
                 verification_type, requirement_id, status,
                 evidence_description, evidence_path,
                 automation_result, notes, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (project_id, now.isoformat(), "icdev-ivv-engine", req["process_area"],
              req.get("verification_type", "verification"), req_id, ivv_status, evidence,
              details or None,
@@ -1584,7 +1584,7 @@ def _ivv_persist_finding(conn, project_id, finding):
             """INSERT OR IGNORE INTO ivv_findings
                (project_id, finding_id, severity, process_area,
                 title, description, recommendation, status)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
             (project_id, finding["finding_id"], finding["severity"], finding["process_area"],
              finding["title"], finding["description"], finding["recommendation"], "open"),
         )
@@ -1661,7 +1661,7 @@ def _ivv_persist_certification(conn, project_id, now, cert_status, v_score, d_sc
                (project_id, certification_type, status,
                 verification_score, validation_score, overall_score,
                 ivv_authority, open_findings_count, critical_findings_count, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (project_id, "IV&V", cert_status, v_score, d_score, overall_score,
              "icdev-ivv-engine", len(findings), critical_count, now.isoformat()),
         )

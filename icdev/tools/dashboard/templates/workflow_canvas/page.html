@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}Workflow & Forms — ICDEV™{% endblock %}
+
+{% block content %}
+{% from "includes/classification_macros.html" import design_classification_banner %}
+{{ design_classification_banner('CUI') }}
+
+<div class="page-container" style="padding:24px">
+
+  <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px">
+    <div>
+      <h1 style="margin:0;font-size:1.75rem">Workflow &amp; Forms</h1>
+      <p style="margin:4px 0 0;color:var(--text-secondary)">Visual form builder and workflow pipeline designer with enterprise branding and multi-format export.</p>
+    </div>
+    <div style="display:flex;gap:8px">
+      <a href="/workflow-canvas/forms/new" style="padding:8px 18px;background:#1d72ff;color:#fff;border-radius:6px;text-decoration:none;font-size:0.9rem;font-weight:600;white-space:nowrap;border:none">+ New Form</a>
+      <a href="/workflow-canvas/workflows/new" class="btn btn-secondary">+ New Workflow</a>
+      <a href="/workflow-canvas/templates" class="btn btn-ghost">Browse Templates</a>
+    </div>
+  </div>
+
+  <!-- Stats row -->
+  <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:16px;margin-bottom:32px">
+    {% set stat_items = [
+      ('Forms', stats.total_forms, '#3b82f6'),
+      ('Published', stats.published_forms, '#10b981'),
+      ('Workflows', stats.total_workflows, '#8b5cf6'),
+      ('Submissions Today', stats.submissions_today, '#f59e0b'),
+      ('Templates', stats.templates_available, '#6366f1'),
+    ] %}
+    {% for label, value, color in stat_items %}
+    <div style="background:var(--bg-secondary);border-radius:8px;padding:16px;border-left:4px solid {{ color }}">
+      <div style="font-size:1.75rem;font-weight:700;color:{{ color }}">{{ value }}</div>
+      <div style="font-size:0.8rem;color:var(--text-secondary);margin-top:2px">{{ label }}</div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px">
+
+    <!-- Recent Forms -->
+    <div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <h2 style="margin:0;font-size:1.1rem">Recent Forms</h2>
+        <a href="/workflow-canvas/forms" style="font-size:0.85rem;color:var(--accent-blue)">View all →</a>
+      </div>
+      {% if forms %}
+      <div style="display:flex;flex-direction:column;gap:10px">
+        {% for form in forms %}
+        <div style="background:var(--bg-secondary);border-radius:8px;padding:14px;display:flex;align-items:center;justify-content:space-between">
+          <div>
+            <div style="font-weight:600">{{ form.name }}</div>
+            <div style="font-size:0.8rem;color:var(--text-secondary)">
+              <span class="badge badge-{{ 'success' if form.status=='published' else 'warning' if form.status=='draft' else 'neutral' }}">{{ form.status }}</span>
+              &nbsp;v{{ form.version }}
+            </div>
+          </div>
+          <div style="display:flex;gap:6px">
+            <a href="/workflow-canvas/forms/{{ form.form_id }}/edit" class="btn btn-xs btn-ghost">Edit</a>
+            <a href="/workflow-canvas/forms/{{ form.form_id }}" class="btn btn-xs btn-ghost">View</a>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div style="background:var(--bg-secondary);border-radius:8px;padding:32px;text-align:center;color:var(--text-secondary)">
+        No forms yet. <a href="/workflow-canvas/forms/new">Create your first form →</a>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- Recent Workflows -->
+    <div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <h2 style="margin:0;font-size:1.1rem">Recent Workflows</h2>
+        <a href="/workflow-canvas/workflows" style="font-size:0.85rem;color:var(--accent-blue)">View all →</a>
+      </div>
+      {% if workflows %}
+      <div style="display:flex;flex-direction:column;gap:10px">
+        {% for wf in workflows %}
+        <div style="background:var(--bg-secondary);border-radius:8px;padding:14px;display:flex;align-items:center;justify-content:space-between">
+          <div>
+            <div style="font-weight:600">{{ wf.name }}</div>
+            <div style="font-size:0.8rem;color:var(--text-secondary)">{{ wf.category or 'custom' }} · v{{ wf.version }}</div>
+          </div>
+          <div style="display:flex;gap:6px">
+            <a href="/workflow-canvas/workflows/{{ wf.workflow_id }}/edit" class="btn btn-xs btn-ghost">Edit</a>
+            <a href="/workflow-canvas/workflows/{{ wf.workflow_id }}" class="btn btn-xs btn-ghost">View</a>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div style="background:var(--bg-secondary);border-radius:8px;padding:32px;text-align:center;color:var(--text-secondary)">
+        No workflows yet. <a href="/workflow-canvas/workflows/new">Create your first workflow →</a>
+      </div>
+      {% endif %}
+    </div>
+
+  </div>
+
+  <!-- IQE widget -->
+  {% if "includes/iqe_query_widget.html" is defined %}
+    {% include "includes/iqe_query_widget.html" %}
+  {% endif %}
+
+</div>
+{% endblock %}

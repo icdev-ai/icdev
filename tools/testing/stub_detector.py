@@ -618,7 +618,7 @@ def store_results(results: dict, project_id: str = "unknown", db_path: Path = No
                (project_id, project_dir, files_checked, files_passed,
                 files_failed, stub_total, level_summary, failures,
                 overall_passed, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 project_id,
                 results.get("project_dir", ""),

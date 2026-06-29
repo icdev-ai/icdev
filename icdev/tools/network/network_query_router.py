@@ -190,7 +190,7 @@ def route_query(topology_id: str, question: str) -> dict:
             # Resolve device name to ID
             conn = ni._get_nc_conn()
             row = conn.execute(
-                "SELECT node_id FROM ni_devices WHERE topology_id = ? AND label LIKE ?",
+                "SELECT node_id FROM ni_devices WHERE topology_id = %s AND label LIKE %s",
                 (topology_id, f"%{device_name}%"),
             ).fetchone()
             conn.close()

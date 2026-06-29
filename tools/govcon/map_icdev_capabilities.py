@@ -140,7 +140,7 @@ def _insert_matrix_entry(
             requirement_type, compliance_status, proposal_section_id,
             response_summary, notes, sort_order, classification,
             created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """,
         (
             entry_id,

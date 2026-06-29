@@ -351,7 +351,7 @@ def _plagiarism_check(text: str, opportunity_id: str = "") -> Dict[str, Any]:
         try:
             rows = conn.execute(
                 "SELECT section_text FROM proposal_section_drafts "
-                "WHERE opportunity_id != ? AND status IN ('draft', 'approved') "
+                "WHERE opportunity_id != %s AND status IN ('draft', 'approved') "
                 "ORDER BY created_at DESC LIMIT 20",
                 (opportunity_id,),
             ).fetchall()

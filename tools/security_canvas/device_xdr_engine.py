@@ -89,7 +89,7 @@ def scan_patch_compliance(device_id: str, os_platform: str = "windows",
         conn.execute(
             "INSERT INTO zig_patch_compliance "
             "(device_id, os_platform, missing_patches, critical_missing, compliant, sla_breached, scanned_at) "
-            "VALUES (?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s)",
             (device_id, os_platform, missing_patches, critical_missing,
              int(compliant), int(sla_breached), now),
         )
@@ -115,7 +115,7 @@ def correlate_xdr(entity: str) -> dict[str, Any]:
         for domain, (table, key) in XDR_DOMAINS.items():
             try:
                 r = conn.execute(
-                    f"SELECT COUNT(*) FROM {table} WHERE {key}=? "  # nosec B608 -- whitelist from XDR_DOMAINS
+                    f"SELECT COUNT(*) FROM {table} WHERE {key}=%s "  # nosec B608 -- whitelist from XDR_DOMAINS
                     f"AND created_at >= datetime('now','-7 days')",  # nosec B608
                     (entity,),
                 ).fetchone()
@@ -144,7 +144,7 @@ def correlate_xdr(entity: str) -> dict[str, Any]:
         conn.execute(
             "INSERT INTO zig_xdr_correlations "
             "(entity, domains_hit, domain_count, xdr_score, verdict, siem_forwarded, soar_triggered, created_at) "
-            "VALUES (?,?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
             (entity, json.dumps(domains_hit), domain_count, xdr_score, verdict,
              int(siem_ok), int(soar_triggered), now),
         )
@@ -172,7 +172,7 @@ def _forward_xdr_siem(entity: str, domains: list[str], score: float) -> bool:
                    f"entity={entity} domains={','.join(domains)} score={score}")
             conn.execute(
                 "INSERT INTO audit_trail (event_type, actor, action, details) "
-                "VALUES ('security_scan', ?, 'xdr_correlate', ?)",
+                "VALUES ('security_scan', %s, 'xdr_correlate', %s)",
                 (entity, cef),
             )
             conn.commit()
@@ -198,7 +198,7 @@ def remediate_device(device_id: str, finding: str, action: str = "auto") -> dict
         _ensure_tables(conn)
         conn.execute(
             "INSERT INTO zig_device_remediations (device_id, finding, action, status, auto, created_at) "
-            "VALUES (?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s)",
             (device_id, finding, applied, "applied", 1, now),
         )
         conn.commit()

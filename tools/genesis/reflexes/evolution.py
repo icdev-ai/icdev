@@ -15,14 +15,14 @@ Config: args/nova_sela_config.yaml
 from __future__ import annotations
 
 import json
-import logging
 import uuid
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
-logger = logging.getLogger("icdev.nova.sela")
+from tools.logging.icdev_logger import get_logger
+log = get_logger("icdev.nova.sela")
 
 
 def _utcnow() -> str:
@@ -37,7 +37,7 @@ def _load_sela_config() -> Dict[str, Any]:
             raw = yaml.safe_load(fh) or {}
         return raw.get("sela", {})
     except Exception as exc:
-        logger.warning("[sela] could not load config: %s — using defaults", exc)
+        log.warning("[sela] could not load config: %s — using defaults", exc)
         return {}
 
 
@@ -61,17 +61,17 @@ def _query_low_performing_skills(
                 COUNT(*) AS total,
                 SUM(CASE WHEN outcome = 'success' THEN 1 ELSE 0 END) AS successes
             FROM agent_execution_traces
-            WHERE created_at >= ?
+            WHERE created_at >= %s
               AND skill_used != ''
             GROUP BY skill_used
-            HAVING COUNT(*) >= ?
+            HAVING COUNT(*) >= %s
             ORDER BY (SUM(CASE WHEN outcome = 'success' THEN 1 ELSE 0 END) * 1.0 / COUNT(*)) ASC
-            LIMIT ?
+            LIMIT %s
             """,
             (cutoff, min_trace_count, skill_limit),
         ).fetchall()
     except Exception as exc:
-        logger.warning("[sela] trace query failed: %s", exc)
+        log.warning("[sela] trace query failed: %s", exc)
         return []
 
     skills = []
@@ -103,11 +103,11 @@ def _get_failure_examples(conn, skill: str, window_days: int, limit: int = 5) ->
             """
             SELECT lesson_pattern, improvement_notes
             FROM agent_execution_traces
-            WHERE skill_used = ?
+            WHERE skill_used = %s
               AND outcome != 'success'
-              AND created_at >= ?
+              AND created_at >= %s
             ORDER BY created_at DESC
-            LIMIT ?
+            LIMIT %s
             """,
             (skill, cutoff, limit),
         ).fetchall()
@@ -146,7 +146,7 @@ def _generate_mutations(
         from tools.llm.router import LLMRouter
         from tools.llm.provider import LLMRequest
     except ImportError as exc:
-        logger.warning("[sela] LLM imports unavailable: %s", exc)
+        log.warning("[sela] LLM imports unavailable: %s", exc)
         return []
 
     examples_block = ""
@@ -186,7 +186,7 @@ def _generate_mutations(
             if isinstance(candidates, list):
                 return [str(c) for c in candidates[:mutation_count]]
     except Exception as exc:
-        logger.warning("[sela] LLM mutation generation failed for skill '%s': %s", skill, exc)
+        log.warning("[sela] LLM mutation generation failed for skill '%s': %s", skill, exc)
 
     return []
 
@@ -249,7 +249,7 @@ def _insert_artifact(conn, skill: str, best: Dict[str, Any], baseline_score: flo
             (artifact_id, task_type, skill_used, generation_n,
              improvement_text, composite_score, baseline_score,
              evidence_traces, applied_count, status, created_at)
-        VALUES (?, ?, ?, 1, ?, ?, ?, '[]', 0, 'pending', ?)
+        VALUES (%s, %s, %s, 1, %s, %s, %s, '[]', 0, 'pending', %s)
         """,
         (
             artifact_id,
@@ -299,7 +299,7 @@ def run_evolution(config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         skills = _query_low_performing_skills(
             conn, window_days, success_rate_threshold, min_trace_count, skill_limit
         )
-        logger.info("[sela] %d under-performing skill(s) found", len(skills))
+        log.info("[sela] %d under-performing skill(s) found", len(skills))
 
         artifacts_created: List[Dict[str, Any]] = []
         skipped_skills: List[str] = []
@@ -314,7 +314,7 @@ def run_evolution(config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
                 skill, skill_info, failure_examples, mutation_count, mutation_function
             )
             if not candidates:
-                logger.info("[sela] no mutations generated for skill '%s' — skipping", skill)
+                log.info("[sela] no mutations generated for skill '%s' — skipping", skill)
                 skipped_skills.append(skill)
                 continue
 
@@ -322,7 +322,7 @@ def run_evolution(config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
             scored.sort(key=lambda s: s["composite_score"], reverse=True)
             best = scored[0]
 
-            logger.info(
+            log.info(
                 "[sela] skill='%s' best_score=%.3f (threshold=%.2f)",
                 skill,
                 best["composite_score"],
@@ -334,7 +334,7 @@ def run_evolution(config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
                 artifacts_created.append(
                     {"skill": skill, "artifact_id": artifact_id, "score": best["composite_score"]}
                 )
-                logger.info("[sela] artifact %s created for skill '%s'", artifact_id, skill)
+                log.info("[sela] artifact %s created for skill '%s'", artifact_id, skill)
             else:
                 skipped_skills.append(skill)
 
@@ -362,7 +362,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             "details": result,
         }
     except Exception as exc:
-        logger.error("[sela] evolution run failed: %s", exc)
+        log.error("[sela] evolution run failed: %s", exc)
         return {
             "success": False,
             "metric_value": 0.0,

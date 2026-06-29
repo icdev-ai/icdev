@@ -37,7 +37,7 @@ def _get_connection(db_path: Path = DB_PATH) -> sqlite3.Connection:
 def _count_table(conn: sqlite3.Connection, table: str, project_id: str) -> int:
     try:
         row = conn.execute(
-            f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = ?",  # nosec B608 -- table/column names are internal constants, not user input
+            f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = %s",  # nosec B608 -- table/column names are internal constants, not user input
             (project_id,),
         ).fetchone()
         return row["cnt"] if row else 0
@@ -242,7 +242,7 @@ def build_evidence(project_id: str, db_path: Path = DB_PATH) -> Dict:
         try:
             drift = conn.execute(
                 """SELECT COUNT(*) as cnt FROM ai_telemetry
-                   WHERE project_id = ? AND event_type = 'drift_detected'""",
+                   WHERE project_id = %s AND event_type = 'drift_detected'""",
                 (project_id,),
             ).fetchone()
             drift_count = drift["cnt"] if drift else 0

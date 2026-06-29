@@ -345,14 +345,14 @@ def save_library(
         conn.execute(
             "INSERT INTO nc_stencil_libraries "
             "(id, vendor, name, category, source_url, raw_format, shape_count, imported_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
             (lib_id, vendor, name, category, source_url, raw_format, len(shapes), _now()),
         )
         for shape in shapes:
             conn.execute(
                 "INSERT INTO nc_stencil_shapes "
                 "(id, library_id, name, name_u, category, icon_data, icon_type, metadata_json) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     str(uuid.uuid4()),
                     lib_id,

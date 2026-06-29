@@ -59,7 +59,7 @@ def _extract_audit(user_email: str) -> list[dict[str, Any]]:
             "SELECT id, project_id, event_type, actor, action, details, "
             "affected_files, classification, session_id, created_at "
             "FROM audit_trail "
-            "WHERE actor = ? AND created_at >= ? "
+            "WHERE actor = %s AND created_at >= %s "
             "ORDER BY created_at DESC",
             (user_email, cutoff.isoformat()),
         ).fetchall()
@@ -88,7 +88,7 @@ def _extract_patterns(user_email: str) -> list[dict[str, Any]]:
 
         # Primary: datasets the user created
         ds_rows = conn.execute(
-            "SELECT id FROM ft_datasets WHERE created_by = ?",
+            "SELECT id FROM ft_datasets WHERE created_by = %s",
             (user_email,),
         ).fetchall()
         dataset_ids = [r[0] for r in ds_rows]
@@ -131,7 +131,7 @@ def _extract_patterns(user_email: str) -> list[dict[str, Any]]:
 def _user_session_ids(conn: Any, user_email: str) -> list[str]:
     rows = conn.execute(
         "SELECT DISTINCT session_id FROM audit_trail "
-        "WHERE actor = ? AND session_id IS NOT NULL AND session_id != ''",
+        "WHERE actor = %s AND session_id IS NOT NULL AND session_id != ''",
         (user_email,),
     ).fetchall()
     return [r[0] for r in rows]

@@ -348,7 +348,7 @@ def create_dashboard(
             """INSERT INTO studio_dashboards
                (dashboard_id, name, layout_json, role_default, created_by,
                 created_at, updated_at, shared)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
             (dash_id, name, layout_json, role_default, created_by, _now_iso(), _now_iso(), 1 if shared else 0),
         )
         conn.commit()
@@ -381,7 +381,7 @@ def list_dashboards(*, role: str | None = None) -> list[dict]:
 def get_dashboard(dash_id: str) -> dict | None:
     conn = get_connection()
     try:
-        row = conn.execute("SELECT * FROM studio_dashboards WHERE dashboard_id = ?", (dash_id,)).fetchone()
+        row = conn.execute("SELECT * FROM studio_dashboards WHERE dashboard_id = %s", (dash_id,)).fetchone()
         if not row:
             return None
         d = dict(row)
@@ -425,7 +425,7 @@ def update_dashboard(
     conn = get_connection()
     try:
         conn.execute(
-            f"UPDATE studio_dashboards SET {', '.join(sets)} WHERE dashboard_id = ?",  # nosec B608
+            f"UPDATE studio_dashboards SET {', '.join(sets)} WHERE dashboard_id = %s",  # nosec B608
             vals,
         )
         conn.commit()
@@ -437,7 +437,7 @@ def update_dashboard(
 def delete_dashboard(dash_id: str) -> dict:
     conn = get_connection()
     try:
-        cur = conn.execute("DELETE FROM studio_dashboards WHERE dashboard_id = ?", (dash_id,))
+        cur = conn.execute("DELETE FROM studio_dashboards WHERE dashboard_id = %s", (dash_id,))
         conn.commit()
         return {"status": "ok"} if cur.rowcount else {"status": "error", "error": "Not found"}
     finally:

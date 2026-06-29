@@ -54,7 +54,7 @@ def _audit(conn, action, details="", actor="gap_analyzer"):
     try:
         conn.execute(
             "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (str(uuid.uuid4()), _now(), "govcon.gap_analysis", actor, action, details, "govcon"),
         )
     except Exception:
@@ -349,7 +349,7 @@ def register_gaps_as_innovation_signals():
 
         # Check if already registered
         existing = conn.execute(
-            "SELECT id FROM innovation_signals WHERE source_type = 'govcon_gap' AND source_url = ?",
+            "SELECT id FROM innovation_signals WHERE source_type = 'govcon_gap' AND source_url = %s",
             (gap["pattern_id"],),
         ).fetchone()
 
@@ -361,7 +361,7 @@ def register_gaps_as_innovation_signals():
                 "INSERT INTO innovation_signals "
                 "(id, source_type, source_url, title, description, category, "
                 "raw_score, composite_score, keywords, content_hash, status, created_at, metadata) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     str(uuid.uuid4()),
                     "govcon_gap",

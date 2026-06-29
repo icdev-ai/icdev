@@ -107,7 +107,7 @@ def _audit(conn, action, details="", actor="contract_manager"):
     try:
         conn.execute(
             "INSERT INTO audit_trail (event_type, actor, action, details, session_id) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s)",
             ("hook_event_logged", actor, action, details, "cpmp"),
         )
     except Exception:
@@ -118,7 +118,7 @@ def _record_status_change(conn, entity_type, entity_id, old_status, new_status, 
     """Record status change in cpmp_status_history (append-only, NIST AU-2)."""
     conn.execute(
         "INSERT INTO cpmp_status_history (entity_type, entity_id, old_status, new_status, changed_by, reason) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s)",
         (entity_type, entity_id, old_status, new_status, changed_by, reason),
     )
 
@@ -137,7 +137,7 @@ def create_contract(data):
         "total_value, funded_value, ceiling_value, pop_start, pop_end, "
         "status, opportunity_id, notes, "
         "created_at, updated_at, created_by) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
         (
             contract_id,
             data.get("contract_number", ""),
@@ -172,7 +172,7 @@ def create_contract(data):
 def get_contract(contract_id):
     """Get a single contract with summary counts."""
     conn = _get_db()
-    row = conn.execute("SELECT * FROM cpmp_contracts WHERE id = ?", (contract_id,)).fetchone()
+    row = conn.execute("SELECT * FROM cpmp_contracts WHERE id = %s", (contract_id,)).fetchone()
     if not row:
         conn.close()
         return {"status": "error", "message": f"Contract {contract_id} not found"}
@@ -181,19 +181,19 @@ def get_contract(contract_id):
 
     # Enrich with counts
     contract["clin_count"] = conn.execute(
-        "SELECT COUNT(*) FROM cpmp_clins WHERE contract_id = ?", (contract_id,)
+        "SELECT COUNT(*) FROM cpmp_clins WHERE contract_id = %s", (contract_id,)
     ).fetchone()[0]
     contract["wbs_count"] = conn.execute(
-        "SELECT COUNT(*) FROM cpmp_wbs WHERE contract_id = ?", (contract_id,)
+        "SELECT COUNT(*) FROM cpmp_wbs WHERE contract_id = %s", (contract_id,)
     ).fetchone()[0]
     contract["deliverable_count"] = conn.execute(
-        "SELECT COUNT(*) FROM cpmp_deliverables WHERE contract_id = ?", (contract_id,)
+        "SELECT COUNT(*) FROM cpmp_deliverables WHERE contract_id = %s", (contract_id,)
     ).fetchone()[0]
     contract["overdue_count"] = conn.execute(
-        "SELECT COUNT(*) FROM cpmp_deliverables WHERE contract_id = ? AND status = 'overdue'", (contract_id,)
+        "SELECT COUNT(*) FROM cpmp_deliverables WHERE contract_id = %s AND status = 'overdue'", (contract_id,)
     ).fetchone()[0]
     contract["subcontractor_count"] = conn.execute(
-        "SELECT COUNT(*) FROM cpmp_subcontractors WHERE contract_id = ?", (contract_id,)
+        "SELECT COUNT(*) FROM cpmp_subcontractors WHERE contract_id = %s", (contract_id,)
     ).fetchone()[0]
 
     conn.close()
@@ -222,7 +222,7 @@ def list_contracts(status=None, health=None, limit=50):
 def update_contract(contract_id, data):
     """Update mutable contract fields (not status — use transition_contract)."""
     conn = _get_db()
-    row = conn.execute("SELECT id FROM cpmp_contracts WHERE id = ?", (contract_id,)).fetchone()
+    row = conn.execute("SELECT id FROM cpmp_contracts WHERE id = %s", (contract_id,)).fetchone()
     if not row:
         conn.close()
         return {"status": "error", "message": f"Contract {contract_id} not found"}
@@ -259,7 +259,7 @@ def update_contract(contract_id, data):
     params.append(_now())
     params.append(contract_id)
 
-    conn.execute(f"UPDATE cpmp_contracts SET {', '.join(sets)} WHERE id = ?", params)  # nosec B608 -- table/column names are internal constants, not user input
+    conn.execute(f"UPDATE cpmp_contracts SET {', '.join(sets)} WHERE id = %s", params)  # nosec B608 -- table/column names are internal constants, not user input
     _audit(conn, "update_contract", f"Updated contract {contract_id}: {list(data.keys())}")
     conn.commit()
     conn.close()
@@ -269,7 +269,7 @@ def update_contract(contract_id, data):
 def transition_contract(contract_id, new_status, changed_by=None, reason=None):
     """Transition contract status with state machine enforcement."""
     conn = _get_db()
-    row = conn.execute("SELECT id, status FROM cpmp_contracts WHERE id = ?", (contract_id,)).fetchone()
+    row = conn.execute("SELECT id, status FROM cpmp_contracts WHERE id = %s", (contract_id,)).fetchone()
     if not row:
         conn.close()
         return {"status": "error", "message": f"Contract {contract_id} not found"}
@@ -284,7 +284,7 @@ def transition_contract(contract_id, new_status, changed_by=None, reason=None):
         }
 
     conn.execute(
-        "UPDATE cpmp_contracts SET status = ?, updated_at = ? WHERE id = ?",
+        "UPDATE cpmp_contracts SET status = %s, updated_at = %s WHERE id = %s",
         (new_status, _now(), contract_id),
     )
     _record_status_change(conn, "contract", contract_id, old_status, new_status, changed_by, reason)
@@ -300,7 +300,7 @@ def transition_contract(contract_id, new_status, changed_by=None, reason=None):
 def create_clin(contract_id, data):
     """Create a CLIN under a contract."""
     conn = _get_db()
-    if not conn.execute("SELECT id FROM cpmp_contracts WHERE id = ?", (contract_id,)).fetchone():
+    if not conn.execute("SELECT id FROM cpmp_contracts WHERE id = %s", (contract_id,)).fetchone():
         conn.close()
         return {"status": "error", "message": f"Contract {contract_id} not found"}
 
@@ -308,7 +308,7 @@ def create_clin(contract_id, data):
     conn.execute(
         "INSERT INTO cpmp_clins (id, contract_id, clin_number, description, clin_type, "
         "total_value, funded_value, billed_value, status, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
         (
             clin_id,
             contract_id,
@@ -333,7 +333,7 @@ def list_clins(contract_id):
     """List CLINs for a contract."""
     conn = _get_db()
     rows = conn.execute(
-        "SELECT * FROM cpmp_clins WHERE contract_id = ? ORDER BY clin_number", (contract_id,)
+        "SELECT * FROM cpmp_clins WHERE contract_id = %s ORDER BY clin_number", (contract_id,)
     ).fetchall()
     conn.close()
     return {"status": "ok", "total": len(rows), "clins": [dict(r) for r in rows]}
@@ -342,7 +342,7 @@ def list_clins(contract_id):
 def update_clin(clin_id, data):
     """Update mutable CLIN fields."""
     conn = _get_db()
-    row = conn.execute("SELECT id FROM cpmp_clins WHERE id = ?", (clin_id,)).fetchone()
+    row = conn.execute("SELECT id FROM cpmp_clins WHERE id = %s", (clin_id,)).fetchone()
     if not row:
         conn.close()
         return {"status": "error", "message": f"CLIN {clin_id} not found"}
@@ -358,7 +358,7 @@ def update_clin(clin_id, data):
         return {"status": "error", "message": "No updatable fields provided"}
     sets.append("updated_at = ?")
     params.extend([_now(), clin_id])
-    conn.execute(f"UPDATE cpmp_clins SET {', '.join(sets)} WHERE id = ?", params)  # nosec B608 -- table/column names are internal constants, not user input
+    conn.execute(f"UPDATE cpmp_clins SET {', '.join(sets)} WHERE id = %s", params)  # nosec B608 -- table/column names are internal constants, not user input
     conn.commit()
     conn.close()
     return {"status": "ok", "clin_id": clin_id}
@@ -370,7 +370,7 @@ def update_clin(clin_id, data):
 def create_wbs(contract_id, data):
     """Create a WBS element (supports hierarchy via parent_id)."""
     conn = _get_db()
-    if not conn.execute("SELECT id FROM cpmp_contracts WHERE id = ?", (contract_id,)).fetchone():
+    if not conn.execute("SELECT id FROM cpmp_contracts WHERE id = %s", (contract_id,)).fetchone():
         conn.close()
         return {"status": "error", "message": f"Contract {contract_id} not found"}
 
@@ -378,7 +378,7 @@ def create_wbs(contract_id, data):
     parent_id = data.get("parent_id")
     level = 1
     if parent_id:
-        parent = conn.execute("SELECT level FROM cpmp_wbs WHERE id = ?", (parent_id,)).fetchone()
+        parent = conn.execute("SELECT level FROM cpmp_wbs WHERE id = %s", (parent_id,)).fetchone()
         if parent:
             level = parent["level"] + 1
 
@@ -386,7 +386,7 @@ def create_wbs(contract_id, data):
         "INSERT INTO cpmp_wbs (id, contract_id, parent_id, wbs_number, title, description, "
         "budget_at_completion, planned_start, planned_finish, "
         "status, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
         (
             wbs_id,
             contract_id,
@@ -412,7 +412,7 @@ def create_wbs(contract_id, data):
 def list_wbs(contract_id):
     """List WBS elements for a contract."""
     conn = _get_db()
-    rows = conn.execute("SELECT * FROM cpmp_wbs WHERE contract_id = ? ORDER BY wbs_number", (contract_id,)).fetchall()
+    rows = conn.execute("SELECT * FROM cpmp_wbs WHERE contract_id = %s ORDER BY wbs_number", (contract_id,)).fetchall()
     conn.close()
     return {"status": "ok", "total": len(rows), "wbs_elements": [dict(r) for r in rows]}
 
@@ -420,7 +420,7 @@ def list_wbs(contract_id):
 def build_wbs_tree(contract_id):
     """Build hierarchical WBS tree from flat list."""
     conn = _get_db()
-    rows = conn.execute("SELECT * FROM cpmp_wbs WHERE contract_id = ? ORDER BY wbs_number", (contract_id,)).fetchall()
+    rows = conn.execute("SELECT * FROM cpmp_wbs WHERE contract_id = %s ORDER BY wbs_number", (contract_id,)).fetchall()
     conn.close()
 
     elements = {r["id"]: dict(r) for r in rows}
@@ -441,7 +441,7 @@ def build_wbs_tree(contract_id):
 def update_wbs(wbs_id, data):
     """Update mutable WBS fields."""
     conn = _get_db()
-    row = conn.execute("SELECT id, status FROM cpmp_wbs WHERE id = ?", (wbs_id,)).fetchone()
+    row = conn.execute("SELECT id, status FROM cpmp_wbs WHERE id = %s", (wbs_id,)).fetchone()
     if not row:
         conn.close()
         return {"status": "error", "message": f"WBS {wbs_id} not found"}
@@ -473,7 +473,7 @@ def update_wbs(wbs_id, data):
 
     sets.append("updated_at = ?")
     params.extend([_now(), wbs_id])
-    conn.execute(f"UPDATE cpmp_wbs SET {', '.join(sets)} WHERE id = ?", params)  # nosec B608 -- table/column names are internal constants, not user input
+    conn.execute(f"UPDATE cpmp_wbs SET {', '.join(sets)} WHERE id = %s", params)  # nosec B608 -- table/column names are internal constants, not user input
 
     if "status" in data and data["status"] != old_status:
         _record_status_change(conn, "wbs", wbs_id, old_status, data["status"])
@@ -489,7 +489,7 @@ def update_wbs(wbs_id, data):
 def create_deliverable(contract_id, data):
     """Create a deliverable / CDRL under a contract."""
     conn = _get_db()
-    if not conn.execute("SELECT id FROM cpmp_contracts WHERE id = ?", (contract_id,)).fetchone():
+    if not conn.execute("SELECT id FROM cpmp_contracts WHERE id = %s", (contract_id,)).fetchone():
         conn.close()
         return {"status": "error", "message": f"Contract {contract_id} not found"}
 
@@ -499,7 +499,7 @@ def create_deliverable(contract_id, data):
         "(id, contract_id, cdrl_number, did_number, title, description, "
         "deliverable_type, frequency, due_date, status, wbs_id, notes, "
         "created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
         (
             deliv_id,
             contract_id,
@@ -547,19 +547,19 @@ def list_deliverables(contract_id, status=None, deliverable_type=None):
 def get_deliverable(deliverable_id):
     """Get a single deliverable with generation history."""
     conn = _get_db()
-    row = conn.execute("SELECT * FROM cpmp_deliverables WHERE id = ?", (deliverable_id,)).fetchone()
+    row = conn.execute("SELECT * FROM cpmp_deliverables WHERE id = %s", (deliverable_id,)).fetchone()
     if not row:
         conn.close()
         return {"status": "error", "message": f"Deliverable {deliverable_id} not found"}
 
     deliverable = dict(row)
     generations = conn.execute(
-        "SELECT * FROM cpmp_cdrl_generations WHERE deliverable_id = ? ORDER BY created_at DESC", (deliverable_id,)
+        "SELECT * FROM cpmp_cdrl_generations WHERE deliverable_id = %s ORDER BY created_at DESC", (deliverable_id,)
     ).fetchall()
     deliverable["generations"] = [dict(g) for g in generations]
 
     history = conn.execute(
-        "SELECT * FROM cpmp_status_history WHERE entity_type = 'deliverable' AND entity_id = ? ORDER BY created_at DESC",
+        "SELECT * FROM cpmp_status_history WHERE entity_type = 'deliverable' AND entity_id = %s ORDER BY created_at DESC",
         (deliverable_id,),
     ).fetchall()
     deliverable["status_history"] = [dict(h) for h in history]
@@ -571,7 +571,7 @@ def get_deliverable(deliverable_id):
 def update_deliverable(deliverable_id, data):
     """Update mutable deliverable fields (not status — use transition_deliverable)."""
     conn = _get_db()
-    row = conn.execute("SELECT id FROM cpmp_deliverables WHERE id = ?", (deliverable_id,)).fetchone()
+    row = conn.execute("SELECT id FROM cpmp_deliverables WHERE id = %s", (deliverable_id,)).fetchone()
     if not row:
         conn.close()
         return {"status": "error", "message": f"Deliverable {deliverable_id} not found"}
@@ -602,7 +602,7 @@ def update_deliverable(deliverable_id, data):
         return {"status": "error", "message": "No updatable fields provided"}
     sets.append("updated_at = ?")
     params.extend([_now(), deliverable_id])
-    conn.execute(f"UPDATE cpmp_deliverables SET {', '.join(sets)} WHERE id = ?", params)  # nosec B608 -- table/column names are internal constants, not user input
+    conn.execute(f"UPDATE cpmp_deliverables SET {', '.join(sets)} WHERE id = %s", params)  # nosec B608 -- table/column names are internal constants, not user input
     conn.commit()
     conn.close()
     return {"status": "ok", "deliverable_id": deliverable_id}
@@ -611,7 +611,7 @@ def update_deliverable(deliverable_id, data):
 def transition_deliverable(deliverable_id, new_status, changed_by=None, reason=None):
     """Transition deliverable status with pipeline enforcement."""
     conn = _get_db()
-    row = conn.execute("SELECT id, status FROM cpmp_deliverables WHERE id = ?", (deliverable_id,)).fetchone()
+    row = conn.execute("SELECT id, status FROM cpmp_deliverables WHERE id = %s", (deliverable_id,)).fetchone()
     if not row:
         conn.close()
         return {"status": "error", "message": f"Deliverable {deliverable_id} not found"}
@@ -636,7 +636,7 @@ def transition_deliverable(deliverable_id, new_status, changed_by=None, reason=N
 
     set_clauses = ", ".join(f"{k} = ?" for k in updates)
     params = list(updates.values()) + [deliverable_id]
-    conn.execute(f"UPDATE cpmp_deliverables SET {set_clauses} WHERE id = ?", params)  # nosec B608 -- table/column names are internal constants, not user input
+    conn.execute(f"UPDATE cpmp_deliverables SET {set_clauses} WHERE id = %s", params)  # nosec B608 -- table/column names are internal constants, not user input
     _record_status_change(conn, "deliverable", deliverable_id, old_status, new_status, changed_by, reason)
     _audit(conn, "transition_deliverable", f"Deliverable {deliverable_id}: {old_status} → {new_status}")
     conn.commit()
@@ -663,7 +663,7 @@ def compute_overdue_deliverables(contract_id=None):
         due = datetime.fromisoformat(row["due_date"])
         days = (datetime.now(timezone.utc) - due.replace(tzinfo=timezone.utc)).days
         conn.execute(
-            "UPDATE cpmp_deliverables SET status = 'overdue', days_overdue = ?, updated_at = ? WHERE id = ?",
+            "UPDATE cpmp_deliverables SET status = 'overdue', days_overdue = %s, updated_at = %s WHERE id = %s",
             (days, _now(), row["id"]),
         )
         _record_status_change(

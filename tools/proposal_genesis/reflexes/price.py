@@ -94,7 +94,7 @@ def _check_line_item_coverage(volume_id: str) -> Dict[str, Any]:
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT COUNT(*) as cnt FROM pg_cost_line_items WHERE cost_volume_id = ?",
+            "SELECT COUNT(*) as cnt FROM pg_cost_line_items WHERE cost_volume_id = %s",
             (volume_id,),
         ).fetchone()
         count = row["cnt"] if row else 0
@@ -150,7 +150,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         conn.execute(
             "INSERT INTO pg_proposal_genesis_audit "
             "(id, event_type, reflex_name, risk_tier, details, success, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (
                 _generate_id("pgaudit"),
                 "price_check",

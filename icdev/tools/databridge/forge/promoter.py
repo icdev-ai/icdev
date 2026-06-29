@@ -35,7 +35,7 @@ def promote_connector(
     try:
         conn = _get_conn(db)
         row = conn.execute(
-            "SELECT id, connector_name, status FROM db_forge_connectors WHERE id = ?",
+            "SELECT id, connector_name, status FROM db_forge_connectors WHERE id = %s",
             (connector_id,),
         ).fetchone()
 
@@ -55,8 +55,8 @@ def promote_connector(
         # Update status
         conn.execute(
             """UPDATE db_forge_connectors
-               SET status = 'promoted', promoted_by = ?, promoted_at = ?, updated_at = ?
-               WHERE id = ?""",
+               SET status = 'promoted', promoted_by = %s, promoted_at = %s, updated_at = %s
+               WHERE id = %s""",
             (promoted_by, now, now, connector_id),
         )
 
@@ -64,14 +64,14 @@ def promote_connector(
         conn.execute(
             """INSERT INTO db_forge_promotions
                (connector_id, from_status, to_status, promoted_by, review_notes, promoted_at)
-               VALUES (?, 'sandboxed', 'promoted', ?, ?, ?)""",
+               VALUES (%s, 'sandboxed', 'promoted', %s, %s, %s)""",
             (connector_id, promoted_by, review_notes[:5000], now),
         )
 
         # Audit trail
         conn.execute(
             """INSERT INTO audit_trail (id, event_type, actor, action, details, created_at)
-               VALUES (?, 'connector_forge_promoted', ?, 'promote', ?, ?)""",
+               VALUES (%s, 'connector_forge_promoted', %s, 'promote', %s, %s)""",
             (f"audit-{uuid.uuid4().hex[:12]}", promoted_by, f"Promoted {row['connector_name']} ({connector_id})", now),
         )
 
@@ -110,7 +110,7 @@ def deprecate_connector(
     try:
         conn = _get_conn(db)
         row = conn.execute(
-            "SELECT id, connector_name, status FROM db_forge_connectors WHERE id = ?",
+            "SELECT id, connector_name, status FROM db_forge_connectors WHERE id = %s",
             (connector_id,),
         ).fetchone()
 
@@ -129,14 +129,14 @@ def deprecate_connector(
         old_status = row["status"]
 
         conn.execute(
-            "UPDATE db_forge_connectors SET status = 'deprecated', updated_at = ? WHERE id = ?",
+            "UPDATE db_forge_connectors SET status = 'deprecated', updated_at = %s WHERE id = %s",
             (now, connector_id),
         )
 
         conn.execute(
             """INSERT INTO db_forge_promotions
                (connector_id, from_status, to_status, promoted_by, review_notes, promoted_at)
-               VALUES (?, ?, 'deprecated', ?, ?, ?)""",
+               VALUES (%s, %s, 'deprecated', %s, %s, %s)""",
             (connector_id, old_status, deprecated_by, reason[:5000], now),
         )
 

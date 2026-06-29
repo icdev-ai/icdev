@@ -64,7 +64,7 @@ def _check_cooldown(conn: Any, key: str, hours: int) -> bool:
     try:
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
         row = conn.execute(
-            "SELECT value FROM ad_reflex_cooldowns WHERE key = ? AND value > ?",
+            "SELECT value FROM ad_reflex_cooldowns WHERE key = %s AND value > %s",
             (key, cutoff),
         ).fetchone()
         return row is None
@@ -81,7 +81,7 @@ def _mark_cooldown(conn: Any, key: str, now: datetime) -> None:
             )
         """)
         conn.execute(
-            "INSERT OR REPLACE INTO ad_reflex_cooldowns (key, value) VALUES (?, ?)",
+            "INSERT OR REPLACE INTO ad_reflex_cooldowns (key, value) VALUES (%s, %s)",
             (key, now.isoformat()),
         )
         conn.commit()
@@ -100,7 +100,7 @@ def _persist_snapshot(conn: Any, series: List[float], now: datetime) -> bool:
         conn.execute(
             "INSERT INTO ad_pc_ratio_history "
             "(fetched_at, equity_pc_ratio, raw_series_json, source, created_at) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s)",
             (
                 now.isoformat(),
                 latest,

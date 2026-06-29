@@ -25,12 +25,17 @@ if REPO_ROOT.name == "icdev":
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from tools.config.component_registry import log_component_audit  # noqa: E402
 from tools.config.core_profile import (  # noqa: E402
     get_active_profile,
     get_profile,
     load_profiles,
     profile_env_overrides,
 )
+
+
+def _actor() -> str:
+    return os.environ.get("USER") or os.environ.get("USERNAME") or "cli"
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -128,6 +133,15 @@ def _apply_profile(name: str, env_file: Path, dry_run: bool) -> dict:
     if not dry_run and overrides:
         env_file.parent.mkdir(parents=True, exist_ok=True)
         env_file.write_text(new_text, encoding="utf-8")
+        log_component_audit(
+            event_type="profile_apply",
+            actor=_actor(),
+            profile_name=name,
+            details={
+                "overrides": overrides,
+                "env_file": str(env_file),
+            },
+        )
 
     return {
         "profile": name,

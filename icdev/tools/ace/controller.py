@@ -156,7 +156,7 @@ class ACEController:
 
         self._executor.submit(
             self._run, instance_id, problem_text, trigger_source, trigger_ref,
-            user_id, project_id, role_ids,
+            user_id, project_id, role_ids=role_ids,
         )
         return instance_id
 

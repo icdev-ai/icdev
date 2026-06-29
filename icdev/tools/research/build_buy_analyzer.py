@@ -542,7 +542,7 @@ def analyze_challenge(challenge_id, session_id, db_path=None):
     try:
         # Get challenge
         challenge_row = conn.execute(
-            "SELECT * FROM research_challenges WHERE id = ? AND session_id = ?",
+            "SELECT * FROM research_challenges WHERE id = %s AND session_id = %s",
             (challenge_id, session_id),
         ).fetchone()
         if not challenge_row:
@@ -551,7 +551,7 @@ def analyze_challenge(challenge_id, session_id, db_path=None):
 
         # Get capability mappings for this challenge
         cap_rows = conn.execute(
-            "SELECT * FROM research_capability_map WHERE challenge_id = ? AND session_id = ?",
+            "SELECT * FROM research_capability_map WHERE challenge_id = %s AND session_id = %s",
             (challenge_id, session_id),
         ).fetchall()
         cap_mappings = [dict(r) for r in cap_rows]
@@ -565,7 +565,7 @@ def analyze_challenge(challenge_id, session_id, db_path=None):
 
         # Get signals for the session
         sig_rows = conn.execute(
-            "SELECT * FROM research_signals WHERE session_id = ?",
+            "SELECT * FROM research_signals WHERE session_id = %s",
             (session_id,),
         ).fetchall()
         signals = [dict(r) for r in sig_rows]
@@ -633,7 +633,7 @@ def analyze_challenge(challenge_id, session_id, db_path=None):
                 existing_solutions, icdev_capability_coverage, estimated_effort,
                 estimated_cost_tier, risk_level, score_breakdown, metadata,
                 analyzed_at, classification)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'CUI')""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'CUI')""",
             (
                 bb_id,
                 session_id,
@@ -720,7 +720,7 @@ def analyze_all(session_id, db_path=None):
     try:
         rows = conn.execute(
             """SELECT id FROM research_challenges
-               WHERE session_id = ? AND status IN ('scored', 'mapped')
+               WHERE session_id = %s AND status IN ('scored', 'mapped')
                ORDER BY composite_score DESC""",
             (session_id,),
         ).fetchall()
@@ -810,7 +810,7 @@ def get_decision_matrix(session_id, db_path=None):
                       c.severity as challenge_severity
                FROM research_build_buy bb
                JOIN research_challenges c ON bb.challenge_id = c.id
-               WHERE bb.session_id = ?
+               WHERE bb.session_id = %s
                ORDER BY bb.build_score DESC""",
             (session_id,),
         ).fetchall()

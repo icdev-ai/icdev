@@ -22,7 +22,8 @@ from tools.config.core_profile import (
 
 def test_load_profiles_has_expected_keys():
     profiles = load_profiles()
-    assert set(profiles.keys()) >= {"local-dev", "air-gap", "saas-il4", "il6-secret"}
+    assert set(profiles.keys()) >= {"local-dev", "air-gap", "saas-il4", "il6-secret",
+                                     "commercial", "government"}
 
 
 def test_air_gap_profile_is_airgapped():
@@ -85,3 +86,56 @@ def test_apply_active_profile_env_defaults_respects_existing_env(monkeypatch):
     applied = apply_active_profile_env_defaults()
     assert "ICDEV_LLM_PROVIDER" not in applied
     assert os.environ["ICDEV_LLM_PROVIDER"] == "openai"
+
+
+# ── DSW-4: White-label profiles ──────────────────────────────────────────────
+
+def test_commercial_profile_banner_none():
+    profile = get_profile("commercial")
+    assert profile is not None
+    assert profile.get("banner_mode") == "none"
+
+
+def test_commercial_profile_brand_path_set():
+    profile = get_profile("commercial")
+    assert profile is not None
+    assert "commercial" in profile.get("brand_path", "")
+
+
+def test_commercial_profile_env_overrides_sets_banner_mode(monkeypatch):
+    monkeypatch.delenv("ICDEV_BANNER_MODE", raising=False)
+    monkeypatch.delenv("ICDEV_BRAND_PATH", raising=False)
+    profile = get_profile("commercial")
+    overrides = profile_env_overrides(profile)
+    assert overrides.get("ICDEV_BANNER_MODE") == "none"
+    assert "ICDEV_BRAND_PATH" in overrides
+    assert "commercial" in overrides["ICDEV_BRAND_PATH"]
+
+
+def test_commercial_profile_env_overrides_brand_path_is_absolute(monkeypatch):
+    monkeypatch.delenv("ICDEV_BRAND_PATH", raising=False)
+    profile = get_profile("commercial")
+    overrides = profile_env_overrides(profile)
+    brand_path = overrides.get("ICDEV_BRAND_PATH", "")
+    assert Path(brand_path).is_absolute()
+    assert Path(brand_path).exists(), f"brand_path does not exist: {brand_path}"
+
+
+def test_government_profile_has_cui_banner():
+    profile = get_profile("government")
+    assert profile is not None
+    assert profile.get("banner_mode") == "cui" or profile.get("enable_cui_banner") is True
+
+
+def test_banner_mode_env_wins_over_profile(monkeypatch):
+    monkeypatch.setenv("ICDEV_BANNER_MODE", "secret")
+    profile = get_profile("commercial")
+    overrides = profile_env_overrides(profile)
+    assert "ICDEV_BANNER_MODE" not in overrides
+
+
+def test_brand_path_env_wins_over_profile(monkeypatch):
+    monkeypatch.setenv("ICDEV_BRAND_PATH", "/custom/brand.yaml")
+    profile = get_profile("commercial")
+    overrides = profile_env_overrides(profile)
+    assert "ICDEV_BRAND_PATH" not in overrides

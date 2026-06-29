@@ -287,7 +287,7 @@ def snapshot_posture(conn: Any, actor: str = "system") -> dict:
         conn.execute(
             "INSERT INTO aiify_posture_snapshots "
             "(overall_score, grade, posture, scan_count, opportunity_count, "
-            " dimensions_json, snapshot_json) VALUES (?,?,?,?,?,?,?)",
+            " dimensions_json, snapshot_json) VALUES (%s,%s,%s,%s,%s,%s,%s)",
             (
                 posture["overall_score"],
                 posture["grade"],
@@ -299,7 +299,7 @@ def snapshot_posture(conn: Any, actor: str = "system") -> dict:
             ),
         )
         conn.execute(
-            "INSERT INTO aiify_audit_log (event_type, actor, detail) VALUES (?,?,?)",
+            "INSERT INTO aiify_audit_log (event_type, actor, detail) VALUES (%s,%s,%s)",
             (
                 "posture_snapshot",
                 actor,
@@ -326,7 +326,7 @@ def posture_trend(conn: Any, limit: int = 30) -> list[dict]:
     try:
         rows = conn.execute(
             "SELECT overall_score, grade, posture, scan_count, opportunity_count, created_at "
-            "FROM aiify_posture_snapshots ORDER BY created_at DESC LIMIT ?",
+            "FROM aiify_posture_snapshots ORDER BY created_at DESC LIMIT %s",
             (limit,),
         ).fetchall()
     except Exception:

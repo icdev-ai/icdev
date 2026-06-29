@@ -24,6 +24,13 @@ INSTANCE_STATES: tuple[str, ...] = (
     "cancelled",
 )
 
+SKILL_CANDIDATE_STATUSES: tuple[str, ...] = (
+    "pending",
+    "promoted",   # SIPA passed → written to roles/candidates/ for human review
+    "rejected",   # SIPA failed or TDD gate rejected
+    "skipped",    # duplicate of an existing candidate
+)
+
 COWORKER_STATES: tuple[str, ...] = (
     "idle",
     "active",
@@ -47,6 +54,7 @@ def _check(values: tuple[str, ...]) -> str:
 
 _CHECK_INSTANCE_STATE = _check(INSTANCE_STATES)
 _CHECK_COWORKER_STATE = _check(COWORKER_STATES)
+_CHECK_SKILL_STATUS = _check(SKILL_CANDIDATE_STATUSES)
 
 SCHEMA = f"""
 CREATE TABLE IF NOT EXISTS ace_instances (
@@ -118,6 +126,7 @@ CREATE TABLE IF NOT EXISTS ace_audit_log (
     detail          TEXT NOT NULL DEFAULT '',
     actor           TEXT NOT NULL DEFAULT 'system',
     classification  TEXT NOT NULL DEFAULT 'CUI',
+    control_refs    TEXT NOT NULL DEFAULT '',
     created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_ace_audit_instance ON ace_audit_log(instance_id);
@@ -151,6 +160,69 @@ CREATE TABLE IF NOT EXISTS ace_event_results (
     created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_ace_event_results_event ON ace_event_results(event_id);
+
+CREATE TABLE IF NOT EXISTS ace_skill_candidates (
+    id                    TEXT PRIMARY KEY,
+    role_id               TEXT NOT NULL,
+    source_role           TEXT NOT NULL DEFAULT '',
+    instance_id           TEXT NOT NULL DEFAULT '',
+    candidate_yaml        TEXT NOT NULL DEFAULT '',
+    trust_tier            TEXT NOT NULL DEFAULT 'yellow',
+    status                TEXT NOT NULL DEFAULT 'pending' CHECK(status {_CHECK_SKILL_STATUS}),
+    sipa_verdict          TEXT,
+    sipa_score            REAL,
+    rejection_reason      TEXT,
+    created_at            TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    resolved_at           TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_ace_skill_candidates_status ON ace_skill_candidates(status);
+CREATE INDEX IF NOT EXISTS idx_ace_skill_candidates_role ON ace_skill_candidates(role_id);
+
+CREATE TABLE IF NOT EXISTS ace_sessions (
+    session_id            TEXT PRIMARY KEY,
+    instance_id           TEXT NOT NULL REFERENCES ace_instances(id) ON DELETE CASCADE,
+    conversation_history  TEXT NOT NULL DEFAULT '[]',
+    history_json          TEXT NOT NULL DEFAULT '[]',
+    resume_token          TEXT NOT NULL UNIQUE,
+    turn_count            INTEGER NOT NULL DEFAULT 0,
+    created_at            TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_ace_sessions_instance ON ace_sessions(instance_id);
+CREATE INDEX IF NOT EXISTS idx_ace_sessions_token ON ace_sessions(resume_token);
+
+CREATE TABLE IF NOT EXISTS ace_qa_runs (
+    id                TEXT PRIMARY KEY,
+    trigger           TEXT NOT NULL DEFAULT '',
+    trigger_ref       TEXT NOT NULL DEFAULT '',
+    canvas_filter     TEXT NOT NULL DEFAULT '',
+    started_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    completed_at      TEXT,
+    status            TEXT NOT NULL DEFAULT 'running',
+    total_tests       INTEGER NOT NULL DEFAULT 0,
+    passed            INTEGER NOT NULL DEFAULT 0,
+    failed            INTEGER NOT NULL DEFAULT 0,
+    screenshot_count  INTEGER NOT NULL DEFAULT 0,
+    report_path       TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_ace_qa_runs_status  ON ace_qa_runs(status);
+CREATE INDEX IF NOT EXISTS idx_ace_qa_runs_started ON ace_qa_runs(started_at);
+
+CREATE TABLE IF NOT EXISTS ace_qa_failures (
+    id                    TEXT PRIMARY KEY,
+    run_id                TEXT NOT NULL REFERENCES ace_qa_runs(id),
+    test_name             TEXT NOT NULL DEFAULT '',
+    spec_file             TEXT NOT NULL DEFAULT '',
+    error_message         TEXT NOT NULL DEFAULT '',
+    screenshot_path       TEXT NOT NULL DEFAULT '',
+    severity              TEXT NOT NULL DEFAULT 'medium',
+    kanban_task_id        TEXT NOT NULL DEFAULT '',
+    healing_attempted     INTEGER NOT NULL DEFAULT 0,
+    healing_succeeded     INTEGER NOT NULL DEFAULT 0,
+    healed_selector       TEXT NOT NULL DEFAULT '',
+    created_at            TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_ace_qa_failures_run      ON ace_qa_failures(run_id);
+CREATE INDEX IF NOT EXISTS idx_ace_qa_failures_severity ON ace_qa_failures(severity);
 """
 
 # ---------------------------------------------------------------------------
@@ -166,6 +238,14 @@ def init() -> None:
     try:
         conn.executescript(SCHEMA)
         conn.commit()
+        # Phase 4: add control_refs to existing ace_audit_log installs (idempotent)
+        try:
+            conn.execute(
+                "ALTER TABLE ace_audit_log ADD COLUMN control_refs TEXT NOT NULL DEFAULT ''"
+            )
+            conn.commit()
+        except Exception:
+            conn.rollback()  # column already exists — reset aborted PG txn
     finally:
         conn.close()
 

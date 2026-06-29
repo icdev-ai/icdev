@@ -4,6 +4,123 @@
 # Human edits to name/description/briefs are preserved.
 
 projects:
+- key: pif
+  name: "Process-Ify Enhancement Suite"
+  description: "14-capability expansion of Process-Ify: conformance checking, my-tasks
+    portal, ROI calculator, BPMN export, template library, multi-source synthesis,
+    SLA gates, handoff ceremony, reverse processify, version diff, chain dependencies,
+    process-as-code, AI coach, and live simulation."
+  task_prefix: pif-
+  default_open: true
+  briefs:
+  - 'conf: compare expected workflow steps vs actual kanban completion order (pif-conf-01)'
+  - 'tasks: /workflow-canvas/my-tasks portal — tasks by role across all chains (pif-tasks-01)'
+  - 'roi: post-chain ROI report — steps, roles, time saved, automation coverage (pif-roi-01)'
+  - 'bpmn: BPMN 2.0 XML export from any processified workflow (pif-bpmn-01)'
+  - 'lib: template catalog — save/search/apply processified workflows as reusable templates (pif-lib-01)'
+  - 'synth: multi-source synthesis — N docs -> 1 unified deduplicated workflow (pif-synth-01)'
+  - 'sla: per-step SLA hours, overdue detection, escalation flag (pif-sla-01)'
+  - 'handoff: auto-generate handoff brief when phase status transitions to complete (pif-handoff-01)'
+  - 'rev: reverse processify — completed kanban run -> regenerated as-executed document (pif-rev-01)'
+  - 'diff: version diff — compare two workflow definitions step-by-step (pif-diff-01)'
+  - 'dep: cross-chain dependency graph — chain B phase N requires chain A phase M (pif-dep-01)'
+  - 'code: process-as-code — export/import chain as YAML spec (pif-code-01)'
+  - 'coach: AI process coach — surface KG context when a step goes in_progress (pif-coach-01)'
+  - 'sim: live simulation — estimate chain timeline + critical path before launch (pif-sim-01)'
+  epics:
+  - key: conf
+    title: "CONF — Process Conformance Checking"
+    priority: high
+  - key: tasks
+    title: "TASKS — Role-Based My-Tasks Portal"
+    priority: high
+  - key: roi
+    title: "ROI — Process ROI Calculator"
+    priority: high
+  - key: bpmn
+    title: "BPMN — BPMN 2.0 Export"
+    priority: high
+  - key: lib
+    title: "LIB — Process Template Library"
+    priority: high
+  - key: synth
+    title: "SYNTH — Multi-Source Synthesis"
+    priority: medium
+  - key: sla
+    title: "SLA — SLA Gate Enforcement"
+    priority: medium
+  - key: handoff
+    title: "HANDOFF — Handoff Ceremony Wizard"
+    priority: medium
+  - key: rev
+    title: "REV — Reverse Process-Ify"
+    priority: medium
+  - key: diff
+    title: "DIFF — Process Version Diff"
+    priority: medium
+  - key: dep
+    title: "DEP — Cross-Chain Dependencies"
+    priority: medium
+  - key: code
+    title: "CODE — Process as Code"
+    priority: medium
+  - key: coach
+    title: "COACH — AI Process Coach"
+    priority: low
+  - key: sim
+    title: "SIM — Live Chain Simulation"
+    priority: low
+- key: ecr
+  name: ECR — Enterprise Commercialization Readiness
+  description: 10-epic initiative making ICDEV enterprise-ready and commercially viable.
+    Covers SSO/SAML/OIDC, SOC-2 evidence export, data residency + GDPR deletion,
+    usage metering + Stripe billing, license tier gates, guided onboarding wizard,
+    public API + webhooks, Prometheus observability, in-product changelog, and
+    demo/sandbox tooling. Implements in epic order (sso first, demo last).
+  task_prefix: ecr-
+  default_open: true
+  briefs:
+  - 'sso: SAML 2.0 + OIDC integration, per-tenant config, RBAC mapping (ecr-sso-01..05)'
+  - 'soc2: evidence_items table, audit export command, PDF report, control map (ecr-soc2-01..05)'
+  - 'dres: data residency zones, PG router, GDPR erasure API + audit (ecr-dres-01..04)'
+  - 'bill: usage_events table, LLM/API metering middleware, Stripe webhook, admin UI (ecr-bill-01..05)'
+  - 'tier: min_tier in registry, license_tier profile, guard enforcement, upgrade CTA (ecr-tier-01..05)'
+  - 'onb: onboarding_state pref, 3-step wizard modal, progress tracking (ecr-onb-01..04)'
+  - 'api: api_keys table, /v1/ prefix + auth middleware, webhook registry, OpenAPI spec (ecr-api-01..05)'
+  - 'obs: prometheus_client integration, /metrics endpoint, Grafana dashboard JSON (ecr-obs-01..04)'
+  - 'cl: CHANGELOG.md parser, /updates route, navbar unseen-release badge (ecr-cl-01..03)'
+  - 'demo: icdev demo seed command, synthetic data for 6 canvases, ICDEV_DEMO_MODE (ecr-demo-01..04)'
+  epics:
+  - key: sso
+    title: SSO — SAML 2.0 + OIDC Identity
+    priority: high
+  - key: soc2
+    title: SOC2 — Compliance Evidence Export
+    priority: high
+  - key: dres
+    title: DRES — Data Residency + GDPR Erasure
+    priority: high
+  - key: bill
+    title: BILL — Usage Metering + Billing
+    priority: high
+  - key: tier
+    title: TIER — License Tiers + Feature Gates
+    priority: high
+  - key: onb
+    title: ONB — Guided Onboarding Wizard
+    priority: medium
+  - key: api
+    title: API — Public API + Webhooks
+    priority: high
+  - key: obs
+    title: OBS — Prometheus Observability
+    priority: medium
+  - key: cl
+    title: CL — Changelog + Release Notes
+    priority: low
+  - key: demo
+    title: DEMO — Demo/Sandbox Tooling
+    priority: medium
 - key: loop
   name: Loop Project
   description: Auto-registered project for tasks with prefix 'loop-'. Update name
@@ -413,6 +530,9 @@ projects:
   - key: register
     title: Registration Checklist -- APPEND_ONLY + conftest + MCP + docs
     priority: medium
+  - key: eval
+    title: Agent Evaluation System -- CoT/CoD metrics + suggestions + rerun + trends
+    priority: high
 - key: portal
   name: Portal Project
   description: Auto-registered project for tasks with prefix 'portal-'. Update name
@@ -11441,3 +11561,164 @@ projects:
   - key: vv
     title: V&V — icdev mirror + Playwright verification
     priority: high
+- key: idr
+  name: "Intelligent Documentation Regeneration"
+  description: >-
+    Generic 8-stage AI pipeline that ingests multi-team artifacts (diagrams,
+    configs/IaC, docs, email snippets), reconciles multiple diagram versions
+    via HITL, generates a new authoritative document grounded in RAG+KG evidence,
+    gates quality with WriteGuard (hard block), requires HITL approval, and
+    publishes with full audit trail + citations. Network is Phase 1; Security
+    (firewall configs), DevOps (IaC), Developer, and Standard Guide follow
+    as domain profiles on the same engine.
+  task_prefix: "idr-"
+  default_open: true
+  briefs:
+    - "core: /docgen engine + session state machine + DIC wiring + idr_ DB migration — idr-core-01..08"
+    - "network: network domain profile + diagram reconciliation + config review integration — idr-network-01..06"
+    - "writeguard: WriteGuard hard gate + auto-fix loop + style guide wiring — idr-writeguard-01..04"
+    - "hitl: conflict resolution UI + document review UI + section-level routing — idr-hitl-01..05"
+    - "publish: DOCX + PDF + HTML export + audit trail + evidence report — idr-publish-01..04"
+    - "security: firewall config review + security domain profile [Phase 2] — idr-security-01..04"
+    - "devops: IaC review + devops domain profile [Phase 3] — idr-devops-01..04"
+    - "standard: multi-domain composite profile + cross-domain context builder [Phase 5] — idr-standard-01..05"
+  epics:
+    - key: core
+      title: "Core Engine — session + upload + DIC integration + DB"
+      priority: critical
+    - key: network
+      title: "Network Domain — diagram analysis + config review + HITL reconciliation"
+      priority: critical
+    - key: writeguard
+      title: "WriteGuard Hard Gate — quality + style + classification"
+      priority: critical
+    - key: hitl
+      title: "HITL Workflow — conflict resolution + document review + section routing"
+      priority: critical
+    - key: publish
+      title: "Export & Publish — DOCX + PDF + HTML + audit trail"
+      priority: high
+    - key: security
+      title: "Security Domain — vendor-agnostic firewall config review [Phase 2]"
+      priority: high
+    - key: devops
+      title: "DevOps Domain — IaC review (Terraform, Ansible, CloudFormation) [Phase 3]"
+      priority: high
+    - key: standard
+      title: "Standard Guide — multi-domain composite + cross-domain HITL routing [Phase 5]"
+      priority: medium
+
+- key: nqe
+  name: "Forward Networks NQE Integration"
+  description: >-
+    NL-driven interface to Forward Networks NQE for non-technical security teams.
+    Covers advisory document ingestion (PDF/DOCX/email), device impact assessment
+    via NQL queries (live FWD + ICDEV fallback), digital twin pre-validation before
+    patching, remediation tracking with HITL gates, POAM generation, exception
+    registry, and full ATO evidence export. ACE coworker-driven implementation.
+  task_prefix: nqe-
+  default_open: true
+  briefs:
+  - 'infra: FWD API client + NQL translator (NL<->NQL) + IQE adapter nqe.* + 5 routes + seed queries -- nqe-infra-01..08'
+  - 'advisory: advisory_extractor (PDF/DOCX/email) + advisory.py + wizard UI + dual NQL validation -- nqe-adv-01..06'
+  - 'twin: remediation_simulator.py + NDC twin.py integration + FWD twin API + verdict gate -- nqe-twin-01..04'
+  - 'migration: migration_planner.py + per-device upgrade steps + Migration Hub page -- nqe-mig-01..04'
+  - 'fallback: FallbackNQEClient + NQL-to-IQE mapping + source badge UI -- nqe-fall-01..03'
+  - 'guardrails: transparency gate + dual-query cross-validation + HITL approval + audit log -- nqe-grd-01..05'
+  - 'history: advisory_history.html + remediation_tracker.py + POAM generator + exception registry -- nqe-hist-01..06'
+  - 'ato: full ATO evidence export (JSON+PDF+Excel) + classification markings + traceability chain -- nqe-ato-01..03'
+  epics:
+  - key: infra
+    title: "NQE Infrastructure -- FWD client + NQL translator + IQE adapter"
+    priority: critical
+  - key: advisory
+    title: "Security Advisory Workflow -- upload + extract + assess impact"
+    priority: critical
+  - key: twin
+    title: "Digital Twin Pre-Validation -- NDC + FWD twin simulation before patching"
+    priority: high
+  - key: migration
+    title: "Migration Hub -- per-device upgrade plans"
+    priority: high
+  - key: fallback
+    title: "Internal Fallback -- ICDEV NDC DB when FWD unavailable"
+    priority: high
+  - key: guardrails
+    title: "Guardrails -- transparency gate + HITL + audit trail"
+    priority: critical
+  - key: history
+    title: "Findings History -- remediation tracker + POAM + exception registry"
+    priority: high
+  - key: ato
+    title: "ATO Evidence Export -- full package PDF+Excel+JSON"
+    priority: high
+- key: pvm
+  name: "PVM — Predictive Vulnerability Management"
+  description: "Forward Networks NQE-powered predictive modeling for network vulnerability
+    management. Time-series risk scoring, attack surface mapping, Bayesian triage,
+    and AI-assisted patch planning driven by the Innovation, Research, and Creative
+    engines. Builds on the completed NQE integration (migration 220) adding five new
+    tools and a unified /network/vulnerability-intelligence dashboard."
+  task_prefix: pvm-
+  default_open: true
+  briefs:
+  - 'eng: Run Research+Creative+Innovation engines for network security domain (pvm-eng-01..03)'
+  - 'pred: Time-series vulnerability risk predictor from NQE+advisory data (pvm-pred-01..04)'
+  - 'asm: NQE-driven attack surface mapping + Nessus correlation (pvm-asm-01..03)'
+  - 'tri: Bayesian vulnerability triage engine with HITL approval gate (pvm-tri-01..04)'
+  - 'pat: AI patch planning with twin simulation + maintenance windows (pvm-pat-01..03)'
+  - 'ui: Vulnerability intelligence dashboard (4-panel) + IQE integration (pvm-ui-01..04)'
+  epics:
+  - key: eng
+    title: Engine Configuration & Execution
+    priority: high
+  - key: pred
+    title: Predictive Risk Scoring
+    priority: high
+  - key: asm
+    title: Attack Surface Mapping
+    priority: high
+  - key: tri
+    title: Bayesian Triage Engine
+    priority: high
+  - key: pat
+    title: AI Patch Planning
+    priority: medium
+  - key: ui
+    title: Vulnerability Intelligence Dashboard
+    priority: medium
+- key: pna
+  name: "PNA — Predictive Network Analytics"
+  description: "Six Forward Networks NQE-powered predictive models extending PVM: device
+    EOL/EOS scoring, BGP instability forecasting, compliance drift detection, network
+    capacity exhaustion, change failure probability, and supply chain risk scoring.
+    Each model follows the pvm-pred pattern (NQE query → deterministic formula →
+    append-only predictions table → API route → dashboard panel)."
+  task_prefix: pna-
+  default_open: true
+  briefs:
+  - 'eol: Device EOL/EOS prediction from NQE OS versions + vendor EOL registry (pna-eol-01..04)'
+  - 'bgp: BGP session instability forecasting from NQE flap history (pna-bgp-01..04)'
+  - 'cmp: Compliance drift prediction vs DISA STIG baselines (pna-cmp-01..04)'
+  - 'cap: Network capacity exhaustion forecasting from interface counters (pna-cap-01..04)'
+  - 'chg: Change failure probability scoring for pending change requests (pna-chg-01..04)'
+  - 'scs: Supply chain risk scoring by vendor/model from CISA KEV + NQE inventory (pna-scs-01..04)'
+  epics:
+  - key: eol
+    title: EOL/EOS Prediction — Device end-of-support risk scoring
+    priority: high
+  - key: bgp
+    title: BGP Instability — Session flap and routing failure forecast
+    priority: high
+  - key: cmp
+    title: Compliance Drift — STIG baseline deviation prediction
+    priority: high
+  - key: cap
+    title: Capacity Exhaustion — Bandwidth saturation forecasting
+    priority: medium
+  - key: chg
+    title: Change Failure — Pre-change risk probability scoring
+    priority: medium
+  - key: scs
+    title: Supply Chain Risk — Vendor/model CVE risk aggregation
+    priority: medium

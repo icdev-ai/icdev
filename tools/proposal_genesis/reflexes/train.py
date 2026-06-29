@@ -79,7 +79,7 @@ def _get_approved_drafts(limit: int = _DRAFTS_FETCH_LIMIT) -> List[Dict]:
                 WHERE source_type = 'approved_draft'
             )
             ORDER BY d.updated_at DESC
-            LIMIT ?
+            LIMIT %s
         """,
             (limit,),
         ).fetchall()
@@ -161,7 +161,7 @@ def _get_recent_lessons(limit: int = _LESSONS_FETCH_LIMIT) -> List[Dict]:
                 WHERE source_type = 'win_loss_lesson'
             )
             ORDER BY l.created_at DESC
-            LIMIT ?
+            LIMIT %s
         """,
             (limit,),
         ).fetchall()
@@ -228,7 +228,7 @@ def _get_kb_entries(limit: int = _KB_FETCH_LIMIT) -> List[Dict]:
                 WHERE source_type = 'knowledge_base'
             )
             ORDER BY kb.usage_count DESC, kb.updated_at DESC
-            LIMIT ?
+            LIMIT %s
         """,
             (limit,),
         ).fetchall()
@@ -309,7 +309,7 @@ def _store_pair(pair: Dict, dataset_id: Optional[str] = None) -> bool:
     )
     try:
         # Check for duplicate
-        existing = conn.execute("SELECT id FROM pg_training_pair_sources WHERE content_hash = ?", (ch,)).fetchone()
+        existing = conn.execute("SELECT id FROM pg_training_pair_sources WHERE content_hash = %s", (ch,)).fetchone()
         if existing:
             return False
 
@@ -317,7 +317,7 @@ def _store_pair(pair: Dict, dataset_id: Optional[str] = None) -> bool:
         conn.execute(
             "INSERT INTO pg_training_pair_sources "
             "(id, source_type, source_id, pair_count, content_hash, "
-            "created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            "created_at) VALUES (%s, %s, %s, %s, %s, %s)",
             (
                 _generate_id("pgtps"),
                 pair.get("source_type", "unknown"),
@@ -336,7 +336,7 @@ def _store_pair(pair: Dict, dataset_id: Optional[str] = None) -> bool:
                     "(id, dataset_id, system_prompt, user_input, "
                     "expected_output, source, status, quality_score, "
                     "created_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
                     (
                         _generate_id("ftex"),
                         dataset_id,
@@ -368,7 +368,7 @@ def _audit_train(event_type: str, details: Dict, success: bool) -> None:
             "INSERT INTO pg_proposal_genesis_audit "
             "(id, event_type, reflex_name, risk_tier, opportunity_id, "
             "details, success, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 _generate_id("pgaudit"),
                 event_type,
@@ -417,7 +417,7 @@ def _get_or_create_dataset() -> Optional[str]:
             "(id, name, description, purpose, base_model, version, "
             "example_count, classification, tenant_id, project_id, "
             "created_by, status, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, 1, 0, ?, ?, ?, ?, 'draft', ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, 1, 0, %s, %s, %s, %s, 'draft', %s, %s)",
             (
                 ds_id,
                 "Proposal Genesis Training Data",
@@ -447,7 +447,7 @@ def _update_dataset_count(dataset_id: str, added: int) -> None:
     conn = get_connection()
     try:
         conn.execute(
-            "UPDATE ft_datasets SET example_count = example_count + ?, updated_at = ? WHERE id = ?",
+            "UPDATE ft_datasets SET example_count = example_count + %s, updated_at = %s WHERE id = %s",
             (added, _utcnow_iso(), dataset_id),
         )
         conn.commit()

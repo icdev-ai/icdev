@@ -254,7 +254,7 @@ def _canonical_json(obj: Any) -> str:
 def _fetch_design(conn: sqlite3.Connection, design_id: str) -> Optional[dict]:
     row = conn.execute(
         "SELECT id, name, description, graph_json, template_id, classification, "
-        "created_at, updated_at FROM topologies WHERE id = ?",
+        "created_at, updated_at FROM topologies WHERE id = %s",
         (design_id,),
     ).fetchone()
     return dict(row) if row else None
@@ -263,7 +263,7 @@ def _fetch_design(conn: sqlite3.Connection, design_id: str) -> Optional[dict]:
 def _fetch_objects(conn: sqlite3.Connection, design_id: str) -> list:
     rows = conn.execute(
         "SELECT id, topology_id, object_type, label, config_json, pos_x, pos_y "
-        "FROM nc_objects WHERE topology_id = ?",
+        "FROM nc_objects WHERE topology_id = %s",
         (design_id,),
     ).fetchall()
     return [dict(r) for r in rows]
@@ -278,7 +278,7 @@ def _fetch_lineage(conn: sqlite3.Connection, parent_design_id: str) -> list:
     """
     row = conn.execute(
         "SELECT clone_id, parent_design_id, lineage FROM nc_lab_clones "
-        "WHERE lab_project_id = ? OR clone_id = ?",
+        "WHERE lab_project_id = %s OR clone_id = %s",
         (parent_design_id, parent_design_id),
     ).fetchone()
     if not row:
@@ -340,7 +340,7 @@ def sanitize_to_lab(
             "INSERT INTO topologies "
             "(id, name, description, graph_json, template_id, classification, "
             " created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 new_design_id,
                 redacted_name,
@@ -370,7 +370,7 @@ def sanitize_to_lab(
             conn.execute(
                 "INSERT INTO nc_objects "
                 "(id, topology_id, object_type, label, config_json, pos_x, pos_y) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
                 (
                     str(uuid.uuid4()),
                     new_design_id,
@@ -391,7 +391,7 @@ def sanitize_to_lab(
             "INSERT INTO nc_lab_clones "
             "(clone_id, parent_design_id, lineage, redaction_log, created_by, "
             " created_at, classification, lab_backend, lab_project_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 clone_id,
                 design_id,

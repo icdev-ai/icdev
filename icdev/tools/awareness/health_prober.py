@@ -177,7 +177,7 @@ def _write_snapshot(
         conn.execute(
             "INSERT INTO awareness_component_health "
             "(id, node_id, probe_type, status, detail, probed_at) "
-            "VALUES (?, ?, ?, ?, ?, ?) "
+            "VALUES (%s, %s, %s, %s, %s, %s) "
             "ON CONFLICT(id) DO UPDATE SET "
             "status = excluded.status, detail = excluded.detail, "
             "probed_at = excluded.probed_at",
@@ -217,13 +217,13 @@ def _load_component_nodes(
         placeholders = ",".join(["?"] * len(entity_types))
         rows = conn.execute(
             f"SELECT id, label, entity_type, properties FROM kg_nodes "
-            f"WHERE graph_id = ? AND entity_type IN ({placeholders})",  # nosec B608
+            f"WHERE graph_id = %s AND entity_type IN ({placeholders})",  # nosec B608
             tuple([GRAPH_ID] + entity_types),
         ).fetchall()
     else:
         rows = conn.execute(
             "SELECT id, label, entity_type, properties FROM kg_nodes "
-            "WHERE graph_id = ?",
+            "WHERE graph_id = %s",
             (GRAPH_ID,),
         ).fetchall()
     result: List[Dict[str, Any]] = []
@@ -348,7 +348,7 @@ def _prev_module_import_status(conn: Any, node_id: str) -> str:
     try:
         row = conn.execute(
             "SELECT status FROM awareness_component_health "
-            "WHERE node_id = ? AND probe_type = 'module_import' "
+            "WHERE node_id = %s AND probe_type = 'module_import' "
             "ORDER BY probed_at DESC LIMIT 1",
             (node_id,),
         ).fetchone()
@@ -603,7 +603,7 @@ def run_all(probe_types: Optional[List[str]] = None) -> Dict[str, Any]:
             "INSERT INTO awareness_run_log "
             "(run_id, phase, started_at, completed_at, status, "
             " probes_ok, probes_fail, elapsed_ms, details_json) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) "
             "ON CONFLICT(run_id) DO UPDATE SET "
             "completed_at = excluded.completed_at, status = excluded.status, "
             "probes_ok = excluded.probes_ok, probes_fail = excluded.probes_fail, "

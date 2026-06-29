@@ -45,7 +45,7 @@ def sync_design_to_mcp(design_id: str) -> Dict[str, Any]:
     try:
         conn = _aadc_conn()
         row = conn.execute(
-            "SELECT graph_json, name FROM aadc_designs WHERE id=?", (design_id,)
+            "SELECT graph_json, name FROM aadc_designs WHERE id=%s", (design_id,)
         ).fetchone()
     except Exception as exc:
         return {"synced": 0, "error": f"design load failed: {exc}"}
@@ -91,7 +91,7 @@ def sync_design_to_mcp(design_id: str) -> Dict[str, Any]:
                 mconn.execute(
                     """
                     INSERT INTO mcp_tool_registry (name, source, capabilities_json, updated_at)
-                    VALUES (?, ?, ?, ?)
+                    VALUES (%s, %s, %s, %s)
                     ON CONFLICT (name, source) DO UPDATE
                       SET capabilities_json = EXCLUDED.capabilities_json,
                           updated_at = EXCLUDED.updated_at
@@ -104,7 +104,7 @@ def sync_design_to_mcp(design_id: str) -> Dict[str, Any]:
                 try:
                     mconn.execute(
                         "INSERT OR REPLACE INTO mcp_tool_registry "
-                        "(name, source, capabilities_json, updated_at) VALUES (?,?,?,?)",
+                        "(name, source, capabilities_json, updated_at) VALUES (%s,%s,%s,%s)",
                         (label, source, caps, now),
                     )
                     synced_labels.append(label)

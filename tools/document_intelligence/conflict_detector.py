@@ -38,7 +38,7 @@ def get_section_state(conn, section_id: str) -> dict | None:
     Uses the caller's existing connection — no new connection opened.
     """
     row = conn.execute(
-        "SELECT content FROM dic_sections WHERE section_id = ? LIMIT 1",
+        "SELECT content FROM dic_sections WHERE section_id = %s LIMIT 1",
         (section_id,),
     ).fetchone()
     if row is None:

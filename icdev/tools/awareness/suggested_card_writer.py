@@ -274,7 +274,7 @@ def _auto_dismiss_stale(conn: Any, stale_days: int) -> int:
         # Get IDs to dismiss + their prediction IDs
         rows = conn.execute(
             "SELECT id, source_prediction_id FROM kanban_tasks "
-            "WHERE status = 'suggested' AND created_at < ?",
+            "WHERE status = 'suggested' AND created_at < %s",
             (cutoff,),
         ).fetchall()
         if not rows:
@@ -284,15 +284,15 @@ def _auto_dismiss_stale(conn: Any, stale_days: int) -> int:
         for r in rows:
             row = dict(r)
             conn.execute(
-                "UPDATE kanban_tasks SET status = 'done', completed_at = ?, updated_at = ? "
-                "WHERE id = ?",
+                "UPDATE kanban_tasks SET status = 'done', completed_at = %s, updated_at = %s "
+                "WHERE id = %s",
                 (now, now, row["id"]),
             )
             if row.get("source_prediction_id"):
                 try:
                     conn.execute(
                         "UPDATE oracle_predictions SET outcome = 'dismissed' "
-                        "WHERE id = ? AND (outcome IS NULL OR outcome = '' OR outcome = 'pending')",
+                        "WHERE id = %s AND (outcome IS NULL OR outcome = '' OR outcome = 'pending')",
                         (row["source_prediction_id"],),
                     )
                 except Exception:
@@ -327,7 +327,7 @@ def promote_all_suggested() -> Dict[str, Any]:
         # them re-loops the scheduler on a known-broken task.
         rows = conn.execute(
             "SELECT id FROM kanban_tasks WHERE status = 'suggested' "
-            "AND (last_failure_reason IS NULL OR last_failure_reason NOT LIKE ?)",
+            "AND (last_failure_reason IS NULL OR last_failure_reason NOT LIKE %s)",
             ("QUARANTINED by self_debug%",),
         ).fetchall()
         count = len(rows)
@@ -335,9 +335,9 @@ def promote_all_suggested() -> Dict[str, Any]:
             return {"promoted": 0, "message": "No suggested cards to promote"}
 
         conn.execute(
-            "UPDATE kanban_tasks SET status = 'backlog', updated_at = ? "
+            "UPDATE kanban_tasks SET status = 'backlog', updated_at = %s "
             "WHERE status = 'suggested' "
-            "AND (last_failure_reason IS NULL OR last_failure_reason NOT LIKE ?)",
+            "AND (last_failure_reason IS NULL OR last_failure_reason NOT LIKE %s)",
             (now, "QUARANTINED by self_debug%"),
         )
         conn.commit()
@@ -389,11 +389,11 @@ def _load_pending_predictions(
         "SELECT id, lens_name, prediction_text, confidence, subject_id, "
         "       prediction_type, severity, evidence_json, created_at "
         "FROM oracle_predictions "
-        "WHERE lens_name = ? "
-        "  AND confidence >= ? "
+        "WHERE lens_name = %s "
+        "  AND confidence >= %s "
         "  AND (outcome IS NULL OR outcome = '' OR outcome = 'pending') "
         "ORDER BY confidence DESC, created_at ASC "
-        "LIMIT ?",
+        "LIMIT %s",
         (LENS_NAME, eps_confidence, int(limit)),
     ).fetchall()
     return [dict(r) for r in rows]
@@ -411,14 +411,14 @@ def _find_open_card(
     try:
         row = conn.execute(
             f"SELECT id, title, status FROM kanban_tasks "
-            f"WHERE source_prediction_id = ? AND status IN ({placeholders}) LIMIT 1",
+            f"WHERE source_prediction_id = %s AND status IN ({placeholders}) LIMIT 1",
             (prediction_id, *OPEN_STATUSES),
         ).fetchone()
         if row:
             return dict(row)
         row = conn.execute(
             f"SELECT id, title, status FROM kanban_tasks "
-            f"WHERE title = ? AND status IN ({placeholders}) LIMIT 1",
+            f"WHERE title = %s AND status IN ({placeholders}) LIMIT 1",
             (title, *OPEN_STATUSES),
         ).fetchone()
         if row:
@@ -442,7 +442,7 @@ def _find_done_card_for_subject(
                 "SELECT kt.id, kt.title, kt.status FROM kanban_tasks kt "
                 "JOIN oracle_predictions op ON kt.source_prediction_id = op.id "
                 "WHERE kt.status = 'done' "
-                "  AND op.prediction_type = ? AND op.subject_id = ? LIMIT 1",
+                "  AND op.prediction_type = %s AND op.subject_id = %s LIMIT 1",
                 (ptype, subject),
             ).fetchone()
             if row:
@@ -450,7 +450,7 @@ def _find_done_card_for_subject(
         # Fallback: match by title
         row = conn.execute(
             "SELECT id, title, status FROM kanban_tasks "
-            "WHERE status = 'done' AND title = ? LIMIT 1",
+            "WHERE status = 'done' AND title = %s LIMIT 1",
             (title,),
         ).fetchone()
         if row:
@@ -466,8 +466,8 @@ def _reset_card_to_backlog(conn: Any, task_id: str) -> bool:
     try:
         conn.execute(
             "UPDATE kanban_tasks "
-            "SET status = 'backlog', completed_at = NULL, updated_at = ? "
-            "WHERE id = ? AND status = 'done'",
+            "SET status = 'backlog', completed_at = NULL, updated_at = %s "
+            "WHERE id = %s AND status = 'done'",
             (now, task_id),
         )
         conn.commit()
@@ -499,7 +499,7 @@ def _insert_card(
             "INSERT INTO kanban_tasks "
             "(id, title, description, task_type, priority, status, "
             " executor_type, source_prediction_id, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 task_id,
                 title,
@@ -529,8 +529,8 @@ def _mark_prediction_promoted(conn: Any, prediction_id: str, task_id: str) -> No
     try:
         conn.execute(
             "UPDATE oracle_predictions "
-            "SET outcome = ?, outcome_at = ? "
-            "WHERE id = ?",
+            "SET outcome = %s, outcome_at = %s "
+            "WHERE id = %s",
             (f"promoted:{task_id}", _now_iso(), prediction_id),
         )
         conn.commit()
@@ -553,7 +553,7 @@ def _mark_predictions_promoted_batch(
     for pid in prediction_ids:
         try:
             conn.execute(
-                "UPDATE oracle_predictions SET outcome = ?, outcome_at = ? WHERE id = ?",
+                "UPDATE oracle_predictions SET outcome = %s, outcome_at = %s WHERE id = %s",
                 (outcome, now, pid),
             )
         except Exception as exc:
@@ -663,7 +663,7 @@ def write_suggested_cards(
             if not dry_run:
                 try:
                     conn.execute(
-                        "UPDATE oracle_predictions SET outcome = ?, outcome_at = ? WHERE id = ?",
+                        "UPDATE oracle_predictions SET outcome = %s, outcome_at = %s WHERE id = %s",
                         ("dismissed:gap_fixed", _now_iso(), p["id"]),
                     )
                     conn.commit()
@@ -928,7 +928,7 @@ def get_stats() -> Dict[str, Any]:
         row = conn.execute(
             "SELECT COUNT(*) AS cnt FROM kanban_tasks kt "
             "JOIN oracle_predictions op ON op.id = kt.source_prediction_id "
-            "WHERE op.lens_name = ?",
+            "WHERE op.lens_name = %s",
             (LENS_NAME,),
         ).fetchone()
         suggested = dict(row).get("cnt", 0) if row else 0
@@ -937,7 +937,7 @@ def get_stats() -> Dict[str, Any]:
         # DB default outcome for fresh rows.
         row = conn.execute(
             "SELECT COUNT(*) AS cnt FROM oracle_predictions "
-            "WHERE lens_name = ? AND (outcome IS NULL OR outcome = '' OR outcome = 'pending')",
+            "WHERE lens_name = %s AND (outcome IS NULL OR outcome = '' OR outcome = 'pending')",
             (LENS_NAME,),
         ).fetchone()
         pending = dict(row).get("cnt", 0) if row else 0
@@ -945,7 +945,7 @@ def get_stats() -> Dict[str, Any]:
         # Already promoted — use a parameter for the LIKE pattern
         row = conn.execute(
             "SELECT COUNT(*) AS cnt FROM oracle_predictions "
-            "WHERE lens_name = ? AND outcome LIKE ?",
+            "WHERE lens_name = %s AND outcome LIKE %s",
             (LENS_NAME, "promoted:%"),
         ).fetchone()
         promoted = dict(row).get("cnt", 0) if row else 0
@@ -955,7 +955,7 @@ def get_stats() -> Dict[str, Any]:
             "SELECT op.prediction_type, COUNT(*) AS cnt "
             "FROM kanban_tasks kt "
             "JOIN oracle_predictions op ON op.id = kt.source_prediction_id "
-            "WHERE kt.status = 'suggested' AND op.lens_name = ? "
+            "WHERE kt.status = 'suggested' AND op.lens_name = %s "
             "GROUP BY op.prediction_type ORDER BY cnt DESC",
             (LENS_NAME,),
         ).fetchall()

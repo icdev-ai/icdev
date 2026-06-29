@@ -328,7 +328,7 @@ def _log_command(
             "(id, binding_id, channel, raw_command, parsed_tool, parsed_args, "
             " gate_results, execution_status, response_classification, "
             " response_filtered, execution_time_ms, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, datetime('now'))",
             (
                 audit_id,
                 envelope.binding_id or "",

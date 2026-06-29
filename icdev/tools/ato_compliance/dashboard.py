@@ -49,7 +49,7 @@ def _table_exists(conn: Any, table_name: str) -> bool:
     """Check if a table exists; works for both SQLite and PostgreSQL."""
     try:
         row = conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=%s",
             (table_name,),
         ).fetchone()
         return row is not None
@@ -58,7 +58,7 @@ def _table_exists(conn: Any, table_name: str) -> bool:
         try:
             row = conn.execute(
                 "SELECT 1 FROM information_schema.tables "
-                "WHERE table_schema='public' AND table_name=?",
+                "WHERE table_schema='public' AND table_name=%s",
                 (table_name,),
             ).fetchone()
             return row is not None
@@ -122,7 +122,7 @@ def get_control_summary(project_id: str, *, conn: Any = None) -> dict:
             """
             SELECT implementation_status, COUNT(*) AS cnt
             FROM project_controls
-            WHERE project_id = ?
+            WHERE project_id = %s
             GROUP BY implementation_status
             """,
             (project_id,),
@@ -156,7 +156,7 @@ def get_control_summary(project_id: str, *, conn: Any = None) -> dict:
                     SUM(CASE WHEN pc.implementation_status = 'not_applicable' THEN 1 ELSE 0 END) AS not_applicable
                 FROM project_controls pc
                 JOIN compliance_controls cc ON cc.id = pc.control_id
-                WHERE pc.project_id = ?
+                WHERE pc.project_id = %s
                 GROUP BY cc.family
                 ORDER BY cc.family
                 """,
@@ -186,7 +186,7 @@ def get_control_summary(project_id: str, *, conn: Any = None) -> dict:
                         SUM(CASE WHEN implementation_status = 'planned' THEN 1 ELSE 0 END) AS planned,
                         SUM(CASE WHEN implementation_status = 'not_applicable' THEN 1 ELSE 0 END) AS not_applicable
                     FROM project_controls
-                    WHERE project_id = ?
+                    WHERE project_id = %s
                     GROUP BY family
                     ORDER BY family
                     """,
@@ -276,7 +276,7 @@ def get_rmf_stages(project_id: str, *, conn: Any = None) -> list[dict]:
             """
             SELECT stage, status, assigned_to, completed_at, notes
             FROM rmf_workflow_stages
-            WHERE project_id = ?
+            WHERE project_id = %s
             """,
             (project_id,),
         ).fetchall()
@@ -358,7 +358,7 @@ def get_artifact_status(project_id: str, *, conn: Any = None) -> dict:
         try:
             ssp_count = _scalar(
                 _conn.execute(
-                    "SELECT COUNT(*) FROM ssp_documents WHERE project_id = ?",
+                    "SELECT COUNT(*) FROM ssp_documents WHERE project_id = %s",
                     (project_id,),
                 ).fetchone()
             )
@@ -367,7 +367,7 @@ def get_artifact_status(project_id: str, *, conn: Any = None) -> dict:
                 approved = _scalar(
                     _conn.execute(
                         "SELECT COUNT(*) FROM ssp_documents "
-                        "WHERE project_id = ? AND status = 'approved'",
+                        "WHERE project_id = %s AND status = 'approved'",
                         (project_id,),
                     ).fetchone()
                 )
@@ -386,14 +386,14 @@ def get_artifact_status(project_id: str, *, conn: Any = None) -> dict:
         try:
             poam_count = _scalar(
                 _conn.execute(
-                    "SELECT COUNT(*) FROM poam_items WHERE project_id = ?",
+                    "SELECT COUNT(*) FROM poam_items WHERE project_id = %s",
                     (project_id,),
                 ).fetchone()
             )
             critical = _scalar(
                 _conn.execute(
                     "SELECT COUNT(*) FROM poam_items "
-                    "WHERE project_id = ? AND severity = 'critical' AND status != 'completed'",
+                    "WHERE project_id = %s AND severity = 'critical' AND status != 'completed'",
                     (project_id,),
                 ).fetchone()
             )
@@ -420,14 +420,14 @@ def get_artifact_status(project_id: str, *, conn: Any = None) -> dict:
             stig_open = _scalar(
                 _conn.execute(
                     "SELECT COUNT(*) FROM stig_findings "
-                    "WHERE project_id = ? AND status = 'Open'",
+                    "WHERE project_id = %s AND status = 'Open'",
                     (project_id,),
                 ).fetchone()
             )
             cat1 = _scalar(
                 _conn.execute(
                     "SELECT COUNT(*) FROM stig_findings "
-                    "WHERE project_id = ? AND severity = 'CAT1' AND status = 'Open'",
+                    "WHERE project_id = %s AND severity = 'CAT1' AND status = 'Open'",
                     (project_id,),
                 ).fetchone()
             )
@@ -449,7 +449,7 @@ def get_artifact_status(project_id: str, *, conn: Any = None) -> dict:
         try:
             sbom_count = _scalar(
                 _conn.execute(
-                    "SELECT COUNT(*) FROM sbom_records WHERE project_id = ?",
+                    "SELECT COUNT(*) FROM sbom_records WHERE project_id = %s",
                     (project_id,),
                 ).fetchone()
             )
@@ -528,7 +528,7 @@ def get_crosswalk_summary(project_id: str, *, conn: Any = None) -> dict:
             """
             SELECT control_id, implementation_status
             FROM project_controls
-            WHERE project_id = ?
+            WHERE project_id = %s
             """,
             (project_id,),
         ).fetchall()

@@ -1,0 +1,59 @@
+# CUI // SP-CTI
+"""IQE adapter for {{ display_name }}.
+
+Registers canvas collections on the IQE Executor.
+Auto-generated from data/templates/canvases/standard.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from tools.iqe.executor import register_collection
+
+
+def _conn(conn: Any):
+    if conn is None:
+        from tools.db.storage import get_connection
+        conn = get_connection()
+    return conn
+
+
+def items_adapter(conn: Any = None) -> list[dict]:
+    c = _conn(conn)
+    try:
+        cur = c.execute(
+            "SELECT id, tenant_id, title, status, created_at "
+            "FROM {{ key }}_items ORDER BY created_at DESC LIMIT 500"
+        )
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, row)) for row in cur.fetchall()]
+    except Exception:
+        return []
+    finally:
+        try:
+            c.close()
+        except Exception:
+            pass
+
+
+def events_adapter(conn: Any = None) -> list[dict]:
+    c = _conn(conn)
+    try:
+        cur = c.execute(
+            "SELECT id, item_id, event_type, recorded_at "
+            "FROM {{ key }}_events ORDER BY recorded_at DESC LIMIT 200"
+        )
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, row)) for row in cur.fetchall()]
+    except Exception:
+        return []
+    finally:
+        try:
+            c.close()
+        except Exception:
+            pass
+
+
+register_collection("{{ key }}.items", items_adapter)
+register_collection("{{ key }}.events", events_adapter)

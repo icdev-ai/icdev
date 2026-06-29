@@ -1,0 +1,180 @@
+{% extends "base.html" %}
+{% block title %}My Objectives{% endblock %}
+{% block content %}
+{% set me_page = 'objectives' %}
+<div class="d-flex" style="min-height:calc(100vh - 60px)">
+
+  <!-- Sidebar -->
+  <aside class="flex-shrink-0 py-3 px-2" style="width:200px;border-right:1px solid rgba(255,255,255,.08);display:flex;flex-direction:column">
+    <div class="text-uppercase fw-semibold px-2 mb-3" style="font-size:.65rem;letter-spacing:.1em;color:#6b7280">My Assistant</div>
+    {% for href,icon,label,key in [('/me','🧠','Overview','home'),('/me/profile','👤','Profile','profile'),('/me/customers','🏢','Customers','customers'),('/me/objectives','🎯','Objectives','objectives'),('/me/challenges','⚡','Challenges','challenges'),('/me/briefing/today','📋',"Today's Briefing",'briefing'),('/me/integrations','🔗','Integrations','integrations')] %}
+    <a href="{{ href }}" class="d-block px-3 py-2 rounded mb-1 text-decoration-none small {% if me_page != key %}text-secondary{% endif %}" {% if me_page == key %}style="background:rgba(37,99,235,.15);color:#60a5fa;font-weight:600"{% endif %}>{{ icon }} {{ label }}</a>
+    {% endfor %}
+  </aside>
+
+  <!-- Main -->
+  <main class="flex-grow-1 p-4" style="min-width:0;max-width:760px">
+
+    <div class="d-flex align-items-start justify-content-between flex-wrap gap-3 mb-4">
+      <div>
+        <h4 class="fw-bold mb-1 d-flex align-items-center gap-2">
+          🎯 My Objectives
+          <span data-bs-toggle="tooltip" data-bs-placement="right" title="Keep 3–5 objectives. Be specific enough that you'd know when you've achieved one. The AI surfaces these in your daily briefing and task prioritization." style="cursor:help;color:#6b7280;font-size:.85rem">ⓘ</span>
+        </h4>
+        <p class="text-muted small mb-0">What you're working toward — surfaced daily in your briefing and used to prioritize tasks.</p>
+      </div>
+      <div class="d-flex gap-2">
+        <button class="btn btn-outline-secondary btn-sm" id="btn-sync-progress" data-bs-toggle="tooltip" title="Auto-track progress from completed kanban tasks and git commits">↻ Sync Progress</button>
+        <button class="btn btn-primary btn-sm" id="btn-add-obj">+ Add Objective</button>
+      </div>
+    </div>
+
+    {% set horizons = [('week','This Week','⚡','rgba(245,158,11,.08)','rgba(245,158,11,.25)','#fbbf24'),('quarter','This Quarter','📅','rgba(37,99,235,.08)','rgba(37,99,235,.25)','#60a5fa'),('long_term','Long Term','🌐','rgba(139,92,246,.08)','rgba(139,92,246,.25)','#a78bfa')] %}
+
+    {% for hkey,hlabel,hicon,hbg,hborder,hcolor in horizons %}
+    {% set h_objs = objectives | selectattr('horizon','equalto',hkey) | list %}
+    {% if h_objs %}
+    <div class="mb-4">
+      <div class="d-flex align-items-center gap-2 mb-2">
+        <span>{{ hicon }}</span>
+        <span class="fw-semibold small" style="color:{{ hcolor }}">{{ hlabel }}</span>
+        <span class="badge rounded-pill" style="background:{{ hborder }};color:{{ hcolor }};font-size:.7rem">{{ h_objs|length }}</span>
+      </div>
+      {% for obj in h_objs %}
+      <div class="rounded-3 p-3 mb-2" style="background:{{ hbg }};border:1px solid {{ hborder }}" data-id="{{ obj.id }}">
+        <div class="d-flex align-items-start gap-3">
+          <div class="flex-grow-1">
+            <div class="fw-semibold small">{{ obj.title }}</div>
+            {% if obj.description %}<div class="text-muted mt-1" style="font-size:.8rem">{{ obj.description }}</div>{% endif %}
+            {% if obj.metric %}<div class="mt-1" style="font-size:.75rem;color:#6b7280">📏 {{ obj.metric }}</div>{% endif %}
+          </div>
+          <button class="btn btn-sm obj-delete text-danger" data-id="{{ obj.id }}" style="font-size:.85rem;padding:.15rem .35rem;line-height:1;flex-shrink:0">×</button>
+        </div>
+        {% set pct = obj.auto_progress_pct | default(0) | int %}
+        {% if pct > 0 %}
+        <div class="mt-2">
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <span style="font-size:.7rem;color:{{ hcolor }}">Auto-tracked progress</span>
+            <span class="fw-semibold" style="font-size:.7rem;color:{{ hcolor }}">{{ pct }}%</span>
+          </div>
+          <div class="progress" style="height:4px;background:rgba(255,255,255,.08)">
+            <div class="progress-bar" style="width:{{ pct }}%;background:{{ hcolor }};transition:width .6s ease"></div>
+          </div>
+          {% set notes = obj.progress_notes %}
+          {% if notes %}
+          {% set last_note = notes | last %}
+          {% if last_note and last_note.note %}
+          <div class="text-muted mt-1" style="font-size:.7rem">{{ last_note.note[:100] }}</div>
+          {% endif %}
+          {% endif %}
+        </div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% endfor %}
+
+    {% if not objectives %}
+    <div class="text-center py-5 text-muted rounded-3" style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07)">
+      <div style="font-size:2.5rem" class="mb-2">🎯</div>
+      <p class="mb-1">No objectives yet.</p>
+      <p class="small mb-3">Start with your top 3. Think: what would make this week, this quarter, and this year a success?</p>
+      <div class="d-flex justify-content-center gap-2 flex-wrap small text-muted">
+        <span class="badge" style="background:rgba(245,158,11,.15);color:#fbbf24;border:1px solid rgba(245,158,11,.2)">⚡ "Ship the feature by Friday"</span>
+        <span class="badge" style="background:rgba(37,99,235,.15);color:#60a5fa;border:1px solid rgba(37,99,235,.2)">📅 "Close Q3 customer reviews"</span>
+        <span class="badge" style="background:rgba(139,92,246,.15);color:#a78bfa;border:1px solid rgba(139,92,246,.2)">🌐 "Build domain thought leadership"</span>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Add form -->
+    <div class="rounded-3 p-3 mt-3 d-none" id="add-obj-form" style="background:rgba(255,255,255,.04);border:1px solid rgba(37,99,235,.3)">
+      <div class="fw-semibold small mb-3">New Objective</div>
+      <div class="row g-2">
+        <div class="col-12">
+          <input class="form-control form-control-sm" id="new-title" placeholder="Objective title *" style="background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.15);color:inherit">
+        </div>
+        <div class="col-md-8">
+          <input class="form-control form-control-sm" id="new-desc" placeholder="Description (optional)" style="background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.15);color:inherit">
+        </div>
+        <div class="col-md-4">
+          <select class="form-select form-select-sm" id="new-horizon" style="background:rgba(30,30,50,.9);border-color:rgba(255,255,255,.15);color:inherit">
+            <option value="week">⚡ This Week</option>
+            <option value="quarter" selected>📅 This Quarter</option>
+            <option value="long_term">🌐 Long Term</option>
+          </select>
+        </div>
+        <div class="col-12">
+          <input class="form-control form-control-sm" id="new-metric" placeholder="Success metric (optional) — e.g. 'All ISP links fully redundant'" style="background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.15);color:inherit">
+        </div>
+        <div class="col-12 d-flex gap-2">
+          <button class="btn btn-primary btn-sm" id="btn-save-obj">Save</button>
+          <button class="btn btn-outline-secondary btn-sm" id="btn-cancel-obj">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+{% include "includes/iqe_query_widget.html" %}
+
+<script>
+const currentObjs = {{ objectives | tojson }};
+
+function saveObjectives(objs) {
+  return fetch('/me/api/second-brain/profile', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({objectives: objs})
+  }).then(r=>r.json());
+}
+
+document.getElementById('btn-add-obj').addEventListener('click', () => {
+  document.getElementById('add-obj-form').classList.remove('d-none');
+  document.getElementById('new-title').focus();
+});
+document.getElementById('btn-cancel-obj').addEventListener('click', () => {
+  document.getElementById('add-obj-form').classList.add('d-none');
+});
+document.getElementById('btn-save-obj').addEventListener('click', () => {
+  const title = document.getElementById('new-title').value.trim();
+  if (!title) { document.getElementById('new-title').focus(); return; }
+  currentObjs.push({
+    title,
+    description: document.getElementById('new-desc').value.trim(),
+    horizon: document.getElementById('new-horizon').value,
+    metric: document.getElementById('new-metric').value.trim(),
+  });
+  saveObjectives(currentObjs).then(d => { if(d.ok) location.reload(); else alert('Error: '+d.error); });
+});
+
+document.querySelectorAll('.obj-delete').forEach(btn => {
+  btn.addEventListener('click', function() {
+    if (!confirm('Remove this objective?')) return;
+    const id = this.dataset.id;
+    const updated = currentObjs.filter(o => o.id !== id);
+    saveObjectives(updated).then(d => { if(d.ok) location.reload(); else alert('Error: '+d.error); });
+  });
+});
+
+document.getElementById('btn-sync-progress')?.addEventListener('click', function() {
+  this.disabled = true; this.textContent = '↻ Syncing…';
+  fetch('/me/api/second-brain/objectives/sync', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'})
+    .then(r=>r.json())
+    .then(d => {
+      if (d.ok && d.count > 0) {
+        location.reload();
+      } else if (d.ok) {
+        this.disabled = false; this.textContent = '✓ Up to date';
+        setTimeout(() => { this.textContent = '↻ Sync Progress'; }, 2000);
+      } else {
+        alert('Sync error: ' + (d.error || 'unknown'));
+        this.disabled = false; this.textContent = '↻ Sync Progress';
+      }
+    }).catch(() => { this.disabled = false; this.textContent = '↻ Sync Progress'; });
+});
+
+document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => new bootstrap.Tooltip(el));
+</script>
+{% endblock %}

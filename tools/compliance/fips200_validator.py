@@ -42,7 +42,7 @@ def _get_connection(db_path=None):
 
 def _get_project(conn, project_id):
     """Load project from DB."""
-    row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+    row = conn.execute("SELECT * FROM projects WHERE id = %s", (project_id,)).fetchone()
     if not row:
         raise ValueError(f"Project '{project_id}' not found")
     return dict(row)
@@ -72,7 +72,7 @@ def _get_fips199_baseline(conn, project_id):
     try:
         row = conn.execute(
             """SELECT overall_categorization, baseline_selected, status
-            FROM fips199_categorizations WHERE project_id = ? AND status IN ('approved', 'draft')
+            FROM fips199_categorizations WHERE project_id = %s AND status IN ('approved', 'draft')
             ORDER BY CASE status WHEN 'approved' THEN 1 ELSE 2 END,
                      categorization_date DESC LIMIT 1""",
             (project_id,),
@@ -98,7 +98,7 @@ def _get_fips199_baseline(conn, project_id):
 def _get_project_controls(conn, project_id):
     """Get all project_controls keyed by control_id.
     Returns dict: control_id -> {implementation_status, ...}"""
-    rows = conn.execute("SELECT * FROM project_controls WHERE project_id = ?", (project_id,)).fetchall()
+    rows = conn.execute("SELECT * FROM project_controls WHERE project_id = %s", (project_id,)).fetchall()
     return {r["control_id"]: dict(r) for r in rows}
 
 
@@ -190,7 +190,7 @@ def validate_fips200(project_id, project_dir=None, gate=False, output_dir=None, 
                  requirement_area_name, family, total_required_controls,
                  mapped_controls, implemented_controls, planned_controls,
                  not_applicable_controls, coverage_pct, status, gap_controls, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     project_id,
                     now,
@@ -235,7 +235,7 @@ def validate_fips200(project_id, project_dir=None, gate=False, output_dir=None, 
         conn.execute(
             """INSERT INTO audit_trail
             (project_id, event_type, actor, action, details, classification)
-            VALUES (?, 'fips200_assessed', 'icdev-compliance-engine', ?, ?, 'CUI')""",
+            VALUES (%s, 'fips200_assessed', 'icdev-compliance-engine', %s, %s, 'CUI')""",
             (
                 project_id,
                 f"FIPS 200 validation: {total_satisfied}/17 areas satisfied ({baseline.capitalize()} baseline)",

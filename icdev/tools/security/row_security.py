@@ -191,6 +191,7 @@ def inject_row_predicate(
     lac_column: str = "lac_label",
     coi_tags: Optional[Set[str]] = None,
     coi_column: str = "coi_tag",
+    placeholder: str = "?",
 ) -> Tuple[str, Tuple[Any, ...], int]:
     """Inject tenant, classification, LAC, and COI predicates into a SQL string.
 
@@ -227,7 +228,7 @@ def inject_row_predicate(
 
     # Tenant predicate
     if tenant_id is not None:
-        extra_clauses.append(f"{tenant_column} = ?")
+        extra_clauses.append(f"{tenant_column} = {placeholder}")
         extra_params.append(tenant_id)
     else:
         logger.debug("inject_row_predicate called with tenant_id=None; tenant filter skipped")
@@ -236,7 +237,7 @@ def inject_row_predicate(
     # visible (unclassified data is world-readable within the tenant).
     # Only rows that have a non-empty classification must match the caller's level.
     if classifications:
-        placeholders = ", ".join(["?"] * len(classifications))
+        placeholders = ", ".join([placeholder] * len(classifications))
         sorted_classes = sorted(classifications)
         extra_clauses.append(
             f"({classification_column} IS NULL OR {classification_column} = '' "
@@ -246,14 +247,14 @@ def inject_row_predicate(
     elif classification:
         extra_clauses.append(
             f"({classification_column} IS NULL OR {classification_column} = '' "
-            f"OR {classification_column} = ?)"
+            f"OR {classification_column} = {placeholder})"
         )
         extra_params.append(classification)
 
     # LAC predicate — NULL means world-readable within tenant+classification.
     if lac_labels:
         sorted_lac = sorted(lac_labels)
-        placeholders = ", ".join(["?"] * len(sorted_lac))
+        placeholders = ", ".join([placeholder] * len(sorted_lac))
         extra_clauses.append(
             f"({lac_column} IS NULL OR {lac_column} IN ({placeholders}))"
         )
@@ -262,7 +263,7 @@ def inject_row_predicate(
     # COI predicate — NULL means accessible to all within tenant+classification.
     if coi_tags:
         sorted_coi = sorted(coi_tags)
-        placeholders = ", ".join(["?"] * len(sorted_coi))
+        placeholders = ", ".join([placeholder] * len(sorted_coi))
         extra_clauses.append(
             f"({coi_column} IS NULL OR {coi_column} IN ({placeholders}))"
         )
@@ -391,12 +392,12 @@ def set_pg_session_vars(conn, tenant_id: Optional[str], classification: Optional
         try:
             conn.execute("SELECT set_config('app.tenant_id', %s, false)", (tenant_id,))
         except Exception:
-            conn.execute("SELECT set_config('app.tenant_id', ?, false)", (tenant_id,))
+            conn.execute("SELECT set_config('app.tenant_id', %s, false)", (tenant_id,))
     if classification is not None:
         try:
             conn.execute("SELECT set_config('app.classification', %s, false)", (classification,))
         except Exception:
-            conn.execute("SELECT set_config('app.classification', ?, false)", (classification,))
+            conn.execute("SELECT set_config('app.classification', %s, false)", (classification,))
 
 
 # ---------------------------------------------------------------------------
@@ -416,7 +417,7 @@ def log_rls_event(
         conn.execute(
             """
             INSERT INTO rls_audit (table_name, action, tenant_id, details, recorded_at)
-            VALUES (?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s)
             """,
             (
                 table,

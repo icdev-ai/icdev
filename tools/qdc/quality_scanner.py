@@ -78,7 +78,7 @@ def scan_quality(project_id: str) -> dict:
         with get_connection() as conn:
             cur = conn.cursor()
             cur.execute(
-                "SELECT metric_key, metric_value FROM qdc_metrics WHERE project_id = ? ORDER BY created_at DESC LIMIT 20",
+                "SELECT metric_key, metric_value FROM qdc_metrics WHERE project_id = %s ORDER BY created_at DESC LIMIT 20",
                 (project_id,),
             )
             rows = cur.fetchall()

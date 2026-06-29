@@ -61,7 +61,7 @@ def _load_training_pairs(dataset_name: str) -> list[dict]:
         SELECT e.system_prompt, e.user_input, e.expected_output
         FROM ft_dataset_examples e
         JOIN ft_datasets d ON d.id = e.dataset_id
-        WHERE d.name = ?
+        WHERE d.name = %s
         ORDER BY e.created_at ASC
         """,
         (dataset_name,),
@@ -185,7 +185,7 @@ def _register_ft_job(conn, job_arn: str, dataset_name: str, base_model: str) -> 
     now = datetime.now(timezone.utc).isoformat()
     # Resolve dataset_id
     ds_row = conn.execute(
-        "SELECT id FROM ft_datasets WHERE name = ? LIMIT 1",
+        "SELECT id FROM ft_datasets WHERE name = %s LIMIT 1",
         (dataset_name,),
     ).fetchone()
     dataset_id = ds_row[0] if ds_row else None
@@ -193,7 +193,7 @@ def _register_ft_job(conn, job_arn: str, dataset_name: str, base_model: str) -> 
         """
         INSERT INTO ft_training_jobs
             (id, dataset_id, provider, base_model, status, cloud_job_id, classification, created_at)
-        VALUES (?,?,?,?,?,?,?,?)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
         """,
         (job_id, dataset_id, "bedrock", base_model, "training", job_arn, "CUI", now),
     )
@@ -206,7 +206,7 @@ def _register_ft_model(conn, model_arn: str, job_db_id: str, base_model: str) ->
         """
         INSERT INTO ft_model_versions
             (id, job_id, model_name, base_model, adapter_path, status, classification, created_at)
-        VALUES (?,?,?,?,?,?,?,?)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
         """,
         (
             str(uuid.uuid4()), job_db_id,
@@ -222,7 +222,7 @@ def _update_ft_job_status(conn, job_db_id: str, status: str, metrics: dict) -> N
                   "timeout": "failed"}
     db_status = status_map.get(status.lower(), "failed")
     conn.execute(
-        "UPDATE ft_training_jobs SET status = ?, error_message = ? WHERE id = ?",
+        "UPDATE ft_training_jobs SET status = %s, error_message = %s WHERE id = %s",
         (db_status, json.dumps(metrics) if db_status != "completed" else None, job_db_id),
     )
 

@@ -40,7 +40,7 @@ def get_waves(session_id: str) -> list[dict]:
     conn = _conn()
     try:
         rows = conn.execute(
-            "SELECT * FROM mc_migration_waves WHERE session_id=? ORDER BY wave_number",
+            "SELECT * FROM mc_migration_waves WHERE session_id=%s ORDER BY wave_number",
             (session_id,),
         ).fetchall()
         cols = [d[0] for d in conn.execute(
@@ -64,7 +64,7 @@ def get_dependencies(session_id: str) -> list[dict]:
     conn = _conn()
     try:
         rows = conn.execute(
-            "SELECT * FROM mc_server_dependencies WHERE session_id=? ORDER BY created_at",
+            "SELECT * FROM mc_server_dependencies WHERE session_id=%s ORDER BY created_at",
             (session_id,),
         ).fetchall()
         cols = [d[0] for d in conn.execute(
@@ -98,16 +98,16 @@ def upsert_wave(session_id: str, wave_data: dict) -> dict:
     conn = _conn()
     try:
         existing = conn.execute(
-            "SELECT id FROM mc_migration_waves WHERE id=? AND session_id=?",
+            "SELECT id FROM mc_migration_waves WHERE id=%s AND session_id=%s",
             (wave_id, session_id),
         ).fetchone()
 
         if existing:
             conn.execute(
                 """UPDATE mc_migration_waves SET
-                   wave_number=?, name=?, cutover_date=?, status=?,
-                   server_ids_json=?, notes=?, app_names=?, app_count=?
-                   WHERE id=? AND session_id=?""",
+                   wave_number=%s, name=%s, cutover_date=%s, status=%s,
+                   server_ids_json=%s, notes=%s, app_names=%s, app_count=%s
+                   WHERE id=%s AND session_id=%s""",
                 (
                     wave_data.get("wave_number", 1),
                     wave_data.get("name", "Wave"),
@@ -126,7 +126,7 @@ def upsert_wave(session_id: str, wave_data: dict) -> dict:
                    (id, session_id, wave_number, name, cutover_date, status,
                     server_ids_json, notes, created_at, classification,
                     app_names, app_count)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (
                     wave_id, session_id,
                     wave_data.get("wave_number", 1),
@@ -158,7 +158,7 @@ def delete_wave(wave_id: str, session_id: str) -> bool:
     conn = _conn()
     try:
         cur = conn.execute(
-            "DELETE FROM mc_migration_waves WHERE id=? AND session_id=?",
+            "DELETE FROM mc_migration_waves WHERE id=%s AND session_id=%s",
             (wave_id, session_id),
         )
         conn.commit()
@@ -177,7 +177,7 @@ def upsert_dependency(session_id: str, dep: dict) -> dict:
             """INSERT OR REPLACE INTO mc_server_dependencies
                (id, session_id, source_server_id, target_server_id,
                 dep_type, direction, notes, created_at)
-               VALUES (?,?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
             (
                 dep_id, session_id,
                 dep.get("source_server_id", ""),
@@ -199,7 +199,7 @@ def delete_dependency(dep_id: str, session_id: str) -> bool:
     conn = _conn()
     try:
         cur = conn.execute(
-            "DELETE FROM mc_server_dependencies WHERE id=? AND session_id=?",
+            "DELETE FROM mc_server_dependencies WHERE id=%s AND session_id=%s",
             (dep_id, session_id),
         )
         conn.commit()
@@ -250,7 +250,7 @@ def auto_assign_waves(session_id: str) -> dict:
     # Delete existing waves and rebuild
     conn = _conn()
     try:
-        conn.execute("DELETE FROM mc_migration_waves WHERE session_id=?", (session_id,))
+        conn.execute("DELETE FROM mc_migration_waves WHERE session_id=%s", (session_id,))
         conn.commit()
     finally:
         conn.close()
@@ -283,7 +283,7 @@ def auto_assign_waves(session_id: str) -> dict:
             app_names = [r[1] for r in rows]
             app_count = len(app_names)
             conn.execute(
-                "UPDATE mc_migration_waves SET app_names=?, app_count=? WHERE id=?",
+                "UPDATE mc_migration_waves SET app_names=%s, app_count=%s WHERE id=%s",
                 (json.dumps(app_names), app_count, w["id"]),
             )
             w["app_names"] = app_names

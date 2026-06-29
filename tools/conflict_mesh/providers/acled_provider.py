@@ -11,7 +11,6 @@ Maps ACLED event fields to the canonical conflict mesh schema:
 
 from __future__ import annotations
 
-import logging
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -24,7 +23,8 @@ from tools.conflict_mesh.providers.base import MeshProvider  # noqa: E402
 from tools.databridge.registry import get_connector_instance  # noqa: E402
 from tools.databridge.connector import ConnectorRequest  # noqa: E402
 
-logger = logging.getLogger("conflict_mesh.acled")
+from tools.logging.icdev_logger import get_logger
+log = get_logger("conflict_mesh.acled")
 
 # Map ACLED event_type strings to canonical enum values
 _ACLED_TYPE_MAP: Dict[str, str] = {
@@ -60,7 +60,7 @@ class ACLEDProvider(MeshProvider):
     def __init__(self) -> None:
         self._connector = get_connector_instance("acled")
         if self._connector is None:
-            logger.warning("ACLED connector not available; provider will return empty results")
+            log.warning("ACLED connector not available; provider will return empty results")
 
     @property
     def provider_name(self) -> str:
@@ -103,7 +103,7 @@ class ACLEDProvider(MeshProvider):
             import os
             api_key = os.environ.get("ACLED_API_KEY", "")
             if not api_key:
-                logger.debug("ACLED_API_KEY not set — skipping ACLED fetch")
+                log.debug("ACLED_API_KEY not set — skipping ACLED fetch")
                 return []
             self._connector.connect({"api_key": api_key})
             resp = self._connector.read(ConnectorRequest(
@@ -116,5 +116,5 @@ class ACLEDProvider(MeshProvider):
                 return []
             return [self.normalize(r) for r in resp.data]
         except Exception as exc:
-            logger.warning("ACLED fetch failed: %s", exc)
+            log.warning("ACLED fetch failed: %s", exc)
             return []

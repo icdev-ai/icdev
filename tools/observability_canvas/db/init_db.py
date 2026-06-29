@@ -35,10 +35,10 @@ def get_connection():
     """
     if _OC_BACKEND == "postgresql":
         try:
-            from tools.db.storage import get_connection as _icdev_conn
-
-            conn = _icdev_conn(db_path=os.environ.get("OC_PG_DATABASE", "observability_canvas"))
-            return conn
+            from tools.db.storage import get_canvas_connection
+            # Canvas tables (observability_designs, od_*) have no classification/tenant_id
+            # columns — must bypass RLS via get_canvas_connection.
+            return get_canvas_connection("OC_STORAGE_BACKEND")
         except ImportError:
             pass
     # SQLite (default) — per-canvas DB, distinct from icdev.db
@@ -94,7 +94,7 @@ CREATE TABLE IF NOT EXISTS od_assessments (
 CREATE TABLE IF NOT EXISTS od_audit (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     design_id       TEXT,
-    user            TEXT,
+    actor           TEXT,
     action          TEXT NOT NULL,
     detail          TEXT,
     classification  TEXT DEFAULT 'CUI // SP-CTI',

@@ -24,7 +24,7 @@ def publish_llmops_summary(tournament_id: int) -> dict:
                       AVG(latency_ms) AS avg_latency_ms,
                       COUNT(CASE WHEN error IS NOT NULL THEN 1 END) AS errors
                FROM gd_ai_llmops_events
-               WHERE tournament_id = ?
+               WHERE tournament_id = %s
                GROUP BY model""",
             (tournament_id,),
         ).fetchall()
@@ -64,7 +64,7 @@ def publish_aiops_health(tournament_id: int) -> None:
         row = conn.execute(
             """SELECT COUNT(*) AS rounds,
                       SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) AS completed
-               FROM gd_ai_rounds WHERE tournament_id = ?""",
+               FROM gd_ai_rounds WHERE tournament_id = %s""",
             (tournament_id,),
         ).fetchone()
         if row:

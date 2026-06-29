@@ -609,13 +609,13 @@ def init_db(verbose: bool = True) -> None:
         # Seed templates (upsert)
         for tpl in _TEMPLATES:
             existing = conn.execute(
-                "SELECT id FROM aiml_templates WHERE id=?", (tpl["id"],)
+                "SELECT id FROM aiml_templates WHERE id=%s", (tpl["id"],)
             ).fetchone()
             if not existing:
                 conn.execute(
                     """INSERT INTO aiml_templates
                        (id, name, category, description, graph_json, il_level, tags)
-                       VALUES (?,?,?,?,?,?,?)""",
+                       VALUES (%s,%s,%s,%s,%s,%s,%s)""",
                     (
                         tpl["id"], tpl["name"], tpl["category"],
                         tpl["description"], tpl["graph_json"],
@@ -627,13 +627,13 @@ def init_db(verbose: bool = True) -> None:
         # Seed snippets (upsert)
         for snp in _SNIPPETS:
             existing = conn.execute(
-                "SELECT id FROM aiml_snippets WHERE id=?", (snp["id"],)
+                "SELECT id FROM aiml_snippets WHERE id=%s", (snp["id"],)
             ).fetchone()
             if not existing:
                 conn.execute(
                     """INSERT INTO aiml_snippets
                        (id, name, category, description, graph_json, tags)
-                       VALUES (?,?,?,?,?,?)""",
+                       VALUES (%s,%s,%s,%s,%s,%s)""",
                     (
                         snp["id"], snp["name"], snp["category"],
                         snp["description"], snp["graph_json"],

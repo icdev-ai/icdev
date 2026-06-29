@@ -111,7 +111,7 @@ def _log_audit(conn, project_id, action, details=None):
     conn.execute(
         """INSERT INTO audit_trail
            (project_id, event_type, actor, action, details, classification, created_at)
-           VALUES (?, 'emass_sync', 'icdev-emass-client', ?, ?, 'CUI', datetime('now'))""",
+           VALUES (%s, 'emass_sync', 'icdev-emass-client', %s, %s, 'CUI', datetime('now'))""",
         (project_id, action, json.dumps(details) if details else None),
     )
     conn.commit()

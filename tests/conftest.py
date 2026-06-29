@@ -188,6 +188,29 @@ CREATE TABLE IF NOT EXISTS canvas_access_grants (
     revoked_at TEXT,
     UNIQUE (tenant_id, principal_type, principal_id, canvas_name)
 );
+CREATE TABLE IF NOT EXISTS tenant_component_overrides (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    component_key TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0, 1)),
+    updated_by TEXT DEFAULT 'system',
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (tenant_id, component_key)
+);
+CREATE TABLE IF NOT EXISTS component_audit_log (
+    id TEXT PRIMARY KEY,
+    event_type TEXT NOT NULL,
+    actor TEXT NOT NULL DEFAULT 'system',
+    tenant_id TEXT,
+    component_key TEXT,
+    profile_name TEXT,
+    details TEXT DEFAULT '{}',
+    classification TEXT DEFAULT 'CUI',
+    recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_component_audit_log_event ON component_audit_log(event_type);
+CREATE INDEX IF NOT EXISTS idx_component_audit_log_component ON component_audit_log(component_key);
+CREATE INDEX IF NOT EXISTS idx_component_audit_log_recorded_at ON component_audit_log(recorded_at);
 CREATE TABLE IF NOT EXISTS abac_decisions (
     id TEXT PRIMARY KEY,
     user_id TEXT,
@@ -199,6 +222,12 @@ CREATE TABLE IF NOT EXISTS abac_decisions (
     decision TEXT,
     reason TEXT,
     evaluated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS user_preferences (
+    user_id          TEXT PRIMARY KEY,
+    tenant_id        TEXT NOT NULL DEFAULT 'default',
+    onboarding_state TEXT NOT NULL DEFAULT '{}',
+    updated_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 CREATE TABLE IF NOT EXISTS user_mfa (
     user_id TEXT PRIMARY KEY,
@@ -868,29 +897,42 @@ CREATE TABLE IF NOT EXISTS zig_maturity_scores (
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS slides_decks (
-    deck_id       INTEGER PRIMARY KEY AUTOINCREMENT,
-    title         TEXT NOT NULL,
-    deck_type     TEXT NOT NULL DEFAULT 'executive_overview',
-    theme         TEXT NOT NULL DEFAULT 'midnight_executive',
-    status        TEXT NOT NULL DEFAULT 'pending',
-    source_types  TEXT DEFAULT '[]',
-    pptx_path     TEXT,
-    slide_count   INTEGER DEFAULT 0,
-    error_message TEXT,
-    created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
-    completed_at  DATETIME
+    deck_id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    title                TEXT NOT NULL,
+    deck_type            TEXT NOT NULL DEFAULT 'executive_overview',
+    theme                TEXT NOT NULL DEFAULT 'midnight_executive',
+    tone                 TEXT DEFAULT 'professional',
+    occasion             TEXT,
+    target_audience      TEXT,
+    citation_style       TEXT DEFAULT 'inline_links',
+    output_formats       TEXT DEFAULT '["pptx"]',
+    status               TEXT NOT NULL DEFAULT 'pending',
+    source_types         TEXT DEFAULT '[]',
+    pptx_path            TEXT,
+    pdf_path             TEXT,
+    html_path            TEXT,
+    slide_count          INTEGER DEFAULT 0,
+    error_message        TEXT,
+    enable_rich_diagrams INTEGER DEFAULT 0,
+    audience_mode        TEXT,
+    created_at           DATETIME DEFAULT CURRENT_TIMESTAMP,
+    completed_at         DATETIME
 );
 CREATE TABLE IF NOT EXISTS slides_slides (
-    slide_id      INTEGER PRIMARY KEY AUTOINCREMENT,
-    deck_id       INTEGER NOT NULL REFERENCES slides_decks(deck_id) ON DELETE CASCADE,
-    position      INTEGER NOT NULL,
-    slide_type    TEXT NOT NULL DEFAULT 'content',
-    title         TEXT NOT NULL,
-    bullets       TEXT DEFAULT '[]',
-    speaker_notes TEXT,
-    image_path    TEXT,
-    image_prompt  TEXT,
-    created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+    slide_id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    deck_id              INTEGER NOT NULL REFERENCES slides_decks(deck_id) ON DELETE CASCADE,
+    position             INTEGER NOT NULL,
+    slide_type           TEXT NOT NULL DEFAULT 'content',
+    title                TEXT NOT NULL,
+    bullets              TEXT DEFAULT '[]',
+    speaker_notes        TEXT,
+    citations            TEXT DEFAULT '[]',
+    image_path           TEXT,
+    image_prompt         TEXT,
+    mermaid_code         TEXT,
+    three_scene_config   TEXT,
+    excalidraw_elements  TEXT,
+    created_at           DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS slides_audit (
     audit_id  INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1262,6 +1304,467 @@ CREATE TABLE IF NOT EXISTS foundry_outcomes (
     tenant_id      TEXT    NOT NULL DEFAULT 'default',
     classification TEXT    NOT NULL DEFAULT 'CUI',
     created_at     TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- MCIP DAT — Diplomatic Activity Tracker (issue-18)
+CREATE TABLE IF NOT EXISTS mcip_dat_events (
+    id              TEXT PRIMARY KEY,
+    source_type     TEXT NOT NULL,
+    content_hash    TEXT NOT NULL,
+    sender          TEXT NOT NULL DEFAULT 'unknown',
+    recipient       TEXT NOT NULL DEFAULT 'unknown',
+    classification  TEXT NOT NULL DEFAULT 'CUI',
+    tension_signal  REAL NOT NULL DEFAULT 0.0,
+    ingested_at     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_mcip_dat_events_source ON mcip_dat_events(source_type);
+CREATE INDEX IF NOT EXISTS idx_mcip_dat_events_at     ON mcip_dat_events(ingested_at);
+
+CREATE TABLE IF NOT EXISTS mcip_dti_scores (
+    id              TEXT PRIMARY KEY,
+    score           REAL NOT NULL,
+    cable_sub       REAL NOT NULL DEFAULT 0.0,
+    unsc_sub        REAL NOT NULL DEFAULT 0.0,
+    backchannel_sub REAL NOT NULL DEFAULT 0.0,
+    event_count     INTEGER NOT NULL DEFAULT 0,
+    computed_at     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_mcip_dti_scores_at ON mcip_dti_scores(computed_at);
+
+-- RAG provenance ledger — append-only AIA chain-of-custody (D-AIDP, NIST AU-3)
+CREATE TABLE IF NOT EXISTS rag_provenance_ledger (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    chunk_uuid TEXT NOT NULL,
+    parent_doc_uuid TEXT,
+    sha256_hash TEXT,
+    token_count INTEGER DEFAULT 0,
+    classification_label TEXT,
+    version_tree_ref TEXT,
+    model_id TEXT,
+    hyperparams_json TEXT DEFAULT '{}',
+    prompt_sha256 TEXT,
+    signature TEXT,
+    event_type TEXT NOT NULL DEFAULT 'ingest'
+        CHECK(event_type IN ('ingest', 'chain_of_custody')),
+    ingest_timestamp TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_rag_prov_chunk ON rag_provenance_ledger(chunk_uuid);
+CREATE INDEX IF NOT EXISTS idx_rag_prov_event_type ON rag_provenance_ledger(event_type);
+
+-- SBOM component registry and supply chain risk tables (migration 209)
+CREATE TABLE IF NOT EXISTS sbom_components (
+    id              TEXT    PRIMARY KEY,
+    component_name  TEXT    NOT NULL,
+    version         TEXT,
+    vendor          TEXT,
+    component_type  TEXT,
+    purl            TEXT,
+    license         TEXT,
+    classification  TEXT    NOT NULL DEFAULT 'CUI',
+    created_at      TEXT    DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT    DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS supply_chain_vulnerabilities (
+    id                TEXT    PRIMARY KEY,
+    sbom_id           TEXT    NOT NULL REFERENCES sbom_components(id),
+    cve_id            TEXT    NOT NULL,
+    cvss_score        REAL    NOT NULL DEFAULT 0.0,
+    severity          TEXT,
+    affected_versions TEXT,
+    fixed_version     TEXT,
+    classification    TEXT    NOT NULL DEFAULT 'CUI',
+    created_at        TEXT    DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS supply_chain_risk_scores (
+    id              TEXT    PRIMARY KEY,
+    sbom_id         TEXT    NOT NULL REFERENCES sbom_components(id),
+    risk_level      TEXT,
+    exploitability  TEXT,
+    patch_available INTEGER NOT NULL DEFAULT 0,
+    last_assessed   TEXT    NOT NULL,
+    classification  TEXT    NOT NULL DEFAULT 'CUI',
+    created_at      TEXT    DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS rag_queries (
+    id              TEXT    PRIMARY KEY,
+    query_text      TEXT    NOT NULL,
+    lens            TEXT    DEFAULT 'default',
+    status          TEXT    DEFAULT 'pending'
+        CHECK(status IN ('pending', 'running', 'done', 'failed')),
+    agent_id        TEXT,
+    tenant_id       TEXT    DEFAULT '',
+    classification  TEXT    DEFAULT 'CUI',
+    created_at      TEXT    DEFAULT CURRENT_TIMESTAMP,
+    completed_at    TEXT
+);
+CREATE TABLE IF NOT EXISTS rag_citations (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    query_id        TEXT    NOT NULL REFERENCES rag_queries(id),
+    source_doc      TEXT    NOT NULL,
+    citation_text   TEXT,
+    confidence      REAL    DEFAULT 0.0,
+    tenant_id       TEXT    DEFAULT '',
+    classification  TEXT    DEFAULT 'CUI',
+    created_at      TEXT    DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS showcase_apps (
+    id          TEXT    PRIMARY KEY,
+    name        TEXT    NOT NULL,
+    category    TEXT    NOT NULL DEFAULT '',
+    description TEXT    NOT NULL DEFAULT '',
+    status      TEXT    NOT NULL DEFAULT 'draft',
+    slug        TEXT,
+    metadata    TEXT    NOT NULL DEFAULT '{}',
+    created_at  TEXT    DEFAULT CURRENT_TIMESTAMP,
+    updated_at  TEXT    DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS sso_providers (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    protocol TEXT NOT NULL CHECK(protocol IN ('saml','oidc')),
+    entity_id TEXT,
+    metadata_url TEXT,
+    client_id TEXT,
+    client_secret_enc TEXT,
+    attr_mapping TEXT,
+    claims_mapping TEXT,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_sso_providers_tenant ON sso_providers(tenant_id);
+CREATE TABLE IF NOT EXISTS sso_sessions (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    provider_id TEXT NOT NULL,
+    user_id TEXT,
+    name_id TEXT,
+    session_index TEXT,
+    id_token TEXT,
+    access_token_enc TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    expires_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_sso_sessions_tenant ON sso_sessions(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_sso_sessions_provider ON sso_sessions(provider_id);
+CREATE TABLE IF NOT EXISTS evidence_items (
+    id              TEXT PRIMARY KEY,
+    control_id      TEXT NOT NULL,
+    framework       TEXT NOT NULL DEFAULT 'soc2',
+    tenant_id       TEXT NOT NULL,
+    evidence_type   TEXT CHECK(evidence_type IN ('log','config','test_result','screenshot','policy')),
+    source_table    TEXT,
+    source_row_id   TEXT,
+    summary         TEXT,
+    collected_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    collector       TEXT NOT NULL DEFAULT 'auto',
+    classification  TEXT NOT NULL DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_evidence_items_control ON evidence_items(tenant_id, control_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_evidence_items_source
+    ON evidence_items(source_table, source_row_id, control_id)
+    WHERE source_table IS NOT NULL AND source_row_id IS NOT NULL;
+CREATE TABLE IF NOT EXISTS data_residency_zones (
+    id          TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    region      TEXT NOT NULL,
+    pg_dsn_env  TEXT NOT NULL,
+    description TEXT,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS tenant_zone_assignments (
+    tenant_id   TEXT PRIMARY KEY,
+    zone_id     TEXT NOT NULL REFERENCES data_residency_zones(id),
+    assigned_at TEXT NOT NULL DEFAULT (datetime('now')),
+    assigned_by TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_tenant_zone_assignments_zone
+    ON tenant_zone_assignments(zone_id);
+CREATE TABLE IF NOT EXISTS erasure_audit (
+    id              TEXT PRIMARY KEY,
+    tenant_id       TEXT NOT NULL,
+    requested_by    TEXT NOT NULL,
+    scope           TEXT NOT NULL DEFAULT 'pii',
+    tables_affected TEXT,
+    completed_at    TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS api_keys (
+    id           TEXT PRIMARY KEY,
+    tenant_id    TEXT NOT NULL,
+    name         TEXT NOT NULL,
+    key_prefix   TEXT NOT NULL,
+    key_hash     TEXT NOT NULL UNIQUE,
+    scopes       TEXT NOT NULL DEFAULT 'read',
+    last_used_at TEXT,
+    expires_at   TEXT,
+    revoked_at   TEXT,
+    created_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_api_keys_tenant ON api_keys(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_api_keys_hash   ON api_keys(key_hash);
+
+CREATE TABLE IF NOT EXISTS idr_sessions (
+    id              TEXT PRIMARY KEY,
+    title           TEXT NOT NULL,
+    domain          TEXT NOT NULL DEFAULT 'network',
+    doc_type        TEXT NOT NULL DEFAULT 'runbook',
+    template_id     TEXT,
+    stage           INTEGER NOT NULL DEFAULT 0,
+    status          TEXT NOT NULL DEFAULT 'setup',
+    dic_collection_id TEXT,
+    ace_instance_id TEXT,
+    topology_id     TEXT,
+    wg_result_id    TEXT,
+    conflicts_resolved INTEGER DEFAULT 0,
+    created_by      TEXT,
+    tenant_id       TEXT,
+    classification  TEXT DEFAULT 'CUI',
+    suggested_classification TEXT,
+    suggested_classification_confidence REAL,
+    prior_docs_context TEXT,
+    last_source_hash TEXT,
+    source_hash_checked_at TEXT,
+    final_doc_text  TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS idr_uploads (
+    id              TEXT PRIMARY KEY,
+    session_id      TEXT NOT NULL,
+    filename        TEXT NOT NULL,
+    upload_type     TEXT NOT NULL DEFAULT 'doc',
+    file_path       TEXT,
+    file_hash       TEXT,
+    dic_doc_id      TEXT,
+    extracted_from_doc_id TEXT,
+    status          TEXT NOT NULL DEFAULT 'pending',
+    error_msg       TEXT,
+    tenant_id       TEXT,
+    uploaded_at     TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS idr_analyses (
+    id              TEXT PRIMARY KEY,
+    session_id      TEXT NOT NULL,
+    upload_id       TEXT NOT NULL,
+    analysis_type   TEXT NOT NULL,
+    result_ref_id   TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'done',
+    error_msg       TEXT,
+    tenant_id       TEXT,
+    result_json     TEXT,
+    confidence_score REAL,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS idr_conflicts (
+    id              TEXT PRIMARY KEY,
+    session_id      TEXT NOT NULL,
+    node_label      TEXT NOT NULL,
+    conflict_type   TEXT NOT NULL,
+    source_a        TEXT NOT NULL,
+    source_a_value  TEXT,
+    source_b        TEXT NOT NULL,
+    source_b_value  TEXT,
+    resolved_by     TEXT,
+    resolution      TEXT,
+    resolution_notes TEXT,
+    resolved_at     TEXT,
+    tenant_id       TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS idr_artifacts (
+    id              TEXT PRIMARY KEY,
+    session_id      TEXT NOT NULL,
+    dic_doc_id      TEXT,
+    dic_version_id  TEXT,
+    format          TEXT NOT NULL,
+    file_path       TEXT,
+    wg_result_id    TEXT,
+    published_at    TEXT,
+    tenant_id       TEXT,
+    flagged_sections TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- PNA: Predictive Network Analytics (migration 222)
+CREATE TABLE IF NOT EXISTS nc_eol_predictions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_name TEXT NOT NULL,
+    vendor TEXT, model TEXT, os_version TEXT,
+    eos_date TEXT, eol_date TEXT, days_remaining INTEGER,
+    has_active_cves INTEGER NOT NULL DEFAULT 0,
+    active_cve_count INTEGER NOT NULL DEFAULT 0,
+    risk_score REAL NOT NULL DEFAULT 0.0,
+    risk_tier TEXT NOT NULL DEFAULT 'medium',
+    nqe_source TEXT NOT NULL DEFAULT 'local_mapping',
+    model_version TEXT NOT NULL DEFAULT '1.0',
+    predicted_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS nc_bgp_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_key TEXT NOT NULL,
+    device_name TEXT NOT NULL,
+    peer_ip TEXT NOT NULL,
+    peer_asn INTEGER,
+    event_type TEXT NOT NULL DEFAULT 'flap',
+    event_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS nc_bgp_predictions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_key TEXT NOT NULL,
+    device_name TEXT NOT NULL,
+    peer_ip TEXT NOT NULL,
+    peer_asn INTEGER,
+    stability_score REAL NOT NULL DEFAULT 1.0,
+    flap_count_24h INTEGER NOT NULL DEFAULT 0,
+    flap_count_7d INTEGER NOT NULL DEFAULT 0,
+    flap_risk TEXT NOT NULL DEFAULT 'low',
+    route_count INTEGER,
+    session_state TEXT,
+    predicted_outage_hrs REAL,
+    confidence REAL NOT NULL DEFAULT 0.4,
+    model_version TEXT NOT NULL DEFAULT '1.0',
+    predicted_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS nc_compliance_drift (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_name TEXT NOT NULL,
+    framework TEXT NOT NULL DEFAULT 'DISA_STIG',
+    last_compliant_score REAL,
+    current_score REAL NOT NULL DEFAULT 0.0,
+    drift_delta REAL NOT NULL DEFAULT 0.0,
+    drift_rate_per_day REAL,
+    failing_controls INTEGER NOT NULL DEFAULT 0,
+    critical_controls_failing INTEGER NOT NULL DEFAULT 0,
+    predicted_fail_date TEXT,
+    days_to_failure INTEGER,
+    risk_score REAL NOT NULL DEFAULT 0.0,
+    risk_tier TEXT NOT NULL DEFAULT 'medium',
+    assessed_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS nc_capacity_predictions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_name TEXT NOT NULL,
+    interface_name TEXT NOT NULL,
+    interface_id TEXT,
+    current_util_pct REAL NOT NULL DEFAULT 0.0,
+    peak_util_pct REAL,
+    avg_util_pct_7d REAL,
+    trend_slope REAL NOT NULL DEFAULT 0.0,
+    days_to_saturation INTEGER,
+    saturation_date TEXT,
+    confidence REAL NOT NULL DEFAULT 0.4,
+    risk_score REAL NOT NULL DEFAULT 0.0,
+    risk_tier TEXT NOT NULL DEFAULT 'low',
+    nqe_source TEXT NOT NULL DEFAULT 'local_mapping',
+    model_version TEXT NOT NULL DEFAULT '1.0',
+    predicted_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS nc_change_risk (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    change_request_id TEXT NOT NULL DEFAULT 'auto',
+    device_name TEXT NOT NULL,
+    action_type TEXT,
+    failure_probability REAL NOT NULL DEFAULT 0.0,
+    blast_radius_size INTEGER NOT NULL DEFAULT 0,
+    concurrent_change_count INTEGER NOT NULL DEFAULT 0,
+    maintenance_window_compliant INTEGER NOT NULL DEFAULT 1,
+    device_criticality INTEGER NOT NULL DEFAULT 3,
+    risk_factors_json TEXT,
+    risk_tier TEXT NOT NULL DEFAULT 'low',
+    simulation_verdict TEXT,
+    model_version TEXT NOT NULL DEFAULT '1.0',
+    predicted_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS nc_supply_chain_risk (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    vendor TEXT NOT NULL,
+    device_count INTEGER NOT NULL DEFAULT 0,
+    model_count INTEGER NOT NULL DEFAULT 0,
+    cve_count INTEGER NOT NULL DEFAULT 0,
+    kev_count INTEGER NOT NULL DEFAULT 0,
+    critical_cve_count INTEGER NOT NULL DEFAULT 0,
+    high_cve_count INTEGER NOT NULL DEFAULT 0,
+    risk_score REAL NOT NULL DEFAULT 0.0,
+    vendor_risk_rating TEXT NOT NULL DEFAULT 'low',
+    top_cves_json TEXT,
+    nqe_device_sample_json TEXT,
+    model_version TEXT NOT NULL DEFAULT '1.0',
+    assessed_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS studio_forms (
+    form_id     TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    description TEXT,
+    schema_json TEXT NOT NULL,
+    created_by  TEXT,
+    created_at  TEXT DEFAULT (datetime('now')),
+    updated_at  TEXT DEFAULT (datetime('now')),
+    version     INTEGER DEFAULT 1,
+    status      TEXT DEFAULT 'draft'
+);
+CREATE TABLE IF NOT EXISTS studio_form_submissions (
+    submission_id TEXT PRIMARY KEY,
+    form_id       TEXT NOT NULL REFERENCES studio_forms(form_id),
+    data_json     TEXT NOT NULL,
+    submitted_by  TEXT,
+    submitted_at  TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS wfc_branding (
+    id               TEXT PRIMARY KEY,
+    entity_type      TEXT NOT NULL,
+    entity_id        TEXT NOT NULL,
+    org_name         TEXT,
+    logo_data        TEXT,
+    primary_color    TEXT DEFAULT '#1a365d',
+    secondary_color  TEXT DEFAULT '#c8a951',
+    header_html      TEXT,
+    footer_html      TEXT,
+    show_classification INTEGER DEFAULT 1,
+    created_at       TEXT DEFAULT (datetime('now')),
+    updated_at       TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS wfc_workflow_form_nodes (
+    id                   TEXT PRIMARY KEY,
+    workflow_id          TEXT NOT NULL,
+    node_key             TEXT NOT NULL,
+    form_id              TEXT NOT NULL,
+    node_label           TEXT,
+    required_before_next INTEGER DEFAULT 1,
+    created_at           TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS forecast_jobs (
+    id             TEXT PRIMARY KEY,
+    source         TEXT NOT NULL DEFAULT 'manual',
+    context        TEXT DEFAULT '',
+    input_rows     INTEGER NOT NULL,
+    input_summary  TEXT DEFAULT '{}',
+    status         TEXT NOT NULL DEFAULT 'pending',
+    prediction     TEXT DEFAULT '{}',
+    model_id       TEXT DEFAULT 'timesfm-2.5-200m',
+    error_message  TEXT DEFAULT '',
+    created_at     TEXT DEFAULT (datetime('now')),
+    updated_at     TEXT DEFAULT (datetime('now')),
+    completed_at   TEXT,
+    classification TEXT DEFAULT 'CUI',
+    tenant_id      TEXT
+);
+CREATE TABLE IF NOT EXISTS forecast_audit (
+    id             TEXT PRIMARY KEY,
+    job_id         TEXT NOT NULL REFERENCES forecast_jobs(id) ON DELETE CASCADE,
+    event_type     TEXT NOT NULL,
+    actor          TEXT DEFAULT 'system',
+    details        TEXT DEFAULT '{}',
+    created_at     TEXT DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI'
 );
 """
 

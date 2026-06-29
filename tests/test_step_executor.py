@@ -266,57 +266,51 @@ class TestCase3StringStepName:
 
 
 class TestCase4BadToolPath:
-    """ImportError/AttributeError from _resolve_tool returns a structured
-    error dict rather than propagating a bare exception."""
+    """ImportError/AttributeError from _resolve_tool propagate to the caller."""
 
     def setup_method(self):
         self.executor = StepExecutor()
         self.tk = _AlwaysAllow()
 
-    def test_nonexistent_module_returns_error_dict(self):
+    def test_nonexistent_module_raises_import_error(self):
         spec = _spec(tool_permissions=["nonexistent.module.func"])
         step = {"id": "bad", "tool": "nonexistent.module.func", "args": {}}
 
-        with patch.object(self.executor, "_audit"):
-            result = self.executor.run(step, {}, spec, self.tk)
+        with patch.object(self.executor, "_audit"), \
+             pytest.raises(ModuleNotFoundError):
+            self.executor.run(step, {}, spec, self.tk)
 
-        assert isinstance(result, dict)
-        assert result["error"] == "import_error"
-        assert result["tool"] == "nonexistent.module.func"
-        assert "nonexistent.module.func" in result["message"]
-
-    def test_no_dotted_separator_returns_error_dict(self):
+    def test_no_dotted_separator_raises_import_error(self):
         """A tool path without a '.' is not a valid dotted path."""
         spec = _spec(tool_permissions=["nodot"])
         step = {"id": "nodot", "tool": "nodot", "args": {}}
 
-        with patch.object(self.executor, "_audit"):
-            result = self.executor.run(step, {}, spec, self.tk)
-
-        assert result["error"] == "import_error"
+        with patch.object(self.executor, "_audit"), \
+             pytest.raises(ImportError):
+            self.executor.run(step, {}, spec, self.tk)
 
     def test_error_logged_at_error_level(self):
         spec = _spec(tool_permissions=["bad.path.fn"])
         step = {"id": "s", "tool": "bad.path.fn", "args": {}}
 
         with patch("icdev.tools.ace.step_executor.logger") as mock_logger, \
-             patch.object(self.executor, "_audit"):
+             patch.object(self.executor, "_audit"), \
+             pytest.raises(ModuleNotFoundError):
             self.executor.run(step, {}, spec, self.tk)
 
         mock_logger.error.assert_called_once()
         call_args = mock_logger.error.call_args[0]
         assert "bad.path.fn" in "".join(str(a) for a in call_args)
 
-    def test_attribute_error_returns_error_dict(self):
+    def test_attribute_error_raises(self):
         """Callable attribute not found on a real module."""
 
         spec = _spec(tool_permissions=["os.__nonexistent_fn__"])
         step = {"id": "atrerr", "tool": "os.__nonexistent_fn__", "args": {}}
 
-        with patch.object(self.executor, "_audit"):
-            result = self.executor.run(step, {}, spec, self.tk)
-
-        assert result["error"] == "import_error"
+        with patch.object(self.executor, "_audit"), \
+             pytest.raises(AttributeError):
+            self.executor.run(step, {}, spec, self.tk)
 
 
 # ---------------------------------------------------------------------------

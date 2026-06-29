@@ -119,7 +119,7 @@ def _audit(conn, action, details="", actor="negative_event_tracker"):
     try:
         conn.execute(
             "INSERT INTO audit_trail (event_type, actor, action, details, session_id) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s)",
             ("hook_event_logged", actor, action, details, "cpmp"),
         )
     except Exception:
@@ -130,7 +130,7 @@ def _record_status_change(conn, entity_type, entity_id, old_status, new_status, 
     """Record status change in cpmp_status_history (append-only, NIST AU-2)."""
     conn.execute(
         "INSERT INTO cpmp_status_history (entity_type, entity_id, old_status, new_status, changed_by, reason) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s)",
         (entity_type, entity_id, old_status, new_status, changed_by, reason),
     )
 
@@ -171,7 +171,7 @@ def record_event(contract_id, event_type, severity, description, **kwargs):
         return {"status": "error", "message": f"Invalid severity: {severity}. Valid: {list(VALID_SEVERITIES)}"}
 
     conn = _get_db()
-    if not conn.execute("SELECT id FROM cpmp_contracts WHERE id = ?", (contract_id,)).fetchone():
+    if not conn.execute("SELECT id FROM cpmp_contracts WHERE id = %s", (contract_id,)).fetchone():
         conn.close()
         return {"status": "error", "message": f"Contract {contract_id} not found"}
 
@@ -197,7 +197,7 @@ def record_event(contract_id, event_type, severity, description, **kwargs):
         "corrective_action, corrective_action_status, cpars_impact, "
         "detected_by, source_entity_type, source_entity_id, "
         "created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
         (
             event_id,
             contract_id,
@@ -271,8 +271,8 @@ def auto_detect_delinquent(contract_id=None):
         # Check if already tracked
         existing = conn.execute(
             "SELECT id FROM cpmp_negative_events "
-            "WHERE contract_id = ? AND event_type = 'delinquent_delivery' "
-            "AND source_entity_id = ? AND corrective_action_status IN ('open', 'in_progress')",
+            "WHERE contract_id = %s AND event_type = 'delinquent_delivery' "
+            "AND source_entity_id = %s AND corrective_action_status IN ('open', 'in_progress')",
             (row["contract_id"], row["id"]),
         ).fetchone()
 
@@ -290,7 +290,7 @@ def auto_detect_delinquent(contract_id=None):
             "corrective_action, corrective_action_status, cpars_impact, "
             "detected_by, source_entity_type, source_entity_id, "
             "created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 event_id,
                 row["contract_id"],
@@ -361,7 +361,7 @@ def auto_detect_cost_overrun(contract_id=None):
         # Get last 3 periods ordered by period_date descending
         periods = conn.execute(
             "SELECT cpi, period_date FROM cpmp_evm_periods "
-            "WHERE contract_id = ? AND cpi IS NOT NULL "
+            "WHERE contract_id = %s AND cpi IS NOT NULL "
             "ORDER BY period_date DESC LIMIT 3",
             (cid,),
         ).fetchall()
@@ -377,7 +377,7 @@ def auto_detect_cost_overrun(contract_id=None):
         # Check if already tracked for this contract (open/in-progress)
         existing = conn.execute(
             "SELECT id FROM cpmp_negative_events "
-            "WHERE contract_id = ? AND event_type = 'cost_overrun' "
+            "WHERE contract_id = %s AND event_type = 'cost_overrun' "
             "AND corrective_action_status IN ('open', 'in_progress')",
             (cid,),
         ).fetchone()
@@ -396,7 +396,7 @@ def auto_detect_cost_overrun(contract_id=None):
             "corrective_action, corrective_action_status, cpars_impact, "
             "detected_by, source_entity_type, source_entity_id, "
             "created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 event_id,
                 cid,
@@ -475,8 +475,8 @@ def auto_detect_quality_rejection(contract_id=None):
         # Check if already tracked
         existing = conn.execute(
             "SELECT id FROM cpmp_negative_events "
-            "WHERE contract_id = ? AND event_type = 'quality_rejection' "
-            "AND source_entity_id = ? AND corrective_action_status IN ('open', 'in_progress')",
+            "WHERE contract_id = %s AND event_type = 'quality_rejection' "
+            "AND source_entity_id = %s AND corrective_action_status IN ('open', 'in_progress')",
             (row["contract_id"], row["deliverable_id"]),
         ).fetchone()
 
@@ -494,7 +494,7 @@ def auto_detect_quality_rejection(contract_id=None):
             "corrective_action, corrective_action_status, cpars_impact, "
             "detected_by, source_entity_type, source_entity_id, "
             "created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 event_id,
                 row["contract_id"],
@@ -567,8 +567,8 @@ def auto_detect_flowdown_failure(contract_id=None):
         # Check if already tracked
         existing = conn.execute(
             "SELECT id FROM cpmp_negative_events "
-            "WHERE contract_id = ? AND event_type = 'flowdown_failure' "
-            "AND source_entity_id = ? AND corrective_action_status IN ('open', 'in_progress')",
+            "WHERE contract_id = %s AND event_type = 'flowdown_failure' "
+            "AND source_entity_id = %s AND corrective_action_status IN ('open', 'in_progress')",
             (row["contract_id"], row["id"]),
         ).fetchone()
 
@@ -585,7 +585,7 @@ def auto_detect_flowdown_failure(contract_id=None):
             "corrective_action, corrective_action_status, cpars_impact, "
             "detected_by, source_entity_type, source_entity_id, "
             "created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 event_id,
                 row["contract_id"],
@@ -663,13 +663,13 @@ def compute_cpars_impact(contract_id):
     """
     conn = _get_db()
 
-    if not conn.execute("SELECT id FROM cpmp_contracts WHERE id = ?", (contract_id,)).fetchone():
+    if not conn.execute("SELECT id FROM cpmp_contracts WHERE id = %s", (contract_id,)).fetchone():
         conn.close()
         return {"status": "error", "message": f"Contract {contract_id} not found"}
 
     rows = conn.execute(
         "SELECT id, event_type, severity, cpars_impact, corrective_action_status, description "
-        "FROM cpmp_negative_events WHERE contract_id = ?",
+        "FROM cpmp_negative_events WHERE contract_id = %s",
         (contract_id,),
     ).fetchall()
 
@@ -746,7 +746,7 @@ def update_corrective_action(event_id, status, action_text=None):
 
     conn = _get_db()
     row = conn.execute(
-        "SELECT id, contract_id, corrective_action_status FROM cpmp_negative_events WHERE id = ?",
+        "SELECT id, contract_id, corrective_action_status FROM cpmp_negative_events WHERE id = %s",
         (event_id,),
     ).fetchone()
 
@@ -769,7 +769,7 @@ def update_corrective_action(event_id, status, action_text=None):
 
     params.append(event_id)
     conn.execute(
-        f"UPDATE cpmp_negative_events SET {', '.join(sets)} WHERE id = ?",  # nosec B608 -- table/column names are internal constants, not user input
+        f"UPDATE cpmp_negative_events SET {', '.join(sets)} WHERE id = %s",  # nosec B608 -- table/column names are internal constants, not user input
         params,
     )
 
@@ -844,14 +844,14 @@ def check_ndaa_thresholds(contract_id):
     """
     conn = _get_db()
 
-    if not conn.execute("SELECT id FROM cpmp_contracts WHERE id = ?", (contract_id,)).fetchone():
+    if not conn.execute("SELECT id FROM cpmp_contracts WHERE id = %s", (contract_id,)).fetchone():
         conn.close()
         return {"status": "error", "message": f"Contract {contract_id} not found"}
 
     # Check critical severity events
     critical_events = conn.execute(
         "SELECT id, event_type, description FROM cpmp_negative_events "
-        "WHERE contract_id = ? AND severity = 'critical' "
+        "WHERE contract_id = %s AND severity = 'critical' "
         "AND corrective_action_status IN ('open', 'in_progress')",
         (contract_id,),
     ).fetchall()
@@ -860,7 +860,7 @@ def check_ndaa_thresholds(contract_id):
     termination_types = ("termination_default", "fraud_waste_abuse")
     termination_events = conn.execute(
         "SELECT id, event_type, description FROM cpmp_negative_events "
-        "WHERE contract_id = ? AND event_type IN (?, ?) "
+        "WHERE contract_id = %s AND event_type IN (%s, %s) "
         "AND corrective_action_status IN ('open', 'in_progress')",
         (contract_id, *termination_types),
     ).fetchall()

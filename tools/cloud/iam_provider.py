@@ -498,7 +498,7 @@ class LocalIAMProvider(IAMProvider):
             now = datetime.now(timezone.utc).isoformat()
             conn = get_connection(db_path=str(self._db_path))
             conn.execute(
-                "INSERT INTO local_service_accounts (id, name, description, created_at) VALUES (?, ?, ?, ?)",
+                "INSERT INTO local_service_accounts (id, name, description, created_at) VALUES (%s, %s, %s, %s)",
                 (account_id, name, description, now),
             )
             conn.commit()
@@ -511,7 +511,7 @@ class LocalIAMProvider(IAMProvider):
         try:
             conn = get_connection(db_path=str(self._db_path))
             row = conn.execute(
-                "SELECT * FROM local_service_accounts WHERE id = ? AND status = 'active'",
+                "SELECT * FROM local_service_accounts WHERE id = %s AND status = 'active'",
                 (account_id,),
             ).fetchone()
             conn.close()
@@ -538,7 +538,7 @@ class LocalIAMProvider(IAMProvider):
             now = datetime.now(timezone.utc).isoformat()
             conn = get_connection(db_path=str(self._db_path))
             conn.execute(
-                "INSERT INTO local_role_assignments (id, account_id, role, scope, assigned_at) VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO local_role_assignments (id, account_id, role, scope, assigned_at) VALUES (%s, %s, %s, %s, %s)",
                 (role_id, account_id, role, scope, now),
             )
             conn.commit()
@@ -551,7 +551,7 @@ class LocalIAMProvider(IAMProvider):
         try:
             conn = get_connection(db_path=str(self._db_path))
             row = conn.execute(
-                "SELECT COUNT(*) FROM local_role_assignments WHERE account_id = ? AND (role = ? OR role = 'admin')",
+                "SELECT COUNT(*) FROM local_role_assignments WHERE account_id = %s AND (role = %s OR role = 'admin')",
                 (account_id, action),
             ).fetchone()
             conn.close()
@@ -563,7 +563,7 @@ class LocalIAMProvider(IAMProvider):
         try:
             conn = get_connection(db_path=str(self._db_path))
             conn.execute(
-                "UPDATE local_service_accounts SET status = 'deleted' WHERE id = ?",
+                "UPDATE local_service_accounts SET status = 'deleted' WHERE id = %s",
                 (account_id,),
             )
             conn.commit()

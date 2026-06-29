@@ -152,6 +152,38 @@ These 6 paths adopted `SandboxExecutor` in Phase 72 (D-SEC-11):
   - `guard_result()` never returns row data to callers — only `{derived, action, throttled, events_written}`.
 - **Revisit if:** a future rule type adds a `custom_expr` field that evaluates arbitrary expressions, or if result rows are ever rendered as HTML without escaping.
 
+### Gap 15 — PNA Predictive Network Analytics (`tools/network/`)
+
+**Modules:** `tools/network/eol_predictor.py`, `tools/network/bgp_predictor.py`, `tools/network/compliance_drift_predictor.py`, `tools/network/capacity_predictor.py`, `tools/network/change_failure_predictor.py`, `tools/network/supply_chain_risk_scorer.py`
+
+**Ingress path:** Each predictor queries Forward Networks NQE via `FallbackNQEClient` (network device inventory, BGP sessions, interface utilization). All returned data is structured (dicts/lists of primitive values — strings, ints, floats). No config text beyond STIG-check pattern matching. The compliance drift predictor reads device config text to match STIG check patterns (regex-free string containment checks; no `eval()`). Vendor names and model strings from NQE are looked up in static registry dicts — no dynamic dispatch.
+
+- **Decision:** **bypass-documented**
+- **Rationale:** No `exec()`, `eval()`, `subprocess`, `os.system`, or `os.popen` anywhere in any of the 6 modules. NQE responses are treated as opaque data structures — field values are used in arithmetic (risk scoring), string comparisons (STIG checks), and parameterized SQL inserts. Config text in compliance drift is matched via `str.__contains__` (no regex compilation from untrusted input). All DB writes use parameterized queries with `?` placeholders; no string-interpolated SQL.
+- **Guardrails:**
+  - `FallbackNQEClient` returns dict/list structures — no code execution of NQE results.
+  - STIG check lambdas compare against fixed string literals (first-party `args/` definitions equivalent): no dynamic pattern injection.
+  - All 6 prediction tables are append-only (in `APPEND_ONLY_TABLES` in `pre_tool_use.py`).
+  - Parameterized SQL throughout — no f-string SQL with untrusted values.
+  - `nc_bgp_events` (the mutable rolling log) uses 90-day prune via `DELETE WHERE ... >= datetime(...)` — no user-supplied date expressions.
+- **Revisit if:** NQE response fields are ever passed to `eval()`, `exec()`, or `subprocess`; or if config text matching is upgraded to regex with user-supplied patterns.
+
+### Gap 16 — TimesFM Forecast Adapter (`icdev/tools/forecast/`)
+
+**Module:** `icdev/tools/forecast/timesfm_adapter.py`
+
+**Ingress path:** `POST /api/forecast` accepts a JSON payload with `values` (numeric time-series array), optional `forecast_horizon`, `freq`, `timestamp_column`, and `value_column`. The adapter validates the schema, creates a persistent `forecast_jobs` record, runs inference via the optional Google TimesFM library (lazy-loaded), and writes an append-only `forecast_audit` event. The payload is treated as data only — no field is interpreted as code.
+
+- **Decision:** **trusted-first-party**
+- **Rationale:** The forecast adapter is first-party code. User-supplied time-series data is parsed as JSON primitives and validated before being passed to the TimesFM `predict` API. There is no `eval()`, `exec()`, `subprocess`, `os.system`, or dynamic model loading from user paths. The optional `timesfm` dependency is pinned/installed by the operator, not supplied by the user.
+- **Guardrails:**
+  - JSON payload is validated: `values` must be a non-empty list of numbers, `forecast_horizon` bounded, `freq` restricted to known tokens.
+  - Input length is capped (default 2048 observations) to reject abuse.
+  - Model checkpoint loading is lazy and uses only the configured `DEFAULT_MODEL_ID`; no user-controlled checkpoint path.
+  - Forecast results and errors are written to append-only `forecast_jobs` / `forecast_audit` tables protected by `pre_tool_use.py`.
+  - Health endpoint reports `available: false` when TimesFM is not installed, so the feature degrades gracefully in air-gap/IL6 environments.
+- **Revisit if:** the adapter is extended to execute user-supplied Python/R code, accept arbitrary model checkpoints, or generate and run arbitrary forecast scripts.
+
 ## Coherence rule
 
 The `sandbox_coverage` rule in `tools/workflow/coherence_checker.py` enforces:
@@ -571,3 +603,37 @@ scanner then runs against the *staged copy as data* — the target is read, hash
     imported by `tools/llm/router.py` for auto-detection only.
 - **Revisit if:** the manager is extended to accept a user-supplied file path, or to write
   to any file outside `<repo_root>/.env`.
+
+
+---
+
+## tools/docgen/ — IDR Intelligent Documentation Regeneration Engine
+
+- **File:** `tools/docgen/` (all modules: blueprint.py, workflow.py, session_manager.py, reconciler.py, context_builder.py, domain_profiles.py)
+- **Risk:** Accepts multi-file uploads (diagrams, config files, IaC, documents) from authenticated dashboard users. Files are saved to `data/docgen/uploads/<session_id>/`. User-provided title/notes fields are stored in the DB. Config/IaC reviewers are invoked via `importlib.import_module()` using paths from `args/docgen/profiles.yaml` (not user input).
+- **Decision:** **trusted-first-party**
+- **Rationale:** All upload paths are server-side and scoped under `data/docgen/` — no path traversal. Analyzer module paths come from the operator-controlled `args/docgen/profiles.yaml`, not from user input. Text fields (title, notes) are stored as data, never executed. The `importlib.import_module()` call is bounded to the allowlisted modules in `profiles.yaml`. Classification banners are enforced via `classification_manager`. HITL gates prevent any AI-generated content from being published without human approval.
+- **Guardrails:**
+  - Upload paths scoped to `data/docgen/uploads/<session_id>/` via `pathlib.Path`.
+  - Analyzer module paths from operator YAML only — not from user request body.
+  - DB values stored verbatim (not evaluated).
+  - HITL at Stage 3 (conflict resolution) and Stage 7 (document review) block auto-publish.
+  - WriteGuard hard gate (Stage 6) blocks low-quality content.
+- **Revisit if:** analyst/reviewer module paths are ever accepted from user request payloads, or if generated document content is auto-published without HITL.
+
+
+---
+
+## tools/network/ — PVM Predictive Vulnerability Management
+
+- **Files:** `tools/network/vuln_predictor.py`, `tools/network/attack_surface_mapper.py`, `tools/network/vuln_triage_engine.py`, `tools/network/patch_planner.py`, `tools/network/routes/pvm.py`
+- **Risk:** Reads CVE advisory data from internal network canvas DB (`nc_advisories`, `nc_advisory_assessments`), NQE device inventory from Forward Networks (trusted internal API), and Nessus scan results from the same internal DB. Accepts `network_id` (string), `advisory_ids` (list of ints), and `approved_by` (email string) from dashboard users. No content is executed, parsed as code, or written to the filesystem.
+- **Decision:** **trusted-first-party**
+- **Rationale:** All external data enters via trusted internal sources (network canvas DB, Forward Networks NQE API, Nessus ACAS). User-supplied inputs (`network_id`, `advisory_ids`, `approved_by`) are stored as metadata or used as DB query parameters — never executed. NQE queries are fixed NQL strings defined in source code (not user-supplied). DB writes are append-only (`nc_vuln_predictions`, `nc_patch_plans`) or upsert (`nc_attack_surface`, `nc_triage_queue`). No `exec()`, `eval()`, `subprocess`, dynamic import, or template rendering of user content occurs.
+- **Guardrails:**
+  - DB queries parameterized (no string interpolation of user input into SQL).
+  - NQL strings are compile-time constants, not user-provided.
+  - HITL gate blocks auto-scheduling: priority ≥ 0.75 requires human approval.
+  - `approved_by` field is stored as metadata only; no downstream code execution.
+  - APPEND-ONLY tables (`nc_vuln_predictions`, `nc_patch_plans`) enforced by `APPEND_ONLY_TABLES` in `.claude/hooks/pre_tool_use.py`.
+- **Revisit if:** users are ever allowed to supply custom NQL queries, if advisory data is fetched from untrusted external URLs, or if `approved_by` is used to trigger downstream privilege escalation.

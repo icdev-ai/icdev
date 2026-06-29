@@ -72,7 +72,7 @@ class GAOAIAssessor(BaseAssessor):
                 try:
                     rows = conn.execute(
                         """SELECT COUNT(*) as cnt FROM audit_trail
-                           WHERE project_id = ?""",
+                           WHERE project_id = %s""",
                         (project_id,),
                     ).fetchone()
                     if rows and rows["cnt"] > 0:
@@ -84,7 +84,7 @@ class GAOAIAssessor(BaseAssessor):
                 try:
                     rows = conn.execute(
                         """SELECT COUNT(*) as cnt FROM ai_telemetry
-                           WHERE project_id = ?""",
+                           WHERE project_id = %s""",
                         (project_id,),
                     ).fetchone()
                     if rows and rows["cnt"] > 0:
@@ -97,7 +97,7 @@ class GAOAIAssessor(BaseAssessor):
                 try:
                     for table in ["xai_assessments", "shap_attributions"]:
                         rows = conn.execute(
-                            f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = ?",  # nosec B608 -- table/column names are internal constants, not user input
+                            f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = %s",  # nosec B608 -- table/column names are internal constants, not user input
                             (project_id,),
                         ).fetchone()
                         if rows and rows["cnt"] > 0:
@@ -110,7 +110,7 @@ class GAOAIAssessor(BaseAssessor):
                 try:
                     for table in ["prov_entities", "ai_bom"]:
                         rows = conn.execute(
-                            f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = ?",  # nosec B608 -- table/column names are internal constants, not user input
+                            f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = %s",  # nosec B608 -- table/column names are internal constants, not user input
                             (project_id,),
                         ).fetchone()
                         if rows and rows["cnt"] > 0:
@@ -123,7 +123,7 @@ class GAOAIAssessor(BaseAssessor):
                 try:
                     for table in ["nist_ai_rmf_assessments", "atlas_assessments"]:
                         rows = conn.execute(
-                            f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = ?",  # nosec B608 -- table/column names are internal constants, not user input
+                            f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = %s",  # nosec B608 -- table/column names are internal constants, not user input
                             (project_id,),
                         ).fetchone()
                         if rows and rows["cnt"] > 0:
@@ -136,7 +136,7 @@ class GAOAIAssessor(BaseAssessor):
                 try:
                     rows = conn.execute(
                         """SELECT COUNT(*) as cnt FROM ai_incident_log
-                           WHERE project_id = ?""",
+                           WHERE project_id = %s""",
                         (project_id,),
                     ).fetchone()
                     if rows and rows["cnt"] > 0:
@@ -148,7 +148,7 @@ class GAOAIAssessor(BaseAssessor):
                 try:
                     rows = conn.execute(
                         """SELECT COUNT(*) as cnt FROM audit_trail
-                           WHERE project_id = ? AND event_type LIKE '%feedback%'""",
+                           WHERE project_id = %s AND event_type LIKE '%feedback%'""",
                         (project_id,),
                     ).fetchone()
                     if rows and rows["cnt"] > 0:
@@ -160,7 +160,7 @@ class GAOAIAssessor(BaseAssessor):
                 try:
                     rows = conn.execute(
                         """SELECT COUNT(*) as cnt FROM ai_reassessment_schedule
-                           WHERE project_id = ?""",
+                           WHERE project_id = %s""",
                         (project_id,),
                     ).fetchone()
                     if rows and rows["cnt"] > 0:
@@ -172,7 +172,7 @@ class GAOAIAssessor(BaseAssessor):
                 try:
                     rows = conn.execute(
                         """SELECT COUNT(*) as cnt FROM ai_ethics_reviews
-                           WHERE project_id = ? AND legal_compliance_matrix = 1""",
+                           WHERE project_id = %s AND legal_compliance_matrix = 1""",
                         (project_id,),
                     ).fetchone()
                     if rows and rows["cnt"] > 0:
@@ -184,7 +184,7 @@ class GAOAIAssessor(BaseAssessor):
                 try:
                     rows = conn.execute(
                         """SELECT COUNT(*) as cnt FROM ai_ethics_reviews
-                           WHERE project_id = ?""",
+                           WHERE project_id = %s""",
                         (project_id,),
                     ).fetchone()
                     if rows and rows["cnt"] > 0:

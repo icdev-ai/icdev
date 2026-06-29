@@ -91,7 +91,7 @@ def _audit(conn, action, details="", actor="knowledge_base"):
     try:
         conn.execute(
             "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (str(uuid.uuid4()), _now(), "govcon.knowledge_base", actor, action, details, "govcon"),
         )
     except Exception:
@@ -117,7 +117,7 @@ def add_block(
         "INSERT INTO proposal_knowledge_base "
         "(id, title, content, category, domain, volume_type, keywords, "
         "naics_codes, usage_count, status, created_at, updated_at, classification) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
         (
             block_id,
             title,
@@ -144,7 +144,7 @@ def add_block(
 def get_block(block_id):
     """Get a single knowledge block."""
     conn = _get_db()
-    row = conn.execute("SELECT * FROM proposal_knowledge_base WHERE id = ?", (block_id,)).fetchone()
+    row = conn.execute("SELECT * FROM proposal_knowledge_base WHERE id = %s", (block_id,)).fetchone()
     conn.close()
 
     if not row:
@@ -231,7 +231,7 @@ def increment_usage(block_id):
     """Increment usage count for a knowledge block."""
     conn = _get_db()
     conn.execute(
-        "UPDATE proposal_knowledge_base SET usage_count = usage_count + 1, updated_at = ? WHERE id = ?",
+        "UPDATE proposal_knowledge_base SET usage_count = usage_count + 1, updated_at = %s WHERE id = %s",
         (_now(), block_id),
     )
     conn.commit()
@@ -266,7 +266,7 @@ def seed_from_catalog():
 
         # Product overview block
         existing = conn.execute(
-            "SELECT id FROM proposal_knowledge_base WHERE title = ? AND category = 'product_overview'",
+            "SELECT id FROM proposal_knowledge_base WHERE title = %s AND category = 'product_overview'",
             (prod_name,),
         ).fetchone()
         if not existing:
@@ -280,7 +280,7 @@ def seed_from_catalog():
                 "INSERT INTO proposal_knowledge_base "
                 "(id, title, content, category, domain, volume_type, keywords, "
                 "naics_codes, usage_count, status, created_at, updated_at, classification) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     str(uuid.uuid4()),
                     prod_name,
@@ -301,7 +301,7 @@ def seed_from_catalog():
 
         # Customer value block
         existing_cv = conn.execute(
-            "SELECT id FROM proposal_knowledge_base WHERE title = ? AND category = 'customer_value'",
+            "SELECT id FROM proposal_knowledge_base WHERE title = %s AND category = 'customer_value'",
             (f"{prod_name} — Customer Value",),
         ).fetchone()
         if not existing_cv and prod.get("customer_value"):
@@ -312,7 +312,7 @@ def seed_from_catalog():
                 "INSERT INTO proposal_knowledge_base "
                 "(id, title, content, category, domain, volume_type, keywords, "
                 "naics_codes, usage_count, status, created_at, updated_at, classification) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     str(uuid.uuid4()),
                     f"{prod_name} — Customer Value",
@@ -333,7 +333,7 @@ def seed_from_catalog():
 
         # Integrated solution block (how this product works end-to-end)
         existing_is = conn.execute(
-            "SELECT id FROM proposal_knowledge_base WHERE title = ? AND category = 'integrated_solution'",
+            "SELECT id FROM proposal_knowledge_base WHERE title = %s AND category = 'integrated_solution'",
             (f"{prod_name} — Integrated Solution",),
         ).fetchone()
         if not existing_is and prod.get("key_capabilities"):
@@ -351,7 +351,7 @@ def seed_from_catalog():
                 "INSERT INTO proposal_knowledge_base "
                 "(id, title, content, category, domain, volume_type, keywords, "
                 "naics_codes, usage_count, status, created_at, updated_at, classification) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     str(uuid.uuid4()),
                     f"{prod_name} — Integrated Solution",
@@ -385,7 +385,7 @@ def seed_from_catalog():
 
         # Check if already seeded
         existing = conn.execute(
-            "SELECT id FROM proposal_knowledge_base WHERE title = ? AND category = 'capability_description'",
+            "SELECT id FROM proposal_knowledge_base WHERE title = %s AND category = 'capability_description'",
             (name,),
         ).fetchone()
         if existing:
@@ -404,7 +404,7 @@ def seed_from_catalog():
             "INSERT INTO proposal_knowledge_base "
             "(id, title, content, category, domain, volume_type, keywords, "
             "naics_codes, usage_count, status, created_at, updated_at, classification) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 str(uuid.uuid4()),
                 name,
@@ -436,7 +436,7 @@ def seed_from_catalog():
                 "INSERT INTO proposal_knowledge_base "
                 "(id, title, content, category, domain, volume_type, keywords, "
                 "naics_codes, usage_count, status, created_at, updated_at, classification) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     str(uuid.uuid4()),
                     f"{name} — Tools",

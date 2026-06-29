@@ -81,7 +81,7 @@ def _emit_output_event(deck_id, pptx_path: str, title: str) -> None:
         try:
             conn.execute(
                 "INSERT INTO genesis_outputs (id, reflex_name, output_type, output_ref, summary, created_at) "
-                "VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)",
+                "VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)",
                 (str(uuid.uuid4()), "slides", "pptx", pptx_path, f"Weekly deck: {title}"),
             )
             conn.commit()

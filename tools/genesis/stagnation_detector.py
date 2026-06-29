@@ -358,7 +358,7 @@ class StagnationDetector:
         try:
             rows = conn.execute(
                 """SELECT payload FROM genesis_gkp
-                   WHERE reflex = ? ORDER BY created_at DESC LIMIT ?""",
+                   WHERE reflex = %s ORDER BY created_at DESC LIMIT %s""",
                 (reflex_name, window),
             ).fetchall()
         except Exception:
@@ -472,9 +472,9 @@ class StagnationDetector:
         try:
             rows = conn.execute(
                 """SELECT metric_value FROM genesis_audit
-                   WHERE reflex_name = ? AND event_type = 'genesis.reflex.completed'
+                   WHERE reflex_name = %s AND event_type = 'genesis.reflex.completed'
                      AND metric_value IS NOT NULL
-                   ORDER BY created_at DESC LIMIT ?""",
+                   ORDER BY created_at DESC LIMIT %s""",
                 (reflex_name, limit),
             ).fetchall()
         finally:
@@ -493,7 +493,7 @@ class StagnationDetector:
                    (id, reflex_name, pattern_type, persona_used,
                     alternatives_json, selected_alternative, score,
                     details_json, classification, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'CUI', ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'CUI', %s)""",
                 (
                     entry_id,
                     result["reflex_name"],

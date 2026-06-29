@@ -177,12 +177,12 @@ def sync_log():
     try:
         if job_id:
             rows = conn.execute(
-                "SELECT * FROM sync_log WHERE job_id = ? ORDER BY created_at DESC LIMIT ?",
+                "SELECT * FROM sync_log WHERE job_id = %s ORDER BY created_at DESC LIMIT %s",
                 (job_id, limit),
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT * FROM sync_log ORDER BY created_at DESC LIMIT ?",
+                "SELECT * FROM sync_log ORDER BY created_at DESC LIMIT %s",
                 (limit,),
             ).fetchall()
         return jsonify({"entries": [dict(r) for r in rows], "count": len(rows)})
@@ -203,7 +203,7 @@ def list_conflicts():
     try:
         if job_id:
             rows = conn.execute(
-                "SELECT * FROM sync_conflicts WHERE job_id = ? ORDER BY created_at DESC",
+                "SELECT * FROM sync_conflicts WHERE job_id = %s ORDER BY created_at DESC",
                 (job_id,),
             ).fetchall()
         else:

@@ -1,0 +1,4 @@
+foreach item in {{ key }}.items
+  where item.title contains $query
+  select item.id, item.title, item.status, item.created_at
+  limit 100

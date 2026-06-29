@@ -187,7 +187,29 @@ class JudgeAgent:
         artifact: dict,
         tournament_id: int,
         round_id: int | None,
+        scenario: dict | None = None,
     ) -> dict:
+        # Prefer adversarial 3-lens panel when scenario context is available
+        if scenario:
+            try:
+                panel = judge_with_adversarial_panel(
+                    artifact={"artifact_type": _role_to_artifact_type_hint(team_key), "content": artifact},
+                    scenario=scenario,
+                )
+                normalized = panel["final_score"] / 100.0
+                return {
+                    "quality_score":     min(1.0, normalized * 1.1),
+                    "innovation_score":  normalized,
+                    "ethics_score":      1.0,
+                    "adversarial_score": normalized,
+                    "compliance_score":  min(1.0, normalized * 1.05),
+                    "judge_notes": panel["reasoning"],
+                    "training_pairs": [],
+                    "_panel": panel,
+                }
+            except Exception as exc:
+                log.debug("Adversarial panel failed, falling back to single-lens: %s", exc)
+
         if not HAS_REQUESTS:
             return _default_scores()
 
@@ -233,6 +255,114 @@ class JudgeAgent:
         except Exception as exc:
             log.warning("[Judge] scoring failed for %s: %s", team_key, exc)
             return _default_scores()
+
+
+# ── Adversarial 3-Lens Panel ──────────────────────────────────────────────────
+
+def judge_with_adversarial_panel(artifact: dict, scenario: dict) -> dict:
+    """Run 3 independent adversarial lenses on a team artifact.
+
+    Returns dict with: final_score, lens_scores, consensus, reasoning.
+    At least 2/3 lenses must agree on a score within ±10 points for consensus.
+    If no consensus: average the 3 scores with a -5 uncertainty penalty.
+    """
+    lenses = [
+        {
+            "name": "correctness",
+            "prompt": (
+                f"You are an adversarial judge. Your job is to FIND FLAWS in this artifact.\n"
+                f"Scenario: {scenario.get('name')}\n"
+                f"Artifact type: {artifact.get('artifact_type')}\n"
+                f"Artifact content: {str(artifact.get('content', ''))[:800]}\n\n"
+                "Score 0-100 for CORRECTNESS only. Be harsh. Find every factual error, "
+                "logical gap, and missing element. Return JSON: {\"score\": N, \"issues\": [...]}"
+            ),
+        },
+        {
+            "name": "completeness",
+            "prompt": (
+                f"You are an adversarial judge. Your job is to FIND GAPS in this artifact.\n"
+                f"Scenario: {scenario.get('name')}\n"
+                f"Artifact type: {artifact.get('artifact_type')}\n"
+                f"Artifact content: {str(artifact.get('content', ''))[:800]}\n\n"
+                "Score 0-100 for COMPLETENESS only. What required elements are missing? "
+                "What questions does this raise but not answer? "
+                "Return JSON: {\"score\": N, \"missing\": [...]}"
+            ),
+        },
+        {
+            "name": "compliance",
+            "prompt": (
+                f"You are an adversarial judge. Your job is to FIND COMPLIANCE GAPS.\n"
+                f"Scenario: {scenario.get('name')}\n"
+                f"Artifact type: {artifact.get('artifact_type')}\n"
+                f"Artifact content: {str(artifact.get('content', ''))[:800]}\n\n"
+                "Score 0-100 for REGULATORY/DOCTRINE COMPLIANCE only. Does this follow "
+                "NIST 800-53, DoD doctrine, AADC requirements? What violations exist? "
+                "Return JSON: {\"score\": N, \"violations\": [...]}"
+            ),
+        },
+    ]
+
+    lens_results = []
+    for lens in lenses:
+        try:
+            score, details = _run_lens(lens["prompt"])
+            lens_results.append({"lens": lens["name"], "score": score, "details": details})
+        except Exception as exc:
+            log.warning("Lens %s failed: %s", lens["name"], exc)
+            lens_results.append({"lens": lens["name"], "score": 50, "details": {}})
+
+    scores = [r["score"] for r in lens_results]
+    avg_score = sum(scores) / len(scores)
+
+    # Check consensus: at least 2 scores within ±10 of each other
+    consensus = False
+    for i in range(len(scores)):
+        for j in range(i + 1, len(scores)):
+            if abs(scores[i] - scores[j]) <= 10:
+                consensus = True
+                break
+
+    final_score = avg_score if consensus else max(0, avg_score - 5)
+
+    return {
+        "final_score": round(final_score, 1),
+        "lens_scores": lens_results,
+        "consensus": consensus,
+        "reasoning": (
+            f"3-lens adversarial panel: "
+            f"correctness={scores[0]}, completeness={scores[1]}, compliance={scores[2]}"
+        ),
+    }
+
+
+def _run_lens(prompt: str) -> tuple[float, dict]:
+    """Run a single adversarial lens via LLM router. Returns (score, details)."""
+    import json as _json
+    try:
+        from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
+        router = LLMRouter()
+        provider, model_id, cfg = router.get_provider_for_function("chat")
+        req = LLMRequest(
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=400,
+            temperature=0.3,
+            skip_injection_scan=True,
+        )
+        resp = provider.invoke(req, model_id, cfg)
+        content = (resp.content or "").strip()
+        start = content.find("{")
+        end = content.rfind("}") + 1
+        if start >= 0 and end > start:
+            data = _json.loads(content[start:end])
+            score = float(data.get("score", 50))
+            score = max(0.0, min(100.0, score))
+            return score, {k: v for k, v in data.items() if k != "score"}
+    except Exception:
+        pass
+    return 50.0, {}
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -294,6 +424,13 @@ def _compute_total_score(scores: dict) -> int:
     return max(0, int(round(raw)))
 
 
+def _role_to_artifact_type_hint(team_key: str) -> str:
+    return {
+        "red": "attack_plan", "blue": "defense_posture",
+        "gold": "innovation_package", "green": "compliance_verdict",
+    }.get(team_key, "orchestrator_brief")
+
+
 def _route_to_suggested_kanban(
     team_key: str,
     round_id: int,
@@ -318,7 +455,7 @@ def _route_to_suggested_kanban(
         conn.execute(
             """INSERT INTO kanban_tasks
                (title, description, status, priority, task_type, created_at, updated_at)
-               VALUES (?, ?, 'suggested', 'medium', 'gameday_artifact', ?, ?)""",
+               VALUES (%s, %s, 'suggested', 'medium', 'gameday_artifact', %s, %s)""",
             (title, description, now, now),
         )
         conn.commit()

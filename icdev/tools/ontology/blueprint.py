@@ -106,7 +106,7 @@ def api_ontology_classes():
             return jsonify({"classes": [], "total": 0})
         if domain:
             rows = conn.execute(
-                "SELECT id, domain, label, superclasses, canonical_id FROM ontology_classes WHERE domain=? ORDER BY domain, label",
+                "SELECT id, domain, label, superclasses, canonical_id FROM ontology_classes WHERE domain=%s ORDER BY domain, label",
                 (domain,),
             ).fetchall()
         else:
@@ -143,14 +143,14 @@ def api_ontology_closure():
         superclasses = [
             {"id": r["superclass"], "distance": r["distance"]}
             for r in conn.execute(
-                "SELECT superclass, distance FROM ontology_subclass_closure WHERE subclass=? ORDER BY distance",
+                "SELECT superclass, distance FROM ontology_subclass_closure WHERE subclass=%s ORDER BY distance",
                 (class_id,),
             ).fetchall()
         ]
         subclasses = [
             {"id": r["subclass"], "distance": r["distance"]}
             for r in conn.execute(
-                "SELECT subclass, distance FROM ontology_subclass_closure WHERE superclass=? ORDER BY distance",
+                "SELECT subclass, distance FROM ontology_subclass_closure WHERE superclass=%s ORDER BY distance",
                 (class_id,),
             ).fetchall()
         ]

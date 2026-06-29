@@ -40,7 +40,7 @@ def project_status(project_id):
     conn = _get_db()
     try:
         # Project basics
-        project = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+        project = conn.execute("SELECT * FROM projects WHERE id = %s", (project_id,)).fetchone()
         if not project:
             return jsonify({"error": "Project not found"}), 404
 
@@ -48,42 +48,42 @@ def project_status(project_id):
 
         # Deployment count
         dep = conn.execute(
-            "SELECT COUNT(*) as cnt FROM deployments WHERE project_id = ?",
+            "SELECT COUNT(*) as cnt FROM deployments WHERE project_id = %s",
             (project_id,),
         ).fetchone()
         data["deployment_count"] = dep["cnt"] if dep else 0
 
         # Open POAM items
         poam = conn.execute(
-            "SELECT COUNT(*) as cnt FROM poam_items WHERE project_id = ? AND status = 'open'",
+            "SELECT COUNT(*) as cnt FROM poam_items WHERE project_id = %s AND status = 'open'",
             (project_id,),
         ).fetchone()
         data["open_poam_count"] = poam["cnt"] if poam else 0
 
         # Open STIG findings
         stig = conn.execute(
-            "SELECT COUNT(*) as cnt FROM stig_findings WHERE project_id = ? AND status = 'Open'",
+            "SELECT COUNT(*) as cnt FROM stig_findings WHERE project_id = %s AND status = 'Open'",
             (project_id,),
         ).fetchone()
         data["open_stig_count"] = stig["cnt"] if stig else 0
 
         # Open alerts
         alert = conn.execute(
-            "SELECT COUNT(*) as cnt FROM alerts WHERE project_id = ? AND status = 'firing'",
+            "SELECT COUNT(*) as cnt FROM alerts WHERE project_id = %s AND status = 'firing'",
             (project_id,),
         ).fetchone()
         data["open_alert_count"] = alert["cnt"] if alert else 0
 
         # Audit entry count
         audit = conn.execute(
-            "SELECT COUNT(*) as cnt FROM audit_trail WHERE project_id = ?",
+            "SELECT COUNT(*) as cnt FROM audit_trail WHERE project_id = %s",
             (project_id,),
         ).fetchone()
         data["audit_entry_count"] = audit["cnt"] if audit else 0
 
         # Latest deployment
         latest_dep = conn.execute(
-            "SELECT * FROM deployments WHERE project_id = ? ORDER BY created_at DESC LIMIT 1",
+            "SELECT * FROM deployments WHERE project_id = %s ORDER BY created_at DESC LIMIT 1",
             (project_id,),
         ).fetchone()
         data["latest_deployment"] = dict(latest_dep) if latest_dep else None
@@ -101,25 +101,25 @@ def project_compliance(project_id):
         # SSP documents
         ssps = conn.execute(
             "SELECT id, version, system_name, status, approved_by, approved_at, created_at "
-            "FROM ssp_documents WHERE project_id = ? ORDER BY created_at DESC",
+            "FROM ssp_documents WHERE project_id = %s ORDER BY created_at DESC",
             (project_id,),
         ).fetchall()
 
         # POAM items
         poams = conn.execute(
-            "SELECT * FROM poam_items WHERE project_id = ? ORDER BY severity, created_at DESC",
+            "SELECT * FROM poam_items WHERE project_id = %s ORDER BY severity, created_at DESC",
             (project_id,),
         ).fetchall()
 
         # STIG findings
         stigs = conn.execute(
-            "SELECT * FROM stig_findings WHERE project_id = ? ORDER BY severity, created_at DESC",
+            "SELECT * FROM stig_findings WHERE project_id = %s ORDER BY severity, created_at DESC",
             (project_id,),
         ).fetchall()
 
         # SBOM records
         sboms = conn.execute(
-            "SELECT * FROM sbom_records WHERE project_id = ? ORDER BY generated_at DESC",
+            "SELECT * FROM sbom_records WHERE project_id = %s ORDER BY generated_at DESC",
             (project_id,),
         ).fetchall()
 
@@ -128,7 +128,7 @@ def project_compliance(project_id):
             "SELECT pc.*, cc.family, cc.title as control_title "
             "FROM project_controls pc "
             "LEFT JOIN compliance_controls cc ON pc.control_id = cc.id "
-            "WHERE pc.project_id = ? ORDER BY pc.control_id",
+            "WHERE pc.project_id = %s ORDER BY pc.control_id",
             (project_id,),
         ).fetchall()
 
@@ -182,7 +182,7 @@ def project_audit_trail(project_id):
     conn = _get_db()
     try:
         rows = conn.execute(
-            "SELECT * FROM audit_trail WHERE project_id = ? ORDER BY created_at DESC LIMIT 100",
+            "SELECT * FROM audit_trail WHERE project_id = %s ORDER BY created_at DESC LIMIT 100",
             (project_id,),
         ).fetchall()
         return jsonify({"project_id": project_id, "entries": [dict(r) for r in rows]})

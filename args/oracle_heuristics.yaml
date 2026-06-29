@@ -43,5 +43,10 @@ heuristics:
     action: backlog
     reason: "Feature request — real value, promote to backlog for human scoping"
 
+  - name: sql_placeholder_fix
+    match_title_contains: "placeholder"
+    action: promote
+    reason: "SQL placeholder mismatch (? vs %s) — always use sql_placeholder(conn) from tools.db.storage; RLS injection must pass placeholder param"
+
 # ── LLM-proposed entries (appended by heuristic_writer.py) ────────────────
 # proposed:

@@ -31,11 +31,11 @@ def register_analysis_routes(bp, get_conn=None, helpers=None):
         """Aggregate device count, link count, open findings count, EOL count, compliance score."""
         with _nc() as db:
             devices = db.execute(
-                "SELECT COUNT(*) FROM nc_objects WHERE topology_id=? AND object_type NOT IN ('label','group','container')",
+                "SELECT COUNT(*) FROM nc_objects WHERE topology_id=%s AND object_type NOT IN ('label','group','container')",
                 (topo_id,),
             ).fetchone()[0]
             links = db.execute(
-                "SELECT COUNT(*) FROM nc_objects WHERE topology_id=? AND object_type='link'",
+                "SELECT COUNT(*) FROM nc_objects WHERE topology_id=%s AND object_type='link'",
                 (topo_id,),
             ).fetchone()[0]
             findings_row = db.execute(
@@ -43,11 +43,11 @@ def register_analysis_routes(bp, get_conn=None, helpers=None):
                 "SUM(CASE WHEN severity='cat1' THEN 1 ELSE 0 END) as cat1, "
                 "SUM(CASE WHEN severity='cat2' THEN 1 ELSE 0 END) as cat2, "
                 "SUM(CASE WHEN severity='cat3' THEN 1 ELSE 0 END) as cat3 "
-                "FROM nc_compliance_findings WHERE topology_id=? AND status='open'",
+                "FROM nc_compliance_findings WHERE topology_id=%s AND status='open'",
                 (topo_id,),
             ).fetchone()
             eol_count = db.execute(
-                "SELECT COUNT(*) FROM nc_objects WHERE topology_id=? AND eol_status IN ('eol','eos')",
+                "SELECT COUNT(*) FROM nc_objects WHERE topology_id=%s AND eol_status IN ('eol','eos')",
                 (topo_id,),
             ).fetchone()[0] if _col_exists(db, "nc_objects", "eol_status") else 0
 
@@ -80,7 +80,7 @@ def register_analysis_routes(bp, get_conn=None, helpers=None):
             # Compliance dimension
             findings = db.execute(
                 "SELECT severity, COUNT(*) FROM nc_compliance_findings "
-                "WHERE topology_id=? AND status='open' GROUP BY severity",
+                "WHERE topology_id=%s AND status='open' GROUP BY severity",
                 (topo_id,),
             ).fetchall()
             finding_map = {r[0]: r[1] for r in findings}
@@ -90,11 +90,11 @@ def register_analysis_routes(bp, get_conn=None, helpers=None):
             # Security: intent validation failures
             intent_fails = db.execute(
                 "SELECT COUNT(*) FROM nc_intent_validations "
-                "WHERE topology_id=? AND result='fail'",
+                "WHERE topology_id=%s AND result='fail'",
                 (topo_id,),
             ).fetchone()[0] if _table_exists(db, "nc_intent_validations") else 0
             intent_total = db.execute(
-                "SELECT COUNT(*) FROM nc_intent_validations WHERE topology_id=?",
+                "SELECT COUNT(*) FROM nc_intent_validations WHERE topology_id=%s",
                 (topo_id,),
             ).fetchone()[0] if _table_exists(db, "nc_intent_validations") else 1
             security_score = round(max(0, 100 - (intent_fails / max(intent_total, 1)) * 100), 1)
@@ -102,11 +102,11 @@ def register_analysis_routes(bp, get_conn=None, helpers=None):
             # EOL dimension
             if _col_exists(db, "nc_objects", "eol_status"):
                 device_count = db.execute(
-                    "SELECT COUNT(*) FROM nc_objects WHERE topology_id=? AND object_type NOT IN ('label','group','link')",
+                    "SELECT COUNT(*) FROM nc_objects WHERE topology_id=%s AND object_type NOT IN ('label','group','link')",
                     (topo_id,),
                 ).fetchone()[0] or 1
                 eol_count = db.execute(
-                    "SELECT COUNT(*) FROM nc_objects WHERE topology_id=? AND eol_status IN ('eol','eos')",
+                    "SELECT COUNT(*) FROM nc_objects WHERE topology_id=%s AND eol_status IN ('eol','eos')",
                     (topo_id,),
                 ).fetchone()[0]
                 eol_score = round(max(0, 100 - (eol_count / device_count) * 100), 1)
@@ -144,7 +144,7 @@ def register_analysis_routes(bp, get_conn=None, helpers=None):
         with _nc() as db:
             findings = db.execute(
                 "SELECT id, check_name, severity, status, description "
-                "FROM nc_compliance_findings WHERE topology_id=? AND status != 'closed'",
+                "FROM nc_compliance_findings WHERE topology_id=%s AND status != 'closed'",
                 (topo_id,),
             ).fetchall()
 
@@ -179,7 +179,7 @@ def register_analysis_routes(bp, get_conn=None, helpers=None):
                 return jsonify({"topology_id": topo_id, "trend": [], "message": "No version history"})
             versions = db.execute(
                 "SELECT version_number, created_at, metadata_json "
-                "FROM nc_versions WHERE topology_id=? ORDER BY version_number",
+                "FROM nc_versions WHERE topology_id=%s ORDER BY version_number",
                 (topo_id,),
             ).fetchall() if _col_exists(db, "nc_versions", "topology_id") else []
 
@@ -206,7 +206,7 @@ def register_analysis_routes(bp, get_conn=None, helpers=None):
         optionally enhanced by Ollama.  Returns findings + summary JSON."""
         with _nc() as db:
             row = db.execute(
-                "SELECT name, graph_json FROM topologies WHERE id=?", (topo_id,)
+                "SELECT name, graph_json FROM topologies WHERE id=%s", (topo_id,)
             ).fetchone()
         if not row:
             return jsonify({"error": "Topology not found"}), 404
@@ -456,13 +456,13 @@ def register_analysis_routes(bp, get_conn=None, helpers=None):
 
         with _nc() as db:
             devices = db.execute(
-                "SELECT COUNT(*) FROM nc_objects WHERE topology_id=? AND object_type NOT IN ('label','group','link')",
+                "SELECT COUNT(*) FROM nc_objects WHERE topology_id=%s AND object_type NOT IN ('label','group','link')",
                 (topo_id,),
             ).fetchone()[0]
             findings = [
                 dict(r) for r in db.execute(
                     "SELECT id, check_name, severity, status, description "
-                    "FROM nc_compliance_findings WHERE topology_id=?",
+                    "FROM nc_compliance_findings WHERE topology_id=%s",
                     (topo_id,),
                 ).fetchall()
             ]
@@ -494,7 +494,7 @@ def register_analysis_routes(bp, get_conn=None, helpers=None):
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _table_exists(db, table: str) -> bool:
-    r = db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone()
+    r = db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=%s", (table,)).fetchone()
     return r is not None
 
 

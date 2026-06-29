@@ -133,7 +133,7 @@ def _audit(action: str, details: str, project_id: str = "") -> None:
         conn.execute(
             "INSERT INTO audit_trail "
             "(id, tenant_id, user_id, action, resource, details, project_id, classification, recorded_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (str(uuid.uuid4()), None, None, action,
              "procurement_vehicles", details, project_id, "CUI", _now()),
         )
@@ -145,7 +145,7 @@ def _audit(action: str, details: str, project_id: str = "") -> None:
             conn.execute(
                 "INSERT INTO audit_trail "
                 "(id, tenant_id, user_id, action, resource, details, classification, recorded_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
                 (str(uuid.uuid4()), None, None, action,
                  "procurement_vehicles", details, "CUI", _now()),
             )
@@ -207,7 +207,7 @@ def create_vehicle(
 
     conn = get_connection()
     existing = conn.execute(
-        "SELECT id FROM procurement_vehicles WHERE vehicle_name = ?", (vehicle_name,)
+        "SELECT id FROM procurement_vehicles WHERE vehicle_name = %s", (vehicle_name,)
     ).fetchone()
     if existing:
         return {"status": "error", "message": f"Vehicle '{vehicle_name}' already exists"}
@@ -218,7 +218,7 @@ def create_vehicle(
         "INSERT INTO procurement_vehicles "
         "(id, vehicle_name, full_name, agency, vehicle_type, "
         "contract_number, naics_code, ceiling_value, expiration_date, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
         (vid, vehicle_name, full_name, agency, vehicle_type,
          contract_number, naics_code, ceiling_value, expiration_date, now, now),
     )
@@ -231,7 +231,7 @@ def get_vehicle(vehicle_name: str) -> dict[str, Any]:
     _ensure_tables()
     conn = get_connection()
     row = conn.execute(
-        "SELECT * FROM procurement_vehicles WHERE vehicle_name = ?", (vehicle_name,)
+        "SELECT * FROM procurement_vehicles WHERE vehicle_name = %s", (vehicle_name,)
     ).fetchone()
     if not row:
         return {"status": "error", "message": f"Vehicle '{vehicle_name}' not found"}
@@ -243,7 +243,7 @@ def list_vehicles(agency: str | None = None) -> dict[str, Any]:
     conn = get_connection()
     if agency:
         rows = conn.execute(
-            "SELECT * FROM procurement_vehicles WHERE agency = ? ORDER BY vehicle_name",
+            "SELECT * FROM procurement_vehicles WHERE agency = %s ORDER BY vehicle_name",
             (agency,),
         ).fetchall()
     else:
@@ -258,7 +258,7 @@ def update_vehicle(vehicle_name: str, **fields: Any) -> dict[str, Any]:
     _ensure_tables()
     conn = get_connection()
     existing = conn.execute(
-        "SELECT id FROM procurement_vehicles WHERE vehicle_name = ?", (vehicle_name,)
+        "SELECT id FROM procurement_vehicles WHERE vehicle_name = %s", (vehicle_name,)
     ).fetchone()
     if not existing:
         return {"status": "error", "message": f"Vehicle '{vehicle_name}' not found"}
@@ -273,7 +273,7 @@ def update_vehicle(vehicle_name: str, **fields: Any) -> dict[str, Any]:
     set_clause = ", ".join(f"{k} = ?" for k in updates)
     values = list(updates.values()) + [vehicle_name]
     conn.execute(
-        f"UPDATE procurement_vehicles SET {set_clause} WHERE vehicle_name = ?",
+        f"UPDATE procurement_vehicles SET {set_clause} WHERE vehicle_name = %s",
         values,
     )
     conn.commit()
@@ -285,13 +285,13 @@ def delete_vehicle(vehicle_name: str) -> dict[str, Any]:
     _ensure_tables()
     conn = get_connection()
     existing = conn.execute(
-        "SELECT id FROM procurement_vehicles WHERE vehicle_name = ?", (vehicle_name,)
+        "SELECT id FROM procurement_vehicles WHERE vehicle_name = %s", (vehicle_name,)
     ).fetchone()
     if not existing:
         return {"status": "error", "message": f"Vehicle '{vehicle_name}' not found"}
 
     conn.execute(
-        "DELETE FROM procurement_vehicles WHERE vehicle_name = ?", (vehicle_name,)
+        "DELETE FROM procurement_vehicles WHERE vehicle_name = %s", (vehicle_name,)
     )
     conn.commit()
     _audit("delete_vehicle", vehicle_name, project_id=vehicle_name)

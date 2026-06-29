@@ -65,6 +65,7 @@ javalang>=0.13.0         # Java AST parser — fallback pattern detection for .j
 
 # === Monitoring ===
 requests>=2.31           # HTTP client for ELK/Splunk/Prometheus APIs
+prometheus_client>=0.20  # Prometheus metrics exposition (tools/observability/metrics.py)
 
 # === SaaS Multi-Tenancy (Phase 21) ===
 # PostgreSQL is the primary backend (ICDEV_STORAGE_BACKEND=postgresql).

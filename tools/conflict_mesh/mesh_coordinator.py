@@ -16,12 +16,12 @@ Usage:
 
 from __future__ import annotations
 
-import logging
 from typing import Any, Dict, List, Optional
 
 from tools.conflict_mesh.providers.base import MeshProvider
+from tools.logging.icdev_logger import get_logger
 
-logger = logging.getLogger("conflict_mesh.coordinator")
+log = get_logger("conflict_mesh.coordinator")
 
 
 class MeshCoordinator:
@@ -60,11 +60,11 @@ class MeshCoordinator:
                     if evt_id:
                         seen_ids.add(evt_id)
                     all_events.append(evt)
-                logger.debug(
+                log.debug(
                     "Provider %s returned %d events", provider.provider_name, len(events)
                 )
             except Exception as exc:
-                logger.warning(
+                log.warning(
                     "Provider %s failed: %s — skipping", provider.provider_name, exc
                 )
 

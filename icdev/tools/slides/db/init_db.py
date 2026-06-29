@@ -49,17 +49,24 @@ def get_connection():
 
 _SCHEMA_PG = f"""
 CREATE TABLE IF NOT EXISTS slides_decks (
-    deck_id       SERIAL PRIMARY KEY,
-    title         TEXT NOT NULL,
-    deck_type     TEXT NOT NULL DEFAULT 'executive_overview' CHECK({CHECK_DECK_TYPE}),
-    theme         TEXT NOT NULL DEFAULT 'midnight_executive' CHECK({CHECK_THEME}),
-    status        TEXT NOT NULL DEFAULT 'pending' CHECK({CHECK_DECK_STATUS}),
-    source_types  JSONB DEFAULT '[]',
-    pptx_path     TEXT,
-    slide_count   INTEGER DEFAULT 0,
-    error_message TEXT,
-    created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    completed_at  TIMESTAMP
+    deck_id         SERIAL PRIMARY KEY,
+    title           TEXT NOT NULL,
+    deck_type       TEXT NOT NULL DEFAULT 'executive_overview' CHECK({CHECK_DECK_TYPE}),
+    theme           TEXT NOT NULL DEFAULT 'midnight_executive' CHECK({CHECK_THEME}),
+    tone            TEXT DEFAULT 'professional',
+    occasion        TEXT,
+    target_audience TEXT,
+    citation_style  TEXT DEFAULT 'inline_links',
+    output_formats  JSONB DEFAULT '["pptx"]',
+    status          TEXT NOT NULL DEFAULT 'pending' CHECK({CHECK_DECK_STATUS}),
+    source_types    JSONB DEFAULT '[]',
+    pptx_path       TEXT,
+    pdf_path        TEXT,
+    html_path       TEXT,
+    slide_count     INTEGER DEFAULT 0,
+    error_message   TEXT,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    completed_at    TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS slides_slides (
@@ -70,6 +77,7 @@ CREATE TABLE IF NOT EXISTS slides_slides (
     title          TEXT NOT NULL,
     bullets        JSONB DEFAULT '[]',
     speaker_notes  TEXT,
+    citations      JSONB DEFAULT '[]',
     image_path     TEXT,
     image_prompt   TEXT,
     created_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -90,17 +98,24 @@ CREATE INDEX IF NOT EXISTS idx_slides_audit_deck_id ON slides_audit(deck_id);
 
 _SCHEMA_SQLITE = """
 CREATE TABLE IF NOT EXISTS slides_decks (
-    deck_id       INTEGER PRIMARY KEY AUTOINCREMENT,
-    title         TEXT NOT NULL,
-    deck_type     TEXT NOT NULL DEFAULT 'executive_overview',
-    theme         TEXT NOT NULL DEFAULT 'midnight_executive',
-    status        TEXT NOT NULL DEFAULT 'pending',
-    source_types  TEXT DEFAULT '[]',
-    pptx_path     TEXT,
-    slide_count   INTEGER DEFAULT 0,
-    error_message TEXT,
-    created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
-    completed_at  DATETIME
+    deck_id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    title           TEXT NOT NULL,
+    deck_type       TEXT NOT NULL DEFAULT 'executive_overview',
+    theme           TEXT NOT NULL DEFAULT 'midnight_executive',
+    tone            TEXT DEFAULT 'professional',
+    occasion        TEXT,
+    target_audience TEXT,
+    citation_style  TEXT DEFAULT 'inline_links',
+    output_formats  TEXT DEFAULT '["pptx"]',
+    status          TEXT NOT NULL DEFAULT 'pending',
+    source_types    TEXT DEFAULT '[]',
+    pptx_path       TEXT,
+    pdf_path        TEXT,
+    html_path       TEXT,
+    slide_count     INTEGER DEFAULT 0,
+    error_message   TEXT,
+    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+    completed_at    DATETIME
 );
 
 CREATE TABLE IF NOT EXISTS slides_slides (
@@ -111,6 +126,7 @@ CREATE TABLE IF NOT EXISTS slides_slides (
     title         TEXT NOT NULL,
     bullets       TEXT DEFAULT '[]',
     speaker_notes TEXT,
+    citations     TEXT DEFAULT '[]',
     image_path    TEXT,
     image_prompt  TEXT,
     created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -129,6 +145,79 @@ CREATE INDEX IF NOT EXISTS idx_slides_deck_id ON slides_slides(deck_id);
 CREATE INDEX IF NOT EXISTS idx_slides_audit_deck_id ON slides_audit(deck_id);
 """
 
+_MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
+
+
+def _parse_migration_version(filename: str) -> int:
+    """Return numeric prefix from filenames like '001_general_presentation.sql'."""
+    digits = []
+    for ch in filename:
+        if ch.isdigit():
+            digits.append(ch)
+        else:
+            break
+    return int("".join(digits)) if digits else 0
+
+
+def _apply_migrations(conn) -> None:
+    """Apply pending .sql migrations from tools/slides/db/migrations/."""
+    if not _MIGRATIONS_DIR.is_dir():
+        return
+
+    files = sorted(
+        (p for p in _MIGRATIONS_DIR.iterdir() if p.suffix.lower() == ".sql"),
+        key=lambda p: _parse_migration_version(p.name),
+    )
+    if not files:
+        return
+
+    is_pg = _SLIDES_BACKEND == "postgresql"
+
+    if is_pg:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS slides_schema_migrations (
+                version     INTEGER PRIMARY KEY,
+                applied_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT MAX(version) as v FROM slides_schema_migrations"
+        ).fetchone()
+        current = int(row[0] if row and row[0] is not None else 0)
+    else:
+        cur = conn.execute("PRAGMA user_version")
+        current = int(cur.fetchone()[0])
+
+    applied = 0
+    for path in files:
+        version = _parse_migration_version(path.name)
+        if version <= current:
+            continue
+        sql = path.read_text(encoding="utf-8")
+        for stmt in sql.strip().split(";"):
+            stmt = stmt.strip()
+            if stmt:
+                try:
+                    conn.execute(stmt)
+                except Exception:
+                    # Idempotent migrations tolerate already-present columns.
+                    pass
+        if is_pg:
+            conn.execute(
+                "INSERT INTO slides_schema_migrations (version) VALUES (%s)",
+                (version,),
+            )
+        current = version
+        applied += 1
+
+    if not is_pg and applied:
+        conn.execute(f"PRAGMA user_version = {current}")
+    conn.commit()
+
+
 _INIT_DONE = False
 
 
@@ -143,7 +232,7 @@ def init_db() -> None:
             stmt = stmt.strip()
             if stmt:
                 conn.execute(stmt)
-        conn.commit()
+        _apply_migrations(conn)
     finally:
         conn.close()
     _INIT_DONE = True

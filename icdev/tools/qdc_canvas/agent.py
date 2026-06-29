@@ -25,15 +25,15 @@ def _update_cross_canvas_link(design_id, source_canvas, source_design_id, score)
         conn = get_connection()
         try:
             existing = conn.execute(
-                "SELECT id FROM qdc_cross_canvas_links WHERE design_id = ? AND source_canvas = ?",
+                "SELECT id FROM qdc_cross_canvas_links WHERE design_id = %s AND source_canvas = %s",
                 (design_id, source_canvas),
             ).fetchone()
             now = _now()
             if existing:
                 conn.execute(
                     "UPDATE qdc_cross_canvas_links "
-                    "SET source_design_id = ?, quality_score = ?, last_synced = ? "
-                    "WHERE id = ?",
+                    "SET source_design_id = %s, quality_score = %s, last_synced = %s "
+                    "WHERE id = %s",
                     (source_design_id, score, now, existing[0]),
                 )
             else:
@@ -42,7 +42,7 @@ def _update_cross_canvas_link(design_id, source_canvas, source_design_id, score)
                 conn.execute(
                     "INSERT INTO qdc_cross_canvas_links "
                     "(id, design_id, source_canvas, source_design_id, "
-                    "quality_score, last_synced) VALUES (?,?,?,?,?,?)",
+                    "quality_score, last_synced) VALUES (%s,%s,%s,%s,%s,%s)",
                     (
                         f"xcl-{uuid.uuid4().hex[:10]}",
                         design_id,
@@ -68,7 +68,7 @@ def _get_latest_qdc_design_for_project(source_canvas):
         try:
             row = conn.execute(
                 "SELECT design_id FROM qdc_cross_canvas_links "
-                "WHERE source_canvas = ? ORDER BY last_synced DESC LIMIT 1",
+                "WHERE source_canvas = %s ORDER BY last_synced DESC LIMIT 1",
                 (source_canvas,),
             ).fetchone()
             return row[0] if row else None
@@ -104,7 +104,7 @@ def _get_canvas_assessment_score(canvas_key, design_id):
         try:
             row = conn.execute(
                 f"SELECT score FROM [{table}] "  # noqa: S608  # nosec B608
-                f"WHERE design_id = ? ORDER BY created_at DESC LIMIT 1",
+                f"WHERE design_id = %s ORDER BY created_at DESC LIMIT 1",
                 (design_id,),
             ).fetchone()
             return float(row[0]) if row else 0.0

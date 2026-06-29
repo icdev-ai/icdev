@@ -61,7 +61,7 @@ def create_snapshot(
             """
             INSERT INTO pipeline_snapshots
                 (id, pipeline_id, snapshot_type, label, nodes_json, edges_json, meta_json, created_by, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (snap_id, pipeline_id, snapshot_type, label, nodes_json, edges_json, meta_json, created_by, now),
         )
@@ -77,7 +77,7 @@ def get_snapshot(snapshot_id: str) -> dict[str, Any] | None:
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT * FROM pipeline_snapshots WHERE id = ?",
+            "SELECT * FROM pipeline_snapshots WHERE id = %s",
             (snapshot_id,),
         ).fetchone()
     finally:
@@ -95,9 +95,9 @@ def list_snapshots(pipeline_id: str, *, limit: int = 50) -> list[dict[str, Any]]
         rows = conn.execute(
             """
             SELECT * FROM pipeline_snapshots
-            WHERE pipeline_id = ?
+            WHERE pipeline_id = %s
             ORDER BY created_at DESC
-            LIMIT ?
+            LIMIT %s
             """,
             (pipeline_id, limit),
         ).fetchall()
@@ -114,7 +114,7 @@ def get_latest_snapshot(pipeline_id: str, snapshot_type: str = "baseline") -> di
         row = conn.execute(
             """
             SELECT * FROM pipeline_snapshots
-            WHERE pipeline_id = ? AND snapshot_type = ?
+            WHERE pipeline_id = %s AND snapshot_type = %s
             ORDER BY created_at DESC
             LIMIT 1
             """,

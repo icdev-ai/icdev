@@ -177,7 +177,7 @@ def create_search(
             """INSERT INTO ft_hp_searches
                (id, dataset_id, method, search_space, max_trials,
                 completed_trials, best_params, status, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, 0, '{}', 'pending', ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, 0, '{}', 'pending', %s, %s)""",
             (search_id, dataset_id, method, json.dumps(search_space), len(trial_params), now, now),
         )
 
@@ -186,7 +186,7 @@ def create_search(
             conn.execute(
                 """INSERT INTO ft_hp_trials
                    (id, search_id, trial_number, params, status, created_at)
-                   VALUES (?, ?, ?, ?, 'pending', ?)""",
+                   VALUES (%s, %s, %s, %s, 'pending', %s)""",
                 (trial_id, search_id, idx, json.dumps(params), now),
             )
 
@@ -215,7 +215,7 @@ def run_next_trial(
     conn = _get_db(db_path)
     try:
         # Validate search exists
-        search = conn.execute("SELECT * FROM ft_hp_searches WHERE id = ?", (search_id,)).fetchone()
+        search = conn.execute("SELECT * FROM ft_hp_searches WHERE id = %s", (search_id,)).fetchone()
         if not search:
             return {"success": False, "error": f"Search not found: {search_id}"}
 
@@ -225,7 +225,7 @@ def run_next_trial(
         # Find next pending trial
         trial = conn.execute(
             """SELECT * FROM ft_hp_trials
-               WHERE search_id = ? AND status = 'pending'
+               WHERE search_id = %s AND status = 'pending'
                ORDER BY trial_number ASC LIMIT 1""",
             (search_id,),
         ).fetchone()
@@ -252,22 +252,22 @@ def run_next_trial(
         if job_result.get("success"):
             conn.execute(
                 """UPDATE ft_hp_trials
-                   SET status = 'running', training_job_id = ?, started_at = ?
-                   WHERE id = ?""",
+                   SET status = 'running', training_job_id = %s, started_at = %s
+                   WHERE id = %s""",
                 (job_result["job_id"], now, trial_dict["id"]),
             )
         else:
             conn.execute(
                 """UPDATE ft_hp_trials
-                   SET status = 'failed', started_at = ?, completed_at = ?
-                   WHERE id = ?""",
+                   SET status = 'failed', started_at = %s, completed_at = %s
+                   WHERE id = %s""",
                 (now, now, trial_dict["id"]),
             )
 
         # Mark search as running if still pending
         if search["status"] == "pending":
             conn.execute(
-                "UPDATE ft_hp_searches SET status = 'running', updated_at = ? WHERE id = ?",
+                "UPDATE ft_hp_searches SET status = 'running', updated_at = %s WHERE id = %s",
                 (now, search_id),
             )
 
@@ -297,7 +297,7 @@ def record_trial_result(
     """Record evaluation results for a completed trial."""
     conn = _get_db(db_path)
     try:
-        trial = conn.execute("SELECT * FROM ft_hp_trials WHERE id = ?", (trial_id,)).fetchone()
+        trial = conn.execute("SELECT * FROM ft_hp_trials WHERE id = %s", (trial_id,)).fetchone()
         if not trial:
             return {"success": False, "error": f"Trial not found: {trial_id}"}
 
@@ -308,14 +308,14 @@ def record_trial_result(
         # Update trial
         conn.execute(
             """UPDATE ft_hp_trials
-               SET status = 'completed', eval_score = ?, eval_metrics = ?,
-                   completed_at = ?
-               WHERE id = ?""",
+               SET status = 'completed', eval_score = %s, eval_metrics = %s,
+                   completed_at = %s
+               WHERE id = %s""",
             (eval_score, json.dumps(eval_metrics or {}), now, trial_id),
         )
 
         # Update search — increment completed, check for new best
-        search = conn.execute("SELECT * FROM ft_hp_searches WHERE id = ?", (search_id,)).fetchone()
+        search = conn.execute("SELECT * FROM ft_hp_searches WHERE id = %s", (search_id,)).fetchone()
         search_dict = dict(search)
 
         new_completed = search_dict["completed_trials"] + 1
@@ -335,7 +335,7 @@ def record_trial_result(
         total_trials = search_dict["max_trials"]
         pending_or_running = conn.execute(
             """SELECT COUNT(*) FROM ft_hp_trials
-               WHERE search_id = ? AND status IN ('pending', 'running')""",
+               WHERE search_id = %s AND status IN ('pending', 'running')""",
             (search_id,),
         ).fetchone()[0]
 
@@ -347,7 +347,7 @@ def record_trial_result(
         set_clause = ", ".join(f"{k} = ?" for k in updates)  # nosec B608 — keys are internal constants
         values = list(updates.values()) + [search_id]
         conn.execute(
-            f"UPDATE ft_hp_searches SET {set_clause} WHERE id = ?",  # nosec B608
+            f"UPDATE ft_hp_searches SET {set_clause} WHERE id = %s",  # nosec B608
             values,
         )
 
@@ -376,7 +376,7 @@ def get_search_status(
     """Return full search status with all trials, best params, progress."""
     conn = _get_db(db_path)
     try:
-        search = conn.execute("SELECT * FROM ft_hp_searches WHERE id = ?", (search_id,)).fetchone()
+        search = conn.execute("SELECT * FROM ft_hp_searches WHERE id = %s", (search_id,)).fetchone()
         if not search:
             return {"success": False, "error": f"Search not found: {search_id}"}
 
@@ -387,7 +387,7 @@ def get_search_status(
 
         trials = conn.execute(
             """SELECT * FROM ft_hp_trials
-               WHERE search_id = ?
+               WHERE search_id = %s
                ORDER BY trial_number ASC""",
             (search_id,),
         ).fetchall()

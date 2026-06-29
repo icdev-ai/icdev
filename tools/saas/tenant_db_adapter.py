@@ -143,7 +143,7 @@ def _get_tenant_config(tenant_id: str) -> Optional[dict]:
             """SELECT id, slug, db_host, db_name, db_port, status,
                       impact_level, tier
                FROM tenants
-               WHERE id = ? AND status = 'active'""",
+               WHERE id = %s AND status = 'active'""",
             (tenant_id,),
         ).fetchone()
         conn.close()
@@ -314,7 +314,7 @@ def verify_project_belongs_to_tenant(tenant_id: str, project_id: str) -> bool:
     """
     try:
         conn = get_tenant_db_connection(tenant_id)
-        row = conn.execute("SELECT id FROM projects WHERE id = ?", (project_id,)).fetchone()
+        row = conn.execute("SELECT id FROM projects WHERE id = %s", (project_id,)).fetchone()
         conn.close()
         return row is not None
     except Exception:

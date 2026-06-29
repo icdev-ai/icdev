@@ -30,7 +30,7 @@ def create_tournament(
         """INSERT INTO gd_ai_tournaments
            (name, scenario_pack, status, round_count, round_duration_minutes,
             config_json, created_at)
-           VALUES (?, ?, 'pending', ?, ?, ?, ?)
+           VALUES (%s, %s, 'pending', %s, %s, %s, %s)
            RETURNING *""",
         (name, scenario_pack, round_count, round_duration_minutes,
          json.dumps(config or {}), _now()),
@@ -42,7 +42,7 @@ def create_tournament(
 def get_tournament(tournament_id: int) -> dict | None:
     conn = get_connection()
     row = conn.execute(
-        "SELECT * FROM gd_ai_tournaments WHERE id = ?", (tournament_id,)
+        "SELECT * FROM gd_ai_tournaments WHERE id = %s", (tournament_id,)
     ).fetchone()
     return dict(row) if row else None
 
@@ -55,7 +55,7 @@ def update_tournament(tournament_id: int, **fields) -> None:
     set_clause = ", ".join(f"{k} = ?" for k in cols)
     conn = get_connection()
     conn.execute(
-        f"UPDATE gd_ai_tournaments SET {set_clause} WHERE id = ?",
+        f"UPDATE gd_ai_tournaments SET {set_clause} WHERE id = %s",
         (*cols.values(), tournament_id),
     )
     conn.commit()
@@ -64,7 +64,7 @@ def update_tournament(tournament_id: int, **fields) -> None:
 def list_tournaments(limit: int = 20) -> list[dict]:
     conn = get_connection()
     rows = conn.execute(
-        "SELECT * FROM gd_ai_tournaments ORDER BY created_at DESC LIMIT ?", (limit,)
+        "SELECT * FROM gd_ai_tournaments ORDER BY created_at DESC LIMIT %s", (limit,)
     ).fetchall()
     return [dict(r) for r in rows]
 
@@ -79,7 +79,7 @@ def seed_teams(tournament_id: int, team_defs: list[dict]) -> list[dict]:
         row = conn.execute(
             """INSERT INTO gd_ai_teams
                (tournament_id, team_key, name, domain, color)
-               VALUES (?, ?, ?, ?, ?)
+               VALUES (%s, %s, %s, %s, %s)
                ON CONFLICT (tournament_id, team_key) DO UPDATE
                SET name=EXCLUDED.name
                RETURNING *""",
@@ -93,7 +93,7 @@ def seed_teams(tournament_id: int, team_defs: list[dict]) -> list[dict]:
 def get_team(tournament_id: int, team_key: str) -> dict | None:
     conn = get_connection()
     row = conn.execute(
-        "SELECT * FROM gd_ai_teams WHERE tournament_id = ? AND team_key = ?",
+        "SELECT * FROM gd_ai_teams WHERE tournament_id = %s AND team_key = %s",
         (tournament_id, team_key),
     ).fetchone()
     return dict(row) if row else None
@@ -110,11 +110,11 @@ def update_team_scores(
     conn = get_connection()
     conn.execute(
         """UPDATE gd_ai_teams
-           SET total_score = total_score + ?,
-               rounds_won  = rounds_won  + ?,
-               artifacts_suggested = artifacts_suggested + ?,
-               training_pairs_contributed = training_pairs_contributed + ?
-           WHERE tournament_id = ? AND team_key = ?""",
+           SET total_score = total_score + %s,
+               rounds_won  = rounds_won  + %s,
+               artifacts_suggested = artifacts_suggested + %s,
+               training_pairs_contributed = training_pairs_contributed + %s
+           WHERE tournament_id = %s AND team_key = %s""",
         (score_delta, rounds_won_delta, artifacts_suggested_delta,
          training_pairs_delta, tournament_id, team_key),
     )
@@ -128,7 +128,7 @@ def create_round(tournament_id: int, round_num: int, scenario: dict) -> dict:
     row = conn.execute(
         """INSERT INTO gd_ai_rounds
            (tournament_id, round_num, scenario_json, status, created_at)
-           VALUES (?, ?, ?, 'pending', ?)
+           VALUES (%s, %s, %s, 'pending', %s)
            ON CONFLICT (tournament_id, round_num) DO UPDATE
            SET scenario_json = EXCLUDED.scenario_json
            RETURNING *""",
@@ -141,7 +141,7 @@ def create_round(tournament_id: int, round_num: int, scenario: dict) -> dict:
 def get_round(tournament_id: int, round_num: int) -> dict | None:
     conn = get_connection()
     row = conn.execute(
-        "SELECT * FROM gd_ai_rounds WHERE tournament_id = ? AND round_num = ?",
+        "SELECT * FROM gd_ai_rounds WHERE tournament_id = %s AND round_num = %s",
         (tournament_id, round_num),
     ).fetchone()
     return dict(row) if row else None
@@ -155,7 +155,7 @@ def update_round(round_id: int, **fields) -> None:
     set_clause = ", ".join(f"{k} = ?" for k in cols)
     conn = get_connection()
     conn.execute(
-        f"UPDATE gd_ai_rounds SET {set_clause} WHERE id = ?",
+        f"UPDATE gd_ai_rounds SET {set_clause} WHERE id = %s",
         (*cols.values(), round_id),
     )
     conn.commit()
@@ -179,7 +179,7 @@ def save_artifact(
         """INSERT INTO gd_ai_artifacts
            (round_id, team_id, team_key, member_role, artifact_type,
             content, tokens_used, model_used, latency_ms, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
            RETURNING *""",
         (round_id, team_id, team_key, member_role, artifact_type,
          content, tokens_used, model_used, latency_ms, _now()),
@@ -224,12 +224,12 @@ def get_round_artifacts(round_id: int, team_key: str | None = None) -> list[dict
     conn = get_connection()
     if team_key:
         rows = conn.execute(
-            "SELECT * FROM gd_ai_artifacts WHERE round_id = ? AND team_key = ? ORDER BY created_at",
+            "SELECT * FROM gd_ai_artifacts WHERE round_id = %s AND team_key = %s ORDER BY created_at",
             (round_id, team_key),
         ).fetchall()
     else:
         rows = conn.execute(
-            "SELECT * FROM gd_ai_artifacts WHERE round_id = ? ORDER BY created_at",
+            "SELECT * FROM gd_ai_artifacts WHERE round_id = %s ORDER BY created_at",
             (round_id,),
         ).fetchall()
     return [dict(r) for r in rows]
@@ -259,7 +259,7 @@ def save_judge_eval(
             ethics_score, adversarial_score, compliance_score, total_score,
             routed_to_suggested, training_pairs_extracted, ethics_blocked,
             judge_notes, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
            ON CONFLICT (round_id, team_id) DO UPDATE
            SET total_score=EXCLUDED.total_score,
                ethics_blocked=EXCLUDED.ethics_blocked,
@@ -278,7 +278,7 @@ def save_judge_eval(
 def get_round_evals(round_id: int) -> list[dict]:
     conn = get_connection()
     rows = conn.execute(
-        "SELECT * FROM gd_ai_judge_evals WHERE round_id = ? ORDER BY total_score DESC",
+        "SELECT * FROM gd_ai_judge_evals WHERE round_id = %s ORDER BY total_score DESC",
         (round_id,),
     ).fetchall()
     return [dict(r) for r in rows]
@@ -303,7 +303,7 @@ def log_llmops_event(
             """INSERT INTO gd_ai_llmops_events
                (tournament_id, round_id, team_key, member_role, model,
                 prompt_tokens, completion_tokens, latency_ms, error, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (tournament_id, round_id, team_key, member_role, model,
              prompt_tokens, completion_tokens, latency_ms, error, _now()),
         )
@@ -316,7 +316,7 @@ def get_tournament_llmops(tournament_id: int, limit: int = 200) -> list[dict]:
     conn = get_connection()
     rows = conn.execute(
         """SELECT * FROM gd_ai_llmops_events
-           WHERE tournament_id = ? ORDER BY created_at DESC LIMIT ?""",
+           WHERE tournament_id = %s ORDER BY created_at DESC LIMIT %s""",
         (tournament_id, limit),
     ).fetchall()
     return [dict(r) for r in rows]
@@ -338,7 +338,7 @@ def save_training_pair(
         """INSERT INTO gd_ai_training_pairs
            (round_id, team_key, member_role, prompt, completion,
             quality_score, ft_dataset_id, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
            RETURNING *""",
         (round_id, team_key, member_role, prompt, completion,
          quality_score, ft_dataset_id, _now()),
@@ -352,7 +352,7 @@ def count_pending_training_pairs(tournament_id: int) -> int:
     row = conn.execute(
         """SELECT COUNT(*) as cnt FROM gd_ai_training_pairs tp
            JOIN gd_ai_rounds r ON r.id = tp.round_id
-           WHERE r.tournament_id = ? AND tp.ft_dataset_id IS NULL""",
+           WHERE r.tournament_id = %s AND tp.ft_dataset_id IS NULL""",
         (tournament_id,),
     ).fetchone()
     return row["cnt"] if row else 0
@@ -378,7 +378,7 @@ def upsert_leaderboard(
            (tournament_id, team_id, team_key, rank, total_score, rounds_won,
             artifacts_suggested, training_pairs_contributed,
             avg_ethics_score, avg_innovation_score, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
            ON CONFLICT (tournament_id, team_id) DO UPDATE
            SET rank=EXCLUDED.rank,
                total_score=EXCLUDED.total_score,
@@ -401,7 +401,7 @@ def get_leaderboard(tournament_id: int) -> list[dict]:
         """SELECT lb.*, t.name, t.domain, t.color
            FROM gd_ai_leaderboard lb
            JOIN gd_ai_teams t ON t.id = lb.team_id
-           WHERE lb.tournament_id = ?
+           WHERE lb.tournament_id = %s
            ORDER BY lb.rank ASC""",
         (tournament_id,),
     ).fetchall()

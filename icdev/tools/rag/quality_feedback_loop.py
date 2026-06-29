@@ -148,7 +148,7 @@ def _compute_feedback_anomaly_thresholds(anomaly_cfg: "dict | None" = None) -> D
                 "SELECT AVG(metric_value) AS mean, "
                 "AVG(metric_value * metric_value) AS sq, COUNT(*) AS n "
                 "FROM ft_quality_snapshots "
-                "WHERE metric_name = ? AND metric_value IS NOT NULL",
+                "WHERE metric_name = %s AND metric_value IS NOT NULL",
                 (metric,),
             ).fetchone()
             if not row:

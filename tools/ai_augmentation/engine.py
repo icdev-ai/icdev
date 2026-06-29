@@ -46,6 +46,10 @@ _FALLBACK_ANOMALY_THRESHOLDS = {
         "p3_min_score": 0.30,
     },
     "priority_high_min_score": 0.70,
+    # Score anomaly detection thresholds (mirrors args/aac_config.yaml)
+    "value_feasibility_max_delta": 0.50,
+    "component_outlier_floor": 0.05,
+    "component_outlier_ceiling": 0.95,
 }
 
 
@@ -83,6 +87,10 @@ _PARADIGM_TO_MODEL: dict[str, str] = {
     "decision_agent": "claude-opus-4-7",
 }
 
+# Toggle for the optional NLP reference extractor.  Disabled by default so unit
+# tests that mock the router can opt-in explicitly.
+_NLP_REF_ENABLED = False
+
 
 @functools.lru_cache(maxsize=128)
 def _nlp_classify_ref(ref: str) -> tuple[bool, str]:
@@ -96,15 +104,11 @@ def _nlp_classify_ref(ref: str) -> tuple[bool, str]:
         (is_git_url, project_name)
     """
     try:
-        import anthropic  # optional dependency
-        api_key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("CLAUDE_API_KEY")
-        if not api_key:
-            raise ValueError("no Anthropic API key configured")
-        client = anthropic.Anthropic(api_key=api_key)
+        from tools.llm.router import LLMRouter, LLMRequest
         model = _PARADIGM_TO_MODEL.get("nlp_extractor", "claude-haiku-4-5-20251001")
-        message = client.messages.create(
-            model=model,
-            max_tokens=128,
+        router = LLMRouter()
+        req = LLMRequest(
+            function="nlp_extractor",
             messages=[{
                 "role": "user",
                 "content": (
@@ -115,8 +119,11 @@ def _nlp_classify_ref(ref: str) -> tuple[bool, str]:
                     "project_name is the short repository or directory name."
                 ),
             }],
+            model=model,
+            max_tokens=128,
         )
-        result = json.loads(message.content[0].text.strip())
+        resp = router.invoke("nlp_extractor", req)
+        result = json.loads(resp.content.strip())
         return bool(result.get("is_git_url", False)), str(result.get("project_name", "") or ref.split("/")[-1])
     except Exception:
         # Regex fallback — identical logic to the original implementation
@@ -177,10 +184,17 @@ def _insert(conn: Any, sql: str, params: tuple, id_col: str = "id") -> int:
     return cur.lastrowid or 0
 
 
-def _build_summary(input_ref: str, opp_rows: list[dict]) -> str:
+def _build_summary(
+    input_ref: str,
+    opp_rows: list[dict],
+    nlp_ref_info: dict | None = None,
+) -> str:
     """Derive a one-sentence plain-English project summary."""
     ref = input_ref.strip().rstrip("/")
-    _, name = _nlp_classify_ref(ref)
+    if nlp_ref_info and nlp_ref_info.get("project_name"):
+        name = nlp_ref_info["project_name"]
+    else:
+        _, name = _nlp_classify_ref(ref)
 
     if not opp_rows:
         return f"'{name}' — no AI-augmentable patterns detected."
@@ -238,7 +252,7 @@ def _register_innovation_signals(opp_rows: list[dict], score_rows: list[dict], s
                 signal_id = f"aac-{scan_id}-{opp_id}"
                 # Skip if already registered
                 existing = conn.execute(
-                    "SELECT id FROM innovation_signals WHERE id = ?", (signal_id,)
+                    "SELECT id FROM innovation_signals WHERE id = %s", (signal_id,)
                 ).fetchone()
                 if existing:
                     continue
@@ -246,7 +260,7 @@ def _register_innovation_signals(opp_rows: list[dict], score_rows: list[dict], s
                     "INSERT INTO innovation_signals "
                     "(id, source, source_type, title, description, content_hash, "
                     "discovered_at, status, category, innovation_score) "
-                    "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                     (
                         signal_id, "aac_opportunities", "internal_analysis",
                         title, description, content_hash,
@@ -495,6 +509,78 @@ def _is_git_url(ref: str) -> bool:
     return _nlp_classify_ref(ref.strip().rstrip("/"))[0]
 
 
+def _strip_markdown_fences(text: str) -> str:
+    """Remove leading/trailing ```json...``` fences from LLM output."""
+    cleaned = text.strip()
+    if cleaned.startswith("```json"):
+        cleaned = cleaned[7:]
+    elif cleaned.startswith("```"):
+        cleaned = cleaned[3:]
+    if cleaned.endswith("```"):
+        cleaned = cleaned[:-3]
+    return cleaned.strip()
+
+
+def _coerce_language_list(value: Any) -> list[str]:
+    """Normalize detected_languages to a list of strings."""
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value if item is not None]
+
+
+def _nlp_extract_ref_info(ref: str, ref_type: str) -> dict:
+    """Use an LLM to extract project metadata from a git/URL/path reference.
+
+    Returns:
+        dict with keys project_name, hosting_platform, detected_languages,
+        or {} if disabled, imports are missing, or the LLM call fails.
+    """
+    if not _NLP_REF_ENABLED:
+        return {}
+
+    try:
+        from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
+    except Exception:
+        return {}
+
+    model = _PARADIGM_TO_MODEL.get("nlp_extractor", "claude-haiku-4-5-20251001")
+    router = LLMRouter()
+    prompt = (
+        f"Analyze this input reference: {ref!r} (type: {ref_type})\n"
+        "Return JSON only — no explanation:\n"
+        '{"project_name": "<short name>", "hosting_platform": "<platform>", '
+        '"detected_languages": ["<lang>", ...]}\n'
+        "hosting_platform should be one of: github, gitlab, bitbucket, azure_devops, local, unknown. "
+        "detected_languages must be a list of programming-language strings."
+    )
+    try:
+        req = LLMRequest(
+            function="nlp_extractor",
+            messages=[{"role": "user", "content": prompt}],
+            model=model,
+            max_tokens=256,
+        )
+        resp = router.invoke("nlp_extractor", req)
+        content = _strip_markdown_fences(resp.content)
+        result = json.loads(content)
+    except Exception:
+        return {}
+
+    if not isinstance(result, dict):
+        return {}
+
+    project_name = str(result.get("project_name", "") or "").strip()
+    hosting_platform = str(result.get("hosting_platform", "") or "").strip().lower()
+    detected_languages = _coerce_language_list(result.get("detected_languages", []))
+
+    return {
+        "project_name": project_name,
+        "hosting_platform": hosting_platform,
+        "detected_languages": detected_languages,
+    }
+
+
 def _clone_git_url(url: str) -> str:
     """Shallow-clone a git URL into a temp directory and return the local path.
 
@@ -578,6 +664,10 @@ def run_scan(
                 "icdev_checks": readiness_result["icdev_checks"],
             },
         }
+
+        nlp_ref_info = _nlp_extract_ref_info(input_ref, input_type)
+        if nlp_ref_info:
+            language_profile["nlp_ref_extraction"] = nlp_ref_info
 
         # 1b. Insert scan record
         conn = get_connection()
@@ -666,7 +756,7 @@ def run_scan(
         roadmap = generate_roadmap(scan_id, opp_rows, score_rows)
 
         # 4a. Build and store deterministic project summary
-        project_summary = _build_summary(input_ref, opp_rows)
+        project_summary = _build_summary(input_ref, opp_rows, nlp_ref_info=nlp_ref_info)
         conn = get_connection()
         try:
             _exec(conn, "UPDATE aac_scans SET project_summary = ? WHERE scan_id = ?",

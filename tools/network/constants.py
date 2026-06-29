@@ -3672,3 +3672,131 @@ NETWORK_ONTOLOGY_MAP: dict[str, str] = {
 PARTNER_TYPES = ['isp', 'carrier', 'cloud', 'content', 'enterprise', 'ix']
 PARTNER_STATUSES = ['active', 'suspended', 'terminated']
 
+# ── Configuration Review Assistant ───────────────────────────────────────────
+CONFIG_REVIEW_ROLES = {
+    "network_engineer": {
+        "label": "Network Engineer",
+        "icon": "🔧",
+        "focus": "Implementation correctness, interface hygiene, routing accuracy, and operational readiness.",
+        "prompt_focus": "Practical fixes, CLI-level commands, rollout cautions, and pre-change validation steps.",
+    },
+    "network_architect": {
+        "label": "Network Architect",
+        "icon": "🏗️",
+        "focus": "Standards, scalability, segmentation strategy, and enterprise design patterns.",
+        "prompt_focus": "Standardized templates, design rationale, enterprise-wide consistency, and future growth.",
+    },
+    "network_admin": {
+        "label": "Network Administrator",
+        "icon": "🖥️",
+        "focus": "Day-to-day operations, monitoring, backups, change control, and credential hygiene.",
+        "prompt_focus": "Procedural runbooks, safe change windows, monitoring hooks, and credential lifecycle.",
+    },
+    "security_auditor": {
+        "label": "Security Auditor",
+        "icon": "🛡️",
+        "focus": "STIG compliance, ACL integrity, cryptographic posture, and attack surface reduction.",
+        "prompt_focus": "Compliance mappings, severity ratings, audit evidence, and remediation evidence.",
+    },
+    "technical_writer": {
+        "label": "Technical Writer",
+        "icon": "📝",
+        "focus": "Clear documentation, SOPs, topology descriptions, and as-built artifacts.",
+        "prompt_focus": "Plain-language explanations, tables, exportable documentation, and runnable runbooks.",
+    },
+}
+
+CONFIG_REVIEW_QUESTIONS = {
+    "network_engineer": [
+        {"id": "strict_acls", "question": "Do you enforce strict ingress/egress ACLs on every interface?", "prompt_hook": "Emphasize ACL completeness and explicit deny logging."},
+        {"id": "redundancy", "question": "Is first-hop redundancy (HSRP/VRRP/GLBP) configured where needed?", "prompt_hook": "Check first-hop redundancy and preempt/failover tuning."},
+        {"id": "logging", "question": "Are syslogs, SNMP traps, and AAA accounting centralized?", "prompt_hook": "Verify centralized logging and accounting."},
+        {"id": "discovery", "question": "Is CDP/LLDP disabled or restricted on untrusted ports?", "prompt_hook": "Address neighbor-discovery protocol exposure."},
+        {"id": "ntp", "question": "Is NTP authenticated and pointed to trusted sources?", "prompt_hook": "Validate authenticated NTP configuration."},
+        {"id": "snmpv3", "question": "Do you require SNMPv3 with auth+priv instead of v2c?", "prompt_hook": "Check SNMP version and community-string hygiene."},
+        {"id": "ipv6", "question": "Is IPv6 explicitly enabled or administratively disabled everywhere?", "prompt_hook": "Verify IPv6 posture to prevent tunnel/overlay gaps."},
+    ],
+    "network_architect": [
+        {"id": "naming", "question": "Does every hostname/interface/VLAN follow a published naming standard?", "prompt_hook": "Enforce naming standards and taxonomy consistency."},
+        {"id": "intent", "question": "Is the config expressed as intent (roles/templates) rather than one-off CLI?", "prompt_hook": "Promote intent-based, template-driven design."},
+        {"id": "cloud", "question": "Are on-premise segments consistently extended/connected to cloud networks?", "prompt_hook": "Assess hybrid/cloud integration consistency."},
+        {"id": "segmentation", "question": "Is segmentation based on zero-trust enclaves rather than flat VLANs?", "prompt_hook": "Evaluate micro-segmentation and zero-trust enclaves."},
+        {"id": "automation", "question": "Is the configuration generated from IaC or automation, not hand-typed?", "prompt_hook": "Recommend IaC/automation and source-of-truth workflows."},
+        {"id": "ha", "question": "Is there no single point of failure at every tier?", "prompt_hook": "Assess redundancy and single points of failure."},
+        {"id": "scale", "question": "Will the addressing and routing design support 3× growth without redesign?", "prompt_hook": "Check scalability and capacity planning."},
+    ],
+    "network_admin": [
+        {"id": "backup", "question": "Are configs backed up automatically before and after every change?", "prompt_hook": "Verify configuration backup and rollback procedures."},
+        {"id": "monitoring", "question": "Are all critical interfaces, CPU, memory, and environmental alarms monitored?", "prompt_hook": "Check monitoring coverage and alerting thresholds."},
+        {"id": "change_control", "question": "Is every change tracked through a change advisory board or ticket?", "prompt_hook": "Validate change-control and rollback planning."},
+        {"id": "credentials", "question": "Are local credentials unique, rotated, and stored in a vault?", "prompt_hook": "Assess credential lifecycle and local-account hygiene."},
+        {"id": "vlan_hygiene", "question": "Are unused VLANs pruned and native VLANs changed from default?", "prompt_hook": "Check VLAN hygiene and trunk security."},
+        {"id": "oob", "question": "Is out-of-band management isolated from production traffic?", "prompt_hook": "Verify out-of-band management isolation."},
+        {"id": "drift", "question": "Is configuration drift detected and reconciled at least daily?", "prompt_hook": "Recommend configuration drift detection."},
+    ],
+    "security_auditor": [
+        {"id": "default_creds", "question": "Have all default/local credentials been removed or rotated?", "prompt_hook": "Check default and local credential removal."},
+        {"id": "mgmt_plane", "question": "Is management-plane access limited to dedicated OOB IPs with MFA?", "prompt_hook": "Assess management-plane hardening."},
+        {"id": "crypto", "question": "Are weak protocols (Telnet, SSH v1, SSL, MD5) disabled?", "prompt_hook": "Verify cryptographic hardening and protocol deprecation."},
+        {"id": "stig", "question": "Has the device been assessed against the latest DISA STIG?", "prompt_hook": "Map findings to DISA STIG and NIST controls."},
+        {"id": "logging_audit", "question": "Are administrative actions logged with integrity protection?", "prompt_hook": "Check audit logging and integrity protection."},
+        {"id": "microseg", "question": "Is east-west traffic explicitly permitted with default-deny policies?", "prompt_hook": "Evaluate micro-segmentation and default-deny posture."},
+        {"id": "patching", "question": "Is the OS/firmware version supported and patched per policy?", "prompt_hook": "Assess firmware/OS patch compliance."},
+    ],
+    "technical_writer": [
+        {"id": "sops", "question": "Are SOPs available for provisioning, troubleshooting, and decommissioning?", "prompt_hook": "Check SOP completeness and clarity."},
+        {"id": "diagrams", "question": "Are physical and logical topology diagrams current and version-controlled?", "prompt_hook": "Verify diagram currency and version control."},
+        {"id": "runbooks", "question": "Do runbooks include exact commands, expected output, and escalation steps?", "prompt_hook": "Assess runbook detail and usability."},
+        {"id": "topology_docs", "question": "Is every interface documented with peer, purpose, and circuit ID?", "prompt_hook": "Check interface documentation completeness."},
+        {"id": "change_history", "question": "Is change history linked to tickets and post-change test results?", "prompt_hook": "Verify change history traceability."},
+    ],
+}
+
+# ── Diagram Analysis ──────────────────────────────────────────────────────────
+
+DIAGRAM_ANALYSIS_INDUSTRIES = {
+    "dod_il4": {
+        "label": "DoD/IC — IL4 (CUI / FedRAMP High)",
+        "frameworks": ["nist_800_53", "cmmc_level_2", "fedramp_high", "il4", "cnssi_1253", "csa_ccm", "nist_800_144"],
+    },
+    "dod_il5": {
+        "label": "DoD/IC — IL5 (NIPR Secret-Enclave)",
+        "frameworks": ["nist_800_53", "cmmc_level_3", "fedramp_high", "il5", "cnssi_1253", "csa_ccm"],
+    },
+    "dod_il6": {
+        "label": "DoD/IC — IL6 SECRET",
+        "frameworks": ["nist_800_53", "il6", "cnssi_1253", "nsa_type1"],
+    },
+    "healthcare": {
+        "label": "Healthcare (HIPAA / HITRUST)",
+        "frameworks": ["hipaa", "hitrust", "nist_800_53", "csa_ccm"],
+    },
+    "financial": {
+        "label": "Financial (PCI-DSS / SOC 2)",
+        "frameworks": ["pci_dss", "soc2", "nist_800_53", "csa_ccm"],
+    },
+    "commercial": {
+        "label": "Commercial / Enterprise (ISO 27001)",
+        "frameworks": ["nist_800_53", "iso_27001", "owasp", "csa_ccm", "nist_800_144"],
+    },
+}
+
+# Cloud provider metadata — keyed to match keyword detection in diagram_analysis.py
+DIAGRAM_CLOUD_PROVIDERS = {
+    "aws":     {"label": "Amazon Web Services", "cis_benchmark": "cis_aws_foundations",   "well_arch": "aws_well_architected"},
+    "azure":   {"label": "Microsoft Azure",     "cis_benchmark": "cis_azure_foundations", "well_arch": "azure_well_architected"},
+    "gcp":     {"label": "Google Cloud",        "cis_benchmark": "cis_gcp_foundations",   "well_arch": "gcp_cloud_architecture"},
+    "oci":     {"label": "Oracle Cloud",        "cis_benchmark": "cis_oci_foundations",   "well_arch": None},
+    "ibm":     {"label": "IBM Cloud",           "cis_benchmark": None,                    "well_arch": None},
+    "on_prem": {"label": "On-Premises",         "cis_benchmark": None,                    "well_arch": None},
+}
+
+# Topology deployment modes detected from diagram content
+DIAGRAM_TOPOLOGY_MODES = ["cloud_native", "hybrid", "multi_cloud", "on_prem"]
+
+# Analysis output tab categories (used as 'tab' column in nc_diagram_findings)
+DIAGRAM_ANALYSIS_FINDING_CATEGORIES = ["overview", "inventory", "topology", "security", "compliance", "remediate"]
+
+# Accepted upload formats for diagram analysis
+DIAGRAM_UPLOAD_FORMATS = ["png", "jpg", "pdf", "drawio", "docx"]
+

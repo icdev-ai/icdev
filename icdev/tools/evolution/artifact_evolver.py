@@ -192,7 +192,7 @@ def _create_evolution_suggestion(
             INSERT INTO oracle_predictions
                 (id, prediction_type, target, confidence, rationale,
                  suggested_action, status, created_at, expires_at)
-            VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, 'pending', %s, %s)
             """,
             (
                 pred_id,

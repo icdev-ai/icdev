@@ -98,7 +98,7 @@ def _read_graph_json(canvas_key: str, design_id: str) -> dict:
     conn = get_connection(str(db_path))
     try:
         row = conn.execute(
-            f"SELECT graph_json FROM [{table}] WHERE id = ?",  # noqa: S608  # nosec B608
+            f"SELECT graph_json FROM [{table}] WHERE id = %s",  # noqa: S608  # nosec B608
             (design_id,),
         ).fetchone()
         if row is None:
@@ -163,11 +163,11 @@ def rebuild_canvas_kg(canvas_key: str, design_id: str) -> dict:
 
         # Delete stale KG data for this (canvas, design_id)
         raw_conn.execute(
-            "DELETE FROM canvas_kg_nodes WHERE canvas = ? AND design_id = ?",
+            "DELETE FROM canvas_kg_nodes WHERE canvas = %s AND design_id = %s",
             (canvas_key, design_id),
         )
         raw_conn.execute(
-            "DELETE FROM canvas_kg_edges WHERE canvas = ? AND design_id = ?",
+            "DELETE FROM canvas_kg_edges WHERE canvas = %s AND design_id = %s",
             (canvas_key, design_id),
         )
 
@@ -205,7 +205,7 @@ def rebuild_canvas_kg(canvas_key: str, design_id: str) -> dict:
             raw_conn.execute(
                 "INSERT INTO canvas_kg_nodes "
                 "(id, canvas, design_id, node_id, node_type, label, ontology_id, metadata_json, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     str(uuid.uuid4()),
                     canvas_key,
@@ -233,7 +233,7 @@ def rebuild_canvas_kg(canvas_key: str, design_id: str) -> dict:
             raw_conn.execute(
                 "INSERT INTO canvas_kg_edges "
                 "(id, canvas, design_id, source_id, target_id, edge_type, metadata_json, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     str(uuid.uuid4()),
                     canvas_key,
@@ -252,7 +252,7 @@ def rebuild_canvas_kg(canvas_key: str, design_id: str) -> dict:
         raw_conn.execute(
             "INSERT INTO canvas_kg_build_log "
             "(build_id, canvas, design_id, nodes_upserted, edges_upserted, duration_ms, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (
                 build_id,
                 canvas_key,
@@ -321,11 +321,11 @@ def upsert_from_dic(
         _ensure_kg_tables(raw_conn)
 
         raw_conn.execute(
-            "DELETE FROM canvas_kg_nodes WHERE canvas = ? AND design_id = ?",
+            "DELETE FROM canvas_kg_nodes WHERE canvas = %s AND design_id = %s",
             (canvas, doc_id),
         )
         raw_conn.execute(
-            "DELETE FROM canvas_kg_edges WHERE canvas = ? AND design_id = ?",
+            "DELETE FROM canvas_kg_edges WHERE canvas = %s AND design_id = %s",
             (canvas, doc_id),
         )
 
@@ -337,7 +337,7 @@ def upsert_from_dic(
             raw_conn.execute(
                 "INSERT INTO canvas_kg_nodes "
                 "(id, canvas, design_id, node_id, node_type, label, ontology_id, metadata_json, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     row_id,
                     canvas,
@@ -355,7 +355,7 @@ def upsert_from_dic(
             raw_conn.execute(
                 "INSERT INTO canvas_kg_edges "
                 "(id, canvas, design_id, source_id, target_id, edge_type, confidence, metadata_json, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     str(uuid.uuid4()),
                     canvas,

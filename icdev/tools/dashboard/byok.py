@@ -102,7 +102,7 @@ def store_llm_key(
             """INSERT INTO dashboard_user_llm_keys
                (id, user_id, provider, encrypted_key, key_label,
                 department, is_department_key, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 key_id,
                 user_id,
@@ -136,7 +136,7 @@ def list_llm_keys(user_id: str) -> list:
             """SELECT id, provider, key_label, status, department,
                       is_department_key, created_at, updated_at
                FROM dashboard_user_llm_keys
-               WHERE user_id = ? ORDER BY created_at DESC""",
+               WHERE user_id = %s ORDER BY created_at DESC""",
             (user_id,),
         ).fetchall()
         return [dict(r) for r in rows]
@@ -159,8 +159,8 @@ def revoke_llm_key(key_id: str, user_id: str = None) -> bool:
         if user_id:
             cursor = conn.execute(
                 """UPDATE dashboard_user_llm_keys
-                   SET status = 'revoked', updated_at = ?
-                   WHERE id = ? AND user_id = ?""",
+                   SET status = 'revoked', updated_at = %s
+                   WHERE id = %s AND user_id = %s""",
                 (now, key_id, user_id),
             )
             conn.commit()
@@ -168,8 +168,8 @@ def revoke_llm_key(key_id: str, user_id: str = None) -> bool:
         else:
             conn.execute(
                 """UPDATE dashboard_user_llm_keys
-                   SET status = 'revoked', updated_at = ?
-                   WHERE id = ?""",
+                   SET status = 'revoked', updated_at = %s
+                   WHERE id = %s""",
                 (now, key_id),
             )
             conn.commit()
@@ -185,7 +185,7 @@ def get_llm_key_for_provider(user_id: str, provider: str) -> str:
     try:
         row = conn.execute(
             """SELECT encrypted_key FROM dashboard_user_llm_keys
-               WHERE user_id = ? AND provider = ? AND status = 'active'
+               WHERE user_id = %s AND provider = %s AND status = 'active'
                      AND is_department_key = 0
                ORDER BY created_at DESC LIMIT 1""",
             (user_id, provider),
@@ -237,7 +237,7 @@ def resolve_api_key(user_id: str, provider: str, department: str = "") -> tuple:
         try:
             row = conn.execute(
                 """SELECT encrypted_key FROM dashboard_user_llm_keys
-                   WHERE department = ? AND provider = ? AND status = 'active'
+                   WHERE department = %s AND provider = %s AND status = 'active'
                          AND is_department_key = 1
                    ORDER BY created_at DESC LIMIT 1""",
                 (department, provider),

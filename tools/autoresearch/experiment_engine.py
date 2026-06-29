@@ -86,7 +86,7 @@ def _audit(event_type: str, action: str, details: dict = None, project_id: str =
             conn.execute(
                 "INSERT INTO audit_trail (id, event_type, actor, action, "
                 "details, project_id, session_id, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     f"at-{uuid.uuid4().hex[:12]}",
                     event_type,
@@ -148,7 +148,7 @@ def create_experiment(
                 "INSERT INTO experiment_candidates "
                 "(id, domain, hypothesis, category, modifications, source, "
                 "signal_id, status, content_hash, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     exp_id,
                     domain,
@@ -193,7 +193,7 @@ def get_experiment(experiment_id: str) -> dict:
     try:
         with _get_db() as conn:
             row = conn.execute(
-                "SELECT * FROM experiment_candidates WHERE id = ?",
+                "SELECT * FROM experiment_candidates WHERE id = %s",
                 (experiment_id,),
             ).fetchone()
             if row:
@@ -239,7 +239,7 @@ def run_experiment(
     try:
         with _get_db() as conn:
             conn.execute(
-                "UPDATE experiment_candidates SET status = ?, updated_at = ? WHERE id = ?",
+                "UPDATE experiment_candidates SET status = %s, updated_at = %s WHERE id = %s",
                 ("running", now_iso(), experiment_id),
             )
     except Exception:
@@ -292,7 +292,7 @@ def evaluate_experiment(experiment_id: str) -> dict:
     try:
         with _get_db() as conn:
             row = conn.execute(
-                "SELECT pre_metric FROM experiment_results WHERE experiment_id = ? ORDER BY created_at DESC LIMIT 1",
+                "SELECT pre_metric FROM experiment_results WHERE experiment_id = %s ORDER BY created_at DESC LIMIT 1",
                 (experiment_id,),
             ).fetchone()
             if row:
@@ -392,7 +392,7 @@ def decide(
                 "pre_metric, post_metric, metric_delta, improvement_pct, "
                 "decision, decision_rationale, tests_passed, coherence_passed, "
                 "classification, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     result_id,
                     experiment_id,
@@ -415,7 +415,7 @@ def decide(
             # Update candidate status
             new_status = "completed" if decision == "keep" else "discarded"
             conn.execute(
-                "UPDATE experiment_candidates SET status = ?, updated_at = ? WHERE id = ?",
+                "UPDATE experiment_candidates SET status = %s, updated_at = %s WHERE id = %s",
                 (new_status, now, experiment_id),
             )
 
@@ -467,7 +467,7 @@ def _update_landscape(conn, domain: str, category: str, decision: str, metric_de
     """Update experiment landscape posterior (Thompson Sampling)."""
     try:
         row = conn.execute(
-            "SELECT * FROM experiment_landscapes WHERE domain = ? AND category = ?",
+            "SELECT * FROM experiment_landscapes WHERE domain = %s AND category = %s",
             (domain, category),
         ).fetchone()
 
@@ -490,11 +490,11 @@ def _update_landscape(conn, domain: str, category: str, decision: str, metric_de
                 discarded += 1
 
             conn.execute(
-                "UPDATE experiment_landscapes SET alpha = ?, beta_val = ?, "
-                "total_experiments = ?, total_kept = ?, total_discarded = ?, "
-                "best_improvement = ?, cumulative_improvement = ?, "
-                "last_experiment_at = ?, updated_at = ? "
-                "WHERE domain = ? AND category = ?",
+                "UPDATE experiment_landscapes SET alpha = %s, beta_val = %s, "
+                "total_experiments = %s, total_kept = %s, total_discarded = %s, "
+                "best_improvement = %s, cumulative_improvement = %s, "
+                "last_experiment_at = %s, updated_at = %s "
+                "WHERE domain = %s AND category = %s",
                 (
                     alpha,
                     beta_val,
@@ -518,7 +518,7 @@ def _update_landscape(conn, domain: str, category: str, decision: str, metric_de
                 "(id, domain, category, alpha, beta_val, total_experiments, "
                 "total_kept, total_discarded, best_improvement, "
                 "cumulative_improvement, last_experiment_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     lid,
                     domain,
@@ -590,7 +590,7 @@ def run_loop(
         with _get_db() as conn:
             rows = conn.execute(
                 "SELECT hypothesis, content_hash FROM experiment_candidates "
-                "WHERE domain = ? ORDER BY created_at DESC LIMIT 50",
+                "WHERE domain = %s ORDER BY created_at DESC LIMIT 50",
                 (domain,),
             ).fetchall()
             recent = [dict(r) for r in rows]
@@ -654,7 +654,7 @@ def run_loop(
                     "INSERT INTO bayesian_experiment_scores "
                     "(id, candidate_id, domain, info_gain_score, dimensions, "
                     "threshold_band, thompson_sample, scored_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
                     (
                         _score_uuid(),
                         exp_id,

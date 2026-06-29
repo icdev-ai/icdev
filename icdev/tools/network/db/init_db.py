@@ -23,6 +23,10 @@ DB_PATH = _ICDEV_ROOT / "data" / "network_canvas.db"
 # default). NC_STORAGE_BACKEND overrides for a dedicated network_canvas backend.
 _NC_BACKEND = os.environ.get("NC_STORAGE_BACKEND", os.environ.get("ICDEV_CANVAS_STORAGE_BACKEND", os.environ.get("ICDEV_STORAGE_BACKEND", "postgresql"))).lower()
 
+# Guard against re-entrant init_db calls (e.g. seed_sops.seed() calls init_db()
+# and init_db() auto-seeds via seed_sops).
+_INIT_DB_IN_PROGRESS = False
+
 
 def get_connection():
     """Get a database connection — SQLite or PostgreSQL.
@@ -267,6 +271,33 @@ CREATE TABLE IF NOT EXISTS nc_compliance_findings (
     fix_action  TEXT,                          -- JSON: {action, params} for one-click fix
     remediated_at TEXT,
     created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Configuration Review Assistant: persisted reviews and findings
+CREATE TABLE IF NOT EXISTS nc_config_reviews (
+    id              TEXT PRIMARY KEY,
+    title           TEXT,
+    vendor          TEXT NOT NULL,             -- cisco_ios, cisco_nxos, juniper, generic
+    role_key        TEXT NOT NULL,             -- network_engineer, network_architect, ...
+    answers_json    TEXT DEFAULT '{}',
+    config_text_hash TEXT NOT NULL,
+    status          TEXT DEFAULT 'draft',      -- draft, analyzing, complete, error
+    result_json     TEXT,                      -- full parsed review result
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS nc_config_review_findings (
+    id              TEXT PRIMARY KEY,
+    review_id       TEXT NOT NULL REFERENCES nc_config_reviews(id),
+    category        TEXT NOT NULL,             -- security_compliance, optimization, remediation
+    severity        TEXT DEFAULT 'info',       -- CAT1, CAT2, CAT3, info, high, medium, low
+    title           TEXT NOT NULL,
+    detail          TEXT,
+    remediation     TEXT,
+    sample_config_snippet TEXT,
+    references_json TEXT DEFAULT '[]',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Projects: group multiple topologies, circuits, IPAM under one engagement
@@ -1410,7 +1441,7 @@ CREATE INDEX IF NOT EXISTS idx_query_log_ts   ON nc_query_log(ts);
 
 -- ── Enclave-in-a-Box Snippets ─────────────────────────────────────────────
 -- Pre-built compliance-validated sub-topologies (SIPR, IL5 DMZ, Tactical Edge)
--- Drag onto canvas; all STIG properties pre-populated.
+-- Drag onto canvas. all STIG properties pre-populated.
 
 CREATE TABLE IF NOT EXISTS nc_collab_sessions (
     id          TEXT PRIMARY KEY,
@@ -1893,6 +1924,51 @@ CREATE TABLE IF NOT EXISTS nc_phase_documents (
 );
 CREATE INDEX IF NOT EXISTS idx_nc_phase_docs_phase ON nc_phase_documents(phase_id);
 CREATE INDEX IF NOT EXISTS idx_nc_phase_docs_project ON nc_phase_documents(project_id);
+
+-- Diagram Analysis: uploaded diagrams and AI analysis results
+CREATE TABLE IF NOT EXISTS nc_diagram_uploads (
+    id              TEXT PRIMARY KEY,
+    filename        TEXT NOT NULL,
+    format          TEXT NOT NULL,
+    file_path       TEXT NOT NULL,
+    file_hash       TEXT NOT NULL,
+    page_count      INTEGER DEFAULT 1,
+    topology_id     TEXT,
+    uploaded_at     TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS nc_diagram_analyses (
+    id                   TEXT PRIMARY KEY,
+    upload_id            TEXT NOT NULL REFERENCES nc_diagram_uploads(id),
+    industry             TEXT NOT NULL,
+    frameworks_json      TEXT DEFAULT '[]',
+    cloud_providers_json TEXT DEFAULT '[]',
+    topology_mode        TEXT DEFAULT 'unknown',
+    status               TEXT NOT NULL DEFAULT 'pending',
+    result_json          TEXT DEFAULT '{}',
+    created_at           TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at           TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS nc_diagram_findings (
+    id              TEXT PRIMARY KEY,
+    analysis_id     TEXT NOT NULL REFERENCES nc_diagram_analyses(id),
+    tab             TEXT NOT NULL,
+    severity        TEXT NOT NULL DEFAULT 'info',
+    title           TEXT NOT NULL,
+    detail          TEXT,
+    remediation     TEXT,
+    references_json TEXT DEFAULT '[]',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS nc_diagram_exports (
+    id              TEXT PRIMARY KEY,
+    analysis_id     TEXT NOT NULL REFERENCES nc_diagram_analyses(id),
+    export_type     TEXT NOT NULL DEFAULT 'drawio',
+    file_path       TEXT NOT NULL,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 # ── Template seeds ────────────────────────────────────────────────────────────
@@ -13913,6 +13989,10 @@ ENCLAVE_SNIPPETS = [
 
 
 def init_db():
+    global _INIT_DB_IN_PROGRESS
+    if _INIT_DB_IN_PROGRESS:
+        return
+    _INIT_DB_IN_PROGRESS = True
     conn = get_connection()
     try:
         if _NC_BACKEND == "postgresql":
@@ -13923,8 +14003,13 @@ def init_db():
                 if stmt and not stmt.startswith("--"):
                     try:
                         conn.execute(stmt)
+                        conn.commit()  # per-statement commit so a failure does not abort the whole schema
                     except Exception:
-                        pass  # table/index already exists
+                        try:
+                            conn.rollback()
+                        except Exception:
+                            pass
+                        # table/index already exists or malformed fragment; ignore and continue
             conn.commit()
             # PG audit immutability triggers (PL/pgSQL syntax)
             try:
@@ -14011,6 +14096,8 @@ def init_db():
             ("nc_migration_phases", "properties_json", "TEXT DEFAULT '{}'"),
             # NDC↔Migration integration: traffic flow ↔ phase link
             ("nc_traffic_flows", "phase_id", "TEXT"),
+            # Config review: store raw config text in DB (was Flask session — cookie 4KB limit broke large configs)
+            ("nc_config_reviews", "config_text", "TEXT DEFAULT ''"),
             # Partner registry: add partner_id + approval columns to nc_peering_agreements
             ("nc_peering_agreements", "partner_id", "TEXT"),
             ("nc_peering_agreements", "approver_name", "TEXT DEFAULT ''"),
@@ -14026,11 +14113,16 @@ def init_db():
                 conn.execute(f"SELECT {col} FROM {table} LIMIT 1")  # nosec B608 -- table/column names are internal constants, not user input
             except Exception:
                 try:
+                    conn.rollback()
                     conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {coltype}")
                     conn.commit()
                     print(f"[init_db] Migrated: added {col} to {table}")
                 except Exception:
-                    pass  # Column might already exist with different syntax
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
+                    # Column might already exist with different syntax; ignore
 
         # Seed templates (upsert — inserts new templates even if some already exist)
         cur = conn.cursor()
@@ -15052,6 +15144,7 @@ def init_db():
         conn.commit()
         print("[init_db] Done.")
     finally:
+        _INIT_DB_IN_PROGRESS = False
         conn.close()
 
 

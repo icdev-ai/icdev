@@ -76,7 +76,7 @@ def _get_win_themes(opp_id: str) -> List[Dict]:
     try:
         rows = conn.execute(
             "SELECT theme_name, theme_description, discriminator "
-            "FROM pg_win_themes WHERE opportunity_id = ? "
+            "FROM pg_win_themes WHERE opportunity_id = %s "
             "ORDER BY created_at ASC",
             (opp_id,),
         ).fetchall()
@@ -93,7 +93,7 @@ def _get_teaming_partners(opp_id: str) -> List[Dict]:
     try:
         rows = conn.execute(
             "SELECT partner_name, role, workshare_pct, cmmc_level "
-            "FROM pg_teaming_workshare WHERE opportunity_id = ? "
+            "FROM pg_teaming_workshare WHERE opportunity_id = %s "
             "ORDER BY workshare_pct DESC",
             (opp_id,),
         ).fetchall()
@@ -110,7 +110,7 @@ def _get_cost_summary(opp_id: str) -> Optional[Dict]:
     try:
         row = conn.execute(
             "SELECT total_price, period_of_performance, pricing_type "
-            "FROM pg_cost_volumes WHERE opportunity_id = ? "
+            "FROM pg_cost_volumes WHERE opportunity_id = %s "
             "ORDER BY updated_at DESC LIMIT 1",
             (opp_id,),
         ).fetchone()
@@ -127,7 +127,7 @@ def _get_compliance_summary(opp_id: str) -> Dict[str, int]:
     try:
         rows = conn.execute(
             "SELECT compliance_status, COUNT(*) as cnt "
-            "FROM pg_compliance_matrix WHERE opportunity_id = ? "
+            "FROM pg_compliance_matrix WHERE opportunity_id = %s "
             "GROUP BY compliance_status",
             (opp_id,),
         ).fetchall()
@@ -234,7 +234,7 @@ def _store_bridge(opp_id: str, doc_md: str) -> str:
         conn.execute(
             "INSERT INTO pg_proposal_genesis_audit "
             "(id, event_type, reflex_name, risk_tier, opportunity_id, "
-            "details, success, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "details, success, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 _generate_id("pgaudit"),
                 "bridge_generated",

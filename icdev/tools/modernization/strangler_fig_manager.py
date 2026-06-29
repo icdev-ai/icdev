@@ -108,7 +108,7 @@ def _log_audit(conn, project_id, event_type, actor, action, details=None, classi
     conn.execute(
         """INSERT INTO audit_trail
            (project_id, event_type, actor, action, details, classification)
-           VALUES (?, ?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s, %s)""",
         (
             project_id,
             event_type,
@@ -131,7 +131,7 @@ def _get_plan_project_id(conn, plan_id):
         """SELECT la.project_id
            FROM migration_plans mp
            JOIN legacy_applications la ON mp.legacy_app_id = la.id
-           WHERE mp.id = ?""",
+           WHERE mp.id = %s""",
         (plan_id,),
     ).fetchone()
     return row["project_id"] if row else None
@@ -157,7 +157,7 @@ def create_strangler_plan(plan_id):
     """
     conn = _get_db()
     try:
-        plan = conn.execute("SELECT * FROM migration_plans WHERE id = ?", (plan_id,)).fetchone()
+        plan = conn.execute("SELECT * FROM migration_plans WHERE id = %s", (plan_id,)).fetchone()
 
         if not plan:
             raise ValueError(f"Migration plan '{plan_id}' not found.")
@@ -172,13 +172,13 @@ def create_strangler_plan(plan_id):
 
         # Fetch all legacy components for this application
         components = conn.execute(
-            "SELECT * FROM legacy_components WHERE legacy_app_id = ?",
+            "SELECT * FROM legacy_components WHERE legacy_app_id = %s",
             (legacy_app_id,),
         ).fetchall()
 
         # Fetch all legacy APIs for this application
         apis = conn.execute(
-            "SELECT * FROM legacy_apis WHERE legacy_app_id = ?",
+            "SELECT * FROM legacy_apis WHERE legacy_app_id = %s",
             (legacy_app_id,),
         ).fetchall()
 
@@ -199,7 +199,7 @@ def create_strangler_plan(plan_id):
                     """INSERT INTO migration_tasks
                        (id, plan_id, legacy_component_id, task_type, title,
                         description, status, created_at)
-                       VALUES (?, ?, ?, 'cutover', ?, ?, 'pending', ?)""",
+                       VALUES (%s, %s, %s, 'cutover', %s, %s, 'pending', %s)""",
                     (
                         task_id,
                         plan_id,
@@ -216,9 +216,9 @@ def create_strangler_plan(plan_id):
         # Update total_tasks on the plan
         conn.execute(
             """UPDATE migration_plans
-               SET total_tasks = total_tasks + ?, status = 'in_progress',
-                   updated_at = ?
-               WHERE id = ?""",
+               SET total_tasks = total_tasks + %s, status = 'in_progress',
+                   updated_at = %s
+               WHERE id = %s""",
             (tasks_created, now, plan_id),
         )
 
@@ -283,7 +283,7 @@ def register_facade(plan_id, legacy_endpoint, modern_endpoint, component_id=None
     """
     conn = _get_db()
     try:
-        plan = conn.execute("SELECT * FROM migration_plans WHERE id = ?", (plan_id,)).fetchone()
+        plan = conn.execute("SELECT * FROM migration_plans WHERE id = %s", (plan_id,)).fetchone()
         if not plan:
             raise ValueError(f"Migration plan '{plan_id}' not found.")
 
@@ -301,7 +301,7 @@ def register_facade(plan_id, legacy_endpoint, modern_endpoint, component_id=None
             """INSERT INTO migration_tasks
                (id, plan_id, legacy_component_id, task_type, title,
                 description, status, created_at)
-               VALUES (?, ?, ?, 'generate_facade', ?, ?, 'in_progress', ?)""",
+               VALUES (%s, %s, %s, 'generate_facade', %s, %s, 'in_progress', %s)""",
             (
                 task_id,
                 plan_id,
@@ -358,7 +358,7 @@ def track_cutover(plan_id, component_id, status):
         # Find the cutover task for this component
         task = conn.execute(
             """SELECT * FROM migration_tasks
-               WHERE plan_id = ? AND legacy_component_id = ?
+               WHERE plan_id = %s AND legacy_component_id = %s
                  AND task_type = 'cutover'""",
             (plan_id, component_id),
         ).fetchone()
@@ -382,8 +382,8 @@ def track_cutover(plan_id, component_id, status):
 
         conn.execute(
             """UPDATE migration_tasks
-               SET status = ?, description = ?, completed_at = ?
-               WHERE id = ?""",
+               SET status = %s, description = %s, completed_at = %s
+               WHERE id = %s""",
             (task_status, json.dumps(desc), completed_at, task["id"]),
         )
 
@@ -396,9 +396,9 @@ def track_cutover(plan_id, component_id, status):
                     """INSERT INTO digital_thread_links
                        (project_id, source_type, source_id, target_type,
                         target_id, link_type, confidence, evidence, created_by)
-                       VALUES (?, 'legacy_component', ?, 'code_module', ?,
+                       VALUES (%s, 'legacy_component', %s, 'code_module', %s,
                                'replaces', 0.95,
-                               ?, 'strangler-fig-manager')""",
+                               %s, 'strangler-fig-manager')""",
                     (
                         project_id,
                         component_id,
@@ -413,7 +413,7 @@ def track_cutover(plan_id, component_id, status):
         if status == "decommissioned":
             # Fetch component name for audit message
             comp = conn.execute(
-                "SELECT name, qualified_name FROM legacy_components WHERE id = ?",
+                "SELECT name, qualified_name FROM legacy_components WHERE id = %s",
                 (component_id,),
             ).fetchone()
             comp_name = comp["name"] if comp else component_id
@@ -470,7 +470,7 @@ def get_cutover_status(plan_id):
     """
     conn = _get_db()
     try:
-        plan = conn.execute("SELECT * FROM migration_plans WHERE id = ?", (plan_id,)).fetchone()
+        plan = conn.execute("SELECT * FROM migration_plans WHERE id = %s", (plan_id,)).fetchone()
         if not plan:
             raise ValueError(f"Migration plan '{plan_id}' not found.")
 
@@ -479,7 +479,7 @@ def get_cutover_status(plan_id):
                       lc.qualified_name
                FROM migration_tasks mt
                LEFT JOIN legacy_components lc ON mt.legacy_component_id = lc.id
-               WHERE mt.plan_id = ? AND mt.task_type = 'cutover'""",
+               WHERE mt.plan_id = %s AND mt.task_type = 'cutover'""",
             (plan_id,),
         ).fetchall()
 
@@ -567,7 +567,7 @@ def generate_routing_config(plan_id):
             """SELECT mt.*, lc.name as comp_name
                FROM migration_tasks mt
                LEFT JOIN legacy_components lc ON mt.legacy_component_id = lc.id
-               WHERE mt.plan_id = ? AND mt.task_type = 'generate_facade'""",
+               WHERE mt.plan_id = %s AND mt.task_type = 'generate_facade'""",
             (plan_id,),
         ).fetchall()
 
@@ -575,7 +575,7 @@ def generate_routing_config(plan_id):
         cutover_tasks = conn.execute(
             """SELECT legacy_component_id, description
                FROM migration_tasks
-               WHERE plan_id = ? AND task_type = 'cutover'""",
+               WHERE plan_id = %s AND task_type = 'cutover'""",
             (plan_id,),
         ).fetchall()
 
@@ -719,7 +719,7 @@ def generate_acl_code(plan_id, boundary_name, language="python"):
     """
     conn = _get_db()
     try:
-        plan = conn.execute("SELECT * FROM migration_plans WHERE id = ?", (plan_id,)).fetchone()
+        plan = conn.execute("SELECT * FROM migration_plans WHERE id = %s", (plan_id,)).fetchone()
         if not plan:
             raise ValueError(f"Migration plan '{plan_id}' not found.")
 
@@ -729,14 +729,14 @@ def generate_acl_code(plan_id, boundary_name, language="python"):
         components = conn.execute(
             """SELECT lc.* FROM legacy_components lc
                JOIN migration_tasks mt ON mt.legacy_component_id = lc.id
-               WHERE mt.plan_id = ? AND mt.task_type = 'cutover'
+               WHERE mt.plan_id = %s AND mt.task_type = 'cutover'
                ORDER BY lc.name""",
             (plan_id,),
         ).fetchall()
 
         # Fetch APIs for method signatures
         apis = conn.execute(
-            "SELECT * FROM legacy_apis WHERE legacy_app_id = ?",
+            "SELECT * FROM legacy_apis WHERE legacy_app_id = %s",
             (legacy_app_id,),
         ).fetchall()
 
@@ -1000,7 +1000,7 @@ def check_coexistence_health(plan_id):
     """
     conn = _get_db()
     try:
-        plan = conn.execute("SELECT * FROM migration_plans WHERE id = ?", (plan_id,)).fetchone()
+        plan = conn.execute("SELECT * FROM migration_plans WHERE id = %s", (plan_id,)).fetchone()
         if not plan:
             raise ValueError(f"Migration plan '{plan_id}' not found.")
 
@@ -1014,14 +1014,14 @@ def check_coexistence_health(plan_id):
             """SELECT mt.*, lc.name as comp_name, lc.qualified_name
                FROM migration_tasks mt
                LEFT JOIN legacy_components lc ON mt.legacy_component_id = lc.id
-               WHERE mt.plan_id = ? AND mt.task_type = 'cutover'""",
+               WHERE mt.plan_id = %s AND mt.task_type = 'cutover'""",
             (plan_id,),
         ).fetchall()
 
         # Fetch all facade registrations
         facades = conn.execute(
             """SELECT * FROM migration_tasks
-               WHERE plan_id = ? AND task_type = 'generate_facade'""",
+               WHERE plan_id = %s AND task_type = 'generate_facade'""",
             (plan_id,),
         ).fetchall()
 
@@ -1084,7 +1084,7 @@ def check_coexistence_health(plan_id):
         deps = conn.execute(
             """SELECT source_component_id, target_component_id
                FROM legacy_dependencies
-               WHERE legacy_app_id = ?
+               WHERE legacy_app_id = %s
                  AND source_component_id IS NOT NULL
                  AND target_component_id IS NOT NULL""",
             (legacy_app_id,),
@@ -1130,7 +1130,7 @@ def check_coexistence_health(plan_id):
 
         # Check 3: All APIs for parallel/modern components should have facades
         apis = conn.execute(
-            "SELECT * FROM legacy_apis WHERE legacy_app_id = ?",
+            "SELECT * FROM legacy_apis WHERE legacy_app_id = %s",
             (legacy_app_id,),
         ).fetchall()
 
@@ -1200,11 +1200,11 @@ def generate_cutover_checklist(plan_id, component_id):
     conn = _get_db()
     try:
         # Verify plan and component exist
-        plan = conn.execute("SELECT * FROM migration_plans WHERE id = ?", (plan_id,)).fetchone()
+        plan = conn.execute("SELECT * FROM migration_plans WHERE id = %s", (plan_id,)).fetchone()
         if not plan:
             raise ValueError(f"Migration plan '{plan_id}' not found.")
 
-        comp = conn.execute("SELECT * FROM legacy_components WHERE id = ?", (component_id,)).fetchone()
+        comp = conn.execute("SELECT * FROM legacy_components WHERE id = %s", (component_id,)).fetchone()
         if not comp:
             raise ValueError(f"Component '{component_id}' not found.")
 
@@ -1213,15 +1213,15 @@ def generate_cutover_checklist(plan_id, component_id):
         # Check for existing modern implementation (digital thread link)
         modern_link = conn.execute(
             """SELECT * FROM digital_thread_links
-               WHERE project_id = ? AND source_type = 'legacy_component'
-                 AND source_id = ? AND link_type = 'replaces'""",
+               WHERE project_id = %s AND source_type = 'legacy_component'
+                 AND source_id = %s AND link_type = 'replaces'""",
             (project_id, component_id),
         ).fetchone()
 
         # Check for test coverage tasks
         test_tasks = conn.execute(
             """SELECT * FROM migration_tasks
-               WHERE plan_id = ? AND legacy_component_id = ?
+               WHERE plan_id = %s AND legacy_component_id = %s
                  AND task_type = 'generate_test'""",
             (plan_id, component_id),
         ).fetchall()
@@ -1231,7 +1231,7 @@ def generate_cutover_checklist(plan_id, component_id):
         # Check for facade registration
         facade = conn.execute(
             """SELECT * FROM migration_tasks
-               WHERE plan_id = ? AND legacy_component_id = ?
+               WHERE plan_id = %s AND legacy_component_id = %s
                  AND task_type = 'generate_facade'""",
             (plan_id, component_id),
         ).fetchone()
@@ -1239,7 +1239,7 @@ def generate_cutover_checklist(plan_id, component_id):
         # Check for schema migration tasks
         schema_task = conn.execute(
             """SELECT * FROM migration_tasks
-               WHERE plan_id = ? AND legacy_component_id = ?
+               WHERE plan_id = %s AND legacy_component_id = %s
                  AND task_type IN ('migrate_schema', 'migrate_data')""",
             (plan_id, component_id),
         ).fetchall()
@@ -1248,8 +1248,8 @@ def generate_cutover_checklist(plan_id, component_id):
         # Check compliance controls mapped
         compliance_links = conn.execute(
             """SELECT * FROM digital_thread_links
-               WHERE project_id = ? AND source_type = 'legacy_component'
-                 AND source_id = ?
+               WHERE project_id = %s AND source_type = 'legacy_component'
+                 AND source_id = %s
                  AND target_type IN ('nist_control', 'stig_rule')""",
             (project_id, component_id),
         ).fetchall()
@@ -1368,19 +1368,19 @@ def execute_cutover(plan_id, component_id):
     conn = _get_db()
     try:
         # Verify plan exists
-        plan = conn.execute("SELECT * FROM migration_plans WHERE id = ?", (plan_id,)).fetchone()
+        plan = conn.execute("SELECT * FROM migration_plans WHERE id = %s", (plan_id,)).fetchone()
         if not plan:
             raise ValueError(f"Migration plan '{plan_id}' not found.")
 
         # Verify component exists
-        comp = conn.execute("SELECT * FROM legacy_components WHERE id = ?", (component_id,)).fetchone()
+        comp = conn.execute("SELECT * FROM legacy_components WHERE id = %s", (component_id,)).fetchone()
         if not comp:
             raise ValueError(f"Component '{component_id}' not found.")
 
         # Find the cutover task
         task = conn.execute(
             """SELECT * FROM migration_tasks
-               WHERE plan_id = ? AND legacy_component_id = ?
+               WHERE plan_id = %s AND legacy_component_id = %s
                  AND task_type = 'cutover'""",
             (plan_id, component_id),
         ).fetchone()
@@ -1402,8 +1402,8 @@ def execute_cutover(plan_id, component_id):
 
         conn.execute(
             """UPDATE migration_tasks
-               SET status = 'completed', description = ?, completed_at = ?
-               WHERE id = ?""",
+               SET status = 'completed', description = %s, completed_at = %s
+               WHERE id = %s""",
             (json.dumps(desc), now, task["id"]),
         )
 
@@ -1414,8 +1414,8 @@ def execute_cutover(plan_id, component_id):
                 """INSERT INTO digital_thread_links
                    (project_id, source_type, source_id, target_type,
                     target_id, link_type, confidence, evidence, created_by)
-                   VALUES (?, 'legacy_component', ?, 'code_module', ?,
-                           'replaces', 0.95, ?, 'strangler-fig-manager')""",
+                   VALUES (%s, 'legacy_component', %s, 'code_module', %s,
+                           'replaces', 0.95, %s, 'strangler-fig-manager')""",
                 (
                     project_id,
                     component_id,
@@ -1429,7 +1429,7 @@ def execute_cutover(plan_id, component_id):
         # 3. Update facade routing for this component
         facade_tasks = conn.execute(
             """SELECT * FROM migration_tasks
-               WHERE plan_id = ? AND legacy_component_id = ?
+               WHERE plan_id = %s AND legacy_component_id = %s
                  AND task_type = 'generate_facade'""",
             (plan_id, component_id),
         ).fetchall()
@@ -1445,8 +1445,8 @@ def execute_cutover(plan_id, component_id):
             f_desc["routing_updated_at"] = now
             conn.execute(
                 """UPDATE migration_tasks
-                   SET description = ?, status = 'completed'
-                   WHERE id = ?""",
+                   SET description = %s, status = 'completed'
+                   WHERE id = %s""",
                 (json.dumps(f_desc), ft["id"]),
             )
 
@@ -1470,7 +1470,7 @@ def execute_cutover(plan_id, component_id):
         # 5. Update migration plan completed_tasks count
         completed = conn.execute(
             """SELECT COUNT(*) as cnt FROM migration_tasks
-               WHERE plan_id = ? AND status = 'completed'""",
+               WHERE plan_id = %s AND status = 'completed'""",
             (plan_id,),
         ).fetchone()
 
@@ -1485,9 +1485,9 @@ def execute_cutover(plan_id, component_id):
 
         conn.execute(
             """UPDATE migration_plans
-               SET completed_tasks = ?, status = ?, completion_date = ?,
-                   updated_at = ?
-               WHERE id = ?""",
+               SET completed_tasks = %s, status = %s, completion_date = %s,
+                   updated_at = %s
+               WHERE id = %s""",
             (completed_count, new_plan_status, completion_date, now, plan_id),
         )
 

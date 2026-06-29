@@ -169,7 +169,7 @@ def run(ctx: Dict[str, Any], conn=None) -> Dict[str, Any]:
                         # Dedup: skip if identical alarm already open
                         try:
                             r = nocc.execute(
-                                "SELECT id FROM noc_alarms WHERE alarm_source='peering_renewal' AND device_name=? AND cleared=0 LIMIT 1",
+                                "SELECT id FROM noc_alarms WHERE alarm_source='peering_renewal' AND device_name=%s AND cleared=0 LIMIT 1",
                                 (str(item.get("id", "")),),
                             ).fetchone()
                         except Exception:
@@ -178,7 +178,7 @@ def run(ctx: Dict[str, Any], conn=None) -> Dict[str, Any]:
                             continue
                         try:
                             nocc.execute(
-                                "INSERT INTO noc_alarms (alarm_source, severity, alarm_type, device_name, description, cleared, acknowledged, suppressed, first_seen, last_seen, classification) VALUES (?,?,?,?,?,0,0,0,?,?,'CUI')",
+                                "INSERT INTO noc_alarms (alarm_source, severity, alarm_type, device_name, description, cleared, acknowledged, suppressed, first_seen, last_seen, classification) VALUES (%s,%s,%s,%s,%s,0,0,0,%s,%s,'CUI')",
                                 ("peering_renewal", severity, "bgp",
                                  str(item.get("id", "")), desc, now, now),
                             )

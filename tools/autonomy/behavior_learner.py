@@ -76,7 +76,7 @@ def scan_user_behavior() -> Dict[str, Any]:
             acted_on = conn.execute(
                 "SELECT id, reflex_name, category FROM review_board_findings "
                 "WHERE fix_applied = 1 "
-                "AND created_at > datetime('now', ? || ' days') "
+                "AND created_at > datetime('now', %s || ' days') "
                 "AND id NOT IN (SELECT finding_id FROM autonomy_behavior_log WHERE finding_id IS NOT NULL)",
                 (f"-{window_days}",),
             ).fetchall()
@@ -97,7 +97,7 @@ def scan_user_behavior() -> Dict[str, Any]:
             successful_fixes = conn.execute(
                 "SELECT id, category FROM review_board_remediation_log "
                 "WHERE status IN ('fixed', 'verified') AND tier = 'auto_fix' "
-                "AND created_at > datetime('now', ? || ' days') "
+                "AND created_at > datetime('now', %s || ' days') "
                 "AND id NOT IN (SELECT COALESCE(finding_id, '') FROM autonomy_behavior_log)",
                 (f"-{window_days}",),
             ).fetchall()
@@ -118,7 +118,7 @@ def scan_user_behavior() -> Dict[str, Any]:
             failed_fixes = conn.execute(
                 "SELECT id, category FROM review_board_remediation_log "
                 "WHERE status = 'failed' "
-                "AND created_at > datetime('now', ? || ' days') "
+                "AND created_at > datetime('now', %s || ' days') "
                 "AND id NOT IN (SELECT COALESCE(finding_id, '') FROM autonomy_behavior_log)",
                 (f"-{window_days}",),
             ).fetchall()
@@ -168,12 +168,12 @@ def _apply_signal(conn, signal: Dict) -> None:
     # Update trust state
     if alpha_delta > 0:
         conn.execute(
-            "UPDATE autonomy_trust_state SET alpha = alpha + ?, last_updated = ? WHERE category = ?",
+            "UPDATE autonomy_trust_state SET alpha = alpha + %s, last_updated = %s WHERE category = %s",
             (alpha_delta, now_iso(), category),
         )
     if beta_delta > 0:
         conn.execute(
-            "UPDATE autonomy_trust_state SET beta = beta + ?, last_updated = ? WHERE category = ?",
+            "UPDATE autonomy_trust_state SET beta = beta + %s, last_updated = %s WHERE category = %s",
             (beta_delta, now_iso(), category),
         )
 
@@ -181,7 +181,7 @@ def _apply_signal(conn, signal: Dict) -> None:
     conn.execute(
         "INSERT INTO autonomy_behavior_log "
         "(id, signal_type, finding_id, alpha_delta, beta_delta, category, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s, %s)",
         (
             f"abl-{uuid.uuid4().hex[:10]}",
             signal.get("signal_type", "unknown"),
@@ -199,7 +199,7 @@ def get_history(limit: int = 50) -> List[Dict]:
     conn = _get_connection()
     try:
         rows = conn.execute(
-            "SELECT * FROM autonomy_behavior_log ORDER BY created_at DESC LIMIT ?",
+            "SELECT * FROM autonomy_behavior_log ORDER BY created_at DESC LIMIT %s",
             (limit,),
         ).fetchall()
         return [dict(r) for r in rows]

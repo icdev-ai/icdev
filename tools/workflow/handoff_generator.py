@@ -99,7 +99,7 @@ def generate_handoff(
         # 1. Open loops
         loops = conn.execute(
             """SELECT * FROM workflow_loops
-               WHERE project_id = ? AND status NOT IN ('closed', 'abandoned')
+               WHERE project_id = %s AND status NOT IN ('closed', 'abandoned')
                ORDER BY created_at DESC""",
             (project_id,),
         ).fetchall()
@@ -125,8 +125,8 @@ def generate_handoff(
         try:
             rows = conn.execute(
                 """SELECT action, details, created_at FROM audit_trail
-                   WHERE project_id = ?
-                   ORDER BY created_at DESC LIMIT ?""",
+                   WHERE project_id = %s
+                   ORDER BY created_at DESC LIMIT %s""",
                 (project_id, max_decisions),
             ).fetchall()
             for r in rows:
@@ -139,7 +139,7 @@ def generate_handoff(
         for lp in loops:
             failed = conn.execute(
                 """SELECT * FROM workflow_acceptance_criteria
-                   WHERE loop_id = ? AND status = 'fail'""",
+                   WHERE loop_id = %s AND status = 'fail'""",
                 (lp["id"],),
             ).fetchall()
             for f in failed:
@@ -150,7 +150,7 @@ def generate_handoff(
 
             recon = conn.execute(
                 """SELECT deviations FROM workflow_reconciliations
-                   WHERE loop_id = ? ORDER BY reconciled_at DESC LIMIT 1""",
+                   WHERE loop_id = %s ORDER BY reconciled_at DESC LIMIT 1""",
                 (lp["id"],),
             ).fetchone()
             if recon and recon["deviations"]:
@@ -224,7 +224,7 @@ def generate_handoff(
                (id, project_id, loop_id, loop_status, chat_context_id,
                 decisions_made, blockers, next_actions, context_summary,
                 handoff_to, created_by, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 handoff_id,
                 project_id,
@@ -273,7 +273,7 @@ def list_handoffs(project_id: str, db_path: Optional[Path] = None) -> Dict[str, 
     conn = _get_db(db_path)
     try:
         rows = conn.execute(
-            "SELECT * FROM workflow_handoffs WHERE project_id = ? ORDER BY created_at DESC",
+            "SELECT * FROM workflow_handoffs WHERE project_id = %s ORDER BY created_at DESC",
             (project_id,),
         ).fetchall()
         return {
@@ -300,7 +300,7 @@ def get_handoff(handoff_id: str, db_path: Optional[Path] = None) -> Dict[str, An
     conn = _get_db(db_path)
     try:
         row = conn.execute(
-            "SELECT * FROM workflow_handoffs WHERE id = ?",
+            "SELECT * FROM workflow_handoffs WHERE id = %s",
             (handoff_id,),
         ).fetchone()
         if not row:

@@ -33,6 +33,28 @@ per-stage document conformance, AI citation/sourcing, and external step integrat
 | `tools/workflow_hitl/section_router.py` | `SectionRouter.route()` — per-section RAG/text-search; greedy cross-section deduplication; `RoutedChunk`, `SectionRouteResult` |
 | `tools/workflow_hitl/report_generator.py` | `generate_report()` — LLM synthesis + no-LLM fallback; Jinja2 HTML render; citation auto-population; `get_report()`, `list_reports()` |
 
+---
+
+## Module: `tools/idr/` — IDR Conflict Gate (HITL)
+
+Intelligent Dispatch Retry: blocks `MERGE_CONFLICT → IN_PROGRESS` state-machine
+transitions until a human explicitly resolves all registered conflicts.
+
+| File | Purpose |
+|------|---------|
+| `tools/idr/__init__.py` | Package marker; re-exports `IDRConflictGate` |
+| `tools/idr/conflict_gate.py` | `IDRConflictGate`: `record_conflict()`, `resolve_conflict()`, `resolve_all()`, `has_unresolved_conflicts()`, `can_resume()`, `assert_can_resume()`, `clear_conflicts()`; `get_gate()` singleton; `ConflictNotResolved` exception |
+
+**Storage:** conflicts serialised into `kanban_tasks.hitl_stage` JSON envelope under key `idr_conflicts`.
+No schema migration required.
+
+**Integration:** call `IDRConflictGate().assert_can_resume(task_id)` before emitting the
+`resume_from_conflict` transition in the kanban auto-remediator / pr_watcher.
+
+**Tests:** `tests/test_idr_conflict_gate.py` — 18 tests, all in-memory SQLite.
+
+---
+
 ### External Step Adapters
 
 | File | Purpose |

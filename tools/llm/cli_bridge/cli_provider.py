@@ -27,9 +27,11 @@ while every other caller transparently hits its existing rule-based fallback —
 and the job keeps running, caching its result in ``cli_llm_jobs`` for reuse.
 """
 
+import base64
 import os
 import shutil
 import time
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from tools.llm.provider import LLMProvider, LLMRequest, LLMResponse
@@ -115,17 +117,41 @@ class CLIJobDeferred(LLMUnavailableError):
         self.job_id = job_id
 
 
+_CLI_TMP_DIR = Path("data/ndc_uploads/cli_tmp")
+
+
+def _save_image_block(block: Dict[str, Any], idx: int) -> Optional[str]:
+    """Save a base64 image_url block to a temp PNG file. Returns the path or None."""
+    try:
+        url = (block.get("image_url") or {}).get("url", "")
+        if not url.startswith("data:"):
+            return None
+        # data:<mime>;base64,<data>
+        header, data = url.split(",", 1)
+        ext = "png"
+        if "jpeg" in header or "jpg" in header:
+            ext = "jpg"
+        _CLI_TMP_DIR.mkdir(parents=True, exist_ok=True)
+        img_bytes = base64.b64decode(data)
+        tmp_file = _CLI_TMP_DIR / f"cli_img_{os.getpid()}_{idx}.{ext}"
+        tmp_file.write_bytes(img_bytes)
+        return str(tmp_file.resolve())
+    except Exception:
+        return None
+
+
 def _flatten_messages(messages: List[Dict[str, Any]], system_prompt: str = "") -> str:
     """Collapse universal messages + system prompt into a single prompt string.
 
-    The Claude CLI takes a single prompt argument, so multimodal/structured
-    content blocks are reduced to their text. Non-text blocks (images, tool
-    results other than text) are dropped — the CLI bridge is a text fallback.
+    Images are saved as temp files and referenced by path so Claude Code can
+    read them via its Read tool (using --dangerously-skip-permissions).
     """
     parts: List[str] = []
     if system_prompt:
         parts.append(system_prompt)
 
+    img_paths: List[str] = []
+    img_idx = 0
     for msg in messages or []:
         content = msg.get("content", "")
         if isinstance(content, str):
@@ -135,6 +161,11 @@ def _flatten_messages(messages: List[Dict[str, Any]], system_prompt: str = "") -
             for block in content:
                 if isinstance(block, dict) and block.get("type") == "text":
                     chunks.append(block.get("text", ""))
+                elif isinstance(block, dict) and block.get("type") == "image_url":
+                    saved = _save_image_block(block, img_idx)
+                    if saved:
+                        img_paths.append(saved)
+                        img_idx += 1
                 elif isinstance(block, dict) and block.get("type") == "tool_result":
                     for inner in block.get("content", []):
                         if isinstance(inner, dict) and inner.get("type") == "text":
@@ -144,6 +175,14 @@ def _flatten_messages(messages: List[Dict[str, Any]], system_prompt: str = "") -
             text = str(content)
         if text:
             parts.append(text)
+
+    if img_paths:
+        img_note = (
+            "\n\n[IMAGES FOR ANALYSIS]\n"
+            + "\n".join(f"Image {i+1}: {p}" for i, p in enumerate(img_paths))
+            + "\n\nPlease use your Read tool to view each image file listed above and include it in your analysis."
+        )
+        parts.append(img_note)
 
     return "\n\n".join(parts)
 

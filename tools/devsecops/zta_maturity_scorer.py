@@ -92,7 +92,7 @@ def _gather_pillar_evidence(project_id: str, pillar: str, conn) -> dict:
         placeholders = ",".join("?" * len(nist_controls))
         rows = conn.execute(
             f"""SELECT control_id, status FROM project_controls
-                WHERE project_id = ? AND control_id IN ({placeholders})""",  # nosec B608 -- table/column names are internal constants, not user input
+                WHERE project_id = %s AND control_id IN ({placeholders})""",  # nosec B608 -- table/column names are internal constants, not user input
             [project_id] + nist_controls,
         ).fetchall()
 
@@ -137,7 +137,7 @@ def _gather_pillar_evidence(project_id: str, pillar: str, conn) -> dict:
 
     # Check DevSecOps profile for relevant stages
     profile_row = conn.execute(
-        "SELECT active_stages FROM devsecops_profiles WHERE project_id = ?", (project_id,)
+        "SELECT active_stages FROM devsecops_profiles WHERE project_id = %s", (project_id,)
     ).fetchone()
 
     if profile_row:
@@ -198,7 +198,7 @@ def score_pillar(project_id: str, pillar: str) -> dict:
         conn.execute(
             """INSERT INTO zta_maturity_scores
                (id, project_id, pillar, score, maturity_level, evidence, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
             (score_id, project_id, pillar, score, maturity, json.dumps(evidence["checks"]), now),
         )
         conn.commit()
@@ -248,7 +248,7 @@ def score_all_pillars(project_id: str) -> dict:
         conn.execute(
             """INSERT INTO zta_maturity_scores
                (id, project_id, pillar, score, maturity_level, evidence, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
             (
                 score_id,
                 project_id,
@@ -320,7 +320,7 @@ def run_scheduled_assessment(project_id: str, drift_threshold: float = 0.1) -> d
         rows = conn.execute(
             """SELECT score, created_at
                FROM zta_maturity_scores
-               WHERE project_id = ? AND pillar = 'overall'
+               WHERE project_id = %s AND pillar = 'overall'
                ORDER BY created_at DESC
                LIMIT 2""",
             (project_id,),
@@ -385,7 +385,7 @@ def get_trend(project_id: str, days: int = 90) -> dict:
         rows = conn.execute(
             """SELECT pillar, score, maturity_level, created_at
                FROM zta_maturity_scores
-               WHERE project_id = ? AND created_at >= datetime('now', ?)
+               WHERE project_id = %s AND created_at >= datetime('now', %s)
                ORDER BY created_at ASC""",
             (project_id, f"-{days} days"),
         ).fetchall()

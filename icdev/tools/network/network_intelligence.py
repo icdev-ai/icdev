@@ -67,7 +67,7 @@ def _load_topology_graph(topology_id: str, conn=None) -> dict | None:
     own_conn = conn is None
     if own_conn:
         conn = _get_nc_conn()
-    row = conn.execute("SELECT graph_json FROM topologies WHERE id = ?", (topology_id,)).fetchone()
+    row = conn.execute("SELECT graph_json FROM topologies WHERE id = %s", (topology_id,)).fetchone()
     if own_conn:
         conn.close()
     if not row:
@@ -98,7 +98,7 @@ def _cache_analysis(topology_id: str, analysis_type: str, query_text: str,
             conn = _get_nc_conn()
         conn.execute(
             "INSERT INTO ni_analyses (id, topology_id, analysis_type, query_text, "
-            "input_json, result_json, result_summary, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "input_json, result_json, result_summary, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
             (aid, topology_id, analysis_type, query_text,
              json.dumps(input_data, default=str), json.dumps(result, default=str),
              summary, datetime.now(timezone.utc).isoformat()),
@@ -195,7 +195,7 @@ def analyze_redundancy(topology_id: str, target_site: str | None = None) -> dict
     if target_site:
         conn = _get_nc_conn()
         rows = conn.execute(
-            "SELECT node_id FROM ni_devices WHERE topology_id = ? AND site LIKE ?",
+            "SELECT node_id FROM ni_devices WHERE topology_id = %s AND site LIKE %s",
             (topology_id, f"%{target_site}%"),
         ).fetchall()
         conn.close()
@@ -452,7 +452,7 @@ def analyze_impact(topology_id: str, changes: list[dict]) -> dict:
     snap_id = str(uuid.uuid4())[:12]
     conn.execute(
         "INSERT INTO ni_state_snapshots (id, topology_id, snapshot_type, graph_json, "
-        "device_count, link_count, change_description, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "device_count, link_count, change_description, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
         (snap_id, topology_id, "pre_change", json.dumps(graph),
          len(graph.get("nodes", [])), len(graph.get("edges", [])),
          json.dumps(changes, default=str), datetime.now(timezone.utc).isoformat()),
@@ -492,7 +492,7 @@ def analyze_impact(topology_id: str, changes: list[dict]) -> dict:
     temp_id = f"temp-{uuid.uuid4().hex[:8]}"
     conn = _get_nc_conn()
     conn.execute(
-        "INSERT INTO topologies (id, name, graph_json, classification) VALUES (?, ?, ?, ?)",
+        "INSERT INTO topologies (id, name, graph_json, classification) VALUES (%s, %s, %s, %s)",
         (temp_id, f"Impact Analysis {topology_id}", json.dumps(modified), "CUI // SP-CTI"),
     )
     conn.commit()
@@ -502,8 +502,8 @@ def analyze_impact(topology_id: str, changes: list[dict]) -> dict:
 
     # Cleanup temp topology
     conn = _get_nc_conn()
-    conn.execute("DELETE FROM topologies WHERE id = ?", (temp_id,))
-    conn.execute("DELETE FROM ni_analyses WHERE topology_id = ?", (temp_id,))
+    conn.execute("DELETE FROM topologies WHERE id = %s", (temp_id,))
+    conn.execute("DELETE FROM ni_analyses WHERE topology_id = %s", (temp_id,))
     conn.commit()
     conn.close()
 
@@ -549,21 +549,21 @@ def project_costs(topology_id: str, years: int = 5) -> dict:
 
     # Annual maintenance from devices
     maint_rows = conn.execute(
-        "SELECT SUM(annual_maintenance_cost) FROM ni_devices WHERE topology_id = ?",
+        "SELECT SUM(annual_maintenance_cost) FROM ni_devices WHERE topology_id = %s",
         (topology_id,),
     ).fetchone()
     annual_maintenance = float(maint_rows[0] or 0) if maint_rows else 0.0
 
     # Circuit costs
     circuit_rows = conn.execute(
-        "SELECT SUM(monthly_cost_usd) FROM nc_circuits WHERE topology_id = ?",
+        "SELECT SUM(monthly_cost_usd) FROM nc_circuits WHERE topology_id = %s",
         (topology_id,),
     ).fetchone()
     annual_circuits = float(circuit_rows[0] or 0) * 12 if circuit_rows else 0.0
 
     # Cross-connect costs
     xconn_rows = conn.execute(
-        "SELECT SUM(monthly_cost_usd) FROM nc_cross_connects WHERE topology_id = ?",
+        "SELECT SUM(monthly_cost_usd) FROM nc_cross_connects WHERE topology_id = %s",
         (topology_id,),
     ).fetchone()
     annual_xconn = float(xconn_rows[0] or 0) * 12 if xconn_rows else 0.0
@@ -659,8 +659,8 @@ def analyze_capacity(topology_id: str, demand_scenario: dict) -> dict:
         site_nodes = set()
         if region:
             rows = conn.execute(
-                "SELECT node_id FROM ni_devices WHERE topology_id = ? AND "
-                "(site LIKE ? OR label LIKE ?)",
+                "SELECT node_id FROM ni_devices WHERE topology_id = %s AND "
+                "(site LIKE %s OR label LIKE %s)",
                 (topology_id, f"%{region}%", f"%{region}%"),
             ).fetchall()
             site_nodes = {r[0] if isinstance(r, tuple) else r["node_id"] for r in rows}
@@ -747,7 +747,7 @@ def manage_configs(topology_id: str, action: str, targets: list[str] | None = No
                 cfg_hash = hashlib.sha256(config_text.encode("utf-8")).hexdigest()
                 conn.execute(
                     "INSERT INTO ni_device_configs (id, device_id, config_type, config_text, "
-                    "config_hash, source, version, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    "config_hash, source, version, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
                     (cfg_id, filename, "generated", config_text, cfg_hash, "config_generator", 1, now),
                 )
                 stored += 1
@@ -1080,7 +1080,7 @@ def assess_vendor_risk(topology_id: str) -> dict:
     conn = _get_nc_conn()
     rows = conn.execute(
         "SELECT vendor, COUNT(*) as cnt FROM ni_devices "
-        "WHERE topology_id = ? AND vendor IS NOT NULL GROUP BY vendor ORDER BY cnt DESC",
+        "WHERE topology_id = %s AND vendor IS NOT NULL GROUP BY vendor ORDER BY cnt DESC",
         (topology_id,),
     ).fetchall()
     conn.close()
@@ -1124,7 +1124,7 @@ def assess_circuits(topology_id: str, horizon_months: int = 12) -> dict:
     cutoff = f"{now.year + (now.month + horizon_months - 1) // 12}-{((now.month + horizon_months - 1) % 12) + 1:02d}-28"
 
     circuits = conn.execute(
-        "SELECT * FROM nc_circuits WHERE topology_id = ? ORDER BY contract_end ASC",
+        "SELECT * FROM nc_circuits WHERE topology_id = %s ORDER BY contract_end ASC",
         (topology_id,),
     ).fetchall()
     conn.close()

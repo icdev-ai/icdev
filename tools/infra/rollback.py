@@ -34,7 +34,7 @@ def get_rollback_target(project_id: str, environment: str, db_path: Path = None)
         current = conn.execute(
             """SELECT id, version, status, deployed_by, completed_at
                FROM deployments
-               WHERE project_id = ? AND environment = ?
+               WHERE project_id = %s AND environment = %s
                ORDER BY created_at DESC
                LIMIT 1""",
             (project_id, environment),
@@ -47,9 +47,9 @@ def get_rollback_target(project_id: str, environment: str, db_path: Path = None)
         target = conn.execute(
             """SELECT id, version, status, deployed_by, completed_at
                FROM deployments
-               WHERE project_id = ? AND environment = ?
+               WHERE project_id = %s AND environment = %s
                  AND status = 'succeeded'
-                 AND id < ?
+                 AND id < %s
                ORDER BY created_at DESC
                LIMIT 1""",
             (project_id, environment, current["id"]),
@@ -60,9 +60,9 @@ def get_rollback_target(project_id: str, environment: str, db_path: Path = None)
             target = conn.execute(
                 """SELECT id, version, status, deployed_by, completed_at
                    FROM deployments
-                   WHERE project_id = ? AND environment = ?
+                   WHERE project_id = %s AND environment = %s
                      AND status = 'succeeded'
-                     AND id != ?
+                     AND id != %s
                    ORDER BY created_at DESC
                    LIMIT 1""",
                 (project_id, environment, current["id"]),
@@ -234,7 +234,7 @@ def _record_rollback(
             """INSERT INTO deployments
                (project_id, environment, version, status, deployed_by,
                 rollback_version, created_at, completed_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 project_id,
                 environment,
@@ -254,7 +254,7 @@ def _record_rollback(
         conn.execute(
             """INSERT INTO audit_trail
                (project_id, event_type, actor, action, details, classification)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s)""",
             (
                 project_id,
                 "rollback_executed",
@@ -286,7 +286,7 @@ def auto_rollback_check(deployment_id: int, db_path: Path = None) -> dict:
         deployment = conn.execute(
             """SELECT id, project_id, environment, version, status,
                       health_check_passed, created_at, completed_at
-               FROM deployments WHERE id = ?""",
+               FROM deployments WHERE id = %s""",
             (deployment_id,),
         ).fetchone()
 
@@ -320,7 +320,7 @@ def auto_rollback_check(deployment_id: int, db_path: Path = None) -> dict:
         # Check recent failure rate
         recent_failures = conn.execute(
             """SELECT COUNT(*) FROM failure_log
-               WHERE project_id = ? AND created_at > datetime('now', '-5 minutes')""",
+               WHERE project_id = %s AND created_at > datetime('now', '-5 minutes')""",
             (deployment["project_id"],),
         ).fetchone()[0]
 

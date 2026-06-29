@@ -226,7 +226,7 @@ def _emit_oracle_prediction(conn, violation_type: str, subject_id: str,
                 (id, lens_id, lens_name, subject_type, subject_id,
                  prediction_type, prediction_text, confidence, severity,
                  horizon_days, evidence_json, classification, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 pred_id,
@@ -272,7 +272,7 @@ def _emit_kanban_task(conn, violation_type: str, subject_id: str,
             INSERT INTO kanban_tasks
                 (id, title, description, task_type, priority, status,
                  executor_type, source_prediction_id, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 task_id,

@@ -64,7 +64,7 @@ def _on_bdc_design_saved(event_id: str, canvas_id: str, event_type: str, payload
         conn = get_connection()
         try:
             designs = conn.execute(
-                "SELECT id, graph_json FROM observability_designs WHERE classification=?",
+                "SELECT id, graph_json FROM observability_designs WHERE classification=%s",
                 (classification,),
             ).fetchall()
             updated = 0
@@ -78,7 +78,7 @@ def _on_bdc_design_saved(event_id: str, canvas_id: str, event_type: str, payload
                     continue
                 nodes.append(new_node)
                 conn.execute(
-                    "UPDATE observability_designs SET graph_json=?, updated_at=? WHERE id=?",
+                    "UPDATE observability_designs SET graph_json=%s, updated_at=%s WHERE id=%s",
                     (json.dumps(graph), _now(), odc_id),
                 )
                 updated += 1

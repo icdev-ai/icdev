@@ -262,7 +262,7 @@ def _log_triage_stage(conn, signal_id, stage, stage_name, result, details):
     conn.execute(
         """INSERT INTO innovation_triage_log
            (id, signal_id, stage, stage_name, result, details, triaged_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s, %s, %s)""",
         (
             log_id,
             signal_id,
@@ -726,9 +726,9 @@ def _stage_duplicate_license(signal, config, conn):
             existing = conn.execute(
                 """SELECT id, title, discovered_at
                    FROM innovation_signals
-                   WHERE content_hash = ?
-                     AND id != ?
-                     AND discovered_at >= ?
+                   WHERE content_hash = %s
+                     AND id != %s
+                     AND discovered_at >= %s
                    ORDER BY discovered_at DESC
                    LIMIT 1""",
                 (content_hash, signal.get("id", ""), cutoff),
@@ -751,9 +751,9 @@ def _stage_duplicate_license(signal, config, conn):
             similar = conn.execute(
                 """SELECT id, title
                    FROM innovation_signals
-                   WHERE title LIKE ?
-                     AND id != ?
-                     AND discovered_at >= ?
+                   WHERE title LIKE %s
+                     AND id != %s
+                     AND discovered_at >= %s
                    LIMIT 3""",
                 (f"{title_prefix}%", signal.get("id", ""), cutoff),
             ).fetchall()
@@ -853,7 +853,7 @@ def triage_signal(signal_id, db_path=None):
 
         # Fetch the signal
         signal_row = conn.execute(
-            "SELECT * FROM innovation_signals WHERE id = ?",
+            "SELECT * FROM innovation_signals WHERE id = %s",
             (signal_id,),
         ).fetchone()
 
@@ -989,11 +989,11 @@ def triage_signal(signal_id, db_path=None):
         conn.execute(
             """UPDATE innovation_signals
                SET status = 'triaged',
-                   triage_result = ?,
-                   gotcha_layer = ?,
-                   boundary_tier = ?,
-                   category = ?
-               WHERE id = ?""",
+                   triage_result = %s,
+                   gotcha_layer = %s,
+                   boundary_tier = %s,
+                   category = %s
+               WHERE id = %s""",
             (triage_result, gotcha_layer, boundary_tier, category, signal_id),
         )
 
@@ -1001,7 +1001,7 @@ def triage_signal(signal_id, db_path=None):
         if module_impact is not None:
             try:
                 meta_row = conn.execute(
-                    "SELECT metadata FROM innovation_signals WHERE id = ?",
+                    "SELECT metadata FROM innovation_signals WHERE id = %s",
                     (signal_id,),
                 ).fetchone()
                 raw_meta = (meta_row["metadata"] if meta_row else None) or "{}"
@@ -1011,7 +1011,7 @@ def triage_signal(signal_id, db_path=None):
                     existing_meta = {}
                 existing_meta["module_impact"] = module_impact
                 conn.execute(
-                    "UPDATE innovation_signals SET metadata = ? WHERE id = ?",
+                    "UPDATE innovation_signals SET metadata = %s WHERE id = %s",
                     (json.dumps(existing_meta), signal_id),
                 )
             except Exception:

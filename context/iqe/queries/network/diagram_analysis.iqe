@@ -1,0 +1,12 @@
+# Network Diagram Analysis seed queries for IQE
+# Each line is a natural-language prompt the widget can translate to IQE.
+show all diagram uploads
+show diagram analyses with status done
+show diagram findings with severity critical
+show diagram findings for IL4 compliance gaps
+show diagram analyses with topology mode hybrid
+show diagram findings from the last analysis
+show diagram uploads with format pdf
+show high severity security findings from diagram analysis
+show multi-cloud diagram analyses
+show diagram findings tab security ordered by severity

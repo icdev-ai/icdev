@@ -159,7 +159,7 @@ def _log_escalation(finding: Dict, issue_url: str) -> None:
             "INSERT INTO review_board_remediation_log "
             "(id, finding_id, reflex_name, category, severity, confidence, "
             "tier, status, fix_description, fix_result, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, 'escalate', 'escalated', ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, 'escalate', 'escalated', %s, %s, %s)",
             (
                 f"rbr-{uuid.uuid4().hex[:10]}",
                 finding.get("id", ""),

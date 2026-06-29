@@ -110,7 +110,7 @@ def embed_all(user_id=None, json_output=False):
                     emb = client.embed(text)
                     blob = embedding_to_blob(emb)
                     c.execute(
-                        "UPDATE memory_entries SET embedding = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                        "UPDATE memory_entries SET embedding = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s",
                         (blob, ids[j]),
                     )
                     total += 1
@@ -120,7 +120,7 @@ def embed_all(user_id=None, json_output=False):
                 for j, emb_data in enumerate(response.data):
                     blob = embedding_to_blob(emb_data.embedding)
                     c.execute(
-                        "UPDATE memory_entries SET embedding = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                        "UPDATE memory_entries SET embedding = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s",
                         (blob, ids[j]),
                     )
                     total += 1

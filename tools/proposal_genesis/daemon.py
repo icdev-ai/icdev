@@ -226,7 +226,7 @@ class ProposalGenesisDaemon(DaemonBase):
                     (id, event_type, reflex_name, risk_tier, opportunity_id,
                      details, success, duration_ms, metric_name, metric_value,
                      created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
                 (
                     audit_id,
@@ -438,7 +438,7 @@ def _log_audit(
                 (id, event_type, reflex_name, risk_tier, opportunity_id,
                  details, success, duration_ms, metric_name, metric_value,
                  created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """,
             (
                 audit_id,

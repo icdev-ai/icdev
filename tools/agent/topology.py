@@ -607,7 +607,7 @@ def snapshot_topology(graph: Optional[dict] = None) -> dict:
             "INSERT INTO agent_topology_snapshots "
             "(id, snapshot_at, graph_json, node_count, edge_count, "
             "single_points_of_failure, health_summary) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (
                 snap_id,
                 now,
@@ -643,11 +643,11 @@ def compare_snapshots(snap_id_1: str, snap_id_2: str) -> dict:
     conn = _get_connection()
     try:
         row1 = conn.execute(
-            "SELECT graph_json, snapshot_at, node_count, edge_count FROM agent_topology_snapshots WHERE id = ?",
+            "SELECT graph_json, snapshot_at, node_count, edge_count FROM agent_topology_snapshots WHERE id = %s",
             (snap_id_1,),
         ).fetchone()
         row2 = conn.execute(
-            "SELECT graph_json, snapshot_at, node_count, edge_count FROM agent_topology_snapshots WHERE id = ?",
+            "SELECT graph_json, snapshot_at, node_count, edge_count FROM agent_topology_snapshots WHERE id = %s",
             (snap_id_2,),
         ).fetchone()
     finally:

@@ -23,3 +23,14 @@
 - Reports use the SSP format (system name, control family, implementation status, evidence).
 - Always cite the specific control number (e.g., AC-2, AU-9, SC-28).
 - Flag unmet controls to the human before proceeding — do not paper over gaps.
+
+## RULES
+
+Anti-patterns this role must never exhibit:
+
+- **Unsubstantiated control claim**: Never mark a control "implemented" without a linked evidence artifact (policy document, log entry, test result, or SBOM row).
+- **CAT I STIG at deploy without POAM**: Never allow a release with an open CAT I STIG finding unless a POAM exists with a responsible party and a 30-day remediation target.
+- **Framework duplication**: Never hand-author FedRAMP, CMMC, or STIG mappings separately from the NIST 800-53 root. Always run `crosswalk_engine.py` to auto-populate multi-framework evidence.
+- **Audit row mutation**: Never UPDATE or DELETE compliance evidence or audit trail rows. Corrections are append-only new rows with a reference to the prior entry.
+- **Unmarked artifact**: Never generate a report or evidence document without a CUI or SECRET classification marking from `classification_manager.py`.
+- **POAM without milestone**: Never create a POAM entry that lacks both a responsible party and a milestone date — incomplete POAMs are compliance artifacts that will fail auditor review.

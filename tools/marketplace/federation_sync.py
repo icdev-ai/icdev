@@ -114,7 +114,7 @@ def promote_approved(tenant_id, db_path=None):
                FROM marketplace_assets a
                JOIN marketplace_versions v ON v.asset_id = a.id AND v.version = a.current_version
                JOIN marketplace_reviews r ON r.asset_id = a.id AND r.version_id = v.id
-               WHERE a.publisher_tenant_id = ?
+               WHERE a.publisher_tenant_id = %s
                  AND a.catalog_tier = 'tenant_local'
                  AND a.status = 'published'
                  AND r.decision = 'approved'""",
@@ -124,7 +124,7 @@ def promote_approved(tenant_id, db_path=None):
         promoted = []
         for asset in eligible:
             conn.execute(
-                "UPDATE marketplace_assets SET catalog_tier = 'central_vetted', updated_at = ? WHERE id = ?",
+                "UPDATE marketplace_assets SET catalog_tier = 'central_vetted', updated_at = %s WHERE id = %s",
                 (_now(), asset["id"]),
             )
             promoted.append(
@@ -182,7 +182,7 @@ def pull_available(tenant_id, consumer_il, db_path=None):
                   AND a.impact_level IN ({placeholders})
                   AND a.id NOT IN (
                       SELECT asset_id FROM marketplace_installations
-                      WHERE tenant_id = ? AND status = 'active'
+                      WHERE tenant_id = %s AND status = 'active'
                   )
                 ORDER BY a.avg_rating DESC, a.install_count DESC""",  # nosec B608 -- table/column names are internal constants, not user input
             (*compatible_ils, tenant_id),
@@ -223,7 +223,7 @@ def propagate_ratings(db_path=None):
         updated = 0
         for agg in aggregates:
             conn.execute(
-                "UPDATE marketplace_assets SET avg_rating = ?, rating_count = ?, updated_at = ? WHERE id = ?",
+                "UPDATE marketplace_assets SET avg_rating = %s, rating_count = %s, updated_at = %s WHERE id = %s",
                 (round(agg["avg_rating"], 2), agg["cnt"], _now(), agg["asset_id"]),
             )
             updated += 1

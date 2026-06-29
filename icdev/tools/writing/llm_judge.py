@@ -506,7 +506,7 @@ def evaluate_and_store(
                     composite_score, combined_score, color_rating,
                     dimension_scores, strengths, weaknesses, overall_assessment,
                     model_used, eval_ms, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     entry_id,
                     post_id,

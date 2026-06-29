@@ -49,7 +49,7 @@ def take_snapshot(project_id: str, label: str | None = None) -> dict:
     link_count = 0
     try:
         row = conn.execute(
-            "SELECT graph_json FROM topologies WHERE id = ?", (project_id,)
+            "SELECT graph_json FROM topologies WHERE id = %s", (project_id,)
         ).fetchone()
         if row and row["graph_json"]:
             graph = json.loads(row["graph_json"])
@@ -62,7 +62,7 @@ def take_snapshot(project_id: str, label: str | None = None) -> dict:
         conn.execute(
             """INSERT INTO network_twin_snapshots
                (id, project_id, label, device_count, link_count, created_at)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s)""",
             (snap_id, project_id, label, device_count, link_count, taken_at),
         )
         conn.commit()
@@ -279,7 +279,7 @@ def blast_radius(
 
     try:
         row = conn.execute(
-            "SELECT graph_json FROM topologies WHERE id = ?", (project_id,)
+            "SELECT graph_json FROM topologies WHERE id = %s", (project_id,)
         ).fetchone()
 
         if row and row["graph_json"]:
@@ -344,4 +344,48 @@ def blast_radius(
         "critical_path_count": critical,
         "slo_risk": slo_risk,
         "impacted_systems": impacted,
+    }
+
+
+def intent_validate(delta: dict, project_id: str | None = None) -> dict:
+    """Validate a proposed remediation action against the NDC digital twin.
+
+    Translates a remediation delta (device, action, from_version, to_version)
+    into a topology_delta and runs simulate_delta + blast_radius.
+
+    Returns a unified dict with verdict, intent_results, compliance_findings,
+    and impacted_systems suitable for consume by remediation_simulator.
+    """
+    device = delta.get("device", "")
+    action = delta.get("action", "")
+
+    topology_delta: dict = {
+        "add_devices": [],
+        "remove_devices": [],
+        "add_links": [],
+        "remove_links": [],
+        "acl_changes": [],
+    }
+    if action == "replace":
+        topology_delta["remove_devices"] = [{"id": device, "label": device, "type": "unknown"}]
+        topology_delta["add_devices"] = [{"id": device, "label": device, "type": "unknown"}]
+    elif action == "config_change":
+        topology_delta["acl_changes"] = [{"device": device, "rule": "permit any any"}]
+
+    sim_result = simulate_delta(project_id or "_intent_validate", topology_delta)
+
+    impacted_systems: list = []
+    if project_id:
+        try:
+            br = blast_radius(project_id, device, topology_delta=topology_delta)
+            impacted_systems = br.get("impacted_systems", [])
+        except Exception:
+            pass
+
+    return {
+        "verdict": sim_result["verdict"],
+        "simulation_id": sim_result["id"],
+        "intent_results": sim_result["intent_results"],
+        "compliance_findings": sim_result["compliance_findings"],
+        "impacted_systems": impacted_systems,
     }

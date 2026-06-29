@@ -183,7 +183,7 @@ def _log_pressure_event(result: dict, db_path: Path = None):
                (session_id, event_type, pressure_level, estimated_tokens_used,
                 estimated_remaining_pct, tool_call_count, recommendation,
                 created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 result.get("session_id", "unknown"),
                 "pressure_check",
@@ -348,7 +348,7 @@ def _log_stuck_event(result: dict, db_path: Path = None):
                (session_id, event_type, pressure_level, estimated_tokens_used,
                 estimated_remaining_pct, tool_call_count, recommendation,
                 created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 result.get("session_id", "unknown"),
                 f"stuck_{result.get('stuck_type', 'unknown')}",

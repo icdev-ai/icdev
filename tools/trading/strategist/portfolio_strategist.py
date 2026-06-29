@@ -1299,7 +1299,7 @@ def _persist_strategy(
         "INSERT INTO ad_strategy_runs "
         "(id, run_type, macro_regime, macro_score, total_tickers_scored, "
         "strategy_json, core_count, tactical_count, opportunistic_count, "
-        "hedge_count, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        "hedge_count, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
         (
             run_id,
             "full",
@@ -1322,7 +1322,7 @@ def _persist_strategy(
             "composite_rank, momentum_score, consistency_score, mean_reversion_flag, "
             "macro_alignment, scenario_resilience, kg_centrality, expert_alignment, "
             "rationale, created_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (
                 _uid(),
                 h["run_id"],
@@ -1350,7 +1350,7 @@ def _persist_strategy(
             "INSERT INTO ad_strategy_sector_allocation "
             "(id, run_id, sector, target_weight_pct, current_weight_pct, "
             "macro_alignment, momentum_rank, avg_scenario_resilience, "
-            "tilt_direction, rationale, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            "tilt_direction, rationale, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (
                 _uid(),
                 run_id,
@@ -1370,7 +1370,7 @@ def _persist_strategy(
         conn.execute(
             "INSERT INTO ad_strategy_signals "
             "(id, run_id, signal_type, severity, ticker, sector, message, data_json, created_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (
                 _uid(),
                 run_id,
@@ -1399,15 +1399,15 @@ def get_latest_strategy(conn=None) -> dict | None:
 
     run_id = run["id"]
     holdings = c.execute(
-        "SELECT * FROM ad_strategy_holdings WHERE run_id = ? ORDER BY weight_pct DESC",
+        "SELECT * FROM ad_strategy_holdings WHERE run_id = %s ORDER BY weight_pct DESC",
         (run_id,),
     ).fetchall()
     allocations = c.execute(
-        "SELECT * FROM ad_strategy_sector_allocation WHERE run_id = ? ORDER BY target_weight_pct DESC",
+        "SELECT * FROM ad_strategy_sector_allocation WHERE run_id = %s ORDER BY target_weight_pct DESC",
         (run_id,),
     ).fetchall()
     signals = c.execute(
-        "SELECT * FROM ad_strategy_signals WHERE run_id = ? ORDER BY created_at DESC",
+        "SELECT * FROM ad_strategy_signals WHERE run_id = %s ORDER BY created_at DESC",
         (run_id,),
     ).fetchall()
 
@@ -1434,7 +1434,7 @@ def get_strategy_history(limit: int = 10, conn=None) -> list[dict]:
     """Get recent strategy runs (metadata only)."""
     c = conn or get_conn()
     rows = c.execute(
-        "SELECT * FROM ad_strategy_runs ORDER BY created_at DESC LIMIT ?",
+        "SELECT * FROM ad_strategy_runs ORDER BY created_at DESC LIMIT %s",
         (limit,),
     ).fetchall()
     return [dict(r) for r in rows]

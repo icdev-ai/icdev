@@ -140,6 +140,80 @@ def award_daily_login(user_id: int) -> dict | None:
     return {"xp": xp, "streak": streak, "bonus": bonus}
 
 
+def award_gameday_xp(user_id: int, tournament_id: str, final_rank: int, total_participants: int) -> dict:
+    """Award XP and achievements based on GameDay tournament performance.
+
+    Rank bonuses:
+    - Top 10: 500 XP + gameday_champion badge
+    - Top 50%: 200 XP
+    - Participated: 100 XP baseline + arena_gladiator on first participation
+
+    Returns: {"xp_awarded": int, "achievements_unlocked": list[str], "gameday_rank": int}
+    """
+    xp = 100  # participation baseline
+    achievements: list[str] = []
+
+    if final_rank <= 10:
+        xp += 500
+        achievements.append("gameday_champion")
+    elif total_participants > 0 and final_rank <= total_participants * 0.5:
+        xp += 200
+
+    # First GameDay participation → arena_gladiator
+    try:
+        from tools.db.storage import get_connection
+        conn = get_connection()
+        prev = conn.execute(
+            "SELECT COUNT(*) FROM fa_user_achievements WHERE user_id = ? AND achievement_slug = 'arena_gladiator'",
+            (user_id,),
+        ).fetchone()
+        if prev and prev[0] == 0:
+            achievements.append("arena_gladiator")
+    except Exception:
+        pass
+
+    try:
+        update_user_xp(user_id, xp)
+    except Exception:
+        pass
+
+    unlocked = []
+    for slug in achievements:
+        try:
+            granted = grant_achievement(user_id, slug)
+            if granted:
+                unlocked.append(slug)
+        except Exception:
+            pass
+
+    return {
+        "xp_awarded": xp,
+        "achievements_unlocked": unlocked,
+        "gameday_rank": final_rank,
+    }
+
+
+def get_gameday_seed_bonus(user_id: int) -> float:
+    """Return a GameDay team seed bonus (0.0–0.25) based on Academy XP.
+
+    L4+ (5000+ XP) earns the maximum bonus of 0.25.
+    Used by GameDay team_runner to give higher-XP learners slightly better starting stats.
+    """
+    try:
+        from icdev.tools.db.storage import get_connection
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT xp FROM fa_users WHERE id = %s",
+            (user_id,),
+        ).fetchone()
+        if row:
+            xp = row[0] or 0
+            return min(0.25, xp / 20000.0)
+    except Exception:
+        pass
+    return 0.0
+
+
 def get_user_stats(user_id: int) -> dict:
     """Full stats for the hub page — XP, level progress, achievements, streak."""
     user = get_user(user_id)

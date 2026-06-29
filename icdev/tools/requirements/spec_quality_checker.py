@@ -204,7 +204,7 @@ def _load_constitutions(project_id: str = None, db_path=None) -> list:
         try:
             conn = _get_connection(db_path)
             rows = conn.execute(
-                "SELECT principles FROM project_constitutions WHERE project_id = ?",
+                "SELECT principles FROM project_constitutions WHERE project_id = %s",
                 (project_id,),
             ).fetchone()
             conn.close()

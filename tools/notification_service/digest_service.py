@@ -12,6 +12,7 @@ ships unchanged when the LLM is unavailable. See ``_ai_digest_narrative``.
 from __future__ import annotations
 
 import pathlib
+from datetime import datetime, timedelta, timezone
 
 import yaml
 
@@ -38,6 +39,17 @@ def _load_narrative_config() -> dict:
 _NARR_CFG = _load_narrative_config()
 _NARRATIVE_MAX_TOKENS: int = int(_NARR_CFG.get("max_tokens", 512))
 _NARRATIVE_TEMPERATURE: float = float(_NARR_CFG.get("temperature", 0.3))
+
+# Query / slice limits used by notification consumers and tests
+_KANBAN_DONE_LIMIT         = 5
+_ORACLE_TOP_PREDS_LIMIT    = 5
+_AIIFY_TOP_OPPS_LIMIT      = 5
+_AGENT_ERRORS_LIMIT        = 5
+_ZIG_GAPS_LIMIT            = 10
+_POAM_DAYS_AHEAD           = 14
+_AUDIT_SINCE_HOURS         = 24
+_NARRATIVE_TOP_PREDS_SLICE = 3
+_NARRATIVE_TOP_OPPS_SLICE  = 3
 
 # ---------------------------------------------------------------------------
 # AI-ification (aiify-opp-5556): optional LLM-synthesized digest narrative.
@@ -262,14 +274,14 @@ def send_genesis_phase_summary(design_id: str, recipient: str, ai_narrative: boo
     conn = get_connection()
     phases = conn.execute(
         "SELECT phase, status, started_at, completed_at FROM genesis_phase_log "
-        "WHERE design_id=? ORDER BY started_at", (design_id,)
+        "WHERE design_id=%s ORDER BY started_at", (design_id,)
     ).fetchall()
     design = conn.execute(
-        "SELECT name, status, current_phase FROM genesis_designs WHERE id=?", (design_id,)
+        "SELECT name, status, current_phase FROM genesis_designs WHERE id=%s", (design_id,)
     ).fetchone()
     reflexes = conn.execute(
         "SELECT name, confidence, fired_at FROM genesis_reflexes "
-        "WHERE design_id=? ORDER BY fired_at DESC LIMIT 5", (design_id,)
+        "WHERE design_id=%s ORDER BY fired_at DESC LIMIT 5", (design_id,)
     ).fetchall()
     conn.close()
     rendered = render_template(
@@ -331,11 +343,12 @@ def send_zig_maturity_report(recipient: str, ai_narrative: bool = False) -> dict
 def send_poam_due_soon_digest(recipient: str, days_ahead: int = 30, ai_narrative: bool = False) -> dict:
     """Fetch upcoming POA&M deadlines, render digest, and deliver."""
     conn = get_connection()
+    due_limit = (datetime.now(timezone.utc) + timedelta(days=days_ahead)).date().isoformat()
     due_items = conn.execute(
         "SELECT id, title, severity, due_date, owner, status, "
         "CAST(julianday(due_date) - julianday('now') AS INTEGER) as days_left "
         "FROM poam_items WHERE status='open' "
-        "AND due_date <= DATE('now', '+? days') ORDER BY due_date", (days_ahead,)
+        "AND due_date <= %s ORDER BY due_date", (due_limit,)
     ).fetchall()
     overdue = conn.execute(
         "SELECT COUNT(*) as cnt FROM poam_items WHERE status='open' AND due_date < DATE('now')"
@@ -366,14 +379,15 @@ def send_poam_due_soon_digest(recipient: str, days_ahead: int = 30, ai_narrative
 def send_audit_trail_summary(recipient: str, since_hours: int = 24, ai_narrative: bool = False) -> dict:
     """Fetch recent audit trail events, render activity summary, and deliver."""
     conn = get_connection()
+    since = (datetime.now(timezone.utc) - timedelta(hours=since_hours)).isoformat()
     events = conn.execute(
         "SELECT resource_type, event, actor, COUNT(*) as cnt "
-        "FROM audit_trail WHERE created_at >= datetime('now', '-? hours') "
-        "GROUP BY resource_type, event, actor ORDER BY cnt DESC LIMIT 20", (since_hours,)
+        "FROM audit_trail WHERE created_at >= %s "
+        "GROUP BY resource_type, event, actor ORDER BY cnt DESC LIMIT 20", (since,)
     ).fetchall()
     actors = conn.execute(
         "SELECT actor, COUNT(*) as cnt FROM audit_trail "
-        "WHERE created_at >= datetime('now', '-? hours') GROUP BY actor ORDER BY cnt DESC", (since_hours,)
+        "WHERE created_at >= %s GROUP BY actor ORDER BY cnt DESC", (since,)
     ).fetchall()
     conn.close()
     total_events = sum(int(e["cnt"]) for e in events)

@@ -86,7 +86,7 @@ def share_provenance(config: BlockchainConfig, registry_id: str, channel_id: str
     try:
         row = conn.execute(
             "SELECT id, citation_type, source_hash, anchor_hash, merkle_root, blockchain_tx_id, classification, trust_score, project_id "
-            "FROM source_citation_registry WHERE id = ?",
+            "FROM source_citation_registry WHERE id = %s",
             (registry_id,),
         ).fetchone()
         if not row:
@@ -128,7 +128,7 @@ def _queue_pending(operation_type: str, payload: dict) -> dict:
     conn = get_connection()
     try:
         conn.execute(
-            "INSERT INTO govchain_pending_operations (operation_type, payload_hash, status) VALUES (?, ?, ?)",
+            "INSERT INTO govchain_pending_operations (operation_type, payload_hash, status) VALUES (%s, %s, %s)",
             (operation_type, payload_hash, "pending"),
         )
         conn.commit()

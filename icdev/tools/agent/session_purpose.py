@@ -119,7 +119,7 @@ def declare(
         conn.execute(
             """INSERT INTO session_purposes
                (id, project_id, purpose, purpose_hash, declared_by, scope, metadata, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
             (purpose_id, project_id, purpose, _hash(purpose), declared_by, scope, json.dumps(metadata or {}), now),
         )
         conn.commit()
@@ -194,7 +194,7 @@ def complete(purpose_id: str, db_path=None) -> bool:
     conn = _get_db(db_path)
     try:
         cursor = conn.execute(
-            "UPDATE session_purposes SET status = 'completed', completed_at = ? WHERE id = ? AND status = 'active'",
+            "UPDATE session_purposes SET status = 'completed', completed_at = %s WHERE id = %s AND status = 'active'",
             (now_iso(), purpose_id),
         )
         conn.commit()
@@ -210,7 +210,7 @@ def abandon(purpose_id: str, db_path=None) -> bool:
     conn = _get_db(db_path)
     try:
         cursor = conn.execute(
-            "UPDATE session_purposes SET status = 'abandoned', completed_at = ? WHERE id = ? AND status = 'active'",
+            "UPDATE session_purposes SET status = 'abandoned', completed_at = %s WHERE id = %s AND status = 'active'",
             (now_iso(), purpose_id),
         )
         conn.commit()

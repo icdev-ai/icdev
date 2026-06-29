@@ -1,0 +1,232 @@
+{% extends "network/base.html" %}
+{% block title %}Exception Registry — Network Canvas{% endblock %}
+{% block content %}
+<style>
+.badge-risk { display:inline-block; padding:2px 8px; border-radius:10px; font-size:0.75rem; font-weight:600; text-transform:uppercase; }
+.badge-risk.critical { background:#3d0000; color:#ff6b6b; }
+.badge-risk.high { background:#3d1a00; color:#ff9a3d; }
+.badge-risk.medium { background:#3d3200; color:#ffd93d; }
+.badge-risk.low { background:#003d1a; color:#6bffb8; }
+.badge-status { display:inline-block; padding:2px 8px; border-radius:10px; font-size:0.75rem; font-weight:600; text-transform:uppercase; }
+.badge-status.pending { background:var(--bg-hover); color:var(--text-dim); }
+.badge-status.issoapproved { background:#1a2a3d; color:#9ab4ff; }
+.badge-status.issMapproved { background:#1a2a3d; color:#c4a8ff; }
+.badge-status.fullyapproved { background:#003d1a; color:#6bffb8; }
+.badge-status.rejected { background:#3d0000; color:#ff6b6b; }
+.badge-status.expired { background:#2a1a00; color:#ff9a3d; }
+.approval-chain { display:flex; gap:4px; align-items:center; }
+.approval-dot { width:22px; height:22px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:0.65rem; font-weight:700; }
+.approval-dot.done { background:#22c55e; color:#000; }
+.approval-dot.pending { background:var(--bg-hover); color:var(--text-dim); border:1px solid var(--border); }
+.approval-dot-label { font-size:0.65rem; color:var(--text-dim); text-align:center; }
+.date-expired { color:#ff6b6b; font-weight:600; }
+.empty-state { text-align:center; padding:60px 20px; color:var(--text-dim); }
+</style>
+
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Exception Registry</h1>
+    <p class="page-subtitle">Risk exceptions with ISSO / ISSM / AO approval chain</p>
+  </div>
+  <div class="page-actions">
+    <button class="btn btn-primary" onclick="openFileModal()">+ File Exception</button>
+  </div>
+</div>
+
+<!-- Summary stats -->
+<div class="stats-bar" style="margin-bottom:1.2rem;">
+  <div class="stat-card">
+    <div class="stat-value">{{ exceptions|length }}</div>
+    <div class="stat-label">Total</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value">{{ exceptions|selectattr('status','equalto','pending')|list|length }}</div>
+    <div class="stat-label">Pending</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value">{{ exceptions|selectattr('status','equalto','fully-approved')|list|length }}</div>
+    <div class="stat-label">Fully Approved</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value">{{ exceptions|selectattr('status','equalto','expired')|list|length }}</div>
+    <div class="stat-label">Expired</div>
+  </div>
+</div>
+
+<!-- Exceptions Table -->
+<section class="panel panel-wide">
+  <div class="panel-header">
+    <h2 class="panel-title">Exceptions</h2>
+  </div>
+  <div style="overflow-x:auto;">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Device</th>
+          <th>Exception Type</th>
+          <th>Risk Level</th>
+          <th>Expiry Date</th>
+          <th>Approval Chain</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if not exceptions %}
+        <tr>
+          <td colspan="7">
+            <div class="empty-state">
+              <div style="font-size:1rem;font-weight:600;margin-bottom:4px;">No exceptions on file</div>
+              <div style="font-size:0.85rem;">File an exception for devices that cannot be immediately remediated.</div>
+            </div>
+          </td>
+        </tr>
+        {% endif %}
+        {% for exc in exceptions %}
+        {% set is_expired = exc.expiry_date and exc.expiry_date[:10] < today %}
+        <tr>
+          <td><strong>{{ exc.device_name or exc.device_id or '—' }}</strong></td>
+          <td>{{ exc.exception_type.replace('-', ' ').title() }}</td>
+          <td><span class="badge-risk {{ exc.risk_level }}">{{ exc.risk_level }}</span></td>
+          <td class="{{ 'date-expired' if is_expired else '' }}">
+            {{ (exc.expiry_date or '')[:10] or '—' }}
+            {% if is_expired %}<span style="font-size:0.72rem;margin-left:4px;">(expired)</span>{% endif %}
+          </td>
+          <td>
+            <div class="approval-chain">
+              <div style="display:flex;flex-direction:column;align-items:center;gap:2px;">
+                <div class="approval-dot {{ 'done' if exc.isso_approved else 'pending' }}" title="{{ exc.isso_approved_by or 'ISSO pending' }}">IS</div>
+                <div class="approval-dot-label">ISSO</div>
+              </div>
+              <div style="width:14px;height:2px;background:{{ '#22c55e' if exc.isso_approved and exc.issm_approved else 'var(--border)' }};margin-bottom:14px;"></div>
+              <div style="display:flex;flex-direction:column;align-items:center;gap:2px;">
+                <div class="approval-dot {{ 'done' if exc.issm_approved else 'pending' }}" title="{{ exc.issm_approved_by or 'ISSM pending' }}">IM</div>
+                <div class="approval-dot-label">ISSM</div>
+              </div>
+              <div style="width:14px;height:2px;background:{{ '#22c55e' if exc.issm_approved and exc.ao_approved else 'var(--border)' }};margin-bottom:14px;"></div>
+              <div style="display:flex;flex-direction:column;align-items:center;gap:2px;">
+                <div class="approval-dot {{ 'done' if exc.ao_approved else 'pending' }}" title="{{ exc.ao_approved_by or 'AO pending' }}">AO</div>
+                <div class="approval-dot-label">AO</div>
+              </div>
+            </div>
+          </td>
+          <td>
+            {% set s_class = exc.status.replace('-','') if exc.status else 'pending' %}
+            <span class="badge-status {{ s_class }}">{{ exc.status or 'pending' }}</span>
+          </td>
+          <td>
+            {% if not exc.isso_approved %}
+            <button class="btn btn-secondary" style="font-size:0.75rem;padding:3px 8px;"
+              onclick="approveException('{{ exc.id }}', 'isso')">ISSO Approve</button>
+            {% elif not exc.issm_approved %}
+            <button class="btn btn-secondary" style="font-size:0.75rem;padding:3px 8px;"
+              onclick="approveException('{{ exc.id }}', 'issm')">ISSM Approve</button>
+            {% elif not exc.ao_approved %}
+            <button class="btn btn-secondary" style="font-size:0.75rem;padding:3px 8px;"
+              onclick="approveException('{{ exc.id }}', 'ao')">AO Approve</button>
+            {% else %}
+            <span style="font-size:0.75rem;color:var(--text-dim);">Fully approved</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- File Exception Modal -->
+<div id="file-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1000;align-items:center;justify-content:center;">
+  <div style="background:var(--bg-card);border-radius:8px;padding:1.5rem;width:460px;max-width:90vw;">
+    <h3 style="margin:0 0 1rem;">File Exception</h3>
+    <label style="display:block;margin-bottom:10px;font-size:0.85rem;">Device Name
+      <input id="fe-device" type="text" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:4px;background:var(--bg-card);color:var(--text-primary);margin-top:4px;">
+    </label>
+    <label style="display:block;margin-bottom:10px;font-size:0.85rem;">Exception Type
+      <select id="fe-type" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:4px;background:var(--bg-card);color:var(--text-primary);margin-top:4px;">
+        <option value="risk-acceptance">Risk Acceptance</option>
+        <option value="temporary-deviation">Temporary Deviation</option>
+        <option value="operational-necessity">Operational Necessity</option>
+        <option value="vendor-constraint">Vendor Constraint</option>
+      </select>
+    </label>
+    <label style="display:block;margin-bottom:10px;font-size:0.85rem;">Risk Level
+      <select id="fe-risk" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:4px;background:var(--bg-card);color:var(--text-primary);margin-top:4px;">
+        <option value="low">Low</option>
+        <option value="medium" selected>Medium</option>
+        <option value="high">High</option>
+        <option value="critical">Critical</option>
+      </select>
+    </label>
+    <label style="display:block;margin-bottom:10px;font-size:0.85rem;">Justification
+      <textarea id="fe-justification" rows="3" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:4px;background:var(--bg-card);color:var(--text-primary);margin-top:4px;resize:vertical;"></textarea>
+    </label>
+    <label style="display:block;margin-bottom:16px;font-size:0.85rem;">Expiry Date
+      <input id="fe-expiry" type="date" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:4px;background:var(--bg-card);color:var(--text-primary);margin-top:4px;">
+    </label>
+    <div style="display:flex;gap:10px;justify-content:flex-end;">
+      <button class="btn btn-secondary" onclick="closeFileModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitException()">File Exception</button>
+    </div>
+  </div>
+</div>
+
+<!-- Approve Modal -->
+<div id="approve-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1000;align-items:center;justify-content:center;">
+  <div style="background:var(--bg-card);border-radius:8px;padding:1.5rem;width:360px;max-width:90vw;">
+    <h3 style="margin:0 0 1rem;">Record Approval</h3>
+    <input type="hidden" id="ap-exc-id">
+    <input type="hidden" id="ap-level">
+    <label style="display:block;margin-bottom:16px;font-size:0.85rem;">Approver Name / ID
+      <input id="ap-approver" type="text" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:4px;background:var(--bg-card);color:var(--text-primary);margin-top:4px;">
+    </label>
+    <div style="display:flex;gap:10px;justify-content:flex-end;">
+      <button class="btn btn-secondary" onclick="closeApproveModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitApproval()">Confirm</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function openFileModal() { document.getElementById('file-modal').style.display = 'flex'; }
+function closeFileModal() { document.getElementById('file-modal').style.display = 'none'; }
+async function submitException() {
+  const body = {
+    device_name: document.getElementById('fe-device').value,
+    exception_type: document.getElementById('fe-type').value,
+    risk_level: document.getElementById('fe-risk').value,
+    justification: document.getElementById('fe-justification').value,
+    expiry_date: document.getElementById('fe-expiry').value,
+  };
+  const r = await fetch('/network/api/exception/file', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body),
+  });
+  if (r.ok) { closeFileModal(); location.reload(); }
+  else { const d = await r.json(); alert('Error: ' + (d.error || 'Unknown')); }
+}
+
+function approveException(excId, level) {
+  document.getElementById('ap-exc-id').value = excId;
+  document.getElementById('ap-level').value = level;
+  document.getElementById('ap-approver').value = '';
+  document.getElementById('approve-modal').style.display = 'flex';
+}
+function closeApproveModal() { document.getElementById('approve-modal').style.display = 'none'; }
+async function submitApproval() {
+  const excId = document.getElementById('ap-exc-id').value;
+  const level = document.getElementById('ap-level').value;
+  const approver = document.getElementById('ap-approver').value;
+  if (!approver) { alert('Please enter approver name.'); return; }
+  const r = await fetch('/network/api/exception/' + excId + '/approve', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ level, approver }),
+  });
+  if (r.ok) { closeApproveModal(); location.reload(); }
+  else { const d = await r.json(); alert('Error: ' + (d.error || 'Unknown')); }
+}
+</script>
+{% endblock %}

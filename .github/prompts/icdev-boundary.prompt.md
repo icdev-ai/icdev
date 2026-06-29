@@ -17,3 +17,5 @@ Runs RICOAS Phase 2 — ATO boundary impact and supply chain intelligence:
 6. **CVE triage** — triage vulnerabilities with blast radius propagation through dependency graph
 
 All operations produce CUI-marked output and record audit trail entries.
+
+See [REFERENCE.md](REFERENCE.md) for step-by-step commands (Steps 1–8).

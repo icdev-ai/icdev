@@ -100,7 +100,7 @@ def enroll_device(hostname: str, os_platform: str = "windows",
             """INSERT INTO zig_mdm_enrollments
                (device_id, hostname, os_platform, mdm_platform, enrollment_status,
                 profile_id, compliant, enrolled_at, last_checkin, updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                ON CONFLICT(device_id) DO UPDATE SET
                mdm_platform=excluded.mdm_platform,
                enrollment_status=excluded.enrollment_status,
@@ -115,7 +115,7 @@ def enroll_device(hostname: str, os_platform: str = "windows",
         # Sync to device registry if present (best-effort — registry seeded by compliance scan)
         try:
             conn.execute(
-                "UPDATE zig_device_registry SET mdm_enrolled=1, updated_at=? WHERE device_id=?",
+                "UPDATE zig_device_registry SET mdm_enrolled=1, updated_at=%s WHERE device_id=%s",
                 (now, device_id),
             )
         except Exception:

@@ -22,24 +22,24 @@ def get_decision_stats(days: int = 7) -> dict[str, Any]:
                           AVG(confidence) as avg_confidence,
                           SUM(CASE WHEN confidence < 0.3 THEN 1 ELSE 0 END) as low_conf,
                           SUM(CASE WHEN decision_type = 'confabulation_flag' THEN 1 ELSE 0 END) as confab_flags
-                   FROM canvas_ai_decisions WHERE created_at >= ?""",
+                   FROM canvas_ai_decisions WHERE created_at >= %s""",
                 (cutoff,),
             ).fetchone()
             by_canvas = conn.execute(
                 """SELECT canvas_type, COUNT(*) as cnt
-                   FROM canvas_ai_decisions WHERE created_at >= ?
+                   FROM canvas_ai_decisions WHERE created_at >= %s
                    GROUP BY canvas_type ORDER BY cnt DESC""",
                 (cutoff,),
             ).fetchall()
             by_model = conn.execute(
                 """SELECT COALESCE(model_used, 'unknown') as model, COUNT(*) as cnt
-                   FROM canvas_ai_decisions WHERE created_at >= ?
+                   FROM canvas_ai_decisions WHERE created_at >= %s
                    GROUP BY model ORDER BY cnt DESC""",
                 (cutoff,),
             ).fetchall()
             by_type = conn.execute(
                 """SELECT decision_type, COUNT(*) as cnt
-                   FROM canvas_ai_decisions WHERE created_at >= ?
+                   FROM canvas_ai_decisions WHERE created_at >= %s
                    GROUP BY decision_type ORDER BY cnt DESC""",
                 (cutoff,),
             ).fetchall()
@@ -80,7 +80,7 @@ def get_decisions(
         params.append(limit)
         with get_connection() as conn:
             rows = conn.execute(
-                f"SELECT * FROM canvas_ai_decisions {where} ORDER BY created_at DESC LIMIT ?",  # nosec B608
+                f"SELECT * FROM canvas_ai_decisions {where} ORDER BY created_at DESC LIMIT %s",  # nosec B608
                 params,
             ).fetchall()
         return [dict(r) for r in rows]
@@ -114,7 +114,7 @@ def get_confabulation_flags(days: int = 7) -> list[dict]:
             rows = conn.execute(
                 """SELECT * FROM canvas_ai_decisions
                    WHERE decision_type = 'confabulation_flag'
-                   AND created_at >= ?
+                   AND created_at >= %s
                    ORDER BY created_at DESC""",
                 (cutoff,),
             ).fetchall()

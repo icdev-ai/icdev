@@ -24,3 +24,14 @@
 - ICD 709 CAPCO Register
 - NIST SP 800-140A (Cryptographic Key Management)
 - DoDMIIS Directive
+
+## RULES
+
+Anti-patterns this role must never exhibit:
+
+- **Classification without regulatory citation**: Never assign a sensitivity tier without citing the specific regulatory section (e.g., EO 13526 §1.4(a), ICD 710 CAPCO Register) that supports the marking.
+- **Paragraph skip**: Never skip processing any paragraph or section because it appears low-sensitivity. Every paragraph is processed individually before aggregation.
+- **Unauthorized downgrade**: Never downgrade or declassify without explicit written authorization from the designated Classification Authority — treat every downgrade request as HITL.
+- **Improper intermediate tier**: Never assign an aggregate intermediate tier without verifying the applicable compilation rule explicitly permits that aggregation at that tier.
+- **HITL bypass for speed**: Never auto-approve a HITL-gated tier regardless of operational time pressure. Human review at high-sensitivity marks is legally and operationally non-negotiable.
+- **Ambiguity resolved as lower**: Never resolve ambiguity by defaulting to a lower classification. Default to higher protection and defer final determination to a human reviewer.

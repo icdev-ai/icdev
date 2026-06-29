@@ -219,7 +219,7 @@ def save_scan_to_db(conn, topology_id: str, file_name: str, parsed: dict) -> str
         "INSERT INTO nc_vuln_scans "
         "(id, topology_id, scan_name, policy, scan_start, scan_end, "
         "file_name, host_count, created_at) "
-        "VALUES (?,?,?,?,?,?,?,?,?)",
+        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
         (
             scan_id,
             topology_id,
@@ -241,7 +241,7 @@ def save_scan_to_db(conn, topology_id: str, file_name: str, parsed: dict) -> str
             "(id, scan_id, ip, fqdn, netbios, os, "
             "cnt_critical, cnt_high, cnt_medium, cnt_low, cnt_info, "
             "node_id, created_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,NULL,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NULL,%s)",
             (
                 host_id,
                 scan_id,
@@ -264,7 +264,7 @@ def save_scan_to_db(conn, topology_id: str, file_name: str, parsed: dict) -> str
                 "severity, severity_label, risk_factor, cve, "
                 "cvss_base_score, port, protocol, "
                 "synopsis, description, solution, plugin_output) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (
                     str(uuid.uuid4()),
                     host_id,
@@ -304,7 +304,7 @@ def match_hosts_to_nodes(conn, scan_id: str, topology_id: str) -> list[dict]:
     import json as _json  # noqa: F401 — used below via _json.loads
 
     # Load topology graph_json
-    row = conn.execute("SELECT graph_json FROM topologies WHERE id=?", (topology_id,)).fetchone()
+    row = conn.execute("SELECT graph_json FROM topologies WHERE id=%s", (topology_id,)).fetchone()
     if not row:
         return []
 
@@ -329,7 +329,7 @@ def match_hosts_to_nodes(conn, scan_id: str, topology_id: str) -> list[dict]:
 
     hosts = conn.execute(
         "SELECT id, ip, fqdn, netbios, cnt_critical, cnt_high, "
-        "cnt_medium, cnt_low, cnt_info FROM nc_vuln_hosts WHERE scan_id=?",
+        "cnt_medium, cnt_low, cnt_info FROM nc_vuln_hosts WHERE scan_id=%s",
         (scan_id,),
     ).fetchall()
 
@@ -366,7 +366,7 @@ def match_hosts_to_nodes(conn, scan_id: str, topology_id: str) -> list[dict]:
 
         if node_id:
             conn.execute(
-                "UPDATE nc_vuln_hosts SET node_id=? WHERE id=?",
+                "UPDATE nc_vuln_hosts SET node_id=%s WHERE id=%s",
                 (node_id, host["id"]),
             )
 
@@ -394,7 +394,7 @@ def get_scan_summary(conn, scan_id: str) -> dict:
     """Return aggregated vulnerability counts for a scan."""
     row = conn.execute(
         "SELECT scan_name, policy, scan_start, scan_end, file_name, "
-        "host_count, created_at FROM nc_vuln_scans WHERE id=?",
+        "host_count, created_at FROM nc_vuln_scans WHERE id=%s",
         (scan_id,),
     ).fetchone()
     if not row:
@@ -409,7 +409,7 @@ def get_scan_summary(conn, scan_id: str) -> dict:
         "  SUM(cnt_info) as info, "
         "  COUNT(*) as host_count, "
         "  SUM(CASE WHEN node_id IS NOT NULL THEN 1 ELSE 0 END) as matched_hosts "
-        "FROM nc_vuln_hosts WHERE scan_id=?",
+        "FROM nc_vuln_hosts WHERE scan_id=%s",
         (scan_id,),
     ).fetchone()
 
@@ -443,7 +443,7 @@ def get_overlay_data(conn, scan_id: str) -> list[dict]:
         "SELECT node_id, ip, fqdn, cnt_critical, cnt_high, "
         "cnt_medium, cnt_low, cnt_info "
         "FROM nc_vuln_hosts "
-        "WHERE scan_id=? AND node_id IS NOT NULL",
+        "WHERE scan_id=%s AND node_id IS NOT NULL",
         (scan_id,),
     ).fetchall()
 
@@ -482,7 +482,7 @@ def _worst_severity(counts: dict) -> str:
 def get_host_findings(conn, scan_id: str, host_ip: str, limit: int = 20) -> list[dict]:
     """Return top N findings for a host in a scan, ordered by severity desc."""
     host = conn.execute(
-        "SELECT id FROM nc_vuln_hosts WHERE scan_id=? AND ip=? LIMIT 1",
+        "SELECT id FROM nc_vuln_hosts WHERE scan_id=%s AND ip=%s LIMIT 1",
         (scan_id, host_ip),
     ).fetchone()
     if not host:
@@ -493,9 +493,9 @@ def get_host_findings(conn, scan_id: str, host_ip: str, limit: int = 20) -> list
         "risk_factor, cve, cvss_base_score, port, protocol, "
         "synopsis, solution "
         "FROM nc_vuln_findings "
-        "WHERE host_id=? "
+        "WHERE host_id=%s "
         "ORDER BY severity DESC, plugin_name "
-        "LIMIT ?",
+        "LIMIT %s",
         (host["id"], limit),
     ).fetchall()
 

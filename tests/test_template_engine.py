@@ -323,3 +323,160 @@ class TestChildAppGeneratorOverlay:
         blueprint_path = child_root / "apps" / "overlay_app" / "blueprint.py"
         assert blueprint_path.exists()
         ast.parse(blueprint_path.read_text(encoding="utf-8"))
+
+
+# ---------------------------------------------------------------------------
+# Core extension template tests
+# ---------------------------------------------------------------------------
+CORE_EXT_TEMPLATES = BASE_DIR / "data" / "templates" / "core_extensions"
+
+
+class TestCoreExtensionTemplate:
+    """Validate the standard core_extension template generates valid Python."""
+
+    def test_standard_renders_successfully(self, tmp_path):
+        template = CORE_EXT_TEMPLATES / "standard"
+        out = tmp_path / "out"
+        result = render_tree(
+            template,
+            out,
+            {
+                "key": "notify_hub",
+                "display_name": "Notification Hub",
+                "env_flag": "ICDEV_NOTIFY_HUB_ENABLED",
+            },
+        )
+        assert result["success"], f"Errors: {result.get('errors')}"
+        assert not result["validation_failures"]
+
+    def test_standard_generates_blueprint(self, tmp_path):
+        template = CORE_EXT_TEMPLATES / "standard"
+        out = tmp_path / "out"
+        render_tree(
+            template,
+            out,
+            {
+                "key": "notify_hub",
+                "display_name": "Notification Hub",
+                "env_flag": "ICDEV_NOTIFY_HUB_ENABLED",
+            },
+        )
+        bp = out / "tools" / "notify_hub" / "blueprint.py"
+        assert bp.exists()
+        text = bp.read_text(encoding="utf-8")
+        assert "create_notify_hub_blueprint" in text
+        assert "ICDEV_NOTIFY_HUB_ENABLED" in text
+        ast.parse(text)
+
+    def test_standard_generates_constants(self, tmp_path):
+        template = CORE_EXT_TEMPLATES / "standard"
+        out = tmp_path / "out"
+        render_tree(
+            template,
+            out,
+            {
+                "key": "notify_hub",
+                "display_name": "Notification Hub",
+                "env_flag": "ICDEV_NOTIFY_HUB_ENABLED",
+            },
+        )
+        c = out / "tools" / "notify_hub" / "constants.py"
+        assert c.exists()
+        ast.parse(c.read_text(encoding="utf-8"))
+
+    def test_standard_iqe_skipped_by_default(self, tmp_path):
+        template = CORE_EXT_TEMPLATES / "standard"
+        out = tmp_path / "out"
+        result = render_tree(
+            template,
+            out,
+            {
+                "key": "notify_hub",
+                "display_name": "Notification Hub",
+                "env_flag": "ICDEV_NOTIFY_HUB_ENABLED",
+                "include_iqe": "false",
+            },
+        )
+        iqe = out / "tools" / "iqe" / "adapters" / "notify_hub.py"
+        assert not iqe.exists(), "IQE adapter should be skipped when include_iqe=false"
+        assert "tools/iqe/adapters/notify_hub.py" in result["skipped_files"]
+
+    def test_standard_iqe_generated_when_requested(self, tmp_path):
+        template = CORE_EXT_TEMPLATES / "standard"
+        out = tmp_path / "out"
+        render_tree(
+            template,
+            out,
+            {
+                "key": "notify_hub",
+                "display_name": "Notification Hub",
+                "env_flag": "ICDEV_NOTIFY_HUB_ENABLED",
+                "include_iqe": "true",
+            },
+        )
+        iqe = out / "tools" / "iqe" / "adapters" / "notify_hub.py"
+        assert iqe.exists()
+        ast.parse(iqe.read_text(encoding="utf-8"))
+
+
+class TestScaffoldCLI:
+    """Tests for the scaffold CLI (canvas, child-app, core, list-templates)."""
+
+    def test_list_templates_returns_kinds(self):
+        from tools.cli.scaffold import _list_templates
+        import io
+        import contextlib
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = _list_templates(emit_json=False)
+        assert rc == 0
+        output = buf.getvalue()
+        assert "canvas:" in output
+        assert "child-app:" in output
+        assert "core:" in output
+        assert "standard" in output
+
+    def test_list_templates_json(self):
+        from tools.cli.scaffold import _list_templates
+        import io
+        import contextlib
+        import json as _json
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = _list_templates(emit_json=True)
+        assert rc == 0
+        data = _json.loads(buf.getvalue())
+        assert "canvases" in data
+        assert "child_apps" in data
+        assert "core_extensions" in data
+        assert "standard" in data["core_extensions"]
+
+    def test_core_dry_run(self, tmp_path):
+        from tools.cli.scaffold import main
+        rc = main([
+            "core", "my_ext",
+            "--display-name", "My Ext",
+            "--env-flag", "ICDEV_MY_EXT_ENABLED",
+            "--dry-run",
+            "--no-register",
+            "--json",
+            "--out", str(tmp_path / "out"),
+        ])
+        assert rc == 0
+        # No files written in dry-run
+        assert not (tmp_path / "out").exists() or not list((tmp_path / "out").rglob("*"))
+
+    def test_core_scaffold_generates_files(self, tmp_path):
+        from tools.cli.scaffold import main
+        out = tmp_path / "out"
+        rc = main([
+            "core", "my_ext",
+            "--display-name", "My Ext",
+            "--env-flag", "ICDEV_MY_EXT_ENABLED",
+            "--no-register",
+            "--out", str(out),
+        ])
+        assert rc == 0
+        assert (out / "tools" / "my_ext" / "__init__.py").exists()
+        assert (out / "tools" / "my_ext" / "blueprint.py").exists()
+        assert (out / "tools" / "my_ext" / "constants.py").exists()

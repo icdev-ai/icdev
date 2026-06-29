@@ -76,7 +76,7 @@ def log_auth_event(user_id, event_type, ip_address=None, user_agent=None, detail
         conn.execute(
             """INSERT INTO dashboard_auth_log
                (user_id, event_type, ip_address, user_agent, details)
-               VALUES (?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s)""",
             (user_id, event_type, ip_address, user_agent, details),
         )
         conn.commit()
@@ -97,7 +97,7 @@ def create_user(email, display_name, role="developer", created_by=None, tenant_i
     try:
         conn.execute(
             """INSERT INTO dashboard_users (id, email, display_name, role, created_by, tenant_id)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s)""",
             (user_id, email, display_name, role, created_by, tenant_id),
         )
         conn.commit()
@@ -127,7 +127,7 @@ def create_api_key_for_user(user_id, label=None, created_by=None, expires_at=Non
         conn.execute(
             """INSERT INTO dashboard_api_keys
                (id, user_id, key_hash, key_prefix, label, expires_at)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s)""",
             (key_id, user_id, hashed, prefix, label, expires_at),
         )
         conn.commit()
@@ -155,7 +155,7 @@ def validate_api_key(raw_key):
                       k.id as key_id, k.expires_at
                FROM dashboard_api_keys k
                JOIN dashboard_users u ON k.user_id = u.id
-               WHERE k.key_hash = ? AND k.status = 'active'""",
+               WHERE k.key_hash = %s AND k.status = 'active'""",
             (hashed,),
         ).fetchone()
 
@@ -179,7 +179,7 @@ def validate_api_key(raw_key):
 
         # Update last_used_at
         conn.execute(
-            "UPDATE dashboard_api_keys SET last_used_at = ? WHERE id = ?",
+            "UPDATE dashboard_api_keys SET last_used_at = %s WHERE id = %s",
             (datetime.now(timezone.utc).isoformat(), row["key_id"]),
         )
         conn.commit()
@@ -194,10 +194,10 @@ def get_user_by_id(user_id, tenant_id=None):
     try:
         if tenant_id is not None:
             return conn.execute(
-                "SELECT * FROM dashboard_users WHERE id = ? AND tenant_id = ?",
+                "SELECT * FROM dashboard_users WHERE id = %s AND tenant_id = %s",
                 (user_id, tenant_id),
             ).fetchone()
-        return conn.execute("SELECT * FROM dashboard_users WHERE id = ?", (user_id,)).fetchone()
+        return conn.execute("SELECT * FROM dashboard_users WHERE id = %s", (user_id,)).fetchone()
     finally:
         conn.close()
 
@@ -232,8 +232,8 @@ def revoke_api_key(key_id, revoked_by=None):
     try:
         conn.execute(
             """UPDATE dashboard_api_keys
-               SET status = 'revoked', revoked_at = ?, revoked_by = ?
-               WHERE id = ?""",
+               SET status = 'revoked', revoked_at = %s, revoked_by = %s
+               WHERE id = %s""",
             (datetime.now(timezone.utc).isoformat(), revoked_by, key_id),
         )
         conn.commit()
@@ -243,7 +243,7 @@ def revoke_api_key(key_id, revoked_by=None):
     # Find user_id for logging
     conn = _get_db()
     try:
-        row = conn.execute("SELECT user_id FROM dashboard_api_keys WHERE id = ?", (key_id,)).fetchone()
+        row = conn.execute("SELECT user_id FROM dashboard_api_keys WHERE id = %s", (key_id,)).fetchone()
         if row:
             log_auth_event(
                 row["user_id"],
@@ -261,7 +261,7 @@ def list_api_keys_for_user(user_id):
         rows = conn.execute(
             """SELECT id, key_prefix, label, status, last_used_at,
                       expires_at, created_at, revoked_at
-               FROM dashboard_api_keys WHERE user_id = ?
+               FROM dashboard_api_keys WHERE user_id = %s
                ORDER BY created_at DESC""",
             (user_id,),
         ).fetchall()
@@ -275,7 +275,7 @@ def suspend_user(user_id, suspended_by=None):
     conn = _get_db()
     try:
         conn.execute(
-            "UPDATE dashboard_users SET status = 'suspended', updated_at = ? WHERE id = ?",
+            "UPDATE dashboard_users SET status = 'suspended', updated_at = %s WHERE id = %s",
             (datetime.now(timezone.utc).isoformat(), user_id),
         )
         conn.commit()
@@ -289,7 +289,7 @@ def reactivate_user(user_id, reactivated_by=None):
     conn = _get_db()
     try:
         conn.execute(
-            "UPDATE dashboard_users SET status = 'active', updated_at = ? WHERE id = ?",
+            "UPDATE dashboard_users SET status = 'active', updated_at = %s WHERE id = %s",
             (datetime.now(timezone.utc).isoformat(), user_id),
         )
         conn.commit()
@@ -476,13 +476,13 @@ def _auto_provision_env_key():
     email = "admin@icdev.local"
     conn = _get_db()
     try:
-        row = conn.execute("SELECT id FROM dashboard_users WHERE email = ?", (email,)).fetchone()
+        row = conn.execute("SELECT id FROM dashboard_users WHERE email = %s", (email,)).fetchone()
         if row:
             user_id = row["id"]
         else:
             user_id = str(uuid.uuid4())
             conn.execute(
-                "INSERT INTO dashboard_users (id, email, display_name, role, created_by) VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO dashboard_users (id, email, display_name, role, created_by) VALUES (%s, %s, %s, %s, %s)",
                 (user_id, email, "Admin", "admin", "auto_provision"),
             )
             conn.commit()
@@ -562,13 +562,13 @@ def bootstrap_env_user(raw_key):
     email = "admin@icdev.local"
     conn = _get_db()
     try:
-        row = conn.execute("SELECT * FROM dashboard_users WHERE email = ?", (email,)).fetchone()
+        row = conn.execute("SELECT * FROM dashboard_users WHERE email = %s", (email,)).fetchone()
         if row:
             user_id = row["id"]
         else:
             user_id = str(uuid.uuid4())
             conn.execute(
-                "INSERT INTO dashboard_users (id, email, display_name, role, created_by) VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO dashboard_users (id, email, display_name, role, created_by) VALUES (%s, %s, %s, %s, %s)",
                 (user_id, email, "Admin", "admin", "env_bootstrap"),
             )
         # Store the provided key
@@ -576,7 +576,7 @@ def bootstrap_env_user(raw_key):
         hashed = hash_api_key(raw_key)
         prefix = key_prefix(raw_key)
         conn.execute(
-            "INSERT INTO dashboard_api_keys (id, user_id, key_hash, key_prefix, label) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO dashboard_api_keys (id, user_id, key_hash, key_prefix, label) VALUES (%s, %s, %s, %s, %s)",
             (key_id, user_id, hashed, prefix, "env_key"),
         )
         conn.commit()

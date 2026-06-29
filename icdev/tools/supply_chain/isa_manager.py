@@ -59,7 +59,7 @@ def _log_audit(conn, project_id, event_type, action, details):
         conn.execute(
             """INSERT INTO audit_trail
                (project_id, event_type, actor, action, details, classification)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s)""",
             (
                 project_id,
                 event_type,
@@ -150,7 +150,7 @@ def create_isa(
                 status, signed_date, expiry_date, data_types_shared,
                 review_cadence_days, next_review_date, classification,
                 created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 isa_id,
                 project_id,
@@ -201,9 +201,9 @@ def get_expiring(project_id, days_ahead=90, db_path=None):
 
         rows = conn.execute(
             """SELECT * FROM isa_agreements
-               WHERE project_id = ?
+               WHERE project_id = %s
                  AND expiry_date IS NOT NULL
-                 AND expiry_date <= ?
+                 AND expiry_date <= %s
                  AND status NOT IN ('terminated', 'expired')
                ORDER BY expiry_date ASC""",
             (project_id, cutoff),
@@ -255,9 +255,9 @@ def get_review_due(project_id, db_path=None):
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         rows = conn.execute(
             """SELECT * FROM isa_agreements
-               WHERE project_id = ?
+               WHERE project_id = %s
                  AND next_review_date IS NOT NULL
-                 AND next_review_date <= ?
+                 AND next_review_date <= %s
                  AND status NOT IN ('terminated', 'expired')
                ORDER BY next_review_date ASC""",
             (project_id, today),
@@ -294,7 +294,7 @@ def renew_isa(isa_id, new_expiry_date, notes=None, db_path=None):
     """
     conn = _get_connection(db_path)
     try:
-        row = conn.execute("SELECT * FROM isa_agreements WHERE id = ?", (isa_id,)).fetchone()
+        row = conn.execute("SELECT * FROM isa_agreements WHERE id = %s", (isa_id,)).fetchone()
         if not row:
             raise ValueError(f"ISA '{isa_id}' not found.")
 
@@ -305,9 +305,9 @@ def renew_isa(isa_id, new_expiry_date, notes=None, db_path=None):
 
         conn.execute(
             """UPDATE isa_agreements
-               SET expiry_date = ?, next_review_date = ?, status = 'active',
-                   updated_at = ?
-               WHERE id = ?""",
+               SET expiry_date = %s, next_review_date = %s, status = 'active',
+                   updated_at = %s
+               WHERE id = %s""",
             (new_expiry_date, next_review, now.isoformat(), isa_id),
         )
         conn.commit()
@@ -339,7 +339,7 @@ def revoke_isa(isa_id, reason, db_path=None):
     """
     conn = _get_connection(db_path)
     try:
-        row = conn.execute("SELECT * FROM isa_agreements WHERE id = ?", (isa_id,)).fetchone()
+        row = conn.execute("SELECT * FROM isa_agreements WHERE id = %s", (isa_id,)).fetchone()
         if not row:
             raise ValueError(f"ISA '{isa_id}' not found.")
 
@@ -348,8 +348,8 @@ def revoke_isa(isa_id, reason, db_path=None):
 
         conn.execute(
             """UPDATE isa_agreements
-               SET status = 'terminated', updated_at = ?
-               WHERE id = ?""",
+               SET status = 'terminated', updated_at = %s
+               WHERE id = %s""",
             (now, isa_id),
         )
         conn.commit()
@@ -386,14 +386,14 @@ def list_isas(project_id, status=None, db_path=None):
                 raise ValueError(f"status must be one of {ISA_STATUSES}")
             rows = conn.execute(
                 """SELECT * FROM isa_agreements
-                   WHERE project_id = ? AND status = ?
+                   WHERE project_id = %s AND status = %s
                    ORDER BY expiry_date ASC""",
                 (project_id, status),
             ).fetchall()
         else:
             rows = conn.execute(
                 """SELECT * FROM isa_agreements
-                   WHERE project_id = ?
+                   WHERE project_id = %s
                    ORDER BY expiry_date ASC""",
                 (project_id,),
             ).fetchall()

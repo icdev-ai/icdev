@@ -796,7 +796,7 @@ def api_app_builder_from_prd(intake_session_id: str):
         except Exception:
             pass
         rows = conn.execute(
-            "SELECT DISTINCT requirement_type FROM intake_requirements WHERE session_id = ?",
+            "SELECT DISTINCT requirement_type FROM intake_requirements WHERE session_id = %s",
             (intake_session_id,),
         ).fetchall()
         for row in rows:

@@ -616,11 +616,11 @@ class SandboxExecutor:
                     container_id, artifact_count, status,
                     actor, project_id, tenant_id, classification, created_at
                 ) VALUES (
-                    ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?,
-                    ?, ?, ?,
-                    ?, ?, ?,
-                    ?, ?, ?, 'CUI', ?
+                    %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s,
+                    %s, %s, %s,
+                    %s, %s, %s,
+                    %s, %s, %s, 'CUI', %s
                 )""",
                 (
                     event_id,
@@ -667,11 +667,11 @@ class SandboxExecutor:
                     container_id, artifact_count, status,
                     actor, project_id, tenant_id, classification, created_at
                 ) VALUES (
-                    ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?,
-                    ?, ?, ?,
-                    ?, ?, ?,
-                    ?, ?, ?, 'CUI', ?
+                    %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s,
+                    %s, %s, %s,
+                    %s, %s, %s,
+                    %s, %s, %s, 'CUI', %s
                 )""",
                 (
                     log.exec_id, log.executor_type, log.language,

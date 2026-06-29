@@ -68,7 +68,7 @@ def create_template(
             """INSERT INTO wf_document_templates
                (id, name, doc_type, schema_json, canvas_type, stage_scope,
                 is_ai_reference, is_human_required, version, is_system, created_by, created_at)
-               VALUES (%s,?,?,?,?,?,?,?,?,0,?,%s)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,0,%s,%s)""",
             (doc_id, name, doc_type, schema, canvas_type, stage_scope,
              int(is_ai_reference), int(is_human_required), version, created_by, _now()),
         )
@@ -98,7 +98,7 @@ def submit_document(
         conn.execute(
             """INSERT INTO wf_document_submissions
                (id, approval_id, instance_id, doc_template_id, stage, submitted_by, submission_json, submitted_at)
-               VALUES (%s,?,?,?,?,?,?,%s)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
             (sub_id, approval_id, instance_id, doc_template_id, stage, submitted_by, data, _now()),
         )
         try:

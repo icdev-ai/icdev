@@ -32,6 +32,7 @@ from tools.agentic_ai_canvas.observability_nodes import check_observability_cove
 from tools.agentic_ai_canvas.a2a_sandbox import check_a2a_sandbox
 from tools.agentic_ai_canvas.safety_extensions import check_safety_extensions
 from tools.agentic_ai_canvas.memory_layer import check_memory_layer
+from tools.agentic_ai_canvas.confidence_gate import check_confidence_gate_path
 
 
 def _now() -> str:
@@ -421,6 +422,9 @@ def assess_design(design_id: str, graph_json: str | dict,
     # Phase 4 execution check (bonus — not penalised if no agents)
     p4_exec_findings = _check_execution_nodes(nodes, edges)
 
+    # Confidence gate path check (MEA-1)
+    cg_findings = check_confidence_gate_path(nodes, edges)
+
     # AIMC bridge: IL compatibility check + OWASP LLM01 bridge security check
     il_compat_findings: list[dict] = []
     bridge_sec_findings: list[dict] = []
@@ -442,7 +446,7 @@ def assess_design(design_id: str, graph_json: str | dict,
 
     all_findings = (rmf_findings + owasp_findings + hitl_findings
                     + obs_findings + a2a_findings + safety_ext_findings
-                    + mem_findings + p4_exec_findings
+                    + mem_findings + p4_exec_findings + cg_findings
                     + il_compat_findings + bridge_sec_findings)
 
     # L5 (unconstrained) agent is always a CRITICAL finding

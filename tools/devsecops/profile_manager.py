@@ -160,7 +160,7 @@ def create_profile(
             """INSERT OR REPLACE INTO devsecops_profiles
                (id, project_id, maturity_level, active_stages, stage_configs,
                 detected_at, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 profile_id,
                 project_id,
@@ -195,7 +195,7 @@ def get_profile(project_id: str) -> dict:
     """
     conn = _get_db()
     try:
-        row = conn.execute("SELECT * FROM devsecops_profiles WHERE project_id = ?", (project_id,)).fetchone()
+        row = conn.execute("SELECT * FROM devsecops_profiles WHERE project_id = %s", (project_id,)).fetchone()
 
         if not row:
             return {
@@ -247,8 +247,8 @@ def update_profile(project_id: str, enable: list = None, disable: list = None, m
     try:
         conn.execute(
             """UPDATE devsecops_profiles
-               SET active_stages = ?, maturity_level = ?, updated_at = ?
-               WHERE project_id = ?""",
+               SET active_stages = %s, maturity_level = %s, updated_at = %s
+               WHERE project_id = %s""",
             (json.dumps(sorted(active)), new_maturity, now, project_id),
         )
         conn.commit()
