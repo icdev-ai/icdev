@@ -5,9 +5,8 @@ from __future__ import annotations
 import os
 import sys
 import sqlite3
-import uuid
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 
@@ -145,7 +144,6 @@ class TestRemediationActions:
 
     def test_create_remediation_action_inserts_row(self, tmp_path):
         """create_remediation_action inserts a nc_remediation_actions row and returns int/str id."""
-        from tools.network.remediation_simulator import simulate_remediation
 
         conn = _get_conn(tmp_path)
         conn.execute("INSERT INTO nc_advisories (id, cve_id, vendor, title, severity) VALUES (1, 'CVE-2024-1234', 'cisco', 'Test Advisory', 'high')")

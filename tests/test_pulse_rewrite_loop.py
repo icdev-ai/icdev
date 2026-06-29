@@ -1,9 +1,7 @@
 """Tests for the _handle_rewrite auto-fix loop (max 3 attempts)."""
 
-import sys
-import types
 import unittest
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import patch
 
 
 def _make_quality(passed: bool, score: float = 60.0) -> dict:

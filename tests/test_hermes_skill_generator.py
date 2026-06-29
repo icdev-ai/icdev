@@ -7,7 +7,6 @@ list_queued, _llm_generate_spec fallback, and CLI JSON output.
 import json
 import sqlite3
 import sys
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 # ---------------------------------------------------------------------------

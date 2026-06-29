@@ -2,13 +2,10 @@
 """ECR-ONB V&V: onboarding_state persistence + API."""
 from __future__ import annotations
 
-import importlib
-import json
 import sqlite3
-import sys
 import uuid
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -257,7 +254,6 @@ def test_route_patch_persists_for_get(tmp_path):
 
 def test_wizard_include_present():
     """Acceptance: _onboarding_wizard.html exists and base.html includes it."""
-    from pathlib import Path
 
     base_dirs = [
         Path("tools/dashboard/templates"),
@@ -293,7 +289,6 @@ def test_wizard_include_present():
 
 def test_wizard_api_routes(flask_app):
     """Acceptance: onboarding API routes return expected shapes and state persists."""
-    from pathlib import Path
 
     # 1. onboarding.js must exist in both static trees
     for js_path in [

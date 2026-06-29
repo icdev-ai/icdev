@@ -166,7 +166,7 @@ class ToolRunner:
         try:
             proc = subprocess.run(
                 cmd,
-                shell=True,
+                shell=True,  # nosec B602 — command is allowlisted before reaching here
                 capture_output=True,
                 text=True,
                 cwd=str(self._root),

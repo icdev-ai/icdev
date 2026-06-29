@@ -2,9 +2,7 @@
 """Tests for DSW-1: brand and banner configuration (tools/dashboard/brand.py)."""
 from __future__ import annotations
 
-import os
 import textwrap
-from pathlib import Path
 
 import pytest
 

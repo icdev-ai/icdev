@@ -424,7 +424,8 @@ class TestScaffoldCLI:
 
     def test_list_templates_returns_kinds(self):
         from tools.cli.scaffold import _list_templates
-        import io, contextlib
+        import io
+        import contextlib
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
             rc = _list_templates(emit_json=False)
@@ -437,7 +438,9 @@ class TestScaffoldCLI:
 
     def test_list_templates_json(self):
         from tools.cli.scaffold import _list_templates
-        import io, contextlib, json as _json
+        import io
+        import contextlib
+        import json as _json
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
             rc = _list_templates(emit_json=True)

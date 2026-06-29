@@ -391,7 +391,6 @@ def test_license_tier_api(monkeypatch):
     except ImportError:
         pytest.skip("Flask not available")
 
-    import importlib
 
     monkeypatch.setenv("ICDEV_LICENSE_TIER", "community")
 

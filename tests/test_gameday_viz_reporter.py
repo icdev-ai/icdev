@@ -2,10 +2,7 @@
 """Tests for tools/gameday/viz_reporter.py — VIZ export for tournament reports."""
 from __future__ import annotations
 
-import json
-from pathlib import Path
 
-import pytest
 
 
 # ---------------------------------------------------------------------------
@@ -106,7 +103,7 @@ class TestExportTournamentReport:
         assert "success" in result
 
     def test_json_fallback_creates_file(self, tmp_path, monkeypatch):
-        import sys, types
+        import sys
         # Remove viz.kernel from sys.modules so ImportError triggers fallback
         sys.modules.pop("tools.viz.kernel", None)
         sys.modules.pop("tools.viz", None)

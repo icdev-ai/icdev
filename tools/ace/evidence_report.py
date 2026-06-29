@@ -331,8 +331,8 @@ def _render_markdown(data: dict[str, Any]) -> str:
     lines.append("")
 
     lines.append("## Instance Metadata")
-    lines.append(f"| Field | Value |")
-    lines.append(f"|-------|-------|")
+    lines.append("| Field | Value |")
+    lines.append("|-------|-------|")
     lines.append(f"| Instance ID | `{inst['id']}` |")
     lines.append(f"| Name | {inst.get('name', '')} |")
     lines.append(f"| Role | {inst.get('role_id', '')} |")
