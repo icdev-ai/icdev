@@ -116,3 +116,40 @@ class GoogleConnector(BaseConnector):
             return get_decrypted_token(user_id, "gcal")
         except Exception:
             return None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Module-level helpers (callable without instantiating the connector)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def send_gmail(token: str, to_email: str, subject: str, html_body: str) -> bool:
+    """Send an email via Gmail API using an OAuth access token."""
+    import base64
+    import urllib.request
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["To"] = to_email
+    msg["From"] = "me"
+    msg.attach(MIMEText(html_body, "html", "utf-8"))
+
+    raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+    body = json.dumps({"raw": raw}).encode()
+
+    req = urllib.request.Request(
+        f"{_GMAIL_API}/users/me/messages/send",
+        data=body,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            result = json.loads(r.read())
+            return bool(result.get("id"))
+    except Exception as exc:
+        logger.warning("[google] Gmail send failed: %s", exc)
+        return False

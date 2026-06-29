@@ -138,6 +138,36 @@
         </div>
       </div>
 
+      <!-- Delivery Channels -->
+      <div class="rounded-3 mb-3 p-3" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08)">
+        <div class="fw-semibold mb-2">📤 Briefing Delivery</div>
+        <div class="d-flex gap-3 flex-wrap">
+          {% set channels = profile.delivery_channels_list or ['dashboard'] %}
+          {% for ch, lbl in [('dashboard','Dashboard'),('email','Email (SMTP)'),('outlook','Outlook (M365)'),('slack','Slack'),('teams','Teams'),('gmail','Gmail')] %}
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" name="delivery_ch_{{ ch }}" id="dch-{{ ch }}" value="{{ ch }}"
+                   {% if ch in channels %}checked{% endif %}
+                   {% if ch == 'dashboard' %}disabled{% endif %}>
+            <label class="form-check-label small" for="dch-{{ ch }}">{{ lbl }}</label>
+          </div>
+          {% endfor %}
+        </div>
+        <div class="small text-muted mt-1">Dashboard is always on. Email tries SMTP then Gmail as fallback.</div>
+      </div>
+
+      <!-- Inferred Role Preview -->
+      <div class="rounded-3 mb-3 p-3" style="background:rgba(99,102,241,.05);border:1px solid rgba(99,102,241,.2)">
+        <div class="fw-semibold small mb-1" style="color:#a5b4fc">🧠 Inferred Role</div>
+        <div id="role-preview" class="text-muted small">
+          {% if inferred_persona and inferred_persona.get('persona') != 'general' %}
+            <strong style="color:#c4b5fd">{{ inferred_persona.display_name }}</strong>
+            · Canvases: {{ inferred_persona.canvases[:4] | join(', ') }}{% if inferred_persona.canvases|length > 4 %} +{{ inferred_persona.canvases|length - 4 }} more{% endif %}
+          {% else %}
+            Enter your job title above to see your inferred role.
+          {% endif %}
+        </div>
+      </div>
+
       <div class="d-flex gap-2">
         <button type="submit" class="btn btn-primary btn-sm" id="btn-save">Save Profile</button>
         <button type="button" id="btn-summarize" class="btn btn-outline-secondary btn-sm">✨ Generate AI Summary</button>
@@ -164,11 +194,36 @@ document.getElementById('profile-form').addEventListener('submit', function(e) {
   const status = document.getElementById('save-status');
   btn.disabled = true; btn.textContent = 'Saving…';
   const data = Object.fromEntries(new FormData(this).entries());
+  // Collect delivery channels (checkboxes not included in FormData if unchecked)
+  const channels = ['dashboard'];
+  document.querySelectorAll('[id^="dch-"]:checked:not(:disabled)').forEach(cb => channels.push(cb.value));
+  data['delivery_channels'] = JSON.stringify(channels);
   fetch('/me/api/second-brain/profile', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)})
     .then(r=>r.json()).then(d => {
       if(d.ok) { status.textContent = '✓ Saved'; status.style.color='#34d399'; setTimeout(()=>status.textContent='',3000); }
       else { status.textContent = 'Error: '+d.error; status.style.color='#f87171'; }
     }).finally(()=>{ btn.disabled=false; btn.textContent='Save Profile'; });
+});
+
+// Live role inference on title change
+const _titleIn = document.querySelector('[name="title"]');
+let _titleDebounce;
+_titleIn?.addEventListener('input', function() {
+  clearTimeout(_titleDebounce);
+  _titleDebounce = setTimeout(() => {
+    const t = this.value.trim();
+    if (!t) return;
+    fetch('/me/api/second-brain/profile/infer-role?title=' + encodeURIComponent(t))
+      .then(r => r.json()).then(d => {
+        if (d.ok && d.persona && d.persona.persona !== 'general') {
+          document.getElementById('role-preview').innerHTML =
+            `<strong style="color:#c4b5fd">${d.persona.display_name}</strong>` +
+            ` · Canvases: ${(d.persona.canvases||[]).slice(0,4).join(', ')}` +
+            (d.persona.canvases?.length > 4 ? ` +${d.persona.canvases.length-4} more` : '') +
+            (d.persona.digest_topics?.length ? ` · Topics: ${d.persona.digest_topics.slice(0,2).join(', ')}` : '');
+        }
+      }).catch(()=>{});
+  }, 500);
 });
 
 document.getElementById('btn-summarize').addEventListener('click', function() {

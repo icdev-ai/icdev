@@ -260,7 +260,18 @@ def deliver_briefing(user_id: str, briefing_date: str | None = None, tenant_id: 
     status["dashboard"] = "stored"
 
     if "email" in channels:
-        status["email"] = _deliver_email(user_id, briefing_date, ctx, tenant_id)
+        # Try SMTP; if that skips (no config), try Gmail API as fallback
+        smtp_result = _deliver_email(user_id, briefing_date, ctx, tenant_id)
+        if smtp_result in ("sent", "error") or "error:" in smtp_result:
+            status["email"] = smtp_result
+        else:
+            # SMTP skipped — try Gmail
+            gmail_result = _deliver_gmail(user_id, briefing_date, ctx, tenant_id)
+            status["email"] = gmail_result
+            status["gmail_fallback"] = gmail_result != "skipped_no_config"
+
+    if "gmail" in channels and "email" not in channels:
+        status["gmail"] = _deliver_gmail(user_id, briefing_date, ctx, tenant_id)
 
     if "slack" in channels:
         status["slack"] = _deliver_slack(user_id, briefing_date, ctx, tenant_id)
@@ -317,6 +328,26 @@ def _deliver_email(user_id: str, briefing_date: str, ctx: dict, tenant_id: str) 
         return "sent"
     except Exception as exc:
         logger.warning("[briefing] email delivery failed: %s", exc)
+        return f"error: {exc}"
+
+
+def _deliver_gmail(user_id: str, briefing_date: str, ctx: dict, tenant_id: str) -> str:
+    """Send briefing via Gmail API — fallback for users without SMTP."""
+    try:
+        from tools.second_brain.integrations import get_decrypted_token
+        token = get_decrypted_token(user_id, "gcal", tenant_id)
+        if not token:
+            return "skipped_no_config"
+        to_addr = ctx.get("work_email") or ""
+        if not to_addr:
+            return "skipped_no_email"
+        briefing = get_todays_briefing(user_id, tenant_id) or {}
+        html_body = _format_email_html(briefing, ctx)
+        from tools.second_brain.connectors.google import send_gmail
+        ok = send_gmail(token, to_addr, f"Your AI Briefing — {briefing_date}", html_body)
+        return "sent" if ok else "error: gmail_api_failed"
+    except Exception as exc:
+        logger.warning("[briefing] gmail delivery failed: %s", exc)
         return f"error: {exc}"
 
 

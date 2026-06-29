@@ -57,15 +57,23 @@ def index():
 
 @second_brain_bp.route("/profile")
 def profile_page():
+    import json as _json
     from tools.second_brain.profile import get_profile
+    from tools.second_brain.role_advisor import infer_persona
     from tools.second_brain.constants import ORG_INDUSTRIES, ORG_SIZES, SENIORITY_LABELS
     profile = get_profile(_user_id(), _tenant_id()) or {}
+    try:
+        profile["delivery_channels_list"] = _json.loads(profile.get("delivery_channels") or '["dashboard"]')
+    except Exception:
+        profile["delivery_channels_list"] = ["dashboard"]
+    inferred = infer_persona(profile.get("title", ""))
     return render_template(
         "second_brain/profile.html",
         profile=profile,
         seniority_labels=SENIORITY_LABELS,
         industries=ORG_INDUSTRIES,
         org_sizes=ORG_SIZES,
+        inferred_persona=inferred,
     )
 
 
@@ -151,12 +159,35 @@ def integrations_page():
 def api_save_profile():
     data = request.get_json(force=True, silent=True) or {}
     try:
-        from tools.second_brain.profile import save_full_profile
+        from tools.second_brain.profile import save_full_profile, upsert_profile
+        # Handle flat data from profile page form (no nested "profile" key)
+        if "profile" not in data:
+            upsert_profile(_user_id(), _tenant_id(), **{
+                k: v for k, v in data.items()
+                if k in {"full_name","work_email","title","seniority_tier","org_name",
+                         "org_industry","org_size","timezone","work_start","work_end",
+                         "briefing_time","delivery_channels","comm_style","team_mission","focus_block"}
+            })
+            from tools.second_brain.profile import get_profile
+            return jsonify({"ok": True, "profile": get_profile(_user_id(), _tenant_id())})
         result = save_full_profile(_user_id(), data, _tenant_id())
         return jsonify({"ok": True, "profile": result})
     except Exception as exc:
         logger.warning("[second_brain] save_profile error: %s", exc)
         return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@second_brain_bp.route("/api/second-brain/profile/infer-role")
+def api_infer_role():
+    title = request.args.get("title", "").strip()
+    from tools.second_brain.role_advisor import infer_persona
+    persona = infer_persona(title)
+    return jsonify({"ok": True, "persona": {
+        "persona": persona.get("persona"),
+        "display_name": persona.get("display_name", ""),
+        "canvases": persona.get("canvases", []),
+        "digest_topics": persona.get("digest_topics", [])[:4],
+    }})
 
 
 @second_brain_bp.route("/api/second-brain/profile/summarize", methods=["POST"])
@@ -772,6 +803,29 @@ def api_retro_generate():
     from tools.second_brain.retro import generate_weekly_retro
     retro = generate_weekly_retro(_user_id(), _tenant_id())
     return jsonify({"ok": True, "retro": retro})
+
+
+@second_brain_bp.route("/api/second-brain/retro/export-slides", methods=["POST"])
+def api_retro_export_slides():
+    """Generate and return a PPTX of the latest weekly retrospective."""
+    import io
+    from flask import send_file
+    from tools.second_brain.retro import export_retro_as_slides, generate_weekly_retro, get_latest_retro
+    retro = get_latest_retro(_user_id(), _tenant_id())
+    if not retro:
+        retro = generate_weekly_retro(_user_id(), _tenant_id())
+    if not retro:
+        return jsonify({"ok": False, "error": "No retro data available"}), 404
+    pptx_bytes = export_retro_as_slides(retro, _user_id(), _tenant_id())
+    if not pptx_bytes:
+        return jsonify({"ok": False, "error": "PPTX generation failed — slides builder may not be configured"}), 500
+    week = retro.get("week_ending", "retro")
+    return send_file(
+        io.BytesIO(pptx_bytes),
+        mimetype="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        as_attachment=True,
+        download_name=f"retro-{week}.pptx",
+    )
 
 
 # ── Unified Search ────────────────────────────────────────────────────────────
