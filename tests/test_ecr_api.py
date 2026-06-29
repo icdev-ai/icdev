@@ -551,7 +551,6 @@ def test_api_key_ui_routes(admin_client):
     wh = resp.get_json()
     assert "endpoint_id" in wh
     assert "secret" in wh
-    endpoint_id = wh["endpoint_id"]
 
     # -- list webhooks --
     resp = client.get("/api/admin/tenants/t1/webhooks")

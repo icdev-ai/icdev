@@ -203,9 +203,9 @@ class TestGetListDefinitions:
         assert list_ip_space_definitions(conn) == []
 
     def test_list_returns_created(self, conn, draft):
-    	rows = list_ip_space_definitions(conn)
-    	assert len(rows) == 1
-    	assert rows[0]["definition_id"] == draft["definition_id"]
+        rows = list_ip_space_definitions(conn)
+        assert len(rows) == 1
+        assert rows[0]["definition_id"] == draft["definition_id"]
 
     def test_list_filter_status(self, conn, draft):
         rows = list_ip_space_definitions(conn, status="draft")

@@ -257,12 +257,6 @@ def main() -> None:
     ))
 
     # ---------- Tier 4 — Hygiene & verification ----------
-    tier4_gate_deps = [
-        "acf-reg-01", "acf-reg-02", "acf-reg-03",
-        "acf-sch-01", "acf-mig-01", "acf-tst-01", "acf-hoo-01",
-        "acf-nav-01", "acf-nav-02", "acf-nav-03", "acf-nav-04", "acf-nav-05",
-    ]
-
     # Use the last Tier-3 task as the scalar parent so Tier-4 blocks until all prior work is done.
     specs.append(TaskSpec(
         id="acf-com-01",

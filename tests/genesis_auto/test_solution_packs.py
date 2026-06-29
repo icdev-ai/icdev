@@ -20,7 +20,7 @@ import pytest
 def test_solution_packs_imports():
     """Verify module can be imported without errors."""
     try:
-        import tools.agentic_ai_canvas.solution_packs
+        import tools.agentic_ai_canvas.solution_packs  # noqa: F401
     except ImportError as e:
         pytest.skip(f"Import dependency missing: {e}")
 

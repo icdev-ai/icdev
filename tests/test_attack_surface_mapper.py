@@ -274,8 +274,6 @@ def test_get_attack_surface_filters_by_cve():
 
 def test_map_attack_surface_returns_success_keys():
     """map_attack_surface always returns success/device/advisory count keys."""
-    nqe_result = {"rows": [], "source": "local_mapping"}
-
     conn = MagicMock()
     conn.commit = MagicMock()
     conn.close = MagicMock()

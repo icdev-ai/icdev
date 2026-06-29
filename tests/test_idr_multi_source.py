@@ -316,8 +316,6 @@ class TestCoTActivation:
             cot_calls.append(heading)
             return "CoT generated text."
 
-        original_build = dg._build_evidence_pool
-
         def patched_build(*a, **kw):
             return rich_evidence
 

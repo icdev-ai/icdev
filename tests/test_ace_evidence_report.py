@@ -337,7 +337,6 @@ class TestGenerateAuditAtPublish:
         _seed_instance(conn, "inst-pub")
 
         calls: list = []
-        original_wga = None
 
         def _tracking_conn(env_var):
             calls.append(env_var)

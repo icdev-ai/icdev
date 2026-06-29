@@ -76,9 +76,6 @@ class TestPendingGapTaskExists(unittest.TestCase):
 class TestRunReflex(unittest.TestCase):
     def _mock_conn(self, sweep_pending=False, gap_pending=False):
         conn = MagicMock()
-        cursor = MagicMock()
-        # Vary fetchone based on which query is being run
-        call_count = [0]
 
         def execute_side(sql, params=()):
             c = MagicMock()

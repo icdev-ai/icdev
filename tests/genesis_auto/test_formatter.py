@@ -20,7 +20,7 @@ import pytest
 def test_formatter_imports():
     """Verify module can be imported without errors."""
     try:
-        import tools.builder.formatter
+        import tools.builder.formatter  # noqa: F401
     except ImportError as e:
         pytest.skip(f"Import dependency missing: {e}")
 

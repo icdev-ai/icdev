@@ -159,7 +159,7 @@ class TestWriteToDbLogic:
 
         import tools.memory.memory_write as mw
         with patch.object(mw, "_get_conn", return_value=mock_conn):
-            result = mw.write_to_db(
+            mw.write_to_db(
                 "test content",
                 "event",
                 importance=5,
@@ -630,8 +630,7 @@ class TestChatManagerEpisodicSave:
                     pass  # DB mock minimal; function flow still reaches the memory write
 
         # The write_to_db side_effect should have been called for the assistant message
-        assistant_writes = [c for c in write_calls if "chat:" in c.get("content", "")]
-        # If mock_conn was fully transparent, assistant_writes will be non-empty
+        # If mock_conn was fully transparent, write_calls will be non-empty
         # At minimum, verify no exception was raised reaching this point
         assert True  # write attempt was made without error
 
