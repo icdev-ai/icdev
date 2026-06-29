@@ -207,6 +207,14 @@
   .art-modal-box h3 { margin:0 0 12px; font-size:15px; }
   .art-modal-pre { background:var(--bg-primary,#0a0a1a); border:1px solid var(--border-color,#2a2a4a); border-radius:4px; padding:14px; font-size:12px; color:var(--text-secondary,#a0a0b8); white-space:pre-wrap; word-break:break-word; max-height:50vh; overflow-y:auto; }
 
+  /* ── Sideshow rendering — HTML/Mermaid/diff output ─────────────── */
+  .msg-text.rendered { white-space: normal; }
+  .msg-text .mermaid { background: var(--bg-secondary, #0d0d2b); border-radius: 4px; padding: 8px; margin: 4px 0; }
+  .msg-text pre.diff-block { background: var(--bg-secondary, #0d0d2b); border-radius: 4px; padding: 8px; font-size: 11px; overflow-x: auto; }
+  .msg-text pre.diff-block .diff-add { color: #4caf50; }
+  .msg-text pre.diff-block .diff-del { color: #f44336; }
+  .msg-text pre.diff-block .diff-ctx { color: var(--text-secondary, #a0a0b8); }
+
   /* ── Abort confirm modal ────────────────────────────────────────── */
   .abort-modal-overlay { position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,.72); z-index:1000; display:none; align-items:center; justify-content:center; }
   .abort-modal-overlay.open { display:flex; }
@@ -747,7 +755,7 @@
           (cwName ? '<span class="msg-from-to">from: <strong>' + escHtml(cwName) + '</strong></span>' : '') +
           (msg.to_role ? '<span class="msg-from-to">→ ' + escHtml(msg.to_role) + '</span>' : '') +
         '</div>' +
-        '<div class="msg-text">' + escHtml((msg.content || "").slice(0, 300)) + (msg.content && msg.content.length > 300 ? "…" : "") + '</div>' +
+        '<div class="msg-text rendered">' + (window.renderMsgContent ? renderMsgContent(msg.content || "") : escHtml((msg.content || "").slice(0, 300))) + '</div>' +
       '</div>';
     return li;
   }
@@ -964,7 +972,7 @@
           '<span class="badge badge-msg-info" style="font-size:10px;">' + escHtml(label) + "</span>" +
           '<span class="badge badge-info history-tag">history</span>' +
         "</div>" +
-        '<div class="msg-text">' + escHtml(content.slice(0, 300)) + (content.length > 300 ? "…" : "") + "</div>" +
+        '<div class="msg-text rendered">' + (window.renderMsgContent ? renderMsgContent(content) : escHtml(content.slice(0, 300))) + '</div>' +
       "</div>";
     return li;
   }
@@ -1035,6 +1043,65 @@
 
   loadNovaState();
 
+})();
+</script>
+
+<script>
+/* ── Sideshow: Mermaid lazy loader + rich message renderer ─────── */
+(function() {
+  var _mermaidReady = false;
+  function _loadMermaid(cb) {
+    if (_mermaidReady) { cb(); return; }
+    if (window.mermaid) { _mermaidReady = true; cb(); return; }
+    var s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js';
+    s.onload = function() {
+      window.mermaid.initialize({ startOnLoad: false, theme: 'dark', securityLevel: 'loose' });
+      _mermaidReady = true;
+      cb();
+    };
+    document.head.appendChild(s);
+  }
+
+  window.renderMsgContent = function(raw) {
+    if (!raw) return '';
+    var text = raw;
+    var el = document.createElement('div');
+
+    var hasMermaid = false;
+    text = text.replace(/```mermaid\n?([\s\S]*?)```/g, function(_, code) {
+      hasMermaid = true;
+      var id = 'mmd-' + Math.random().toString(36).slice(2, 8);
+      return '<div class="mermaid" id="' + id + '">' + code.trim() + '</div>';
+    });
+
+    text = text.replace(/```diff\n?([\s\S]*?)```/g, function(_, code) {
+      var lines = code.split('\n').map(function(l) {
+        if (l.charAt(0) === '+') return '<span class="diff-add">' + escHtml(l) + '</span>';
+        if (l.charAt(0) === '-') return '<span class="diff-del">' + escHtml(l) + '</span>';
+        return '<span class="diff-ctx">' + escHtml(l) + '</span>';
+      });
+      return '<pre class="diff-block">' + lines.join('\n') + '</pre>';
+    });
+
+    if (/^[\s\n]*<[a-zA-Z]/.test(text)) {
+      el.innerHTML = text;
+    } else {
+      el.style.whiteSpace = 'pre-wrap';
+      el.style.wordBreak = 'break-word';
+      el.textContent = raw.slice(0, 600) + (raw.length > 600 ? '…' : '');
+      return el.outerHTML;
+    }
+
+    if (hasMermaid) {
+      _loadMermaid(function() {
+        document.querySelectorAll('.mermaid:not([data-processed])').forEach(function(node) {
+          try { window.mermaid.init(undefined, node); } catch(e) {}
+        });
+      });
+    }
+    return el.outerHTML;
+  };
 })();
 </script>
 {% endblock %}

@@ -1191,3 +1191,176 @@ def run_agent_loop(
             logger.warning("agent_loop: on_stop raised: %s", exc)
 
     return result
+
+
+# ---------------------------------------------------------------------------
+# Loopy adaptation — staged feedback-driven agent loops
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class LoopStage:
+    """One named stage in a :func:`run_staged_agent_loop` pipeline.
+
+    Inspired by the Loopy workflow platform: each stage has an explicit name,
+    optional prompt suffix, acceptance criteria, and before/after examples so
+    the LLM knows what "done" looks like before it starts.
+    """
+
+    name: str
+    """Human-readable stage name, e.g. ``"PLAN"``, ``"EXECUTE"``, ``"REFLECT"``."""
+
+    prompt_suffix: str = ""
+    """Extra instructions appended to the base system prompt for this stage only."""
+
+    acceptance_criteria: str = ""
+    """What a successful stage output looks like. Injected at the end of the user prompt."""
+
+    before_example: str = ""
+    """Optional example of the input for this stage (shown in system prompt)."""
+
+    after_example: str = ""
+    """Optional example of the expected output for this stage (shown in system prompt)."""
+
+    max_iterations: int | None = None
+    """Per-stage turn cap; falls back to the ``run_staged_agent_loop`` default."""
+
+
+@dataclass
+class StagedLoopResult:
+    """Aggregated result of a :func:`run_staged_agent_loop` run."""
+
+    done: bool = False
+    """True only when every stage completed successfully."""
+
+    stages_completed: list[str] = field(default_factory=list)
+    """Stage names that finished with ``AgentLoopResult.done=True``."""
+
+    stages_failed: list[str] = field(default_factory=list)
+    """Stage names that did not complete (first failure stops the pipeline)."""
+
+    stage_results: dict[str, AgentLoopResult] = field(default_factory=dict)
+    """Per-stage :class:`AgentLoopResult`, keyed by :attr:`LoopStage.name`."""
+
+    final_content: str = ""
+    """``final_content`` of the last stage that ran."""
+
+    total_input_tokens: int = 0
+    total_output_tokens: int = 0
+    total_cost_usd: float = 0.0
+
+    session_id: str = ""
+    """UUID generated at pipeline start (does not equal any single stage session)."""
+
+
+def run_staged_agent_loop(
+    router: Any,
+    *,
+    stages: list[LoopStage],
+    system_prompt: str,
+    user_prompt: str,
+    tools: list[dict[str, Any]],
+    tool_handlers: dict[str, ToolHandler],
+    llm_function: str = "code_generation",
+    max_iterations: int = 12,
+    max_tokens: int = 4096,
+    temperature: float = 1.0,
+    effort: str = "medium",
+    stop_event: threading.Event | None = None,
+    on_stage_complete: Callable[[str, AgentLoopResult], None] | None = None,
+    **kwargs: Any,
+) -> StagedLoopResult:
+    """Run a series of named, feedback-driven stages through the agent loop.
+
+    Each :class:`LoopStage` gets its own system-prompt context (name, suffix,
+    before/after examples, acceptance criteria) and its own :func:`run_agent_loop`
+    invocation.  Output from each stage is forwarded as context to the next.
+
+    The pipeline stops at the first stage that does not complete (``done=False``).
+
+    Args:
+        router:        An ``LLMRouter`` instance.
+        stages:        Ordered list of :class:`LoopStage` objects.
+        system_prompt: Base system instruction shared by all stages.
+        user_prompt:   The initial task description (used verbatim for stage 1).
+        tools:         Tool schema list (shared across all stages).
+        tool_handlers: ``{tool_name: handler}`` map (shared across all stages).
+        llm_function:  Router routing key.
+        max_iterations: Default per-stage turn cap (overridable per stage).
+        max_tokens:    Per-turn output tokens.
+        temperature:   Sampling temperature.
+        effort:        Router effort tier.
+        stop_event:    When set, propagated to the current stage to abort it.
+        on_stage_complete: Optional ``callback(stage_name, AgentLoopResult)``
+            fired after each stage completes (pass or fail).
+        **kwargs:      Forwarded to each :func:`run_agent_loop` call (e.g.
+            ``max_total_tokens``, ``on_pre_tool_use``, ``output_schema``).
+
+    Returns:
+        :class:`StagedLoopResult`.
+    """
+    staged = StagedLoopResult(session_id=str(_uuid.uuid4()))
+    prev_output: str = ""
+
+    for idx, stage in enumerate(stages):
+        if stop_event is not None and stop_event.is_set():
+            break
+
+        # Build stage-specific system prompt.
+        stage_system = system_prompt
+        if stage.name:
+            stage_system += f"\n\n## Stage: {stage.name}"
+        if stage.prompt_suffix:
+            stage_system += f"\n{stage.prompt_suffix}"
+        if stage.before_example:
+            stage_system += f"\n\n### Example input\n{stage.before_example}"
+        if stage.after_example:
+            stage_system += f"\n\n### Example output\n{stage.after_example}"
+
+        # Build stage-specific user prompt.
+        if prev_output and idx > 0:
+            stage_user = (
+                f"Previous stage ({stages[idx - 1].name}) output:\n"
+                f"{prev_output}\n\n---\n\n{user_prompt}"
+            )
+        else:
+            stage_user = user_prompt
+        if stage.acceptance_criteria:
+            stage_user += f"\n\nAcceptance criteria for this stage:\n{stage.acceptance_criteria}"
+
+        stage_result = run_agent_loop(
+            router,
+            system_prompt=stage_system,
+            user_prompt=stage_user,
+            tools=tools,
+            tool_handlers=tool_handlers,
+            llm_function=llm_function,
+            max_iterations=stage.max_iterations if stage.max_iterations is not None else max_iterations,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            effort=effort,
+            stop_event=stop_event,
+            **kwargs,
+        )
+
+        staged.stage_results[stage.name] = stage_result
+        staged.total_input_tokens += stage_result.total_input_tokens
+        staged.total_output_tokens += stage_result.total_output_tokens
+        staged.total_cost_usd += stage_result.total_cost_usd
+        staged.final_content = stage_result.final_content
+
+        if on_stage_complete is not None:
+            try:
+                on_stage_complete(stage.name, stage_result)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("run_staged_agent_loop: on_stage_complete raised for %s: %s", stage.name, exc)
+
+        if not stage_result.done:
+            staged.stages_failed.append(stage.name)
+            break
+
+        staged.stages_completed.append(stage.name)
+        prev_output = stage_result.final_content
+
+    staged.done = len(staged.stages_failed) == 0 and len(staged.stages_completed) == len(stages)
+    return staged
