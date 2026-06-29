@@ -1572,6 +1572,8 @@ components:
       - second_brain.objectives
       - second_brain.briefings
       - second_brain.relationships
+      - second_brain.commitments
+      - second_brain.knowledge
   completeness:
     template: tools/dashboard/templates/second_brain/index.html
     blueprint: true
