@@ -572,6 +572,10 @@ git clone https://github.com/icdev-ai/icdev.git
 cd icdev
 pip install -r requirements.txt
 
+# Configure environment (copy sample, then edit with your LLM keys)
+cp .env.sample .env
+# Edit .env — set OLLAMA_MODEL, API keys, DB backend, and canvas toggles
+
 # Initialize databases (588+ tables)
 python tools/db/init_icdev_db.py
 
