@@ -6,7 +6,6 @@ import json
 import os
 import urllib.parse
 import urllib.request
-from typing import Any
 
 from tools.logging.icdev_logger import get_logger
 

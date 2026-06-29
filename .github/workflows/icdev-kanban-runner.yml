@@ -18,7 +18,7 @@ on:
         required: true
         type: string
       llm_provider:
-        description: "LLM provider: ollama_cloud | ollama | anthropic | openai | gemini | bedrock"
+        description: "LLM provider: ollama_cloud | kimi | ollama | anthropic | openai | gemini | bedrock"
         required: false
         default: "ollama_cloud"
         type: string
@@ -30,7 +30,7 @@ env:
   PYTHONPATH: "."
   ICDEV_STORAGE_BACKEND: sqlite
   LLM_PROVIDER: ${{ github.event.inputs.llm_provider || 'ollama_cloud' }}
-  # Ollama Cloud (air-gap via API key — no local install required)
+  # Ollama Cloud / Kimi (kimi routes through ollama_cloud via OLLAMA_API_KEY)
   OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
   OLLAMA_CLOUD_BASE_URL: ${{ secrets.OLLAMA_CLOUD_BASE_URL || 'https://ollama.com' }}
   # Local Ollama fallback (used only when OLLAMA_API_KEY is absent)
@@ -40,6 +40,7 @@ env:
   ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY || '' }}
   OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || '' }}
   GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY || '' }}
+  KIMI_API_KEY: ${{ secrets.KIMI_API_KEY || '' }}
   AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID || '' }}
   AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY || '' }}
   AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION || 'us-gov-west-1' }}
@@ -127,6 +128,13 @@ jobs:
                 echo "OK: Google API key present."
               fi
               ;;
+            kimi)
+              if [ -z "$KIMI_API_KEY" ] && [ -z "$OLLAMA_API_KEY" ]; then
+                echo "WARNING: KIMI_API_KEY (or OLLAMA_API_KEY) secret not set"; MISSING=1
+              else
+                echo "OK: Kimi key present (routes through ollama_cloud if KIMI_API_KEY absent)."
+              fi
+              ;;
             bedrock)
               if [ -z "$AWS_ACCESS_KEY_ID" ]; then
                 echo "WARNING: AWS_ACCESS_KEY_ID secret not set"; MISSING=1
@@ -171,7 +179,19 @@ jobs:
           TASK_ID="${{ github.event.inputs.task_id }}"
           TASK_TYPE="${{ github.event.inputs.task_type }}"
           TASK_DESC="${{ github.event.inputs.task_desc }}"
-          if [ -n "$OLLAMA_API_KEY" ] || [ -n "$ANTHROPIC_API_KEY" ]; then
+          # Determine if the selected provider has a usable key — LLM-agnostic check
+          HAS_LLM_KEY=0
+          case "$LLM_PROVIDER" in
+            ollama_cloud) [ -n "$OLLAMA_API_KEY" ] && HAS_LLM_KEY=1 ;;
+            kimi)         [ -n "$KIMI_API_KEY" ] || [ -n "$OLLAMA_API_KEY" ] && HAS_LLM_KEY=1 ;;
+            ollama)       HAS_LLM_KEY=1 ;;
+            anthropic)    [ -n "$ANTHROPIC_API_KEY" ] && HAS_LLM_KEY=1 ;;
+            openai)       [ -n "$OPENAI_API_KEY" ] && HAS_LLM_KEY=1 ;;
+            gemini)       [ -n "$GOOGLE_API_KEY" ] && HAS_LLM_KEY=1 ;;
+            bedrock)      [ -n "$AWS_ACCESS_KEY_ID" ] && HAS_LLM_KEY=1 ;;
+            *)            [ -n "$OLLAMA_API_KEY" ] || [ -n "$ANTHROPIC_API_KEY" ] && HAS_LLM_KEY=1 ;;
+          esac
+          if [ "$HAS_LLM_KEY" -eq 1 ]; then
             echo "LLM key detected — running agentic runner (provider=$LLM_PROVIDER)"
             python tools/anvil/agentic_runner.py \
               --task-id  "$TASK_ID" \

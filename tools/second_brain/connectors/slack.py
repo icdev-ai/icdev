@@ -69,7 +69,8 @@ class SlackConnector(BaseConnector):
         if not token:
             return []
         try:
-            import time, urllib.request
+            import time
+            import urllib.request
             oldest = str(int(time.time()) - 86400)
             req = urllib.request.Request(
                 f"{_API}/search.messages?query=<@me>&oldest={oldest}&count=10",

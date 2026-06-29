@@ -1,0 +1,57 @@
+# CUI // SP-CTI
+name: PR Auto-Merge (Kanban)
+
+on:
+  # Run whenever a CI check suite completes — catches green PRs immediately
+  check_suite:
+    types: [completed]
+  # Fallback sweep every 15 minutes to catch any PRs CI missed
+  schedule:
+    - cron: "*/15 * * * *"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    name: Auto-merge qualifying kanban PRs
+    runs-on: ubuntu-latest
+    # Only run on the main repo (not forks)
+    if: github.repository == 'icdev-ai/icdev'
+    steps:
+      - name: Auto-merge kanban PRs with all checks passing
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Scanning for qualifying kanban PRs..."
+          # Qualifying: kanban/* branch, all checks passed, not a draft
+          gh pr list \
+            --repo icdev-ai/icdev \
+            --state open \
+            --json number,headRefName,isDraft,title \
+            --limit 100 \
+          | jq -r '.[] | select(.headRefName | startswith("kanban/")) | select(.isDraft == false) | [.number, .headRefName, .title] | @tsv' \
+          | while IFS=$'\t' read -r pr_num branch title; do
+              echo "Checking PR #$pr_num ($branch)..."
+              # Get check status — all must be SUCCESS or SKIPPED (not PENDING/FAILURE)
+              status=$(gh pr checks "$pr_num" --repo icdev-ai/icdev 2>/dev/null | awk '{print $2}' | sort -u)
+              if echo "$status" | grep -qE "^(fail|pending|in_progress)$"; then
+                echo "  PR #$pr_num: checks not green, skipping"
+                continue
+              fi
+              mergeable=$(gh pr view "$pr_num" --repo icdev-ai/icdev --json mergeable --jq '.mergeable' 2>/dev/null)
+              if [ "$mergeable" != "MERGEABLE" ]; then
+                echo "  PR #$pr_num: not mergeable ($mergeable), skipping"
+                continue
+              fi
+              echo "  PR #$pr_num ($branch): all green — auto-merging (squash)"
+              gh pr merge "$pr_num" \
+                --repo icdev-ai/icdev \
+                --squash \
+                --delete-branch \
+                --body "Auto-merged by pr-watcher: CI green, branch=$branch" \
+              && echo "  Merged PR #$pr_num" \
+              || echo "  Merge failed for PR #$pr_num"
+            done
+          echo "Sweep complete."

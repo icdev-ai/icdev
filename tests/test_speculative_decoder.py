@@ -1,8 +1,7 @@
 """Tests for icdev.tools.llm.speculative_decoder."""
 from __future__ import annotations
 
-import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -10,7 +9,6 @@ from icdev.tools.llm.speculative_decoder import (
     SpeculativeConfig,
     SpeculativeDecoder,
     SpeculativeDecodingUnavailable,
-    _http_get,
     _detect_provider,
     _discover_draft_model,
     _is_enabled,

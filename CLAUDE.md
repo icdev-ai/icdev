@@ -310,6 +310,7 @@ python tools/workflow/coherence_checker.py --all --gate                # coheren
 - When a workflow fails mid-execution, preserve intermediate outputs before retrying
 - Read the full goal before starting a task — don't skim
 - **NEVER DELETE YOUTUBE VIDEOS** — Irreversible.
+- **Branch-first workflow — NEVER commit directly to `main`.** Every code change — whether from a Claude Code session, Cursor, the kanban runner, or any AI assistant — must follow: (1) create a `fix/<slug>` or `feat/<slug>` branch, (2) make changes there, (3) commit, (4) `git push`, (5) open a PR with `gh pr create`, (6) wait for CI to pass, (7) merge. The only exception is a trivial one-liner hotfix explicitly approved by the user. This rule is LLM-agnostic and applies regardless of which model or tool produced the change.
 - When adding an append-only/immutable DB table, ALWAYS add it to `APPEND_ONLY_TABLES` in `.claude/hooks/pre_tool_use.py`
 - When adding a new dashboard page route, ALWAYS add it to the `Pages:` line in `.claude/commands/start.md`
 - **New dashboard page completeness gate (8 required components — ALL must ship together):**

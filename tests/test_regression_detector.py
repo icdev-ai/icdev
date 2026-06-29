@@ -3,7 +3,6 @@
 """Tests for regression detection in quality_monitor (D3)."""
 from __future__ import annotations
 
-import pytest
 
 from icdev.tools.finetune.quality_monitor import detect_regression
 
