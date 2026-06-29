@@ -24,8 +24,6 @@ def _conn():
 
 
 def _ensure_schema(conn: Any) -> None:
-    from tools.db.storage import sql_placeholder
-    ph = sql_placeholder(conn)
     conn.execute(
         """CREATE TABLE IF NOT EXISTS sb_notes (
             id TEXT PRIMARY KEY,

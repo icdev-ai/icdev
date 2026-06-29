@@ -48,7 +48,7 @@ def print_recipe_card(name: str) -> None:
     print(f"  {recipe['display_name']} — {name}")
     print(f"{'='*50}")
     print(f"  {recipe['description']}")
-    print(f"\n  3-command setup:")
+    print("\n  3-command setup:")
     for i, cmd in enumerate(recipe.get("setup_commands", []), 1):
         print(f"    {i}. {cmd}")
     print(f"\n  Profile: {recipe.get('profile', 'local-dev')}")
