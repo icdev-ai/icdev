@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block title %}Upgrade Required — {{ canvas_key }} | {{ brand.product_name if brand is defined else "ICDEV™" }}{% endblock %}
+
+{% block content %}
+{% set _tier_colors = {"community": "secondary", "professional": "primary", "enterprise": "warning"} %}
+<div class="container py-5" style="max-width:860px;margin:0 auto;">
+
+  <!-- Lock card -->
+  <div class="card shadow border-0 text-center" style="border-radius:16px;overflow:hidden;">
+    <div class="card-body py-5 px-4">
+
+      <!-- Lock icon -->
+      <div style="font-size:3.5rem;line-height:1;margin-bottom:1rem;">&#x1f512;</div>
+
+      <!-- Canvas name -->
+      <h1 class="h3 fw-bold mb-2">{{ canvas_key | replace("_", " ") | title }}</h1>
+      <p class="text-muted mb-4">This canvas requires a higher license tier.</p>
+
+      <!-- Current plan → Required plan -->
+      <div class="d-flex justify-content-center align-items-end gap-3 mb-4">
+        <div class="text-center">
+          <div class="text-muted small mb-1">Your Plan</div>
+          <span class="badge fs-6 px-3 py-2 bg-{{ _tier_colors.get(active_tier, 'secondary') }}">
+            {{ active_tier | title }}
+          </span>
+        </div>
+        <div class="pb-1" style="color:#6b7280;font-size:1.2rem;">&#x27a1;</div>
+        <div class="text-center">
+          <div class="text-muted small mb-1">Required Plan</div>
+          <span class="badge fs-6 px-3 py-2 bg-{{ _tier_colors.get(required_tier, 'secondary') }}">
+            {{ required_tier | title }}
+          </span>
+        </div>
+      </div>
+
+      <!-- CTA buttons -->
+      <div class="d-flex justify-content-center gap-3 flex-wrap">
+        {% if brand is defined and brand.support_url %}
+          <a href="{{ brand.support_url }}" class="btn btn-primary btn-lg px-5" target="_blank" rel="noopener">
+            &#x2b06; Upgrade Plan
+          </a>
+        {% else %}
+          <a href="mailto:sales@icdev.io?subject=Upgrade%20to%20{{ required_tier | title }}%20Plan&body=I%20need%20access%20to%20the%20{{ canvas_key }}%20canvas."
+             class="btn btn-primary btn-lg px-5">
+            &#x2b06; Upgrade Plan
+          </a>
+        {% endif %}
+        <a href="/" class="btn btn-outline-secondary btn-lg px-4">&#x2190; Dashboard</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Feature comparison table -->
+  <div class="card shadow border-0 mt-4" style="border-radius:16px;">
+    <div class="card-header bg-transparent border-0 pt-4 pb-0 px-4">
+      <h2 class="h5 fw-semibold mb-0">Plan Comparison</h2>
+    </div>
+    <div class="card-body px-4 pb-4">
+      <div class="table-responsive">
+        <table class="table table-bordered align-middle mb-0">
+          <thead class="table-dark">
+            <tr>
+              <th style="width:40%">Feature</th>
+              <th class="text-center">
+                <span class="badge bg-secondary">Community</span>
+              </th>
+              <th class="text-center">
+                <span class="badge bg-primary">Professional</span>
+              </th>
+              <th class="text-center">
+                <span class="badge bg-warning text-dark">Enterprise</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {%- set yes = '<span style="color:#22c55e;font-size:1.1rem;" aria-label="Included">&#x2714;</span>' | safe -%}
+            {%- set no  = '<span style="color:#9ca3af;font-size:1.1rem;" aria-label="Not included">&#x2014;</span>' | safe -%}
+            <tr>
+              <td>Core Canvases</td>
+              <td class="text-center">{{ yes }}</td>
+              <td class="text-center">{{ yes }}</td>
+              <td class="text-center">{{ yes }}</td>
+            </tr>
+            <tr>
+              <td>Professional Canvases</td>
+              <td class="text-center">{{ no }}</td>
+              <td class="text-center">{{ yes }}</td>
+              <td class="text-center">{{ yes }}</td>
+            </tr>
+            <tr>
+              <td>Enterprise Canvases</td>
+              <td class="text-center">{{ no }}</td>
+              <td class="text-center">{{ no }}</td>
+              <td class="text-center">{{ yes }}</td>
+            </tr>
+            <tr>
+              <td>Multi-Tenant Management</td>
+              <td class="text-center">{{ no }}</td>
+              <td class="text-center">{{ yes }}</td>
+              <td class="text-center">{{ yes }}</td>
+            </tr>
+            <tr>
+              <td>SSO / SAML Integration</td>
+              <td class="text-center">{{ no }}</td>
+              <td class="text-center">{{ yes }}</td>
+              <td class="text-center">{{ yes }}</td>
+            </tr>
+            <tr>
+              <td>Advanced RBAC &amp; ABAC</td>
+              <td class="text-center">{{ no }}</td>
+              <td class="text-center">{{ no }}</td>
+              <td class="text-center">{{ yes }}</td>
+            </tr>
+            <tr>
+              <td>Compliance &amp; Audit Export</td>
+              <td class="text-center">{{ no }}</td>
+              <td class="text-center">{{ no }}</td>
+              <td class="text-center">{{ yes }}</td>
+            </tr>
+            <tr>
+              <td>Priority Support</td>
+              <td class="text-center">{{ no }}</td>
+              <td class="text-center">{{ yes }}</td>
+              <td class="text-center">{{ yes }}</td>
+            </tr>
+            <tr>
+              <td>Dedicated Customer Success Manager</td>
+              <td class="text-center">{{ no }}</td>
+              <td class="text-center">{{ no }}</td>
+              <td class="text-center">{{ yes }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

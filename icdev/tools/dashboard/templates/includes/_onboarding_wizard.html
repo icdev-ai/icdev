@@ -1,0 +1,410 @@
+{# Onboarding Wizard — 3-step Bootstrap-style modal. #}
+{# Shown automatically when onboarding_state.completed=false (checked via API). #}
+<style>
+#onb-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.65);
+  z-index: 10500;
+  align-items: center;
+  justify-content: center;
+}
+#onb-backdrop.onb-open { display: flex; }
+.onb-modal-dialog {
+  background: var(--bg-secondary, #1a1d27);
+  border: 1px solid var(--border-color, #2a2a4a);
+  border-radius: 10px;
+  box-shadow: 0 8px 48px rgba(0,0,0,.55);
+  width: 100%;
+  max-width: 540px;
+  max-height: 90vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.onb-header {
+  padding: 1.25rem 1.5rem .75rem;
+  border-bottom: 1px solid var(--border-color, #2a2a4a);
+}
+.onb-header h5 {
+  margin: 0;
+  font-size: 1.1rem;
+  color: var(--text-primary, #e8eaf6);
+}
+.onb-step-indicator {
+  display: flex;
+  gap: .5rem;
+  margin-top: .75rem;
+}
+.onb-step-dot {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border-color, #2a2a4a);
+  transition: background .2s;
+}
+.onb-step-dot.active { background: var(--accent-primary, #4a90d9); }
+.onb-step-dot.done   { background: #22c55e; }
+.onb-step-label {
+  font-size: .7rem;
+  color: var(--text-dim, #8892a4);
+  margin-top: .35rem;
+  text-align: center;
+}
+.onb-body {
+  padding: 1.25rem 1.5rem;
+  overflow-y: auto;
+  flex: 1;
+  color: var(--text-primary, #e8eaf6);
+}
+.onb-pane { display: none; }
+.onb-pane.active { display: block; }
+.onb-footer {
+  padding: .9rem 1.5rem;
+  border-top: 1px solid var(--border-color, #2a2a4a);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: .5rem;
+}
+/* form controls */
+.onb-label {
+  display: block;
+  font-size: .8rem;
+  color: var(--text-dim, #8892a4);
+  margin-bottom: .35rem;
+}
+.onb-select, .onb-input {
+  width: 100%;
+  padding: .45rem .75rem;
+  background: var(--bg-primary, #12141f);
+  border: 1px solid var(--border-color, #2a2a4a);
+  border-radius: 6px;
+  color: var(--text-primary, #e8eaf6);
+  font-size: .875rem;
+  margin-bottom: .85rem;
+  box-sizing: border-box;
+}
+.onb-select:focus, .onb-input:focus {
+  outline: none;
+  border-color: var(--accent-primary, #4a90d9);
+}
+.onb-btn {
+  padding: .4rem .9rem;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  font-size: .8rem;
+  transition: opacity .15s;
+}
+.onb-btn:disabled { opacity: .45; cursor: default; }
+.onb-btn-primary { background: var(--accent-primary, #4a90d9); color: #fff; }
+.onb-btn-secondary { background: var(--bg-tertiary, #242736); color: var(--text-dim, #8892a4); }
+.onb-btn-skip { background: transparent; color: var(--text-dim, #8892a4); text-decoration: underline; font-size: .75rem; }
+.onb-test-status {
+  font-size: .75rem;
+  margin-top: -.5rem;
+  margin-bottom: .75rem;
+  min-height: 1rem;
+}
+.onb-test-status.ok   { color: #22c55e; }
+.onb-test-status.err  { color: #f56565; }
+.onb-check-list { list-style: none; padding: 0; margin: 0; }
+.onb-check-list li {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  padding: .45rem .5rem;
+  border-radius: 6px;
+  margin-bottom: .25rem;
+  cursor: pointer;
+  font-size: .875rem;
+}
+.onb-check-list li:hover { background: var(--bg-tertiary, #242736); }
+.onb-check-list li input[type=checkbox] { accent-color: var(--accent-primary, #4a90d9); width: 1rem; height: 1rem; cursor: pointer; }
+.onb-iqe-result {
+  background: var(--bg-primary, #12141f);
+  border: 1px solid var(--border-color, #2a2a4a);
+  border-radius: 6px;
+  padding: .75rem;
+  font-size: .78rem;
+  color: var(--text-dim, #8892a4);
+  max-height: 140px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  margin-top: .75rem;
+  display: none;
+}
+</style>
+
+<div id="onb-backdrop" role="dialog" aria-modal="true" aria-labelledby="onb-modal-title">
+  <div class="onb-modal-dialog">
+
+    <!-- Header -->
+    <div class="onb-header">
+      <h5 id="onb-modal-title">Welcome to ICDEV&trade; — Quick Setup</h5>
+      <div class="onb-step-indicator">
+        <div class="onb-step-dot active" id="onb-dot-0"></div>
+        <div class="onb-step-dot"        id="onb-dot-1"></div>
+        <div class="onb-step-dot"        id="onb-dot-2"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-top:.3rem;">
+        <span class="onb-step-label">LLM Provider</span>
+        <span class="onb-step-label">Enable Canvas</span>
+        <span class="onb-step-label">First Query</span>
+      </div>
+    </div>
+
+    <!-- Body -->
+    <div class="onb-body">
+
+      <!-- Step 1: LLM Provider -->
+      <div class="onb-pane active" id="onb-step-0">
+        <p style="font-size:.85rem;color:var(--text-dim,#8892a4);margin-bottom:1rem;">
+          Configure your AI provider so ICDEV&trade; can generate code, documents, and insights.
+        </p>
+        <label class="onb-label" for="onb-provider">AI Provider</label>
+        <select id="onb-provider" class="onb-select" onchange="onbProviderChange()">
+          <option value="anthropic">Anthropic (Claude)</option>
+          <option value="openai">OpenAI (GPT)</option>
+          <option value="ollama">Ollama (local / air-gap)</option>
+          <option value="azure">Azure OpenAI</option>
+        </select>
+
+        <div id="onb-apikey-row">
+          <label class="onb-label" for="onb-apikey">API Key</label>
+          <input id="onb-apikey" class="onb-input" type="password" placeholder="sk-…" autocomplete="off">
+        </div>
+
+        <div id="onb-ollama-row" style="display:none;">
+          <label class="onb-label" for="onb-ollama-url">Ollama Base URL</label>
+          <input id="onb-ollama-url" class="onb-input" type="text" value="http://localhost:11434" placeholder="http://localhost:11434">
+        </div>
+
+        <div id="onb-azure-row" style="display:none;">
+          <label class="onb-label" for="onb-azure-endpoint">Azure Endpoint</label>
+          <input id="onb-azure-endpoint" class="onb-input" type="text" placeholder="https://…openai.azure.com/">
+          <label class="onb-label" for="onb-azure-key">Azure API Key</label>
+          <input id="onb-azure-key" class="onb-input" type="password" placeholder="key-…" autocomplete="off">
+        </div>
+
+        <button class="onb-btn onb-btn-secondary" onclick="onbTestConnection()" id="onb-test-btn">
+          Test Connection
+        </button>
+        <div class="onb-test-status" id="onb-test-status"></div>
+      </div>
+
+      <!-- Step 2: Enable Canvas -->
+      <div class="onb-pane" id="onb-step-1">
+        <p style="font-size:.85rem;color:var(--text-dim,#8892a4);margin-bottom:1rem;">
+          Choose a canvas to activate. You can enable more later from <strong>Admin &rsaquo; Components</strong>.
+        </p>
+        <ul class="onb-check-list" id="onb-canvas-list">
+          <li onclick="onbToggleCanvas(this,'network')">
+            <input type="checkbox" value="network" onclick="event.stopPropagation()"> Network Design
+          </li>
+          <li onclick="onbToggleCanvas(this,'security')">
+            <input type="checkbox" value="security" onclick="event.stopPropagation()"> Security Design
+          </li>
+          <li onclick="onbToggleCanvas(this,'infrastructure')">
+            <input type="checkbox" value="infrastructure" onclick="event.stopPropagation()"> Infrastructure Design
+          </li>
+          <li onclick="onbToggleCanvas(this,'aiml')">
+            <input type="checkbox" value="aiml" onclick="event.stopPropagation()"> AI/ML Canvas
+          </li>
+          <li onclick="onbToggleCanvas(this,'pipeline')">
+            <input type="checkbox" value="pipeline" onclick="event.stopPropagation()"> Pipeline Design
+          </li>
+        </ul>
+        <p style="font-size:.72rem;color:var(--text-dim,#8892a4);margin-top:.75rem;">
+          Select one or more &mdash; enabling a canvas adds it to the navigation sidebar.
+        </p>
+      </div>
+
+      <!-- Step 3: First IQE Query -->
+      <div class="onb-pane" id="onb-step-2">
+        <p style="font-size:.85rem;color:var(--text-dim,#8892a4);margin-bottom:1rem;">
+          Run your first Intelligent Query Engine (IQE) query to see ICDEV&trade; in action.
+        </p>
+        <label class="onb-label" for="onb-iqe-input">Ask anything about your system</label>
+        <textarea id="onb-iqe-input" class="onb-input" rows="3"
+          style="resize:vertical;"
+          placeholder="What are the top security risks in my architecture?">What are the top security risks in my architecture?</textarea>
+        <button class="onb-btn onb-btn-secondary" onclick="onbRunIqe()" id="onb-iqe-btn">
+          Run Query
+        </button>
+        <div class="onb-iqe-result" id="onb-iqe-result"></div>
+      </div>
+
+    </div><!-- /.onb-body -->
+
+    <!-- Footer -->
+    <div class="onb-footer">
+      <button class="onb-btn onb-btn-skip" onclick="onbSkip()" id="onb-skip-btn">
+        Skip setup
+      </button>
+      <div style="display:flex;gap:.5rem;">
+        <button class="onb-btn onb-btn-secondary" onclick="onbBack()" id="onb-back-btn" style="display:none;">
+          Back
+        </button>
+        <button class="onb-btn onb-btn-primary" onclick="onbNext()" id="onb-next-btn">
+          Next &rsaquo;
+        </button>
+      </div>
+    </div>
+
+  </div><!-- /.onb-modal-dialog -->
+</div><!-- /#onb-backdrop -->
+
+<script>
+(function () {
+  var _step = 0;
+  var _total = 3;
+  var _selectedCanvas = null;
+
+  function _show() {
+    document.getElementById('onb-backdrop').classList.add('onb-open');
+  }
+  function _hide() {
+    document.getElementById('onb-backdrop').classList.remove('onb-open');
+  }
+
+  function _renderStep(n) {
+    for (var i = 0; i < _total; i++) {
+      var pane = document.getElementById('onb-step-' + i);
+      var dot  = document.getElementById('onb-dot-' + i);
+      if (pane) pane.classList.toggle('active', i === n);
+      if (dot) {
+        dot.classList.toggle('active', i === n);
+        dot.classList.toggle('done',   i < n);
+      }
+    }
+    var backBtn = document.getElementById('onb-back-btn');
+    var nextBtn = document.getElementById('onb-next-btn');
+    if (backBtn) backBtn.style.display = n > 0 ? '' : 'none';
+    if (nextBtn) nextBtn.textContent = n === _total - 1 ? 'Finish ✓' : 'Next ›';
+  }
+
+  window.onbProviderChange = function () {
+    var p = document.getElementById('onb-provider').value;
+    document.getElementById('onb-apikey-row').style.display  = (p === 'ollama')                       ? 'none' : '';
+    document.getElementById('onb-ollama-row').style.display  = (p === 'ollama')                       ? ''     : 'none';
+    document.getElementById('onb-azure-row').style.display   = (p === 'azure')                        ? ''     : 'none';
+    document.getElementById('onb-test-status').textContent = '';
+    document.getElementById('onb-test-status').className = 'onb-test-status';
+  };
+
+  window.onbTestConnection = function () {
+    var btn = document.getElementById('onb-test-btn');
+    var status = document.getElementById('onb-test-status');
+    btn.disabled = true;
+    status.textContent = 'Testing…';
+    status.className = 'onb-test-status';
+    fetch('/api/llm/health', { method: 'GET' })
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+      .then(function () {
+        status.textContent = '✓ Connection successful';
+        status.className = 'onb-test-status ok';
+      })
+      .catch(function () {
+        status.textContent = '⚠ Could not reach provider — check key/URL and retry';
+        status.className = 'onb-test-status err';
+      })
+      .finally(function () { btn.disabled = false; });
+  };
+
+  window.onbToggleCanvas = function (li, val) {
+    var cb = li.querySelector('input[type=checkbox]');
+    if (cb) {
+      cb.checked = !cb.checked;
+      _selectedCanvas = cb.checked ? val : null;
+    }
+  };
+
+  window.onbRunIqe = function () {
+    var btn = document.getElementById('onb-iqe-btn');
+    var out = document.getElementById('onb-iqe-result');
+    var q   = (document.getElementById('onb-iqe-input').value || '').trim();
+    if (!q) return;
+    btn.disabled = true;
+    out.style.display = 'block';
+    out.textContent = 'Running query…';
+    fetch('/api/iqe/dispatch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ canvas: 'core', query: q })
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        out.textContent = d.answer || d.result || JSON.stringify(d, null, 2);
+        fetch('/api/onboarding/state', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ first_iqe_run: true })
+        });
+      })
+      .catch(function (e) { out.textContent = 'Error: ' + e; })
+      .finally(function () { btn.disabled = false; });
+  };
+
+  window.onbNext = function () {
+    if (_step === 0) {
+      fetch('/api/onboarding/state', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ current_step: 1, llm_configured: true, steps_done: ['llm'] })
+      });
+    }
+    if (_step === 1 && _selectedCanvas) {
+      fetch('/api/onboarding/state', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ current_step: 2, canvas_enabled: _selectedCanvas, steps_done: ['llm', 'canvas'] })
+      });
+    }
+    if (_step < _total - 1) {
+      _step++;
+      _renderStep(_step);
+    } else {
+      fetch('/api/onboarding/state', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ completed: true })
+      }).finally(function () { _hide(); });
+    }
+  };
+
+  window.onbBack = function () {
+    if (_step > 0) {
+      _step--;
+      _renderStep(_step);
+    }
+  };
+
+  window.onbSkip = function () {
+    fetch('/api/onboarding/state', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ completed: true })
+    }).finally(function () { _hide(); });
+  };
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') onbSkip();
+  });
+
+  document.addEventListener('DOMContentLoaded', function () {
+    fetch('/api/onboarding/state')
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        if (d && d.completed === false) {
+          _step = d.current_step || 0;
+          _renderStep(_step);
+          _show();
+        }
+      })
+      .catch(function () { /* silent — don't block the app if onboarding API is unreachable */ });
+  });
+})();
+</script>

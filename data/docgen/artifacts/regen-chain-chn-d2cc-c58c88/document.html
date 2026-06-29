@@ -1,0 +1,345 @@
+<!DOCTYPE html><html lang='en'><head><meta charset='utf-8'><title>Federal Network Peering Lifecycle — End-to-End Process Document</title><style>body{font-family:Arial,sans-serif;max-width:900px;margin:40px auto;padding:0 20px;line-height:1.6;color:#1a1a2e}h1{border-bottom:2px solid #1d72ff;padding-bottom:8px}h2{color:#1d72ff;margin-top:2em}h3{color:#374151;margin-top:1.5em}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:8px;text-align:left}th{background:#f0f4ff}.banner{background:#1d72ff;color:#fff;text-align:center;padding:8px;font-weight:bold;letter-spacing:1px;margin-bottom:24px;font-size:13px}@media print{.banner{-webkit-print-color-adjust:exact}}</style></head><body><div class='banner'>PROCESS-IFY REGENERATED DOCUMENT</div><h1>Federal Network Peering Lifecycle — End-to-End Process Document</h1><h1>STANDARD OPERATING PROCEDURE (Unified)</h1>
+<p><strong>Document Title:</strong> Federal Network Peering Lifecycle<br />
+<strong>SOP ID:</strong> SOP-NET-UNIFIED-001<br />
+<strong>Classification:</strong> INTERNAL / CONTROLLED DISTRIBUTION<br />
+<strong>Effective Date:</strong> 2026-06-27<br />
+<strong>Version:</strong> 1.0  </p>
+<hr />
+<h2>1. Cover Page</h2>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;"><strong>Document Details</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><strong>Chain Name:</strong> Federal Network Peering Lifecycle</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Industry Sector:</strong> Telecommunications (Federal Carrier Infrastructure)</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Date of Issue:</strong> June 27, 2026</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Classification Level:</strong> Restricted – Internal Use Only</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Process Enabler:</strong> AI-enabled via Process-Ify</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>2. Executive Summary</h2>
+<p>This document defines the end-to-end Standard Operating Procedure (SOP) for the Federal Network Peering Lifecycle, governing all inbound and outbound peering requests between Tier-1 and Tier-2 carrier entities. The process integrates rigorous technical feasibility, security compliance, commercial assessment, legal review, and financial approval to ensure that new interconnections align with federal routing policies and security mandates.</p>
+<p>The lifecycle is bifurcated into two distinct operational phases: <strong>Phase 1 – Peering Agreement Review</strong> (Authorization &amp; Validation) and <strong>Phase 2 – Implementation Runbook</strong> (Physical Deployment &amp; Activation). Phase 1 focuses on the administrative and logical validation of the peer, including BGP security posture analysis, capacity assessment, and multi-tier executive approval. Phase 2 executes the physical cutover, router configuration, traffic migration, and post-deployment stabilization within a defined maintenance window.</p>
+<p>Strict adherence to this workflow ensures network stability, prevents illicit prefix propagation, and maintains high availability standards for federal telecommunications infrastructure. All personnel involved must execute their assigned roles without deviation from the checklists provided herein. Unauthorized deviations require immediate reporting to Network Operations Command.</p>
+<hr />
+<h2>3. Table of Contents</h2>
+<ol>
+<li>Cover Page</li>
+<li>Executive Summary</li>
+<li>Table of Contents</li>
+<li>Phase I: Peering Agreement Review (Steps 1–12)</li>
+<li>Handoff Checklist I: Transition from Authorization to Implementation</li>
+<li>Appendix A: Forms Index</li>
+<li>Phase II: Implementation Runbook (Steps 1–6)</li>
+<li>Handoff Checklist II: Cutover Completion &amp; Closure</li>
+<li>Version History</li>
+</ol>
+<hr />
+<h2>4. Phase I: Peering Agreement Review</h2>
+<p><strong>Team:</strong> Phase 1 – Peering Agreement Review  </p>
+<p>This phase encompasses the evaluation of incoming peering requests from inception to final executive sign-off and BGP staging validation. It ensures no unauthorized or non-compliant entities are introduced into the routing table prior to physical implementation.</p>
+<h3>Step 1: Peering Request Intake</h3>
+<ul>
+<li><strong>Assignee:</strong> Network Engineer</li>
+<li><strong>Reviewer:</strong> Compliance Officer</li>
+<li><strong>Approver:</strong> N/A (Pending Technical Review)</li>
+<li><strong>Workflow Actions:</strong><ul>
+<li>Receive official peering request form from the partner carrier entity.</li>
+<li>Scrutinize ASN allocation, projected traffic volume metrics, and proposed physical interconnection location.</li>
+<li>Cross-reference partner identifier against the Restricted Entities List (REL).</li>
+</ul>
+</li>
+</ul>
+<h3>Step 2: Capacity Assessment</h3>
+<ul>
+<li><strong>Assignee:</strong> Network Architect</li>
+<li><strong>Reviewer:</strong> N/A</li>
+<li><strong>Approver:</strong> N/A</li>
+<li><strong>Workflow Actions:</strong><ul>
+<li>Analyze available port density and bandwidth capacity at the proposed peering point.</li>
+<li>Verify hardware compatibility with current edge router chassis (e.g., PE-CHI-01).</li>
+</ul>
+</li>
+</ul>
+<h3>Step 3: Routing and BGP Security Review</h3>
+<ul>
+<li><strong>Assignee:</strong> Security Team</li>
+<li><strong>Reviewer:</strong> NOC Lead</li>
+<li><strong>Approver:</strong> N/A</li>
+<li><strong>Workflow Actions:</strong><ul>
+<li>Audit partner's advertised routing policy.</li>
+<li>Evaluate BGP security posture, including RPKI validation status and prefix filtering mechanisms.</li>
+<li>Confirm adherence to max-prefix thresholds and prefix limit agreements (typically &lt; 20% of total table).</li>
+</ul>
+</li>
+</ul>
+<h3>Step 4: Commercial Terms Review</h3>
+<ul>
+<li><strong>Assignee:</strong> Commercial Manager</li>
+<li><strong>Reviewer:</strong> N/A</li>
+<li><strong>Approver:</strong> N/A</li>
+<li><strong>Workflow Actions:</strong><ul>
+<li>Determine settlement model classification (Settlement-Free vs. Paid Peering).</li>
+<li>Validate traffic ratio requirements against commercial policy.</li>
+</ul>
+</li>
+</ul>
+<h3>Step 5: Legal Agreement Review</h3>
+<ul>
+<li><strong>Assignee:</strong> Legal Counsel</li>
+<li><strong>Reviewer:</strong> Compliance Officer</li>
+<li><strong>Approver:</strong> General Counsel / Chief Risk Officer (Implied)</li>
+<li><strong>Workflow Actions:</strong><ul>
+<li>Draft and review the Interconnection Service Level Agreement (SLA).</li>
+<li>Scrutinize liability caps, termination clauses, data sovereignty requirements, and intellectual property rights.</li>
+</ul>
+</li>
+</ul>
+<h3>Step 6: Financial Approval</h3>
+<ul>
+<li><strong>Assignee:</strong> Finance Manager</li>
+<li><strong>Reviewer:</strong> Commercial Manager</li>
+<li><strong>Approver:</strong> Finance Director</li>
+<li><strong>Workflow Actions:</strong><ul>
+<li>Calculate projected Cost of Capital (CoC) or revenue impact based on settlement terms.</li>
+<li>Approve expenditure against departmental budget codes.</li>
+</ul>
+</li>
+</ul>
+<h3>Step 7: Executive Approval</h3>
+<ul>
+<li><strong>Assignee:</strong> VP of Network Operations</li>
+<li><strong>Reviewer:</strong> CTO / Chief Architect</li>
+<li><strong>Approver:</strong> VP of Network Operations</li>
+<li><strong>Workflow Actions:</strong><ul>
+<li>Review and approve agreements involving capacities exceeding the delegated authority threshold (10 Gbps).</li>
+<li>Confirm strategic alignment with federal network expansion goals.</li>
+</ul>
+</li>
+</ul>
+<h3>Step 8: BGP Staging Configuration</h3>
+<ul>
+<li><strong>Assignee:</strong> Senior Network Engineer</li>
+<li><strong>Reviewer:</strong> Network Architect</li>
+<li><strong>Approver:</strong> VP of Network Operations (Sign-off on config)</li>
+<li><strong>Workflow Actions:</strong><ul>
+<li>Initialize logical neighbor sessions in the isolated Staging Environment.</li>
+<li>Apply initial prefix-lists and MD5 authentication keys from the secrets vault.</li>
+</ul>
+</li>
+</ul>
+<h3>Step 9: Staging Validation and Monitoring</h3>
+<ul>
+<li><strong>Assignee:</strong> NOC Lead</li>
+<li><strong>Reviewer:</strong> Senior Network Engineer</li>
+<li><strong>Approver:</strong> VP of Network Operations (if high risk)</li>
+<li><strong>Workflow Actions:</strong><ul>
+<li>Verify session state transitions to <code>ESTABLISHED</code>.</li>
+<li>Monitor traffic patterns, error rates, and latency for a continuous period of 48 hours.</li>
+</ul>
+</li>
+</ul>
+<h3>Step 10: Production Cutover Authorization (Phase I Gatekeeper)</h3>
+<ul>
+<li><strong>Assignee:</strong> VP of Network Operations / Change Manager</li>
+<li><strong>Reviewer:</strong> NOC Lead</li>
+<li><strong>Approver:</strong> CAB Chair (Pre-implementation sign-off based on Phase 1 completion)</li>
+<li><strong>Workflow Actions:</strong><ul>
+<li>Finalize transition from Staging to Production schedule.</li>
+<li>Authorize the handoff of execution tasks to Phase II Implementation Team.</li>
+</ul>
+</li>
+</ul>
+<h3>Step 11: Peering Registry Logging</h3>
+<ul>
+<li><strong>Assignee:</strong> Network Operations</li>
+<li><strong>Reviewer:</strong> Compliance Officer</li>
+<li><strong>Approver:</strong> N/A</li>
+<li><strong>Workflow Actions:</strong><ul>
+<li>Enter approved agreement metadata into the central Peering Registry database.</li>
+<li>Assign unique internal Reference ID to the session.</li>
+</ul>
+</li>
+</ul>
+<h3>Step 12: Routing Policy Database Update (Readiness)</h3>
+<ul>
+<li><strong>Assignee:</strong> Network Engineer</li>
+<li><strong>Reviewer:</strong> Network Architect</li>
+<li><strong>Approver:</strong> N/A</li>
+<li><strong>Workflow Actions:</strong><ul>
+<li>Prepare routing policy updates for production deployment.</li>
+<li>Stage prefix propagation scripts and update documentation in the Architecture Repository [ORGANIZATION]gram.</li>
+</ul>
+</li>
+</ul>
+<hr />
+<h2>5. Handoff Checklist I: Transition from Authorization to Implementation</h2>
+<p><strong>Purpose:</strong> Ensures seamless transfer of responsibility between Phase 1 (Review) and Phase 2 (Implementation). The Physical Deployment phase shall not initiate until all items below are verified in the Change Management System.</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">ID</th>
+<th style="text-align: left;">Verification Item</th>
+<th style="text-align: left;">Status (Y/N/NA)</th>
+<th style="text-align: left;">Evidence Reference</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><strong>H1</strong></td>
+<td style="text-align: left;">Peering Request Form fully completed and signed by Partner Carrier.</td>
+<td style="text-align: left;">[ ]</td>
+<td style="text-align: left;">Form: PEA-INTAKE-V2</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>H2</strong></td>
+<td style="text-align: left;">Compliance Officer clearance received (Not on Restricted List).</td>
+<td style="text-align: left;">[ ]</td>
+<td style="text-align: left;">Case Log #<strong><em>_</em></strong></td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>H3</strong></td>
+<td style="text-align: left;">Network Architect sign-off confirming sufficient capacity at Interconnection Point.</td>
+<td style="text-align: left;">[ ]</td>
+<td style="text-align: left;">Capacity Report ID</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>H4</strong></td>
+<td style="text-align: left;">Security Team validation of BGP security posture and prefix limits.</td>
+<td style="text-align: left;">[ ]</td>
+<td style="text-align: left;">Scan Result: BGPS-VRFY-260627</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>H5</strong></td>
+<td style="text-align: left;">Legal Counsel review complete; SLA draft approved for signing (or signed).</td>
+<td style="text-align: left;">[ ]</td>
+<td style="text-align: left;">Contract Ref: LEG-SLA-____</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>H6</strong></td>
+<td style="text-align: left;">Finance Director approval of cost impact or settlement model.</td>
+<td style="text-align: left;">[ ]</td>
+<td style="text-align: left;">Financial Memo ID</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>H7</strong></td>
+<td style="text-align: left;">VP of Network Operations signature on capacity &gt;10Gbps agreements.</td>
+<td style="text-align: left;">[ ]</td>
+<td style="text-align: left;">Executive Memo</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>H8</strong></td>
+<td style="text-align: left;">BGP Staging Environment tested for 48 hours with zero anomalies.</td>
+<td style="text-align: left;">[ ]</td>
+<td style="text-align: left;">Monitoring Dashboard Log</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>H9</strong></td>
+<td style="text-align: left;">Physical cross-connect ordered (if applicable) or logical cabling confirmed ready.</td>
+<td style="text-align: left;">[ ]</td>
+<td style="text-align: left;">CoreSite Order #<strong><em>_</em></strong></td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>H10</strong></td>
+<td style="text-align: left;">Pre-implementation Architecture Document (<code>ARCH-NET-042</code>) approved by CAB Chair.</td>
+<td style="text-align: left;">[ ]</td>
+<td style="text-align: left;">Doc ID: ARCH-NET-042-Apvrv</td>
+</tr>
+</tbody>
+</table>
+<p><em>Sign-off:</em> <strong><em>_</em></strong><strong><em>_</em></strong><strong><em>_</em> (CAB Chair) // Date: </strong><strong><em>_</em></strong>___<br />
+<em>Action Required for Phase II:</em> Proceed to <strong>Step 1</strong> of Implementation Runbook. If any item is "N/A", provide justification in the Change Ticket comments field.</p>
+<hr />
+<h2>Appendix A: Forms Index</h2>
+<p>The following standardized forms are utilized throughout this lifecycle chain. Deviations from these templates require VP-level approval and a waiver request filed with Legal Counsel.</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Form Code</th>
+<th style="text-align: left;">Title</th>
+<th style="text-align: left;">Usage Phase</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><strong>PEA-INTAKE-V2</strong></td>
+<td style="text-align: left;">Peering Request Intake Form</td>
+<td style="text-align: left;">Phase 1, Step 1</td>
+<td style="text-align: left;">Initial data collection: ASN, Location, Traffic Projections.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>CAP-Assess-V3</strong></td>
+<td style="text-align: left;">Capacity Assessment Report</td>
+<td style="text-align: left;">Phase 1, Step 2</td>
+<td style="text-align: left;">Technical validation of port density and optical reachability.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>SEC-RPT-09-BGP</strong></td>
+<td style="text-align: left;">BGP Security Review Matrix</td>
+<td style="text-align: left;">Phase 1, Step 3</td>
+<td style="text-align: left;">Checklist for prefix filtering, RPKI status, and MD5 keys.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>COM-TERM-FRM</strong></td>
+<td style="text-align: left;">Commercial Terms Agreement Draft</td>
+<td style="text-align: left;">Phase 1, Steps 4/6</td>
+<td style="text-align: left;">Defines settlement-free/paid structure and traffic ratios.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>LEG-SLA-DRAFT-v5</strong></td>
+<td style="text-align: left;">Interconnection SLA Template</td>
+<td style="text-align: left;">Phase 1, Step 5 &amp; H1</td>
+<td style="text-align: left;">Legal contract covering liability, termination, and SLAs.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>FIN-COST-IMPACT</strong></td>
+<td style="text-align: left;">Financial Impact Memo</td>
+<td style="text-align: left;">Phase 1, Step 6</td>
+<td style="text-align: left;">ROI calculation for paid peering or CapEx justification.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>BGP-STAGE-LIST</strong></td>
+<td style="text-align: left;">Staging Configuration Script Set</td>
+<td style="text-align: left;">Phase 1, Steps 8/9</td>
+<td style="text-align: left;">Configurations ready for upload to the test environment.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>CHG-TICKET-V4</strong></td>
+<td style="text-align: left;">Change Request Ticket</td>
+<td style="text-align: left;">Both Phases</td>
+<td style="text-align: left;">Master ticket tracking architecture approval (ARCH-NET-042) and maintenance windows.</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>6. Phase II: Implementation Runbook</h2>
+<p><strong>Team:</strong> Phase 3 – Implementation Runbook  </p>
+<p>This phase executes the physical deployment, logical configuration, and traffic activation within a strict operational window. Strict adherence to safety protocols and change management procedures is mandatory. Failure at any validation step requires immediate rollback of the specific interface or session.</p>
+<h3>Step 1: Pre-Implementation Readiness</h3>
+<ul>
+<li><strong>Assignee:</strong> NOC Lead</li>
+<li><strong>Reviewer:</strong> Network Architect</li>
+<li><strong>Approver:</strong> CAB Chair (Final Gatekeeper)</li>
+<li><strong>Workflow Actions:</strong><ul>
+<li>Verify Architecture document <code>ARCH-NET-042</code> is in the approved state.</li>
+<li>Confirm Change Ticket (<code>CHG-20240601</code>) has received final CAB approval and lockout scheduled on network devices.</li>
+<li>Validate maintenance window: <strong>Saturday 02:00 – 06:00 UTC</strong>. No activity permitted outside this window without Director sign-off.</li>
+<li>Review Rollback Plan with NOC</li>
+</ul>
+</li>
+</ul></body></html>
