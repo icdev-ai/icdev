@@ -6,7 +6,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License">
   <img src="https://img.shields.io/badge/python-3.9%2B-brightgreen" alt="Python 3.9+">
-  <img src="https://img.shields.io/badge/version-1.2.31-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-1.2.32-blue" alt="Version">
   <a href="https://pypi.org/project/icdev/"><img src="https://img.shields.io/pypi/v/icdev?color=informational&label=PyPI" alt="PyPI Version"></a>
   <a href="https://pypi.org/project/icdev/"><img src="https://img.shields.io/pypi/dm/icdev?label=PyPI%20downloads" alt="PyPI Downloads"></a>
   <img src="https://img.shields.io/badge/compliance%20frameworks-42-orange" alt="Compliance Frameworks">
