@@ -2533,6 +2533,15 @@ def create_app(testing: bool = False) -> Flask:
     except Exception as _exc:
         app.logger.warning("Cache Savings blueprint failed to register: %s", _exc)
 
+    # ---- RFI Response Workbench Blueprint ----
+    if os.environ.get("ICDEV_RFI_CANVAS_ENABLED", "false").lower() in ("true", "1", "yes"):
+        try:
+            from tools.govcon.rfi_canvas_blueprint import rfi_canvas_bp as _rfi_canvas_bp
+            app.register_blueprint(_rfi_canvas_bp)
+            app.logger.info("RFI Response Workbench blueprint registered at /rfi")
+        except Exception as _exc:
+            app.logger.warning("RFI canvas blueprint failed to register: %s", _exc)
+
     # ---- JISE Portal Blueprint ----
     try:
         from tools.intelligence.jise_portal import jise_bp as _jise_bp
