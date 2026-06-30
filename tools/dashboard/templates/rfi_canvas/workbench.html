@@ -351,17 +351,49 @@ function togglePreview() {
 
 function renderMarkdown(text) {
   const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  let html = esc(text)
-    .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
+  const lines = text.split('\n');
+  let html = '';
+  let inList = false, inTable = false;
+  for (let i = 0; i < lines.length; i++) {
+    let raw = lines[i];
+    // HR separator
+    if (/^---+$/.test(raw.trim())) { if (inList) { html += '</ul>'; inList=false; } if (inTable) { html += '</tbody></table>'; inTable=false; } html += '<hr style="border-color:#1e3a6e;margin:.75rem 0">'; continue; }
+    // Table row
+    if (raw.trim().startsWith('|') && raw.trim().endsWith('|')) {
+      const cells = raw.trim().slice(1,-1).split('|').map(c => esc(c.trim()));
+      const isSep = cells.every(c => /^[-: ]+$/.test(c));
+      if (isSep) continue;
+      if (!inTable) { if (inList){html+='</ul>';inList=false;} html += '<table style="width:100%;font-size:.82rem;border-collapse:collapse;margin:.5rem 0"><tbody>'; inTable=true; }
+      const tag = !inTable ? 'th' : 'td';
+      html += '<tr>' + cells.map(c => `<td style="border:1px solid #1e3a6e;padding:.3rem .5rem;color:#b8d0e8">${applyInline(c)}</td>`).join('') + '</tr>';
+      continue;
+    }
+    if (inTable) { html += '</tbody></table>'; inTable=false; }
+    // List item
+    if (/^- (.+)/.test(raw)) { if (!inList){html+='<ul style="padding-left:1.2rem;margin:.3rem 0">'; inList=true;} html += `<li style="color:#b8d0e8;margin:.15rem 0">${applyInline(esc(raw.replace(/^- /,'')))}</li>`; continue; }
+    if (inList) { html += '</ul>'; inList=false; }
+    // Headings
+    let m;
+    if ((m = raw.match(/^### (.+)/))) { html += `<h5 style="color:#eaeaea;margin:.9rem 0 .3rem;font-size:.95rem">${applyInline(esc(m[1]))}</h5>`; continue; }
+    if ((m = raw.match(/^## (.+)/)))  { html += `<h4 style="color:#eaeaea;margin:1rem 0 .35rem">${applyInline(esc(m[1]))}</h4>`; continue; }
+    if ((m = raw.match(/^# (.+)/)))   { html += `<h3 style="color:#eaeaea;margin:1rem 0 .4rem">${applyInline(esc(m[1]))}</h3>`; continue; }
+    // Blockquote
+    if ((m = raw.match(/^> (.+)/)))   { html += `<blockquote style="border-left:3px solid #1e3a6e;padding-left:10px;color:#7a8cb0;margin:.5rem 0">${applyInline(esc(m[1]))}</blockquote>`; continue; }
+    // Empty line
+    if (raw.trim() === '') { html += '<br>'; continue; }
+    // Paragraph
+    html += `<p style="margin:.35rem 0;color:#b8d0e8">${applyInline(esc(raw))}</p>`;
+  }
+  if (inList) html += '</ul>';
+  if (inTable) html += '</tbody></table>';
+  return html;
+}
+
+function applyInline(s) {
+  return s
+    .replace(/\*\*(.+?)\*\*/g,'<strong style="color:#eaeaea">$1</strong>')
     .replace(/\*(.+?)\*/g,'<em>$1</em>')
-    .replace(/`(.+?)`/g,'<code style="background:#1e293b;color:#7ab3f0;padding:1px 5px;border-radius:3px">$1</code>')
-    .replace(/^### (.+)$/gm,'<h5 style="color:#eaeaea;margin-top:1rem;margin-bottom:.4rem">$1</h5>')
-    .replace(/^## (.+)$/gm,'<h4 style="color:#eaeaea;margin-top:1rem;margin-bottom:.4rem">$1</h4>')
-    .replace(/^# (.+)$/gm,'<h3 style="color:#eaeaea;margin-top:1rem;margin-bottom:.4rem">$1</h3>')
-    .replace(/^- (.+)$/gm,'<li style="color:#b8d0e8">$1</li>')
-    .replace(/^&gt; (.+)$/gm,'<blockquote style="border-left:3px solid #1e3a6e;padding-left:10px;color:#7a8cb0">$1</blockquote>')
-    .replace(/\n\n/g,'</p><p style="margin-bottom:.5rem;color:#b8d0e8">');
-  return '<p style="margin-bottom:.5rem;color:#b8d0e8">' + html + '</p>';
+    .replace(/`(.+?)`/g,'<code style="background:#1e293b;color:#7ab3f0;padding:1px 5px;border-radius:3px">$1</code>');
 }
 
 function generateContent() {
@@ -384,6 +416,8 @@ function generateContent() {
       updateWordCount(document.getElementById('content-editor').value);
       document.getElementById('gen-count').textContent = 'v' + d.section.generation_count;
       refreshSidebarItem(currentSectionId, d.section.status);
+      // Auto-switch to rendered preview after generation
+      if (!previewActive) togglePreview();
       setTimeout(() => { status.style.display = 'none'; }, 3000);
     })
     .catch(err => { btn.disabled = false; label.textContent = 'Generate Content'; icon.textContent = '✨'; icon.className = ''; status.textContent = '❌ ' + err.message; status.style.color = '#f87171'; });

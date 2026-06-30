@@ -272,7 +272,10 @@ def generate_section_content(section_id, profile_name, parsed_data):
         primary_naics=profile.get("primary_naics", "541512"),
         business_size=profile.get("business_size", "Large Business"),
         ndc_status=profile.get("ndc_status", "Traditional Defense Contractor"),
-        clearances=", ".join(profile.get("clearances", ["TS/SCI"])),
+        clearances=", ".join(
+            c.get("level", str(c)) if isinstance(c, dict) else c
+            for c in profile.get("clearances", ["TS/SCI"])
+        ),
         objectives_list=obj_list,
         hitl_context=hitl_context,
         title=section["title"],
@@ -290,12 +293,34 @@ def generate_section_content(section_id, profile_name, parsed_data):
     return get_section(section_id)
 
 
+_ROUTER = None
+
+def _get_router():
+    global _ROUTER
+    if _ROUTER is None:
+        import logging as _logging
+        # On Windows, TimedRotatingFileHandler.doRollover() raises PermissionError
+        # when the old log file is still locked by a previously killed process.
+        # Suppress logging.raiseExceptions during init so rotation errors don't
+        # abort LLMRouter construction.  rls-bypass: not a security bypass, Windows
+        # file-lock workaround — required for task-rfi-llm-init
+        old_raise = _logging.raiseExceptions
+        _logging.raiseExceptions = False
+        try:
+            from tools.llm.router import LLMRouter
+            _ROUTER = LLMRouter()
+        except Exception as exc:
+            logger.warning("LLMRouter init failed: %s — LLM generation disabled", exc)
+        finally:
+            _logging.raiseExceptions = old_raise
+    return _ROUTER
+
+
 def _call_llm(prompt, section_title, item_number):
     try:
-        from tools.llm.router import LLMRouter, LLMRequest
-        router = LLMRouter()
+        from tools.llm.router import LLMRequest
+        router = _get_router()
         req = LLMRequest(
-            function_name="proposal_drafting",
             messages=[{
                 "role": "user",
                 "content": (
