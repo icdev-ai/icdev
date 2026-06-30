@@ -1,0 +1,550 @@
+{% extends "base.html" %}
+{% block title %}RFI Workbench — {{ session.rfi_number }}{% endblock %}
+{% block content %}
+<style>
+#wb-layout{display:grid;grid-template-columns:270px 1fr 310px;gap:0;height:calc(100vh - 112px);overflow:hidden}
+#wb-sidebar{border-right:1px solid #dee2e6;overflow-y:auto;background:#f8f9fa}
+#wb-editor{overflow-y:auto;padding:1.25rem 1.5rem}
+#wb-panel{border-left:1px solid #dee2e6;overflow-y:auto;background:#f8f9fa;padding:0}
+.section-item{padding:.35rem .75rem;cursor:pointer;border-left:3px solid transparent;font-size:.81rem;line-height:1.3;transition:background .1s}
+.section-item:hover{background:#e9ecef}
+.section-item.active{background:#dbeafe;border-left-color:#2563eb;font-weight:600;color:#1d4ed8}
+.section-item.status-accepted,.section-item.status-hitl_approved{border-left-color:#16a34a}
+.section-item.status-hitl_rejected{border-left-color:#dc2626}
+.section-item.status-ai_draft_ready{border-left-color:#d97706}
+.section-item.status-pending{border-left-color:#9ca3af}
+.part-hdr{font-size:.68rem;font-weight:700;text-transform:uppercase;color:#6b7280;padding:.45rem .75rem .2rem;letter-spacing:.05em;background:#e5e7eb;border-top:1px solid #d1d5db}
+.s-badge{font-size:.6rem;padding:1px 4px;border-radius:3px;float:right;margin-top:2px}
+#content-editor{width:100%;min-height:320px;resize:vertical;font-family:'Segoe UI',system-ui,sans-serif;font-size:.875rem;line-height:1.65;padding:.75rem;border:1px solid #ced4da;border-radius:6px;background:#fff;transition:border-color .15s}
+#content-editor:focus{outline:none;border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.1)}
+.wg-bar{height:7px;border-radius:4px;transition:width .4s}
+.spin{animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.generating{animation:pulse 1.5s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
+#markdown-preview{font-size:.875rem;line-height:1.65;min-height:200px}
+#markdown-preview h3,#markdown-preview h4,#markdown-preview h5{margin-top:1rem;margin-bottom:.4rem}
+#markdown-preview table{width:100%;font-size:.82rem;border-collapse:collapse}
+#markdown-preview td,#markdown-preview th{border:1px solid #dee2e6;padding:.3rem .5rem}
+#markdown-preview th{background:#f8f9fa;font-weight:600}
+</style>
+
+<!-- Top bar -->
+<div class="d-flex align-items-center justify-content-between px-3 border-bottom bg-white" style="height:52px;flex-shrink:0">
+  <div class="d-flex align-items-center gap-3">
+    <a href="/rfi/" class="btn btn-sm btn-outline-secondary">← Sessions</a>
+    <div class="d-flex align-items-center gap-2">
+      <span class="fw-semibold">{{ session.rfi_number or 'RFI' }}</span>
+      <span class="text-muted small d-none d-md-inline">{{ (session.rfi_title or '')[:60] }}</span>
+    </div>
+    <span id="session-status-badge" class="badge {% if session.status == 'exported' %}bg-success{% elif session.status == 'complete' %}bg-primary{% elif session.status == 'in_progress' %}bg-info{% else %}bg-secondary{% endif %}">
+      {{ session.status|replace('_',' ')|title }}
+    </span>
+  </div>
+  <div class="d-flex align-items-center gap-2">
+    <small class="text-muted d-none d-lg-inline" id="progress-label">
+      {{ session.approved_sections }}/{{ session.total_sections }} accepted
+    </small>
+    <div class="progress d-none d-md-flex" style="width:80px;height:8px;">
+      <div class="progress-bar bg-success" id="progress-bar"
+        style="width:{{ ((session.approved_sections / session.total_sections) * 100)|round(0)|int if session.total_sections > 0 else 0 }}%">
+      </div>
+    </div>
+    <button class="btn btn-sm btn-outline-secondary" onclick="doExport('md')" title="Download Markdown">⬇ MD</button>
+    <button class="btn btn-sm btn-success" onclick="doExport('docx')" id="export-docx-btn">
+      <span id="export-spinner" class="d-none" style="display:inline-block;width:12px;height:12px;border:2px solid rgba(255,255,255,.5);border-top-color:#fff;border-radius:50%;margin-right:4px;" class="spin"></span>
+      📥 Export DOCX
+    </button>
+  </div>
+</div>
+
+<!-- 3-panel workbench -->
+<div id="wb-layout">
+
+  <!-- LEFT: Section tree -->
+  <div id="wb-sidebar">
+    <div class="p-2 border-bottom">
+      <input type="text" class="form-control form-control-sm" placeholder="🔍 Filter sections…" id="section-filter" oninput="filterSections(this.value)">
+    </div>
+    <div id="section-tree">
+      {% set ns = namespace(cur_part='') %}
+      {% set part_labels = {'part1':'Part 1 — Admin','part2':'Part 2 — Technical','part3':'Part 3 — Schedule','part4':'Part 4 — Business','part5':'Part 5 — Insights','appendix':'Appendix'} %}
+      {% for sec in sections %}
+        {% if sec.part != ns.cur_part %}
+          {% set ns.cur_part = sec.part %}
+          <div class="part-hdr">{{ part_labels.get(sec.part, sec.part) }}</div>
+        {% endif %}
+        <div class="section-item status-{{ sec.status }}"
+             data-id="{{ sec.id }}"
+             data-search="{{ sec.item_number|lower }} {{ sec.title|lower }}"
+             onclick="loadSection('{{ sec.id }}')">
+          <span class="text-muted" style="font-size:.72rem">{{ sec.item_number }}</span>
+          {{ sec.title }}
+          <span class="s-badge
+            {% if sec.status in ('accepted','hitl_approved') %}bg-success text-white
+            {% elif sec.status == 'hitl_rejected' %}bg-danger text-white
+            {% elif sec.status == 'ai_draft_ready' %}bg-warning text-dark
+            {% else %}bg-light text-secondary border{% endif %}">
+            {% if sec.status in ('accepted','hitl_approved') %}✓
+            {% elif sec.status == 'hitl_rejected' %}✗
+            {% elif sec.status == 'ai_draft_ready' %}⚡
+            {% else %}○{% endif %}
+          </span>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- CENTER: Editor -->
+  <div id="wb-editor">
+    <div id="editor-placeholder" class="text-center text-muted py-5">
+      <div style="font-size:3rem" class="mb-3">👈</div>
+      <div class="fw-semibold fs-5">Select a section</div>
+      <div class="small mt-1">Click any section in the left panel to begin editing</div>
+    </div>
+
+    <div id="editor-area" class="d-none">
+      <!-- Section header -->
+      <div class="d-flex align-items-start justify-content-between mb-2">
+        <div>
+          <h5 class="mb-0" id="editor-title">—</h5>
+          <p class="text-muted small mb-0 mt-1" id="editor-question" style="max-width:600px"></p>
+        </div>
+        <span class="badge ms-3 flex-shrink-0" id="editor-status-badge">—</span>
+      </div>
+
+      <!-- Toolbar -->
+      <div class="d-flex align-items-center gap-2 mb-2">
+        <button class="btn btn-sm btn-outline-secondary" onclick="togglePreview()" id="preview-btn">📄 Preview</button>
+        <span class="text-muted small" id="word-count"></span>
+        <span class="text-muted small ms-auto" id="save-indicator"></span>
+        <button class="btn btn-sm btn-outline-primary" onclick="saveContent()" id="save-btn">💾 Save</button>
+      </div>
+
+      <!-- Editor / Preview -->
+      <textarea id="content-editor" class="content-editor" oninput="onContentChange()"
+        placeholder="Content will appear here after AI generation, or type directly…"></textarea>
+      <div id="markdown-preview" class="d-none border rounded p-3 bg-white" style="overflow-y:auto;max-height:480px;"></div>
+
+      <!-- WriteGuard inline summary -->
+      <div class="mt-2 small" id="wg-inline-summary" style="color:#6b7280"></div>
+
+      <!-- HITL comment shown inline when rejected -->
+      <div id="rejected-notice" class="d-none mt-2 alert alert-warning py-2 small">
+        <strong>Rejected — Reviewer comment:</strong> <span id="rejected-comment"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: Controls panel -->
+  <div id="wb-panel">
+    <div id="panel-placeholder" class="text-center text-muted p-4 pt-5">
+      <div style="font-size:2.5rem" class="mb-2">🛠️</div>
+      <div class="small fw-semibold">Select a section to see AI Assist, WriteGuard, and HITL controls</div>
+    </div>
+
+    <div id="panel-controls" class="d-none">
+      <div class="p-3">
+
+        <!-- AI Assist -->
+        <div class="card mb-3 border-primary shadow-sm">
+          <div class="card-header py-2 fw-semibold text-primary bg-primary bg-opacity-10 d-flex justify-content-between">
+            <span>✨ AI Assist</span>
+            <small class="text-muted fw-normal" id="gen-count"></small>
+          </div>
+          <div class="card-body pb-2 pt-2">
+            <p class="text-muted small mb-2">Generates section content using your company profile, RFI objectives, and any reviewer feedback below.</p>
+            <button class="btn btn-primary w-100 mb-1" id="gen-btn" onclick="generateContent()">
+              <span id="gen-spinner-icon">✨</span> <span id="gen-btn-label">Generate Content</span>
+            </button>
+            <div class="text-center small d-none" id="gen-status"></div>
+          </div>
+        </div>
+
+        <!-- WriteGuard -->
+        <div class="card mb-3 border-info shadow-sm">
+          <div class="card-header py-2 fw-semibold text-info bg-info bg-opacity-10">🔍 WriteGuard Quality</div>
+          <div class="card-body pt-2 pb-2">
+            <button class="btn btn-info btn-sm w-100 mb-2 text-white" onclick="runWriteGuard()" id="wg-btn">
+              Run WriteGuard
+            </button>
+            <div id="wg-results" class="d-none">
+              <div class="d-flex align-items-center justify-content-between mb-2">
+                <span class="small fw-semibold">Overall</span>
+                <span id="wg-overall-badge" class="badge"></span>
+              </div>
+              {% for dim in ['Correctness','Clarity','Delivery','Originality','Engagement'] %}
+              <div class="mb-1">
+                <div class="d-flex justify-content-between mb-1" style="font-size:.76rem">
+                  <span>{{ dim }}</span><span id="wg-score-{{ dim|lower }}">—</span>
+                </div>
+                <div class="progress" style="height:5px"><div class="wg-bar bg-secondary progress-bar" id="wg-bar-{{ dim|lower }}" style="width:0%"></div></div>
+              </div>
+              {% endfor %}
+              <div id="wg-issues" class="mt-2" style="font-size:.76rem"></div>
+            </div>
+            <div id="wg-error" class="text-danger small d-none"></div>
+          </div>
+        </div>
+
+        <!-- HITL -->
+        <div class="card border-warning shadow-sm">
+          <div class="card-header py-2 fw-semibold text-warning bg-warning bg-opacity-10">👤 HITL Review</div>
+          <div class="card-body pt-2 pb-3">
+            <label class="form-label small fw-semibold mb-1">Reviewer Comment</label>
+            <textarea class="form-control form-control-sm mb-2" id="hitl-comment" rows="3"
+              placeholder="Feedback for AI to incorporate on next generation (optional)…"></textarea>
+
+            <button class="btn btn-success w-100 mb-1" onclick="applyHitl('approve')">✅ Approve</button>
+            <button class="btn btn-danger w-100 mb-1" onclick="applyHitl('reject')">❌ Reject</button>
+            <button class="btn btn-warning w-100 mb-1 text-dark" onclick="commentAndRegenerate()">
+              💬 Comment &amp; Regenerate
+            </button>
+            <button class="btn btn-outline-success w-100" onclick="applyHitl('accept')">🏁 Mark Final (Accept)</button>
+
+            <div id="hitl-msg" class="mt-2 small text-center"></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div><!-- #wb-layout -->
+
+<script>
+const SESSION_ID = "{{ session.id }}";
+let currentSectionId = null;
+let currentSection = null;
+let saveTimer = null;
+let previewActive = false;
+
+// ── Load section ─────────────────────────────────────────────────────────────
+function loadSection(id) {
+  document.querySelectorAll('.section-item').forEach(el => el.classList.remove('active'));
+  const el = document.querySelector(`.section-item[data-id="${id}"]`);
+  if (el) el.classList.add('active');
+  currentSectionId = id;
+
+  fetch(`/api/rfi/${SESSION_ID}/sections`)
+    .then(r => r.json())
+    .then(secs => {
+      currentSection = secs.find(s => s.id === id);
+      if (currentSection) renderSection(currentSection);
+    });
+}
+
+function renderSection(sec) {
+  document.getElementById('editor-placeholder').classList.add('d-none');
+  document.getElementById('panel-placeholder').classList.add('d-none');
+  document.getElementById('editor-area').classList.remove('d-none');
+  document.getElementById('panel-controls').classList.remove('d-none');
+
+  document.getElementById('editor-title').textContent = sec.item_number + ' — ' + sec.title;
+  document.getElementById('editor-question').textContent = sec.question_text || '';
+
+  const badge = document.getElementById('editor-status-badge');
+  badge.textContent = (sec.status || '').replace(/_/g,' ');
+  badge.className = 'badge ms-3 flex-shrink-0 ' + statusBadgeClass(sec.status);
+
+  const editor = document.getElementById('content-editor');
+  editor.value = sec.content || sec.ai_draft || '';
+  updateWordCount(editor.value);
+
+  document.getElementById('hitl-comment').value = sec.hitl_comment || '';
+  document.getElementById('gen-count').textContent = sec.generation_count > 0 ? 'v' + sec.generation_count : 'not generated';
+  document.getElementById('hitl-msg').textContent = '';
+  document.getElementById('save-indicator').textContent = '';
+  document.getElementById('gen-status').classList.add('d-none');
+
+  // Rejected notice
+  const rejNotice = document.getElementById('rejected-notice');
+  if (sec.status === 'hitl_rejected' && sec.hitl_comment) {
+    document.getElementById('rejected-comment').textContent = sec.hitl_comment;
+    rejNotice.classList.remove('d-none');
+  } else {
+    rejNotice.classList.add('d-none');
+  }
+
+  // WriteGuard inline
+  if (sec.writeguard_score) {
+    const s = parseFloat(sec.writeguard_score);
+    document.getElementById('wg-inline-summary').textContent =
+      `WriteGuard: ${s.toFixed(0)}% ${s >= 80 ? '✅' : s >= 60 ? '⚠️' : '❌'}`;
+    if (sec.writeguard_result) {
+      try {
+        const wg = typeof sec.writeguard_result === 'string' ? JSON.parse(sec.writeguard_result) : sec.writeguard_result;
+        renderWriteGuardResult(wg);
+      } catch(e) {}
+    }
+  } else {
+    document.getElementById('wg-inline-summary').textContent = '';
+    document.getElementById('wg-results').classList.add('d-none');
+  }
+
+  // Ensure editor visible
+  if (previewActive) togglePreview();
+}
+
+function statusBadgeClass(status) {
+  const m = {pending:'bg-secondary', ai_draft_ready:'bg-warning text-dark', hitl_approved:'bg-success', hitl_rejected:'bg-danger', accepted:'bg-success'};
+  return m[status] || 'bg-secondary';
+}
+
+// ── Editor ────────────────────────────────────────────────────────────────────
+function onContentChange() {
+  updateWordCount(document.getElementById('content-editor').value);
+  document.getElementById('save-indicator').textContent = '● unsaved';
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveContent, 2500);
+}
+
+function updateWordCount(text) {
+  const w = text.trim() ? text.trim().split(/\s+/).length : 0;
+  document.getElementById('word-count').textContent = w + ' words';
+}
+
+function saveContent() {
+  if (!currentSectionId) return;
+  const content = document.getElementById('content-editor').value;
+  fetch(`/api/rfi/${SESSION_ID}/sections/${currentSectionId}/save`, {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({content})
+  }).then(r => r.json()).then(d => {
+    if (d.ok) document.getElementById('save-indicator').textContent = '✓ saved';
+  });
+}
+
+function togglePreview() {
+  previewActive = !previewActive;
+  const editor = document.getElementById('content-editor');
+  const preview = document.getElementById('markdown-preview');
+  const btn = document.getElementById('preview-btn');
+  if (previewActive) {
+    preview.innerHTML = renderMarkdown(editor.value);
+    preview.classList.remove('d-none');
+    editor.classList.add('d-none');
+    btn.textContent = '✏️ Edit';
+  } else {
+    preview.classList.add('d-none');
+    editor.classList.remove('d-none');
+    btn.textContent = '📄 Preview';
+  }
+}
+
+function renderMarkdown(text) {
+  const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  let html = esc(text)
+    .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g,'<em>$1</em>')
+    .replace(/`(.+?)`/g,'<code style="background:#f3f4f6;padding:1px 4px;border-radius:3px">$1</code>')
+    .replace(/^### (.+)$/gm,'<h5 class="mt-3">$1</h5>')
+    .replace(/^## (.+)$/gm,'<h4 class="mt-3">$1</h4>')
+    .replace(/^# (.+)$/gm,'<h3 class="mt-3">$1</h3>')
+    .replace(/^- (.+)$/gm,'<li>$1</li>')
+    .replace(/^&gt; (.+)$/gm,'<blockquote class="border-start border-3 ps-3 text-muted">$1</blockquote>')
+    .replace(/\n\n/g,'</p><p class="mb-2">');
+  // Simple table detection
+  html = html.replace(/((?:\|.+\|\n?)+)/g, m => {
+    const rows = m.trim().split('\n').filter(r => r.trim() && !r.match(/^\|[-| ]+\|$/));
+    if (rows.length === 0) return m;
+    let out = '<table class="table table-sm table-bordered mt-2 mb-2"><tbody>';
+    rows.forEach((row, i) => {
+      const cells = row.split('|').filter((_, idx, arr) => idx > 0 && idx < arr.length - 1);
+      const tag = i === 0 ? 'th' : 'td';
+      out += '<tr>' + cells.map(c => `<${tag}>${c.trim()}</${tag}>`).join('') + '</tr>';
+    });
+    return out + '</tbody></table>';
+  });
+  return '<p class="mb-2">' + html + '</p>';
+}
+
+// ── AI Generate ───────────────────────────────────────────────────────────────
+function generateContent() {
+  if (!currentSectionId) return;
+  const btn = document.getElementById('gen-btn');
+  const label = document.getElementById('gen-btn-label');
+  const icon = document.getElementById('gen-spinner-icon');
+  const status = document.getElementById('gen-status');
+  btn.disabled = true;
+  label.textContent = 'Generating…';
+  icon.className = 'spin';
+  icon.textContent = '⟳';
+  label.className = 'generating';
+  status.textContent = '⚡ AI is generating content…';
+  status.className = 'text-muted small generating text-center';
+  status.classList.remove('d-none');
+
+  fetch(`/api/rfi/${SESSION_ID}/sections/${currentSectionId}/generate`, {method: 'POST'})
+    .then(r => r.json())
+    .then(d => {
+      btn.disabled = false; label.textContent = 'Regenerate'; icon.textContent = '✨'; icon.className = '';
+      if (d.error) { status.textContent = '❌ ' + d.error; status.className = 'text-danger small text-center'; return; }
+      status.textContent = '✓ Generated'; status.className = 'text-success small text-center';
+      currentSection = d.section;
+      document.getElementById('content-editor').value = d.section.content || d.section.ai_draft || '';
+      updateWordCount(document.getElementById('content-editor').value);
+      document.getElementById('gen-count').textContent = 'v' + d.section.generation_count;
+      refreshSidebarItem(currentSectionId, d.section.status);
+      setTimeout(() => status.classList.add('d-none'), 3000);
+    })
+    .catch(err => {
+      btn.disabled = false; label.textContent = 'Generate Content'; icon.textContent = '✨'; icon.className = '';
+      status.textContent = '❌ ' + err.message; status.className = 'text-danger small text-center';
+    });
+}
+
+// ── WriteGuard ────────────────────────────────────────────────────────────────
+function runWriteGuard() {
+  if (!currentSectionId) return;
+  const btn = document.getElementById('wg-btn');
+  btn.disabled = true; btn.textContent = 'Running…';
+  document.getElementById('wg-error').classList.add('d-none');
+  document.getElementById('wg-results').classList.add('d-none');
+  // Save first
+  saveContent();
+  setTimeout(() => {
+    fetch(`/api/rfi/${SESSION_ID}/sections/${currentSectionId}/writeguard`, {method: 'POST'})
+      .then(r => r.json())
+      .then(d => {
+        btn.disabled = false; btn.textContent = 'Run WriteGuard';
+        if (d.error) { document.getElementById('wg-error').textContent = d.error; document.getElementById('wg-error').classList.remove('d-none'); return; }
+        renderWriteGuardResult(d.result);
+      })
+      .catch(err => {
+        btn.disabled = false; btn.textContent = 'Run WriteGuard';
+        document.getElementById('wg-error').textContent = err.message; document.getElementById('wg-error').classList.remove('d-none');
+      });
+  }, 400);
+}
+
+function renderWriteGuardResult(wg) {
+  const score = parseFloat(wg.overall_score || 0);
+  const badge = document.getElementById('wg-overall-badge');
+  badge.textContent = score.toFixed(0) + '%';
+  badge.className = 'badge ' + (score >= 80 ? 'bg-success' : score >= 60 ? 'bg-warning text-dark' : 'bg-danger');
+
+  const dims = ['Correctness','Clarity','Delivery','Originality','Engagement'];
+  const comp = wg.composites || {};
+  dims.forEach(d => {
+    const s = parseFloat(comp[d] || 0);
+    const el = document.getElementById('wg-score-' + d.toLowerCase());
+    const bar = document.getElementById('wg-bar-' + d.toLowerCase());
+    if (el) el.textContent = s.toFixed(0) + '%';
+    if (bar) {
+      bar.style.width = s + '%';
+      bar.className = 'wg-bar progress-bar ' + (s >= 80 ? 'bg-success' : s >= 60 ? 'bg-warning' : 'bg-danger');
+    }
+  });
+
+  const issues = wg.issues || [];
+  const issDiv = document.getElementById('wg-issues');
+  issDiv.innerHTML = issues.length
+    ? issues.slice(0,4).map(i => `<div class="text-muted">• ${(i.message || i).toString().slice(0,80)}</div>`).join('')
+    : '<div class="text-success">✓ No major issues</div>';
+
+  document.getElementById('wg-results').classList.remove('d-none');
+  document.getElementById('wg-inline-summary').textContent =
+    `WriteGuard: ${score.toFixed(0)}% ${score >= 80 ? '✅' : score >= 60 ? '⚠️' : '❌'}`;
+}
+
+// ── HITL ──────────────────────────────────────────────────────────────────────
+function applyHitl(action) {
+  if (!currentSectionId) return;
+  const comment = document.getElementById('hitl-comment').value;
+  const msg = document.getElementById('hitl-msg');
+  msg.textContent = 'Saving…'; msg.className = 'mt-2 small text-center text-muted';
+
+  fetch(`/api/rfi/${SESSION_ID}/sections/${currentSectionId}/hitl`, {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({action, comment})
+  }).then(r => r.json()).then(d => {
+    if (d.error) { msg.textContent = '❌ ' + d.error; msg.className = 'mt-2 small text-center text-danger'; return; }
+    const labels = {approve:'✅ Approved', reject:'❌ Rejected', accept:'🏁 Accepted as final'};
+    msg.textContent = labels[action] || 'Done';
+    msg.className = 'mt-2 small text-center ' + (action === 'reject' ? 'text-danger' : 'text-success');
+    currentSection = d.section;
+    const badge = document.getElementById('editor-status-badge');
+    badge.textContent = d.section.status.replace(/_/g,' ');
+    badge.className = 'badge ms-3 flex-shrink-0 ' + statusBadgeClass(d.section.status);
+    refreshSidebarItem(currentSectionId, d.section.status);
+    updateProgress();
+    if (action === 'reject' && comment) {
+      document.getElementById('rejected-comment').textContent = comment;
+      document.getElementById('rejected-notice').classList.remove('d-none');
+    } else {
+      document.getElementById('rejected-notice').classList.add('d-none');
+    }
+  });
+}
+
+function commentAndRegenerate() {
+  const comment = document.getElementById('hitl-comment').value;
+  if (!comment.trim()) { alert('Please add a comment before regenerating.'); return; }
+  applyHitl('reject');
+  setTimeout(() => generateContent(), 600);
+}
+
+// ── Sidebar helpers ──────────────────────────────────────────────────────────
+function refreshSidebarItem(id, status) {
+  const el = document.querySelector(`.section-item[data-id="${id}"]`);
+  if (!el) return;
+  el.className = 'section-item active status-' + status;
+  const badge = el.querySelector('.s-badge');
+  if (badge) {
+    const icons = {accepted:'✓', hitl_approved:'✓', hitl_rejected:'✗', ai_draft_ready:'⚡', pending:'○'};
+    const cls = {
+      accepted:'bg-success text-white', hitl_approved:'bg-success text-white',
+      hitl_rejected:'bg-danger text-white', ai_draft_ready:'bg-warning text-dark',
+      pending:'bg-light text-secondary border'
+    };
+    badge.textContent = icons[status] || '○';
+    badge.className = 's-badge ' + (cls[status] || 'bg-light text-secondary border');
+  }
+  updateProgress();
+}
+
+function updateProgress() {
+  const items = document.querySelectorAll('.section-item');
+  const total = items.length;
+  let approved = 0;
+  items.forEach(el => {
+    if (el.classList.contains('status-hitl_approved') || el.classList.contains('status-accepted')) approved++;
+  });
+  const pct = total > 0 ? Math.round(approved / total * 100) : 0;
+  document.getElementById('progress-bar').style.width = pct + '%';
+  document.getElementById('progress-label').textContent = approved + '/' + total + ' accepted';
+}
+
+// ── Export ───────────────────────────────────────────────────────────────────
+function doExport(fmt) {
+  const btn = document.getElementById('export-docx-btn');
+  const spinner = document.getElementById('export-spinner');
+  if (fmt === 'docx') { btn.disabled = true; spinner.style.display = 'inline-block'; }
+  fetch(`/api/rfi/${SESSION_ID}/export/${fmt}`, {method: 'POST'})
+    .then(r => r.json())
+    .then(d => {
+      btn.disabled = false; spinner.style.display = 'none';
+      if (d.error) { alert('Export error: ' + d.error); return; }
+      window.location.href = `/api/rfi/${SESSION_ID}/download/${fmt}`;
+    })
+    .catch(err => { btn.disabled = false; spinner.style.display = 'none'; alert('Export failed: ' + err.message); });
+}
+
+// ── Filter ────────────────────────────────────────────────────────────────────
+function filterSections(q) {
+  const lower = q.toLowerCase();
+  let lastHdr = null;
+  document.querySelectorAll('#section-tree > *').forEach(el => {
+    if (el.classList.contains('part-hdr')) { lastHdr = el; el.style.display = ''; return; }
+    const matches = !lower || (el.dataset.search || '').includes(lower);
+    el.style.display = matches ? '' : 'none';
+  });
+}
+
+// Auto-load first section
+document.addEventListener('DOMContentLoaded', () => {
+  const first = document.querySelector('.section-item');
+  if (first) loadSection(first.dataset.id);
+});
+</script>
+{% endblock %}
