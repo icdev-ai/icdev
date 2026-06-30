@@ -188,6 +188,84 @@ def api_delete_session(session_id):
         return jsonify({"error": str(exc)}), 500
 
 
+# ── API: requirements ─────────────────────────────────────────────────────────
+
+@rfi_canvas_bp.route("/api/rfi/<session_id>/sections/<section_id>/requirements")
+def api_get_requirements(session_id, section_id):
+    return jsonify(wb.get_requirements(section_id))
+
+
+@rfi_canvas_bp.route("/api/rfi/<session_id>/sections/<section_id>/requirements", methods=["POST"])
+def api_add_requirement(session_id, section_id):
+    data = request.get_json(force=True) or {}
+    text = (data.get("text") or "").strip()
+    if not text:
+        return jsonify({"error": "text is required"}), 400
+    try:
+        new_req = wb.add_requirement(section_id, text, source="manual")
+        return jsonify({"ok": True, "requirement": new_req}), 201
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@rfi_canvas_bp.route(
+    "/api/rfi/<session_id>/sections/<section_id>/requirements/check-coverage",
+    methods=["POST"],
+)
+def api_check_coverage(session_id, section_id):
+    try:
+        reqs = wb.check_requirement_coverage(section_id)
+        return jsonify({"ok": True, "requirements": reqs})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@rfi_canvas_bp.route(
+    "/api/rfi/<session_id>/sections/<section_id>/requirements/<req_id>",
+    methods=["PUT"],
+)
+def api_update_requirement(session_id, section_id, req_id):
+    data = request.get_json(force=True) or {}
+    text = (data.get("text") or "").strip()
+    if not text:
+        return jsonify({"error": "text is required"}), 400
+    updated = wb.update_requirement(section_id, req_id, text)
+    if updated is None:
+        return jsonify({"error": "Requirement not found"}), 404
+    return jsonify({"ok": True, "requirement": updated})
+
+
+@rfi_canvas_bp.route(
+    "/api/rfi/<session_id>/sections/<section_id>/requirements/<req_id>",
+    methods=["DELETE"],
+)
+def api_delete_requirement(session_id, section_id, req_id):
+    deleted = wb.delete_requirement(section_id, req_id)
+    if not deleted:
+        return jsonify({"error": "Requirement not found"}), 404
+    return jsonify({"ok": True})
+
+
+# ── API: ACE team ──────────────────────────────────────────────────────────────
+
+@rfi_canvas_bp.route("/api/rfi/<session_id>/ace/status")
+def api_ace_status(session_id):
+    try:
+        status = wb.get_ace_team_status(session_id)
+        return jsonify(status)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@rfi_canvas_bp.route("/api/rfi/<session_id>/ace/launch", methods=["POST"])
+def api_ace_launch(session_id):
+    try:
+        instance_id = wb.launch_ace_team(session_id)
+        return jsonify({"ok": True, "ace_instance_id": instance_id})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
 # ── IQE dispatch ──────────────────────────────────────────────────────────────
 
 @rfi_canvas_bp.route("/api/rfi/iqe-query", methods=["POST"])

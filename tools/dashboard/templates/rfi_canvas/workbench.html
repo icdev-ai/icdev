@@ -32,6 +32,18 @@
 .wb-card-hdr{padding:8px 14px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #1e3a6e;font-size:12px;font-weight:600}
 .wb-card-body{padding:12px 14px}
 .wb-btn{width:100%;border-radius:5px;padding:7px 12px;font-size:12px;font-weight:600;cursor:pointer;margin-bottom:6px;transition:all .15s;border:1px solid transparent}
+#req-panel{background:#0a1525;border:1px solid #1e3a6e;border-radius:6px;margin-top:10px;overflow:hidden}
+#req-panel-hdr{display:flex;align-items:center;gap:8px;padding:7px 12px;background:#0f1f3a;border-bottom:1px solid #1e3a6e;cursor:pointer;user-select:none}
+#req-list{max-height:220px;overflow-y:auto;padding:6px 8px}
+.req-item{display:flex;align-items:flex-start;gap:7px;padding:5px 6px;border-radius:4px;margin-bottom:3px;border:1px solid #1a2b4a;background:#060f1c}
+.req-icon{flex-shrink:0;font-size:13px;margin-top:1px}
+.req-text{flex:1;font-size:11.5px;color:#b8d0e8;line-height:1.4}
+.req-src{font-size:9px;padding:1px 4px;border-radius:2px;background:#1e293b;color:#5a7aa0;border:1px solid #334155;flex-shrink:0}
+.req-del{flex-shrink:0;background:none;border:none;color:#5a7aa0;cursor:pointer;font-size:12px;padding:0 2px;line-height:1}
+.req-del:hover{color:#f87171}
+#req-coverage-bar-wrap{padding:6px 12px 4px;display:none}
+#req-add-row{display:flex;gap:6px;padding:6px 8px;border-top:1px solid #1a2b4a}
+#ace-team-roles{font-size:11px;color:#7a8cb0;margin-bottom:8px;line-height:1.6}
 </style>
 
 <!-- Top bar -->
@@ -131,6 +143,7 @@
         <button onclick="togglePreview()" id="preview-btn"
           style="background:#0d1b2e;color:#7ab3f0;border:1px solid #1e3a6e;border-radius:4px;padding:4px 10px;font-size:11px;cursor:pointer;">📄 Preview</button>
         <span style="color:#5a7aa0;font-size:11px;" id="word-count"></span>
+        <span style="font-size:11px;" id="md-structure-indicator"></span>
         <span style="color:#5a7aa0;font-size:11px;margin-left:auto;" id="save-indicator"></span>
         <button onclick="saveContent()" id="save-btn"
           style="background:#0f3460;color:#7ab3f0;border:1px solid #1e3a6e;border-radius:4px;padding:4px 10px;font-size:11px;cursor:pointer;">💾 Save</button>
@@ -141,6 +154,39 @@
       <div id="markdown-preview" style="display:none;"></div>
 
       <div id="wg-inline-summary" style="margin-top:8px;font-size:12px;color:#7a8cb0;"></div>
+
+      <!-- Requirements Panel -->
+      <div id="req-panel">
+        <div id="req-panel-hdr" onclick="toggleReqPanel()">
+          <span style="color:#7ab3f0;font-size:12px;font-weight:600;">📋 Requirements</span>
+          <span id="req-count-badge" style="font-size:10px;background:#0f2040;color:#7ab3f0;border:1px solid #1e3a6e;padding:1px 6px;border-radius:10px;">0</span>
+          <span id="req-coverage-label" style="font-size:10px;color:#5a7aa0;margin-left:4px;"></span>
+          <span style="color:#5a7aa0;font-size:11px;margin-left:auto;" id="req-panel-toggle">▾</span>
+        </div>
+        <div id="req-panel-body">
+          <div id="req-coverage-bar-wrap">
+            <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
+              <span style="font-size:10px;color:#7a8cb0;">Coverage</span>
+              <span id="req-coverage-pct" style="font-size:10px;color:#94a3b8;"></span>
+            </div>
+            <div style="background:#0a1525;border-radius:3px;height:4px;overflow:hidden;">
+              <div id="req-coverage-bar" style="height:100%;background:#22c55e;width:0%;transition:width .4s;"></div>
+            </div>
+          </div>
+          <div id="req-list"></div>
+          <div id="req-add-row">
+            <input type="text" id="req-add-input" placeholder="Add requirement…"
+              style="flex:1;background:#050d1f;color:#b8d0e8;border:1px solid #1a3560;border-radius:4px;padding:4px 8px;font-size:11px;"
+              onkeydown="if(event.key==='Enter')addRequirement()">
+            <button onclick="addRequirement()"
+              style="background:#0f3460;color:#7ab3f0;border:1px solid #1e3a6e;border-radius:4px;padding:4px 10px;font-size:11px;cursor:pointer;">Add</button>
+          </div>
+          <div style="text-align:right;padding:0 8px 6px;">
+            <button onclick="recheckCoverage()"
+              style="background:none;border:none;color:#5a7aa0;font-size:10px;cursor:pointer;padding:2px 4px;">🔄 Re-check Coverage</button>
+          </div>
+        </div>
+      </div>
 
       <div id="rejected-notice" style="display:none;background:#2d0a0a;border:1px solid #7f1d1d;color:#fca5a5;border-radius:5px;padding:8px 12px;margin-top:10px;font-size:12px;">
         <strong>Rejected — Reviewer comment:</strong> <span id="rejected-comment"></span>
@@ -230,6 +276,24 @@
           </div>
         </div>
 
+        <!-- AI Team -->
+        <div class="wb-card">
+          <div class="wb-card-hdr" style="background:#0a1a10;color:#4ade80;">
+            <span>🤖 AI Team</span>
+            <small id="ace-team-state" style="color:#5a7aa0;font-weight:400;">not launched</small>
+          </div>
+          <div class="wb-card-body">
+            <div id="ace-team-roles"></div>
+            <button class="wb-btn" id="ace-launch-btn" onclick="launchAceTeam()"
+              style="background:#0a1a10;color:#4ade80;border-color:#16a34a;">
+              🚀 Launch Team
+            </button>
+            <div style="text-align:center;margin-top:4px;">
+              <a href="/coworker" target="_blank" style="font-size:10px;color:#5a7aa0;text-decoration:none;">→ View in ACE Canvas</a>
+            </div>
+          </div>
+        </div>
+
       </div>
     </div>
   </div>
@@ -277,6 +341,8 @@ function renderSection(sec) {
   document.getElementById('hitl-msg').textContent = '';
   document.getElementById('save-indicator').textContent = '';
   document.getElementById('gen-status').style.display = 'none';
+  document.getElementById('md-structure-indicator').textContent = '';
+  loadRequirements(sec.id);
 
   const rejNotice = document.getElementById('rejected-notice');
   if (sec.status === 'hitl_rejected' && sec.hitl_comment) {
@@ -443,6 +509,18 @@ function generateContent() {
       updateWordCount(document.getElementById('content-editor').value);
       document.getElementById('gen-count').textContent = 'v' + d.section.generation_count;
       refreshSidebarItem(currentSectionId, d.section.status);
+      // Show markdown structure indicator
+      const mdv = d.section.markdown_validation;
+      const mdInd = document.getElementById('md-structure-indicator');
+      if (mdv && !mdv.valid) {
+        const errCount = (mdv.issues||[]).filter(i=>i.severity==='error').length;
+        mdInd.textContent = `⚠ ${errCount} structure issue${errCount!==1?'s':''}`;
+        mdInd.style.color = '#f87171';
+      } else if (mdv) {
+        mdInd.textContent = '✓ Structure OK';
+        mdInd.style.color = '#22c55e';
+      }
+      loadRequirements(currentSectionId);
       // Auto-switch to rendered preview after generation
       if (!previewActive) togglePreview();
       setTimeout(() => { status.style.display = 'none'; }, 3000);
@@ -581,6 +659,172 @@ function filterSections(q) {
 document.addEventListener('DOMContentLoaded', () => {
   const first = document.querySelector('.section-item');
   if (first) loadSection(first.dataset.id);
+  loadAceTeamStatus();
 });
+
+// ── Requirements ──────────────────────────────────────────────────────────────
+
+function loadRequirements(sectionId) {
+  if (!sectionId) return;
+  fetch(`/api/rfi/${SESSION_ID}/sections/${sectionId}/requirements`)
+    .then(r => r.json())
+    .then(reqs => renderRequirements(reqs))
+    .catch(() => {});
+}
+
+function renderRequirements(reqs) {
+  const list = document.getElementById('req-list');
+  const badge = document.getElementById('req-count-badge');
+  const covWrap = document.getElementById('req-coverage-bar-wrap');
+  const covLabel = document.getElementById('req-coverage-label');
+  const covBar = document.getElementById('req-coverage-bar');
+  const covPct = document.getElementById('req-coverage-pct');
+
+  badge.textContent = reqs.length;
+  if (!reqs.length) {
+    list.innerHTML = '<div style="color:#334155;font-size:11px;padding:8px;text-align:center;">No requirements — extracting…</div>';
+    covWrap.style.display = 'none';
+    covLabel.textContent = '';
+    return;
+  }
+
+  const covReqs = reqs.filter(r => r.covered !== null && r.covered !== undefined);
+  if (covReqs.length > 0) {
+    const covered = reqs.filter(r => r.covered === true || r.covered === 'true').length;
+    const partial = reqs.filter(r => r.covered === 'partial').length;
+    const pct = Math.round((covered + partial * 0.5) / reqs.length * 100);
+    covWrap.style.display = '';
+    covBar.style.width = pct + '%';
+    covBar.style.background = pct >= 80 ? '#22c55e' : pct >= 50 ? '#f59e0b' : '#ef4444';
+    covPct.textContent = pct + '%';
+    covLabel.textContent = `${covered}/${reqs.length} covered`;
+    covLabel.style.color = pct >= 80 ? '#22c55e' : pct >= 50 ? '#fbbf24' : '#f87171';
+  } else {
+    covWrap.style.display = 'none';
+    covLabel.textContent = '';
+  }
+
+  const iconMap = { true: '✓', false: '✗', partial: '~' };
+  const colorMap = { true: '#22c55e', false: '#f87171', partial: '#fbbf24' };
+  list.innerHTML = reqs.map(r => {
+    const covered = r.covered !== null && r.covered !== undefined;
+    const icon = covered ? (iconMap[String(r.covered)] || '○') : '○';
+    const iconColor = covered ? (colorMap[String(r.covered)] || '#5a7aa0') : '#5a7aa0';
+    const srcLabel = r.source === 'manual' ? 'manual' : 'AI';
+    return `<div class="req-item">
+      <span class="req-icon" style="color:${iconColor}">${icon}</span>
+      <span class="req-text">${escHtml(r.text)}</span>
+      <span class="req-src">${srcLabel}</span>
+      <button class="req-del" onclick="deleteRequirement('${r.id}')" title="Remove">×</button>
+    </div>`;
+  }).join('');
+}
+
+function toggleReqPanel() {
+  const body = document.getElementById('req-panel-body');
+  const toggle = document.getElementById('req-panel-toggle');
+  const collapsed = body.style.display === 'none';
+  body.style.display = collapsed ? '' : 'none';
+  toggle.textContent = collapsed ? '▾' : '▸';
+}
+
+function addRequirement() {
+  if (!currentSectionId) return;
+  const input = document.getElementById('req-add-input');
+  const text = input.value.trim();
+  if (!text) return;
+  fetch(`/api/rfi/${SESSION_ID}/sections/${currentSectionId}/requirements`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({text})
+  }).then(r => r.json()).then(d => {
+    if (d.ok) { input.value = ''; loadRequirements(currentSectionId); }
+  }).catch(() => {});
+}
+
+function deleteRequirement(reqId) {
+  if (!currentSectionId) return;
+  fetch(`/api/rfi/${SESSION_ID}/sections/${currentSectionId}/requirements/${reqId}`, {method:'DELETE'})
+    .then(() => loadRequirements(currentSectionId))
+    .catch(() => {});
+}
+
+function recheckCoverage() {
+  if (!currentSectionId) return;
+  const btn = event.target;
+  btn.textContent = '⟳ Checking…';
+  btn.disabled = true;
+  fetch(`/api/rfi/${SESSION_ID}/sections/${currentSectionId}/requirements/check-coverage`, {method:'POST'})
+    .then(r => r.json())
+    .then(d => {
+      btn.textContent = '🔄 Re-check Coverage'; btn.disabled = false;
+      if (d.requirements) renderRequirements(d.requirements);
+    })
+    .catch(() => { btn.textContent = '🔄 Re-check Coverage'; btn.disabled = false; });
+}
+
+function escHtml(s) {
+  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── ACE Team ──────────────────────────────────────────────────────────────────
+
+function loadAceTeamStatus() {
+  fetch(`/api/rfi/${SESSION_ID}/ace/status`)
+    .then(r => r.json())
+    .then(d => renderAceTeamStatus(d))
+    .catch(() => {});
+}
+
+function renderAceTeamStatus(data) {
+  const stateEl = document.getElementById('ace-team-state');
+  const rolesEl = document.getElementById('ace-team-roles');
+  const launchBtn = document.getElementById('ace-launch-btn');
+  if (!stateEl) return;
+
+  const stateLabels = {
+    not_launched: 'not launched',
+    launched: 'launched',
+    active: 'active',
+    no_session: 'no session',
+  };
+  stateEl.textContent = stateLabels[data.status] || data.status;
+  stateEl.style.color = data.status === 'active' ? '#4ade80' : data.status === 'launched' ? '#fbbf24' : '#5a7aa0';
+
+  const roleNames = {
+    rfi_writer: 'Writer',
+    rfi_editor: 'Editor',
+    rfi_reviewer: 'Reviewer',
+    rfi_researcher: 'Researcher',
+    rfi_compliance_reviewer: 'Compliance',
+  };
+  const roles = data.roles || [];
+  if (roles.length > 0) {
+    rolesEl.innerHTML = roles.map(r => {
+      const name = roleNames[r.role_id] || r.role_id;
+      const stateIcon = r.state === 'running' ? '⚡' : r.state === 'idle' ? '○' : r.state === 'done' ? '✓' : '·';
+      return `<div>${stateIcon} ${name}</div>`;
+    }).join('');
+  } else if (data.status !== 'not_launched') {
+    rolesEl.innerHTML = ['Writer','Editor','Reviewer','Researcher','Compliance'].map(n => `<div>· ${n}</div>`).join('');
+  } else {
+    rolesEl.innerHTML = '<div style="color:#334155;font-size:10px;">Team will auto-launch on new sessions</div>';
+  }
+
+  launchBtn.textContent = (data.status === 'active' || data.status === 'launched') ? '🔄 Re-launch Team' : '🚀 Launch Team';
+}
+
+function launchAceTeam() {
+  const btn = document.getElementById('ace-launch-btn');
+  btn.disabled = true; btn.textContent = '⟳ Launching…';
+  fetch(`/api/rfi/${SESSION_ID}/ace/launch`, {method:'POST'})
+    .then(r => r.json())
+    .then(d => {
+      btn.disabled = false;
+      if (d.ok) { setTimeout(loadAceTeamStatus, 1500); }
+      else { btn.textContent = '🚀 Launch Team'; }
+    })
+    .catch(() => { btn.disabled = false; btn.textContent = '🚀 Launch Team'; });
+}
 </script>
 {% endblock %}

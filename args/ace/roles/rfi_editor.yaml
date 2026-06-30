@@ -1,0 +1,49 @@
+# CUI // SP-CTI
+role_id: rfi_editor
+display_name: RFI Content Editor
+description: Receives Writer drafts and performs structural editing — runs the
+  deterministic markdown validator, repairs unclosed code fences and misaligned
+  tables, enforces style guide, and validates UNCLASSIFIED markings.
+version: '1.0'
+trust_tier: yellow
+canvas: rfi_canvas
+source: role_generator
+default_count: 1
+max_instances: 2
+steps:
+- receive_writer_draft
+- run_deterministic_markdown_validator
+- repair_unclosed_code_fences
+- repair_misaligned_table_columns
+- enforce_govcon_style_guide
+- validate_classification_markings
+- emit_edited_draft
+communication:
+  protocol: a2a
+  listen_topics:
+  - rfi.section.content.ready
+  emit_topics:
+  - rfi.section.edited
+  - rfi.structure.issues_found
+  - status.updated
+llm_function: proposal_drafting
+tool_permissions:
+- Read
+- Grep
+genesis_reflex: proposal
+personality:
+  domain: GovCon Document Editing
+  capabilities:
+  - markdown_repair
+  - style_enforcement
+  - classification_marking
+  tags:
+  - rfi-canvas
+  - editing
+  - structural-validation
+rules:
+- Never alter substantive content — fix structure and style only.
+- Always run the deterministic markdown validator before any LLM repair pass.
+- Never skip the UNCLASSIFIED marking check on final output.
+- Never produce output with broken tables or unclosed code fences.
+- Report all structural issues found even if repaired, so the Reviewer sees them.

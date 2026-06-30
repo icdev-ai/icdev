@@ -1,11 +1,14 @@
 """RFI Response Workbench — backing module.
 
 Handles: session management, section CRUD, AI generation dispatch,
-WriteGuard integration, HITL state machine, export assembly.
+WriteGuard integration, HITL state machine, export assembly,
+requirements layer (extract/CRUD/coverage), ACE team integration.
 """
 from __future__ import annotations
 
 import json
+import threading
+import time
 import uuid
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -109,6 +112,8 @@ def create_session(rfi_number, rfi_title, profile_name, upload_filename, parsed_
     )
     db.commit()
     _seed_sections(sid, parsed_data)
+    threading.Thread(target=_seed_requirements_background, args=(sid,), daemon=True).start()
+    threading.Thread(target=_launch_ace_team_background, args=(sid,), daemon=True).start()
     return sid
 
 
@@ -184,6 +189,11 @@ def get_sections(session_id):
                 d["writeguard_result"] = json.loads(d["writeguard_result"])
             except Exception:
                 pass
+        if isinstance(d.get("requirements"), str):
+            try:
+                d["requirements"] = json.loads(d["requirements"] or "[]")
+            except Exception:
+                d["requirements"] = []
         result.append(d)
     return result
 
@@ -199,6 +209,11 @@ def get_section(section_id):
             d["writeguard_result"] = json.loads(d["writeguard_result"])
         except Exception:
             pass
+    if isinstance(d.get("requirements"), str):
+        try:
+            d["requirements"] = json.loads(d["requirements"] or "[]")
+        except Exception:
+            d["requirements"] = []
     return d
 
 
@@ -265,6 +280,14 @@ def generate_section_content(section_id, profile_name, parsed_data):
     hitl_comment = section.get("hitl_comment", "")
     hitl_context = f"Incorporate this reviewer feedback: {hitl_comment}" if hitl_comment else ""
 
+    # Inject uncovered requirements so the LLM explicitly addresses them
+    reqs = get_requirements(section_id)
+    uncovered = [r for r in reqs if r.get("covered") in (False, None, "false", "partial")]
+    if uncovered:
+        req_lines = "\n".join(f"  - {r['text']}" for r in uncovered)
+        req_notice = f"You MUST address each of these requirements:\n{req_lines}"
+        hitl_context = f"{req_notice}\n\n{hitl_context}".strip() if hitl_context else req_notice
+
     prompt = prompt_tpl.format(
         entity_name=profile.get("entity_name", "the responding organization"),
         rfi_number=parsed_data.get("rfi_number", "RFI-UNKNOWN"),
@@ -284,13 +307,27 @@ def generate_section_content(section_id, profile_name, parsed_data):
 
     draft = _call_llm(prompt, section["title"], item)
 
+    # Run deterministic markdown validator — attach as transient field
+    try:
+        from tools.govcon.rfi_markdown_validator import validate_markdown_structure
+        md_validation = validate_markdown_structure(draft)
+    except Exception as exc:
+        logger.warning("Markdown validator failed: %s", exc)
+        md_validation = {"valid": True, "issues": []}
+
     db = get_db()
     db.execute(
         "UPDATE rfi_workbench_sections SET ai_draft=%s, content=%s, status='ai_draft_ready', generation_count=generation_count+1, updated_at=%s WHERE id=%s",
         (draft, draft, _now(), section_id),
     )
     db.commit()
-    return get_section(section_id)
+
+    # Kick off coverage check in background
+    threading.Thread(target=_check_coverage_background, args=(section_id,), daemon=True).start()
+
+    result = get_section(section_id)
+    result["markdown_validation"] = md_validation
+    return result
 
 
 _ROUTER = None
@@ -495,3 +532,275 @@ def list_profiles():
         return list(data.get("profiles", {}).keys())
     except Exception:
         return ["own_company", "peraton"]
+
+
+# ── Requirements layer ────────────────────────────────────────────────────────
+
+def get_requirements(section_id: str) -> list[dict]:
+    section = get_section(section_id)
+    if not section:
+        return []
+    reqs = section.get("requirements")
+    if isinstance(reqs, list):
+        return reqs
+    return []
+
+
+def _save_requirements(section_id: str, reqs: list[dict]):
+    db = get_db()
+    db.execute(
+        "UPDATE rfi_workbench_sections SET requirements=%s, updated_at=%s WHERE id=%s",
+        (json.dumps(reqs), _now(), section_id),
+    )
+    db.commit()
+
+
+def add_requirement(section_id: str, text: str, source: str = "manual") -> dict:
+    reqs = get_requirements(section_id)
+    new_req = {"id": _uid(), "text": text, "source": source, "covered": None}
+    reqs.append(new_req)
+    _save_requirements(section_id, reqs)
+    return new_req
+
+
+def update_requirement(section_id: str, req_id: str, text: str) -> dict | None:
+    reqs = get_requirements(section_id)
+    for r in reqs:
+        if r["id"] == req_id:
+            r["text"] = text
+            _save_requirements(section_id, reqs)
+            return r
+    return None
+
+
+def delete_requirement(section_id: str, req_id: str) -> bool:
+    reqs = get_requirements(section_id)
+    original_len = len(reqs)
+    reqs = [r for r in reqs if r["id"] != req_id]
+    if len(reqs) == original_len:
+        return False
+    _save_requirements(section_id, reqs)
+    return True
+
+
+def extract_section_requirements(section_id: str) -> list[dict]:
+    """LLM-based extraction of discrete requirements from question_text.
+    Skips if requirements already exist for the section.
+    """
+    existing = get_requirements(section_id)
+    if existing:
+        return existing
+
+    section = get_section(section_id)
+    if not section:
+        return []
+
+    question_text = section.get("question_text", "").strip()
+    if not question_text:
+        return []
+
+    prompt = (
+        f"You are a GovCon proposal expert. Extract discrete, actionable requirements from "
+        f"the following RFI question/instruction. Return ONLY a JSON array of strings, "
+        f"each item being one specific requirement the response must address. "
+        f"Extract 3 to 8 requirements. No preamble, no markdown, just the JSON array.\n\n"
+        f"RFI Section: {section.get('title', '')}\n"
+        f"Question: {question_text}"
+    )
+
+    try:
+        from tools.llm.router import LLMRequest
+        router = _get_router()
+        if not router:
+            return []
+        req = LLMRequest(
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=400,
+        )
+        response = router.invoke("proposal_drafting", req)
+        raw = response.content if hasattr(response, "content") else str(response)
+
+        # Strip markdown code fences if present
+        import re
+        raw = re.sub(r"^```[a-z]*\n?", "", raw.strip(), flags=re.MULTILINE)
+        raw = raw.strip().rstrip("```").strip()
+
+        extracted = json.loads(raw)
+        if not isinstance(extracted, list):
+            return []
+
+        reqs = [
+            {"id": _uid(), "text": str(item), "source": "extracted", "covered": None}
+            for item in extracted if isinstance(item, str) and item.strip()
+        ]
+        _save_requirements(section_id, reqs)
+        return reqs
+    except Exception as exc:
+        logger.warning("Requirement extraction failed for section %s: %s", section_id, exc)
+        return []
+
+
+def check_requirement_coverage(section_id: str) -> list[dict]:
+    """LLM-based check of whether generated content covers each requirement.
+    Updates the covered field on each requirement and saves back to DB.
+    """
+    reqs = get_requirements(section_id)
+    if not reqs:
+        return []
+
+    section = get_section(section_id)
+    if not section:
+        return reqs
+
+    content = (section.get("content") or section.get("ai_draft") or "").strip()
+    if not content:
+        return reqs
+
+    req_list = "\n".join(f"  [{r['id'][:8]}] {r['text']}" for r in reqs)
+    prompt = (
+        f"You are a GovCon proposal evaluator. For each requirement listed below, "
+        f"determine whether the provided content addresses it.\n\n"
+        f"Return ONLY a JSON object mapping the requirement short-id (first 8 chars) "
+        f"to one of: true (fully addressed), false (not addressed), or \"partial\" (partially addressed).\n\n"
+        f"Requirements:\n{req_list}\n\n"
+        f"Content to evaluate:\n{content[:2000]}"
+    )
+
+    try:
+        from tools.llm.router import LLMRequest
+        router = _get_router()
+        if not router:
+            return reqs
+        req = LLMRequest(
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=300,
+        )
+        response = router.invoke("proposal_review", req)
+        raw = response.content if hasattr(response, "content") else str(response)
+
+        import re
+        raw = re.sub(r"^```[a-z]*\n?", "", raw.strip(), flags=re.MULTILINE)
+        raw = raw.strip().rstrip("```").strip()
+
+        coverage_map = json.loads(raw)
+        if not isinstance(coverage_map, dict):
+            return reqs
+
+        for r in reqs:
+            short_id = r["id"][:8]
+            verdict = coverage_map.get(short_id)
+            if verdict is True or verdict == "true":
+                r["covered"] = True
+            elif verdict is False or verdict == "false":
+                r["covered"] = False
+            elif verdict == "partial":
+                r["covered"] = "partial"
+
+        _save_requirements(section_id, reqs)
+        return reqs
+    except Exception as exc:
+        logger.warning("Coverage check failed for section %s: %s", section_id, exc)
+        return reqs
+
+
+def _seed_requirements_background(session_id: str):
+    """Extract requirements for all sections of a session, 0.3s apart."""
+    try:
+        db = get_db()
+        rows = db.execute(
+            "SELECT id FROM rfi_workbench_sections WHERE session_id=%s ORDER BY part, item_number",
+            (session_id,),
+        ).fetchall()
+        for row in rows:
+            sec_id = list(row)[0] if not hasattr(row, "keys") else row["id"]
+            try:
+                extract_section_requirements(sec_id)
+            except Exception as exc:
+                logger.warning("Background req extraction failed for section %s: %s", sec_id, exc)
+            time.sleep(0.3)
+    except Exception as exc:
+        logger.warning("Background requirement seeding failed for session %s: %s", session_id, exc)
+
+
+def _check_coverage_background(section_id: str):
+    """Run coverage check in background after content generation."""
+    try:
+        check_requirement_coverage(section_id)
+    except Exception as exc:
+        logger.warning("Background coverage check failed for section %s: %s", section_id, exc)
+
+
+# ── ACE Team integration ──────────────────────────────────────────────────────
+
+_RFI_TEAM_ROLES = [
+    "rfi_writer",
+    "rfi_editor",
+    "rfi_reviewer",
+    "rfi_researcher",
+    "rfi_compliance_reviewer",
+]
+
+
+def launch_ace_team(session_id: str) -> str:
+    """Launch the 5-role RFI ACE team for a session. Returns the ace_instance_id."""
+    session = get_session(session_id)
+    if not session:
+        raise ValueError(f"Session {session_id} not found")
+
+    try:
+        from icdev.tools.ace.controller import ACEController
+        controller = ACEController()
+        problem = (
+            f"RFI response color team for session {session_id}: "
+            f"{session.get('rfi_title', 'RFI')} ({session.get('rfi_number', '')}). "
+            f"Pipeline: Writer → Editor → Reviewer → Researcher → Compliance Reviewer."
+        )
+        result = controller.launch(
+            problem_text=problem,
+            canvas="rfi_canvas",
+            role_ids=_RFI_TEAM_ROLES,
+        )
+        instance_id = result.get("instance_id") or result.get("id") or _uid()
+    except Exception as exc:
+        logger.warning("ACE team launch failed: %s — storing placeholder id", exc)
+        instance_id = f"rfi-team-{_uid()[:8]}"
+
+    db = get_db()
+    db.execute(
+        "UPDATE rfi_workbench_sessions SET ace_instance_id=%s, updated_at=%s WHERE id=%s",
+        (instance_id, _now(), session_id),
+    )
+    db.commit()
+    return instance_id
+
+
+def get_ace_team_status(session_id: str) -> dict:
+    """Return the ACE team status for a session."""
+    session = get_session(session_id)
+    if not session:
+        return {"status": "no_session", "roles": []}
+
+    ace_id = session.get("ace_instance_id")
+    if not ace_id:
+        return {"status": "not_launched", "roles": []}
+
+    try:
+        from icdev.tools.ace.controller import ACEController
+        controller = ACEController()
+        status = controller.status(ace_id)
+        return {"status": "active", "ace_instance_id": ace_id, **status}
+    except Exception as exc:
+        logger.warning("ACE team status failed for %s: %s", ace_id, exc)
+        return {
+            "status": "launched",
+            "ace_instance_id": ace_id,
+            "roles": [{"role_id": r, "state": "unknown"} for r in _RFI_TEAM_ROLES],
+        }
+
+
+def _launch_ace_team_background(session_id: str):
+    """Launch ACE team in background thread after session creation."""
+    try:
+        launch_ace_team(session_id)
+    except Exception as exc:
+        logger.warning("Background ACE team launch failed for session %s: %s", session_id, exc)

@@ -27,6 +27,16 @@
 #markdown-preview table{width:100%;font-size:.82rem;border-collapse:collapse}
 #markdown-preview td,#markdown-preview th{border:1px solid #dee2e6;padding:.3rem .5rem}
 #markdown-preview th{background:#f8f9fa;font-weight:600}
+#req-panel{border:1px solid #dee2e6;border-radius:6px;margin-top:10px;overflow:hidden;background:#fff}
+#req-panel-hdr{display:flex;align-items:center;gap:8px;padding:7px 12px;background:#f8f9fa;border-bottom:1px solid #dee2e6;cursor:pointer;user-select:none}
+#req-list{max-height:220px;overflow-y:auto;padding:6px 8px}
+.req-item{display:flex;align-items:flex-start;gap:7px;padding:5px 6px;border-radius:4px;margin-bottom:3px;border:1px solid #e9ecef;background:#f8f9fa}
+.req-icon{flex-shrink:0;font-size:13px;margin-top:1px}
+.req-text{flex:1;font-size:11.5px;color:#374151;line-height:1.4}
+.req-src{font-size:9px;padding:1px 4px;border-radius:2px;background:#e9ecef;color:#6b7280;flex-shrink:0}
+.req-del{flex-shrink:0;background:none;border:none;color:#9ca3af;cursor:pointer;font-size:12px;padding:0 2px;line-height:1}
+.req-del:hover{color:#dc2626}
+#req-add-row{display:flex;gap:6px;padding:6px 8px;border-top:1px solid #e9ecef}
 </style>
 
 <!-- Top bar -->
@@ -117,6 +127,7 @@
       <div class="d-flex align-items-center gap-2 mb-2">
         <button class="btn btn-sm btn-outline-secondary" onclick="togglePreview()" id="preview-btn">📄 Preview</button>
         <span class="text-muted small" id="word-count"></span>
+        <span class="small" id="md-structure-indicator"></span>
         <span class="text-muted small ms-auto" id="save-indicator"></span>
         <button class="btn btn-sm btn-outline-primary" onclick="saveContent()" id="save-btn">💾 Save</button>
       </div>
@@ -128,6 +139,36 @@
 
       <!-- WriteGuard inline summary -->
       <div class="mt-2 small" id="wg-inline-summary" style="color:#6b7280"></div>
+
+      <!-- Requirements Panel -->
+      <div id="req-panel">
+        <div id="req-panel-hdr" onclick="toggleReqPanel()">
+          <span class="fw-semibold small text-primary">📋 Requirements</span>
+          <span id="req-count-badge" class="badge bg-primary rounded-pill" style="font-size:10px;">0</span>
+          <span id="req-coverage-label" class="small text-muted ms-1"></span>
+          <span class="text-muted small ms-auto" id="req-panel-toggle">▾</span>
+        </div>
+        <div id="req-panel-body">
+          <div id="req-coverage-bar-wrap" class="d-none px-3 pt-2">
+            <div class="d-flex justify-content-between mb-1">
+              <span class="small text-muted">Coverage</span>
+              <span id="req-coverage-pct" class="small text-muted"></span>
+            </div>
+            <div class="progress" style="height:4px">
+              <div id="req-coverage-bar" class="progress-bar bg-success" style="width:0%;transition:width .4s"></div>
+            </div>
+          </div>
+          <div id="req-list"></div>
+          <div id="req-add-row">
+            <input type="text" id="req-add-input" class="form-control form-control-sm" placeholder="Add requirement…"
+              onkeydown="if(event.key==='Enter')addRequirement()">
+            <button class="btn btn-sm btn-outline-primary" onclick="addRequirement()">Add</button>
+          </div>
+          <div class="text-end px-2 pb-2">
+            <button onclick="recheckCoverage()" class="btn btn-link btn-sm text-muted p-0" style="font-size:10px;">🔄 Re-check Coverage</button>
+          </div>
+        </div>
+      </div>
 
       <!-- HITL comment shown inline when rejected -->
       <div id="rejected-notice" class="d-none mt-2 alert alert-warning py-2 small">
@@ -206,6 +247,23 @@
           </div>
         </div>
 
+        <!-- AI Team -->
+        <div class="card mb-3 border-success shadow-sm mt-3">
+          <div class="card-header py-2 fw-semibold text-success bg-success bg-opacity-10 d-flex justify-content-between">
+            <span>🤖 AI Team</span>
+            <small id="ace-team-state" class="fw-normal text-muted">not launched</small>
+          </div>
+          <div class="card-body pt-2 pb-2">
+            <div id="ace-team-roles" class="small text-muted mb-2"></div>
+            <button class="btn btn-outline-success btn-sm w-100 mb-1" id="ace-launch-btn" onclick="launchAceTeam()">
+              🚀 Launch Team
+            </button>
+            <div class="text-center">
+              <a href="/coworker" target="_blank" class="small text-muted">→ View in ACE Canvas</a>
+            </div>
+          </div>
+        </div>
+
       </div>
     </div>
   </div>
@@ -255,6 +313,8 @@ function renderSection(sec) {
   document.getElementById('hitl-msg').textContent = '';
   document.getElementById('save-indicator').textContent = '';
   document.getElementById('gen-status').classList.add('d-none');
+  document.getElementById('md-structure-indicator').textContent = '';
+  loadRequirements(sec.id);
 
   // Rejected notice
   const rejNotice = document.getElementById('rejected-notice');
@@ -431,6 +491,19 @@ function generateContent() {
       updateWordCount(document.getElementById('content-editor').value);
       document.getElementById('gen-count').textContent = 'v' + d.section.generation_count;
       refreshSidebarItem(currentSectionId, d.section.status);
+      // Show markdown structure indicator
+      const mdv = d.section.markdown_validation;
+      const mdInd = document.getElementById('md-structure-indicator');
+      if (mdv && !mdv.valid) {
+        const errCount = (mdv.issues||[]).filter(i=>i.severity==='error').length;
+        mdInd.textContent = `⚠ ${errCount} structure issue${errCount!==1?'s':''}`;
+        mdInd.className = 'small text-danger';
+      } else if (mdv) {
+        mdInd.textContent = '✓ Structure OK';
+        mdInd.className = 'small text-success';
+      }
+      loadRequirements(currentSectionId);
+      if (!previewActive) togglePreview();
       setTimeout(() => status.classList.add('d-none'), 3000);
     })
     .catch(err => {
@@ -591,6 +664,161 @@ function filterSections(q) {
 document.addEventListener('DOMContentLoaded', () => {
   const first = document.querySelector('.section-item');
   if (first) loadSection(first.dataset.id);
+  loadAceTeamStatus();
 });
+
+// ── Requirements ──────────────────────────────────────────────────────────────
+
+function loadRequirements(sectionId) {
+  if (!sectionId) return;
+  fetch(`/api/rfi/${SESSION_ID}/sections/${sectionId}/requirements`)
+    .then(r => r.json())
+    .then(reqs => renderRequirements(reqs))
+    .catch(() => {});
+}
+
+function renderRequirements(reqs) {
+  const list = document.getElementById('req-list');
+  const badge = document.getElementById('req-count-badge');
+  const covWrap = document.getElementById('req-coverage-bar-wrap');
+  const covLabel = document.getElementById('req-coverage-label');
+  const covBar = document.getElementById('req-coverage-bar');
+  const covPct = document.getElementById('req-coverage-pct');
+
+  badge.textContent = reqs.length;
+  if (!reqs.length) {
+    list.innerHTML = '<div class="text-muted small p-2 text-center">No requirements — extracting…</div>';
+    covWrap.classList.add('d-none');
+    covLabel.textContent = '';
+    return;
+  }
+
+  const covReqs = reqs.filter(r => r.covered !== null && r.covered !== undefined);
+  if (covReqs.length > 0) {
+    const covered = reqs.filter(r => r.covered === true || r.covered === 'true').length;
+    const partial = reqs.filter(r => r.covered === 'partial').length;
+    const pct = Math.round((covered + partial * 0.5) / reqs.length * 100);
+    covWrap.classList.remove('d-none');
+    covBar.style.width = pct + '%';
+    covBar.className = 'progress-bar ' + (pct >= 80 ? 'bg-success' : pct >= 50 ? 'bg-warning' : 'bg-danger');
+    covPct.textContent = pct + '%';
+    covLabel.textContent = `${covered}/${reqs.length} covered`;
+    covLabel.className = 'small ms-1 ' + (pct >= 80 ? 'text-success' : pct >= 50 ? 'text-warning' : 'text-danger');
+  } else {
+    covWrap.classList.add('d-none');
+    covLabel.textContent = '';
+  }
+
+  const iconMap = { true: '✓', false: '✗', partial: '~' };
+  const colorMap = { true: '#16a34a', false: '#dc2626', partial: '#d97706' };
+  list.innerHTML = reqs.map(r => {
+    const covered = r.covered !== null && r.covered !== undefined;
+    const icon = covered ? (iconMap[String(r.covered)] || '○') : '○';
+    const iconColor = covered ? (colorMap[String(r.covered)] || '#9ca3af') : '#9ca3af';
+    const srcLabel = r.source === 'manual' ? 'manual' : 'AI';
+    return `<div class="req-item">
+      <span class="req-icon" style="color:${iconColor}">${icon}</span>
+      <span class="req-text">${escHtml(r.text)}</span>
+      <span class="req-src">${srcLabel}</span>
+      <button class="req-del" onclick="deleteRequirement('${r.id}')" title="Remove">×</button>
+    </div>`;
+  }).join('');
+}
+
+function toggleReqPanel() {
+  const body = document.getElementById('req-panel-body');
+  const toggle = document.getElementById('req-panel-toggle');
+  const collapsed = body.style.display === 'none';
+  body.style.display = collapsed ? '' : 'none';
+  toggle.textContent = collapsed ? '▾' : '▸';
+}
+
+function addRequirement() {
+  if (!currentSectionId) return;
+  const input = document.getElementById('req-add-input');
+  const text = input.value.trim();
+  if (!text) return;
+  fetch(`/api/rfi/${SESSION_ID}/sections/${currentSectionId}/requirements`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({text})
+  }).then(r => r.json()).then(d => {
+    if (d.ok) { input.value = ''; loadRequirements(currentSectionId); }
+  }).catch(() => {});
+}
+
+function deleteRequirement(reqId) {
+  if (!currentSectionId) return;
+  fetch(`/api/rfi/${SESSION_ID}/sections/${currentSectionId}/requirements/${reqId}`, {method:'DELETE'})
+    .then(() => loadRequirements(currentSectionId))
+    .catch(() => {});
+}
+
+function recheckCoverage() {
+  if (!currentSectionId) return;
+  const btn = event.target;
+  btn.textContent = '⟳ Checking…';
+  btn.disabled = true;
+  fetch(`/api/rfi/${SESSION_ID}/sections/${currentSectionId}/requirements/check-coverage`, {method:'POST'})
+    .then(r => r.json())
+    .then(d => {
+      btn.textContent = '🔄 Re-check Coverage'; btn.disabled = false;
+      if (d.requirements) renderRequirements(d.requirements);
+    })
+    .catch(() => { btn.textContent = '🔄 Re-check Coverage'; btn.disabled = false; });
+}
+
+function escHtml(s) {
+  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── ACE Team ──────────────────────────────────────────────────────────────────
+
+function loadAceTeamStatus() {
+  fetch(`/api/rfi/${SESSION_ID}/ace/status`)
+    .then(r => r.json())
+    .then(d => renderAceTeamStatus(d))
+    .catch(() => {});
+}
+
+function renderAceTeamStatus(data) {
+  const stateEl = document.getElementById('ace-team-state');
+  const rolesEl = document.getElementById('ace-team-roles');
+  const launchBtn = document.getElementById('ace-launch-btn');
+  if (!stateEl) return;
+
+  const stateLabels = {not_launched:'not launched', launched:'launched', active:'active', no_session:'no session'};
+  stateEl.textContent = stateLabels[data.status] || data.status;
+  stateEl.className = 'fw-normal ' + (data.status === 'active' ? 'text-success' : data.status === 'launched' ? 'text-warning' : 'text-muted');
+
+  const roleNames = {rfi_writer:'Writer', rfi_editor:'Editor', rfi_reviewer:'Reviewer', rfi_researcher:'Researcher', rfi_compliance_reviewer:'Compliance'};
+  const roles = data.roles || [];
+  if (roles.length > 0) {
+    rolesEl.innerHTML = roles.map(r => {
+      const name = roleNames[r.role_id] || r.role_id;
+      const stateIcon = r.state === 'running' ? '⚡' : r.state === 'idle' ? '○' : r.state === 'done' ? '✓' : '·';
+      return `<div>${stateIcon} ${name}</div>`;
+    }).join('');
+  } else if (data.status !== 'not_launched') {
+    rolesEl.innerHTML = ['Writer','Editor','Reviewer','Researcher','Compliance'].map(n => `<div>· ${n}</div>`).join('');
+  } else {
+    rolesEl.innerHTML = '<div class="text-muted" style="font-size:10px">Team will auto-launch on new sessions</div>';
+  }
+
+  launchBtn.textContent = (data.status === 'active' || data.status === 'launched') ? '🔄 Re-launch Team' : '🚀 Launch Team';
+}
+
+function launchAceTeam() {
+  const btn = document.getElementById('ace-launch-btn');
+  btn.disabled = true; btn.textContent = '⟳ Launching…';
+  fetch(`/api/rfi/${SESSION_ID}/ace/launch`, {method:'POST'})
+    .then(r => r.json())
+    .then(d => {
+      btn.disabled = false;
+      if (d.ok) { setTimeout(loadAceTeamStatus, 1500); }
+      else { btn.textContent = '🚀 Launch Team'; }
+    })
+    .catch(() => { btn.disabled = false; btn.textContent = '🚀 Launch Team'; });
+}
 </script>
 {% endblock %}
