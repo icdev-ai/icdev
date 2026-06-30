@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import sys
 from pathlib import Path
@@ -32,9 +31,6 @@ try:
     from docx import Document
     from docx.shared import Inches, Pt, RGBColor
     from docx.enum.text import WD_ALIGN_PARAGRAPH
-    from docx.enum.section import WD_SECTION
-    from docx.oxml.ns import qn
-    from docx.oxml import OxmlElement
     DOCX_AVAILABLE = True
 except ImportError:
     DOCX_AVAILABLE = False

@@ -22,7 +22,8 @@ whitelisted_canvases:
   - demo_runner        # missing blueprint, directory, nav link, seed queries (pre-existing debt)
   - forge_academy      # missing blueprint, directory, nav link, IQE adapter, seed queries, widget (pre-existing debt)
   - il5                # missing icdev mirror, blueprint, IQE adapter, seed queries, widget (pre-existing debt)
-  - ontology           # IQE seed queries missing (.iqe files present but need .yaml) (pre-existing debt)
+  - canvas_health      # route is /health/canvases not /canvas_health; nav link check is a false positive
+  - ontology           # IQE seed queries missing (.iqe files present — need .yaml or .iqe glob fix) (pre-existing debt)
   - safety_monitor     # missing blueprint, directory, nav link, IQE adapter, seed queries, widget (pre-existing debt)
   - strategos          # missing IQE seed queries, IQE widget (pre-existing debt)
   - system_graph       # missing nav link, IQE adapter, seed queries, IQE widget (pre-existing debt)

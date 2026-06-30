@@ -1550,7 +1550,6 @@ def _get_chat_models() -> tuple[list[dict], str]:
     in the chat_response routing chain.
     """
     import yaml
-    from pathlib import Path
 
     config_path = BASE_DIR / "args" / "llm_config.yaml"
     try:

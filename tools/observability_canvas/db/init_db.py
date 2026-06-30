@@ -779,7 +779,7 @@ def init_db():
             for tpl in TEMPLATES:
                 conn.execute(
                     "INSERT INTO od_templates (id, name, category, description, graph_json, tags) "
-                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    "VALUES (%s, %s, %s, %s, %s, %s)",
                     (tpl["id"], tpl["name"], tpl["category"], tpl["description"], tpl["graph_json"], tpl["tags"]),
                 )
             conn.commit()
@@ -787,10 +787,10 @@ def init_db():
         # Seed snippets (upsert)
         snp_added = 0
         for s in ODC_SNIPPETS:
-            check = conn.execute("SELECT 1 FROM od_snippets WHERE id=?", (s["id"],)).fetchone()
+            check = conn.execute("SELECT 1 FROM od_snippets WHERE id=%s", (s["id"],)).fetchone()
             if not check:
                 conn.execute(
-                    "INSERT INTO od_snippets (id, name, category, description, graph_json, tags) VALUES (?,?,?,?,?,?)",
+                    "INSERT INTO od_snippets (id, name, category, description, graph_json, tags) VALUES (%s,%s,%s,%s,%s,%s)",
                     (s["id"], s["name"], s["category"], s["description"], s["graph_json"], s["tags"]),
                 )
                 snp_added += 1

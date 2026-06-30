@@ -153,7 +153,7 @@ FORGE Architecture
 
 def test_markdown_to_docx_creates_file(tmp_path):
     out_file = tmp_path / "response.docx"
-    result = markdown_to_docx(_SAMPLE_MD, str(out_file))
+    markdown_to_docx(_SAMPLE_MD, str(out_file))
     assert out_file.exists()
     assert out_file.stat().st_size > 1000
 
@@ -197,7 +197,7 @@ def test_markdown_to_docx_empty_content(tmp_path):
 
 def test_markdown_to_docx_custom_classification(tmp_path):
     out_file = tmp_path / "classified.docx"
-    result = markdown_to_docx("# Hello\n\nWorld.", str(out_file), classification="SECRET//NOFORN")
+    markdown_to_docx("# Hello\n\nWorld.", str(out_file), classification="SECRET//NOFORN")
     doc = DocxDocument(str(out_file))
     # Classification appears in header/footer — check it's in the document XML
     header_text = " ".join(p.text for p in doc.sections[0].header.paragraphs)
