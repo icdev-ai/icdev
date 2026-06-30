@@ -1,0 +1,80 @@
+# ICDEV™ GovCon Company Profile Registry
+# Usage: --profile <name> in rfi_response_generator.py
+# All Part 1 administrative data is driven from this file.
+# Technical content, capabilities, and insights are profile-independent.
+
+profiles:
+
+  peraton:
+    entity_name: "Peraton Inc."
+    address: "12975 Worldgate Drive, Herndon, VA 20170"
+    cage_code: "[VERIFY ON SAM.GOV]"
+    sam_uei: "[VERIFY ON SAM.GOV]"
+    contact_name: "[NAME]"
+    contact_title: "[TITLE]"
+    contact_email: "[EMAIL]@peraton.com"
+    contact_phone: "[PHONE]"
+    business_size: "Large Business"
+    primary_naics: "541512"
+    socioeconomic_status: []  # no 8(a), HUBZone, SDVOSB, WOSB
+    ndc_status: "Traditional Defense Contractor"
+    ndc_note: >
+      Peraton is a traditional defense contractor per 10 U.S.C. 3014.
+      Teaming and cost-share strategy described in Part 4.3 of each response.
+    foci_status: "No FOCI"
+    foci_note: >
+      Peraton Inc. is privately held by Veritas Capital, a U.S.-based private equity firm
+      headquartered in New York, NY. No foreign ownership, control, or influence (FOCI).
+    clearances:
+      - level: "TS/SCI"
+        note: "TS/SCI with CI polygraph; SCIF-capable facilities available"
+    ip_posture:
+      prior_ip: "Government Purpose Rights (GPR)"
+      developed_under_contract: "Unlimited Rights"
+      government_data: "Government owns all data and derivative models"
+    boilerplate_cover: >
+      Peraton Inc. is pleased to respond to NSA RFI-{rfi_number}.
+      Peraton brings deep experience delivering mission-critical AI/ML systems
+      to the Intelligence Community, supported by TS/SCI cleared personnel and
+      SCIF-capable facilities.
+
+  own_company:
+    entity_name: "[YOUR COMPANY NAME]"
+    address: "[ADDRESS]"
+    cage_code: "[CAGE CODE]"
+    sam_uei: "[SAM.GOV UEI]"
+    contact_name: "[NAME]"
+    contact_title: "[TITLE]"
+    contact_email: "[EMAIL]"
+    contact_phone: "[PHONE]"
+    business_size: "[Large / Small / etc.]"
+    primary_naics: "541512"
+    socioeconomic_status: []  # fill in: 8a, HUBZone, SDVOSB, WOSB as applicable
+    ndc_status: "[Traditional / NDC-eligible — verify against 10 U.S.C. 3014]"
+    ndc_note: "[Describe NDC teaming plan or cost share if traditional]"
+    foci_status: "[No FOCI / Describe if applicable]"
+    foci_note: "[Ownership structure description]"
+    clearances:
+      - level: "[TS/SCI / Secret / Uncleared]"
+        note: "[Details]"
+    ip_posture:
+      prior_ip: "Government Purpose Rights (GPR)"
+      developed_under_contract: "Unlimited Rights"
+      government_data: "Government owns all data and derivative models"
+    boilerplate_cover: >
+      [YOUR COMPANY] is pleased to respond to NSA RFI-{rfi_number}.
+
+# Default profile to use when --profile flag is not specified
+default_profile: own_company
+
+# RFI response formatting defaults (apply to all profiles)
+formatting:
+  font: "Times New Roman"
+  font_size_pt: 11
+  line_spacing: "single"
+  margins_inches: 1.0
+  max_body_pages: 7
+  max_appendix_pages: 2
+  classification_marking: "UNCLASSIFIED//FOUO"
+  cover_page_counted: false
+  file_naming: "{entity_name_slug}_AIOrchestration_RFI-{rfi_number}.docx"
