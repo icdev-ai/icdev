@@ -1299,7 +1299,7 @@ components:
   default_enabled: false
   module: tools.govcon.rfi_canvas_blueprint
   blueprint_attr: rfi_canvas_bp
-  url_prefix: /rfi
+  url_prefix: ""
   min_il: IL4
   default_roles:
   - developer
@@ -1307,6 +1307,10 @@ components:
   nav:
     section: GovCon
     label: RFI Workbench
+    links:
+    - label: RFI Workbench
+      href: /rfi/
+      enabled: true
   iqe:
     adapter_module: tools.iqe.adapters.rfi_canvas
     collections:
