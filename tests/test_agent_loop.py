@@ -12,7 +12,9 @@ from icdev.tools.llm.agent_loop import (
     DONE,
     AgentLoopUnsupported,
     ResultSubtype,
+    RubricVerdict,
     run_agent_loop,
+    run_agent_loop_with_rubric,
 )
 from icdev.tools.llm.provider import LLMResponse
 
@@ -1437,3 +1439,182 @@ class TestLoopControls:
         defaults = _load_budget_defaults()
         assert "stall_threshold" in defaults
         assert defaults["stall_threshold"] > 0
+
+
+# ---------------------------------------------------------------------------
+# initial_messages — explicit message-history seeding
+# ---------------------------------------------------------------------------
+
+
+class TestInitialMessages:
+    def test_initial_messages_overrides_user_prompt(self):
+        router = ScriptedRouter(["hi"])
+        result = run_agent_loop(
+            router, system_prompt="s", user_prompt="ignored",
+            tools=[], tool_handlers={},
+            initial_messages=[{"role": "user", "content": "real prompt"}],
+        )
+        assert router.calls[0]["messages_len"] == 1
+        assert result.messages[0]["content"] == "real prompt"
+        assert result.done is True
+
+    def test_initial_messages_takes_precedence_over_resume_session_id(self):
+        router = ScriptedRouter(["hi"])
+        result = run_agent_loop(
+            router, system_prompt="s", user_prompt="ignored",
+            tools=[], tool_handlers={},
+            resume_session_id="nonexistent-session",
+            initial_messages=[{"role": "user", "content": "explicit"}],
+        )
+        assert result.messages[0]["content"] == "explicit"
+
+
+# ---------------------------------------------------------------------------
+# run_agent_loop_with_rubric — self-graded iteration
+# ---------------------------------------------------------------------------
+
+
+class TestRubricLoop:
+    def test_satisfied_on_first_attempt(self):
+        router = ScriptedRouter([
+            "draft response",
+            '{"verdict": "satisfied", "feedback": "meets all criteria"}',
+        ])
+        result = run_agent_loop_with_rubric(
+            router, rubric="Must be polite and under 100 words.",
+            system_prompt="s", user_prompt="u", tools=[], tool_handlers={},
+        )
+        assert result.satisfied is True
+        assert result.grading_attempts == 1
+        assert len(result.grades) == 1
+        assert result.grades[0].verdict == RubricVerdict.satisfied
+        assert result.result.final_content == "draft response"
+
+    def test_needs_revision_then_satisfied(self):
+        router = ScriptedRouter([
+            "draft v1",
+            '{"verdict": "needs_revision", "feedback": "add unit tests"}',
+            "draft v2",
+            '{"verdict": "satisfied", "feedback": "good now"}',
+        ])
+        result = run_agent_loop_with_rubric(
+            router, rubric="Must include tests.",
+            system_prompt="s", user_prompt="u", tools=[], tool_handlers={},
+            max_grading_iterations=3,
+        )
+        assert result.satisfied is True
+        assert result.grading_attempts == 2
+        assert [g.verdict for g in result.grades] == [
+            RubricVerdict.needs_revision,
+            RubricVerdict.satisfied,
+        ]
+        assert result.result.final_content == "draft v2"
+        # Second agent-loop call resumed with feedback appended: prior 2 messages
+        # (user, assistant) + 1 injected feedback message = 3.
+        assert router.calls[2]["messages_len"] == 3
+
+    def test_max_grading_iterations_reached(self):
+        router = ScriptedRouter([
+            "v1",
+            '{"verdict": "needs_revision", "feedback": "still missing X"}',
+            "v2",
+            '{"verdict": "needs_revision", "feedback": "still missing X"}',
+        ])
+        result = run_agent_loop_with_rubric(
+            router, rubric="Must include X.",
+            system_prompt="s", user_prompt="u", tools=[], tool_handlers={},
+            max_grading_iterations=2,
+        )
+        assert result.satisfied is False
+        assert result.grading_attempts == 2
+        assert result.grades[-1].verdict == RubricVerdict.max_iterations_reached
+        assert result.result.final_content == "v2"
+
+    def test_failed_verdict_stops_immediately(self):
+        router = ScriptedRouter([
+            "draft",
+            '{"verdict": "failed", "feedback": "rubric is self-contradictory"}',
+        ])
+        result = run_agent_loop_with_rubric(
+            router, rubric="Impossible rubric.",
+            system_prompt="s", user_prompt="u", tools=[], tool_handlers={},
+            max_grading_iterations=5,
+        )
+        assert result.satisfied is False
+        assert result.grading_attempts == 1
+        assert result.grades[0].verdict == RubricVerdict.failed
+
+    def test_grader_error_on_malformed_json_stops_loop(self):
+        router = ScriptedRouter([
+            "draft",
+            "this is not valid JSON",
+        ])
+        result = run_agent_loop_with_rubric(
+            router, rubric="Anything.",
+            system_prompt="s", user_prompt="u", tools=[], tool_handlers={},
+            max_grading_iterations=5,
+        )
+        assert result.satisfied is False
+        assert result.grading_attempts == 1
+        assert result.grades[0].verdict == RubricVerdict.grader_error
+
+    def test_ungraded_when_agent_loop_does_not_complete(self):
+        """A truncated/undone agent loop is never handed to the grader."""
+        router = ScriptedRouter([
+            [{"id": "c1", "name": "echo", "input": {}}],
+        ])
+        result = run_agent_loop_with_rubric(
+            router, rubric="Anything.",
+            system_prompt="s", user_prompt="u",
+            tools=[_tool("echo")], tool_handlers={"echo": lambda i, s: "ok"},
+            max_iterations=1,
+        )
+        assert result.result.done is False
+        assert result.grading_attempts == 0
+        assert result.grades == []
+        assert result.satisfied is False
+
+    def test_rejects_explicit_initial_messages_kwarg(self):
+        router = ScriptedRouter(["draft"])
+        with pytest.raises(ValueError):
+            run_agent_loop_with_rubric(
+                router, rubric="x", system_prompt="s", user_prompt="u",
+                tools=[], tool_handlers={}, initial_messages=[],
+            )
+
+    def test_grader_llm_function_override(self):
+        router = ScriptedRouter([
+            "draft",
+            '{"verdict": "satisfied", "feedback": "ok"}',
+        ])
+        run_agent_loop_with_rubric(
+            router, rubric="x", system_prompt="s", user_prompt="u",
+            tools=[], tool_handlers={},
+            llm_function="code_generation", grader_llm_function="quick_grade",
+        )
+        assert router.calls[0]["function"] == "code_generation"
+        assert router.calls[1]["function"] == "quick_grade"
+
+    def test_on_grade_callback_fires_per_round(self):
+        router = ScriptedRouter([
+            "v1",
+            '{"verdict": "needs_revision", "feedback": "fix it"}',
+            "v2",
+            '{"verdict": "satisfied", "feedback": "ok"}',
+        ])
+        seen: list[tuple[int, str]] = []
+        run_agent_loop_with_rubric(
+            router, rubric="x", system_prompt="s", user_prompt="u",
+            tools=[], tool_handlers={},
+            on_grade=lambda attempt, grade: seen.append((attempt, grade.verdict)),
+        )
+        assert seen == [
+            (1, RubricVerdict.needs_revision),
+            (2, RubricVerdict.satisfied),
+        ]
+
+    def test_rubric_defaults_present_in_config(self):
+        from icdev.tools.llm.agent_loop import _load_budget_defaults
+        defaults = _load_budget_defaults()
+        assert defaults.get("max_grading_iterations") == 3
+        assert defaults.get("grader_max_tokens") == 1024

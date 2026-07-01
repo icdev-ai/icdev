@@ -1282,3 +1282,6 @@ agent_loop:
     enabled: true
     top_k: 5
     tier: "episodic|semantic"
+  rubric:
+    max_grading_iterations: 3   # grade-then-revise rounds before giving up
+    grader_max_tokens: 1024     # max output tokens for the grader's JSON verdict
