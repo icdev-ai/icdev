@@ -173,7 +173,10 @@ if _HAS_YAML:
 
     def yaml_load_no_duplicates(text: str) -> Any:
         """Parse YAML like ``yaml.safe_load()``, but raise on any duplicate mapping key."""
-        return yaml.load(text, Loader=_UniqueKeySafeLoader)
+        # _UniqueKeySafeLoader subclasses yaml.SafeLoader (no arbitrary object
+        # instantiation); bandit's B506 only recognizes the literal SafeLoader
+        # name, so it misflags this custom-but-safe loader.
+        return yaml.load(text, Loader=_UniqueKeySafeLoader)  # nosec B506
 
 else:
 
