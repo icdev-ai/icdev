@@ -248,6 +248,38 @@
           </div>
         </div>
 
+        <!-- ACE Editor Review -->
+        <div class="card border-0 shadow-sm" id="ace-editor-card" style="display:none;border-left:3px solid #a855f7 !important;">
+          <div class="card-header py-2 fw-semibold d-flex align-items-center gap-2"
+               style="background:#1a0f2e;color:#c084fc;">
+            🤖 ACE Editor Review
+            <span id="ace-editor-status-dot" class="rounded-circle d-inline-block ms-1"
+                  style="width:8px;height:8px;background:#6b7280;" title="Review status"></span>
+            <button class="btn btn-sm ms-auto py-0 px-2" onclick="runAceEditorReview()"
+                    style="background:none;border:1px solid #7e22ce;color:#a855f7;font-size:.75rem;">
+              ↺ Re-run
+            </button>
+          </div>
+          <div class="card-body py-2">
+            <div id="ace-editor-reviewing" class="d-none text-center small py-2" style="color:#a855f7;">
+              ⏳ Editor reviewing…
+            </div>
+            <div id="ace-editor-result" class="d-none">
+              <div class="d-flex align-items-center gap-2 mb-2">
+                <span class="small text-secondary">Overall:</span>
+                <span id="ace-editor-overall" class="badge"></span>
+                <span id="ace-editor-time" class="ms-auto" style="font-size:.7rem;color:#6b7280;"></span>
+              </div>
+              <div id="ace-editor-issues" style="font-size:.76rem;"></div>
+              <div id="ace-editor-summary" class="border-top mt-2 pt-2"
+                   style="font-size:.76rem;white-space:pre-wrap;"></div>
+            </div>
+            <div id="ace-editor-empty" class="small text-muted fst-italic">
+              Review will appear after generation.
+            </div>
+          </div>
+        </div>
+
         <!-- HITL -->
         <div class="card border-warning shadow-sm">
           <div class="card-header py-2 fw-semibold text-warning bg-warning bg-opacity-10">👤 HITL Review</div>
@@ -462,6 +494,9 @@ function renderSection(sec) {
   } else if (hasContent) {
     togglePreview();
   }
+
+  // ACE Editor review panel
+  renderAceEditorFeedback(sec.ace_feedback || null);
 }
 
 function statusBadgeClass(status) {
@@ -637,6 +672,9 @@ function generateContent() {
         mdInd.className = 'small text-success';
       }
       loadRequirements(currentSectionId);
+      // Start ACE Editor review polling
+      showAceEditorReviewing();
+      _pollAceEditorFeedback();
       if (!previewActive) togglePreview();
       setTimeout(() => status.classList.add('d-none'), 3000);
     })
@@ -1398,6 +1436,94 @@ function restoreVersion(index) {
       document.getElementById('save-indicator').textContent = '● unsaved';
       toggleHistory();
     }).catch(() => {});
+}
+
+// ── ACE Editor Review ──────────────────────────────────────────────────────────
+let _aceEditorPollTimer = null;
+
+function renderAceEditorFeedback(feedback) {
+  const card = document.getElementById('ace-editor-card');
+  const reviewing = document.getElementById('ace-editor-reviewing');
+  const result = document.getElementById('ace-editor-result');
+  const empty = document.getElementById('ace-editor-empty');
+  const dot = document.getElementById('ace-editor-status-dot');
+  if (!card) return;
+  card.style.display = '';
+  reviewing.classList.add('d-none');
+  result.classList.add('d-none');
+  empty.classList.remove('d-none');
+  if (!feedback) {
+    if (dot) dot.style.background = '#6b7280';
+    return;
+  }
+  empty.classList.add('d-none');
+  result.classList.remove('d-none');
+  const overall = feedback.overall || 'pass';
+  const overallEl = document.getElementById('ace-editor-overall');
+  overallEl.textContent = overall.toUpperCase();
+  if (overall === 'pass') {
+    overallEl.className = 'badge bg-success';
+    if (dot) dot.style.background = '#22c55e';
+  } else if (overall === 'warn') {
+    overallEl.className = 'badge bg-warning text-dark';
+    if (dot) dot.style.background = '#f59e0b';
+  } else {
+    overallEl.className = 'badge bg-danger';
+    if (dot) dot.style.background = '#ef4444';
+  }
+  const timeEl = document.getElementById('ace-editor-time');
+  if (feedback.reviewed_at) {
+    try { timeEl.textContent = new Date(feedback.reviewed_at).toLocaleTimeString(); } catch(e) {}
+  }
+  const issuesEl = document.getElementById('ace-editor-issues');
+  const issues = feedback.issues || [];
+  if (issues.length) {
+    issuesEl.innerHTML = issues.map(i => {
+      const cls = i.level === 'error' ? 'text-danger' : 'text-warning';
+      return `<div class="${cls} mb-1">• ${i.source ? '<b>' + i.source + '</b>: ' : ''}${i.message}</div>`;
+    }).join('');
+  } else {
+    issuesEl.innerHTML = '<div class="text-success">No issues found.</div>';
+  }
+  document.getElementById('ace-editor-summary').textContent = feedback.summary || '';
+}
+
+function showAceEditorReviewing() {
+  const card = document.getElementById('ace-editor-card');
+  const reviewing = document.getElementById('ace-editor-reviewing');
+  const result = document.getElementById('ace-editor-result');
+  const empty = document.getElementById('ace-editor-empty');
+  const dot = document.getElementById('ace-editor-status-dot');
+  if (!card) return;
+  card.style.display = '';
+  reviewing.classList.remove('d-none');
+  result.classList.add('d-none');
+  empty.classList.add('d-none');
+  if (dot) dot.style.background = '#a855f7';
+}
+
+function runAceEditorReview() {
+  if (!currentSectionId) return;
+  showAceEditorReviewing();
+  fetch(`/api/rfi/${SESSION_ID}/sections/${currentSectionId}/ace-feedback/run`, {method:'POST'})
+    .then(() => _pollAceEditorFeedback())
+    .catch(() => {});
+}
+
+function _pollAceEditorFeedback() {
+  if (_aceEditorPollTimer) clearTimeout(_aceEditorPollTimer);
+  if (!currentSectionId) return;
+  fetch(`/api/rfi/${SESSION_ID}/sections/${currentSectionId}/ace-feedback`)
+    .then(r => r.json())
+    .then(d => {
+      if (d.status === 'ready' && d.feedback) {
+        renderAceEditorFeedback(d.feedback);
+      } else {
+        _aceEditorPollTimer = setTimeout(_pollAceEditorFeedback, 2000);
+      }
+    }).catch(() => {
+      _aceEditorPollTimer = setTimeout(_pollAceEditorFeedback, 3000);
+    });
 }
 </script>
 {% endblock %}

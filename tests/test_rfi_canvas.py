@@ -432,3 +432,143 @@ class TestWorkbenchUtils:
         profile = {"entity_name": "TestOrg", "primary_naics": "541512"}
         result = _build_markdown(session, sections, profile, {})
         assert "RFI-TEST-99" in result
+
+
+# ── Group 5: ACE Editor Review ────────────────────────────────────────────────
+
+class TestAceEditorReview:
+    """Unit tests for run_ace_editor_review() in rfi_workbench.py.
+
+    All DB calls are patched via monkeypatch so no real DB is required.
+    """
+
+    def _make_section(self, content="", ace_feedback=None):
+        return {
+            "id": "sec-ace-01",
+            "session_id": "sess-ace-01",
+            "item_number": "2.4",
+            "title": "Technical Approach",
+            "content": content,
+            "ai_draft": content,
+            "status": "ai_draft_ready",
+            "ace_feedback": ace_feedback,
+        }
+
+    def test_returns_empty_when_no_content(self, monkeypatch):
+        import tools.govcon.rfi_workbench as wb
+        monkeypatch.setattr(wb, "get_section", lambda sid: self._make_section(""))
+        result = wb.run_ace_editor_review("sec-ace-01")
+        assert result == {}
+
+    def test_returns_empty_when_section_not_found(self, monkeypatch):
+        import tools.govcon.rfi_workbench as wb
+        monkeypatch.setattr(wb, "get_section", lambda sid: None)
+        result = wb.run_ace_editor_review("missing-section")
+        assert result == {}
+
+    def test_result_has_required_keys(self, monkeypatch):
+        import tools.govcon.rfi_workbench as wb
+
+        section = self._make_section("This is a well-written technical approach. UNCLASSIFIED.")
+        monkeypatch.setattr(wb, "get_section", lambda sid: section)
+
+        captured = {}
+
+        def fake_db_execute(*a, **kw):
+            class _Cur:
+                def execute(self, *a, **kw): return self
+                def commit(self): pass
+            return _Cur()
+
+        class _FakeConn:
+            def execute(self, sql, params=None):
+                if "UPDATE" in sql and "ace_feedback" in sql:
+                    captured["written"] = params
+                class _R:
+                    pass
+                return _R()
+            def commit(self): pass
+
+        monkeypatch.setattr(wb, "get_db", lambda: _FakeConn())
+        monkeypatch.setattr(wb, "_call_llm", lambda *a, **kw: "• Looks good overall.")
+
+        result = wb.run_ace_editor_review("sec-ace-01")
+        assert "issues" in result
+        assert "overall" in result
+        assert "summary" in result
+        assert "reviewed_at" in result
+
+    def test_overall_is_pass_for_clean_content(self, monkeypatch):
+        import tools.govcon.rfi_workbench as wb
+
+        section = self._make_section("Our solution meets all requirements. UNCLASSIFIED.")
+        monkeypatch.setattr(wb, "get_section", lambda sid: section)
+        monkeypatch.setattr(wb, "_call_llm", lambda *a, **kw: "• No issues.")
+
+        class _FakeConn:
+            def execute(self, sql, params=None):
+                class _R: pass
+                return _R()
+            def commit(self): pass
+
+        monkeypatch.setattr(wb, "get_db", lambda: _FakeConn())
+        result = wb.run_ace_editor_review("sec-ace-01")
+        assert result.get("overall") in ("pass", "warn")
+
+    def test_verify_tag_adds_issue(self, monkeypatch):
+        import tools.govcon.rfi_workbench as wb
+
+        section = self._make_section("Our solution meets requirements [VERIFY]. UNCLASSIFIED.")
+        monkeypatch.setattr(wb, "get_section", lambda sid: section)
+        monkeypatch.setattr(wb, "_call_llm", lambda *a, **kw: "• Contains placeholder.")
+
+        class _FakeConn:
+            def execute(self, sql, params=None):
+                class _R: pass
+                return _R()
+            def commit(self): pass
+
+        monkeypatch.setattr(wb, "get_db", lambda: _FakeConn())
+        result = wb.run_ace_editor_review("sec-ace-01")
+        verify_issues = [i for i in result.get("issues", []) if "[VERIFY]" in i.get("message", "")]
+        assert len(verify_issues) >= 1
+
+    def test_feedback_written_to_db(self, monkeypatch):
+        import tools.govcon.rfi_workbench as wb
+
+        section = self._make_section("Strong response. UNCLASSIFIED.")
+        monkeypatch.setattr(wb, "get_section", lambda sid: section)
+        monkeypatch.setattr(wb, "_call_llm", lambda *a, **kw: "• Meets requirements.")
+
+        written_params = []
+
+        class _FakeConn:
+            def execute(self, sql, params=None):
+                if params and len(params) >= 3 and "ace_feedback" in (sql or ""):
+                    written_params.append(params)
+                class _R: pass
+                return _R()
+            def commit(self): pass
+
+        monkeypatch.setattr(wb, "get_db", lambda: _FakeConn())
+        wb.run_ace_editor_review("sec-ace-01")
+        assert len(written_params) >= 1
+        feedback_json = written_params[0][0]
+        import json
+        feedback = json.loads(feedback_json)
+        assert "overall" in feedback
+
+    def test_parse_section_row_decodes_ace_feedback(self):
+        import json
+        import tools.govcon.rfi_workbench as wb
+
+        payload = {"issues": [], "overall": "pass", "summary": "OK", "reviewed_at": "2026-06-30T00:00:00"}
+        row = {
+            "id": "sec-x",
+            "writeguard_result": None,
+            "requirements": "[]",
+            "ace_feedback": json.dumps(payload),
+        }
+        result = wb._parse_section_row(row)
+        assert isinstance(result["ace_feedback"], dict)
+        assert result["ace_feedback"]["overall"] == "pass"
