@@ -122,6 +122,7 @@
 - [Linting](manifest/linting.md)
 - [Testing (Additional)](manifest/testing.md)
 - [WriteGuard — Writing Quality Analysis](manifest/writeguard-writing-quality-analysis.md)
+- [Slides Deck Generator](manifest/slides.md)
 - [Pulse AI Blog Engine](manifest/pulse-ai-blog-engine.md)
 - [Evaluation & Red Teaming (Phase 65)](manifest/evaluation-red-teaming.md)
 - [Bayesian Autoresearch (Phase 67, D-AR-1 through D-AR-10)](manifest/bayesian-autoresearch.md)
@@ -1134,3 +1135,11 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Weekly Retro Reflex | tools\genesis\reflexes\weekly_retro_reflex.py | Auto-registered: reflexes/weekly_retro_reflex.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Rfi Engine Runner | tools\govcon\rfi_engine_runner.py | Auto-registered: govcon/rfi_engine_runner.py | --json | JSON |
+| Rfi Markdown Validator | tools\govcon\rfi_markdown_validator.py | Auto-registered: govcon/rfi_markdown_validator.py | --json | JSON |
+| Rfi Style Engine | tools\govcon\rfi_style_engine.py | Auto-registered: govcon/rfi_style_engine.py | --json | JSON |

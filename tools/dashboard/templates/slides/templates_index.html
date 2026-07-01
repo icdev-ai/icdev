@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}Fill an Existing Template - ICDEV™{% endblock %}
+
+{% block content %}
+{% from "includes/classification_macros.html" import design_classification_banner %}
+{{ design_classification_banner('CUI') }}
+<div class="breadcrumbs"><a href="/">Home</a><span class="separator">/</span><a href="/slides">Slide Decks</a><span class="separator">/</span><span>Templates</span></div>
+
+<div class="page-header" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
+    <div>
+        <h1>Fill an Existing Template</h1>
+        <p class="subtitle">
+            Upload a customer's own .pptx (e.g. an agency proposal template). Its exact design — shapes,
+            fonts, theme — is preserved; you only fill in new content for the slides you pick.
+        </p>
+    </div>
+    <a href="/slides" class="btn btn-secondary">← Back to Decks</a>
+</div>
+
+<div class="card" style="margin-bottom:24px;">
+    <div class="card-header"><h3 style="margin:0;">Upload a Template</h3></div>
+    <div class="card-body">
+        <form id="upload-form" enctype="multipart/form-data" style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+            <input type="file" id="template-file" name="file" accept=".pptx" required class="form-control" style="max-width:360px;">
+            <button type="submit" class="btn btn-primary">Upload &amp; Inspect</button>
+            <span id="upload-status" style="color:var(--text-secondary); font-size:13px;"></span>
+        </form>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header"><h3 style="margin:0;">Uploaded Templates</h3></div>
+    <div class="card-body">
+        {% if templates %}
+        <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(260px,1fr)); gap:16px;">
+        {% for t in templates %}
+            <a href="/slides/templates/{{ t.template_id }}" class="deck-card"
+               style="display:block; background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:10px; padding:16px; text-decoration:none; color:inherit;">
+                <div style="font-weight:700; margin-bottom:6px;">{{ t.filename }}</div>
+                <div style="font-size:12px; color:var(--text-secondary);">
+                    {{ t.slide_count }} slide{{ 's' if t.slide_count != 1 else '' }} ·
+                    {{ t.uploaded_at[:10] if (t.uploaded_at and t.uploaded_at is string) else (t.uploaded_at.strftime('%Y-%m-%d') if t.uploaded_at else '—') }}
+                </div>
+            </a>
+        {% endfor %}
+        </div>
+        {% else %}
+        <div style="padding:48px; text-align:center; color:var(--text-secondary);">
+            <div style="font-size:48px; margin-bottom:12px;">📄</div>
+            <div style="font-size:18px; font-weight:600; margin-bottom:8px;">No templates uploaded yet</div>
+            <div>Upload a .pptx above to get started.</div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+document.getElementById('upload-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    var fileInput = document.getElementById('template-file');
+    var statusEl = document.getElementById('upload-status');
+    if (!fileInput.files.length) { return; }
+    var formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+    statusEl.textContent = 'Uploading…';
+    fetch('/slides/api/templates/upload', { method: 'POST', body: formData })
+        .then(function(r) { return r.json().then(function(data) { return { ok: r.ok, data: data }; }); })
+        .then(function(res) {
+            if (!res.ok) {
+                statusEl.textContent = 'Error: ' + (res.data.error || 'upload failed');
+                return;
+            }
+            window.location.href = '/slides/templates/' + res.data.template_id;
+        })
+        .catch(function(err) { statusEl.textContent = 'Error: ' + err; });
+});
+</script>
+{% endblock %}

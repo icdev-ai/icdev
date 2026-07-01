@@ -91,7 +91,7 @@ function regenSheet() {
               </h6>
               <ul class="mb-0 ps-3">
                 {% for item in items %}
-                <li class="mb-1 small">{{ item }}</li>
+                <li class="mb-1 small">{{ item | markdown_inline | safe }}</li>
                 {% endfor %}
               </ul>
             </div>

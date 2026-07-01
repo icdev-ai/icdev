@@ -6,6 +6,20 @@ All notable changes to ICDEV™ are documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.33] - 2026-07-01
+
+### Added
+- **RFI Response Engine** — full GovCon RFI Response Workbench canvas (`/rfi`) with HITL review, WriteGuard V&V, cross-section consistency checking, deadline countdown, and one-click "Generate Why Us" narrative. New ACE evaluator team (`rfi_researcher`, `rfi_writer`, `rfi_compliance_reviewer`, `rfi_editor`, `rfi_reviewer` roles under `args/ace/roles/`). 104 tests.
+- **Slides: SVG → Native PPTX Shapes** — `tools/viz/svg_to_pptx.py` is a deterministic SVG-subset parser (rect/circle/ellipse/line/polyline/polygon/path/text, nested `<g transform>`) that emits native `python-pptx` `FreeformBuilder` vector shapes instead of rasterized pictures. Curves are flattened to line segments. New `slide_type="svg_art"` in `pptx_builder`.
+- **Slides: Template-Fill Workflow** — `tools/slides/template_fill.py` adds `/slides/templates`: upload a customer-supplied `.pptx`, inspect its fillable shapes (title/body/table/chart) via `inspect_template()`, then overwrite selected slides' content in place with `fill_and_export()` — format-preserving (reuses existing run/paragraph XML), no LLM step, deletes unselected slides. New `slides_templates` table.
+- 43 new/updated tests for the slides changes above; Playwright-verified upload → inspect → fill → download round-trip.
+
+### Fixed
+- **Slides schema dialect mismatch** — `tools/slides/db/init_db.py` picked its SQL dialect from the configured backend (`_SLIDES_BACKEND`, default `postgresql`) instead of what `get_connection()` actually resolved to, so `SERIAL PRIMARY KEY` silently landed on a SQLite-backed connection whenever PG was unreachable, breaking autoincrement for every table in the canvas. Schema selection is now resolved from the live connection.
+- A latent bug where a `.svg` `image_path` silently failed under `add_picture` (`python-pptx` cannot rasterize SVG) is now handled by the new native-shape renderer.
+
+---
+
 ## [1.2.32] - 2026-06-29
 
 ### Added
