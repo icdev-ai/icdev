@@ -15447,24 +15447,6 @@ CREATE INDEX idx_go_created_at  ON public.genesis_outputs (created_at);
 
 
 --
--- Name: genesis_phase_log; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.genesis_phase_log (
-    id           bigserial PRIMARY KEY,
-    design_id    text NOT NULL,
-    phase        text NOT NULL,
-    status       text NOT NULL,
-    started_at   text,
-    completed_at text
-);
-
-CREATE INDEX idx_gpl_design_id    ON public.genesis_phase_log (design_id);
-CREATE INDEX idx_gpl_started_at   ON public.genesis_phase_log (started_at);
-CREATE INDEX idx_gpl_completed_at ON public.genesis_phase_log (completed_at);
-
-
---
 -- Name: genesis_reflex_log; Type: TABLE; Schema: public; Owner: -
 --
 
