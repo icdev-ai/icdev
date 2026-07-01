@@ -246,6 +246,90 @@ def api_summarize(session_id, section_id):
         return jsonify({"error": str(exc)}), 500
 
 
+# ── API: engine weights ───────────────────────────────────────────────────────
+
+@rfi_canvas_bp.route("/api/rfi/<session_id>/engine-weights")
+def api_get_engine_weights(session_id):
+    try:
+        return jsonify(wb.get_engine_weights(session_id))
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@rfi_canvas_bp.route("/api/rfi/<session_id>/engine-weights", methods=["PUT"])
+def api_set_engine_weights(session_id):
+    data = request.get_json(force=True) or {}
+    try:
+        wb.set_engine_weights(session_id, data)
+        return jsonify({"ok": True})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@rfi_canvas_bp.route("/api/rfi/<session_id>/sections/<section_id>/engine-weights")
+def api_get_section_engine_weights(session_id, section_id):
+    try:
+        override = wb.get_section_engine_weights_override(section_id)
+        if override is None:
+            return jsonify({"inherited": True, "weights": wb.get_engine_weights(session_id)})
+        return jsonify({"inherited": False, "weights": override})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@rfi_canvas_bp.route("/api/rfi/<session_id>/sections/<section_id>/engine-weights", methods=["PUT"])
+def api_set_section_engine_weights(session_id, section_id):
+    data = request.get_json(force=True) or {}
+    try:
+        wb.set_section_engine_weights_override(section_id, data)
+        return jsonify({"ok": True})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+# ── API: uploads ──────────────────────────────────────────────────────────────
+
+_UPLOAD_PAST_PERF_DIR = _ROOT / ".tmp" / "rfi_past_perf"
+_UPLOAD_PAST_PERF_DIR.mkdir(parents=True, exist_ok=True)
+
+_ALLOWED_UPLOAD_EXT = {".pdf", ".docx", ".doc", ".txt"}
+
+
+@rfi_canvas_bp.route("/api/rfi/<session_id>/uploads")
+def api_list_uploads(session_id):
+    try:
+        return jsonify(wb.list_session_uploads(session_id))
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@rfi_canvas_bp.route("/api/rfi/<session_id>/uploads", methods=["POST"])
+def api_upload_past_perf(session_id):
+    if "file" not in request.files:
+        return jsonify({"error": "No file uploaded"}), 400
+    f = request.files["file"]
+    if not f.filename or Path(f.filename).suffix.lower() not in _ALLOWED_UPLOAD_EXT:
+        return jsonify({"error": "Accepted: PDF, DOCX, DOC, TXT"}), 400
+    upload_type = request.form.get("upload_type", "past_performance")
+    _UPLOAD_PAST_PERF_DIR.mkdir(parents=True, exist_ok=True)
+    dest = _UPLOAD_PAST_PERF_DIR / f"{session_id}_{f.filename}"
+    f.save(str(dest))
+    try:
+        record = wb.save_session_upload(session_id, f.filename, str(dest), upload_type)
+        return jsonify({"ok": True, "upload": record}), 201
+    except Exception as exc:
+        logger.exception("Upload save failed for session %s", session_id)
+        return jsonify({"error": str(exc)}), 500
+
+
+@rfi_canvas_bp.route("/api/rfi/<session_id>/uploads/<upload_id>", methods=["DELETE"])
+def api_delete_upload(session_id, upload_id):
+    deleted = wb.delete_session_upload(upload_id)
+    if not deleted:
+        return jsonify({"error": "Upload not found"}), 404
+    return jsonify({"ok": True})
+
+
 # ── API: requirements ─────────────────────────────────────────────────────────
 
 @rfi_canvas_bp.route("/api/rfi/<session_id>/sections/<section_id>/requirements")

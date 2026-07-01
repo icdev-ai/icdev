@@ -250,6 +250,37 @@
           </div>
         </div>
 
+        <!-- Engine Weights -->
+        <div class="card mb-3 border-info shadow-sm mt-3">
+          <div class="card-header py-2 fw-semibold text-info bg-info bg-opacity-10 d-flex justify-content-between">
+            <span>⚖️ Engine Weights</span>
+            <small id="ew-total-badge" class="fw-normal text-muted">—</small>
+          </div>
+          <div class="card-body pt-2 pb-2">
+            <p class="text-muted" style="font-size:10px;">Enable/disable each source and set its relative weight. Normalized at generation time.</p>
+            <div id="ew-rows"></div>
+            <div class="d-flex gap-2 mt-2">
+              <button class="btn btn-sm btn-outline-info flex-fill" onclick="saveEngineWeights()">💾 Save Weights</button>
+              <button class="btn btn-sm btn-outline-secondary" onclick="resetEngineWeights()">↺</button>
+            </div>
+            <div id="ew-msg" class="text-center mt-1" style="font-size:10px;"></div>
+            <hr class="my-2">
+            <div class="fw-semibold mb-1" style="font-size:11px;">📁 Past Performance Docs</div>
+            <div id="pp-list" class="mb-2" style="max-height:100px;overflow-y:auto;"></div>
+            <label class="d-block" style="cursor:pointer;">
+              <div id="pp-drop" class="border border-secondary rounded text-center text-muted p-2"
+                style="font-size:11px;cursor:pointer;"
+                ondragover="event.preventDefault()" ondrop="handlePPDrop(event)">
+                Drag & drop or <span class="text-info text-decoration-underline">click to upload</span><br>
+                <small>PDF, DOCX, TXT</small>
+              </div>
+              <input id="pp-file-input" type="file" accept=".pdf,.docx,.doc,.txt" multiple
+                class="d-none" onchange="handlePPFileSelect(event)">
+            </label>
+            <div id="pp-upload-msg" class="text-center mt-1" style="font-size:10px;"></div>
+          </div>
+        </div>
+
         <!-- Style Guide -->
         <div class="card mb-3 border-primary shadow-sm mt-3">
           <div class="card-header py-2 fw-semibold text-primary bg-primary bg-opacity-10 d-flex justify-content-between">
@@ -733,6 +764,8 @@ document.addEventListener('DOMContentLoaded', () => {
   if (first) loadSection(first.dataset.id);
   loadAceTeamStatus();
   loadSessionStyleGuide();
+  loadEngineWeights();
+  loadUploadList();
 });
 
 // ── Requirements ──────────────────────────────────────────────────────────────
@@ -965,6 +998,145 @@ function summarizeToFit() {
       document.getElementById('save-indicator').textContent = '● unsaved';
     }
   }).catch(err => { btn.disabled = false; btn.textContent = '✂ Summarize'; alert('Error: ' + err.message); });
+}
+
+// ── Engine Weights ─────────────────────────────────────────────────────────────
+
+const _EW_LABELS = {
+  uploads: '1st-party Uploads',
+  kg_past_performance: 'KG Past Performance',
+  rag_general: 'RAG Knowledge Base',
+  innovation_engine: 'Innovation Engine',
+  creative_engine: 'Creative Engine',
+  research_engine: 'Research Engine',
+};
+let _ewData = {};
+
+function loadEngineWeights() {
+  fetch(`/api/rfi/${SESSION_ID}/engine-weights`)
+    .then(r => r.json())
+    .then(d => { _ewData = d; renderEngineWeights(); })
+    .catch(() => {});
+}
+
+function renderEngineWeights() {
+  const container = document.getElementById('ew-rows');
+  if (!container) return;
+  const rows = [];
+  let total = 0;
+  for (const [key, cfg] of Object.entries(_ewData)) {
+    if (cfg.enabled) total += (cfg.weight || 0);
+    const label = _EW_LABELS[key] || key;
+    rows.push(`
+      <div class="mb-2">
+        <div class="d-flex align-items-center gap-2 mb-1">
+          <input type="checkbox" class="form-check-input" id="ew-en-${key}" ${cfg.enabled ? 'checked' : ''}
+            onchange="_ewData['${key}'].enabled=this.checked;_updateEwTotal()">
+          <label class="form-check-label small flex-fill" for="ew-en-${key}">${label}</label>
+          <span id="ew-val-${key}" class="text-info small" style="min-width:26px;text-align:right;">${cfg.weight}</span>
+        </div>
+        <input type="range" class="form-range" min="0" max="100" value="${cfg.weight}"
+          oninput="_ewData['${key}'].weight=+this.value;document.getElementById('ew-val-${key}').textContent=this.value;_updateEwTotal()">
+      </div>`);
+  }
+  container.innerHTML = rows.join('');
+  _updateEwTotal();
+}
+
+function _updateEwTotal() {
+  const badge = document.getElementById('ew-total-badge');
+  if (!badge) return;
+  let enabled_total = 0;
+  for (const cfg of Object.values(_ewData)) { if (cfg.enabled) enabled_total += (cfg.weight || 0); }
+  badge.textContent = `total: ${enabled_total}`;
+  badge.className = (enabled_total === 100) ? 'fw-normal text-success' : 'fw-normal text-warning';
+}
+
+function saveEngineWeights() {
+  const msg = document.getElementById('ew-msg');
+  msg.textContent = 'Saving…';
+  fetch(`/api/rfi/${SESSION_ID}/engine-weights`, {
+    method: 'PUT', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(_ewData),
+  }).then(r => r.json()).then(d => {
+    msg.textContent = d.ok ? '✓ Saved' : ('Error: ' + (d.error || '?'));
+    msg.className = d.ok ? 'text-center mt-1 text-success' : 'text-center mt-1 text-danger';
+    setTimeout(() => { msg.textContent = ''; }, 3000);
+  }).catch(() => { msg.textContent = 'Network error'; msg.className = 'text-center mt-1 text-danger'; });
+}
+
+function resetEngineWeights() {
+  _ewData = {
+    uploads: {enabled: true, weight: 40},
+    kg_past_performance: {enabled: true, weight: 30},
+    rag_general: {enabled: true, weight: 20},
+    innovation_engine: {enabled: false, weight: 10},
+    creative_engine: {enabled: false, weight: 10},
+    research_engine: {enabled: false, weight: 10},
+  };
+  renderEngineWeights();
+  document.getElementById('ew-msg').textContent = 'Defaults restored — click Save to persist.';
+  document.getElementById('ew-msg').className = 'text-center mt-1 text-warning';
+}
+
+// ── Past Performance Uploads ──────────────────────────────────────────────────
+
+function loadUploadList() {
+  fetch(`/api/rfi/${SESSION_ID}/uploads`)
+    .then(r => r.json())
+    .then(list => renderUploadList(list))
+    .catch(() => {});
+}
+
+function renderUploadList(list) {
+  const el = document.getElementById('pp-list');
+  if (!el) return;
+  if (!list || !list.length) {
+    el.innerHTML = '<div class="text-muted" style="font-size:10px;padding:4px;">No uploads yet</div>';
+    return;
+  }
+  el.innerHTML = list.map(u => `
+    <div class="d-flex align-items-center gap-1 py-1 border-bottom border-secondary">
+      <span class="flex-fill text-muted small text-truncate" style="font-size:10px;" title="${u.filename}">${u.filename}</span>
+      <span class="badge bg-secondary" style="font-size:9px;">${u.upload_type || 'pp'}</span>
+      <button onclick="deleteUpload('${u.id}')" class="btn btn-sm p-0 text-danger border-0" style="font-size:11px;">✕</button>
+    </div>`).join('');
+}
+
+function handlePPDrop(ev) {
+  ev.preventDefault();
+  const files = ev.dataTransfer.files;
+  if (files && files.length) _uploadFiles(files);
+}
+
+function handlePPFileSelect(ev) {
+  if (ev.target.files && ev.target.files.length) _uploadFiles(ev.target.files);
+}
+
+function _uploadFiles(files) {
+  const msg = document.getElementById('pp-upload-msg');
+  msg.textContent = `Uploading ${files.length} file(s)…`;
+  msg.className = 'text-center mt-1 text-info';
+  const promises = Array.from(files).map(file => {
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('upload_type', 'past_performance');
+    return fetch(`/api/rfi/${SESSION_ID}/uploads`, { method: 'POST', body: fd }).then(r => r.json());
+  });
+  Promise.all(promises).then(results => {
+    const errs = results.filter(r => r.error);
+    msg.textContent = errs.length ? `${errs.length} error(s)` : `✓ ${results.length} uploaded`;
+    msg.className = errs.length ? 'text-center mt-1 text-danger' : 'text-center mt-1 text-success';
+    loadUploadList();
+    setTimeout(() => { msg.textContent = ''; }, 4000);
+    document.getElementById('pp-file-input').value = '';
+  }).catch(() => { msg.textContent = 'Upload failed'; msg.className = 'text-center mt-1 text-danger'; });
+}
+
+function deleteUpload(uploadId) {
+  if (!confirm('Remove this upload?')) return;
+  fetch(`/api/rfi/${SESSION_ID}/uploads/${uploadId}`, { method: 'DELETE' })
+    .then(r => r.json()).then(d => { if (d.ok) loadUploadList(); }).catch(() => {});
 }
 </script>
 {% endblock %}

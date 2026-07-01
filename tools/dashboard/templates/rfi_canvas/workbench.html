@@ -279,6 +279,42 @@
           </div>
         </div>
 
+        <!-- Engine Weights -->
+        <div class="wb-card">
+          <div class="wb-card-hdr" style="background:#0a1a30;color:#38bdf8;">
+            <span>⚖️ Engine Weights</span>
+            <small id="ew-total-badge" style="color:#5a7aa0;font-weight:400;">—</small>
+          </div>
+          <div class="wb-card-body">
+            <div style="font-size:10px;color:#5a7aa0;margin-bottom:8px;">
+              Controls how AI blends sources during generation. Enable/disable each source and set its relative weight (0–100). Weights are normalized at generation time.
+            </div>
+            <div id="ew-rows"></div>
+            <div style="display:flex;gap:6px;margin-top:8px;">
+              <button class="wb-btn" onclick="saveEngineWeights()"
+                style="flex:1;background:#0a1a30;color:#38bdf8;border-color:#0ea5e9;">💾 Save Weights</button>
+              <button class="wb-btn" onclick="resetEngineWeights()"
+                style="background:#0f3460;color:#7a8cb0;border-color:#1e3a6e;">↺</button>
+            </div>
+            <div id="ew-msg" style="font-size:10px;color:#5a7aa0;margin-top:4px;text-align:center;"></div>
+
+            <!-- Past Performance Uploads -->
+            <hr style="border-color:#1a2b4a;margin:10px 0 8px;">
+            <div style="font-size:11px;color:#94a3b8;font-weight:600;margin-bottom:6px;">📁 Past Performance Docs</div>
+            <div id="pp-list" style="margin-bottom:6px;max-height:100px;overflow-y:auto;"></div>
+            <label style="display:block;cursor:pointer;">
+              <div id="pp-drop" style="border:1px dashed #1e3a6e;border-radius:4px;padding:8px;text-align:center;font-size:11px;color:#5a7aa0;cursor:pointer;"
+                ondragover="event.preventDefault()" ondrop="handlePPDrop(event)">
+                Drag & drop or <span style="color:#38bdf8;text-decoration:underline;">click to upload</span><br>
+                <span style="font-size:10px;">PDF, DOCX, TXT</span>
+              </div>
+              <input id="pp-file-input" type="file" accept=".pdf,.docx,.doc,.txt" multiple
+                style="display:none" onchange="handlePPFileSelect(event)">
+            </label>
+            <div id="pp-upload-msg" style="font-size:10px;color:#5a7aa0;margin-top:4px;text-align:center;"></div>
+          </div>
+        </div>
+
         <!-- Style Guide -->
         <div class="wb-card">
           <div class="wb-card-hdr" style="background:#1a0a30;color:#a78bfa;">
@@ -736,6 +772,8 @@ document.addEventListener('DOMContentLoaded', () => {
   if (first) loadSection(first.dataset.id);
   loadAceTeamStatus();
   loadSessionStyleGuide();
+  loadEngineWeights();
+  loadUploadList();
 });
 
 // ── Requirements ──────────────────────────────────────────────────────────────
@@ -981,6 +1019,161 @@ function summarizeToFit() {
       document.getElementById('save-indicator').style.color = '#f59e0b';
     }
   }).catch(err => { btn.disabled = false; btn.textContent = '✂ Summarize'; alert('Error: ' + err.message); });
+}
+
+// ── Engine Weights ─────────────────────────────────────────────────────────────
+
+const _EW_LABELS = {
+  uploads: '1st-party Uploads',
+  kg_past_performance: 'KG Past Performance',
+  rag_general: 'RAG Knowledge Base',
+  innovation_engine: 'Innovation Engine',
+  creative_engine: 'Creative Engine',
+  research_engine: 'Research Engine',
+};
+let _ewData = {};
+
+function loadEngineWeights() {
+  fetch(`/api/rfi/${SESSION_ID}/engine-weights`)
+    .then(r => r.json())
+    .then(d => { _ewData = d; renderEngineWeights(); })
+    .catch(() => {});
+}
+
+function renderEngineWeights() {
+  const container = document.getElementById('ew-rows');
+  if (!container) return;
+  const rows = [];
+  let total = 0;
+  for (const [key, cfg] of Object.entries(_ewData)) {
+    if (cfg.enabled) total += (cfg.weight || 0);
+    const label = _EW_LABELS[key] || key;
+    rows.push(`
+      <div style="margin-bottom:6px;">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">
+          <input type="checkbox" id="ew-en-${key}" ${cfg.enabled ? 'checked' : ''}
+            onchange="_ewData['${key}'].enabled=this.checked;_updateEwTotal()">
+          <label for="ew-en-${key}" style="font-size:11px;color:#94a3b8;flex:1;">${label}</label>
+          <span id="ew-val-${key}" style="font-size:10px;color:#38bdf8;min-width:26px;text-align:right;">${cfg.weight}</span>
+        </div>
+        <input type="range" min="0" max="100" value="${cfg.weight}"
+          style="width:100%;accent-color:#38bdf8;"
+          oninput="_ewData['${key}'].weight=+this.value;document.getElementById('ew-val-${key}').textContent=this.value;_updateEwTotal()">
+      </div>`);
+  }
+  container.innerHTML = rows.join('');
+  _updateEwTotal();
+}
+
+function _updateEwTotal() {
+  const badge = document.getElementById('ew-total-badge');
+  if (!badge) return;
+  let enabled_total = 0;
+  for (const cfg of Object.values(_ewData)) { if (cfg.enabled) enabled_total += (cfg.weight || 0); }
+  badge.textContent = `total: ${enabled_total}`;
+  badge.style.color = (enabled_total === 100) ? '#22c55e' : '#f59e0b';
+}
+
+function saveEngineWeights() {
+  const msg = document.getElementById('ew-msg');
+  msg.textContent = 'Saving…';
+  fetch(`/api/rfi/${SESSION_ID}/engine-weights`, {
+    method: 'PUT', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(_ewData),
+  }).then(r => r.json()).then(d => {
+    msg.textContent = d.ok ? '✓ Saved' : ('Error: ' + (d.error || '?'));
+    msg.style.color = d.ok ? '#22c55e' : '#f87171';
+    setTimeout(() => { msg.textContent = ''; }, 3000);
+  }).catch(() => { msg.textContent = 'Network error'; msg.style.color = '#f87171'; });
+}
+
+function resetEngineWeights() {
+  const defaults = {
+    uploads: {enabled: true, weight: 40},
+    kg_past_performance: {enabled: true, weight: 30},
+    rag_general: {enabled: true, weight: 20},
+    innovation_engine: {enabled: false, weight: 10},
+    creative_engine: {enabled: false, weight: 10},
+    research_engine: {enabled: false, weight: 10},
+  };
+  _ewData = defaults;
+  renderEngineWeights();
+  document.getElementById('ew-msg').textContent = 'Defaults restored — click Save to persist.';
+  document.getElementById('ew-msg').style.color = '#f59e0b';
+}
+
+// ── Past Performance Uploads ──────────────────────────────────────────────────
+
+function loadUploadList() {
+  fetch(`/api/rfi/${SESSION_ID}/uploads`)
+    .then(r => r.json())
+    .then(list => renderUploadList(list))
+    .catch(() => {});
+}
+
+function renderUploadList(list) {
+  const el = document.getElementById('pp-list');
+  if (!el) return;
+  if (!list || !list.length) {
+    el.innerHTML = '<div style="font-size:10px;color:#334155;padding:4px;">No uploads yet</div>';
+    return;
+  }
+  el.innerHTML = list.map(u => `
+    <div style="display:flex;align-items:center;gap:4px;padding:3px 0;border-bottom:1px solid #0f1f3a;">
+      <span style="flex:1;font-size:10px;color:#94a3b8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
+        title="${u.filename}">${u.filename}</span>
+      <span style="font-size:9px;color:#5a7aa0;">${u.upload_type || 'pp'}</span>
+      <button onclick="deleteUpload('${u.id}')"
+        style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:11px;padding:0 4px;">✕</button>
+    </div>`).join('');
+}
+
+function handlePPDrop(ev) {
+  ev.preventDefault();
+  const files = ev.dataTransfer.files;
+  if (files && files.length) _uploadFiles(files);
+}
+
+function handlePPFileSelect(ev) {
+  if (ev.target.files && ev.target.files.length) _uploadFiles(ev.target.files);
+}
+
+function _uploadFiles(files) {
+  const msg = document.getElementById('pp-upload-msg');
+  const drop = document.getElementById('pp-drop');
+  drop.style.borderColor = '#38bdf8';
+  msg.textContent = `Uploading ${files.length} file(s)…`;
+  msg.style.color = '#38bdf8';
+
+  const promises = Array.from(files).map(file => {
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('upload_type', 'past_performance');
+    return fetch(`/api/rfi/${SESSION_ID}/uploads`, { method: 'POST', body: fd })
+      .then(r => r.json());
+  });
+
+  Promise.all(promises).then(results => {
+    drop.style.borderColor = '#1e3a6e';
+    const errs = results.filter(r => r.error);
+    msg.textContent = errs.length ? `${errs.length} error(s)` : `✓ ${results.length} uploaded`;
+    msg.style.color = errs.length ? '#f87171' : '#22c55e';
+    loadUploadList();
+    setTimeout(() => { msg.textContent = ''; }, 4000);
+    document.getElementById('pp-file-input').value = '';
+  }).catch(() => {
+    drop.style.borderColor = '#1e3a6e';
+    msg.textContent = 'Upload failed';
+    msg.style.color = '#f87171';
+  });
+}
+
+function deleteUpload(uploadId) {
+  if (!confirm('Remove this upload?')) return;
+  fetch(`/api/rfi/${SESSION_ID}/uploads/${uploadId}`, { method: 'DELETE' })
+    .then(r => r.json())
+    .then(d => { if (d.ok) loadUploadList(); })
+    .catch(() => {});
 }
 </script>
 {% endblock %}

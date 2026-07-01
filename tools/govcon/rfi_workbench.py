@@ -325,6 +325,21 @@ def generate_section_content(section_id, profile_name, parsed_data):
         prompt += "\n\n[Style Requirements]\n" + "\n".join(style_parts)
 
     session_id = section.get("session_id", "")
+
+    # Phase B: inject weighted source context (uploads, KG, RAG, engines)
+    try:
+        from tools.govcon.rfi_engine_runner import assemble_weighted_prompt_context
+        topic = f"{section['title']} {section.get('question_text', '')[:200]}"
+        engine_ctx = assemble_weighted_prompt_context(session_id, section_id, topic)
+        if engine_ctx.get("context"):
+            prompt += "\n\n[Source Context — weighted from enabled engines]\n" + engine_ctx["context"]
+            logger.debug(
+                "Engine context assembled: sources=%s chars=%d",
+                engine_ctx.get("sources_used"), engine_ctx.get("total_chars", 0),
+            )
+    except Exception as exc:
+        logger.warning("Engine context assembly failed (non-fatal): %s", exc)
+
     role_key = f"{session_id}:rfi_writer" if session_id else "rfi_writer"
     draft = _call_llm(prompt, section["title"], item, role_key=role_key, llm_function="rfi_writer_drafting")
 
@@ -915,3 +930,40 @@ def _launch_ace_team_background(session_id: str):
         launch_ace_team(session_id)
     except Exception as exc:
         logger.warning("Background ACE team launch failed for session %s: %s", session_id, exc)
+
+
+# ── Phase B: Engine weights + uploads (delegates to rfi_engine_runner) ────────
+
+def get_engine_weights(session_id: str) -> dict:
+    from tools.govcon.rfi_engine_runner import get_session_engine_weights
+    return get_session_engine_weights(session_id)
+
+
+def set_engine_weights(session_id: str, weights: dict) -> None:
+    from tools.govcon.rfi_engine_runner import set_session_engine_weights
+    set_session_engine_weights(session_id, weights)
+
+
+def get_section_engine_weights_override(section_id: str) -> dict | None:
+    from tools.govcon.rfi_engine_runner import get_section_engine_weights
+    return get_section_engine_weights(section_id)
+
+
+def set_section_engine_weights_override(section_id: str, weights: dict) -> None:
+    from tools.govcon.rfi_engine_runner import set_section_engine_weights
+    set_section_engine_weights(section_id, weights)
+
+
+def save_session_upload(session_id: str, filename: str, file_path: str, upload_type: str = "past_performance") -> dict:
+    from tools.govcon.rfi_engine_runner import save_upload
+    return save_upload(session_id, filename, file_path, upload_type)
+
+
+def list_session_uploads(session_id: str) -> list[dict]:
+    from tools.govcon.rfi_engine_runner import get_uploads
+    return get_uploads(session_id)
+
+
+def delete_session_upload(upload_id: str) -> bool:
+    from tools.govcon.rfi_engine_runner import delete_upload
+    return delete_upload(upload_id)
