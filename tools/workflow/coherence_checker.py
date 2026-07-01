@@ -25,6 +25,7 @@ Checks:
  15. canvas_placeholder_style — bare ? in execute() SQL for get_canvas_connection callers (use %s)
  16. runtime_placeholder_style — bare ? in execute() SQL in ANY runtime tools/ file (use %s; translate_sql is not a fix)
  17. ace_yaml_listen_topics   — role YAMLs must not mix task.assigned with reactive topics (deadlock risk)
+ 18. yaml_duplicate_keys     — args/*.yaml duplicate mapping keys (FAIL top-level, WARN nested) + parse errors
 
 All checks: stdlib only (ast, re, pathlib), air-gap safe, zero deps.
 (openapi_parity imports Flask/dashboard at runtime; gracefully skips if unavailable.)
@@ -143,6 +144,44 @@ def _load_config() -> Dict[str, Any]:
             return yaml.safe_load(f) or {}
     except Exception:
         return {}
+
+
+def _scan_yaml_duplicate_keys(text: str) -> List[Dict[str, Any]]:
+    """Return every duplicate mapping key in ``text`` as {"key", "line", "depth"}.
+
+    yaml.safe_load() silently keeps only the last occurrence of a repeated
+    mapping key, so two independent commits that each add the same top-level
+    key merge cleanly (pure line insertions) while the first block becomes
+    dead config with no parse error or warning. This walks the raw composed
+    node tree (yaml.compose) rather than hooking SafeLoader.construct_mapping,
+    because the constructor resolves nested mappings lazily through generators
+    (to support anchors/aliases) — a call-stack depth counter unwinds before
+    those deferred nested calls run and would misreport every duplicate as
+    depth 0. Depth 0 is the document root mapping (a file's top-level keys);
+    depth > 0 is a nested mapping (e.g. a key repeated inside one block/list
+    item).
+    """
+    duplicates: List[Dict[str, Any]] = []
+
+    def _walk(node, depth: int) -> None:
+        if isinstance(node, yaml.MappingNode):
+            seen: Set[Any] = set()
+            for key_node, value_node in node.value:
+                if isinstance(key_node, yaml.ScalarNode):
+                    key = key_node.value
+                    if key in seen:
+                        duplicates.append({"key": key, "line": key_node.start_mark.line + 1, "depth": depth})
+                    else:
+                        seen.add(key)
+                _walk(value_node, depth + 1)
+        elif isinstance(node, yaml.SequenceNode):
+            for item in node.value:
+                _walk(item, depth)
+
+    root = yaml.compose(text, Loader=yaml.SafeLoader)
+    if root is not None:
+        _walk(root, 0)
+    return duplicates
 
 
 # ---------------------------------------------------------------------------
@@ -4544,6 +4583,115 @@ def check_canvas_rls_bypass() -> "CoherenceCheck":
     )
 
 
+# Check #18: yaml_duplicate_keys — args/*.yaml collision guard
+# ---------------------------------------------------------------------------
+
+
+def check_yaml_duplicate_keys(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
+    """Detect duplicate mapping keys and parse errors in args/*.yaml.
+
+    Two independent commits that each add the same top-level key to a config
+    file merge cleanly in git (pure line insertions) but yaml.safe_load()
+    silently keeps only the last occurrence, leaving the first block dead
+    with no error. Top-level collisions FAIL the gate — a whole config
+    section can vanish. Nested collisions only WARN: repeating a key deeper
+    inside one block/list item is lower blast-radius and is sometimes
+    intentional in generated/templated YAML.
+    """
+    check_id = "yaml_duplicate_keys"
+    check_name = "YAML Duplicate Key Guard"
+
+    if not _HAS_YAML:
+        return CoherenceCheck(
+            check_id=check_id,
+            check_name=check_name,
+            status="warn",
+            expected=[],
+            actual=[],
+            missing=[],
+            extra=[],
+            message="PyYAML not available — skipping yaml_duplicate_keys check",
+        )
+
+    args_dir = PROJECT_ROOT / "args"
+    if changed_files:
+        yaml_paths = [
+            f for f in changed_files
+            if f.suffix in (".yaml", ".yml") and f.parent.name == "args"
+        ]
+        if not yaml_paths:
+            yaml_paths = sorted(args_dir.glob("*.yaml"))
+    else:
+        yaml_paths = sorted(args_dir.glob("*.yaml")) if args_dir.exists() else []
+
+    parse_errors: List[str] = []
+    top_level_dupes: List[str] = []
+    nested_dupes: List[str] = []
+    scanned = 0
+
+    for path in yaml_paths:
+        full_path = path if path.is_absolute() else PROJECT_ROOT / path
+        try:
+            text = full_path.read_text(encoding="utf-8")
+        except Exception:
+            continue
+        scanned += 1
+        try:
+            dupes = _scan_yaml_duplicate_keys(text)
+        except yaml.YAMLError as exc:
+            parse_errors.append(f"{full_path.name}: YAML parse error — {exc}")
+            continue
+        for d in dupes:
+            entry = f"{full_path.name}:{d['line']} — duplicate key '{d['key']}'"
+            if d["depth"] == 0:
+                top_level_dupes.append(entry)
+            else:
+                nested_dupes.append(entry)
+
+    if parse_errors or top_level_dupes:
+        blocking = parse_errors + top_level_dupes
+        return CoherenceCheck(
+            check_id=check_id,
+            check_name=check_name,
+            status="fail",
+            expected=["No YAML parse errors", "No duplicate top-level keys in args/*.yaml"],
+            actual=blocking,
+            missing=blocking,
+            extra=nested_dupes,
+            message=(
+                f"{len(parse_errors)} parse error(s) and {len(top_level_dupes)} duplicate "
+                f"top-level key(s) across {scanned} args/*.yaml file(s) — PyYAML silently "
+                "keeps only the last occurrence, shadowing the earlier block with no warning"
+            ),
+        )
+
+    if nested_dupes:
+        return CoherenceCheck(
+            check_id=check_id,
+            check_name=check_name,
+            status="warn",
+            expected=["No duplicate keys at any nesting level"],
+            actual=nested_dupes,
+            missing=[],
+            extra=nested_dupes,
+            message=(
+                f"{len(nested_dupes)} nested duplicate key(s) across {scanned} args/*.yaml "
+                "file(s) — review for accidental duplication (not gate-blocking)"
+            ),
+        )
+
+    return CoherenceCheck(
+        check_id=check_id,
+        check_name=check_name,
+        status="pass",
+        expected=["No duplicate keys in args/*.yaml"],
+        actual=[f"Scanned {scanned} args/*.yaml file(s), no duplicate keys"],
+        missing=[],
+        extra=[],
+        message=f"All {scanned} args/*.yaml file(s) clean of duplicate keys",
+    )
+
+
 # ---------------------------------------------------------------------------
 # Check Registry & Orchestrator
 # ---------------------------------------------------------------------------
@@ -4585,6 +4733,7 @@ CHECK_REGISTRY = {
     "nav_sync": check_nav_sync,
     "iqe_map_sync": check_iqe_map_sync,
     "profile_sync": check_profile_sync,
+    "yaml_duplicate_keys": check_yaml_duplicate_keys,
 }
 
 
@@ -4624,6 +4773,7 @@ _FIX_REGISTRY: Dict[str, str] = {
     "nav_sync": "skip",  # template changes require human review
     "iqe_map_sync": "skip",  # adapter wiring requires human review
     "profile_sync": "skip",  # profile YAML changes require human review
+    "yaml_duplicate_keys": "skip",  # picking which block to keep requires human judgment
 }
 
 
