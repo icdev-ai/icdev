@@ -1134,3 +1134,11 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Weekly Retro Reflex | tools\genesis\reflexes\weekly_retro_reflex.py | Auto-registered: reflexes/weekly_retro_reflex.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Rfi Engine Runner | tools\govcon\rfi_engine_runner.py | Auto-registered: govcon/rfi_engine_runner.py | --json | JSON |
+| Rfi Markdown Validator | tools\govcon\rfi_markdown_validator.py | Auto-registered: govcon/rfi_markdown_validator.py | --json | JSON |
+| Rfi Style Engine | tools\govcon\rfi_style_engine.py | Auto-registered: govcon/rfi_style_engine.py | --json | JSON |
