@@ -37,6 +37,13 @@ profiles:
       Peraton brings deep experience delivering mission-critical AI/ML systems
       to the Intelligence Community, supported by TS/SCI cleared personnel and
       SCIF-capable facilities.
+    capability_statements:
+      - "15+ years delivering mission-critical AI/ML systems to the Intelligence Community"
+      - "TS/SCI cleared workforce with SCIF-capable facilities at multiple sites"
+      - "CMMC Level 2 certified; NIST SP 800-171 compliant supply chain"
+      - "Proven delivery of production AI systems at DIA, NSA, and SOCOM"
+    solution_name: "Peraton AI/ML Orchestration Platform"
+    technical_differentiators: []
 
   own_company:
     entity_name: "[YOUR COMPANY NAME]"
@@ -63,6 +70,9 @@ profiles:
       government_data: "Government owns all data and derivative models"
     boilerplate_cover: >
       [YOUR COMPANY] is pleased to respond to NSA RFI-{rfi_number}.
+    capability_statements: []
+    solution_name: "[YOUR SOLUTION NAME]"
+    technical_differentiators: []
 
 # Default profile to use when --profile flag is not specified
 default_profile: own_company
