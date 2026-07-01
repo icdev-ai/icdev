@@ -533,6 +533,41 @@ def api_ace_launch(session_id):
         return jsonify({"error": str(exc)}), 500
 
 
+# ── API: deadline countdown ───────────────────────────────────────────────────
+
+@rfi_canvas_bp.route("/api/rfi/<session_id>/deadline")
+def api_get_deadline(session_id):
+    return jsonify(wb.get_deadline_info(session_id))
+
+
+@rfi_canvas_bp.route("/api/rfi/<session_id>/deadline", methods=["POST"])
+def api_save_deadline(session_id):
+    data = request.get_json(force=True) or {}
+    deadline = (data.get("deadline") or "").strip()
+    if not deadline:
+        return jsonify({"error": "deadline is required (YYYY-MM-DD or MM/DD/YYYY)"}), 400
+    return jsonify(wb.save_session_deadline(session_id, deadline))
+
+
+# ── API: competitive differentiator ───────────────────────────────────────────
+
+@rfi_canvas_bp.route("/api/rfi/<session_id>/why-us", methods=["POST"])
+def api_generate_why_us(session_id):
+    data = request.get_json(force=True) or {}
+    try:
+        session = wb.get_session(session_id)
+        profile_name = data.get("profile_name") or (session.get("profile_name") if session else "own_company")
+        result = wb.generate_why_us(
+            session_id,
+            profile_name=profile_name or "own_company",
+            competitor_name=data.get("competitor_name", ""),
+        )
+        return jsonify({"ok": True, **result})
+    except Exception as exc:
+        logger.exception("Why Us generation failed for session %s", session_id)
+        return jsonify({"error": str(exc)}), 500
+
+
 # ── IQE dispatch ──────────────────────────────────────────────────────────────
 
 @rfi_canvas_bp.route("/api/rfi/iqe-query", methods=["POST"])

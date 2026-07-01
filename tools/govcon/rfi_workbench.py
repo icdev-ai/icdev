@@ -1473,13 +1473,39 @@ def generate_all_sections(session_id: str, profile_name: str, parsed_data: dict)
                 f"{sec['item_number']}: {str(exc)[:80]}"
             )
         _generate_all_progress[session_id]["done"] += 1
+        _persist_genall_progress(session_id)
         time.sleep(0.1)
     _generate_all_progress[session_id]["running"] = False
     _generate_all_progress[session_id]["current_item"] = None
+    _persist_genall_progress(session_id)
+
+
+_GENALL_TMP_DIR = _ROOT / ".tmp"
+
+
+def _persist_genall_progress(session_id: str) -> None:
+    try:
+        _GENALL_TMP_DIR.mkdir(parents=True, exist_ok=True)
+        p = _GENALL_TMP_DIR / f"rfi_genall_{session_id}.json"
+        p.write_text(json.dumps(_generate_all_progress[session_id]), encoding="utf-8")
+    except Exception as exc:
+        logger.debug("Could not persist generate-all progress for %s: %s", session_id, exc)
 
 
 def get_generate_all_status(session_id: str) -> dict:
-    return _generate_all_progress.get(session_id, {"running": False, "done": 0, "total": 0})
+    if session_id in _generate_all_progress:
+        return _generate_all_progress[session_id]
+    # Fallback: read persisted file from .tmp/ (survives server restart)
+    try:
+        p = _GENALL_TMP_DIR / f"rfi_genall_{session_id}.json"
+        if p.exists():
+            data = json.loads(p.read_text(encoding="utf-8"))
+            # Persisted state is always non-running (server restarted mid-run)
+            data["running"] = False
+            return data
+    except Exception:
+        pass
+    return {"running": False, "done": 0, "total": 0}
 
 
 def cancel_generate_all(session_id: str) -> None:
@@ -1605,7 +1631,104 @@ def get_session_readiness(session_id: str) -> dict:
     }
 
 
-# ── Item 7: Parse summary ─────────────────────────────────────────────────────
+# ── Item 6: Submission deadline countdown ────────────────────────────────────
+
+def _compute_days_remaining(deadline_str: str) -> int | None:
+    try:
+        import re
+        # Accept YYYY-MM-DD or MM/DD/YYYY
+        s = deadline_str.strip()
+        if re.match(r"\d{4}-\d{2}-\d{2}", s):
+            dl = date.fromisoformat(s[:10])
+        elif re.match(r"\d{1,2}/\d{1,2}/\d{4}", s):
+            from datetime import datetime as _dt
+            dl = _dt.strptime(s, "%m/%d/%Y").date()
+        else:
+            return None
+        return (dl - date.today()).days
+    except Exception:
+        return None
+
+
+def get_deadline_info(session_id: str) -> dict:
+    session = get_session(session_id)
+    if not session:
+        return {}
+    parsed = session.get("parsed_data") or {}
+    deadline = parsed.get("response_date") or session.get("response_date")
+    days = _compute_days_remaining(deadline) if deadline else None
+    return {
+        "deadline": deadline,
+        "days_remaining": days,
+        "urgent": days is not None and days <= 7,
+        "overdue": days is not None and days < 0,
+    }
+
+
+def save_session_deadline(session_id: str, deadline: str) -> dict:
+    session = get_session(session_id)
+    if not session:
+        return {}
+    parsed = session.get("parsed_data") or {}
+    parsed["response_date"] = deadline.strip()
+    db = get_db()
+    db.execute(
+        "UPDATE rfi_workbench_sessions SET parsed_data=%s, updated_at=%s WHERE id=%s",
+        (json.dumps(parsed), _now(), session_id),
+    )
+    db.commit()
+    return get_deadline_info(session_id)
+
+
+# ── Item 7: Competitive differentiator ("Generate Why Us") ───────────────────
+
+def generate_why_us(session_id: str, profile_name: str, competitor_name: str = "") -> dict:
+    """Generate a 'Why Us' competitive differentiator paragraph for section 5.1.
+
+    Uses profile capability_statements + optional competitor_name.
+    Routes via rfi_writer_drafting (LOCAL ONLY — CUI content).
+    Returns {"paragraph": str, "word_count": int}.
+    """
+    session = get_session(session_id)
+    if not session:
+        raise ValueError(f"Session {session_id} not found")
+
+    profile = _load_profile(profile_name)
+    cap_stmts = profile.get("capability_statements") or []
+    tech_diff = profile.get("technical_differentiators") or []
+    solution_name = profile.get("solution_name") or profile.get("entity_name", "our solution")
+    entity_name = profile.get("entity_name", "the responding organization")
+    rfi_title = session.get("rfi_title", "the solicitation")
+
+    bullets = "\n".join(f"  • {c}" for c in cap_stmts) if cap_stmts else "  • No specific capabilities listed in profile."
+    diff_text = ("\nTechnical differentiators:\n" + "\n".join(f"  • {d}" for d in tech_diff)) if tech_diff else ""
+    comp_ctx = f"\nKey competitor context (do NOT name them — differentiate by merit): {competitor_name}" if competitor_name.strip() else ""
+
+    prompt = (
+        f"You are a GovCon proposal strategist. Write a competitive differentiator paragraph "
+        f"for the 'Industry Insights' section of an RFI response.\n\n"
+        f"Entity: {entity_name}\nSolution: {solution_name}\nRFI: {rfi_title}{comp_ctx}\n\n"
+        f"Capability statements:\n{bullets}{diff_text}\n\n"
+        f"Write a 150-200 word paragraph that:\n"
+        f"1. States why {entity_name} is uniquely positioned to address this requirement\n"
+        f"2. References specific capabilities from the list above (not generic claims)\n"
+        f"3. Never names competitors — differentiates by merit\n"
+        f"4. Ends with a clear, concrete value proposition\n\n"
+        f"Return ONLY the paragraph. No headers, no bullet points, no preamble."
+    )
+
+    role_key = f"{session_id}:rfi_writer"
+    paragraph = _call_llm(
+        prompt,
+        "Why Us — Competitive Differentiator",
+        "5.1",
+        role_key=role_key,
+        llm_function="rfi_writer_drafting",
+    )
+    return {"paragraph": paragraph, "word_count": len(paragraph.split())}
+
+
+# ── Item 8: Parse summary ─────────────────────────────────────────────────────
 
 def get_parse_summary(session: dict) -> dict:
     """Return parse metadata for the upload-feedback banner."""

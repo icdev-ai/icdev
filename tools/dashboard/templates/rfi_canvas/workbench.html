@@ -72,6 +72,10 @@
       ⚡ All
     </button>
     <span id="gen-all-status" style="font-size:10px;color:#5a7aa0;"></span>
+    <span id="deadline-badge" title="Click to set deadline" onclick="toggleDeadlinePicker()"
+      style="display:none;cursor:pointer;font-size:10px;padding:3px 9px;border-radius:10px;border:1px solid #1e3a6e;color:#94a3b8;"></span>
+    <input type="date" id="deadline-input" style="display:none;background:#050d1f;color:#b8d0e8;border:1px solid #1e3a6e;border-radius:4px;padding:3px 6px;font-size:10px;"
+      onchange="saveDeadline(this.value)" onblur="document.getElementById('deadline-input').style.display='none'">
     <a href="/rfi/{{ session.id }}/preview" target="_blank"
       style="background:#0a1a30;color:#38bdf8;border:1px solid #0ea5e9;border-radius:4px;padding:5px 10px;font-size:11px;text-decoration:none;">👁 Preview</a>
     <button onclick="doExport('md')"
@@ -201,6 +205,29 @@
           <div style="text-align:right;padding:0 8px 6px;">
             <button onclick="recheckCoverage()"
               style="background:none;border:none;color:#5a7aa0;font-size:10px;cursor:pointer;padding:2px 4px;">🔄 Re-check Coverage</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Generate Why Us panel — shown for section 5.1 (Industry Insights) -->
+      <div id="why-us-panel" style="display:none;margin-top:8px;background:#050d1f;border:1px solid #1e3a6e;border-radius:6px;overflow:hidden;">
+        <div style="background:#0a1628;padding:7px 12px;display:flex;align-items:center;gap:8px;border-bottom:1px solid #1e3a6e;">
+          <span style="color:#38bdf8;font-size:11px;font-weight:600;">🏆 Competitive Differentiator</span>
+        </div>
+        <div style="padding:8px 12px;">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+            <input type="text" id="competitor-input" placeholder="Key competitor (optional — not named in output)"
+              style="flex:1;background:#0a1628;color:#b8d0e8;border:1px solid #1a3560;border-radius:4px;padding:4px 8px;font-size:11px;">
+            <button onclick="generateWhyUs()"
+              style="background:#0c2a4a;color:#38bdf8;border:1px solid #0ea5e9;border-radius:4px;padding:4px 10px;font-size:11px;cursor:pointer;">
+              Generate Why Us
+            </button>
+          </div>
+          <div id="why-us-spinner" style="display:none;font-size:11px;color:#5a7aa0;">Generating…</div>
+          <div id="why-us-output" style="display:none;font-size:11px;color:#94a3b8;line-height:1.6;background:#0a1628;padding:8px;border-radius:4px;border:1px solid #1a2b4a;white-space:pre-wrap;"></div>
+          <div id="why-us-actions" style="display:none;text-align:right;margin-top:6px;gap:6px;display:none;">
+            <button onclick="appendWhyUsToEditor()"
+              style="background:#052e16;color:#4ade80;border:1px solid #16a34a;border-radius:4px;padding:3px 10px;font-size:10px;cursor:pointer;">⬇ Append to Editor</button>
           </div>
         </div>
       </div>
@@ -561,6 +588,17 @@ function renderSection(sec) {
     if (fb.reviewer) renderReviewerFeedback(fb.reviewer);
     else if (fb.source === 'reviewer') renderReviewerFeedback(fb);
   }
+
+  // Why Us panel — show only for Part 5 (Industry Insights)
+  const whyUsPanel = document.getElementById('why-us-panel');
+  if (whyUsPanel) {
+    const isInsights = (sec.item_number || '').startsWith('5') || (sec.part || '').includes('5');
+    whyUsPanel.style.display = isInsights ? '' : 'none';
+    document.getElementById('why-us-output').style.display = 'none';
+    document.getElementById('why-us-actions').style.display = 'none';
+    document.getElementById('why-us-spinner').style.display = 'none';
+    _whyUsParagraph = '';
+  }
 }
 
 function applyStatusStyle(el, status) {
@@ -584,7 +622,8 @@ function onContentChange() {
 
 function updateWordCount(text) {
   const w = text.trim() ? text.trim().split(/\s+/).length : 0;
-  document.getElementById('word-count').textContent = w + ' words';
+  const wEl = document.getElementById('word-count');
+  if (wEl) wEl.textContent = sectionWordLimit ? `${w} / ${sectionWordLimit} words` : `${w} words`;
   const pages = sessionWordsPerPage > 0 ? (w / sessionWordsPerPage) : 0;
   const pageEl = document.getElementById('page-count');
   if (pageEl) pageEl.textContent = pages > 0 ? `· ≈${pages.toFixed(1)} pg` : '';
@@ -885,6 +924,8 @@ document.addEventListener('DOMContentLoaded', () => {
   loadSessionStyleGuide();
   loadEngineWeights();
   loadUploadList();
+  loadDeadlineInfo();
+  window.__rfi_profile_name = "{{ session.profile_name }}";
   window.__rfi_session_meta = {
     rfi_number: "{{ session.rfi_number }}",
     parse_fallback: {{ 'true' if (session.rfi_number == 'RFI-UNKNOWN' or not session.get('parsed_data') or not session.get('parsed_data', {}).get('questionnaire_parts')) else 'false' }},
@@ -1676,6 +1717,88 @@ function rerunReviewer() {
   _reviewerPollCount = 0;
   fetch(`/api/rfi/${SESSION_ID}/sections/${currentSectionId}/ace-reviewer/run`, {method:'POST'});
   _reviewerPollTimer = setTimeout(() => _pollReviewer(currentSectionId), 4000);
+}
+
+// ── Item 6: Deadline countdown ────────────────────────────────────────────────
+function loadDeadlineInfo() {
+  fetch(`/api/rfi/${SESSION_ID}/deadline`)
+    .then(r => r.json())
+    .then(d => {
+      const badge = document.getElementById('deadline-badge');
+      if (!badge) return;
+      badge.style.display = '';
+      if (!d.deadline) {
+        badge.textContent = '📅 Set deadline';
+        badge.style.borderColor = '#334155';
+        badge.style.color = '#5a7aa0';
+        return;
+      }
+      const days = d.days_remaining;
+      let color = '#22c55e', border = '#16a34a';
+      if (d.overdue) { color = '#f87171'; border = '#7f1d1d'; }
+      else if (d.urgent) { color = '#fbbf24'; border = '#92400e'; }
+      const label = d.overdue ? `${Math.abs(days)}d overdue` : days === 0 ? 'Due today!' : `${days}d remaining`;
+      badge.textContent = `📅 ${label}`;
+      badge.style.color = color;
+      badge.style.borderColor = border;
+    })
+    .catch(() => {});
+}
+
+function toggleDeadlinePicker() {
+  const inp = document.getElementById('deadline-input');
+  inp.style.display = inp.style.display === 'none' ? '' : 'none';
+  if (inp.style.display !== 'none') inp.focus();
+}
+
+function saveDeadline(val) {
+  if (!val) return;
+  fetch(`/api/rfi/${SESSION_ID}/deadline`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({deadline: val}),
+  }).then(() => { document.getElementById('deadline-input').style.display = 'none'; loadDeadlineInfo(); });
+}
+
+// ── Item 7: Generate Why Us ───────────────────────────────────────────────────
+let _whyUsParagraph = '';
+
+function generateWhyUs() {
+  const competitor = (document.getElementById('competitor-input') || {}).value || '';
+  const spinner = document.getElementById('why-us-spinner');
+  const output = document.getElementById('why-us-output');
+  const actions = document.getElementById('why-us-actions');
+  spinner.style.display = '';
+  output.style.display = 'none';
+  actions.style.display = 'none';
+  fetch(`/api/rfi/${SESSION_ID}/why-us`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({competitor_name: competitor}),
+  })
+    .then(r => r.json())
+    .then(d => {
+      spinner.style.display = 'none';
+      if (d.ok && d.paragraph) {
+        _whyUsParagraph = d.paragraph;
+        output.textContent = d.paragraph;
+        output.style.display = '';
+        actions.style.display = '';
+        actions.style.display = 'flex';
+        actions.style.justifyContent = 'flex-end';
+      } else {
+        output.textContent = d.error || 'Generation failed.';
+        output.style.display = '';
+      }
+    })
+    .catch(() => { spinner.style.display = 'none'; output.textContent = 'Error.'; output.style.display = ''; });
+}
+
+function appendWhyUsToEditor() {
+  if (!_whyUsParagraph) return;
+  const editor = document.getElementById('content-editor');
+  const existing = editor.value.trim();
+  editor.value = existing ? existing + '\n\n---\n\n**Why ' + (window.__rfi_profile_name || 'Us') + ':**\n\n' + _whyUsParagraph : _whyUsParagraph;
+  onContentChange();
+  document.getElementById('why-us-actions').style.display = 'none';
 }
 </script>
 {% endblock %}

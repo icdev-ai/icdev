@@ -62,6 +62,8 @@
     </div>
     <button id="gen-all-btn" class="btn btn-sm btn-outline-primary" onclick="startGenerateAll()" title="Generate all pending/rejected sections">⚡ All</button>
     <span id="gen-all-status" class="text-muted" style="font-size:10px;"></span>
+    <span id="deadline-badge" class="badge rounded-pill border d-none" title="Click to set deadline" onclick="toggleDeadlinePicker()" style="cursor:pointer;font-size:10px;"></span>
+    <input type="date" id="deadline-input" class="d-none form-control form-control-sm" style="width:auto;font-size:10px;" onchange="saveDeadline(this.value)" onblur="document.getElementById('deadline-input').classList.add('d-none')">
     <a href="/rfi/{{ session.id }}/preview" class="btn btn-sm btn-outline-info" title="Assembled document preview">👁 Preview</a>
     <button class="btn btn-sm btn-outline-secondary" onclick="doExport('md')" title="Download Markdown">⬇ MD</button>
     <button class="btn btn-sm btn-success" onclick="doExport('docx')" id="export-docx-btn">
@@ -178,6 +180,24 @@
           </div>
           <div class="text-end px-2 pb-2">
             <button onclick="recheckCoverage()" class="btn btn-link btn-sm text-muted p-0" style="font-size:10px;">🔄 Re-check Coverage</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Generate Why Us panel — shown for Part 5 (Industry Insights) -->
+      <div id="why-us-panel" class="d-none mt-2 border rounded overflow-hidden">
+        <div class="px-3 py-2 border-bottom bg-light d-flex align-items-center gap-2">
+          <span class="fw-semibold small text-info">🏆 Competitive Differentiator</span>
+        </div>
+        <div class="p-2">
+          <div class="d-flex gap-2 mb-2">
+            <input type="text" id="competitor-input" class="form-control form-control-sm" placeholder="Key competitor (optional — not named in output)">
+            <button class="btn btn-sm btn-outline-info" onclick="generateWhyUs()" style="white-space:nowrap;">Generate Why Us</button>
+          </div>
+          <div id="why-us-spinner" class="d-none text-muted small">Generating…</div>
+          <div id="why-us-output" class="d-none small text-muted border rounded bg-light p-2" style="white-space:pre-wrap;line-height:1.6;"></div>
+          <div id="why-us-actions" class="d-none text-end mt-1">
+            <button class="btn btn-sm btn-outline-success py-0" onclick="appendWhyUsToEditor()">⬇ Append to Editor</button>
           </div>
         </div>
       </div>
@@ -524,6 +544,18 @@ function renderSection(sec) {
     if (fb.reviewer) renderReviewerFeedback(fb.reviewer);
     else if (fb.source === 'reviewer') renderReviewerFeedback(fb);
   }
+
+  // Why Us panel — show only for Part 5 (Industry Insights)
+  const whyUsPanel = document.getElementById('why-us-panel');
+  if (whyUsPanel) {
+    const isInsights = (sec.item_number || '').startsWith('5') || (sec.part || '').includes('5');
+    if (isInsights) { whyUsPanel.classList.remove('d-none'); }
+    else { whyUsPanel.classList.add('d-none'); }
+    document.getElementById('why-us-output').classList.add('d-none');
+    document.getElementById('why-us-actions').classList.add('d-none');
+    document.getElementById('why-us-spinner').classList.add('d-none');
+    _whyUsParagraph = '';
+  }
 }
 
 function statusBadgeClass(status) {
@@ -541,7 +573,8 @@ function onContentChange() {
 
 function updateWordCount(text) {
   const w = text.trim() ? text.trim().split(/\s+/).length : 0;
-  document.getElementById('word-count').textContent = w + ' words';
+  const wEl = document.getElementById('word-count');
+  if (wEl) wEl.textContent = sectionWordLimit ? `${w} / ${sectionWordLimit} words` : `${w} words`;
   const pages = sessionWordsPerPage > 0 ? (w / sessionWordsPerPage) : 0;
   const pageEl = document.getElementById('page-count');
   if (pageEl) pageEl.textContent = pages > 0 ? `· ≈${pages.toFixed(1)} pg` : '';
@@ -873,6 +906,8 @@ document.addEventListener('DOMContentLoaded', () => {
   loadSessionStyleGuide();
   loadEngineWeights();
   loadUploadList();
+  loadDeadlineInfo();
+  window.__rfi_profile_name = "{{ session.profile_name }}";
   window.__rfi_session_meta = {
     rfi_number: "{{ session.rfi_number }}",
     parse_fallback: {{ 'true' if (session.rfi_number == 'RFI-UNKNOWN' or not session.get('parsed_data') or not session.get('parsed_data', {}).get('questionnaire_parts')) else 'false' }},
@@ -1630,6 +1665,87 @@ function rerunReviewer() {
   _reviewerPollCount = 0;
   fetch(`/api/rfi/${SESSION_ID}/sections/${currentSectionId}/ace-reviewer/run`, {method:'POST'});
   _reviewerPollTimer = setTimeout(() => _pollReviewer(currentSectionId), 4000);
+}
+
+// ── Item 6: Deadline countdown ────────────────────────────────────────────────
+function loadDeadlineInfo() {
+  fetch(`/api/rfi/${SESSION_ID}/deadline`)
+    .then(r => r.json())
+    .then(d => {
+      const badge = document.getElementById('deadline-badge');
+      if (!badge) return;
+      badge.classList.remove('d-none');
+      if (!d.deadline) {
+        badge.textContent = '📅 Set deadline';
+        badge.className = 'badge rounded-pill border text-secondary';
+        return;
+      }
+      const days = d.days_remaining;
+      const label = d.overdue ? `${Math.abs(days)}d overdue` : days === 0 ? 'Due today!' : `${days}d remaining`;
+      badge.textContent = `📅 ${label}`;
+      badge.className = d.overdue ? 'badge rounded-pill bg-danger text-white' :
+                        d.urgent  ? 'badge rounded-pill bg-warning text-dark' :
+                                    'badge rounded-pill bg-success text-white';
+    })
+    .catch(() => {});
+}
+
+function toggleDeadlinePicker() {
+  const inp = document.getElementById('deadline-input');
+  inp.classList.toggle('d-none');
+  if (!inp.classList.contains('d-none')) inp.focus();
+}
+
+function saveDeadline(val) {
+  if (!val) return;
+  fetch(`/api/rfi/${SESSION_ID}/deadline`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({deadline: val}),
+  }).then(() => { document.getElementById('deadline-input').classList.add('d-none'); loadDeadlineInfo(); });
+}
+
+// ── Item 7: Generate Why Us ───────────────────────────────────────────────────
+let _whyUsParagraph = '';
+
+function generateWhyUs() {
+  const competitor = (document.getElementById('competitor-input') || {}).value || '';
+  document.getElementById('why-us-spinner').classList.remove('d-none');
+  document.getElementById('why-us-output').classList.add('d-none');
+  document.getElementById('why-us-actions').classList.add('d-none');
+  fetch(`/api/rfi/${SESSION_ID}/why-us`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({competitor_name: competitor}),
+  })
+    .then(r => r.json())
+    .then(d => {
+      document.getElementById('why-us-spinner').classList.add('d-none');
+      const out = document.getElementById('why-us-output');
+      const acts = document.getElementById('why-us-actions');
+      if (d.ok && d.paragraph) {
+        _whyUsParagraph = d.paragraph;
+        out.textContent = d.paragraph;
+        out.classList.remove('d-none');
+        acts.classList.remove('d-none');
+      } else {
+        out.textContent = d.error || 'Generation failed.';
+        out.classList.remove('d-none');
+      }
+    })
+    .catch(() => {
+      document.getElementById('why-us-spinner').classList.add('d-none');
+      document.getElementById('why-us-output').textContent = 'Error.';
+      document.getElementById('why-us-output').classList.remove('d-none');
+    });
+}
+
+function appendWhyUsToEditor() {
+  if (!_whyUsParagraph) return;
+  const editor = document.getElementById('content-editor');
+  const existing = editor.value.trim();
+  const profileName = window.__rfi_profile_name || 'Us';
+  editor.value = existing ? `${existing}\n\n---\n\n**Why ${profileName}:**\n\n${_whyUsParagraph}` : _whyUsParagraph;
+  onContentChange();
+  document.getElementById('why-us-actions').classList.add('d-none');
 }
 </script>
 {% endblock %}

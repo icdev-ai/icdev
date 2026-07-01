@@ -789,3 +789,129 @@ class TestConsistencyCheck:
         monkeypatch.setattr(wb, "get_session", lambda sid: None)
         r = wb.check_cross_section_consistency("no-such-session")
         assert "error" in r
+
+
+# ── Items 5-7: Persistence, Deadline, Why Us ──────────────────────────────────
+
+class TestGenerateAllPersistence:
+    """Item 5 — generate-all progress persists to .tmp/rfi_genall_{sid}.json."""
+
+    def test_persist_writes_json(self, tmp_path, monkeypatch):
+        import tools.govcon.rfi_workbench as wb
+        monkeypatch.setattr(wb, "_GENALL_TMP_DIR", tmp_path)
+        wb._generate_all_progress["sess-x"] = {"total": 3, "done": 1, "running": True}
+        wb._persist_genall_progress("sess-x")
+        p = tmp_path / "rfi_genall_sess-x.json"
+        assert p.exists()
+        import json
+        data = json.loads(p.read_text())
+        assert data["total"] == 3
+
+    def test_get_status_reads_from_file_when_not_in_memory(self, tmp_path, monkeypatch):
+        import json, tools.govcon.rfi_workbench as wb
+        monkeypatch.setattr(wb, "_GENALL_TMP_DIR", tmp_path)
+        # Ensure session not in memory
+        wb._generate_all_progress.pop("sess-y", None)
+        (tmp_path / "rfi_genall_sess-y.json").write_text(
+            json.dumps({"total": 5, "done": 5, "running": True, "cancelled": False}),
+            encoding="utf-8",
+        )
+        status = wb.get_generate_all_status("sess-y")
+        assert status["total"] == 5
+        assert status["running"] is False  # persisted state always marked not-running
+
+    def test_get_status_returns_default_when_no_file(self, tmp_path, monkeypatch):
+        import tools.govcon.rfi_workbench as wb
+        monkeypatch.setattr(wb, "_GENALL_TMP_DIR", tmp_path)
+        wb._generate_all_progress.pop("sess-z", None)
+        status = wb.get_generate_all_status("sess-z")
+        assert status == {"running": False, "done": 0, "total": 0}
+
+
+class TestDeadlineInfo:
+    """Item 6 — deadline countdown."""
+
+    def _session(self, response_date=None):
+        pd = {"objectives": [], "questionnaire_parts": []}
+        if response_date:
+            pd["response_date"] = response_date
+        return {"id": "s1", "profile_name": "own_company", "parsed_data": pd, "rfi_number": "RFI-001"}
+
+    def test_no_deadline_returns_none(self, monkeypatch):
+        import tools.govcon.rfi_workbench as wb
+        monkeypatch.setattr(wb, "get_session", lambda sid: self._session())
+        r = wb.get_deadline_info("s1")
+        assert r["deadline"] is None
+        assert r["days_remaining"] is None
+
+    def test_future_deadline_positive_days(self, monkeypatch):
+        from datetime import date, timedelta
+        import tools.govcon.rfi_workbench as wb
+        future = (date.today() + timedelta(days=14)).isoformat()
+        monkeypatch.setattr(wb, "get_session", lambda sid: self._session(future))
+        r = wb.get_deadline_info("s1")
+        assert r["days_remaining"] == 14
+        assert r["overdue"] is False
+        assert r["urgent"] is False
+
+    def test_urgent_within_7_days(self, monkeypatch):
+        from datetime import date, timedelta
+        import tools.govcon.rfi_workbench as wb
+        soon = (date.today() + timedelta(days=3)).isoformat()
+        monkeypatch.setattr(wb, "get_session", lambda sid: self._session(soon))
+        r = wb.get_deadline_info("s1")
+        assert r["urgent"] is True
+
+    def test_overdue_negative_days(self, monkeypatch):
+        from datetime import date, timedelta
+        import tools.govcon.rfi_workbench as wb
+        past = (date.today() - timedelta(days=2)).isoformat()
+        monkeypatch.setattr(wb, "get_session", lambda sid: self._session(past))
+        r = wb.get_deadline_info("s1")
+        assert r["overdue"] is True
+        assert r["days_remaining"] < 0
+
+    def test_invalid_date_returns_none_days(self, monkeypatch):
+        import tools.govcon.rfi_workbench as wb
+        monkeypatch.setattr(wb, "get_session", lambda sid: self._session("not-a-date"))
+        r = wb.get_deadline_info("s1")
+        assert r["days_remaining"] is None
+
+
+class TestGenerateWhyUs:
+    """Item 7 — generate_why_us function."""
+
+    def _session(self):
+        return {"id": "s1", "profile_name": "own_company", "rfi_title": "Test RFI", "rfi_number": "RFI-001"}
+
+    def test_uses_capability_statements_in_prompt(self, monkeypatch):
+        import tools.govcon.rfi_workbench as wb
+        monkeypatch.setattr(wb, "get_session", lambda sid: self._session())
+        monkeypatch.setattr(wb, "_load_profile", lambda name: {
+            "entity_name": "Acme Corp", "solution_name": "AcmeSys",
+            "capability_statements": ["Proven zero-trust AI platform"],
+        })
+        captured = {}
+        def fake_call(prompt, *a, **kw):
+            captured["prompt"] = prompt
+            return "We are uniquely positioned."
+        monkeypatch.setattr(wb, "_call_llm", fake_call)
+        r = wb.generate_why_us("s1", "own_company", competitor_name="BigCo")
+        assert "Proven zero-trust" in captured["prompt"]
+        assert "BigCo" in captured["prompt"]
+        assert r["paragraph"] == "We are uniquely positioned."
+        assert r["word_count"] == 4
+
+    def test_fallback_when_no_capability_statements(self, monkeypatch):
+        import tools.govcon.rfi_workbench as wb
+        monkeypatch.setattr(wb, "get_session", lambda sid: self._session())
+        monkeypatch.setattr(wb, "_load_profile", lambda name: {"entity_name": "Acme Corp"})
+        monkeypatch.setattr(wb, "_call_llm", lambda *a, **kw: "Generic paragraph.")
+        r = wb.generate_why_us("s1", "own_company")
+        assert r["paragraph"] == "Generic paragraph."
+
+    def test_raises_when_session_not_found(self, monkeypatch):
+        import tools.govcon.rfi_workbench as wb
+        monkeypatch.setattr(wb, "get_session", lambda sid: None)
+        with pytest.raises(ValueError, match="not found"):
+            wb.generate_why_us("no-such-session", "own_company")
