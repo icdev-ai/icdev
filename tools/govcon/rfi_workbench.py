@@ -1100,6 +1100,193 @@ def _ace_editor_review_background(section_id: str) -> None:
         logger.warning("ACE Editor background review error for %s: %s", section_id, exc)
 
 
+# ── ACE Reviewer one-pass (item 1) ───────────────────────────────────────────
+
+def run_ace_reviewer_pass(section_id: str) -> dict:
+    """ACE Reviewer: Government evaluator perspective critique.
+
+    Called after HITL approve/accept. Asks: "Would a contracting officer score this highly?"
+    Writes result to ace_feedback with source='reviewer' merged alongside editor findings.
+    """
+    import re as _re
+    section = get_section(section_id)
+    if not section:
+        return {}
+    content = (section.get("content") or section.get("ai_draft") or "").strip()
+    if not content:
+        return {}
+
+    reqs = get_requirements(section_id)
+    req_list = "\n".join(f"  [{r['id'][:8]}] {r['text']}" for r in reqs) if reqs else "None extracted."
+
+    prompt = (
+        f"You are a Government contracting officer evaluating an RFI response section.\n"
+        f"Section: {section.get('item_number')} — {section.get('title')}\n\n"
+        f"Content:\n{content[:2000]}\n\n"
+        f"Requirements this section must address:\n{req_list}\n\n"
+        f"Evaluate from the Government's perspective:\n"
+        f"1. Does it directly answer what was asked, or does it sell instead of answer?\n"
+        f"2. Are technical claims specific and verifiable, or vague and aspirational?\n"
+        f"3. Are there any red flags (unsupported assertions, missing data, compliance gaps)?\n"
+        f"4. How would you score this section 1-5 for technical merit?\n\n"
+        f"Return ONLY a JSON object:\n"
+        f'{{"issues": [{{"type": "evaluator_concern", "message": "...", "suggestion": "..."}}], '
+        f'"evaluator_score": 3, "overall": "pass", '
+        f'"summary": "one sentence from evaluator perspective"}}'
+    )
+
+    router = _get_router()
+    if not router:
+        return {}
+
+    try:
+        from tools.llm.router import LLMRequest
+        req_obj = LLMRequest(
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=500,
+        )
+        response = router.invoke("rfi_reviewer_review", req_obj)
+        raw = response.content if hasattr(response, "content") else str(response)
+        raw = _re.sub(r"^```[a-z]*\n?", "", raw.strip(), flags=_re.MULTILINE)
+        raw = raw.strip().rstrip("```").strip()
+        try:
+            feedback = json.loads(raw)
+        except Exception:
+            m = _re.search(r'\{.*\}', raw, _re.DOTALL)
+            feedback = json.loads(m.group()) if m else {
+                "summary": raw[:200], "overall": "warn",
+                "issues": [], "evaluator_score": None,
+            }
+
+        feedback["source"] = "reviewer"
+        feedback["reviewed_at"] = _now()
+
+        # Merge into existing ace_feedback — preserve editor findings
+        existing = section.get("ace_feedback")
+        if isinstance(existing, dict) and existing.get("source") != "reviewer":
+            existing["reviewer"] = feedback
+            merged = existing
+        else:
+            merged = feedback
+
+        db = get_db()
+        db.execute(
+            "UPDATE rfi_workbench_sections SET ace_feedback=%s, updated_at=%s WHERE id=%s",
+            (json.dumps(merged), _now(), section_id),
+        )
+        db.commit()
+        return feedback
+    except Exception as exc:
+        logger.warning("ACE Reviewer pass failed for %s: %s", section_id, exc)
+        return {}
+
+
+def _ace_reviewer_pass_background(section_id: str) -> None:
+    time.sleep(0.5)
+    try:
+        run_ace_reviewer_pass(section_id)
+        logger.debug("ACE Reviewer pass complete for section %s", section_id)
+    except Exception as exc:
+        logger.warning("ACE Reviewer background error for %s: %s", section_id, exc)
+
+
+# ── Cross-section consistency check (item 3) ─────────────────────────────────
+
+def check_cross_section_consistency(session_id: str) -> dict:
+    """Scan accepted sections for conflicts: TRL claims, [VERIFY] tags, LLM semantic pass.
+
+    Returns {conflicts: [{type, sections, message, severity}], overall: 'clean'|'warnings'|'conflicts'}
+    """
+    import re as _re
+    session = get_session(session_id)
+    if not session:
+        return {"error": "Session not found"}
+    sections = get_sections(session_id)
+    accepted = [s for s in sections if s["status"] in ("hitl_approved", "accepted")]
+    if len(accepted) < 2:
+        return {"conflicts": [], "overall": "clean", "checked": len(accepted)}
+
+    conflicts = []
+
+    # 1. TRL claims
+    trl_claims = {}
+    for s in accepted:
+        text = s.get("content") or ""
+        matches = _re.findall(r'\bTRL[\s\-]?(\d)\b', text, _re.IGNORECASE)
+        if matches:
+            trl_claims[s["item_number"]] = [int(m) for m in matches]
+    if trl_claims:
+        all_trl = {v for vals in trl_claims.values() for v in vals}
+        if max(all_trl) - min(all_trl) > 2:
+            conflicts.append({
+                "type": "trl_mismatch",
+                "sections": list(trl_claims.keys()),
+                "message": f"TRL claims span {min(all_trl)}-{max(all_trl)} across sections. Verify consistency.",
+                "severity": "warning",
+            })
+
+    # 2. [VERIFY] tags in accepted sections
+    verify_secs = [s["item_number"] for s in accepted if "[VERIFY]" in (s.get("content") or "")]
+    if verify_secs:
+        conflicts.append({
+            "type": "unresolved_verify_tag",
+            "sections": verify_secs,
+            "message": f"[VERIFY] placeholders remain in accepted sections: {', '.join(verify_secs)}",
+            "severity": "error",
+        })
+
+    # 3. LLM semantic pass (cap at 12 sections to stay within token budget)
+    router = _get_router()
+    if router and len(accepted) >= 2:
+        section_summaries = []
+        for s in accepted[:12]:
+            text = (s.get("content") or "")[:400]
+            section_summaries.append(f"Section {s['item_number']} ({s['title']}):\n{text}")
+        combined = "\n\n---\n\n".join(section_summaries)
+        prompt = (
+            f"You are reviewing an RFI response for internal consistency.\n\n"
+            f"Accepted sections (summarized):\n\n{combined}\n\n"
+            f"Identify up to 4 logical conflicts or inconsistencies across sections. "
+            f"Focus on: contradictory technical claims, inconsistent timelines, "
+            f"different entity names or capabilities stated, cost vs. timeline mismatches.\n"
+            f"Return ONLY a JSON array (may be empty []). "
+            f'Each element: {{"type": "narrative_conflict", "sections": ["2.1","3.1"], "message": "...", "severity": "warning"}}'
+        )
+        try:
+            from tools.llm.router import LLMRequest
+            req_obj = LLMRequest(messages=[{"role": "user", "content": prompt}], max_tokens=400)
+            response = router.invoke("rfi_reviewer_review", req_obj)
+            raw = response.content if hasattr(response, "content") else str(response)
+            raw = _re.sub(r"^```[a-z]*\n?", "", raw.strip(), flags=_re.MULTILINE)
+            raw = raw.strip().rstrip("```").strip()
+            try:
+                llm_conflicts = json.loads(raw)
+                if isinstance(llm_conflicts, list):
+                    conflicts.extend(llm_conflicts[:4])
+            except Exception:
+                m = _re.search(r'\[.*\]', raw, _re.DOTALL)
+                if m:
+                    try:
+                        conflicts.extend(json.loads(m.group())[:4])
+                    except Exception:
+                        pass
+        except Exception as exc:
+            logger.warning("LLM consistency check failed: %s", exc)
+
+    overall = "clean"
+    if any(c.get("severity") == "error" for c in conflicts):
+        overall = "conflicts"
+    elif conflicts:
+        overall = "warnings"
+
+    return {
+        "conflicts": conflicts,
+        "overall": overall,
+        "checked": len(accepted),
+        "checked_at": _now(),
+    }
+
+
 # ── On-demand summarization ───────────────────────────────────────────────────
 
 def summarize_section_content(section_id: str, word_target: int) -> dict:
