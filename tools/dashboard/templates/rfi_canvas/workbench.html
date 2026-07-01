@@ -1,0 +1,1804 @@
+{% extends "base.html" %}
+{% block title %}RFI Workbench — {{ session.rfi_number }}{% endblock %}
+{% block content %}
+<style>
+#wb-layout{display:grid;grid-template-columns:270px 1fr 310px;gap:0;height:calc(100vh - 112px);overflow:hidden}
+#wb-sidebar{border-right:1px solid #1e3a6e;overflow-y:auto;background:#0d1b2e}
+#wb-editor{overflow-y:auto;padding:1.25rem 1.5rem;background:#0a1220}
+#wb-panel{border-left:1px solid #1e3a6e;overflow-y:auto;background:#0d1b2e;padding:0}
+.section-item{padding:.35rem .75rem;cursor:pointer;border-left:3px solid transparent;font-size:.81rem;line-height:1.3;transition:background .1s;color:#94a3b8}
+.section-item:hover{background:#16213e;color:#b8d0e8}
+.section-item.active{background:#0f2040;border-left-color:#4f8ef7;font-weight:600;color:#7ab3f0}
+.section-item.status-accepted,.section-item.status-hitl_approved{border-left-color:#22c55e}
+.section-item.status-hitl_rejected{border-left-color:#ef4444}
+.section-item.status-ai_draft_ready{border-left-color:#f59e0b}
+.section-item.status-pending{border-left-color:#334155}
+.part-hdr{font-size:.68rem;font-weight:700;text-transform:uppercase;color:#5a7aa0;padding:.45rem .75rem .2rem;letter-spacing:.05em;background:#050d1f;border-top:1px solid #1a2b4a}
+.s-badge{font-size:.6rem;padding:1px 5px;border-radius:3px;float:right;margin-top:2px;border:1px solid transparent}
+#content-editor{width:100%;min-height:320px;resize:vertical;font-family:'Segoe UI',system-ui,sans-serif;font-size:.875rem;line-height:1.65;padding:.75rem;border:1px solid #1e3a6e;border-radius:6px;background:#050d1f;color:#e2e8f0;transition:border-color .15s}
+#content-editor:focus{outline:none;border-color:#4f8ef7;box-shadow:0 0 0 3px rgba(79,142,247,.12)}
+#content-editor::placeholder{color:#334155}
+.wg-bar{height:6px;border-radius:3px;transition:width .4s}
+.spin{animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.generating{animation:pulse 1.5s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
+#markdown-preview{font-size:.875rem;line-height:1.65;min-height:200px;color:#e2e8f0;background:#050d1f;border:1px solid #1e3a6e;border-radius:6px;padding:.75rem;overflow-y:auto;max-height:480px}
+#markdown-preview h3,#markdown-preview h4,#markdown-preview h5{margin-top:1rem;margin-bottom:.4rem;color:#eaeaea}
+#markdown-preview table{width:100%;font-size:.82rem;border-collapse:collapse}
+#markdown-preview td,#markdown-preview th{border:1px solid #1e3a6e;padding:.3rem .5rem;color:#b8d0e8}
+#markdown-preview th{background:#0d1b2e;color:#7ab3f0;font-weight:600}
+.wb-card{background:#16213e;border:1px solid #1e3a6e;border-radius:7px;margin-bottom:12px;overflow:hidden}
+.wb-card-hdr{padding:8px 14px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #1e3a6e;font-size:12px;font-weight:600}
+.wb-card-body{padding:12px 14px}
+.wb-btn{width:100%;border-radius:5px;padding:7px 12px;font-size:12px;font-weight:600;cursor:pointer;margin-bottom:6px;transition:all .15s;border:1px solid transparent}
+#req-panel{background:#0a1525;border:1px solid #1e3a6e;border-radius:6px;margin-top:10px;overflow:hidden}
+#req-panel-hdr{display:flex;align-items:center;gap:8px;padding:7px 12px;background:#0f1f3a;border-bottom:1px solid #1e3a6e;cursor:pointer;user-select:none}
+#req-list{max-height:220px;overflow-y:auto;padding:6px 8px}
+.req-item{display:flex;align-items:flex-start;gap:7px;padding:5px 6px;border-radius:4px;margin-bottom:3px;border:1px solid #1a2b4a;background:#060f1c}
+.req-icon{flex-shrink:0;font-size:13px;margin-top:1px}
+.req-text{flex:1;font-size:11.5px;color:#b8d0e8;line-height:1.4}
+.req-src{font-size:9px;padding:1px 4px;border-radius:2px;background:#1e293b;color:#5a7aa0;border:1px solid #334155;flex-shrink:0}
+.req-del{flex-shrink:0;background:none;border:none;color:#5a7aa0;cursor:pointer;font-size:12px;padding:0 2px;line-height:1}
+.req-del:hover{color:#f87171}
+#req-coverage-bar-wrap{padding:6px 12px 4px;display:none}
+#req-add-row{display:flex;gap:6px;padding:6px 8px;border-top:1px solid #1a2b4a}
+#ace-team-roles{font-size:11px;color:#7a8cb0;margin-bottom:8px;line-height:1.6}
+</style>
+
+<!-- Top bar -->
+<div style="display:flex;align-items:center;justify-content:space-between;padding:0 14px;height:52px;flex-shrink:0;background:#0d1b2e;border-bottom:1px solid #1e3a6e;">
+  <div style="display:flex;align-items:center;gap:12px;">
+    <a href="/rfi/" style="background:#0f3460;color:#7ab3f0;border:1px solid #1e3a6e;border-radius:4px;padding:4px 10px;font-size:11px;text-decoration:none;">← Sessions</a>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <span style="color:#eaeaea;font-weight:600;font-size:13px;">{{ session.rfi_number or 'RFI' }}</span>
+      <span style="color:#7a8cb0;font-size:12px;" class="d-none d-md-inline">{{ (session.rfi_title or '')[:60] }}</span>
+    </div>
+    <span id="session-status-badge" style="font-size:10px;font-weight:600;padding:2px 8px;border-radius:3px;
+      {% if session.status == 'exported' %}background:#052e16;color:#4ade80;border:1px solid #16a34a;
+      {% elif session.status == 'complete' %}background:#172554;color:#60a5fa;border:1px solid #2563eb;
+      {% elif session.status == 'in_progress' %}background:#0c2a4a;color:#38bdf8;border:1px solid #0284c7;
+      {% else %}background:#1e293b;color:#94a3b8;border:1px solid #334155;{% endif %}">
+      {{ session.status|replace('_',' ')|title }}
+    </span>
+  </div>
+  <div style="display:flex;align-items:center;gap:10px;">
+    <span style="color:#7a8cb0;font-size:11px;" id="progress-label">{{ session.approved_sections }}/{{ session.total_sections }} accepted</span>
+    <div style="width:80px;height:6px;background:#0a1525;border-radius:3px;overflow:hidden;" class="d-none d-md-block">
+      <div id="progress-bar" style="height:100%;background:#22c55e;width:{{ ((session.approved_sections / session.total_sections) * 100)|round(0)|int if session.total_sections > 0 else 0 }}%;transition:width .3s;"></div>
+    </div>
+    <button id="gen-all-btn" onclick="startGenerateAll()"
+      style="background:#0a1a30;color:#38bdf8;border:1px solid #0ea5e9;border-radius:4px;padding:5px 10px;font-size:11px;cursor:pointer;">
+      ⚡ All
+    </button>
+    <span id="gen-all-status" style="font-size:10px;color:#5a7aa0;"></span>
+    <span id="deadline-badge" title="Click to set deadline" onclick="toggleDeadlinePicker()"
+      style="display:none;cursor:pointer;font-size:10px;padding:3px 9px;border-radius:10px;border:1px solid #1e3a6e;color:#94a3b8;"></span>
+    <input type="date" id="deadline-input" style="display:none;background:#050d1f;color:#b8d0e8;border:1px solid #1e3a6e;border-radius:4px;padding:3px 6px;font-size:10px;"
+      onchange="saveDeadline(this.value)" onblur="document.getElementById('deadline-input').style.display='none'">
+    <a href="/rfi/{{ session.id }}/preview" target="_blank"
+      style="background:#0a1a30;color:#38bdf8;border:1px solid #0ea5e9;border-radius:4px;padding:5px 10px;font-size:11px;text-decoration:none;">👁 Preview</a>
+    <button onclick="doExport('md')"
+      style="background:#0d1b2e;color:#94a3b8;border:1px solid #334155;border-radius:4px;padding:5px 10px;font-size:11px;cursor:pointer;">⬇ MD</button>
+    <button onclick="doExport('docx')" id="export-docx-btn"
+      style="background:#052e16;color:#4ade80;border:1px solid #16a34a;border-radius:4px;padding:5px 12px;font-size:11px;font-weight:600;cursor:pointer;">
+      <span id="export-spinner" style="display:none;width:10px;height:10px;border:2px solid rgba(74,222,128,.4);border-top-color:#4ade80;border-radius:50%;margin-right:4px;" class="spin"></span>
+      📥 Export DOCX
+    </button>
+  </div>
+</div>
+
+<!-- Parse warning banner -->
+<div id="parse-warning-banner" style="display:none;background:#1a0a00;border:1px solid #92400e;color:#fbbf24;padding:8px 16px;font-size:11px;margin:8px 16px;border-radius:4px;">
+  ⚠ RFI parsing used fallback defaults — <strong id="parse-rfi-number"></strong> could not be fully extracted.
+  Edit the RFI number and title above if needed.
+  <a href="#" onclick="dismissParseWarning();return false;" style="color:#fbbf24;margin-left:12px;">Dismiss</a>
+</div>
+
+<!-- 3-panel workbench -->
+<div id="wb-layout">
+
+  <!-- LEFT: Section tree -->
+  <div id="wb-sidebar">
+    <div style="padding:8px;border-bottom:1px solid #1e3a6e;">
+      <input type="text" placeholder="🔍 Filter sections…" id="section-filter" oninput="filterSections(this.value)"
+        style="width:100%;background:#050d1f;color:#b8d0e8;border:1px solid #1a3560;border-radius:4px;padding:6px 10px;font-size:12px;">
+    </div>
+    <div id="section-tree">
+      {% set ns = namespace(cur_part='') %}
+      {% set part_labels = {'part1':'Part 1 — Admin','part2':'Part 2 — Technical','part3':'Part 3 — Schedule','part4':'Part 4 — Business','part5':'Part 5 — Insights','appendix':'Appendix'} %}
+      {% for sec in sections %}
+        {% if sec.part != ns.cur_part %}
+          {% set ns.cur_part = sec.part %}
+          <div class="part-hdr">{{ part_labels.get(sec.part, sec.part) }}</div>
+        {% endif %}
+        <div class="section-item status-{{ sec.status }}"
+             data-id="{{ sec.id }}"
+             data-search="{{ sec.item_number|lower }} {{ sec.title|lower }}"
+             onclick="loadSection('{{ sec.id }}')">
+          <span style="font-size:.72rem;color:#3d5a80;">{{ sec.item_number }}</span>
+          {{ sec.title }}
+          <span class="s-badge
+            {% if sec.status in ('accepted','hitl_approved') %}
+              style="background:#052e16;color:#4ade80;border-color:#16a34a;"
+            {% elif sec.status == 'hitl_rejected' %}
+              style="background:#2d0a0a;color:#f87171;border-color:#7f1d1d;"
+            {% elif sec.status == 'ai_draft_ready' %}
+              style="background:#2d1a00;color:#fbbf24;border-color:#92400e;"
+            {% else %}
+              style="background:#1e293b;color:#64748b;border-color:#334155;"
+            {% endif %}">
+            {% if sec.status in ('accepted','hitl_approved') %}✓
+            {% elif sec.status == 'hitl_rejected' %}✗
+            {% elif sec.status == 'ai_draft_ready' %}⚡
+            {% else %}○{% endif %}
+          </span>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- CENTER: Editor -->
+  <div id="wb-editor">
+    <div id="editor-placeholder" style="text-align:center;padding:48px 24px;">
+      <div style="font-size:3rem;margin-bottom:12px;">👈</div>
+      <div style="color:#eaeaea;font-weight:600;font-size:15px;">Select a section</div>
+      <div style="color:#7a8cb0;font-size:12px;margin-top:6px;">Click any section in the left panel to begin editing</div>
+    </div>
+
+    <div id="editor-area" style="display:none;">
+      <!-- Section header -->
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px;">
+        <div>
+          <h5 id="editor-title" style="margin:0;color:#eaeaea;font-size:14px;font-weight:700;">—</h5>
+          <p id="editor-question" style="color:#7a8cb0;font-size:12px;margin:4px 0 0;max-width:600px;"></p>
+        </div>
+        <span id="editor-status-badge" style="font-size:10px;font-weight:600;padding:2px 8px;border-radius:3px;margin-left:12px;flex-shrink:0;background:#1e293b;color:#94a3b8;border:1px solid #334155;">—</span>
+      </div>
+
+      <!-- Toolbar -->
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+        <button onclick="togglePreview()" id="preview-btn"
+          style="background:#0d1b2e;color:#7ab3f0;border:1px solid #1e3a6e;border-radius:4px;padding:4px 10px;font-size:11px;cursor:pointer;">📄 Preview</button>
+        <span style="color:#5a7aa0;font-size:11px;" id="word-count"></span>
+        <span style="color:#7a8cb0;font-size:11px;" id="page-count"></span>
+        <span style="font-size:11px;font-weight:600;" id="limit-badge"></span>
+        <button id="summarize-btn" onclick="summarizeToFit()" style="display:none;background:#1a0a30;color:#a78bfa;border:1px solid #6d28d9;border-radius:4px;padding:3px 8px;font-size:10px;cursor:pointer;">✂ Summarize</button>
+        <span style="font-size:11px;" id="md-structure-indicator"></span>
+        <span style="color:#5a7aa0;font-size:11px;margin-left:auto;" id="save-indicator"></span>
+        <button onclick="saveContent()" id="save-btn"
+          style="background:#0f3460;color:#7ab3f0;border:1px solid #1e3a6e;border-radius:4px;padding:4px 10px;font-size:11px;cursor:pointer;">💾 Save</button>
+      </div>
+
+      <textarea id="content-editor" class="content-editor" oninput="onContentChange()"
+        placeholder="Content will appear here after AI generation, or type directly…"></textarea>
+      <div id="markdown-preview" style="display:none;"></div>
+
+      <div id="wg-inline-summary" style="margin-top:8px;font-size:12px;color:#7a8cb0;"></div>
+
+      <!-- Requirements Panel -->
+      <div id="req-panel">
+        <div id="req-panel-hdr" onclick="toggleReqPanel()">
+          <span style="color:#7ab3f0;font-size:12px;font-weight:600;">📋 Requirements</span>
+          <span id="req-count-badge" style="font-size:10px;background:#0f2040;color:#7ab3f0;border:1px solid #1e3a6e;padding:1px 6px;border-radius:10px;">0</span>
+          <span id="req-coverage-label" style="font-size:10px;color:#5a7aa0;margin-left:4px;"></span>
+          <span style="color:#5a7aa0;font-size:11px;margin-left:auto;" id="req-panel-toggle">▾</span>
+        </div>
+        <div id="req-panel-body">
+          <div id="req-coverage-bar-wrap">
+            <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
+              <span style="font-size:10px;color:#7a8cb0;">Coverage</span>
+              <span id="req-coverage-pct" style="font-size:10px;color:#94a3b8;"></span>
+            </div>
+            <div style="background:#0a1525;border-radius:3px;height:4px;overflow:hidden;">
+              <div id="req-coverage-bar" style="height:100%;background:#22c55e;width:0%;transition:width .4s;"></div>
+            </div>
+          </div>
+          <div id="req-list"></div>
+          <div id="req-add-row">
+            <input type="text" id="req-add-input" placeholder="Add requirement…"
+              style="flex:1;background:#050d1f;color:#b8d0e8;border:1px solid #1a3560;border-radius:4px;padding:4px 8px;font-size:11px;"
+              onkeydown="if(event.key==='Enter')addRequirement()">
+            <button onclick="addRequirement()"
+              style="background:#0f3460;color:#7ab3f0;border:1px solid #1e3a6e;border-radius:4px;padding:4px 10px;font-size:11px;cursor:pointer;">Add</button>
+          </div>
+          <div style="text-align:right;padding:0 8px 6px;">
+            <button onclick="recheckCoverage()"
+              style="background:none;border:none;color:#5a7aa0;font-size:10px;cursor:pointer;padding:2px 4px;">🔄 Re-check Coverage</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Generate Why Us panel — shown for section 5.1 (Industry Insights) -->
+      <div id="why-us-panel" style="display:none;margin-top:8px;background:#050d1f;border:1px solid #1e3a6e;border-radius:6px;overflow:hidden;">
+        <div style="background:#0a1628;padding:7px 12px;display:flex;align-items:center;gap:8px;border-bottom:1px solid #1e3a6e;">
+          <span style="color:#38bdf8;font-size:11px;font-weight:600;">🏆 Competitive Differentiator</span>
+        </div>
+        <div style="padding:8px 12px;">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+            <input type="text" id="competitor-input" placeholder="Key competitor (optional — not named in output)"
+              style="flex:1;background:#0a1628;color:#b8d0e8;border:1px solid #1a3560;border-radius:4px;padding:4px 8px;font-size:11px;">
+            <button onclick="generateWhyUs()"
+              style="background:#0c2a4a;color:#38bdf8;border:1px solid #0ea5e9;border-radius:4px;padding:4px 10px;font-size:11px;cursor:pointer;">
+              Generate Why Us
+            </button>
+          </div>
+          <div id="why-us-spinner" style="display:none;font-size:11px;color:#5a7aa0;">Generating…</div>
+          <div id="why-us-output" style="display:none;font-size:11px;color:#94a3b8;line-height:1.6;background:#0a1628;padding:8px;border-radius:4px;border:1px solid #1a2b4a;white-space:pre-wrap;"></div>
+          <div id="why-us-actions" style="display:none;text-align:right;margin-top:6px;gap:6px;display:none;">
+            <button onclick="appendWhyUsToEditor()"
+              style="background:#052e16;color:#4ade80;border:1px solid #16a34a;border-radius:4px;padding:3px 10px;font-size:10px;cursor:pointer;">⬇ Append to Editor</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="rejected-notice" style="display:none;background:#2d0a0a;border:1px solid #7f1d1d;color:#fca5a5;border-radius:5px;padding:8px 12px;margin-top:10px;font-size:12px;">
+        <strong>Rejected — Reviewer comment:</strong> <span id="rejected-comment"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: Controls panel -->
+  <div id="wb-panel">
+    <div id="panel-placeholder" style="text-align:center;padding:48px 16px;">
+      <div style="font-size:2.5rem;margin-bottom:10px;">🛠️</div>
+      <div style="color:#7a8cb0;font-size:12px;font-weight:600;">Select a section to see AI Assist, WriteGuard, and HITL controls</div>
+    </div>
+
+    <div id="panel-controls" style="display:none;">
+      <div style="padding:12px;">
+
+        <!-- AI Assist -->
+        <div class="wb-card">
+          <div class="wb-card-hdr" style="background:#0f3460;color:#7ab3f0;position:relative;">
+            <span>✨ AI Assist</span>
+            <small style="color:#5a7aa0;font-weight:400;" id="gen-count"></small>
+            <button id="history-btn" onclick="toggleHistory()" title="Version history"
+              style="background:none;border:1px solid #1e3a6e;color:#5a7aa0;border-radius:3px;padding:2px 7px;font-size:10px;cursor:pointer;display:none;margin-left:4px;">
+              🕐 History
+            </button>
+            <div id="history-panel" style="display:none;position:absolute;right:0;top:28px;z-index:20;background:#0a1628;border:1px solid #1e3a6e;border-radius:6px;width:280px;max-height:220px;overflow-y:auto;padding:8px;">
+              <div style="font-size:10px;color:#5a7aa0;margin-bottom:6px;font-weight:600;">Version History</div>
+              <div id="history-list"></div>
+            </div>
+          </div>
+          <div class="wb-card-body">
+            <p style="color:#7a8cb0;font-size:11px;margin:0 0 10px;">Generates section content using your company profile, RFI objectives, and reviewer feedback.</p>
+            <button class="wb-btn" id="gen-btn" onclick="generateContent()"
+              style="background:#0f3460;color:#7ab3f0;border-color:#1e3a6e;">
+              <span id="gen-spinner-icon">✨</span> <span id="gen-btn-label">Generate Content</span>
+            </button>
+            <div style="display:none;text-align:center;font-size:11px;color:#7a8cb0;margin-top:4px;" id="gen-status"></div>
+          </div>
+        </div>
+
+        <!-- WriteGuard -->
+        <div class="wb-card">
+          <div class="wb-card-hdr" style="background:#0c2a3a;color:#38bdf8;">
+            🔍 WriteGuard Quality
+          </div>
+          <div class="wb-card-body">
+            <button class="wb-btn" onclick="runWriteGuard()" id="wg-btn"
+              style="background:#0c2a3a;color:#38bdf8;border-color:#0284c7;">
+              Run WriteGuard
+            </button>
+            <div id="wg-results" style="display:none;">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+                <span style="color:#94a3b8;font-size:11px;font-weight:600;">Overall</span>
+                <span id="wg-overall-badge" style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:3px;background:#1e293b;color:#94a3b8;border:1px solid #334155;"></span>
+              </div>
+              {% for dim in ['Correctness','Clarity','Delivery','Originality','Engagement','Style'] %}
+              <div style="margin-bottom:8px;">
+                <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
+                  <span style="font-size:11px;color:#94a3b8;">{{ dim }}</span>
+                  <span id="wg-score-{{ dim|lower }}" style="font-size:11px;color:#94a3b8;">—</span>
+                </div>
+                <div style="background:#0a1525;border-radius:3px;height:5px;overflow:hidden;">
+                  <div class="wg-bar" id="wg-bar-{{ dim|lower }}" style="width:0%;height:100%;background:#334155;"></div>
+                </div>
+              </div>
+              {% endfor %}
+              <div id="wg-issues" style="margin-top:8px;font-size:11px;color:#7a8cb0;"></div>
+            </div>
+            <div id="wg-error" style="display:none;color:#f87171;font-size:11px;margin-top:6px;"></div>
+          </div>
+        </div>
+
+        <!-- ACE Editor Review -->
+        <div class="wb-card" id="ace-editor-card" style="display:none;">
+          <div class="wb-card-hdr" style="background:#1a0f2e;color:#c084fc;position:relative;">
+            <span>🤖 ACE Editor Review</span>
+            <span id="ace-editor-status-dot" style="width:8px;height:8px;border-radius:50%;background:#334155;display:inline-block;margin-left:6px;vertical-align:middle;" title="Review status"></span>
+            <button onclick="runAceEditorReview()" title="Re-run editor review"
+              style="background:none;border:1px solid #3b1f5e;color:#9d4edd;border-radius:3px;padding:2px 7px;font-size:10px;cursor:pointer;margin-left:auto;">
+              ↺ Re-run
+            </button>
+          </div>
+          <div class="wb-card-body">
+            <div id="ace-editor-reviewing" style="display:none;text-align:center;font-size:11px;color:#9d4edd;padding:8px 0;">
+              <span>⏳ Editor reviewing…</span>
+            </div>
+            <div id="ace-editor-result" style="display:none;">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                <span style="font-size:11px;color:#94a3b8;">Overall:</span>
+                <span id="ace-editor-overall" style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:3px;"></span>
+                <span id="ace-editor-time" style="font-size:10px;color:#5a7aa0;margin-left:auto;"></span>
+              </div>
+              <div id="ace-editor-issues" style="font-size:11px;color:#94a3b8;margin-bottom:8px;"></div>
+              <div id="ace-editor-summary" style="font-size:11px;color:#94a3b8;white-space:pre-wrap;border-top:1px solid #1e3a6e;padding-top:8px;margin-top:4px;"></div>
+            </div>
+            <div id="ace-editor-empty" style="font-size:11px;color:#5a7aa0;font-style:italic;">
+              Review will appear after generation.
+            </div>
+          </div>
+        </div>
+
+        <!-- ACE Reviewer panel (shown after approve/accept) -->
+        <div class="wb-card" id="ace-reviewer-card" style="display:none;">
+          <div class="wb-card-hdr" style="background:#0d0a1f;color:#a78bfa;position:relative;border-bottom:1px solid #2d1b69;">
+            <span>🏛 Evaluator Review</span>
+            <span id="ace-reviewer-score" style="font-size:10px;color:#5a7aa0;margin-left:8px;"></span>
+            <span id="ace-reviewer-overall" style="font-size:10px;padding:1px 7px;border-radius:10px;margin-left:auto;"></span>
+            <span id="ace-reviewer-spinner" style="font-size:10px;color:#5a7aa0;display:none;margin-left:6px;">evaluating…</span>
+            <button onclick="rerunReviewer()" style="background:none;border:1px solid #2d1b69;color:#7c6ab0;border-radius:3px;padding:2px 7px;font-size:9px;cursor:pointer;margin-left:6px;">↺ Re-run</button>
+          </div>
+          <div class="wb-card-body">
+            <div id="ace-reviewer-summary" style="font-size:11px;color:#94a3b8;font-style:italic;margin-bottom:8px;"></div>
+            <div id="ace-reviewer-issues"></div>
+          </div>
+        </div>
+
+        <!-- HITL -->
+        <div class="wb-card">
+          <div class="wb-card-hdr" style="background:#2d1a00;color:#fbbf24;">
+            👤 HITL Review
+          </div>
+          <div class="wb-card-body">
+            <label style="display:block;color:#94a3b8;font-size:11px;font-weight:600;margin-bottom:5px;">Reviewer Comment</label>
+            <textarea id="hitl-comment" rows="3"
+              placeholder="Feedback for AI to incorporate on next generation (optional)…"
+              style="width:100%;background:#050d1f;color:#b8d0e8;border:1px solid #1a3560;border-radius:4px;padding:7px 10px;font-size:11px;margin-bottom:8px;resize:vertical;"></textarea>
+
+            <button class="wb-btn" onclick="applyHitl('approve')"
+              style="background:#052e16;color:#4ade80;border-color:#16a34a;">✅ Approve</button>
+            <button class="wb-btn" onclick="applyHitl('reject')"
+              style="background:#2d0a0a;color:#f87171;border-color:#7f1d1d;">❌ Reject</button>
+            <button class="wb-btn" onclick="commentAndRegenerate()"
+              style="background:#2d1a00;color:#fbbf24;border-color:#92400e;">💬 Comment &amp; Regenerate</button>
+            <button class="wb-btn" onclick="applyHitl('accept')"
+              style="background:#0d1b2e;color:#4ade80;border-color:#16a34a;">🏁 Mark Final (Accept)</button>
+
+            <div id="hitl-msg" style="margin-top:8px;font-size:11px;text-align:center;color:#7a8cb0;"></div>
+          </div>
+        </div>
+
+        <!-- Engine Weights -->
+        <div class="wb-card">
+          <div class="wb-card-hdr" style="background:#0a1a30;color:#38bdf8;">
+            <span>⚖️ Engine Weights</span>
+            <small id="ew-total-badge" style="color:#5a7aa0;font-weight:400;">—</small>
+          </div>
+          <div class="wb-card-body">
+            <div style="font-size:10px;color:#5a7aa0;margin-bottom:8px;">
+              Controls how AI blends sources during generation. Enable/disable each source and set its relative weight (0–100). Weights are normalized at generation time.
+            </div>
+            <div id="ew-rows"></div>
+            <div style="display:flex;gap:6px;margin-top:8px;">
+              <button class="wb-btn" onclick="saveEngineWeights()"
+                style="flex:1;background:#0a1a30;color:#38bdf8;border-color:#0ea5e9;">💾 Save Weights</button>
+              <button class="wb-btn" onclick="resetEngineWeights()"
+                style="background:#0f3460;color:#7a8cb0;border-color:#1e3a6e;">↺</button>
+            </div>
+            <div id="ew-msg" style="font-size:10px;color:#5a7aa0;margin-top:4px;text-align:center;"></div>
+
+            <!-- Section override -->
+            <hr style="border-color:#1a2b4a;margin:8px 0 6px;">
+            <div style="display:flex;align-items:center;gap:6px;">
+              <input type="checkbox" id="ew-sec-override" disabled onchange="toggleSectionOverride(this.checked)">
+              <label for="ew-sec-override" style="font-size:11px;color:#7a8cb0;">Override for this section</label>
+              <button id="ew-sec-clear" onclick="clearSectionOverride()"
+                style="display:none;margin-left:auto;background:none;border:1px solid #7f1d1d;color:#f87171;border-radius:4px;padding:2px 7px;font-size:10px;cursor:pointer;">Clear</button>
+            </div>
+            <div id="ew-sec-rows" style="display:none;margin-top:6px;"></div>
+            <button id="ew-sec-save" onclick="saveSectionEngineWeights()" style="display:none;margin-top:6px;"
+              class="wb-btn" style="background:#0a1a30;color:#38bdf8;border-color:#0ea5e9;">💾 Save Section Override</button>
+            <div id="ew-sec-msg" style="font-size:10px;color:#5a7aa0;margin-top:4px;text-align:center;"></div>
+
+            <!-- Past Performance Uploads -->
+            <hr style="border-color:#1a2b4a;margin:10px 0 8px;">
+            <div style="font-size:11px;color:#94a3b8;font-weight:600;margin-bottom:6px;">📁 Past Performance Docs</div>
+            <div id="pp-list" style="margin-bottom:6px;max-height:100px;overflow-y:auto;"></div>
+            <label style="display:block;cursor:pointer;">
+              <div id="pp-drop" style="border:1px dashed #1e3a6e;border-radius:4px;padding:8px;text-align:center;font-size:11px;color:#5a7aa0;cursor:pointer;"
+                ondragover="event.preventDefault()" ondrop="handlePPDrop(event)">
+                Drag & drop or <span style="color:#38bdf8;text-decoration:underline;">click to upload</span><br>
+                <span style="font-size:10px;">PDF, DOCX, TXT</span>
+              </div>
+              <input id="pp-file-input" type="file" accept=".pdf,.docx,.doc,.txt" multiple
+                style="display:none" onchange="handlePPFileSelect(event)">
+            </label>
+            <div id="pp-upload-msg" style="font-size:10px;color:#5a7aa0;margin-top:4px;text-align:center;"></div>
+          </div>
+        </div>
+
+        <!-- Style Guide -->
+        <div class="wb-card">
+          <div class="wb-card-hdr" style="background:#1a0a30;color:#a78bfa;">
+            <span>📝 Style Guide</span>
+            <small id="sg-status" style="color:#5a7aa0;font-weight:400;">default</small>
+          </div>
+          <div class="wb-card-body">
+            <label style="display:block;color:#94a3b8;font-size:11px;font-weight:600;margin-bottom:4px;">Tone</label>
+            <select id="sg-tone" style="width:100%;background:#050d1f;color:#b8d0e8;border:1px solid #1a3560;border-radius:4px;padding:4px 8px;font-size:11px;margin-bottom:8px;">
+              <option value="formal">Formal</option>
+              <option value="semi-formal">Semi-formal</option>
+              <option value="technical">Technical</option>
+            </select>
+            <div style="display:flex;gap:6px;margin-bottom:8px;">
+              <div style="flex:1;">
+                <label style="display:block;color:#94a3b8;font-size:11px;font-weight:600;margin-bottom:3px;">Total pages</label>
+                <input id="sg-page-limit" type="number" min="0" step="1" placeholder="none"
+                  style="width:100%;background:#050d1f;color:#b8d0e8;border:1px solid #1a3560;border-radius:4px;padding:4px 7px;font-size:11px;">
+              </div>
+              <div style="flex:1;">
+                <label style="display:block;color:#94a3b8;font-size:11px;font-weight:600;margin-bottom:3px;">Words/page</label>
+                <input id="sg-words-per-page" type="number" min="50" step="50" value="250"
+                  style="width:100%;background:#050d1f;color:#b8d0e8;border:1px solid #1a3560;border-radius:4px;padding:4px 7px;font-size:11px;">
+              </div>
+            </div>
+            <label style="display:block;color:#94a3b8;font-size:11px;font-weight:600;margin-bottom:3px;">Forbidden phrases <span style="font-weight:400;color:#5a7aa0;">(one/line)</span></label>
+            <textarea id="sg-forbidden" rows="3" placeholder="TBD&#10;N/A&#10;best in class"
+              style="width:100%;background:#050d1f;color:#b8d0e8;border:1px solid #1a3560;border-radius:4px;padding:4px 8px;font-size:11px;margin-bottom:8px;resize:vertical;"></textarea>
+            <label style="display:block;color:#94a3b8;font-size:11px;font-weight:600;margin-bottom:3px;">Required headings <span style="font-weight:400;color:#5a7aa0;">(one/line)</span></label>
+            <textarea id="sg-headings" rows="2" placeholder="Technical Approach&#10;Past Performance"
+              style="width:100%;background:#050d1f;color:#b8d0e8;border:1px solid #1a3560;border-radius:4px;padding:4px 8px;font-size:11px;margin-bottom:8px;resize:vertical;"></textarea>
+            <button class="wb-btn" onclick="saveStyleGuide()"
+              style="background:#1a0a30;color:#a78bfa;border-color:#6d28d9;">💾 Save Style Settings</button>
+            <hr style="border-color:#1a2b4a;margin:8px 0 10px;">
+            <label style="display:block;color:#94a3b8;font-size:11px;font-weight:600;margin-bottom:3px;">Section word limit</label>
+            <div style="display:flex;gap:6px;align-items:center;margin-bottom:4px;">
+              <input id="sec-word-limit" type="number" min="0" step="50" placeholder="none"
+                style="flex:1;background:#050d1f;color:#b8d0e8;border:1px solid #1a3560;border-radius:4px;padding:4px 8px;font-size:11px;">
+              <button onclick="saveSectionLimits()"
+                style="background:#0f3460;color:#7ab3f0;border:1px solid #1e3a6e;border-radius:4px;padding:4px 10px;font-size:11px;cursor:pointer;">Set</button>
+            </div>
+            <div style="font-size:10px;color:#5a7aa0;">Limits apply to this section only</div>
+          </div>
+        </div>
+
+        <!-- AI Team -->
+        <div class="wb-card">
+          <div class="wb-card-hdr" style="background:#0a1a10;color:#4ade80;">
+            <span>🤖 AI Team</span>
+            <small id="ace-team-state" style="color:#5a7aa0;font-weight:400;">not launched</small>
+          </div>
+          <div class="wb-card-body">
+            <div id="ace-team-roles"></div>
+            <button class="wb-btn" id="ace-launch-btn" onclick="launchAceTeam()"
+              style="background:#0a1a10;color:#4ade80;border-color:#16a34a;">
+              🚀 Launch Team
+            </button>
+            <div style="text-align:center;margin-top:4px;">
+              <a href="/coworker" target="_blank" style="font-size:10px;color:#5a7aa0;text-decoration:none;">→ View in ACE Canvas</a>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const SESSION_ID = "{{ session.id }}";
+let currentSectionId = null;
+let currentSection = null;
+let saveTimer = null;
+let previewActive = false;
+let sessionWordsPerPage = 250;
+let sectionWordLimit = null;
+let sectionPageLimit = null;
+
+function loadSection(id) {
+  document.querySelectorAll('.section-item').forEach(el => el.classList.remove('active'));
+  const el = document.querySelector(`.section-item[data-id="${id}"]`);
+  if (el) el.classList.add('active');
+  currentSectionId = id;
+  fetch(`/api/rfi/${SESSION_ID}/sections`)
+    .then(r => r.json())
+    .then(secs => {
+      currentSection = secs.find(s => s.id === id);
+      if (currentSection) renderSection(currentSection);
+    });
+}
+
+function renderSection(sec) {
+  // Update limit vars BEFORE updateWordCount reads them
+  sectionWordLimit = sec.word_limit || null;
+  sectionPageLimit = sec.page_limit || null;
+  const wlInput = document.getElementById('sec-word-limit');
+  if (wlInput) wlInput.value = sectionWordLimit || '';
+  document.getElementById('editor-placeholder').style.display = 'none';
+  document.getElementById('panel-placeholder').style.display = 'none';
+  document.getElementById('editor-area').style.display = '';
+  document.getElementById('panel-controls').style.display = '';
+
+  document.getElementById('editor-title').textContent = sec.item_number + ' — ' + sec.title;
+  document.getElementById('editor-question').textContent = sec.question_text || '';
+
+  const badge = document.getElementById('editor-status-badge');
+  badge.textContent = (sec.status || '').replace(/_/g,' ');
+  applyStatusStyle(badge, sec.status);
+
+  const editor = document.getElementById('content-editor');
+  editor.value = sec.content || sec.ai_draft || '';
+  updateWordCount(editor.value);
+
+  document.getElementById('hitl-comment').value = sec.hitl_comment || '';
+  document.getElementById('gen-count').textContent = sec.generation_count > 0 ? 'v' + sec.generation_count : 'not generated';
+  const historyBtn = document.getElementById('history-btn');
+  if (historyBtn) historyBtn.style.display = '';
+  _historyVisible = false;
+  const histPanel = document.getElementById('history-panel');
+  if (histPanel) { histPanel.style.display = 'none'; }
+  document.getElementById('hitl-msg').textContent = '';
+  document.getElementById('save-indicator').textContent = '';
+  document.getElementById('gen-status').style.display = 'none';
+  document.getElementById('md-structure-indicator').textContent = '';
+  loadRequirements(sec.id);
+  // Enable section weight override controls
+  const overrideCb = document.getElementById('ew-sec-override');
+  if (overrideCb) { overrideCb.disabled = false; }
+  loadSectionEngineWeights(sec.id);
+
+  const rejNotice = document.getElementById('rejected-notice');
+  if (sec.status === 'hitl_rejected' && sec.hitl_comment) {
+    document.getElementById('rejected-comment').textContent = sec.hitl_comment;
+    rejNotice.style.display = '';
+  } else { rejNotice.style.display = 'none'; }
+
+  if (sec.writeguard_score) {
+    const s = parseFloat(sec.writeguard_score);
+    document.getElementById('wg-inline-summary').textContent = `WriteGuard: ${s.toFixed(0)}% ${s>=80?'✅':s>=60?'⚠️':'❌'}`;
+    if (sec.writeguard_result) {
+      try { renderWriteGuardResult(typeof sec.writeguard_result==='string' ? JSON.parse(sec.writeguard_result) : sec.writeguard_result); } catch(e) {}
+    }
+  } else {
+    document.getElementById('wg-inline-summary').textContent = '';
+    document.getElementById('wg-results').style.display = 'none';
+  }
+
+  const hasContent = !!(sec.content || sec.ai_draft);
+  if (previewActive) {
+    document.getElementById('markdown-preview').innerHTML = renderMarkdown(document.getElementById('content-editor').value);
+  } else if (hasContent) {
+    togglePreview();
+  }
+
+  // ACE Editor review panel
+  renderAceEditorFeedback(sec.ace_feedback || null);
+
+  // ACE Reviewer panel — reset then pre-fill if existing feedback
+  clearTimeout(_reviewerPollTimer);
+  _reviewerPollCount = 0;
+  const revCard = document.getElementById('ace-reviewer-card');
+  if (revCard) revCard.style.display = 'none';
+  const fb = sec.ace_feedback;
+  if (fb) {
+    if (fb.reviewer) renderReviewerFeedback(fb.reviewer);
+    else if (fb.source === 'reviewer') renderReviewerFeedback(fb);
+  }
+
+  // Why Us panel — show only for Part 5 (Industry Insights)
+  const whyUsPanel = document.getElementById('why-us-panel');
+  if (whyUsPanel) {
+    const isInsights = (sec.item_number || '').startsWith('5') || (sec.part || '').includes('5');
+    whyUsPanel.style.display = isInsights ? '' : 'none';
+    document.getElementById('why-us-output').style.display = 'none';
+    document.getElementById('why-us-actions').style.display = 'none';
+    document.getElementById('why-us-spinner').style.display = 'none';
+    _whyUsParagraph = '';
+  }
+}
+
+function applyStatusStyle(el, status) {
+  const styles = {
+    pending: 'background:#1e293b;color:#94a3b8;border:1px solid #334155;',
+    ai_draft_ready: 'background:#2d1a00;color:#fbbf24;border:1px solid #92400e;',
+    hitl_approved: 'background:#052e16;color:#4ade80;border:1px solid #16a34a;',
+    hitl_rejected: 'background:#2d0a0a;color:#f87171;border:1px solid #7f1d1d;',
+    accepted: 'background:#052e16;color:#4ade80;border:1px solid #16a34a;'
+  };
+  el.style.cssText = 'font-size:10px;font-weight:600;padding:2px 8px;border-radius:3px;margin-left:12px;flex-shrink:0;' + (styles[status] || styles.pending);
+}
+
+function onContentChange() {
+  updateWordCount(document.getElementById('content-editor').value);
+  document.getElementById('save-indicator').textContent = '● unsaved';
+  document.getElementById('save-indicator').style.color = '#f59e0b';
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveContent, 2500);
+}
+
+function updateWordCount(text) {
+  const w = text.trim() ? text.trim().split(/\s+/).length : 0;
+  const wEl = document.getElementById('word-count');
+  if (wEl) wEl.textContent = sectionWordLimit ? `${w} / ${sectionWordLimit} words` : `${w} words`;
+  const pages = sessionWordsPerPage > 0 ? (w / sessionWordsPerPage) : 0;
+  const pageEl = document.getElementById('page-count');
+  if (pageEl) pageEl.textContent = pages > 0 ? `· ≈${pages.toFixed(1)} pg` : '';
+  const limitBadge = document.getElementById('limit-badge');
+  const sumBtn = document.getElementById('summarize-btn');
+  if (limitBadge) {
+    if (sectionWordLimit && w > sectionWordLimit) {
+      limitBadge.textContent = `⚠ +${w - sectionWordLimit} over`;
+      limitBadge.style.color = '#f87171';
+      if (sumBtn) sumBtn.style.display = '';
+    } else if (sectionWordLimit) {
+      limitBadge.textContent = `${sectionWordLimit - w} left`;
+      limitBadge.style.color = '#4ade80';
+      if (sumBtn) sumBtn.style.display = 'none';
+    } else {
+      limitBadge.textContent = '';
+      if (sumBtn) sumBtn.style.display = 'none';
+    }
+  }
+}
+
+function saveContent() {
+  if (!currentSectionId) return;
+  const content = document.getElementById('content-editor').value;
+  fetch(`/api/rfi/${SESSION_ID}/sections/${currentSectionId}/save`, {
+    method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({content})
+  }).then(r => r.json()).then(d => {
+    if (d.ok) { document.getElementById('save-indicator').textContent = '✓ saved'; document.getElementById('save-indicator').style.color = '#22c55e'; }
+  });
+}
+
+function togglePreview() {
+  previewActive = !previewActive;
+  const editor = document.getElementById('content-editor');
+  const preview = document.getElementById('markdown-preview');
+  const btn = document.getElementById('preview-btn');
+  if (previewActive) {
+    preview.innerHTML = renderMarkdown(editor.value);
+    preview.style.display = '';
+    editor.style.display = 'none';
+    btn.textContent = '✏️ Edit';
+  } else {
+    preview.style.display = 'none';
+    editor.style.display = '';
+    btn.textContent = '📄 Preview';
+  }
+}
+
+function renderMarkdown(text) {
+  const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const lines = text.split('\n');
+  let html = '';
+  let inList = false, inTable = false, tableFirstRow = false;
+  let inCode = false, codeLines = [];
+  for (let i = 0; i < lines.length; i++) {
+    let raw = lines[i];
+    // Fenced code block
+    if (/^```/.test(raw)) {
+      if (!inCode) {
+        if (inList) { html += '</ul>'; inList = false; }
+        if (inTable) { html += '</tbody></table>'; inTable = false; }
+        inCode = true; codeLines = [];
+      } else {
+        inCode = false;
+        const body = codeLines.map(l => esc(l)).join('\n');
+        html += `<pre style="background:#0a0f1a;border:1px solid #1e3a6e;border-radius:5px;padding:.75rem;overflow-x:auto;margin:.5rem 0"><code style="font-family:'Consolas','Courier New',monospace;font-size:.8rem;color:#a8d1f0;line-height:1.5;white-space:pre">${body}</code></pre>`;
+      }
+      continue;
+    }
+    if (inCode) { codeLines.push(raw); continue; }
+    // HR separator
+    if (/^---+$/.test(raw.trim())) { if (inList) { html += '</ul>'; inList=false; } if (inTable) { html += '</tbody></table>'; inTable=false; } html += '<hr style="border-color:#1e3a6e;margin:.75rem 0">'; continue; }
+    // Table row
+    if (raw.trim().startsWith('|') && raw.trim().endsWith('|')) {
+      const rawCells = raw.trim().slice(1,-1).split('|').map(c => c.trim());
+      const isSep = rawCells.every(c => /^[-: ]+$/.test(c));
+      if (isSep) continue;
+      if (!inTable) { if (inList){html+='</ul>';inList=false;} html += '<table style="width:100%;font-size:.82rem;border-collapse:collapse;margin:.5rem 0"><thead>'; inTable=true; tableFirstRow=true; }
+      const cells = rawCells.map(c => esc(c));
+      if (tableFirstRow) {
+        html += '<tr>' + cells.map(c => `<th style="border:1px solid #1e3a6e;padding:.35rem .6rem;background:#0d1b2e;color:#7ab3f0;font-weight:600;text-align:left">${applyInline(c)}</th>`).join('') + '</tr></thead><tbody>';
+        tableFirstRow = false;
+      } else {
+        html += '<tr>' + cells.map(c => `<td style="border:1px solid #1e3a6e;padding:.3rem .5rem;color:#b8d0e8">${applyInline(c)}</td>`).join('') + '</tr>';
+      }
+      continue;
+    }
+    if (inTable) { html += '</tbody></table>'; inTable=false; }
+    // List item
+    if (/^[-*] (.+)/.test(raw)) { const m0=raw.match(/^[-*] (.+)/); if (!inList){html+='<ul style="padding-left:1.2rem;margin:.3rem 0">'; inList=true;} html += `<li style="color:#b8d0e8;margin:.15rem 0">${applyInline(esc(m0[1]))}</li>`; continue; }
+    if (inList) { html += '</ul>'; inList=false; }
+    // Headings
+    let m;
+    if ((m = raw.match(/^#### (.+)/))){ html += `<h6 style="color:#d1d5db;margin:.8rem 0 .25rem;font-size:.88rem">${applyInline(esc(m[1]))}</h6>`; continue; }
+    if ((m = raw.match(/^### (.+)/))) { html += `<h5 style="color:#eaeaea;margin:.9rem 0 .3rem;font-size:.95rem">${applyInline(esc(m[1]))}</h5>`; continue; }
+    if ((m = raw.match(/^## (.+)/)))  { html += `<h4 style="color:#eaeaea;margin:1rem 0 .35rem">${applyInline(esc(m[1]))}</h4>`; continue; }
+    if ((m = raw.match(/^# (.+)/)))   { html += `<h3 style="color:#eaeaea;margin:1rem 0 .4rem">${applyInline(esc(m[1]))}</h3>`; continue; }
+    // Blockquote
+    if ((m = raw.match(/^> (.+)/)))   { html += `<blockquote style="border-left:3px solid #1e3a6e;padding-left:10px;color:#7a8cb0;margin:.5rem 0">${applyInline(esc(m[1]))}</blockquote>`; continue; }
+    // Empty line
+    if (raw.trim() === '') { html += '<br>'; continue; }
+    // Paragraph
+    html += `<p style="margin:.35rem 0;color:#b8d0e8">${applyInline(esc(raw))}</p>`;
+  }
+  if (inList) html += '</ul>';
+  if (inTable) html += '</tbody></table>';
+  if (inCode) { const body = codeLines.map(l => esc(l)).join('\n'); html += `<pre style="background:#0a0f1a;border:1px solid #1e3a6e;border-radius:5px;padding:.75rem;overflow-x:auto;margin:.5rem 0"><code style="font-family:'Consolas','Courier New',monospace;font-size:.8rem;color:#a8d1f0;line-height:1.5;white-space:pre">${body}</code></pre>`; }
+  return html;
+}
+
+function applyInline(s) {
+  return s
+    .replace(/\*\*(.+?)\*\*/g,'<strong style="color:#eaeaea">$1</strong>')
+    .replace(/\*(.+?)\*/g,'<em>$1</em>')
+    .replace(/`(.+?)`/g,'<code style="background:#1e293b;color:#7ab3f0;padding:1px 5px;border-radius:3px">$1</code>');
+}
+
+function generateContent() {
+  if (!currentSectionId) return;
+  const btn = document.getElementById('gen-btn');
+  const label = document.getElementById('gen-btn-label');
+  const icon = document.getElementById('gen-spinner-icon');
+  const status = document.getElementById('gen-status');
+  btn.disabled = true; label.textContent = 'Generating…'; icon.className = 'spin'; icon.textContent = '⟳';
+  label.className = 'generating'; status.textContent = '⚡ AI is generating content…';
+  status.style.color = '#7a8cb0'; status.style.display = '';
+  fetch(`/api/rfi/${SESSION_ID}/sections/${currentSectionId}/generate`, {method:'POST'})
+    .then(r => r.json())
+    .then(d => {
+      btn.disabled = false; label.textContent = 'Regenerate'; icon.textContent = '✨'; icon.className = '';
+      if (d.error) { status.textContent = '❌ ' + d.error; status.style.color = '#f87171'; return; }
+      status.textContent = '✓ Generated'; status.style.color = '#4ade80';
+      currentSection = d.section;
+      document.getElementById('content-editor').value = d.section.content || d.section.ai_draft || '';
+      updateWordCount(document.getElementById('content-editor').value);
+      document.getElementById('gen-count').textContent = 'v' + d.section.generation_count;
+      refreshSidebarItem(currentSectionId, d.section.status);
+      // Show markdown structure indicator
+      const mdv = d.section.markdown_validation;
+      const mdInd = document.getElementById('md-structure-indicator');
+      if (mdv && !mdv.valid) {
+        const errCount = (mdv.issues||[]).filter(i=>i.severity==='error').length;
+        mdInd.textContent = `⚠ ${errCount} structure issue${errCount!==1?'s':''}`;
+        mdInd.style.color = '#f87171';
+      } else if (mdv) {
+        mdInd.textContent = '✓ Structure OK';
+        mdInd.style.color = '#22c55e';
+      }
+      loadRequirements(currentSectionId);
+      // Start ACE Editor review polling
+      showAceEditorReviewing();
+      _pollAceEditorFeedback();
+      // Auto-switch to rendered preview after generation
+      if (!previewActive) togglePreview();
+      setTimeout(() => { status.style.display = 'none'; }, 3000);
+    })
+    .catch(err => { btn.disabled = false; label.textContent = 'Generate Content'; icon.textContent = '✨'; icon.className = ''; status.textContent = '❌ ' + err.message; status.style.color = '#f87171'; });
+}
+
+function runWriteGuard() {
+  if (!currentSectionId) return;
+  const btn = document.getElementById('wg-btn');
+  btn.disabled = true; btn.textContent = 'Running…';
+  document.getElementById('wg-error').style.display = 'none';
+  document.getElementById('wg-results').style.display = 'none';
+  saveContent();
+  setTimeout(() => {
+    fetch(`/api/rfi/${SESSION_ID}/sections/${currentSectionId}/writeguard`, {method:'POST'})
+      .then(r => r.json())
+      .then(d => {
+        btn.disabled = false; btn.textContent = 'Run WriteGuard';
+        if (d.error) { document.getElementById('wg-error').textContent = d.error; document.getElementById('wg-error').style.display = ''; return; }
+        renderWriteGuardResult(d.result);
+      })
+      .catch(err => { btn.disabled = false; btn.textContent = 'Run WriteGuard'; document.getElementById('wg-error').textContent = err.message; document.getElementById('wg-error').style.display = ''; });
+  }, 400);
+}
+
+function renderWriteGuardResult(wg) {
+  const score = parseFloat(wg.overall_score || 0);
+  const badge = document.getElementById('wg-overall-badge');
+  badge.textContent = score.toFixed(0) + '%';
+  if (score >= 80) { badge.style.cssText = 'font-size:11px;font-weight:700;padding:2px 8px;border-radius:3px;background:#052e16;color:#4ade80;border:1px solid #16a34a;'; }
+  else if (score >= 60) { badge.style.cssText = 'font-size:11px;font-weight:700;padding:2px 8px;border-radius:3px;background:#2d1a00;color:#fbbf24;border:1px solid #92400e;'; }
+  else { badge.style.cssText = 'font-size:11px;font-weight:700;padding:2px 8px;border-radius:3px;background:#2d0a0a;color:#f87171;border:1px solid #7f1d1d;'; }
+
+  const dims = ['Correctness','Clarity','Delivery','Originality','Engagement'];
+  const comp = wg.composites || {};
+  dims.forEach(d => {
+    const s = parseFloat(comp[d] || 0);
+    const scoreEl = document.getElementById('wg-score-' + d.toLowerCase());
+    const bar = document.getElementById('wg-bar-' + d.toLowerCase());
+    if (scoreEl) { scoreEl.textContent = s.toFixed(0) + '%'; scoreEl.style.color = s>=80?'#4ade80':s>=60?'#fbbf24':'#f87171'; }
+    if (bar) { bar.style.width = s + '%'; bar.style.background = s>=80?'#22c55e':s>=60?'#f59e0b':'#ef4444'; }
+  });
+
+  const issues = wg.issues || [];
+  const issDiv = document.getElementById('wg-issues');
+  issDiv.innerHTML = issues.length
+    ? issues.slice(0,4).map(i => `<div style="color:#7a8cb0;margin-bottom:3px;">• ${(i.message||i).toString().slice(0,80)}</div>`).join('')
+    : '<div style="color:#4ade80;">✓ No major issues</div>';
+  document.getElementById('wg-results').style.display = '';
+  document.getElementById('wg-inline-summary').textContent = `WriteGuard: ${score.toFixed(0)}% ${score>=80?'✅':score>=60?'⚠️':'❌'}`;
+}
+
+function applyHitl(action) {
+  if (!currentSectionId) return;
+  const comment = document.getElementById('hitl-comment').value;
+  const msg = document.getElementById('hitl-msg');
+  msg.textContent = 'Saving…'; msg.style.color = '#7a8cb0';
+  fetch(`/api/rfi/${SESSION_ID}/sections/${currentSectionId}/hitl`, {
+    method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action, comment})
+  }).then(r => r.json()).then(d => {
+    if (d.error) { msg.textContent = '❌ ' + d.error; msg.style.color = '#f87171'; return; }
+    const labels = {approve:'✅ Approved', reject:'❌ Rejected', accept:'🏁 Accepted as final'};
+    msg.textContent = labels[action] || 'Done';
+    msg.style.color = action === 'reject' ? '#f87171' : '#4ade80';
+    currentSection = d.section;
+    const badge = document.getElementById('editor-status-badge');
+    badge.textContent = d.section.status.replace(/_/g,' ');
+    applyStatusStyle(badge, d.section.status);
+    refreshSidebarItem(currentSectionId, d.section.status);
+    updateProgress();
+    if (action === 'reject' && comment) {
+      document.getElementById('rejected-comment').textContent = comment;
+      document.getElementById('rejected-notice').style.display = '';
+    } else { document.getElementById('rejected-notice').style.display = 'none'; }
+    if (action === 'approve' || action === 'accept') {
+      _reviewerPollCount = 0;
+      clearTimeout(_reviewerPollTimer);
+      showReviewerReviewing();
+      _reviewerPollTimer = setTimeout(() => _pollReviewer(currentSectionId), 4000);
+    }
+  });
+}
+
+function commentAndRegenerate() {
+  if (!document.getElementById('hitl-comment').value.trim()) { alert('Please add a comment before regenerating.'); return; }
+  applyHitl('reject');
+  setTimeout(generateContent, 600);
+}
+
+function refreshSidebarItem(id, status) {
+  const el = document.querySelector(`.section-item[data-id="${id}"]`);
+  if (!el) return;
+  el.className = 'section-item active status-' + status;
+  const badge = el.querySelector('.s-badge');
+  if (badge) {
+    const icons = {accepted:'✓', hitl_approved:'✓', hitl_rejected:'✗', ai_draft_ready:'⚡', pending:'○'};
+    const styles = {
+      accepted:'background:#052e16;color:#4ade80;border-color:#16a34a;',
+      hitl_approved:'background:#052e16;color:#4ade80;border-color:#16a34a;',
+      hitl_rejected:'background:#2d0a0a;color:#f87171;border-color:#7f1d1d;',
+      ai_draft_ready:'background:#2d1a00;color:#fbbf24;border-color:#92400e;',
+      pending:'background:#1e293b;color:#64748b;border-color:#334155;'
+    };
+    badge.textContent = icons[status] || '○';
+    badge.style.cssText = (styles[status] || styles.pending);
+  }
+  updateProgress();
+}
+
+function updateProgress() {
+  const items = document.querySelectorAll('.section-item');
+  let approved = 0;
+  items.forEach(el => { if (el.classList.contains('status-hitl_approved') || el.classList.contains('status-accepted')) approved++; });
+  const pct = items.length > 0 ? Math.round(approved / items.length * 100) : 0;
+  document.getElementById('progress-bar').style.width = pct + '%';
+  document.getElementById('progress-label').textContent = approved + '/' + items.length + ' accepted';
+}
+
+function doExport(fmt) {
+  const btn = document.getElementById('export-docx-btn');
+  const spinner = document.getElementById('export-spinner');
+  if (fmt === 'docx') { btn.disabled = true; spinner.style.display = 'inline-block'; }
+  fetch(`/api/rfi/${SESSION_ID}/export/${fmt}`, {method:'POST'})
+    .then(r => r.json())
+    .then(d => {
+      btn.disabled = false; spinner.style.display = 'none';
+      if (d.error) { alert('Export error: ' + d.error); return; }
+      window.location.href = `/api/rfi/${SESSION_ID}/download/${fmt}`;
+    })
+    .catch(err => { btn.disabled = false; spinner.style.display = 'none'; alert('Export failed: ' + err.message); });
+}
+
+function filterSections(q) {
+  const lower = q.toLowerCase();
+  document.querySelectorAll('#section-tree > *').forEach(el => {
+    if (el.classList.contains('part-hdr')) { el.style.display = ''; return; }
+    el.style.display = (!lower || (el.dataset.search||'').includes(lower)) ? '' : 'none';
+  });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const first = document.querySelector('.section-item');
+  if (first) loadSection(first.dataset.id);
+  loadAceTeamStatus();
+  loadSessionStyleGuide();
+  loadEngineWeights();
+  loadUploadList();
+  loadDeadlineInfo();
+  window.__rfi_profile_name = "{{ session.profile_name }}";
+  window.__rfi_session_meta = {
+    rfi_number: "{{ session.rfi_number }}",
+    parse_fallback: {{ 'true' if (session.rfi_number == 'RFI-UNKNOWN' or not session.get('parsed_data') or not session.get('parsed_data', {}).get('questionnaire_parts')) else 'false' }},
+  };
+  checkParseWarning();
+});
+
+// ── Requirements ──────────────────────────────────────────────────────────────
+
+function loadRequirements(sectionId) {
+  if (!sectionId) return;
+  fetch(`/api/rfi/${SESSION_ID}/sections/${sectionId}/requirements`)
+    .then(r => r.json())
+    .then(reqs => renderRequirements(reqs))
+    .catch(() => {});
+}
+
+function renderRequirements(reqs) {
+  const list = document.getElementById('req-list');
+  const badge = document.getElementById('req-count-badge');
+  const covWrap = document.getElementById('req-coverage-bar-wrap');
+  const covLabel = document.getElementById('req-coverage-label');
+  const covBar = document.getElementById('req-coverage-bar');
+  const covPct = document.getElementById('req-coverage-pct');
+
+  badge.textContent = reqs.length;
+  if (!reqs.length) {
+    list.innerHTML = '<div style="color:#334155;font-size:11px;padding:8px;text-align:center;">No requirements — extracting…</div>';
+    covWrap.style.display = 'none';
+    covLabel.textContent = '';
+    return;
+  }
+
+  const covReqs = reqs.filter(r => r.covered !== null && r.covered !== undefined);
+  if (covReqs.length > 0) {
+    const covered = reqs.filter(r => r.covered === true || r.covered === 'true').length;
+    const partial = reqs.filter(r => r.covered === 'partial').length;
+    const pct = Math.round((covered + partial * 0.5) / reqs.length * 100);
+    covWrap.style.display = '';
+    covBar.style.width = pct + '%';
+    covBar.style.background = pct >= 80 ? '#22c55e' : pct >= 50 ? '#f59e0b' : '#ef4444';
+    covPct.textContent = pct + '%';
+    covLabel.textContent = `${covered}/${reqs.length} covered`;
+    covLabel.style.color = pct >= 80 ? '#22c55e' : pct >= 50 ? '#fbbf24' : '#f87171';
+  } else {
+    covWrap.style.display = 'none';
+    covLabel.textContent = '';
+  }
+
+  const iconMap = { true: '✓', false: '✗', partial: '~' };
+  const colorMap = { true: '#22c55e', false: '#f87171', partial: '#fbbf24' };
+  list.innerHTML = reqs.map(r => {
+    const covered = r.covered !== null && r.covered !== undefined;
+    const icon = covered ? (iconMap[String(r.covered)] || '○') : '○';
+    const iconColor = covered ? (colorMap[String(r.covered)] || '#5a7aa0') : '#5a7aa0';
+    const srcLabel = r.source === 'manual' ? 'manual' : 'AI';
+    return `<div class="req-item">
+      <span class="req-icon" style="color:${iconColor}">${icon}</span>
+      <span class="req-text">${escHtml(r.text)}</span>
+      <span class="req-src">${srcLabel}</span>
+      <button class="req-del" onclick="deleteRequirement('${r.id}')" title="Remove">×</button>
+    </div>`;
+  }).join('');
+}
+
+function toggleReqPanel() {
+  const body = document.getElementById('req-panel-body');
+  const toggle = document.getElementById('req-panel-toggle');
+  const collapsed = body.style.display === 'none';
+  body.style.display = collapsed ? '' : 'none';
+  toggle.textContent = collapsed ? '▾' : '▸';
+}
+
+function addRequirement() {
+  if (!currentSectionId) return;
+  const input = document.getElementById('req-add-input');
+  const text = input.value.trim();
+  if (!text) return;
+  fetch(`/api/rfi/${SESSION_ID}/sections/${currentSectionId}/requirements`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({text})
+  }).then(r => r.json()).then(d => {
+    if (d.ok) { input.value = ''; loadRequirements(currentSectionId); }
+  }).catch(() => {});
+}
+
+function deleteRequirement(reqId) {
+  if (!currentSectionId) return;
+  fetch(`/api/rfi/${SESSION_ID}/sections/${currentSectionId}/requirements/${reqId}`, {method:'DELETE'})
+    .then(() => loadRequirements(currentSectionId))
+    .catch(() => {});
+}
+
+function recheckCoverage() {
+  if (!currentSectionId) return;
+  const btn = event.target;
+  btn.textContent = '⟳ Checking…';
+  btn.disabled = true;
+  fetch(`/api/rfi/${SESSION_ID}/sections/${currentSectionId}/requirements/check-coverage`, {method:'POST'})
+    .then(r => r.json())
+    .then(d => {
+      btn.textContent = '🔄 Re-check Coverage'; btn.disabled = false;
+      if (d.requirements) renderRequirements(d.requirements);
+    })
+    .catch(() => { btn.textContent = '🔄 Re-check Coverage'; btn.disabled = false; });
+}
+
+function escHtml(s) {
+  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── ACE Team ──────────────────────────────────────────────────────────────────
+
+function loadAceTeamStatus() {
+  fetch(`/api/rfi/${SESSION_ID}/ace/status`)
+    .then(r => r.json())
+    .then(d => renderAceTeamStatus(d))
+    .catch(() => {});
+}
+
+function renderAceTeamStatus(data) {
+  const stateEl = document.getElementById('ace-team-state');
+  const rolesEl = document.getElementById('ace-team-roles');
+  const launchBtn = document.getElementById('ace-launch-btn');
+  if (!stateEl) return;
+
+  const stateLabels = {
+    not_launched: 'not launched',
+    launched: 'launched',
+    active: 'active',
+    no_session: 'no session',
+  };
+  stateEl.textContent = stateLabels[data.status] || data.status;
+  stateEl.style.color = data.status === 'active' ? '#4ade80' : data.status === 'launched' ? '#fbbf24' : '#5a7aa0';
+
+  const roleNames = {
+    rfi_writer: 'Writer',
+    rfi_editor: 'Editor',
+    rfi_reviewer: 'Reviewer',
+    rfi_researcher: 'Researcher',
+    rfi_compliance_reviewer: 'Compliance',
+  };
+  const roles = data.roles || [];
+  if (roles.length > 0) {
+    rolesEl.innerHTML = roles.map(r => {
+      const name = roleNames[r.role_id] || r.role_id;
+      const stateIcon = r.state === 'running' ? '⚡' : r.state === 'idle' ? '○' : r.state === 'done' ? '✓' : '·';
+      return `<div>${stateIcon} ${name}</div>`;
+    }).join('');
+  } else if (data.status !== 'not_launched') {
+    rolesEl.innerHTML = ['Writer','Editor','Reviewer','Researcher','Compliance'].map(n => `<div>· ${n}</div>`).join('');
+  } else {
+    rolesEl.innerHTML = '<div style="color:#334155;font-size:10px;">Team will auto-launch on new sessions</div>';
+  }
+
+  launchBtn.textContent = (data.status === 'active' || data.status === 'launched') ? '🔄 Re-launch Team' : '🚀 Launch Team';
+}
+
+function launchAceTeam() {
+  const btn = document.getElementById('ace-launch-btn');
+  btn.disabled = true; btn.textContent = '⟳ Launching…';
+  fetch(`/api/rfi/${SESSION_ID}/ace/launch`, {method:'POST'})
+    .then(r => r.json())
+    .then(d => {
+      btn.disabled = false;
+      if (d.ok) { setTimeout(loadAceTeamStatus, 1500); }
+      else { btn.textContent = '🚀 Launch Team'; }
+    })
+    .catch(() => { btn.disabled = false; btn.textContent = '🚀 Launch Team'; });
+}
+
+// ── Style Guide ──────────────────────────────────────────────────────────────
+
+function loadSessionStyleGuide() {
+  fetch(`/api/rfi/${SESSION_ID}/style-guide`)
+    .then(r => r.json())
+    .then(sg => {
+      sessionWordsPerPage = parseInt(sg.words_per_page) || 250;
+      const el = id => document.getElementById(id);
+      if (el('sg-tone')) el('sg-tone').value = sg.tone || 'formal';
+      if (el('sg-page-limit')) el('sg-page-limit').value = sg.page_limit || '';
+      if (el('sg-words-per-page')) el('sg-words-per-page').value = sg.words_per_page || 250;
+      if (el('sg-forbidden')) el('sg-forbidden').value = (sg.forbidden_phrases || []).join('\n');
+      if (el('sg-headings')) el('sg-headings').value = (sg.required_headings || []).join('\n');
+      if (el('sg-status')) el('sg-status').textContent = (sg.tone || sg.page_limit) ? 'custom' : 'default';
+      // Refresh page estimate with updated words/page
+      const editor = el('content-editor');
+      if (editor && editor.value) updateWordCount(editor.value);
+    })
+    .catch(() => {});
+}
+
+function saveStyleGuide() {
+  const v = id => (document.getElementById(id) || {}).value || '';
+  const tone = v('sg-tone') || 'formal';
+  const page_limit = parseInt(v('sg-page-limit')) || null;
+  const words_per_page = parseInt(v('sg-words-per-page')) || 250;
+  const forbidden_phrases = v('sg-forbidden').split('\n').map(s => s.trim()).filter(Boolean);
+  const required_headings = v('sg-headings').split('\n').map(s => s.trim()).filter(Boolean);
+  fetch(`/api/rfi/${SESSION_ID}/style-guide`, {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({tone, page_limit, words_per_page, forbidden_phrases, required_headings})
+  }).then(r => r.json()).then(d => {
+    if (!d.ok) return;
+    sessionWordsPerPage = words_per_page;
+    const statusEl = document.getElementById('sg-status');
+    if (statusEl) { statusEl.textContent = 'saved ✓'; setTimeout(() => { statusEl.textContent = 'custom'; }, 2000); }
+    const editor = document.getElementById('content-editor');
+    if (editor && editor.value) updateWordCount(editor.value);
+  }).catch(() => {});
+}
+
+function saveSectionLimits() {
+  if (!currentSectionId) return;
+  const wlVal = parseInt((document.getElementById('sec-word-limit') || {}).value) || null;
+  sectionWordLimit = wlVal;
+  fetch(`/api/rfi/${SESSION_ID}/sections/${currentSectionId}/limits`, {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({word_limit: wlVal, page_limit: null})
+  }).then(r => r.json()).then(d => {
+    if (d.ok) {
+      const editor = document.getElementById('content-editor');
+      if (editor && editor.value) updateWordCount(editor.value);
+    }
+  }).catch(() => {});
+}
+
+function summarizeToFit() {
+  if (!currentSectionId || !sectionWordLimit) return;
+  const btn = document.getElementById('summarize-btn');
+  btn.disabled = true; btn.textContent = '⟳ Summarizing…';
+  fetch(`/api/rfi/${SESSION_ID}/sections/${currentSectionId}/summarize`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({word_target: sectionWordLimit})
+  }).then(r => r.json()).then(d => {
+    btn.disabled = false; btn.textContent = '✂ Summarize';
+    if (d.error) { alert('Summarize failed: ' + d.error); return; }
+    if (d.already_fits) { alert('Content already fits within the word limit.'); return; }
+    const preview = `${d.word_count} words (target: ${sectionWordLimit})\n\nPreview:\n${(d.condensed || '').slice(0, 200)}…`;
+    if (confirm(`Replace content with AI-condensed version?\n\n${preview}`)) {
+      document.getElementById('content-editor').value = d.condensed;
+      updateWordCount(d.condensed);
+      document.getElementById('save-indicator').textContent = '● unsaved';
+      document.getElementById('save-indicator').style.color = '#f59e0b';
+    }
+  }).catch(err => { btn.disabled = false; btn.textContent = '✂ Summarize'; alert('Error: ' + err.message); });
+}
+
+// ── Engine Weights ─────────────────────────────────────────────────────────────
+
+const _EW_LABELS = {
+  uploads: '1st-party Uploads',
+  kg_past_performance: 'KG Past Performance',
+  rag_general: 'RAG Knowledge Base',
+  innovation_engine: 'Innovation Engine',
+  creative_engine: 'Creative Engine',
+  research_engine: 'Research Engine',
+};
+let _ewData = {};
+
+let _ewAvailability = {};
+let _ewSecData = null;
+
+function loadEngineWeights() {
+  fetch(`/api/rfi/${SESSION_ID}/engine-weights`)
+    .then(r => r.json())
+    .then(d => { _ewData = d; renderEngineWeights(); })
+    .catch(() => {});
+  fetch(`/api/rfi/${SESSION_ID}/engine-weights/availability`)
+    .then(r => r.json())
+    .then(d => { _ewAvailability = d; renderEngineWeights(); })
+    .catch(() => {});
+}
+
+function renderEngineWeights(data, containerId, prefix) {
+  data = data || _ewData;
+  containerId = containerId || 'ew-rows';
+  prefix = prefix || 'ew';
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  const rows = [];
+  for (const [key, cfg] of Object.entries(data)) {
+    const label = _EW_LABELS[key] || key;
+    const avail = _ewAvailability[key];
+    let dot = '';
+    if (avail !== undefined) {
+      const color = avail.available ? '#22c55e' : '#334155';
+      const tip = avail.available ? `${avail.row_count} rows` : 'No data yet';
+      dot = `<span title="${tip}" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${color};margin-right:3px;"></span>`;
+    }
+    const canRun = ['innovation_engine','creative_engine','research_engine'].includes(key);
+    const runBtn = canRun ? `<button onclick="runEngine('${key}')"
+      style="background:none;border:1px solid #1e3a6e;color:#5a7aa0;border-radius:3px;padding:1px 6px;font-size:9px;cursor:pointer;"
+      title="Seed this engine from RFI topic">▶</button>` : '';
+    rows.push(`
+      <div style="margin-bottom:6px;">
+        <div style="display:flex;align-items:center;gap:5px;margin-bottom:2px;">
+          <input type="checkbox" id="${prefix}-en-${key}" ${cfg.enabled ? 'checked' : ''}
+            onchange="_ewMutate('${prefix}','${key}','enabled',this.checked)">
+          <label for="${prefix}-en-${key}" style="font-size:11px;color:#94a3b8;flex:1;">${dot}${label}</label>
+          <span id="${prefix}-val-${key}" style="font-size:10px;color:#38bdf8;min-width:26px;text-align:right;">${cfg.weight}</span>
+          ${runBtn}
+        </div>
+        <input type="range" min="0" max="100" value="${cfg.weight}"
+          style="width:100%;accent-color:#38bdf8;"
+          oninput="_ewMutate('${prefix}','${key}','weight',+this.value)">
+      </div>`);
+  }
+  container.innerHTML = rows.join('');
+  _updateEwTotal();
+}
+
+function _ewMutate(prefix, key, field, val) {
+  if (prefix === 'ew') { _ewData[key][field] = val; _updateEwTotal(); }
+  else if (prefix === 'ew-sec' && _ewSecData) { _ewSecData[key][field] = val; }
+  const valEl = document.getElementById(`${prefix}-val-${key}`);
+  if (valEl && field === 'weight') valEl.textContent = val;
+}
+
+function _updateEwTotal() {
+  const badge = document.getElementById('ew-total-badge');
+  if (!badge) return;
+  let enabled_total = 0;
+  for (const cfg of Object.values(_ewData)) { if (cfg.enabled) enabled_total += (cfg.weight || 0); }
+  badge.textContent = `total: ${enabled_total}`;
+  badge.style.color = (enabled_total === 100) ? '#22c55e' : '#f59e0b';
+}
+
+function saveEngineWeights() {
+  const msg = document.getElementById('ew-msg');
+  msg.textContent = 'Saving…';
+  fetch(`/api/rfi/${SESSION_ID}/engine-weights`, {
+    method: 'PUT', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(_ewData),
+  }).then(r => r.json()).then(d => {
+    msg.textContent = d.ok ? '✓ Saved' : ('Error: ' + (d.error || '?'));
+    msg.style.color = d.ok ? '#22c55e' : '#f87171';
+    setTimeout(() => { msg.textContent = ''; }, 3000);
+  }).catch(() => { msg.textContent = 'Network error'; msg.style.color = '#f87171'; });
+}
+
+function resetEngineWeights() {
+  const defaults = {
+    uploads: {enabled: true, weight: 40},
+    kg_past_performance: {enabled: true, weight: 30},
+    rag_general: {enabled: true, weight: 20},
+    innovation_engine: {enabled: false, weight: 10},
+    creative_engine: {enabled: false, weight: 10},
+    research_engine: {enabled: false, weight: 10},
+  };
+  _ewData = defaults;
+  renderEngineWeights();
+  document.getElementById('ew-msg').textContent = 'Defaults restored — click Save to persist.';
+  document.getElementById('ew-msg').style.color = '#f59e0b';
+}
+
+// ── Past Performance Uploads ──────────────────────────────────────────────────
+
+function loadUploadList() {
+  fetch(`/api/rfi/${SESSION_ID}/uploads`)
+    .then(r => r.json())
+    .then(list => renderUploadList(list))
+    .catch(() => {});
+}
+
+function renderUploadList(list) {
+  const el = document.getElementById('pp-list');
+  if (!el) return;
+  if (!list || !list.length) {
+    el.innerHTML = '<div style="font-size:10px;color:#334155;padding:4px;">No uploads yet</div>';
+    return;
+  }
+  el.innerHTML = list.map(u => `
+    <div style="display:flex;align-items:center;gap:4px;padding:3px 0;border-bottom:1px solid #0f1f3a;">
+      <span style="flex:1;font-size:10px;color:#94a3b8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
+        title="${u.filename}">${u.filename}</span>
+      <span style="font-size:9px;color:#5a7aa0;">${u.upload_type || 'pp'}</span>
+      <button onclick="deleteUpload('${u.id}')"
+        style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:11px;padding:0 4px;">✕</button>
+    </div>`).join('');
+}
+
+function handlePPDrop(ev) {
+  ev.preventDefault();
+  const files = ev.dataTransfer.files;
+  if (files && files.length) _uploadFiles(files);
+}
+
+function handlePPFileSelect(ev) {
+  if (ev.target.files && ev.target.files.length) _uploadFiles(ev.target.files);
+}
+
+function _uploadFiles(files) {
+  const msg = document.getElementById('pp-upload-msg');
+  const drop = document.getElementById('pp-drop');
+  drop.style.borderColor = '#38bdf8';
+  msg.textContent = `Uploading ${files.length} file(s)…`;
+  msg.style.color = '#38bdf8';
+
+  const promises = Array.from(files).map(file => {
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('upload_type', 'past_performance');
+    return fetch(`/api/rfi/${SESSION_ID}/uploads`, { method: 'POST', body: fd })
+      .then(r => r.json());
+  });
+
+  Promise.all(promises).then(results => {
+    drop.style.borderColor = '#1e3a6e';
+    const errs = results.filter(r => r.error);
+    msg.textContent = errs.length ? `${errs.length} error(s)` : `✓ ${results.length} uploaded`;
+    msg.style.color = errs.length ? '#f87171' : '#22c55e';
+    loadUploadList();
+    setTimeout(() => { msg.textContent = ''; }, 4000);
+    document.getElementById('pp-file-input').value = '';
+  }).catch(() => {
+    drop.style.borderColor = '#1e3a6e';
+    msg.textContent = 'Upload failed';
+    msg.style.color = '#f87171';
+  });
+}
+
+function deleteUpload(uploadId) {
+  if (!confirm('Remove this upload?')) return;
+  fetch(`/api/rfi/${SESSION_ID}/uploads/${uploadId}`, { method: 'DELETE' })
+    .then(r => r.json())
+    .then(d => { if (d.ok) loadUploadList(); })
+    .catch(() => {});
+}
+
+// ── Section engine weight override ────────────────────────────────────────────
+
+function toggleSectionOverride(enabled) {
+  const rows = document.getElementById('ew-sec-rows');
+  const saveBtn = document.getElementById('ew-sec-save');
+  const clearBtn = document.getElementById('ew-sec-clear');
+  if (enabled && currentSectionId) {
+    loadSectionEngineWeights(currentSectionId);
+    rows.style.display = '';
+    saveBtn.style.display = '';
+    clearBtn.style.display = '';
+  } else {
+    rows.style.display = 'none';
+    saveBtn.style.display = 'none';
+    clearBtn.style.display = 'none';
+    _ewSecData = null;
+  }
+}
+
+function loadSectionEngineWeights(sectionId) {
+  if (!sectionId) return;
+  fetch(`/api/rfi/${SESSION_ID}/sections/${sectionId}/engine-weights`)
+    .then(r => r.json())
+    .then(d => {
+      _ewSecData = JSON.parse(JSON.stringify(d.weights));
+      const override = document.getElementById('ew-sec-override');
+      if (override) {
+        override.checked = !d.inherited;
+        toggleSectionOverride(!d.inherited);
+      }
+      renderEngineWeights(_ewSecData, 'ew-sec-rows', 'ew-sec');
+    }).catch(() => {});
+}
+
+function saveSectionEngineWeights() {
+  if (!currentSectionId || !_ewSecData) return;
+  const msg = document.getElementById('ew-sec-msg');
+  msg.textContent = 'Saving…';
+  fetch(`/api/rfi/${SESSION_ID}/sections/${currentSectionId}/engine-weights`, {
+    method: 'PUT', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(_ewSecData),
+  }).then(r => r.json()).then(d => {
+    msg.textContent = d.ok ? '✓ Section override saved' : ('Error: ' + (d.error || '?'));
+    msg.style.color = d.ok ? '#22c55e' : '#f87171';
+    setTimeout(() => { msg.textContent = ''; }, 3000);
+  }).catch(() => { msg.textContent = 'Error'; msg.style.color = '#f87171'; });
+}
+
+function clearSectionOverride() {
+  if (!currentSectionId || !confirm('Remove section override? It will inherit session weights.')) return;
+  fetch(`/api/rfi/${SESSION_ID}/sections/${currentSectionId}/engine-weights`, {
+    method: 'PUT', headers: {'Content-Type':'application/json'},
+    body: 'null',
+  }).then(() => {
+    _ewSecData = null;
+    document.getElementById('ew-sec-override').checked = false;
+    toggleSectionOverride(false);
+    document.getElementById('ew-sec-msg').textContent = 'Override cleared.';
+    document.getElementById('ew-sec-msg').style.color = '#5a7aa0';
+    setTimeout(() => { document.getElementById('ew-sec-msg').textContent = ''; }, 3000);
+  });
+}
+
+// ── Phase C: Run engine seed ──────────────────────────────────────────────────
+
+function runEngine(sourceKey) {
+  const topic = currentSection
+    ? `${currentSection.title} ${currentSection.question_text || ''}`
+    : document.title;
+  const msg = document.getElementById('ew-msg');
+  msg.textContent = `Running ${_EW_LABELS[sourceKey] || sourceKey}…`;
+  msg.style.color = '#38bdf8';
+  fetch(`/api/rfi/${SESSION_ID}/engines/run`, {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({source: sourceKey, topic}),
+  }).then(r => r.json()).then(d => {
+    msg.textContent = d.ok ? `✓ ${_EW_LABELS[sourceKey]} seeded — reload to see results` : ('Error: ' + (d.error || '?'));
+    msg.style.color = d.ok ? '#22c55e' : '#f87171';
+    if (d.ok) setTimeout(() => { loadEngineWeights(); msg.textContent = ''; }, 2000);
+  }).catch(() => { msg.textContent = 'Error'; msg.style.color = '#f87171'; });
+}
+
+// ── Generate All ──────────────────────────────────────────────────────────────
+let _genAllPollTimer = null;
+
+function startGenerateAll() {
+  const btn = document.getElementById('gen-all-btn');
+  const status = document.getElementById('gen-all-status');
+  btn.disabled = true;
+  status.textContent = 'Starting…';
+  fetch(`/api/rfi/${SESSION_ID}/generate-all`, {method: 'POST'})
+    .then(r => r.json())
+    .then(d => {
+      if (!d.ok) { btn.disabled = false; status.textContent = d.error || 'Error'; return; }
+      btn.textContent = '⏹ Cancel';
+      btn.onclick = cancelGenerateAll;
+      btn.disabled = false;
+      _pollGenerateAll();
+    })
+    .catch(() => { btn.disabled = false; status.textContent = 'Error'; });
+}
+
+function cancelGenerateAll() {
+  fetch(`/api/rfi/${SESSION_ID}/generate-all/cancel`, {method: 'POST'});
+}
+
+function _pollGenerateAll() {
+  clearTimeout(_genAllPollTimer);
+  fetch(`/api/rfi/${SESSION_ID}/generate-all/status`)
+    .then(r => r.json())
+    .then(d => {
+      const btn = document.getElementById('gen-all-btn');
+      const status = document.getElementById('gen-all-status');
+      if (d.running) {
+        status.textContent = `${d.done}/${d.total} — generating ${d.current_item || '…'}`;
+        _genAllPollTimer = setTimeout(_pollGenerateAll, 2000);
+        if (d.done > 0) _refreshSidebarStatuses();
+      } else {
+        btn.textContent = '⚡ All'; btn.onclick = startGenerateAll; btn.disabled = false;
+        const errs = (d.errors || []).length;
+        status.textContent = errs ? `Done — ${errs} error(s)` : (d.done > 0 ? `✓ ${d.done} generated` : '');
+        _refreshSidebarStatuses();
+      }
+    })
+    .catch(() => { _genAllPollTimer = setTimeout(_pollGenerateAll, 3000); });
+}
+
+function _refreshSidebarStatuses() {
+  fetch(`/api/rfi/${SESSION_ID}/sections`)
+    .then(r => r.json())
+    .then(secs => { secs.forEach(sec => refreshSidebarItem(sec.id, sec.status)); updateProgress(); })
+    .catch(() => {});
+}
+
+// ── Parse warning ─────────────────────────────────────────────────────────────
+function checkParseWarning() {
+  const session = window.__rfi_session_meta;
+  if (session && session.parse_fallback) {
+    const banner = document.getElementById('parse-warning-banner');
+    const numEl = document.getElementById('parse-rfi-number');
+    if (banner) {
+      if (numEl) numEl.textContent = session.rfi_number || 'RFI-UNKNOWN';
+      banner.style.display = '';
+    }
+  }
+}
+
+function dismissParseWarning() {
+  const banner = document.getElementById('parse-warning-banner');
+  if (banner) banner.style.display = 'none';
+}
+
+// ── Section history ───────────────────────────────────────────────────────────
+let _historyVisible = false;
+
+function toggleHistory() {
+  const panel = document.getElementById('history-panel');
+  _historyVisible = !_historyVisible;
+  if (_historyVisible) { panel.style.display = ''; loadHistory(); }
+  else { panel.style.display = 'none'; }
+}
+
+function loadHistory() {
+  if (!currentSectionId) return;
+  fetch(`/api/rfi/${SESSION_ID}/sections/${currentSectionId}/history`)
+    .then(r => r.json())
+    .then(items => {
+      const list = document.getElementById('history-list');
+      if (!items || !items.length) {
+        list.innerHTML = '<div style="color:#5a7aa0;font-size:10px;">No history yet</div>';
+        return;
+      }
+      list.innerHTML = items.map((h, i) => {
+        const ts = new Date(h.saved_at).toLocaleString();
+        const preview = (h.content || '').slice(0, 60).replace(/\n/g, ' ');
+        return `<div style="padding:4px 0;border-bottom:1px solid #1a2b4a;cursor:pointer;" onclick="restoreVersion(${i})">
+          <div style="font-size:10px;color:#7ab3f0;">${ts} <span style="color:#5a7aa0;">(${h.save_type})</span></div>
+          <div style="font-size:10px;color:#94a3b8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${preview}…</div>
+        </div>`;
+      }).join('');
+    }).catch(() => {});
+}
+
+function restoreVersion(index) {
+  fetch(`/api/rfi/${SESSION_ID}/sections/${currentSectionId}/history`)
+    .then(r => r.json())
+    .then(items => {
+      const item = items[index];
+      if (!item) return;
+      if (!confirm(`Restore version from ${new Date(item.saved_at).toLocaleString()}?`)) return;
+      document.getElementById('content-editor').value = item.content;
+      updateWordCount(item.content);
+      document.getElementById('save-indicator').textContent = '● unsaved';
+      document.getElementById('save-indicator').style.color = '#f59e0b';
+      toggleHistory();
+    }).catch(() => {});
+}
+
+// ── ACE Editor Review ──────────────────────────────────────────────────────────
+let _aceEditorPollTimer = null;
+
+function renderAceEditorFeedback(feedback) {
+  const card = document.getElementById('ace-editor-card');
+  const reviewing = document.getElementById('ace-editor-reviewing');
+  const result = document.getElementById('ace-editor-result');
+  const empty = document.getElementById('ace-editor-empty');
+  const dot = document.getElementById('ace-editor-status-dot');
+  if (!card) return;
+  card.style.display = '';
+  reviewing.style.display = 'none';
+  result.style.display = 'none';
+  empty.style.display = 'none';
+  if (!feedback) {
+    empty.style.display = '';
+    dot.style.background = '#334155';
+    return;
+  }
+  result.style.display = '';
+  const overall = feedback.overall || 'pass';
+  const overallEl = document.getElementById('ace-editor-overall');
+  overallEl.textContent = overall.toUpperCase();
+  if (overall === 'pass') {
+    overallEl.style.cssText = 'font-size:11px;font-weight:700;padding:2px 8px;border-radius:3px;background:#052e16;color:#4ade80;border:1px solid #16a34a;';
+    dot.style.background = '#4ade80';
+  } else if (overall === 'warn') {
+    overallEl.style.cssText = 'font-size:11px;font-weight:700;padding:2px 8px;border-radius:3px;background:#1a0a00;color:#fbbf24;border:1px solid #92400e;';
+    dot.style.background = '#fbbf24';
+  } else {
+    overallEl.style.cssText = 'font-size:11px;font-weight:700;padding:2px 8px;border-radius:3px;background:#2d0a0a;color:#f87171;border:1px solid #7f1d1d;';
+    dot.style.background = '#f87171';
+  }
+  const timeEl = document.getElementById('ace-editor-time');
+  if (feedback.reviewed_at) {
+    try { timeEl.textContent = new Date(feedback.reviewed_at).toLocaleTimeString(); } catch(e) {}
+  }
+  const issuesEl = document.getElementById('ace-editor-issues');
+  const issues = feedback.issues || [];
+  if (issues.length) {
+    issuesEl.innerHTML = issues.map(i => {
+      const col = i.level === 'error' ? '#f87171' : '#fbbf24';
+      return `<div style="color:${col};margin-bottom:3px;">• ${i.source ? '<b>' + i.source + '</b>: ' : ''}${i.message}</div>`;
+    }).join('');
+  } else {
+    issuesEl.innerHTML = '<div style="color:#4ade80;font-size:11px;">No issues found.</div>';
+  }
+  document.getElementById('ace-editor-summary').textContent = feedback.summary || '';
+}
+
+function showAceEditorReviewing() {
+  const card = document.getElementById('ace-editor-card');
+  const reviewing = document.getElementById('ace-editor-reviewing');
+  const result = document.getElementById('ace-editor-result');
+  const empty = document.getElementById('ace-editor-empty');
+  const dot = document.getElementById('ace-editor-status-dot');
+  if (!card) return;
+  card.style.display = '';
+  reviewing.style.display = '';
+  result.style.display = 'none';
+  empty.style.display = 'none';
+  if (dot) dot.style.background = '#9d4edd';
+}
+
+function runAceEditorReview() {
+  if (!currentSectionId) return;
+  showAceEditorReviewing();
+  fetch(`/api/rfi/${SESSION_ID}/sections/${currentSectionId}/ace-feedback/run`, {method:'POST'})
+    .then(() => _pollAceEditorFeedback())
+    .catch(() => {});
+}
+
+function _pollAceEditorFeedback() {
+  if (_aceEditorPollTimer) clearTimeout(_aceEditorPollTimer);
+  if (!currentSectionId) return;
+  fetch(`/api/rfi/${SESSION_ID}/sections/${currentSectionId}/ace-feedback`)
+    .then(r => r.json())
+    .then(d => {
+      if (d.status === 'ready' && d.feedback) {
+        renderAceEditorFeedback(d.feedback);
+      } else {
+        _aceEditorPollTimer = setTimeout(_pollAceEditorFeedback, 2000);
+      }
+    }).catch(() => {
+      _aceEditorPollTimer = setTimeout(_pollAceEditorFeedback, 3000);
+    });
+}
+
+// ── ACE Reviewer ──────────────────────────────────────────────────────────────
+let _reviewerPollTimer = null;
+let _reviewerPollCount = 0;
+
+function showReviewerReviewing() {
+  const card = document.getElementById('ace-reviewer-card');
+  if (!card) return;
+  card.style.display = '';
+  const spinner = document.getElementById('ace-reviewer-spinner');
+  if (spinner) spinner.style.display = '';
+  document.getElementById('ace-reviewer-summary').textContent = 'Evaluator is reviewing…';
+  document.getElementById('ace-reviewer-issues').innerHTML = '';
+}
+
+function renderReviewerFeedback(fb) {
+  const card = document.getElementById('ace-reviewer-card');
+  if (!card) return;
+  card.style.display = '';
+  const spinner = document.getElementById('ace-reviewer-spinner');
+  if (spinner) spinner.style.display = 'none';
+
+  const scoreEl = document.getElementById('ace-reviewer-score');
+  if (scoreEl && fb.evaluator_score != null) scoreEl.textContent = `Score: ${fb.evaluator_score}/5`;
+
+  const overallEl = document.getElementById('ace-reviewer-overall');
+  const colorMap = {pass:'#22c55e', warn:'#f59e0b', fail:'#ef4444'};
+  const labelMap = {pass:'✓ Pass', warn:'⚠ Concerns', fail:'✗ Red Flags'};
+  const ov = fb.overall || 'warn';
+  if (overallEl) { overallEl.textContent = labelMap[ov] || ov; overallEl.style.color = colorMap[ov] || '#94a3b8'; }
+
+  const sumEl = document.getElementById('ace-reviewer-summary');
+  if (sumEl) sumEl.textContent = fb.summary || '';
+
+  const issuesEl = document.getElementById('ace-reviewer-issues');
+  const issues = fb.issues || [];
+  if (!issues.length) {
+    issuesEl.innerHTML = '<div style="font-size:11px;color:#22c55e;">✓ No evaluator concerns.</div>';
+    return;
+  }
+  const typeColors = {evaluator_concern:'#a78bfa',missing_data:'#ef4444',vague_claim:'#f59e0b',compliance_gap:'#f87171'};
+  issuesEl.innerHTML = issues.slice(0,5).map(i => {
+    const col = typeColors[i.type] || '#94a3b8';
+    const sug = i.suggestion ? `<div style="font-size:10px;color:#5a7aa0;margin-top:2px;">→ ${i.suggestion}</div>` : '';
+    return `<div style="margin-bottom:6px;padding:5px 7px;border-left:2px solid ${col};background:rgba(0,0,0,.15);">
+      <span style="font-size:9px;color:${col};text-transform:uppercase;font-weight:600;">${i.type.replace(/_/g,' ')}</span>
+      <div style="font-size:11px;color:#b8d0e8;margin-top:1px;">${i.message}</div>${sug}
+    </div>`;
+  }).join('');
+}
+
+function _pollReviewer(sectionId) {
+  _reviewerPollCount++;
+  if (_reviewerPollCount > 15) return;
+  clearTimeout(_reviewerPollTimer);
+  fetch(`/api/rfi/${SESSION_ID}/sections/${sectionId}/ace-feedback`)
+    .then(r => r.json())
+    .then(d => {
+      const fb = d.feedback || d.ace_feedback;
+      if (fb && fb.reviewer) { renderReviewerFeedback(fb.reviewer); }
+      else if (fb && fb.source === 'reviewer') { renderReviewerFeedback(fb); }
+      else { _reviewerPollTimer = setTimeout(() => _pollReviewer(sectionId), 3000); }
+    })
+    .catch(() => { _reviewerPollTimer = setTimeout(() => _pollReviewer(sectionId), 5000); });
+}
+
+function rerunReviewer() {
+  if (!currentSectionId) return;
+  showReviewerReviewing();
+  _reviewerPollCount = 0;
+  fetch(`/api/rfi/${SESSION_ID}/sections/${currentSectionId}/ace-reviewer/run`, {method:'POST'});
+  _reviewerPollTimer = setTimeout(() => _pollReviewer(currentSectionId), 4000);
+}
+
+// ── Item 6: Deadline countdown ────────────────────────────────────────────────
+function loadDeadlineInfo() {
+  fetch(`/api/rfi/${SESSION_ID}/deadline`)
+    .then(r => r.json())
+    .then(d => {
+      const badge = document.getElementById('deadline-badge');
+      if (!badge) return;
+      badge.style.display = '';
+      if (!d.deadline) {
+        badge.textContent = '📅 Set deadline';
+        badge.style.borderColor = '#334155';
+        badge.style.color = '#5a7aa0';
+        return;
+      }
+      const days = d.days_remaining;
+      let color = '#22c55e', border = '#16a34a';
+      if (d.overdue) { color = '#f87171'; border = '#7f1d1d'; }
+      else if (d.urgent) { color = '#fbbf24'; border = '#92400e'; }
+      const label = d.overdue ? `${Math.abs(days)}d overdue` : days === 0 ? 'Due today!' : `${days}d remaining`;
+      badge.textContent = `📅 ${label}`;
+      badge.style.color = color;
+      badge.style.borderColor = border;
+    })
+    .catch(() => {});
+}
+
+function toggleDeadlinePicker() {
+  const inp = document.getElementById('deadline-input');
+  inp.style.display = inp.style.display === 'none' ? '' : 'none';
+  if (inp.style.display !== 'none') inp.focus();
+}
+
+function saveDeadline(val) {
+  if (!val) return;
+  fetch(`/api/rfi/${SESSION_ID}/deadline`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({deadline: val}),
+  }).then(() => { document.getElementById('deadline-input').style.display = 'none'; loadDeadlineInfo(); });
+}
+
+// ── Item 7: Generate Why Us ───────────────────────────────────────────────────
+let _whyUsParagraph = '';
+
+function generateWhyUs() {
+  const competitor = (document.getElementById('competitor-input') || {}).value || '';
+  const spinner = document.getElementById('why-us-spinner');
+  const output = document.getElementById('why-us-output');
+  const actions = document.getElementById('why-us-actions');
+  spinner.style.display = '';
+  output.style.display = 'none';
+  actions.style.display = 'none';
+  fetch(`/api/rfi/${SESSION_ID}/why-us`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({competitor_name: competitor}),
+  })
+    .then(r => r.json())
+    .then(d => {
+      spinner.style.display = 'none';
+      if (d.ok && d.paragraph) {
+        _whyUsParagraph = d.paragraph;
+        output.textContent = d.paragraph;
+        output.style.display = '';
+        actions.style.display = '';
+        actions.style.display = 'flex';
+        actions.style.justifyContent = 'flex-end';
+      } else {
+        output.textContent = d.error || 'Generation failed.';
+        output.style.display = '';
+      }
+    })
+    .catch(() => { spinner.style.display = 'none'; output.textContent = 'Error.'; output.style.display = ''; });
+}
+
+function appendWhyUsToEditor() {
+  if (!_whyUsParagraph) return;
+  const editor = document.getElementById('content-editor');
+  const existing = editor.value.trim();
+  editor.value = existing ? existing + '\n\n---\n\n**Why ' + (window.__rfi_profile_name || 'Us') + ':**\n\n' + _whyUsParagraph : _whyUsParagraph;
+  onContentChange();
+  document.getElementById('why-us-actions').style.display = 'none';
+}
+</script>
+{% endblock %}

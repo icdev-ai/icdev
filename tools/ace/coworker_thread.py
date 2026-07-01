@@ -103,7 +103,7 @@ class HITLGate:
                 pending_rows = conn.execute(
                     """SELECT id, detail, created_at
                        FROM ace_audit_log
-                       WHERE coworker_id = ? AND action = 'hitl_pending'
+                       WHERE coworker_id = %s AND action = 'hitl_pending'
                        ORDER BY created_at DESC""",
                     (coworker_id,),
                 ).fetchall()
@@ -113,7 +113,7 @@ class HITLGate:
 
                 resolved_rows = conn.execute(
                     """SELECT detail FROM ace_audit_log
-                       WHERE coworker_id = ? AND action = 'hitl_resolved'""",
+                       WHERE coworker_id = %s AND action = 'hitl_resolved'""",
                     (coworker_id,),
                 ).fetchall()
                 resolved_details = {r[0] for r in resolved_rows}
@@ -146,7 +146,7 @@ class HITLGate:
                 conn.execute(
                     "INSERT INTO ace_audit_log "
                     "(instance_id, coworker_id, action, detail, actor, created_at) "
-                    "VALUES (?, ?, 'hitl_resolved', ?, 'hitl_gate', ?)",
+                    "VALUES (%s, %s, 'hitl_resolved', %s, 'hitl_gate', %s)",
                     (instance_id, coworker_id, detail, now),
                 )
                 conn.commit()
@@ -668,7 +668,7 @@ class CoWorkerThread(threading.Thread):
                 conn.execute(
                     "INSERT INTO ace_messages "
                     "(id, instance_id, coworker_id, message_type, role, content, metadata_json) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s)",
                     (
                         str(_uuid.uuid4()),
                         self.instance_id,
@@ -886,7 +886,7 @@ class CoWorkerThread(threading.Thread):
                 conn.execute(
                     "INSERT INTO kanban_tasks "
                     "(id, title, description, task_type, priority, status, created_at, updated_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
                     (
                         card_id,
                         f"HITL Review: ACE compliance gap — {self.spec.coworker_id}",
@@ -925,7 +925,7 @@ class CoWorkerThread(threading.Thread):
             conn = get_canvas_connection(_DB_ENV)
             try:
                 conn.execute(
-                    "UPDATE ace_coworkers SET state = ?, last_active_at = ? WHERE id = ?",
+                    "UPDATE ace_coworkers SET state = %s, last_active_at = %s WHERE id = %s",
                     (state, now, self.spec.coworker_id),
                 )
                 conn.commit()
@@ -942,7 +942,7 @@ class CoWorkerThread(threading.Thread):
             conn = get_canvas_connection(_DB_ENV)
             try:
                 conn.execute(
-                    "UPDATE ace_coworkers SET assigned_step = ? WHERE id = ?",
+                    "UPDATE ace_coworkers SET assigned_step = %s WHERE id = %s",
                     (step_id, self.spec.coworker_id),
                 )
                 conn.commit()
@@ -1102,7 +1102,7 @@ class CoWorkerThread(threading.Thread):
                 conn.execute(
                     "INSERT INTO ace_skill_candidates "
                     "(id, role_id, source_role, instance_id, candidate_yaml, trust_tier, status, created_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)",
+                    "VALUES (%s, %s, %s, %s, %s, %s, 'pending', %s)",
                     (candidate_id, candidate_role_id, role_id, self.instance_id, candidate_yaml, self.spec.trust_tier, now),
                 )
                 conn.commit()

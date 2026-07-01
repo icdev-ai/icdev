@@ -390,7 +390,7 @@ class TestDsynArtifactInventory:
     def test_dic_canvas_integrations_has_all_sources(self):
         import yaml
         import pathlib
-        with pathlib.Path("args/dic_canvas_integrations.yaml").open() as f:
+        with (pathlib.Path(__file__).parent.parent / "args/dic_canvas_integrations.yaml").open() as f:
             config = yaml.safe_load(f)
         integrations = config.get("integrations", {})
         for expected in ["ndc.topology.drift_detected", "compliance.finding_created",

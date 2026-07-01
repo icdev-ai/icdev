@@ -1,0 +1,8 @@
+canvas: rfi_canvas
+queries:
+  - label: All exports
+    query: "foreach e in rfi_canvas.exports select e.rfi_number, e.export_format, e.file_path, e.exported_at"
+  - label: DOCX exports
+    query: "foreach e in rfi_canvas.exports where e.export_format == \"docx\" select e.rfi_number, e.file_path, e.exported_at"
+  - label: Recent exports
+    query: "foreach e in rfi_canvas.exports orderby e.exported_at desc select e.rfi_number, e.export_format, e.exported_at"

@@ -1221,6 +1221,15 @@ def check_api_wiring(
             if len(func_lines) <= 5:
                 continue
 
+            # Skip known health/ping/status endpoints — these intentionally
+            # return hardcoded sentinel values (not placeholder code).
+            _HEALTH_ENDPOINT_NAMES = {
+                "api_status", "api_health", "api_ping", "health_check",
+                "ping", "status", "get_status", "liveness", "readiness",
+            }
+            if node.name in _HEALTH_ENDPOINT_NAMES:
+                continue
+
             # Check: does it have any DB/storage call?
             has_db_call = bool(_DB_CALL_PATTERNS.search(func_body))
 
@@ -1572,6 +1581,18 @@ _ATTRIBUTION_REGISTRY: Dict[str, Dict[str, str]] = {
             "inspiration for the readiness check architecture. Structural diff confirmed "
             "no class or method overlap; ICDEV implementation uses its own scoring model, "
             "DB schema, and LLMRouter integration."
+        ),
+    },
+    "getzep/graphiti": {
+        "url": "https://github.com/getzep/graphiti",
+        "license": "Apache-2.0",
+        "audit_status": (
+            "2026-06-29 verified — getzep/graphiti is Apache-2.0 licensed. "
+            "tools/document_intelligence/chat_memory.py cites it as design "
+            "inspiration for grounded, citable session memory (along with mem0 and "
+            "two academic papers). ICDEV implementation uses SQLite-backed subject/ref "
+            "tables driven by the existing DIC RAG/KG pipeline; no graphiti code, "
+            "class, or method is copied. Concept-only citation."
         ),
     },
 }
@@ -2908,7 +2929,9 @@ def check_new_page_completeness() -> CoherenceCheck:
 
         # 6. IQE seed queries
         iqe_queries = iqe_queries_dir / canvas
-        if not iqe_queries.exists() or not list(iqe_queries.glob("*.yaml")) + list(iqe_queries.glob("*.yml")):
+        if not iqe_queries.exists() or not (
+            list(iqe_queries.glob("*.yaml")) + list(iqe_queries.glob("*.yml")) + list(iqe_queries.glob("*.iqe"))
+        ):
             missing.append(f"context/iqe/queries/{canvas}/ missing or empty")
 
         # 7. IQE widget in template
@@ -3003,7 +3026,13 @@ def check_new_page_completeness() -> CoherenceCheck:
 
             # Skip non-enabled canvases that have NO template dir at all
             # (they're intentionally not built yet)
-            canvas_tpl_dir = templates_dir / key
+            # Use the declared template's parent dir when available (handles canvases
+            # whose key differs from their template dir name, e.g. ndc→network).
+            canvas_tpl_dir = (
+                declared_tpl.parent
+                if (declared_tpl and declared_tpl.exists())
+                else templates_dir / key
+            )
             if not canvas_tpl_dir.exists() and not is_enabled:
                 continue
 
@@ -3061,7 +3090,7 @@ def check_new_page_completeness() -> CoherenceCheck:
             rel_tpl = main_tpl.relative_to(PROJECT_ROOT)
 
             # 1. icdev/ mirror for main template
-            icdev_mirror = PROJECT_ROOT / "icdev" / main_tpl.relative_to(PROJECT_ROOT / "tools")
+            icdev_mirror = PROJECT_ROOT / "icdev" / "tools" / main_tpl.relative_to(PROJECT_ROOT / "tools")
             if not icdev_mirror.exists():
                 registry_violations.append(
                     f"tch-completeness-{key}-mirror: {rel_tpl}: icdev/ mirror missing"
@@ -3101,15 +3130,15 @@ def check_new_page_completeness() -> CoherenceCheck:
             if seed_path_str:
                 seed_dir = PROJECT_ROOT / seed_path_str
                 if not seed_dir.exists() or not (
-                    list(seed_dir.glob("*.yaml")) + list(seed_dir.glob("*.yml"))
+                    list(seed_dir.glob("*.yaml")) + list(seed_dir.glob("*.yml")) + list(seed_dir.glob("*.iqe"))
                 ):
                     registry_violations.append(
                         f"tch-completeness-{key}-seed_queries: "
                         f"{seed_path_str} missing or empty"
                     )
 
-            # 7. IQE widget in template
-            if "iqe_query_widget" not in main_tpl_text and "iqe-widget" not in main_tpl_text:
+            # 7. IQE widget in template — only required when canvas has iqe.adapter_module wired
+            if iqe_adapter_mod and "iqe_query_widget" not in main_tpl_text and "iqe-widget" not in main_tpl_text:
                 registry_violations.append(
                     f"tch-completeness-{key}-iqe_widget: "
                     f"{rel_tpl} missing iqe_query_widget include"

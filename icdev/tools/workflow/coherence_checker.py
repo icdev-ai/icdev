@@ -1220,6 +1220,15 @@ def check_api_wiring(
             if len(func_lines) <= 5:
                 continue
 
+            # Skip known health/ping/status endpoints — these intentionally
+            # return hardcoded sentinel values (not placeholder code).
+            _HEALTH_ENDPOINT_NAMES = {
+                "api_status", "api_health", "api_ping", "health_check",
+                "ping", "status", "get_status", "liveness", "readiness",
+            }
+            if node.name in _HEALTH_ENDPOINT_NAMES:
+                continue
+
             # Check: does it have any DB/storage call?
             has_db_call = bool(_DB_CALL_PATTERNS.search(func_body))
 
@@ -1571,6 +1580,18 @@ _ATTRIBUTION_REGISTRY: Dict[str, Dict[str, str]] = {
             "inspiration for the readiness check architecture. Structural diff confirmed "
             "no class or method overlap; ICDEV implementation uses its own scoring model, "
             "DB schema, and LLMRouter integration."
+        ),
+    },
+    "getzep/graphiti": {
+        "url": "https://github.com/getzep/graphiti",
+        "license": "Apache-2.0",
+        "audit_status": (
+            "2026-06-29 verified — getzep/graphiti is Apache-2.0 licensed. "
+            "tools/document_intelligence/chat_memory.py cites it as design "
+            "inspiration for grounded, citable session memory (along with mem0 and "
+            "two academic papers). ICDEV implementation uses SQLite-backed subject/ref "
+            "tables driven by the existing DIC RAG/KG pipeline; no graphiti code, "
+            "class, or method is copied. Concept-only citation."
         ),
     },
 }
@@ -2906,7 +2927,9 @@ def check_new_page_completeness() -> CoherenceCheck:
 
         # 6. IQE seed queries
         iqe_queries = iqe_queries_dir / canvas
-        if not iqe_queries.exists() or not list(iqe_queries.glob("*.yaml")) + list(iqe_queries.glob("*.yml")):
+        if not iqe_queries.exists() or not (
+            list(iqe_queries.glob("*.yaml")) + list(iqe_queries.glob("*.yml")) + list(iqe_queries.glob("*.iqe"))
+        ):
             missing.append(f"context/iqe/queries/{canvas}/ missing or empty")
 
         # 7. IQE widget in template

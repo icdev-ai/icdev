@@ -105,7 +105,7 @@ def _column_exists(conn, table: str, column: str) -> bool:
         if is_pg(conn):
             row = conn.execute(
                 "SELECT 1 FROM information_schema.columns "
-                "WHERE table_name = ? AND column_name = ?",
+                "WHERE table_name = %s AND column_name = %s",
                 (table, column),
             ).fetchone()
         else:

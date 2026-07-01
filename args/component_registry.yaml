@@ -375,7 +375,7 @@ components:
     db_migration: tools/agentic_ai_canvas/db/migrations
     iqe_adapter: true
     nav_link: true
-    seed_queries: context/iqe/queries/agentic-ai/
+    seed_queries: context/iqe/queries/aadc/
 - key: aimc
   kind: canvas
   display_name: AI/ML Canvas
@@ -406,7 +406,7 @@ components:
     db_migration: tools/aiml_canvas/db/migrations
     iqe_adapter: true
     nav_link: true
-    seed_queries: context/iqe/queries/ai-ml/
+    seed_queries: context/iqe/queries/aimc/
 - key: ohc
   kind: canvas
   display_name: Operations Hub Canvas
@@ -437,7 +437,7 @@ components:
     db_migration: tools/ops_hub/db/migrations
     iqe_adapter: true
     nav_link: true
-    seed_queries: context/iqe/queries/ops/
+    seed_queries: context/iqe/queries/ohc/
 - key: iop
   kind: canvas
   display_name: Info Ops Canvas
@@ -489,7 +489,7 @@ components:
     db_migration: tools/mission_canvas/db/migrations
     iqe_adapter: true
     nav_link: true
-    seed_queries: context/iqe/queries/mission/
+    seed_queries: context/iqe/queries/mission_canvas/
 - key: nocc
   kind: canvas
   display_name: NOC Canvas
@@ -520,7 +520,7 @@ components:
     db_migration: tools/noc_canvas/db/migrations
     iqe_adapter: true
     nav_link: true
-    seed_queries: context/iqe/queries/noc/
+    seed_queries: context/iqe/queries/noc_canvas/
 - key: pmc
   kind: canvas
   display_name: Peering Management Canvas
@@ -741,7 +741,7 @@ components:
     db_migration: tools/document_intelligence/db/migrations
     iqe_adapter: true
     nav_link: true
-    seed_queries: context/iqe/queries/document_intelligence/
+    seed_queries: context/iqe/queries/dic/
 - key: demo_runner
   kind: canvas
   display_name: Demo Runner
@@ -1290,6 +1290,41 @@ components:
   nav:
     section: Intelligence
     label: RAG
+- key: rfi_canvas
+  kind: canvas
+  cli_name: rfi
+  display_name: RFI Response Workbench
+  description: Upload RFI docs, AI-generate section responses, HITL review, WriteGuard quality, export DOCX.
+  env_flag: ICDEV_RFI_CANVAS_ENABLED
+  default_enabled: false
+  module: tools.govcon.rfi_canvas_blueprint
+  blueprint_attr: rfi_canvas_bp
+  url_prefix: ""
+  min_il: IL4
+  default_roles:
+  - developer
+  - analyst
+  nav:
+    section: GovCon
+    label: RFI Workbench
+    links:
+    - label: RFI Workbench
+      href: /rfi/
+      enabled: true
+  iqe:
+    adapter_module: tools.iqe.adapters.rfi_canvas
+    collections:
+    - rfi_canvas.sessions
+    - rfi_canvas.sections
+    - rfi_canvas.exports
+  completeness:
+    template: tools/dashboard/templates/rfi_canvas/index.html
+    blueprint: true
+    constants: tools/govcon/rfi_workbench.py
+    db_migration: tools/db/migrations/236_rfi_workbench.sql
+    iqe_adapter: true
+    nav_link: true
+    seed_queries: context/iqe/queries/rfi_canvas/
 - key: govcon
   kind: feature
   display_name: GovCon Intelligence

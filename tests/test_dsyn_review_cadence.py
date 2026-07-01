@@ -112,7 +112,7 @@ class TestReflexStructure:
     def test_genesis_config_has_entry(self):
         import yaml
         import pathlib
-        with pathlib.Path("args/genesis_config.yaml").open() as f:
+        with (pathlib.Path(__file__).parent.parent / "args/genesis_config.yaml").open() as f:
             cfg = yaml.safe_load(f)
         reflexes = cfg.get("reflexes", {})
         assert "dic_review_cadence" in reflexes
@@ -120,7 +120,7 @@ class TestReflexStructure:
     def test_genesis_config_nightly_interval(self):
         import yaml
         import pathlib
-        with pathlib.Path("args/genesis_config.yaml").open() as f:
+        with (pathlib.Path(__file__).parent.parent / "args/genesis_config.yaml").open() as f:
             cfg = yaml.safe_load(f)
         entry = cfg["reflexes"]["dic_review_cadence"]
         assert entry["interval_seconds"] == 86400

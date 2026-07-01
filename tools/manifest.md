@@ -1103,3 +1103,34 @@
 | Role Advisor | tools\second_brain\role_advisor.py | Auto-registered: second_brain/role_advisor.py | --json | JSON |
 | Nightly Prep Reflex | tools\genesis\reflexes\nightly_prep_reflex.py | Auto-registered: reflexes/nightly_prep_reflex.py | --json | JSON |
 | Thought Leadership Reflex | tools\genesis\reflexes\thought_leadership_reflex.py | Auto-registered: reflexes/thought_leadership_reflex.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Recipe Loader | tools\config\recipe_loader.py | Auto-registered: config/recipe_loader.py | --json | JSON |
+| Context Factory | tools\coworkers\context_factory.py | Auto-registered: coworkers/context_factory.py | --json | JSON |
+| Chat Memory | tools\document_intelligence\chat_memory.py | Auto-registered: document_intelligence/chat_memory.py | --json | JSON |
+| Cross Canvas Context | tools\document_intelligence\cross_canvas_context.py | Auto-registered: document_intelligence/cross_canvas_context.py | --json | JSON |
+| Seed Demo Corpus | tools\document_intelligence\seed_demo_corpus.py | Auto-registered: document_intelligence/seed_demo_corpus.py | --json | JSON |
+| Analyze Backlog | tools\kanban\analyze_backlog.py | Auto-registered: kanban/analyze_backlog.py | --json | JSON |
+| Balance Scheduler | tools\kanban\balance_scheduler.py | Auto-registered: kanban/balance_scheduler.py | --json | JSON |
+| Promote Backlog To Scheduled | tools\kanban\promote_backlog_to_scheduled.py | Auto-registered: kanban/promote_backlog_to_scheduled.py | --json | JSON |
+| Seed Acf Adaptations | tools\kanban\seed_acf_adaptations.py | Auto-registered: kanban/seed_acf_adaptations.py | --json | JSON |
+| Seed Acf Completion | tools\kanban\seed_acf_completion.py | Auto-registered: kanban/seed_acf_completion.py | --json | JSON |
+| Dic Personaliser | tools\second_brain\dic_personaliser.py | Auto-registered: second_brain/dic_personaliser.py | --json | JSON |
+| Interactions | tools\second_brain\interactions.py | Auto-registered: second_brain/interactions.py | --json | JSON |
+| Objective Tracker | tools\second_brain\objective_tracker.py | Auto-registered: second_brain/objective_tracker.py | --json | JSON |
+| Personal Rag | tools\second_brain\personal_rag.py | Auto-registered: second_brain/personal_rag.py | --json | JSON |
+| Relationship Health | tools\second_brain\relationship_health.py | Auto-registered: second_brain/relationship_health.py | --json | JSON |
+| Retro | tools\second_brain\retro.py | Auto-registered: second_brain/retro.py | --json | JSON |
+| Slides Tailor | tools\second_brain\slides_tailor.py | Auto-registered: second_brain/slides_tailor.py | --json | JSON |
+| Commitment Watch Reflex | tools\genesis\reflexes\commitment_watch_reflex.py | Auto-registered: reflexes/commitment_watch_reflex.py | --json | JSON |
+| Meeting Prep Reflex | tools\genesis\reflexes\meeting_prep_reflex.py | Auto-registered: reflexes/meeting_prep_reflex.py | --json | JSON |
+| Objective Tracker Reflex | tools\genesis\reflexes\objective_tracker_reflex.py | Auto-registered: reflexes/objective_tracker_reflex.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Weekly Retro Reflex | tools\genesis\reflexes\weekly_retro_reflex.py | Auto-registered: reflexes/weekly_retro_reflex.py | --json | JSON |

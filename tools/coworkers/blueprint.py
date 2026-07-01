@@ -18,15 +18,14 @@ can pick it up directly.
 """
 from __future__ import annotations
 
-import logging
-
 from flask import Blueprint, jsonify, redirect, render_template
 
 from icdev.tools.coworkers import constants as _const
 from icdev.tools.coworkers.context_factory import build_chat_link
 from icdev.tools.coworkers.registry import get_coworker, list_coworkers
+from tools.logging.icdev_logger import get_logger
 
-logger = logging.getLogger("icdev.coworkers.blueprint")
+logger = get_logger("icdev.coworkers.blueprint")
 
 
 def create_coworkers_blueprint() -> Blueprint:

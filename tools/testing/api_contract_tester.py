@@ -26,12 +26,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-try:
-    from tools.logging.icdev_logger import get_logger
-    logger = get_logger("icdev.testing.api_contract_tester")
-except Exception:
-    import logging
-    logger = logging.getLogger("api_contract_tester")
+from tools.logging.icdev_logger import get_logger
+logger = get_logger("icdev.testing.api_contract_tester")
 
 _DEDUP_DB = BASE_DIR / "data" / "api_contract_filed.db"
 
