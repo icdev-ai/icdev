@@ -88,6 +88,7 @@ SLIDE_TYPES: list[str] = [
     "excalidraw_sketch",  # Hand-drawn whiteboard style via rough.js
     "card_grid",          # 3-column card grid (investment overview, capability comparison)
     "table",              # Structured data table (financials, comparisons, ROI breakdowns)
+    "svg_art",            # Full-slide vector art rendered as native, editable PPTX shapes
 ]
 
 # ── Themes ────────────────────────────────────────────────────────────────────

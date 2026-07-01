@@ -637,3 +637,22 @@ scanner then runs against the *staged copy as data* — the target is read, hash
   - `approved_by` field is stored as metadata only; no downstream code execution.
   - APPEND-ONLY tables (`nc_vuln_predictions`, `nc_patch_plans`) enforced by `APPEND_ONLY_TABLES` in `.claude/hooks/pre_tool_use.py`.
 - **Revisit if:** users are ever allowed to supply custom NQL queries, if advisory data is fetched from untrusted external URLs, or if `approved_by` is used to trigger downstream privilege escalation.
+
+---
+
+### Gap 23 — Slides Template-Fill Upload (`tools/slides/template_fill.py`, `tools/slides/blueprint.py` — `/api/templates/upload`)
+
+**Module:** `tools/slides/template_fill.py` (`inspect_template()`, `fill_and_export()`); ingress at `tools/slides/blueprint.py` route `POST /api/templates/upload`.
+
+**Ingress path:** Dashboard user uploads an arbitrary `.pptx` file (e.g. a customer/agency proposal template) via multipart HTTP. The file is saved under `tools/presentations/templates_uploaded/` and parsed with `python-pptx` (`inspect_template()`) to enumerate its shapes; a later `fill_and_export()` call opens the same file, overwrites selected slides' text/table/chart content in place, deletes unselected slides, and saves a new `.pptx`.
+
+- **Decision:** **trusted-first-party** (bounded native parser, no code execution surface)
+- **Rationale:** `python-pptx` only parses OOXML (a ZIP of XML parts) via `xml.etree`/`lxml` — no macro execution, no embedded-script evaluation, no `exec()`/`eval()`/`subprocess`. `svg_to_pptx.py` (used for the related `svg_art` slide type and the `slides_svg` graphics fallback) similarly only parses SVG via stdlib `xml.etree.ElementTree` with a bounded element allowlist — unrecognized elements are skipped, not executed. No user content is ever passed to a shell, template-rendered unescaped, or dynamically imported.
+- **Guardrails:**
+  - Extension allowlist enforced at upload: reject anything not ending in `.pptx` (`api_upload_template`).
+  - Filename sanitized via `werkzeug.utils.secure_filename` before use as a path component.
+  - Upload saved under a fixed server-side directory (`tools/presentations/templates_uploaded/`), never at a user-supplied path.
+  - `inspect_template()` is read-only (never mutates the uploaded file).
+  - `fill_and_export()` writes only to the fixed `tools/presentations/slides/` output directory, using a timestamp+hash-derived filename — never a user-supplied path.
+  - Malformed/corrupt `.pptx` uploads raise inside `python-pptx`'s parser and are caught, returning a 400 — the partial upload is deleted, nothing is persisted.
+- **Revisit if:** the parsing/fill pipeline ever shells out (e.g. LibreOffice conversion), evaluates macros, or the upload directory becomes user-path-controlled.

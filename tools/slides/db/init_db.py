@@ -92,6 +92,15 @@ CREATE TABLE IF NOT EXISTS slides_audit (
     ts        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS slides_templates (
+    template_id     SERIAL PRIMARY KEY,
+    filename        TEXT NOT NULL,
+    path            TEXT NOT NULL,
+    slide_count     INTEGER DEFAULT 0,
+    shape_map_json  JSONB DEFAULT '[]',
+    uploaded_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE INDEX IF NOT EXISTS idx_slides_deck_id ON slides_slides(deck_id);
 CREATE INDEX IF NOT EXISTS idx_slides_audit_deck_id ON slides_audit(deck_id);
 """
@@ -146,6 +155,15 @@ CREATE TABLE IF NOT EXISTS slides_audit (
     ts        DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS slides_templates (
+    template_id     INTEGER PRIMARY KEY AUTOINCREMENT,
+    filename        TEXT NOT NULL,
+    path            TEXT NOT NULL,
+    slide_count     INTEGER DEFAULT 0,
+    shape_map_json  TEXT DEFAULT '[]',
+    uploaded_at     DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE INDEX IF NOT EXISTS idx_slides_deck_id ON slides_slides(deck_id);
 CREATE INDEX IF NOT EXISTS idx_slides_audit_deck_id ON slides_audit(deck_id);
 """
@@ -164,6 +182,22 @@ def _parse_migration_version(filename: str) -> int:
     return int("".join(digits)) if digits else 0
 
 
+def _conn_is_pg(conn) -> bool:
+    """Resolve dialect from the actual connection, not the configured backend.
+
+    ``_SLIDES_BACKEND`` defaults to "postgresql" and get_connection() falls
+    back to SQLite silently when PG is unreachable — using the *configured*
+    backend to pick PG-dialect SQL (e.g. SERIAL PRIMARY KEY) against a
+    connection that actually fell back to SQLite silently produces a broken
+    schema (SERIAL parses but never autoincrements). Ask the connection.
+    """
+    try:
+        from tools.db.storage import is_pg
+        return is_pg(conn)
+    except Exception:
+        return _SLIDES_BACKEND == "postgresql"
+
+
 def _apply_migrations(conn) -> None:
     """Apply pending .sql migrations from tools/slides/db/migrations/."""
     if not _MIGRATIONS_DIR.is_dir():
@@ -176,7 +210,7 @@ def _apply_migrations(conn) -> None:
     if not files:
         return
 
-    is_pg = _SLIDES_BACKEND == "postgresql"
+    is_pg = _conn_is_pg(conn)
 
     if is_pg:
         conn.execute(
@@ -236,7 +270,7 @@ def init_db() -> None:
         return
     conn = get_connection()
     try:
-        schema = _SCHEMA_PG if _SLIDES_BACKEND == "postgresql" else _SCHEMA_SQLITE
+        schema = _SCHEMA_PG if _conn_is_pg(conn) else _SCHEMA_SQLITE
         for stmt in schema.strip().split(";"):
             stmt = stmt.strip()
             if stmt:

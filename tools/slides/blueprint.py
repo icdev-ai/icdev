@@ -9,16 +9,22 @@ Routes:
   POST /api/slides/<id>/revise   revise a single slide → {slide}
   GET  /api/slides/<id>/download serve the .pptx file
   POST /api/slides/<id>/iqe-query IQE natural-language query
+  GET  /slides/templates                     list uploaded .pptx templates
+  GET  /slides/templates/<id>                template detail (shape map + fill form)
+  POST /slides/api/templates/upload          upload a .pptx template → {template_id, slides}
+  POST /slides/api/templates/<id>/fill       fill selected slides → {deck_id}
 """
 from __future__ import annotations
 
 import json
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 
 from typing import Any
 
 from flask import Blueprint, jsonify, render_template, request, send_file
+from werkzeug.utils import secure_filename
 
 from tools.slides.constants import (
     DECK_TYPES, SLIDE_TYPES, THEMES, TONES, CITATION_STYLES, OUTPUT_FORMATS,
@@ -65,6 +71,32 @@ def _conn():
 def _ph(conn):
     """Return the SQL placeholder token for the active backend."""
     return sql_placeholder(conn)
+
+
+def _insert_and_get_id(conn, table: str, columns: list[str], values: tuple, id_column: str) -> int | None:
+    """INSERT a row and return its new id, portable across the PG/SQLite canvas backends.
+
+    RETURNING works on both dialects in principle, but the SQLite fallback
+    path (StorageCursor over a plain ``?``-placeholder connection) does not
+    reliably surface the RETURNING value — use lastrowid there instead.
+    """
+    from tools.db.storage import is_pg
+    ph = _ph(conn)
+    col_list = ", ".join(columns)
+    val_list = ", ".join([ph] * len(columns))
+    if is_pg(conn):
+        cur = conn.execute(
+            f"INSERT INTO {table} ({col_list}) VALUES ({val_list}) RETURNING {id_column}", values,
+        )
+        row = cur.fetchone()
+        return int(row[0]) if row else None
+    cur = conn.execute(f"INSERT INTO {table} ({col_list}) VALUES ({val_list})", values)
+    return int(cur.lastrowid) if cur.lastrowid is not None else None
+
+
+def _templates_upload_dir() -> Path:
+    from tools.slides.pptx_builder import _OUTPUT_DIR
+    return _OUTPUT_DIR.parent / "templates_uploaded"
 
 
 # ── Page Routes ──────────────────────────────────────────────────────────────
@@ -218,6 +250,49 @@ def present(deck_id: int):
         transition=transition,
         deck_id=deck_id,
     )
+
+
+# ── Template-Fill Page Routes ────────────────────────────────────────────────
+
+@slides_bp.route("/templates")
+def templates_index():
+    conn = _conn()
+    try:
+        rows = conn.execute(
+            "SELECT template_id, filename, slide_count, uploaded_at "
+            "FROM slides_templates ORDER BY uploaded_at DESC LIMIT 50"
+        ).fetchall()
+        templates = [dict(row) for row in rows]
+    except Exception:
+        templates = []
+    finally:
+        conn.close()
+    return render_template("slides/templates_index.html", templates=templates)
+
+
+@slides_bp.route("/templates/<int:template_id>")
+def template_detail(template_id: int):
+    conn = _conn()
+    try:
+        row = conn.execute(
+            f"SELECT * FROM slides_templates WHERE template_id = {_ph(conn)}", (template_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+
+    if not row:
+        return render_template("slides/templates_index.html", templates=[], error="Template not found"), 404
+
+    template = dict(row)
+    shape_map = template.get("shape_map_json")
+    if isinstance(shape_map, str):
+        try:
+            shape_map = json.loads(shape_map)
+        except Exception:
+            shape_map = {"slide_count": 0, "slides": []}
+    template["shape_map"] = shape_map or {"slide_count": 0, "slides": []}
+
+    return render_template("slides/template_detail.html", template=template)
 
 
 # ── API Routes ───────────────────────────────────────────────────────────────
@@ -608,6 +683,101 @@ def api_asset_smoke():
     except Exception as exc:
         logger.exception("asset-smoke failed")
         return jsonify({"success": False, "error": str(exc)}), 500
+
+
+@slides_bp.route("/api/templates/upload", methods=["POST"])
+def api_upload_template():
+    """Upload a .pptx template, inspect its shape map, and persist it.
+
+    Returns {template_id, slide_count, slides: [...]}.
+    """
+    f = request.files.get("file")
+    if not f or not f.filename:
+        return jsonify({"error": "file required"}), 400
+
+    filename = secure_filename(f.filename)
+    if not filename.lower().endswith(".pptx"):
+        return jsonify({"error": "only .pptx files are supported"}), 400
+
+    upload_dir = _templates_upload_dir()
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    dest = upload_dir / f"{ts}_{filename}"
+    f.save(str(dest))
+
+    try:
+        from tools.slides import template_fill
+        info = template_fill.inspect_template(str(dest))
+    except Exception as exc:
+        logger.exception("api_upload_template: inspect_template failed")
+        dest.unlink(missing_ok=True)
+        return jsonify({"error": f"could not parse .pptx: {exc}"}), 400
+
+    conn = _conn()
+    try:
+        template_id = _insert_and_get_id(
+            conn, "slides_templates",
+            ["filename", "path", "slide_count", "shape_map_json"],
+            (filename, str(dest), info["slide_count"], json.dumps(info)),
+            "template_id",
+        )
+        conn.commit()
+    except Exception as exc:
+        logger.exception("api_upload_template: DB insert failed")
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        conn.close()
+
+    return jsonify({"template_id": template_id, "slide_count": info["slide_count"], "slides": info["slides"]}), 201
+
+
+@slides_bp.route("/api/templates/<int:template_id>/fill", methods=["POST"])
+def api_fill_template(template_id: int):
+    """Fill selected slides of an uploaded template and register the result as a deck."""
+    data = request.get_json(silent=True) or {}
+    selections = data.get("selections") or []
+    if not selections:
+        return jsonify({"error": "selections required"}), 400
+
+    conn = _conn()
+    try:
+        row = conn.execute(
+            f"SELECT filename, path FROM slides_templates WHERE template_id = {_ph(conn)}",
+            (template_id,),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    if not row:
+        return jsonify({"error": "template not found"}), 404
+    row = dict(row)
+    pptx_path = row["path"]
+    if not pptx_path or not Path(pptx_path).exists():
+        return jsonify({"error": "uploaded template file missing on disk"}), 404
+
+    try:
+        from tools.slides import template_fill
+        out_path = template_fill.fill_and_export(pptx_path, selections)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        logger.exception("api_fill_template: fill_and_export failed")
+        return jsonify({"error": str(exc)}), 500
+
+    title = f"{Path(row['filename']).stem} (filled)"
+    conn = _conn()
+    try:
+        deck_id = _insert_and_get_id(
+            conn, "slides_decks",
+            ["title", "deck_type", "status", "pptx_path", "slide_count", "source_types"],
+            (title, "template_fill", "completed", out_path, len(selections), json.dumps(["template_fill"])),
+            "deck_id",
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    return jsonify({"deck_id": deck_id, "pptx_path": out_path}), 201
 
 
 @slides_bp.route("/api/iqe-query", methods=["POST"])

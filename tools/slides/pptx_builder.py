@@ -188,8 +188,15 @@ def _build_content_slide(
         _add_bullets(s, bullets, Inches(0.24), Inches(0.85), col_w, palette)
         img_l = LM + col_w + Inches(0.15)
         img_w = CW - col_w - Inches(0.1)
+        img_h = Inches(5.6)
         try:
-            s.shapes.add_picture(image_path, img_l, Inches(0.85), img_w, Inches(5.6))
+            if str(image_path).lower().endswith(".svg"):
+                # add_picture cannot rasterize SVG (no PIL SVG support) — embed
+                # as native, editable shapes instead of a flattened picture.
+                from tools.viz import svg_to_pptx
+                svg_to_pptx.embed_svg_file(s, image_path, img_l, Inches(0.85), img_w, img_h)
+            else:
+                s.shapes.add_picture(image_path, img_l, Inches(0.85), img_w, img_h)
         except Exception:
             pass
     else:
@@ -281,6 +288,41 @@ def _build_mermaid_slide(prs: Presentation, slide_data: dict, n: int, palette: d
         _box(s, LM, Inches(5.0), CW, Inches(0.4),
              "ℹ️  Open the web presentation viewer or HTML export to see the interactive diagram.",
              size=11, color=accent, italic=True, wrap=True)
+
+    _footer(s, n, palette)
+    notes_text = slide_data.get("speaker_notes", "")
+    if notes_text:
+        _notes(s, notes_text)
+
+
+def _build_svg_slide(prs: Presentation, slide_data: dict, n: int, palette: dict) -> None:
+    """Full-slide vector art, rendered as native/editable PPTX shapes (not a picture)."""
+    s = _blank(prs)
+    _bg(s, _rgb(palette, "bg"))
+    accent = _rgb(palette, "accent")
+    dark = _rgb(palette, "dark")
+    subtext = _rgb(palette, "subtext")
+
+    _rect(s, 0, 0, Inches(0.12), H, accent)
+    _rect(s, Inches(0.12), 0, W - Inches(0.12), Inches(0.72), dark)
+    title = slide_data.get("title", "")[:80]
+    _box(s, Inches(0.24), Inches(0.12), CW, Inches(0.55),
+         title, size=22, bold=True, color=accent)
+    _accent_bar(s, palette, top=Inches(0.72), h=Inches(0.04))
+
+    svg_code = slide_data.get("svg_code") or ""
+    rendered = False
+    if svg_code:
+        try:
+            from tools.viz import svg_to_pptx
+            shapes = svg_to_pptx.render_svg_into_slide(s, svg_code, LM, Inches(0.9), CW, Inches(5.6))
+            rendered = bool(shapes)
+        except Exception:
+            rendered = False
+
+    if not rendered:
+        _box(s, LM, Inches(2.8), CW, Inches(0.6),
+             "(No vector art generated)", size=14, color=subtext, align=PP_ALIGN.CENTER)
 
     _footer(s, n, palette)
     notes_text = slide_data.get("speaker_notes", "")
@@ -546,6 +588,8 @@ def build(
             _build_outro_slide(prs, slide_data, n, palette)
         elif slide_type == "mermaid_diagram":
             _build_mermaid_slide(prs, slide_data, n, palette)
+        elif slide_type == "svg_art":
+            _build_svg_slide(prs, slide_data, n, palette)
         elif slide_type == "three_animation":
             _build_three_placeholder_slide(prs, slide_data, n, palette)
         elif slide_type == "excalidraw_sketch":

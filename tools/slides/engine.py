@@ -285,7 +285,7 @@ class DeckEngine:
         def _gen_one(slide_data: dict) -> dict:
             slide_type = slide_data.get("slide_type", "content")
             if slide_type in ("title", "outro", "mermaid_diagram", "three_animation",
-                              "excalidraw_sketch", "card_grid"):
+                              "excalidraw_sketch", "card_grid", "svg_art"):
                 return slide_data
             title = slide_data.get("title", "")
             bullets = slide_data.get("bullets", [])

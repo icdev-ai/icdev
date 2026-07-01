@@ -119,3 +119,104 @@ class TestPresentRoute:
         resp = client.get("/slides/new")
         assert resp.status_code == 200
         assert b"enable_rich_diagrams" in resp.data
+
+
+def _fixture_pptx_bytes() -> bytes:
+    """A tiny title+body deck, built in-memory with python-pptx."""
+    import io
+    from pptx import Presentation
+
+    prs = Presentation()
+    s = prs.slides.add_slide(prs.slide_layouts[1])
+    s.placeholders[0].text_frame.text = "Fixture Title"
+    s.placeholders[1].text_frame.text = "Fixture bullet"
+    buf = io.BytesIO()
+    prs.save(buf)
+    buf.seek(0)
+    return buf.read()
+
+
+class TestTemplateFillRoutes:
+    def _upload(self, client, filename: str = "fixture.pptx"):
+        import io
+        data = {"file": (io.BytesIO(_fixture_pptx_bytes()), filename)}
+        return client.post(
+            "/slides/api/templates/upload",
+            data=data,
+            content_type="multipart/form-data",
+        )
+
+    def test_upload_returns_template_id_and_shape_map(self, client):
+        resp = self._upload(client)
+        assert resp.status_code == 201, resp.data.decode()
+        data = resp.get_json()
+        assert data["template_id"] is not None
+        assert data["slide_count"] == 1
+        kinds = {s["kind"] for s in data["slides"][0]["shapes"]}
+        assert kinds == {"title", "body"}
+
+    def test_upload_rejects_non_pptx(self, client):
+        import io
+        resp = client.post(
+            "/slides/api/templates/upload",
+            data={"file": (io.BytesIO(b"not a pptx"), "notes.txt")},
+            content_type="multipart/form-data",
+        )
+        assert resp.status_code == 400
+
+    def test_upload_rejects_missing_file(self, client):
+        resp = client.post("/slides/api/templates/upload", content_type="multipart/form-data")
+        assert resp.status_code == 400
+
+    def test_templates_index_lists_uploaded(self, client):
+        self._upload(client, filename="listed.pptx")
+        resp = client.get("/slides/templates")
+        assert resp.status_code == 200
+        assert b"listed.pptx" in resp.data
+
+    def test_template_detail_404_for_unknown_id(self, client):
+        resp = client.get("/slides/templates/999999")
+        assert resp.status_code == 404
+
+    def test_template_detail_renders_shape_summary(self, client):
+        upload_resp = self._upload(client, filename="detail_target.pptx")
+        template_id = upload_resp.get_json()["template_id"]
+        resp = client.get(f"/slides/templates/{template_id}")
+        assert resp.status_code == 200
+        assert b"Fixture Title" in resp.data
+
+    def test_fill_end_to_end_creates_deck(self, client):
+        upload_resp = self._upload(client, filename="fill_target.pptx")
+        template_id = upload_resp.get_json()["template_id"]
+
+        fill_resp = client.post(
+            f"/slides/api/templates/{template_id}/fill",
+            data=json.dumps({"selections": [
+                {"slide_index": 0, "title": "New Title", "bullets": ["b1", "b2"]},
+            ]}),
+            content_type="application/json",
+        )
+        assert fill_resp.status_code == 201, fill_resp.data.decode()
+        deck_id = fill_resp.get_json()["deck_id"]
+        assert deck_id is not None
+
+        detail_resp = client.get(f"/slides/{deck_id}")
+        assert detail_resp.status_code == 200
+
+    def test_fill_requires_selections(self, client):
+        upload_resp = self._upload(client, filename="empty_sel.pptx")
+        template_id = upload_resp.get_json()["template_id"]
+        resp = client.post(
+            f"/slides/api/templates/{template_id}/fill",
+            data=json.dumps({"selections": []}),
+            content_type="application/json",
+        )
+        assert resp.status_code == 400
+
+    def test_fill_404_for_unknown_template(self, client):
+        resp = client.post(
+            "/slides/api/templates/999999/fill",
+            data=json.dumps({"selections": [{"slide_index": 0, "title": "x"}]}),
+            content_type="application/json",
+        )
+        assert resp.status_code == 404

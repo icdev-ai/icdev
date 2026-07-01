@@ -11,7 +11,9 @@
 | `ContentAgent` | `tools/slides/content_agent.py` | Parallel per-slide content generation (bullets, notes, citations, visual context) |
 | `GraphicsGenerator` | `tools/slides/graphics_generator.py` | Theme+tone-aware image pipeline: dispatches to the ICDEV-native `AssetGenerator` (SDXL/matplotlib/SVG) |
 | `AssetGenerator` | `tools/viz/asset_generator.py` | ICDEV-native unified media dispatcher for slides, pulse, and viz graphics; air-gap aware, cacheable, GPU/SVG fallbacks |
-| `PptxBuilder` | `tools/slides/pptx_builder.py` | python-pptx assembly with 8 themes + citation footer |
+| `svg_to_pptx` | `tools/viz/svg_to_pptx.py` | Deterministic SVG (rect/circle/ellipse/line/polyline/polygon/path/text, nested `<g transform>`) -> native editable PPTX shapes via python-pptx `FreeformBuilder`; curves flattened to line segments. `render_svg_into_slide()` / `embed_svg_file()`. Used by `slide_type="svg_art"` and to embed the `slides_svg` graphics fallback natively instead of a raster picture (`add_picture` cannot rasterize SVG) |
+| `PptxBuilder` | `tools/slides/pptx_builder.py` | python-pptx assembly with 8 themes + citation footer; `svg_art` slide type renders native vector shapes via `svg_to_pptx` |
+| `template_fill` | `tools/slides/template_fill.py` | Template-fill workflow: `inspect_template()` reads an uploaded .pptx's fillable shapes (title/body/table/chart), `fill_and_export()` overwrites selected slides' content in place (preserving fonts/theme) and deletes unselected slides — no LLM, deterministic python-pptx only |
 | `ExportPDF` | `tools/slides/export_pdf.py` | fpdf2 PDF export (themed, air-gap safe) |
 | `ExportHTML` | `tools/slides/export_html.py` | Self-contained responsive HTML export |
 | `ResearchConnector` | `tools/slides/research_connector.py` | Topic research: web search in connected mode, LLM+KG fallback in air-gap mode |
@@ -21,7 +23,7 @@
 | Source: child_apps | `tools/slides/sources/child_apps.py` | Showcase/child application catalog |
 | Source: kanban | `tools/slides/sources/kanban.py` | Project epics + task burndown |
 | Source: genesis | `tools/slides/sources/genesis.py` | Genesis reflex run summaries |
-| Blueprint | `tools/slides/blueprint.py` | Flask canvas at `/slides/` (10+ routes: wizard, detail, generate, revise, regenerate, PPTX/PDF/HTML download, IQE) |
+| Blueprint | `tools/slides/blueprint.py` | Flask canvas at `/slides/` (14+ routes: wizard, detail, generate, revise, regenerate, PPTX/PDF/HTML download, IQE, template upload/list/detail/fill) |
 | IQE Adapter | `tools/iqe/adapters/slides.py` | slides.decks + slides.slides collections |
 | Genesis Reflex | `tools/genesis/reflexes/slides.py` | Weekly Friday 17:00 auto-deck |
 | DB Init | `tools/slides/db/init_db.py` | PG-first canvas DB with idempotent migration runner |
@@ -43,6 +45,18 @@ Dashboard wizard at `/slides/new` is three steps:
 1. **Topic & Occasion** — title, occasion, target audience, deck type, max slides
 2. **Tone & Style** — tone selector (professional, visionary, casual, playful, authoritative, warm, dramatic, minimal, fun_fiesta, adventurous_outdoor), theme palette
 3. **Layout & Output** — export formats (PPTX + optional PDF/HTML), citation style, ICDEV sources (hidden for general decks), graphics toggle, extra context
+
+## Template-Fill Workflow
+
+Upload a customer-supplied .pptx (e.g. an agency's own proposal template) at `/slides/templates`,
+pick which of its slides to reuse, and fill in new content — the template's exact design (shapes,
+fonts, theme) is preserved; unselected slides are dropped. No LLM step.
+
+- `GET /slides/templates` — list uploaded templates
+- `GET /slides/templates/<id>` — per-slide fillable shape summary + fill form
+- `POST /slides/api/templates/upload` — multipart upload -> `{template_id, slides}`
+- `POST /slides/api/templates/<id>/fill` — `{selections: [{slide_index, title?, bullets?, table?, chart?, notes?}]}` -> `{deck_id}` (registered in `slides_decks` as `deck_type="template_fill"`, downloadable via the normal `/slides/<deck_id>` flow)
+- DB: `slides_templates` table (`template_id, filename, path, slide_count, shape_map_json, uploaded_at`)
 
 ## Configuration
 
