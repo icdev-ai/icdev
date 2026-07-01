@@ -586,6 +586,104 @@ def _build_markdown(session, sections, profile, parsed):
         lines.append("")
 
     lines += ["", "---", "", "> UNCLASSIFIED//FOUO", ""]
+    annex = build_compliance_annex(sections)
+    lines.append(_build_compliance_annex_md(annex))
+    return "\n".join(lines)
+
+
+def build_compliance_annex(sections: list) -> dict:
+    """Build a compliance summary dict for export and preview.
+
+    Returns:
+        {
+          "coverage": [{"title", "total", "covered", "partial", "uncovered", "pct"}],
+          "quality": [{"title", "wg_score", "style_score", "passed"}],
+          "overall_coverage_pct": int,
+          "overall_wg_score": float,
+        }
+    """
+    coverage_rows = []
+    quality_rows = []
+    total_reqs = covered_total = partial_total = 0
+    wg_scores = []
+
+    for sec in sections:
+        reqs = sec.get("requirements") or []
+        if isinstance(reqs, str):
+            try:
+                reqs = json.loads(reqs)
+            except Exception:
+                reqs = []
+        n = len(reqs)
+        cov = sum(1 for r in reqs if r.get("covered") is True or r.get("covered") == "true")
+        part = sum(1 for r in reqs if r.get("covered") == "partial")
+        uncov = n - cov - part
+        pct = round((cov + part * 0.5) / n * 100) if n else None
+        coverage_rows.append({
+            "title": f"{sec.get('item_number', '')} {sec.get('title', '')}".strip(),
+            "total": n, "covered": cov, "partial": part, "uncovered": uncov, "pct": pct,
+        })
+        total_reqs += n
+        covered_total += cov
+        partial_total += part
+
+        wg = sec.get("writeguard_score")
+        wg_result = sec.get("writeguard_result") or {}
+        if isinstance(wg_result, str):
+            try:
+                wg_result = json.loads(wg_result)
+            except Exception:
+                wg_result = {}
+        style_score = (wg_result.get("composites") or {}).get("Style")
+        quality_rows.append({
+            "title": f"{sec.get('item_number', '')} {sec.get('title', '')}".strip(),
+            "wg_score": wg,
+            "style_score": style_score,
+            "passed": wg is not None and wg >= 70,
+        })
+        if wg is not None:
+            wg_scores.append(wg)
+
+    overall_cov = round((covered_total + partial_total * 0.5) / total_reqs * 100) if total_reqs else 0
+    overall_wg = round(sum(wg_scores) / len(wg_scores), 1) if wg_scores else None
+    return {
+        "coverage": coverage_rows,
+        "quality": quality_rows,
+        "overall_coverage_pct": overall_cov,
+        "overall_wg_score": overall_wg,
+    }
+
+
+def _build_compliance_annex_md(annex: dict) -> str:
+    lines = ["", "---", "", "## Compliance & Quality Annex", "",
+             "> UNCLASSIFIED//FOUO — For internal review only", ""]
+
+    # Requirements coverage table
+    lines += ["### Requirements Coverage", ""]
+    total_cov = annex.get("overall_coverage_pct", 0)
+    lines.append(f"**Overall Coverage: {total_cov}%**")
+    lines.append("")
+    lines.append("| Section | Reqs | Covered | Partial | Uncovered | % |")
+    lines.append("|---------|------|---------|---------|-----------|---|")
+    for r in annex.get("coverage", []):
+        pct = f"{r['pct']}%" if r["pct"] is not None else "—"
+        lines.append(f"| {r['title']} | {r['total']} | {r['covered']} | {r['partial']} | {r['uncovered']} | {pct} |")
+    lines.append("")
+
+    # WriteGuard quality table
+    lines += ["### WriteGuard Quality Scores", ""]
+    overall_wg = annex.get("overall_wg_score")
+    if overall_wg is not None:
+        lines.append(f"**Average Score: {overall_wg}/100**")
+        lines.append("")
+    lines.append("| Section | WG Score | Style | Pass? |")
+    lines.append("|---------|----------|-------|-------|")
+    for r in annex.get("quality", []):
+        wg = f"{r['wg_score']}" if r["wg_score"] is not None else "—"
+        style = f"{r['style_score']}" if r["style_score"] is not None else "—"
+        passed = "✓" if r["passed"] else "✗" if r["wg_score"] is not None else "—"
+        lines.append(f"| {r['title']} | {wg} | {style} | {passed} |")
+    lines.append("")
     return "\n".join(lines)
 
 

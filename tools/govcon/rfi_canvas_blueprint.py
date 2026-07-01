@@ -330,6 +330,56 @@ def api_delete_upload(session_id, upload_id):
     return jsonify({"ok": True})
 
 
+@rfi_canvas_bp.route("/api/rfi/<session_id>/engine-weights/availability")
+def api_engine_availability(session_id):
+    """Check which engine source tables exist and have rows."""
+    try:
+        from tools.govcon.rfi_engine_runner import check_source_availability
+        return jsonify(check_source_availability(session_id))
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@rfi_canvas_bp.route("/api/rfi/<session_id>/engines/run", methods=["POST"])
+def api_engine_run(session_id):
+    """Phase C: trigger an engine source population for this RFI session."""
+    data = request.get_json(force=True) or {}
+    source = data.get("source")
+    topic = data.get("topic", "")
+    if not source:
+        return jsonify({"error": "source is required"}), 400
+    try:
+        from tools.govcon.rfi_engine_runner import trigger_engine_seed
+        import threading
+        threading.Thread(
+            target=trigger_engine_seed,
+            args=(session_id, source, topic),
+            daemon=True,
+        ).start()
+        return jsonify({"ok": True, "message": f"Engine '{source}' seed started in background"})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+# ── Preview (assembled document, in-browser read-only view) ───────────────────
+
+@rfi_canvas_bp.route("/rfi/<session_id>/preview")
+def rfi_preview(session_id):
+    session = wb.get_session(session_id)
+    if not session:
+        abort(404)
+    sections = wb.get_sections(session_id)
+    profile = wb._load_profile(session.get("profile_name", "own_company"))
+    annex = wb.build_compliance_annex(sections)
+    return render_template(
+        "rfi_canvas/preview.html",
+        session=session,
+        sections=sections,
+        profile=profile,
+        annex=annex,
+    )
+
+
 # ── API: requirements ─────────────────────────────────────────────────────────
 
 @rfi_canvas_bp.route("/api/rfi/<session_id>/sections/<section_id>/requirements")

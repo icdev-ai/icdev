@@ -60,6 +60,7 @@
         style="width:{{ ((session.approved_sections / session.total_sections) * 100)|round(0)|int if session.total_sections > 0 else 0 }}%">
       </div>
     </div>
+    <a href="/rfi/{{ session.id }}/preview" class="btn btn-sm btn-outline-info" title="Assembled document preview">👁 Preview</a>
     <button class="btn btn-sm btn-outline-secondary" onclick="doExport('md')" title="Download Markdown">⬇ MD</button>
     <button class="btn btn-sm btn-success" onclick="doExport('docx')" id="export-docx-btn">
       <span id="export-spinner" class="d-none" style="display:inline-block;width:12px;height:12px;border:2px solid rgba(255,255,255,.5);border-top-color:#fff;border-radius:50%;margin-right:4px;" class="spin"></span>
@@ -264,6 +265,16 @@
               <button class="btn btn-sm btn-outline-secondary" onclick="resetEngineWeights()">↺</button>
             </div>
             <div id="ew-msg" class="text-center mt-1" style="font-size:10px;"></div>
+            <!-- Section override -->
+            <hr class="my-2">
+            <div class="d-flex align-items-center gap-2">
+              <input class="form-check-input" type="checkbox" id="ew-sec-override" disabled onchange="toggleSectionOverride(this.checked)">
+              <label class="form-check-label small text-muted" for="ew-sec-override">Override for this section</label>
+              <button id="ew-sec-clear" onclick="clearSectionOverride()" class="btn btn-sm btn-outline-danger ms-auto py-0 px-2" style="display:none;font-size:10px;">Clear</button>
+            </div>
+            <div id="ew-sec-rows" style="display:none;" class="mt-2"></div>
+            <button id="ew-sec-save" onclick="saveSectionEngineWeights()" style="display:none;" class="btn btn-sm btn-outline-info w-100 mt-2">💾 Save Section Override</button>
+            <div id="ew-sec-msg" class="text-center mt-1" style="font-size:10px;"></div>
             <hr class="my-2">
             <div class="fw-semibold mb-1" style="font-size:11px;">📁 Past Performance Docs</div>
             <div id="pp-list" class="mb-2" style="max-height:100px;overflow-y:auto;"></div>
@@ -394,6 +405,10 @@ function renderSection(sec) {
   document.getElementById('gen-status').classList.add('d-none');
   document.getElementById('md-structure-indicator').textContent = '';
   loadRequirements(sec.id);
+  // Enable section override toggle and load its weights
+  const secOverride = document.getElementById('ew-sec-override');
+  if (secOverride) { secOverride.disabled = false; }
+  loadSectionEngineWeights(sec.id);
 
   // Rejected notice
   const rejNotice = document.getElementById('rejected-notice');
@@ -1011,36 +1026,62 @@ const _EW_LABELS = {
   research_engine: 'Research Engine',
 };
 let _ewData = {};
+let _ewAvailability = {};
+let _ewSecData = null;
 
 function loadEngineWeights() {
   fetch(`/api/rfi/${SESSION_ID}/engine-weights`)
     .then(r => r.json())
     .then(d => { _ewData = d; renderEngineWeights(); })
     .catch(() => {});
+  fetch(`/api/rfi/${SESSION_ID}/engine-weights/availability`)
+    .then(r => r.json())
+    .then(d => { _ewAvailability = d; renderEngineWeights(); })
+    .catch(() => {});
 }
 
-function renderEngineWeights() {
-  const container = document.getElementById('ew-rows');
+function renderEngineWeights(data, containerId, prefix) {
+  data = data || _ewData;
+  containerId = containerId || 'ew-rows';
+  prefix = prefix || 'ew';
+  const container = document.getElementById(containerId);
   if (!container) return;
   const rows = [];
-  let total = 0;
-  for (const [key, cfg] of Object.entries(_ewData)) {
-    if (cfg.enabled) total += (cfg.weight || 0);
+  for (const [key, cfg] of Object.entries(data)) {
     const label = _EW_LABELS[key] || key;
+    const avail = _ewAvailability[key];
+    let dot = '';
+    if (avail !== undefined) {
+      const color = avail.available ? '#22c55e' : '#6b7280';
+      const tip = avail.available ? `${avail.row_count} rows` : 'No data yet';
+      dot = `<span title="${tip}" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${color};margin-right:3px;"></span>`;
+    }
+    const canRun = ['innovation_engine','creative_engine','research_engine'].includes(key);
+    const runBtn = canRun
+      ? `<button onclick="runEngine('${key}')" class="btn btn-sm py-0 px-1 btn-outline-secondary ms-1"
+           style="font-size:9px;" title="Seed this engine from RFI topic">▶</button>` : '';
     rows.push(`
       <div class="mb-2">
         <div class="d-flex align-items-center gap-2 mb-1">
-          <input type="checkbox" class="form-check-input" id="ew-en-${key}" ${cfg.enabled ? 'checked' : ''}
-            onchange="_ewData['${key}'].enabled=this.checked;_updateEwTotal()">
-          <label class="form-check-label small flex-fill" for="ew-en-${key}">${label}</label>
-          <span id="ew-val-${key}" class="text-info small" style="min-width:26px;text-align:right;">${cfg.weight}</span>
+          <input type="checkbox" class="form-check-input" id="${prefix}-en-${key}" ${cfg.enabled ? 'checked' : ''}
+            onchange="_ewMutate('${prefix}','${key}','enabled',this.checked)">
+          <label class="form-check-label small flex-fill" for="${prefix}-en-${key}">${dot}${label}</label>
+          <span id="${prefix}-val-${key}" class="text-info small" style="min-width:26px;text-align:right;">${cfg.weight}</span>
+          ${runBtn}
         </div>
         <input type="range" class="form-range" min="0" max="100" value="${cfg.weight}"
-          oninput="_ewData['${key}'].weight=+this.value;document.getElementById('ew-val-${key}').textContent=this.value;_updateEwTotal()">
+          oninput="_ewMutate('${prefix}','${key}','weight',+this.value)">
       </div>`);
   }
   container.innerHTML = rows.join('');
   _updateEwTotal();
+}
+
+function _ewMutate(prefix, key, field, val) {
+  if (prefix === 'ew') { _ewData[key][field] = val; _updateEwTotal(); }
+  else if (prefix === 'ew-sec' && _ewSecData) { _ewSecData[key][field] = val; }
+  const valEl = document.getElementById(`${prefix}-val-${key}`);
+  if (valEl && field === 'weight') valEl.textContent = val;
 }
 
 function _updateEwTotal() {
@@ -1077,6 +1118,88 @@ function resetEngineWeights() {
   renderEngineWeights();
   document.getElementById('ew-msg').textContent = 'Defaults restored — click Save to persist.';
   document.getElementById('ew-msg').className = 'text-center mt-1 text-warning';
+}
+
+// ── Section engine weight override ────────────────────────────────────────────
+
+function toggleSectionOverride(enabled) {
+  const rows = document.getElementById('ew-sec-rows');
+  const saveBtn = document.getElementById('ew-sec-save');
+  const clearBtn = document.getElementById('ew-sec-clear');
+  if (enabled && currentSectionId) {
+    loadSectionEngineWeights(currentSectionId);
+    rows.style.display = '';
+    saveBtn.style.display = '';
+    clearBtn.style.display = '';
+  } else {
+    rows.style.display = 'none';
+    saveBtn.style.display = 'none';
+    clearBtn.style.display = 'none';
+    _ewSecData = null;
+  }
+}
+
+function loadSectionEngineWeights(sectionId) {
+  if (!sectionId) return;
+  fetch(`/api/rfi/${SESSION_ID}/sections/${sectionId}/engine-weights`)
+    .then(r => r.json())
+    .then(d => {
+      _ewSecData = JSON.parse(JSON.stringify(d.weights));
+      const override = document.getElementById('ew-sec-override');
+      if (override) {
+        override.checked = !d.inherited;
+        toggleSectionOverride(!d.inherited);
+      }
+      renderEngineWeights(_ewSecData, 'ew-sec-rows', 'ew-sec');
+    }).catch(() => {});
+}
+
+function saveSectionEngineWeights() {
+  if (!currentSectionId || !_ewSecData) return;
+  const msg = document.getElementById('ew-sec-msg');
+  msg.textContent = 'Saving…';
+  fetch(`/api/rfi/${SESSION_ID}/sections/${currentSectionId}/engine-weights`, {
+    method: 'PUT', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(_ewSecData),
+  }).then(r => r.json()).then(d => {
+    msg.textContent = d.ok ? '✓ Section override saved' : ('Error: ' + (d.error || '?'));
+    msg.className = d.ok ? 'text-success text-center' : 'text-danger text-center';
+    setTimeout(() => { msg.textContent = ''; }, 3000);
+  }).catch(() => { msg.textContent = 'Error'; msg.className = 'text-danger text-center'; });
+}
+
+function clearSectionOverride() {
+  if (!currentSectionId || !confirm('Remove section override? It will inherit session weights.')) return;
+  fetch(`/api/rfi/${SESSION_ID}/sections/${currentSectionId}/engine-weights`, {
+    method: 'PUT', headers: {'Content-Type':'application/json'},
+    body: 'null',
+  }).then(() => {
+    _ewSecData = null;
+    document.getElementById('ew-sec-override').checked = false;
+    toggleSectionOverride(false);
+    document.getElementById('ew-sec-msg').textContent = 'Override cleared.';
+    document.getElementById('ew-sec-msg').className = 'text-muted text-center';
+    setTimeout(() => { document.getElementById('ew-sec-msg').textContent = ''; }, 3000);
+  });
+}
+
+// ── Phase C: Run engine seed ──────────────────────────────────────────────────
+
+function runEngine(sourceKey) {
+  const topic = currentSection
+    ? `${currentSection.title} ${currentSection.question_text || ''}`
+    : document.title;
+  const msg = document.getElementById('ew-msg');
+  msg.textContent = `Running ${_EW_LABELS[sourceKey] || sourceKey}…`;
+  msg.className = 'text-center mt-1 text-info';
+  fetch(`/api/rfi/${SESSION_ID}/engines/run`, {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({source: sourceKey, topic}),
+  }).then(r => r.json()).then(d => {
+    msg.textContent = d.ok ? `✓ ${_EW_LABELS[sourceKey]} seeded — reload to see results` : ('Error: ' + (d.error || '?'));
+    msg.className = d.ok ? 'text-center mt-1 text-success' : 'text-center mt-1 text-danger';
+    if (d.ok) setTimeout(() => { loadEngineWeights(); msg.textContent = ''; }, 2000);
+  }).catch(() => { msg.textContent = 'Error'; msg.className = 'text-center mt-1 text-danger'; });
 }
 
 // ── Past Performance Uploads ──────────────────────────────────────────────────

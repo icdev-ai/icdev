@@ -67,6 +67,8 @@
     <div style="width:80px;height:6px;background:#0a1525;border-radius:3px;overflow:hidden;" class="d-none d-md-block">
       <div id="progress-bar" style="height:100%;background:#22c55e;width:{{ ((session.approved_sections / session.total_sections) * 100)|round(0)|int if session.total_sections > 0 else 0 }}%;transition:width .3s;"></div>
     </div>
+    <a href="/rfi/{{ session.id }}/preview" target="_blank"
+      style="background:#0a1a30;color:#38bdf8;border:1px solid #0ea5e9;border-radius:4px;padding:5px 10px;font-size:11px;text-decoration:none;">👁 Preview</a>
     <button onclick="doExport('md')"
       style="background:#0d1b2e;color:#94a3b8;border:1px solid #334155;border-radius:4px;padding:5px 10px;font-size:11px;cursor:pointer;">⬇ MD</button>
     <button onclick="doExport('docx')" id="export-docx-btn"
@@ -298,6 +300,19 @@
             </div>
             <div id="ew-msg" style="font-size:10px;color:#5a7aa0;margin-top:4px;text-align:center;"></div>
 
+            <!-- Section override -->
+            <hr style="border-color:#1a2b4a;margin:8px 0 6px;">
+            <div style="display:flex;align-items:center;gap:6px;">
+              <input type="checkbox" id="ew-sec-override" disabled onchange="toggleSectionOverride(this.checked)">
+              <label for="ew-sec-override" style="font-size:11px;color:#7a8cb0;">Override for this section</label>
+              <button id="ew-sec-clear" onclick="clearSectionOverride()"
+                style="display:none;margin-left:auto;background:none;border:1px solid #7f1d1d;color:#f87171;border-radius:4px;padding:2px 7px;font-size:10px;cursor:pointer;">Clear</button>
+            </div>
+            <div id="ew-sec-rows" style="display:none;margin-top:6px;"></div>
+            <button id="ew-sec-save" onclick="saveSectionEngineWeights()" style="display:none;margin-top:6px;"
+              class="wb-btn" style="background:#0a1a30;color:#38bdf8;border-color:#0ea5e9;">💾 Save Section Override</button>
+            <div id="ew-sec-msg" style="font-size:10px;color:#5a7aa0;margin-top:4px;text-align:center;"></div>
+
             <!-- Past Performance Uploads -->
             <hr style="border-color:#1a2b4a;margin:10px 0 8px;">
             <div style="font-size:11px;color:#94a3b8;font-weight:600;margin-bottom:6px;">📁 Past Performance Docs</div>
@@ -435,6 +450,10 @@ function renderSection(sec) {
   document.getElementById('gen-status').style.display = 'none';
   document.getElementById('md-structure-indicator').textContent = '';
   loadRequirements(sec.id);
+  // Enable section weight override controls
+  const overrideCb = document.getElementById('ew-sec-override');
+  if (overrideCb) { overrideCb.disabled = false; }
+  loadSectionEngineWeights(sec.id);
 
   const rejNotice = document.getElementById('rejected-notice');
   if (sec.status === 'hitl_rejected' && sec.hitl_comment) {
@@ -1033,36 +1052,63 @@ const _EW_LABELS = {
 };
 let _ewData = {};
 
+let _ewAvailability = {};
+let _ewSecData = null;
+
 function loadEngineWeights() {
   fetch(`/api/rfi/${SESSION_ID}/engine-weights`)
     .then(r => r.json())
     .then(d => { _ewData = d; renderEngineWeights(); })
     .catch(() => {});
+  fetch(`/api/rfi/${SESSION_ID}/engine-weights/availability`)
+    .then(r => r.json())
+    .then(d => { _ewAvailability = d; renderEngineWeights(); })
+    .catch(() => {});
 }
 
-function renderEngineWeights() {
-  const container = document.getElementById('ew-rows');
+function renderEngineWeights(data, containerId, prefix) {
+  data = data || _ewData;
+  containerId = containerId || 'ew-rows';
+  prefix = prefix || 'ew';
+  const container = document.getElementById(containerId);
   if (!container) return;
   const rows = [];
-  let total = 0;
-  for (const [key, cfg] of Object.entries(_ewData)) {
-    if (cfg.enabled) total += (cfg.weight || 0);
+  for (const [key, cfg] of Object.entries(data)) {
     const label = _EW_LABELS[key] || key;
+    const avail = _ewAvailability[key];
+    let dot = '';
+    if (avail !== undefined) {
+      const color = avail.available ? '#22c55e' : '#334155';
+      const tip = avail.available ? `${avail.row_count} rows` : 'No data yet';
+      dot = `<span title="${tip}" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${color};margin-right:3px;"></span>`;
+    }
+    const canRun = ['innovation_engine','creative_engine','research_engine'].includes(key);
+    const runBtn = canRun ? `<button onclick="runEngine('${key}')"
+      style="background:none;border:1px solid #1e3a6e;color:#5a7aa0;border-radius:3px;padding:1px 6px;font-size:9px;cursor:pointer;"
+      title="Seed this engine from RFI topic">▶</button>` : '';
     rows.push(`
       <div style="margin-bottom:6px;">
-        <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">
-          <input type="checkbox" id="ew-en-${key}" ${cfg.enabled ? 'checked' : ''}
-            onchange="_ewData['${key}'].enabled=this.checked;_updateEwTotal()">
-          <label for="ew-en-${key}" style="font-size:11px;color:#94a3b8;flex:1;">${label}</label>
-          <span id="ew-val-${key}" style="font-size:10px;color:#38bdf8;min-width:26px;text-align:right;">${cfg.weight}</span>
+        <div style="display:flex;align-items:center;gap:5px;margin-bottom:2px;">
+          <input type="checkbox" id="${prefix}-en-${key}" ${cfg.enabled ? 'checked' : ''}
+            onchange="_ewMutate('${prefix}','${key}','enabled',this.checked)">
+          <label for="${prefix}-en-${key}" style="font-size:11px;color:#94a3b8;flex:1;">${dot}${label}</label>
+          <span id="${prefix}-val-${key}" style="font-size:10px;color:#38bdf8;min-width:26px;text-align:right;">${cfg.weight}</span>
+          ${runBtn}
         </div>
         <input type="range" min="0" max="100" value="${cfg.weight}"
           style="width:100%;accent-color:#38bdf8;"
-          oninput="_ewData['${key}'].weight=+this.value;document.getElementById('ew-val-${key}').textContent=this.value;_updateEwTotal()">
+          oninput="_ewMutate('${prefix}','${key}','weight',+this.value)">
       </div>`);
   }
   container.innerHTML = rows.join('');
   _updateEwTotal();
+}
+
+function _ewMutate(prefix, key, field, val) {
+  if (prefix === 'ew') { _ewData[key][field] = val; _updateEwTotal(); }
+  else if (prefix === 'ew-sec' && _ewSecData) { _ewSecData[key][field] = val; }
+  const valEl = document.getElementById(`${prefix}-val-${key}`);
+  if (valEl && field === 'weight') valEl.textContent = val;
 }
 
 function _updateEwTotal() {
@@ -1174,6 +1220,88 @@ function deleteUpload(uploadId) {
     .then(r => r.json())
     .then(d => { if (d.ok) loadUploadList(); })
     .catch(() => {});
+}
+
+// ── Section engine weight override ────────────────────────────────────────────
+
+function toggleSectionOverride(enabled) {
+  const rows = document.getElementById('ew-sec-rows');
+  const saveBtn = document.getElementById('ew-sec-save');
+  const clearBtn = document.getElementById('ew-sec-clear');
+  if (enabled && currentSectionId) {
+    loadSectionEngineWeights(currentSectionId);
+    rows.style.display = '';
+    saveBtn.style.display = '';
+    clearBtn.style.display = '';
+  } else {
+    rows.style.display = 'none';
+    saveBtn.style.display = 'none';
+    clearBtn.style.display = 'none';
+    _ewSecData = null;
+  }
+}
+
+function loadSectionEngineWeights(sectionId) {
+  if (!sectionId) return;
+  fetch(`/api/rfi/${SESSION_ID}/sections/${sectionId}/engine-weights`)
+    .then(r => r.json())
+    .then(d => {
+      _ewSecData = JSON.parse(JSON.stringify(d.weights));
+      const override = document.getElementById('ew-sec-override');
+      if (override) {
+        override.checked = !d.inherited;
+        toggleSectionOverride(!d.inherited);
+      }
+      renderEngineWeights(_ewSecData, 'ew-sec-rows', 'ew-sec');
+    }).catch(() => {});
+}
+
+function saveSectionEngineWeights() {
+  if (!currentSectionId || !_ewSecData) return;
+  const msg = document.getElementById('ew-sec-msg');
+  msg.textContent = 'Saving…';
+  fetch(`/api/rfi/${SESSION_ID}/sections/${currentSectionId}/engine-weights`, {
+    method: 'PUT', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(_ewSecData),
+  }).then(r => r.json()).then(d => {
+    msg.textContent = d.ok ? '✓ Section override saved' : ('Error: ' + (d.error || '?'));
+    msg.style.color = d.ok ? '#22c55e' : '#f87171';
+    setTimeout(() => { msg.textContent = ''; }, 3000);
+  }).catch(() => { msg.textContent = 'Error'; msg.style.color = '#f87171'; });
+}
+
+function clearSectionOverride() {
+  if (!currentSectionId || !confirm('Remove section override? It will inherit session weights.')) return;
+  fetch(`/api/rfi/${SESSION_ID}/sections/${currentSectionId}/engine-weights`, {
+    method: 'PUT', headers: {'Content-Type':'application/json'},
+    body: 'null',
+  }).then(() => {
+    _ewSecData = null;
+    document.getElementById('ew-sec-override').checked = false;
+    toggleSectionOverride(false);
+    document.getElementById('ew-sec-msg').textContent = 'Override cleared.';
+    document.getElementById('ew-sec-msg').style.color = '#5a7aa0';
+    setTimeout(() => { document.getElementById('ew-sec-msg').textContent = ''; }, 3000);
+  });
+}
+
+// ── Phase C: Run engine seed ──────────────────────────────────────────────────
+
+function runEngine(sourceKey) {
+  const topic = currentSection
+    ? `${currentSection.title} ${currentSection.question_text || ''}`
+    : document.title;
+  const msg = document.getElementById('ew-msg');
+  msg.textContent = `Running ${_EW_LABELS[sourceKey] || sourceKey}…`;
+  msg.style.color = '#38bdf8';
+  fetch(`/api/rfi/${SESSION_ID}/engines/run`, {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({source: sourceKey, topic}),
+  }).then(r => r.json()).then(d => {
+    msg.textContent = d.ok ? `✓ ${_EW_LABELS[sourceKey]} seeded — reload to see results` : ('Error: ' + (d.error || '?'));
+    msg.style.color = d.ok ? '#22c55e' : '#f87171';
+    if (d.ok) setTimeout(() => { loadEngineWeights(); msg.textContent = ''; }, 2000);
+  }).catch(() => { msg.textContent = 'Error'; msg.style.color = '#f87171'; });
 }
 </script>
 {% endblock %}

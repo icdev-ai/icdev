@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+{% block title %}Preview — {{ session.rfi_number }} | RFI Workbench{% endblock %}
+{% block content %}
+<style>
+.pv-header{background:#050d1f;border-bottom:1px solid #1e3a6e;padding:10px 20px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:10;}
+.pv-back{color:#7ab3f0;text-decoration:none;font-size:12px;padding:4px 10px;border:1px solid #1e3a6e;border-radius:4px;}
+.pv-back:hover{background:#0f3460;color:#b8d0e8;}
+.pv-title{color:#b8d0e8;font-size:14px;font-weight:600;flex:1;}
+.pv-btn{padding:6px 14px;border-radius:4px;font-size:12px;cursor:pointer;border:1px solid #1e3a6e;background:#0f3460;color:#7ab3f0;}
+.pv-btn:hover{background:#1e3a6e;}
+.pv-body{max-width:900px;margin:24px auto;padding:0 20px 60px;}
+.pv-doc-header{text-align:center;padding:24px 0 16px;border-bottom:2px solid #1e3a6e;margin-bottom:24px;}
+.pv-doc-header h1{color:#b8d0e8;font-size:22px;margin:0 0 4px;}
+.pv-doc-header h2{color:#7ab3f0;font-size:16px;margin:0 0 4px;font-weight:400;}
+.pv-doc-header .meta{color:#5a7aa0;font-size:11px;margin-top:8px;}
+.pv-classification{background:#1a0a00;color:#fbbf24;border:1px solid #92400e;padding:4px 14px;font-size:11px;border-radius:4px;display:inline-block;margin-bottom:8px;}
+.pv-part-hdr{background:#0f1f3a;border-left:3px solid #1e3a6e;padding:8px 14px;margin:24px 0 12px;color:#7ab3f0;font-size:13px;font-weight:600;}
+.pv-section{margin-bottom:20px;padding:14px 16px;background:#0a1628;border:1px solid #1a2b4a;border-radius:6px;}
+.pv-sec-hdr{display:flex;align-items:flex-start;gap:10px;margin-bottom:8px;}
+.pv-sec-num{color:#38bdf8;font-weight:700;font-size:13px;white-space:nowrap;}
+.pv-sec-title{color:#b8d0e8;font-size:13px;font-weight:600;flex:1;}
+.pv-badges{display:flex;gap:6px;flex-wrap:wrap;margin-left:auto;}
+.badge-status{padding:2px 7px;border-radius:10px;font-size:10px;font-weight:600;}
+.badge-accepted{background:#052e16;color:#4ade80;border:1px solid #16a34a;}
+.badge-ai_draft_ready{background:#0c2a3a;color:#38bdf8;border:1px solid #0ea5e9;}
+.badge-pending{background:#1a1200;color:#fbbf24;border:1px solid #92400e;}
+.badge-hitl_rejected{background:#2d0a0a;color:#f87171;border:1px solid #7f1d1d;}
+.pv-wg-score{font-size:10px;padding:2px 7px;border-radius:10px;border:1px solid #1e3a6e;color:#94a3b8;}
+.pv-wg-pass{border-color:#16a34a;color:#4ade80;}
+.pv-wg-warn{border-color:#92400e;color:#fbbf24;}
+.pv-wg-fail{border-color:#7f1d1d;color:#f87171;}
+.pv-coverage{font-size:10px;padding:2px 7px;border-radius:10px;background:#0f1f3a;color:#7a8cb0;border:1px solid #1a2b4a;}
+.pv-content{color:#94a3b8;font-size:12px;line-height:1.7;white-space:pre-wrap;font-family:inherit;}
+.pv-empty{color:#334155;font-size:12px;font-style:italic;padding:8px 0;}
+.pv-annex{margin-top:36px;padding-top:20px;border-top:2px solid #1e3a6e;}
+.pv-annex h2{color:#7ab3f0;font-size:15px;margin-bottom:4px;}
+.pv-annex-sub{color:#94a3b8;font-size:13px;font-weight:600;margin:16px 0 6px;}
+.pv-table{width:100%;border-collapse:collapse;font-size:11px;margin-bottom:16px;}
+.pv-table th{background:#0f1f3a;color:#7ab3f0;padding:6px 10px;text-align:left;border:1px solid #1e3a6e;}
+.pv-table td{color:#94a3b8;padding:5px 10px;border:1px solid #1a2b4a;}
+.pv-table tr:hover td{background:#0a1628;}
+.pv-stat{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;background:#0a1628;border:1px solid #1a2b4a;border-radius:6px;margin-right:8px;margin-bottom:8px;}
+.pv-stat-num{font-size:18px;font-weight:700;color:#38bdf8;}
+.pv-stat-lbl{font-size:11px;color:#5a7aa0;}
+@media print{
+  .pv-header{position:relative;}
+  .pv-back,.pv-btn{display:none;}
+  .pv-body{margin:0;padding:0;}
+}
+</style>
+
+<div class="pv-header">
+  <a href="/rfi/{{ session.id }}" class="pv-back">← Back to Workbench</a>
+  <span class="pv-title">{{ session.rfi_number }} — {{ session.rfi_title }}</span>
+  <button class="pv-btn" onclick="window.print()">🖨 Print / PDF</button>
+  <a href="/api/rfi/{{ session.id }}/export/md" class="pv-btn" onclick="triggerExport(event,'md')">⬇ Export MD</a>
+  <a href="/api/rfi/{{ session.id }}/export/docx" class="pv-btn" onclick="triggerExport(event,'docx')">⬇ Export DOCX</a>
+</div>
+
+<div class="pv-body">
+  <div class="pv-doc-header">
+    <div class="pv-classification">UNCLASSIFIED // FOR OFFICIAL USE ONLY</div>
+    <h1>{{ profile.entity_name or 'Organization' }}</h1>
+    <h2>Response to {{ session.rfi_title }}</h2>
+    <div class="meta">
+      {{ session.rfi_number }} &nbsp;·&nbsp;
+      {{ session.approved_sections or 0 }}/{{ session.total_sections or 0 }} sections accepted &nbsp;·&nbsp;
+      Exported: <span id="export-ts">—</span>
+    </div>
+  </div>
+
+  {% set ns = namespace(current_part='') %}
+  {% set part_labels = {
+    'part1': 'Part 1 — Administrative',
+    'part2': 'Part 2 — Technical Approach',
+    'part3': 'Part 3 — Project Feasibility & Schedule',
+    'part4': 'Part 4 — Business & IP',
+    'part5': 'Part 5 — Industry Insights',
+    'appendix': 'Appendix',
+  } %}
+
+  {% for sec in sections %}
+    {% if sec.part != ns.current_part %}
+      {% set ns.current_part = sec.part %}
+      <div class="pv-part-hdr">{{ part_labels.get(sec.part, sec.part) }}</div>
+    {% endif %}
+
+    {% set status = sec.status or 'pending' %}
+    {% set wg = sec.writeguard_score %}
+    {% set reqs = sec.requirements or [] %}
+    {% set n_reqs = reqs | length %}
+    {% set covered = reqs | selectattr('covered', 'equalto', true) | list | length %}
+    {% set cov_pct = ((covered / n_reqs) * 100) | round(0) | int if n_reqs > 0 else None %}
+
+    <div class="pv-section">
+      <div class="pv-sec-hdr">
+        <span class="pv-sec-num">{{ sec.item_number }}</span>
+        <span class="pv-sec-title">{{ sec.title }}</span>
+        <div class="pv-badges">
+          <span class="badge-status badge-{{ status }}">{{ status.replace('_',' ') }}</span>
+          {% if wg is not none %}
+            <span class="pv-wg-score {% if wg >= 80 %}pv-wg-pass{% elif wg >= 60 %}pv-wg-warn{% else %}pv-wg-fail{% endif %}">
+              WG {{ wg }}
+            </span>
+          {% endif %}
+          {% if n_reqs > 0 %}
+            <span class="pv-coverage">{{ covered }}/{{ n_reqs }} reqs</span>
+          {% endif %}
+        </div>
+      </div>
+      {% set content = sec.content or sec.ai_draft %}
+      {% if content %}
+        <div class="pv-content">{{ content }}</div>
+      {% else %}
+        <div class="pv-empty">Content pending — not yet generated.</div>
+      {% endif %}
+    </div>
+  {% endfor %}
+
+  <div class="pv-classification" style="margin-top:16px;">UNCLASSIFIED // FOR OFFICIAL USE ONLY</div>
+
+  <!-- Compliance Annex -->
+  <div class="pv-annex">
+    <h2>Compliance & Quality Annex</h2>
+    <div style="margin-bottom:12px;">
+      <div class="pv-stat"><span class="pv-stat-num">{{ annex.overall_coverage_pct }}%</span><span class="pv-stat-lbl">Req Coverage</span></div>
+      {% if annex.overall_wg_score is not none %}
+      <div class="pv-stat"><span class="pv-stat-num">{{ annex.overall_wg_score }}</span><span class="pv-stat-lbl">Avg WG Score</span></div>
+      {% endif %}
+    </div>
+
+    <div class="pv-annex-sub">Requirements Coverage</div>
+    <table class="pv-table">
+      <thead><tr><th>Section</th><th>Total</th><th>Covered</th><th>Partial</th><th>Uncovered</th><th>%</th></tr></thead>
+      <tbody>
+        {% for r in annex.coverage %}
+        <tr>
+          <td>{{ r.title }}</td>
+          <td>{{ r.total }}</td>
+          <td style="color:#4ade80;">{{ r.covered }}</td>
+          <td style="color:#fbbf24;">{{ r.partial }}</td>
+          <td style="color:#f87171;">{{ r.uncovered }}</td>
+          <td>{% if r.pct is not none %}{{ r.pct }}%{% else %}—{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <div class="pv-annex-sub">WriteGuard Quality</div>
+    <table class="pv-table">
+      <thead><tr><th>Section</th><th>WG Score</th><th>Style Score</th><th>Pass?</th></tr></thead>
+      <tbody>
+        {% for r in annex.quality %}
+        <tr>
+          <td>{{ r.title }}</td>
+          <td {% if r.wg_score is not none %}style="color:{% if r.wg_score >= 80 %}#4ade80{% elif r.wg_score >= 60 %}#fbbf24{% else %}#f87171{% endif %};"{% endif %}>
+            {% if r.wg_score is not none %}{{ r.wg_score }}{% else %}—{% endif %}
+          </td>
+          <td>{% if r.style_score is not none %}{{ r.style_score }}{% else %}—{% endif %}</td>
+          <td>{% if r.wg_score is not none %}{% if r.passed %}✓{% else %}✗{% endif %}{% else %}—{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+document.getElementById('export-ts').textContent = new Date().toLocaleDateString();
+
+function triggerExport(ev, fmt) {
+  ev.preventDefault();
+  const btn = ev.target;
+  btn.textContent = 'Generating…';
+  fetch(`/api/rfi/{{ session.id }}/export/${fmt}`, {method:'POST'})
+    .then(r => r.json())
+    .then(d => {
+      if (d.ok) {
+        btn.textContent = '⬇ Download';
+        window.location.href = `/api/rfi/{{ session.id }}/download/${fmt}`;
+      } else {
+        btn.textContent = 'Error';
+        alert(d.error || 'Export failed');
+      }
+    }).catch(() => { btn.textContent = 'Error'; });
+}
+</script>
+{% endblock %}

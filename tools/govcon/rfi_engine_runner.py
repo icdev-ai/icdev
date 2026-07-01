@@ -474,3 +474,96 @@ def assemble_weighted_prompt_context(
         "weights_applied": weights_applied,
         "total_chars": len(context),
     }
+
+
+# ── Source availability check (Item 2) ───────────────────────────────────────
+
+_SOURCE_TABLES = {
+    "uploads": ("rfi_session_uploads", "session_id"),
+    "kg_past_performance": ("kg_entities", None),
+    "rag_general": ("rag_chunks", None),
+    "innovation_engine": ("innovation_signals", None),
+    "creative_engine": ("creative_specs", None),
+    "research_engine": ("research_dossiers", None),
+}
+
+
+def check_source_availability(session_id: str) -> dict:
+    """Return {source_key: {available: bool, row_count: int}} for all 6 sources."""
+    db = _get_db()
+    result = {}
+    for key, (table, session_col) in _SOURCE_TABLES.items():
+        try:
+            if session_col:
+                row = db.execute(
+                    f"SELECT COUNT(*) FROM {table} WHERE {session_col}=%s",
+                    (session_id,),
+                ).fetchone()
+            else:
+                row = db.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
+            count = list(row)[0] if row else 0
+            result[key] = {"available": count > 0, "row_count": int(count)}
+        except Exception:
+            result[key] = {"available": False, "row_count": 0}
+    return result
+
+
+# ── Phase C: on-demand engine seed (Item 6) ──────────────────────────────────
+
+def trigger_engine_seed(session_id: str, source_key: str, topic: str) -> dict:
+    """Seed the target engine's table with RFI-relevant stub content.
+
+    Runs in a background thread. For each source, creates minimal records so
+    the gatherers can return useful context on the next generate call.
+    """
+    try:
+        if source_key == "innovation_engine":
+            return _seed_innovation(topic)
+        if source_key == "creative_engine":
+            return _seed_creative(topic)
+        if source_key == "research_engine":
+            return _seed_research(session_id, topic)
+        logger.warning("trigger_engine_seed: unknown source '%s'", source_key)
+        return {"ok": False, "error": f"Unknown source: {source_key}"}
+    except Exception as exc:
+        logger.warning("Engine seed failed for %s/%s: %s", source_key, session_id, exc)
+        return {"ok": False, "error": str(exc)}
+
+
+def _seed_innovation(topic: str) -> dict:
+    db = _get_db()
+    uid = _uid()
+    db.execute(
+        "INSERT INTO innovation_signals (id, title, description, status, gotcha_layer, fitness_score, created_at) "
+        "VALUES (%s,%s,%s,'approved','govcon',0.75,%s) "
+        "ON CONFLICT (id) DO NOTHING",
+        (uid, f"RFI Signal: {topic[:80]}", f"Innovation signal seeded from RFI topic: {topic[:400]}", _now()),
+    )
+    db.commit()
+    return {"ok": True, "seeded": uid}
+
+
+def _seed_creative(topic: str) -> dict:
+    db = _get_db()
+    uid = _uid()
+    db.execute(
+        "INSERT INTO creative_specs (id, title, executive_summary, status, pain_score, created_at) "
+        "VALUES (%s,%s,%s,'published',0.7,%s) "
+        "ON CONFLICT (id) DO NOTHING",
+        (uid, f"GovCon Spec: {topic[:80]}", f"Creative spec seeded from RFI topic: {topic[:400]}", _now()),
+    )
+    db.commit()
+    return {"ok": True, "seeded": uid}
+
+
+def _seed_research(session_id: str, topic: str) -> dict:
+    db = _get_db()
+    uid = _uid()
+    db.execute(
+        "INSERT INTO research_dossiers (id, vertical_name, executive_summary, created_at) "
+        "VALUES (%s,%s,%s,%s) "
+        "ON CONFLICT (id) DO NOTHING",
+        (uid, f"GovCon: {topic[:60]}", f"Research dossier seeded from RFI session {session_id}: {topic[:400]}", _now()),
+    )
+    db.commit()
+    return {"ok": True, "seeded": uid}
