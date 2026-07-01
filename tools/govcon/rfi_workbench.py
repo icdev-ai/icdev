@@ -324,7 +324,9 @@ def generate_section_content(section_id, profile_name, parsed_data):
             style_parts.append(compliance_notes[:300].strip())
         prompt += "\n\n[Style Requirements]\n" + "\n".join(style_parts)
 
-    draft = _call_llm(prompt, section["title"], item)
+    session_id = section.get("session_id", "")
+    role_key = f"{session_id}:rfi_writer" if session_id else "rfi_writer"
+    draft = _call_llm(prompt, section["title"], item, role_key=role_key, llm_function="rfi_writer_drafting")
 
     # Run deterministic markdown validator — attach as transient field
     try:
@@ -347,6 +349,37 @@ def generate_section_content(section_id, profile_name, parsed_data):
     result = get_section(section_id)
     result["markdown_validation"] = md_validation
     return result
+
+
+# ── Hermes-Agent pattern 2: per-role failure-count auto-block ────────────────
+# Keys are "{session_id}:{role_id}" for generate-path tracking,
+# or plain "{role_id}" for ACE-path tracking. Resets on server restart.
+_role_failure_counts: dict[str, int] = {}
+_role_blocked: set[str] = set()
+
+
+def _track_llm_failure(role_key: str, max_failures: int = 2) -> bool:
+    """Record a consecutive failure. Returns True if the role is now blocked."""
+    _role_failure_counts[role_key] = _role_failure_counts.get(role_key, 0) + 1
+    if _role_failure_counts[role_key] >= max_failures:
+        _role_blocked.add(role_key)
+        logger.warning(
+            "Role '%s' auto-blocked after %d consecutive failures (Hermes pattern 2)",
+            role_key, _role_failure_counts[role_key],
+        )
+        return True
+    return False
+
+
+def _track_llm_success(role_key: str) -> None:
+    """Reset consecutive failure count on success."""
+    _role_failure_counts.pop(role_key, None)
+    _role_blocked.discard(role_key)
+
+
+def is_role_blocked(session_id: str, role_id: str) -> bool:
+    """Return True if this role is currently auto-blocked for the session."""
+    return f"{session_id}:{role_id}" in _role_blocked or role_id in _role_blocked
 
 
 _ROUTER = None
@@ -372,7 +405,10 @@ def _get_router():
     return _ROUTER
 
 
-def _call_llm(prompt, section_title, item_number):
+def _call_llm(prompt, section_title, item_number, role_key: str = "rfi_writer", llm_function: str = "rfi_writer_drafting"):
+    if role_key in _role_blocked:
+        logger.warning("Skipping LLM call — role '%s' is auto-blocked", role_key)
+        return _template_fallback(section_title, item_number, prompt)
     try:
         from tools.llm.router import LLMRequest
         router = _get_router()
@@ -390,13 +426,15 @@ def _call_llm(prompt, section_title, item_number):
             }],
             max_tokens=900,
         )
-        response = router.invoke("proposal_drafting", req)
+        response = router.invoke(llm_function, req)
+        _track_llm_success(role_key)
         if hasattr(response, "content"):
             return response.content
         if isinstance(response, dict):
             return response.get("content", response.get("text", str(response)))
         return str(response)
     except Exception as exc:
+        _track_llm_failure(role_key)
         logger.warning("LLM generation failed for section %s: %s — using fallback", item_number, exc)
         return _template_fallback(section_title, item_number, prompt)
 
@@ -804,10 +842,20 @@ _RFI_TEAM_ROLES = [
 
 
 def launch_ace_team(session_id: str) -> str:
-    """Launch the 5-role RFI ACE team for a session. Returns the ace_instance_id."""
+    """Launch the 5-role RFI ACE team for a session. Returns the ace_instance_id.
+
+    Hermes-Agent pattern 3: all RFI roles are leaf nodes (is_orchestrator=false).
+    Blocked roles are filtered out of the launch set before delegating to ACE.
+    """
     session = get_session(session_id)
     if not session:
         raise ValueError(f"Session {session_id} not found")
+
+    # Filter blocked roles (Hermes pattern 2) and enforce leaf isolation (pattern 3)
+    active_roles = [r for r in _RFI_TEAM_ROLES if not is_role_blocked(session_id, r)]
+    if len(active_roles) < len(_RFI_TEAM_ROLES):
+        skipped = set(_RFI_TEAM_ROLES) - set(active_roles)
+        logger.warning("Launching ACE team without blocked roles: %s", skipped)
 
     try:
         from icdev.tools.ace.controller import ACEController
@@ -815,12 +863,13 @@ def launch_ace_team(session_id: str) -> str:
         problem = (
             f"RFI response color team for session {session_id}: "
             f"{session.get('rfi_title', 'RFI')} ({session.get('rfi_number', '')}). "
-            f"Pipeline: Writer → Editor → Reviewer → Researcher → Compliance Reviewer."
+            f"Pipeline: Writer → Editor → Reviewer → Researcher → Compliance Reviewer. "
+            f"All roles are leaf nodes — no inter-role delegation permitted."
         )
         result = controller.launch(
             problem_text=problem,
             canvas="rfi_canvas",
-            role_ids=_RFI_TEAM_ROLES,
+            role_ids=active_roles,
         )
         instance_id = result.get("instance_id") or result.get("id") or _uid()
     except Exception as exc:

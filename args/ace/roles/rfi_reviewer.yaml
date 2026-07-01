@@ -28,7 +28,9 @@ communication:
   - rfi.coverage.checked
   - rfi.feedback.ready
   - status.updated
-llm_function: proposal_review
+llm_function: rfi_reviewer_review
+is_orchestrator: false
+max_failures: 2
 tool_permissions:
 - Read
 - Grep

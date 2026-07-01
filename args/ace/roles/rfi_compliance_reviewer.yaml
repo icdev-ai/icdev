@@ -28,7 +28,9 @@ communication:
   - rfi.compliance.gate.passed
   - rfi.compliance.gate.failed
   - status.updated
-llm_function: compliance_assessment
+llm_function: rfi_compliance_assessment
+is_orchestrator: false
+max_failures: 2
 tool_permissions:
 - Read
 - Grep

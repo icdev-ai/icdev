@@ -26,7 +26,9 @@ communication:
   - rfi.claims.validated
   - rfi.claims.flagged
   - status.updated
-llm_function: agent_knowledge
+llm_function: rfi_researcher_knowledge
+is_orchestrator: false
+max_failures: 2
 tool_permissions:
 - Read
 - Grep

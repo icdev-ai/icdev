@@ -24,7 +24,9 @@ communication:
   emit_topics:
   - rfi.section.content.ready
   - status.updated
-llm_function: proposal_drafting
+llm_function: rfi_writer_drafting
+is_orchestrator: false
+max_failures: 2
 tool_permissions:
 - Read
 - Grep

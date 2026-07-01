@@ -698,6 +698,30 @@ routing:
     chain: [qwen3-local, llama-local]
     effort: medium
 
+  # Per-role RFI routing — Hermes-Agent pattern 1: each role gets its own
+  # model chain + effort tier. LOCAL ONLY (CUI content — never cloud LLMs).
+  # effort=low for Writer (quantity/speed), medium for Editor (repair pass),
+  # high for Reviewer/Researcher/Compliance (evaluation & gate functions).
+  rfi_writer_drafting:
+    chain: [qwen3-local, llama-local]
+    effort: low
+
+  rfi_editor_drafting:
+    chain: [qwen3-local, llama-local]
+    effort: medium
+
+  rfi_reviewer_review:
+    chain: [qwen3-local, llama-local]
+    effort: high
+
+  rfi_researcher_knowledge:
+    chain: [qwen3-local, llama-local]
+    effort: high
+
+  rfi_compliance_assessment:
+    chain: [qwen3-local, llama-local]
+    effort: high
+
   # Failure triage — Claude for diagnose (thinking/reasoning),
   # Ollama for patch (building/code-gen). Explicit two-tier split per
   # the "Claude thinks, Ollama builds" convention.

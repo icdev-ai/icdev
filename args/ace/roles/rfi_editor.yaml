@@ -26,7 +26,9 @@ communication:
   - rfi.section.edited
   - rfi.structure.issues_found
   - status.updated
-llm_function: proposal_drafting
+llm_function: rfi_editor_drafting
+is_orchestrator: false
+max_failures: 2
 tool_permissions:
 - Read
 - Grep
