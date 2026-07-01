@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block title %}{{ template.filename }} - Fill Template - ICDEV™{% endblock %}
+
+{% block content %}
+{% from "includes/classification_macros.html" import design_classification_banner %}
+{{ design_classification_banner('CUI') }}
+<div class="breadcrumbs">
+    <a href="/">Home</a><span class="separator">/</span>
+    <a href="/slides">Slide Decks</a><span class="separator">/</span>
+    <a href="/slides/templates">Templates</a><span class="separator">/</span>
+    <span>{{ template.filename }}</span>
+</div>
+
+<div class="page-header">
+    <h1>{{ template.filename }}</h1>
+    <p class="subtitle">Pick which slides to reuse and fill in new content. Everything else about the
+        template's design — shapes, fonts, theme — stays exactly as uploaded. Unselected slides are dropped.</p>
+</div>
+
+<form id="fill-form">
+{% for slide in template.shape_map.slides %}
+    {% set kinds = slide.shapes | map(attribute='kind') | list %}
+    <div class="card" style="margin-bottom:16px;" data-slide-index="{{ slide.index }}">
+        <div class="card-header" style="display:flex; align-items:center; gap:10px;">
+            <input type="checkbox" class="slide-include" data-index="{{ slide.index }}" checked>
+            <h3 style="margin:0;">Slide {{ slide.index + 1 }}</h3>
+            <span style="font-size:12px; color:var(--text-secondary);">
+                ({{ slide.shapes | length }} fillable shape{{ 's' if slide.shapes | length != 1 else '' }})
+            </span>
+        </div>
+        <div class="card-body slide-fields" style="display:flex; flex-direction:column; gap:10px;">
+            {% if not slide.shapes %}
+            <div style="color:var(--text-secondary); font-size:13px;">No fillable text/table/chart shapes on this slide — its design will be kept as-is if selected.</div>
+            {% endif %}
+            {% if 'title' in kinds %}
+            <div>
+                <label style="font-size:12px; color:var(--text-secondary);">Title (was: "{{ slide.shapes | selectattr('kind','equalto','title') | map(attribute='preview_text') | first }}")</label>
+                <input type="text" class="form-control field-title" placeholder="New title">
+            </div>
+            {% endif %}
+            {% if 'body' in kinds %}
+            <div>
+                <label style="font-size:12px; color:var(--text-secondary);">Bullets (one per line — was: "{{ slide.shapes | selectattr('kind','equalto','body') | map(attribute='preview_text') | first }}")</label>
+                <textarea class="form-control field-bullets" rows="3" placeholder="One bullet per line"></textarea>
+            </div>
+            {% endif %}
+            {% for shape in slide.shapes if shape.kind == 'table' %}
+            <div>
+                <label style="font-size:12px; color:var(--text-secondary);">
+                    Table ({{ shape.rows }}×{{ shape.cols }}) — CSV, header row first, one row per line
+                </label>
+                <textarea class="form-control field-table" rows="3" placeholder="Header1,Header2&#10;val1,val2"></textarea>
+            </div>
+            {% endfor %}
+            <div>
+                <label style="font-size:12px; color:var(--text-secondary);">Speaker notes (optional)</label>
+                <textarea class="form-control field-notes" rows="2"></textarea>
+            </div>
+        </div>
+    </div>
+{% endfor %}
+
+    <div style="display:flex; gap:12px; align-items:center;">
+        <button type="submit" class="btn btn-primary">Generate Filled Deck</button>
+        <span id="fill-status" style="color:var(--text-secondary); font-size:13px;"></span>
+    </div>
+</form>
+
+<script>
+document.getElementById('fill-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    var statusEl = document.getElementById('fill-status');
+    var selections = [];
+    document.querySelectorAll('[data-slide-index]').forEach(function(card) {
+        var checkbox = card.querySelector('.slide-include');
+        if (!checkbox.checked) { return; }
+        var index = parseInt(card.dataset.slideIndex, 10);
+        var sel = { slide_index: index };
+
+        var titleEl = card.querySelector('.field-title');
+        if (titleEl && titleEl.value.trim()) { sel.title = titleEl.value.trim(); }
+
+        var bulletsEl = card.querySelector('.field-bullets');
+        if (bulletsEl && bulletsEl.value.trim()) {
+            sel.bullets = bulletsEl.value.split('\n').map(function(s) { return s.trim(); }).filter(Boolean);
+        }
+
+        var tableEl = card.querySelector('.field-table');
+        if (tableEl && tableEl.value.trim()) {
+            var lines = tableEl.value.split('\n').map(function(l) { return l.split(',').map(function(c) { return c.trim(); }); }).filter(function(l) { return l.length && l[0] !== ''; });
+            if (lines.length) {
+                sel.table = { headers: lines[0], rows: lines.slice(1) };
+            }
+        }
+
+        var notesEl = card.querySelector('.field-notes');
+        if (notesEl && notesEl.value.trim()) { sel.notes = notesEl.value.trim(); }
+
+        selections.push(sel);
+    });
+
+    if (!selections.length) {
+        statusEl.textContent = 'Select at least one slide.';
+        return;
+    }
+
+    statusEl.textContent = 'Generating…';
+    fetch('{{ url_for("slides.api_fill_template", template_id=template.template_id) }}', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ selections: selections }),
+    })
+        .then(function(r) { return r.json().then(function(data) { return { ok: r.ok, data: data }; }); })
+        .then(function(res) {
+            if (!res.ok) {
+                statusEl.textContent = 'Error: ' + (res.data.error || 'fill failed');
+                return;
+            }
+            window.location.href = '/slides/' + res.data.deck_id;
+        })
+        .catch(function(err) { statusEl.textContent = 'Error: ' + err; });
+});
+</script>
+{% endblock %}
