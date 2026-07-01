@@ -425,6 +425,26 @@ def api_section_history(session_id, section_id):
     return jsonify(wb.get_section_history(section_id))
 
 
+@rfi_canvas_bp.route("/api/rfi/<session_id>/sections/<section_id>/ace-feedback")
+def api_ace_feedback(session_id, section_id):
+    section = wb.get_section(section_id)
+    if not section:
+        return jsonify({"error": "not found"}), 404
+    feedback = section.get("ace_feedback")
+    if feedback is None:
+        return jsonify({"status": "pending"})
+    return jsonify({"status": "ready", "feedback": feedback})
+
+
+@rfi_canvas_bp.route("/api/rfi/<session_id>/sections/<section_id>/ace-feedback/run", methods=["POST"])
+def api_run_ace_feedback(session_id, section_id):
+    import threading
+    threading.Thread(
+        target=wb._ace_editor_review_background, args=(section_id,), daemon=True
+    ).start()
+    return jsonify({"ok": True, "status": "running"})
+
+
 @rfi_canvas_bp.route("/api/rfi/<session_id>/sections/<section_id>/requirements")
 def api_get_requirements(session_id, section_id):
     return jsonify(wb.get_requirements(section_id))

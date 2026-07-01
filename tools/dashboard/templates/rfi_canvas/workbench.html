@@ -277,6 +277,35 @@
           </div>
         </div>
 
+        <!-- ACE Editor Review -->
+        <div class="wb-card" id="ace-editor-card" style="display:none;">
+          <div class="wb-card-hdr" style="background:#1a0f2e;color:#c084fc;position:relative;">
+            <span>🤖 ACE Editor Review</span>
+            <span id="ace-editor-status-dot" style="width:8px;height:8px;border-radius:50%;background:#334155;display:inline-block;margin-left:6px;vertical-align:middle;" title="Review status"></span>
+            <button onclick="runAceEditorReview()" title="Re-run editor review"
+              style="background:none;border:1px solid #3b1f5e;color:#9d4edd;border-radius:3px;padding:2px 7px;font-size:10px;cursor:pointer;margin-left:auto;">
+              ↺ Re-run
+            </button>
+          </div>
+          <div class="wb-card-body">
+            <div id="ace-editor-reviewing" style="display:none;text-align:center;font-size:11px;color:#9d4edd;padding:8px 0;">
+              <span>⏳ Editor reviewing…</span>
+            </div>
+            <div id="ace-editor-result" style="display:none;">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                <span style="font-size:11px;color:#94a3b8;">Overall:</span>
+                <span id="ace-editor-overall" style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:3px;"></span>
+                <span id="ace-editor-time" style="font-size:10px;color:#5a7aa0;margin-left:auto;"></span>
+              </div>
+              <div id="ace-editor-issues" style="font-size:11px;color:#94a3b8;margin-bottom:8px;"></div>
+              <div id="ace-editor-summary" style="font-size:11px;color:#94a3b8;white-space:pre-wrap;border-top:1px solid #1e3a6e;padding-top:8px;margin-top:4px;"></div>
+            </div>
+            <div id="ace-editor-empty" style="font-size:11px;color:#5a7aa0;font-style:italic;">
+              Review will appear after generation.
+            </div>
+          </div>
+        </div>
+
         <!-- HITL -->
         <div class="wb-card">
           <div class="wb-card-hdr" style="background:#2d1a00;color:#fbbf24;">
@@ -503,6 +532,9 @@ function renderSection(sec) {
   } else if (hasContent) {
     togglePreview();
   }
+
+  // ACE Editor review panel
+  renderAceEditorFeedback(sec.ace_feedback || null);
 }
 
 function applyStatusStyle(el, status) {

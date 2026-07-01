@@ -175,35 +175,7 @@ def get_session(session_id):
     return s
 
 
-def get_sections(session_id):
-    db = get_db()
-    rows = db.execute(
-        "SELECT * FROM rfi_workbench_sections WHERE session_id=%s ORDER BY part, item_number",
-        (session_id,),
-    ).fetchall()
-    result = []
-    for r in rows:
-        d = dict(r)
-        if isinstance(d.get("writeguard_result"), str) and d["writeguard_result"]:
-            try:
-                d["writeguard_result"] = json.loads(d["writeguard_result"])
-            except Exception:
-                pass
-        if isinstance(d.get("requirements"), str):
-            try:
-                d["requirements"] = json.loads(d["requirements"] or "[]")
-            except Exception:
-                d["requirements"] = []
-        result.append(d)
-    return result
-
-
-def get_section(section_id):
-    db = get_db()
-    row = db.execute("SELECT * FROM rfi_workbench_sections WHERE id=%s", (section_id,)).fetchone()
-    if not row:
-        return None
-    d = dict(row)
+def _parse_section_row(d: dict) -> dict:
     if isinstance(d.get("writeguard_result"), str) and d["writeguard_result"]:
         try:
             d["writeguard_result"] = json.loads(d["writeguard_result"])
@@ -214,7 +186,29 @@ def get_section(section_id):
             d["requirements"] = json.loads(d["requirements"] or "[]")
         except Exception:
             d["requirements"] = []
+    if isinstance(d.get("ace_feedback"), str) and d["ace_feedback"]:
+        try:
+            d["ace_feedback"] = json.loads(d["ace_feedback"])
+        except Exception:
+            d["ace_feedback"] = None
     return d
+
+
+def get_sections(session_id):
+    db = get_db()
+    rows = db.execute(
+        "SELECT * FROM rfi_workbench_sections WHERE session_id=%s ORDER BY part, item_number",
+        (session_id,),
+    ).fetchall()
+    return [_parse_section_row(dict(r)) for r in rows]
+
+
+def get_section(section_id):
+    db = get_db()
+    row = db.execute("SELECT * FROM rfi_workbench_sections WHERE id=%s", (section_id,)).fetchone()
+    if not row:
+        return None
+    return _parse_section_row(dict(row))
 
 
 def save_section_content(section_id, content, save_type="manual"):
@@ -407,6 +401,8 @@ def generate_section_content(section_id, profile_name, parsed_data):
 
     # Kick off coverage check in background
     threading.Thread(target=_check_coverage_background, args=(section_id,), daemon=True).start()
+    # Kick off ACE Editor one-pass review in background (item 8)
+    threading.Thread(target=_ace_editor_review_background, args=(section_id,), daemon=True).start()
 
     result = get_section(section_id)
     result["markdown_validation"] = md_validation
@@ -992,6 +988,116 @@ def _check_coverage_background(section_id: str):
         check_requirement_coverage(section_id)
     except Exception as exc:
         logger.warning("Background coverage check failed for section %s: %s", section_id, exc)
+
+
+# ── ACE Editor one-pass review (item 8) ──────────────────────────────────────
+
+def run_ace_editor_review(section_id: str) -> dict:
+    """Run a structured Editor review on the section's current content.
+
+    Steps:
+      1. Deterministic markdown validator (sync, no LLM).
+      2. Style compliance check via WriteGuard score.
+      3. LLM critique via rfi_editor_drafting (LOCAL ONLY — CUI content).
+
+    Result is written to the ace_feedback column and returned.
+    """
+    section = get_section(section_id)
+    if not section:
+        return {}
+    content = (section.get("content") or section.get("ai_draft") or "").strip()
+    if not content:
+        return {}
+
+    issues: list[dict] = []
+    overall = "pass"
+
+    # Step 1 — deterministic markdown validator
+    try:
+        from tools.govcon.rfi_markdown_validator import validate_markdown_structure
+        md_result = validate_markdown_structure(content)
+        for iss in md_result.get("issues", []):
+            issues.append({"source": "markdown", "level": iss.get("level", "warning"), "message": iss.get("message", str(iss))})
+        if not md_result.get("valid", True):
+            overall = "warn"
+    except Exception as exc:
+        logger.debug("ACE Editor markdown validator skipped: %s", exc)
+
+    # Step 2 — WriteGuard style score
+    try:
+        from tools.govcon.writeguard import evaluate_style
+        wg_result = evaluate_style(content, section.get("title", ""))
+        wg_score = wg_result.get("score")
+        if wg_score is not None and wg_score < 60:
+            issues.append({
+                "source": "writeguard",
+                "level": "warn" if wg_score >= 40 else "error",
+                "message": f"WriteGuard style score {wg_score}/100 — below threshold.",
+            })
+            overall = "warn" if overall == "pass" else overall
+    except Exception as exc:
+        logger.debug("ACE Editor WriteGuard skipped: %s", exc)
+        wg_score = None
+
+    # Step 3 — LLM critique (LOCAL ONLY — rfi_editor_drafting route)
+    llm_summary = ""
+    try:
+        role_key = f"editor:{section_id}"
+        if role_key not in _role_blocked:
+            prompt = (
+                f"You are the Editor in a GovCon color-team review. "
+                f"Review this RFI section response and provide a brief critique (3-5 bullet points).\n"
+                f"Focus on: clarity, completeness against stated requirements, compliance language, "
+                f"government-appropriate tone, and any [VERIFY] placeholders that remain.\n"
+                f"Section: {section.get('title', '')}\n\n"
+                f"{content[:3000]}\n\n"
+                f"Return ONLY the bullet-point critique. No preamble."
+            )
+            llm_summary = _call_llm(
+                prompt,
+                section.get("title", ""),
+                section.get("item_number", ""),
+                role_key=role_key,
+                llm_function="rfi_editor_drafting",
+            )
+            if llm_summary and "[VERIFY]" in content:
+                issues.append({
+                    "source": "editor_llm",
+                    "level": "warn",
+                    "message": "Section contains un-resolved [VERIFY] placeholders.",
+                })
+                overall = "warn" if overall == "pass" else overall
+    except Exception as exc:
+        logger.warning("ACE Editor LLM critique failed for section %s: %s", section_id, exc)
+
+    reviewed_at = _now()
+    feedback = {
+        "issues": issues,
+        "overall": overall,
+        "summary": llm_summary,
+        "reviewed_at": reviewed_at,
+    }
+
+    try:
+        db = get_db()
+        db.execute(
+            "UPDATE rfi_workbench_sections SET ace_feedback=%s, updated_at=%s WHERE id=%s",
+            (json.dumps(feedback), reviewed_at, section_id),
+        )
+        db.commit()
+    except Exception as exc:
+        logger.warning("ACE Editor feedback write failed for section %s: %s", section_id, exc)
+
+    return feedback
+
+
+def _ace_editor_review_background(section_id: str) -> None:
+    """Daemon wrapper for run_ace_editor_review with a short yield."""
+    time.sleep(0.3)
+    try:
+        run_ace_editor_review(section_id)
+    except Exception as exc:
+        logger.warning("ACE Editor background review error for %s: %s", section_id, exc)
 
 
 # ── On-demand summarization ───────────────────────────────────────────────────
