@@ -6,7 +6,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License">
   <img src="https://img.shields.io/badge/python-3.9%2B-brightgreen" alt="Python 3.9+">
-  <img src="https://img.shields.io/badge/version-1.2.32-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-1.2.33-blue" alt="Version">
   <a href="https://pypi.org/project/icdev/"><img src="https://img.shields.io/pypi/v/icdev?color=informational&label=PyPI" alt="PyPI Version"></a>
   <a href="https://pypi.org/project/icdev/"><img src="https://img.shields.io/pypi/dm/icdev?label=PyPI%20downloads" alt="PyPI Downloads"></a>
   <img src="https://img.shields.io/badge/compliance%20frameworks-42-orange" alt="Compliance Frameworks">
@@ -27,7 +27,7 @@
 
 ## Table of Contents
 
-- [What's New](#whats-new-in-1231--enterprise-configurable-platform--ace-file-access--processify)
+- [What's New](#whats-new-in-1233--rfi-response-engine--slides-svg-shapes--template-fill)
 - [What ICDEV™ Builds](#what-icdev-builds)
 - [10 Design Canvases](#10-design-canvases)
 - [Quick Start](#quick-start)
@@ -45,6 +45,15 @@
 - [Testing](#testing)
 - [Project Structure](#project-structure)
 - [License](#license)
+
+---
+
+## What's New in 1.2.33 — RFI Response Engine, Slides SVG Shapes & Template-Fill
+
+- **RFI Response Engine** — Full GovCon RFI Response Workbench canvas at `/rfi` with HITL review, WriteGuard V&V, cross-section consistency checking, deadline countdown, and one-click "Generate Why Us" narrative. New ACE evaluator team (`rfi_researcher`, `rfi_writer`, `rfi_compliance_reviewer`, `rfi_editor`, `rfi_reviewer`) under `args/ace/roles/`. 104 tests.
+- **Slides: SVG → Native PPTX Shapes** — `tools/viz/svg_to_pptx.py` parses a deterministic SVG subset (rect/circle/ellipse/line/polyline/polygon/path/text, nested `<g transform>`) into native `python-pptx` `FreeformBuilder` vector shapes instead of rasterized pictures, with curves flattened to line segments. New `slide_type="svg_art"` in `pptx_builder`.
+- **Slides: Template-Fill Workflow** — `tools/slides/template_fill.py` adds `/slides/templates`: upload a customer-supplied `.pptx`, inspect its fillable shapes (title/body/table/chart), and fill selected slides in place — format-preserving, no LLM step, deletes unselected slides. New `slides_templates` table.
+- **Slides Schema Fix** — resolved a dialect-mismatch bug where `SERIAL PRIMARY KEY` silently landed on a SQLite-backed connection whenever PostgreSQL was unreachable, breaking autoincrement across the Slides canvas.
 
 ---
 
