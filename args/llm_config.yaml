@@ -1143,19 +1143,6 @@ chain_orchestration:
           - Neutral case (hold / wait)
 
 # -----------------------------------------------------------------------
-# Agent Loop Primitive Budget Defaults (D-ALG-3)
-# -----------------------------------------------------------------------
-# Default hard/soft guardrails for the reusable run_agent_loop() primitive.
-# Per-role overrides can be set in role YAML as agent_max_total_tokens,
-# agent_max_cost_usd, agent_context_window_tokens, agent_compression_budget_tokens.
-agent_loop:
-  budgets:
-    max_total_tokens: 128000
-    context_window_tokens: 64000
-    compression_budget_tokens: 48000
-    max_cost_usd: 5.00
-
-# -----------------------------------------------------------------------
 # Response Cache + Context Caching (D-CACHE-1 through D-CACHE-10)
 # Two-level: response_cache = deterministic KV store for full responses
 # (PostgreSQL-native with SQLite fallback); context_cache = provider-level
@@ -1265,8 +1252,11 @@ speculative_decoding:
   target_endpoint: "${OLLAMA_BASE_URL:-http://localhost:11434}"
 
 # ---------------------------------------------------------------------------
-# Agent Loop Defaults
-# Consumed by icdev/tools/llm/agent_loop._load_budget_defaults()
+# Agent Loop Defaults (D-ALG-3)
+# Consumed by icdev/tools/llm/agent_loop._load_budget_defaults().
+# Per-role overrides can be set in role YAML as agent_max_total_tokens,
+# agent_max_cost_usd, agent_context_window_tokens, agent_compression_budget_tokens
+# (read via getattr(role, ...) in tools/ace/coworker_thread.py).
 # ---------------------------------------------------------------------------
 agent_loop:
   budgets:
