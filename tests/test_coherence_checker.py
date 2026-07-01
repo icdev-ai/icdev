@@ -27,6 +27,7 @@ from tools.workflow.coherence_checker import (
     check_schema_code,
     check_signature_call,
     run_checks,
+    yaml_load_no_duplicates,
 )
 from tools.workflow.impact_analyzer import (
     _identify_subsystem_from_file,
@@ -626,3 +627,69 @@ class TestImpactAnalyzer:
     def test_analyze_impact_table_change(self):
         result = analyze_impact(changed_tables=["chat_contexts"])
         assert "affected_subsystems" in result
+
+
+# ---------------------------------------------------------------------------
+# yaml_load_no_duplicates — duplicate-key detection at any nesting depth
+# ---------------------------------------------------------------------------
+
+
+class TestYamlLoadNoDuplicates:
+    def test_loads_clean_yaml(self):
+        text = textwrap.dedent(
+            """
+            components:
+              - key: foo
+                display_name: Foo
+            """
+        )
+        data = yaml_load_no_duplicates(text)
+        assert data["components"][0]["key"] == "foo"
+
+    def test_raises_on_top_level_duplicate_key(self):
+        text = textwrap.dedent(
+            """
+            key: foo
+            key: bar
+            """
+        )
+        with pytest.raises(Exception):
+            yaml_load_no_duplicates(text)
+
+    def test_raises_on_nested_mapping_duplicate_key(self):
+        text = textwrap.dedent(
+            """
+            components:
+              - key: foo
+                display_name: Foo
+                display_name: Bar
+            """
+        )
+        with pytest.raises(Exception):
+            yaml_load_no_duplicates(text)
+
+    def test_raises_on_deeply_nested_duplicate_key(self):
+        text = textwrap.dedent(
+            """
+            components:
+              - key: foo
+                metadata:
+                  owner: alice
+                  owner: bob
+            """
+        )
+        with pytest.raises(Exception):
+            yaml_load_no_duplicates(text)
+
+    def test_no_false_positive_across_sibling_mappings(self):
+        text = textwrap.dedent(
+            """
+            components:
+              - key: foo
+                display_name: Foo
+              - key: bar
+                display_name: Bar
+            """
+        )
+        data = yaml_load_no_duplicates(text)
+        assert [c["key"] for c in data["components"]] == ["foo", "bar"]

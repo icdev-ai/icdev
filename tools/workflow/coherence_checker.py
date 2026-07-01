@@ -145,6 +145,42 @@ def _load_config() -> Dict[str, Any]:
         return {}
 
 
+if _HAS_YAML:
+
+    class _UniqueKeySafeLoader(yaml.SafeLoader):
+        """SafeLoader variant that rejects duplicate mapping keys at every nesting depth.
+
+        PyYAML's default constructor silently keeps the last value when a
+        mapping has a repeated key. ``construct_mapping`` runs once per
+        MappingNode encountered during construction — including nested ones
+        reached via ``construct_object`` — so overriding it here catches
+        duplicates at any depth, not just the document root.
+        """
+
+        def construct_mapping(self, node, deep: bool = False):
+            seen: Set[Any] = set()
+            for key_node, _value_node in node.value:
+                key = self.construct_object(key_node, deep=deep)
+                if key in seen:
+                    raise yaml.constructor.ConstructorError(
+                        "while constructing a mapping",
+                        node.start_mark,
+                        f"found duplicate key {key!r}",
+                        key_node.start_mark,
+                    )
+                seen.add(key)
+            return super().construct_mapping(node, deep=deep)
+
+    def yaml_load_no_duplicates(text: str) -> Any:
+        """Parse YAML like ``yaml.safe_load()``, but raise on any duplicate mapping key."""
+        return yaml.load(text, Loader=_UniqueKeySafeLoader)
+
+else:
+
+    def yaml_load_no_duplicates(text: str) -> Any:
+        raise RuntimeError("pyyaml is required for yaml_load_no_duplicates()")
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -3999,7 +4035,6 @@ def check_spec_discipline(changed_files: Optional[List[Path]] = None) -> Coheren
 
 def check_component_registry(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
     """Verify args/component_registry.yaml is loadable and internally consistent."""
-    import yaml
 
     registry_path = PROJECT_ROOT / "args" / "component_registry.yaml"
     expected = ["components list loadable", "no duplicate keys", "module paths exist"]
@@ -4017,7 +4052,7 @@ def check_component_registry(changed_files: Optional[List[Path]] = None) -> Cohe
         )
 
     try:
-        data = yaml.safe_load(registry_path.read_text(encoding="utf-8"))
+        data = yaml_load_no_duplicates(registry_path.read_text(encoding="utf-8"))
     except Exception as exc:
         return CoherenceCheck(
             check_id="component_registry",
