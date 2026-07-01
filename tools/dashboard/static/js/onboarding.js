@@ -194,6 +194,11 @@
   root.ICDEV.Onboarding = _instance;
 
   document.addEventListener('DOMContentLoaded', function () {
+    // Automated browsers (Playwright, Selenium, ...) set navigator.webdriver.
+    // Skip the auto-popup there — E2E tests don't expect a blocking first-run
+    // modal, and its hidden-but-DOM-present inputs otherwise collide with
+    // broad `input[type="password"]`-style locators used by unrelated tests.
+    if (navigator.webdriver) return;
     _instance.init();
   });
 

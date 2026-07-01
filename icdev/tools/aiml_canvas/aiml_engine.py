@@ -17,6 +17,7 @@ from tools.aiml_canvas.constants import (
     FOUNDATION_MODELS,
 )
 from tools.aiml_canvas.db.init_db import get_connection
+from tools.db.storage import sql_placeholder
 
 
 def _now() -> str:
@@ -50,8 +51,9 @@ def create_design(
     if template_id and not graph_json["nodes"]:
         conn = get_connection()
         try:
+            ph = sql_placeholder(conn)
             row = conn.execute(
-                "SELECT graph_json FROM aiml_templates WHERE id=%s", (template_id,)
+                f"SELECT graph_json FROM aiml_templates WHERE id={ph}", (template_id,)
             ).fetchone()
             if row:
                 graph_json = json.loads(row["graph_json"])
@@ -60,11 +62,12 @@ def create_design(
 
     conn = get_connection()
     try:
+        ph = sql_placeholder(conn)
         conn.execute(
-            """INSERT INTO aiml_designs
+            f"""INSERT INTO aiml_designs
                (id, name, description, graph_json, template_id, classification,
                 il_level, primary_use_case, adaptation_strategy, created_at, updated_at)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+               VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph})""",
             (
                 design_id, name, description, json.dumps(graph_json),
                 template_id, classification, il_level, primary_use_case,
@@ -72,7 +75,7 @@ def create_design(
             ),
         )
         conn.execute(
-            "INSERT INTO aiml_audit (design_id, action, detail) VALUES (%s,%s,%s)",
+            f"INSERT INTO aiml_audit (design_id, action, detail) VALUES ({ph},{ph},{ph})",
             (design_id, "create", f"Design '{name}' created"),
         )
         conn.commit()
@@ -85,8 +88,9 @@ def create_design(
 def get_design(design_id: str) -> dict | None:
     conn = get_connection()
     try:
+        ph = sql_placeholder(conn)
         row = conn.execute(
-            "SELECT * FROM aiml_designs WHERE id=%s", (design_id,)
+            f"SELECT * FROM aiml_designs WHERE id={ph}", (design_id,)
         ).fetchone()
         if not row:
             return None
@@ -100,9 +104,10 @@ def get_design(design_id: str) -> dict | None:
 def list_designs(limit: int = 50, offset: int = 0) -> list[dict]:
     conn = get_connection()
     try:
+        ph = sql_placeholder(conn)
         rows = conn.execute(
             "SELECT id, name, description, classification, il_level, adaptation_strategy, created_at, updated_at "
-            "FROM aiml_designs ORDER BY updated_at DESC LIMIT %s OFFSET %s",
+            f"FROM aiml_designs ORDER BY updated_at DESC LIMIT {ph} OFFSET {ph}",
             (limit, offset),
         ).fetchall()
         return [dict(r) for r in rows]
@@ -115,38 +120,39 @@ def save_design(design_id: str, graph: dict, name: str | None = None,
                 classification: str | None = None) -> dict:
     conn = get_connection()
     try:
-        row = conn.execute("SELECT * FROM aiml_designs WHERE id=%s", (design_id,)).fetchone()
+        ph = sql_placeholder(conn)
+        row = conn.execute(f"SELECT * FROM aiml_designs WHERE id={ph}", (design_id,)).fetchone()
         if not row:
             raise ValueError(f"Design {design_id} not found")
 
         # Save version snapshot before overwriting
         version_count = conn.execute(
-            "SELECT COUNT(*) FROM aiml_versions WHERE design_id=%s", (design_id,)
+            f"SELECT COUNT(*) FROM aiml_versions WHERE design_id={ph}", (design_id,)
         ).fetchone()[0]
         conn.execute(
-            "INSERT INTO aiml_versions (id, design_id, version_number, graph_json, created_at) VALUES (%s,%s,%s,%s,%s)",
+            f"INSERT INTO aiml_versions (id, design_id, version_number, graph_json, created_at) VALUES ({ph},{ph},{ph},{ph},{ph})",
             (str(uuid.uuid4()), design_id, version_count + 1, row["graph_json"], _now()),
         )
 
-        updates: list[str] = ["graph_json=?", "updated_at=?"]
+        updates: list[str] = [f"graph_json={ph}", f"updated_at={ph}"]
         params: list[Any] = [json.dumps(graph), _now()]
         if name is not None:
-            updates.append("name=?")
+            updates.append(f"name={ph}")
             params.append(name)
         if description is not None:
-            updates.append("description=?")
+            updates.append(f"description={ph}")
             params.append(description)
         if il_level is not None:
-            updates.append("il_level=?")
+            updates.append(f"il_level={ph}")
             params.append(il_level)
         if classification is not None:
-            updates.append("classification=?")
+            updates.append(f"classification={ph}")
             params.append(classification)
         params.append(design_id)
 
-        conn.execute(f"UPDATE aiml_designs SET {', '.join(updates)} WHERE id=%s", params)
+        conn.execute(f"UPDATE aiml_designs SET {', '.join(updates)} WHERE id={ph}", params)
         conn.execute(
-            "INSERT INTO aiml_audit (design_id, action, detail) VALUES (%s,%s,%s)",
+            f"INSERT INTO aiml_audit (design_id, action, detail) VALUES ({ph},{ph},{ph})",
             (design_id, "save", f"Graph saved ({len(graph.get('nodes',[]))} nodes)"),
         )
         conn.commit()
@@ -159,7 +165,8 @@ def save_design(design_id: str, graph: dict, name: str | None = None,
 def delete_design(design_id: str) -> bool:
     conn = get_connection()
     try:
-        result = conn.execute("DELETE FROM aiml_designs WHERE id=%s", (design_id,))
+        ph = sql_placeholder(conn)
+        result = conn.execute(f"DELETE FROM aiml_designs WHERE id={ph}", (design_id,))
         conn.commit()
         return result.rowcount > 0
     finally:
@@ -408,10 +415,11 @@ def run_assessment(design_id: str) -> dict:
     assessment_id = str(uuid.uuid4())
     conn = get_connection()
     try:
+        ph = sql_placeholder(conn)
         conn.execute(
-            """INSERT INTO aiml_assessments
+            f"""INSERT INTO aiml_assessments
                (id, design_id, framework_id, framework_name, findings_json, score, passed, created_at)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
+               VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph})""",
             (
                 assessment_id, design_id,
                 "aimc-canvas", "AIMC Canvas Compliance",
@@ -420,7 +428,7 @@ def run_assessment(design_id: str) -> dict:
             ),
         )
         conn.execute(
-            "INSERT INTO aiml_audit (design_id, action, detail) VALUES (%s,%s,%s)",
+            f"INSERT INTO aiml_audit (design_id, action, detail) VALUES ({ph},{ph},{ph})",
             (design_id, "assess", f"Score: {score}% ({passed_count}/{total} checks passed)"),
         )
         conn.commit()
@@ -519,8 +527,9 @@ def generate_model_card(design_id: str) -> dict:
     art_id = str(uuid.uuid4())
     conn = get_connection()
     try:
+        ph = sql_placeholder(conn)
         conn.execute(
-            "INSERT INTO aiml_artifacts (id, design_id, artifact_type, title, content_json, format, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s)",
+            f"INSERT INTO aiml_artifacts (id, design_id, artifact_type, title, content_json, format, created_at) VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph})",
             (art_id, design_id, "model-card", f"Model Card — {design['name']}", json.dumps(card), "json", _now()),
         )
         conn.commit()
@@ -639,8 +648,9 @@ def generate_deployment_manifest(design_id: str) -> dict:
     art_id = str(uuid.uuid4())
     conn = get_connection()
     try:
+        ph = sql_placeholder(conn)
         conn.execute(
-            "INSERT INTO aiml_artifacts (id, design_id, artifact_type, title, content_json, format, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s)",
+            f"INSERT INTO aiml_artifacts (id, design_id, artifact_type, title, content_json, format, created_at) VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph})",
             (art_id, design_id, "deploy-manifest", f"Deployment Manifest — {design['name']}", json.dumps(manifest), "yaml", _now()),
         )
         conn.commit()
@@ -669,7 +679,8 @@ def list_templates() -> list[dict]:
 def get_template(template_id: str) -> dict | None:
     conn = get_connection()
     try:
-        row = conn.execute("SELECT * FROM aiml_templates WHERE id=%s", (template_id,)).fetchone()
+        ph = sql_placeholder(conn)
+        row = conn.execute(f"SELECT * FROM aiml_templates WHERE id={ph}", (template_id,)).fetchone()
         if not row:
             return None
         d = dict(row)
@@ -684,8 +695,9 @@ def list_snippets(category: str | None = None) -> list[dict]:
     conn = get_connection()
     try:
         if category:
+            ph = sql_placeholder(conn)
             rows = conn.execute(
-                "SELECT * FROM aiml_snippets WHERE category=%s ORDER BY name", (category,)
+                f"SELECT * FROM aiml_snippets WHERE category={ph} ORDER BY name", (category,)
             ).fetchall()
         else:
             rows = conn.execute("SELECT * FROM aiml_snippets ORDER BY category, name").fetchall()
@@ -705,9 +717,10 @@ def list_snippets(category: str | None = None) -> list[dict]:
 def list_versions(design_id: str) -> list[dict]:
     conn = get_connection()
     try:
+        ph = sql_placeholder(conn)
         rows = conn.execute(
             "SELECT id, design_id, version_number, change_summary, created_at "
-            "FROM aiml_versions WHERE design_id=%s ORDER BY version_number DESC",
+            f"FROM aiml_versions WHERE design_id={ph} ORDER BY version_number DESC",
             (design_id,),
         ).fetchall()
         return [dict(r) for r in rows]
@@ -718,7 +731,8 @@ def list_versions(design_id: str) -> list[dict]:
 def get_version(version_id: str) -> dict | None:
     conn = get_connection()
     try:
-        row = conn.execute("SELECT * FROM aiml_versions WHERE id=%s", (version_id,)).fetchone()
+        ph = sql_placeholder(conn)
+        row = conn.execute(f"SELECT * FROM aiml_versions WHERE id={ph}", (version_id,)).fetchone()
         if not row:
             return None
         d = dict(row)

@@ -933,7 +933,12 @@
     })();
     </script>
     {% block body_end %}
+    {# Skipped under ICDEV_AUTH_BYPASS (CI/E2E) — its always-rendered, normally-
+       hidden #onb-apikey input otherwise collides with broad
+       input[type="password"]-style locators used by unrelated E2E tests. #}
+    {% if not auth_bypass %}
     {% include "includes/_onboarding_wizard.html" ignore missing %}
+    {% endif %}
     {% endblock %}
 
     {# ── IQE Global Query Trigger FAB ─────────────────────────────────────── #}

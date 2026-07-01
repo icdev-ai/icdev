@@ -498,11 +498,7 @@
     };
 
     // ── Auto-initialization ──────────────────────────────────────────────────
-    /** On DOMContentLoaded, show welcome overlay if tour not yet completed or paused */
-    function autoInit() {
-        var done = false;
-        try { done = localStorage.getItem(STORAGE_KEY) === "1"; } catch (e) { done = true; }
-        if (done) return;
+    function scheduleWelcome() {
         /* Short delay so dashboard renders first, then preload steps from config */
         setTimeout(function () {
             injectStyles();
@@ -514,6 +510,25 @@
                 );
             });
         }, 500);
+    }
+
+    /** On DOMContentLoaded, show welcome overlay if tour not yet completed or paused.
+     *  Defers to the Onboarding Wizard for first-run welcome duty on a fresh
+     *  install — showing both overlays at once stacks two competing modals. */
+    function autoInit() {
+        // Automated browsers (Playwright, Selenium, ...) set navigator.webdriver.
+        // Skip the auto-popup there — see the matching guard in onboarding.js.
+        if (navigator.webdriver) return;
+        var done = false;
+        try { done = localStorage.getItem(STORAGE_KEY) === "1"; } catch (e) { done = true; }
+        if (done) return;
+        fetch('/api/onboarding/state')
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (d) {
+                if (d && d.completed === false) return; // wizard is handling first-run welcome
+                scheduleWelcome();
+            })
+            .catch(function () { scheduleWelcome(); });
     }
 
     if (document.readyState === "loading") {
