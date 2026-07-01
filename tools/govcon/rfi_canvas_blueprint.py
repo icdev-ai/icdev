@@ -188,6 +188,64 @@ def api_delete_session(session_id):
         return jsonify({"error": str(exc)}), 500
 
 
+# ── API: style guide ─────────────────────────────────────────────────────────
+
+@rfi_canvas_bp.route("/api/rfi/<session_id>/style-guide")
+def api_get_style_guide(session_id):
+    try:
+        from tools.govcon.rfi_style_engine import get_session_style_guide
+        return jsonify(get_session_style_guide(session_id))
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@rfi_canvas_bp.route("/api/rfi/<session_id>/style-guide", methods=["PUT"])
+def api_set_style_guide(session_id):
+    data = request.get_json(force=True) or {}
+    page_limit = data.pop("page_limit", None)
+    words_per_page = data.pop("words_per_page", None)
+    try:
+        from tools.govcon.rfi_style_engine import set_session_style_overrides
+        set_session_style_overrides(session_id, data, page_limit=page_limit, words_per_page=words_per_page)
+        return jsonify({"ok": True})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@rfi_canvas_bp.route("/api/rfi/<session_id>/sections/<section_id>/limits")
+def api_get_section_limits(session_id, section_id):
+    try:
+        from tools.govcon.rfi_style_engine import get_section_limits
+        return jsonify(get_section_limits(section_id))
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@rfi_canvas_bp.route("/api/rfi/<session_id>/sections/<section_id>/limits", methods=["PUT"])
+def api_set_section_limits(session_id, section_id):
+    data = request.get_json(force=True) or {}
+    try:
+        from tools.govcon.rfi_style_engine import set_section_limits
+        set_section_limits(section_id, data.get("word_limit"), data.get("page_limit"))
+        return jsonify({"ok": True})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@rfi_canvas_bp.route("/api/rfi/<session_id>/sections/<section_id>/summarize", methods=["POST"])
+def api_summarize(session_id, section_id):
+    data = request.get_json(force=True) or {}
+    word_target = data.get("word_target")
+    if not word_target:
+        return jsonify({"error": "word_target is required"}), 400
+    try:
+        result = wb.summarize_section_content(section_id, int(word_target))
+        return jsonify({"ok": True, **result})
+    except Exception as exc:
+        logger.exception("Summarize error for section %s", section_id)
+        return jsonify({"error": str(exc)}), 500
+
+
 # ── API: requirements ─────────────────────────────────────────────────────────
 
 @rfi_canvas_bp.route("/api/rfi/<session_id>/sections/<section_id>/requirements")

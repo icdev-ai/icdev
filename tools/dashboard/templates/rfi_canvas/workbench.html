@@ -143,6 +143,9 @@
         <button onclick="togglePreview()" id="preview-btn"
           style="background:#0d1b2e;color:#7ab3f0;border:1px solid #1e3a6e;border-radius:4px;padding:4px 10px;font-size:11px;cursor:pointer;">📄 Preview</button>
         <span style="color:#5a7aa0;font-size:11px;" id="word-count"></span>
+        <span style="color:#7a8cb0;font-size:11px;" id="page-count"></span>
+        <span style="font-size:11px;font-weight:600;" id="limit-badge"></span>
+        <button id="summarize-btn" onclick="summarizeToFit()" style="display:none;background:#1a0a30;color:#a78bfa;border:1px solid #6d28d9;border-radius:4px;padding:3px 8px;font-size:10px;cursor:pointer;">✂ Summarize</button>
         <span style="font-size:11px;" id="md-structure-indicator"></span>
         <span style="color:#5a7aa0;font-size:11px;margin-left:auto;" id="save-indicator"></span>
         <button onclick="saveContent()" id="save-btn"
@@ -235,7 +238,7 @@
                 <span style="color:#94a3b8;font-size:11px;font-weight:600;">Overall</span>
                 <span id="wg-overall-badge" style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:3px;background:#1e293b;color:#94a3b8;border:1px solid #334155;"></span>
               </div>
-              {% for dim in ['Correctness','Clarity','Delivery','Originality','Engagement'] %}
+              {% for dim in ['Correctness','Clarity','Delivery','Originality','Engagement','Style'] %}
               <div style="margin-bottom:8px;">
                 <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
                   <span style="font-size:11px;color:#94a3b8;">{{ dim }}</span>
@@ -276,6 +279,51 @@
           </div>
         </div>
 
+        <!-- Style Guide -->
+        <div class="wb-card">
+          <div class="wb-card-hdr" style="background:#1a0a30;color:#a78bfa;">
+            <span>📝 Style Guide</span>
+            <small id="sg-status" style="color:#5a7aa0;font-weight:400;">default</small>
+          </div>
+          <div class="wb-card-body">
+            <label style="display:block;color:#94a3b8;font-size:11px;font-weight:600;margin-bottom:4px;">Tone</label>
+            <select id="sg-tone" style="width:100%;background:#050d1f;color:#b8d0e8;border:1px solid #1a3560;border-radius:4px;padding:4px 8px;font-size:11px;margin-bottom:8px;">
+              <option value="formal">Formal</option>
+              <option value="semi-formal">Semi-formal</option>
+              <option value="technical">Technical</option>
+            </select>
+            <div style="display:flex;gap:6px;margin-bottom:8px;">
+              <div style="flex:1;">
+                <label style="display:block;color:#94a3b8;font-size:11px;font-weight:600;margin-bottom:3px;">Total pages</label>
+                <input id="sg-page-limit" type="number" min="0" step="1" placeholder="none"
+                  style="width:100%;background:#050d1f;color:#b8d0e8;border:1px solid #1a3560;border-radius:4px;padding:4px 7px;font-size:11px;">
+              </div>
+              <div style="flex:1;">
+                <label style="display:block;color:#94a3b8;font-size:11px;font-weight:600;margin-bottom:3px;">Words/page</label>
+                <input id="sg-words-per-page" type="number" min="50" step="50" value="250"
+                  style="width:100%;background:#050d1f;color:#b8d0e8;border:1px solid #1a3560;border-radius:4px;padding:4px 7px;font-size:11px;">
+              </div>
+            </div>
+            <label style="display:block;color:#94a3b8;font-size:11px;font-weight:600;margin-bottom:3px;">Forbidden phrases <span style="font-weight:400;color:#5a7aa0;">(one/line)</span></label>
+            <textarea id="sg-forbidden" rows="3" placeholder="TBD&#10;N/A&#10;best in class"
+              style="width:100%;background:#050d1f;color:#b8d0e8;border:1px solid #1a3560;border-radius:4px;padding:4px 8px;font-size:11px;margin-bottom:8px;resize:vertical;"></textarea>
+            <label style="display:block;color:#94a3b8;font-size:11px;font-weight:600;margin-bottom:3px;">Required headings <span style="font-weight:400;color:#5a7aa0;">(one/line)</span></label>
+            <textarea id="sg-headings" rows="2" placeholder="Technical Approach&#10;Past Performance"
+              style="width:100%;background:#050d1f;color:#b8d0e8;border:1px solid #1a3560;border-radius:4px;padding:4px 8px;font-size:11px;margin-bottom:8px;resize:vertical;"></textarea>
+            <button class="wb-btn" onclick="saveStyleGuide()"
+              style="background:#1a0a30;color:#a78bfa;border-color:#6d28d9;">💾 Save Style Settings</button>
+            <hr style="border-color:#1a2b4a;margin:8px 0 10px;">
+            <label style="display:block;color:#94a3b8;font-size:11px;font-weight:600;margin-bottom:3px;">Section word limit</label>
+            <div style="display:flex;gap:6px;align-items:center;margin-bottom:4px;">
+              <input id="sec-word-limit" type="number" min="0" step="50" placeholder="none"
+                style="flex:1;background:#050d1f;color:#b8d0e8;border:1px solid #1a3560;border-radius:4px;padding:4px 8px;font-size:11px;">
+              <button onclick="saveSectionLimits()"
+                style="background:#0f3460;color:#7ab3f0;border:1px solid #1e3a6e;border-radius:4px;padding:4px 10px;font-size:11px;cursor:pointer;">Set</button>
+            </div>
+            <div style="font-size:10px;color:#5a7aa0;">Limits apply to this section only</div>
+          </div>
+        </div>
+
         <!-- AI Team -->
         <div class="wb-card">
           <div class="wb-card-hdr" style="background:#0a1a10;color:#4ade80;">
@@ -305,6 +353,9 @@ let currentSectionId = null;
 let currentSection = null;
 let saveTimer = null;
 let previewActive = false;
+let sessionWordsPerPage = 250;
+let sectionWordLimit = null;
+let sectionPageLimit = null;
 
 function loadSection(id) {
   document.querySelectorAll('.section-item').forEach(el => el.classList.remove('active'));
@@ -320,6 +371,11 @@ function loadSection(id) {
 }
 
 function renderSection(sec) {
+  // Update limit vars BEFORE updateWordCount reads them
+  sectionWordLimit = sec.word_limit || null;
+  sectionPageLimit = sec.page_limit || null;
+  const wlInput = document.getElementById('sec-word-limit');
+  if (wlInput) wlInput.value = sectionWordLimit || '';
   document.getElementById('editor-placeholder').style.display = 'none';
   document.getElementById('panel-placeholder').style.display = 'none';
   document.getElementById('editor-area').style.display = '';
@@ -391,6 +447,25 @@ function onContentChange() {
 function updateWordCount(text) {
   const w = text.trim() ? text.trim().split(/\s+/).length : 0;
   document.getElementById('word-count').textContent = w + ' words';
+  const pages = sessionWordsPerPage > 0 ? (w / sessionWordsPerPage) : 0;
+  const pageEl = document.getElementById('page-count');
+  if (pageEl) pageEl.textContent = pages > 0 ? `· ≈${pages.toFixed(1)} pg` : '';
+  const limitBadge = document.getElementById('limit-badge');
+  const sumBtn = document.getElementById('summarize-btn');
+  if (limitBadge) {
+    if (sectionWordLimit && w > sectionWordLimit) {
+      limitBadge.textContent = `⚠ +${w - sectionWordLimit} over`;
+      limitBadge.style.color = '#f87171';
+      if (sumBtn) sumBtn.style.display = '';
+    } else if (sectionWordLimit) {
+      limitBadge.textContent = `${sectionWordLimit - w} left`;
+      limitBadge.style.color = '#4ade80';
+      if (sumBtn) sumBtn.style.display = 'none';
+    } else {
+      limitBadge.textContent = '';
+      if (sumBtn) sumBtn.style.display = 'none';
+    }
+  }
 }
 
 function saveContent() {
@@ -660,6 +735,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const first = document.querySelector('.section-item');
   if (first) loadSection(first.dataset.id);
   loadAceTeamStatus();
+  loadSessionStyleGuide();
 });
 
 // ── Requirements ──────────────────────────────────────────────────────────────
@@ -825,6 +901,86 @@ function launchAceTeam() {
       else { btn.textContent = '🚀 Launch Team'; }
     })
     .catch(() => { btn.disabled = false; btn.textContent = '🚀 Launch Team'; });
+}
+
+// ── Style Guide ──────────────────────────────────────────────────────────────
+
+function loadSessionStyleGuide() {
+  fetch(`/api/rfi/${SESSION_ID}/style-guide`)
+    .then(r => r.json())
+    .then(sg => {
+      sessionWordsPerPage = parseInt(sg.words_per_page) || 250;
+      const el = id => document.getElementById(id);
+      if (el('sg-tone')) el('sg-tone').value = sg.tone || 'formal';
+      if (el('sg-page-limit')) el('sg-page-limit').value = sg.page_limit || '';
+      if (el('sg-words-per-page')) el('sg-words-per-page').value = sg.words_per_page || 250;
+      if (el('sg-forbidden')) el('sg-forbidden').value = (sg.forbidden_phrases || []).join('\n');
+      if (el('sg-headings')) el('sg-headings').value = (sg.required_headings || []).join('\n');
+      if (el('sg-status')) el('sg-status').textContent = (sg.tone || sg.page_limit) ? 'custom' : 'default';
+      // Refresh page estimate with updated words/page
+      const editor = el('content-editor');
+      if (editor && editor.value) updateWordCount(editor.value);
+    })
+    .catch(() => {});
+}
+
+function saveStyleGuide() {
+  const v = id => (document.getElementById(id) || {}).value || '';
+  const tone = v('sg-tone') || 'formal';
+  const page_limit = parseInt(v('sg-page-limit')) || null;
+  const words_per_page = parseInt(v('sg-words-per-page')) || 250;
+  const forbidden_phrases = v('sg-forbidden').split('\n').map(s => s.trim()).filter(Boolean);
+  const required_headings = v('sg-headings').split('\n').map(s => s.trim()).filter(Boolean);
+  fetch(`/api/rfi/${SESSION_ID}/style-guide`, {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({tone, page_limit, words_per_page, forbidden_phrases, required_headings})
+  }).then(r => r.json()).then(d => {
+    if (!d.ok) return;
+    sessionWordsPerPage = words_per_page;
+    const statusEl = document.getElementById('sg-status');
+    if (statusEl) { statusEl.textContent = 'saved ✓'; setTimeout(() => { statusEl.textContent = 'custom'; }, 2000); }
+    const editor = document.getElementById('content-editor');
+    if (editor && editor.value) updateWordCount(editor.value);
+  }).catch(() => {});
+}
+
+function saveSectionLimits() {
+  if (!currentSectionId) return;
+  const wlVal = parseInt((document.getElementById('sec-word-limit') || {}).value) || null;
+  sectionWordLimit = wlVal;
+  fetch(`/api/rfi/${SESSION_ID}/sections/${currentSectionId}/limits`, {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({word_limit: wlVal, page_limit: null})
+  }).then(r => r.json()).then(d => {
+    if (d.ok) {
+      const editor = document.getElementById('content-editor');
+      if (editor && editor.value) updateWordCount(editor.value);
+    }
+  }).catch(() => {});
+}
+
+function summarizeToFit() {
+  if (!currentSectionId || !sectionWordLimit) return;
+  const btn = document.getElementById('summarize-btn');
+  btn.disabled = true; btn.textContent = '⟳ Summarizing…';
+  fetch(`/api/rfi/${SESSION_ID}/sections/${currentSectionId}/summarize`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({word_target: sectionWordLimit})
+  }).then(r => r.json()).then(d => {
+    btn.disabled = false; btn.textContent = '✂ Summarize';
+    if (d.error) { alert('Summarize failed: ' + d.error); return; }
+    if (d.already_fits) { alert('Content already fits within the word limit.'); return; }
+    const preview = `${d.word_count} words (target: ${sectionWordLimit})\n\nPreview:\n${(d.condensed || '').slice(0, 200)}…`;
+    if (confirm(`Replace content with AI-condensed version?\n\n${preview}`)) {
+      document.getElementById('content-editor').value = d.condensed;
+      updateWordCount(d.condensed);
+      document.getElementById('save-indicator').textContent = '● unsaved';
+      document.getElementById('save-indicator').style.color = '#f59e0b';
+    }
+  }).catch(err => { btn.disabled = false; btn.textContent = '✂ Summarize'; alert('Error: ' + err.message); });
 }
 </script>
 {% endblock %}

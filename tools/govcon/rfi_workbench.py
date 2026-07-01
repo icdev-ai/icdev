@@ -288,6 +288,13 @@ def generate_section_content(section_id, profile_name, parsed_data):
         req_notice = f"You MUST address each of these requirements:\n{req_lines}"
         hitl_context = f"{req_notice}\n\n{hitl_context}".strip() if hitl_context else req_notice
 
+    # Load effective style guide and inject tone + compliance constraints into prompt
+    try:
+        from tools.govcon.rfi_style_engine import get_session_style_guide
+        style_guide = get_session_style_guide(section.get("session_id", ""))
+    except Exception:
+        style_guide = {}
+
     prompt = prompt_tpl.format(
         entity_name=profile.get("entity_name", "the responding organization"),
         rfi_number=parsed_data.get("rfi_number", "RFI-UNKNOWN"),
@@ -304,6 +311,18 @@ def generate_section_content(section_id, profile_name, parsed_data):
         title=section["title"],
         question_text=section.get("question_text", ""),
     )
+
+    # Append style guide constraints to prompt
+    if style_guide:
+        tone = style_guide.get("tone", "formal")
+        forbidden = style_guide.get("forbidden_phrases") or []
+        style_parts = [f"Tone: {tone}."]
+        if forbidden:
+            style_parts.append(f"Never use: {', '.join(str(p) for p in forbidden[:10])}.")
+        compliance_notes = style_guide.get("compliance_notes", "")
+        if compliance_notes:
+            style_parts.append(compliance_notes[:300].strip())
+        prompt += "\n\n[Style Requirements]\n" + "\n".join(style_parts)
 
     draft = _call_llm(prompt, section["title"], item)
 
@@ -414,6 +433,16 @@ def run_writeguard(section_id):
             "issues": [],
             "error": str(exc),
         }
+
+    # Merge style compliance findings into WriteGuard result
+    try:
+        from tools.govcon.rfi_style_engine import check_style_compliance, get_session_style_guide
+        style_guide = get_session_style_guide(section.get("session_id", ""))
+        style_result = check_style_compliance(text, style_guide)
+        result.setdefault("composites", {})["Style"] = style_result.get("score", 100)
+        result.setdefault("issues", []).extend(style_result.get("findings", []))
+    except Exception as exc:
+        logger.warning("Style compliance check failed: %s", exc)
 
     db = get_db()
     db.execute(
@@ -728,6 +757,39 @@ def _check_coverage_background(section_id: str):
         check_requirement_coverage(section_id)
     except Exception as exc:
         logger.warning("Background coverage check failed for section %s: %s", section_id, exc)
+
+
+# ── On-demand summarization ───────────────────────────────────────────────────
+
+def summarize_section_content(section_id: str, word_target: int) -> dict:
+    """Condense section content to fit within word_target words.
+
+    Returns condensed text WITHOUT saving — caller must confirm before replacing.
+    """
+    section = get_section(section_id)
+    if not section:
+        raise ValueError(f"Section {section_id} not found")
+
+    content = (section.get("content") or section.get("ai_draft") or "").strip()
+    if not content:
+        raise ValueError("No content to summarize")
+
+    current_words = len(content.split())
+    if current_words <= word_target:
+        return {"condensed": content, "word_count": current_words, "already_fits": True}
+
+    prompt = (
+        f"Condense the following GovCon section response to approximately {word_target} words. "
+        f"Preserve all specific claims, metrics, compliance statements, and required headings. "
+        f"Remove redundant phrases, generic boilerplate, and repetition. "
+        f"Return ONLY the condensed text — no preamble, no commentary.\n\n"
+        f"Section: {section['title']}\n\n"
+        f"{content}"
+    )
+
+    condensed = _call_llm(prompt, section["title"], section["item_number"])
+    word_count = len(condensed.split())
+    return {"condensed": condensed, "word_count": word_count, "already_fits": False}
 
 
 # ── ACE Team integration ──────────────────────────────────────────────────────

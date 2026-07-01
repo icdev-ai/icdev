@@ -127,6 +127,9 @@
       <div class="d-flex align-items-center gap-2 mb-2">
         <button class="btn btn-sm btn-outline-secondary" onclick="togglePreview()" id="preview-btn">📄 Preview</button>
         <span class="text-muted small" id="word-count"></span>
+        <span class="text-secondary small" id="page-count"></span>
+        <span class="small fw-semibold" id="limit-badge"></span>
+        <button id="summarize-btn" onclick="summarizeToFit()" class="btn btn-sm btn-outline-secondary" style="display:none;font-size:10px;padding:2px 8px;">✂ Summarize</button>
         <span class="small" id="md-structure-indicator"></span>
         <span class="text-muted small ms-auto" id="save-indicator"></span>
         <button class="btn btn-sm btn-outline-primary" onclick="saveContent()" id="save-btn">💾 Save</button>
@@ -214,7 +217,7 @@
                 <span class="small fw-semibold">Overall</span>
                 <span id="wg-overall-badge" class="badge"></span>
               </div>
-              {% for dim in ['Correctness','Clarity','Delivery','Originality','Engagement'] %}
+              {% for dim in ['Correctness','Clarity','Delivery','Originality','Engagement','Style'] %}
               <div class="mb-1">
                 <div class="d-flex justify-content-between mb-1" style="font-size:.76rem">
                   <span>{{ dim }}</span><span id="wg-score-{{ dim|lower }}">—</span>
@@ -247,6 +250,44 @@
           </div>
         </div>
 
+        <!-- Style Guide -->
+        <div class="card mb-3 border-primary shadow-sm mt-3">
+          <div class="card-header py-2 fw-semibold text-primary bg-primary bg-opacity-10 d-flex justify-content-between">
+            <span>📝 Style Guide</span>
+            <small id="sg-status" class="fw-normal text-muted">default</small>
+          </div>
+          <div class="card-body pt-2 pb-2">
+            <label class="form-label small fw-semibold mb-1">Tone</label>
+            <select id="sg-tone" class="form-select form-select-sm mb-2">
+              <option value="formal">Formal</option>
+              <option value="semi-formal">Semi-formal</option>
+              <option value="technical">Technical</option>
+            </select>
+            <div class="row g-2 mb-2">
+              <div class="col">
+                <label class="form-label small fw-semibold mb-1">Total pages</label>
+                <input id="sg-page-limit" type="number" min="0" step="1" placeholder="none" class="form-control form-control-sm">
+              </div>
+              <div class="col">
+                <label class="form-label small fw-semibold mb-1">Words/page</label>
+                <input id="sg-words-per-page" type="number" min="50" step="50" value="250" class="form-control form-control-sm">
+              </div>
+            </div>
+            <label class="form-label small fw-semibold mb-1">Forbidden phrases <span class="fw-normal text-muted">(one/line)</span></label>
+            <textarea id="sg-forbidden" rows="3" placeholder="TBD&#10;N/A&#10;best in class" class="form-control form-control-sm mb-2"></textarea>
+            <label class="form-label small fw-semibold mb-1">Required headings <span class="fw-normal text-muted">(one/line)</span></label>
+            <textarea id="sg-headings" rows="2" placeholder="Technical Approach&#10;Past Performance" class="form-control form-control-sm mb-2"></textarea>
+            <button class="btn btn-primary btn-sm w-100 mb-2" onclick="saveStyleGuide()">💾 Save Style Settings</button>
+            <hr class="my-2">
+            <label class="form-label small fw-semibold mb-1">Section word limit</label>
+            <div class="input-group input-group-sm mb-1">
+              <input id="sec-word-limit" type="number" min="0" step="50" placeholder="none" class="form-control">
+              <button class="btn btn-outline-secondary" onclick="saveSectionLimits()">Set</button>
+            </div>
+            <div class="text-muted" style="font-size:10px;">Limits apply to this section only</div>
+          </div>
+        </div>
+
         <!-- AI Team -->
         <div class="card mb-3 border-success shadow-sm mt-3">
           <div class="card-header py-2 fw-semibold text-success bg-success bg-opacity-10 d-flex justify-content-between">
@@ -275,6 +316,9 @@ let currentSectionId = null;
 let currentSection = null;
 let saveTimer = null;
 let previewActive = false;
+let sessionWordsPerPage = 250;
+let sectionWordLimit = null;
+let sectionPageLimit = null;
 
 // ── Load section ─────────────────────────────────────────────────────────────
 function loadSection(id) {
@@ -292,6 +336,10 @@ function loadSection(id) {
 }
 
 function renderSection(sec) {
+  sectionWordLimit = sec.word_limit || null;
+  sectionPageLimit = sec.page_limit || null;
+  const wlInput = document.getElementById('sec-word-limit');
+  if (wlInput) wlInput.value = sectionWordLimit || '';
   document.getElementById('editor-placeholder').classList.add('d-none');
   document.getElementById('panel-placeholder').classList.add('d-none');
   document.getElementById('editor-area').classList.remove('d-none');
@@ -365,6 +413,25 @@ function onContentChange() {
 function updateWordCount(text) {
   const w = text.trim() ? text.trim().split(/\s+/).length : 0;
   document.getElementById('word-count').textContent = w + ' words';
+  const pages = sessionWordsPerPage > 0 ? (w / sessionWordsPerPage) : 0;
+  const pageEl = document.getElementById('page-count');
+  if (pageEl) pageEl.textContent = pages > 0 ? `· ≈${pages.toFixed(1)} pg` : '';
+  const limitBadge = document.getElementById('limit-badge');
+  const sumBtn = document.getElementById('summarize-btn');
+  if (limitBadge) {
+    if (sectionWordLimit && w > sectionWordLimit) {
+      limitBadge.textContent = `⚠ +${w - sectionWordLimit} over`;
+      limitBadge.style.color = '#dc2626';
+      if (sumBtn) sumBtn.style.display = '';
+    } else if (sectionWordLimit) {
+      limitBadge.textContent = `${sectionWordLimit - w} left`;
+      limitBadge.style.color = '#16a34a';
+      if (sumBtn) sumBtn.style.display = 'none';
+    } else {
+      limitBadge.textContent = '';
+      if (sumBtn) sumBtn.style.display = 'none';
+    }
+  }
 }
 
 function saveContent() {
@@ -665,6 +732,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const first = document.querySelector('.section-item');
   if (first) loadSection(first.dataset.id);
   loadAceTeamStatus();
+  loadSessionStyleGuide();
 });
 
 // ── Requirements ──────────────────────────────────────────────────────────────
@@ -819,6 +887,84 @@ function launchAceTeam() {
       else { btn.textContent = '🚀 Launch Team'; }
     })
     .catch(() => { btn.disabled = false; btn.textContent = '🚀 Launch Team'; });
+}
+
+// ── Style Guide ──────────────────────────────────────────────────────────────
+
+function loadSessionStyleGuide() {
+  fetch(`/api/rfi/${SESSION_ID}/style-guide`)
+    .then(r => r.json())
+    .then(sg => {
+      sessionWordsPerPage = parseInt(sg.words_per_page) || 250;
+      const el = id => document.getElementById(id);
+      if (el('sg-tone')) el('sg-tone').value = sg.tone || 'formal';
+      if (el('sg-page-limit')) el('sg-page-limit').value = sg.page_limit || '';
+      if (el('sg-words-per-page')) el('sg-words-per-page').value = sg.words_per_page || 250;
+      if (el('sg-forbidden')) el('sg-forbidden').value = (sg.forbidden_phrases || []).join('\n');
+      if (el('sg-headings')) el('sg-headings').value = (sg.required_headings || []).join('\n');
+      if (el('sg-status')) el('sg-status').textContent = (sg.tone || sg.page_limit) ? 'custom' : 'default';
+      const editor = el('content-editor');
+      if (editor && editor.value) updateWordCount(editor.value);
+    })
+    .catch(() => {});
+}
+
+function saveStyleGuide() {
+  const v = id => (document.getElementById(id) || {}).value || '';
+  const tone = v('sg-tone') || 'formal';
+  const page_limit = parseInt(v('sg-page-limit')) || null;
+  const words_per_page = parseInt(v('sg-words-per-page')) || 250;
+  const forbidden_phrases = v('sg-forbidden').split('\n').map(s => s.trim()).filter(Boolean);
+  const required_headings = v('sg-headings').split('\n').map(s => s.trim()).filter(Boolean);
+  fetch(`/api/rfi/${SESSION_ID}/style-guide`, {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({tone, page_limit, words_per_page, forbidden_phrases, required_headings})
+  }).then(r => r.json()).then(d => {
+    if (!d.ok) return;
+    sessionWordsPerPage = words_per_page;
+    const statusEl = document.getElementById('sg-status');
+    if (statusEl) { statusEl.textContent = 'saved ✓'; setTimeout(() => { statusEl.textContent = 'custom'; }, 2000); }
+    const editor = document.getElementById('content-editor');
+    if (editor && editor.value) updateWordCount(editor.value);
+  }).catch(() => {});
+}
+
+function saveSectionLimits() {
+  if (!currentSectionId) return;
+  const wlVal = parseInt((document.getElementById('sec-word-limit') || {}).value) || null;
+  sectionWordLimit = wlVal;
+  fetch(`/api/rfi/${SESSION_ID}/sections/${currentSectionId}/limits`, {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({word_limit: wlVal, page_limit: null})
+  }).then(r => r.json()).then(d => {
+    if (d.ok) {
+      const editor = document.getElementById('content-editor');
+      if (editor && editor.value) updateWordCount(editor.value);
+    }
+  }).catch(() => {});
+}
+
+function summarizeToFit() {
+  if (!currentSectionId || !sectionWordLimit) return;
+  const btn = document.getElementById('summarize-btn');
+  btn.disabled = true; btn.textContent = '⟳ Summarizing…';
+  fetch(`/api/rfi/${SESSION_ID}/sections/${currentSectionId}/summarize`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({word_target: sectionWordLimit})
+  }).then(r => r.json()).then(d => {
+    btn.disabled = false; btn.textContent = '✂ Summarize';
+    if (d.error) { alert('Summarize failed: ' + d.error); return; }
+    if (d.already_fits) { alert('Content already fits within the word limit.'); return; }
+    const preview = `${d.word_count} words (target: ${sectionWordLimit})\n\nPreview:\n${(d.condensed || '').slice(0, 200)}…`;
+    if (confirm(`Replace content with AI-condensed version?\n\n${preview}`)) {
+      document.getElementById('content-editor').value = d.condensed;
+      updateWordCount(d.condensed);
+      document.getElementById('save-indicator').textContent = '● unsaved';
+    }
+  }).catch(err => { btn.disabled = false; btn.textContent = '✂ Summarize'; alert('Error: ' + err.message); });
 }
 </script>
 {% endblock %}
