@@ -49,6 +49,25 @@ def _md_to_html(text: str | None) -> str:
         return f"<pre>{html.escape(text)}</pre>"
 
 
+def _md_inline_to_html(text: str | None) -> str:
+    """Convert a single line of inline markdown (bold/italic/code/links) to HTML.
+
+    Strips the wrapping <p> the ``markdown`` package always adds, so the
+    result is safe to place inside an existing block element (e.g. <li>),
+    unlike the block-level `markdown` filter above.
+    """
+    if not text:
+        return ""
+    try:
+        import markdown as md_lib
+        out = md_lib.markdown(text).strip()
+        if out.startswith("<p>") and out.endswith("</p>"):
+            out = out[len("<p>"):-len("</p>")]
+        return out
+    except Exception:
+        return html.escape(text)
+
+
 # ---------------------------------------------------------------------------
 # Glossary of acronyms (used by glossary_term filter)
 # ---------------------------------------------------------------------------
@@ -960,6 +979,8 @@ def register_ux_filters(app):
     app.jinja_env.filters["glossary"] = glossary_term
     # Markdown → safe HTML (used by DIC document detail and other canvas pages)
     app.jinja_env.filters["markdown"] = _md_to_html
+    # Inline markdown (bold/code/links only, no <p> wrapper) — used by /updates changelog items
+    app.jinja_env.filters["markdown_inline"] = _md_inline_to_html
 
     # Template globals (callable directly in templates)
     app.jinja_env.globals["score_display"] = score_display
