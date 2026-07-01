@@ -1,0 +1,12 @@
+canvas: rfi_canvas
+queries:
+  - label: All section drafts
+    query: "foreach s in rfi_canvas.sections select s.rfi_number, s.part, s.item_number, s.title, s.status, s.generation_count"
+  - label: Pending sections
+    query: "foreach s in rfi_canvas.sections where s.status == \"pending\" select s.rfi_number, s.item_number, s.title"
+  - label: Accepted sections
+    query: "foreach s in rfi_canvas.sections where s.status == \"accepted\" select s.rfi_number, s.item_number, s.title, s.updated_at"
+  - label: Rejected sections
+    query: "foreach s in rfi_canvas.sections where s.hitl_action == \"reject\" select s.rfi_number, s.item_number, s.title, s.updated_at"
+  - label: Sections with WriteGuard scores
+    query: "foreach s in rfi_canvas.sections where s.writeguard_score != null select s.rfi_number, s.item_number, s.title, s.writeguard_score, s.status"

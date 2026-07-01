@@ -257,6 +257,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "cpmp_evm_periods",
         "cpmp_cdrl_generations",
         "cpmp_cor_access_log",
+        # RFI Workbench (migration 236) — export log is append-only
+        "rfi_workbench_exports",
         # Phase 61 — ANVIL Critique (Feature 3)
         "anvil_critique_sessions",
         "anvil_critique_findings",

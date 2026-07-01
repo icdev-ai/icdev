@@ -56,7 +56,7 @@ def test_parse_error_exits_1(capsys: pytest.CaptureFixture[str]) -> None:
 # 4 — --query file runs vendor_inventory.iqe and exits 0 --------------------
 
 def test_query_file_exits_0(capsys: pytest.CaptureFixture[str]) -> None:
-    path = Path("context/iqe/queries/network/vendor_inventory.iqe")
+    path = Path(__file__).parent.parent / "context/iqe/queries/network/vendor_inventory.iqe"
     rc = main(["--query", str(path)])
     assert rc == 0
     out = capsys.readouterr().out

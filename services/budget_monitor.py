@@ -39,7 +39,7 @@ class BudgetVariance:
 class BudgetMonitor:
     """Monitor real-time resource usage against configured budget limits."""
 
-    DEFAULT_CONFIG_PATH = Path("args/budget_config.yaml")
+    DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent.parent / "args" / "budget_config.yaml"
 
     def __init__(self, config_path: Optional[Path] = None) -> None:
         self._config_path = Path(config_path or self.DEFAULT_CONFIG_PATH)

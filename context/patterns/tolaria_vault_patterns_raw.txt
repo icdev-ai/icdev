@@ -1,0 +1,386 @@
+================================================================================
+TOLARIA VAULT PATTERNS — RAW EXTRACTION
+Source: https://github.com/refactoringhq/tolaria
+Extracted: 2026-06-29
+================================================================================
+
+--------------------------------------------------------------------------------
+1. REPOSITORY OVERVIEW
+--------------------------------------------------------------------------------
+Name: tolaria
+Version: 0.1.0
+License: AGPL-3.0-or-later
+Description: Desktop application (Tauri + React + TypeScript) for managing
+  markdown-based knowledge bases — "second brains" and personal knowledge
+  management. Platform: macOS, Windows, Linux.
+  Key principles: plain markdown files, offline-first, no cloud dependencies,
+  Git integration, keyboard-centric.
+
+Stack: Tauri, React 19, TypeScript 5.9, Vite, pnpm 8+, Node.js 20+, Rust
+Notable deps: Anthropic SDK, Mantine, Radix UI, BlockNote, CodeMirror, tldraw,
+  IronCalc, Playwright 1.58, Vitest 4, ESLint 9
+
+--------------------------------------------------------------------------------
+2. ROOT DIRECTORY STRUCTURE
+--------------------------------------------------------------------------------
+tolaria/
+├── .chunk/                  # configuration/cache (Chunk CI sidecar)
+├── .claude/                 # Claude Code compatibility shim (points to AGENTS.md)
+├── .github/                 # GitHub workflows and templates
+├── .husky/                  # Git hooks management
+├── demo-vault-v2/           # PRIMARY demo/QA fixture vault (default for testing)
+├── demo-vault/              # Legacy demo vault (do not use for new work)
+├── design/                  # Design assets
+├── docs/                    # Architecture docs, ADRs, getting-started
+│   ├── adr/                 # Architecture Decision Records
+│   ├── ARCHITECTURE.md
+│   ├── ABSTRACTIONS.md
+│   └── GETTING-STARTED.md
+├── e2e/                     # End-to-end test files
+├── mcp-server/              # MCP server implementation
+├── patches/                 # Package patches (BlockNote, Tiptap)
+├── public/                  # Static assets
+├── release-notes/           # Release documentation
+├── scripts/                 # Utility scripts (incl. generate_demo_vault.py)
+├── site/                    # Website/documentation site (VitePress)
+├── src/                     # Frontend source (React/TypeScript)
+│   └── lib/
+│       └── locales/
+│           └── en.json      # All user-facing UI strings (i18n)
+├── src-tauri/               # Tauri Rust backend
+├── tests/
+│   └── smoke/               # Playwright smoke tests (<slug>.spec.ts)
+├── AGENTS.md                # Shared AI agent instructions (canonical)
+├── CLAUDE.md                # Compatibility shim → AGENTS.md
+├── GEMINI.md                # Gemini AI agent notes
+├── CONTRIBUTING.md
+├── SECURITY.md
+├── LICENSE
+├── README.md
+├── biome.json               # Biome linter config
+├── components.json          # shadcn/ui component config
+├── eslint.config.js
+├── index.html
+├── lara.yaml                # Localization config
+├── lara.lock                # Localization lock
+├── package.json
+├── playwright.config.ts
+├── playwright.integration.config.ts
+├── playwright.smoke.config.ts
+├── pnpm-lock.yaml
+├── pnpm-workspace.yaml
+├── tsconfig.json
+├── tsconfig.app.json
+├── tsconfig.node.json
+├── vite.config.ts
+├── .codacy.yaml
+├── .codescene-thresholds    # CodeScene quality gate thresholds (ratchet)
+├── .codesceneignore
+├── .codescenerc
+├── .env.example
+├── .gitignore
+└── .semgrepignore
+
+--------------------------------------------------------------------------------
+3. DEMO VAULT STRUCTURE (demo-vault-v2/)
+--------------------------------------------------------------------------------
+demo-vault-v2/
+├── .fixture-manifest.json   # Metadata + QA scenario descriptions
+├── .gitignore
+│
+├── attachments/             # Binary attachments (images for attachment rendering QA)
+│
+├── type/                    # Type definition files (one per content type)
+│   ├── area.md
+│   ├── event.md
+│   ├── measure.md
+│   ├── note.md
+│   ├── person.md
+│   ├── procedure.md
+│   ├── project.md
+│   ├── quarter.md
+│   ├── responsibility.md
+│   └── topic.md
+│
+├── views/                   # Saved view configurations (YAML)
+│   └── active-projects.yml
+│
+│   [Content files — naming conventions: <type>-<slug>.md or <date>.md]
+│
+├── 24q4.md                  # Quarter note
+├── 24q4-laputa-start.md     # Project note (quarter-prefixed)
+├── 25q1.md
+├── 25q1-laputa-v1.md
+├── 25q2.md
+├── 25q2-laputa-v2.md
+│
+├── refactoring-business-plan.md
+├── area-building.md
+│
+├── procedure-quarterly-sponsor-outreach.md
+├── procedure-sponsor-onboarding.md
+│
+├── responsibility-sponsorships.md
+│
+├── measure-close-rate.md
+├── measure-sponsorship-mrr.md
+│
+├── person-luca-rossi.md
+├── person-matteo-cellini.md
+│
+├── topic-writing.md
+├── note-on-clear-prose.md
+├── writing-for-clarity-vs-writing-for-credit.md
+├── writing-weekly-rhythm.md
+│
+├── event-team-sync-2025-01-13.md
+├── laputa-qa-reference.md
+├── rtl-mixed-direction-qa.md
+└── tolaria-sheet-prototype-sample.md
+
+--------------------------------------------------------------------------------
+4. FILE NAMING CONVENTIONS
+--------------------------------------------------------------------------------
+Pattern: <type>-<kebab-slug>.md
+  - area-<slug>.md          e.g. area-building.md
+  - event-<slug>.md         e.g. event-team-sync-2025-01-13.md
+  - measure-<slug>.md       e.g. measure-close-rate.md
+  - note-<slug>.md          e.g. note-on-clear-prose.md (or bare slug for notes)
+  - person-<first>-<last>.md  e.g. person-luca-rossi.md
+  - procedure-<slug>.md     e.g. procedure-quarterly-sponsor-outreach.md
+  - responsibility-<slug>.md  e.g. responsibility-sponsorships.md
+  - topic-<slug>.md         e.g. topic-writing.md
+
+Quarter notes: <YY><Q-abbr>.md  e.g. 25q2.md
+Project notes: <YY><Q-abbr>-<project-slug>.md  e.g. 25q2-laputa-v2.md
+Event notes: event-<slug>-<date>.md  e.g. event-team-sync-2025-01-13.md
+
+Free-form notes without type prefix also valid (bare slugs):
+  e.g. writing-for-clarity-vs-writing-for-credit.md
+
+--------------------------------------------------------------------------------
+5. MARKDOWN FRONTMATTER SYNTAX (YAML between --- delimiters)
+--------------------------------------------------------------------------------
+
+5a. CONTENT NOTES (in demo-vault-v2/*.md):
+
+-- Quarter note --
+---
+type: Quarter
+aliases:
+  - "[[Q2 2025]]"
+status: Active
+has:
+  - "[[25q2-laputa-v2]]"
+---
+
+-- Person note --
+---
+type: Person
+aliases:
+  - "[[Luca Rossi]]"
+tier: 1st
+---
+
+-- Area note --
+---
+type: Area
+aliases:
+  - "[[Building]]"
+has:
+  - "[[responsibility-sponsorships]]"
+---
+
+-- Procedure note --
+---
+type: Procedure
+aliases:
+  - "[[Quarterly Sponsor Outreach]]"
+belongs_to: "[[responsibility-sponsorships]]"
+owner: "[[person-matteo-cellini]]"
+cadence: Quarterly
+---
+
+-- Measure note --
+---
+type: Measure
+aliases:
+  - "[[Sponsorship Close Rate]]"
+belongs_to: "[[responsibility-sponsorships]]"
+unit: percent
+---
+
+5b. TYPE DEFINITION FILES (in demo-vault-v2/type/*.md):
+
+-- Type: Area --
+---
+type: Type
+icon: folders
+color: amber
+sidebar label: Areas
+---
+
+-- Type: Project --
+---
+type: Type
+icon: rocket
+color: blue
+sidebar label: Projects
+---
+
+-- Type: Quarter --
+---
+type: Type
+icon: clock-countdown
+color: emerald
+sidebar label: Quarters
+---
+
+-- Type: Person --
+---
+type: Type
+icon: user
+color: rose
+sidebar label: People
+---
+
+-- Type: Note --
+---
+type: Type
+icon: note
+color: slate
+sidebar label: Notes
+---
+
+5c. WIKILINK SYNTAX (inter-document references):
+  - "[[<display name>]]"         — display-name wikilink (resolves by alias or title)
+  - "[[<file-slug>]]"            — slug wikilink (resolves by filename without .md)
+  Used in: aliases array, has array, belongs_to, owner fields
+
+--------------------------------------------------------------------------------
+6. SUPPORTED FRONTMATTER YAML FIELDS (by field name)
+--------------------------------------------------------------------------------
+Field         | Used In        | Values / Notes
+------------- | -------------- | -------------------------------------------
+type          | all notes      | String: Area, Event, Measure, Note, Person,
+              |                | Procedure, Project, Quarter, Responsibility,
+              |                | Topic, Type (for type-def files)
+aliases       | all notes      | List of "[[Display Name]]" wikilinks
+status        | Quarter, Proj  | String: Active, Done, Cancelled, etc.
+has           | Area, Quarter  | List of "[[slug]]" wikilinks to child items
+belongs_to    | Measure, Proc  | "[[responsibility-slug]]" wikilink
+owner         | Procedure      | "[[person-slug]]" wikilink
+cadence       | Procedure      | String: Quarterly, Monthly, Weekly, etc.
+tier          | Person         | String: 1st, 2nd, 3rd (relationship proximity)
+unit          | Measure        | String: percent, count, currency, etc.
+icon          | Type def       | String: Phosphor icon name (folders, rocket,
+              |                | clock-countdown, user, note, etc.)
+color         | Type def       | String: Tailwind color name (amber, blue,
+              |                | emerald, rose, slate, etc.)
+sidebar label | Type def       | String: Plural display name for sidebar nav
+
+--------------------------------------------------------------------------------
+7. VIEW CONFIGURATION SYNTAX (views/*.yml)
+--------------------------------------------------------------------------------
+Example: views/active-projects.yml
+  name: "Active Projects"
+  icon: rocket
+  color: blue
+  sort: modified:desc
+  filter:
+    type: all
+    field: Project    # filters notes where type == "Project"
+
+--------------------------------------------------------------------------------
+8. FIXTURE MANIFEST FORMAT (demo-vault-v2/.fixture-manifest.json)
+--------------------------------------------------------------------------------
+JSON object describing:
+  - Purpose: "Curated local vault for native QA and developer flows"
+  - QA Scenarios covered:
+    1. Exact-Match Search  — Quick Open title ranking
+    2. Relationship Rendering — inspector shows relationship keys, not properties
+    3. Project Navigation  — quarters/projects/saved views keyboard QA
+    4. Attachment Rendering — binary image files for block-level testing
+    5. RTL & Mixed Direction — Arabic + English bidirectional text in editors
+
+  Large fixture generation:
+    Script: scripts/generate_demo_vault.py
+    Output dir: generated-fixtures/demo-vault-large
+
+--------------------------------------------------------------------------------
+9. RELATIONSHIP / KNOWLEDGE GRAPH PATTERNS
+--------------------------------------------------------------------------------
+Tolaria models a PKM graph through typed wikilinks in frontmatter:
+  - Area  → has  → [Responsibility, Project, ...]
+  - Quarter → has → [Project, ...]
+  - Responsibility → (implied parent of Procedure, Measure)
+  - Procedure → belongs_to → Responsibility
+  - Procedure → owner → Person
+  - Measure → belongs_to → Responsibility
+  - Person → tier → proximity level
+
+Inspector panel displays "relationship keys" (belongs_to, owner, has) differently
+from standard properties — this is a core UI feature.
+
+--------------------------------------------------------------------------------
+10. AI-AGNOSTIC DESIGN PRINCIPLES (from AGENTS.md + README)
+--------------------------------------------------------------------------------
+- Notes are plain markdown files — no proprietary format, fully portable
+- YAML frontmatter is standard; compatible with Obsidian, Logseq, etc.
+- No accounts or subscriptions required (offline-first)
+- Git integration for version control (provider-agnostic)
+- Type system is user-defined via type/*.md files (not hardcoded in app logic)
+- Views are YAML config files in views/ (declarative, not compiled)
+- Wikilinks use [[display name]] syntax (compatible with Obsidian standard)
+- File naming is kebab-case slugs (no spaces, lowercase)
+- Attachments live in attachments/ subdirectory
+- All user-facing copy in src/lib/locales/en.json (i18n-ready)
+
+--------------------------------------------------------------------------------
+11. SUPPORTED CONTENT TYPES (10 built-in types in demo vault)
+--------------------------------------------------------------------------------
+Type Name       | Icon            | Color   | Sidebar Label
+--------------- | --------------- | ------- | -------------
+Area            | folders         | amber   | Areas
+Event           | (event)         | (event) | Events
+Measure         | (measure)       | (meas.) | Measures
+Note            | note            | slate   | Notes
+Person          | user            | rose    | People
+Procedure       | (procedure)     | (proc.) | Procedures
+Project         | rocket          | blue    | Projects
+Quarter         | clock-countdown | emerald | Quarters
+Responsibility  | (resp.)         | (resp.) | Responsibilities
+Topic           | (topic)         | (topic) | Topics
+
+Type defs live in: demo-vault-v2/type/<typename-lowercase>.md
+  Each file uses frontmatter: type=Type, icon, color, "sidebar label"
+
+--------------------------------------------------------------------------------
+12. DEVELOPMENT WORKFLOW (AI-AGNOSTIC RULES FROM AGENTS.md)
+--------------------------------------------------------------------------------
+- TDD: Red → Green → Refactor → Commit (one cycle per commit)
+- Test preference: E2E > unit tests for user flows
+- All UI copy: src/lib/locales/en.json → pnpm l10n:translate
+- CodeScene quality gate (ratchet): file must not regress; new files must be 10.0
+- Playwright smoke: tests/smoke/<slug>.spec.ts (tag @smoke only for core flows)
+- Commit prefixes: feat:, fix:, refactor:, test:, docs:
+- Never --no-verify on git push
+- ADRs: docs/adr/ — never edit existing, create superseding ADR
+- Demo vault hygiene: revert any QA changes before committing
+
+--------------------------------------------------------------------------------
+13. PACKAGE.JSON KEY SCRIPTS
+--------------------------------------------------------------------------------
+dev          → Vite browser mode
+tauri dev    → Native desktop app (Tauri)
+build        → TypeScript + Vite production build
+test         → Vitest unit tests
+test:coverage → Vitest with coverage (frontend ≥70%)
+l10n:translate → Translate en.json to all lara.yaml target locales
+l10n:validate  → Validate placeholder integrity in translations
+playwright:smoke      → Curated smoke suite (<5 min on sidecars)
+playwright:regression → Full Playwright pass
+
+================================================================================
+END OF EXTRACTION
+================================================================================

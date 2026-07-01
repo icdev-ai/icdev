@@ -233,7 +233,7 @@ class TestCrowdsourceConfig:
     def test_crowdsource_in_integrations_yaml(self):
         import yaml
         import pathlib
-        config_path = pathlib.Path("args/dic_canvas_integrations.yaml")
+        config_path = pathlib.Path(__file__).parent.parent / "args/dic_canvas_integrations.yaml"
         with config_path.open() as f:
             config = yaml.safe_load(f)
         assert "crowdsource" in config.get("integrations", {}), \
@@ -242,7 +242,7 @@ class TestCrowdsourceConfig:
     def test_crowdsource_has_required_fields(self):
         import yaml
         import pathlib
-        with pathlib.Path("args/dic_canvas_integrations.yaml").open() as f:
+        with (pathlib.Path(__file__).parent.parent / "args/dic_canvas_integrations.yaml").open() as f:
             config = yaml.safe_load(f)
         entry = config["integrations"]["crowdsource"]
         assert entry.get("priority")

@@ -1,0 +1,221 @@
+{% extends "base.html" %}
+{% block title %}RFI Response Workbench{% endblock %}
+{% block content %}
+<div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;margin-bottom:12px;">CUI // SP-CTI</div>
+
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+  <div>
+    <h2 style="margin:0;color:#eaeaea;font-size:20px;letter-spacing:.3px;">📄 RFI Response Workbench</h2>
+    <p style="color:#7a8cb0;font-size:12px;margin:4px 0 0;">Upload an RFI document and generate a complete, HITL-reviewed response ready for export</p>
+  </div>
+</div>
+
+<!-- Upload Card -->
+<div style="background:#16213e;border:1px solid #1e3a6e;border-radius:8px;margin-bottom:20px;overflow:hidden;">
+  <div style="background:#0f3460;padding:10px 16px;display:flex;align-items:center;gap:8px;">
+    <span style="font-size:14px;">📎</span>
+    <span style="color:#7ab3f0;font-weight:600;font-size:13px;">Upload RFI Document</span>
+  </div>
+  <div style="padding:20px;">
+    <form id="upload-form" enctype="multipart/form-data">
+      <div style="display:grid;grid-template-columns:1fr 240px 200px;gap:16px;align-items:end;">
+
+        <!-- Drop zone -->
+        <div>
+          <label style="display:block;color:#b8d0e8;font-size:12px;font-weight:600;margin-bottom:6px;">RFI Document <span style="color:#e94560;">*</span></label>
+          <div id="drop-zone" style="background:#0d1b2e;border:2px dashed #1e3a6e;border-radius:6px;padding:24px;text-align:center;cursor:pointer;transition:all 0.2s;">
+            <div id="drop-label">
+              <div style="font-size:24px;margin-bottom:6px;">📎</div>
+              <div style="color:#5a7aa0;font-size:13px;">Drag &amp; drop PDF or DOCX here</div>
+              <div style="color:#3d5a80;font-size:11px;margin-top:4px;">or <span id="browse-link" style="color:#4f8ef7;cursor:pointer;font-weight:600;">browse to upload</span></div>
+            </div>
+            <div id="file-selected" style="display:none;color:#4ade80;font-weight:600;font-size:13px;">
+              <span id="file-selected-name"></span>
+            </div>
+            <input type="file" id="rfi-file-input" name="rfi_file" accept=".pdf,.docx,.doc" style="display:none;">
+          </div>
+        </div>
+
+        <!-- Profile select -->
+        <div>
+          <label style="display:block;color:#b8d0e8;font-size:12px;font-weight:600;margin-bottom:6px;">Company Profile</label>
+          <select name="profile" id="profile-select" style="width:100%;background:#050d1f;color:#b8d0e8;border:1px solid #1a3560;border-radius:5px;padding:8px 10px;font-size:13px;">
+            {% for p in profiles %}
+            <option value="{{ p }}" {% if p == 'peraton' %}selected{% endif %}>{{ p|replace('_',' ')|title }}</option>
+            {% endfor %}
+          </select>
+          <div style="color:#5a6e8c;font-size:11px;margin-top:4px;">Defines all Part 1 administrative data</div>
+        </div>
+
+        <!-- Submit -->
+        <div>
+          <button type="submit" id="upload-btn" disabled
+            style="width:100%;background:#0f3460;color:#7ab3f0;border:1px solid #1e3a6e;border-radius:5px;padding:10px 16px;font-size:13px;font-weight:600;cursor:not-allowed;transition:all 0.2s;">
+            <span class="spinner-border spinner-border-sm d-none me-2" id="upload-spinner"></span>
+            🚀 Parse RFI &amp; Start Workflow
+          </button>
+        </div>
+      </div>
+    </form>
+
+    <div id="upload-error" style="display:none;background:#2d0a0a;border:1px solid #e94560;color:#f87171;border-radius:5px;padding:10px 14px;margin-top:12px;font-size:12px;"></div>
+
+    <!-- Workflow steps -->
+    <div style="border-top:1px solid #1e3a6e;margin-top:18px;padding-top:14px;">
+      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;text-align:center;">
+        {% for step in [('📎','1. Upload RFI','PDF/DOCX parsed automatically'),('✨','2. AI Generate','Content per section'),('🔍','3. WriteGuard','Style, tone, grammar'),('👤','4. HITL Review','Approve, reject, comment'),('📥','5. Export','DOCX + MD ready')] %}
+        <div style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:6px;padding:10px 6px;">
+          <div style="font-size:20px;margin-bottom:4px;">{{ step[0] }}</div>
+          <div style="color:#eaeaea;font-size:11px;font-weight:600;margin-bottom:2px;">{{ step[1] }}</div>
+          <div style="color:#7a8cb0;font-size:10px;">{{ step[2] }}</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Sessions -->
+{% if sessions %}
+<div style="background:#16213e;border:1px solid #1e3a6e;border-radius:8px;overflow:hidden;">
+  <div style="padding:10px 16px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #1e3a6e;">
+    <span style="color:#eaeaea;font-size:13px;font-weight:600;">Active Sessions</span>
+    <span style="color:#7a8cb0;font-size:11px;">{{ sessions|length }} session{{ 's' if sessions|length != 1 }}</span>
+  </div>
+  <table style="width:100%;border-collapse:collapse;">
+    <thead>
+      <tr style="background:#0d1b2e;">
+        <th style="color:#7a8cb0;font-size:11px;font-weight:600;padding:8px 14px;text-align:left;border-bottom:1px solid #1e3a6e;">RFI</th>
+        <th style="color:#7a8cb0;font-size:11px;font-weight:600;padding:8px 14px;text-align:left;border-bottom:1px solid #1e3a6e;">Title</th>
+        <th style="color:#7a8cb0;font-size:11px;font-weight:600;padding:8px 14px;text-align:left;border-bottom:1px solid #1e3a6e;">Profile</th>
+        <th style="color:#7a8cb0;font-size:11px;font-weight:600;padding:8px 14px;text-align:center;border-bottom:1px solid #1e3a6e;">Progress</th>
+        <th style="color:#7a8cb0;font-size:11px;font-weight:600;padding:8px 14px;text-align:center;border-bottom:1px solid #1e3a6e;">Status</th>
+        <th style="color:#7a8cb0;font-size:11px;font-weight:600;padding:8px 14px;text-align:left;border-bottom:1px solid #1e3a6e;">Updated</th>
+        <th style="border-bottom:1px solid #1e3a6e;"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in sessions %}
+      {% set pct = ((s.approved_sections / s.total_sections) * 100)|round(0)|int if s.total_sections > 0 else 0 %}
+      <tr style="border-bottom:1px solid #1a2b4a;" onmouseover="this.style.background='#0f2040'" onmouseout="this.style.background='transparent'">
+        <td style="padding:10px 14px;color:#4f8ef7;font-size:12px;font-weight:600;">{{ s.rfi_number or '—' }}</td>
+        <td style="padding:10px 14px;color:#eaeaea;font-size:12px;">{{ (s.rfi_title or '—')[:50] }}</td>
+        <td style="padding:10px 14px;color:#7a8cb0;font-size:12px;">{{ s.profile_name|replace('_',' ')|title }}</td>
+        <td style="padding:10px 14px;text-align:center;min-width:130px;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <div style="flex:1;background:#0a1525;border-radius:3px;height:5px;overflow:hidden;">
+              <div style="height:100%;width:{{ pct }}%;background:{% if pct == 100 %}#22c55e{% elif pct >= 50 %}#38bdf8{% else %}#f59e0b{% endif %};"></div>
+            </div>
+            <span style="color:#7a8cb0;font-size:11px;white-space:nowrap;">{{ s.approved_sections }}/{{ s.total_sections }}</span>
+          </div>
+        </td>
+        <td style="padding:10px 14px;text-align:center;">
+          <span style="font-size:10px;font-weight:600;padding:2px 8px;border-radius:3px;
+            {% if s.status == 'exported' %}background:#052e16;color:#4ade80;border:1px solid #16a34a;
+            {% elif s.status == 'complete' %}background:#172554;color:#60a5fa;border:1px solid #2563eb;
+            {% elif s.status == 'in_progress' %}background:#0c2a4a;color:#38bdf8;border:1px solid #0284c7;
+            {% else %}background:#1e293b;color:#94a3b8;border:1px solid #334155;{% endif %}">
+            {{ s.status|replace('_',' ')|title }}
+          </span>
+        </td>
+        <td style="padding:10px 14px;color:#7a8cb0;font-size:11px;">{{ (s.updated_at or '')[:16] }}</td>
+        <td style="padding:10px 14px;text-align:right;">
+          <a href="/rfi/{{ s.id }}"
+            style="background:#0f3460;color:#7ab3f0;border:1px solid #1e3a6e;border-radius:4px;padding:4px 10px;font-size:11px;text-decoration:none;margin-right:4px;">Open</a>
+          <button onclick="deleteSession('{{ s.id }}', this)"
+            style="background:#2d0a0a;color:#f87171;border:1px solid #7f1d1d;border-radius:4px;padding:4px 10px;font-size:11px;cursor:pointer;">Delete</button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div style="background:#16213e;border:1px solid #1e3a6e;border-radius:8px;padding:48px;text-align:center;">
+  <div style="font-size:40px;margin-bottom:10px;">📄</div>
+  <div style="color:#eaeaea;font-size:14px;font-weight:600;margin-bottom:6px;">No sessions yet</div>
+  <div style="color:#7a8cb0;font-size:12px;">Upload an RFI document above to begin the workflow</div>
+</div>
+{% endif %}
+
+{% include "includes/iqe_query_widget.html" %}
+
+<script>
+const dropZone = document.getElementById('drop-zone');
+const fileInput = document.getElementById('rfi-file-input');
+const uploadBtn = document.getElementById('upload-btn');
+const dropLabel = document.getElementById('drop-label');
+const fileSelectedDiv = document.getElementById('file-selected');
+const fileSelectedName = document.getElementById('file-selected-name');
+
+document.getElementById('browse-link').onclick = () => fileInput.click();
+dropZone.onclick = (e) => { if (e.target.id !== 'browse-link') fileInput.click(); };
+
+fileInput.addEventListener('change', function() {
+  if (this.files.length > 0) {
+    fileSelectedName.textContent = '✓ ' + this.files[0].name;
+    fileSelectedDiv.style.display = 'block';
+    dropLabel.style.display = 'none';
+    uploadBtn.removeAttribute('disabled');
+    uploadBtn.style.cursor = 'pointer';
+    uploadBtn.style.background = '#0f3460';
+    uploadBtn.style.borderColor = '#4f8ef7';
+    dropZone.style.borderColor = '#22c55e';
+  }
+});
+
+dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.style.borderColor = '#4f8ef7'; dropZone.style.background = '#0f2040'; });
+dropZone.addEventListener('dragleave', () => { dropZone.style.background = '#0d1b2e'; dropZone.style.borderColor = '#1e3a6e'; });
+dropZone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  dropZone.style.background = '#0d1b2e'; dropZone.style.borderColor = '#1e3a6e';
+  if (e.dataTransfer.files.length > 0) {
+    const dt = new DataTransfer();
+    dt.items.add(e.dataTransfer.files[0]);
+    fileInput.files = dt.files;
+    fileInput.dispatchEvent(new Event('change'));
+  }
+});
+
+document.getElementById('upload-form').addEventListener('submit', function(e) {
+  e.preventDefault();
+  const spinner = document.getElementById('upload-spinner');
+  const errDiv = document.getElementById('upload-error');
+  uploadBtn.disabled = true;
+  uploadBtn.style.cursor = 'not-allowed';
+  spinner.classList.remove('d-none');
+  errDiv.style.display = 'none';
+  uploadBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Parsing RFI...';
+  fetch('/rfi/upload', {method: 'POST', body: new FormData(this)})
+    .then(r => r.json())
+    .then(d => {
+      if (d.error) {
+        errDiv.textContent = d.error;
+        errDiv.style.display = 'block';
+        uploadBtn.disabled = false;
+        uploadBtn.style.cursor = 'pointer';
+        uploadBtn.innerHTML = '🚀 Parse RFI &amp; Start Workflow';
+        spinner.classList.add('d-none');
+        return;
+      }
+      window.location.href = d.redirect;
+    })
+    .catch(err => {
+      errDiv.textContent = 'Upload failed: ' + err.message;
+      errDiv.style.display = 'block';
+      uploadBtn.disabled = false;
+      uploadBtn.style.cursor = 'pointer';
+      uploadBtn.innerHTML = '🚀 Parse RFI &amp; Start Workflow';
+      spinner.classList.add('d-none');
+    });
+});
+
+function deleteSession(id, btn) {
+  if (!confirm('Delete this session? This cannot be undone.')) return;
+  btn.disabled = true;
+  fetch('/api/rfi/' + id, {method: 'DELETE'})
+    .then(r => r.json())
+    .then(d => { if (d.ok) location.reload(); else { btn.disabled = false; alert(d.error); } });
+}
+</script>
+{% endblock %}

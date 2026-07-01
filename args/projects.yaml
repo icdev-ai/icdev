@@ -1,15 +1,156 @@
-﻿# CUI // SP-CTI
+# CUI // SP-CTI
 #
 # Auto-managed by tools/project/kanban_project_sync.py
 # Human edits to name/description/briefs are preserved.
 
 projects:
+- key: test
+  name: Test Project
+  description: Auto-registered project for tasks with prefix 'test-'. Update name
+    and description to reflect the project purpose.
+  task_prefix: test-
+  default_open: true
+  briefs: []
+  epics:
+  - key: abc
+    title: ABC
+    priority: medium
+- key: task
+  name: Task Project
+  description: Auto-registered project for tasks with prefix 'task-'. Update name
+    and description to reflect the project purpose.
+  task_prefix: task-
+  default_open: true
+  briefs: []
+  epics:
+  - key: 0a4389596f
+    title: 0A4389596F
+    priority: medium
+  - key: 3bc9eb0918
+    title: 3BC9EB0918
+    priority: medium
+- key: processify_wfl_f77f
+  name: Processify Wfl F77F Project
+  description: Auto-registered project for tasks with prefix 'processify-wfl-f77f-'.
+    Update name and description to reflect the project purpose.
+  task_prefix: processify-wfl-f77f-
+  default_open: true
+  briefs: []
+  epics:
+  - key: step
+    title: STEP
+    priority: medium
+- key: processify_wfl_1745
+  name: Processify Wfl 1745 Project
+  description: Auto-registered project for tasks with prefix 'processify-wfl-1745-'.
+    Update name and description to reflect the project purpose.
+  task_prefix: processify-wfl-1745-
+  default_open: true
+  briefs: []
+  epics:
+  - key: step
+    title: STEP
+    priority: medium
+- key: digitize_wfl_917c
+  name: Digitize Wfl 917C Project
+  description: Auto-registered project for tasks with prefix 'digitize-wfl-917c-'.
+    Update name and description to reflect the project purpose.
+  task_prefix: digitize-wfl-917c-
+  default_open: true
+  briefs: []
+  epics:
+  - key: step
+    title: STEP
+    priority: medium
+- key: digitize_wfl_7f07
+  name: Digitize Wfl 7F07 Project
+  description: Auto-registered project for tasks with prefix 'digitize-wfl-7f07-'.
+    Update name and description to reflect the project purpose.
+  task_prefix: digitize-wfl-7f07-
+  default_open: true
+  briefs: []
+  epics:
+  - key: step
+    title: STEP
+    priority: medium
+- key: digitize_wfl_170d
+  name: Digitize Wfl 170D Project
+  description: Auto-registered project for tasks with prefix 'digitize-wfl-170d-'.
+    Update name and description to reflect the project purpose.
+  task_prefix: digitize-wfl-170d-
+  default_open: true
+  briefs: []
+  epics:
+  - key: step
+    title: STEP
+    priority: medium
+- key: digitize_wfl_003f
+  name: Digitize Wfl 003F Project
+  description: Auto-registered project for tasks with prefix 'digitize-wfl-003f-'.
+    Update name and description to reflect the project purpose.
+  task_prefix: digitize-wfl-003f-
+  default_open: true
+  briefs: []
+  epics:
+  - key: step
+    title: STEP
+    priority: medium
+- key: debt_todo
+  name: Debt Todo Project
+  description: Auto-registered project for tasks with prefix 'debt-todo-'. Update
+    name and description to reflect the project purpose.
+  task_prefix: debt-todo-
+  default_open: true
+  briefs: []
+  epics:
+  - key: mod
+    title: MOD
+    priority: medium
+  - key: net
+    title: NET
+    priority: medium
+- key: debt_bandit
+  name: Debt Bandit Project
+  description: Auto-registered project for tasks with prefix 'debt-bandit-'. Update
+    name and description to reflect the project purpose.
+  task_prefix: debt-bandit-
+  default_open: true
+  briefs: []
+  epics:
+  - key: b608
+    title: B608
+    priority: medium
+- key: crypto
+  name: Crypto Project
+  description: Auto-registered project for tasks with prefix 'crypto-'. Update name
+    and description to reflect the project purpose.
+  task_prefix: crypto-
+  default_open: true
+  briefs: []
+  epics:
+  - key: refactor
+    title: REFACTOR
+    priority: medium
+- key: acex
+  name: Acex Project
+  description: Auto-registered project for tasks with prefix 'acex-'. Update name
+    and description to reflect the project purpose.
+  task_prefix: acex-
+  default_open: true
+  briefs: []
+  epics:
+  - key: chat
+    title: CHAT
+    priority: medium
+  - key: hard
+    title: HARD
+    priority: medium
 - key: pif
-  name: "Process-Ify Enhancement Suite"
-  description: "14-capability expansion of Process-Ify: conformance checking, my-tasks
+  name: Process-Ify Enhancement Suite
+  description: '14-capability expansion of Process-Ify: conformance checking, my-tasks
     portal, ROI calculator, BPMN export, template library, multi-source synthesis,
     SLA gates, handoff ceremony, reverse processify, version diff, chain dependencies,
-    process-as-code, AI coach, and live simulation."
+    process-as-code, AI coach, and live simulation.'
   task_prefix: pif-
   default_open: true
   briefs:
@@ -17,79 +158,89 @@ projects:
   - 'tasks: /workflow-canvas/my-tasks portal — tasks by role across all chains (pif-tasks-01)'
   - 'roi: post-chain ROI report — steps, roles, time saved, automation coverage (pif-roi-01)'
   - 'bpmn: BPMN 2.0 XML export from any processified workflow (pif-bpmn-01)'
-  - 'lib: template catalog — save/search/apply processified workflows as reusable templates (pif-lib-01)'
+  - 'lib: template catalog — save/search/apply processified workflows as reusable
+    templates (pif-lib-01)'
   - 'synth: multi-source synthesis — N docs -> 1 unified deduplicated workflow (pif-synth-01)'
   - 'sla: per-step SLA hours, overdue detection, escalation flag (pif-sla-01)'
-  - 'handoff: auto-generate handoff brief when phase status transitions to complete (pif-handoff-01)'
-  - 'rev: reverse processify — completed kanban run -> regenerated as-executed document (pif-rev-01)'
+  - 'handoff: auto-generate handoff brief when phase status transitions to complete
+    (pif-handoff-01)'
+  - 'rev: reverse processify — completed kanban run -> regenerated as-executed document
+    (pif-rev-01)'
   - 'diff: version diff — compare two workflow definitions step-by-step (pif-diff-01)'
-  - 'dep: cross-chain dependency graph — chain B phase N requires chain A phase M (pif-dep-01)'
+  - 'dep: cross-chain dependency graph — chain B phase N requires chain A phase M
+    (pif-dep-01)'
   - 'code: process-as-code — export/import chain as YAML spec (pif-code-01)'
   - 'coach: AI process coach — surface KG context when a step goes in_progress (pif-coach-01)'
-  - 'sim: live simulation — estimate chain timeline + critical path before launch (pif-sim-01)'
+  - 'sim: live simulation — estimate chain timeline + critical path before launch
+    (pif-sim-01)'
   epics:
   - key: conf
-    title: "CONF — Process Conformance Checking"
+    title: CONF — Process Conformance Checking
     priority: high
   - key: tasks
-    title: "TASKS — Role-Based My-Tasks Portal"
+    title: TASKS — Role-Based My-Tasks Portal
     priority: high
   - key: roi
-    title: "ROI — Process ROI Calculator"
+    title: ROI — Process ROI Calculator
     priority: high
   - key: bpmn
-    title: "BPMN — BPMN 2.0 Export"
+    title: BPMN — BPMN 2.0 Export
     priority: high
   - key: lib
-    title: "LIB — Process Template Library"
+    title: LIB — Process Template Library
     priority: high
   - key: synth
-    title: "SYNTH — Multi-Source Synthesis"
+    title: SYNTH — Multi-Source Synthesis
     priority: medium
   - key: sla
-    title: "SLA — SLA Gate Enforcement"
+    title: SLA — SLA Gate Enforcement
     priority: medium
   - key: handoff
-    title: "HANDOFF — Handoff Ceremony Wizard"
+    title: HANDOFF — Handoff Ceremony Wizard
     priority: medium
   - key: rev
-    title: "REV — Reverse Process-Ify"
+    title: REV — Reverse Process-Ify
     priority: medium
   - key: diff
-    title: "DIFF — Process Version Diff"
+    title: DIFF — Process Version Diff
     priority: medium
   - key: dep
-    title: "DEP — Cross-Chain Dependencies"
+    title: DEP — Cross-Chain Dependencies
     priority: medium
   - key: code
-    title: "CODE — Process as Code"
+    title: CODE — Process as Code
     priority: medium
   - key: coach
-    title: "COACH — AI Process Coach"
+    title: COACH — AI Process Coach
     priority: low
   - key: sim
-    title: "SIM — Live Chain Simulation"
+    title: SIM — Live Chain Simulation
     priority: low
 - key: ecr
   name: ECR — Enterprise Commercialization Readiness
   description: 10-epic initiative making ICDEV enterprise-ready and commercially viable.
-    Covers SSO/SAML/OIDC, SOC-2 evidence export, data residency + GDPR deletion,
-    usage metering + Stripe billing, license tier gates, guided onboarding wizard,
-    public API + webhooks, Prometheus observability, in-product changelog, and
-    demo/sandbox tooling. Implements in epic order (sso first, demo last).
+    Covers SSO/SAML/OIDC, SOC-2 evidence export, data residency + GDPR deletion, usage
+    metering + Stripe billing, license tier gates, guided onboarding wizard, public
+    API + webhooks, Prometheus observability, in-product changelog, and demo/sandbox
+    tooling. Implements in epic order (sso first, demo last).
   task_prefix: ecr-
   default_open: true
   briefs:
   - 'sso: SAML 2.0 + OIDC integration, per-tenant config, RBAC mapping (ecr-sso-01..05)'
   - 'soc2: evidence_items table, audit export command, PDF report, control map (ecr-soc2-01..05)'
   - 'dres: data residency zones, PG router, GDPR erasure API + audit (ecr-dres-01..04)'
-  - 'bill: usage_events table, LLM/API metering middleware, Stripe webhook, admin UI (ecr-bill-01..05)'
-  - 'tier: min_tier in registry, license_tier profile, guard enforcement, upgrade CTA (ecr-tier-01..05)'
+  - 'bill: usage_events table, LLM/API metering middleware, Stripe webhook, admin
+    UI (ecr-bill-01..05)'
+  - 'tier: min_tier in registry, license_tier profile, guard enforcement, upgrade
+    CTA (ecr-tier-01..05)'
   - 'onb: onboarding_state pref, 3-step wizard modal, progress tracking (ecr-onb-01..04)'
-  - 'api: api_keys table, /v1/ prefix + auth middleware, webhook registry, OpenAPI spec (ecr-api-01..05)'
-  - 'obs: prometheus_client integration, /metrics endpoint, Grafana dashboard JSON (ecr-obs-01..04)'
+  - 'api: api_keys table, /v1/ prefix + auth middleware, webhook registry, OpenAPI
+    spec (ecr-api-01..05)'
+  - 'obs: prometheus_client integration, /metrics endpoint, Grafana dashboard JSON
+    (ecr-obs-01..04)'
   - 'cl: CHANGELOG.md parser, /updates route, navbar unseen-release badge (ecr-cl-01..03)'
-  - 'demo: icdev demo seed command, synthetic data for 6 canvases, ICDEV_DEMO_MODE (ecr-demo-01..04)'
+  - 'demo: icdev demo seed command, synthetic data for 6 canvases, ICDEV_DEMO_MODE
+    (ecr-demo-01..04)'
   epics:
   - key: sso
     title: SSO — SAML 2.0 + OIDC Identity
@@ -5993,6 +6144,15 @@ projects:
   - key: vv
     title: V&V — Coherence + Companion Sync + E2E Smoke
     priority: high
+  - key: airgap
+    title: AIRGAP
+    priority: medium
+  - key: auto
+    title: AUTO
+    priority: medium
+  - key: gate
+    title: GATE
+    priority: medium
 - key: rec
   name: Rec Project
   description: Auto-registered project for tasks with prefix 'rec-'. Update name and
@@ -6206,6 +6366,12 @@ projects:
     priority: high
   - key: register
     title: Registration Checklist -- APPEND_ONLY + conftest + MCP + docs
+    priority: medium
+  - key: ent
+    title: ENT
+    priority: medium
+  - key: sys
+    title: SYS
     priority: medium
 - key: portal
   name: Portal Project
@@ -11562,103 +11728,123 @@ projects:
     title: V&V — icdev mirror + Playwright verification
     priority: high
 - key: idr
-  name: "Intelligent Documentation Regeneration"
-  description: >-
-    Generic 8-stage AI pipeline that ingests multi-team artifacts (diagrams,
-    configs/IaC, docs, email snippets), reconciles multiple diagram versions
-    via HITL, generates a new authoritative document grounded in RAG+KG evidence,
-    gates quality with WriteGuard (hard block), requires HITL approval, and
-    publishes with full audit trail + citations. Network is Phase 1; Security
-    (firewall configs), DevOps (IaC), Developer, and Standard Guide follow
-    as domain profiles on the same engine.
-  task_prefix: "idr-"
+  name: Intelligent Documentation Regeneration
+  description: Generic 8-stage AI pipeline that ingests multi-team artifacts (diagrams,
+    configs/IaC, docs, email snippets), reconciles multiple diagram versions via HITL,
+    generates a new authoritative document grounded in RAG+KG evidence, gates quality
+    with WriteGuard (hard block), requires HITL approval, and publishes with full
+    audit trail + citations. Network is Phase 1; Security (firewall configs), DevOps
+    (IaC), Developer, and Standard Guide follow as domain profiles on the same engine.
+  task_prefix: idr-
   default_open: true
   briefs:
-    - "core: /docgen engine + session state machine + DIC wiring + idr_ DB migration — idr-core-01..08"
-    - "network: network domain profile + diagram reconciliation + config review integration — idr-network-01..06"
-    - "writeguard: WriteGuard hard gate + auto-fix loop + style guide wiring — idr-writeguard-01..04"
-    - "hitl: conflict resolution UI + document review UI + section-level routing — idr-hitl-01..05"
-    - "publish: DOCX + PDF + HTML export + audit trail + evidence report — idr-publish-01..04"
-    - "security: firewall config review + security domain profile [Phase 2] — idr-security-01..04"
-    - "devops: IaC review + devops domain profile [Phase 3] — idr-devops-01..04"
-    - "standard: multi-domain composite profile + cross-domain context builder [Phase 5] — idr-standard-01..05"
+  - 'core: /docgen engine + session state machine + DIC wiring + idr_ DB migration
+    — idr-core-01..08'
+  - 'network: network domain profile + diagram reconciliation + config review integration
+    — idr-network-01..06'
+  - 'writeguard: WriteGuard hard gate + auto-fix loop + style guide wiring — idr-writeguard-01..04'
+  - 'hitl: conflict resolution UI + document review UI + section-level routing — idr-hitl-01..05'
+  - 'publish: DOCX + PDF + HTML export + audit trail + evidence report — idr-publish-01..04'
+  - 'security: firewall config review + security domain profile [Phase 2] — idr-security-01..04'
+  - 'devops: IaC review + devops domain profile [Phase 3] — idr-devops-01..04'
+  - 'standard: multi-domain composite profile + cross-domain context builder [Phase
+    5] — idr-standard-01..05'
   epics:
-    - key: core
-      title: "Core Engine — session + upload + DIC integration + DB"
-      priority: critical
-    - key: network
-      title: "Network Domain — diagram analysis + config review + HITL reconciliation"
-      priority: critical
-    - key: writeguard
-      title: "WriteGuard Hard Gate — quality + style + classification"
-      priority: critical
-    - key: hitl
-      title: "HITL Workflow — conflict resolution + document review + section routing"
-      priority: critical
-    - key: publish
-      title: "Export & Publish — DOCX + PDF + HTML + audit trail"
-      priority: high
-    - key: security
-      title: "Security Domain — vendor-agnostic firewall config review [Phase 2]"
-      priority: high
-    - key: devops
-      title: "DevOps Domain — IaC review (Terraform, Ansible, CloudFormation) [Phase 3]"
-      priority: high
-    - key: standard
-      title: "Standard Guide — multi-domain composite + cross-domain HITL routing [Phase 5]"
-      priority: medium
-
+  - key: core
+    title: Core Engine — session + upload + DIC integration + DB
+    priority: critical
+  - key: network
+    title: Network Domain — diagram analysis + config review + HITL reconciliation
+    priority: critical
+  - key: writeguard
+    title: WriteGuard Hard Gate — quality + style + classification
+    priority: critical
+  - key: hitl
+    title: HITL Workflow — conflict resolution + document review + section routing
+    priority: critical
+  - key: publish
+    title: Export & Publish — DOCX + PDF + HTML + audit trail
+    priority: high
+  - key: security
+    title: Security Domain — vendor-agnostic firewall config review [Phase 2]
+    priority: high
+  - key: devops
+    title: DevOps Domain — IaC review (Terraform, Ansible, CloudFormation) [Phase
+      3]
+    priority: high
+  - key: standard
+    title: Standard Guide — multi-domain composite + cross-domain HITL routing [Phase
+      5]
+    priority: medium
 - key: nqe
-  name: "Forward Networks NQE Integration"
-  description: >-
-    NL-driven interface to Forward Networks NQE for non-technical security teams.
-    Covers advisory document ingestion (PDF/DOCX/email), device impact assessment
+  name: Forward Networks NQE Integration
+  description: NL-driven interface to Forward Networks NQE for non-technical security
+    teams. Covers advisory document ingestion (PDF/DOCX/email), device impact assessment
     via NQL queries (live FWD + ICDEV fallback), digital twin pre-validation before
-    patching, remediation tracking with HITL gates, POAM generation, exception
-    registry, and full ATO evidence export. ACE coworker-driven implementation.
+    patching, remediation tracking with HITL gates, POAM generation, exception registry,
+    and full ATO evidence export. ACE coworker-driven implementation.
   task_prefix: nqe-
   default_open: true
   briefs:
-  - 'infra: FWD API client + NQL translator (NL<->NQL) + IQE adapter nqe.* + 5 routes + seed queries -- nqe-infra-01..08'
-  - 'advisory: advisory_extractor (PDF/DOCX/email) + advisory.py + wizard UI + dual NQL validation -- nqe-adv-01..06'
-  - 'twin: remediation_simulator.py + NDC twin.py integration + FWD twin API + verdict gate -- nqe-twin-01..04'
-  - 'migration: migration_planner.py + per-device upgrade steps + Migration Hub page -- nqe-mig-01..04'
+  - 'infra: FWD API client + NQL translator (NL<->NQL) + IQE adapter nqe.* + 5 routes
+    + seed queries -- nqe-infra-01..08'
+  - 'advisory: advisory_extractor (PDF/DOCX/email) + advisory.py + wizard UI + dual
+    NQL validation -- nqe-adv-01..06'
+  - 'twin: remediation_simulator.py + NDC twin.py integration + FWD twin API + verdict
+    gate -- nqe-twin-01..04'
+  - 'migration: migration_planner.py + per-device upgrade steps + Migration Hub page
+    -- nqe-mig-01..04'
   - 'fallback: FallbackNQEClient + NQL-to-IQE mapping + source badge UI -- nqe-fall-01..03'
-  - 'guardrails: transparency gate + dual-query cross-validation + HITL approval + audit log -- nqe-grd-01..05'
-  - 'history: advisory_history.html + remediation_tracker.py + POAM generator + exception registry -- nqe-hist-01..06'
-  - 'ato: full ATO evidence export (JSON+PDF+Excel) + classification markings + traceability chain -- nqe-ato-01..03'
+  - 'guardrails: transparency gate + dual-query cross-validation + HITL approval +
+    audit log -- nqe-grd-01..05'
+  - 'history: advisory_history.html + remediation_tracker.py + POAM generator + exception
+    registry -- nqe-hist-01..06'
+  - 'ato: full ATO evidence export (JSON+PDF+Excel) + classification markings + traceability
+    chain -- nqe-ato-01..03'
   epics:
   - key: infra
-    title: "NQE Infrastructure -- FWD client + NQL translator + IQE adapter"
+    title: NQE Infrastructure -- FWD client + NQL translator + IQE adapter
     priority: critical
   - key: advisory
-    title: "Security Advisory Workflow -- upload + extract + assess impact"
+    title: Security Advisory Workflow -- upload + extract + assess impact
     priority: critical
   - key: twin
-    title: "Digital Twin Pre-Validation -- NDC + FWD twin simulation before patching"
+    title: Digital Twin Pre-Validation -- NDC + FWD twin simulation before patching
     priority: high
   - key: migration
-    title: "Migration Hub -- per-device upgrade plans"
+    title: Migration Hub -- per-device upgrade plans
     priority: high
   - key: fallback
-    title: "Internal Fallback -- ICDEV NDC DB when FWD unavailable"
+    title: Internal Fallback -- ICDEV NDC DB when FWD unavailable
     priority: high
   - key: guardrails
-    title: "Guardrails -- transparency gate + HITL + audit trail"
+    title: Guardrails -- transparency gate + HITL + audit trail
     priority: critical
   - key: history
-    title: "Findings History -- remediation tracker + POAM + exception registry"
+    title: Findings History -- remediation tracker + POAM + exception registry
     priority: high
   - key: ato
-    title: "ATO Evidence Export -- full package PDF+Excel+JSON"
+    title: ATO Evidence Export -- full package PDF+Excel+JSON
     priority: high
+  - key: adv
+    title: ADV
+    priority: medium
+  - key: fall
+    title: FALL
+    priority: medium
+  - key: grd
+    title: GRD
+    priority: medium
+  - key: hist
+    title: HIST
+    priority: medium
 - key: pvm
-  name: "PVM — Predictive Vulnerability Management"
-  description: "Forward Networks NQE-powered predictive modeling for network vulnerability
+  name: PVM — Predictive Vulnerability Management
+  description: Forward Networks NQE-powered predictive modeling for network vulnerability
     management. Time-series risk scoring, attack surface mapping, Bayesian triage,
     and AI-assisted patch planning driven by the Innovation, Research, and Creative
     engines. Builds on the completed NQE integration (migration 220) adding five new
-    tools and a unified /network/vulnerability-intelligence dashboard."
+    tools and a unified /network/vulnerability-intelligence dashboard.
   task_prefix: pvm-
   default_open: true
   briefs:
@@ -11688,12 +11874,12 @@ projects:
     title: Vulnerability Intelligence Dashboard
     priority: medium
 - key: pna
-  name: "PNA — Predictive Network Analytics"
-  description: "Six Forward Networks NQE-powered predictive models extending PVM: device
-    EOL/EOS scoring, BGP instability forecasting, compliance drift detection, network
-    capacity exhaustion, change failure probability, and supply chain risk scoring.
-    Each model follows the pvm-pred pattern (NQE query → deterministic formula →
-    append-only predictions table → API route → dashboard panel)."
+  name: PNA — Predictive Network Analytics
+  description: 'Six Forward Networks NQE-powered predictive models extending PVM:
+    device EOL/EOS scoring, BGP instability forecasting, compliance drift detection,
+    network capacity exhaustion, change failure probability, and supply chain risk
+    scoring. Each model follows the pvm-pred pattern (NQE query → deterministic formula
+    → append-only predictions table → API route → dashboard panel).'
   task_prefix: pna-
   default_open: true
   briefs:
@@ -11702,7 +11888,8 @@ projects:
   - 'cmp: Compliance drift prediction vs DISA STIG baselines (pna-cmp-01..04)'
   - 'cap: Network capacity exhaustion forecasting from interface counters (pna-cap-01..04)'
   - 'chg: Change failure probability scoring for pending change requests (pna-chg-01..04)'
-  - 'scs: Supply chain risk scoring by vendor/model from CISA KEV + NQE inventory (pna-scs-01..04)'
+  - 'scs: Supply chain risk scoring by vendor/model from CISA KEV + NQE inventory
+    (pna-scs-01..04)'
   epics:
   - key: eol
     title: EOL/EOS Prediction — Device end-of-support risk scoring

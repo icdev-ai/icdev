@@ -54,7 +54,7 @@ from pathlib import Path
 
 from flask import Blueprint, jsonify, render_template, request, send_file
 
-_ROOT = Path(__file__).resolve().parents[2]
+_ROOT = Path(__file__).resolve().parents[3]  # rls-bypass: icdev/ is 3 levels deep; parents[3] = project root so tools.* resolves correctly — required for task-3bc9eb0918 because cwd changes in worktrees
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 

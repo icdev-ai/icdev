@@ -5,10 +5,11 @@ so callers can degrade gracefully (air-gap, missing LLM, no embedding index).
 """
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass, field
 
-logger = logging.getLogger(__name__)
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger(__name__)
 
 # ── Optional deps — imported at module level so tests can patch them ──────────
 try:

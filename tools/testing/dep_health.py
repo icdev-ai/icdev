@@ -24,12 +24,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-try:
-    from tools.logging.icdev_logger import get_logger
-    logger = get_logger("icdev.testing.dep_health")
-except Exception:
-    import logging
-    logger = logging.getLogger("icdev.testing.dep_health")
+from tools.logging.icdev_logger import get_logger
+logger = get_logger("icdev.testing.dep_health")
 
 DEDUP_DB = BASE_DIR / "data" / "dep_health_filed.db"
 REQUIREMENTS = BASE_DIR / "requirements.txt"
