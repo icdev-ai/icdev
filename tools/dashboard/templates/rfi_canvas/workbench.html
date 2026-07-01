@@ -818,6 +818,11 @@ document.addEventListener('DOMContentLoaded', () => {
   loadSessionStyleGuide();
   loadEngineWeights();
   loadUploadList();
+  window.__rfi_session_meta = {
+    rfi_number: "{{ session.rfi_number }}",
+    parse_fallback: {{ 'true' if (session.rfi_number == 'RFI-UNKNOWN' or not session.get('parsed_data') or not session.get('parsed_data', {}).get('questionnaire_parts')) else 'false' }},
+  };
+  checkParseWarning();
 });
 
 // ── Requirements ──────────────────────────────────────────────────────────────
@@ -1327,6 +1332,122 @@ function runEngine(sourceKey) {
     msg.style.color = d.ok ? '#22c55e' : '#f87171';
     if (d.ok) setTimeout(() => { loadEngineWeights(); msg.textContent = ''; }, 2000);
   }).catch(() => { msg.textContent = 'Error'; msg.style.color = '#f87171'; });
+}
+
+// ── Generate All ──────────────────────────────────────────────────────────────
+let _genAllPollTimer = null;
+
+function startGenerateAll() {
+  const btn = document.getElementById('gen-all-btn');
+  const status = document.getElementById('gen-all-status');
+  btn.disabled = true;
+  status.textContent = 'Starting…';
+  fetch(`/api/rfi/${SESSION_ID}/generate-all`, {method: 'POST'})
+    .then(r => r.json())
+    .then(d => {
+      if (!d.ok) { btn.disabled = false; status.textContent = d.error || 'Error'; return; }
+      btn.textContent = '⏹ Cancel';
+      btn.onclick = cancelGenerateAll;
+      btn.disabled = false;
+      _pollGenerateAll();
+    })
+    .catch(() => { btn.disabled = false; status.textContent = 'Error'; });
+}
+
+function cancelGenerateAll() {
+  fetch(`/api/rfi/${SESSION_ID}/generate-all/cancel`, {method: 'POST'});
+}
+
+function _pollGenerateAll() {
+  clearTimeout(_genAllPollTimer);
+  fetch(`/api/rfi/${SESSION_ID}/generate-all/status`)
+    .then(r => r.json())
+    .then(d => {
+      const btn = document.getElementById('gen-all-btn');
+      const status = document.getElementById('gen-all-status');
+      if (d.running) {
+        status.textContent = `${d.done}/${d.total} — generating ${d.current_item || '…'}`;
+        _genAllPollTimer = setTimeout(_pollGenerateAll, 2000);
+        if (d.done > 0) _refreshSidebarStatuses();
+      } else {
+        btn.textContent = '⚡ All'; btn.onclick = startGenerateAll; btn.disabled = false;
+        const errs = (d.errors || []).length;
+        status.textContent = errs ? `Done — ${errs} error(s)` : (d.done > 0 ? `✓ ${d.done} generated` : '');
+        _refreshSidebarStatuses();
+      }
+    })
+    .catch(() => { _genAllPollTimer = setTimeout(_pollGenerateAll, 3000); });
+}
+
+function _refreshSidebarStatuses() {
+  fetch(`/api/rfi/${SESSION_ID}/sections`)
+    .then(r => r.json())
+    .then(secs => { secs.forEach(sec => refreshSidebarItem(sec.id, sec.status)); updateProgress(); })
+    .catch(() => {});
+}
+
+// ── Parse warning ─────────────────────────────────────────────────────────────
+function checkParseWarning() {
+  const session = window.__rfi_session_meta;
+  if (session && session.parse_fallback) {
+    const banner = document.getElementById('parse-warning-banner');
+    const numEl = document.getElementById('parse-rfi-number');
+    if (banner) {
+      if (numEl) numEl.textContent = session.rfi_number || 'RFI-UNKNOWN';
+      banner.style.display = '';
+    }
+  }
+}
+
+function dismissParseWarning() {
+  const banner = document.getElementById('parse-warning-banner');
+  if (banner) banner.style.display = 'none';
+}
+
+// ── Section history ───────────────────────────────────────────────────────────
+let _historyVisible = false;
+
+function toggleHistory() {
+  const panel = document.getElementById('history-panel');
+  _historyVisible = !_historyVisible;
+  if (_historyVisible) { panel.style.display = ''; loadHistory(); }
+  else { panel.style.display = 'none'; }
+}
+
+function loadHistory() {
+  if (!currentSectionId) return;
+  fetch(`/api/rfi/${SESSION_ID}/sections/${currentSectionId}/history`)
+    .then(r => r.json())
+    .then(items => {
+      const list = document.getElementById('history-list');
+      if (!items || !items.length) {
+        list.innerHTML = '<div style="color:#5a7aa0;font-size:10px;">No history yet</div>';
+        return;
+      }
+      list.innerHTML = items.map((h, i) => {
+        const ts = new Date(h.saved_at).toLocaleString();
+        const preview = (h.content || '').slice(0, 60).replace(/\n/g, ' ');
+        return `<div style="padding:4px 0;border-bottom:1px solid #1a2b4a;cursor:pointer;" onclick="restoreVersion(${i})">
+          <div style="font-size:10px;color:#7ab3f0;">${ts} <span style="color:#5a7aa0;">(${h.save_type})</span></div>
+          <div style="font-size:10px;color:#94a3b8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${preview}…</div>
+        </div>`;
+      }).join('');
+    }).catch(() => {});
+}
+
+function restoreVersion(index) {
+  fetch(`/api/rfi/${SESSION_ID}/sections/${currentSectionId}/history`)
+    .then(r => r.json())
+    .then(items => {
+      const item = items[index];
+      if (!item) return;
+      if (!confirm(`Restore version from ${new Date(item.saved_at).toLocaleString()}?`)) return;
+      document.getElementById('content-editor').value = item.content;
+      updateWordCount(item.content);
+      document.getElementById('save-indicator').textContent = '● unsaved';
+      document.getElementById('save-indicator').style.color = '#f59e0b';
+      toggleHistory();
+    }).catch(() => {});
 }
 </script>
 {% endblock %}

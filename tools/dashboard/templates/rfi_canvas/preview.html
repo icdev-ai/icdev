@@ -184,5 +184,24 @@ function triggerExport(ev, fmt) {
       }
     }).catch(() => { btn.textContent = 'Error'; });
 }
+
+// ── Readiness indicator ───────────────────────────────────────────────────────
+(function loadReadiness() {
+  fetch('/api/rfi/{{ session.id }}/readiness')
+    .then(r => r.json())
+    .then(d => {
+      const badge = document.createElement('span');
+      const checks = d.checks || {};
+      const passing = Object.values(checks).filter(Boolean).length;
+      const total = Object.keys(checks).length;
+      const ready = d.ready;
+      badge.style.cssText = 'font-size:11px;padding:3px 10px;border-radius:10px;margin-left:12px;' +
+        (ready ? 'background:#052e16;color:#4ade80;border:1px solid #16a34a;' : 'background:#1a0a00;color:#fbbf24;border:1px solid #92400e;');
+      badge.title = Object.entries(checks).map(([k,v]) => (v ? '✓ ' : '✗ ') + k).join('\n');
+      badge.textContent = ready ? `✓ Submission Ready (${passing}/${total})` : `${passing}/${total} checks passing`;
+      const titleEl = document.querySelector('.pv-title');
+      if (titleEl) titleEl.appendChild(badge);
+    }).catch(() => {});
+})();
 </script>
 {% endblock %}
