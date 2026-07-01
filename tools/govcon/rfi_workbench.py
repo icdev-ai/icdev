@@ -217,13 +217,42 @@ def get_section(section_id):
     return d
 
 
-def save_section_content(section_id, content):
+def save_section_content(section_id, content, save_type="manual"):
     db = get_db()
+    # Append current content to history before overwriting (item 6)
+    existing = db.execute(
+        "SELECT content, session_id FROM rfi_workbench_sections WHERE id=%s", (section_id,)
+    ).fetchone()
+    if existing:
+        old_content = (existing["content"] if hasattr(existing, "keys") else existing[0]) or ""
+        sess_id = (existing["session_id"] if hasattr(existing, "keys") else existing[1]) or ""
+        if old_content.strip():
+            try:
+                db.execute(
+                    "INSERT INTO rfi_section_history (id, section_id, session_id, content, saved_at, save_type) "
+                    "VALUES (%s,%s,%s,%s,%s,%s)",
+                    (_uid(), section_id, sess_id, old_content, _now(), save_type),
+                )
+            except Exception as exc:
+                logger.debug("History insert skipped (table may not exist yet): %s", exc)
     db.execute(
         "UPDATE rfi_workbench_sections SET content=%s, updated_at=%s WHERE id=%s",
         (content, _now(), section_id),
     )
     db.commit()
+
+
+def get_section_history(section_id: str, limit: int = 10) -> list[dict]:
+    db = get_db()
+    try:
+        rows = db.execute(
+            "SELECT id, saved_at, save_type, content FROM rfi_section_history "
+            "WHERE section_id=%s ORDER BY saved_at DESC LIMIT %s",
+            (section_id, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    except Exception:
+        return []
 
 
 def apply_hitl(section_id, action, comment=""):
@@ -271,6 +300,18 @@ def generate_section_content(section_id, profile_name, parsed_data):
     objectives = parsed_data.get("objectives", [])
     obj_list = "; ".join(f"Obj {o['letter']}: {o['title']}" for o in objectives) if objectives else "A-F as described in the RFI"
 
+    # Item 4 — capability context from profile (avoids hardcoded ICDEV product claims)
+    cap_stmts = profile.get("capability_statements") or []
+    solution_name = profile.get("solution_name") or profile.get("entity_name", "our solution")
+    cap_context = ""
+    if cap_stmts:
+        bullets = "\n".join(f"  • {c}" for c in cap_stmts)
+        cap_context = (
+            f"[COMPANY CAPABILITIES — use these, do not reference NOVA/ECHO/SOUL/SELA/KEDA/FORGE "
+            f"or any other vendor product names not listed here]\n"
+            f"Solution name: {solution_name}\n{bullets}"
+        )
+
     item = section["item_number"]
     prompt_tpl = _SECTION_PROMPTS.get(
         item,
@@ -310,7 +351,13 @@ def generate_section_content(section_id, profile_name, parsed_data):
         hitl_context=hitl_context,
         title=section["title"],
         question_text=section.get("question_text", ""),
+        capability_context=cap_context,
+        solution_name=solution_name,
     )
+
+    # Prepend capability context when not already embedded in the template
+    if cap_context and "{capability_context}" not in prompt_tpl:
+        prompt = cap_context + "\n\n" + prompt
 
     # Append style guide constraints to prompt
     if style_guide:
@@ -846,11 +893,44 @@ def check_requirement_coverage(section_id: str) -> list[dict]:
         f"Content to evaluate:\n{content[:2000]}"
     )
 
+    import re as _re
+
+    def _parse_coverage_response(raw_text: str) -> dict | None:
+        """Strip fences and extract first {...} block; return dict or None."""
+        cleaned = _re.sub(r"^```[a-z]*\n?", "", raw_text.strip(), flags=_re.MULTILINE)
+        cleaned = cleaned.strip().rstrip("```").strip()
+        try:
+            result = json.loads(cleaned)
+            return result if isinstance(result, dict) else None
+        except json.JSONDecodeError:
+            pass
+        # Fallback: find first {...} block in the response
+        m = _re.search(r"\{[^{}]+\}", cleaned, _re.DOTALL)
+        if m:
+            try:
+                result = json.loads(m.group())
+                return result if isinstance(result, dict) else None
+            except json.JSONDecodeError:
+                pass
+        return None
+
+    def _apply_coverage_map(reqs_list: list, coverage_map: dict) -> list:
+        for r in reqs_list:
+            verdict = coverage_map.get(r["id"][:8])
+            if verdict is True or verdict == "true":
+                r["covered"] = True
+            elif verdict is False or verdict == "false":
+                r["covered"] = False
+            elif verdict == "partial":
+                r["covered"] = "partial"
+        return reqs_list
+
     try:
         from tools.llm.router import LLMRequest
         router = _get_router()
         if not router:
             return reqs
+
         req = LLMRequest(
             messages=[{"role": "user", "content": prompt}],
             max_tokens=300,
@@ -858,24 +938,28 @@ def check_requirement_coverage(section_id: str) -> list[dict]:
         response = router.invoke("proposal_review", req)
         raw = response.content if hasattr(response, "content") else str(response)
 
-        import re
-        raw = re.sub(r"^```[a-z]*\n?", "", raw.strip(), flags=re.MULTILINE)
-        raw = raw.strip().rstrip("```").strip()
+        coverage_map = _parse_coverage_response(raw)
 
-        coverage_map = json.loads(raw)
-        if not isinstance(coverage_map, dict):
+        if coverage_map is None:
+            # Retry once with a strict prompt
+            strict_prompt = (
+                f"Respond with ONLY a JSON object, no explanation, no markdown. "
+                f"Keys: requirement short-ids (8 chars). Values: true, false, or \"partial\".\n\n"
+                f"{req_list}"
+            )
+            retry_req = LLMRequest(
+                messages=[{"role": "user", "content": strict_prompt}],
+                max_tokens=200,
+            )
+            retry_resp = router.invoke("proposal_review", retry_req)
+            retry_raw = retry_resp.content if hasattr(retry_resp, "content") else str(retry_resp)
+            coverage_map = _parse_coverage_response(retry_raw)
+
+        if coverage_map is None:
+            logger.warning("Coverage check: could not parse LLM response for section %s", section_id)
             return reqs
 
-        for r in reqs:
-            short_id = r["id"][:8]
-            verdict = coverage_map.get(short_id)
-            if verdict is True or verdict == "true":
-                r["covered"] = True
-            elif verdict is False or verdict == "false":
-                r["covered"] = False
-            elif verdict == "partial":
-                r["covered"] = "partial"
-
+        reqs = _apply_coverage_map(reqs, coverage_map)
         _save_requirements(section_id, reqs)
         return reqs
     except Exception as exc:
@@ -1065,3 +1149,152 @@ def list_session_uploads(session_id: str) -> list[dict]:
 def delete_session_upload(upload_id: str) -> bool:
     from tools.govcon.rfi_engine_runner import delete_upload
     return delete_upload(upload_id)
+
+
+# ── Item 1: Generate All ──────────────────────────────────────────────────────
+
+_generate_all_progress: dict[str, dict] = {}
+
+
+def generate_all_sections(session_id: str, profile_name: str, parsed_data: dict) -> None:
+    """Daemon thread: generate every pending/rejected section in sequence."""
+    sections = get_sections(session_id)
+    pending = [s for s in sections if s["status"] in ("pending", "hitl_rejected")]
+    _generate_all_progress[session_id] = {
+        "total": len(pending), "done": 0, "current_item": None,
+        "errors": [], "running": True, "cancelled": False,
+    }
+    for sec in pending:
+        if _generate_all_progress[session_id].get("cancelled"):
+            break
+        _generate_all_progress[session_id]["current_item"] = sec["item_number"]
+        try:
+            generate_section_content(sec["id"], profile_name, parsed_data)
+        except Exception as exc:
+            _generate_all_progress[session_id]["errors"].append(
+                f"{sec['item_number']}: {str(exc)[:80]}"
+            )
+        _generate_all_progress[session_id]["done"] += 1
+        time.sleep(0.1)
+    _generate_all_progress[session_id]["running"] = False
+    _generate_all_progress[session_id]["current_item"] = None
+
+
+def get_generate_all_status(session_id: str) -> dict:
+    return _generate_all_progress.get(session_id, {"running": False, "done": 0, "total": 0})
+
+
+def cancel_generate_all(session_id: str) -> None:
+    if session_id in _generate_all_progress:
+        _generate_all_progress[session_id]["cancelled"] = True
+
+
+# ── Item 2: Submission readiness gate ────────────────────────────────────────
+
+def get_session_readiness(session_id: str) -> dict:
+    """Compute submission readiness checklist from existing DB data."""
+    session = get_session(session_id)
+    if not session:
+        return {"error": "Session not found"}
+    sections = get_sections(session_id)
+
+    total = len(sections)
+    accepted = sum(1 for s in sections if s["status"] in ("hitl_approved", "accepted"))
+    pending = sum(1 for s in sections if s["status"] == "pending")
+    rejected = sum(1 for s in sections if s["status"] == "hitl_rejected")
+
+    verify_sections = [
+        s["item_number"] for s in sections
+        if "[VERIFY]" in (s.get("content") or s.get("ai_draft") or "")
+    ]
+
+    page_limit_breach = None
+    try:
+        from tools.govcon.rfi_style_engine import get_session_style_guide
+        sg = get_session_style_guide(session_id)
+        page_limit = sg.get("page_limit")
+        words_per_page = sg.get("words_per_page") or 250
+        if page_limit:
+            total_words = sum(
+                len((s.get("content") or s.get("ai_draft") or "").split())
+                for s in sections
+            )
+            estimated_pages = total_words / words_per_page
+            if estimated_pages > page_limit:
+                page_limit_breach = {"estimated": round(estimated_pages, 1), "limit": page_limit}
+    except Exception:
+        pass
+
+    low_wg_sections = [
+        s["item_number"] for s in sections
+        if s.get("writeguard_score") is not None
+        and float(s["writeguard_score"]) < 60
+        and s["status"] in ("hitl_approved", "accepted")
+    ]
+
+    checks = [
+        {
+            "id": "all_accepted",
+            "label": "All sections accepted",
+            "passed": accepted >= total and total > 0,
+            "detail": f"{accepted}/{total} accepted" if accepted < total else None,
+        },
+        {
+            "id": "no_pending",
+            "label": "No pending (ungenerated) sections",
+            "passed": pending == 0,
+            "detail": f"{pending} section(s) still pending" if pending else None,
+        },
+        {
+            "id": "no_rejected",
+            "label": "No rejected sections awaiting revision",
+            "passed": rejected == 0,
+            "detail": f"{rejected} section(s) rejected" if rejected else None,
+        },
+        {
+            "id": "no_verify_tags",
+            "label": "No [VERIFY] placeholders remaining",
+            "passed": len(verify_sections) == 0,
+            "detail": f"[VERIFY] found in: {', '.join(verify_sections)}" if verify_sections else None,
+        },
+        {
+            "id": "page_limit",
+            "label": "Document within page limit",
+            "passed": page_limit_breach is None,
+            "detail": (
+                f"~{page_limit_breach['estimated']} pages (limit: {page_limit_breach['limit']})"
+                if page_limit_breach else None
+            ),
+        },
+        {
+            "id": "quality_gate",
+            "label": "No accepted sections below WG 60",
+            "passed": len(low_wg_sections) == 0,
+            "detail": f"Low quality: {', '.join(low_wg_sections)}" if low_wg_sections else None,
+        },
+    ]
+
+    passed = sum(1 for c in checks if c["passed"])
+    return {
+        "ready": passed == len(checks),
+        "passed": passed,
+        "total_checks": len(checks),
+        "checks": checks,
+        "summary": f"{passed}/{len(checks)} checks passed",
+    }
+
+
+# ── Item 7: Parse summary ─────────────────────────────────────────────────────
+
+def get_parse_summary(session: dict) -> dict:
+    """Return parse metadata for the upload-feedback banner."""
+    parsed = session.get("parsed_data") or {}
+    rfi_number = session.get("rfi_number", "RFI-UNKNOWN")
+    parse_fallback = rfi_number == "RFI-UNKNOWN" or not parsed.get("questionnaire_parts")
+    return {
+        "parse_fallback": parse_fallback,
+        "rfi_number": rfi_number,
+        "rfi_title": session.get("rfi_title", ""),
+        "objectives_count": len(parsed.get("objectives") or []),
+        "questionnaire_parts_count": len(parsed.get("questionnaire_parts") or []),
+    }
