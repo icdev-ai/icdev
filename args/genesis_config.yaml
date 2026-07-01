@@ -452,8 +452,6 @@ reflexes:
       name: gap_tasks_created
       threshold: 0
       operator: gte  # 0 = no gaps (healthy); > 0 = gap tasks filed
-      threshold: 0
-      operator: gte
 
   coherence_to_kanban_reflex:
     enabled: true
