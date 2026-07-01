@@ -162,6 +162,12 @@
         {% endfor %}
       </tbody>
     </table>
+
+    <div class="pv-annex-sub" style="margin-top:20px;">Cross-Section Consistency</div>
+    <div id="pv-consistency-result" style="color:#5a7aa0;font-size:11px;">
+      <button onclick="checkConsistency()" class="pv-btn" style="margin-bottom:8px;">🔍 Check Consistency</button>
+      <div id="pv-consistency-output"></div>
+    </div>
   </div>
 </div>
 
@@ -183,6 +189,29 @@ function triggerExport(ev, fmt) {
         alert(d.error || 'Export failed');
       }
     }).catch(() => { btn.textContent = 'Error'; });
+}
+
+function checkConsistency() {
+  const out = document.getElementById('pv-consistency-output');
+  out.textContent = 'Scanning…';
+  fetch('/api/rfi/{{ session.id }}/consistency')
+    .then(r => r.json())
+    .then(d => {
+      if (!d.conflicts || !d.conflicts.length) {
+        out.innerHTML = '<span style="color:#22c55e;">✓ No conflicts detected across ' + (d.checked || 0) + ' accepted sections.</span>';
+        return;
+      }
+      const colorMap = {error:'#ef4444', warning:'#f59e0b'};
+      out.innerHTML = d.conflicts.map(c => {
+        const col = colorMap[c.severity] || '#94a3b8';
+        return `<div style="margin-bottom:6px;padding:5px 8px;border-left:2px solid ${col};background:rgba(0,0,0,.04);">
+          <span style="font-size:9px;color:${col};font-weight:600;text-transform:uppercase;">${c.type.replace(/_/g,' ')}</span>
+          <span style="font-size:10px;color:#5a7aa0;margin-left:6px;">[${(c.sections||[]).join(', ')}]</span>
+          <div style="font-size:11px;margin-top:2px;">${c.message}</div>
+        </div>`;
+      }).join('');
+    })
+    .catch(() => { out.textContent = 'Check failed.'; });
 }
 
 // ── Readiness indicator ───────────────────────────────────────────────────────

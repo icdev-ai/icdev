@@ -445,6 +445,18 @@ def api_run_ace_feedback(session_id, section_id):
     return jsonify({"ok": True, "status": "running"})
 
 
+@rfi_canvas_bp.route("/api/rfi/<session_id>/sections/<section_id>/ace-reviewer/run", methods=["POST"])
+def api_ace_reviewer_run(session_id, section_id):
+    import threading
+    threading.Thread(target=wb._ace_reviewer_pass_background, args=(section_id,), daemon=True).start()
+    return jsonify({"ok": True, "message": "Reviewer pass started"})
+
+
+@rfi_canvas_bp.route("/api/rfi/<session_id>/consistency")
+def api_consistency(session_id):
+    return jsonify(wb.check_cross_section_consistency(session_id))
+
+
 @rfi_canvas_bp.route("/api/rfi/<session_id>/sections/<section_id>/requirements")
 def api_get_requirements(session_id, section_id):
     return jsonify(wb.get_requirements(section_id))

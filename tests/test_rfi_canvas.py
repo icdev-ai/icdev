@@ -572,3 +572,220 @@ class TestAceEditorReview:
         result = wb._parse_section_row(row)
         assert isinstance(result["ace_feedback"], dict)
         assert result["ace_feedback"]["overall"] == "pass"
+
+
+# ── Group 6: ACE Reviewer pass ────────────────────────────────────────────────
+
+class TestAceReviewerPass:
+    """Unit tests for run_ace_reviewer_pass() — no live DB or LLM."""
+
+    def _make_section(self, content="", ace_feedback=None):
+        return {
+            "id": "sec-rev-01",
+            "session_id": "sess-rev-01",
+            "item_number": "2.4",
+            "title": "Technical Approach",
+            "content": content,
+            "ai_draft": content,
+            "status": "hitl_approved",
+            "ace_feedback": ace_feedback,
+        }
+
+    def test_returns_empty_when_section_not_found(self, monkeypatch):
+        import tools.govcon.rfi_workbench as wb
+        monkeypatch.setattr(wb, "get_section", lambda sid: None)
+        assert wb.run_ace_reviewer_pass("missing") == {}
+
+    def test_returns_empty_when_no_content(self, monkeypatch):
+        import tools.govcon.rfi_workbench as wb
+        monkeypatch.setattr(wb, "get_section", lambda sid: self._make_section(""))
+        assert wb.run_ace_reviewer_pass("sec-rev-01") == {}
+
+    def test_returns_empty_when_no_router(self, monkeypatch):
+        import tools.govcon.rfi_workbench as wb
+        monkeypatch.setattr(wb, "get_section", lambda sid: self._make_section("Strong technical section."))
+        monkeypatch.setattr(wb, "get_requirements", lambda sid: [])
+        monkeypatch.setattr(wb, "_get_router", lambda: None)
+        assert wb.run_ace_reviewer_pass("sec-rev-01") == {}
+
+    def test_result_has_reviewer_source(self, monkeypatch):
+        import tools.govcon.rfi_workbench as wb
+        from unittest.mock import MagicMock
+
+        section = self._make_section("Well-structured technical section meeting all objectives.")
+        monkeypatch.setattr(wb, "get_section", lambda sid: section)
+        monkeypatch.setattr(wb, "get_requirements", lambda sid: [])
+
+        llm_resp = MagicMock()
+        llm_resp.content = '{"issues": [], "evaluator_score": 4, "overall": "pass", "summary": "Well-structured response."}'
+        router_mock = MagicMock()
+        router_mock.invoke.return_value = llm_resp
+
+        class _FakeConn:
+            def execute(self, sql, params=None):
+                class _R: pass
+                return _R()
+            def commit(self): pass
+
+        monkeypatch.setattr(wb, "_get_router", lambda: router_mock)
+        monkeypatch.setattr(wb, "get_db", lambda: _FakeConn())
+
+        result = wb.run_ace_reviewer_pass("sec-rev-01")
+        assert result.get("source") == "reviewer"
+        assert result.get("overall") in ("pass", "warn", "fail")
+
+    def test_merges_into_existing_editor_feedback(self, monkeypatch):
+        import tools.govcon.rfi_workbench as wb
+        from unittest.mock import MagicMock
+
+        existing_fb = {"issues": [{"source": "editor", "message": "Check tone"}], "overall": "warn", "summary": "Editor note", "reviewed_at": "t0"}
+        section = self._make_section("Good technical section.", ace_feedback=existing_fb)
+        monkeypatch.setattr(wb, "get_section", lambda sid: section)
+        monkeypatch.setattr(wb, "get_requirements", lambda sid: [])
+
+        llm_resp = MagicMock()
+        llm_resp.content = '{"issues": [], "evaluator_score": 3, "overall": "warn", "summary": "Needs more specifics."}'
+        router_mock = MagicMock()
+        router_mock.invoke.return_value = llm_resp
+
+        written = []
+
+        class _FakeConn:
+            def execute(self, sql, params=None):
+                if params and "ace_feedback" in (sql or ""):
+                    written.append(params)
+                class _R: pass
+                return _R()
+            def commit(self): pass
+
+        monkeypatch.setattr(wb, "_get_router", lambda: router_mock)
+        monkeypatch.setattr(wb, "get_db", lambda: _FakeConn())
+
+        wb.run_ace_reviewer_pass("sec-rev-01")
+        assert len(written) >= 1
+        import json
+        merged = json.loads(written[0][0])
+        # Editor feedback preserved, reviewer key added
+        assert "reviewer" in merged
+
+
+# ── Group 7: Cross-section consistency check ──────────────────────────────────
+
+class TestConsistencyCheck:
+    """Unit tests for check_cross_section_consistency() — no live DB or LLM."""
+
+    def _make_section(self, item, content, status="accepted"):
+        import uuid
+        return {
+            "id": str(uuid.uuid4()),
+            "session_id": "s1",
+            "item_number": item,
+            "title": f"Section {item}",
+            "content": content,
+            "ai_draft": "",
+            "status": status,
+            "requirements": [],
+        }
+
+    def test_empty_accepted_returns_clean(self, monkeypatch):
+        import tools.govcon.rfi_workbench as wb
+        monkeypatch.setattr(wb, "get_session", lambda sid: {"id": "s1", "profile_name": "own_company", "parsed_data": {}})
+        monkeypatch.setattr(wb, "get_sections", lambda sid: [])
+        r = wb.check_cross_section_consistency("s1")
+        assert r["overall"] == "clean"
+
+    def test_single_accepted_returns_clean(self, monkeypatch):
+        import tools.govcon.rfi_workbench as wb
+        monkeypatch.setattr(wb, "get_session", lambda sid: {"id": "s1", "profile_name": "own_company", "parsed_data": {}})
+        monkeypatch.setattr(wb, "get_sections", lambda sid: [self._make_section("1.1", "Some content here.")])
+        r = wb.check_cross_section_consistency("s1")
+        assert r["overall"] == "clean"
+
+    def test_verify_tag_in_accepted_flagged_as_error(self, monkeypatch):
+        import tools.govcon.rfi_workbench as wb
+        secs = [
+            self._make_section("1.1", "Company: [VERIFY] Some Corp."),
+            self._make_section("1.2", "Business size is small."),
+        ]
+        monkeypatch.setattr(wb, "get_session", lambda sid: {"id": "s1", "profile_name": "own_company", "parsed_data": {}})
+        monkeypatch.setattr(wb, "get_sections", lambda sid: secs)
+        monkeypatch.setattr(wb, "_get_router", lambda: None)
+        r = wb.check_cross_section_consistency("s1")
+        types = [c["type"] for c in r["conflicts"]]
+        assert "unresolved_verify_tag" in types
+        assert r["overall"] == "conflicts"
+
+    def test_trl_spread_greater_than_2_flagged(self, monkeypatch):
+        import tools.govcon.rfi_workbench as wb
+        secs = [
+            self._make_section("2.1", "Current TRL is TRL 3 for core components."),
+            self._make_section("2.4", "The system is at TRL 8, fully deployed."),
+        ]
+        monkeypatch.setattr(wb, "get_session", lambda sid: {"id": "s1", "profile_name": "own_company", "parsed_data": {}})
+        monkeypatch.setattr(wb, "get_sections", lambda sid: secs)
+        monkeypatch.setattr(wb, "_get_router", lambda: None)
+        r = wb.check_cross_section_consistency("s1")
+        types = [c["type"] for c in r["conflicts"]]
+        assert "trl_mismatch" in types
+
+    def test_trl_spread_within_2_not_flagged(self, monkeypatch):
+        import tools.govcon.rfi_workbench as wb
+        secs = [
+            self._make_section("2.1", "TRL 6 for core inference engine."),
+            self._make_section("2.4", "The system is at TRL 7."),
+        ]
+        monkeypatch.setattr(wb, "get_session", lambda sid: {"id": "s1", "profile_name": "own_company", "parsed_data": {}})
+        monkeypatch.setattr(wb, "get_sections", lambda sid: secs)
+        monkeypatch.setattr(wb, "_get_router", lambda: None)
+        r = wb.check_cross_section_consistency("s1")
+        assert "trl_mismatch" not in [c["type"] for c in r["conflicts"]]
+
+    def test_clean_sections_no_conflicts(self, monkeypatch):
+        import tools.govcon.rfi_workbench as wb
+        secs = [
+            self._make_section("1.1", "Acme Corp, 123 Main St, TS/SCI cleared."),
+            self._make_section("1.2", "Acme Corp is a small business under NAICS 541512."),
+        ]
+        monkeypatch.setattr(wb, "get_session", lambda sid: {"id": "s1", "profile_name": "own_company", "parsed_data": {}})
+        monkeypatch.setattr(wb, "get_sections", lambda sid: secs)
+        monkeypatch.setattr(wb, "_get_router", lambda: None)
+        r = wb.check_cross_section_consistency("s1")
+        assert "trl_mismatch" not in [c["type"] for c in r["conflicts"]]
+        assert "unresolved_verify_tag" not in [c["type"] for c in r["conflicts"]]
+
+    def test_skip_llm_prevents_router_call(self, monkeypatch):
+        import tools.govcon.rfi_workbench as wb
+        from unittest.mock import MagicMock
+        secs = [
+            self._make_section("2.1", "TRL 6 system."),
+            self._make_section("3.1", "Delivery in M6."),
+        ]
+        router_mock = MagicMock()
+        monkeypatch.setattr(wb, "get_session", lambda sid: {"id": "s1", "profile_name": "own_company", "parsed_data": {}})
+        monkeypatch.setattr(wb, "get_sections", lambda sid: secs)
+        monkeypatch.setattr(wb, "_get_router", lambda: router_mock)
+        wb.check_cross_section_consistency("s1", skip_llm=True)
+        router_mock.invoke.assert_not_called()
+
+    def test_llm_conflicts_merged(self, monkeypatch):
+        import tools.govcon.rfi_workbench as wb
+        from unittest.mock import MagicMock
+        secs = [
+            self._make_section("2.1", "TRL 6. No issues."),
+            self._make_section("3.1", "Delivery in M6."),
+        ]
+        llm_response = MagicMock()
+        llm_response.content = '[{"type":"timeline_mismatch","sections":["2.1","3.1"],"message":"Timeline inconsistent.","severity":"warning"}]'
+        router_mock = MagicMock()
+        router_mock.invoke.return_value = llm_response
+        monkeypatch.setattr(wb, "get_session", lambda sid: {"id": "s1", "profile_name": "own_company", "parsed_data": {}})
+        monkeypatch.setattr(wb, "get_sections", lambda sid: secs)
+        monkeypatch.setattr(wb, "_get_router", lambda: router_mock)
+        r = wb.check_cross_section_consistency("s1")
+        assert any(c["type"] == "timeline_mismatch" for c in r["conflicts"])
+
+    def test_session_not_found_returns_error(self, monkeypatch):
+        import tools.govcon.rfi_workbench as wb
+        monkeypatch.setattr(wb, "get_session", lambda sid: None)
+        r = wb.check_cross_section_consistency("no-such-session")
+        assert "error" in r

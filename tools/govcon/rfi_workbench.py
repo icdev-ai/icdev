@@ -259,6 +259,8 @@ def apply_hitl(section_id, action, comment=""):
     )
     db.commit()
     _recalculate_session_progress(section_id)
+    if action in ("approve", "accept"):
+        threading.Thread(target=_ace_reviewer_pass_background, args=(section_id,), daemon=True).start()
     return get_section(section_id)
 
 
@@ -1192,8 +1194,11 @@ def _ace_reviewer_pass_background(section_id: str) -> None:
 
 # ── Cross-section consistency check (item 3) ─────────────────────────────────
 
-def check_cross_section_consistency(session_id: str) -> dict:
+def check_cross_section_consistency(session_id: str, skip_llm: bool = False) -> dict:
     """Scan accepted sections for conflicts: TRL claims, [VERIFY] tags, LLM semantic pass.
+
+    Args:
+        skip_llm: When True, run only the fast deterministic pass (used inside readiness gate).
 
     Returns {conflicts: [{type, sections, message, severity}], overall: 'clean'|'warnings'|'conflicts'}
     """
@@ -1237,7 +1242,7 @@ def check_cross_section_consistency(session_id: str) -> dict:
 
     # 3. LLM semantic pass (cap at 12 sections to stay within token budget)
     router = _get_router()
-    if router and len(accepted) >= 2:
+    if not skip_llm and router and len(accepted) >= 2:
         section_summaries = []
         for s in accepted[:12]:
             text = (s.get("content") or "")[:400]
@@ -1565,7 +1570,30 @@ def get_session_readiness(session_id: str) -> dict:
             "passed": len(low_wg_sections) == 0,
             "detail": f"Low quality: {', '.join(low_wg_sections)}" if low_wg_sections else None,
         },
+        {
+            "id": "consistency",
+            "label": "No cross-section conflicts detected",
+            "passed": True,
+            "detail": None,
+        },
     ]
+
+    # Check #7 — cross-section consistency (deterministic pass only; LLM skipped for speed)
+    try:
+        consistency = check_cross_section_consistency(session_id, skip_llm=True)
+        errors = [c for c in consistency.get("conflicts", []) if c.get("severity") == "error"]
+        warnings = [c for c in consistency.get("conflicts", []) if c.get("severity") == "warning"]
+        cons_check = next(c for c in checks if c["id"] == "consistency")
+        if errors:
+            cons_check["passed"] = False
+            cons_check["detail"] = f"{len(errors)} conflict(s): {errors[0]['message'][:80]}"
+        elif warnings:
+            cons_check["passed"] = False
+            cons_check["detail"] = f"{len(warnings)} warning(s): {warnings[0]['message'][:80]}"
+        else:
+            cons_check["passed"] = True
+    except Exception as exc:
+        logger.warning("Consistency check in readiness failed: %s", exc)
 
     passed = sum(1 for c in checks if c["passed"])
     return {

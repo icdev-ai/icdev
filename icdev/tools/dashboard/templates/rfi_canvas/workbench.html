@@ -280,6 +280,22 @@
           </div>
         </div>
 
+        <!-- ACE Reviewer panel (shown after approve/accept) -->
+        <div class="card border-0 shadow-sm d-none" id="ace-reviewer-card" style="border-left:3px solid #6d28d9 !important;">
+          <div class="card-header py-2 d-flex align-items-center gap-2" style="background:#f5f3ff;">
+            <span class="fw-semibold small" style="color:#6d28d9;">🏛 Evaluator Review</span>
+            <span id="ace-reviewer-score" class="text-muted small"></span>
+            <span id="ace-reviewer-overall" class="badge ms-auto"></span>
+            <span id="ace-reviewer-spinner" class="text-muted small d-none ms-1">evaluating…</span>
+            <button onclick="rerunReviewer()" class="btn btn-sm ms-1 py-0 px-2"
+                    style="background:none;border:1px solid #6d28d9;color:#6d28d9;font-size:.7rem;">↺ Re-run</button>
+          </div>
+          <div class="card-body py-2">
+            <div id="ace-reviewer-summary" class="small text-muted fst-italic mb-2"></div>
+            <div id="ace-reviewer-issues"></div>
+          </div>
+        </div>
+
         <!-- HITL -->
         <div class="card border-warning shadow-sm">
           <div class="card-header py-2 fw-semibold text-warning bg-warning bg-opacity-10">👤 HITL Review</div>
@@ -497,6 +513,17 @@ function renderSection(sec) {
 
   // ACE Editor review panel
   renderAceEditorFeedback(sec.ace_feedback || null);
+
+  // ACE Reviewer panel — reset then pre-fill if existing feedback
+  clearTimeout(_reviewerPollTimer);
+  _reviewerPollCount = 0;
+  const revCard = document.getElementById('ace-reviewer-card');
+  if (revCard) revCard.classList.add('d-none');
+  const fb = sec.ace_feedback;
+  if (fb) {
+    if (fb.reviewer) renderReviewerFeedback(fb.reviewer);
+    else if (fb.source === 'reviewer') renderReviewerFeedback(fb);
+  }
 }
 
 function statusBadgeClass(status) {
@@ -764,6 +791,12 @@ function applyHitl(action) {
       document.getElementById('rejected-notice').classList.remove('d-none');
     } else {
       document.getElementById('rejected-notice').classList.add('d-none');
+    }
+    if (action === 'approve' || action === 'accept') {
+      _reviewerPollCount = 0;
+      clearTimeout(_reviewerPollTimer);
+      showReviewerReviewing();
+      _reviewerPollTimer = setTimeout(() => _pollReviewer(currentSectionId), 4000);
     }
   });
 }
@@ -1524,6 +1557,79 @@ function _pollAceEditorFeedback() {
     }).catch(() => {
       _aceEditorPollTimer = setTimeout(_pollAceEditorFeedback, 3000);
     });
+}
+
+// ── ACE Reviewer ──────────────────────────────────────────────────────────────
+let _reviewerPollTimer = null;
+let _reviewerPollCount = 0;
+
+function showReviewerReviewing() {
+  const card = document.getElementById('ace-reviewer-card');
+  if (!card) return;
+  card.classList.remove('d-none');
+  const spinner = document.getElementById('ace-reviewer-spinner');
+  if (spinner) spinner.classList.remove('d-none');
+  document.getElementById('ace-reviewer-summary').textContent = 'Evaluator is reviewing…';
+  document.getElementById('ace-reviewer-issues').innerHTML = '';
+}
+
+function renderReviewerFeedback(fb) {
+  const card = document.getElementById('ace-reviewer-card');
+  if (!card) return;
+  card.classList.remove('d-none');
+  const spinner = document.getElementById('ace-reviewer-spinner');
+  if (spinner) spinner.classList.add('d-none');
+
+  const scoreEl = document.getElementById('ace-reviewer-score');
+  if (scoreEl && fb.evaluator_score != null) scoreEl.textContent = `Score: ${fb.evaluator_score}/5`;
+
+  const overallEl = document.getElementById('ace-reviewer-overall');
+  const colorClass = {pass:'bg-success', warn:'bg-warning text-dark', fail:'bg-danger'};
+  const labelMap = {pass:'✓ Pass', warn:'⚠ Concerns', fail:'✗ Red Flags'};
+  const ov = fb.overall || 'warn';
+  if (overallEl) { overallEl.textContent = labelMap[ov] || ov; overallEl.className = 'badge ms-auto ' + (colorClass[ov] || 'bg-secondary'); }
+
+  const sumEl = document.getElementById('ace-reviewer-summary');
+  if (sumEl) sumEl.textContent = fb.summary || '';
+
+  const issuesEl = document.getElementById('ace-reviewer-issues');
+  const issues = fb.issues || [];
+  if (!issues.length) {
+    issuesEl.innerHTML = '<div class="small text-success">✓ No evaluator concerns.</div>';
+    return;
+  }
+  const typeColors = {evaluator_concern:'#6d28d9',missing_data:'#dc2626',vague_claim:'#d97706',compliance_gap:'#ef4444'};
+  issuesEl.innerHTML = issues.slice(0,5).map(i => {
+    const col = typeColors[i.type] || '#6b7280';
+    const sug = i.suggestion ? `<div class="small text-muted mt-1">→ ${i.suggestion}</div>` : '';
+    return `<div class="mb-2 ps-2" style="border-left:2px solid ${col};">
+      <span class="badge text-uppercase" style="font-size:.65rem;background:${col};">${i.type.replace(/_/g,' ')}</span>
+      <div class="small mt-1">${i.message}</div>${sug}
+    </div>`;
+  }).join('');
+}
+
+function _pollReviewer(sectionId) {
+  _reviewerPollCount++;
+  if (_reviewerPollCount > 15) return;
+  clearTimeout(_reviewerPollTimer);
+  fetch(`/api/rfi/${SESSION_ID}/sections/${sectionId}/ace-feedback`)
+    .then(r => r.json())
+    .then(d => {
+      const fb = d.feedback || d.ace_feedback;
+      if (fb && fb.reviewer) { renderReviewerFeedback(fb.reviewer); }
+      else if (fb && fb.source === 'reviewer') { renderReviewerFeedback(fb); }
+      else { _reviewerPollTimer = setTimeout(() => _pollReviewer(sectionId), 3000); }
+    })
+    .catch(() => { _reviewerPollTimer = setTimeout(() => _pollReviewer(sectionId), 5000); });
+}
+
+function rerunReviewer() {
+  if (!currentSectionId) return;
+  showReviewerReviewing();
+  _reviewerPollCount = 0;
+  fetch(`/api/rfi/${SESSION_ID}/sections/${currentSectionId}/ace-reviewer/run`, {method:'POST'});
+  _reviewerPollTimer = setTimeout(() => _pollReviewer(currentSectionId), 4000);
 }
 </script>
 {% endblock %}
