@@ -78,7 +78,12 @@ def rfi_upload():
         upload_filename=f.filename,
         parsed_data=parsed,
     )
-    return jsonify({"session_id": session_id, "redirect": f"/rfi/{session_id}"})
+    parse_summary = wb.get_parse_summary(wb.get_session(session_id))
+    return jsonify({
+        "session_id": session_id,
+        "redirect": f"/rfi/{session_id}",
+        "parse_summary": parse_summary,
+    })
 
 
 @rfi_canvas_bp.route("/rfi/<session_id>")
@@ -96,6 +101,39 @@ def rfi_workbench_page(session_id):
 @rfi_canvas_bp.route("/api/rfi/<session_id>/sections")
 def api_list_sections(session_id):
     return jsonify(wb.get_sections(session_id))
+
+
+@rfi_canvas_bp.route("/api/rfi/<session_id>/generate-all", methods=["POST"])
+def api_generate_all(session_id):
+    session = wb.get_session(session_id)
+    if not session:
+        return jsonify({"error": "Session not found"}), 404
+    status = wb.get_generate_all_status(session_id)
+    if status.get("running"):
+        return jsonify({"ok": False, "error": "Already running"}), 409
+    import threading
+    threading.Thread(
+        target=wb.generate_all_sections,
+        args=(session_id, session["profile_name"], session.get("parsed_data") or {}),
+        daemon=True,
+    ).start()
+    return jsonify({"ok": True, "message": "Generate-all started"})
+
+
+@rfi_canvas_bp.route("/api/rfi/<session_id>/generate-all/status")
+def api_generate_all_status(session_id):
+    return jsonify(wb.get_generate_all_status(session_id))
+
+
+@rfi_canvas_bp.route("/api/rfi/<session_id>/generate-all/cancel", methods=["POST"])
+def api_generate_all_cancel(session_id):
+    wb.cancel_generate_all(session_id)
+    return jsonify({"ok": True})
+
+
+@rfi_canvas_bp.route("/api/rfi/<session_id>/readiness")
+def api_readiness(session_id):
+    return jsonify(wb.get_session_readiness(session_id))
 
 
 @rfi_canvas_bp.route("/api/rfi/<session_id>/sections/<section_id>/generate", methods=["POST"])
@@ -381,6 +419,11 @@ def rfi_preview(session_id):
 
 
 # ── API: requirements ─────────────────────────────────────────────────────────
+
+@rfi_canvas_bp.route("/api/rfi/<session_id>/sections/<section_id>/history")
+def api_section_history(session_id, section_id):
+    return jsonify(wb.get_section_history(section_id))
+
 
 @rfi_canvas_bp.route("/api/rfi/<session_id>/sections/<section_id>/requirements")
 def api_get_requirements(session_id, section_id):
