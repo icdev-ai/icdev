@@ -1,0 +1,5 @@
+show all diplomatic activity events
+show dti history for the last 48 hours
+show events with high tension signal
+show diplomatic events from cable traffic source
+show recent dti scores ordered by computed_at

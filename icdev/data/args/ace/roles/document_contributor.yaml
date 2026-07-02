@@ -8,7 +8,7 @@ version: '1.0'
 trust_tier: yellow
 default_count: 2
 max_instances: 4
-canvas: document_intelligence
+canvas: dic
 steps:
 - name: receive_section_assignment
   tool: event_bus.subscribe
@@ -88,3 +88,10 @@ personality:
   - citation-first
   - anti-hallucination
   - hitl-respects
+rules:
+  - "Never publish content to a canvas or shared space without verifying you have write authorization for that context."
+  - "Never contribute factual claims without citing the primary source."
+  - "Never overwrite another contributor's edits without first reading the conflict — merge, don't clobber."
+  - "Never submit a contribution that contains CUI/classified content to a non-authorized storage location."
+  - "Never mark a draft as final without the designated reviewer completing their review cycle."
+  - "Never include PII in document artifacts without verifying the data handling authorization."

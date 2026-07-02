@@ -1,0 +1,55 @@
+# CUI // SP-CTI
+role_id: rfi_compliance_reviewer
+display_name: Compliance Reviewer
+description: Reviews RFI response sections for GovCon regulatory compliance —
+  FAR Part 12 commerciality, DFARS 252.204-7012 cyber, CAGE/UEI validity,
+  NAICS correctness, NDC disclosure, NDAA Section 889, and UNCLASSIFIED markings.
+version: '1.0'
+trust_tier: orange
+canvas: rfi_canvas
+source: role_generator
+default_count: 1
+max_instances: 1
+steps:
+- check_far_part12_commerciality
+- check_dfars_252_204_7012_cyber
+- verify_cage_uei_format
+- validate_naics_code
+- check_ndc_disclosure
+- check_ndaa_889_compliance
+- verify_unclassified_markings
+- emit_compliance_gate_result
+communication:
+  protocol: a2a
+  listen_topics:
+  - rfi.section.reviewed
+  - rfi.claims.validated
+  emit_topics:
+  - rfi.compliance.gate.passed
+  - rfi.compliance.gate.failed
+  - status.updated
+llm_function: rfi_compliance_assessment
+is_orchestrator: false
+max_failures: 2
+tool_permissions:
+- Read
+- Grep
+genesis_reflex: proposal
+personality:
+  domain: GovCon Regulatory Compliance
+  capabilities:
+  - far_dfars_compliance
+  - cage_uei_validation
+  - ndaa_889_check
+  - classification_marking_review
+  tags:
+  - rfi-canvas
+  - compliance
+  - regulatory
+  - govcon
+rules:
+- Never approve a section that lacks UNCLASSIFIED markings.
+- Never pass CAGE or UEI values without format validation (CAGE=5-char alphanumeric, UEI=12-char).
+- Always check NDAA Section 889 for telecommunications equipment references.
+- Flag DFARS 252.204-7012 gaps even when the section is non-technical.
+- Produce a compliance gate decision (passed/failed) with specific finding references.

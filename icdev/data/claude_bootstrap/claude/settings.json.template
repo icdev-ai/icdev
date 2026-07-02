@@ -12,7 +12,6 @@
     "deny": [
       "Bash(git push --force*)",
       "Bash(git push -f*)",
-      "Bash(git push -u*)",
       "Bash(git branch -d *)",
       "Bash(git branch -D *)",
       "Bash(git branch --delete *)",

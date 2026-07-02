@@ -1,0 +1,4 @@
+# NQE: List all devices with their OS versions
+# Collection: nqe.os_versions
+foreach d in network.devices
+select { d.hostname, d.vendor, d.hardware.platform, d.os.version, d.role }

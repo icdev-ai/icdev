@@ -18,8 +18,8 @@ Provider selection respects:
 """
 from __future__ import annotations
 
-import hashlib
 import json
+import zlib
 import os
 import time
 from dataclasses import dataclass, field
@@ -166,8 +166,8 @@ def _available_providers() -> List[str]:
     providers: List[str] = ["slides_svg", "slides_matplotlib"]
     if _gpu_available():
         providers.insert(0, "pulse_sdxl")
-    # viz_kernel is reserved for the tools/viz/ branch; it will be added once that
-    # rendering kernel is present in the tree.
+    if os.environ.get("OPENAI_API_KEY"):
+        providers.insert(0, "dalle")
     return providers
 
 
@@ -198,21 +198,19 @@ def _configured_priority() -> List[str]:
 
 def _cache_key(req: AssetRequest) -> str:
     """Deterministic 16-char cache key from request inputs."""
-    h = hashlib.sha256()
-    h.update(req.context.encode("utf-8"))
-    h.update(req.title.encode("utf-8"))
-    h.update(";".join(req.bullets).encode("utf-8"))
-    h.update(req.visual_context.encode("utf-8"))
-    h.update(req.prompt.encode("utf-8"))
-    h.update(req.category.encode("utf-8"))
-    h.update(req.topic.encode("utf-8"))
-    h.update(req.theme.encode("utf-8"))
-    h.update(req.tone.encode("utf-8"))
-    h.update(f"{req.width}x{req.height}".encode("utf-8"))
+    parts = [
+        req.context, req.title, ";".join(req.bullets),
+        req.visual_context, req.prompt, req.category,
+        req.topic, req.theme, req.tone,
+        f"{req.width}x{req.height}",
+    ]
     for payload in (req.chart_json, req.table_json, req.diagram_json, req.kpis_json):
         if payload:
-            h.update(json.dumps(payload, sort_keys=True).encode("utf-8"))
-    return h.hexdigest()[:16]
+            parts.append(json.dumps(payload, sort_keys=True))
+    data = "\x00".join(parts).encode("utf-8")
+    lo = zlib.crc32(data) & 0xFFFFFFFF
+    hi = zlib.crc32(data[::-1]) & 0xFFFFFFFF
+    return f"{hi:08x}{lo:08x}"
 
 
 def _cache_path(key: str, ext: str, output_dir: Path) -> Path:
@@ -293,6 +291,8 @@ class AssetGenerator:
         return candidates
 
     def _run_provider(self, provider: str, req: AssetRequest, cache_key: str) -> Dict[str, Any]:
+        if provider == "dalle":
+            return self._provider_dalle(req, cache_key)
         if provider == "pulse_sdxl":
             return self._provider_sdxl(req, cache_key)
         if provider == "slides_matplotlib":
@@ -302,6 +302,53 @@ class AssetGenerator:
         if provider == "viz_kernel":
             return self._provider_viz_kernel(req, cache_key)
         return {"success": False, "error": f"unknown provider {provider}", "method": provider}
+
+    # ── Provider: OpenAI Image (gpt-image-1 / DALL-E) ───────────────────────────
+
+    def _provider_dalle(self, req: AssetRequest, cache_key: str) -> Dict[str, Any]:
+        api_key = os.environ.get("OPENAI_API_KEY")
+        if not api_key:
+            return {"success": False, "error": "OPENAI_API_KEY not set", "method": "dalle"}
+
+        start = time.time()
+        prompt = req.prompt or _build_image_prompt(req.title, req.category, req.topic)
+        output_path = self._resolve_output_path(req, cache_key, "png")
+
+        try:
+            import base64
+            import openai
+
+            client = openai.OpenAI(api_key=api_key)
+
+            # Probe available models: prefer gpt-image-1 (latest), fall back to dall-e-3
+            _model = os.environ.get("OPENAI_IMAGE_MODEL", "gpt-image-1")
+            _size = "1536x1024"   # gpt-image-1 landscape size
+            _quality = "medium"   # gpt-image-1 quality tiers: low/medium/high/auto
+            _kw: Dict[str, Any] = {"model": _model, "prompt": prompt, "n": 1, "size": _size, "quality": _quality}
+
+            response = client.images.generate(**_kw)
+            img_data = response.data[0]
+
+            if getattr(img_data, "b64_json", None):
+                img_bytes = base64.b64decode(img_data.b64_json)
+                Path(output_path).write_bytes(img_bytes)
+            elif getattr(img_data, "url", None):
+                import urllib.request
+                urllib.request.urlretrieve(img_data.url, output_path)
+            else:
+                return {"success": False, "error": "no image data in response", "method": "dalle"}
+
+            return {
+                "success": True,
+                "path": output_path,
+                "method": "dalle",
+                "model": _model,
+                "prompt": prompt,
+                "revised_prompt": getattr(img_data, "revised_prompt", None),
+                "elapsed_ms": int((time.time() - start) * 1000),
+            }
+        except Exception as exc:
+            return {"success": False, "error": str(exc), "method": "dalle", "prompt": prompt}
 
     # ── Provider: SDXL Turbo ─────────────────────────────────────────────────
 
@@ -438,8 +485,8 @@ class AssetGenerator:
             width = req.width
             height = req.height
 
-            h = hashlib.md5(title.encode("utf-8"), usedforsecurity=False).hexdigest()
-            hue1 = int(h[:3], 16) % 360
+            _seed = zlib.crc32(title.encode("utf-8")) & 0xFFFFFFFF
+            hue1 = _seed % 360
             hue2 = (hue1 + 40) % 360
             accent = f"hsl({(hue1 + 180) % 360}, 70%, 85%)"
 
@@ -491,14 +538,50 @@ class AssetGenerator:
     # ── Provider: viz_kernel (placeholder) ─────────────────────────────────────
 
     def _provider_viz_kernel(self, req: AssetRequest, cache_key: str) -> Dict[str, Any]:
-        """Reserved for tools/viz/ rendering kernel integration.
+        """Render chart_json/table_json/diagram_json/kpis_json via tools/viz/.
 
-        Once the VIZ branch (irad/feature) merges, this provider will render
-        chart_json/table_json/diagram_json/kpis_json into PNG/SVG deterministically.
+        Deterministic — the kernel only draws numbers it is given, it never
+        fabricates data. PNG is used for chart/diagram; SVG/HTML tables and
+        KPI tiles have no PNG renderer in the kernel today.
         """
         if not any((req.chart_json, req.table_json, req.diagram_json, req.kpis_json)):
             return {"success": False, "error": "no structured viz payload", "method": "viz_kernel"}
-        return {"success": False, "error": "viz_kernel not yet available on this branch", "method": "viz_kernel"}
+
+        start = time.time()
+        theme = req.theme or "midnight_executive"
+        try:
+            from tools.viz.spec import ChartSpec, DiagramSpec
+
+            output_path = self._resolve_output_path(req, cache_key, "png")
+
+            if req.chart_json:
+                from tools.viz.render_png import chart_to_png
+                spec = ChartSpec.from_dict(req.chart_json)
+                path = chart_to_png(spec, theme=theme, out_path=output_path)
+            elif req.diagram_json:
+                from tools.viz.render_png import diagram_to_png
+                spec = DiagramSpec.from_dict(req.diagram_json)
+                path = diagram_to_png(spec, theme=theme, out_path=output_path)
+            else:
+                # table_json / kpis_json have no PNG renderer — fall back to HTML fragment.
+                from tools.viz.render_html import table_to_html, kpis_to_html
+                from tools.viz.spec import TableSpec, KpiSpec
+                if req.table_json:
+                    html = table_to_html(TableSpec.from_dict(req.table_json), theme=theme)
+                else:
+                    html = kpis_to_html(KpiSpec.from_dict(req.kpis_json), theme=theme)
+                output_path = self._resolve_output_path(req, cache_key, "html")
+                Path(output_path).write_text(html, encoding="utf-8")
+                path = output_path
+
+            return {
+                "success": True,
+                "path": path,
+                "method": "viz_kernel",
+                "elapsed_ms": int((time.time() - start) * 1000),
+            }
+        except Exception as exc:
+            return {"success": False, "error": str(exc), "method": "viz_kernel"}
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -573,8 +656,7 @@ def _build_image_prompt(title: str, category: str = "", topic: str = "") -> str:
 
     if matches:
         scene = matches[0][2]
-        h = hashlib.md5(title.encode("utf-8"), usedforsecurity=False).hexdigest()
-        style_idx = int(h[:2], 16) % 5
+        style_idx = (zlib.crc32(title.encode("utf-8")) & 0xFFFFFFFF) % 5
         styles = [
             "photorealistic digital art, cinematic lighting, detailed, high quality, 4k, dark blue and teal color palette",
             "isometric 3D illustration, clean geometric shapes, soft studio lighting, high quality, 4k, purple and blue color palette",
@@ -598,7 +680,7 @@ def _rgb_to_hex(rgb: tuple[int, int, int]) -> str:
 def _resolve_theme_palette(theme: str) -> Dict[str, tuple[int, int, int]]:
     """Resolve a theme name to a palette dict with bg/accent/text keys."""
     try:
-        from icdev.tools.slides.constants import THEME_PALETTES, DEFAULT_THEME
+        from tools.slides.constants import THEME_PALETTES, DEFAULT_THEME
 
         return THEME_PALETTES.get(theme) or THEME_PALETTES[DEFAULT_THEME]
     except Exception:

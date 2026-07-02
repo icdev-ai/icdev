@@ -1,0 +1,9 @@
+collection: second_brain.commitments
+queries:
+  - "What commitments are due this week?"
+  - "Show me overdue commitments"
+  - "Which contracts renew soon?"
+  - "What deadlines are coming up in the next 30 days?"
+  - "Show me critical commitment alerts"
+  - "Which SLAs expire soon?"
+  - "What are my upcoming renewal dates?"

@@ -35,4 +35,7 @@
 | Swagger UI | tools/saas/swagger_ui.py | Flask Blueprint: /api/v1/docs (Swagger UI) + /api/v1/openapi.json (D153) | /api/v1/docs | HTML + JSON |
 | Metrics | tools/saas/metrics.py | Prometheus metrics collector — dual-backend: prometheus_client or stdlib fallback (D154) | (library) | MetricsCollector |
 | Metrics Blueprint | tools/saas/metrics_blueprint.py | Flask Blueprint: GET /metrics — Prometheus text exposition (D154) | /metrics | text/plain |
+| Stripe Webhook Handler | tools/billing/stripe_handler.py | Stripe webhook signature verification (HMAC-SHA256) + billing_status sync for invoice.payment_succeeded/failed and customer.subscription.deleted events | payload bytes, Stripe-Signature header | verified bool / handled dict with tenant_id + billing_status |
+| Usage Metering | tools/billing/metering.py | Fire-and-forget usage event recording (record_usage) and synchronous totals query (get_usage_summary) into usage_events table; background thread writer so callers never block | tenant_id, event_type, quantity | None / {event_type: total} dict |
+| Tier Shim | tools/billing/tier.py | Backward-compatibility re-export of TIER_ORDER, get_active_tier, tier_satisfies from icdev.tools.billing.tier | — | — |
 

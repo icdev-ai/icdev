@@ -4,6 +4,12 @@ ICDEV™ is a meta-builder that autonomously builds Gov/DoD applications with fu
 
 ---
 
+## Recent Fixes
+
+- **Bandit B314 (SVG XML parsing) — resolved.** `tools/viz/svg_to_pptx.py` now parses untrusted SVG input with `defusedxml` instead of stdlib `xml.etree.ElementTree`, eliminating the Bandit B314 finding. See [Sandbox Coverage](security/sandbox-coverage.md) and the root [CHANGELOG](../CHANGELOG.md).
+
+---
+
 ## Getting Started
 
 | Guide | Description |

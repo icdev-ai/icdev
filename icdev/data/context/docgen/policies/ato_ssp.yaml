@@ -1,0 +1,28 @@
+# OKB Policy Constraints — ATO System Security Plan
+# NIST SP 800-53 / FedRAMP SSP required sections
+constraints:
+  - id: cls-marking
+    description: "SSP must carry a classification marking"
+    pattern: "\\b(CUI|SECRET|UNCLASSIFIED|FOUO)\\b"
+    required: true
+
+  - id: has-system-boundary
+    description: "SSP must describe the system boundary"
+    pattern: "(?i)system\\s+boundary"
+    required: true
+
+  - id: has-control-implementation
+    description: "SSP must include control implementation statements"
+    pattern: "(?i)control\\s+implementation"
+    required: true
+
+  - id: has-continuous-monitoring
+    description: "SSP should reference continuous monitoring"
+    pattern: "(?i)continuous\\s+monitoring"
+    required: false
+
+  - id: no-placeholder
+    description: "No unresolved placeholders"
+    pattern: "\\[TBD\\]|\\[TODO\\]|\\[PLACEHOLDER\\]|\\[INSERT"
+    required: true
+    negate: true

@@ -209,6 +209,7 @@ CREATE TABLE IF NOT EXISTS audit_trail (
     classification TEXT DEFAULT 'CUI',
     ip_address TEXT,
     session_id TEXT,
+    recorded_at TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -406,6 +407,54 @@ CREATE TABLE IF NOT EXISTS sbom_records (
     vulnerability_count INTEGER,
     generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS sbom_components (
+    id              TEXT    PRIMARY KEY,
+    component_name  TEXT    NOT NULL,
+    version         TEXT,
+    vendor          TEXT,
+    component_type  TEXT    CHECK(component_type IN (
+                                'library', 'framework', 'container', 'os',
+                                'firmware', 'device', 'application', 'service', 'other')),
+    purl            TEXT,
+    license         TEXT,
+    classification  TEXT    NOT NULL DEFAULT 'CUI',
+    created_at      TEXT    DEFAULT (datetime('now')),
+    updated_at      TEXT    DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_sbom_comp_name   ON sbom_components(component_name);
+CREATE INDEX IF NOT EXISTS idx_sbom_comp_vendor ON sbom_components(vendor);
+
+CREATE TABLE IF NOT EXISTS supply_chain_vulnerabilities (
+    id                TEXT    PRIMARY KEY,
+    sbom_id           TEXT    NOT NULL REFERENCES sbom_components(id),
+    cve_id            TEXT    NOT NULL,
+    cvss_score        REAL    NOT NULL DEFAULT 0.0,
+    severity          TEXT    CHECK(severity IN (
+                                  'critical', 'high', 'medium', 'low',
+                                  'informational', 'none')),
+    affected_versions TEXT,
+    fixed_version     TEXT,
+    classification    TEXT    NOT NULL DEFAULT 'CUI',
+    created_at        TEXT    DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_scv_sbom_id    ON supply_chain_vulnerabilities(sbom_id);
+CREATE INDEX IF NOT EXISTS idx_scv_cvss_score ON supply_chain_vulnerabilities(cvss_score);
+
+CREATE TABLE IF NOT EXISTS supply_chain_risk_scores (
+    id              TEXT    PRIMARY KEY,
+    sbom_id         TEXT    NOT NULL REFERENCES sbom_components(id),
+    risk_level      TEXT    CHECK(risk_level IN (
+                                'critical', 'high', 'medium', 'low', 'none')),
+    exploitability  TEXT    CHECK(exploitability IN (
+                                'functional', 'poc', 'unproven', 'not_defined')),
+    patch_available INTEGER NOT NULL DEFAULT 0,
+    last_assessed   TEXT    NOT NULL,
+    classification  TEXT    NOT NULL DEFAULT 'CUI',
+    created_at      TEXT    DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_scrs_sbom_id      ON supply_chain_risk_scores(sbom_id);
+CREATE INDEX IF NOT EXISTS idx_scrs_last_assessed ON supply_chain_risk_scores(last_assessed);
 
 -- ============================================================
 -- CODE REVIEW GATES
@@ -4236,7 +4285,9 @@ CREATE TABLE IF NOT EXISTS memory_entries (
     source TEXT DEFAULT 'manual',
     decay_weight REAL DEFAULT 1.0,
     classification TEXT DEFAULT 'CUI',
-    compartment TEXT DEFAULT ''
+    compartment TEXT DEFAULT '',
+    tags TEXT,
+    metadata TEXT
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_content_hash_user
     ON memory_entries(content_hash, user_id);
@@ -5531,6 +5582,7 @@ CREATE TABLE IF NOT EXISTS proposal_section_dependencies (
     dependency_type TEXT DEFAULT 'content' CHECK(dependency_type IN (
         'content', 'data', 'approval', 'pricing')),
     required_status TEXT DEFAULT 'drafting',
+    classification TEXT DEFAULT 'CUI',
     created_at TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_prop_dep_section ON proposal_section_dependencies(section_id);
@@ -5618,6 +5670,7 @@ CREATE TABLE IF NOT EXISTS proposal_status_history (
     new_status TEXT NOT NULL,
     changed_by TEXT,
     reason TEXT,
+    classification TEXT DEFAULT 'CUI',
     created_at TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_prop_hist_entity ON proposal_status_history(entity_type, entity_id);
@@ -8574,6 +8627,10 @@ CREATE TABLE IF NOT EXISTS notification_log (
     severity        TEXT NOT NULL DEFAULT 'info'
         CHECK(severity IN ('info','warning','error','critical')),
     title           TEXT,
+    type            TEXT,
+    body            TEXT,
+    tenant_id       TEXT,
+    classification  TEXT DEFAULT 'CUI',
     delivered       BOOLEAN NOT NULL DEFAULT FALSE,
     error           TEXT,
     created_at      TEXT NOT NULL
@@ -10243,6 +10300,12 @@ CREATE TABLE IF NOT EXISTS oracle_predictions (
     horizon_days    INTEGER NOT NULL DEFAULT 7,
     evidence_json   TEXT DEFAULT '{}',
     scoring_weights TEXT DEFAULT '{}',
+    target          TEXT,
+    rationale       TEXT,
+    suggested_action TEXT,
+    status          TEXT DEFAULT 'pending'
+        CHECK(status IN ('pending','accepted','rejected','archived')),
+    expires_at      TEXT,
     outcome         TEXT CHECK(outcome IN ('confirmed','refuted','expired','pending')),
     outcome_at      TEXT,
     classification  TEXT NOT NULL DEFAULT 'CUI',
@@ -10874,6 +10937,60 @@ CREATE TABLE IF NOT EXISTS component_audit_log (
 CREATE INDEX IF NOT EXISTS idx_component_audit_log_event ON component_audit_log(event_type);
 CREATE INDEX IF NOT EXISTS idx_component_audit_log_component ON component_audit_log(component_key);
 CREATE INDEX IF NOT EXISTS idx_component_audit_log_recorded_at ON component_audit_log(recorded_at);
+
+-- ============================================================
+-- USER GROUPS (Migration 163: G-01, NIST AC-3/AC-6)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS groups (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT,
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    created_by TEXT,
+    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'disabled'))
+);
+CREATE INDEX IF NOT EXISTS idx_groups_tenant ON groups (tenant_id);
+
+CREATE TABLE IF NOT EXISTS group_members (
+    group_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    added_at TEXT NOT NULL,
+    added_by TEXT,
+    PRIMARY KEY (group_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_group_members_user ON group_members (user_id);
+
+CREATE TABLE IF NOT EXISTS group_roles (
+    group_id TEXT NOT NULL,
+    role TEXT NOT NULL,
+    canvas_scope TEXT,
+    granted_at TEXT NOT NULL,
+    granted_by TEXT,
+    PRIMARY KEY (group_id, role, canvas_scope)
+);
+
+-- ============================================================
+-- CANVAS ACCESS GRANTS (Migration 163: ZTA Pillar 5, NIST AC-3/AC-16)
+-- Explicit deny-all default: principal must have a row to access any canvas.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS canvas_access_grants (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    principal_type TEXT NOT NULL CHECK (principal_type IN ('user', 'group', 'role')),
+    principal_id TEXT NOT NULL,
+    canvas_name TEXT NOT NULL,
+    access_level TEXT NOT NULL CHECK (access_level IN ('read', 'write', 'admin')),
+    granted_by TEXT NOT NULL,
+    granted_at TEXT NOT NULL,
+    expires_at TEXT,
+    revoked_at TEXT,
+    UNIQUE (tenant_id, principal_type, principal_id, canvas_name)
+);
+CREATE INDEX IF NOT EXISTS idx_cag_tenant_canvas ON canvas_access_grants (tenant_id, canvas_name);
+CREATE INDEX IF NOT EXISTS idx_cag_principal ON canvas_access_grants (principal_type, principal_id);
 
 """
 

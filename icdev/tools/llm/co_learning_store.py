@@ -32,7 +32,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from icdev.tools.logging.icdev_logger import get_logger
+from tools.logging.icdev_logger import get_logger
 
 logger = get_logger(__name__)
 

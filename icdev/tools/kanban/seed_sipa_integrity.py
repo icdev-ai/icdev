@@ -680,7 +680,7 @@ def seed(dry_run: bool = False) -> int:
     try:
         for t in TASKS:
             existing = conn.execute(
-                "SELECT id FROM kanban_tasks WHERE id=?", (t["id"],)
+                "SELECT id FROM kanban_tasks WHERE id=%s", (t["id"],)
             ).fetchone()
             if existing:
                 skipped += 1
@@ -693,7 +693,7 @@ def seed(dry_run: bool = False) -> int:
                    (id, title, description, task_type, priority, status,
                     scheduled_at, created_at, updated_at, depends_on_task_id,
                     project_id, classification)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (
                     t["id"],
                     t["title"],

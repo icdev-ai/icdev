@@ -42,7 +42,6 @@ def reverse_processify(workflow_id: str) -> str:
     if not tasks:
         return "(No kanban tasks found — cannot reconstruct executed document)"
 
-    steps = wf_data.get("steps", [])
     wf_name = wf_data.get("workflow_name") or wf_row.get("name") or "Workflow"
     industry = wf_data.get("industry", "General")
 

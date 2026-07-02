@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""`icdev scaffold` — generate ICDEV™ canvases and child apps from templates.
+"""`icdev scaffold` — generate ICDEV™ canvases, child apps, and core extensions from templates.
 
 Subcommands:
   icdev scaffold canvas <key> --display-name "Name" [--flavor FLAVOR] [--out PATH]
   icdev scaffold child-app <key> --display-name "Name" [--flavor FLAVOR] [--canvases ...] [--out PATH]
+  icdev scaffold core <key> --display-name "Name" [--flavor FLAVOR] [--out PATH]
 
 Examples:
   icdev scaffold canvas demo --display-name "Demo Canvas" --out ./demo-canvas
   icdev scaffold canvas demo --display-name "Demo Canvas" --vars url_prefix=/demo
   icdev scaffold child-app my_lab --display-name "My Lab" --flavor ai-lab --canvases dic,slides
   icdev scaffold child-app my_lab --display-name "My Lab" --template ./custom-template
+  icdev scaffold core notification_hub --display-name "Notification Hub" --env-flag ICDEV_NOTIF_ENABLED
+  icdev scaffold core notification_hub --display-name "Notification Hub" --dry-run
 """
 
 from __future__ import annotations
@@ -29,7 +32,34 @@ if str(REPO_ROOT) not in sys.path:
 
 from tools.builder.template_engine import render_tree
 
+REGISTRY_PATH = REPO_ROOT / "args" / "component_registry.yaml"
+
 BASE_DIR = REPO_ROOT
+
+
+def _list_templates(emit_json: bool = False) -> int:
+    """Print available template flavors per kind."""
+    templates_root = BASE_DIR / "data" / "templates"
+    result = {}
+    for kind_dir in ("canvases", "child_apps", "core_extensions"):
+        kind_path = templates_root / kind_dir
+        if not kind_path.exists():
+            result[kind_dir] = []
+            continue
+        flavors = []
+        for item in sorted(kind_path.iterdir()):
+            if item.is_dir() and (item / "manifest.yaml").exists():
+                flavors.append(item.name)
+        result[kind_dir] = flavors
+    if emit_json:
+        print(json.dumps(result, indent=2))
+    else:
+        for kind_dir, flavors in result.items():
+            kind_label = {"canvases": "canvas", "child_apps": "child-app", "core_extensions": "core"}[kind_dir]
+            print(f"\n{kind_label}:")
+            for f in flavors:
+                print(f"  {f}")
+    return 0
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -38,6 +68,10 @@ def _build_parser() -> argparse.ArgumentParser:
         description=__doc__,
     )
     sub = parser.add_subparsers(dest="target", required=True)
+
+    # Template discovery
+    list_tmpl = sub.add_parser("list-templates", help="List available template flavors")
+    list_tmpl.add_argument("--json", action="store_true", help="Emit JSON output")
 
     canvas = sub.add_parser("canvas", help="Scaffold a new design canvas")
     canvas.add_argument("key", help="Short canvas key (e.g. demo)")
@@ -48,6 +82,8 @@ def _build_parser() -> argparse.ArgumentParser:
     canvas.add_argument("--template", default="data/templates/canvases/minimal", help="Template directory (overrides --flavor)")
     canvas.add_argument("--out", default=None, help="Output directory (default: ./<key>-canvas)")
     canvas.add_argument("--vars", nargs="*", default=[], help="Extra variable overrides as key=value")
+    canvas.add_argument("--dry-run", action="store_true", help="Preview what would be generated without writing files")
+    canvas.add_argument("--no-register", action="store_true", help="Skip auto-registration in component_registry.yaml")
     canvas.add_argument("--json", action="store_true", help="Emit JSON result")
 
     child_app = sub.add_parser("child-app", help="Scaffold a new child application")
@@ -60,7 +96,22 @@ def _build_parser() -> argparse.ArgumentParser:
     child_app.add_argument("--template", default="data/templates/child_apps/minimal", help="Template directory (overrides --flavor)")
     child_app.add_argument("--out", default=None, help="Output directory (default: ./<key>-app)")
     child_app.add_argument("--vars", nargs="*", default=[], help="Extra variable overrides as key=value")
+    child_app.add_argument("--dry-run", action="store_true", help="Preview what would be generated without writing files")
+    child_app.add_argument("--no-register", action="store_true", help="Skip auto-registration in component_registry.yaml")
     child_app.add_argument("--json", action="store_true", help="Emit JSON result")
+
+    core = sub.add_parser("core", help="Scaffold a new core extension")
+    core.add_argument("key", help="Short extension key (e.g. notification_hub)")
+    core.add_argument("--display-name", required=True, help="Human-facing extension name")
+    core.add_argument("--env-flag", default=None, help="Primary .env toggle (default: ICDEV_<KEY>_ENABLED)")
+    core.add_argument("--url-prefix", default=None, help="Flask url_prefix (default: /<key>, empty=no-web)")
+    core.add_argument("--flavor", default="standard", help="Built-in core-extension flavor (default: standard)")
+    core.add_argument("--template", default=None, help="Template directory path (overrides --flavor)")
+    core.add_argument("--out", default=None, help="Output directory (default: ./<key>-ext)")
+    core.add_argument("--vars", nargs="*", default=[], help="Extra variable overrides as key=value")
+    core.add_argument("--dry-run", action="store_true", help="Preview what would be generated without writing files")
+    core.add_argument("--no-register", action="store_true", help="Skip auto-registration in component_registry.yaml")
+    core.add_argument("--json", action="store_true", help="Emit JSON result")
 
     return parser
 
@@ -74,23 +125,139 @@ def _derive_env_flag(key: str, explicit: str | None) -> str:
 def _derive_url_prefix(key: str, explicit: str | None) -> str:
     if explicit:
         return explicit
-    return f"/{key}"
+    return f"/{key.replace('_', '-')}"
+
+
+def _register_component(
+    kind: str,
+    key: str,
+    display_name: str,
+    env_flag: str,
+    url_prefix: str,
+    default_roles: list[str],
+    dry_run: bool = False,
+) -> dict:
+    """Append a new component entry to args/component_registry.yaml."""
+    try:
+        import yaml
+    except ImportError:
+        return {"registered": False, "error": "PyYAML not available"}
+
+    if not REGISTRY_PATH.exists():
+        return {"registered": False, "error": f"Registry not found: {REGISTRY_PATH}"}
+
+    with open(REGISTRY_PATH, "r", encoding="utf-8") as fh:
+        data = yaml.safe_load(fh) or {}
+
+    kind_key = "canvases" if kind == "canvas" else ("child_apps" if kind == "child-app" else "core_extensions")
+    entries = data.setdefault(kind_key, [])
+
+    # Skip if already registered
+    if any(e.get("key") == key for e in entries):
+        return {"registered": False, "reason": f"{key} already in registry"}
+
+    cli_name = key.replace("_", "-")
+
+    if kind == "canvas":
+        module = f"tools.{key}_canvas.blueprint"
+        blueprint_attr = f"create_{key}_blueprint"
+        nav_section = "Canvases"
+        completeness = {
+            "template": f"tools/dashboard/templates/{key}/page.html",
+            "blueprint": True,
+            "constants": f"tools/{key}_canvas/constants.py",
+            "db_migration": f"tools/{key}_canvas/db",
+            "iqe_adapter": True,
+            "nav_link": True,
+            "seed_queries": f"context/iqe/queries/{key}/",
+        }
+    elif kind == "core":
+        module = f"tools.{key}.blueprint"
+        blueprint_attr = f"create_{key.replace('-', '_')}_blueprint"
+        nav_section = "System"
+        completeness = {
+            "blueprint": True,
+            "constants": f"tools/{key}/constants.py",
+        }
+    else:  # child-app
+        module = f"tools.{key}.blueprint"
+        blueprint_attr = f"create_{key.replace('-', '_')}_app"
+        nav_section = "Applications"
+        completeness = {}
+
+    new_entry = {
+        "key": key,
+        "kind": kind if kind != "core" else "core_extension",
+        "display_name": display_name,
+        "cli_name": cli_name,
+        "description": f"{display_name} (scaffolded)",
+        "env_flag": env_flag,
+        "extra_env_flags": [],
+        "default_enabled": False,
+        "module": module,
+        "blueprint_attr": blueprint_attr,
+        "url_prefix": url_prefix,
+        "min_il": "IL4",
+        "min_tier": "community",
+        "default_roles": default_roles,
+        "nav": {
+            "section": nav_section,
+            "label": display_name,
+            "links": [{"label": "Overview", "href": f"{url_prefix}/"}] if url_prefix else [],
+        },
+        "iqe": {
+            "adapter_module": f"tools.iqe.adapters.{key}",
+            "collections": [f"{key}.items", f"{key}.events"],
+        },
+        "completeness": completeness,
+    }
+
+    if dry_run:
+        return {"registered": False, "dry_run": True, "would_add": new_entry}
+
+    entries.append(new_entry)
+    with open(REGISTRY_PATH, "w", encoding="utf-8") as fh:
+        yaml.dump(data, fh, default_flow_style=False, allow_unicode=True, sort_keys=False, indent=2)
+
+    # Log to component_audit_log
+    try:
+        from tools.config.component_registry import log_component_audit
+        log_component_audit(
+            event_type="scaffold",
+            actor="icdev-cli",
+            component_key=key,
+            details={"kind": kind, "display_name": display_name, "env_flag": env_flag},
+        )
+    except Exception:
+        pass
+
+    return {"registered": True, "key": key, "kind": kind_key}
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
 
+    if args.target == "list-templates":
+        return _list_templates(emit_json=getattr(args, "json", False))
+
+    _kind_to_dir = {"canvas": "canvases", "child-app": "child_apps", "core": "core_extensions"}
     if args.flavor:
-        kind = "canvases" if args.target == "canvas" else "child_apps"
-        template_dir = BASE_DIR / "data" / "templates" / kind / args.flavor
-    else:
+        kind_dir = _kind_to_dir.get(args.target, "canvases")
+        template_dir = BASE_DIR / "data" / "templates" / kind_dir / args.flavor
+    elif getattr(args, "template", None):
         template_dir = BASE_DIR / args.template
+    else:
+        # Default templates per kind
+        _defaults = {"canvas": "minimal", "child-app": "minimal", "core": "standard"}
+        kind_dir = _kind_to_dir.get(args.target, "canvases")
+        template_dir = BASE_DIR / "data" / "templates" / kind_dir / _defaults.get(args.target, "standard")
     if not template_dir.exists():
         print(f"Template not found: {template_dir}", file=sys.stderr)
         return 2
 
-    default_suffix = "canvas" if args.target == "canvas" else "app"
+    _default_suffixes = {"canvas": "canvas", "child-app": "app", "core": "ext"}
+    default_suffix = _default_suffixes.get(args.target, "component")
     out_dir = Path(args.out).resolve() if args.out else Path.cwd() / f"{args.key}-{default_suffix}"
 
     variables: dict[str, str] = {
@@ -109,14 +276,40 @@ def main(argv: list[str] | None = None) -> int:
         k, v = raw.split("=", 1)
         variables[k.strip()] = v.strip()
 
-    result = render_tree(template_dir, out_dir, variables)
+    dry_run = getattr(args, "dry_run", False)
+    no_register = getattr(args, "no_register", False)
+
+    result = render_tree(template_dir, out_dir, variables, dry_run=dry_run)
+
+    # Auto-register in component_registry.yaml (canvas and core scaffolds)
+    reg_result: dict = {}
+    if args.target in ("canvas", "core") and result.get("success") and not no_register:
+        default_roles_str = variables.get("default_roles", "developer" if args.target == "canvas" else "admin")
+        default_roles = [r.strip() for r in default_roles_str.split(",") if r.strip()]
+        reg_result = _register_component(
+            kind=args.target,
+            key=args.key,
+            display_name=args.display_name,
+            env_flag=variables["env_flag"],
+            url_prefix=variables["url_prefix"],
+            default_roles=default_roles,
+            dry_run=dry_run,
+        )
+        result["registry"] = reg_result
 
     if args.json:
         print(json.dumps(result, indent=2, default=str))
     else:
-        print(f"Scaffolded {args.display_name} to {out_dir}")
+        if dry_run:
+            print(f"[dry-run] Would scaffold {args.display_name} to {out_dir}")
+        else:
+            print(f"Scaffolded {args.display_name} to {out_dir}")
         for f in result["rendered_files"]:
-            print(f"  + {f}")
+            prefix = "  (would create)" if dry_run else "  +"
+            print(f"{prefix} {f}")
+        if result.get("skipped_files"):
+            for f in result["skipped_files"]:
+                print(f"  - skipped: {f}")
         if result.get("errors"):
             print("Errors:")
             for e in result["errors"]:
@@ -125,6 +318,13 @@ def main(argv: list[str] | None = None) -> int:
             print("Validation failures:")
             for e in result["validation_failures"]:
                 print(f"  ! {e}")
+        if reg_result:
+            if reg_result.get("registered"):
+                print(f"  Registered in args/component_registry.yaml (key={args.key})")
+            elif reg_result.get("dry_run"):
+                print(f"  [dry-run] Would register key={args.key} in args/component_registry.yaml")
+            elif reg_result.get("reason"):
+                print(f"  Registry: {reg_result['reason']}")
 
     return 0 if result.get("success") else 1
 

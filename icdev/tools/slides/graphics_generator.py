@@ -16,7 +16,7 @@ import os
 from pathlib import Path
 from typing import Optional
 
-from icdev.tools.viz.asset_generator import AssetGenerator, AssetRequest
+from tools.viz.asset_generator import AssetGenerator, AssetRequest
 
 _DEFAULT_STYLE_HINT = (
     "professional corporate illustration, dark navy blue and gold color palette, "
@@ -39,7 +39,7 @@ Rules:
 
 def _style_hint(theme: str = "", tone: str = "") -> str:
     """Compose a style hint from theme palette and tone."""
-    from icdev.tools.slides.constants import TONE_STYLE_HINTS, THEME_PALETTES
+    from tools.slides.constants import TONE_STYLE_HINTS, THEME_PALETTES
 
     parts = []
     if tone:
@@ -70,8 +70,8 @@ def _build_visual_prompt(title: str, bullets: list[str], visual_context: str, th
     )
     system_prompt = _VIZ_SYSTEM_TEMPLATE.format(style_hint=style_hint)
     try:
-        from icdev.tools.llm.router import LLMRouter
-        from icdev.tools.llm.provider import LLMRequest
+        from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
 
         router = LLMRouter()
         request = LLMRequest(
@@ -84,7 +84,7 @@ def _build_visual_prompt(title: str, bullets: list[str], visual_context: str, th
             effort="low",
             skip_injection_scan=True,
         )
-        from icdev.tools.slides.constants import LLM_FN_VIZ_PROMPT
+        from tools.slides.constants import LLM_FN_VIZ_PROMPT
         response = router.invoke(LLM_FN_VIZ_PROMPT, request)
         prompt = (response.content or "").strip().strip('"\'')
         if len(prompt) > 20:

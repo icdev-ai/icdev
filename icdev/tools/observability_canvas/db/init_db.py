@@ -36,7 +36,8 @@ def get_connection():
     if _OC_BACKEND == "postgresql":
         try:
             from tools.db.storage import get_canvas_connection
-            # Canvas tables lack classification/tenant_id — bypass RLS via get_canvas_connection.
+            # Canvas tables (observability_designs, od_*) have no classification/tenant_id
+            # columns — must bypass RLS via get_canvas_connection.
             return get_canvas_connection("OC_STORAGE_BACKEND")
         except ImportError:
             pass
@@ -93,7 +94,7 @@ CREATE TABLE IF NOT EXISTS od_assessments (
 CREATE TABLE IF NOT EXISTS od_audit (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     design_id       TEXT,
-    user            TEXT,
+    actor           TEXT,
     action          TEXT NOT NULL,
     detail          TEXT,
     classification  TEXT DEFAULT 'CUI // SP-CTI',
@@ -778,7 +779,7 @@ def init_db():
             for tpl in TEMPLATES:
                 conn.execute(
                     "INSERT INTO od_templates (id, name, category, description, graph_json, tags) "
-                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    "VALUES (%s, %s, %s, %s, %s, %s)",
                     (tpl["id"], tpl["name"], tpl["category"], tpl["description"], tpl["graph_json"], tpl["tags"]),
                 )
             conn.commit()
@@ -786,10 +787,10 @@ def init_db():
         # Seed snippets (upsert)
         snp_added = 0
         for s in ODC_SNIPPETS:
-            check = conn.execute("SELECT 1 FROM od_snippets WHERE id=?", (s["id"],)).fetchone()
+            check = conn.execute("SELECT 1 FROM od_snippets WHERE id=%s", (s["id"],)).fetchone()
             if not check:
                 conn.execute(
-                    "INSERT INTO od_snippets (id, name, category, description, graph_json, tags) VALUES (?,?,?,?,?,?)",
+                    "INSERT INTO od_snippets (id, name, category, description, graph_json, tags) VALUES (%s,%s,%s,%s,%s,%s)",
                     (s["id"], s["name"], s["category"], s["description"], s["graph_json"], s["tags"]),
                 )
                 snp_added += 1

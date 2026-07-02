@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 # CUI // SP-CTI
 """Declarative tool registry for the Unified MCP Gateway Server (D301).
 
@@ -43,9 +43,9 @@ Categories:
     system_graph (3)
     intelligence (3)
     integrity (2)
-    nova (5)
+    nova (8)
 
-Total: 275 tools, 6 resources
+Total: 278 tools, 6 resources
 """
 
 TOOL_REGISTRY = {
@@ -6523,6 +6523,19 @@ TOOL_REGISTRY = {
             "required": ["instance_id"],
         },
     },
+    "ace_abort": {
+        "category": "ace",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_ace_abort",
+        "description": "Abort a running ACE co-worker instance. Sets its state to cancelled and stops all coworker threads.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "instance_id": {"type": "string", "description": "ACE instance ID to abort"},
+            },
+            "required": ["instance_id"],
+        },
+    },
     # ============================================================
     # CONTEXT COMPRESSION (Innovation Sig-84ab — Headroom)
     # ============================================================
@@ -6535,6 +6548,9 @@ TOOL_REGISTRY = {
             "Reduces token usage 60-95% via SmartCrusher (text) or CodeCompressor (code). "
             "Uses headroom library when installed; falls back to deterministic built-in compressor. "
             "All compression is reversible — original messages preserved via decompression_map."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
     # ── Document Intelligence Canvas (DIC) ──────────────────────────────────
     "dic_ingest": {
         "category": "dic",
@@ -6548,30 +6564,6 @@ TOOL_REGISTRY = {
         "input_schema": {
             "type": "object",
             "properties": {
-                "messages": {
-                    "type": "array",
-                    "description": "List of role/content message dicts (OpenAI message format)",
-                    "items": {"type": "object"},
-                },
-                "budget_tokens": {
-                    "type": "integer",
-                    "description": "Target token budget after compression (default: 8000)",
-                    "default": 8000,
-                },
-                "content_type": {
-                    "type": "string",
-                    "description": "Compression strategy: auto (detect per-message), text, or code",
-                    "enum": ["auto", "text", "code"],
-                    "default": "auto",
-                },
-                "session_id": {
-                    "type": "string",
-                    "description": "Optional session ID for compression log correlation",
-                },
-            },
-            "required": ["messages"],
-        },
-    },
                 "url": {"type": "string", "description": "URL to ingest (mutually exclusive with text)"},
                 "text": {"type": "string", "description": "Plain text content to ingest"},
                 "title": {"type": "string", "description": "Document title (optional)"},
@@ -6733,6 +6725,61 @@ TOOL_REGISTRY = {
             "Read-only — use nova_record_trust_event to update scores."
         ),
         "input_schema": {"type": "object", "properties": {}},
+    },
+    # ============================================================
+    # NOVA — Skill Generator (adapt-hermes-04)
+    # ============================================================
+    "nova_analyze_patterns": {
+        "category": "nova",
+        "module": "tools.nova.skill_generator",
+        "handler": "analyze_patterns",
+        "description": (
+            "Scan session history for repeated command patterns that suggest a missing "
+            "ICDEV™ skill. Returns list of {pattern, count, category, example} dicts "
+            "sorted by frequency. Part of Hermes adaptation (adapt-hermes-04)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "limit": {"type": "integer", "default": 50, "description": "Max patterns to return"},
+                "min_count": {"type": "integer", "default": 2, "description": "Minimum occurrences to surface"},
+            },
+        },
+    },
+    "nova_generate_skill": {
+        "category": "nova",
+        "module": "tools.nova.skill_generator",
+        "handler": "generate_skill_spec",
+        "description": (
+            "Generate an ICDEV™ skill specification markdown for a given command pattern. "
+            "Uses scanner-tier LLM when available; falls back to structured template. "
+            "Queues result in agent_improvement_artifacts for SELA Continuous Harness "
+            "evaluation (adapt-hermes-04). Set dry_run=true to preview without DB write."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "pattern": {"type": "string", "description": "Command pattern to auto-skill (e.g. 'python tools/memory/hybrid_search.py')"},
+                "category": {"type": "string", "default": "general", "description": "Pattern category tag"},
+                "dry_run": {"type": "boolean", "default": False, "description": "Preview without queuing to DB"},
+            },
+            "required": ["pattern"],
+        },
+    },
+    "nova_list_skill_queue": {
+        "category": "nova",
+        "module": "tools.nova.skill_generator",
+        "handler": "list_queued",
+        "description": (
+            "List pending auto-generated skill specs in agent_improvement_artifacts "
+            "awaiting Continuous Harness SELA evaluation (adapt-hermes-04)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "limit": {"type": "integer", "default": 20, "description": "Max entries to return"},
+            },
+        },
     },
 }
 
@@ -7075,7 +7122,8 @@ RESOURCE_REGISTRY = {
     # ============================================================
     # INTELLIGENCE (3 tools) — JISE Portal Data Feed
     # NIST 800-53: SA-11, CM-3, AC-3, AU-2
-    # =====================================================    "jise_get_portal_data": {
+    # =====================================================
+    "jise_get_portal_data": {
         "category": "intelligence",
         "module": "tools.intelligence.jise_portal",
         "handler": "get_jise_portal_data",
@@ -7099,7 +7147,11 @@ RESOURCE_REGISTRY = {
                     "default": 200,
                     "minimum": 1,
                     "maximum": 1000,
-=======
+                },
+            },
+        },
+    },
+    # ============================================================
     # CONFLICT MESH (3 tools)
     # ============================================================
     "conflict_mesh_etl": {
@@ -7407,7 +7459,8 @@ RESOURCE_REGISTRY = {
         "input_schema": {
             "type": "object",
             "properties": {},
-=======
+        },
+    },
     "conflict_mesh_predict": {
         "category": "conflict_mesh",
         "module": "tools.conflict_mesh.escalation_predictor",
@@ -7433,6 +7486,79 @@ RESOURCE_REGISTRY = {
             "properties": {
                 "threshold": {"type": "number", "default": 0.7, "description": "Minimum risk score (0–1)"},
                 "limit": {"type": "integer", "default": 20, "description": "Max results to return"},
+            },
+        },
+    },
+    # ── PVM — Predictive Vulnerability Management (NDC) ──────────────────────
+    "pvm_predict_risk": {
+        "category": "network",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_pvm_predict_risk",
+        "description": "Compute composite risk score for a single CVE advisory using 4-weight formula (cvss×0.35 + exploit×0.30 + patch_lag×0.20 + trend×0.15). Writes to nc_vuln_predictions (APPEND-ONLY).",
+        "input_schema": {
+            "type": "object",
+            "required": ["advisory_id"],
+            "properties": {
+                "advisory_id": {"type": "integer", "description": "nc_advisories.id to score"},
+            },
+        },
+    },
+    "pvm_predict_all": {
+        "category": "network",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_pvm_predict_all",
+        "description": "Score all open/in_progress advisories in nc_advisories. Returns list of prediction dicts ordered by risk_score_composite DESC.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    "pvm_top_risks": {
+        "category": "network",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_pvm_top_risks",
+        "description": "Return latest risk prediction per advisory, ordered by composite risk score descending.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "limit": {"type": "integer", "default": 20, "description": "Max predictions to return"},
+            },
+        },
+    },
+    "pvm_map_attack_surface": {
+        "category": "network",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_pvm_map_attack_surface",
+        "description": "Correlate Forward Networks NQE device inventory with CVE advisories and Nessus findings. UPSERTs nc_attack_surface rows with surface_score = cvss×0.5 + reachable×0.3 + bgp_exposed×0.2.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "network_id": {"type": "string", "description": "Optional network_id filter for NQE queries"},
+            },
+        },
+    },
+    "pvm_score_triage": {
+        "category": "network",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_pvm_score_triage",
+        "description": "4-factor Bayesian triage scoring for CVE advisories: kev×0.40 + criticality×0.25 + exposure×0.20 + urgency×0.15. Auto-approves score < 0.40; HITL gate for score >= 0.75.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "advisory_ids": {
+                    "type": "array",
+                    "items": {"type": "integer"},
+                    "description": "Advisory IDs to score; empty/omit = all open advisories",
+                },
+            },
+        },
+    },
+    "pvm_create_patch_plan": {
+        "category": "network",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_pvm_create_patch_plan",
+        "description": "Cluster approved advisories by site, schedule maintenance windows, simulate blast radius, write APPEND-ONLY patch plans to nc_patch_plans.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "approved_by": {"type": "string", "description": "Email/name of approver for audit trail"},
             },
         },
     },

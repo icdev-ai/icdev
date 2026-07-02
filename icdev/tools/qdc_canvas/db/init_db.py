@@ -803,7 +803,7 @@ if __name__ == "__main__":
         tables = conn.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").fetchall()
         print(f"QDC Canvas DB initialized: {len(tables)} tables")
         for t in tables:
-            count = conn.execute(f"SELECT COUNT(*) FROM [{t[0]}]").fetchone()[0]  # noqa: S608  # nosec B608 — t[0] from sqlite_master table list, not user input
+            count = conn.execute(f"SELECT COUNT(*) FROM [{t[0]}]").fetchone()[0]  # noqa: S608
             print(f"  {t[0]}: {count} rows")
     finally:
         conn.close()

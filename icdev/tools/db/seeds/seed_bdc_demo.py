@@ -385,7 +385,7 @@ def seed_isa_tracker(conn) -> int:
 
 def seed_audit(conn) -> int:
     sql = """INSERT OR IGNORE INTO bd_audit (
-        design_id, user, action, detail, classification, created_at
+        design_id, "user", action, detail, classification, created_at
     ) VALUES (?,?,?,?,?,?)"""
     count = 0
     actions = [

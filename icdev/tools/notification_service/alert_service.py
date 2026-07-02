@@ -17,6 +17,15 @@ from .event_service import (
     send, sendmail, notify, emit, publish, dispatch, _now_iso,
 )
 
+# Narrative / digest limits and thresholds
+_NARRATIVE_MAX_TOKENS  = 512
+_NARRATIVE_TEMPERATURE = 0.3
+_CAT1_DIGEST_LIMIT     = 5
+_STIG_DIGEST_LIMIT     = 10
+_POAM_DAYS_THRESHOLD   = 14
+_DIGEST_DAYS_WINDOW    = 7
+_POAM_AUTO_DUE_DAYS    = 90
+
 ESCALATION_LEVELS = {
     "cat1": {"priority": "CRITICAL", "sla_hours": 24,  "auto_escalate": True,  "page": True},
     "cat2": {"priority": "HIGH",     "sla_hours": 72,  "auto_escalate": True,  "page": False},
@@ -311,7 +320,7 @@ def dispatch_stig_alert(
 
         # --- Render ---
         rendered = Template(STIG_ALERT_TEMPLATE).safe_substitute(vars_)
-        rendered_html = render_template(
+        _rendered_html = render_template(
             "alerts/stig_finding.html",
             check=check_row,
             workload=workload_row,
@@ -494,6 +503,42 @@ def send_poam_reminder(
         }
     finally:
         conn.close()
+
+
+def _compute_poam_deadline_threshold(cfg: dict | None) -> int:
+    """Adaptive POA&M deadline threshold from historical remediation times.
+
+    Config keys:
+      enabled: bool
+      min_samples: int
+      fallback_days_threshold: int
+      adaptive_bounds: {"threshold_floor": int, "threshold_ceil": int}
+    """
+    cfg = cfg or {}
+    if not cfg.get("enabled", True):
+        return int(cfg.get("fallback_days_threshold", _POAM_DAYS_THRESHOLD))
+    min_samples = int(cfg.get("min_samples", 5))
+    fallback = int(cfg.get("fallback_days_threshold", _POAM_DAYS_THRESHOLD))
+    bounds = cfg.get("adaptive_bounds", {}) or {}
+    floor = int(bounds.get("threshold_floor", 3))
+    ceil = int(bounds.get("threshold_ceil", 60))
+    try:
+        conn = get_connection()
+        try:
+            row = conn.execute(
+                "SELECT AVG(julianday(completed_at) - julianday(detected_at)) as avg_days, COUNT(*) as n "
+                "FROM poam_items WHERE status = 'closed' AND completed_at IS NOT NULL"
+            ).fetchone()
+            avg_days = float((row or {}).get("avg_days", 0.0) or 0.0)
+            n = int((row or {}).get("n", 0) or 0)
+            if n < min_samples:
+                return fallback
+            threshold = int(avg_days * 0.5)
+            return max(floor, min(ceil, threshold))
+        finally:
+            conn.close()
+    except Exception:
+        return fallback
 
 
 def send_security_alert_digest(

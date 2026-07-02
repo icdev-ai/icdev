@@ -43,7 +43,7 @@ def run_runbook_checks(project_id: str) -> dict:
         with get_canvas_connection() as conn:
             cur = conn.cursor()
             cur.execute(
-                "SELECT check_key, check_value FROM ohc_runbooks WHERE project_id = ? ORDER BY created_at DESC LIMIT 30",
+                "SELECT check_key, check_value FROM ohc_runbooks WHERE project_id = %s ORDER BY created_at DESC LIMIT 30",
                 (project_id,),
             )
             rows = cur.fetchall()

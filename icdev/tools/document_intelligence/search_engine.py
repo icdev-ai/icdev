@@ -429,7 +429,7 @@ def _normalize_keywords(keywords: list[str] | None) -> list[str]:
 def _doc_meta(conn, doc_id: str) -> dict[str, Any]:
     try:
         cur = conn.execute(
-            "SELECT title, classification, summary FROM dic_documents WHERE doc_id = ?",
+            "SELECT title, classification, summary FROM dic_documents WHERE doc_id = %s",
             (doc_id,),
         )
         row = cur.fetchone()
@@ -449,7 +449,7 @@ def _chunk_meta(conn, chunk_id: str) -> dict[str, Any]:
     result: dict[str, Any] = {"page": 0, "section": "", "doc_id": "", "collection_id": "", "sha256": "", "attribution_pct": 0}
     try:
         cur = conn.execute(
-            "SELECT content, content_hash FROM rag_chunks WHERE id = ?",
+            "SELECT content, content_hash FROM rag_chunks WHERE id = %s",
             (chunk_id,),
         )
         row = cur.fetchone()
@@ -463,7 +463,7 @@ def _chunk_meta(conn, chunk_id: str) -> dict[str, Any]:
         pass
     try:
         cur2 = conn.execute(
-            "SELECT page, section, doc_id, collection_id FROM dic_chunk_links WHERE rag_chunk_id = ?",
+            "SELECT page, section, doc_id, collection_id FROM dic_chunk_links WHERE rag_chunk_id = %s",
             (chunk_id,),
         )
         row2 = cur2.fetchone()
@@ -1379,7 +1379,7 @@ class DICSearchEngine:
             like_clauses = " OR ".join(["content LIKE ?" for _ in terms])
             params = [f"%{t}%" for t in terms]
             cur = conn.execute(
-                f"SELECT chunk_id, content, source_id FROM rag_chunks WHERE {like_clauses} LIMIT ?",
+                f"SELECT chunk_id, content, source_id FROM rag_chunks WHERE {like_clauses} LIMIT %s",
                 params + [top_k],
             )
             rows = cur.fetchall()
@@ -1765,19 +1765,6 @@ class DICSearchEngine:
             llm_used=llm_used,
         )
 
-    def classify_query_intent(self, query: str) -> "DICQueryIntent":
-        """Classify a search query's intent to recommend the optimal DIC retrieval strategy.
-
-        DIC analog of paperless's combined ``DocumentSearchFilter`` — instead of
-        requiring the caller to manually configure fulltext search mode, query
-        expansion, metadata filters, and answer synthesis as separate steps, the
-        LLM assesses the query's *intent* and recommends which DIC capabilities
-        to apply as a structured decision object (aiify-opp-28).
-
-        The model outputs a schema-constrained JSON object of boolean flags and
-        an intent type. It never answers the query, never invents document
-        content, and always degrades to a safe all-False default when unavailable
-        (air-gap safe).
     def filter_query(self, natural_query: str) -> "DICFilterQuery":
         """Parse natural language into structured document search filters.
 

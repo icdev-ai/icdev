@@ -6,7 +6,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License">
   <img src="https://img.shields.io/badge/python-3.9%2B-brightgreen" alt="Python 3.9+">
-  <img src="https://img.shields.io/badge/version-1.2.33-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-1.2.34-blue" alt="Version">
   <a href="https://pypi.org/project/icdev/"><img src="https://img.shields.io/pypi/v/icdev?color=informational&label=PyPI" alt="PyPI Version"></a>
   <a href="https://pypi.org/project/icdev/"><img src="https://img.shields.io/pypi/dm/icdev?label=PyPI%20downloads" alt="PyPI Downloads"></a>
   <img src="https://img.shields.io/badge/compliance%20frameworks-42-orange" alt="Compliance Frameworks">
@@ -27,7 +27,7 @@
 
 ## Table of Contents
 
-- [What's New](#whats-new-in-1233--rfi-response-engine--slides-svg-shapes--template-fill)
+- [What's New](#whats-new-in-1234--bi-dashboard-canvas--rubric-gated-agent-loop)
 - [What ICDEV™ Builds](#what-icdev-builds)
 - [10 Design Canvases](#10-design-canvases)
 - [Quick Start](#quick-start)
@@ -48,7 +48,16 @@
 
 ---
 
-## What's New in 1.2.33 — RFI Response Engine, Slides SVG Shapes & Template-Fill
+## What's New in 1.2.34 — BI Dashboard Canvas & Rubric-Gated Agent Loop
+
+- **BI Dashboard Canvas** — NL-driven 2D/3D chart canvas at `/bi_dashboard`: describe a chart in plain English and get a rendered 2D or 3D visualization (bar, scatter3d, surface3d, bar3d) backed by real project data via a ported VIZ kernel + ECharts-gl. Two new ACE Quick Launch presets (`bi_build_dashboard`, `bi_kg_insights`).
+- **Rubric-Gated Agent Loop** — `run_agent_loop_with_rubric()` in `icdev/tools/llm/agent_loop.py` declares a rubric up front, runs the agent loop, then has a separate tool-free grader LLM judge the result (satisfied / needs_revision / failed); on `needs_revision` the grader's feedback is injected and the loop resumes from the existing transcript for up to `max_grading_iterations` rounds. Framework-agnostic adaptation of deepagents' RubricMiddleware pattern — no LangGraph dependency. 12 new tests.
+- **Config Hygiene Sweep** — repo-wide `args/*.yaml` sweep removed several silent duplicate-mapping-key landmines (`llm_config.yaml`, `genesis_config.yaml`, `security_gates.yaml`, `simulation_canvas_registry.yaml`) and fixed a real YAML indentation parse error in `package_exclusions.yaml` that had been breaking the installer's exclusion loader outright.
+
+### Fixed
+- **BI Dashboard bar3d aggregation** — `_structure_to_spec()` treated bar3d's categorical x/y fields (e.g. region/quarter) as raw floats, silently dropping every row; now builds `x_categories`/`y_categories` from real column values and aggregates z per (x, y) pair per the ECharts `bar3D` contract.
+- **Coherence checker nav-link false positive** — `check_new_page_completeness`'s nav-link check only recognized hardcoded `href="/<canvas>"` strings, false-positiving on registry-driven canvases (`component_registry.yaml` → `nav_tree`) that render their link dynamically. The check is now registry-aware.
+- **Untrusted SVG parsing (Bandit B314)** — `tools/viz/svg_to_pptx.py` now parses SVG input via `defusedxml` instead of stdlib `xml.etree.ElementTree`.
 
 - **RFI Response Engine** — Full GovCon RFI Response Workbench canvas at `/rfi` with HITL review, WriteGuard V&V, cross-section consistency checking, deadline countdown, and one-click "Generate Why Us" narrative. New ACE evaluator team (`rfi_researcher`, `rfi_writer`, `rfi_compliance_reviewer`, `rfi_editor`, `rfi_reviewer`) under `args/ace/roles/`. 104 tests.
 - **Slides: SVG → Native PPTX Shapes** — `tools/viz/svg_to_pptx.py` parses a deterministic SVG subset (rect/circle/ellipse/line/polyline/polygon/path/text, nested `<g transform>`) into native `python-pptx` `FreeformBuilder` vector shapes instead of rasterized pictures, with curves flattened to line segments. New `slide_type="svg_art"` in `pptx_builder`.

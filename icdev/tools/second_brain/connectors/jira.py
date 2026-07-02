@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import urllib.request
 import base64
 from typing import Any

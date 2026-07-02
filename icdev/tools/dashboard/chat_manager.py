@@ -491,7 +491,7 @@ def _build_iac_context(project_id: str = "") -> str:
         iac_tables = []
         for t in ("iac_templates", "iac_modules", "iac_resources", "infrastructure_templates"):
             try:
-                row = conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()  # noqa: S608  # nosec B608 — t is a hardcoded table name from internal tuple, not user input
+                row = conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()  # noqa: S608
                 count = row[0] if row else 0
                 if count > 0:
                     iac_tables.append(f"{t}({count})")
@@ -1045,6 +1045,16 @@ class ChatManager:
 
         if role == "user":
             _fire_intake_hook(context_id, content)
+            # ACE co-worker trigger: detect @team / implicit RICOAS signals and launch
+            if not hook_ctx.get("coworker_instance_id"):
+                try:
+                    from icdev.tools.ace.chat_trigger import detect_ace_trigger, maybe_launch_ace
+                    if detect_ace_trigger(content):
+                        _ace_id = maybe_launch_ace(context_id, content)
+                        if _ace_id:
+                            hook_ctx["coworker_instance_id"] = _ace_id
+                except Exception as _ace_exc:
+                    logger.debug("ACE trigger skipped: %s", _ace_exc)
             _check_coworker_trigger(context_id, content, hook_ctx)
             # RICOAS Adaptation 3: detect and persist corrections
             _detect_and_store_correction(context_id, content, turn_number=turn)
@@ -1283,6 +1293,21 @@ class ChatManager:
                     },
                 )
 
+                # A-4 — Episodic memory: save this exchange so future retrieval has it
+                try:
+                    from tools.memory.memory_write import write_to_db as _mem_write_a4
+                    _user_q = msg.get("content", "")
+                    _mem_write_a4(
+                        content=f"User: {_user_q[:400]} | Assistant: {response[:400]}",
+                        entry_type="event",
+                        importance=3,
+                        source="hook",
+                        tier="episodic",
+                        session_ref=context_id,
+                    )
+                except Exception:
+                    pass
+
             except Exception as exc:
                 logger.error("Error processing message in %s: %s", context_id, exc)
                 ctx.turn_number += 1
@@ -1379,6 +1404,28 @@ class ChatManager:
                 # --- RICOAS: two-phase inception instruction ---
                 if _check_inception_needed(ctx, user_content):
                     system_content += "\n" + _INCEPTION_INSTRUCTION + "\n"
+
+                # --- Episodic/semantic memory retrieval (A-5) ---
+                try:
+                    from tools.memory.hybrid_search import search as _mem_search
+                    _chat_top_k = 3
+                    try:
+                        import yaml as _yaml
+                        import os as _os
+                        _cfg_path = _os.path.join(_os.path.dirname(__file__), "..", "..", "args", "llm_config.yaml")
+                        with open(_cfg_path, encoding="utf-8") as _f:
+                            _lcfg = _yaml.safe_load(_f)
+                        _chat_top_k = int(_lcfg.get("agent_loop", {}).get("memory", {}).get("chat_top_k", 3))
+                    except Exception:
+                        pass
+                    _mem_hits = _mem_search(user_content, limit=_chat_top_k, tier="episodic|semantic")
+                    if _mem_hits:
+                        mem_block = "\n\n[Retrieved Memory]\n"
+                        for h in _mem_hits:
+                            mem_block += f"  - [{h['type']}] {h['content'][:300]}\n"
+                        system_content += mem_block
+                except Exception:
+                    pass
 
             if system_content:
                 conversation.append({"role": "system", "content": system_content})

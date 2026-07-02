@@ -672,7 +672,9 @@ def _rule_orphan_db_table() -> List[Dict[str, Any]]:
     # schemas defined under icdev/tools/ (e.g. aac_scans in
     # icdev/tools/ai_augmentation/db/init_db.py) must also be covered so
     # seed/adapter references in tools/ don't false-fire as orphans.
-    schema_roots = [tools_dir, BASE_DIR / "apps", BASE_DIR / "icdev"]
+    # migrations/ (root) holds raw SQL migration files that create tables
+    # referenced by production code (e.g. rag_queries, rag_citations).
+    schema_roots = [tools_dir, BASE_DIR / "apps", BASE_DIR / "icdev", BASE_DIR / "migrations"]
 
     created: Set[str] = set()
     referenced: Dict[str, str] = {}  # table → first referencing file

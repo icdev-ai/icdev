@@ -322,27 +322,9 @@ class ChatManager:
                 (ts, ts, context_id),
             )
             conn.commit()
+            return msg_id
         finally:
             conn.close()
-
-        # Save assistant turns to episodic memory for future retrieval.
-        if role == "assistant" and content:
-            try:
-                from tools.memory.memory_write import write_to_db as _mem_write
-                _mem_write(
-                    content=f"[chat:{context_id[:8]}] {content[:800]}",
-                    entry_type="event",
-                    importance=3,
-                    user_id=self.user_id,
-                    tenant_id=self.tenant_id or None,
-                    source="hook",
-                    classification=classification or self.classification,
-                    tier="episodic",
-                )
-            except Exception:
-                pass  # never block a chat message on memory failure
-
-        return msg_id
 
     def get_messages(
         self,
@@ -378,7 +360,6 @@ class ChatManager:
 
     def get_last_message(self, context_id: str) -> dict[str, Any] | None:
         """Return the most recent message, or None."""
-        msgs = self.get_messages(context_id, limit=1, offset=0)
         # get_messages returns in turn order; use DESC for last
         from icdev.tools.db.storage import get_connection
 

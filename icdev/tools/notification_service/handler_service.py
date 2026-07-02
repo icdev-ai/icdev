@@ -40,6 +40,8 @@ _AGENT_ERRORS_LIMIT        = 5     # recent agent errors in incident notificatio
 _AGENT_METRICS_LIMIT       = 10    # agent metrics in incident notification
 _CMMC_GAPS_LIMIT           = 10    # CMMC practice gaps in assessment notification
 _HANDLER_ERRORS_SLICE      = 3     # narrative slice for error messages
+_MODULE_ROWS_LIMIT         = 10    # module rows in summary notifications
+_SUMMARISE_FINDINGS_COUNT  = 5     # number of findings in summary strings
 
 # ---------------------------------------------------------------------------
 # AI-ification (aiify-opp-5592): optional LLM-synthesized handler narrative.

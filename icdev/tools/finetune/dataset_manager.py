@@ -51,7 +51,7 @@ def _audit(conn: sqlite3.Connection, project_id: str, event_type: str, details: 
     """Append to audit trail."""
     try:
         conn.execute(
-            "INSERT INTO audit_trail (project_id, event_type, details, actor, created_at) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO audit_trail (project_id, event_type, details, actor, created_at) VALUES (%s, %s, %s, %s, %s)",
             (project_id, event_type, details, "finetune_dataset_manager", _now()),
         )
     except Exception:
@@ -85,7 +85,7 @@ def create_dataset(
             """INSERT INTO ft_datasets
                (id, name, description, purpose, base_model, version, example_count,
                 classification, tenant_id, project_id, created_by, status, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, 1, 0, ?, ?, ?, ?, 'draft', ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, 1, 0, %s, %s, %s, %s, 'draft', %s, %s)""",
             (
                 ds_id,
                 name,
@@ -149,7 +149,7 @@ def get_dataset(dataset_id: str, db_path: Optional[Path] = None) -> Dict[str, An
     """Get a single dataset by ID."""
     conn = _get_db(db_path)
     try:
-        row = conn.execute("SELECT * FROM ft_datasets WHERE id = ?", (dataset_id,)).fetchone()
+        row = conn.execute("SELECT * FROM ft_datasets WHERE id = %s", (dataset_id,)).fetchone()
         if not row:
             return {"success": False, "error": f"Dataset not found: {dataset_id}"}
         return {"success": True, "dataset": dict(row)}
@@ -171,7 +171,7 @@ def update_dataset_status(
     conn = _get_db(db_path)
     try:
         conn.execute(
-            "UPDATE ft_datasets SET status = ?, updated_at = ? WHERE id = ?",
+            "UPDATE ft_datasets SET status = %s, updated_at = %s WHERE id = %s",
             (status, _now(), dataset_id),
         )
         conn.commit()
@@ -209,7 +209,7 @@ def add_example(
     try:
         # Dedup check (D-FT-9)
         existing = conn.execute(
-            "SELECT id FROM ft_dataset_examples WHERE dataset_id = ? AND content_hash = ?",
+            "SELECT id FROM ft_dataset_examples WHERE dataset_id = %s AND content_hash = %s",
             (dataset_id, chash),
         ).fetchone()
         if existing:
@@ -220,7 +220,7 @@ def add_example(
                (dataset_id, system_prompt, user_input, expected_output, source,
                 source_chunk_id, source_document_id, content_hash, classification,
                 tenant_id, project_id, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 dataset_id,
                 system_prompt,
@@ -239,11 +239,11 @@ def add_example(
 
         # Update example count
         count = conn.execute(
-            "SELECT COUNT(*) FROM ft_dataset_examples WHERE dataset_id = ?",
+            "SELECT COUNT(*) FROM ft_dataset_examples WHERE dataset_id = %s",
             (dataset_id,),
         ).fetchone()[0]
         conn.execute(
-            "UPDATE ft_datasets SET example_count = ?, updated_at = ? WHERE id = ?",
+            "UPDATE ft_datasets SET example_count = %s, updated_at = %s WHERE id = %s",
             (count, _now(), dataset_id),
         )
         conn.commit()
@@ -319,7 +319,7 @@ def list_examples(
         examples = [dict(r) for r in rows]
 
         total = conn.execute(
-            "SELECT COUNT(*) FROM ft_dataset_examples WHERE dataset_id = ?",
+            "SELECT COUNT(*) FROM ft_dataset_examples WHERE dataset_id = %s",
             (dataset_id,),
         ).fetchone()[0]
 
@@ -334,23 +334,23 @@ def get_dataset_stats(dataset_id: str, db_path: Optional[Path] = None) -> Dict[s
     """Get dataset statistics."""
     conn = _get_db(db_path)
     try:
-        ds = conn.execute("SELECT * FROM ft_datasets WHERE id = ?", (dataset_id,)).fetchone()
+        ds = conn.execute("SELECT * FROM ft_datasets WHERE id = %s", (dataset_id,)).fetchone()
         if not ds:
             return {"success": False, "error": f"Dataset not found: {dataset_id}"}
 
         total = conn.execute(
-            "SELECT COUNT(*) FROM ft_dataset_examples WHERE dataset_id = ?",
+            "SELECT COUNT(*) FROM ft_dataset_examples WHERE dataset_id = %s",
             (dataset_id,),
         ).fetchone()[0]
 
         approved = conn.execute(
-            "SELECT COUNT(*) FROM ft_dataset_examples WHERE dataset_id = ? AND approved = 1",
+            "SELECT COUNT(*) FROM ft_dataset_examples WHERE dataset_id = %s AND approved = 1",
             (dataset_id,),
         ).fetchone()[0]
 
         by_source = {}
         for row in conn.execute(
-            "SELECT source, COUNT(*) as cnt FROM ft_dataset_examples WHERE dataset_id = ? GROUP BY source",
+            "SELECT source, COUNT(*) as cnt FROM ft_dataset_examples WHERE dataset_id = %s GROUP BY source",
             (dataset_id,),
         ).fetchall():
             by_source[row["source"]] = row["cnt"]
@@ -359,7 +359,7 @@ def get_dataset_stats(dataset_id: str, db_path: Optional[Path] = None) -> Dict[s
             """SELECT AVG(quality_score) as avg_quality,
                       AVG(compliance_score) as avg_compliance,
                       AVG(relevance_score) as avg_relevance
-               FROM ft_dataset_examples WHERE dataset_id = ? AND approved = 1""",
+               FROM ft_dataset_examples WHERE dataset_id = %s AND approved = 1""",
             (dataset_id,),
         ).fetchone()
 
@@ -434,7 +434,7 @@ def export_jsonl(
         all_hashes = [row["content_hash"] for row in rows]
         dataset_hash = _content_hash("|".join(all_hashes))
         conn.execute(
-            "UPDATE ft_datasets SET content_hash = ?, updated_at = ? WHERE id = ?",
+            "UPDATE ft_datasets SET content_hash = %s, updated_at = %s WHERE id = %s",
             (dataset_hash, _now(), dataset_id),
         )
         conn.commit()
@@ -447,97 +447,6 @@ def export_jsonl(
         }
     except Exception as e:
         return {"success": False, "error": str(e)}
-    finally:
-        conn.close()
-
-
-# ── Cache Invalidation ────────────────────────────────────────────────
-
-
-def invalidate_cache(
-    dataset_id: str,
-    reason: str = "",
-    db_path: Optional[Path] = None,
-) -> int:
-    """Mark a dataset as needing refresh when underlying data changes.
-
-    Resets dataset status to 'draft' and unapproves all examples so they
-    must be re-reviewed before the next training run. Returns count of
-    examples affected.
-    """
-    conn = _get_db(db_path)
-    try:
-        # Verify dataset exists
-        ds = conn.execute("SELECT id, project_id FROM ft_datasets WHERE id = %s", (dataset_id,)).fetchone()
-        if not ds:
-            return 0
-
-        project_id = ds["project_id"] if hasattr(ds, "keys") else ds[1]
-
-        # Reset dataset status to draft (needs relabeling)
-        conn.execute(
-            "UPDATE ft_datasets SET status = 'draft', updated_at = %s WHERE id = %s",
-            (_now(), dataset_id),
-        )
-
-        # Unapprove all examples (marks them as needing re-review)
-        cur = conn.execute(
-            "UPDATE ft_dataset_examples SET approved = 0 WHERE dataset_id = %s AND approved = 1",
-            (dataset_id,),
-        )
-        affected = cur.rowcount if hasattr(cur, "rowcount") else 0
-
-        # Log invalidation event
-        try:
-            conn.execute(
-                "INSERT INTO ft_training_job_events (job_id, event_type, details, created_at) VALUES (%s, %s, %s, %s)",
-                (
-                    dataset_id,
-                    "cache_invalidated",
-                    json.dumps({"reason": reason, "examples_unapproved": affected}),
-                    _now(),
-                ),
-            )
-        except Exception:
-            # ft_training_job_events may not accept dataset_id as job_id; log and continue
-            pass
-
-        _audit(
-            conn,
-            project_id,
-            "finetune_cache_invalidated",
-            json.dumps({"dataset_id": dataset_id, "reason": reason, "affected": affected}),
-        )
-        conn.commit()
-        return affected
-    except Exception:
-        return 0
-    finally:
-        conn.close()
-
-
-def get_dataset_hash(
-    dataset_id: str,
-    db_path: Optional[Path] = None,
-) -> Optional[str]:
-    """Compute a deterministic SHA256 hash of all example content hashes in a dataset.
-
-    Returns None if the dataset is not found or has no examples. Changes when any
-    example changes, enabling downstream cache-bust detection.
-    """
-    conn = _get_db(db_path)
-    try:
-        rows = conn.execute(
-            "SELECT content_hash FROM ft_dataset_examples WHERE dataset_id = %s ORDER BY content_hash ASC",
-            (dataset_id,),
-        ).fetchall()
-        if not rows:
-            return None
-        hashes = [r["content_hash"] if hasattr(r, "keys") else r[0] for r in rows]
-        combined = "|".join(hashes)
-        return hashlib.sha256(combined.encode("utf-8")).hexdigest()
-    except Exception:
-        return None
     finally:
         conn.close()
 

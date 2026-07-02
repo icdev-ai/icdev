@@ -105,7 +105,7 @@ def _column_exists(conn, table: str, column: str) -> bool:
         if is_pg(conn):
             row = conn.execute(
                 "SELECT 1 FROM information_schema.columns "
-                "WHERE table_name = ? AND column_name = ?",
+                "WHERE table_name = %s AND column_name = %s",
                 (table, column),
             ).fetchone()
         else:
@@ -122,7 +122,8 @@ def _column_exists(conn, table: str, column: str) -> bool:
 def init_nova_tables(conn=None) -> dict:
     """Create all NOVA tables. Safe to call on any DB state (idempotent)."""
     from tools.db.storage import get_canvas_connection
-    # NOVA system tables have no classification/tenant_id — bypass RLS.
+    # NOVA system tables (agent_execution_traces, ace_trust_ledger, etc.) have no
+    # classification/tenant_id columns — bypass RLS via get_canvas_connection.
     _close = conn is None
     if conn is None:
         conn = get_canvas_connection("NOVA_STORAGE_BACKEND")

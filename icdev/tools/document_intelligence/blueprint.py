@@ -29,6 +29,12 @@ Routes:
   GET  /document-intelligence/api/suggestions/<id>               suggestion detail
   POST /document-intelligence/api/suggestions/<id>/accept        accept: apply content + history
   POST /document-intelligence/api/suggestions/<id>/reject        reject: mark decided + note
+
+  GET  /document-intelligence/techwriter                          tech writer workspace (migration 230)
+  PATCH /document-intelligence/api/documents/<id>/writeguard-mode update writeguard content mode
+  POST /document-intelligence/api/techwriter/research            AI research + draft for a section
+  POST /document-intelligence/api/techwriter/diagram             generate Mermaid diagram syntax
+  POST /document-intelligence/api/import-from-docgen            import docgen session → new tech writer doc
 """
 from __future__ import annotations
 
@@ -78,6 +84,13 @@ _TEMPLATES = [
     {"id": "hitl-review", "name": "HITL Review Queue", "description": "Surface AI-generated drafts for human review before publishing.", "flagship": False, "category": "governance", "kind": "workflow"},
     {"id": "sop-refresh", "name": "SOP Refresh", "description": "Keep standard operating procedures current against process changes.", "flagship": False, "category": "operations", "kind": "workflow"},
     {"id": "knowledge-handoff", "name": "Knowledge Handoff", "description": "Capture retiring-SME knowledge into a living collection via CoD-verified generation.", "flagship": False, "category": "knowledge", "kind": "workflow"},
+    # Tech Writer templates (migration 230) — category="techwriter", status='approved' on instantiate
+    {"id": "STANDARD_GUIDE", "name": "Standard Guide", "description": "Cloud-agnostic reference guide spanning multiple providers (AWS/Azure/GCP/Oracle).", "flagship": False, "category": "techwriter", "kind": "guide"},
+    {"id": "SOP", "name": "SOP", "description": "Standard Operating Procedure with numbered steps, prerequisites, and rollback.", "flagship": False, "category": "techwriter", "kind": "sop"},
+    {"id": "RUNBOOK", "name": "Runbook", "description": "Operational runbook with pre-flight checks, procedure, verification, and escalation path.", "flagship": False, "category": "techwriter", "kind": "runbook"},
+    {"id": "ARCH_NETWORK", "name": "Network Architecture", "description": "Network topology, segmentation strategy, traffic flows, and security controls.", "flagship": False, "category": "techwriter", "kind": "architecture"},
+    {"id": "ARCH_APPLICATION", "name": "Application Architecture", "description": "System context, component diagram, API contracts, data flow, and deployment architecture.", "flagship": False, "category": "techwriter", "kind": "architecture"},
+    {"id": "ARCH_SYSTEM", "name": "System Architecture", "description": "End-to-end system boundary, stakeholders, interfaces, and quality attributes.", "flagship": False, "category": "techwriter", "kind": "architecture"},
 ]
 
 _SNIPPETS = [
@@ -102,6 +115,7 @@ _PAGES = [
     {"name": "Explorer", "icon": "🔎", "href": "/document-intelligence/explorer", "desc": "KG buried-bodies explorer — orphans, tribal knowledge, contradictions.", "ready": True, "task": "dic-explore-01"},
     {"name": "Handoff", "icon": "🤝", "href": "/document-intelligence/handoff", "desc": "Knowledge handoff — capture retiring SME knowledge into a living collection.", "ready": True, "task": "dic-handoff-01"},
     {"name": "Notebook", "icon": "📓", "href": "/document-intelligence/notebook", "desc": "NotebookLM-style view — sources, chat, and AI outputs (study guide, FAQ, timeline, audio) in one screen.", "ready": True, "task": "dic-notebook-01"},
+    {"name": "Tech Writer", "icon": "✍️", "href": "/document-intelligence/techwriter", "desc": "Author arch docs, SOPs, runbooks, and standard guides with inline WriteGuard and AI research.", "ready": True, "task": "dic-techwriter-01"},
 ]
 
 _LOCAL_PROVIDERS = ["ollama", "llamacpp", "huggingface-local"]
@@ -200,7 +214,7 @@ def _user_role(collection_id: str, user_id: str) -> str:
     conn = _conn()
     try:
         row = conn.execute(
-            "SELECT role FROM dic_team_access WHERE collection_id = ? AND user_id = ? LIMIT 1",
+            "SELECT role FROM dic_team_access WHERE collection_id = %s AND user_id = %s LIMIT 1",
             (collection_id, user_id),
         ).fetchone()
         if row:
@@ -235,7 +249,7 @@ def _role_badge(role: str) -> str:
 def _collection_id_from_doc(doc_id: str) -> str | None:
     conn = _conn()
     try:
-        row = conn.execute("SELECT collection_id FROM dic_documents WHERE doc_id = ? LIMIT 1", (doc_id,)).fetchone()
+        row = conn.execute("SELECT collection_id FROM dic_documents WHERE doc_id = %s LIMIT 1", (doc_id,)).fetchone()
         if row:
             return row[0] if hasattr(row, "__getitem__") else row["collection_id"]
     except Exception:
@@ -249,7 +263,7 @@ def _collection_id_from_version(version_id: str) -> str | None:
     conn = _conn()
     try:
         row = conn.execute(
-            "SELECT d.collection_id FROM dic_versions v JOIN dic_documents d ON d.doc_id = v.doc_id WHERE v.version_id = ? LIMIT 1",
+            "SELECT d.collection_id FROM dic_versions v JOIN dic_documents d ON d.doc_id = v.doc_id WHERE v.version_id = %s LIMIT 1",
             (version_id,),
         ).fetchone()
         if row:
@@ -265,7 +279,7 @@ def _collection_id_from_section(section_id: str) -> str | None:
     conn = _conn()
     try:
         row = conn.execute(
-            "SELECT d.collection_id FROM dic_sections s JOIN dic_documents d ON d.doc_id = s.doc_id WHERE s.section_id = ? LIMIT 1",
+            "SELECT d.collection_id FROM dic_sections s JOIN dic_documents d ON d.doc_id = s.doc_id WHERE s.section_id = %s LIMIT 1",
             (section_id,),
         ).fetchone()
         if row:
@@ -297,14 +311,14 @@ def collections():
         for c in cols:
             try:
                 doc_count_row = conn.execute(
-                    "SELECT COUNT(*) FROM dic_documents WHERE collection_id = ?", (c["collection_id"],)
+                    "SELECT COUNT(*) FROM dic_documents WHERE collection_id = %s", (c["collection_id"],)
                 ).fetchone()
                 c["doc_count"] = doc_count_row[0] if doc_count_row else 0
             except Exception:
                 c["doc_count"] = 0
             try:
                 team_row = conn.execute(
-                    "SELECT COUNT(*) FROM dic_team_access WHERE collection_id = ?", (c["collection_id"],)
+                    "SELECT COUNT(*) FROM dic_team_access WHERE collection_id = %s", (c["collection_id"],)
                 ).fetchone()
                 c["team_size"] = team_row[0] if team_row else 0
             except Exception:
@@ -530,6 +544,216 @@ def templates_page():
     return render_template("document_intelligence/templates.html", templates=_TEMPLATES)
 
 
+# ── Tech Writer Workspace ─────────────────────────────────────────────────────
+
+@dic_bp.route("/techwriter")
+def techwriter():
+    """Tech Writer Workspace — template picker + list of active drafts."""
+    tenant_id, classification = _security_context()
+    conn = _conn()
+    try:
+        active_docs = _safe_rows(
+            conn,
+            "SELECT doc_id, title, template_type, writeguard_mode, created_at "
+            "FROM dic_documents "
+            "WHERE tenant_id = %s AND template_type IS NOT NULL "
+            "ORDER BY created_at DESC LIMIT 50",
+            (tenant_id,),
+        )
+    finally:
+        conn.close()
+    from tools.document_intelligence.constants import (
+        TEMPLATE_TYPES,
+        TEMPLATE_TYPE_TO_WRITEGUARD_MODE,
+    )
+    tw_templates = [t for t in _TEMPLATES if t.get("category") == "techwriter"]
+    return render_template(
+        "document_intelligence/techwriter.html",
+        active_docs=active_docs,
+        template_types=TEMPLATE_TYPES,
+        type_to_mode=TEMPLATE_TYPE_TO_WRITEGUARD_MODE,
+        tw_templates=tw_templates,
+        pages=_PAGES,
+    )
+
+
+@dic_bp.route("/api/documents/<doc_id>/writeguard-mode", methods=["PATCH"])
+def api_set_writeguard_mode(doc_id: str):
+    """PATCH — update writeguard_mode on a techwriter document."""
+    body = request.get_json(silent=True) or {}
+    mode = (body.get("mode") or "default").strip()
+    from tools.document_intelligence.constants import WRITEGUARD_MODES
+    if mode not in WRITEGUARD_MODES:
+        return jsonify({"error": f"invalid mode: {mode}"}), 400
+    conn = _conn()
+    try:
+        conn.execute(
+            "UPDATE dic_documents SET writeguard_mode = %s WHERE doc_id = %s",
+            (mode, doc_id),
+        )
+        conn.commit()
+        return jsonify({"doc_id": doc_id, "writeguard_mode": mode})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        conn.close()
+
+
+@dic_bp.route("/api/techwriter/research", methods=["POST"])
+def api_techwriter_research():
+    """POST — AI research + draft for a single section.
+
+    Body: {query, section_heading, template_type, collection_id, web_urls}
+    Returns: {draft_content, rag_chunks, kg_entities, web_sources, is_airgap, warnings, error}
+    """
+    body = request.get_json(silent=True) or {}
+    query = (body.get("query") or "").strip()
+    if not query:
+        return jsonify({"error": "query required"}), 400
+    tenant_id, classification = _security_context()
+    try:
+        from tools.document_intelligence.tech_writing_assist import research_and_draft
+        result = research_and_draft(
+            query=query,
+            section_heading=body.get("section_heading", ""),
+            template_type=body.get("template_type", ""),
+            collection_id=body.get("collection_id", "default"),
+            tenant_id=tenant_id,
+            classification=classification,
+            web_urls=body.get("web_urls") or [],
+        )
+        return jsonify({
+            "draft_content": result.draft_content,
+            "rag_chunks": result.rag_chunks[:5],
+            "kg_entities": result.kg_entities[:10],
+            "web_sources": result.web_sources,
+            "is_airgap": result.is_airgap,
+            "warnings": result.warnings,
+            "error": result.error,
+        })
+    except Exception as exc:
+        logger.warning("dic: techwriter/research error: %s", exc)
+        return jsonify({"error": str(exc)}), 500
+
+
+@dic_bp.route("/api/techwriter/diagram", methods=["POST"])
+def api_techwriter_diagram():
+    """POST — generate Mermaid diagram syntax from a natural-language description.
+
+    Body: {description, diagram_type, template_type}
+    Returns: {syntax, diagram_type, description, error}
+    """
+    body = request.get_json(silent=True) or {}
+    description = (body.get("description") or "").strip()
+    if not description:
+        return jsonify({"error": "description required"}), 400
+    _, classification = _security_context()
+    try:
+        from tools.document_intelligence.tech_writing_assist import generate_diagram_syntax
+        result = generate_diagram_syntax(
+            description=description,
+            diagram_type=body.get("diagram_type", "mermaid"),
+            template_type=body.get("template_type", ""),
+            classification=classification,
+        )
+        return jsonify({
+            "syntax": result.syntax,
+            "diagram_type": result.diagram_type,
+            "description": result.description,
+            "error": result.error,
+        })
+    except Exception as exc:
+        logger.warning("dic: techwriter/diagram error: %s", exc)
+        return jsonify({"error": str(exc)}), 500
+
+
+@dic_bp.route("/api/import-from-docgen", methods=["POST"])
+def api_import_from_docgen():
+    """POST — create a DIC tech-writer document seeded from a docgen session.
+
+    Body: {session_id, title, template_type, classification}
+    Returns: {doc_id, collection_id, template_type, writeguard_mode}
+
+    Docgen → Tech Writer bridge: imports docgen session metadata and creates a
+    pre-seeded DIC document with the matching template type and sections.
+    """
+    from tools.document_intelligence.constants import (
+        TEMPLATE_TYPE_TO_WRITEGUARD_MODE,
+        TEMPLATE_TYPES,
+    )
+
+    body = request.get_json(silent=True) or {}
+    session_id = (body.get("session_id") or "").strip()
+    title = (body.get("title") or "Untitled").strip()
+    template_type = (body.get("template_type") or "ARCH_SYSTEM").strip().upper()
+    classification = (body.get("classification") or "CUI").strip()
+
+    if template_type not in TEMPLATE_TYPES:
+        return jsonify({"error": f"Invalid template_type: {template_type}"}), 400
+
+    tenant_id, _ = _security_context()
+    writeguard_mode = TEMPLATE_TYPE_TO_WRITEGUARD_MODE.get(template_type, "default")
+
+    try:
+        conn = _conn()
+        # Create a new collection for this import if no matching one exists
+        import uuid as _uuid
+        doc_id = str(_uuid.uuid4())
+        collection_id = f"docgen-import-{session_id[:8]}" if session_id else str(_uuid.uuid4())[:8]
+
+        # Ensure the collection exists (upsert-style: ignore if duplicate)
+        try:
+            conn.execute(
+                """INSERT INTO dic_collections
+                   (collection_id, name, tenant_id, classification, created_at)
+                   VALUES (%s,%s,%s,%s,NOW())
+                   ON CONFLICT (collection_id) DO NOTHING""",
+                (collection_id, f"Docgen Import — {title[:60]}", tenant_id, classification),
+            )
+        except Exception:
+            pass  # collection already exists or ON CONFLICT not supported
+
+        conn.execute(
+            """INSERT INTO dic_documents
+               (doc_id, collection_id, title, filename, status, origin,
+                classification, template_type, writeguard_mode, tenant_id, created_at)
+               VALUES (%s,%s,%s,%s,'approved','human_authored',%s,%s,%s,%s,NOW())""",
+            (
+                doc_id,
+                collection_id,
+                title,
+                f"docgen-{session_id[:8]}.doc" if session_id else "imported.doc",
+                classification,
+                template_type,
+                writeguard_mode,
+                tenant_id,
+            ),
+        )
+
+        # Seed sections from _TEMPLATE_SECTIONS
+        sections = _TEMPLATE_SECTIONS.get(template_type, [])
+        for i, heading in enumerate(sections):
+            s_id = str(_uuid.uuid4())
+            conn.execute(
+                """INSERT INTO dic_sections
+                   (section_id, doc_id, heading, content, section_order, status, created_at)
+                   VALUES (%s,%s,%s,%s,%s,'draft',NOW())""",
+                (s_id, doc_id, heading, "", i),
+            )
+
+        conn.commit() if hasattr(conn, "commit") else None
+        logger.info("dic: import-from-docgen → doc_id=%s template=%s", doc_id, template_type)
+        return jsonify({
+            "doc_id": doc_id,
+            "collection_id": collection_id,
+            "template_type": template_type,
+            "writeguard_mode": writeguard_mode,
+        })
+    except Exception as exc:
+        logger.warning("dic: import-from-docgen error: %s", exc)
+        return jsonify({"error": str(exc)}), 500
+
+
 @dic_bp.route("/freshness")
 def freshness():
     tenant_id, _ = _security_context()
@@ -613,7 +837,7 @@ def api_ingest():
         conn = _conn()
         conn.execute(
             "INSERT INTO dic_ingest_jobs (job_id, filename, collection_id, status, tenant_id) "
-            "VALUES (?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s)",
             (job_id, filename, collection_id, "queued", tenant_id),
         )
         conn.commit()
@@ -633,7 +857,7 @@ def api_ingest():
                 try:
                     c = _conn()
                     c.execute(
-                        "UPDATE dic_ingest_jobs SET status=?, stage_detail=?, updated_at=? WHERE job_id=?",
+                        "UPDATE dic_ingest_jobs SET status=%s, stage_detail=%s, updated_at=%s WHERE job_id=%s",
                         (stage, detail, _now(), job_id),
                     )
                     c.commit()
@@ -668,8 +892,8 @@ def api_ingest():
             try:
                 c = _conn()
                 c.execute(
-                    "UPDATE dic_ingest_jobs SET status='done', doc_id=?, chunks_total=?, "
-                    "chunks_done=?, errors_json=?, updated_at=? WHERE job_id=?",
+                    "UPDATE dic_ingest_jobs SET status='done', doc_id=%s, chunks_total=%s, "
+                    "chunks_done=%s, errors_json=%s, updated_at=%s WHERE job_id=%s",
                     (outcome.doc_id, outcome.chunks, outcome.chunks_embedded,
                      json.dumps(outcome.errors), _now(), job_id),
                 )
@@ -685,7 +909,7 @@ def api_ingest():
             try:
                 c = _conn()
                 c.execute(
-                    "UPDATE dic_ingest_jobs SET status='error', stage_detail=?, updated_at=? WHERE job_id=?",
+                    "UPDATE dic_ingest_jobs SET status='error', stage_detail=%s, updated_at=%s WHERE job_id=%s",
                     (str(exc), _now(), job_id),
                 )
                 c.commit()
@@ -805,7 +1029,7 @@ def api_kg_explore():
     # global RLS predicate would add an UndefinedColumn clause.  Disable RLS for
     # this read-only KG endpoint; collection/doc scoping is enforced below via
     # dic_chunk_links / dic_documents.
-    conn.set_security_context(None)
+    conn.set_security_context(None)  # rls-bypass: kg_nodes/kg_edges/kg_graphs have no tenant_id; scoped via dic_chunk_links + dic_documents instead
 
     def _collection_chunk_clause(alias: str = "n") -> tuple[str, list]:
         """Return a predicate and params that restrict a kg_nodes alias to
@@ -832,13 +1056,13 @@ def api_kg_explore():
             terms = _extract_terms(query)
             if not terms or not coll_id:
                 return []
-            like = " OR ".join(["LOWER(rc.content) LIKE LOWER(?)"] * len(terms))
+            like = " OR ".join(["LOWER(rc.content) LIKE LOWER(%s)"] * len(terms))
             params = [coll_id] + [f"%{t}%" for t in terms]
             cur = conn.execute(
                 "SELECT DISTINCT rc.id FROM rag_chunks rc "
                 "JOIN dic_chunk_links l ON l.rag_chunk_id = rc.id "
                 "JOIN dic_documents d ON d.doc_id = l.doc_id "
-                f"WHERE d.collection_id = ? AND ({like}) "
+                f"WHERE d.collection_id = %s AND ({like}) "
                 "LIMIT 50",
                 tuple(params),
             )
@@ -1074,6 +1298,17 @@ def api_search():
                 query, clearance=clearance, collection_id=collection_id, top_k=top_k, mode=mode,
             )
             payload["access"] = expl.to_dict()
+        # Personalise results if Second Brain is enabled
+        try:
+            import os as _os
+            if _os.environ.get("ICDEV_SECOND_BRAIN_ENABLED", "false").lower() == "true":
+                from flask import g as _g
+                from tools.second_brain.dic_personaliser import personalise_dic_results
+                _uid = getattr(_g, "user_id", "default")
+                _tid = getattr(_g, "tenant_id", "default")
+                payload["results"] = personalise_dic_results(payload["results"], _uid, _tid)
+        except Exception:
+            pass
         return jsonify(payload)
     except Exception as exc:
         logger.warning("dic: search error: %s", exc)
@@ -1092,7 +1327,7 @@ def api_provenance(chunk_id: str):
     try:
         # Look up chunk — PG uses 'id' (text), SQLite may use 'chunk_id'
         cur = conn.execute(
-            "SELECT content, content_hash, source_id, classification FROM rag_chunks WHERE id = ?",
+            "SELECT content, content_hash, source_id, classification FROM rag_chunks WHERE id = %s",
             (chunk_id,),
         )
         row = cur.fetchone()
@@ -1107,7 +1342,7 @@ def api_provenance(chunk_id: str):
 
         # Look up doc linkage
         cur2 = conn.execute(
-            "SELECT doc_id, collection_id, page, section FROM dic_chunk_links WHERE rag_chunk_id = ?",
+            "SELECT doc_id, collection_id, page, section FROM dic_chunk_links WHERE rag_chunk_id = %s",
             (chunk_id,),
         )
         link = cur2.fetchone()
@@ -1565,7 +1800,7 @@ def api_collections_create():
     try:
         conn.execute(
             "INSERT INTO dic_collections (collection_id, name, description, classification, tenant_id) "
-            "VALUES (?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s)",
             (collection_id, name, data.get("description", ""), data.get("classification", classification), tenant_id),
         )
         conn.commit()
@@ -1600,7 +1835,7 @@ def api_team_add(collection_id):
     conn = _conn()
     try:
         conn.execute(
-            "INSERT INTO dic_team_access (access_id, collection_id, user_id, role, tenant_id, classification) VALUES (?,?,?,?,?,?)",
+            "INSERT INTO dic_team_access (access_id, collection_id, user_id, role, tenant_id, classification) VALUES (%s,%s,%s,%s,%s,%s)",
             (access_id, collection_id, user_id, role, tenant_id, classification or "CUI"),
         )
         conn.commit()
@@ -1630,7 +1865,7 @@ def api_collection_documents(collection_id):
             try:
                 ver = conn.execute(
                     "SELECT version_id, status, origin, version_no FROM dic_versions "
-                    "WHERE doc_id = ? ORDER BY version_no DESC LIMIT 1",
+                    "WHERE doc_id = %s ORDER BY version_no DESC LIMIT 1",
                     (r["doc_id"],),
                 ).fetchone()
                 if ver:
@@ -1638,7 +1873,7 @@ def api_collection_documents(collection_id):
                     r["latest_status"] = ver[1] if hasattr(ver, "__getitem__") else ver["status"]
                     r["latest_origin"] = ver[2] if hasattr(ver, "__getitem__") else ver["origin"]
                     r["version_count"] = conn.execute(
-                        "SELECT COUNT(*) FROM dic_versions WHERE doc_id = ?",
+                        "SELECT COUNT(*) FROM dic_versions WHERE doc_id = %s",
                         (r["doc_id"],),
                     ).fetchone()[0]
                 else:
@@ -1653,7 +1888,7 @@ def api_collection_documents(collection_id):
                 r["version_count"] = 0
             try:
                 chunk_row = conn.execute(
-                    "SELECT COUNT(*) FROM dic_chunk_links WHERE doc_id = ?",
+                    "SELECT COUNT(*) FROM dic_chunk_links WHERE doc_id = %s",
                     (r["doc_id"],),
                 ).fetchone()
                 r["chunk_count"] = chunk_row[0] if chunk_row else 0
@@ -1689,7 +1924,7 @@ def _record_review_note(item_id: str, item_type: str, note_text: str, reviewer_i
         note_id = f"note_{hashlib.sha256(f'{item_id}:{_now()}'.encode()).hexdigest()[:16]}"
         conn.execute(
             "INSERT INTO dic_review_notes (note_id, item_id, item_type, note_text, reviewer_id, created_at) "
-            "VALUES (?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s)",
             (note_id, item_id, item_type, note_text, reviewer_id, _now()),
         )
         conn.commit()
@@ -1722,7 +1957,7 @@ def api_review_assign(item_id):
             table, pk = "dic_sections", "section_id"
         else:
             table, pk = "dic_ssp_fragments", "fragment_id"
-        conn.execute(f"UPDATE {table} SET assigned_to = ? WHERE {pk} = ?", (assigned_to, item_id))  # nosec B608 — table/pk from ternary constants, not user input
+        conn.execute(f"UPDATE {table} SET assigned_to = %s WHERE {pk} = %s", (assigned_to, item_id))  # nosec B608 — table/pk from ternary constants, not user input
         conn.commit()
         return jsonify({"status": "assigned", "item_id": item_id, "assigned_to": assigned_to})
     except Exception as exc:
@@ -1749,7 +1984,7 @@ def api_review_revise(item_id):
     try:
         if item_type == "version":
             conn.execute(
-                "UPDATE dic_versions SET status='needs_revision', review_notes=? WHERE version_id=?",
+                "UPDATE dic_versions SET status='needs_revision', review_notes=%s WHERE version_id=%s",
                 (note, item_id),
             )
         else:
@@ -1758,7 +1993,7 @@ def api_review_revise(item_id):
                 request_revision(item_id, reviewed_by=reviewer)
             except Exception:
                 conn.execute(
-                    "UPDATE dic_ssp_fragments SET status='needs_revision', reviewed_by=?, reviewed_at=? WHERE fragment_id=?",
+                    "UPDATE dic_ssp_fragments SET status='needs_revision', reviewed_by=%s, reviewed_at=%s WHERE fragment_id=%s",
                     (reviewer, _now(), item_id),
                 )
         conn.commit()
@@ -1789,7 +2024,7 @@ def api_review_approve(item_id):
     try:
         if item_type == "version":
             conn.execute(
-                "UPDATE dic_versions SET status='approved' WHERE version_id=?", (item_id,)
+                "UPDATE dic_versions SET status='approved' WHERE version_id=%s", (item_id,)
             )
         else:
             # Try ACOIC approve helper first.
@@ -1798,7 +2033,7 @@ def api_review_approve(item_id):
                 approve_fragment(item_id, reviewed_by=reviewer)
             except Exception:
                 conn.execute(
-                    "UPDATE dic_ssp_fragments SET status='approved', reviewed_by=?, reviewed_at=? WHERE fragment_id=?",
+                    "UPDATE dic_ssp_fragments SET status='approved', reviewed_by=%s, reviewed_at=%s WHERE fragment_id=%s",
                     (reviewer, _now(), item_id),
                 )
         conn.commit()
@@ -1829,7 +2064,7 @@ def api_review_reject(item_id):
     try:
         if item_type == "version":
             conn.execute(
-                "UPDATE dic_versions SET status='rejected' WHERE version_id=?", (item_id,)
+                "UPDATE dic_versions SET status='rejected' WHERE version_id=%s", (item_id,)
             )
         else:
             try:
@@ -1837,7 +2072,7 @@ def api_review_reject(item_id):
                 reject_fragment(item_id, reviewed_by=reviewer)
             except Exception:
                 conn.execute(
-                    "UPDATE dic_ssp_fragments SET status='rejected', reviewed_by=?, reviewed_at=? WHERE fragment_id=?",
+                    "UPDATE dic_ssp_fragments SET status='rejected', reviewed_by=%s, reviewed_at=%s WHERE fragment_id=%s",
                     (reviewer, _now(), item_id),
                 )
         conn.commit()
@@ -1868,7 +2103,7 @@ def api_section_lock_acquire(section_id: str):
     _c = _conn()
     try:
         doc_row = _c.execute(
-            "SELECT doc_id FROM dic_sections WHERE section_id = ? LIMIT 1", (section_id,)
+            "SELECT doc_id FROM dic_sections WHERE section_id = %s LIMIT 1", (section_id,)
         ).fetchone()
         doc_id = doc_row["doc_id"] if doc_row else ""
     finally:
@@ -1969,7 +2204,7 @@ def api_section_annotations_create(section_id: str):
     try:
         _ensure_dic_annotations(conn)
         doc_row = conn.execute(
-            "SELECT doc_id FROM dic_sections WHERE section_id = ? LIMIT 1", (section_id,)
+            "SELECT doc_id FROM dic_sections WHERE section_id = %s LIMIT 1", (section_id,)
         ).fetchone()
         doc_id = doc_row[0] if doc_row else ""
         ann_id = f"ann_{uuid.uuid4().hex[:16]}"
@@ -1979,14 +2214,14 @@ def api_section_annotations_create(section_id: str):
             """INSERT INTO dic_section_annotations
                (ann_id, section_id, doc_id, selected_text, category, comment,
                 author, status, classification, created_at, updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (ann_id, section_id, doc_id,
              (data.get("selected_text") or "").strip(),
              category, comment, author, "open", "CUI", now, now),
         )
         conn.commit()
         row = dict(conn.execute(
-            "SELECT * FROM dic_section_annotations WHERE ann_id = ?", (ann_id,)
+            "SELECT * FROM dic_section_annotations WHERE ann_id = %s", (ann_id,)
         ).fetchone())
         return jsonify(row), 201
     except Exception as exc:
@@ -2010,14 +2245,14 @@ def api_annotation_update(ann_id: str):
     conn = _conn()
     try:
         _ensure_dic_annotations(conn)
-        set_clause = ", ".join(f"{k} = ?" for k in updates)
+        set_clause = ", ".join(f"{k} = %s" for k in updates)
         conn.execute(
-            f"UPDATE dic_section_annotations SET {set_clause} WHERE ann_id = ?",
+            f"UPDATE dic_section_annotations SET {set_clause} WHERE ann_id = %s",
             [*updates.values(), ann_id],
         )
         conn.commit()
         row = conn.execute(
-            "SELECT * FROM dic_section_annotations WHERE ann_id = ?", (ann_id,)
+            "SELECT * FROM dic_section_annotations WHERE ann_id = %s", (ann_id,)
         ).fetchone()
         if not row:
             return jsonify({"error": "not found"}), 404
@@ -2033,7 +2268,7 @@ def api_annotation_delete(ann_id: str):
     conn = _conn()
     try:
         _ensure_dic_annotations(conn)
-        conn.execute("DELETE FROM dic_section_annotations WHERE ann_id = ?", (ann_id,))
+        conn.execute("DELETE FROM dic_section_annotations WHERE ann_id = %s", (ann_id,))
         conn.commit()
         return jsonify({"deleted": ann_id})
     except Exception as exc:
@@ -2055,7 +2290,7 @@ def api_section_approve(section_id):
     conn = _conn()
     try:
         conn.execute(
-            "UPDATE dic_sections SET status='approved', reviewed_by=?, reviewed_at=? WHERE section_id=?",
+            "UPDATE dic_sections SET status='approved', reviewed_by=%s, reviewed_at=%s WHERE section_id=%s",
             (reviewer, _now(), section_id),
         )
         conn.commit()
@@ -2079,7 +2314,7 @@ def api_section_reject(section_id):
     conn = _conn()
     try:
         conn.execute(
-            "UPDATE dic_sections SET status='rejected', reviewed_by=?, reviewed_at=? WHERE section_id=?",
+            "UPDATE dic_sections SET status='rejected', reviewed_by=%s, reviewed_at=%s WHERE section_id=%s",
             (reviewer, _now(), section_id),
         )
         conn.commit()
@@ -2103,7 +2338,7 @@ def api_section_revise(section_id):
     conn = _conn()
     try:
         conn.execute(
-            "UPDATE dic_sections SET status='needs_revision', reviewed_by=?, reviewed_at=? WHERE section_id=?",
+            "UPDATE dic_sections SET status='needs_revision', reviewed_by=%s, reviewed_at=%s WHERE section_id=%s",
             (reviewer, _now(), section_id),
         )
         conn.commit()
@@ -2129,7 +2364,7 @@ def api_section_update_content(section_id):
     try:
         # Capture before-content for edit history + conflict detection
         before_row = conn.execute(
-            "SELECT content FROM dic_sections WHERE section_id = ? LIMIT 1", (section_id,)
+            "SELECT content FROM dic_sections WHERE section_id = %s LIMIT 1", (section_id,)
         ).fetchone()
         before_content = (dict(before_row).get("content") or "") if before_row else ""
 
@@ -2146,7 +2381,7 @@ def api_section_update_content(section_id):
                 }), 409
 
         conn.execute(
-            "UPDATE dic_sections SET content = ?, status = ?, origin = ?, created_at = ? WHERE section_id = ?",
+            "UPDATE dic_sections SET content = %s, status = %s, origin = %s, created_at = %s WHERE section_id = %s",
             (content, "draft", "human_authored", _now(), section_id),
         )
         conn.commit()
@@ -2210,6 +2445,32 @@ _TEMPLATE_SECTIONS: dict[str, list[str]] = {
     "hitl-review": ["Review Queue", "Reviewer Assignments", "Acceptance Criteria", "Escalation Path"],
     "sop-refresh": ["Current Procedure", "Change Summary", "Updated Steps", "Validation Criteria", "Rollback Plan"],
     "knowledge-handoff": ["SME Profile", "Knowledge Areas", "Interview Agenda", "Captured Artifacts", "Successor Onboarding"],
+    # Tech Writer templates (migration 230)
+    "STANDARD_GUIDE": [
+        "Executive Summary", "Scope and Applicability", "Cloud Provider Overview",
+        "Connectivity Patterns", "Security Controls", "Implementation Steps",
+        "Operational Procedures", "Troubleshooting", "References",
+    ],
+    "SOP": [
+        "Purpose", "Scope", "Responsibilities", "Prerequisites",
+        "Procedure", "Verification", "Rollback", "References",
+    ],
+    "RUNBOOK": [
+        "Overview", "Prerequisites", "Pre-flight Checks",
+        "Procedure", "Verification Steps", "Rollback", "Escalation Path",
+    ],
+    "ARCH_NETWORK": [
+        "Architecture Overview", "Network Topology", "Segmentation Strategy",
+        "Traffic Flows", "Security Controls", "Diagrams", "Decision Log",
+    ],
+    "ARCH_APPLICATION": [
+        "System Context", "Component Diagram", "API Contracts",
+        "Data Flow", "Security Considerations", "Deployment Architecture", "Decision Log",
+    ],
+    "ARCH_SYSTEM": [
+        "Mission and Goals", "Stakeholders", "System Boundary",
+        "Key Components", "Interfaces", "Quality Attributes", "Decision Log",
+    ],
 }
 
 
@@ -2231,6 +2492,13 @@ def api_template_instantiate(template_id):
     doc_id = _hid("dic_tpl", template_id, collection_id, now)
     version_id = f"{doc_id}_v1"
 
+    # Tech writer templates skip HITL — authors own approval.
+    is_techwriter = template_meta.get("category") == "techwriter"
+    from tools.document_intelligence.constants import TEMPLATE_TYPE_TO_WRITEGUARD_MODE
+    wg_mode = TEMPLATE_TYPE_TO_WRITEGUARD_MODE.get(template_id, "default") if is_techwriter else "default"
+    doc_origin = "human_authored" if is_techwriter else "template"
+    doc_status = "approved" if is_techwriter else "draft"
+
     conn = _conn()
     try:
         cur = conn.cursor()
@@ -2239,13 +2507,15 @@ def api_template_instantiate(template_id):
             INSERT OR REPLACE INTO dic_documents
                 (doc_id, collection_id, source_id, filename, filepath,
                  content_type, provider, title, byte_size, content_sha256,
-                 page_count, created_at, tenant_id, classification)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 page_count, created_at, tenant_id, classification,
+                 template_type, writeguard_mode)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 doc_id, collection_id, doc_id, f"{template_id}-template.md", "",
                 "text/markdown", "template", template_meta["name"], 0, "",
                 len(sections), now, tenant_id, classification,
+                template_id if is_techwriter else None, wg_mode,
             ),
         )
         cur.execute(
@@ -2253,10 +2523,10 @@ def api_template_instantiate(template_id):
             INSERT OR REPLACE INTO dic_versions
                 (version_id, doc_id, version_no, origin, status,
                  content_sha256, created_at, created_by, tenant_id, classification)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
-                version_id, doc_id, 1, "template", "draft",
+                version_id, doc_id, 1, doc_origin, doc_status,
                 "", now, created_by, tenant_id, classification,
             ),
         )
@@ -2267,11 +2537,11 @@ def api_template_instantiate(template_id):
                 INSERT OR REPLACE INTO dic_sections
                     (section_id, version_id, doc_id, heading, content,
                      citations_json, status, origin, created_at, created_by, tenant_id, classification)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     section_id, version_id, doc_id, heading, "",
-                    "[]", "draft", "template", now, created_by, tenant_id, classification,
+                    "[]", doc_status, doc_origin, now, created_by, tenant_id, classification,
                 ),
             )
         conn.commit()
@@ -2384,7 +2654,7 @@ def api_section_style_check(section_id: str):
     conn = _conn()
     try:
         row = conn.execute(
-            "SELECT heading, content FROM dic_sections WHERE section_id = ? LIMIT 1",
+            "SELECT heading, content FROM dic_sections WHERE section_id = %s LIMIT 1",
             (section_id,),
         ).fetchone()
         if not row:
@@ -2823,12 +3093,12 @@ def api_suggestion_accept(suggestion_id: str):
     conn = _conn()
     try:
         before_row = conn.execute(
-            "SELECT content FROM dic_sections WHERE section_id = ? LIMIT 1", (section_id,)
+            "SELECT content FROM dic_sections WHERE section_id = %s LIMIT 1", (section_id,)
         ).fetchone()
         before_content = (dict(before_row).get("content") or "") if before_row else ""
 
         conn.execute(
-            "UPDATE dic_sections SET content = ?, status = ?, origin = ?, created_at = ? WHERE section_id = ?",
+            "UPDATE dic_sections SET content = %s, status = %s, origin = %s, created_at = %s WHERE section_id = %s",
             (suggested_content, "draft", "ai_generated", _now(), section_id),
         )
         conn.commit()
@@ -2928,7 +3198,7 @@ def api_section_suggest(section_id: str):
     try:
         conn = _conn()
         cur = conn.execute(
-            "SELECT content FROM dic_sections WHERE section_id = ? LIMIT 1",
+            "SELECT content FROM dic_sections WHERE section_id = %s LIMIT 1",
             (section_id,),
         )
         row = cur.fetchone()
@@ -3460,7 +3730,7 @@ def api_output_detail(output_id: str):
     try:
         row = conn.execute(
             "SELECT id, output_type, content_json, provider, status, created_at "
-            "FROM dic_generated_outputs WHERE id = ? AND tenant_id = ?",
+            "FROM dic_generated_outputs WHERE id = %s AND tenant_id = %s",
             (output_id, tenant_id),
         ).fetchone()
     finally:
@@ -3500,7 +3770,7 @@ def api_generate_tasks():
     try:
         row = conn.execute(
             "SELECT output_type, content_json FROM dic_generated_outputs "
-            "WHERE id = ? AND tenant_id = ?",
+            "WHERE id = %s AND tenant_id = %s",
             (output_id, tenant_id),
         ).fetchone()
     finally:
@@ -3588,7 +3858,7 @@ def api_generate_slides():
     try:
         row = conn.execute(
             "SELECT output_type, content_json FROM dic_generated_outputs "
-            "WHERE id = ? AND tenant_id = ?",
+            "WHERE id = %s AND tenant_id = %s",
             (output_id, tenant_id),
         ).fetchone()
     finally:
@@ -3671,7 +3941,7 @@ def api_generate_slides():
         try:
             cur = sconn.execute(
                 "INSERT INTO slides_decks (title, deck_type, theme, status, source_types) "
-                "VALUES (?, ?, ?, 'running', ?) RETURNING deck_id",
+                "VALUES (%s, %s, %s, 'running', %s) RETURNING deck_id",
                 (deck_title, "executive_overview", theme, json.dumps(["dic"])),
             )
             row2 = cur.fetchone()
@@ -3685,15 +3955,15 @@ def api_generate_slides():
             pptx_path = pptx_builder.build(slide_dicts, theme=theme, title=deck_title)
             now_iso = _dt.now(_tz.utc).isoformat()
             sconn.execute(
-                "UPDATE slides_decks SET status='completed', slide_count=?, pptx_path=?, "
-                "completed_at=? WHERE deck_id=?",
+                "UPDATE slides_decks SET status='completed', slide_count=%s, pptx_path=%s, "
+                "completed_at=%s WHERE deck_id=%s",
                 (len(slide_dicts), pptx_path, now_iso, deck_id),
             )
             for i, sd in enumerate(slide_dicts):
                 sconn.execute(
                     "INSERT INTO slides_slides "
                     "(deck_id, position, slide_type, title, bullets, speaker_notes) "
-                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    "VALUES (%s, %s, %s, %s, %s, %s)",
                     (
                         deck_id, i + 1,
                         sd.get("slide_type", "content"),
@@ -3706,7 +3976,7 @@ def api_generate_slides():
         except Exception as exc:
             try:
                 sconn.execute(
-                    "UPDATE slides_decks SET status='failed', error_message=? WHERE deck_id=?",
+                    "UPDATE slides_decks SET status='failed', error_message=%s WHERE deck_id=%s",
                     (str(exc), deck_id),
                 )
                 sconn.commit()
@@ -3749,7 +4019,7 @@ def api_generate_roadmap():
     try:
         row = conn.execute(
             "SELECT output_type, content_json FROM dic_generated_outputs "
-            "WHERE id = ? AND tenant_id = ?",
+            "WHERE id = %s AND tenant_id = %s",
             (output_id, tenant_id),
         ).fetchone()
     finally:
@@ -3861,7 +4131,7 @@ def api_attach_coworker(collection_id):
                 )"""
             )
             conn.execute(
-                "INSERT INTO coworker_dic_contexts (id, instance_id, collection_id) VALUES (?, NULL, ?)",
+                "INSERT INTO coworker_dic_contexts (id, instance_id, collection_id) VALUES (%s, NULL, %s)",
                 (_uuid.uuid4().hex, collection_id),
             )
             conn.commit()

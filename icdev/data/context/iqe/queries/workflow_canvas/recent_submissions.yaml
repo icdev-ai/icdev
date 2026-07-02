@@ -1,0 +1,7 @@
+query: "Show recent form submissions"
+canvas: workflow_canvas
+collection: wfc.submissions
+examples:
+  - "What submissions came in today"
+  - "Recent form responses"
+  - "How many submissions this week"

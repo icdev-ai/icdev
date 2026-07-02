@@ -46,7 +46,7 @@ def scan_ops(project_id: str) -> dict:
         with get_canvas_connection() as conn:
             cur = conn.cursor()
             cur.execute(
-                "SELECT metric_key, metric_value FROM ohc_ops_metrics WHERE project_id = ? ORDER BY created_at DESC LIMIT 30",
+                "SELECT metric_key, metric_value FROM ohc_ops_metrics WHERE project_id = %s ORDER BY created_at DESC LIMIT 30",
                 (project_id,),
             )
             rows = cur.fetchall()

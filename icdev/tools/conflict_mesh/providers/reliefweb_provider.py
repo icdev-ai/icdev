@@ -15,7 +15,6 @@ Maps report fields to the canonical conflict mesh schema:
 from __future__ import annotations
 
 import json
-import logging
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -27,8 +26,9 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from tools.conflict_mesh.providers.base import MeshProvider  # noqa: E402
+from tools.logging.icdev_logger import get_logger
 
-logger = logging.getLogger("conflict_mesh.reliefweb")
+log = get_logger("conflict_mesh.reliefweb")
 
 RELIEFWEB_BASE_URL = "https://api.reliefweb.int/v1"
 _REQUEST_TIMEOUT = 20
@@ -116,5 +116,5 @@ class ReliefWebProvider(MeshProvider):
             items = data.get("data", [])
             return [self.normalize(item) for item in items]
         except (HTTPError, URLError, OSError, json.JSONDecodeError, Exception) as exc:
-            logger.warning("ReliefWeb fetch failed: %s", exc)
+            log.warning("ReliefWeb fetch failed: %s", exc)
             return []

@@ -18,10 +18,13 @@ from tools.ai_augmentation.agent_readiness.pillars._base import (
 # ---------------------------------------------------------------------------
 # Anomaly-detection threshold loader
 # ---------------------------------------------------------------------------
-_ARGS_PATH = pathlib.Path(__file__).parents[5] / "args" / "agent_readiness_config.yaml"
+_ARGS_PATH = pathlib.Path(__file__).parents[4] / "args" / "agent_readiness_config.yaml"
 _DEFAULTS: dict[str, Any] = {
-    "cui_header_sample_size": 30,
-    "cui_header_min_marked_ratio": 0.5,
+    "sample_size": 30,
+    "min_header_ratio": 0.5,
+    "warn_header_ratio": 0.3,
+    "adaptive_min_floor": 10,
+    "adaptive_corpus_divisor": 5,
 }
 
 
@@ -37,12 +40,11 @@ def _load_thresholds() -> dict[str, Any]:
         data = yaml.safe_load(raw) or {}
         cfg = data.get("pillars", {}).get("il_classification", {}).get("cui_file_headers", {})
         return {
-            "cui_header_sample_size": int(
-                cfg.get("sample_size", _DEFAULTS["cui_header_sample_size"])
-            ),
-            "cui_header_min_marked_ratio": float(
-                cfg.get("min_marked_ratio", _DEFAULTS["cui_header_min_marked_ratio"])
-            ),
+            "sample_size": int(cfg.get("sample_size", _DEFAULTS["sample_size"])),
+            "min_header_ratio": float(cfg.get("min_header_ratio", _DEFAULTS["min_header_ratio"])),
+            "warn_header_ratio": float(cfg.get("warn_header_ratio", _DEFAULTS["warn_header_ratio"])),
+            "adaptive_min_floor": int(cfg.get("adaptive_min_floor", _DEFAULTS["adaptive_min_floor"])),
+            "adaptive_corpus_divisor": int(cfg.get("adaptive_corpus_divisor", _DEFAULTS["adaptive_corpus_divisor"])),
         }
     except Exception:  # noqa: BLE001
         return dict(_DEFAULTS)
@@ -56,12 +58,17 @@ _IL_PATTERN = r"\bIL[4-6]\b|\bimpact\s+level\s+[4-6]\b"
 def _check_cui_file_headers(repo: pathlib.Path) -> CriterionResult:
     cid = "cui-file-headers"
     thresholds = _load_thresholds()
-    sample_size = thresholds["cui_header_sample_size"]
-    min_ratio = thresholds["cui_header_min_marked_ratio"]
+    sample_size = thresholds["sample_size"]
+    min_ratio = thresholds["min_header_ratio"]
+    warn_ratio = thresholds["warn_header_ratio"]
+    adaptive_min_floor = thresholds["adaptive_min_floor"]
+    adaptive_divisor = thresholds["adaptive_corpus_divisor"]
     py_files = _glob_files(repo, "**/*.py")
     if not py_files:
         return CriterionResult(cid, True, "No Python source files; CUI header check skipped.", skipped=True)
-    sample = py_files[:sample_size]
+    # Adaptive sample: cap at sample_size but never below adaptive_min_floor when enough files exist.
+    adaptive = min(sample_size, max(adaptive_min_floor, len(py_files) // adaptive_divisor))
+    sample = py_files[:adaptive]
     marked = []
     for f in sample:
         content = f.read_text(encoding="utf-8", errors="replace")
@@ -71,10 +78,11 @@ def _check_cui_file_headers(repo: pathlib.Path) -> CriterionResult:
     ratio = len(marked) / len(sample)
     if ratio >= min_ratio:
         return CriterionResult(cid, True, f"CUI/classification headers found in {len(marked)}/{len(sample)} sampled files")
-    if marked:
+    if ratio >= warn_ratio:
         return CriterionResult(cid, False, f"Only {len(marked)}/{len(sample)} sampled files have CUI headers (min ratio {min_ratio:.0%}).",
                                "Add '# CUI // SP-CTI' or equivalent classification header to all source files.")
-    return CriterionResult(cid, False, "No CUI classification headers found in sampled source files.",
+    return CriterionResult(cid, False,
+                           f"No/anomalously low CUI headers in {len(marked)}/{len(sample)} sampled files (warn ratio {warn_ratio:.0%}).",
                            "Add classification markings to all source files per NIST SP 800-171 requirements.")
 
 

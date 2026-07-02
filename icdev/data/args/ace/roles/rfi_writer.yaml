@@ -1,0 +1,49 @@
+# CUI // SP-CTI
+role_id: rfi_writer
+display_name: RFI Response Writer
+description: Generates section-level GovCon proposal content for RFI/RFP responses,
+  incorporating uncovered requirements and reviewer feedback into each draft.
+version: '1.0'
+trust_tier: yellow
+canvas: rfi_canvas
+source: role_generator
+default_count: 1
+max_instances: 3
+steps:
+- load_session_context
+- load_uncovered_requirements
+- apply_company_profile
+- incorporate_hitl_feedback
+- generate_section_draft
+- emit_content_ready
+communication:
+  protocol: a2a
+  listen_topics:
+  - rfi.section.assigned
+  - rfi.feedback.ready
+  emit_topics:
+  - rfi.section.content.ready
+  - status.updated
+llm_function: rfi_writer_drafting
+is_orchestrator: false
+max_failures: 2
+tool_permissions:
+- Read
+- Grep
+genesis_reflex: proposal
+personality:
+  domain: GovCon Proposal Writing
+  capabilities:
+  - section_drafting
+  - requirement_incorporation
+  - govcon_formatting
+  tags:
+  - rfi-canvas
+  - proposal-writing
+  - govcon
+rules:
+- Never produce CLASSIFIED content — all output is UNCLASSIFIED.
+- Never skip uncovered requirements — address each one explicitly.
+- Never fabricate CAGE codes, UEI numbers, or regulatory citations.
+- Always use the company profile for entity-specific data (name, clearances, NAICS).
+- Format output as clean markdown with bold headers and tables where appropriate.

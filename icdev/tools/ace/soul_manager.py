@@ -260,38 +260,3 @@ def build_identity_preamble(role: str) -> str:
             lines.append(f"- {fact['content']}")
 
     return "\n".join(lines)
-
-
-def inject_user_profile_context(
-    soul_text: str,
-    user_id: str,
-    tenant_id: str = "default",
-) -> str:
-    """Prepend a 'WHO YOU ARE WORKING WITH' block to *soul_text* from the user's world model.
-
-    Safe to call unconditionally — returns *soul_text* unchanged if the profile
-    doesn't exist or the second_brain module is unavailable.
-    """
-    if not user_id:
-        return soul_text
-    try:
-        from tools.second_brain.profile import build_world_model_context
-        ctx = build_world_model_context(user_id, tenant_id)
-        if not ctx:
-            return soul_text
-        objs = "; ".join(ctx.get("objectives", [])[:3]) or "not yet defined"
-        chals = "; ".join(ctx.get("challenge_keys", [])[:3]) or "not yet defined"
-        rels = ", ".join(ctx.get("relationship_names", [])[:5]) or "not yet defined"
-        preamble = (
-            "=== WHO YOU ARE WORKING WITH ===\n"
-            f"Name: {ctx.get('name','Unknown')} | Role: {ctx.get('title','')} | Org: {ctx.get('org_name','')}\n"
-            f"Timezone: {ctx.get('timezone','UTC')} | Style: {ctx.get('comm_style_label','balanced')}\n"
-            f"Objectives: {objs}\n"
-            f"Challenges: {chals}\n"
-            f"Key relationships: {rels}\n"
-            "=================================\n\n"
-        )
-        return preamble + soul_text
-    except Exception as exc:
-        logger.debug("[soul] inject_user_profile_context failed: %s", exc)
-        return soul_text

@@ -34,6 +34,7 @@ Subcommands:
   disable <name> [...]     Disable — flip flags to false.
   status [--json]          Report which toggles are currently on/off.
   list [--json]            List supported toggle names + descriptions.
+  audit export             Export SOC 2 (and future framework) evidence reports.
   demo seed --tenant <slug> [--canvases <c1,c2,...>]
                            Provision a demo tenant with synthetic data and
                            ICDEV_DEMO_MODE enabled (read-only banner).
@@ -74,6 +75,10 @@ def main(argv: list[str] | None = None) -> int:
     if sub == "profile":
         from icdev.tools.cli.profile import main as profile_main
         return profile_main(rest)
+
+    if sub == "audit":
+        from tools.cli.audit import main as audit_main
+        return audit_main(rest)
 
     if sub == "demo":
         return _demo_main(rest)

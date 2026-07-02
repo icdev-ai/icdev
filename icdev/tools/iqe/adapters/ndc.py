@@ -55,6 +55,22 @@ _COLLECTIONS = [
     "network.ai_decisions",
     "network.partners",
     "network.agreements_expiring",
+    "network.diagram_uploads",
+    "network.diagram_analyses",
+    "network.diagram_findings",
+    # PVM — Predictive Vulnerability Management collections
+    "network.vuln_predictions",
+    "network.attack_surface",
+    "network.triage_queue",
+    "network.patch_plans",
+    "network.advisories",
+    # PNA — Predictive Network Analytics collections
+    "network.eol_predictions",
+    "network.bgp_predictions",
+    "network.compliance_drift",
+    "network.capacity_predictions",
+    "network.change_risk",
+    "network.supply_chain_risk",
 ]
 
 
@@ -157,6 +173,85 @@ class NDCAdapter(IQEAdapter):
                 "monthly_cost_usd FROM nc_peering_agreements "
                 "WHERE status='operational' AND contract_end != '' AND contract_end <= date('now', '+90 days') "
                 "ORDER BY contract_end ASC",
+            )
+        elif collection == "network.diagram_uploads":
+            rows = _fetch(conn, "SELECT * FROM nc_diagram_uploads ORDER BY uploaded_at DESC")
+        elif collection == "network.diagram_analyses":
+            rows = _fetch(conn, "SELECT * FROM nc_diagram_analyses ORDER BY created_at DESC")
+        elif collection == "network.diagram_findings":
+            sql = (
+                "SELECT f.*, a.industry, a.topology_mode FROM nc_diagram_findings f "
+                "JOIN nc_diagram_analyses a ON a.id = f.analysis_id "
+                "ORDER BY f.created_at DESC"
+            )
+            rows = _fetch(conn, sql)
+        # ── PVM — Predictive Vulnerability Management ─────────────────────
+        elif collection == "network.vuln_predictions":
+            rows = _fetch(
+                conn,
+                "SELECT * FROM nc_vuln_predictions ORDER BY risk_score_composite DESC LIMIT 200",
+            )
+        elif collection == "network.attack_surface":
+            rows = _fetch(
+                conn,
+                "SELECT * FROM nc_attack_surface ORDER BY surface_score DESC LIMIT 500",
+            )
+        elif collection == "network.triage_queue":
+            rows = _fetch(
+                conn,
+                "SELECT * FROM nc_triage_queue ORDER BY rank ASC NULLS LAST",
+            )
+        elif collection == "network.patch_plans":
+            rows = _fetch(
+                conn,
+                "SELECT * FROM nc_patch_plans ORDER BY scheduled_at ASC LIMIT 500",
+            )
+        elif collection == "network.advisories":
+            rows = _fetch(
+                conn,
+                """SELECT a.*,
+                          aa.impacted_count,
+                          aa.cross_validation_delta_pct,
+                          aa.approved_by AS assessment_approved_by,
+                          aa.created_at AS assessment_date
+                   FROM nc_advisories a
+                   LEFT JOIN nc_advisory_assessments aa ON aa.id = (
+                       SELECT id FROM nc_advisory_assessments
+                       WHERE advisory_id = a.id
+                       ORDER BY created_at DESC LIMIT 1
+                   )
+                   ORDER BY a.created_at DESC LIMIT 200""",
+            )
+        # ── PNA — Predictive Network Analytics ────────────────────────────
+        elif collection == "network.eol_predictions":
+            rows = _fetch(
+                conn,
+                "SELECT * FROM nc_eol_predictions ORDER BY risk_score DESC LIMIT 200",
+            )
+        elif collection == "network.bgp_predictions":
+            rows = _fetch(
+                conn,
+                "SELECT * FROM nc_bgp_predictions ORDER BY stability_score ASC LIMIT 200",
+            )
+        elif collection == "network.compliance_drift":
+            rows = _fetch(
+                conn,
+                "SELECT * FROM nc_compliance_drift ORDER BY risk_score DESC LIMIT 200",
+            )
+        elif collection == "network.capacity_predictions":
+            rows = _fetch(
+                conn,
+                "SELECT * FROM nc_capacity_predictions ORDER BY risk_score DESC LIMIT 200",
+            )
+        elif collection == "network.change_risk":
+            rows = _fetch(
+                conn,
+                "SELECT * FROM nc_change_risk ORDER BY failure_probability DESC LIMIT 200",
+            )
+        elif collection == "network.supply_chain_risk":
+            rows = _fetch(
+                conn,
+                "SELECT * FROM nc_supply_chain_risk ORDER BY risk_score DESC LIMIT 100",
             )
         else:
             raise ValueError(

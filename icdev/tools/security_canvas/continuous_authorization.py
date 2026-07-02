@@ -3,7 +3,7 @@
 
 Implements continuous application security monitoring and automated ongoing
 authorization (cATO). Each application carries a live authorization posture
-derived from DAST gates, runtime checks, vulnerability drift, and control
+computed from DAST gates, runtime checks, vulnerability drift, and control
 status. When posture degrades below the ATO maintenance threshold, the
 authorization is automatically suspended pending remediation — replacing the
 periodic point-in-time ATO with a continuous one.

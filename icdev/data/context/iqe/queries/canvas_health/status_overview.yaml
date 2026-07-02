@@ -1,0 +1,7 @@
+collection: canvas_health.canvas_status
+query: "Show all canvas health status"
+description: "List every registered canvas with its QA status (green/amber/red), route, and open issues."
+example_questions:
+  - "Which canvases are healthy?"
+  - "Show me the overall canvas QA posture"
+  - "How many canvases are in amber state?"

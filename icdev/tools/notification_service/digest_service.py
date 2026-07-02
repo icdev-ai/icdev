@@ -40,6 +40,17 @@ _NARR_CFG = _load_narrative_config()
 _NARRATIVE_MAX_TOKENS: int = int(_NARR_CFG.get("max_tokens", 512))
 _NARRATIVE_TEMPERATURE: float = float(_NARR_CFG.get("temperature", 0.3))
 
+# Query / slice limits used by notification consumers and tests
+_KANBAN_DONE_LIMIT         = 5
+_ORACLE_TOP_PREDS_LIMIT    = 5
+_AIIFY_TOP_OPPS_LIMIT      = 5
+_AGENT_ERRORS_LIMIT        = 5
+_ZIG_GAPS_LIMIT            = 10
+_POAM_DAYS_AHEAD           = 14
+_AUDIT_SINCE_HOURS         = 24
+_NARRATIVE_TOP_PREDS_SLICE = 3
+_NARRATIVE_TOP_OPPS_SLICE  = 3
+
 # ---------------------------------------------------------------------------
 # AI-ification (aiify-opp-5556): optional LLM-synthesized digest narrative.
 #

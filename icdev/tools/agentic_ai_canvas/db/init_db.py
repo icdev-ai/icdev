@@ -744,7 +744,7 @@ def _seed_templates(conn) -> None:
         conn.execute(
             "INSERT INTO aadc_templates "
             "(id, name, category, description, graph_json, compliance_badges, autonomy_max, tags) "
-            "VALUES (?,?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
             (f"tpl-{_uid()}", name, cat, desc,
              json.dumps(graph), json.dumps(badges), autonomy, tags),
         )
@@ -879,7 +879,7 @@ def _seed_snippets(conn) -> None:
         conn.execute(
             "INSERT INTO aadc_snippets "
             "(id, name, category, description, graph_json, node_count, tags) "
-            "VALUES (?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s)",
             (f"snp-{_uid()}", name, cat, desc,
              json.dumps({"nodes": nodes, "edges": edges}), nc, tags),
         )
@@ -901,7 +901,7 @@ def _seed_solution_packs(conn) -> None:
         conn.execute(
             "INSERT INTO aadc_templates "
             "(id, name, category, description, graph_json, compliance_badges, autonomy_max, tags) "
-            "VALUES (?,?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
             (
                 f"sp-{_uid()}",
                 p["name"],
@@ -992,7 +992,7 @@ if __name__ == "__main__":
         ).fetchall()
         print(f"AADC Canvas DB initialized: {len(tables)} tables")
         for t in tables:
-            count = conn.execute(f"SELECT COUNT(*) FROM [{t[0]}]").fetchone()[0]  # noqa: S608  # nosec B608 — t[0] from sqlite_master table list, not user input
+            count = conn.execute(f"SELECT COUNT(*) FROM [{t[0]}]").fetchone()[0]  # noqa: S608
             print(f"  {t[0]}: {count} rows")
     finally:
         conn.close()

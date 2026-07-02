@@ -154,7 +154,7 @@ def advise_retry_threshold(
     prompt = _build_prompt(endpoint_url, scan_context or {})
 
     try:
-        from tools.llm.router import LLMRouter, LLMUnavailableError
+        from tools.llm.router import LLMRouter
         from tools.llm.provider import LLMRequest
     except ImportError:
         return _DEFAULT_THRESHOLD

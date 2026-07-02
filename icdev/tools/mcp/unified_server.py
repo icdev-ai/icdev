@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# Path setup must come first so ICDev's tools/ wins over any shadowing packages (e.g. FathomDesk)
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent.parent.parent))
 
 from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
@@ -100,11 +104,25 @@ class UnifiedMCPServer(MCPServer):
 
         logger.info("Registered %d tools from unified registry", len(TOOL_REGISTRY))
 
-        # Register resources with lazy dispatch
+        # Register resources vs tool-overflow entries from RESOURCE_REGISTRY.
+        # True resources have a "name" field; tool-like entries (with "input_schema")
+        # were placed in RESOURCE_REGISTRY by mistake and are registered as tools.
+        resource_count = 0
+        tool_overflow_count = 0
         for uri, entry in RESOURCE_REGISTRY.items():
-            self._register_lazy_resource(uri, entry)
+            if "name" in entry:
+                self._register_lazy_resource(uri, entry)
+                resource_count += 1
+            elif "input_schema" in entry:
+                self._register_lazy_tool(uri, entry)
+                tool_overflow_count += 1
 
-        logger.info("Registered %d resources from unified registry", len(RESOURCE_REGISTRY))
+        logger.info("Registered %d resources from unified registry", resource_count)
+        if tool_overflow_count:
+            logger.info(
+                "Registered %d tool-overflow entries from RESOURCE_REGISTRY as tools",
+                tool_overflow_count,
+            )
 
     def _register_lazy_tool(self, tool_name: str, entry: dict) -> None:
         """Register a single tool with a lazy-loading handler closure."""

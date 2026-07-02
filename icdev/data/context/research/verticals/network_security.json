@@ -1,0 +1,249 @@
+{
+  "id": "vert-network-security",
+  "name": "Network Security & Predictive Vulnerability Management",
+  "slug": "network_security",
+  "description": "Enterprise network security operations spanning CVE advisory management, vulnerability prioritization, automated remediation, and predictive risk modeling. Focuses on network device vulnerability lifecycle — from discovery (Nessus/ACAS, CVE feeds) through triage (CVSS + KEV), impact assessment (digital twin, Forward Networks NQE), and patch planning. Covers DoD/GovCloud environments (DISA STIGs, CISA BODs, NSA guidance) as well as enterprise (Tenable, Qualys, Rapid7, Armis) and OT/ICS (Claroty, Dragos, Skybox) markets.",
+  "keywords": [
+    "vulnerability management",
+    "CVE",
+    "CVSS",
+    "CISA KEV",
+    "patch management",
+    "network security",
+    "network vulnerability scanning",
+    "Nessus",
+    "ACAS",
+    "Tenable",
+    "Qualys",
+    "Rapid7",
+    "attack surface management",
+    "attack surface",
+    "remediation prioritization",
+    "DISA STIG",
+    "NSA guidance",
+    "predictive vulnerability",
+    "risk scoring",
+    "Forward Networks",
+    "NQE",
+    "network query engine",
+    "digital twin network",
+    "network compliance",
+    "BGP security",
+    "device inventory",
+    "OS version management",
+    "zero-day",
+    "exploit prediction",
+    "threat intelligence feeds",
+    "EPSS",
+    "exploit prediction scoring system",
+    "OT security",
+    "ICS vulnerability",
+    "SBOM network devices",
+    "firmware vulnerability"
+  ],
+  "regulatory_bodies": [
+    "CISA",
+    "NIST",
+    "NSA",
+    "DISA",
+    "DoD",
+    "CNSS",
+    "NIST NCSC"
+  ],
+  "regulations": [
+    "DISA STIGs",
+    "NSA CSfC",
+    "CISA BOD 22-01 (KEV Catalog)",
+    "CISA BOD 19-02 (Critical Vulnerability Remediation)",
+    "NIST SP 800-40 (Patch Management)",
+    "NIST SP 800-82 (ICS/OT Security)",
+    "NIST SP 800-53 RA-5 (Vulnerability Monitoring & Scanning)",
+    "NIST SP 800-53 SI-2 (Flaw Remediation)",
+    "NIST SP 800-53 SI-4 (System Monitoring)",
+    "NIST CSF 2.0 (IDENTIFY.RA, RESPOND.MI)",
+    "FedRAMP SA-11 (Developer Security Testing)",
+    "CMMC AC.3.012",
+    "DoDI 8500.01 (Cybersecurity Activities)"
+  ],
+  "pain_points": [
+    "CVSS fatigue — too many high/critical CVEs with no actionable priority",
+    "Alert overload from Nessus/ACAS scans without risk context",
+    "Patch lag — average 60+ days from CVE disclosure to remediation",
+    "No reachability context — scanners report CVEs but not whether devices are actually reachable/exploitable",
+    "Change window constraints blocking urgent patching",
+    "Manual blast radius estimation before patching changes",
+    "No time-series tracking of risk trajectory per CVE",
+    "Disconnected tools — scanners, ticketing, change management not integrated",
+    "STIG/POAM documentation is manual and disconnected from scan data",
+    "False positives from signature-based scanners waste analyst time"
+  ],
+  "competitors": [
+    {"name": "Tenable", "products": ["Tenable.io", "Tenable.sc", "Tenable.ot"], "strength": "Market leader, largest plugin library, strong enterprise penetration"},
+    {"name": "Qualys", "products": ["VMDR", "TruRisk", "CyberSecurity Asset Management"], "strength": "SaaS-native, strong VMDR prioritization with TruRisk score"},
+    {"name": "Rapid7", "products": ["InsightVM", "Nexpose"], "strength": "Attacker-centric prioritization, strong IR integration"},
+    {"name": "Armis", "products": ["Centrix"], "strength": "Agentless asset discovery + OT/IoT coverage"},
+    {"name": "Claroty", "products": ["Continuous Threat Detection"], "strength": "OT/ICS specialist, industrial protocol awareness"},
+    {"name": "Skybox Security", "products": ["Vulnerability Control"], "strength": "Network path analysis + attack simulation, change management integration"},
+    {"name": "Brinqa", "products": ["Risk Platform"], "strength": "Aggregates multiple scanners, unified risk scoring"},
+    {"name": "Kenna Security (Cisco)", "products": ["Vulnerability Management"], "strength": "ML-driven exploit prediction, EPSS integration"},
+    {"name": "Forward Networks", "products": ["NQE", "Verify", "Predict"], "strength": "Mathematical network model, NQL querying, reachability verification"}
+  ],
+  "icdev_differentiators": [
+    "NQE-powered reachability verification — knows if CVE-affected device is actually reachable before scheduling patch",
+    "Digital twin blast radius simulation before every remediation action",
+    "Dual-query cross-validation with HITL approval gate (Jaccard divergence scoring)",
+    "POAM + ATO evidence auto-generation from assessment results",
+    "Bayesian optimal prioritization ordering for analyst review queues",
+    "Time-series risk trajectory forecasting (30d/90d)",
+    "Integrated with DoD compliance frameworks (NIST 800-53, DISA STIG, FedRAMP) natively"
+  ],
+  "academic_categories": {
+    "arxiv": [
+      "cs.CR",
+      "cs.NI",
+      "cs.LG"
+    ],
+    "ieee": [
+      "vulnerability assessment",
+      "network security",
+      "exploit prediction",
+      "patch management",
+      "attack surface analysis"
+    ],
+    "acm": [
+      "security and privacy",
+      "network measurement",
+      "systems security"
+    ]
+  },
+  "community_sources": {
+    "reddit": [
+      "r/netsec",
+      "r/cybersecurity",
+      "r/AskNetsec",
+      "r/blueteamsec",
+      "r/sysadmin",
+      "r/networking"
+    ],
+    "stackexchange": [
+      "security.stackexchange.com",
+      "networkengineering.stackexchange.com"
+    ],
+    "discord": [
+      "BlueTeamLabs Discord",
+      "TryHackMe Discord"
+    ],
+    "github_discussions": [
+      "tenable/pytenable",
+      "anchore/grype",
+      "aquasecurity/trivy",
+      "CERTCC/VINCE"
+    ],
+    "forums": [
+      "community.tenable.com",
+      "qualys.com/community",
+      "rapid7.com/blog"
+    ]
+  },
+  "review_sites": {
+    "g2": [
+      "vulnerability-management",
+      "vulnerability-scanner",
+      "network-security-software",
+      "patch-management-software"
+    ],
+    "capterra": [
+      "vulnerability-scanner",
+      "network-security-software",
+      "patch-management-software"
+    ],
+    "trustpilot": []
+  },
+  "saas_commercial": [
+    "tenable.io",
+    "qualys.com",
+    "rapid7.com/products/insightvm",
+    "armis.com",
+    "brinqa.com"
+  ],
+  "open_source": {
+    "github_topics": [
+      "vulnerability-scanner",
+      "cve",
+      "nvd",
+      "nessus",
+      "openvas",
+      "vulnerability-management",
+      "exploit-prediction",
+      "epss",
+      "attack-surface"
+    ],
+    "awesome_lists": [
+      "awesome-security",
+      "awesome-vulnerability-research"
+    ],
+    "package_registries": {
+      "pypi": [
+        "pytenable",
+        "python-openvas",
+        "cvss",
+        "nvdlib",
+        "vulners"
+      ],
+      "npm": [],
+      "crates": []
+    }
+  },
+  "news_sources": [
+    "https://www.cisa.gov/news-events/cybersecurity-advisories",
+    "https://nvd.nist.gov/vuln/full-listing",
+    "https://msrc.microsoft.com/update-guide",
+    "https://www.kb.cert.org/vuls/",
+    "https://www.first.org/epss",
+    "https://threatpost.com",
+    "https://www.darkreading.com",
+    "https://www.bleepingcomputer.com"
+  ],
+  "patent_categories": [
+    "G06F 21/57",
+    "H04L 63/14",
+    "G06N 5/04"
+  ],
+  "compliance_frameworks": [
+    "NIST SP 800-53",
+    "NIST SP 800-40",
+    "NIST SP 800-82",
+    "NIST CSF 2.0",
+    "DISA STIGs",
+    "FedRAMP",
+    "CMMC",
+    "CISA BOD 22-01",
+    "CISA BOD 19-02"
+  ],
+  "video_sources": [
+    "youtube:vulnerability management",
+    "youtube:CVE prioritization",
+    "youtube:CVSS fatigue fix",
+    "youtube:network security automation",
+    "youtube:Forward Networks NQE",
+    "youtube:Tenable vulnerability management",
+    "youtube:Qualys VMDR"
+  ],
+  "market_size": {
+    "vulnerability_management_tam": "5.6B USD (2025)",
+    "attack_surface_management_tam": "1.8B USD (2025)",
+    "growth_rate": "15.5% CAGR",
+    "dod_segment": "Estimated 800M USD (ACAS/Tenable DoD contracts)"
+  },
+  "challenge_scoring_hints": {
+    "market_demand": 0.88,
+    "regulatory_pressure": 0.92,
+    "technical_complexity": 0.65,
+    "competitive_saturation": 0.70,
+    "icdev_readiness": 0.85,
+    "compliance_alignment": 0.95
+  },
+  "classification": "CUI // SP-CTI",
+  "created_at": "2026-06-25",
+  "version": "1.0.0"
+}

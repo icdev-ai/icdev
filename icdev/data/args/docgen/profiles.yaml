@@ -1,0 +1,201 @@
+# CUI // SP-CTI
+# IDR Domain Profiles — args/docgen/profiles.yaml
+# Consumed by: tools/docgen/domain_profiles.py
+# Each profile wires in the correct analyzers, ACE roles, WriteGuard mode,
+# and document template for a given team's documentation domain.
+# Standard Guide is the composite multi-domain profile (multi_domain: true).
+
+profiles:
+
+  network:
+    display_name: "Network"
+    description: "Network topology, routing, capacity, and runbook documentation."
+    multi_domain: false
+    diagram_analyzer: "tools.network.diagram_analysis"
+    diagram_analyzer_fn: "analyze_from_file"
+    config_reviewer: "tools.network.config_review"
+    config_reviewer_fn: "review_config"
+    iac_reviewer: null
+    apispec_reviewer: null
+    writeguard_mode: "runbook"
+    content_type: "technical_runbook"
+    ace_roles:
+      - network_architect
+      - compliance_officer
+      - technical_writer
+    doc_template: "network_runbook"
+    upload_types:
+      - diagram
+      - doc
+      - config
+      - email
+      - supplement
+    example_doc_types:
+      - runbook
+      - design_doc
+      - migration_plan
+      - assessment
+
+  security:
+    display_name: "Security"
+    description: "Firewall configs, zero-trust policy, and security design documentation."
+    multi_domain: false
+    diagram_analyzer: "tools.network.diagram_analysis"
+    diagram_analyzer_fn: "analyze_from_file"
+    config_reviewer: "tools.security.firewall_config_review"
+    config_reviewer_fn: "review_firewall_config"
+    iac_reviewer: null
+    apispec_reviewer: null
+    writeguard_mode: "policy_language"
+    content_type: "security_policy"
+    ace_roles:
+      - security_engineer
+      - compliance_officer
+      - technical_writer
+    doc_template: "security_policy"
+    upload_types:
+      - diagram
+      - doc
+      - config
+      - email
+      - supplement
+    example_doc_types:
+      - security_design
+      - policy_doc
+      - assessment
+      - stig_checklist
+
+  devops:
+    display_name: "DevOps / IaC"
+    description: "Terraform, Ansible, CloudFormation IaC review and operational runbooks."
+    multi_domain: false
+    diagram_analyzer: "tools.network.diagram_analysis"
+    diagram_analyzer_fn: "analyze_from_file"
+    config_reviewer: null
+    config_reviewer_fn: null
+    iac_reviewer: "tools.devops.iac_review"
+    iac_reviewer_fn: "review_iac"
+    apispec_reviewer: null
+    writeguard_mode: "runbook"
+    content_type: "technical_runbook"
+    ace_roles:
+      - devops_engineer
+      - architect
+      - technical_writer
+    doc_template: "devops_runbook"
+    upload_types:
+      - diagram
+      - doc
+      - iac
+      - email
+      - supplement
+    example_doc_types:
+      - runbook
+      - iac_design_doc
+      - migration_plan
+      - post_deployment_report
+
+  developer:
+    display_name: "Developer"
+    description: "API specs, service diagrams, ADRs, and developer design documents."
+    multi_domain: false
+    diagram_analyzer: "tools.network.diagram_analysis"
+    diagram_analyzer_fn: "analyze_from_file"
+    config_reviewer: null
+    config_reviewer_fn: null
+    iac_reviewer: null
+    apispec_reviewer: null
+    writeguard_mode: "adr"
+    content_type: "adr"
+    ace_roles:
+      - software_architect
+      - technical_writer
+    doc_template: "developer_adr"
+    upload_types:
+      - diagram
+      - doc
+      - email
+      - supplement
+    example_doc_types:
+      - adr
+      - api_design_doc
+      - service_runbook
+
+  compliance:
+    display_name: "Compliance"
+    description: "NIST, FedRAMP, CMMC compliance assessment and evidence documentation."
+    multi_domain: false
+    diagram_analyzer: "tools.network.diagram_analysis"
+    diagram_analyzer_fn: "analyze_from_file"
+    config_reviewer: null
+    config_reviewer_fn: null
+    iac_reviewer: null
+    apispec_reviewer: null
+    writeguard_mode: "policy_language"
+    content_type: "compliance_assessment"
+    ace_roles:
+      - compliance_officer
+      - isso
+      - technical_writer
+    doc_template: "compliance_assessment"
+    upload_types:
+      - diagram
+      - doc
+      - email
+      - supplement
+    example_doc_types:
+      - assessment
+      - ssp
+      - poam
+      - evidence_package
+
+  standard_guide:
+    display_name: "Standard Guide (All Domains)"
+    description: >-
+      Cross-domain composite profile. Runs ALL analyzers in parallel and
+      produces a single authoritative document spanning all disciplines.
+    multi_domain: true
+    # Union of all domain analyzers — all run in Stage 2
+    domain_members:
+      - network
+      - security
+      - devops
+      - developer
+      - compliance
+    diagram_analyzer: "tools.network.diagram_analysis"
+    diagram_analyzer_fn: "analyze_from_file"
+    # config/iac reviewers per domain are resolved dynamically from domain_members
+    config_reviewer: null
+    config_reviewer_fn: null
+    iac_reviewer: null
+    apispec_reviewer: null
+    writeguard_mode: "policy_language"
+    content_type: "standard_guide"
+    # section-level mode overrides keyed by section slug
+    writeguard_section_modes:
+      network_architecture: "runbook"
+      security_policies: "policy_language"
+      devops_operations: "runbook"
+      developer_apis: "adr"
+      compliance_posture: "policy_language"
+    ace_roles:
+      - network_architect
+      - security_engineer
+      - devops_engineer
+      - software_architect
+      - compliance_officer
+      - isso
+      - technical_writer
+      - architect
+    doc_template: "standard_guide"
+    upload_types:
+      - diagram
+      - doc
+      - config
+      - iac
+      - email
+      - supplement
+    example_doc_types:
+      - standard_guide
+      - enterprise_design_doc
+      - architecture_review

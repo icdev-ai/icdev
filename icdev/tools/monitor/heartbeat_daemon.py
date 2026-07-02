@@ -150,6 +150,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
             "enabled": True,
             "interval_seconds": 300,
             "stale_threshold_minutes": 5,
+        },
         "a2a_agent_health": {
             "enabled": True,
             "interval_seconds": 300,
@@ -329,7 +330,7 @@ def check_agent_health(
             rows = conn.execute(
                 """SELECT agent_id, name, last_heartbeat
                    FROM agents
-                   WHERE last_heartbeat < datetime('now', ? || ' seconds')""",
+                   WHERE last_heartbeat < datetime('now', %s || ' seconds')""",
                 (str(-threshold),),
             ).fetchall()
         finally:
@@ -360,8 +361,8 @@ def check_cve_sla(
                     """SELECT id, cve_id, component, severity, created_at
                        FROM cve_triage
                        WHERE status != 'resolved'
-                         AND severity = ?
-                         AND created_at < datetime('now', ? || ' days')
+                         AND severity = %s
+                         AND created_at < datetime('now', %s || ' days')
                        ORDER BY created_at ASC""",
                     (severity, str(-days)),
                 ).fetchall()
@@ -390,7 +391,7 @@ def check_pending_intake(
                 """SELECT session_id, customer_name, customer_org, updated_at
                    FROM intake_sessions
                    WHERE session_status = 'active'
-                     AND updated_at < datetime('now', ? || ' hours')
+                     AND updated_at < datetime('now', %s || ' hours')
                    ORDER BY updated_at ASC""",
                 (str(-idle_hours),),
             ).fetchall()
@@ -419,7 +420,7 @@ def check_failing_tests(
                 """SELECT id, failure_type, error_summary, created_at
                    FROM failure_log
                    WHERE resolved = 0
-                     AND created_at > datetime('now', ? || ' hours')
+                     AND created_at > datetime('now', %s || ' hours')
                    ORDER BY created_at DESC""",
                 (str(-lookback),),
             ).fetchall()
@@ -448,7 +449,7 @@ def check_expiring_isas(
                 """SELECT id, partner_org, expiry_date, status
                    FROM isa_agreements
                    WHERE status = 'active'
-                     AND expiry_date < datetime('now', '+' || ? || ' days')
+                     AND expiry_date < datetime('now', '+' || %s || ' days')
                    ORDER BY expiry_date ASC""",
                 (str(days),),
             ).fetchall()
@@ -505,7 +506,7 @@ def check_memory_maintenance(
                    LEFT JOIN memory_access_log a ON a.entry_id = m.id
                    GROUP BY m.id
                    HAVING last_accessed IS NULL
-                      OR last_accessed < datetime('now', ? || ' days')
+                      OR last_accessed < datetime('now', %s || ' days')
                    ORDER BY last_accessed ASC
                    LIMIT 50""",
                 (str(-stale_days),),
@@ -637,7 +638,7 @@ def _trigger_kanban_wakeup(db_path: Optional[Path] = None) -> str:  # noqa: ARG0
         return f"wakeup_failed: {exc}"
 
 
-def check_kanban_stale(
+def check_kanban_genesis_health(
     config: Optional[dict] = None,
     db_path: Optional[Path] = None,
 ) -> Dict[str, Any]:
@@ -723,7 +724,7 @@ def check_ace_instance_stale(
             rows = conn.execute(
                 "SELECT id, name, role_id, state, updated_at FROM ace_instances "
                 "WHERE state NOT IN ('complete','cancelled','failed') "
-                "AND updated_at < datetime('now', ? || ' minutes') "
+                "AND updated_at < datetime('now', %s || ' minutes') "
                 "ORDER BY updated_at ASC LIMIT 50",
                 (str(-threshold_minutes),),
             ).fetchall()
@@ -753,7 +754,7 @@ def check_kanban_stale(
             rows = conn.execute(
                 "SELECT id, title, status, updated_at FROM kanban_tasks "
                 "WHERE status = 'in_progress' "
-                "AND updated_at < datetime('now', ? || ' hours') "
+                "AND updated_at < datetime('now', %s || ' hours') "
                 "ORDER BY updated_at ASC LIMIT 50",
                 (str(-threshold_hours),),
             ).fetchall()
@@ -923,7 +924,6 @@ CHECK_REGISTRY: Dict[str, Callable] = {
     "review_board_health": check_review_board_health,
     "kanban_stale": check_kanban_stale,
     "ace_instance_stale": check_ace_instance_stale,
-    "kanban_stale": check_kanban_stale,
     "a2a_agent_health": check_a2a_agent_health,
 }
 
@@ -952,7 +952,7 @@ def _record_check_result(
         conn.execute(
             """INSERT INTO heartbeat_checks
                (check_type, last_run, next_run, status, result_summary, items_found, duration_ms)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
             (
                 check_type,
                 now,

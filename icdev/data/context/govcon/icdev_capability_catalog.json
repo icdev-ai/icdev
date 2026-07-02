@@ -1396,6 +1396,160 @@
         "AI ethics"
       ],
       "evidence": "Phase 49: incident log, ethics reviews, impact assessments, CAIO designation, oversight plans, appeals, reassessment scheduling"
+    },
+    {
+      "id": "cap-ai-ml-orchestration",
+      "name": "AI/ML Processing Orchestration — FORGE Three-Tier Routing Stack",
+      "category": "ai_ml",
+      "description": "FORGE-native three-tier intelligent routing stack that separates policy intelligence from high-throughput execution. Tier 1: pre-compiled rule sidecar for commodity objects (<100µs target, zero LLM tokens on critical path). Tier 2: Chain-of-Debate (CoD) for ambiguous objects — parallel debater agents reach consensus via judge synthesis (ThreadPoolExecutor, <15ms target). Tier 3: Chain-of-Thought (CoT) for high-value/premium objects — reason→critic→synthesize with full audit chain (<2s). Policy hot-reload via args/ YAML without process restart; REST API for external priority injection. Per-routing-decision cost ledger (cost_usd, input_tokens, duration_ms) built into chain_orchestrator.py. Cloud-native: primary AWS GovCloud/C2S (EKS + Bedrock + Kinesis + SageMaker), secondary Azure Government (AKS + Azure OpenAI + Event Hubs), air-gap Ollama for SCIFs.",
+      "tools": [
+        "tools/llm/chain_orchestrator.py",
+        "tools/llm/router.py",
+        "tools/cloud/csp_monitor.py",
+        "tools/dashboard/api/govcon.py"
+      ],
+      "agents": [
+        "orchestrator",
+        "builder"
+      ],
+      "compliance_controls": [
+        "SC-5",
+        "SC-6",
+        "SC-7",
+        "SA-17",
+        "SI-12",
+        "AU-2"
+      ],
+      "keywords": [
+        "AI/ML orchestration",
+        "intelligent routing",
+        "processing orchestration",
+        "chain of thought",
+        "chain of debate",
+        "CoT",
+        "CoD",
+        "rule engine",
+        "policy sidecar",
+        "multi-tier routing",
+        "priority queue",
+        "GPU routing",
+        "analytics routing",
+        "line-speed",
+        "microsecond",
+        "NSA",
+        "IC",
+        "intelligence community",
+        "AWS GovCloud",
+        "C2S",
+        "SC2S",
+        "cloud-native",
+        "FORGE"
+      ],
+      "trl": "Hybrid TRL 6 — core FORGE/chain_orchestrator TRL 8 (commercial-in-use); NSA mission metrics integration adapter TRL 5-6 (demonstrated in relevant environment); compiled policy sidecar TRL 6 (Python prototype, C/Rust production target)",
+      "evidence": "Phase 59: chain_orchestrator.py CoT/CoD implementation; LLMRouter abstraction (YAML-driven, zero code change to add provider); csp_monitor.py multi-cloud tracking; cost per step already logged"
+    },
+    {
+      "id": "cap-xai-provenance",
+      "name": "Explainable AI & Provenance — AgentSHAP + W3C PROV-AGENT",
+      "category": "ai_ml",
+      "description": "Closed-loop XAI layer providing bidirectional traceability and per-decision explainability with <2µs overhead on the critical path. XAI canvas uses AgentSHAP for feature attribution — identifies which input attributes drove a routing or classification decision, stored as shap_explanation records. W3C PROV-AGENT provenance logged asynchronously (ring buffer + batch flush every 100ms) so audit records are eventually consistent without adding synchronous latency. Bidirectional RTM (Requirement Traceability Matrix) links every decision back to the policy rule, priority weight, and resource allocation that produced it. HITL override API allows NSA analysts to flag objects for manual re-routing; overrides are recorded as provenance events and fed into the NOVA learning loop.",
+      "tools": [
+        "tools/xai/xai_engine.py",
+        "tools/traceability/rtm_engine.py",
+        "tools/nova/trust.py",
+        "tools/llm/chain_orchestrator.py"
+      ],
+      "agents": [
+        "compliance",
+        "orchestrator"
+      ],
+      "compliance_controls": [
+        "AU-2",
+        "AU-3",
+        "AU-9",
+        "AU-12",
+        "SI-4",
+        "AC-6",
+        "PM-32"
+      ],
+      "keywords": [
+        "explainable AI",
+        "XAI",
+        "AgentSHAP",
+        "SHAP",
+        "feature attribution",
+        "provenance",
+        "W3C PROV",
+        "audit trail",
+        "traceability",
+        "RTM",
+        "requirement traceability",
+        "HITL",
+        "human in the loop",
+        "human override",
+        "governance",
+        "decision audit",
+        "interpretability",
+        "transparency",
+        "explainability",
+        "data lineage",
+        "routing audit"
+      ],
+      "evidence": "Phase 46+59: bidirectional RTM engine, XAI canvas (AgentSHAP), W3C PROV-AGENT async logging, HITL approval gates in govcon pipeline, chain_orchestrator.py async shadow log"
+    },
+    {
+      "id": "cap-adaptive-learning",
+      "name": "Adaptive Learning from Mission Outcomes — NOVA™ (ECHO+SOUL+TRUST+SELA)",
+      "category": "ai_ml",
+      "description": "NOVA™ adaptive learning loop continuously improves routing policy from mission outcome feedback without centralizing sensitive data. Four components: ECHO (feedback ingestion — append-only event store capturing analyst overrides, mission outcome signals, false-positive flags); SOUL (Bayesian Teaching Intelligence — updates routing policy weights from ECHO data, D-BT-1 through D-BT-6, cadence configurable); TRUST (confidence gate — blocks SOUL updates below 0.70 confidence threshold, routes uncertain updates to HITL queue); SELA (safe exploration — controlled epsilon-greedy exploration to prevent policy convergence, feeds new patterns back to ECHO). NOVA is gated by ICDEV_HARNESS_COLEARN=true. Bedrock fine-tuning pipeline (tools/finetune/bedrock_ft_pipeline.py) handles model weight updates for cloud environments. Genesis analyze.py and train.py reflexes run on configurable cadence.",
+      "tools": [
+        "tools/nova/echo.py",
+        "tools/nova/soul.py",
+        "tools/nova/trust.py",
+        "tools/nova/sela.py",
+        "tools/finetune/bedrock_ft_pipeline.py",
+        "tools/genesis/reflexes/analyze.py",
+        "tools/genesis/reflexes/train.py"
+      ],
+      "agents": [
+        "orchestrator",
+        "builder",
+        "knowledge"
+      ],
+      "compliance_controls": [
+        "SA-11",
+        "SA-15",
+        "CM-3",
+        "AU-2",
+        "PM-32",
+        "SI-4"
+      ],
+      "keywords": [
+        "adaptive learning",
+        "reinforcement learning",
+        "policy update",
+        "feedback loop",
+        "mission outcomes",
+        "Bayesian",
+        "teaching intelligence",
+        "NOVA",
+        "ECHO",
+        "SOUL",
+        "TRUST",
+        "SELA",
+        "safe exploration",
+        "confidence gate",
+        "HITL feedback",
+        "fine-tuning",
+        "Bedrock",
+        "SageMaker",
+        "online learning",
+        "continuous improvement",
+        "federated learning",
+        "model drift",
+        "reflex"
+      ],
+      "evidence": "Phase 59 NOVA: echo.py feedback ingestion, soul.py Bayesian updates (D-BT-1 through D-BT-6), trust.py confidence gate (threshold 0.70), sela.py safe exploration; Bedrock fine-tuning pipeline built; Genesis reflexes running on 3h cadence"
     }
   ]
 }

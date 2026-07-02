@@ -506,7 +506,6 @@ def _deliver_teams(user_id: str, briefing_date: str, ctx: dict, tenant_id: str) 
 
 
 def _format_email_html(briefing: dict, ctx: dict) -> str:
-    name = ctx.get("name", "")
     rows = [f"<h2>{briefing.get('greeting','Good morning!')}</h2>",
             f"<p>{briefing.get('focus','')}</p>"]
     if briefing.get("meetings"):

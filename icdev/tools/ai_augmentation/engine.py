@@ -104,15 +104,11 @@ def _nlp_classify_ref(ref: str) -> tuple[bool, str]:
         (is_git_url, project_name)
     """
     try:
-        import anthropic  # optional dependency
-        api_key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("CLAUDE_API_KEY")
-        if not api_key:
-            raise ValueError("no Anthropic API key configured")
-        client = anthropic.Anthropic(api_key=api_key)
+        from tools.llm.router import LLMRouter, LLMRequest
         model = _PARADIGM_TO_MODEL.get("nlp_extractor", "claude-haiku-4-5-20251001")
-        message = client.messages.create(
-            model=model,
-            max_tokens=128,
+        router = LLMRouter()
+        req = LLMRequest(
+            function="nlp_extractor",
             messages=[{
                 "role": "user",
                 "content": (
@@ -123,8 +119,11 @@ def _nlp_classify_ref(ref: str) -> tuple[bool, str]:
                     "project_name is the short repository or directory name."
                 ),
             }],
+            model=model,
+            max_tokens=128,
         )
-        result = json.loads(message.content[0].text.strip())
+        resp = router.invoke("nlp_extractor", req)
+        result = json.loads(resp.content.strip())
         return bool(result.get("is_git_url", False)), str(result.get("project_name", "") or ref.split("/")[-1])
     except Exception:
         # Regex fallback — identical logic to the original implementation

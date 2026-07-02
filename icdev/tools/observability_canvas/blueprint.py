@@ -131,7 +131,7 @@ def create_observability_blueprint():
         try:
             with get_connection() as conn:
                 conn.execute(
-                    "INSERT INTO od_audit (design_id, user, action, detail, created_at) VALUES (%s,%s,%s,%s,%s)",
+                    "INSERT INTO od_audit (design_id, actor, action, detail, created_at) VALUES (%s,%s,%s,%s,%s)",
                     (design_id, user_id, action, details, _now()),
                 )
         except Exception:

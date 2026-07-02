@@ -3,80 +3,96 @@
 {% block content %}
 <style>
 #wb-layout{display:grid;grid-template-columns:270px 1fr 310px;gap:0;height:calc(100vh - 112px);overflow:hidden}
-#wb-sidebar{border-right:1px solid #dee2e6;overflow-y:auto;background:#f8f9fa}
-#wb-editor{overflow-y:auto;padding:1.25rem 1.5rem}
-#wb-panel{border-left:1px solid #dee2e6;overflow-y:auto;background:#f8f9fa;padding:0}
-.section-item{padding:.35rem .75rem;cursor:pointer;border-left:3px solid transparent;font-size:.81rem;line-height:1.3;transition:background .1s}
-.section-item:hover{background:#e9ecef}
-.section-item.active{background:#dbeafe;border-left-color:#2563eb;font-weight:600;color:#1d4ed8}
-.section-item.status-accepted,.section-item.status-hitl_approved{border-left-color:#16a34a}
-.section-item.status-hitl_rejected{border-left-color:#dc2626}
-.section-item.status-ai_draft_ready{border-left-color:#d97706}
-.section-item.status-pending{border-left-color:#9ca3af}
-.part-hdr{font-size:.68rem;font-weight:700;text-transform:uppercase;color:#6b7280;padding:.45rem .75rem .2rem;letter-spacing:.05em;background:#e5e7eb;border-top:1px solid #d1d5db}
-.s-badge{font-size:.6rem;padding:1px 4px;border-radius:3px;float:right;margin-top:2px}
-#content-editor{width:100%;min-height:320px;resize:vertical;font-family:'Segoe UI',system-ui,sans-serif;font-size:.875rem;line-height:1.65;padding:.75rem;border:1px solid #ced4da;border-radius:6px;background:#fff;transition:border-color .15s}
-#content-editor:focus{outline:none;border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.1)}
-.wg-bar{height:7px;border-radius:4px;transition:width .4s}
+#wb-sidebar{border-right:1px solid #1e3a6e;overflow-y:auto;background:#0d1b2e}
+#wb-editor{overflow-y:auto;padding:1.25rem 1.5rem;background:#0a1220}
+#wb-panel{border-left:1px solid #1e3a6e;overflow-y:auto;background:#0d1b2e;padding:0}
+.section-item{padding:.35rem .75rem;cursor:pointer;border-left:3px solid transparent;font-size:.81rem;line-height:1.3;transition:background .1s;color:#94a3b8}
+.section-item:hover{background:#16213e;color:#b8d0e8}
+.section-item.active{background:#0f2040;border-left-color:#4f8ef7;font-weight:600;color:#7ab3f0}
+.section-item.status-accepted,.section-item.status-hitl_approved{border-left-color:#22c55e}
+.section-item.status-hitl_rejected{border-left-color:#ef4444}
+.section-item.status-ai_draft_ready{border-left-color:#f59e0b}
+.section-item.status-pending{border-left-color:#334155}
+.part-hdr{font-size:.68rem;font-weight:700;text-transform:uppercase;color:#5a7aa0;padding:.45rem .75rem .2rem;letter-spacing:.05em;background:#050d1f;border-top:1px solid #1a2b4a}
+.s-badge{font-size:.6rem;padding:1px 5px;border-radius:3px;float:right;margin-top:2px;border:1px solid transparent}
+#content-editor{width:100%;min-height:320px;resize:vertical;font-family:'Segoe UI',system-ui,sans-serif;font-size:.875rem;line-height:1.65;padding:.75rem;border:1px solid #1e3a6e;border-radius:6px;background:#050d1f;color:#e2e8f0;transition:border-color .15s}
+#content-editor:focus{outline:none;border-color:#4f8ef7;box-shadow:0 0 0 3px rgba(79,142,247,.12)}
+#content-editor::placeholder{color:#334155}
+.wg-bar{height:6px;border-radius:3px;transition:width .4s}
 .spin{animation:spin 1s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 .generating{animation:pulse 1.5s ease-in-out infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
-#markdown-preview{font-size:.875rem;line-height:1.65;min-height:200px}
-#markdown-preview h3,#markdown-preview h4,#markdown-preview h5{margin-top:1rem;margin-bottom:.4rem}
+#markdown-preview{font-size:.875rem;line-height:1.65;min-height:200px;color:#e2e8f0;background:#050d1f;border:1px solid #1e3a6e;border-radius:6px;padding:.75rem;overflow-y:auto;max-height:480px}
+#markdown-preview h3,#markdown-preview h4,#markdown-preview h5{margin-top:1rem;margin-bottom:.4rem;color:#eaeaea}
 #markdown-preview table{width:100%;font-size:.82rem;border-collapse:collapse}
-#markdown-preview td,#markdown-preview th{border:1px solid #dee2e6;padding:.3rem .5rem}
-#markdown-preview th{background:#f8f9fa;font-weight:600}
-#req-panel{border:1px solid #dee2e6;border-radius:6px;margin-top:10px;overflow:hidden;background:#fff}
-#req-panel-hdr{display:flex;align-items:center;gap:8px;padding:7px 12px;background:#f8f9fa;border-bottom:1px solid #dee2e6;cursor:pointer;user-select:none}
+#markdown-preview td,#markdown-preview th{border:1px solid #1e3a6e;padding:.3rem .5rem;color:#b8d0e8}
+#markdown-preview th{background:#0d1b2e;color:#7ab3f0;font-weight:600}
+.wb-card{background:#16213e;border:1px solid #1e3a6e;border-radius:7px;margin-bottom:12px;overflow:hidden}
+.wb-card-hdr{padding:8px 14px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #1e3a6e;font-size:12px;font-weight:600}
+.wb-card-body{padding:12px 14px}
+.wb-btn{width:100%;border-radius:5px;padding:7px 12px;font-size:12px;font-weight:600;cursor:pointer;margin-bottom:6px;transition:all .15s;border:1px solid transparent}
+#req-panel{background:#0a1525;border:1px solid #1e3a6e;border-radius:6px;margin-top:10px;overflow:hidden}
+#req-panel-hdr{display:flex;align-items:center;gap:8px;padding:7px 12px;background:#0f1f3a;border-bottom:1px solid #1e3a6e;cursor:pointer;user-select:none}
 #req-list{max-height:220px;overflow-y:auto;padding:6px 8px}
-.req-item{display:flex;align-items:flex-start;gap:7px;padding:5px 6px;border-radius:4px;margin-bottom:3px;border:1px solid #e9ecef;background:#f8f9fa}
+.req-item{display:flex;align-items:flex-start;gap:7px;padding:5px 6px;border-radius:4px;margin-bottom:3px;border:1px solid #1a2b4a;background:#060f1c}
 .req-icon{flex-shrink:0;font-size:13px;margin-top:1px}
-.req-text{flex:1;font-size:11.5px;color:#374151;line-height:1.4}
-.req-src{font-size:9px;padding:1px 4px;border-radius:2px;background:#e9ecef;color:#6b7280;flex-shrink:0}
-.req-del{flex-shrink:0;background:none;border:none;color:#9ca3af;cursor:pointer;font-size:12px;padding:0 2px;line-height:1}
-.req-del:hover{color:#dc2626}
-#req-add-row{display:flex;gap:6px;padding:6px 8px;border-top:1px solid #e9ecef}
+.req-text{flex:1;font-size:11.5px;color:#b8d0e8;line-height:1.4}
+.req-src{font-size:9px;padding:1px 4px;border-radius:2px;background:#1e293b;color:#5a7aa0;border:1px solid #334155;flex-shrink:0}
+.req-del{flex-shrink:0;background:none;border:none;color:#5a7aa0;cursor:pointer;font-size:12px;padding:0 2px;line-height:1}
+.req-del:hover{color:#f87171}
+#req-coverage-bar-wrap{padding:6px 12px 4px;display:none}
+#req-add-row{display:flex;gap:6px;padding:6px 8px;border-top:1px solid #1a2b4a}
+#ace-team-roles{font-size:11px;color:#7a8cb0;margin-bottom:8px;line-height:1.6}
 </style>
 
 <!-- Top bar -->
-<div class="d-flex align-items-center justify-content-between px-3 border-bottom bg-white" style="height:52px;flex-shrink:0">
-  <div class="d-flex align-items-center gap-3">
-    <a href="/rfi/" class="btn btn-sm btn-outline-secondary">← Sessions</a>
-    <div class="d-flex align-items-center gap-2">
-      <span class="fw-semibold">{{ session.rfi_number or 'RFI' }}</span>
-      <span class="text-muted small d-none d-md-inline">{{ (session.rfi_title or '')[:60] }}</span>
+<div style="display:flex;align-items:center;justify-content:space-between;padding:0 14px;height:52px;flex-shrink:0;background:#0d1b2e;border-bottom:1px solid #1e3a6e;">
+  <div style="display:flex;align-items:center;gap:12px;">
+    <a href="/rfi/" style="background:#0f3460;color:#7ab3f0;border:1px solid #1e3a6e;border-radius:4px;padding:4px 10px;font-size:11px;text-decoration:none;">← Sessions</a>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <span style="color:#eaeaea;font-weight:600;font-size:13px;">{{ session.rfi_number or 'RFI' }}</span>
+      <span style="color:#7a8cb0;font-size:12px;" class="d-none d-md-inline">{{ (session.rfi_title or '')[:60] }}</span>
     </div>
-    <span id="session-status-badge" class="badge {% if session.status == 'exported' %}bg-success{% elif session.status == 'complete' %}bg-primary{% elif session.status == 'in_progress' %}bg-info{% else %}bg-secondary{% endif %}">
+    <span id="session-status-badge" style="font-size:10px;font-weight:600;padding:2px 8px;border-radius:3px;
+      {% if session.status == 'exported' %}background:#052e16;color:#4ade80;border:1px solid #16a34a;
+      {% elif session.status == 'complete' %}background:#172554;color:#60a5fa;border:1px solid #2563eb;
+      {% elif session.status == 'in_progress' %}background:#0c2a4a;color:#38bdf8;border:1px solid #0284c7;
+      {% else %}background:#1e293b;color:#94a3b8;border:1px solid #334155;{% endif %}">
       {{ session.status|replace('_',' ')|title }}
     </span>
   </div>
-  <div class="d-flex align-items-center gap-2">
-    <small class="text-muted d-none d-lg-inline" id="progress-label">
-      {{ session.approved_sections }}/{{ session.total_sections }} accepted
-    </small>
-    <div class="progress d-none d-md-flex" style="width:80px;height:8px;">
-      <div class="progress-bar bg-success" id="progress-bar"
-        style="width:{{ ((session.approved_sections / session.total_sections) * 100)|round(0)|int if session.total_sections > 0 else 0 }}%">
-      </div>
+  <div style="display:flex;align-items:center;gap:10px;">
+    <span style="color:#7a8cb0;font-size:11px;" id="progress-label">{{ session.approved_sections }}/{{ session.total_sections }} accepted</span>
+    <div style="width:80px;height:6px;background:#0a1525;border-radius:3px;overflow:hidden;" class="d-none d-md-block">
+      <div id="progress-bar" style="height:100%;background:#22c55e;width:{{ ((session.approved_sections / session.total_sections) * 100)|round(0)|int if session.total_sections > 0 else 0 }}%;transition:width .3s;"></div>
     </div>
-    <button id="gen-all-btn" class="btn btn-sm btn-outline-primary" onclick="startGenerateAll()" title="Generate all pending/rejected sections">⚡ All</button>
-    <span id="gen-all-status" class="text-muted" style="font-size:10px;"></span>
-    <span id="deadline-badge" class="badge rounded-pill border d-none" title="Click to set deadline" onclick="toggleDeadlinePicker()" style="cursor:pointer;font-size:10px;"></span>
-    <input type="date" id="deadline-input" class="d-none form-control form-control-sm" style="width:auto;font-size:10px;" onchange="saveDeadline(this.value)" onblur="document.getElementById('deadline-input').classList.add('d-none')">
-    <a href="/rfi/{{ session.id }}/preview" class="btn btn-sm btn-outline-info" title="Assembled document preview">👁 Preview</a>
-    <button class="btn btn-sm btn-outline-secondary" onclick="doExport('md')" title="Download Markdown">⬇ MD</button>
-    <button class="btn btn-sm btn-success" onclick="doExport('docx')" id="export-docx-btn">
-      <span id="export-spinner" class="d-none" style="display:inline-block;width:12px;height:12px;border:2px solid rgba(255,255,255,.5);border-top-color:#fff;border-radius:50%;margin-right:4px;" class="spin"></span>
+    <button id="gen-all-btn" onclick="startGenerateAll()"
+      style="background:#0a1a30;color:#38bdf8;border:1px solid #0ea5e9;border-radius:4px;padding:5px 10px;font-size:11px;cursor:pointer;">
+      ⚡ All
+    </button>
+    <span id="gen-all-status" style="font-size:10px;color:#5a7aa0;"></span>
+    <span id="deadline-badge" title="Click to set deadline" onclick="toggleDeadlinePicker()"
+      style="display:none;cursor:pointer;font-size:10px;padding:3px 9px;border-radius:10px;border:1px solid #1e3a6e;color:#94a3b8;"></span>
+    <input type="date" id="deadline-input" style="display:none;background:#050d1f;color:#b8d0e8;border:1px solid #1e3a6e;border-radius:4px;padding:3px 6px;font-size:10px;"
+      onchange="saveDeadline(this.value)" onblur="document.getElementById('deadline-input').style.display='none'">
+    <a href="/rfi/{{ session.id }}/preview" target="_blank"
+      style="background:#0a1a30;color:#38bdf8;border:1px solid #0ea5e9;border-radius:4px;padding:5px 10px;font-size:11px;text-decoration:none;">👁 Preview</a>
+    <button onclick="doExport('md')"
+      style="background:#0d1b2e;color:#94a3b8;border:1px solid #334155;border-radius:4px;padding:5px 10px;font-size:11px;cursor:pointer;">⬇ MD</button>
+    <button onclick="doExport('docx')" id="export-docx-btn"
+      style="background:#052e16;color:#4ade80;border:1px solid #16a34a;border-radius:4px;padding:5px 12px;font-size:11px;font-weight:600;cursor:pointer;">
+      <span id="export-spinner" style="display:none;width:10px;height:10px;border:2px solid rgba(74,222,128,.4);border-top-color:#4ade80;border-radius:50%;margin-right:4px;" class="spin"></span>
       📥 Export DOCX
     </button>
   </div>
 </div>
 
 <!-- Parse warning banner -->
-<div id="parse-warning-banner" class="alert alert-warning alert-dismissible d-none mx-3 mt-2 py-2" role="alert" style="font-size:12px;">
-  ⚠ RFI parsing used fallback defaults — <strong id="parse-rfi-number"></strong> could not be fully extracted. Edit the RFI number and title above if needed.
-  <button type="button" class="btn-close btn-sm" onclick="dismissParseWarning()"></button>
+<div id="parse-warning-banner" style="display:none;background:#1a0a00;border:1px solid #92400e;color:#fbbf24;padding:8px 16px;font-size:11px;margin:8px 16px;border-radius:4px;">
+  ⚠ RFI parsing used fallback defaults — <strong id="parse-rfi-number"></strong> could not be fully extracted.
+  Edit the RFI number and title above if needed.
+  <a href="#" onclick="dismissParseWarning();return false;" style="color:#fbbf24;margin-left:12px;">Dismiss</a>
 </div>
 
 <!-- 3-panel workbench -->
@@ -84,8 +100,9 @@
 
   <!-- LEFT: Section tree -->
   <div id="wb-sidebar">
-    <div class="p-2 border-bottom">
-      <input type="text" class="form-control form-control-sm" placeholder="🔍 Filter sections…" id="section-filter" oninput="filterSections(this.value)">
+    <div style="padding:8px;border-bottom:1px solid #1e3a6e;">
+      <input type="text" placeholder="🔍 Filter sections…" id="section-filter" oninput="filterSections(this.value)"
+        style="width:100%;background:#050d1f;color:#b8d0e8;border:1px solid #1a3560;border-radius:4px;padding:6px 10px;font-size:12px;">
     </div>
     <div id="section-tree">
       {% set ns = namespace(cur_part='') %}
@@ -99,13 +116,18 @@
              data-id="{{ sec.id }}"
              data-search="{{ sec.item_number|lower }} {{ sec.title|lower }}"
              onclick="loadSection('{{ sec.id }}')">
-          <span class="text-muted" style="font-size:.72rem">{{ sec.item_number }}</span>
+          <span style="font-size:.72rem;color:#3d5a80;">{{ sec.item_number }}</span>
           {{ sec.title }}
           <span class="s-badge
-            {% if sec.status in ('accepted','hitl_approved') %}bg-success text-white
-            {% elif sec.status == 'hitl_rejected' %}bg-danger text-white
-            {% elif sec.status == 'ai_draft_ready' %}bg-warning text-dark
-            {% else %}bg-light text-secondary border{% endif %}">
+            {% if sec.status in ('accepted','hitl_approved') %}
+              style="background:#052e16;color:#4ade80;border-color:#16a34a;"
+            {% elif sec.status == 'hitl_rejected' %}
+              style="background:#2d0a0a;color:#f87171;border-color:#7f1d1d;"
+            {% elif sec.status == 'ai_draft_ready' %}
+              style="background:#2d1a00;color:#fbbf24;border-color:#92400e;"
+            {% else %}
+              style="background:#1e293b;color:#64748b;border-color:#334155;"
+            {% endif %}">
             {% if sec.status in ('accepted','hitl_approved') %}✓
             {% elif sec.status == 'hitl_rejected' %}✗
             {% elif sec.status == 'ai_draft_ready' %}⚡
@@ -118,92 +140,99 @@
 
   <!-- CENTER: Editor -->
   <div id="wb-editor">
-    <div id="editor-placeholder" class="text-center text-muted py-5">
-      <div style="font-size:3rem" class="mb-3">👈</div>
-      <div class="fw-semibold fs-5">Select a section</div>
-      <div class="small mt-1">Click any section in the left panel to begin editing</div>
+    <div id="editor-placeholder" style="text-align:center;padding:48px 24px;">
+      <div style="font-size:3rem;margin-bottom:12px;">👈</div>
+      <div style="color:#eaeaea;font-weight:600;font-size:15px;">Select a section</div>
+      <div style="color:#7a8cb0;font-size:12px;margin-top:6px;">Click any section in the left panel to begin editing</div>
     </div>
 
-    <div id="editor-area" class="d-none">
+    <div id="editor-area" style="display:none;">
       <!-- Section header -->
-      <div class="d-flex align-items-start justify-content-between mb-2">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px;">
         <div>
-          <h5 class="mb-0" id="editor-title">—</h5>
-          <p class="text-muted small mb-0 mt-1" id="editor-question" style="max-width:600px"></p>
+          <h5 id="editor-title" style="margin:0;color:#eaeaea;font-size:14px;font-weight:700;">—</h5>
+          <p id="editor-question" style="color:#7a8cb0;font-size:12px;margin:4px 0 0;max-width:600px;"></p>
         </div>
-        <span class="badge ms-3 flex-shrink-0" id="editor-status-badge">—</span>
+        <span id="editor-status-badge" style="font-size:10px;font-weight:600;padding:2px 8px;border-radius:3px;margin-left:12px;flex-shrink:0;background:#1e293b;color:#94a3b8;border:1px solid #334155;">—</span>
       </div>
 
       <!-- Toolbar -->
-      <div class="d-flex align-items-center gap-2 mb-2">
-        <button class="btn btn-sm btn-outline-secondary" onclick="togglePreview()" id="preview-btn">📄 Preview</button>
-        <span class="text-muted small" id="word-count"></span>
-        <span class="text-secondary small" id="page-count"></span>
-        <span class="small fw-semibold" id="limit-badge"></span>
-        <button id="summarize-btn" onclick="summarizeToFit()" class="btn btn-sm btn-outline-secondary" style="display:none;font-size:10px;padding:2px 8px;">✂ Summarize</button>
-        <span class="small" id="md-structure-indicator"></span>
-        <span class="text-muted small ms-auto" id="save-indicator"></span>
-        <button class="btn btn-sm btn-outline-primary" onclick="saveContent()" id="save-btn">💾 Save</button>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+        <button onclick="togglePreview()" id="preview-btn"
+          style="background:#0d1b2e;color:#7ab3f0;border:1px solid #1e3a6e;border-radius:4px;padding:4px 10px;font-size:11px;cursor:pointer;">📄 Preview</button>
+        <span style="color:#5a7aa0;font-size:11px;" id="word-count"></span>
+        <span style="color:#7a8cb0;font-size:11px;" id="page-count"></span>
+        <span style="font-size:11px;font-weight:600;" id="limit-badge"></span>
+        <button id="summarize-btn" onclick="summarizeToFit()" style="display:none;background:#1a0a30;color:#a78bfa;border:1px solid #6d28d9;border-radius:4px;padding:3px 8px;font-size:10px;cursor:pointer;">✂ Summarize</button>
+        <span style="font-size:11px;" id="md-structure-indicator"></span>
+        <span style="color:#5a7aa0;font-size:11px;margin-left:auto;" id="save-indicator"></span>
+        <button onclick="saveContent()" id="save-btn"
+          style="background:#0f3460;color:#7ab3f0;border:1px solid #1e3a6e;border-radius:4px;padding:4px 10px;font-size:11px;cursor:pointer;">💾 Save</button>
       </div>
 
-      <!-- Editor / Preview -->
       <textarea id="content-editor" class="content-editor" oninput="onContentChange()"
         placeholder="Content will appear here after AI generation, or type directly…"></textarea>
-      <div id="markdown-preview" class="d-none border rounded p-3 bg-white" style="overflow-y:auto;max-height:480px;"></div>
+      <div id="markdown-preview" style="display:none;"></div>
 
-      <!-- WriteGuard inline summary -->
-      <div class="mt-2 small" id="wg-inline-summary" style="color:#6b7280"></div>
+      <div id="wg-inline-summary" style="margin-top:8px;font-size:12px;color:#7a8cb0;"></div>
 
       <!-- Requirements Panel -->
       <div id="req-panel">
         <div id="req-panel-hdr" onclick="toggleReqPanel()">
-          <span class="fw-semibold small text-primary">📋 Requirements</span>
-          <span id="req-count-badge" class="badge bg-primary rounded-pill" style="font-size:10px;">0</span>
-          <span id="req-coverage-label" class="small text-muted ms-1"></span>
-          <span class="text-muted small ms-auto" id="req-panel-toggle">▾</span>
+          <span style="color:#7ab3f0;font-size:12px;font-weight:600;">📋 Requirements</span>
+          <span id="req-count-badge" style="font-size:10px;background:#0f2040;color:#7ab3f0;border:1px solid #1e3a6e;padding:1px 6px;border-radius:10px;">0</span>
+          <span id="req-coverage-label" style="font-size:10px;color:#5a7aa0;margin-left:4px;"></span>
+          <span style="color:#5a7aa0;font-size:11px;margin-left:auto;" id="req-panel-toggle">▾</span>
         </div>
         <div id="req-panel-body">
-          <div id="req-coverage-bar-wrap" class="d-none px-3 pt-2">
-            <div class="d-flex justify-content-between mb-1">
-              <span class="small text-muted">Coverage</span>
-              <span id="req-coverage-pct" class="small text-muted"></span>
+          <div id="req-coverage-bar-wrap">
+            <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
+              <span style="font-size:10px;color:#7a8cb0;">Coverage</span>
+              <span id="req-coverage-pct" style="font-size:10px;color:#94a3b8;"></span>
             </div>
-            <div class="progress" style="height:4px">
-              <div id="req-coverage-bar" class="progress-bar bg-success" style="width:0%;transition:width .4s"></div>
+            <div style="background:#0a1525;border-radius:3px;height:4px;overflow:hidden;">
+              <div id="req-coverage-bar" style="height:100%;background:#22c55e;width:0%;transition:width .4s;"></div>
             </div>
           </div>
           <div id="req-list"></div>
           <div id="req-add-row">
-            <input type="text" id="req-add-input" class="form-control form-control-sm" placeholder="Add requirement…"
+            <input type="text" id="req-add-input" placeholder="Add requirement…"
+              style="flex:1;background:#050d1f;color:#b8d0e8;border:1px solid #1a3560;border-radius:4px;padding:4px 8px;font-size:11px;"
               onkeydown="if(event.key==='Enter')addRequirement()">
-            <button class="btn btn-sm btn-outline-primary" onclick="addRequirement()">Add</button>
+            <button onclick="addRequirement()"
+              style="background:#0f3460;color:#7ab3f0;border:1px solid #1e3a6e;border-radius:4px;padding:4px 10px;font-size:11px;cursor:pointer;">Add</button>
           </div>
-          <div class="text-end px-2 pb-2">
-            <button onclick="recheckCoverage()" class="btn btn-link btn-sm text-muted p-0" style="font-size:10px;">🔄 Re-check Coverage</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Generate Why Us panel — shown for Part 5 (Industry Insights) -->
-      <div id="why-us-panel" class="d-none mt-2 border rounded overflow-hidden">
-        <div class="px-3 py-2 border-bottom bg-light d-flex align-items-center gap-2">
-          <span class="fw-semibold small text-info">🏆 Competitive Differentiator</span>
-        </div>
-        <div class="p-2">
-          <div class="d-flex gap-2 mb-2">
-            <input type="text" id="competitor-input" class="form-control form-control-sm" placeholder="Key competitor (optional — not named in output)">
-            <button class="btn btn-sm btn-outline-info" onclick="generateWhyUs()" style="white-space:nowrap;">Generate Why Us</button>
-          </div>
-          <div id="why-us-spinner" class="d-none text-muted small">Generating…</div>
-          <div id="why-us-output" class="d-none small text-muted border rounded bg-light p-2" style="white-space:pre-wrap;line-height:1.6;"></div>
-          <div id="why-us-actions" class="d-none text-end mt-1">
-            <button class="btn btn-sm btn-outline-success py-0" onclick="appendWhyUsToEditor()">⬇ Append to Editor</button>
+          <div style="text-align:right;padding:0 8px 6px;">
+            <button onclick="recheckCoverage()"
+              style="background:none;border:none;color:#5a7aa0;font-size:10px;cursor:pointer;padding:2px 4px;">🔄 Re-check Coverage</button>
           </div>
         </div>
       </div>
 
-      <!-- HITL comment shown inline when rejected -->
-      <div id="rejected-notice" class="d-none mt-2 alert alert-warning py-2 small">
+      <!-- Generate Why Us panel — shown for section 5.1 (Industry Insights) -->
+      <div id="why-us-panel" style="display:none;margin-top:8px;background:#050d1f;border:1px solid #1e3a6e;border-radius:6px;overflow:hidden;">
+        <div style="background:#0a1628;padding:7px 12px;display:flex;align-items:center;gap:8px;border-bottom:1px solid #1e3a6e;">
+          <span style="color:#38bdf8;font-size:11px;font-weight:600;">🏆 Competitive Differentiator</span>
+        </div>
+        <div style="padding:8px 12px;">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+            <input type="text" id="competitor-input" placeholder="Key competitor (optional — not named in output)"
+              style="flex:1;background:#0a1628;color:#b8d0e8;border:1px solid #1a3560;border-radius:4px;padding:4px 8px;font-size:11px;">
+            <button onclick="generateWhyUs()"
+              style="background:#0c2a4a;color:#38bdf8;border:1px solid #0ea5e9;border-radius:4px;padding:4px 10px;font-size:11px;cursor:pointer;">
+              Generate Why Us
+            </button>
+          </div>
+          <div id="why-us-spinner" style="display:none;font-size:11px;color:#5a7aa0;">Generating…</div>
+          <div id="why-us-output" style="display:none;font-size:11px;color:#94a3b8;line-height:1.6;background:#0a1628;padding:8px;border-radius:4px;border:1px solid #1a2b4a;white-space:pre-wrap;"></div>
+          <div id="why-us-actions" style="display:none;text-align:right;margin-top:6px;gap:6px;display:none;">
+            <button onclick="appendWhyUsToEditor()"
+              style="background:#052e16;color:#4ade80;border:1px solid #16a34a;border-radius:4px;padding:3px 10px;font-size:10px;cursor:pointer;">⬇ Append to Editor</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="rejected-notice" style="display:none;background:#2d0a0a;border:1px solid #7f1d1d;color:#fca5a5;border-radius:5px;padding:8px 12px;margin-top:10px;font-size:12px;">
         <strong>Rejected — Reviewer comment:</strong> <span id="rejected-comment"></span>
       </div>
     </div>
@@ -211,222 +240,246 @@
 
   <!-- RIGHT: Controls panel -->
   <div id="wb-panel">
-    <div id="panel-placeholder" class="text-center text-muted p-4 pt-5">
-      <div style="font-size:2.5rem" class="mb-2">🛠️</div>
-      <div class="small fw-semibold">Select a section to see AI Assist, WriteGuard, and HITL controls</div>
+    <div id="panel-placeholder" style="text-align:center;padding:48px 16px;">
+      <div style="font-size:2.5rem;margin-bottom:10px;">🛠️</div>
+      <div style="color:#7a8cb0;font-size:12px;font-weight:600;">Select a section to see AI Assist, WriteGuard, and HITL controls</div>
     </div>
 
-    <div id="panel-controls" class="d-none">
-      <div class="p-3">
+    <div id="panel-controls" style="display:none;">
+      <div style="padding:12px;">
 
         <!-- AI Assist -->
-        <div class="card mb-3 border-primary shadow-sm">
-          <div class="card-header py-2 fw-semibold text-primary bg-primary bg-opacity-10 d-flex justify-content-between align-items-center" style="position:relative;">
+        <div class="wb-card">
+          <div class="wb-card-hdr" style="background:#0f3460;color:#7ab3f0;position:relative;">
             <span>✨ AI Assist</span>
-            <div class="d-flex align-items-center gap-2">
-              <small class="text-muted fw-normal" id="gen-count"></small>
-              <button id="history-btn" onclick="toggleHistory()" title="Version history"
-                class="btn btn-outline-secondary btn-sm py-0 px-1 d-none" style="font-size:10px;">🕐 History</button>
-            </div>
-            <div id="history-panel" class="d-none shadow border rounded bg-white" style="position:absolute;right:0;top:34px;z-index:20;width:290px;max-height:220px;overflow-y:auto;padding:8px;">
-              <div class="text-muted fw-bold mb-1" style="font-size:10px;">Version History</div>
+            <small style="color:#5a7aa0;font-weight:400;" id="gen-count"></small>
+            <button id="history-btn" onclick="toggleHistory()" title="Version history"
+              style="background:none;border:1px solid #1e3a6e;color:#5a7aa0;border-radius:3px;padding:2px 7px;font-size:10px;cursor:pointer;display:none;margin-left:4px;">
+              🕐 History
+            </button>
+            <div id="history-panel" style="display:none;position:absolute;right:0;top:28px;z-index:20;background:#0a1628;border:1px solid #1e3a6e;border-radius:6px;width:280px;max-height:220px;overflow-y:auto;padding:8px;">
+              <div style="font-size:10px;color:#5a7aa0;margin-bottom:6px;font-weight:600;">Version History</div>
               <div id="history-list"></div>
             </div>
           </div>
-          <div class="card-body pb-2 pt-2">
-            <p class="text-muted small mb-2">Generates section content using your company profile, RFI objectives, and any reviewer feedback below.</p>
-            <button class="btn btn-primary w-100 mb-1" id="gen-btn" onclick="generateContent()">
+          <div class="wb-card-body">
+            <p style="color:#7a8cb0;font-size:11px;margin:0 0 10px;">Generates section content using your company profile, RFI objectives, and reviewer feedback.</p>
+            <button class="wb-btn" id="gen-btn" onclick="generateContent()"
+              style="background:#0f3460;color:#7ab3f0;border-color:#1e3a6e;">
               <span id="gen-spinner-icon">✨</span> <span id="gen-btn-label">Generate Content</span>
             </button>
-            <div class="text-center small d-none" id="gen-status"></div>
+            <div style="display:none;text-align:center;font-size:11px;color:#7a8cb0;margin-top:4px;" id="gen-status"></div>
           </div>
         </div>
 
         <!-- WriteGuard -->
-        <div class="card mb-3 border-info shadow-sm">
-          <div class="card-header py-2 fw-semibold text-info bg-info bg-opacity-10">🔍 WriteGuard Quality</div>
-          <div class="card-body pt-2 pb-2">
-            <button class="btn btn-info btn-sm w-100 mb-2 text-white" onclick="runWriteGuard()" id="wg-btn">
+        <div class="wb-card">
+          <div class="wb-card-hdr" style="background:#0c2a3a;color:#38bdf8;">
+            🔍 WriteGuard Quality
+          </div>
+          <div class="wb-card-body">
+            <button class="wb-btn" onclick="runWriteGuard()" id="wg-btn"
+              style="background:#0c2a3a;color:#38bdf8;border-color:#0284c7;">
               Run WriteGuard
             </button>
-            <div id="wg-results" class="d-none">
-              <div class="d-flex align-items-center justify-content-between mb-2">
-                <span class="small fw-semibold">Overall</span>
-                <span id="wg-overall-badge" class="badge"></span>
+            <div id="wg-results" style="display:none;">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+                <span style="color:#94a3b8;font-size:11px;font-weight:600;">Overall</span>
+                <span id="wg-overall-badge" style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:3px;background:#1e293b;color:#94a3b8;border:1px solid #334155;"></span>
               </div>
               {% for dim in ['Correctness','Clarity','Delivery','Originality','Engagement','Style'] %}
-              <div class="mb-1">
-                <div class="d-flex justify-content-between mb-1" style="font-size:.76rem">
-                  <span>{{ dim }}</span><span id="wg-score-{{ dim|lower }}">—</span>
+              <div style="margin-bottom:8px;">
+                <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
+                  <span style="font-size:11px;color:#94a3b8;">{{ dim }}</span>
+                  <span id="wg-score-{{ dim|lower }}" style="font-size:11px;color:#94a3b8;">—</span>
                 </div>
-                <div class="progress" style="height:5px"><div class="wg-bar bg-secondary progress-bar" id="wg-bar-{{ dim|lower }}" style="width:0%"></div></div>
+                <div style="background:#0a1525;border-radius:3px;height:5px;overflow:hidden;">
+                  <div class="wg-bar" id="wg-bar-{{ dim|lower }}" style="width:0%;height:100%;background:#334155;"></div>
+                </div>
               </div>
               {% endfor %}
-              <div id="wg-issues" class="mt-2" style="font-size:.76rem"></div>
+              <div id="wg-issues" style="margin-top:8px;font-size:11px;color:#7a8cb0;"></div>
             </div>
-            <div id="wg-error" class="text-danger small d-none"></div>
+            <div id="wg-error" style="display:none;color:#f87171;font-size:11px;margin-top:6px;"></div>
           </div>
         </div>
 
         <!-- ACE Editor Review -->
-        <div class="card border-0 shadow-sm" id="ace-editor-card" style="display:none;border-left:3px solid #a855f7 !important;">
-          <div class="card-header py-2 fw-semibold d-flex align-items-center gap-2"
-               style="background:#1a0f2e;color:#c084fc;">
-            🤖 ACE Editor Review
-            <span id="ace-editor-status-dot" class="rounded-circle d-inline-block ms-1"
-                  style="width:8px;height:8px;background:#6b7280;" title="Review status"></span>
-            <button class="btn btn-sm ms-auto py-0 px-2" onclick="runAceEditorReview()"
-                    style="background:none;border:1px solid #7e22ce;color:#a855f7;font-size:.75rem;">
+        <div class="wb-card" id="ace-editor-card" style="display:none;">
+          <div class="wb-card-hdr" style="background:#1a0f2e;color:#c084fc;position:relative;">
+            <span>🤖 ACE Editor Review</span>
+            <span id="ace-editor-status-dot" style="width:8px;height:8px;border-radius:50%;background:#334155;display:inline-block;margin-left:6px;vertical-align:middle;" title="Review status"></span>
+            <button onclick="runAceEditorReview()" title="Re-run editor review"
+              style="background:none;border:1px solid #3b1f5e;color:#9d4edd;border-radius:3px;padding:2px 7px;font-size:10px;cursor:pointer;margin-left:auto;">
               ↺ Re-run
             </button>
           </div>
-          <div class="card-body py-2">
-            <div id="ace-editor-reviewing" class="d-none text-center small py-2" style="color:#a855f7;">
-              ⏳ Editor reviewing…
+          <div class="wb-card-body">
+            <div id="ace-editor-reviewing" style="display:none;text-align:center;font-size:11px;color:#9d4edd;padding:8px 0;">
+              <span>⏳ Editor reviewing…</span>
             </div>
-            <div id="ace-editor-result" class="d-none">
-              <div class="d-flex align-items-center gap-2 mb-2">
-                <span class="small text-secondary">Overall:</span>
-                <span id="ace-editor-overall" class="badge"></span>
-                <span id="ace-editor-time" class="ms-auto" style="font-size:.7rem;color:#6b7280;"></span>
+            <div id="ace-editor-result" style="display:none;">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                <span style="font-size:11px;color:#94a3b8;">Overall:</span>
+                <span id="ace-editor-overall" style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:3px;"></span>
+                <span id="ace-editor-time" style="font-size:10px;color:#5a7aa0;margin-left:auto;"></span>
               </div>
-              <div id="ace-editor-issues" style="font-size:.76rem;"></div>
-              <div id="ace-editor-summary" class="border-top mt-2 pt-2"
-                   style="font-size:.76rem;white-space:pre-wrap;"></div>
+              <div id="ace-editor-issues" style="font-size:11px;color:#94a3b8;margin-bottom:8px;"></div>
+              <div id="ace-editor-summary" style="font-size:11px;color:#94a3b8;white-space:pre-wrap;border-top:1px solid #1e3a6e;padding-top:8px;margin-top:4px;"></div>
             </div>
-            <div id="ace-editor-empty" class="small text-muted fst-italic">
+            <div id="ace-editor-empty" style="font-size:11px;color:#5a7aa0;font-style:italic;">
               Review will appear after generation.
             </div>
           </div>
         </div>
 
         <!-- ACE Reviewer panel (shown after approve/accept) -->
-        <div class="card border-0 shadow-sm d-none" id="ace-reviewer-card" style="border-left:3px solid #6d28d9 !important;">
-          <div class="card-header py-2 d-flex align-items-center gap-2" style="background:#f5f3ff;">
-            <span class="fw-semibold small" style="color:#6d28d9;">🏛 Evaluator Review</span>
-            <span id="ace-reviewer-score" class="text-muted small"></span>
-            <span id="ace-reviewer-overall" class="badge ms-auto"></span>
-            <span id="ace-reviewer-spinner" class="text-muted small d-none ms-1">evaluating…</span>
-            <button onclick="rerunReviewer()" class="btn btn-sm ms-1 py-0 px-2"
-                    style="background:none;border:1px solid #6d28d9;color:#6d28d9;font-size:.7rem;">↺ Re-run</button>
+        <div class="wb-card" id="ace-reviewer-card" style="display:none;">
+          <div class="wb-card-hdr" style="background:#0d0a1f;color:#a78bfa;position:relative;border-bottom:1px solid #2d1b69;">
+            <span>🏛 Evaluator Review</span>
+            <span id="ace-reviewer-score" style="font-size:10px;color:#5a7aa0;margin-left:8px;"></span>
+            <span id="ace-reviewer-overall" style="font-size:10px;padding:1px 7px;border-radius:10px;margin-left:auto;"></span>
+            <span id="ace-reviewer-spinner" style="font-size:10px;color:#5a7aa0;display:none;margin-left:6px;">evaluating…</span>
+            <button onclick="rerunReviewer()" style="background:none;border:1px solid #2d1b69;color:#7c6ab0;border-radius:3px;padding:2px 7px;font-size:9px;cursor:pointer;margin-left:6px;">↺ Re-run</button>
           </div>
-          <div class="card-body py-2">
-            <div id="ace-reviewer-summary" class="small text-muted fst-italic mb-2"></div>
+          <div class="wb-card-body">
+            <div id="ace-reviewer-summary" style="font-size:11px;color:#94a3b8;font-style:italic;margin-bottom:8px;"></div>
             <div id="ace-reviewer-issues"></div>
           </div>
         </div>
 
         <!-- HITL -->
-        <div class="card border-warning shadow-sm">
-          <div class="card-header py-2 fw-semibold text-warning bg-warning bg-opacity-10">👤 HITL Review</div>
-          <div class="card-body pt-2 pb-3">
-            <label class="form-label small fw-semibold mb-1">Reviewer Comment</label>
-            <textarea class="form-control form-control-sm mb-2" id="hitl-comment" rows="3"
-              placeholder="Feedback for AI to incorporate on next generation (optional)…"></textarea>
+        <div class="wb-card">
+          <div class="wb-card-hdr" style="background:#2d1a00;color:#fbbf24;">
+            👤 HITL Review
+          </div>
+          <div class="wb-card-body">
+            <label style="display:block;color:#94a3b8;font-size:11px;font-weight:600;margin-bottom:5px;">Reviewer Comment</label>
+            <textarea id="hitl-comment" rows="3"
+              placeholder="Feedback for AI to incorporate on next generation (optional)…"
+              style="width:100%;background:#050d1f;color:#b8d0e8;border:1px solid #1a3560;border-radius:4px;padding:7px 10px;font-size:11px;margin-bottom:8px;resize:vertical;"></textarea>
 
-            <button class="btn btn-success w-100 mb-1" onclick="applyHitl('approve')">✅ Approve</button>
-            <button class="btn btn-danger w-100 mb-1" onclick="applyHitl('reject')">❌ Reject</button>
-            <button class="btn btn-warning w-100 mb-1 text-dark" onclick="commentAndRegenerate()">
-              💬 Comment &amp; Regenerate
-            </button>
-            <button class="btn btn-outline-success w-100" onclick="applyHitl('accept')">🏁 Mark Final (Accept)</button>
+            <button class="wb-btn" onclick="applyHitl('approve')"
+              style="background:#052e16;color:#4ade80;border-color:#16a34a;">✅ Approve</button>
+            <button class="wb-btn" onclick="applyHitl('reject')"
+              style="background:#2d0a0a;color:#f87171;border-color:#7f1d1d;">❌ Reject</button>
+            <button class="wb-btn" onclick="commentAndRegenerate()"
+              style="background:#2d1a00;color:#fbbf24;border-color:#92400e;">💬 Comment &amp; Regenerate</button>
+            <button class="wb-btn" onclick="applyHitl('accept')"
+              style="background:#0d1b2e;color:#4ade80;border-color:#16a34a;">🏁 Mark Final (Accept)</button>
 
-            <div id="hitl-msg" class="mt-2 small text-center"></div>
+            <div id="hitl-msg" style="margin-top:8px;font-size:11px;text-align:center;color:#7a8cb0;"></div>
           </div>
         </div>
 
         <!-- Engine Weights -->
-        <div class="card mb-3 border-info shadow-sm mt-3">
-          <div class="card-header py-2 fw-semibold text-info bg-info bg-opacity-10 d-flex justify-content-between">
+        <div class="wb-card">
+          <div class="wb-card-hdr" style="background:#0a1a30;color:#38bdf8;">
             <span>⚖️ Engine Weights</span>
-            <small id="ew-total-badge" class="fw-normal text-muted">—</small>
+            <small id="ew-total-badge" style="color:#5a7aa0;font-weight:400;">—</small>
           </div>
-          <div class="card-body pt-2 pb-2">
-            <p class="text-muted" style="font-size:10px;">Enable/disable each source and set its relative weight. Normalized at generation time.</p>
+          <div class="wb-card-body">
+            <div style="font-size:10px;color:#5a7aa0;margin-bottom:8px;">
+              Controls how AI blends sources during generation. Enable/disable each source and set its relative weight (0–100). Weights are normalized at generation time.
+            </div>
             <div id="ew-rows"></div>
-            <div class="d-flex gap-2 mt-2">
-              <button class="btn btn-sm btn-outline-info flex-fill" onclick="saveEngineWeights()">💾 Save Weights</button>
-              <button class="btn btn-sm btn-outline-secondary" onclick="resetEngineWeights()">↺</button>
+            <div style="display:flex;gap:6px;margin-top:8px;">
+              <button class="wb-btn" onclick="saveEngineWeights()"
+                style="flex:1;background:#0a1a30;color:#38bdf8;border-color:#0ea5e9;">💾 Save Weights</button>
+              <button class="wb-btn" onclick="resetEngineWeights()"
+                style="background:#0f3460;color:#7a8cb0;border-color:#1e3a6e;">↺</button>
             </div>
-            <div id="ew-msg" class="text-center mt-1" style="font-size:10px;"></div>
+            <div id="ew-msg" style="font-size:10px;color:#5a7aa0;margin-top:4px;text-align:center;"></div>
+
             <!-- Section override -->
-            <hr class="my-2">
-            <div class="d-flex align-items-center gap-2">
-              <input class="form-check-input" type="checkbox" id="ew-sec-override" disabled onchange="toggleSectionOverride(this.checked)">
-              <label class="form-check-label small text-muted" for="ew-sec-override">Override for this section</label>
-              <button id="ew-sec-clear" onclick="clearSectionOverride()" class="btn btn-sm btn-outline-danger ms-auto py-0 px-2" style="display:none;font-size:10px;">Clear</button>
+            <hr style="border-color:#1a2b4a;margin:8px 0 6px;">
+            <div style="display:flex;align-items:center;gap:6px;">
+              <input type="checkbox" id="ew-sec-override" disabled onchange="toggleSectionOverride(this.checked)">
+              <label for="ew-sec-override" style="font-size:11px;color:#7a8cb0;">Override for this section</label>
+              <button id="ew-sec-clear" onclick="clearSectionOverride()"
+                style="display:none;margin-left:auto;background:none;border:1px solid #7f1d1d;color:#f87171;border-radius:4px;padding:2px 7px;font-size:10px;cursor:pointer;">Clear</button>
             </div>
-            <div id="ew-sec-rows" style="display:none;" class="mt-2"></div>
-            <button id="ew-sec-save" onclick="saveSectionEngineWeights()" style="display:none;" class="btn btn-sm btn-outline-info w-100 mt-2">💾 Save Section Override</button>
-            <div id="ew-sec-msg" class="text-center mt-1" style="font-size:10px;"></div>
-            <hr class="my-2">
-            <div class="fw-semibold mb-1" style="font-size:11px;">📁 Past Performance Docs</div>
-            <div id="pp-list" class="mb-2" style="max-height:100px;overflow-y:auto;"></div>
-            <label class="d-block" style="cursor:pointer;">
-              <div id="pp-drop" class="border border-secondary rounded text-center text-muted p-2"
-                style="font-size:11px;cursor:pointer;"
+            <div id="ew-sec-rows" style="display:none;margin-top:6px;"></div>
+            <button id="ew-sec-save" onclick="saveSectionEngineWeights()" style="display:none;margin-top:6px;"
+              class="wb-btn" style="background:#0a1a30;color:#38bdf8;border-color:#0ea5e9;">💾 Save Section Override</button>
+            <div id="ew-sec-msg" style="font-size:10px;color:#5a7aa0;margin-top:4px;text-align:center;"></div>
+
+            <!-- Past Performance Uploads -->
+            <hr style="border-color:#1a2b4a;margin:10px 0 8px;">
+            <div style="font-size:11px;color:#94a3b8;font-weight:600;margin-bottom:6px;">📁 Past Performance Docs</div>
+            <div id="pp-list" style="margin-bottom:6px;max-height:100px;overflow-y:auto;"></div>
+            <label style="display:block;cursor:pointer;">
+              <div id="pp-drop" style="border:1px dashed #1e3a6e;border-radius:4px;padding:8px;text-align:center;font-size:11px;color:#5a7aa0;cursor:pointer;"
                 ondragover="event.preventDefault()" ondrop="handlePPDrop(event)">
-                Drag & drop or <span class="text-info text-decoration-underline">click to upload</span><br>
-                <small>PDF, DOCX, TXT</small>
+                Drag & drop or <span style="color:#38bdf8;text-decoration:underline;">click to upload</span><br>
+                <span style="font-size:10px;">PDF, DOCX, TXT</span>
               </div>
               <input id="pp-file-input" type="file" accept=".pdf,.docx,.doc,.txt" multiple
-                class="d-none" onchange="handlePPFileSelect(event)">
+                style="display:none" onchange="handlePPFileSelect(event)">
             </label>
-            <div id="pp-upload-msg" class="text-center mt-1" style="font-size:10px;"></div>
+            <div id="pp-upload-msg" style="font-size:10px;color:#5a7aa0;margin-top:4px;text-align:center;"></div>
           </div>
         </div>
 
         <!-- Style Guide -->
-        <div class="card mb-3 border-primary shadow-sm mt-3">
-          <div class="card-header py-2 fw-semibold text-primary bg-primary bg-opacity-10 d-flex justify-content-between">
+        <div class="wb-card">
+          <div class="wb-card-hdr" style="background:#1a0a30;color:#a78bfa;">
             <span>📝 Style Guide</span>
-            <small id="sg-status" class="fw-normal text-muted">default</small>
+            <small id="sg-status" style="color:#5a7aa0;font-weight:400;">default</small>
           </div>
-          <div class="card-body pt-2 pb-2">
-            <label class="form-label small fw-semibold mb-1">Tone</label>
-            <select id="sg-tone" class="form-select form-select-sm mb-2">
+          <div class="wb-card-body">
+            <label style="display:block;color:#94a3b8;font-size:11px;font-weight:600;margin-bottom:4px;">Tone</label>
+            <select id="sg-tone" style="width:100%;background:#050d1f;color:#b8d0e8;border:1px solid #1a3560;border-radius:4px;padding:4px 8px;font-size:11px;margin-bottom:8px;">
               <option value="formal">Formal</option>
               <option value="semi-formal">Semi-formal</option>
               <option value="technical">Technical</option>
             </select>
-            <div class="row g-2 mb-2">
-              <div class="col">
-                <label class="form-label small fw-semibold mb-1">Total pages</label>
-                <input id="sg-page-limit" type="number" min="0" step="1" placeholder="none" class="form-control form-control-sm">
+            <div style="display:flex;gap:6px;margin-bottom:8px;">
+              <div style="flex:1;">
+                <label style="display:block;color:#94a3b8;font-size:11px;font-weight:600;margin-bottom:3px;">Total pages</label>
+                <input id="sg-page-limit" type="number" min="0" step="1" placeholder="none"
+                  style="width:100%;background:#050d1f;color:#b8d0e8;border:1px solid #1a3560;border-radius:4px;padding:4px 7px;font-size:11px;">
               </div>
-              <div class="col">
-                <label class="form-label small fw-semibold mb-1">Words/page</label>
-                <input id="sg-words-per-page" type="number" min="50" step="50" value="250" class="form-control form-control-sm">
+              <div style="flex:1;">
+                <label style="display:block;color:#94a3b8;font-size:11px;font-weight:600;margin-bottom:3px;">Words/page</label>
+                <input id="sg-words-per-page" type="number" min="50" step="50" value="250"
+                  style="width:100%;background:#050d1f;color:#b8d0e8;border:1px solid #1a3560;border-radius:4px;padding:4px 7px;font-size:11px;">
               </div>
             </div>
-            <label class="form-label small fw-semibold mb-1">Forbidden phrases <span class="fw-normal text-muted">(one/line)</span></label>
-            <textarea id="sg-forbidden" rows="3" placeholder="TBD&#10;N/A&#10;best in class" class="form-control form-control-sm mb-2"></textarea>
-            <label class="form-label small fw-semibold mb-1">Required headings <span class="fw-normal text-muted">(one/line)</span></label>
-            <textarea id="sg-headings" rows="2" placeholder="Technical Approach&#10;Past Performance" class="form-control form-control-sm mb-2"></textarea>
-            <button class="btn btn-primary btn-sm w-100 mb-2" onclick="saveStyleGuide()">💾 Save Style Settings</button>
-            <hr class="my-2">
-            <label class="form-label small fw-semibold mb-1">Section word limit</label>
-            <div class="input-group input-group-sm mb-1">
-              <input id="sec-word-limit" type="number" min="0" step="50" placeholder="none" class="form-control">
-              <button class="btn btn-outline-secondary" onclick="saveSectionLimits()">Set</button>
+            <label style="display:block;color:#94a3b8;font-size:11px;font-weight:600;margin-bottom:3px;">Forbidden phrases <span style="font-weight:400;color:#5a7aa0;">(one/line)</span></label>
+            <textarea id="sg-forbidden" rows="3" placeholder="TBD&#10;N/A&#10;best in class"
+              style="width:100%;background:#050d1f;color:#b8d0e8;border:1px solid #1a3560;border-radius:4px;padding:4px 8px;font-size:11px;margin-bottom:8px;resize:vertical;"></textarea>
+            <label style="display:block;color:#94a3b8;font-size:11px;font-weight:600;margin-bottom:3px;">Required headings <span style="font-weight:400;color:#5a7aa0;">(one/line)</span></label>
+            <textarea id="sg-headings" rows="2" placeholder="Technical Approach&#10;Past Performance"
+              style="width:100%;background:#050d1f;color:#b8d0e8;border:1px solid #1a3560;border-radius:4px;padding:4px 8px;font-size:11px;margin-bottom:8px;resize:vertical;"></textarea>
+            <button class="wb-btn" onclick="saveStyleGuide()"
+              style="background:#1a0a30;color:#a78bfa;border-color:#6d28d9;">💾 Save Style Settings</button>
+            <hr style="border-color:#1a2b4a;margin:8px 0 10px;">
+            <label style="display:block;color:#94a3b8;font-size:11px;font-weight:600;margin-bottom:3px;">Section word limit</label>
+            <div style="display:flex;gap:6px;align-items:center;margin-bottom:4px;">
+              <input id="sec-word-limit" type="number" min="0" step="50" placeholder="none"
+                style="flex:1;background:#050d1f;color:#b8d0e8;border:1px solid #1a3560;border-radius:4px;padding:4px 8px;font-size:11px;">
+              <button onclick="saveSectionLimits()"
+                style="background:#0f3460;color:#7ab3f0;border:1px solid #1e3a6e;border-radius:4px;padding:4px 10px;font-size:11px;cursor:pointer;">Set</button>
             </div>
-            <div class="text-muted" style="font-size:10px;">Limits apply to this section only</div>
+            <div style="font-size:10px;color:#5a7aa0;">Limits apply to this section only</div>
           </div>
         </div>
 
         <!-- AI Team -->
-        <div class="card mb-3 border-success shadow-sm mt-3">
-          <div class="card-header py-2 fw-semibold text-success bg-success bg-opacity-10 d-flex justify-content-between">
+        <div class="wb-card">
+          <div class="wb-card-hdr" style="background:#0a1a10;color:#4ade80;">
             <span>🤖 AI Team</span>
-            <small id="ace-team-state" class="fw-normal text-muted">not launched</small>
+            <small id="ace-team-state" style="color:#5a7aa0;font-weight:400;">not launched</small>
           </div>
-          <div class="card-body pt-2 pb-2">
-            <div id="ace-team-roles" class="small text-muted mb-2"></div>
-            <button class="btn btn-outline-success btn-sm w-100 mb-1" id="ace-launch-btn" onclick="launchAceTeam()">
+          <div class="wb-card-body">
+            <div id="ace-team-roles"></div>
+            <button class="wb-btn" id="ace-launch-btn" onclick="launchAceTeam()"
+              style="background:#0a1a10;color:#4ade80;border-color:#16a34a;">
               🚀 Launch Team
             </button>
-            <div class="text-center">
-              <a href="/coworker" target="_blank" class="small text-muted">→ View in ACE Canvas</a>
+            <div style="text-align:center;margin-top:4px;">
+              <a href="/coworker" target="_blank" style="font-size:10px;color:#5a7aa0;text-decoration:none;">→ View in ACE Canvas</a>
             </div>
           </div>
         </div>
@@ -434,7 +487,7 @@
       </div>
     </div>
   </div>
-</div><!-- #wb-layout -->
+</div>
 
 <script>
 const SESSION_ID = "{{ session.id }}";
@@ -446,13 +499,11 @@ let sessionWordsPerPage = 250;
 let sectionWordLimit = null;
 let sectionPageLimit = null;
 
-// ── Load section ─────────────────────────────────────────────────────────────
 function loadSection(id) {
   document.querySelectorAll('.section-item').forEach(el => el.classList.remove('active'));
   const el = document.querySelector(`.section-item[data-id="${id}"]`);
   if (el) el.classList.add('active');
   currentSectionId = id;
-
   fetch(`/api/rfi/${SESSION_ID}/sections`)
     .then(r => r.json())
     .then(secs => {
@@ -462,21 +513,22 @@ function loadSection(id) {
 }
 
 function renderSection(sec) {
+  // Update limit vars BEFORE updateWordCount reads them
   sectionWordLimit = sec.word_limit || null;
   sectionPageLimit = sec.page_limit || null;
   const wlInput = document.getElementById('sec-word-limit');
   if (wlInput) wlInput.value = sectionWordLimit || '';
-  document.getElementById('editor-placeholder').classList.add('d-none');
-  document.getElementById('panel-placeholder').classList.add('d-none');
-  document.getElementById('editor-area').classList.remove('d-none');
-  document.getElementById('panel-controls').classList.remove('d-none');
+  document.getElementById('editor-placeholder').style.display = 'none';
+  document.getElementById('panel-placeholder').style.display = 'none';
+  document.getElementById('editor-area').style.display = '';
+  document.getElementById('panel-controls').style.display = '';
 
   document.getElementById('editor-title').textContent = sec.item_number + ' — ' + sec.title;
   document.getElementById('editor-question').textContent = sec.question_text || '';
 
   const badge = document.getElementById('editor-status-badge');
   badge.textContent = (sec.status || '').replace(/_/g,' ');
-  badge.className = 'badge ms-3 flex-shrink-0 ' + statusBadgeClass(sec.status);
+  applyStatusStyle(badge, sec.status);
 
   const editor = document.getElementById('content-editor');
   editor.value = sec.content || sec.ai_draft || '';
@@ -484,44 +536,36 @@ function renderSection(sec) {
 
   document.getElementById('hitl-comment').value = sec.hitl_comment || '';
   document.getElementById('gen-count').textContent = sec.generation_count > 0 ? 'v' + sec.generation_count : 'not generated';
-  document.getElementById('hitl-msg').textContent = '';
-  document.getElementById('save-indicator').textContent = '';
-  document.getElementById('gen-status').classList.add('d-none');
-  document.getElementById('md-structure-indicator').textContent = '';
   const historyBtn = document.getElementById('history-btn');
-  if (historyBtn) historyBtn.classList.remove('d-none');
+  if (historyBtn) historyBtn.style.display = '';
   _historyVisible = false;
   const histPanel = document.getElementById('history-panel');
-  if (histPanel) histPanel.classList.add('d-none');
+  if (histPanel) { histPanel.style.display = 'none'; }
+  document.getElementById('hitl-msg').textContent = '';
+  document.getElementById('save-indicator').textContent = '';
+  document.getElementById('gen-status').style.display = 'none';
+  document.getElementById('md-structure-indicator').textContent = '';
   loadRequirements(sec.id);
-  // Enable section override toggle and load its weights
-  const secOverride = document.getElementById('ew-sec-override');
-  if (secOverride) { secOverride.disabled = false; }
+  // Enable section weight override controls
+  const overrideCb = document.getElementById('ew-sec-override');
+  if (overrideCb) { overrideCb.disabled = false; }
   loadSectionEngineWeights(sec.id);
 
-  // Rejected notice
   const rejNotice = document.getElementById('rejected-notice');
   if (sec.status === 'hitl_rejected' && sec.hitl_comment) {
     document.getElementById('rejected-comment').textContent = sec.hitl_comment;
-    rejNotice.classList.remove('d-none');
-  } else {
-    rejNotice.classList.add('d-none');
-  }
+    rejNotice.style.display = '';
+  } else { rejNotice.style.display = 'none'; }
 
-  // WriteGuard inline
   if (sec.writeguard_score) {
     const s = parseFloat(sec.writeguard_score);
-    document.getElementById('wg-inline-summary').textContent =
-      `WriteGuard: ${s.toFixed(0)}% ${s >= 80 ? '✅' : s >= 60 ? '⚠️' : '❌'}`;
+    document.getElementById('wg-inline-summary').textContent = `WriteGuard: ${s.toFixed(0)}% ${s>=80?'✅':s>=60?'⚠️':'❌'}`;
     if (sec.writeguard_result) {
-      try {
-        const wg = typeof sec.writeguard_result === 'string' ? JSON.parse(sec.writeguard_result) : sec.writeguard_result;
-        renderWriteGuardResult(wg);
-      } catch(e) {}
+      try { renderWriteGuardResult(typeof sec.writeguard_result==='string' ? JSON.parse(sec.writeguard_result) : sec.writeguard_result); } catch(e) {}
     }
   } else {
     document.getElementById('wg-inline-summary').textContent = '';
-    document.getElementById('wg-results').classList.add('d-none');
+    document.getElementById('wg-results').style.display = 'none';
   }
 
   const hasContent = !!(sec.content || sec.ai_draft);
@@ -538,7 +582,7 @@ function renderSection(sec) {
   clearTimeout(_reviewerPollTimer);
   _reviewerPollCount = 0;
   const revCard = document.getElementById('ace-reviewer-card');
-  if (revCard) revCard.classList.add('d-none');
+  if (revCard) revCard.style.display = 'none';
   const fb = sec.ace_feedback;
   if (fb) {
     if (fb.reviewer) renderReviewerFeedback(fb.reviewer);
@@ -549,24 +593,29 @@ function renderSection(sec) {
   const whyUsPanel = document.getElementById('why-us-panel');
   if (whyUsPanel) {
     const isInsights = (sec.item_number || '').startsWith('5') || (sec.part || '').includes('5');
-    if (isInsights) { whyUsPanel.classList.remove('d-none'); }
-    else { whyUsPanel.classList.add('d-none'); }
-    document.getElementById('why-us-output').classList.add('d-none');
-    document.getElementById('why-us-actions').classList.add('d-none');
-    document.getElementById('why-us-spinner').classList.add('d-none');
+    whyUsPanel.style.display = isInsights ? '' : 'none';
+    document.getElementById('why-us-output').style.display = 'none';
+    document.getElementById('why-us-actions').style.display = 'none';
+    document.getElementById('why-us-spinner').style.display = 'none';
     _whyUsParagraph = '';
   }
 }
 
-function statusBadgeClass(status) {
-  const m = {pending:'bg-secondary', ai_draft_ready:'bg-warning text-dark', hitl_approved:'bg-success', hitl_rejected:'bg-danger', accepted:'bg-success'};
-  return m[status] || 'bg-secondary';
+function applyStatusStyle(el, status) {
+  const styles = {
+    pending: 'background:#1e293b;color:#94a3b8;border:1px solid #334155;',
+    ai_draft_ready: 'background:#2d1a00;color:#fbbf24;border:1px solid #92400e;',
+    hitl_approved: 'background:#052e16;color:#4ade80;border:1px solid #16a34a;',
+    hitl_rejected: 'background:#2d0a0a;color:#f87171;border:1px solid #7f1d1d;',
+    accepted: 'background:#052e16;color:#4ade80;border:1px solid #16a34a;'
+  };
+  el.style.cssText = 'font-size:10px;font-weight:600;padding:2px 8px;border-radius:3px;margin-left:12px;flex-shrink:0;' + (styles[status] || styles.pending);
 }
 
-// ── Editor ────────────────────────────────────────────────────────────────────
 function onContentChange() {
   updateWordCount(document.getElementById('content-editor').value);
   document.getElementById('save-indicator').textContent = '● unsaved';
+  document.getElementById('save-indicator').style.color = '#f59e0b';
   clearTimeout(saveTimer);
   saveTimer = setTimeout(saveContent, 2500);
 }
@@ -583,11 +632,11 @@ function updateWordCount(text) {
   if (limitBadge) {
     if (sectionWordLimit && w > sectionWordLimit) {
       limitBadge.textContent = `⚠ +${w - sectionWordLimit} over`;
-      limitBadge.style.color = '#dc2626';
+      limitBadge.style.color = '#f87171';
       if (sumBtn) sumBtn.style.display = '';
     } else if (sectionWordLimit) {
       limitBadge.textContent = `${sectionWordLimit - w} left`;
-      limitBadge.style.color = '#16a34a';
+      limitBadge.style.color = '#4ade80';
       if (sumBtn) sumBtn.style.display = 'none';
     } else {
       limitBadge.textContent = '';
@@ -600,10 +649,9 @@ function saveContent() {
   if (!currentSectionId) return;
   const content = document.getElementById('content-editor').value;
   fetch(`/api/rfi/${SESSION_ID}/sections/${currentSectionId}/save`, {
-    method: 'POST', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({content})
+    method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({content})
   }).then(r => r.json()).then(d => {
-    if (d.ok) document.getElementById('save-indicator').textContent = '✓ saved';
+    if (d.ok) { document.getElementById('save-indicator').textContent = '✓ saved'; document.getElementById('save-indicator').style.color = '#22c55e'; }
   });
 }
 
@@ -614,12 +662,12 @@ function togglePreview() {
   const btn = document.getElementById('preview-btn');
   if (previewActive) {
     preview.innerHTML = renderMarkdown(editor.value);
-    preview.classList.remove('d-none');
-    editor.classList.add('d-none');
+    preview.style.display = '';
+    editor.style.display = 'none';
     btn.textContent = '✏️ Edit';
   } else {
-    preview.classList.add('d-none');
-    editor.classList.remove('d-none');
+    preview.style.display = 'none';
+    editor.style.display = '';
     btn.textContent = '📄 Preview';
   }
 }
@@ -646,7 +694,7 @@ function renderMarkdown(text) {
       continue;
     }
     if (inCode) { codeLines.push(raw); continue; }
-    // HR
+    // HR separator
     if (/^---+$/.test(raw.trim())) { if (inList) { html += '</ul>'; inList=false; } if (inTable) { html += '</tbody></table>'; inTable=false; } html += '<hr style="border-color:#1e3a6e;margin:.75rem 0">'; continue; }
     // Table row
     if (raw.trim().startsWith('|') && raw.trim().endsWith('|')) {
@@ -693,28 +741,21 @@ function applyInline(s) {
     .replace(/`(.+?)`/g,'<code style="background:#1e293b;color:#7ab3f0;padding:1px 5px;border-radius:3px">$1</code>');
 }
 
-// ── AI Generate ───────────────────────────────────────────────────────────────
 function generateContent() {
   if (!currentSectionId) return;
   const btn = document.getElementById('gen-btn');
   const label = document.getElementById('gen-btn-label');
   const icon = document.getElementById('gen-spinner-icon');
   const status = document.getElementById('gen-status');
-  btn.disabled = true;
-  label.textContent = 'Generating…';
-  icon.className = 'spin';
-  icon.textContent = '⟳';
-  label.className = 'generating';
-  status.textContent = '⚡ AI is generating content…';
-  status.className = 'text-muted small generating text-center';
-  status.classList.remove('d-none');
-
-  fetch(`/api/rfi/${SESSION_ID}/sections/${currentSectionId}/generate`, {method: 'POST'})
+  btn.disabled = true; label.textContent = 'Generating…'; icon.className = 'spin'; icon.textContent = '⟳';
+  label.className = 'generating'; status.textContent = '⚡ AI is generating content…';
+  status.style.color = '#7a8cb0'; status.style.display = '';
+  fetch(`/api/rfi/${SESSION_ID}/sections/${currentSectionId}/generate`, {method:'POST'})
     .then(r => r.json())
     .then(d => {
       btn.disabled = false; label.textContent = 'Regenerate'; icon.textContent = '✨'; icon.className = '';
-      if (d.error) { status.textContent = '❌ ' + d.error; status.className = 'text-danger small text-center'; return; }
-      status.textContent = '✓ Generated'; status.className = 'text-success small text-center';
+      if (d.error) { status.textContent = '❌ ' + d.error; status.style.color = '#f87171'; return; }
+      status.textContent = '✓ Generated'; status.style.color = '#4ade80';
       currentSection = d.section;
       document.getElementById('content-editor').value = d.section.content || d.section.ai_draft || '';
       updateWordCount(document.getElementById('content-editor').value);
@@ -726,45 +767,38 @@ function generateContent() {
       if (mdv && !mdv.valid) {
         const errCount = (mdv.issues||[]).filter(i=>i.severity==='error').length;
         mdInd.textContent = `⚠ ${errCount} structure issue${errCount!==1?'s':''}`;
-        mdInd.className = 'small text-danger';
+        mdInd.style.color = '#f87171';
       } else if (mdv) {
         mdInd.textContent = '✓ Structure OK';
-        mdInd.className = 'small text-success';
+        mdInd.style.color = '#22c55e';
       }
       loadRequirements(currentSectionId);
       // Start ACE Editor review polling
       showAceEditorReviewing();
       _pollAceEditorFeedback();
+      // Auto-switch to rendered preview after generation
       if (!previewActive) togglePreview();
-      setTimeout(() => status.classList.add('d-none'), 3000);
+      setTimeout(() => { status.style.display = 'none'; }, 3000);
     })
-    .catch(err => {
-      btn.disabled = false; label.textContent = 'Generate Content'; icon.textContent = '✨'; icon.className = '';
-      status.textContent = '❌ ' + err.message; status.className = 'text-danger small text-center';
-    });
+    .catch(err => { btn.disabled = false; label.textContent = 'Generate Content'; icon.textContent = '✨'; icon.className = ''; status.textContent = '❌ ' + err.message; status.style.color = '#f87171'; });
 }
 
-// ── WriteGuard ────────────────────────────────────────────────────────────────
 function runWriteGuard() {
   if (!currentSectionId) return;
   const btn = document.getElementById('wg-btn');
   btn.disabled = true; btn.textContent = 'Running…';
-  document.getElementById('wg-error').classList.add('d-none');
-  document.getElementById('wg-results').classList.add('d-none');
-  // Save first
+  document.getElementById('wg-error').style.display = 'none';
+  document.getElementById('wg-results').style.display = 'none';
   saveContent();
   setTimeout(() => {
-    fetch(`/api/rfi/${SESSION_ID}/sections/${currentSectionId}/writeguard`, {method: 'POST'})
+    fetch(`/api/rfi/${SESSION_ID}/sections/${currentSectionId}/writeguard`, {method:'POST'})
       .then(r => r.json())
       .then(d => {
         btn.disabled = false; btn.textContent = 'Run WriteGuard';
-        if (d.error) { document.getElementById('wg-error').textContent = d.error; document.getElementById('wg-error').classList.remove('d-none'); return; }
+        if (d.error) { document.getElementById('wg-error').textContent = d.error; document.getElementById('wg-error').style.display = ''; return; }
         renderWriteGuardResult(d.result);
       })
-      .catch(err => {
-        btn.disabled = false; btn.textContent = 'Run WriteGuard';
-        document.getElementById('wg-error').textContent = err.message; document.getElementById('wg-error').classList.remove('d-none');
-      });
+      .catch(err => { btn.disabled = false; btn.textContent = 'Run WriteGuard'; document.getElementById('wg-error').textContent = err.message; document.getElementById('wg-error').style.display = ''; });
   }, 400);
 }
 
@@ -772,59 +806,51 @@ function renderWriteGuardResult(wg) {
   const score = parseFloat(wg.overall_score || 0);
   const badge = document.getElementById('wg-overall-badge');
   badge.textContent = score.toFixed(0) + '%';
-  badge.className = 'badge ' + (score >= 80 ? 'bg-success' : score >= 60 ? 'bg-warning text-dark' : 'bg-danger');
+  if (score >= 80) { badge.style.cssText = 'font-size:11px;font-weight:700;padding:2px 8px;border-radius:3px;background:#052e16;color:#4ade80;border:1px solid #16a34a;'; }
+  else if (score >= 60) { badge.style.cssText = 'font-size:11px;font-weight:700;padding:2px 8px;border-radius:3px;background:#2d1a00;color:#fbbf24;border:1px solid #92400e;'; }
+  else { badge.style.cssText = 'font-size:11px;font-weight:700;padding:2px 8px;border-radius:3px;background:#2d0a0a;color:#f87171;border:1px solid #7f1d1d;'; }
 
   const dims = ['Correctness','Clarity','Delivery','Originality','Engagement'];
   const comp = wg.composites || {};
   dims.forEach(d => {
     const s = parseFloat(comp[d] || 0);
-    const el = document.getElementById('wg-score-' + d.toLowerCase());
+    const scoreEl = document.getElementById('wg-score-' + d.toLowerCase());
     const bar = document.getElementById('wg-bar-' + d.toLowerCase());
-    if (el) el.textContent = s.toFixed(0) + '%';
-    if (bar) {
-      bar.style.width = s + '%';
-      bar.className = 'wg-bar progress-bar ' + (s >= 80 ? 'bg-success' : s >= 60 ? 'bg-warning' : 'bg-danger');
-    }
+    if (scoreEl) { scoreEl.textContent = s.toFixed(0) + '%'; scoreEl.style.color = s>=80?'#4ade80':s>=60?'#fbbf24':'#f87171'; }
+    if (bar) { bar.style.width = s + '%'; bar.style.background = s>=80?'#22c55e':s>=60?'#f59e0b':'#ef4444'; }
   });
 
   const issues = wg.issues || [];
   const issDiv = document.getElementById('wg-issues');
   issDiv.innerHTML = issues.length
-    ? issues.slice(0,4).map(i => `<div class="text-muted">• ${(i.message || i).toString().slice(0,80)}</div>`).join('')
-    : '<div class="text-success">✓ No major issues</div>';
-
-  document.getElementById('wg-results').classList.remove('d-none');
-  document.getElementById('wg-inline-summary').textContent =
-    `WriteGuard: ${score.toFixed(0)}% ${score >= 80 ? '✅' : score >= 60 ? '⚠️' : '❌'}`;
+    ? issues.slice(0,4).map(i => `<div style="color:#7a8cb0;margin-bottom:3px;">• ${(i.message||i).toString().slice(0,80)}</div>`).join('')
+    : '<div style="color:#4ade80;">✓ No major issues</div>';
+  document.getElementById('wg-results').style.display = '';
+  document.getElementById('wg-inline-summary').textContent = `WriteGuard: ${score.toFixed(0)}% ${score>=80?'✅':score>=60?'⚠️':'❌'}`;
 }
 
-// ── HITL ──────────────────────────────────────────────────────────────────────
 function applyHitl(action) {
   if (!currentSectionId) return;
   const comment = document.getElementById('hitl-comment').value;
   const msg = document.getElementById('hitl-msg');
-  msg.textContent = 'Saving…'; msg.className = 'mt-2 small text-center text-muted';
-
+  msg.textContent = 'Saving…'; msg.style.color = '#7a8cb0';
   fetch(`/api/rfi/${SESSION_ID}/sections/${currentSectionId}/hitl`, {
-    method: 'POST', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({action, comment})
+    method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action, comment})
   }).then(r => r.json()).then(d => {
-    if (d.error) { msg.textContent = '❌ ' + d.error; msg.className = 'mt-2 small text-center text-danger'; return; }
+    if (d.error) { msg.textContent = '❌ ' + d.error; msg.style.color = '#f87171'; return; }
     const labels = {approve:'✅ Approved', reject:'❌ Rejected', accept:'🏁 Accepted as final'};
     msg.textContent = labels[action] || 'Done';
-    msg.className = 'mt-2 small text-center ' + (action === 'reject' ? 'text-danger' : 'text-success');
+    msg.style.color = action === 'reject' ? '#f87171' : '#4ade80';
     currentSection = d.section;
     const badge = document.getElementById('editor-status-badge');
     badge.textContent = d.section.status.replace(/_/g,' ');
-    badge.className = 'badge ms-3 flex-shrink-0 ' + statusBadgeClass(d.section.status);
+    applyStatusStyle(badge, d.section.status);
     refreshSidebarItem(currentSectionId, d.section.status);
     updateProgress();
     if (action === 'reject' && comment) {
       document.getElementById('rejected-comment').textContent = comment;
-      document.getElementById('rejected-notice').classList.remove('d-none');
-    } else {
-      document.getElementById('rejected-notice').classList.add('d-none');
-    }
+      document.getElementById('rejected-notice').style.display = '';
+    } else { document.getElementById('rejected-notice').style.display = 'none'; }
     if (action === 'approve' || action === 'accept') {
       _reviewerPollCount = 0;
       clearTimeout(_reviewerPollTimer);
@@ -835,13 +861,11 @@ function applyHitl(action) {
 }
 
 function commentAndRegenerate() {
-  const comment = document.getElementById('hitl-comment').value;
-  if (!comment.trim()) { alert('Please add a comment before regenerating.'); return; }
+  if (!document.getElementById('hitl-comment').value.trim()) { alert('Please add a comment before regenerating.'); return; }
   applyHitl('reject');
-  setTimeout(() => generateContent(), 600);
+  setTimeout(generateContent, 600);
 }
 
-// ── Sidebar helpers ──────────────────────────────────────────────────────────
 function refreshSidebarItem(id, status) {
   const el = document.querySelector(`.section-item[data-id="${id}"]`);
   if (!el) return;
@@ -849,35 +873,33 @@ function refreshSidebarItem(id, status) {
   const badge = el.querySelector('.s-badge');
   if (badge) {
     const icons = {accepted:'✓', hitl_approved:'✓', hitl_rejected:'✗', ai_draft_ready:'⚡', pending:'○'};
-    const cls = {
-      accepted:'bg-success text-white', hitl_approved:'bg-success text-white',
-      hitl_rejected:'bg-danger text-white', ai_draft_ready:'bg-warning text-dark',
-      pending:'bg-light text-secondary border'
+    const styles = {
+      accepted:'background:#052e16;color:#4ade80;border-color:#16a34a;',
+      hitl_approved:'background:#052e16;color:#4ade80;border-color:#16a34a;',
+      hitl_rejected:'background:#2d0a0a;color:#f87171;border-color:#7f1d1d;',
+      ai_draft_ready:'background:#2d1a00;color:#fbbf24;border-color:#92400e;',
+      pending:'background:#1e293b;color:#64748b;border-color:#334155;'
     };
     badge.textContent = icons[status] || '○';
-    badge.className = 's-badge ' + (cls[status] || 'bg-light text-secondary border');
+    badge.style.cssText = (styles[status] || styles.pending);
   }
   updateProgress();
 }
 
 function updateProgress() {
   const items = document.querySelectorAll('.section-item');
-  const total = items.length;
   let approved = 0;
-  items.forEach(el => {
-    if (el.classList.contains('status-hitl_approved') || el.classList.contains('status-accepted')) approved++;
-  });
-  const pct = total > 0 ? Math.round(approved / total * 100) : 0;
+  items.forEach(el => { if (el.classList.contains('status-hitl_approved') || el.classList.contains('status-accepted')) approved++; });
+  const pct = items.length > 0 ? Math.round(approved / items.length * 100) : 0;
   document.getElementById('progress-bar').style.width = pct + '%';
-  document.getElementById('progress-label').textContent = approved + '/' + total + ' accepted';
+  document.getElementById('progress-label').textContent = approved + '/' + items.length + ' accepted';
 }
 
-// ── Export ───────────────────────────────────────────────────────────────────
 function doExport(fmt) {
   const btn = document.getElementById('export-docx-btn');
   const spinner = document.getElementById('export-spinner');
   if (fmt === 'docx') { btn.disabled = true; spinner.style.display = 'inline-block'; }
-  fetch(`/api/rfi/${SESSION_ID}/export/${fmt}`, {method: 'POST'})
+  fetch(`/api/rfi/${SESSION_ID}/export/${fmt}`, {method:'POST'})
     .then(r => r.json())
     .then(d => {
       btn.disabled = false; spinner.style.display = 'none';
@@ -887,18 +909,14 @@ function doExport(fmt) {
     .catch(err => { btn.disabled = false; spinner.style.display = 'none'; alert('Export failed: ' + err.message); });
 }
 
-// ── Filter ────────────────────────────────────────────────────────────────────
 function filterSections(q) {
   const lower = q.toLowerCase();
-  let lastHdr = null;
   document.querySelectorAll('#section-tree > *').forEach(el => {
-    if (el.classList.contains('part-hdr')) { lastHdr = el; el.style.display = ''; return; }
-    const matches = !lower || (el.dataset.search || '').includes(lower);
-    el.style.display = matches ? '' : 'none';
+    if (el.classList.contains('part-hdr')) { el.style.display = ''; return; }
+    el.style.display = (!lower || (el.dataset.search||'').includes(lower)) ? '' : 'none';
   });
 }
 
-// Auto-load first section
 document.addEventListener('DOMContentLoaded', () => {
   const first = document.querySelector('.section-item');
   if (first) loadSection(first.dataset.id);
@@ -935,8 +953,8 @@ function renderRequirements(reqs) {
 
   badge.textContent = reqs.length;
   if (!reqs.length) {
-    list.innerHTML = '<div class="text-muted small p-2 text-center">No requirements — extracting…</div>';
-    covWrap.classList.add('d-none');
+    list.innerHTML = '<div style="color:#334155;font-size:11px;padding:8px;text-align:center;">No requirements — extracting…</div>';
+    covWrap.style.display = 'none';
     covLabel.textContent = '';
     return;
   }
@@ -946,23 +964,23 @@ function renderRequirements(reqs) {
     const covered = reqs.filter(r => r.covered === true || r.covered === 'true').length;
     const partial = reqs.filter(r => r.covered === 'partial').length;
     const pct = Math.round((covered + partial * 0.5) / reqs.length * 100);
-    covWrap.classList.remove('d-none');
+    covWrap.style.display = '';
     covBar.style.width = pct + '%';
-    covBar.className = 'progress-bar ' + (pct >= 80 ? 'bg-success' : pct >= 50 ? 'bg-warning' : 'bg-danger');
+    covBar.style.background = pct >= 80 ? '#22c55e' : pct >= 50 ? '#f59e0b' : '#ef4444';
     covPct.textContent = pct + '%';
     covLabel.textContent = `${covered}/${reqs.length} covered`;
-    covLabel.className = 'small ms-1 ' + (pct >= 80 ? 'text-success' : pct >= 50 ? 'text-warning' : 'text-danger');
+    covLabel.style.color = pct >= 80 ? '#22c55e' : pct >= 50 ? '#fbbf24' : '#f87171';
   } else {
-    covWrap.classList.add('d-none');
+    covWrap.style.display = 'none';
     covLabel.textContent = '';
   }
 
   const iconMap = { true: '✓', false: '✗', partial: '~' };
-  const colorMap = { true: '#16a34a', false: '#dc2626', partial: '#d97706' };
+  const colorMap = { true: '#22c55e', false: '#f87171', partial: '#fbbf24' };
   list.innerHTML = reqs.map(r => {
     const covered = r.covered !== null && r.covered !== undefined;
     const icon = covered ? (iconMap[String(r.covered)] || '○') : '○';
-    const iconColor = covered ? (colorMap[String(r.covered)] || '#9ca3af') : '#9ca3af';
+    const iconColor = covered ? (colorMap[String(r.covered)] || '#5a7aa0') : '#5a7aa0';
     const srcLabel = r.source === 'manual' ? 'manual' : 'AI';
     return `<div class="req-item">
       <span class="req-icon" style="color:${iconColor}">${icon}</span>
@@ -1035,11 +1053,22 @@ function renderAceTeamStatus(data) {
   const launchBtn = document.getElementById('ace-launch-btn');
   if (!stateEl) return;
 
-  const stateLabels = {not_launched:'not launched', launched:'launched', active:'active', no_session:'no session'};
+  const stateLabels = {
+    not_launched: 'not launched',
+    launched: 'launched',
+    active: 'active',
+    no_session: 'no session',
+  };
   stateEl.textContent = stateLabels[data.status] || data.status;
-  stateEl.className = 'fw-normal ' + (data.status === 'active' ? 'text-success' : data.status === 'launched' ? 'text-warning' : 'text-muted');
+  stateEl.style.color = data.status === 'active' ? '#4ade80' : data.status === 'launched' ? '#fbbf24' : '#5a7aa0';
 
-  const roleNames = {rfi_writer:'Writer', rfi_editor:'Editor', rfi_reviewer:'Reviewer', rfi_researcher:'Researcher', rfi_compliance_reviewer:'Compliance'};
+  const roleNames = {
+    rfi_writer: 'Writer',
+    rfi_editor: 'Editor',
+    rfi_reviewer: 'Reviewer',
+    rfi_researcher: 'Researcher',
+    rfi_compliance_reviewer: 'Compliance',
+  };
   const roles = data.roles || [];
   if (roles.length > 0) {
     rolesEl.innerHTML = roles.map(r => {
@@ -1050,7 +1079,7 @@ function renderAceTeamStatus(data) {
   } else if (data.status !== 'not_launched') {
     rolesEl.innerHTML = ['Writer','Editor','Reviewer','Researcher','Compliance'].map(n => `<div>· ${n}</div>`).join('');
   } else {
-    rolesEl.innerHTML = '<div class="text-muted" style="font-size:10px">Team will auto-launch on new sessions</div>';
+    rolesEl.innerHTML = '<div style="color:#334155;font-size:10px;">Team will auto-launch on new sessions</div>';
   }
 
   launchBtn.textContent = (data.status === 'active' || data.status === 'launched') ? '🔄 Re-launch Team' : '🚀 Launch Team';
@@ -1083,6 +1112,7 @@ function loadSessionStyleGuide() {
       if (el('sg-forbidden')) el('sg-forbidden').value = (sg.forbidden_phrases || []).join('\n');
       if (el('sg-headings')) el('sg-headings').value = (sg.required_headings || []).join('\n');
       if (el('sg-status')) el('sg-status').textContent = (sg.tone || sg.page_limit) ? 'custom' : 'default';
+      // Refresh page estimate with updated words/page
       const editor = el('content-editor');
       if (editor && editor.value) updateWordCount(editor.value);
     })
@@ -1143,6 +1173,7 @@ function summarizeToFit() {
       document.getElementById('content-editor').value = d.condensed;
       updateWordCount(d.condensed);
       document.getElementById('save-indicator').textContent = '● unsaved';
+      document.getElementById('save-indicator').style.color = '#f59e0b';
     }
   }).catch(err => { btn.disabled = false; btn.textContent = '✂ Summarize'; alert('Error: ' + err.message); });
 }
@@ -1158,6 +1189,7 @@ const _EW_LABELS = {
   research_engine: 'Research Engine',
 };
 let _ewData = {};
+
 let _ewAvailability = {};
 let _ewSecData = null;
 
@@ -1184,24 +1216,25 @@ function renderEngineWeights(data, containerId, prefix) {
     const avail = _ewAvailability[key];
     let dot = '';
     if (avail !== undefined) {
-      const color = avail.available ? '#22c55e' : '#6b7280';
+      const color = avail.available ? '#22c55e' : '#334155';
       const tip = avail.available ? `${avail.row_count} rows` : 'No data yet';
       dot = `<span title="${tip}" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${color};margin-right:3px;"></span>`;
     }
     const canRun = ['innovation_engine','creative_engine','research_engine'].includes(key);
-    const runBtn = canRun
-      ? `<button onclick="runEngine('${key}')" class="btn btn-sm py-0 px-1 btn-outline-secondary ms-1"
-           style="font-size:9px;" title="Seed this engine from RFI topic">▶</button>` : '';
+    const runBtn = canRun ? `<button onclick="runEngine('${key}')"
+      style="background:none;border:1px solid #1e3a6e;color:#5a7aa0;border-radius:3px;padding:1px 6px;font-size:9px;cursor:pointer;"
+      title="Seed this engine from RFI topic">▶</button>` : '';
     rows.push(`
-      <div class="mb-2">
-        <div class="d-flex align-items-center gap-2 mb-1">
-          <input type="checkbox" class="form-check-input" id="${prefix}-en-${key}" ${cfg.enabled ? 'checked' : ''}
+      <div style="margin-bottom:6px;">
+        <div style="display:flex;align-items:center;gap:5px;margin-bottom:2px;">
+          <input type="checkbox" id="${prefix}-en-${key}" ${cfg.enabled ? 'checked' : ''}
             onchange="_ewMutate('${prefix}','${key}','enabled',this.checked)">
-          <label class="form-check-label small flex-fill" for="${prefix}-en-${key}">${dot}${label}</label>
-          <span id="${prefix}-val-${key}" class="text-info small" style="min-width:26px;text-align:right;">${cfg.weight}</span>
+          <label for="${prefix}-en-${key}" style="font-size:11px;color:#94a3b8;flex:1;">${dot}${label}</label>
+          <span id="${prefix}-val-${key}" style="font-size:10px;color:#38bdf8;min-width:26px;text-align:right;">${cfg.weight}</span>
           ${runBtn}
         </div>
-        <input type="range" class="form-range" min="0" max="100" value="${cfg.weight}"
+        <input type="range" min="0" max="100" value="${cfg.weight}"
+          style="width:100%;accent-color:#38bdf8;"
           oninput="_ewMutate('${prefix}','${key}','weight',+this.value)">
       </div>`);
   }
@@ -1222,7 +1255,7 @@ function _updateEwTotal() {
   let enabled_total = 0;
   for (const cfg of Object.values(_ewData)) { if (cfg.enabled) enabled_total += (cfg.weight || 0); }
   badge.textContent = `total: ${enabled_total}`;
-  badge.className = (enabled_total === 100) ? 'fw-normal text-success' : 'fw-normal text-warning';
+  badge.style.color = (enabled_total === 100) ? '#22c55e' : '#f59e0b';
 }
 
 function saveEngineWeights() {
@@ -1233,13 +1266,13 @@ function saveEngineWeights() {
     body: JSON.stringify(_ewData),
   }).then(r => r.json()).then(d => {
     msg.textContent = d.ok ? '✓ Saved' : ('Error: ' + (d.error || '?'));
-    msg.className = d.ok ? 'text-center mt-1 text-success' : 'text-center mt-1 text-danger';
+    msg.style.color = d.ok ? '#22c55e' : '#f87171';
     setTimeout(() => { msg.textContent = ''; }, 3000);
-  }).catch(() => { msg.textContent = 'Network error'; msg.className = 'text-center mt-1 text-danger'; });
+  }).catch(() => { msg.textContent = 'Network error'; msg.style.color = '#f87171'; });
 }
 
 function resetEngineWeights() {
-  _ewData = {
+  const defaults = {
     uploads: {enabled: true, weight: 40},
     kg_past_performance: {enabled: true, weight: 30},
     rag_general: {enabled: true, weight: 20},
@@ -1247,9 +1280,84 @@ function resetEngineWeights() {
     creative_engine: {enabled: false, weight: 10},
     research_engine: {enabled: false, weight: 10},
   };
+  _ewData = defaults;
   renderEngineWeights();
   document.getElementById('ew-msg').textContent = 'Defaults restored — click Save to persist.';
-  document.getElementById('ew-msg').className = 'text-center mt-1 text-warning';
+  document.getElementById('ew-msg').style.color = '#f59e0b';
+}
+
+// ── Past Performance Uploads ──────────────────────────────────────────────────
+
+function loadUploadList() {
+  fetch(`/api/rfi/${SESSION_ID}/uploads`)
+    .then(r => r.json())
+    .then(list => renderUploadList(list))
+    .catch(() => {});
+}
+
+function renderUploadList(list) {
+  const el = document.getElementById('pp-list');
+  if (!el) return;
+  if (!list || !list.length) {
+    el.innerHTML = '<div style="font-size:10px;color:#334155;padding:4px;">No uploads yet</div>';
+    return;
+  }
+  el.innerHTML = list.map(u => `
+    <div style="display:flex;align-items:center;gap:4px;padding:3px 0;border-bottom:1px solid #0f1f3a;">
+      <span style="flex:1;font-size:10px;color:#94a3b8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
+        title="${u.filename}">${u.filename}</span>
+      <span style="font-size:9px;color:#5a7aa0;">${u.upload_type || 'pp'}</span>
+      <button onclick="deleteUpload('${u.id}')"
+        style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:11px;padding:0 4px;">✕</button>
+    </div>`).join('');
+}
+
+function handlePPDrop(ev) {
+  ev.preventDefault();
+  const files = ev.dataTransfer.files;
+  if (files && files.length) _uploadFiles(files);
+}
+
+function handlePPFileSelect(ev) {
+  if (ev.target.files && ev.target.files.length) _uploadFiles(ev.target.files);
+}
+
+function _uploadFiles(files) {
+  const msg = document.getElementById('pp-upload-msg');
+  const drop = document.getElementById('pp-drop');
+  drop.style.borderColor = '#38bdf8';
+  msg.textContent = `Uploading ${files.length} file(s)…`;
+  msg.style.color = '#38bdf8';
+
+  const promises = Array.from(files).map(file => {
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('upload_type', 'past_performance');
+    return fetch(`/api/rfi/${SESSION_ID}/uploads`, { method: 'POST', body: fd })
+      .then(r => r.json());
+  });
+
+  Promise.all(promises).then(results => {
+    drop.style.borderColor = '#1e3a6e';
+    const errs = results.filter(r => r.error);
+    msg.textContent = errs.length ? `${errs.length} error(s)` : `✓ ${results.length} uploaded`;
+    msg.style.color = errs.length ? '#f87171' : '#22c55e';
+    loadUploadList();
+    setTimeout(() => { msg.textContent = ''; }, 4000);
+    document.getElementById('pp-file-input').value = '';
+  }).catch(() => {
+    drop.style.borderColor = '#1e3a6e';
+    msg.textContent = 'Upload failed';
+    msg.style.color = '#f87171';
+  });
+}
+
+function deleteUpload(uploadId) {
+  if (!confirm('Remove this upload?')) return;
+  fetch(`/api/rfi/${SESSION_ID}/uploads/${uploadId}`, { method: 'DELETE' })
+    .then(r => r.json())
+    .then(d => { if (d.ok) loadUploadList(); })
+    .catch(() => {});
 }
 
 // ── Section engine weight override ────────────────────────────────────────────
@@ -1295,9 +1403,9 @@ function saveSectionEngineWeights() {
     body: JSON.stringify(_ewSecData),
   }).then(r => r.json()).then(d => {
     msg.textContent = d.ok ? '✓ Section override saved' : ('Error: ' + (d.error || '?'));
-    msg.className = d.ok ? 'text-success text-center' : 'text-danger text-center';
+    msg.style.color = d.ok ? '#22c55e' : '#f87171';
     setTimeout(() => { msg.textContent = ''; }, 3000);
-  }).catch(() => { msg.textContent = 'Error'; msg.className = 'text-danger text-center'; });
+  }).catch(() => { msg.textContent = 'Error'; msg.style.color = '#f87171'; });
 }
 
 function clearSectionOverride() {
@@ -1310,7 +1418,7 @@ function clearSectionOverride() {
     document.getElementById('ew-sec-override').checked = false;
     toggleSectionOverride(false);
     document.getElementById('ew-sec-msg').textContent = 'Override cleared.';
-    document.getElementById('ew-sec-msg').className = 'text-muted text-center';
+    document.getElementById('ew-sec-msg').style.color = '#5a7aa0';
     setTimeout(() => { document.getElementById('ew-sec-msg').textContent = ''; }, 3000);
   });
 }
@@ -1323,75 +1431,15 @@ function runEngine(sourceKey) {
     : document.title;
   const msg = document.getElementById('ew-msg');
   msg.textContent = `Running ${_EW_LABELS[sourceKey] || sourceKey}…`;
-  msg.className = 'text-center mt-1 text-info';
+  msg.style.color = '#38bdf8';
   fetch(`/api/rfi/${SESSION_ID}/engines/run`, {
     method: 'POST', headers: {'Content-Type':'application/json'},
     body: JSON.stringify({source: sourceKey, topic}),
   }).then(r => r.json()).then(d => {
     msg.textContent = d.ok ? `✓ ${_EW_LABELS[sourceKey]} seeded — reload to see results` : ('Error: ' + (d.error || '?'));
-    msg.className = d.ok ? 'text-center mt-1 text-success' : 'text-center mt-1 text-danger';
+    msg.style.color = d.ok ? '#22c55e' : '#f87171';
     if (d.ok) setTimeout(() => { loadEngineWeights(); msg.textContent = ''; }, 2000);
-  }).catch(() => { msg.textContent = 'Error'; msg.className = 'text-center mt-1 text-danger'; });
-}
-
-// ── Past Performance Uploads ──────────────────────────────────────────────────
-
-function loadUploadList() {
-  fetch(`/api/rfi/${SESSION_ID}/uploads`)
-    .then(r => r.json())
-    .then(list => renderUploadList(list))
-    .catch(() => {});
-}
-
-function renderUploadList(list) {
-  const el = document.getElementById('pp-list');
-  if (!el) return;
-  if (!list || !list.length) {
-    el.innerHTML = '<div class="text-muted" style="font-size:10px;padding:4px;">No uploads yet</div>';
-    return;
-  }
-  el.innerHTML = list.map(u => `
-    <div class="d-flex align-items-center gap-1 py-1 border-bottom border-secondary">
-      <span class="flex-fill text-muted small text-truncate" style="font-size:10px;" title="${u.filename}">${u.filename}</span>
-      <span class="badge bg-secondary" style="font-size:9px;">${u.upload_type || 'pp'}</span>
-      <button onclick="deleteUpload('${u.id}')" class="btn btn-sm p-0 text-danger border-0" style="font-size:11px;">✕</button>
-    </div>`).join('');
-}
-
-function handlePPDrop(ev) {
-  ev.preventDefault();
-  const files = ev.dataTransfer.files;
-  if (files && files.length) _uploadFiles(files);
-}
-
-function handlePPFileSelect(ev) {
-  if (ev.target.files && ev.target.files.length) _uploadFiles(ev.target.files);
-}
-
-function _uploadFiles(files) {
-  const msg = document.getElementById('pp-upload-msg');
-  msg.textContent = `Uploading ${files.length} file(s)…`;
-  msg.className = 'text-center mt-1 text-info';
-  const promises = Array.from(files).map(file => {
-    const fd = new FormData();
-    fd.append('file', file);
-    fd.append('upload_type', 'past_performance');
-    return fetch(`/api/rfi/${SESSION_ID}/uploads`, { method: 'POST', body: fd }).then(r => r.json());
-  });
-  Promise.all(promises).then(results => {
-    const errs = results.filter(r => r.error);
-    msg.textContent = errs.length ? `${errs.length} error(s)` : `✓ ${results.length} uploaded`;
-    msg.className = errs.length ? 'text-center mt-1 text-danger' : 'text-center mt-1 text-success';
-    loadUploadList();
-    setTimeout(() => { msg.textContent = ''; }, 4000);
-    document.getElementById('pp-file-input').value = '';
-  }).catch(() => { msg.textContent = 'Upload failed'; msg.className = 'text-center mt-1 text-danger'; });
-}
-
-function deleteUpload(uploadId) {
-  if (!confirm('Remove this upload?')) return;
-  fetch(`/api/rfi/${SESSION_ID}/uploads/${uploadId}`, { method: 'DELETE' })
-    .then(r => r.json()).then(d => { if (d.ok) loadUploadList(); }).catch(() => {});
+  }).catch(() => { msg.textContent = 'Error'; msg.style.color = '#f87171'; });
 }
 
 // ── Generate All ──────────────────────────────────────────────────────────────
@@ -1406,7 +1454,9 @@ function startGenerateAll() {
     .then(r => r.json())
     .then(d => {
       if (!d.ok) { btn.disabled = false; status.textContent = d.error || 'Error'; return; }
-      btn.textContent = '⏹ Cancel'; btn.onclick = cancelGenerateAll; btn.disabled = false;
+      btn.textContent = '⏹ Cancel';
+      btn.onclick = cancelGenerateAll;
+      btn.disabled = false;
       _pollGenerateAll();
     })
     .catch(() => { btn.disabled = false; status.textContent = 'Error'; });
@@ -1452,14 +1502,14 @@ function checkParseWarning() {
     const numEl = document.getElementById('parse-rfi-number');
     if (banner) {
       if (numEl) numEl.textContent = session.rfi_number || 'RFI-UNKNOWN';
-      banner.classList.remove('d-none');
+      banner.style.display = '';
     }
   }
 }
 
 function dismissParseWarning() {
   const banner = document.getElementById('parse-warning-banner');
-  if (banner) banner.classList.add('d-none');
+  if (banner) banner.style.display = 'none';
 }
 
 // ── Section history ───────────────────────────────────────────────────────────
@@ -1468,8 +1518,8 @@ let _historyVisible = false;
 function toggleHistory() {
   const panel = document.getElementById('history-panel');
   _historyVisible = !_historyVisible;
-  if (_historyVisible) { panel.classList.remove('d-none'); loadHistory(); }
-  else { panel.classList.add('d-none'); }
+  if (_historyVisible) { panel.style.display = ''; loadHistory(); }
+  else { panel.style.display = 'none'; }
 }
 
 function loadHistory() {
@@ -1479,14 +1529,15 @@ function loadHistory() {
     .then(items => {
       const list = document.getElementById('history-list');
       if (!items || !items.length) {
-        list.innerHTML = '<div class="text-muted small">No history yet</div>'; return;
+        list.innerHTML = '<div style="color:#5a7aa0;font-size:10px;">No history yet</div>';
+        return;
       }
       list.innerHTML = items.map((h, i) => {
         const ts = new Date(h.saved_at).toLocaleString();
         const preview = (h.content || '').slice(0, 60).replace(/\n/g, ' ');
-        return `<div class="border-bottom py-1" style="cursor:pointer;font-size:11px;" onclick="restoreVersion(${i})">
-          <div class="text-primary fw-semibold">${ts} <span class="text-muted">(${h.save_type})</span></div>
-          <div class="text-muted text-truncate">${preview}…</div>
+        return `<div style="padding:4px 0;border-bottom:1px solid #1a2b4a;cursor:pointer;" onclick="restoreVersion(${i})">
+          <div style="font-size:10px;color:#7ab3f0;">${ts} <span style="color:#5a7aa0;">(${h.save_type})</span></div>
+          <div style="font-size:10px;color:#94a3b8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${preview}…</div>
         </div>`;
       }).join('');
     }).catch(() => {});
@@ -1502,6 +1553,7 @@ function restoreVersion(index) {
       document.getElementById('content-editor').value = item.content;
       updateWordCount(item.content);
       document.getElementById('save-indicator').textContent = '● unsaved';
+      document.getElementById('save-indicator').style.color = '#f59e0b';
       toggleHistory();
     }).catch(() => {});
 }
@@ -1517,27 +1569,27 @@ function renderAceEditorFeedback(feedback) {
   const dot = document.getElementById('ace-editor-status-dot');
   if (!card) return;
   card.style.display = '';
-  reviewing.classList.add('d-none');
-  result.classList.add('d-none');
-  empty.classList.remove('d-none');
+  reviewing.style.display = 'none';
+  result.style.display = 'none';
+  empty.style.display = 'none';
   if (!feedback) {
-    if (dot) dot.style.background = '#6b7280';
+    empty.style.display = '';
+    dot.style.background = '#334155';
     return;
   }
-  empty.classList.add('d-none');
-  result.classList.remove('d-none');
+  result.style.display = '';
   const overall = feedback.overall || 'pass';
   const overallEl = document.getElementById('ace-editor-overall');
   overallEl.textContent = overall.toUpperCase();
   if (overall === 'pass') {
-    overallEl.className = 'badge bg-success';
-    if (dot) dot.style.background = '#22c55e';
+    overallEl.style.cssText = 'font-size:11px;font-weight:700;padding:2px 8px;border-radius:3px;background:#052e16;color:#4ade80;border:1px solid #16a34a;';
+    dot.style.background = '#4ade80';
   } else if (overall === 'warn') {
-    overallEl.className = 'badge bg-warning text-dark';
-    if (dot) dot.style.background = '#f59e0b';
+    overallEl.style.cssText = 'font-size:11px;font-weight:700;padding:2px 8px;border-radius:3px;background:#1a0a00;color:#fbbf24;border:1px solid #92400e;';
+    dot.style.background = '#fbbf24';
   } else {
-    overallEl.className = 'badge bg-danger';
-    if (dot) dot.style.background = '#ef4444';
+    overallEl.style.cssText = 'font-size:11px;font-weight:700;padding:2px 8px;border-radius:3px;background:#2d0a0a;color:#f87171;border:1px solid #7f1d1d;';
+    dot.style.background = '#f87171';
   }
   const timeEl = document.getElementById('ace-editor-time');
   if (feedback.reviewed_at) {
@@ -1547,11 +1599,11 @@ function renderAceEditorFeedback(feedback) {
   const issues = feedback.issues || [];
   if (issues.length) {
     issuesEl.innerHTML = issues.map(i => {
-      const cls = i.level === 'error' ? 'text-danger' : 'text-warning';
-      return `<div class="${cls} mb-1">• ${i.source ? '<b>' + i.source + '</b>: ' : ''}${i.message}</div>`;
+      const col = i.level === 'error' ? '#f87171' : '#fbbf24';
+      return `<div style="color:${col};margin-bottom:3px;">• ${i.source ? '<b>' + i.source + '</b>: ' : ''}${i.message}</div>`;
     }).join('');
   } else {
-    issuesEl.innerHTML = '<div class="text-success">No issues found.</div>';
+    issuesEl.innerHTML = '<div style="color:#4ade80;font-size:11px;">No issues found.</div>';
   }
   document.getElementById('ace-editor-summary').textContent = feedback.summary || '';
 }
@@ -1564,10 +1616,10 @@ function showAceEditorReviewing() {
   const dot = document.getElementById('ace-editor-status-dot');
   if (!card) return;
   card.style.display = '';
-  reviewing.classList.remove('d-none');
-  result.classList.add('d-none');
-  empty.classList.add('d-none');
-  if (dot) dot.style.background = '#a855f7';
+  reviewing.style.display = '';
+  result.style.display = 'none';
+  empty.style.display = 'none';
+  if (dot) dot.style.background = '#9d4edd';
 }
 
 function runAceEditorReview() {
@@ -1601,9 +1653,9 @@ let _reviewerPollCount = 0;
 function showReviewerReviewing() {
   const card = document.getElementById('ace-reviewer-card');
   if (!card) return;
-  card.classList.remove('d-none');
+  card.style.display = '';
   const spinner = document.getElementById('ace-reviewer-spinner');
-  if (spinner) spinner.classList.remove('d-none');
+  if (spinner) spinner.style.display = '';
   document.getElementById('ace-reviewer-summary').textContent = 'Evaluator is reviewing…';
   document.getElementById('ace-reviewer-issues').innerHTML = '';
 }
@@ -1611,18 +1663,18 @@ function showReviewerReviewing() {
 function renderReviewerFeedback(fb) {
   const card = document.getElementById('ace-reviewer-card');
   if (!card) return;
-  card.classList.remove('d-none');
+  card.style.display = '';
   const spinner = document.getElementById('ace-reviewer-spinner');
-  if (spinner) spinner.classList.add('d-none');
+  if (spinner) spinner.style.display = 'none';
 
   const scoreEl = document.getElementById('ace-reviewer-score');
   if (scoreEl && fb.evaluator_score != null) scoreEl.textContent = `Score: ${fb.evaluator_score}/5`;
 
   const overallEl = document.getElementById('ace-reviewer-overall');
-  const colorClass = {pass:'bg-success', warn:'bg-warning text-dark', fail:'bg-danger'};
+  const colorMap = {pass:'#22c55e', warn:'#f59e0b', fail:'#ef4444'};
   const labelMap = {pass:'✓ Pass', warn:'⚠ Concerns', fail:'✗ Red Flags'};
   const ov = fb.overall || 'warn';
-  if (overallEl) { overallEl.textContent = labelMap[ov] || ov; overallEl.className = 'badge ms-auto ' + (colorClass[ov] || 'bg-secondary'); }
+  if (overallEl) { overallEl.textContent = labelMap[ov] || ov; overallEl.style.color = colorMap[ov] || '#94a3b8'; }
 
   const sumEl = document.getElementById('ace-reviewer-summary');
   if (sumEl) sumEl.textContent = fb.summary || '';
@@ -1630,16 +1682,16 @@ function renderReviewerFeedback(fb) {
   const issuesEl = document.getElementById('ace-reviewer-issues');
   const issues = fb.issues || [];
   if (!issues.length) {
-    issuesEl.innerHTML = '<div class="small text-success">✓ No evaluator concerns.</div>';
+    issuesEl.innerHTML = '<div style="font-size:11px;color:#22c55e;">✓ No evaluator concerns.</div>';
     return;
   }
-  const typeColors = {evaluator_concern:'#6d28d9',missing_data:'#dc2626',vague_claim:'#d97706',compliance_gap:'#ef4444'};
+  const typeColors = {evaluator_concern:'#a78bfa',missing_data:'#ef4444',vague_claim:'#f59e0b',compliance_gap:'#f87171'};
   issuesEl.innerHTML = issues.slice(0,5).map(i => {
-    const col = typeColors[i.type] || '#6b7280';
-    const sug = i.suggestion ? `<div class="small text-muted mt-1">→ ${i.suggestion}</div>` : '';
-    return `<div class="mb-2 ps-2" style="border-left:2px solid ${col};">
-      <span class="badge text-uppercase" style="font-size:.65rem;background:${col};">${i.type.replace(/_/g,' ')}</span>
-      <div class="small mt-1">${i.message}</div>${sug}
+    const col = typeColors[i.type] || '#94a3b8';
+    const sug = i.suggestion ? `<div style="font-size:10px;color:#5a7aa0;margin-top:2px;">→ ${i.suggestion}</div>` : '';
+    return `<div style="margin-bottom:6px;padding:5px 7px;border-left:2px solid ${col};background:rgba(0,0,0,.15);">
+      <span style="font-size:9px;color:${col};text-transform:uppercase;font-weight:600;">${i.type.replace(/_/g,' ')}</span>
+      <div style="font-size:11px;color:#b8d0e8;margin-top:1px;">${i.message}</div>${sug}
     </div>`;
   }).join('');
 }
@@ -1674,26 +1726,29 @@ function loadDeadlineInfo() {
     .then(d => {
       const badge = document.getElementById('deadline-badge');
       if (!badge) return;
-      badge.classList.remove('d-none');
+      badge.style.display = '';
       if (!d.deadline) {
         badge.textContent = '📅 Set deadline';
-        badge.className = 'badge rounded-pill border text-secondary';
+        badge.style.borderColor = '#334155';
+        badge.style.color = '#5a7aa0';
         return;
       }
       const days = d.days_remaining;
+      let color = '#22c55e', border = '#16a34a';
+      if (d.overdue) { color = '#f87171'; border = '#7f1d1d'; }
+      else if (d.urgent) { color = '#fbbf24'; border = '#92400e'; }
       const label = d.overdue ? `${Math.abs(days)}d overdue` : days === 0 ? 'Due today!' : `${days}d remaining`;
       badge.textContent = `📅 ${label}`;
-      badge.className = d.overdue ? 'badge rounded-pill bg-danger text-white' :
-                        d.urgent  ? 'badge rounded-pill bg-warning text-dark' :
-                                    'badge rounded-pill bg-success text-white';
+      badge.style.color = color;
+      badge.style.borderColor = border;
     })
     .catch(() => {});
 }
 
 function toggleDeadlinePicker() {
   const inp = document.getElementById('deadline-input');
-  inp.classList.toggle('d-none');
-  if (!inp.classList.contains('d-none')) inp.focus();
+  inp.style.display = inp.style.display === 'none' ? '' : 'none';
+  if (inp.style.display !== 'none') inp.focus();
 }
 
 function saveDeadline(val) {
@@ -1701,7 +1756,7 @@ function saveDeadline(val) {
   fetch(`/api/rfi/${SESSION_ID}/deadline`, {
     method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({deadline: val}),
-  }).then(() => { document.getElementById('deadline-input').classList.add('d-none'); loadDeadlineInfo(); });
+  }).then(() => { document.getElementById('deadline-input').style.display = 'none'; loadDeadlineInfo(); });
 }
 
 // ── Item 7: Generate Why Us ───────────────────────────────────────────────────
@@ -1709,43 +1764,41 @@ let _whyUsParagraph = '';
 
 function generateWhyUs() {
   const competitor = (document.getElementById('competitor-input') || {}).value || '';
-  document.getElementById('why-us-spinner').classList.remove('d-none');
-  document.getElementById('why-us-output').classList.add('d-none');
-  document.getElementById('why-us-actions').classList.add('d-none');
+  const spinner = document.getElementById('why-us-spinner');
+  const output = document.getElementById('why-us-output');
+  const actions = document.getElementById('why-us-actions');
+  spinner.style.display = '';
+  output.style.display = 'none';
+  actions.style.display = 'none';
   fetch(`/api/rfi/${SESSION_ID}/why-us`, {
     method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({competitor_name: competitor}),
   })
     .then(r => r.json())
     .then(d => {
-      document.getElementById('why-us-spinner').classList.add('d-none');
-      const out = document.getElementById('why-us-output');
-      const acts = document.getElementById('why-us-actions');
+      spinner.style.display = 'none';
       if (d.ok && d.paragraph) {
         _whyUsParagraph = d.paragraph;
-        out.textContent = d.paragraph;
-        out.classList.remove('d-none');
-        acts.classList.remove('d-none');
+        output.textContent = d.paragraph;
+        output.style.display = '';
+        actions.style.display = '';
+        actions.style.display = 'flex';
+        actions.style.justifyContent = 'flex-end';
       } else {
-        out.textContent = d.error || 'Generation failed.';
-        out.classList.remove('d-none');
+        output.textContent = d.error || 'Generation failed.';
+        output.style.display = '';
       }
     })
-    .catch(() => {
-      document.getElementById('why-us-spinner').classList.add('d-none');
-      document.getElementById('why-us-output').textContent = 'Error.';
-      document.getElementById('why-us-output').classList.remove('d-none');
-    });
+    .catch(() => { spinner.style.display = 'none'; output.textContent = 'Error.'; output.style.display = ''; });
 }
 
 function appendWhyUsToEditor() {
   if (!_whyUsParagraph) return;
   const editor = document.getElementById('content-editor');
   const existing = editor.value.trim();
-  const profileName = window.__rfi_profile_name || 'Us';
-  editor.value = existing ? `${existing}\n\n---\n\n**Why ${profileName}:**\n\n${_whyUsParagraph}` : _whyUsParagraph;
+  editor.value = existing ? existing + '\n\n---\n\n**Why ' + (window.__rfi_profile_name || 'Us') + ':**\n\n' + _whyUsParagraph : _whyUsParagraph;
   onContentChange();
-  document.getElementById('why-us-actions').classList.add('d-none');
+  document.getElementById('why-us-actions').style.display = 'none';
 }
 </script>
 {% endblock %}

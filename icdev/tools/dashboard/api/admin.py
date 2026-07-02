@@ -8,7 +8,7 @@ All endpoints require 'admin' role.
 
 import sqlite3
 from datetime import datetime, timezone
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection, sql_placeholder
 
 from flask import Blueprint, jsonify, render_template, request
 
@@ -266,16 +266,17 @@ def api_auth_log():
     event_type = request.args.get("event_type")
 
     conn = _get_db()
+    ph = sql_placeholder(conn)
     try:
         query = "SELECT * FROM dashboard_auth_log WHERE 1=1"
         params = []
         if user_id:
-            query += " AND user_id = ?"
+            query += f" AND user_id = {ph}"
             params.append(user_id)
         if event_type:
-            query += " AND event_type = ?"
+            query += f" AND event_type = {ph}"
             params.append(event_type)
-        query += " ORDER BY created_at DESC LIMIT ?"
+        query += f" ORDER BY created_at DESC LIMIT {ph}"
         params.append(limit)
 
         rows = conn.execute(query, params).fetchall()

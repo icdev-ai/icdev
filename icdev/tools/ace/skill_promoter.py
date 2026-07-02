@@ -143,7 +143,7 @@ def _load_pending(limit: int = _MAX_PER_RUN) -> list[dict[str, Any]]:
             rows = conn.execute(
                 "SELECT id, role_id, source_role, instance_id, candidate_yaml, trust_tier "
                 "FROM ace_skill_candidates WHERE status = 'pending' "
-                "ORDER BY created_at ASC LIMIT ?",
+                "ORDER BY created_at ASC LIMIT %s",
                 (limit,),
             ).fetchall()
             return [dict(zip(("id", "role_id", "source_role", "instance_id", "candidate_yaml", "trust_tier"), r)) for r in rows]
@@ -212,8 +212,8 @@ def _update_status(
         conn = get_canvas_connection(_DB_ENV)
         try:
             conn.execute(
-                "UPDATE ace_skill_candidates SET status = ?, sipa_verdict = ?, "
-                "sipa_score = ?, rejection_reason = ?, resolved_at = ? WHERE id = ?",
+                "UPDATE ace_skill_candidates SET status = %s, sipa_verdict = %s, "
+                "sipa_score = %s, rejection_reason = %s, resolved_at = %s WHERE id = %s",
                 (status, sipa_verdict, sipa_score, rejection_reason, now, candidate_id),
             )
             conn.commit()

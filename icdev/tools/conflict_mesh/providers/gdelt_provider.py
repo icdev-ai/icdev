@@ -15,7 +15,6 @@ CAMEO codes:
 
 from __future__ import annotations
 
-import logging
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -27,8 +26,9 @@ if str(BASE_DIR) not in sys.path:
 from tools.conflict_mesh.providers.base import MeshProvider  # noqa: E402
 from tools.databridge.registry import get_connector_instance  # noqa: E402
 from tools.databridge.connector import ConnectorRequest  # noqa: E402
+from tools.logging.icdev_logger import get_logger
 
-logger = logging.getLogger("conflict_mesh.gdelt")
+log = get_logger("conflict_mesh.gdelt")
 
 # Minimum CAMEO EventCode integer prefix to be considered conflict-relevant
 _MIN_CAMEO_CODE = 140
@@ -55,7 +55,7 @@ class GDELTProvider(MeshProvider):
     def __init__(self) -> None:
         self._connector = get_connector_instance("gdelt")
         if self._connector is None:
-            logger.warning("GDELT connector not available; provider will return empty results")
+            log.warning("GDELT connector not available; provider will return empty results")
 
     @property
     def provider_name(self) -> str:
@@ -112,5 +112,5 @@ class GDELTProvider(MeshProvider):
                     results.append(self.normalize(raw))
             return results
         except Exception as exc:
-            logger.warning("GDELT fetch failed: %s", exc)
+            log.warning("GDELT fetch failed: %s", exc)
             return []

@@ -1,0 +1,10 @@
+# PNA-002: BGP session instability — sessions with high flap rate or poor stability score
+# Collection: network.bgp_predictions
+# Use: BGP instability panel on /network/predictive-analytics, NOC alerting,
+#      routing availability SLA tracking, CISA advisory correlation.
+
+foreach p in network.bgp_predictions
+where p.stability_score < 0.75
+select p.device_name, p.peer_ip, p.peer_asn, p.stability_score,
+       p.flap_count_24h, p.flap_count_7d, p.flap_risk,
+       p.predicted_outage_hrs, p.confidence, p.predicted_at

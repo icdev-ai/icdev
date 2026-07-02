@@ -1,0 +1,38 @@
+# CUI // UNCLASSIFIED
+# Company-wide GovCon style guide — applied to all RFI/RFP sessions as the base.
+# Per-session overrides (uploaded or entered in the workbench) take precedence.
+
+tone: formal           # formal | semi-formal | technical
+
+# Estimated words per standard page (12pt font, ~1-inch margins, single-spaced).
+# 250 ≈ single-spaced 12pt; 500 ≈ double-spaced; adjust to match your submission format.
+words_per_page: 250
+
+# Phrases that should NOT appear in submission text.
+forbidden_phrases:
+  - "TBD"
+  - "to be determined"
+  - "N/A"
+  - "as applicable"
+  - "best in class"
+  - "state of the art"
+  - "cutting edge"
+  - "cutting-edge"
+  - "best-of-breed"
+  - "leveraging synergies"
+  - "world-class"
+  - "innovative solution"
+  - "robust solution"
+  - "seamlessly integrate"
+
+# Headings that MUST appear somewhere in each section response (leave empty for no requirement).
+required_headings: []
+
+# Compliance context injected into every generation prompt.
+compliance_notes: |
+  All content must comply with: FAR Part 12 (commercial item determination),
+  FAR 52.204-25 / DFARS 252.204-7012 (NDAA §889 / cyber), CAGE/UEI format requirements,
+  and include UNCLASSIFIED marking. Do not include export-controlled technical data.
+
+# Optional sample writing excerpt used to calibrate tone (leave empty to skip).
+sample_writing: ""
