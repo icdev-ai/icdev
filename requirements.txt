@@ -89,6 +89,15 @@ faker>=33.0              # Realistic surrogate generation for reversible anonymi
 pypdf>=4.0               # Pure-Python PDF text extraction — air-gap baseline
 fpdf2>=2.7               # Pure-Python PDF generation — network migration phase reports (air-gap safe, no C)
 
+# === Presentation & Document Export ===
+# Required by tools/slides/pptx_builder.py, tools/viz/svg_to_pptx.py,
+# tools/presentations/generate_exec_deck.py (PPTX) and
+# tools/workflow_canvas/export_engine.py, tools/presentations/
+# generate_exec_doc.py (DOCX). Hard imports, no try/except fallback — the
+# Slides canvas and Workflow Forms Canvas export routes 500 without these.
+python-pptx>=1.0         # PPTX generation (air-gap safe, no C)
+python-docx>=1.1         # DOCX generation (air-gap safe, no C)
+
 # === Security: pinned to patch CVEs (see pip-audit) ===
 black>=26.3.1            # CVE-2026-32274: path traversal
 filelock>=3.20.3         # CVE-2025-68146, CVE-2026-22701: TOCTOU race

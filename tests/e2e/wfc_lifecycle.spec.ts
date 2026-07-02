@@ -160,10 +160,11 @@ test.describe.serial('WFC Lifecycle', () => {
   });
 
   // ── 6. Export PPTX ────────────────────────────────────────────────────────
-  // File-generation endpoints (build a document, write it, read it back) run
-  // noticeably heavier than the plain API calls the global 10s actionTimeout
-  // is tuned for; give them the same 30s budget as page navigation rather
-  // than tightening everything else's patience to match a slow-path outlier.
+  // Extra timeout headroom for file-generation endpoints (build a document,
+  // write it, read it back) vs. the global 10s actionTimeout tuned for plain
+  // API calls. The original CI 500 was actually python-pptx/python-docx
+  // missing from requirements.txt (see that file) — this timeout is
+  // defensive margin, not the fix for that.
   test('Export form as PPTX returns valid file', async ({ page }) => {
     const resp = await page.request.post(
       `${BASE}/workflow-canvas/api/forms/${formId}/export/pptx`,
