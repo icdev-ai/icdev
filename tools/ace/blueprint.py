@@ -723,6 +723,8 @@ def api_abort(instance_id: str):
     """
     try:
         ACEController.get_instance().abort(instance_id)
+    except LookupError:
+        return jsonify({"error": "not_found", "instance_id": instance_id}), 404
     except Exception as exc:  # noqa: BLE001
         logger.warning("ace abort failed for %s: %s", instance_id, exc)
         return jsonify({"error": str(exc)}), 500
@@ -1296,6 +1298,22 @@ def api_monitor_summary():
             conn.close()
 
 
+@ace_api_bp.route("/presets", methods=["GET"])
+def api_presets_list():
+    """List Quick Launch presets (args/ace/launch_presets.yaml) for the coworker UI."""
+    try:
+        import yaml
+        from icdev._paths import get_data_path
+
+        presets_path = get_data_path("args") / "ace" / "launch_presets.yaml"
+        data = yaml.safe_load(presets_path.read_text(encoding="utf-8")) or {}
+        presets = data.get("presets", [])
+        return jsonify({"presets": presets, "count": len(presets)})
+    except Exception as exc:
+        logger.warning("ace presets list failed: %s", exc)
+        return jsonify({"error": str(exc)}), 500
+
+
 @ace_api_bp.route("/profiles", methods=["GET"])
 def api_profiles_list():
     """List all coworker profiles (both built-in and generated)."""
@@ -1587,10 +1605,19 @@ def api_ace_events_emit():
 
 @ace_api_bp.route("/events/topics", methods=["GET"])
 def api_ace_event_topics():
-    """Return all dispatch topics and which roles listen to each."""
+    """Return all dispatch topics and which roles listen to each.
+
+    gap C-2: icdev.tools.ace.event_bus has no DISPATCH_TOPICS registry (the
+    module only implements the queue itself, not a canonical topic list) —
+    this endpoint has never actually been wired. 404 rather than 500 until
+    that registry exists.
+    """
+    try:
+        from icdev.tools.ace.event_bus import DISPATCH_TOPICS
+    except ImportError:
+        return jsonify({"error": "not_implemented", "detail": "no dispatch topic registry"}), 404
     try:
         from icdev.tools.ace.role_loader import RoleLoader
-        from icdev.tools.ace.event_bus import DISPATCH_TOPICS
         roles = RoleLoader().list_roles()
         topic_map: dict[str, list[str]] = {t: [] for t in sorted(DISPATCH_TOPICS)}
         for role in roles:

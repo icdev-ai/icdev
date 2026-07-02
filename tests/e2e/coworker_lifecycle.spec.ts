@@ -423,7 +423,7 @@ test.describe('ACE Co-Worker Engine Lifecycle', () => {
     expect(result.foundCount).toBeGreaterThanOrEqual(1);
   });
 
-  test('GET /api/ace/presets returns 16 presets (C-1 fix)', async ({ page }) => {
+  test('GET /api/ace/presets returns 17 presets (C-1 fix)', async ({ page }) => {
     await page.goto('/coworker/');
 
     const result = await page.evaluate(async () => {
@@ -434,7 +434,7 @@ test.describe('ACE Co-Worker Engine Lifecycle', () => {
 
     expect(result.status).toBe(200);
     expect(result.hasPresets).toBe(true);
-    expect(result.count).toBe(16);
+    expect(result.count).toBe(17);
   });
 
   // ── Orchestrator Integration ───────────────────────────────────────────── //

@@ -198,7 +198,24 @@ class ACEController:
             return {"instance_id": instance_id, "error": str(exc)}
 
     def abort(self, instance_id: str) -> None:
-        """Signal all CoWorkerThreads for an instance to stop."""
+        """Signal all CoWorkerThreads for an instance to stop.
+
+        Raises LookupError if *instance_id* does not exist.
+        """
+        from icdev.tools.db.storage import get_canvas_connection
+        from icdev.tools.ace.db.init_db import init as _init_ace_db
+
+        _init_ace_db()
+        conn = get_canvas_connection(_DB_ENV)
+        try:
+            row = conn.execute(
+                "SELECT id FROM ace_instances WHERE id = ?", (instance_id,)
+            ).fetchone()
+        finally:
+            conn.close()
+        if not row:
+            raise LookupError(f"ACE instance {instance_id} not found")
+
         with self._threads_lock:
             threads = self._threads.get(instance_id, [])
         for t in threads:
