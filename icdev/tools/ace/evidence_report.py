@@ -35,11 +35,7 @@ _DEFAULT_CLASSIFICATION = "CUI"
 # ---------------------------------------------------------------------------
 
 
-def generate(
-    instance_id: str,
-    fmt: str = "ssp",
-    publish_meta: "dict[str, Any] | None" = None,
-) -> "dict[str, Any] | str":
+def generate(instance_id: str, fmt: str = "ssp") -> dict[str, Any] | str:
     """Generate an evidence report for *instance_id*.
 
     Args:
@@ -47,8 +43,6 @@ def generate(
             the most-recently created instance.
         fmt: Output format — ``"json"`` (dict), ``"ssp"`` (structured text),
             or ``"markdown"``.
-        publish_meta: Optional IDR publish context (idr_session_id, artifact
-            formats, etc.) appended to the audit log detail at publish time.
 
     Returns:
         A dict if *fmt* is ``"json"``; a formatted string otherwise.
@@ -57,69 +51,11 @@ def generate(
         ValueError: Instance not found.
     """
     data = _collect(instance_id)
-    _write_generate_audit(data["instance"]["id"], data, publish_meta=publish_meta)
     if fmt == "json":
         return data
     if fmt == "markdown":
         return _render_markdown(data)
     return _render_ssp(data)
-
-
-# ---------------------------------------------------------------------------
-# Audit helper
-# ---------------------------------------------------------------------------
-
-
-def _write_generate_audit(
-    instance_id: str,
-    data: "dict[str, Any]",
-    publish_meta: "dict[str, Any] | None" = None,
-) -> None:
-    """Append an ace_audit_log row recording that this evidence report was generated.
-
-    Non-blocking — exceptions are silently swallowed so audit failure never
-    breaks report generation.
-
-    Args:
-        publish_meta: Optional IDR publish context merged into the detail JSON
-            (e.g. ``{"idr_session_id": "...", "formats": ["html","docx"]}``)
-            to link the audit entry back to the triggering IDR publish event.
-    """
-    try:
-        from icdev.tools.db.storage import get_canvas_connection
-
-        summary = data.get("summary", {})
-        detail_dict: dict[str, Any] = {
-            "generated_at": data.get("generated_at"),
-            "classification": data.get("classification"),
-            "total_actions": summary.get("total_actions", 0),
-            "total_artifacts": summary.get("total_artifacts", 0),
-            "control_refs_count": summary.get("control_refs_count", 0),
-        }
-        if publish_meta:
-            detail_dict["publish"] = publish_meta
-        detail = json.dumps(detail_dict, separators=(",", ":"))
-        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-        conn = get_canvas_connection(_DB_ENV)
-        try:
-            conn.execute(
-                "INSERT INTO ace_audit_log "
-                "(instance_id, action, detail, actor, classification, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (
-                    instance_id,
-                    "evidence_report.generate",
-                    detail,
-                    "evidence_report",
-                    data.get("classification", _DEFAULT_CLASSIFICATION),
-                    now,
-                ),
-            )
-            conn.commit()
-        finally:
-            conn.close()
-    except Exception:
-        pass
 
 
 # ---------------------------------------------------------------------------
@@ -129,9 +65,10 @@ def _write_generate_audit(
 
 def _collect(instance_id: str) -> dict[str, Any]:
     """Load all evidence rows for the instance and return a structured dict."""
-    from icdev.tools.db.storage import get_canvas_connection
+    from icdev.tools.db.storage import get_canvas_connection, sql_placeholder
 
     conn = get_canvas_connection(_DB_ENV)
+    _ph = sql_placeholder(conn)
     try:
         # Resolve "latest"
         if instance_id == "latest":
@@ -144,8 +81,8 @@ def _collect(instance_id: str) -> dict[str, Any]:
 
         # Instance metadata
         inst_row = conn.execute(
-            "SELECT id, name, role_id, state, trust_tier, created_at, completed_at "
-            "FROM ace_instances WHERE id = ?",
+            f"SELECT id, name, role_id, state, trust_tier, created_at, completed_at "
+            f"FROM ace_instances WHERE id = {_ph}",
             (instance_id,),
         ).fetchone()
         if not inst_row:
@@ -159,7 +96,7 @@ def _collect(instance_id: str) -> dict[str, Any]:
         cw_rows = conn.execute(
             "SELECT id, role_id, display_name, state, trust_tier, assigned_step, "
             "last_active_at, created_at "
-            "FROM ace_coworkers WHERE instance_id = ? ORDER BY created_at",
+            f"FROM ace_coworkers WHERE instance_id = {_ph} ORDER BY created_at",
             (instance_id,),
         ).fetchall()
         coworkers = [
@@ -175,7 +112,7 @@ def _collect(instance_id: str) -> dict[str, Any]:
         audit_rows = conn.execute(
             "SELECT id, coworker_id, action, detail, actor, classification, "
             "control_refs, created_at "
-            "FROM ace_audit_log WHERE instance_id = ? ORDER BY created_at",
+            f"FROM ace_audit_log WHERE instance_id = {_ph} ORDER BY created_at",
             (instance_id,),
         ).fetchall()
 
@@ -195,7 +132,7 @@ def _collect(instance_id: str) -> dict[str, Any]:
         # Artifacts
         artifact_rows = conn.execute(
             "SELECT id, coworker_id, artifact_type, title, classification, created_at "
-            "FROM ace_artifacts WHERE instance_id = ? ORDER BY created_at",
+            f"FROM ace_artifacts WHERE instance_id = {_ph} ORDER BY created_at",
             (instance_id,),
         ).fetchall()
         artifacts = [

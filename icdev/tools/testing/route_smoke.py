@@ -120,6 +120,20 @@ NAV_ROUTES: List[str] = [
     "/data/ask",
     "/observability/ask",
     "/infra/ask",
+    # Canvas home routes — regression-tested 2026-06-27
+    "/security",
+    "/observability",
+    "/network/diagram-analysis",
+    "/ai-builder",
+    "/ai-learning",
+    "/ai-roi",
+    "/ai-skills",
+    "/ai-handoff",
+    "/skillhub",
+    "/security/zig",
+    "/dashboard/executive-view",
+    "/dashboard/compliance-view",
+    "/dashboard/pm-view",
 ]
 
 # Body text that indicates a broken response (even with 200 status)
@@ -269,7 +283,101 @@ def run_smoke(
                 )
 
     failures = [r for r in results if not r["ok"]]
+    record_smoke_results(results, base=base)
     return len(failures) == 0, results
+
+
+_PERF_DB_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "route_perf.db"
+
+
+def record_smoke_results(results: List[Dict], base: str = "http://localhost:5050") -> None:
+    """Persist elapsed_ms + ok status for each smoke result to route_perf.db."""
+    import sqlite3 as _sqlite3
+    try:
+        _PERF_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+        conn = _sqlite3.connect(str(_PERF_DB_PATH))
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS route_perf (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                route       TEXT NOT NULL,
+                base        TEXT NOT NULL,
+                elapsed_ms  INTEGER,
+                status_ok   INTEGER NOT NULL,
+                http_status INTEGER,
+                recorded_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_route_perf_route ON route_perf(route)
+        """)
+        rows = [
+            (r["route"], base, r.get("elapsed_ms"), 1 if r.get("ok") else 0, r.get("status"))
+            for r in results if r.get("route")
+        ]
+        conn.executemany(
+            "INSERT INTO route_perf (route, base, elapsed_ms, status_ok, http_status) VALUES (?,?,?,?,?)",
+            rows,
+        )
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass  # Never block smoke runs on DB write failure
+
+
+def detect_perf_regressions(
+    threshold_multiplier: float = 2.5,
+    min_runs: int = 5,
+    lookback: int = 30,
+) -> List[Dict]:
+    """Return routes whose recent p50 latency exceeds baseline by threshold_multiplier.
+
+    Args:
+        threshold_multiplier: current_p50 > baseline_p50 * multiplier → regression
+        min_runs: minimum recorded runs before a route is eligible
+        lookback: number of recent runs to compare against the full baseline
+    Returns:
+        List of {route, baseline_p50, current_p50, ratio, runs}
+    """
+    import sqlite3 as _sqlite3
+    if not _PERF_DB_PATH.exists():
+        return []
+    try:
+        conn = _sqlite3.connect(str(_PERF_DB_PATH))
+        conn.row_factory = _sqlite3.Row
+        rows = conn.execute(
+            """
+            SELECT route, elapsed_ms, status_ok, recorded_at
+            FROM route_perf
+            WHERE elapsed_ms IS NOT NULL AND status_ok = 1
+            ORDER BY recorded_at ASC
+            """
+        ).fetchall()
+        conn.close()
+    except Exception:
+        return []
+
+    from collections import defaultdict
+    by_route: dict = defaultdict(list)
+    for row in rows:
+        by_route[row["route"]].append(row["elapsed_ms"])
+
+    regressions = []
+    for route, times in by_route.items():
+        if len(times) < min_runs:
+            continue
+        all_sorted = sorted(times)
+        baseline_p50 = all_sorted[len(all_sorted) // 2]
+        recent = sorted(times[-lookback:])
+        current_p50 = recent[len(recent) // 2]
+        if current_p50 > baseline_p50 * threshold_multiplier:
+            regressions.append({
+                "route": route,
+                "baseline_p50_ms": baseline_p50,
+                "current_p50_ms": current_p50,
+                "ratio": round(current_p50 / max(baseline_p50, 1), 2),
+                "runs": len(times),
+            })
+    return sorted(regressions, key=lambda r: -r["ratio"])
 
 
 def run_api_smoke(

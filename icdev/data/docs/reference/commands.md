@@ -76,6 +76,36 @@ python tools/testing/e2e_runner.py --run-all           # Execute all E2E tests
 
 ---
 
+## Enterprise-Configurable Platform Commands
+```bash
+# Component registry — single source of truth for canvases, child apps, features, core extensions
+python -c "from tools.config.component_registry import get_registry; r=get_registry(); print([c.key for c in r.iter_canvases()])"
+python -c "from tools.config.component_registry import get_registry; r=get_registry(); print(r.get_nav_context())"
+
+# Canvas / feature toggles
+icdev enable <name> [...]         # Turn on canvas / subsystem toggles in .env
+icdev disable <name> [...]        # Turn off toggles
+icdev status                      # Show active toggles
+icdev status --json               # Machine-readable status
+icdev list                        # List supported toggles
+
+# Core enterprise profiles
+icdev profile list                 # List available profiles
+icdev profile show [<name>]        # Show profile details (active profile by default)
+icdev profile apply <name>         # Append profile env overrides to .env
+icdev profile apply <name> --dry-run  # Preview overrides
+
+# Scaffolding
+icdev scaffold canvas <key> --display-name "Name" [--flavor <flavor>] [--template <dir>] [--out <dir>]   # Generate a new canvas
+icdev scaffold child-app <key> --display-name "Name" --flavor <flavor> [--canvases k1,k2] [--out <dir>]  # Generate a child app (minimal, compliance, ai-lab, govcon)
+
+# Validation
+python tools/workflow/coherence_checker.py --all --gate      # Registry/profile/completeness coherence gate
+python tools/builder/forge_validator.py --gate               # FORGE gate for child apps
+```
+
+---
+
 ## Compliance Commands
 ```bash
 python tools/compliance/ssp_generator.py --project-id "sparkpilot"
@@ -2980,4 +3010,40 @@ python -c "from tools.innovation.innovation_manager import stage_discover; print
 
 # Weekly DIC digest reflex (manual trigger)
 python -c "from tools.genesis.reflexes.dic_digest import run; print(run({}, None))"
+```
+
+---
+
+## Network Canvas — PVM (Predictive Vulnerability Management)
+
+```bash
+# Risk Predictor
+python tools/network/vuln_predictor.py --predict <advisory_id> --json
+python tools/network/vuln_predictor.py --predict-all --json
+python tools/network/vuln_predictor.py --trajectory <advisory_id> [--limit 10] --json
+python tools/network/vuln_predictor.py --top-risks [--limit 20] --json
+
+# Attack Surface Mapper
+python tools/network/attack_surface_mapper.py --map [--network-id <id>] --json
+python tools/network/attack_surface_mapper.py --surface [--cve CVE-XXXX-XXXX] [--device <name>] [--min-score 0.5] --json
+python tools/network/attack_surface_mapper.py --summary --json
+
+# Vulnerability Triage Engine
+python tools/network/vuln_triage_engine.py --score [--advisory-ids 1,2,3] --json
+python tools/network/vuln_triage_engine.py --queue [--status pending] --json
+python tools/network/vuln_triage_engine.py --approve <advisory_id> --by analyst@example.com --json
+python tools/network/vuln_triage_engine.py --defer  <advisory_id> --by analyst@example.com --json
+
+# AI Patch Planner
+python tools/network/patch_planner.py --create-plan [--approved-by EMAIL] --json
+python tools/network/patch_planner.py --plans [--plan-id <uuid>] [--advisory-id <id>] --json
+python tools/network/patch_planner.py --plan-summary <plan_id> --json
+
+# PVM Dashboard
+# http://localhost:5050/network/vulnerability-intelligence
+
+# PVM IQE Seed Queries
+python tools/iqe/cli.py --file context/iqe/queries/network/pvm_01_risk_trajectory.iqe --adapter ndc --json
+python tools/iqe/cli.py --file context/iqe/queries/network/pvm_02_attack_surface.iqe   --adapter ndc --json
+python tools/iqe/cli.py --file context/iqe/queries/network/pvm_03_triage_queue.iqe     --adapter ndc --json
 ```

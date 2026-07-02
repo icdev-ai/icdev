@@ -450,7 +450,7 @@ def api_save_design(design_id: str):
 
         params.append(design_id)
         conn.execute(
-            f"UPDATE qdc_designs SET {', '.join(updates)} WHERE id = %s",  # noqa: S608  # nosec B608 — updates built from hardcoded column allowlist, not user input
+            f"UPDATE qdc_designs SET {', '.join(updates)} WHERE id = %s",  # noqa: S608
             params,
         )
         conn.commit()
@@ -890,7 +890,7 @@ def api_update_sop(sop_id: str):
 
         params.append(sop_id)
         conn.execute(
-            f"UPDATE qdc_sops SET {', '.join(updates)} WHERE id = %s",  # noqa: S608  # nosec B608 — updates built from hardcoded column allowlist, not user input
+            f"UPDATE qdc_sops SET {', '.join(updates)} WHERE id = %s",  # noqa: S608
             params,
         )
         conn.commit()

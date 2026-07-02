@@ -181,7 +181,6 @@ class FileAccessBroker:
                 )
             return target
 
-        action = "write to" if need_write else "read"
         raise ScopeViolationError(
             f"'{path}' is not within any declared folder_access scope "
             f"({'rw' if need_write else 'r or rw'} required)"
@@ -208,7 +207,7 @@ class FileAccessBroker:
                 conn.execute(
                     "INSERT INTO ace_audit_log "
                     "(instance_id, coworker_id, action, detail, actor, created_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    "VALUES (%s, %s, %s, %s, %s, %s)",
                     (
                         instance_id,
                         coworker_id,

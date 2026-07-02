@@ -2,9 +2,9 @@
 """MCIP DTI Scorer Reflex — computes and persists the Diplomatic Tension Index every 6 hours."""
 from __future__ import annotations
 
-import logging
 
-logger = logging.getLogger(__name__)
+from tools.logging.icdev_logger import get_logger
+log = get_logger("genesis.reflexes.mcip_dti_scorer")
 
 
 def run(ctx: dict, session) -> dict:
@@ -15,7 +15,7 @@ def run(ctx: dict, session) -> dict:
 
         result = compute_dti(window_hours=DTI_UPDATE_INTERVAL_HOURS)
         row_id = record_dti_score(result["score"], result["sub_scores"], result["event_count"])
-        logger.info(
+        log.info(
             "mcip_dti_scorer: DTI=%.2f band=%s events=%d id=%s",
             result["score"], result["band"], result["event_count"], row_id,
         )
@@ -27,5 +27,5 @@ def run(ctx: dict, session) -> dict:
             "persisted_id": row_id,
         }
     except Exception as exc:
-        logger.error("mcip_dti_scorer failed: %s", exc)
+        log.error("mcip_dti_scorer failed: %s", exc)
         return {"status": "error", "error": str(exc)}

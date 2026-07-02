@@ -323,7 +323,7 @@ def seed_assessments(conn) -> int:
 
 def seed_audit(conn) -> int:
     sql = """INSERT OR IGNORE INTO qdc_audit (
-        id, design_id, user, action, detail, classification, created_at
+        id, design_id, \"user\", action, detail, classification, created_at
     ) VALUES (?,?,?,?,?,?,?)"""
     count = 0
     actions = [

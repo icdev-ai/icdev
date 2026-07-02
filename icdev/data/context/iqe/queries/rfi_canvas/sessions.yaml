@@ -1,0 +1,10 @@
+canvas: rfi_canvas
+queries:
+  - label: All RFI sessions
+    query: "foreach s in rfi_canvas.sessions select s.rfi_number, s.rfi_title, s.profile_name, s.status, s.approved_sections, s.total_sections, s.created_at"
+  - label: In-progress sessions
+    query: "foreach s in rfi_canvas.sessions where s.status == \"in_progress\" select s.rfi_number, s.rfi_title, s.approved_sections, s.total_sections, s.updated_at"
+  - label: Completed sessions
+    query: "foreach s in rfi_canvas.sessions where s.status in [\"complete\",\"exported\"] select s.rfi_number, s.rfi_title, s.status, s.updated_at"
+  - label: Sessions by profile
+    query: "foreach s in rfi_canvas.sessions orderby s.profile_name select s.rfi_number, s.profile_name, s.status, s.approved_sections, s.total_sections"

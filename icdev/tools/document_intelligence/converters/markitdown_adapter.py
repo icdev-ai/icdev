@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    pass
+    from tools.document_intelligence.extractors import Extraction
 
 logger = get_logger(__name__)
 

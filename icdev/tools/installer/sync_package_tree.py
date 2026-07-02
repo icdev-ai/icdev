@@ -45,6 +45,16 @@ PKG_DIR = REPO_ROOT / "icdev"
 PKG_TOOLS = PKG_DIR / "tools"
 PKG_DATA = PKG_DIR / "data"
 
+# Canonical content for icdev/tools/__init__.py — see sync_tools() for why
+# this is written directly rather than copied from tools/__init__.py.
+ICDEV_TOOLS_INIT = '''"""ICDEV™ tools package — deterministic execution modules.
+
+All new code should use the canonical namespace ``icdev.tools.*``.
+The root-level ``tools`` package is a backward-compatibility shim that
+redirects ``tools.xxx`` imports to ``icdev.tools.xxx``.
+"""
+'''
+
 # Subsystems NOT shipped in the public icdev wheel.
 # These are owner-specific child apps / parent-platform services that users
 # of `pip install icdev` don't need (they build their OWN systems with the
@@ -189,10 +199,23 @@ def sync_tools(dry_run: bool = False, clean: bool = False) -> list:
 
     PKG_TOOLS.mkdir(parents=True, exist_ok=True)
 
+    # icdev/tools/__init__.py is the real package init and must never be
+    # the copy of tools/__init__.py (the backward-compat shim, meant only
+    # for the dev repo where both tools/ and icdev/tools/ coexist on
+    # sys.path). Shipping the shim as icdev/tools/__init__.py makes the
+    # installed wheel self-referential: icdev.tools.__init__ would import
+    # from a non-existent top-level `tools` package, causing a circular
+    # ImportError on first `import icdev` in any environment that isn't
+    # the dev repo. Written unconditionally (even under --clean, which
+    # deletes icdev/tools/ before this function repopulates it).
+    if not dry_run:
+        (PKG_TOOLS / "__init__.py").write_text(ICDEV_TOOLS_INIT, encoding="utf-8")
+
     results: list = []
-    # Copy top-level files (manifest.md, __init__.py, helper .py files)
+    # Copy top-level files (manifest.md, helper .py files). __init__.py is
+    # excluded — see the icdev/tools/__init__.py write above.
     for child in src_root.iterdir():
-        if _should_skip(child):
+        if _should_skip(child) or child.name == "__init__.py":
             continue
         if child.is_file():
             if not dry_run:

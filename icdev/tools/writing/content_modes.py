@@ -348,6 +348,168 @@ def _check_rca(text: str) -> list[dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------------
+# Tech Writer modes (migration 230)
+# ---------------------------------------------------------------------------
+
+
+def _check_standard_guide(text: str) -> list[dict[str, Any]]:
+    """Cloud-agnostic reference guide checks."""
+    findings: list[dict[str, Any]] = []
+
+    # Require cloud provider coverage
+    for provider in ("AWS", "Azure", "GCP", "Oracle"):
+        if not re.search(r"\b" + provider + r"\b", text, re.IGNORECASE):
+            findings.append(
+                _finding(
+                    "medium",
+                    f"Missing cloud provider coverage: {provider}.",
+                    f"Standard guides should address {provider} or explicitly state it is out of scope.",
+                )
+            )
+
+    # Require References section
+    if not re.search(r"(?:##?\s*references?|##?\s*further\s+reading|##?\s*resources?)", text, re.IGNORECASE):
+        findings.append(
+            _finding(
+                "medium",
+                "Missing References section.",
+                "Add '## References' with links to official provider documentation, RFCs, and standards.",
+            )
+        )
+
+    # Word economy
+    word_count = len(text.split())
+    if word_count > 15000:
+        findings.append(
+            _finding(
+                "low",
+                f"Document is {word_count:,} words — consider splitting into topic-specific guides.",
+                "Standard guides are reference material. Aim for ≤ 15,000 words; extract procedures into linked SOPs.",
+            )
+        )
+
+    # Require scope section
+    if not re.search(r"(?:##?\s*scope|##?\s*applicability|##?\s*audience)", text, re.IGNORECASE):
+        findings.append(
+            _finding(
+                "low",
+                "Missing Scope / Applicability section.",
+                "Add '## Scope' defining which teams, environments, and providers this guide applies to.",
+            )
+        )
+
+    return findings
+
+
+def _check_architecture_doc(text: str) -> list[dict[str, Any]]:
+    """Architecture document structural checks."""
+    findings: list[dict[str, Any]] = []
+
+    # Require architecture/component/context section
+    if not re.search(
+        r"(?:##?\s*(?:architecture|component|context|overview|system\s*boundary|topology))",
+        text, re.IGNORECASE,
+    ):
+        findings.append(
+            _finding(
+                "high",
+                "Missing architecture section (Architecture / Component / Context / Topology).",
+                "Add '## Architecture Overview', '## System Context', or '## Component Diagram'.",
+            )
+        )
+
+    # Require decision log
+    if not re.search(r"(?:##?\s*decision|##?\s*adr|##?\s*rationale|##?\s*trade.?off)", text, re.IGNORECASE):
+        findings.append(
+            _finding(
+                "medium",
+                "Missing Decision Log / ADR section.",
+                "Add '## Decision Log' or '## Architecture Decision Records' documenting key choices and trade-offs.",
+            )
+        )
+
+    # Require security considerations
+    if not re.search(r"(?:##?\s*security|##?\s*threat|##?\s*risk|##?\s*compliance)", text, re.IGNORECASE):
+        findings.append(
+            _finding(
+                "medium",
+                "Missing Security Considerations section.",
+                "Add '## Security Controls' or '## Security Considerations' with threats and mitigations.",
+            )
+        )
+
+    # Warn if no diagram marker
+    if not re.search(r"(?:\[DIAGRAM:|```mermaid|```plantuml|mermaid|excalidraw)", text, re.IGNORECASE):
+        findings.append(
+            _finding(
+                "low",
+                "No diagram detected — architecture documents should include at least one diagram.",
+                "Use the ⬡ Diagram button to insert a Mermaid diagram.",
+            )
+        )
+
+    return findings
+
+
+def _check_sop_runbook(text: str) -> list[dict[str, Any]]:
+    """SOP and Runbook structural checks."""
+    findings: list[dict[str, Any]] = []
+
+    # Numbered steps — at least 3
+    steps = re.compile(r"^\s*\d+[\.\)]\s+\S", re.MULTILINE).findall(text)
+    if len(steps) < 3:
+        findings.append(
+            _finding(
+                "high",
+                f"Only {len(steps)} numbered step(s) — SOPs and runbooks require at least 3.",
+                "Use '1. Step description' format. Each discrete action should be its own numbered step.",
+            )
+        )
+
+    # Rollback
+    if not re.search(r"(?:##?\s*rollback|##?\s*revert|##?\s*recovery|##?\s*contingency)", text, re.IGNORECASE):
+        findings.append(
+            _finding(
+                "high",
+                "Missing Rollback / Recovery section.",
+                "Add '## Rollback' with steps to undo the procedure and restore the previous state.",
+            )
+        )
+
+    # Prerequisites
+    if not re.search(r"(?:##?\s*prerequisites?|##?\s*requirements?|##?\s*before\s+you\s+begin|##?\s*pre.?flight)", text, re.IGNORECASE):
+        findings.append(
+            _finding(
+                "medium",
+                "Missing Prerequisites / Pre-flight section.",
+                "Add '## Prerequisites' listing required permissions, tools, and environment checks.",
+            )
+        )
+
+    # Verification
+    if not re.search(r"(?:##?\s*verif|##?\s*validat|##?\s*health.?check)", text, re.IGNORECASE):
+        findings.append(
+            _finding(
+                "medium",
+                "Missing Verification section.",
+                "Add '## Verification Steps' with commands confirming the procedure succeeded.",
+            )
+        )
+
+    # Responsibilities (SOP-specific)
+    if not re.search(r"(?:##?\s*responsibilit|##?\s*roles?\s*and|##?\s*owner|##?\s*raci)", text, re.IGNORECASE):
+        findings.append(
+            _finding(
+                "low",
+                "Missing Responsibilities / Roles section.",
+                "Add '## Responsibilities' identifying who owns each step.",
+            )
+        )
+
+    return findings
+
+
+# ---------------------------------------------------------------------------
 # Mode registry
 # ---------------------------------------------------------------------------
 
@@ -393,6 +555,25 @@ CONTENT_MODES: dict[str, dict[str, Any]] = {
         "description": "Requires Timeline, Impact, Root Cause, Corrective Action, and Preventive Action sections plus 5 Whys.",
         "suppressed_dims": ["tone", "ai_detection"],
         "check": _check_rca,
+    },
+    # Tech Writer modes (migration 230)
+    "standard_guide": {
+        "label": "Standard Guide",
+        "description": "Cloud-agnostic reference guide. Checks provider coverage (AWS/Azure/GCP/Oracle), scope, references, and word economy.",
+        "suppressed_dims": ["ai_detection"],
+        "check": _check_standard_guide,
+    },
+    "architecture_doc": {
+        "label": "Architecture Document",
+        "description": "Checks for architecture/component sections, decision log, security considerations, and at least one diagram.",
+        "suppressed_dims": ["cliches"],
+        "check": _check_architecture_doc,
+    },
+    "sop_runbook": {
+        "label": "SOP / Runbook",
+        "description": "Requires numbered steps, rollback section, prerequisites, verification, and responsibilities. Tone checks relaxed.",
+        "suppressed_dims": ["tone", "cliches"],
+        "check": _check_sop_runbook,
     },
 }
 

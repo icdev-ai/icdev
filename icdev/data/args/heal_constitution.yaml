@@ -53,6 +53,13 @@ rules:
     max_per_day: 3
     on_violation: hold
 
+  - name: fix_canvas_rls_bypass_confidence
+    description: "Canvas RLS bypass fix edits source files — require high confidence before applying"
+    applies_to_types:
+      - fix_canvas_rls_bypass
+    min_confidence: 0.88
+    on_violation: block
+
 # Anomaly-detection parameters for adaptive confidence threshold (heal.py).
 # All values formerly hardcoded in _compute_adaptive_confidence_threshold.
 anomaly_detection:

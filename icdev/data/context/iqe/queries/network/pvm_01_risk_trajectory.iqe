@@ -1,0 +1,9 @@
+# PVM-001: Vulnerability risk trajectory — top predicted risks with 30d/90d forecasts
+# Collection: network.vuln_predictions
+# Use: risk trajectory chart on /network/vulnerability-intelligence, executive risk briefings,
+#      ATO evidence, POAM priority ordering.
+
+foreach p in network.vuln_predictions
+where p.risk_score_composite > 0.5
+select p.advisory_id, p.risk_score_composite, p.risk_score_30d, p.risk_score_90d,
+       p.trend, p.confidence, p.model_version, p.predicted_at

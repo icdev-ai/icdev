@@ -17,6 +17,7 @@
 | Reflex Observer | tools/monitoring/reflex_observer.py | observe() wrapper for Genesis reflexes; records to reflex_observations table | reflex_name, run_fn, *args, **kwargs | Reflex observation record |
 | WATCHCON Tiers | tools/monitor/watchcon.py | Three-tier alert classification: WATCHCON 4 (routine/info), WATCHCON 3 (elevated/warning), WATCHCON 2 (high/critical); insert, query, backfill, summarize | --tier, --json | Alert tier records + summary |
 | Monitor Constants | tools/monitor/constants.py | WATCHCON tier constants, severity↔tier mappings | (import only) | Module-level constants |
+| TimesFM Forecast Adapter | icdev/tools/forecast/timesfm_adapter.py | Self-hostable time-series forecasting microservice backed by Google TimesFM; lazy-loads model, validates payload, persists jobs + audit | JSON payload or CLI | Forecast job record / health status |
 
 ## EQO Centralized Logging (eqo-log)
 | Tool | File | Description | Input | Output |

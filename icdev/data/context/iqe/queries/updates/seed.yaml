@@ -1,0 +1,6 @@
+canvas: updates
+queries:
+  - "Show all platform releases"
+  - "Show the latest release version"
+  - "Show releases with security fixes"
+  - "Show releases added in the last month"

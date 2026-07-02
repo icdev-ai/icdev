@@ -1,0 +1,29 @@
+# CUI // SP-CTI
+# ICDEV™ Classification / Information Banner Configuration
+#
+# mode controls what banner is shown:
+#   none    — no banner (commercial / unclassified deployments)
+#   cui     — yellow "CUI // SP-CTI" DoD banner
+#   secret  — red "SECRET" banner
+#   il6     — purple "SECRET // SI" IL6 banner
+#   custom  — use the text/color fields below
+#   demo    — green "DEMO MODE — Read Only" bar (auto-set when ICDEV_DEMO_MODE=true)
+#
+# Override: ICDEV_BANNER_MODE=none  (env var wins over this file)
+#
+# For DoD/IC deployments keep mode: cui and set via ICDEV_CUI_BANNER_ENABLED=true
+# For commercial / SaaS deployments: set mode: none (no banner)
+# For white-label with a custom info bar: set mode: custom
+
+mode: cui
+
+# --- Custom mode fields (ignored unless mode: custom) ---
+text: "CUI // SP-CTI"
+background_color: "#5a4e00"
+text_color: "#ffd700"
+
+# Layout
+position: top           # top | bottom | both
+font_size: "0.75rem"
+font_weight: "600"
+letter_spacing: "0.08em"

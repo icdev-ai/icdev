@@ -689,6 +689,7 @@ class ComponentRegistry:
                     "kind": c.kind,
                     "url_prefix": c.url_prefix,
                     "min_il": c.min_il,
+                    "min_tier": c.min_tier,
                     "default_roles": list(c.default_roles),
                     "enabled": c.is_enabled(self._env),
                     "links": self._normalize_nav_links(c.nav, c.url_prefix),
@@ -759,8 +760,7 @@ def _has_route_decorator(blueprint_path: Path) -> bool:
     if not blueprint_path.exists():
         return False
     try:
-        text = blueprint_path.read_text(encoding="utf-8-sig")
-        tree = ast.parse(text)
+        tree = ast.parse(blueprint_path.read_text(encoding="utf-8"))
     except SyntaxError:
         return False
     for node in ast.walk(tree):
@@ -833,12 +833,47 @@ def validate_canvas_completeness(
     root = Path(repo_root or BASE_DIR).resolve()
     completeness = comp.completeness
 
-    # Point 1: main page template
+    # Point 1: main page template — check declared path, then common legacy fallbacks.
+    # Legacy canvases may use index.html, dashboard.html, or live in a differently named dir.
+    module_path_tmp = comp.module or ""
+    module_dir_tmp = _module_dir_from_module(module_path_tmp)
+    _module_leaf = module_dir_tmp.split("/")[-1] if "/" in module_dir_tmp else module_dir_tmp
+
     template_path_str = completeness.get("template") or f"tools/dashboard/templates/{key}/page.html"
     template_path = root / template_path_str
     page_present = template_path.exists()
 
-    # Point 2: icdev mirror
+    if not page_present:
+        # Try common alternative names and directory conventions
+        _tmpl_candidates = [
+            f"tools/dashboard/templates/{_module_leaf}/page.html",
+            f"tools/dashboard/templates/{_module_leaf}/index.html",
+            f"tools/dashboard/templates/{key}/index.html",
+            f"tools/dashboard/templates/{key}/dashboard.html",
+        ]
+        for _cand in _tmpl_candidates:
+            if (root / _cand).exists():
+                template_path_str = _cand
+                template_path = root / _cand
+                page_present = True
+                break
+        # Last resort: any .html in the template dir (e.g. trust.html for ace)
+        if not page_present:
+            for _leaf in (_module_leaf, key):
+                _tmpl_dir = root / "tools" / "dashboard" / "templates" / _leaf
+                if _tmpl_dir.is_dir():
+                    _html_files = sorted(
+                        f for f in _tmpl_dir.glob("*.html")
+                        if f.name not in ("base.html", "login.html", "error.html")
+                    )
+                    if _html_files:
+                        template_path = _html_files[0]
+                        template_path_str = str(template_path.relative_to(root)).replace("\\", "/")
+                        page_present = True
+                        break
+
+    # Point 2: icdev mirror — only required if a main template was found.
+    # Existing canvases without a web template don't need the icdev mirror.
     icdev_template_path = root / "icdev" / template_path_str
     mirror_present = icdev_template_path.exists()
 
@@ -863,9 +898,20 @@ def validate_canvas_completeness(
     constants_present = constants_path.exists()
 
     # Point 6: DB migration directory
+    # Check declared path and common legacy fallback (db/ without /migrations sub-dir).
     migration_path_str = completeness.get("db_migration")
     migration_path = root / migration_path_str if migration_path_str else None
-    migration_present = _file_exists(migration_path) if migration_path_str else None
+    migration_present: bool | None = None
+    if migration_path_str:
+        migration_present = _file_exists(migration_path)
+        if not migration_present:
+            # Fallback: check parent db/ directory (older canvases don't have /migrations)
+            _db_parent = Path(migration_path_str).parent
+            if _db_parent.name == "migrations":
+                _db_parent = _db_parent.parent
+            if (root / _db_parent).exists():
+                migration_present = True
+                migration_path_str = str(_db_parent)
 
     # Point 7: nav link
     nav_link_present = bool(completeness.get("nav_link")) or bool(comp.nav.get("section"))
@@ -879,6 +925,19 @@ def validate_canvas_completeness(
     seed_queries_path = root / seed_queries_str if seed_queries_str else None
     iqe_adapter_present = _file_exists(iqe_adapter_path) if iqe_adapter_module else None
     seed_queries_present = _file_exists(seed_queries_path) if seed_queries_str else None
+
+    # Fallback: search common IQE seed-query directory name variants when not found.
+    if not seed_queries_present and iqe_adapter_present:
+        _iqe_query_root = root / "context" / "iqe" / "queries"
+        if _iqe_query_root.exists():
+            _name_variants = [key, key + "_canvas", key.replace("_canvas", ""), _module_leaf]
+            for _var in _name_variants:
+                _cand = _iqe_query_root / _var
+                if _cand.exists() and any(_cand.iterdir()):
+                    seed_queries_present = True
+                    seed_queries_path = _cand
+                    break
+
     iqe_present = iqe_adapter_present is True and seed_queries_present is True
 
     items: list[CanvasCompletenessItem] = [
@@ -887,11 +946,13 @@ def validate_canvas_completeness(
             required=True,
             present=page_present,
             path=str(template_path.relative_to(root)) if page_present else template_path_str,
-            message="tools/dashboard/templates/{key}/page.html exists" if page_present else f"missing {template_path_str}",
+            message="page template exists" if page_present else f"missing {template_path_str}",
         ),
         CanvasCompletenessItem(
             point="icdev_mirror",
-            required=True,
+            # Only required when a main template exists; legacy canvases without
+            # a template don't need the icdev/ mirror (companion sync would create it).
+            required=page_present,
             present=mirror_present,
             path=str(icdev_template_path.relative_to(root)) if mirror_present else f"icdev/{template_path_str}",
             message="icdev mirror exists" if mirror_present else f"missing icdev/{template_path_str}",

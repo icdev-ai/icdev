@@ -1,0 +1,11 @@
+# PNA-005: Change failure risk — pending changes with high failure probability
+# Collection: network.change_risk
+# Use: Change risk panel on /network/predictive-analytics, change advisory board (CAB) review,
+#      automated HITL routing for high-risk changes, post-incident analysis.
+
+foreach p in network.change_risk
+where p.failure_probability > 0.5
+select p.change_request_id, p.device_name, p.action_type,
+       p.failure_probability, p.blast_radius_size, p.concurrent_change_count,
+       p.maintenance_window_compliant, p.risk_tier,
+       p.simulation_verdict, p.predicted_at

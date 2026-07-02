@@ -103,7 +103,7 @@ class HITLGate:
                 pending_rows = conn.execute(
                     """SELECT id, detail, created_at
                        FROM ace_audit_log
-                       WHERE coworker_id = ? AND action = 'hitl_pending'
+                       WHERE coworker_id = %s AND action = 'hitl_pending'
                        ORDER BY created_at DESC""",
                     (coworker_id,),
                 ).fetchall()
@@ -113,7 +113,7 @@ class HITLGate:
 
                 resolved_rows = conn.execute(
                     """SELECT detail FROM ace_audit_log
-                       WHERE coworker_id = ? AND action = 'hitl_resolved'""",
+                       WHERE coworker_id = %s AND action = 'hitl_resolved'""",
                     (coworker_id,),
                 ).fetchall()
                 resolved_details = {r[0] for r in resolved_rows}
@@ -146,7 +146,7 @@ class HITLGate:
                 conn.execute(
                     "INSERT INTO ace_audit_log "
                     "(instance_id, coworker_id, action, detail, actor, created_at) "
-                    "VALUES (?, ?, 'hitl_resolved', ?, 'hitl_gate', ?)",
+                    "VALUES (%s, %s, 'hitl_resolved', %s, 'hitl_gate', %s)",
                     (instance_id, coworker_id, detail, now),
                 )
                 conn.commit()
@@ -269,7 +269,7 @@ class CoWorkerThread(threading.Thread):
             from icdev.tools.ace.soul_manager import build_identity_preamble, inject_user_profile_context
             preamble = build_identity_preamble(self.spec.role_id)
             # Inject the launching user's world model context (Second Brain) if available.
-            user_id = getattr(self.spec, "user_id", None) or self._context.get("user_id") or "default"
+            user_id = getattr(self.spec, "user_id", None) or self._ace_context.get("user_id") or "default"
             preamble = inject_user_profile_context(preamble, user_id)
             if preamble:
                 self._ace_context["soul_preamble"] = preamble
@@ -332,7 +332,6 @@ class CoWorkerThread(threading.Thread):
     def _run_step_mode(self, role: Any) -> None:
         """Execute the role's fixed ``steps`` list (the legacy default mode)."""
         executor = StepExecutor()
-        _markov_prev_step: str = ""  # Markov: tracks previous step name for transition recording
 
         # 4 & 5. Execute each step; poll inbox between steps
         for raw_step in role.steps:
@@ -346,7 +345,6 @@ class CoWorkerThread(threading.Thread):
                 break
 
             step = self._normalise_step(raw_step)
-            _markov_cur_step: str = getattr(raw_step, "name", "") or step.get("id", "")
             self._set_assigned_step(step.get("id", str(raw_step)))
 
             try:
@@ -355,16 +353,6 @@ class CoWorkerThread(threading.Thread):
                     "step_complete",
                     f"step={step.get('id')} result_type={type(result).__name__}",
                 )
-                # Markov: record successful step-to-step transition
-                if _markov_prev_step and _markov_cur_step:
-                    try:
-                        from icdev.tools.ace.markov_sequencer import get_sequencer as _get_seq
-                        _get_seq(self.spec.role_id).record_transition(
-                            _markov_prev_step, _markov_cur_step, success=True
-                        )
-                    except Exception:
-                        pass
-                _markov_prev_step = _markov_cur_step
             except (ToolPermissionDeniedError, TrustKernelDeniedError, ImportError, AttributeError) as exc:
                 # 5. Required step failure → HITL gate
                 if step.get("required", False):
@@ -372,16 +360,6 @@ class CoWorkerThread(threading.Thread):
                         return  # stop signalled during HITL wait
                 else:
                     self._audit("step_failed_optional", f"step={step.get('id')} reason={exc}")
-                # Markov: record failed step-to-step transition
-                if _markov_prev_step and _markov_cur_step:
-                    try:
-                        from icdev.tools.ace.markov_sequencer import get_sequencer as _get_seq
-                        _get_seq(self.spec.role_id).record_transition(
-                            _markov_prev_step, _markov_cur_step, success=False
-                        )
-                    except Exception:
-                        pass
-                _markov_prev_step = _markov_cur_step
                 continue
 
             # 6. Behavioral compliance check every monitor_interval steps
@@ -435,6 +413,15 @@ class CoWorkerThread(threading.Thread):
         if soul:
             system_prompt += f"\n{soul}\n"
 
+        # Co-learning: inject role-specific improvement suggestions from prior sessions.
+        try:
+            from icdev.tools.llm.co_learning_store import build_system_prompt_patch as _build_colearn_patch
+            _colearn_patch = _build_colearn_patch(self.spec.role_id)
+            if _colearn_patch:
+                system_prompt = system_prompt + "\n\n" + _colearn_patch
+        except Exception:
+            pass  # non-fatal
+
         problem_text = self._ace_context.get("problem_text", "")
         user_prompt = (
             f"INSTANCE: {self.instance_id}\n"
@@ -454,9 +441,138 @@ class CoWorkerThread(threading.Thread):
         max_iter = int(getattr(role, "max_iterations", 12))
         max_total_tokens = getattr(role, "agent_max_total_tokens", None)
         max_cost_usd = getattr(role, "agent_max_cost_usd", None)
+        # Per-role cost cap from args/llm_config.yaml → agent_loop.role_cost_caps.
+        # Takes the more restrictive of the role YAML cap and the config cap.
+        try:
+            from icdev.tools.llm.role_cost_caps import get_cap_for_role as _get_cap
+            _config_cap = _get_cap(self.spec.role_id)
+            if _config_cap is not None:
+                max_cost_usd = min(max_cost_usd, _config_cap) if max_cost_usd is not None else _config_cap
+                logger.info(
+                    "coworker: cost cap $%.2f applied for role=%s",
+                    max_cost_usd,
+                    self.spec.role_id,
+                )
+        except Exception:
+            pass  # non-fatal; proceed without config cap
         context_window_tokens = getattr(role, "agent_context_window_tokens", None)
         compression_budget_tokens = getattr(role, "agent_compression_budget_tokens", None)
+        llm_function = getattr(self.spec, "llm_function", "") or "code_generation"
         self._audit("agent_loop_start", f"tools={tool_inventory} max_iter={max_iter}")
+
+        # ----------------------------------------------------------------
+        # Trust-tier pre-tool hook
+        # Block write/exec tools before the handler is invoked when the
+        # co-worker is not green-tier, giving the LLM a clear permission
+        # message rather than a TrustKernelDeniedError traceback.
+        # ----------------------------------------------------------------
+        _WRITE_EXEC_TOOLS: frozenset[str] = frozenset({"write_file", "run_tool"})
+        _trust_tier = self.spec.trust_tier
+
+        def _trust_pre_hook(name: str, inp: dict) -> "str | None":
+            if name in _WRITE_EXEC_TOOLS and _trust_tier != "green":
+                return (
+                    f"Permission denied: '{name}' requires green trust tier; "
+                    f"this co-worker is trust_tier={_trust_tier!r}. "
+                    "Use a read-only tool or request promotion to green tier."
+                )
+            return None
+
+        # ----------------------------------------------------------------
+        # HITL mid-turn checkpoint hook
+        # If the role spec declares hitl_tools, pause and wait for human
+        # approval before executing any of those tools mid-loop.
+        # ----------------------------------------------------------------
+        _hitl_tool_names = frozenset(getattr(role, "hitl_tools", []) or [])
+        _hitl_hook = None
+        if _hitl_tool_names:
+            try:
+                from icdev.tools.llm.agent_hitl import build_hitl_hook as _build_hitl
+                _hitl_hook = _build_hitl(
+                    trigger_tools=_hitl_tool_names,
+                    instance_id=self.instance_id,
+                    coworker_id=self.spec.coworker_id,
+                    stop_event=self._stop_event,
+                    timeout_seconds=300,
+                    poll_interval_seconds=5.0,
+                )
+                self._audit(
+                    "agent_hitl_armed",
+                    f"hitl_tools={sorted(_hitl_tool_names)}",
+                )
+            except Exception as _hitl_exc:  # noqa: BLE001
+                logger.warning("ace: HITL hook init failed for %s: %s", self.spec.coworker_id, _hitl_exc)
+
+        def _combined_pre_hook(name: str, inp: dict) -> "str | None":
+            blocked = _trust_pre_hook(name, inp)
+            if blocked:
+                return blocked
+            if _hitl_hook is not None:
+                return _hitl_hook(name, inp)
+            return None
+
+        # ----------------------------------------------------------------
+        # on_stop hook: audit result_subtype + save session for resume.
+        # ----------------------------------------------------------------
+        _coworker_id = self.spec.coworker_id
+        _role_id = self.spec.role_id
+        _instance_id = self.instance_id
+        _system_prompt_ref = system_prompt
+
+        def _on_stop_hook(loop_result: Any) -> None:
+            self._audit(
+                "agent_loop_subtype",
+                f"result_subtype={loop_result.result_subtype} "
+                f"session_id={loop_result.session_id}",
+            )
+            # Persist session for potential resume.
+            try:
+                from icdev.tools.llm.agent_loop_session import save_session
+                save_session(
+                    loop_result,
+                    instance_id=_instance_id,
+                    coworker_id=_coworker_id,
+                    llm_function=llm_function,
+                    system_prompt=_system_prompt_ref,
+                )
+            except Exception as _exc:
+                logger.debug("ace: session save failed for %s: %s", _coworker_id, _exc)
+
+            # Save episodic memory entry for this completed agent run.
+            try:
+                if loop_result.done and loop_result.final_content:
+                    from tools.memory.memory_write import write_to_db as _mem_write
+                    _mem_write(
+                        content=f"[ACE:{_coworker_id}] {loop_result.final_content[:800]}",
+                        entry_type="event",
+                        importance=min(10, max(1, loop_result.turns)),
+                        source="hook",
+                        tier="episodic",
+                        session_ref=loop_result.session_id,
+                        trace_id=getattr(loop_result, "trace_id", None) or None,
+                    )
+            except Exception as _exc:
+                logger.debug("ace: episodic memory save failed for %s: %s", _coworker_id, _exc)
+
+            # Co-learning: persist improvement suggestions so next session benefits.
+            try:
+                from icdev.tools.llm.co_learning_store import auto_record_from_loop_result as _colearn_record
+                _colearn_record(loop_result.session_id, _role_id, loop_result)
+            except Exception as _exc:
+                logger.debug("ace: co-learning record failed for %s: %s", _coworker_id, _exc)
+
+            try:
+                from icdev.tools.ace import event_bus as _eb
+                _eb.publish(_instance_id, {
+                    "type": "loop_done",
+                    "coworker_id": _coworker_id,
+                    "result_subtype": loop_result.result_subtype,
+                    "turns": loop_result.turns,
+                    "done": loop_result.done,
+                    "session_id": loop_result.session_id,
+                })
+            except Exception:
+                pass
 
         try:
             result = run_agent_loop(
@@ -465,14 +581,19 @@ class CoWorkerThread(threading.Thread):
                 user_prompt=user_prompt,
                 tools=tools,
                 tool_handlers=tool_handlers,
-                llm_function=getattr(self.spec, "llm_function", "") or "code_generation",
+                llm_function=llm_function,
                 max_iterations=max_iter,
                 stop_event=self._stop_event,
                 on_turn=self._on_agent_turn,
+                on_pre_tool_use=_combined_pre_hook,
+                on_stop=_on_stop_hook,
                 max_total_tokens=max_total_tokens,
                 max_cost_usd=max_cost_usd,
                 context_window_tokens=context_window_tokens,
                 compression_budget_tokens=compression_budget_tokens,
+                parent_session_id=getattr(self, "_parent_session_id", ""),
+                tenant_id=getattr(self, "tenant_id", ""),
+                user_id=getattr(self, "user_id", ""),
             )
         except AgentLoopUnsupported as exc:
             # Provider can't do native tool use — fall back to step mode with audit.
@@ -493,9 +614,10 @@ class CoWorkerThread(threading.Thread):
         self._audit(
             "agent_loop_complete",
             f"done={result.done} truncated={result.truncated} turns={result.turns} "
-            f"tool_calls={len(result.tool_call_log)}",
+            f"tool_calls={len(result.tool_call_log)} subtype={result.result_subtype} "
+            f"session_id={result.session_id}",
         )
-        detail = "agent loop done" if result.done else "agent loop truncated (max_iterations)"
+        detail = "agent loop done" if result.done else f"agent loop truncated ({result.result_subtype})"
         self._finish_done(role, detail=detail)
 
     def _on_agent_turn(self, turn: int, response: Any, messages: list[dict[str, Any]]) -> None:
@@ -508,6 +630,18 @@ class CoWorkerThread(threading.Thread):
         self._set_assigned_step(f"agent_turn_{turn + 1}")
         self._audit("agent_turn", f"turn={turn + 1} tools={tool_summary}")
         self._persist_agent_turn(turn + 1, text, tool_summary)
+
+        try:
+            from icdev.tools.ace import event_bus as _eb
+            _eb.publish(self.instance_id, {
+                "type": "agent_turn",
+                "coworker_id": self.spec.coworker_id,
+                "turn": turn + 1,
+                "tool_summary": tool_summary,
+                "text_len": len(text),
+            })
+        except Exception:
+            pass
 
         # Behavioral compliance check every monitor_interval turns.
         self._step_count += 1
@@ -534,7 +668,7 @@ class CoWorkerThread(threading.Thread):
                 conn.execute(
                     "INSERT INTO ace_messages "
                     "(id, instance_id, coworker_id, message_type, role, content, metadata_json) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s)",
                     (
                         str(_uuid.uuid4()),
                         self.instance_id,
@@ -752,7 +886,7 @@ class CoWorkerThread(threading.Thread):
                 conn.execute(
                     "INSERT INTO kanban_tasks "
                     "(id, title, description, task_type, priority, status, created_at, updated_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
                     (
                         card_id,
                         f"HITL Review: ACE compliance gap — {self.spec.coworker_id}",
@@ -791,7 +925,7 @@ class CoWorkerThread(threading.Thread):
             conn = get_canvas_connection(_DB_ENV)
             try:
                 conn.execute(
-                    "UPDATE ace_coworkers SET state = ?, last_active_at = ? WHERE id = ?",
+                    "UPDATE ace_coworkers SET state = %s, last_active_at = %s WHERE id = %s",
                     (state, now, self.spec.coworker_id),
                 )
                 conn.commit()
@@ -808,7 +942,7 @@ class CoWorkerThread(threading.Thread):
             conn = get_canvas_connection(_DB_ENV)
             try:
                 conn.execute(
-                    "UPDATE ace_coworkers SET assigned_step = ? WHERE id = ?",
+                    "UPDATE ace_coworkers SET assigned_step = %s WHERE id = %s",
                     (step_id, self.spec.coworker_id),
                 )
                 conn.commit()
@@ -968,7 +1102,7 @@ class CoWorkerThread(threading.Thread):
                 conn.execute(
                     "INSERT INTO ace_skill_candidates "
                     "(id, role_id, source_role, instance_id, candidate_yaml, trust_tier, status, created_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)",
+                    "VALUES (%s, %s, %s, %s, %s, %s, 'pending', %s)",
                     (candidate_id, candidate_role_id, role_id, self.instance_id, candidate_yaml, self.spec.trust_tier, now),
                 )
                 conn.commit()

@@ -1,0 +1,9 @@
+# PNA-001: Device EOL risk — devices approaching or past end-of-support
+# Collection: network.eol_predictions
+# Use: EOL risk panel on /network/predictive-analytics, vendor lifecycle planning,
+#      POAM evidence for unsupported OS, DoD STIG V-220519 remediation tracking.
+
+foreach p in network.eol_predictions
+where p.risk_score > 0.5
+select p.device_name, p.vendor, p.os_version, p.eos_date, p.days_remaining,
+       p.has_active_cves, p.risk_score, p.risk_tier, p.predicted_at

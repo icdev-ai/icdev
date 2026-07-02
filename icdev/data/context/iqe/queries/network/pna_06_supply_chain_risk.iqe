@@ -1,0 +1,10 @@
+# PNA-006: Supply chain risk — vendors with critical or high risk exposure
+# Collection: network.supply_chain_risk
+# Use: Supply chain panel on /network/predictive-analytics, vendor risk management,
+#      CMMC SC.3.183 compliance, NDAA Section 889 enforcement, CISA KEV exposure tracking.
+
+foreach p in network.supply_chain_risk
+where p.risk_score > 0.25
+select p.vendor, p.device_count, p.cve_count, p.kev_count,
+       p.critical_cve_count, p.risk_score, p.vendor_risk_rating,
+       p.top_cves_json, p.assessed_at

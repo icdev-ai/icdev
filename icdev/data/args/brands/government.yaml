@@ -1,0 +1,18 @@
+# Brand config for DoD/IC government deployments.
+# Keeps ICDEV™ identity + CUI classification banner.
+#
+# Activate with: icdev profile apply government
+# Or set directly: ICDEV_BRAND_PATH=args/brands/government.yaml
+
+product_name: "ICDEV™"
+product_short: "ICDEV"
+tagline: "AI-Native Defense & Enterprise Platform"
+logo_path: "img/icdev-logo.svg"
+logo_width: "120px"
+favicon_path: "img/favicon.ico"
+primary_color: "#4a90d9"
+secondary_color: "#7c3aed"
+copyright: "© 2026 ICDEV. All rights reserved."
+support_url: ""
+docs_url: ""
+privacy_url: ""

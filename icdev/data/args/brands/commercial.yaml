@@ -1,0 +1,21 @@
+# White-label brand config for commercial enterprise deployments.
+#
+# Operators: replace values below with your organization's branding.
+# Activate with: icdev profile apply commercial
+# Or set directly: ICDEV_BRAND_PATH=args/brands/commercial.yaml
+#
+# To apply your logo, drop a file into tools/dashboard/static/img/
+# and update logo_path below.
+
+product_name: "Enterprise AI Platform"
+product_short: "EAP"
+tagline: "AI-Native Enterprise Platform"
+logo_path: "img/icdev-logo.svg"
+logo_width: "120px"
+favicon_path: "img/favicon.ico"
+primary_color: "#2563eb"
+secondary_color: "#4f46e5"
+copyright: "© 2026. All rights reserved."
+support_url: ""
+docs_url: ""
+privacy_url: ""

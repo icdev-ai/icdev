@@ -1,0 +1,1052 @@
+{% extends "base.html" %}
+{% block title %}Admin Console{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+  <div class="d-flex align-items-center mb-4">
+    <h1 class="mb-0 me-3">Admin Console</h1>
+    <span class="badge bg-danger">Admin</span>
+  </div>
+
+  <!-- Nav tabs -->
+  <ul class="nav nav-tabs mb-4" id="adminTabs" role="tablist">
+    <li class="nav-item">
+      <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-components">Components</button>
+    </li>
+    <li class="nav-item">
+      <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-audit">Audit Log</button>
+    </li>
+    <li class="nav-item">
+      <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-grants">Access Grants</button>
+    </li>
+    <li class="nav-item">
+      <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-sso">SSO Providers</button>
+    </li>
+    <li class="nav-item">
+      <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-evidence" onclick="loadEvidence()">Evidence</button>
+    </li>
+    <li class="nav-item">
+      <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-usage" onclick="loadUsage()">Usage</button>
+    </li>
+    <li class="nav-item">
+      <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-apikeys" onclick="loadApiKeys()">API Keys</button>
+    </li>
+    <li class="nav-item">
+      <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-webhooks" onclick="loadWebhooks()">Webhooks</button>
+    </li>
+  </ul>
+
+  <div class="tab-content">
+
+    <!-- Tab 1: Component Toggles -->
+    <div class="tab-pane fade show active" id="tab-components">
+      <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span class="fw-semibold">Tenant Component Overrides</span>
+          <div class="input-group" style="width:260px">
+            <span class="input-group-text">Tenant</span>
+            <input type="text" id="tenant-id-input" class="form-control form-control-sm"
+                   placeholder="tenant-id" value="default">
+            <button class="btn btn-sm btn-outline-primary" onclick="loadComponents()">Load</button>
+          </div>
+        </div>
+        <div class="card-body p-0">
+          <div id="components-loading" class="p-3 text-muted small">Enter a tenant ID and click Load.</div>
+          <table class="table table-sm table-hover mb-0 d-none" id="components-table">
+            <thead class="table-dark">
+              <tr>
+                <th>Key</th><th>Kind</th><th>Display Name</th>
+                <th>Env Default</th><th>Tenant Override</th><th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="components-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 2: Audit Log -->
+    <div class="tab-pane fade" id="tab-audit">
+      <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span class="fw-semibold">Component Audit Log</span>
+          <button class="btn btn-sm btn-outline-secondary" onclick="loadAudit()">Refresh</button>
+        </div>
+        <div class="card-body p-0">
+          <table class="table table-sm table-hover mb-0">
+            <thead class="table-dark">
+              <tr><th>Time</th><th>Event</th><th>Actor</th><th>Component</th><th>Tenant</th><th>Details</th></tr>
+            </thead>
+            <tbody id="audit-tbody">
+              <tr><td colspan="6" class="text-muted p-3">Click Refresh to load audit log.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 3: Access Grants -->
+    <div class="tab-pane fade" id="tab-grants">
+      <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span class="fw-semibold">Canvas Access Grants</span>
+          <button class="btn btn-sm btn-outline-secondary" onclick="loadGrants()">Refresh</button>
+        </div>
+        <div class="card-body p-0">
+          <table class="table table-sm table-hover mb-0">
+            <thead class="table-dark">
+              <tr><th>Tenant</th><th>Principal</th><th>Canvas</th><th>Level</th><th>Granted By</th><th>Granted At</th><th>Revoked</th></tr>
+            </thead>
+            <tbody id="grants-tbody">
+              <tr><td colspan="7" class="text-muted p-3">Click Refresh to load grants.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 4: SSO Providers -->
+    <div class="tab-pane fade" id="tab-sso">
+      <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span class="fw-semibold">SSO Providers</span>
+          <div class="d-flex align-items-center gap-2">
+            <div class="input-group" style="width:260px">
+              <span class="input-group-text">Tenant</span>
+              <input type="text" id="sso-tenant-input" class="form-control form-control-sm"
+                     placeholder="tenant-id" value="default">
+              <button class="btn btn-sm btn-outline-primary" onclick="loadSSOProviders()">Load</button>
+            </div>
+            <button class="btn btn-sm btn-success" onclick="openSSOModal()">+ Add Provider</button>
+          </div>
+        </div>
+        <div class="card-body p-0">
+          <div id="sso-loading" class="p-3 text-muted small">Enter a tenant ID and click Load.</div>
+          <table class="table table-sm table-hover mb-0 d-none" id="sso-table">
+            <thead class="table-dark">
+              <tr>
+                <th>Name</th><th>Protocol</th><th>Entity / Client ID</th>
+                <th>Metadata URL</th><th>Status</th><th>Login Link</th><th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="sso-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 5: SOC 2 Evidence -->
+    <div class="tab-pane fade" id="tab-evidence">
+      <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span class="fw-semibold">SOC 2 Evidence Items</span>
+          <div class="d-flex gap-2 align-items-center">
+            <input type="text" id="evidence-tenant-input" class="form-control form-control-sm"
+                   style="width:160px" placeholder="tenant-id" value="default">
+            <select id="evidence-ctrl-filter" class="form-select form-select-sm" style="width:140px">
+              <option value="">All Controls</option>
+            </select>
+            <button class="btn btn-sm btn-outline-primary" onclick="loadEvidence()">Refresh</button>
+            <a id="evidence-export-link" href="#" onclick="exportEvidence(event)"
+               class="btn btn-sm btn-outline-success">Export HTML</a>
+          </div>
+        </div>
+        <div class="card-body p-0">
+          <div id="evidence-loading" class="p-3 text-muted small">Click Refresh or the Evidence tab to load.</div>
+          <table class="table table-sm table-hover mb-0 d-none" id="evidence-table">
+            <thead class="table-light">
+              <tr>
+                <th>Control</th>
+                <th>Framework</th>
+                <th>Type</th>
+                <th>Source</th>
+                <th>Summary</th>
+                <th>Collected At</th>
+                <th>Collector</th>
+              </tr>
+            </thead>
+            <tbody id="evidence-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 6: Usage Analytics -->
+    <div class="tab-pane fade" id="tab-usage">
+      <!-- Date-range picker -->
+      <div class="d-flex align-items-center gap-3 mb-3">
+        <span class="fw-semibold text-muted small">Date range:</span>
+        <div class="btn-group btn-group-sm" role="group" id="usage-range-group">
+          <input type="radio" class="btn-check" name="usageRange" id="ur7"  value="7"  autocomplete="off">
+          <label class="btn btn-outline-secondary" for="ur7">7 days</label>
+          <input type="radio" class="btn-check" name="usageRange" id="ur30" value="30" autocomplete="off" checked>
+          <label class="btn btn-outline-secondary" for="ur30">30 days</label>
+          <input type="radio" class="btn-check" name="usageRange" id="ur90" value="90" autocomplete="off">
+          <label class="btn btn-outline-secondary" for="ur90">90 days</label>
+        </div>
+        <div class="input-group input-group-sm" style="width:220px">
+          <span class="input-group-text">Tenant</span>
+          <input type="text" id="usage-tenant-input" class="form-control" placeholder="tenant-id" value="default">
+          <button class="btn btn-outline-primary" onclick="loadUsage()">Load</button>
+        </div>
+      </div>
+
+      <!-- Current-month indicator -->
+      <div id="usage-month-banner" class="alert alert-info py-2 small d-none">
+        <span id="usage-month-text"></span>
+      </div>
+
+      <!-- Bar chart -->
+      <div class="card mb-3">
+        <div class="card-header fw-semibold">Daily Usage by Event Type</div>
+        <div class="card-body" style="position:relative; height:280px">
+          <div id="usage-chart-loading" class="text-muted small p-2">Select a tenant and click Load.</div>
+          <canvas id="usageChart" class="d-none" style="max-height:260px"></canvas>
+        </div>
+      </div>
+
+      <!-- Summary + top-consumers -->
+      <div class="row g-3">
+        <div class="col-md-4">
+          <div class="card h-100">
+            <div class="card-header fw-semibold">Period Summary</div>
+            <div class="card-body p-0">
+              <table class="table table-sm mb-0">
+                <thead class="table-light"><tr><th>Event Type</th><th class="text-end">Total</th></tr></thead>
+                <tbody id="usage-summary-tbody">
+                  <tr><td colspan="2" class="text-muted p-3 small">No data.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-8">
+          <div class="card h-100">
+            <div class="card-header fw-semibold">Cross-Tenant Top Consumers</div>
+            <div class="card-body p-0">
+              <table class="table table-sm mb-0">
+                <thead class="table-light">
+                  <tr><th>Tenant</th><th>Event Type</th><th class="text-end">Total Quantity</th></tr>
+                </thead>
+                <tbody id="usage-consumers-tbody">
+                  <tr><td colspan="3" class="text-muted p-3 small">Load tenant usage to also refresh cross-tenant view.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 7: API Keys -->
+    <div class="tab-pane fade" id="tab-apikeys">
+      <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span class="fw-semibold">API Keys</span>
+          <div class="d-flex align-items-center gap-2">
+            <div class="input-group" style="width:260px">
+              <span class="input-group-text">Tenant</span>
+              <input type="text" id="apikey-tenant-input" class="form-control form-control-sm"
+                     placeholder="tenant-id" value="default">
+              <button class="btn btn-sm btn-outline-primary" onclick="loadApiKeys()">Load</button>
+            </div>
+            <button class="btn btn-sm btn-success" onclick="openApiKeyModal()">+ Create Key</button>
+          </div>
+        </div>
+        <div class="card-body p-0">
+          <div id="apikey-loading" class="p-3 text-muted small">Enter a tenant ID and click Load.</div>
+          <table class="table table-sm table-hover mb-0 d-none" id="apikey-table">
+            <thead class="table-dark">
+              <tr>
+                <th>Name</th><th>Prefix</th><th>Scopes</th>
+                <th>Created</th><th>Last Used</th><th>Expires</th><th>Status</th><th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="apikey-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 8: Webhooks -->
+    <div class="tab-pane fade" id="tab-webhooks">
+      <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span class="fw-semibold">Webhook Endpoints</span>
+          <div class="d-flex align-items-center gap-2">
+            <div class="input-group" style="width:260px">
+              <span class="input-group-text">Tenant</span>
+              <input type="text" id="webhook-tenant-input" class="form-control form-control-sm"
+                     placeholder="tenant-id" value="default">
+              <button class="btn btn-sm btn-outline-primary" onclick="loadWebhooks()">Load</button>
+            </div>
+            <button class="btn btn-sm btn-success" onclick="openWebhookModal()">+ Add Endpoint</button>
+          </div>
+        </div>
+        <div class="card-body p-0">
+          <div id="webhook-loading" class="p-3 text-muted small">Enter a tenant ID and click Load.</div>
+          <table class="table table-sm table-hover mb-0 d-none" id="webhook-table">
+            <thead class="table-dark">
+              <tr><th>URL</th><th>Event Types</th><th>Status</th><th>Created</th><th>Actions</th></tr>
+            </thead>
+            <tbody id="webhook-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- tab-content -->
+</div>
+
+<!-- API Key Create Modal -->
+<div class="modal fade" id="apiKeyModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Create API Key</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="apiKeyModalBody">
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Key Name <span class="text-danger">*</span></label>
+          <input type="text" id="apikey-name" class="form-control" placeholder="e.g. CI Pipeline Token">
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Scopes</label>
+          <div class="form-check"><input class="form-check-input apikey-scope" type="checkbox" value="read" id="scope-read" checked><label class="form-check-label" for="scope-read">read</label></div>
+          <div class="form-check"><input class="form-check-input apikey-scope" type="checkbox" value="write" id="scope-write"><label class="form-check-label" for="scope-write">write</label></div>
+          <div class="form-check"><input class="form-check-input apikey-scope" type="checkbox" value="admin" id="scope-admin"><label class="form-check-label" for="scope-admin">admin</label></div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Expires At <span class="text-muted small">(optional)</span></label>
+          <input type="date" id="apikey-expires" class="form-control">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="createApiKey()">Create</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- API Key Display Modal (shown once after creation) -->
+<div class="modal fade" id="apiKeyDisplayModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header bg-warning-subtle">
+        <h5 class="modal-title">API Key Created</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-warning py-2 small">Copy this key now — it will not be shown again.</div>
+        <div class="input-group mb-2">
+          <input type="text" id="apikey-raw-display" class="form-control font-monospace" readonly>
+          <button class="btn btn-outline-secondary" type="button" onclick="copyApiKey()">Copy</button>
+        </div>
+        <div id="apikey-copied-msg" class="text-success small d-none">Copied!</div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Done</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Webhook Add Modal -->
+<div class="modal fade" id="webhookModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Add Webhook Endpoint</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Endpoint URL <span class="text-danger">*</span></label>
+          <input type="url" id="webhook-url" class="form-control" placeholder="https://example.com/webhook">
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Event Types</label>
+          <div class="form-check"><input class="form-check-input wh-event" type="checkbox" value="component.updated" id="wh-ev-comp"><label class="form-check-label" for="wh-ev-comp">component.updated</label></div>
+          <div class="form-check"><input class="form-check-input wh-event" type="checkbox" value="key.created" id="wh-ev-key"><label class="form-check-label" for="wh-ev-key">key.created</label></div>
+          <div class="form-check"><input class="form-check-input wh-event" type="checkbox" value="tenant.updated" id="wh-ev-tenant"><label class="form-check-label" for="wh-ev-tenant">tenant.updated</label></div>
+          <div class="form-check"><input class="form-check-input wh-event" type="checkbox" value="*" id="wh-ev-all" checked><label class="form-check-label" for="wh-ev-all">* (all events)</label></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="createWebhook()">Add Endpoint</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Webhook Secret Display Modal -->
+<div class="modal fade" id="webhookSecretModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header bg-warning-subtle">
+        <h5 class="modal-title">Webhook Registered</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-warning py-2 small">Copy the signing secret now — it will not be shown again.</div>
+        <div class="input-group mb-2">
+          <input type="text" id="webhook-secret-display" class="form-control font-monospace" readonly>
+          <button class="btn btn-outline-secondary" type="button" onclick="copyWebhookSecret()">Copy</button>
+        </div>
+        <div id="webhook-secret-copied-msg" class="text-success small d-none">Copied!</div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Done</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SSO Add/Edit Modal -->
+<div class="modal fade" id="ssoModal" tabindex="-1" aria-labelledby="ssoModalTitle" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="ssoModalTitle">Add SSO Provider</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="sso-modal-pid">
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Provider Name <span class="text-danger">*</span></label>
+          <input type="text" id="sso-name" class="form-control" placeholder="e.g. Corp SAML IdP">
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Protocol <span class="text-danger">*</span></label>
+          <select id="sso-protocol" class="form-select" onchange="toggleSSOFields()">
+            <option value="saml">SAML 2.0</option>
+            <option value="oidc">OIDC</option>
+          </select>
+        </div>
+        <div id="sso-saml-fields">
+          <div class="mb-3">
+            <label class="form-label">Entity ID</label>
+            <input type="text" id="sso-entity-id" class="form-control"
+                   placeholder="https://idp.example.com/entity">
+          </div>
+        </div>
+        <div id="sso-oidc-fields" class="d-none">
+          <div class="mb-3">
+            <label class="form-label">Client ID</label>
+            <input type="text" id="sso-client-id" class="form-control"
+                   placeholder="client_id from identity provider">
+          </div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Metadata / Discovery URL</label>
+          <input type="url" id="sso-metadata-url" class="form-control"
+                 placeholder="https://idp.example.com/metadata">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Attribute Mapping <span class="text-muted small">(JSON)</span></label>
+          <textarea id="sso-attr-mapping" class="form-control font-monospace" rows="3"
+                    placeholder='{"email": "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress"}'></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="saveSSOProvider()">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<script>
+const API = {
+  components: tid => `/api/admin/tenants/${encodeURIComponent(tid)}/components`,
+  setOverride: (tid, key) => `/api/admin/tenants/${encodeURIComponent(tid)}/components/${key}`,
+  audit: '/api/admin/audit/component-changes',
+  grants: '/api/admin/audit/access-grants',
+  evidence: (tid, ctrl) => `/api/admin/tenants/${encodeURIComponent(tid)}/evidence` + (ctrl ? `?control_id=${encodeURIComponent(ctrl)}` : ''),
+};
+
+function badge(enabled) {
+  return enabled
+    ? '<span class="badge bg-success">enabled</span>'
+    : '<span class="badge bg-secondary">disabled</span>';
+}
+
+async function loadComponents() {
+  const tid = document.getElementById('tenant-id-input').value.trim();
+  if (!tid) return;
+  document.getElementById('components-loading').textContent = 'Loading…';
+  document.getElementById('components-loading').classList.remove('d-none');
+  document.getElementById('components-table').classList.add('d-none');
+  try {
+    const resp = await fetch(API.components(tid));
+    const data = await resp.json();
+    const tbody = document.getElementById('components-tbody');
+    tbody.innerHTML = '';
+    for (const c of (data.components || [])) {
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td><code>${c.key}</code></td>
+        <td><span class="badge bg-info text-dark">${c.kind}</span></td>
+        <td>${c.display_name}</td>
+        <td>${badge(c.env_enabled)}</td>
+        <td>${c.has_override ? badge(c.tenant_enabled) + ' <small class="text-muted">(override)</small>' : '<span class="text-muted small">inherited</span>'}</td>
+        <td>
+          <button class="btn btn-xs btn-outline-success me-1" onclick="setOverride('${tid}','${c.key}',true)" title="Enable for tenant">✓</button>
+          <button class="btn btn-xs btn-outline-danger me-1" onclick="setOverride('${tid}','${c.key}',false)" title="Disable for tenant">✗</button>
+          ${c.has_override ? `<button class="btn btn-xs btn-outline-secondary" onclick="clearOverride('${tid}','${c.key}')" title="Clear override">↺</button>` : ''}
+        </td>`;
+      tbody.appendChild(row);
+    }
+    document.getElementById('components-loading').classList.add('d-none');
+    document.getElementById('components-table').classList.remove('d-none');
+  } catch(e) {
+    document.getElementById('components-loading').textContent = 'Error: ' + e;
+  }
+}
+
+async function setOverride(tid, key, enabled) {
+  await fetch(API.setOverride(tid, key), {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({enabled}),
+  });
+  loadComponents();
+}
+
+async function clearOverride(tid, key) {
+  await fetch(API.setOverride(tid, key), {method: 'DELETE'});
+  loadComponents();
+}
+
+async function loadAudit() {
+  try {
+    const resp = await fetch(API.audit + '?limit=100');
+    const data = await resp.json();
+    const tbody = document.getElementById('audit-tbody');
+    tbody.innerHTML = '';
+    for (const e of (data.entries || [])) {
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td class="small text-muted">${(e.recorded_at||'').substring(0,19)}</td>
+        <td><span class="badge bg-primary">${e.event_type}</span></td>
+        <td>${e.actor||'-'}</td>
+        <td><code>${e.component_key||'-'}</code></td>
+        <td>${e.tenant_id||'-'}</td>
+        <td class="small text-muted">${e.details||''}</td>`;
+      tbody.appendChild(row);
+    }
+    if (!data.entries?.length) tbody.innerHTML = '<tr><td colspan="6" class="text-muted p-3">No audit entries.</td></tr>';
+  } catch(e) {
+    document.getElementById('audit-tbody').innerHTML = '<tr><td colspan="6">Error: ' + e + '</td></tr>';
+  }
+}
+
+// ── SSO Providers ──────────────────────────────────────────────────
+const SSO_API = {
+  list:   tid      => `/api/admin/tenants/${encodeURIComponent(tid)}/sso-providers`,
+  listAll:tid      => `/api/admin/tenants/${encodeURIComponent(tid)}/sso-providers?all=1`,
+  create: tid      => `/api/admin/tenants/${encodeURIComponent(tid)}/sso-providers`,
+  update: (tid,pid)=> `/api/admin/tenants/${encodeURIComponent(tid)}/sso-providers/${encodeURIComponent(pid)}`,
+  disable:(tid,pid)=> `/api/admin/tenants/${encodeURIComponent(tid)}/sso-providers/${encodeURIComponent(pid)}`,
+};
+
+async function loadSSOProviders() {
+  const tid = document.getElementById('sso-tenant-input').value.trim();
+  if (!tid) return;
+  document.getElementById('sso-loading').textContent = 'Loading…';
+  document.getElementById('sso-loading').classList.remove('d-none');
+  document.getElementById('sso-table').classList.add('d-none');
+  try {
+    const resp = await fetch(SSO_API.listAll(tid));
+    const data = await resp.json();
+    const tbody = document.getElementById('sso-tbody');
+    tbody.innerHTML = '';
+    const providers = data.providers || [];
+    if (!providers.length) {
+      tbody.innerHTML = '<tr><td colspan="7" class="text-muted p-3">No providers. Click "+ Add Provider" to create one.</td></tr>';
+    } else {
+      for (const p of providers) {
+        const statusBadge = p.enabled
+          ? '<span class="badge bg-success">enabled</span>'
+          : '<span class="badge bg-secondary">disabled</span>';
+        const loginCell = p.enabled
+          ? `<a href="${p.login_url}" class="btn btn-xs btn-outline-info" target="_blank">Login</a>`
+          : '<span class="text-muted small">—</span>';
+        const actions = p.enabled
+          ? `<button class="btn btn-xs btn-outline-primary me-1" onclick="editSSO('${p.id}')">Edit</button>
+             <button class="btn btn-xs btn-outline-danger" onclick="disableSSO('${p.id}')">Disable</button>`
+          : '';
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td>${p.name}</td>
+          <td><span class="badge bg-info text-dark">${(p.protocol||'').toUpperCase()}</span></td>
+          <td><code class="small">${p.entity_id || p.client_id || '—'}</code></td>
+          <td class="small text-muted text-truncate" style="max-width:200px" title="${p.metadata_url||''}">${p.metadata_url||'—'}</td>
+          <td>${statusBadge}</td>
+          <td>${loginCell}</td>
+          <td>${actions}</td>`;
+        tbody.appendChild(row);
+      }
+    }
+    document.getElementById('sso-loading').classList.add('d-none');
+    document.getElementById('sso-table').classList.remove('d-none');
+  } catch(e) {
+    document.getElementById('sso-loading').textContent = 'Error: ' + e;
+  }
+}
+
+function toggleSSOFields() {
+  const proto = document.getElementById('sso-protocol').value;
+  document.getElementById('sso-saml-fields').classList.toggle('d-none', proto !== 'saml');
+  document.getElementById('sso-oidc-fields').classList.toggle('d-none', proto !== 'oidc');
+}
+
+function openSSOModal() {
+  document.getElementById('ssoModalTitle').textContent = 'Add SSO Provider';
+  document.getElementById('sso-modal-pid').value = '';
+  document.getElementById('sso-name').value = '';
+  document.getElementById('sso-protocol').value = 'saml';
+  document.getElementById('sso-entity-id').value = '';
+  document.getElementById('sso-client-id').value = '';
+  document.getElementById('sso-metadata-url').value = '';
+  document.getElementById('sso-attr-mapping').value = '';
+  toggleSSOFields();
+  new bootstrap.Modal(document.getElementById('ssoModal')).show();
+}
+
+async function editSSO(pid) {
+  const tid = document.getElementById('sso-tenant-input').value.trim();
+  const resp = await fetch(SSO_API.listAll(tid));
+  const data = await resp.json();
+  const p = (data.providers || []).find(x => x.id === pid);
+  if (!p) return;
+  document.getElementById('ssoModalTitle').textContent = 'Edit SSO Provider';
+  document.getElementById('sso-modal-pid').value = pid;
+  document.getElementById('sso-name').value = p.name || '';
+  document.getElementById('sso-protocol').value = p.protocol || 'saml';
+  document.getElementById('sso-entity-id').value = p.entity_id || '';
+  document.getElementById('sso-client-id').value = p.client_id || '';
+  document.getElementById('sso-metadata-url').value = p.metadata_url || '';
+  document.getElementById('sso-attr-mapping').value = p.attr_mapping || '';
+  toggleSSOFields();
+  new bootstrap.Modal(document.getElementById('ssoModal')).show();
+}
+
+async function saveSSOProvider() {
+  const tid = document.getElementById('sso-tenant-input').value.trim();
+  const pid = document.getElementById('sso-modal-pid').value;
+  const proto = document.getElementById('sso-protocol').value;
+  const payload = {
+    name:         document.getElementById('sso-name').value.trim(),
+    protocol:     proto,
+    entity_id:    document.getElementById('sso-entity-id').value.trim() || null,
+    client_id:    document.getElementById('sso-client-id').value.trim() || null,
+    metadata_url: document.getElementById('sso-metadata-url').value.trim() || null,
+    attr_mapping: document.getElementById('sso-attr-mapping').value.trim() || null,
+  };
+  if (!payload.name) { alert('Provider name is required'); return; }
+  const url    = pid ? SSO_API.update(tid, pid) : SSO_API.create(tid);
+  const method = pid ? 'PUT' : 'POST';
+  const resp   = await fetch(url, {
+    method,
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload),
+  });
+  if (resp.ok) {
+    bootstrap.Modal.getInstance(document.getElementById('ssoModal'))?.hide();
+    loadSSOProviders();
+  } else {
+    const err = await resp.json().catch(() => ({}));
+    alert('Error: ' + (err.error || resp.statusText));
+  }
+}
+
+async function disableSSO(pid) {
+  if (!confirm('Disable this SSO provider? The row is preserved and can be re-enabled.')) return;
+  const tid  = document.getElementById('sso-tenant-input').value.trim();
+  const resp = await fetch(SSO_API.disable(tid, pid), {method: 'DELETE'});
+  if (resp.ok) {
+    loadSSOProviders();
+  } else {
+    const err = await resp.json().catch(() => ({}));
+    alert('Error: ' + (err.error || resp.statusText));
+  }
+}
+// ── End SSO Providers ───────────────────────────────────────────────
+
+// ── SOC 2 Evidence ──────────────────────────────────────────────────
+async function loadEvidence() {
+  const tid = document.getElementById('evidence-tenant-input').value.trim() || 'default';
+  const ctrl = document.getElementById('evidence-ctrl-filter').value;
+  document.getElementById('evidence-loading').textContent = 'Loading…';
+  document.getElementById('evidence-loading').classList.remove('d-none');
+  document.getElementById('evidence-table').classList.add('d-none');
+  try {
+    const resp = await fetch(API.evidence(tid, ctrl));
+    const data = await resp.json();
+    const tbody = document.getElementById('evidence-tbody');
+    const ctrlSel = document.getElementById('evidence-ctrl-filter');
+    // Populate control filter if empty
+    if (ctrlSel.options.length <= 1 && data.controls) {
+      data.controls.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c; opt.textContent = c;
+        ctrlSel.appendChild(opt);
+      });
+    }
+    tbody.innerHTML = '';
+    for (const e of (data.items || [])) {
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td><strong>${e.control_id}</strong></td>
+        <td><span class="badge bg-info text-dark">${e.framework}</span></td>
+        <td><span class="badge bg-secondary">${e.evidence_type || '—'}</span></td>
+        <td class="small text-muted">${e.source_table || '—'}${e.source_row_id ? ':' + e.source_row_id.substring(0,8) + '…' : ''}</td>
+        <td class="small">${e.summary || '—'}</td>
+        <td class="small text-muted">${(e.collected_at||'').substring(0,19)}</td>
+        <td class="small text-muted">${e.collector}</td>`;
+      tbody.appendChild(row);
+    }
+    document.getElementById('evidence-loading').classList.add('d-none');
+    document.getElementById('evidence-table').classList.remove('d-none');
+    if (!(data.items?.length)) tbody.innerHTML = '<tr><td colspan="7" class="text-muted p-3">No evidence items. Run the collector first.</td></tr>';
+  } catch(e) {
+    document.getElementById('evidence-loading').textContent = 'Error: ' + e;
+  }
+}
+
+async function exportEvidence(evt) {
+  evt.preventDefault();
+  const tid = document.getElementById('evidence-tenant-input').value.trim() || 'default';
+  window.open(`/api/admin/tenants/${encodeURIComponent(tid)}/evidence/export?format=html`, '_blank');
+}
+// ── End SOC 2 Evidence ──────────────────────────────────────────────
+
+async function loadGrants() {
+  try {
+    const resp = await fetch(API.grants + '?limit=200');
+    const data = await resp.json();
+    const tbody = document.getElementById('grants-tbody');
+    tbody.innerHTML = '';
+    for (const g of (data.grants || [])) {
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td>${g.tenant_id}</td>
+        <td>${g.principal_type}:<code>${g.principal_id}</code></td>
+        <td><code>${g.canvas_name}</code></td>
+        <td><span class="badge bg-secondary">${g.access_level}</span></td>
+        <td>${g.granted_by}</td>
+        <td class="small text-muted">${(g.granted_at||'').substring(0,19)}</td>
+        <td>${g.revoked_at ? '<span class="badge bg-danger">revoked</span>' : ''}</td>`;
+      tbody.appendChild(row);
+    }
+    if (!data.grants?.length) tbody.innerHTML = '<tr><td colspan="7" class="text-muted p-3">No grants found.</td></tr>';
+  } catch(e) {
+    document.getElementById('grants-tbody').innerHTML = '<tr><td colspan="7">Error: ' + e + '</td></tr>';
+  }
+}
+
+// ── Usage Analytics ─────────────────────────────────────────────────────────
+
+const EVENT_COLORS = {
+  llm_token:     'rgba(99,102,241,0.8)',
+  api_call:      'rgba(34,197,94,0.8)',
+  storage_mb:    'rgba(251,146,60,0.8)',
+  canvas_load:   'rgba(14,165,233,0.8)',
+  coworker_task: 'rgba(168,85,247,0.8)',
+};
+
+let _usageChart = null;
+
+function _getDaysBefore(n) {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return d.toISOString().slice(0, 10);
+}
+
+function _getSelectedDays() {
+  const checked = document.querySelector('input[name="usageRange"]:checked');
+  return checked ? parseInt(checked.value, 10) : 30;
+}
+
+// Attach range-button listeners once DOM is ready
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('input[name="usageRange"]').forEach(r => {
+    r.addEventListener('change', () => {
+      const tid = document.getElementById('usage-tenant-input').value.trim();
+      if (tid) loadUsage();
+    });
+  });
+});
+
+async function loadUsage() {
+  const tid = document.getElementById('usage-tenant-input').value.trim();
+  if (!tid) return;
+
+  const days = _getSelectedDays();
+  const since = _getDaysBefore(days);
+
+  // Per-tenant breakdown
+  const tenantResp = await fetch(`/api/admin/tenants/${encodeURIComponent(tid)}/usage?since=${since}`);
+  const tenantData = await tenantResp.json();
+
+  _renderSummaryTable(tenantData.summary || {});
+  _renderChart(tenantData.daily || []);
+  _renderMonthBanner(tenantData.current_month_total || 0);
+
+  // Cross-tenant overview
+  const overviewResp = await fetch(`/api/admin/usage/overview?since=${since}`);
+  const overviewData = await overviewResp.json();
+  _renderConsumersTable(overviewData.top_consumers || []);
+}
+
+function _renderSummaryTable(summary) {
+  const tbody = document.getElementById('usage-summary-tbody');
+  const entries = Object.entries(summary);
+  if (!entries.length) {
+    tbody.innerHTML = '<tr><td colspan="2" class="text-muted p-3 small">No events in this period.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = entries
+    .map(([et, qty]) => `<tr>
+      <td><span class="badge" style="background:${EVENT_COLORS[et]||'#6c757d'}">${et}</span></td>
+      <td class="text-end fw-semibold">${qty.toLocaleString()}</td>
+    </tr>`)
+    .join('');
+}
+
+function _renderMonthBanner(total) {
+  const banner = document.getElementById('usage-month-banner');
+  const text   = document.getElementById('usage-month-text');
+  text.textContent = `Current month total: ${total.toLocaleString()} units`;
+  banner.classList.remove('d-none');
+}
+
+function _renderConsumersTable(consumers) {
+  const tbody = document.getElementById('usage-consumers-tbody');
+  if (!consumers.length) {
+    tbody.innerHTML = '<tr><td colspan="3" class="text-muted p-3 small">No data.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = consumers.slice(0, 20).map(c => `<tr>
+    <td><code class="small">${c.tenant_id}</code></td>
+    <td><span class="badge" style="background:${EVENT_COLORS[c.event_type]||'#6c757d'}">${c.event_type}</span></td>
+    <td class="text-end">${c.total_quantity.toLocaleString()}</td>
+  </tr>`).join('');
+}
+
+function _renderChart(daily) {
+  const loading = document.getElementById('usage-chart-loading');
+  const canvas  = document.getElementById('usageChart');
+
+  if (!daily.length) {
+    loading.textContent = 'No usage events in this period.';
+    loading.classList.remove('d-none');
+    canvas.classList.add('d-none');
+    return;
+  }
+
+  loading.classList.add('d-none');
+  canvas.classList.remove('d-none');
+
+  // Collect all unique dates and event types
+  const dates     = [...new Set(daily.map(d => d.date))].sort();
+  const eventTypes = [...new Set(daily.map(d => d.event_type))];
+
+  // Build lookup: {date+et -> qty}
+  const lookup = {};
+  for (const row of daily) lookup[`${row.date}|${row.event_type}`] = row.total_quantity;
+
+  const datasets = eventTypes.map(et => ({
+    label: et,
+    data: dates.map(d => lookup[`${d}|${et}`] || 0),
+    backgroundColor: EVENT_COLORS[et] || 'rgba(107,114,128,0.7)',
+    borderRadius: 3,
+  }));
+
+  if (_usageChart) {
+    _usageChart.destroy();
+    _usageChart = null;
+  }
+
+  _usageChart = new Chart(canvas, {
+    type: 'bar',
+    data: { labels: dates, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { position: 'top' } },
+      scales: {
+        x: { stacked: true, ticks: { maxRotation: 45, font: { size: 11 } } },
+        y: { stacked: true, beginAtZero: true },
+      },
+    },
+  });
+}
+// ── End Usage Analytics ──────────────────────────────────────────────────────
+
+// ── API Keys ──────────────────────────────────────────────────────────────────
+async function loadApiKeys() {
+  const tid = document.getElementById('apikey-tenant-input').value.trim();
+  if (!tid) return;
+  document.getElementById('apikey-loading').textContent = 'Loading…';
+  document.getElementById('apikey-loading').classList.remove('d-none');
+  document.getElementById('apikey-table').classList.add('d-none');
+  try {
+    const resp = await fetch(`/api/admin/tenants/${encodeURIComponent(tid)}/api-keys`);
+    const data = await resp.json();
+    const tbody = document.getElementById('apikey-tbody');
+    tbody.innerHTML = '';
+    const keys = data.keys || [];
+    if (!keys.length) {
+      tbody.innerHTML = '<tr><td colspan="8" class="text-muted p-3">No API keys. Click "+ Create Key" to create one.</td></tr>';
+    } else {
+      for (const k of keys) {
+        const status = k.revoked_at
+          ? '<span class="badge bg-danger">revoked</span>'
+          : k.expires_at && k.expires_at < new Date().toISOString()
+            ? '<span class="badge bg-warning text-dark">expired</span>'
+            : '<span class="badge bg-success">active</span>';
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td>${k.name}</td>
+          <td><code class="small">${k.key_prefix}</code></td>
+          <td><span class="badge bg-secondary">${k.scopes}</span></td>
+          <td class="small text-muted">${(k.created_at||'').substring(0,10)}</td>
+          <td class="small text-muted">${(k.last_used_at||'—').substring(0,10)}</td>
+          <td class="small text-muted">${(k.expires_at||'—').substring(0,10)}</td>
+          <td>${status}</td>
+          <td>${!k.revoked_at ? `<button class="btn btn-xs btn-outline-danger" onclick="revokeApiKey('${k.id}')">Revoke</button>` : ''}</td>`;
+        tbody.appendChild(row);
+      }
+    }
+    document.getElementById('apikey-loading').classList.add('d-none');
+    document.getElementById('apikey-table').classList.remove('d-none');
+  } catch(e) {
+    document.getElementById('apikey-loading').textContent = 'Error: ' + e;
+  }
+}
+
+function openApiKeyModal() {
+  document.getElementById('apikey-name').value = '';
+  document.querySelectorAll('.apikey-scope').forEach(cb => { cb.checked = cb.value === 'read'; });
+  document.getElementById('apikey-expires').value = '';
+  new bootstrap.Modal(document.getElementById('apiKeyModal')).show();
+}
+
+async function createApiKey() {
+  const tid = document.getElementById('apikey-tenant-input').value.trim();
+  const name = document.getElementById('apikey-name').value.trim();
+  if (!name) { alert('Key name is required'); return; }
+  const scopes = [...document.querySelectorAll('.apikey-scope:checked')].map(c => c.value).join(' ') || 'read';
+  const expiresVal = document.getElementById('apikey-expires').value;
+  const payload = { name, scopes };
+  if (expiresVal) payload.expires_at = expiresVal + 'T00:00:00Z';
+  const resp = await fetch(`/api/admin/tenants/${encodeURIComponent(tid)}/api-keys`, {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload),
+  });
+  if (!resp.ok) { const err = await resp.json().catch(() => ({})); alert('Error: ' + (err.error || resp.statusText)); return; }
+  const data = await resp.json();
+  bootstrap.Modal.getInstance(document.getElementById('apiKeyModal'))?.hide();
+  document.getElementById('apikey-raw-display').value = data.raw_key;
+  document.getElementById('apikey-copied-msg').classList.add('d-none');
+  new bootstrap.Modal(document.getElementById('apiKeyDisplayModal')).show();
+  loadApiKeys();
+}
+
+function copyApiKey() {
+  const val = document.getElementById('apikey-raw-display').value;
+  navigator.clipboard.writeText(val).then(() => {
+    document.getElementById('apikey-copied-msg').classList.remove('d-none');
+  });
+}
+
+async function revokeApiKey(kid) {
+  if (!confirm('Revoke this API key? This cannot be undone.')) return;
+  const tid = document.getElementById('apikey-tenant-input').value.trim();
+  const resp = await fetch(`/api/admin/tenants/${encodeURIComponent(tid)}/api-keys/${encodeURIComponent(kid)}`, { method: 'DELETE' });
+  if (resp.ok) { loadApiKeys(); } else { const err = await resp.json().catch(()=>({})); alert('Error: ' + (err.error || resp.statusText)); }
+}
+// ── End API Keys ──────────────────────────────────────────────────────────────
+
+// ── Webhooks ──────────────────────────────────────────────────────────────────
+async function loadWebhooks() {
+  const tid = document.getElementById('webhook-tenant-input').value.trim();
+  if (!tid) return;
+  document.getElementById('webhook-loading').textContent = 'Loading…';
+  document.getElementById('webhook-loading').classList.remove('d-none');
+  document.getElementById('webhook-table').classList.add('d-none');
+  try {
+    const resp = await fetch(`/api/admin/tenants/${encodeURIComponent(tid)}/webhooks`);
+    const data = await resp.json();
+    const tbody = document.getElementById('webhook-tbody');
+    tbody.innerHTML = '';
+    const endpoints = data.endpoints || [];
+    if (!endpoints.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="text-muted p-3">No webhooks. Click "+ Add Endpoint".</td></tr>';
+    } else {
+      for (const e of endpoints) {
+        const status = e.enabled ? '<span class="badge bg-success">active</span>' : '<span class="badge bg-secondary">disabled</span>';
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td class="text-truncate" style="max-width:300px" title="${e.url}"><code class="small">${e.url}</code></td>
+          <td class="small">${(e.event_types||'*').replace(/,/g, ', ')}</td>
+          <td>${status}</td>
+          <td class="small text-muted">${(e.created_at||'').substring(0,10)}</td>
+          <td>${e.enabled ? `<button class="btn btn-xs btn-outline-danger" onclick="disableWebhook('${e.id}')">Disable</button>` : ''}</td>`;
+        tbody.appendChild(row);
+      }
+    }
+    document.getElementById('webhook-loading').classList.add('d-none');
+    document.getElementById('webhook-table').classList.remove('d-none');
+  } catch(e) {
+    document.getElementById('webhook-loading').textContent = 'Error: ' + e;
+  }
+}
+
+function openWebhookModal() {
+  document.getElementById('webhook-url').value = '';
+  document.querySelectorAll('.wh-event').forEach(cb => { cb.checked = cb.value === '*'; });
+  new bootstrap.Modal(document.getElementById('webhookModal')).show();
+}
+
+async function createWebhook() {
+  const tid = document.getElementById('webhook-tenant-input').value.trim();
+  const url = document.getElementById('webhook-url').value.trim();
+  if (!url) { alert('Endpoint URL is required'); return; }
+  const event_types = [...document.querySelectorAll('.wh-event:checked')].map(c => c.value);
+  const resp = await fetch(`/api/admin/tenants/${encodeURIComponent(tid)}/webhooks`, {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ url, event_types }),
+  });
+  if (!resp.ok) { const err = await resp.json().catch(()=>({})); alert('Error: ' + (err.error || resp.statusText)); return; }
+  const data = await resp.json();
+  bootstrap.Modal.getInstance(document.getElementById('webhookModal'))?.hide();
+  document.getElementById('webhook-secret-display').value = data.secret;
+  document.getElementById('webhook-secret-copied-msg').classList.add('d-none');
+  new bootstrap.Modal(document.getElementById('webhookSecretModal')).show();
+  loadWebhooks();
+}
+
+function copyWebhookSecret() {
+  const val = document.getElementById('webhook-secret-display').value;
+  navigator.clipboard.writeText(val).then(() => {
+    document.getElementById('webhook-secret-copied-msg').classList.remove('d-none');
+  });
+}
+
+async function disableWebhook(wid) {
+  if (!confirm('Disable this webhook endpoint?')) return;
+  const tid = document.getElementById('webhook-tenant-input').value.trim();
+  const resp = await fetch(`/api/admin/tenants/${encodeURIComponent(tid)}/webhooks/${encodeURIComponent(wid)}`, { method: 'DELETE' });
+  if (resp.ok) { loadWebhooks(); } else { const err = await resp.json().catch(()=>({})); alert('Error: ' + (err.error || resp.statusText)); }
+}
+// ── End Webhooks ──────────────────────────────────────────────────────────────
+</script>
+{% endblock %}

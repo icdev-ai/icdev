@@ -1,0 +1,213 @@
+# CUI // SP-CTI
+# SOC 2 Trust Service Criteria → ICDEV audit_log event_type + component key mapping
+# Used by soc2_collector.py to auto-harvest evidence from audit_trail and component_audit_log.
+#
+# Structure per control:
+#   description: Human-readable TSC criterion text
+#   event_types:  audit_trail.action values that constitute evidence
+#   component_keys: component_audit_log.component_key values that constitute evidence
+#   category: CC=Common Criteria, A=Availability, PI=Processing Integrity, C=Confidentiality, P=Privacy
+
+controls:
+
+  # ── Common Criteria ─────────────────────────────────────────────────────────
+
+  CC1.1:
+    description: "The entity demonstrates a commitment to integrity and ethical values."
+    category: CC
+    event_types: [policy_updated, code_of_conduct_acknowledged, ethics_review_completed]
+    component_keys: [compliance, audit_trail]
+
+  CC1.2:
+    description: "The board of directors demonstrates independence and exercises oversight."
+    category: CC
+    event_types: [oversight_review_completed, board_approval]
+    component_keys: [compliance, admin]
+
+  CC2.1:
+    description: "The entity obtains or generates relevant, quality information."
+    category: CC
+    event_types: [report_generated, audit_export_completed, evidence_collected]
+    component_keys: [compliance, dashboard, rag]
+
+  CC2.2:
+    description: "The entity internally communicates information."
+    category: CC
+    event_types: [notification_sent, alert_dispatched, compliance_report_shared]
+    component_keys: [notification, compliance]
+
+  CC3.1:
+    description: "The entity specifies objectives with sufficient clarity."
+    category: CC
+    event_types: [requirement_created, spec_generated, prd_created]
+    component_keys: [intake, govcon, requirements]
+
+  CC4.1:
+    description: "The entity selects, develops, and performs ongoing evaluations."
+    category: CC
+    event_types: [security_scan_completed, health_check_passed, coherence_check_passed]
+    component_keys: [security, integrity, compliance]
+
+  CC5.1:
+    description: "The entity selects and develops control activities."
+    category: CC
+    event_types: [gate_passed, security_gate_passed, compliance_gate_passed]
+    component_keys: [security, compliance, devsecops]
+
+  CC5.2:
+    description: "The entity also selects and develops general controls over technology."
+    category: CC
+    event_types: [access_granted, access_revoked, permission_changed, rbac_updated]
+    component_keys: [auth, admin, zta]
+
+  CC6.1:
+    description: "The entity implements logical access security software and controls."
+    category: CC
+    event_types: [login_success, login_failure, sso_session_created, mfa_verified]
+    component_keys: [auth, sso, admin]
+
+  CC6.2:
+    description: "Prior to issuing credentials, the entity registers and authorizes users."
+    category: CC
+    event_types: [user_created, user_invited, role_assigned, sso_provider_created]
+    component_keys: [admin, auth]
+
+  CC6.3:
+    description: "The entity removes access when no longer needed."
+    category: CC
+    event_types: [user_disabled, access_revoked, sso_provider_disabled, session_expired]
+    component_keys: [admin, auth]
+
+  CC6.6:
+    description: "The entity implements security measures against threats from outside."
+    category: CC
+    event_types: [intrusion_detected, firewall_event, rate_limit_exceeded, prompt_injection_detected]
+    component_keys: [security, zta, devsecops]
+
+  CC6.7:
+    description: "The entity restricts transmission, movement, and removal of information."
+    category: CC
+    event_types: [data_export_requested, data_transfer_completed, erasure_completed]
+    component_keys: [admin, compliance, rag]
+
+  CC7.1:
+    description: "The entity detects and monitors for potential vulnerabilities."
+    category: CC
+    event_types: [vulnerability_detected, cve_triaged, sast_scan_completed, dependency_audit]
+    component_keys: [security, integrity, devsecops]
+
+  CC7.2:
+    description: "The entity monitors for security incidents and events."
+    category: CC
+    event_types: [security_alert, anomaly_detected, siem_event_forwarded]
+    component_keys: [security, monitoring, devsecops]
+
+  CC7.3:
+    description: "The entity evaluates security events to determine if they are incidents."
+    category: CC
+    event_types: [incident_classified, threat_triaged, cve_triaged]
+    component_keys: [security, monitoring]
+
+  CC7.4:
+    description: "The entity responds to identified security incidents."
+    category: CC
+    event_types: [incident_response_initiated, incident_resolved, remediation_applied]
+    component_keys: [security, compliance, monitoring]
+
+  CC8.1:
+    description: "The entity authorizes, designs, develops, and implements changes."
+    category: CC
+    event_types: [deployment_completed, migration_applied, feature_enabled, feature_disabled]
+    component_keys: [devsecops, admin, dashboard]
+
+  CC9.1:
+    description: "The entity identifies, selects, and develops risk mitigation activities."
+    category: CC
+    event_types: [risk_assessed, poam_created, control_implemented]
+    component_keys: [compliance, security]
+
+  CC9.2:
+    description: "The entity assesses and manages risks from vendors and business partners."
+    category: CC
+    event_types: [sbom_generated, supply_chain_scanned, vendor_assessed]
+    component_keys: [security, compliance, supply_chain]
+
+  # ── Availability ─────────────────────────────────────────────────────────────
+
+  A1.1:
+    description: "The entity maintains, monitors, and evaluates current processing capacity."
+    category: A
+    event_types: [health_check_passed, sla_probe_completed, metrics_collected]
+    component_keys: [monitoring, dashboard, observability]
+
+  A1.2:
+    description: "The entity authorizes, designs, develops, and implements changes."
+    category: A
+    event_types: [deployment_completed, rollback_executed, migration_applied]
+    component_keys: [devsecops, admin]
+
+  A1.3:
+    description: "The entity tests recovery plan procedures."
+    category: A
+    event_types: [backup_completed, restore_tested, disaster_recovery_drill]
+    component_keys: [monitoring, infrastructure]
+
+  # ── Processing Integrity ──────────────────────────────────────────────────────
+
+  PI1.1:
+    description: "The entity obtains or generates input information that is complete and accurate."
+    category: PI
+    event_types: [data_validated, intake_completed, requirement_verified]
+    component_keys: [intake, rag, document_intelligence]
+
+  PI1.2:
+    description: "The entity implements controls to prevent processing errors."
+    category: PI
+    event_types: [test_suite_passed, coherence_check_passed, gate_passed]
+    component_keys: [compliance, devsecops, security]
+
+  # ── Confidentiality ───────────────────────────────────────────────────────────
+
+  C1.1:
+    description: "The entity identifies and maintains confidential information."
+    category: C
+    event_types: [classification_applied, cui_marked, data_classified]
+    component_keys: [compliance, admin, auth]
+
+  C1.2:
+    description: "The entity disposes of confidential information."
+    category: C
+    event_types: [erasure_completed, data_purged, retention_policy_applied]
+    component_keys: [admin, compliance]
+
+  # ── Privacy ───────────────────────────────────────────────────────────────────
+
+  P1.1:
+    description: "The entity provides notice about its privacy practices."
+    category: P
+    event_types: [privacy_notice_presented, consent_recorded]
+    component_keys: [admin, compliance]
+
+  P3.1:
+    description: "The entity collects personal information consistent with objectives."
+    category: P
+    event_types: [pii_scan_completed, data_collected, consent_verified]
+    component_keys: [compliance, document_intelligence]
+
+  P4.1:
+    description: "The entity limits the use of personal information."
+    category: P
+    event_types: [data_access_logged, purpose_limitation_enforced]
+    component_keys: [admin, compliance, auth]
+
+  P6.1:
+    description: "The entity discloses personal information to third parties."
+    category: P
+    event_types: [data_transfer_completed, third_party_disclosure_logged]
+    component_keys: [admin, compliance]
+
+  P8.1:
+    description: "The entity responds to requests, complaints, and disputes from data subjects."
+    category: P
+    event_types: [erasure_completed, data_subject_request_fulfilled, gdpr_request_processed]
+    component_keys: [admin, compliance]

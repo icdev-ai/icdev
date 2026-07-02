@@ -17,8 +17,8 @@ All seeders:
 """
 from __future__ import annotations
 
-import hashlib
 import json
+import zlib
 from datetime import datetime, timezone
 from typing import Any
 
@@ -32,7 +32,7 @@ _NOW = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 def _uid(prefix: str, idx: int) -> str:
     raw = f"{prefix}-{idx}".encode()
-    return prefix + "-" + hashlib.sha256(raw).hexdigest()[:12]
+    return prefix + "-" + format(zlib.crc32(raw) & 0xFFFFFFFF, "08x")
 
 
 def _node(nid: str, label: str, ntype: str, x: int, y: int, **kw: Any) -> dict:

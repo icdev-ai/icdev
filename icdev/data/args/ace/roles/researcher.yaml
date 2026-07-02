@@ -9,7 +9,7 @@ version: '1.1'
 trust_tier: yellow
 default_count: 1
 max_instances: 2
-canvas: document_intelligence
+canvas: dic
 steps:
 - scope_research_question
 - detect_content_domain
@@ -75,3 +75,11 @@ personality:
   - source-critical
   - gap-aware
   - domain-adaptive
+rules:
+  - "Never present a finding as established fact without citing peer-reviewed or primary source evidence."
+  - "Never limit search to a single database or source — at minimum cross-reference two independent sources."
+  - "Never omit confidence levels and limitations from a research summary."
+  - "Never plagiarize or reproduce copyrighted material verbatim without proper attribution and license compliance."
+  - "Never conflate a preprint with a peer-reviewed publication in the evidence hierarchy."
+  - "Never produce a research brief without a 'gaps and limitations' section."
+  - "Never treat absence of evidence as evidence of absence — log as 'insufficient data' and flag for deeper search."

@@ -261,6 +261,148 @@ EXTERNAL_REPOS = [
         "adaptation_target": "tools/monitor/ — self-supervised anomaly patterns (future)",
         "implementation_status": "pending",
     },
+    # --- 2026-06-28 batch: sideshow / httpinspect / loopy / agentcn / trilium ---
+    {
+        "source": "sideshow",
+        "title": "Sideshow — Real-Time Agent Output Rendering Panel",
+        "description": (
+            "Live browser view for coding agents: renders HTML, Mermaid diagrams, diffs, code, "
+            "and images directly from agent stdout in real-time. Threaded user feedback lets "
+            "agents iterate without full re-runs. MCP-integrated, built on Solid.js + Hono + "
+            "Cloudflare Workers. Key patterns: composable output cards, streaming render pipeline, "
+            "in-browser feedback threading. "
+            "Adaptation: ACE /coworker canvas needs real-time visual output rendering and a "
+            "threaded feedback loop for agent refinement cycles."
+        ),
+        "category": "ui",
+        "gotcha_layer": "tool",
+        "url": "https://github.com/modem-dev/sideshow",
+        "scoring_hints": {
+            "novelty": 0.85,
+            "feasibility": 0.75,
+            "compliance_alignment": 0.80,
+            "user_impact": 0.90,
+            "effort": 0.65,
+        },
+        "adaptation_target": (
+            "icdev/tools/ace/ — real-time output rendering + threaded feedback for ACE coworker canvas"
+        ),
+        "implementation_status": "pending",
+    },
+    {
+        "source": "httpinspect",
+        "title": "httpinspect — Zero-Instrumentation eBPF HTTP Monitor",
+        "description": (
+            "Terminal dashboard for live inter-service HTTP traffic captured at kernel level via "
+            "eBPF/TCX — no proxy, no app modifications, no restarts. Requires Linux 6.6+ with BTF "
+            "and Clang. Real-time endpoint metrics (request rate, latency, status codes) in a "
+            "`top`-like TUI. "
+            "Adaptation: ICDEV monitoring canvas zero-instrumentation layer for IL5/IL6 air-gapped "
+            "deployments where inserting a proxy is prohibited; informs ZTA network segmentation "
+            "canvas traffic analysis without sidecar overhead."
+        ),
+        "category": "observability",
+        "gotcha_layer": "tool",
+        "url": "https://github.com/yeet-src/httpinspect",
+        "scoring_hints": {
+            "novelty": 0.80,
+            "feasibility": 0.55,
+            "compliance_alignment": 0.70,
+            "user_impact": 0.75,
+            "effort": 0.50,
+        },
+        "adaptation_target": (
+            "icdev/tools/monitoring/ — zero-instrumentation HTTP capture pattern for air-gapped "
+            "IL6/SIPR monitoring strategy"
+        ),
+        "implementation_status": "pending",
+    },
+    {
+        "source": "loopy",
+        "title": "Loopy — Structured Feedback-Driven Workflow Loops for AI Agents",
+        "description": (
+            "Platform providing named 'loops' — iterative, feedback-driven workflows with "
+            "explicit before/after examples and measurable success criteria. Agents run a loop, "
+            "receive structured feedback, and refine until criteria are met. Safety-first design: "
+            "no auto-scheduling, no production changes without HITL gate. Skill distribution via "
+            "npx. Registry-driven loop catalog. Supports Codex, Cursor, Claude Code. "
+            "Adaptation: agent_loop.py structured refinement stages with named loop taxonomy; "
+            "goals/manifest.md before/after examples; kanban starter card library."
+        ),
+        "category": "workflow",
+        "gotcha_layer": "tool",
+        "url": "https://github.com/Forward-Future/loopy",
+        "scoring_hints": {
+            "novelty": 0.75,
+            "feasibility": 0.90,
+            "compliance_alignment": 0.90,
+            "user_impact": 0.85,
+            "effort": 0.80,
+        },
+        "adaptation_target": (
+            "icdev/tools/llm/agent_loop.py — structured loop stages with feedback; "
+            "goals/manifest.md — before/after loop examples; kanban starter card library"
+        ),
+        "implementation_status": "pending",
+    },
+    {
+        "source": "agentcn",
+        "title": "agentcn — Zero-Config AI Agent Templates (shadcn model)",
+        "description": (
+            "Open-source collection of production-ready AI agent templates distributed as CLI "
+            "recipes with zero install configuration. Each template ships complete: instructions, "
+            "tool definitions, workflow steps. IDE integrations for Cursor and VS Code. Built on "
+            "Next.js + TypeScript + shadcn/ui + Radix. 'npx agentcn add <name>' model. "
+            "Adaptation: simplify ICDEV /initialize to 3 commands; kanban starter card library "
+            "modeled on recipe distribution; Cursor dev-profile bridge improvement."
+        ),
+        "category": "dx",
+        "gotcha_layer": "tool",
+        "url": "https://github.com/shadcn-labs/agentcn",
+        "scoring_hints": {
+            "novelty": 0.70,
+            "feasibility": 0.85,
+            "compliance_alignment": 0.75,
+            "user_impact": 0.80,
+            "effort": 0.75,
+        },
+        "adaptation_target": (
+            "icdev/tools/dashboard/ — zero-config UX onboarding; "
+            "args/component_registry.yaml — component recipe model; "
+            "tools/dev_profile/ — cursor-import-bridge recipe distribution"
+        ),
+        "implementation_status": "pending",
+    },
+    {
+        "source": "trilium",
+        "title": "Trilium — Hierarchical Knowledge Base with Relation Maps & Attribute System",
+        "description": (
+            "Open-source personal knowledge base (TypeScript/Node.js) scaling to 100k+ notes. "
+            "Key patterns: hierarchical cloning (single note placed in multiple tree locations "
+            "simultaneously), typed attribute system (labels + typed relation types), bidirectional "
+            "relation maps, per-note AES encryption, self-hosted sync server, REST API + JS "
+            "scripting automation, Excalidraw canvas sketching, Leaflet geo maps. "
+            "Adaptation: Second Brain canvas note-cloning model for multi-context entity placement; "
+            "KG entity multi-parent hierarchy; DIC per-document encryption; /components-map "
+            "relation map visualization; RAG index sharding strategy for large corpora."
+        ),
+        "category": "knowledge",
+        "gotcha_layer": "tool",
+        "url": "https://github.com/TriliumNext/Trilium",
+        "scoring_hints": {
+            "novelty": 0.80,
+            "feasibility": 0.80,
+            "compliance_alignment": 0.85,
+            "user_impact": 0.90,
+            "effort": 0.70,
+        },
+        "adaptation_target": (
+            "icdev/tools/knowledge/ + tools/second_brain/ — hierarchical cloning model, "
+            "typed attribute system, bidirectional relation maps; "
+            "icdev/tools/dic/ — per-document encryption pattern"
+        ),
+        "implementation_status": "pending",
+    },
 ]
 
 

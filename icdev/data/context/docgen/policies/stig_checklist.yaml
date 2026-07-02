@@ -1,0 +1,27 @@
+# OKB Policy Constraints — DISA STIG Compliance Gap Report
+constraints:
+  - id: cls-marking
+    description: "STIG report must carry a classification marking"
+    pattern: "\\b(CUI|SECRET|UNCLASSIFIED|FOUO)\\b"
+    required: true
+
+  - id: has-stig-findings
+    description: "Report must include STIG findings section"
+    pattern: "(?i)stig\\s+findings"
+    required: true
+
+  - id: has-remediation
+    description: "Report must include remediation roadmap"
+    pattern: "(?i)remediation"
+    required: true
+
+  - id: has-open-items
+    description: "Report should identify open items"
+    pattern: "(?i)open\\s+items?"
+    required: false
+
+  - id: no-placeholder
+    description: "No unresolved placeholders"
+    pattern: "\\[TBD\\]|\\[TODO\\]|\\[PLACEHOLDER\\]|\\[INSERT"
+    required: true
+    negate: true

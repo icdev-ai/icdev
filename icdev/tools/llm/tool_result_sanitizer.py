@@ -19,7 +19,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Literal
 
-from icdev.tools.logging.icdev_logger import get_logger
+from tools.logging.icdev_logger import get_logger
 
 logger = get_logger(__name__)
 

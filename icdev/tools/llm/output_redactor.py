@@ -15,12 +15,13 @@ Configuration: args/llm_config.yaml -> output_redactor:
 """
 from __future__ import annotations
 
-import logging
 import re
 from dataclasses import dataclass, field
 from typing import Literal
 
-logger = logging.getLogger(__name__)
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger(__name__)
 
 RedactorMode = Literal["redact", "warn", "off"]
 

@@ -20,7 +20,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-_ROLES_DIR = Path(__file__).parents[3] / "args" / "ace" / "roles"
+_ROLES_DIR = Path(__file__).parents[2] / "args" / "ace" / "roles"
 _CANDIDATES_DIR = _ROLES_DIR / "candidates"
 
 

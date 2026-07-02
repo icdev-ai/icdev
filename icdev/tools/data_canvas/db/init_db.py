@@ -2707,10 +2707,10 @@ CREATE INDEX IF NOT EXISTS idx_dd_migration_jobs_status ON dd_migration_jobs(sta
         count = cur.fetchone()[0]
         added = 0
         for t in TEMPLATES:
-            cur.execute("SELECT 1 FROM dd_templates WHERE id=?", (t["id"],))
+            cur.execute("SELECT 1 FROM dd_templates WHERE id=%s", (t["id"],))
             if not cur.fetchone():
                 conn.execute(
-                    "INSERT INTO dd_templates (id, name, category, description, graph_json, tags) VALUES (?,?,?,?,?,?)",
+                    "INSERT INTO dd_templates (id, name, category, description, graph_json, tags) VALUES (%s,%s,%s,%s,%s,%s)",
                     (t["id"], t["name"], t["category"], t["description"], t["graph_json"], t["tags"]),
                 )
                 added += 1
@@ -2725,10 +2725,10 @@ CREATE INDEX IF NOT EXISTS idx_dd_migration_jobs_status ON dd_migration_jobs(sta
         snp_count = cur.fetchone()[0]
         snp_added = 0
         for s in SNIPPETS:
-            cur.execute("SELECT 1 FROM dd_snippets WHERE id=?", (s["id"],))
+            cur.execute("SELECT 1 FROM dd_snippets WHERE id=%s", (s["id"],))
             if not cur.fetchone():
                 conn.execute(
-                    "INSERT INTO dd_snippets (id, name, category, description, graph_json, tags) VALUES (?,?,?,?,?,?)",
+                    "INSERT INTO dd_snippets (id, name, category, description, graph_json, tags) VALUES (%s,%s,%s,%s,%s,%s)",
                     (s["id"], s["name"], s["category"], s["description"], s["graph_json"], s["tags"]),
                 )
                 snp_added += 1
@@ -2746,12 +2746,12 @@ CREATE INDEX IF NOT EXISTS idx_dd_migration_jobs_status ON dd_migration_jobs(sta
             rb_count = 0
         rb_added = 0
         for rb in RUNBOOKS:
-            cur.execute("SELECT 1 FROM ddc_runbooks WHERE id=?", (rb["id"],))
+            cur.execute("SELECT 1 FROM ddc_runbooks WHERE id=%s", (rb["id"],))
             if not cur.fetchone():
                 conn.execute(
                     "INSERT INTO ddc_runbooks "
                     "(id, title, category, severity, description, trigger_condition, steps_json, classification, status) "
-                    "VALUES (?,?,?,?,?,?,?,?,?)",
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                     (
                         rb["id"],
                         rb["title"],
@@ -2779,13 +2779,13 @@ CREATE INDEX IF NOT EXISTS idx_dd_migration_jobs_status ON dd_migration_jobs(sta
             sop_count = 0
         sop_added = 0
         for sop in SOPS:
-            cur.execute("SELECT 1 FROM ddc_sops WHERE id=?", (sop["id"],))
+            cur.execute("SELECT 1 FROM ddc_sops WHERE id=%s", (sop["id"],))
             if not cur.fetchone():
                 conn.execute(
                     "INSERT INTO ddc_sops "
                     "(id, title, category, description, purpose, scope, steps_json, version, "
                     "status, classification, owner, reviewer, approver) "
-                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                     (
                         sop["id"],
                         sop["title"],

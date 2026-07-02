@@ -20,7 +20,7 @@ from tools.workflow_hitl.section_router import SectionRouter, RoutedChunk, Secti
 
 logger = get_logger(__name__)
 
-_TEMPLATE_DIR = Path("context/workflow_report_templates")
+_TEMPLATE_DIR = Path(__file__).resolve().parent.parent.parent / "context" / "workflow_report_templates"
 _DEFAULT_MAX_WORDS = 800
 
 

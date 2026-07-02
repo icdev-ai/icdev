@@ -11,10 +11,11 @@ Usage:
 """
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger(__name__)
 
 _CONFIG_PATH = Path(__file__).resolve().parents[3] / "args" / "llm_config.yaml"
 

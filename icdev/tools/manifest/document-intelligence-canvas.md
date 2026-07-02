@@ -86,6 +86,31 @@ for r in results:
 # mode="hybrid" enables vector+rerank when RAGRetriever is available
 ```
 
+## Freshness
+
+| Tool | Purpose |
+|------|---------|
+| `tools/document_intelligence/freshness_engine.py` | DIC Freshness Engine — staleness scoring and autonomous reflex trigger. `scan_collection(collection_id, ...)` scores every document in a collection across four dimensions: document age vs retention tier (default 90 days), time since last approved version, drift events since last update, and pending-review section count. Writes per-doc `dic_doc_freshness` rows (upsert) and a collection-level `dic_freshness_scans` row; returns `ScanResult` with `stale_count`, `aging_count`, `fresh_count`, `regen_priority`. `corpus_heatmap(tenant_id, limit)` returns all documents ordered by score descending (stale first) for the dashboard heatmap. All reads use `get_connection()` so RLS applies. |
+
+### Key API
+
+```python
+from tools.document_intelligence.freshness_engine import scan_collection, corpus_heatmap
+
+result = scan_collection("ato_docs", tenant_id="default", classification="CUI")
+print(result.stale_count, result.regen_priority)
+for doc in result.docs:
+    print(doc.doc_id, doc.state, doc.score, doc.reason)
+
+heatmap = corpus_heatmap(tenant_id="default", limit=100)
+# -> [{"doc_id", "collection_id", "state", "reason", "score", "title"}, ...]
+```
+
+### Tables
+
+- `dic_doc_freshness` — per-doc freshness row (doc_id PK, collection_id, state ∈ fresh/aging/stale/unknown, reason, source_event, score 0–1, updated_at, tenant_id, classification).
+- `dic_freshness_scans` — per-collection scan summary (scan_id, collection_id, stale_count, regen_priority, scanned_at, tenant_id).
+
 ## Generation
 
 | Tool | Purpose |
@@ -177,6 +202,28 @@ history = get_section_history("sec_abc123", limit=20, since="2026-01-01T00:00:00
 
 - `dic_edit_history` — append-only audit log (edit_id, section_id, doc_id, version_id, editor, content_before, content_after, char_delta, diff_summary, edited_at, tenant_id, classification). `_ensure_table()` creates it on first use.
 
+## Freshness
+
+| Tool | Purpose |
+|------|---------|
+| `tools/document_intelligence/freshness_engine.py` | DIC Freshness Engine — staleness scoring and autonomous reflex trigger. `scan_collection(collection_id, *, tenant_id, classification, retention_days)` scores every document in a collection across four dimensions: age vs retention tier, time since last approved version, drift events since last update, and pending-review section count. Returns `ScanResult` with per-doc `FreshnessResult` list (state ∈ `fresh`/`aging`/`stale`/`unknown`, composite score 0.0–1.0) and aggregate `stale_count`/`aging_count`/`fresh_count`/`regen_priority`. Persists per-doc rows to `dic_doc_freshness` (upsert) and a collection-level row to `dic_freshness_scans`. Air-gap safe — no LLM calls; pure date arithmetic + SQL. Feeds the `/document-intelligence/` heatmap and `dic_digest.py` weekly reflex. |
+
+### Key API
+
+```python
+from tools.document_intelligence.freshness_engine import scan_collection
+
+result = scan_collection("ato_docs", tenant_id="default", classification="CUI")
+print(result.stale_count, result.regen_priority)
+for doc in result.docs:
+    print(doc.doc_id, doc.state, doc.score, doc.reason)
+```
+
+### Tables written
+
+- `dic_doc_freshness` — per-doc freshness row (doc_id PK, collection_id, state, reason, source_event, score, updated_at, tenant_id, classification). Upserted on every scan.
+- `dic_freshness_scans` — collection-level aggregate (scan_id, collection_id, stale_count, regen_priority, scanned_at, tenant_id).
+
 ## Analytics & Discovery
 
 | Tool | Purpose |
@@ -249,6 +296,32 @@ Air-gap-first, dual-mode implementation porting open-notebook/NotebookLM essenti
 | `POST /api/generate/enhance` | Layer LLM narrative on a BM25+KG output. Returns enhanced content_json. |
 | `POST /api/collections/<id>/attach-coworker` | Register DIC collection as ACE co-worker context; returns {coworker_url}. |
 
+## Provenance
+
+| Tool | Purpose |
+|------|---------|
+| `tools/dic/provenance_adapter.py` | DIC Provenance Adapter — bridges DIC search results to `provenance_engine` metadata for footnote popover annotation (irad-aidp-09). `get_chunk_provenance(chunk_uuid, chunk_text, llm_output)` returns `{sha256, classification, source_doc_uuid, version_tree_ref, ingest_timestamp, attribution_score}`. Attribution score is a deterministic token-overlap recall ratio (chunk tokens ∩ output tokens / chunk tokens) — no LLM calls. Queries `rag_provenance_ledger` via `provenance_engine.get_lineage()` (irad-aidp-02); falls back to a direct DB SELECT on `rag_provenance_ledger` when the engine is unavailable. |
+
+### Key API
+
+```python
+from tools.dic.provenance_adapter import get_chunk_provenance
+
+prov = get_chunk_provenance(
+    chunk_uuid="abc-123",
+    chunk_text="The system shall ...",
+    llm_output="Access control policies require ...",
+)
+# -> {sha256, classification, source_doc_uuid, version_tree_ref,
+#     ingest_timestamp, attribution_score}
+```
+
+## MCP Dispatch
+
+| Tool | Purpose |
+|------|---------|
+| `tools/document_intelligence/gap_handlers.py` | Thin MCP gap-handler wrappers for DIC MCP dispatch. Exposes four handlers: `handle_dic_ingest(params)` → `ingest_orchestrator.ingest_document`, `handle_dic_search(params)` → `search_engine.search`, `handle_dic_generate(params)` → `doc_generator.generate`, `handle_dic_chat(params)` → `search_engine.answer`. All handlers catch exceptions and return structured error dicts rather than raising, making them safe for MCP gateway dispatch. Registered in `tools/mcp/tool_registry.py` and `tools/mcp/gap_handlers.py`. |
+
 ## Ecosystem Integration Tools
 
 | Tool | Purpose |
@@ -257,3 +330,28 @@ Air-gap-first, dual-mode implementation porting open-notebook/NotebookLM essenti
 | `tools/genesis/reflexes/dic_digest.py::run` | Weekly reflex: new-doc summary + freshness alerts → notification_log. Registered in daemon.py REFLEX_NAMES. |
 | `tools/research/source_scanners/dic_scanner.py::scan_dic_collection` | Research engine scanner: queries rag_chunks from a DIC collection, maps to research_signals format. Key: "dic_collection". |
 | `tools/canvas/kg_builder.py::upsert_from_dic` | Post-generation KG bridge: writes DIC entities/relationships to canvas_kg_nodes/edges with canvas='dic'. |
+
+## Tech Writer Workspace (Migration 230)
+
+| Tool | Purpose |
+|------|---------|
+| `tools/document_intelligence/tech_writing_assist.py` | AI research + drafting + diagram generation for the Tech Writer workspace. `research_and_draft(query, section_heading, template_type, ...)` → `ResearchResult`; `generate_diagram_syntax(description, diagram_type, template_type)` → `DiagramResult`. Never raises — all errors surface in result.error. Uses module-level optional imports (RAGRetriever, kg_retrieve, LLMRouter, fetch_content, is_airgap) so tests can patch them. Air-gap aware (skips web when air-gapped). |
+
+Routes added to `blueprint.py`:
+- `GET /techwriter` — Tech Writer workspace page (6 template-type cards + continue-writing list)
+- `PATCH /api/documents/<id>/writeguard-mode` — update WriteGuard content mode
+- `POST /api/techwriter/research` — AI research + draft per section (caps rag_chunks to 5, kg_entities to 10)
+- `POST /api/techwriter/diagram` — generate Mermaid syntax from natural-language description
+
+Constants in `tools/document_intelligence/constants.py`:
+- `TEMPLATE_TYPES` — 6 types: STANDARD_GUIDE, SOP, RUNBOOK, ARCH_NETWORK, ARCH_APPLICATION, ARCH_SYSTEM
+- `WRITEGUARD_MODES` — mode keys; `TEMPLATE_TYPE_TO_WRITEGUARD_MODE` maps each template type to its mode
+
+Frontend:
+- `tools/dashboard/static/js/dic-techwriter-sidebar.js` — `DICTechWriterSidebar.init({sidebarId, mode, debounceMs:1500})`. MutationObserver catches dynamically created `textarea[data-section-id]` elements. Debounced 1500ms → POST `/api/writeguard/analyze` → severity-coloured findings + SVG donut score. Apply-fix button calls `/api/writeguard/rewrite`.
+- `doc_detail.html` — conditional two-column layout + `<aside id="wg-sidebar">` + AI Research drawer + Mermaid `<dialog>` editor; all guarded by `{% if doc.template_type %}`.
+
+Content modes in `tools/writing/content_modes.py`:
+- `standard_guide` — checks AWS/Azure/GCP/Oracle coverage, References section
+- `architecture_doc` — checks decision log, security section, warns if no `[DIAGRAM:]` marker
+- `sop_runbook` — checks numbered steps, Rollback, Prerequisites, Verification; suppresses tone+clichés

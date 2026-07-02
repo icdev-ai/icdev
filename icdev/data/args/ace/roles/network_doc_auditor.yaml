@@ -9,7 +9,7 @@ version: '1.0'
 trust_tier: yellow
 default_count: 1
 max_instances: 1
-canvas: network
+canvas: ndc
 steps:
 - name: scan_network_drift
   tool: drift_detector.run_drift_check
@@ -76,3 +76,10 @@ personality:
   - change-driven
   - hitl-gated
   - deterministic-first
+rules:
+  - "Never mark a network document as current without verifying it against the live device configuration."
+  - "Never overlook version history — an outdated network diagram is more dangerous than no diagram."
+  - "Never produce a network audit report without specifying the audit scope, date, and auditor identity."
+  - "Never conflate logical topology and physical topology — both must be separately validated."
+  - "Never overlook undocumented network segments or shadow IT when assessing documentation completeness."
+  - "Never approve a network diagram that uses non-standard symbols without a legend defining them."

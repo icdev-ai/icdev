@@ -30,7 +30,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-_REPO_ROOT = Path(__file__).parents[3].resolve()
+_REPO_ROOT = Path(__file__).parents[2].resolve()
 _REGISTRY_PATH = _REPO_ROOT / "args" / "component_registry.yaml"
 _ROLES_DIR = _REPO_ROOT / "args" / "ace" / "roles"
 

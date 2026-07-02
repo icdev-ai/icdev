@@ -186,7 +186,14 @@ def _run_job(job_id: str) -> None:
     _emit_progress(phase="running", operation_type="cli_synthesis", operation_id=job_id)
 
     prompt = job.get("prompt", "")
-    cmd = [binary, "--output-format", "json", "-p", prompt]
+    cmd = [binary, "--output-format", "json"]
+
+    # When images are referenced in the prompt, allow Claude Code to read them
+    # via its built-in Read tool (dangerously-skip-permissions bypasses dialogs).
+    if "[IMAGES FOR ANALYSIS]" in prompt:
+        cmd += ["--dangerously-skip-permissions", "--allowedTools", "Read"]
+
+    cmd += ["-p", prompt]
 
     try:
         result = subprocess.run(

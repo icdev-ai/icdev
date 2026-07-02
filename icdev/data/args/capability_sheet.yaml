@@ -1,0 +1,889 @@
+meta:
+  version: '2.0'
+  last_updated: '2026-06-27'
+  last_commit_sha: d0c5c2018
+  output_path: C:/Users/schuo/Downloads/ICDEV_Capabilities_Challenges_Solutions.xlsx
+challenges:
+- id: 1
+  domain: Compliance & ATO
+  challenge: Authority to Operate (ATO) takes 12-18 months of manual paperwork
+  business_impact: Schedule slips, mission capability is delayed, and program cost balloons while teams chase signatures.
+  solution: 'Treat compliance as code: ICDEV auto-generates ATO artifacts directly from the build and runs continuous (cATO)
+    monitoring on an append-only audit trail, so authorization evidence is produced as the system is built, not after.'
+  modules: icdev-comply (SSP/POAM/STIG/SBOM), classification_manager, audit trail (NIST AU), cATO monitor
+  compliance: NIST 800-53, FedRAMP, RMF, cATO
+  outcome: 18-month ATO cycle to 6-8 weeks (target); evidence auto-generated
+  so_what: Mission capability fielded quarters earlier; program office avoids 12+ months of assessment limbo and its associated
+    cost overrun.
+  status: approved
+- id: 2
+  domain: Compliance & ATO
+  challenge: Compliance evidence is scattered across docs, wikis, and people's heads
+  business_impact: Assessors can't trace controls to implementation; audits stall; findings re-open repeatedly.
+  solution: Every tool run, decision, and artifact is timestamped to an immutable audit trail with auto-collected, lineage-tracked
+    evidence mapped to controls - one source of truth for assessors.
+  modules: Compliance Evidence Auto-Collection + Lineage, audit_trail, provenance engine
+  compliance: NIST AU-3, FedRAMP, eMASS
+  outcome: Manual evidence hunts to continuous, traceable evidence
+  so_what: Assessors walk away with a pre-packaged evidence package; re-authorization becomes a scheduled event, not a fire
+    drill.
+  status: approved
+- id: 3
+  domain: Compliance & ATO
+  challenge: The same control must be re-proven across many overlapping frameworks
+  business_impact: Teams re-do work for FedRAMP, then CMMC, then CJIS/HIPAA - 3-6 months of duplicate mapping per regime.
+  solution: A dual-hub crosswalk engine maps one implemented control to 42+ frameworks automatically and flags coverage gaps,
+    so you implement once and audit across every regime.
+  modules: Compliance crosswalk engine, multi-framework compliance, FedRAMP 20x KSI, eMASS integration
+  compliance: NIST 800-53/171, FedRAMP, CMMC, CJIS, HIPAA, ISO 27001, SOC 2
+  outcome: 5+ siloed mappings to 1 implementation, 42 frameworks
+  so_what: Win a CMMC contract AND a FedRAMP authorization from the same control implementation - no duplicate engineering
+    work.
+  status: approved
+- id: 4
+  domain: Requirements
+  challenge: Requirements arrive ambiguous; defects surface in week 8, not week 1
+  business_impact: Vague SOW/CDD language flows unchecked into development; rework and ATO-breaking surprises are expensive.
+  solution: Conversational AI intake (RICOAS) detects ambiguity and missing security/compliance requirements, scores readiness
+    across 5 dimensions, and decomposes accepted requirements into SAFe epics/stories before code is written.
+  modules: icdev-intake (RICOAS), gap_detector, readiness scorer, SAFe decomposer
+  compliance: SAFe, NIST 800-53 (early control capture)
+  outcome: Defects caught at intake, not in test; readiness scored up front
+  so_what: Stop paying 10-100x rework costs to fix defects found in test or production - catch them when changing a requirement
+    costs nothing.
+  status: approved
+- id: 5
+  domain: Requirements
+  challenge: Nobody knows when a requirement quietly expands the ATO boundary
+  business_impact: A single requirement can push the system into a higher impact level - discovered too late, it forces full
+    re-authorization.
+  solution: Boundary impact analysis tags every requirement RED/ORANGE/YELLOW/GREEN against the authorization boundary; the
+    Boundary Design Canvas visualizes zones and ISA lifecycle so scope changes are caught immediately.
+  modules: icdev-boundary, Boundary Design Canvas (BDC), ISA expiry reflex
+  compliance: RMF authorization boundary, FedRAMP, NIST CA
+  outcome: Boundary breaches surfaced at requirement time, not at assessment
+  so_what: Avoid surprise re-authorization triggered by a single scope-creeping requirement - the difference between a 2-week
+    patch and a 6-month re-assessment.
+  status: approved
+- id: 6
+  domain: Risk & Simulation
+  challenge: Program risk is assessed after the fact, with no real what-if capability
+  business_impact: PMs commit to cost/schedule without modeling tradeoffs; RED requirements force scope renegotiation late.
+  solution: The Digital Program Twin runs Monte Carlo simulation across schedule, cost, risk, compliance, architecture, and
+    staffing, then generates three Courses of Action (Speed / Balanced / Comprehensive) for an evidence-based decision.
+  modules: icdev-simulate (Digital Program Twin), COA generator, TTX GameDay engine
+  compliance: RMF risk management, DoD acquisition
+  outcome: Spreadsheet guesswork to 6-dimension simulation + 3 scored COAs
+  so_what: Brief decision authority with evidence-backed COA analysis instead of gut-feel slide decks - and rehearse the risk
+    posture in a TTX before the program office commits.
+  status: approved
+- id: 7
+  domain: Build & Quality
+  challenge: Security and quality gates run too late - after code is already merged; E2E tests degrade silently
+  business_impact: Findings discovered post-merge are 10-100x costlier to fix; E2E selector drift causes false failures and
+    undetected coverage gaps.
+  solution: ANVIL 5-phase TDD writes failing tests first, then runs adversarial multi-agent critique plus SAST/secret/container
+    scans as pre-merge gates. The 3-phase QA Agent autonomously sweeps for E2E coverage gaps every 6 hours and self-heals
+    broken selectors (HITL-gated at confidence < 0.7).
+  modules: icdev-build (ANVIL), icdev-secure, icdev-review, ACE qa_agent role, Playwright runner, Genesis QA reflex (6h),
+    AI selector self-healer
+  compliance: NIST SA-11, DevSecOps, OWASP, SLSA
+  outcome: Post-merge firefighting to design-phase gates; test suite self-maintains; 6-hour autonomous gap detection
+  so_what: Catch bugs before merge AND keep your test suite self-maintaining - engineers spend time on features, not test
+    archaeology.
+  status: approved
+- id: 8
+  domain: Build & Quality
+  challenge: Code quality and test coverage are subjective and uneven across teams
+  business_impact: Tech debt accumulates invisibly; maintainability degrades; new hires inherit fragile code.
+  solution: 'Deterministic tools enforce quality objectively: complexity/smell detection, a 9-step test pipeline, and a Quality
+    Design Canvas that gates on cyclomatic complexity and tracks maintainability trends.'
+  modules: icdev-test, Quality Design Canvas (QDC), code_lens, test_orchestrator
+  compliance: ISO/IEC 25010, NIST SA-11
+  outcome: Subjective review to objective, gated quality metrics
+  so_what: Replace code-review debates with objective gates - merge only when the numbers clear the bar, regardless of who
+    wrote the code.
+  status: approved
+- id: 9
+  domain: Security & ZTA
+  challenge: Zero Trust is a slogan; segmentation is static and unmeasured
+  business_impact: Without a maturity baseline, ZTA investments can't be prioritized or proven to assessors.
+  solution: ICDEV scores NIST 800-207 ZTA maturity, hardens the DevSecOps pipeline, and models network/security topology on
+    interactive canvases with built-in compliance baselines.
+  modules: icdev-zta, icdev-devsecops, Network & Security Design Canvases (NDC/SDC)
+  compliance: NIST 800-207, DoD Zero Trust, NIST 800-53
+  outcome: Static segmentation to scored ZTA maturity + modeled controls
+  so_what: Walk into any DoD ZTA assessment with a scored, documented maturity baseline - not a narrative - and track progress
+    sprint over sprint.
+  status: approved
+- id: 10
+  domain: Security & ZTA
+  challenge: STIG and scan findings aren't prioritized by what actually matters
+  business_impact: Teams drown in low-impact findings while boundary-breaking issues hide in the noise.
+  solution: Findings are auto-classified by ATO boundary impact (GREEN to RED); RED blocks deployment, so remediation effort
+    is spent where it changes the authorization decision.
+  modules: Boundary tagger, security gates, STIG checklist generator
+  compliance: DISA STIG, RMF, NIST RA-5
+  outcome: Undifferentiated backlog to impact-ranked, deployment-gating triage
+  so_what: Stop triaging 400 findings by hand - boundary-breaking issues automatically block the deployment gate while low-risk
+    items queue for the next sprint.
+  status: approved
+- id: 11
+  domain: Supply Chain
+  challenge: Vendor and dependency risk enters the system unmanaged
+  business_impact: Section 889 violations, expired ISAs, and CVE exposure are discovered only after an incident or audit failure.
+  solution: Supply-chain intelligence aggregates the dependency graph, triages CVEs with SLA tracking, warns on ISA expiry
+    (60d/30d), tiers vendor risk, and screens NDAA Section 889 - with SBOMs regenerated on every build. SIPA now ships in
+    production, inspecting codebases for unauthorized or malicious code.
+  modules: Supply chain intelligence, NDAA 889 screener, ISA expiry reflex, SBOM generator, SIPA (tools/integrity/)
+  compliance: NDAA 889, NIST 800-161 (C-SCRM), EO 14028 SBOM, NIST SSDF
+  outcome: Reactive incidents to proactive, SLA-tracked supply-chain risk + malicious-code detection
+  so_what: Find the Section 889 violation or the tampered dependency before the contract vehicle is at risk - not after a
+    CO asks why your SBOM is three months stale.
+  status: approved
+- id: 12
+  domain: GovCon Capture
+  challenge: Opportunity capture and proposal writing take 8-16 weeks of manual effort
+  business_impact: BD teams hunt SAM.gov by hand and write proposals from scratch, missing deadlines and reusing little.
+  solution: Proposal Genesis runs autonomous reflexes across Capture/Propose/Deliver/Learn. The new WriteGuard V&V pipeline
+    enforces policy compliance before any draft ships. Black-hat / PTW competitive panel and White/Gold team gate add competitive
+    intelligence and sign-off.
+  modules: Proposal Genesis, WriteGuard V&V, black-hat panel, competitor_profiler, bayesian_bid_scorer, govcon pipeline
+  compliance: FAR/DFARS, Shipley process
+  outcome: 8-16 week capture cycle to AI-assisted draft + color team + competitive scoring
+  so_what: Field-ready proposal drafts in days instead of weeks - with built-in color-team simulation so you enter final review
+    already scrubbed.
+  status: approved
+- id: 13
+  domain: GovCon Capture
+  challenge: Bid / no-bid decisions are made on gut feel, not data
+  business_impact: Companies chase un-winnable pursuits and burn B&P budget on poor-fit opportunities.
+  solution: A bid/no-bid scoring engine fuses readiness, win probability, resource fit, and margin into one score, with FAR/DFARS
+    verification and an independent government cost estimate to ground the decision.
+  modules: Bid/no-bid scorer, far_dfars_verifier, igce_estimator, win_loss_engine
+  compliance: FAR/DFARS, FAR 15 (IGCE)
+  outcome: Gut-feel pursuits to data-driven bid decisions + IGCE
+  so_what: Know before committing B&P budget whether the pursuit is winnable - and back up the decision with an IGCE that
+    stands up to protest.
+  status: approved
+- id: 14
+  domain: AI Governance
+  challenge: AI systems are fielded with no documented risk, fairness, or oversight profile
+  business_impact: New federal AI mandates require inventories, model cards, and oversight - absence creates audit and legal
+    exposure.
+  solution: ICDEV auto-produces model/system cards, an AI inventory, fairness and confabulation assessments, oversight plans,
+    and CAIO/incident tracking. The AI-ify Compliance Posture Engine continuously scores AI posture (A-F) with LLM-narrative
+    reports pushed to stakeholders.
+  modules: AI transparency & accountability suite, AI-ify posture engine (A-F scoring), LLM narrative reports, fairness assessor,
+    CAIO tracker
+  compliance: OMB M-25-21 / M-26-04, NIST AI RMF, EU AI Act, MITRE ATLAS
+  outcome: Undocumented AI to audit-ready cards, inventory, oversight + continuous posture score
+  so_what: Meet OMB AI inventory mandates with a living, auto-updated posture score instead of a point-in-time slide deck
+    - and know your grade before the IG asks.
+  status: approved
+- id: 15
+  domain: AI Governance
+  challenge: Agentic AI architectures are novel, fragile, and hard to govern
+  business_impact: Multi-agent pipelines fail unpredictably and lack guardrails, blocking adoption of autonomous systems.
+  solution: The Agentic AI Design Canvas ships 7 reference solution packs with risk registers, circuit breakers, HITL gates,
+    and ATLAS threat scenarios. The ACE parallel_agents tool enables governed fan-out of N sub-agents concurrently with cost
+    and eval controls.
+  modules: Agentic AI Design Canvas (AADC), solution packs, ACE parallel_agents tool, cost_estimator, ops_config_generator,
+    HITL gates
+  compliance: NIST AI RMF, MITRE ATLAS, OWASP LLM Top 10
+  outcome: Fragile bespoke agents to governed reference architectures + parallel agent fan-out
+  so_what: Field multi-agent systems that leadership can actually approve - because every agent in the fan-out has a risk
+    register, a cost cap, and a HITL gate.
+  status: approved
+- id: 16
+  domain: Modernization
+  challenge: Legacy systems are undocumented and modernization scope is unclear
+  business_impact: Original developers are gone; teams can't estimate effort or preserve compliance when migrating.
+  solution: Automated 7R assessment scores each workload; cross-language translation generates candidate ports with auto-repair;
+    Migration Canvas Phase A COA selection and Phase B auto-generated topology sidecar maintain 95%+ control coverage through
+    the migration.
+  modules: icdev-modernize (7R), cross-language translation, Migration Canvas Phase A+B, ATO bridge, govlift
+  compliance: NIST 800-53 (control continuity), Cloud Smart
+  outcome: Unknown legacy to scored 7R plan + auto-generated target topology + 95%+ control coverage retained
+  so_what: Commit to a migration wave with a scored COA and an auto-generated target-state topology - so the ATO doesn't restart
+    from zero when the first workload moves.
+  status: approved
+- id: 17
+  domain: Platform & Air-Gap
+  challenge: Vendor lock-in to a single cloud or LLM provider
+  business_impact: Programs fear committing to tooling that traps them in one CSP or model vendor's roadmap and pricing.
+  solution: A vendor-agnostic LLM router and cloud-agnostic architecture let the same project target different clouds and
+    swap model providers via .env config - no code changes, admins control routing.
+  modules: LLM Router, cloud-agnostic architecture, llm_config.yaml
+  compliance: MOSA, DoD modular open systems
+  outcome: Single-vendor risk to portable, config-swappable stack
+  so_what: Negotiate from a position of strength with every cloud and model vendor - swapping providers is a config change,
+    not a re-architecture.
+  status: approved
+- id: 18
+  domain: Platform & Air-Gap
+  challenge: IL5 / air-gapped teams can't use modern SaaS AI tooling at all
+  business_impact: Classified and disconnected environments are stuck with dated tools and no AI assistance.
+  solution: 'ICDEV runs fully offline: SQLite storage, local Ollama LLM routing, vendored JavaScript, and offline PyPI wheels.
+    Predictive Network Analytics models and TimesFM forecasting also run self-hosted with no external calls.'
+  modules: tools/airgap runtime shim, Ollama routing, wheel_vendor, air-gap mode, on-prem PNA + TimesFM
+  compliance: IL4/IL5/IL6, DoD SRG, NIST 800-53
+  outcome: Air-gap teams unblocked to full AI platform + predictive analytics, no external calls
+  so_what: Bring the full power of AI-assisted compliance and predictive ops to a SCIF - not a watered-down version of the
+    cloud product.
+  status: approved
+- id: 19
+  domain: Knowledge & Agents
+  challenge: Architecture docs go stale the moment they're drawn
+  business_impact: PowerPoint topologies never match reality; knowledge decays and onboarding is slow.
+  solution: 21+ interactive design canvases keep architecture as living data; every save re-indexes a knowledge graph in under
+    a second; the System Graph federates all canvas nodes into one navigable map with natural-language /ask endpoints.
+  modules: 21+ Design Canvases, Knowledge Graph / GraphRAG, System Graph, IQE query engine, canvas /ask
+  compliance: MOSA, DoD digital engineering
+  outcome: Stale diagrams to 21+ living, queryable canvases + federated system graph
+  so_what: Onboard a new team member using live, queryable architecture data - not a stale Visio that nobody trusts.
+  status: approved
+- id: 20
+  domain: Knowledge & Agents
+  challenge: Specialist teams work in silos; the platform never improves itself
+  business_impact: Architects, security, and compliance hand off blindly; CVEs and best practices pile up unactioned.
+  solution: 16 coordinated domain agents collaborate over an A2A protocol across the lifecycle. Genesis autonomous lab continuously
+    scans NIST/CISA/OWASP, detects gaps, self-heals, and feeds lessons back. NOVA adds a four-loop self-learning coworker
+    layer (ECHO+SOUL+TRUST+SELA).
+  modules: 16-agent multi-agent system (A2A), Genesis v2.0 autonomous lab, NOVA self-learning coworker, Lessons Learned engine
+  compliance: NIST 800-53 CA/SI, continuous monitoring
+  outcome: Siloed handoffs to 16 coordinated agents + 24/7 self-improvement + NOVA co-learning
+  so_what: A platform that gets smarter every sprint without engineer intervention - gaps discovered overnight become kanban
+    tasks by morning.
+  status: approved
+- id: 21
+  domain: Autonomous Operations
+  challenge: Teams can't scale expert capacity without proportionally scaling headcount
+  business_impact: Program offices miss deliverables and burn senior staff on repetitive tasks that AI could handle autonomously.
+  solution: The ACE Co-Worker Engine deploys 47+ specialized role SOULs as persistent autonomous workers with HITL gates,
+    an LLM eval feedback loop (CoT/CoD scoring), live monitoring dashboard, parallel agent fan-out, and cross-grader enforcement
+    - all with session checkpointing.
+  modules: ACE Co-Worker Engine (47+ role SOULs), eval engine (CoT/CoD), live monitoring UI, parallel_agents tool, cross-grader
+    LLM, session checkpointing
+  compliance: NIST AI RMF, OMB M-26-04
+  outcome: Expert-level tasks delegated to governed autonomous workers; eval scores surface quality degradation before it
+    reaches humans
+  so_what: Multiply your team's output without multiplying headcount - and know when your AI workers are drifting below acceptable
+    quality before a stakeholder notices.
+  status: approved
+  is_new: true
+- id: 22
+  domain: Autonomous Operations
+  challenge: AI tools reset every session and never learn from prior work
+  business_impact: Teams re-teach the AI the same context repeatedly; the same mistakes recur; institutional knowledge stays
+    siloed.
+  solution: The Agent Loop primitive adds session checkpointing, prompt-injection sanitization, co-learning persistence, harness
+    retrieval, and episodic memory save - so each session builds on prior work. Per-role cost caps and IL4/IL5 output redaction
+    are enforced automatically.
+  modules: agent_loop.py, session_checkpoint, co_learning_store, memory harness retrieval, episodic save, output redaction
+    (IL4/IL5), per-role cost caps
+  compliance: NIST AU (audit trail), IL4/IL5 output controls, OMB AI policy
+  outcome: One-shot AI responses to persistent learning loop; IL4/IL5 output sanitized; cost controlled per role
+  so_what: AI co-workers that compound value over time - and classified content never leaks past the redaction gate.
+  status: approved
+  is_new: true
+- id: 23
+  domain: Build & Quality
+  challenge: ATO documents and compliance deliverables take weeks of manual expert assembly
+  business_impact: Documentation bottlenecks delay ATO submissions; inconsistent quality triggers assessor findings; version
+    control is ad hoc.
+  solution: 'The IDR canvas: LLM-first document ingestion, WriteGuard auto-fix loop, ACE multi-coworker generation, OKB machine-checkable
+    policy gate, NQE transparency gate, embedding conflict detection, ATO boundary narrative, and classification-aware PDF/DOCX/HTML
+    exports with dynamic CUI banners.'
+  modules: tools/dic/ (IDR canvas), WriteGuard, ACE multi-coworker stage5, NQE transparency gate, OKB policy gate, classification-aware
+    exports (PDF/DOCX/HTML)
+  compliance: NIST AU-3, RMF, CUI markings (DoDI 5200.48)
+  outcome: Weeks of document assembly to hours; classification-stamped exports; policy-gated before submission
+  so_what: Turn weeks of document assembly into hours - every exported artifact arrives CUI-stamped and policy-gated so assessors
+    don't call you back.
+  status: approved
+  is_new: true
+- id: 24
+  domain: Platform & Workflow
+  challenge: Business processes are executed manually, undocumented, and impossible to audit
+  business_impact: Process variance causes inconsistent outputs, untracked decisions, and audit gaps sprint over sprint.
+  solution: 'Process-Ify implements 14 workflow enhancement capabilities on the Workflow Canvas: live DAG visualization, process
+    mining, bottleneck detection, SLA tracking, HITL gate insertion, compliance annotation, and automated process documentation
+    generation.'
+  modules: tools/workflow_canvas/ (Process-Ify, 14 capabilities), Workflow Canvas, HITL gates, compliance annotation engine
+  compliance: NIST 800-53 CM, audit trail
+  outcome: Undocumented processes to auditable, monitored, HITL-gated workflows with compliance annotations
+  so_what: Processes that lived only in people's heads are now visible, auditable, and improvable - without waiting for a
+    BA to draw a Visio diagram.
+  status: approved
+  is_new: true
+- id: 25
+  domain: Platform & Workflow
+  challenge: Operational telemetry sits unused; outages are always a surprise
+  business_impact: Capacity crises and network faults are reactive and expensive; forecast data is locked in spreadsheets.
+  solution: 6 Predictive Network Analytics models (traffic, fault, anomaly, capacity, security, latency) + TimesFM-backed
+    self-hostable forecasting microservice that runs fully on-prem with no external calls.
+  modules: tools/network/pna/ (6 PNA models, 148 tests), tools/forecast/ (TimesFM), on-prem deployment
+  compliance: NIST 800-53 (availability), DoD RMF
+  outcome: Reactive ops to predictive, SLA-protected posture; forecasting runs air-gapped
+  so_what: Know 24-48 hours before the network fails - with a model you own, running in your environment, not in a cloud vendor's.
+  status: approved
+  is_new: true
+- id: 26
+  domain: Build & Quality
+  challenge: E2E test suites degrade as the UI evolves; coverage gaps go undetected for months
+  business_impact: Broken selectors cause false failures; maintenance burden drives teams to skip E2E entirely, creating undetected
+    regression risk.
+  solution: '3-phase QA Agent: Phase 1 - ACE qa_agent role generates Playwright tests from live sessions; Phase 2 - Genesis
+    6-hour reflex sweeps for E2E coverage gaps; Phase 3 - AI-assisted selector self-healing with HITL gate when confidence
+    < 0.7.'
+  modules: ACE qa_agent role, Playwright runner, Genesis QA reflex (6-hour), AI selector self-healer, HITL confidence gate
+  compliance: NIST SA-11, DevSecOps, SLSA
+  outcome: Degrading test suite to self-maintaining E2E coverage; gaps auto-detected every 6 hours; broken selectors self-healed
+  so_what: Your test suite maintains itself - engineers focus on features, not test archaeology, and coverage gaps surface
+    before users report them.
+  status: approved
+  is_new: true
+- id: 27
+  domain: Platform & SaaS
+  challenge: AI and agent workload costs are opaque; no per-role or per-tenant visibility
+  business_impact: Budget overruns on AI compute are discovered at month-end; no per-customer cost visibility for managed-service
+    pricing.
+  solution: 'Billing & Metering module: real-time usage tracking per role/session, Stripe integration for SaaS tiers, per-role
+    cost caps enforced in the Agent Loop, and tenant-level consumption dashboards.'
+  modules: tools/billing/ (metering.py, stripe_handler.py, tier.py), agent_loop per-role cost caps, tenant usage dashboards
+  compliance: SOC 2 (metering/billing), FedRAMP (usage tracking)
+  outcome: Opaque AI spend to tracked, capped, and billable per role/tenant; SaaS pricing enabled
+  so_what: Know exactly what every AI agent role costs before the bill arrives - and turn that cost visibility into a pricing
+    model for your managed service.
+  status: approved
+  is_new: true
+- id: 28
+  domain: Knowledge & Agents
+  challenge: Teams learn ICDEV through documentation, not practice - adoption stalls
+  business_impact: Low adoption means low ROI on the platform; teams fall back to manual processes without guided onboarding.
+  solution: 'Academy + GameDay TTX: 16 AI-mission learning paths covering NOVA, VIZ, and all major capability domains, with
+    table-top exercise (TTX) scenario rehearsal for risk and compliance readiness.'
+  modules: tools/gameday/ (16 missions), Academy learning paths, VIZ+NOVA integration, TTX GameDay engine
+  compliance: NIST 800-53 AT (Awareness & Training)
+  outcome: Docs-only onboarding to 16 guided AI missions; TTX rehearsals surface readiness gaps before production
+  so_what: Cut the adoption curve from months to days - teams learn on real ICDEV scenarios, not slides, so they're productive
+    from day one.
+  status: approved
+  is_new: true
+capabilities:
+- id: 1
+  capability: FORGE Framework
+  what_it_does: 'The architectural backbone: separates probabilistic AI reasoning (orchestration) from deterministic execution
+    (Python tools) across six layers - Goals, Orchestration, Tools, Args, Context, Hard Prompts - so multi-step workflows
+    stay reliable instead of compounding LLM error.'
+  modules: goals/manifest, 600+ tools, args/*.yaml, hardprompts/
+  compliance: MOSA, separation of concerns
+  solves: 7, 8
+  so_what: At 90% per-step accuracy, a 5-step workflow degrades to 59% end-to-end - FORGE confines the error to orchestration
+    so execution is always deterministic.
+  status: approved
+- id: 2
+  capability: ANVIL TDD Build
+  what_it_does: 5-phase true test-driven workflow (Architect to Navigate to Verify(RED) to Integrate(GREEN) to Launch) that
+    writes failing tests first, generates implementation, then runs adversarial multi-agent critique and security scans as
+    pre-merge gates.
+  modules: icdev-build, ANVIL critique phase, test_orchestrator, icdev-review
+  compliance: NIST SA-11, DevSecOps, SLSA
+  solves: 7, 8
+  so_what: Bugs caught in the RED phase cost nothing to fix; bugs caught post-merge cost 10-100x. ANVIL shifts the catch point
+    left.
+  status: approved
+- id: 3
+  capability: Compliance & ATO Automation
+  what_it_does: Generates ATO artifacts (SSP, POAM, STIG checklist, SBOM) directly from the build with CUI markings, then
+    runs continuous (cATO) monitoring on an append-only audit trail - compliance produced as a by-product of building.
+  modules: icdev-comply, classification_manager, cATO monitor, audit_trail
+  compliance: NIST 800-53, FedRAMP, RMF, cATO, DISA STIG
+  solves: 1, 2
+  so_what: Turn ATO documentation from a 12-month sprint into a background process - evidence accumulates automatically as
+    engineers build.
+  status: approved
+- id: 4
+  capability: 42-Framework Crosswalk
+  what_it_does: A dual-hub crosswalk engine maps one implemented control to 42+ compliance frameworks automatically, detects
+    coverage gaps, and recommends which framework delta to close next - implement once, audit everywhere.
+  modules: Compliance crosswalk engine, multi-framework compliance, FedRAMP 20x KSI, eMASS
+  compliance: NIST 800-53/171, FedRAMP, CMMC, CJIS, HIPAA, ISO 27001, SOC 2, PCI
+  solves: '3'
+  so_what: Win a CMMC contract and a FedRAMP authorization from the same control implementation - no duplicate engineering.
+  status: approved
+- id: 5
+  capability: Evidence Auto-Collection & Lineage
+  what_it_does: Continuously harvests compliance evidence from tool runs and tags it with provenance/lineage mapped to controls,
+    giving assessors a single immutable source of truth.
+  modules: Compliance Evidence Auto-Collection, provenance engine, audit_trail (NIST AU-3)
+  compliance: NIST AU-3, FedRAMP, eMASS
+  solves: '2'
+  so_what: Assessors get a pre-packaged evidence trail - re-authorization becomes a scheduled event, not a fire drill.
+  status: approved
+- id: 6
+  capability: Requirements Intake (RICOAS)
+  what_it_does: Conversational AI intake that detects ambiguity and missing security/compliance requirements, scores readiness
+    across 5 dimensions, extracts requirements from PDFs/SOWs, and decomposes them into SAFe epics/stories before code is
+    written.
+  modules: icdev-intake, gap_detector, readiness scorer, SAFe decomposer
+  compliance: SAFe, NIST 800-53 (early capture)
+  solves: '4'
+  so_what: Requirements defects cost nothing to fix at intake and 10-100x to fix in test - RICOAS moves the detection point
+    to before any code exists.
+  status: approved
+- id: 7
+  capability: ATO Boundary Impact Analysis
+  what_it_does: Tags every requirement RED/ORANGE/YELLOW/GREEN against the authorization boundary and visualizes zones + ISA
+    lifecycle on the Boundary Design Canvas, catching scope changes that would trigger re-authorization.
+  modules: icdev-boundary, Boundary Design Canvas (BDC), ISA expiry reflex
+  compliance: RMF authorization boundary, FedRAMP, NIST CA
+  solves: '5'
+  so_what: A single out-of-boundary requirement can force a 6-month re-authorization - catch it at intake, not at assessment.
+  status: approved
+- id: 8
+  capability: Digital Program Twin
+  what_it_does: Monte Carlo simulation across 6 dimensions (schedule, cost, risk, compliance, architecture, staffing) that
+    generates three scored Courses of Action (Speed / Balanced / Comprehensive) for evidence-based program decisions.
+  modules: icdev-simulate, COA generator, TTX GameDay engine
+  compliance: RMF risk management, DoD acquisition
+  solves: '6'
+  so_what: Brief decision authority with a scored COA backed by simulation data - not a gut-feel estimate that collapses under
+    scrutiny.
+  status: approved
+- id: 9
+  capability: Security & Zero Trust
+  what_it_does: Scores NIST 800-207 ZTA maturity, hardens the DevSecOps pipeline (SAST, dependency audit, secret + container
+    scanning), and auto-triages findings by ATO boundary impact so the riskiest issues block deployment.
+  modules: icdev-zta, icdev-devsecops, icdev-secure, boundary tagger, security gates
+  compliance: NIST 800-207, DoD Zero Trust, NIST 800-53, DISA STIG, OWASP
+  solves: 9, 10
+  so_what: Walk into any DoD ZTA assessment with a scored, documented maturity baseline - and findings already ranked by what
+    actually blocks authorization.
+  status: approved
+- id: 10
+  capability: AI Security (MITRE ATLAS)
+  what_it_does: 'Defends the AI supply chain itself: prompt-injection detection, AI prompt-chain validation, and MITRE ATLAS
+    red-teaming to surface adversarial-ML threats against models and agents.'
+  modules: AI security suite, prompt injection detector, ATLAS scenarios
+  compliance: MITRE ATLAS, NIST AI RMF, OWASP LLM Top 10
+  solves: 14, 15
+  so_what: 'LLM prompt injection is the #1 agentic-AI attack vector - catch it at the gate before it reaches a privileged
+    agent.'
+  status: approved
+- id: 11
+  capability: SIPA - Software Integrity Assessor
+  what_it_does: Inspects a codebase for unauthorized or malicious code - either against its documented requirements/PRD (Mode
+    A) or its claimed purpose (Mode B) - using static analysis, with automatic quarantine of suspect artifacts and HITL review.
+    Now in full production with 44+ tests.
+  modules: 'tools/integrity/ (route: /integrity), quarantine engine, HITL review'
+  compliance: NIST 800-53 SA-11/SI, NIST SSDF, EO 14028 (software integrity)
+  solves: '11'
+  so_what: Supply chain attacks hide in code, not in CVEs - SIPA catches what dependency scanners miss.
+  status: approved
+- id: 12
+  capability: Supply Chain Intelligence (C-SCRM)
+  what_it_does: Aggregates the dependency graph, triages CVEs with SLA tracking, warns on ISA expiry (60d/30d), tiers vendor
+    risk, screens NDAA Section 889, and regenerates SBOMs on every build.
+  modules: Supply chain intelligence, NDAA 889 screener, ISA expiry reflex, SBOM generator
+  compliance: NDAA 889, NIST 800-161, EO 14028 SBOM
+  solves: '11'
+  so_what: Find the Section 889 violation before the CO asks - not after the contract vehicle is already at risk.
+  status: approved
+- id: 13
+  capability: Proposal Genesis
+  what_it_does: 'Autonomous capture-to-proposal pipeline: scans SAM.gov, extracts requirements, maps to capabilities, drafts
+    content, runs Shipley color-team simulation, learns from win/loss. Includes WriteGuard V&V pipeline, Black-hat / PTW competitive
+    panel, and White/Gold team sign-off gate.'
+  modules: Proposal Genesis, WriteGuard V&V, black-hat panel, bayesian_bid_scorer, competitor_profiler, govcon pipeline
+  compliance: FAR/DFARS, Shipley process
+  solves: '12'
+  so_what: Field-ready proposal drafts in days instead of weeks - with color-team simulation and competitive scoring baked
+    in.
+  status: approved
+- id: 14
+  capability: Bid/No-Bid & Cost Intelligence
+  what_it_does: Fuses readiness, win probability, resource fit, and margin into a single bid/no-bid score, with FAR/DFARS
+    verification and an independent government cost estimate (IGCE) to ground pursuit decisions.
+  modules: Bid/no-bid scorer, far_dfars_verifier, igce_estimator
+  compliance: FAR/DFARS, FAR 15 (IGCE)
+  solves: '13'
+  so_what: Know before committing B&P budget whether the pursuit is winnable - and back it up with an IGCE that stands up
+    to protest.
+  status: approved
+- id: 15
+  capability: AI Transparency & Accountability
+  what_it_does: Auto-produces model/system cards, an AI inventory, fairness and confabulation assessments, oversight plans,
+    CAIO designation, and incident tracking. AI-ify Compliance Posture Engine scores AI posture A-F continuously with LLM-narrative
+    reports.
+  modules: AI transparency suite, AI-ify posture engine (A-F), LLM narrative digests, fairness assessor, CAIO tracker
+  compliance: OMB M-25-21 / M-26-04, NIST AI RMF, EU AI Act
+  solves: '14'
+  so_what: Meet OMB AI inventory mandates with a living, auto-updated posture score - not a point-in-time slide deck.
+  status: approved
+- id: 16
+  capability: Agentic AI Design Canvas
+  what_it_does: Visual builder for multi-agent systems with 40+ node types and 7 vetted solution packs that ship with risk
+    registers, circuit breakers, HITL gates, and ATLAS threat scenarios. ACE parallel_agents tool enables governed concurrent
+    fan-out.
+  modules: Agentic AI Design Canvas (AADC), solution packs, ACE parallel_agents, cost_estimator, ops_config_generator
+  compliance: NIST AI RMF, MITRE ATLAS, OWASP LLM Top 10
+  solves: '15'
+  so_what: Field multi-agent systems that leadership can actually approve - every agent in the fan-out has a risk register,
+    a cost cap, and a HITL gate.
+  status: approved
+- id: 17
+  capability: Modernization & Translation
+  what_it_does: Scores legacy workloads with automated 7R assessment, generates cross-language translations with auto-repair,
+    Migration Canvas Phase A COA selection, Phase B auto-generated topology sidecar, and bridges old-to-new ATO so control
+    coverage stays 95%+.
+  modules: icdev-modernize, cross-language translation, Migration Canvas Phase A+B, ATO bridge, govlift
+  compliance: NIST 800-53 (control continuity), Cloud Smart
+  solves: '16'
+  so_what: Commit to a migration wave with a scored COA and auto-generated target topology - so the ATO doesn't restart from
+    zero.
+  status: approved
+- id: 18
+  capability: 21+ Design Canvases & Knowledge Graph
+  what_it_does: 21+ interactive design canvases keep architecture as living data; every save re-indexes a knowledge graph
+    in under a second; per-canvas /ask endpoints answer questions grounded in the actual design; System Graph federates all
+    canvas nodes into one navigable map.
+  modules: 21+ Design Canvases, Knowledge Graph / GraphRAG, System Graph, IQE query engine, canvas /ask
+  compliance: MOSA, DoD digital engineering
+  solves: '19'
+  so_what: Onboard a new team member using live, queryable architecture data - not a stale Visio that nobody trusts.
+  status: approved
+- id: 19
+  capability: Multi-Agent System (A2A)
+  what_it_does: 16 coordinated domain agents (Architect, Builder, Compliance, Security, Infrastructure, MBSE, Requirements,
+    Supply Chain, Modernization, Simulation, DevSecOps, Knowledge, Monitor, Gateway + 2 new) collaborate over a mutual-TLS
+    A2A protocol across the lifecycle.
+  modules: 16-agent orchestration, A2A protocol (JSON-RPC/mTLS), MCP servers
+  compliance: NIST 800-53 CA/SI
+  solves: '20'
+  so_what: Every lifecycle discipline runs in parallel - security doesn't wait for architecture to finish before it starts
+    its review.
+  status: approved
+- id: 20
+  capability: Genesis Autonomous Lab
+  what_it_does: 'A 24/7 self-improvement daemon: 20+ reflexes scan NIST/CISA/OWASP/GitHub, detect capability gaps, self-heal
+    (confidence 0.7+, max 5/hr), mine failure patterns, and feed lessons back into the tool chain.'
+  modules: Genesis v2.0, reflex registry, Lessons Learned engine, drift/gap detectors
+  compliance: NIST 800-53 SI/CA, continuous monitoring
+  solves: '20'
+  so_what: Gaps discovered overnight become kanban tasks by morning - without a human noticing, triaging, or assigning them.
+  status: approved
+- id: 21
+  capability: Vendor-Agnostic & Cloud-Agnostic
+  what_it_does: An LLM router and cloud-agnostic architecture let the same project swap model providers and target clouds
+    via .env config with no code changes - admins control routing, avoiding CSP and model lock-in.
+  modules: LLM Router, cloud-agnostic architecture, llm_config.yaml
+  compliance: MOSA, DoD modular open systems
+  solves: '17'
+  so_what: Negotiate from a position of strength with every cloud and model vendor - swapping providers is a config change,
+    not a re-architecture.
+  status: approved
+- id: 22
+  capability: Air-Gap / Offline Operation
+  what_it_does: 'Runs the entire platform fully disconnected: SQLite storage, local Ollama LLM routing, vendored JavaScript,
+    and offline PyPI wheels. Predictive analytics and forecasting models also run on-prem with no external calls.'
+  modules: tools/airgap runtime shim, Ollama routing, wheel_vendor, on-prem PNA + TimesFM
+  compliance: IL4/IL5/IL6, DoD SRG, NIST 800-53
+  solves: '18'
+  so_what: Bring the full AI-assisted platform to a SCIF - not a watered-down version of the cloud product.
+  status: approved
+- id: 23
+  capability: Multi-Tenant SaaS & Marketplace
+  what_it_does: Ships as a multi-tenant SaaS platform with per-tenant databases, BYOK, usage tracking, and a Federated FORGE
+    asset marketplace for publishing and installing reusable skills and compliance extensions.
+  modules: SaaS multi-tenancy, marketplace (icdev-market), BYOK, usage tracking
+  compliance: FedRAMP, SOC 2 (multi-tenancy)
+  solves: '27'
+  so_what: Turn the platform into a managed service with per-tenant billing and a marketplace for selling compliance extensions.
+  status: approved
+- id: 24
+  capability: ACE Co-Worker Engine
+  what_it_does: Deploys 47+ specialized autonomous role SOULs as persistent AI co-workers with HITL gates, LLM evaluation
+    feedback loop (CoT/CoD scoring), live monitoring, parallel agent fan-out, eval-driven improvement suggestions, apply-suggestions
+    re-run, and cross-grader enforcement.
+  modules: ACE engine (47+ role SOULs), eval engine (CoT/CoD), live monitoring UI, apply-suggestions, parallel_agents tool,
+    cross-grader LLM, session checkpointing
+  compliance: NIST AI RMF, OMB M-26-04
+  solves: '21'
+  so_what: Multiply team output without scaling headcount - and eval scores tell you when an AI worker is drifting below acceptable
+    quality before a stakeholder notices.
+  status: approved
+  is_new: true
+- id: 25
+  capability: NOVA Autonomous Self-Learning Coworker
+  what_it_does: 'A four-loop autonomous learning system (ECHO: observe, SOUL: internalize, TRUST: validate, SELA: self-evolve)
+    that builds on prior session memory, generates new skills from observed patterns, and continuously refines its own behavior.'
+  modules: tools/nova/ (reflexion_loop.py, skill_generator.py, ECHO/SOUL/TRUST/SELA loops)
+  compliance: NIST AI RMF, continuous improvement
+  solves: 20, 21
+  so_what: An AI co-worker that improves itself with every engagement - without a prompt engineer having to rewrite its instructions.
+  status: approved
+  is_new: true
+- id: 26
+  capability: Agent Loop (Production Agentic Primitive)
+  what_it_does: 'Production-grade reusable agentic execution layer: session checkpointing, correlation IDs, prompt-injection
+    sanitization, co-learning persistence, harness retrieval, episodic memory save, per-role cost caps, IL4/IL5 output redaction,
+    and 5 loop-control mechanisms (stall/runaway/random-walk guards).'
+  modules: icdev/tools/llm/agent_loop.py, session_checkpoint, co_learning_store, memory harness, output redaction, per-role
+    cost caps, 5 loop-control mechanisms
+  compliance: NIST AU, IL4/IL5 output controls
+  solves: '22'
+  so_what: Every agentic capability in the platform inherits production-grade safety and learning from a single tested primitive
+    - instead of reinventing guardrails per feature.
+  status: approved
+  is_new: true
+- id: 27
+  capability: IDR - Intelligent Document Requirements
+  what_it_does: 'LLM-first document requirements canvas: ingestion, WriteGuard auto-fix loop, ACE multi-coworker generation,
+    OKB machine-checkable policy gate, NQE transparency gate, embedding conflict detection, ATO boundary narrative, template
+    gallery, and classification-aware PDF/DOCX/HTML exports with dynamic CUI banners.'
+  modules: tools/dic/ (IDR), WriteGuard, ACE multi-coworker, NQE transparency gate, OKB policy gate, classification-aware
+    exports
+  compliance: NIST AU-3, RMF, CUI markings (DoDI 5200.48)
+  solves: '23'
+  so_what: Turn weeks of document assembly into hours - every artifact arrives CUI-stamped and policy-gated before submission.
+  status: approved
+  is_new: true
+- id: 28
+  capability: Slide Deck & Presentation Generator
+  what_it_does: 'Autonomous slide deck generation pipeline: LLM orchestration, research connector, multi-source data ingestion,
+    PPTX/PDF/HTML export, graphics generator, and curated deck workflow for controlled narrative - with weekly Genesis reflex
+    for scheduled refreshes.'
+  modules: tools/slides/ (engine, pptx_builder, research_connector, export_pdf, graphics_generator), curated_decks
+  compliance: NIST SA (documentation)
+  solves: '23'
+  so_what: Briefing-ready decks from research to PowerPoint in minutes - with controlled narrative for color-team and executive
+    audiences.
+  status: approved
+  is_new: true
+- id: 29
+  capability: Process-Ify Workflow Automation
+  what_it_does: '14 workflow enhancement capabilities on the Workflow Canvas: live DAG visualization, process mining, bottleneck
+    detection, SLA tracking, HITL gate insertion, compliance annotation, and automated process documentation generation.'
+  modules: tools/workflow_canvas/ (Process-Ify, 14 capabilities), Workflow Canvas, HITL gates, compliance annotation
+  compliance: NIST 800-53 CM, audit trail
+  solves: '24'
+  so_what: Processes that lived only in people's heads are now visible, auditable, and improvable - without waiting for a
+    BA to draw a Visio diagram.
+  status: approved
+  is_new: true
+- id: 30
+  capability: Autonomous QA Agent
+  what_it_does: '3-phase autonomous QA system: Phase 1 - ACE qa_agent role generates Playwright tests from live sessions;
+    Phase 2 - Genesis 6-hour reflex sweeps for E2E coverage gaps; Phase 3 - AI-assisted selector self-healing with HITL gate
+    when confidence < 0.7.'
+  modules: ACE qa_agent role, Playwright runner, Genesis QA reflex (6-hour), AI selector self-healer, HITL confidence gate
+  compliance: NIST SA-11, DevSecOps, SLSA
+  solves: 7, 26
+  so_what: Your test suite maintains itself - coverage gaps surface every 6 hours and broken selectors self-repair before
+    users report a regression.
+  status: approved
+  is_new: true
+- id: 31
+  capability: Predictive Network Analytics (PNA)
+  what_it_does: 6 on-prem predictive network models (traffic, fault, anomaly, capacity, security, latency) + TimesFM-backed
+    self-hostable forecasting microservice - all air-gap compatible with no external data calls.
+  modules: tools/network/pna/ (6 models, 148 tests), tools/forecast/ (TimesFM), on-prem deployment
+  compliance: NIST 800-53 (availability, SI), DoD RMF
+  solves: '25'
+  so_what: Know 24-48 hours before the network fails - with a model you own, running in your environment, not in a cloud vendor's.
+  status: approved
+  is_new: true
+- id: 32
+  capability: Billing & Usage Metering
+  what_it_does: Real-time AI usage tracking per role/session, Stripe integration for SaaS tier management, per-role cost caps
+    enforced in the Agent Loop, and tenant-level consumption dashboards.
+  modules: tools/billing/ (metering.py, stripe_handler.py, tier.py), agent_loop cost caps, tenant dashboards
+  compliance: SOC 2 (metering/billing), FedRAMP (usage tracking)
+  solves: '27'
+  so_what: Know exactly what every AI agent role costs before the bill arrives - and turn that visibility into a monetizable
+    managed service.
+  status: approved
+  is_new: true
+- id: 33
+  capability: Academy + GameDay TTX
+  what_it_does: 16 guided AI-mission learning paths covering NOVA, VIZ, and all major capability domains, plus a Table-Top
+    Exercise (TTX) engine for risk and compliance scenario rehearsal.
+  modules: tools/gameday/ (16 missions), Academy learning paths, VIZ+NOVA integration, TTX GameDay engine
+  compliance: NIST 800-53 AT (Awareness & Training)
+  solves: '28'
+  so_what: Cut the adoption curve from months to days - teams learn on real ICDEV scenarios, not slides, so they're productive
+    from day one.
+  status: approved
+  is_new: true
+canvases:
+- id: 1
+  canvas: NDC - Network Design Canvas
+  route: /network
+  use_case: Network architects/engineers designing or documenting an enclave topology.
+  challenge: Network diagrams live in Visio, drift out of date, and are never validated against security intent.
+  how_it_solves: Drag-and-drop topology with intent validation, ACAS/Nessus vulnerability overlay, natural-language query,
+    change-request markup, and NetBox sync - a living, validated network model.
+  status: approved
+- id: 2
+  canvas: IDC - Infrastructure Design Canvas
+  route: /infra
+  use_case: Cloud/infra engineers planning multi-CSP compute, storage, containers, and serverless.
+  challenge: Infrastructure is designed in slides, then hand-translated to IaC, drifting from its compliance baseline.
+  how_it_solves: Visual multi-CSP design with CSP equivalence mapping, NIST/FedRAMP/CMMC assessment, and one-click IaC emit
+    (Terraform/Pulumi/Ansible/Helm) behind a pre-apply compliance gate.
+  status: approved
+- id: 3
+  canvas: SDC - Security Design Canvas
+  route: /security
+  use_case: Security engineers and ISSOs threat-modeling a system.
+  challenge: Threat models are one-time Word docs; control coverage and attack paths are never tracked.
+  how_it_solves: STRIDE threat modeling with NIST/FedRAMP/CMMC control mapping, MITRE ATT&CK coverage, an attack-path digital
+    twin, and AI-assisted remediation.
+  status: approved
+- id: 4
+  canvas: BDC - Boundary Design Canvas
+  route: /boundary
+  use_case: ISSOs/ISSMs defining the ATO, FedRAMP, or SCIF authorization boundary.
+  challenge: Authorization boundaries are ambiguous and ISAs silently expire, putting the ATO at risk.
+  how_it_solves: Visual boundary design with ISA lifecycle tracking (60-day/30-day warnings), PPS matrix generation, and automated
+    boundary-gap detection.
+  status: approved
+- id: 5
+  canvas: PDC - Pipeline Design Canvas
+  route: /devops
+  use_case: DevSecOps engineers designing CI/CD with security gates.
+  challenge: Security gates are bolted onto pipelines late and inconsistently across teams.
+  how_it_solves: Model the CI/CD DAG, place security gates, export GitLab/GitHub Actions, and run a pre-merge what-if twin
+    with SLSA assessment before changes land.
+  status: approved
+- id: 6
+  canvas: ODC - Observability Design Canvas
+  route: /observability
+  use_case: SOC and SRE teams designing the SIEM/SOAR and logging stack.
+  challenge: Detection-coverage gaps and log-retention non-compliance are found during incidents or audits.
+  how_it_solves: Design the log/SIEM stack, score MITRE ATT&CK detection coverage, assess NIST AU/SI controls, set retention
+    policy, and project SLO burn-rate.
+  status: approved
+- id: 7
+  canvas: DDC - Data Design Canvas
+  route: /data
+  use_case: Data architects and privacy officers modeling data and lineage.
+  challenge: Sensitive data (PII/PHI/CUI/SECRET) flows untracked across systems, breaking privacy compliance.
+  how_it_solves: Data modeling with classification, column-level lineage DAG, contracts that block SECRET-to-lower flows,
+    Privacy Act/HIPAA/GDPR assessment, and catalog sync (OpenMetadata/DataHub).
+  status: approved
+- id: 8
+  canvas: QDC - Quality Design Canvas
+  route: /code-quality
+  use_case: Engineering leads and QA tracking code health over time.
+  challenge: Code quality is subjective and technical debt accumulates invisibly between reviews.
+  how_it_solves: Measures complexity and code smells, gates on cyclomatic-complexity thresholds, and tracks maintainability
+    trends across the codebase.
+  status: approved
+- id: 9
+  canvas: MDC - Migration Design Canvas
+  route: /migration-canvas
+  use_case: Modernization teams planning a legacy-to-cloud migration.
+  challenge: Migration scope is unclear and waves aren't sequenced against dependencies or the ATO.
+  how_it_solves: Inventory scanning, 7R disposition advisor, COA selection (Phase A), auto-generated topology sidecar (Phase
+    B), wave planner, and an ATO-coverage bridge so controls survive the move.
+  status: approved
+- id: 10
+  canvas: AADC - Agentic AI Design Canvas
+  route: /agentic-ai
+  use_case: AI engineers designing multi-agent and autonomous systems.
+  challenge: Agentic architectures are novel, fragile, and ship without guardrails.
+  how_it_solves: 40+ node types, 7 vetted solution packs, a risk register, MITRE ATLAS threat scenarios, cost estimation,
+    ops-config generation, and ACE parallel_agents fan-out.
+  status: approved
+- id: 11
+  canvas: OHC - Ops Hub Canvas
+  route: /ops-hub
+  use_case: Platform, ML-ops, and LLM-ops teams unifying operational signals.
+  challenge: Ops telemetry is scattered across SageMaker, Vertex, MLflow, Prometheus, Bedrock, and more.
+  how_it_solves: A single hub aggregating AIOps/MLOps/LLMOps through 12+ adapters (CloudWatch, Prometheus, MLflow, SageMaker,
+    Bedrock Guardrails...) into one operational view.
+  status: approved
+- id: 12
+  canvas: AISG - AI Safety & Governance Canvas
+  route: /aisg
+  use_case: CAIOs and AI-governance leads operationalizing responsible AI.
+  challenge: AI governance is policy-on-paper with no enforcement or audit evidence.
+  how_it_solves: Governance checks, learning paths, ROI tracking, compliance and executive views, and policy auto-tuning aligned
+    to federal AI mandates.
+  status: approved
+- id: 13
+  canvas: AIML - AI/ML Design Canvas
+  route: /aiml
+  use_case: ML engineers and the model review board designing and governing models.
+  challenge: Models are deployed without documented risk, scanning, or deployment-readiness review.
+  how_it_solves: Model design with model scanning, deployment-readiness checks, and governance assessment (model cards, risk
+    scoring).
+  status: approved
+- id: 14
+  canvas: Mission Control Canvas
+  route: —
+  use_case: Program leadership wanting a single operational picture.
+  challenge: Mission and program status is fragmented across many tools and canvases.
+  how_it_solves: A control canvas that aggregates mission events and cross-canvas status into one operational view.
+  status: approved
+- id: 15
+  canvas: AI-ify Canvas
+  route: /ai-ify
+  use_case: Application owners deciding where to add AI to existing software.
+  challenge: Teams don't know which parts of an app are good AI-augmentation candidates, or their current AI posture.
+  how_it_solves: Scans a codebase for AI-augmentation opportunities, scores AI/agentic-AI posture (A-F) with LLM-narrative
+    reports and concrete remediation guidance, and pushes compliance posture digests to stakeholders.
+  status: approved
+- id: 16
+  canvas: DIC - Document Intelligence Canvas
+  route: /dic
+  use_case: Analysts needing grounded, citable answers over a document corpus.
+  challenge: Document search is ungrounded; LLM answers hallucinate and lack citations.
+  how_it_solves: RAG+KG over documents with NO-LLM grounded search, citations, freshness tracking, collaboration hub, handoff
+    sessions, and HITL + AI-labeled generation under RBAC/ABAC/RLS.
+  status: approved
+- id: 17
+  canvas: Data Mesh Canvas
+  route: /data-mesh
+  use_case: Data-platform teams running federated, domain-owned data.
+  challenge: Centralized data ownership bottlenecks delivery; contracts and governance are ad hoc.
+  how_it_solves: Models domains, data products, contracts, and computational-governance policies with a federated catalog.
+  status: approved
+- id: 18
+  canvas: IC IE Data Fabric
+  route: —
+  use_case: Multi-agency Intelligence Community teams sharing data across boundaries.
+  challenge: Cross-agency data sharing is blocked by classification and trust boundaries.
+  how_it_solves: A multi-agency data-sharing fabric with classification-aware access and federated discovery.
+  status: approved
+- id: 19
+  canvas: System Graph
+  route: /graph
+  use_case: Architects wanting a federated view across every canvas.
+  challenge: Each canvas is a silo; there is no single graph of how the whole system connects.
+  how_it_solves: A federated Sigma.js graph that stitches nodes and edges across all canvases into one navigable system map.
+  status: approved
+- id: 20
+  canvas: WFC - Workflow Canvas + Process-Ify
+  route: /workflow-canvas
+  use_case: Process owners and operations teams automating and auditing business workflows.
+  challenge: Business processes are undocumented and unauditable - the same inefficiencies compound sprint over sprint.
+  how_it_solves: 14 Process-Ify capabilities bring live DAG visualization, process mining, bottleneck detection, SLA tracking,
+    HITL gate insertion, and compliance annotation to every workflow - turning undocumented execution into an auditable, governed
+    pipeline.
+  status: approved
+  is_new: true
+- id: 21
+  canvas: SLD - Slide Deck Generator
+  route: /slides
+  use_case: Program managers, capture teams, and executives needing briefing-ready presentations from research and platform
+    data.
+  challenge: Presentation prep consumes expert time that should go to analysis - decks are manually assembled from scattered
+    sources.
+  how_it_solves: Autonomous LLM pipeline generates research-grounded PPTX/PDF/HTML decks with multi-source ingestion, graphics
+    generation, curated deck workflow for controlled narrative, and a weekly Genesis reflex for scheduled refreshes.
+  status: approved
+  is_new: true

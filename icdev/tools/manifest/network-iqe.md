@@ -156,6 +156,7 @@ python tools/iqe/cli.py --file context/iqe/queries/network/09_stig_open_findings
 | TFW narrative generator | `tools/network/narrative_generator.py` | Traffic Flow Walkthrough narratives — per-persona LLM narratives + deterministic detail_json (CSP detection, multi-CSP hops, classification overlay, NIST 800-53 pre-population). CLI: `--flow-id <id> --json` |
 | NDC Digital Twin | tools/network/twin.py | Network digital twin: topology snapshot capture, intent rule validation against deltas, and blast-radius impact analysis for network nodes/links with fuzzy node resolution | `take_snapshot()`, `simulate_delta()`, `blast_radius()` (library) | Snapshot/delta/impact dicts |
 | NDC Stencil Routes | tools/network/routes/stencils.py | Flask Blueprint registering 8 REST endpoints for Visio stencil catalog, upload, import-by-URL, library CRUD, and shape icon serving on NDC network canvas | `register_stencil_routes(bp)` (library) | HTTP responses |
+| Federal Peering Request | tools/network/federal_peering_request.py | Peering request initiation (Step 1 of `digitize-wfl-7f07`) for federal network interconnection: creates a `federal_peering_requests` record with initiating/responding operator, peering type, proposed interconnection points, and workflow status. | `create_peering_request(...)` (library) | Peering request dict |
 
 ---
 
@@ -491,3 +492,250 @@ Include with:
 | `context/iqe/queries/migration/` | 5 | MC |
 | `context/iqe/queries/aadc/` | 5 | AADC |
 | `context/iqe/queries/aimc/` | 3 | AIMC |
+
+---
+
+## NDC — PVM: Predictive Vulnerability Management (pvm-*)
+
+### Vulnerability Risk Predictor (`tools/network/vuln_predictor.py`)
+
+4-weight composite risk predictor for CVE advisories. Reads `nc_advisories` + `nc_advisory_assessments`, writes APPEND-ONLY to `nc_vuln_predictions`.
+
+| Function | Returns | Notes |
+|----------|---------|-------|
+| `predict_advisory_risk(advisory_id)` | dict | Scores and persists one advisory |
+| `predict_all_open_advisories()` | list[dict] | Scores all open/in_progress advisories |
+| `get_risk_trajectory(advisory_id, limit)` | list[dict] | Historical prediction rows ASC |
+| `get_top_risks(limit)` | list[dict] | Latest prediction per advisory DESC |
+| `_compute_scores(advisory, assessments)` | dict | Pure formula: cvss×0.35 + exploit×0.30 + lag×0.20 + trend×0.15 |
+
+**Exploit weight tiers:** exploited_in_wild=1 → 1.0; cvss≥7 → 0.5; else → 0.1
+**Confidence:** 0 assessments → 0.30; 1 → 0.40; 2 → 0.60; 3+ → 0.85
+**Model version constant:** `MODEL_VERSION = "1.0"`
+**APPEND-ONLY table:** `nc_vuln_predictions`
+
+### Attack Surface Mapper (`tools/network/attack_surface_mapper.py`)
+
+Cross-correlates Forward Networks NQE device inventory with Nessus/ACAS scan findings and CVE advisories.
+
+| Function | Returns | Notes |
+|----------|---------|-------|
+| `map_attack_surface(network_id)` | dict | Full NQE+Nessus+advisory-model-match pass |
+| `get_attack_surface(cve_id, device_name, min_score, limit)` | list[dict] | Filter `nc_attack_surface` |
+| `get_surface_summary()` | dict | Counts: total, reachable, critical, by_criticality |
+| `_surface_score(cvss, reachable, bgp_exposed)` | float | cvss/10×0.5 + reachable×0.3 + bgp_exposed×0.2 |
+| `_criticality_from_cvss(cvss)` | int | 9+ → 5; 7+ → 4; 5+ → 3; 3+ → 2; else → 1 |
+
+**UPSERT key:** `(device_name, cve_id)` in `nc_attack_surface`
+**NQE queries:** `network.devices[config]`, `network.interfaces[ip]`, `network.bgp.sessions[down]`
+
+### Vulnerability Triage Engine (`tools/network/vuln_triage_engine.py`)
+
+4-factor priority scoring with Bayesian reranking and HITL gates.
+
+| Function | Returns | Notes |
+|----------|---------|-------|
+| `score_advisories(advisory_ids)` | dict | Score + Bayesian rank; returns {scored, auto_approved, pending_hitl, queue} |
+| `get_triage_queue(status, limit)` | list[dict] | Filter `nc_triage_queue` by status |
+| `approve_advisory(advisory_id, approved_by)` | dict | Sets status=approved; audits triage_approve |
+| `defer_advisory(advisory_id, approved_by)` | dict | Sets status=deferred; audits triage_approve |
+| `_compute_priority(adv, asset_crit_norm, net_exp_norm)` | (float, dict) | Formula + rationale |
+| `_determine_status(score)` | (str, int) | <0.40 → auto-approved; ≥0.75 → HITL pending |
+
+**Priority formula:** kev×0.40 + criticality×0.25 + exposure×0.20 + urgency×0.15
+**HITL thresholds:** from `args/network_canvas_config.yaml` under `pvm:` section
+**Bayesian reranking:** `tools.intelligence.bayesian_teacher.optimal_compliance_order()` with fallback
+
+### AI Patch Planner (`tools/network/patch_planner.py`)
+
+Reads approved triage items, clusters by site, finds maintenance windows, simulates blast radius, writes APPEND-ONLY patch plans.
+
+| Function | Returns | Notes |
+|----------|---------|-------|
+| `create_patch_plan(approved_by)` | dict | {plan_id, batches, devices, plan[]} |
+| `get_patch_plans(plan_id, advisory_id, limit)` | list[dict] | Filter `nc_patch_plans` |
+| `get_plan_summary(plan_id)` | dict | Aggregates: batches, devices, by_simulation_status, risk_reduction_total |
+| `_site_from_device(name)` | str | First segment split by '-' or '.' |
+| `_find_next_window(conn, site, after_utc)` | dict|None | Projects recurrence forward past after_utc |
+| `_run_simulation(device_name)` | dict | Calls `remediation_simulator.simulate_remediation(-1)`; degrades to skipped |
+
+**Clustering:** by site prefix → one batch per site cluster per advisory
+**risk_reduction:** priority_score × surface_score
+**APPEND-ONLY table:** `nc_patch_plans`
+**Audit action:** `plan_create`
+
+### PVM Routes (`tools/network/routes/pvm.py`)
+
+Registered via `register_pvm_routes(bp)` called from `tools/network/blueprint.py`.
+
+| Route | Method | Purpose |
+|-------|--------|---------|
+| `/network/vulnerability-intelligence` | GET | 4-panel PVM dashboard page |
+| `/network/api/pvm/predict/<id>` | POST | Predict risk for one advisory |
+| `/network/api/pvm/predict-all` | POST | Predict all open advisories |
+| `/network/api/pvm/trajectory/<id>` | GET | Risk trajectory for one advisory |
+| `/network/api/pvm/top-risks` | GET | Top-N advisories by composite risk |
+| `/network/api/pvm/map-surface` | POST | Run attack surface mapping pass |
+| `/network/api/pvm/attack-surface` | GET | Query attack surface (filters: cve, device, min_score) |
+| `/network/api/pvm/surface-summary` | GET | Aggregate attack surface counts |
+| `/network/api/pvm/score-advisories` | POST | Score + triage advisories |
+| `/network/api/pvm/triage-queue` | GET | Get triage queue (filter by status) |
+| `/network/api/pvm/approve/<id>` | POST | Approve advisory for patch scheduling |
+| `/network/api/pvm/defer/<id>` | POST | Defer advisory |
+| `/network/api/pvm/create-plan` | POST | Create patch plan |
+| `/network/api/pvm/plans` | GET | List patch plans |
+| `/network/api/pvm/plan-summary/<plan_id>` | GET | Plan aggregate summary |
+
+### PVM DB Tables (Migration 221)
+
+| Table | Type | Notes |
+|-------|------|-------|
+| `nc_vuln_predictions` | APPEND-ONLY | model_version, risk_score_composite/30d/90d, trend, confidence |
+| `nc_attack_surface` | UPSERT | (device_name, cve_id) unique; surface_score, reachable, criticality |
+| `nc_triage_queue` | INSERT OR REPLACE | advisory_id unique; priority_score, rank, status, rationale_json |
+| `nc_patch_plans` | APPEND-ONLY | plan_id+batch_id+device_name; risk_reduction, simulation_status |
+| `nc_maintenance_windows` | CRUD | site, start_utc, end_utc, recurrence, blackout_days_json |
+
+### PVM IQE Collections (in `tools/iqe/adapters/ndc.py`)
+
+| Collection | Source Table | Notes |
+|-----------|-------------|-------|
+| `network.vuln_predictions` | `nc_vuln_predictions` | Ordered by risk_score_composite DESC |
+| `network.attack_surface` | `nc_attack_surface` | Ordered by surface_score DESC |
+| `network.triage_queue` | `nc_triage_queue` | Ordered by rank ASC |
+| `network.patch_plans` | `nc_patch_plans` | Ordered by created_at DESC |
+| `network.advisories` | `nc_advisories` | All advisory metadata |
+
+### PVM IQE Seed Queries (`context/iqe/queries/network/`)
+
+| File | Purpose |
+|------|---------|
+| `pvm_01_risk_trajectory.iqe` | Latest risk scores ordered by composite DESC |
+| `pvm_02_attack_surface.iqe` | Reachable attack surface entries by criticality |
+| `pvm_03_triage_queue.iqe` | Pending triage queue items ordered by rank |
+
+---
+
+## NDC — PNA: Predictive Network Analytics (pna-*)
+
+Six predictive models that forecast network health failures before they occur.
+
+### Device EOL Predictor (`tools/network/eol_predictor.py`)
+
+| Function | Purpose |
+|----------|---------|
+| `predict_eol_risk(network_id?)` | Run EOL prediction for all NQE devices vs 26-entry vendor EOL registry |
+| `get_eol_predictions(risk_tier?, limit)` | Query nc_eol_predictions, optional tier filter |
+| `get_eol_summary()` | Aggregate counts: total, by_tier, critical_count, already_eol_count |
+
+```bash
+python tools/network/eol_predictor.py --predict --json
+python tools/network/eol_predictor.py --predictions --tier critical --json
+python tools/network/eol_predictor.py --summary --json
+```
+
+### BGP Instability Predictor (`tools/network/bgp_predictor.py`)
+
+| Function | Purpose |
+|----------|---------|
+| `predict_bgp_stability(network_id?)` | Analyze BGP sessions, record events, compute flap-based stability scores |
+| `get_bgp_predictions(risk?, limit)` | Query nc_bgp_predictions ordered by stability_score ASC |
+| `get_bgp_summary()` | Aggregate: total_sessions, down_count, by_risk dict, avg_stability |
+
+```bash
+python tools/network/bgp_predictor.py --predict --json
+python tools/network/bgp_predictor.py --predictions --risk critical --json
+python tools/network/bgp_predictor.py --summary --json
+```
+
+### Compliance Drift Predictor (`tools/network/compliance_drift_predictor.py`)
+
+| Function | Purpose |
+|----------|---------|
+| `predict_compliance_drift(network_id?)` | Run 12-check STIG pattern scan, compute score drift vs last baseline |
+| `get_compliance_drift(device_name?, framework?, limit)` | Query nc_compliance_drift |
+| `get_compliance_summary()` | Aggregate: avg_compliance_score, critical_drift_count, by_framework |
+
+```bash
+python tools/network/compliance_drift_predictor.py --predict --json
+python tools/network/compliance_drift_predictor.py --drift --device rtr-01 --json
+python tools/network/compliance_drift_predictor.py --summary --json
+```
+
+### Capacity Exhaustion Predictor (`tools/network/capacity_predictor.py`)
+
+| Function | Purpose |
+|----------|---------|
+| `predict_capacity_exhaustion(network_id?)` | OLS trend over last 5 NQE counter samples → days_to_saturation |
+| `get_capacity_predictions(device_name?, min_risk, limit)` | Query nc_capacity_predictions |
+| `get_capacity_summary()` | Aggregate: saturating_within_30d, saturating_within_90d, avg_utilization |
+
+```bash
+python tools/network/capacity_predictor.py --predict --json
+python tools/network/capacity_predictor.py --predictions --min-risk 0.5 --json
+python tools/network/capacity_predictor.py --summary --json
+```
+
+### Change Failure Predictor (`tools/network/change_failure_predictor.py`)
+
+| Function | Purpose |
+|----------|---------|
+| `predict_change_failure(plan_id?)` | 5-factor failure probability: simulation + blast + concurrency + window + criticality |
+| `get_change_risks(risk_tier?, plan_id?, limit)` | Query nc_change_risk ordered by failure_probability DESC |
+| `get_change_risk_summary()` | Aggregate: critical_count, avg_failure_probability, by_tier dict |
+
+```bash
+python tools/network/change_failure_predictor.py --predict --json
+python tools/network/change_failure_predictor.py --risks --tier high --json
+python tools/network/change_failure_predictor.py --summary --json
+```
+
+### Supply Chain Risk Scorer (`tools/network/supply_chain_risk_scorer.py`)
+
+| Function | Purpose |
+|----------|---------|
+| `score_supply_chain_risk(network_id?)` | Vendor risk: NQE inventory × nc_advisories KEV/CVSS → 3-factor score |
+| `get_supply_chain_risks(vendor?, rating?, limit)` | Query nc_supply_chain_risk (latest per vendor) |
+| `get_supply_chain_summary()` | Aggregate: critical_vendors, total_kev_exposure, top_risk_vendors |
+
+```bash
+python tools/network/supply_chain_risk_scorer.py --score --json
+python tools/network/supply_chain_risk_scorer.py --risks --rating critical --json
+python tools/network/supply_chain_risk_scorer.py --summary --json
+```
+
+### PNA Routes (`tools/network/routes/pna.py`)
+
+| Route | Method | Purpose |
+|-------|--------|---------|
+| `/network/predictive-analytics` | GET | 6-panel PNA dashboard page |
+| `/api/network/predict/eol` | GET/POST | EOL predictions + trigger run |
+| `/api/network/predict/bgp` | GET/POST | BGP predictions + trigger run |
+| `/api/network/predict/compliance` | GET/POST | Compliance drift + trigger run |
+| `/api/network/predict/capacity` | GET/POST | Capacity predictions + trigger run |
+| `/api/network/predict/change` | GET/POST | Change risk predictions + trigger run |
+| `/api/network/predict/supply-chain` | GET/POST | Supply chain risk + trigger run |
+| `/api/network/predict/all` | POST | Run all 6 predictors and return aggregate |
+
+### PNA DB Tables (Migration 222)
+
+| Table | Type | Purpose |
+|-------|------|---------|
+| `nc_eol_predictions` | APPEND-ONLY | Device end-of-life risk per NQE scan |
+| `nc_bgp_events` | Mutable | Rolling BGP session up/down event log (pruned >90d) |
+| `nc_bgp_predictions` | APPEND-ONLY | BGP stability scores and flap forecasts |
+| `nc_compliance_drift` | APPEND-ONLY | STIG compliance scores and drift rates |
+| `nc_capacity_predictions` | APPEND-ONLY | Interface utilization trend and saturation date |
+| `nc_change_risk` | APPEND-ONLY | Change failure probability scores |
+| `nc_supply_chain_risk` | APPEND-ONLY | Vendor supply chain risk scores |
+
+### PNA IQE Seed Queries (`context/iqe/queries/network/`)
+
+| File | Purpose |
+|------|---------|
+| `pna_01_eol_risk.iqe` | Devices with EOL risk_score > 0.5 |
+| `pna_02_bgp_instability.iqe` | BGP sessions with stability_score < 0.75 |
+| `pna_03_compliance_drift.iqe` | Devices drifting from STIG baselines |
+| `pna_04_capacity_exhaustion.iqe` | Interfaces saturating within 90 days |
+| `pna_05_change_failure_risk.iqe` | Changes with failure_probability > 0.5 |
+| `pna_06_supply_chain_risk.iqe` | Vendors with risk_score > 0.25 |

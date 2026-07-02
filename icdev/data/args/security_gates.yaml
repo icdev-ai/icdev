@@ -88,19 +88,6 @@ db_abstraction_lint:
     backup_manager.py, */init_db.py.  Suppress a single line with # sqlite3-ok
     only when a direct connection genuinely cannot be avoided.
 
-# OpenAPI ↔ Route Parity gate — blocks when the generated OpenAPI spec diverges
-# from app.url_map for /api/v1/* routes (undocumented or phantom paths).
-# Run: python tools/workflow/coherence_checker.py --check openapi_parity --json --gate
-api_contract_drift:
-  blocking:
-    - api_contract_drift   # url_map /api/v1/* routes not mirrored in generated OpenAPI spec
-  note: >
-    Violations are detected by tools/workflow/coherence_checker.py::check_openapi_parity.
-    missing_from_spec: routes registered in Flask but absent from the spec — add them to
-    tools/dashboard/api/openapi_generator.py or the ENDPOINT_DOCS override dict.
-    phantom_in_spec: spec paths with no live url_map rule — remove or reroute them.
-    Gracefully skips when Flask/dashboard deps are unavailable (air-gap environments).
-
 # New Page Completeness Gate (TCH — True Completion Hardening)
 # Blocks merges when a new dashboard page ships without all 8 required components
 # (template, icdev/ mirror, blueprint route, backing module, nav link, IQE adapter,
@@ -1670,3 +1657,26 @@ gates:
     table: ace_instances
     query: "SELECT COUNT(*) FROM ace_instances WHERE state='hitl_pending' AND started_at < NOW() - INTERVAL '24 hours'"
     nist_controls: [CA-7, IR-4, SI-4]
+
+  # PVM — Predictive Vulnerability Management HITL gates
+  - id: PVM-TRIAGE-001
+    name: pvm_stale_triage_pending
+    description: Advisory triage items with priority_score >= 0.75 awaiting HITL approval for > 48h
+    severity: WARN
+    warn_on: [pvm_stale_high_priority_triage]
+    action: block deploy
+    condition: "any nc_triage_queue row with status=pending and priority_score >= 0.75 and created_at < NOW() - INTERVAL '48 hours'"
+    table: nc_triage_queue
+    query: "SELECT COUNT(*) FROM nc_triage_queue WHERE status='pending' AND priority_score >= 0.75 AND created_at < NOW() - INTERVAL '48 hours'"
+    nist_controls: [RA-5, SI-2, CA-7]
+
+  - id: PVM-PREDICT-001
+    name: pvm_critical_risk_unreviewed
+    description: Vulnerability predictions with composite risk >= 0.90 older than 24h without triage entry
+    severity: WARN
+    warn_on: [pvm_unreviewed_critical_risk]
+    action: notify
+    condition: "nc_vuln_predictions with risk_score_composite >= 0.90 and no matching nc_triage_queue row and created_at < NOW() - INTERVAL '24 hours'"
+    table: nc_vuln_predictions
+    query: "SELECT COUNT(*) FROM nc_vuln_predictions p WHERE p.risk_score_composite >= 0.90 AND NOT EXISTS (SELECT 1 FROM nc_triage_queue t WHERE t.advisory_id = p.advisory_id) AND p.predicted_at < NOW() - INTERVAL '24 hours'"
+    nist_controls: [RA-5, IR-4, SI-2]

@@ -166,7 +166,7 @@ class ToolRunner:
         try:
             proc = subprocess.run(
                 cmd,
-                shell=True,
+                shell=True,  # nosec B602 — command is allowlisted before reaching here
                 capture_output=True,
                 text=True,
                 cwd=str(self._root),
@@ -204,7 +204,7 @@ class ToolRunner:
                 conn.execute(
                     "INSERT INTO ace_audit_log "
                     "(instance_id, coworker_id, action, detail, actor, created_at) "
-                    "VALUES (?, ?, 'hitl_pending', ?, 'tool_runner', ?)",
+                    "VALUES (%s, %s, 'hitl_pending', %s, 'tool_runner', %s)",
                     (instance_id, coworker_id, f"RunTool: {command}", now),
                 )
                 conn.commit()
@@ -234,7 +234,7 @@ class ToolRunner:
                     """
                     INSERT INTO ace_artifacts
                         (id, instance_id, coworker_id, artifact_type, content, created_at)
-                    VALUES (?, ?, ?, 'tool_output', ?, ?)
+                    VALUES (%s, %s, %s, 'tool_output', %s, %s)
                     """,
                     (
                         artifact_id,

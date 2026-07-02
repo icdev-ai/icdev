@@ -1,0 +1,5 @@
+# IQE-BID-001: List uploaded datasets available to chart
+# Shows every CSV/XLSX/JSON dataset a user has uploaded to BI Studio.
+
+foreach d in bi.uploaded_datasets
+select d.id, d.name, d.row_count, d.classification, d.created_at

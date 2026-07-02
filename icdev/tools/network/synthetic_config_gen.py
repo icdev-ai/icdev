@@ -202,7 +202,7 @@ def generate_topology(
     Returns:
         SyntheticTopology with Cisco IOS-style config text for each device.
     """
-    rng = random.Random(seed)
+    _rng = random.Random(seed)
     topo = SyntheticTopology(topology_id=topology_id)
 
     vlans = _VLAN_NAMES[:min(len(_VLAN_NAMES), device_count + 2)]
@@ -261,7 +261,7 @@ def apply_drift(
     Returns:
         A new SyntheticTopology with drifted configs (baseline is unchanged).
     """
-    rng = random.Random(seed)
+    _rng = random.Random(seed)
     drifted = SyntheticTopology(
         topology_id=baseline.topology_id,
         device_meta=dict(baseline.device_meta),

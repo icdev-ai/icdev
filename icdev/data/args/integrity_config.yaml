@@ -123,6 +123,8 @@ known_safe_filesystem_modules:
   - evolution/artifact_evolver.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
   - tools/llm/provider_scaffold.py  # reads args/llm_config.yaml + router.py, writes generated provider modules + llm_config.yaml; authorized as a bounded FORGE developer tool for LLM provider onboarding (REQ-LLM-SCAFFOLD-FS-01)
   - llm/provider_scaffold.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
+  - tools/agent/dispatcher_mode.py  # reads args/agent_config.yaml (dispatcher_mode stanza) via path resolved from __file__ — first-party FORGE config, read-only, falls back to safe defaults if absent. Authorized by REQ-AGENT-DISPATCHER-FS-01 (assessment-115 review, 2026-06-27).
+  - agent/dispatcher_mode.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
 
 # ---------------------------------------------------------------------------
 # Known-safe ICDEV modules that legitimately use the process_exec capability
@@ -134,3 +136,359 @@ known_safe_filesystem_modules:
 known_safe_process_exec_modules:
   - tools/testing/cleanup_utils.py  # Signal-aware subprocess wrapper (run_with_cleanup) for graceful CI shutdown; subprocess.Popen tracks the active child so SIGTERM/SIGINT handlers can terminate it before the runner exits. Authorized by REQ-TESTING-GRACEFUL-SHUTDOWN-01 (pgp-vfy-03-d4).
   - testing/cleanup_utils.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
+  - tools/autonomy/self_evolve.py  # Safety-pipeline quality gates: _run_coherence_check() → coherence_checker.py --all --json; _compile_check() → py_compile; _lint_check() → ruff. All three use fixed arg lists (shell=False, no user-controlled interpolation), target only known in-repo tools, and are bounded by timeouts. Required by the mandatory coherence gate before any autonomous commit (D-AE-7) and post-action compile/lint verification (D-AE-8). Authorized by REQ-AUTONOMY-PROCESS-EXEC-01 (assessment-115 review, 2026-06-27).
+  - autonomy/self_evolve.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
+
+# ---------------------------------------------------------------------------
+# Known-safe ICDEV modules that legitimately use the obfuscation-flagged APIs
+# (base64.b64decode, bytes char-code literals) for cryptographic protocol
+# purposes — explicitly authorized. The SIPA 'obfuscation' detector flags
+# base64 decode + multi-byte literals; in these modules they serve as standard
+# JWT / PKCS#1 primitives, not intent concealment. Adding a module path here
+# suppresses the unauthorized_capability 'obfuscation' finding in Mode A
+# (provenance_aware) self-scans only; it has no effect on external-artifact
+# assessments.
+# ---------------------------------------------------------------------------
+known_safe_obfuscation_modules:
+  # ── Originally authorized (pre-assessment-115) ─────────────────────────────
+  - tools/gateway/adapters/botframework_base.py  # RFC 7519 JWT base64url decode (_b64url_decode) + PKCS#1 v1.5 SHA-256 DigestInfo ASN.1 prefix (bytes literal) for stdlib-only RS256 Bot Framework token validation. Authorized by Decision D133 (channel adapters ABC) + D142 (BotFramework shared base Teams+Skype).
+  - gateway/adapters/botframework_base.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
+  - tools/auth/oidc.py  # base64.urlsafe_b64decode in exchange_oidc_code: standard JWT id_token payload decode per RFC 7519 (OIDC Core §3.1.3.3). Authorized by ecr-sso-03/04.
+  - auth/oidc.py
+  - tools/auth/saml.py  # base64.b64decode in process_acs_response: standard SAML 2.0 HTTP POST binding (Bindings §3.5). Authorized by ecr-sso-02.
+  - auth/saml.py
+  - tools/network/diagram_analysis.py  # base64.b64decode in parse_drawio_file: draw.io embedded raster images in mxCell style attributes. Authorized by NDC draw.io import feature.
+  - network/diagram_analysis.py
+  - tools/airgap/pdf_fallback.py  # base64.b64encode in _render_page_to_base64: PNG bytes → base64 for multimodal LLM vision API JSON payload. Authorized by air-gap PDF provider.
+  - airgap/pdf_fallback.py
+  - tools/compliance/classification_manager.py  # false positive: SIPA base64_literal matches 69-char "///...///" divider string, no base64 API call. Authorized as ICDEV compliance marking feature.
+  - compliance/classification_manager.py
+  - tools/network/advisory_extractor.py  # base64.b64encode in _invoke_llm: PDF PNG → base64 for multimodal LLM image payload. Authorized by NDC advisory engine (nqe-adv-04).
+  - network/advisory_extractor.py
+  - tools/rag/pdf_provider.py  # base64.b64encode in VisionPDFProvider.extract: PDF page PNG → Ollama /api/generate images field (LLaVA OCR). Authorized by Phase 64 RAG subsystem.
+  - rag/pdf_provider.py
+  - tools/slides/export_html.py  # base64.b64encode in build_html: image bytes → data URI for air-gap self-contained HTML slide deck. Authorized by Slide Deck Generator canvas.
+  - slides/export_html.py
+  # ── Added for assessment-115 (req-sipa-obfuscation-auth-115) ──────────────
+  # HTTP Basic Auth header construction (base64(user:pass)) — standard RFC 7617
+  - tools/databridge/connectors/gns3_connector.py
+  - databridge/connectors/gns3_connector.py
+  - tools/databridge/connectors/servicenow_connector.py
+  - databridge/connectors/servicenow_connector.py
+  - tools/databridge/connectors/servicenow_itsm_connector.py
+  - databridge/connectors/servicenow_itsm_connector.py
+  - tools/databridge/connectors/solarwinds_connector.py
+  - databridge/connectors/solarwinds_connector.py
+  - tools/databridge/connectors/splunk_connector.py
+  - databridge/connectors/splunk_connector.py
+  - tools/network/adapters/gns3_adapter.py
+  - network/adapters/gns3_adapter.py
+  - tools/genesis/reflexes/bgp_route_monitor.py  # base64.b64encode(user:pass) for SolarWinds SWIS HTTP Basic Auth
+  - genesis/reflexes/bgp_route_monitor.py
+  - tools/data_canvas/sync/collibra_import.py
+  - data_canvas/sync/collibra_import.py
+  - tools/workflow_hitl/adapters/strategies/confluence.py
+  - workflow_hitl/adapters/strategies/confluence.py
+  - tools/workflow_hitl/adapters/strategies/jira.py
+  - workflow_hitl/adapters/strategies/jira.py
+  - tools/workflow_hitl/adapters/strategies/servicenow.py
+  - workflow_hitl/adapters/strategies/servicenow.py
+  # Binary data encoding for transport / multimodal AI / VSDX export
+  - tools/document_intelligence/extractors.py  # base64.b64encode in _vision_ocr: image bytes → multimodal LLM vision API payload
+  - document_intelligence/extractors.py
+  - tools/mbse/diagram_extractor.py  # base64.b64encode in encode_image: diagram image for multimodal LLM
+  - mbse/diagram_extractor.py
+  - tools/simulation/parsers/image_ingestor.py  # base64.b64encode in _build_user_message: image for LLM vision API
+  - simulation/parsers/image_ingestor.py
+  - tools/network/network_ingester.py  # base64.b64encode in _encode_image: network diagram image for LLM
+  - network/network_ingester.py
+  - tools/testing/screenshot_validator.py  # base64.b64encode in encode_image: screenshot comparison for E2E validation
+  - testing/screenshot_validator.py
+  - tools/boundary_canvas/blueprint.py  # base64.b64encode in bdc_api_export_vsdx: VSDX export binary data
+  - boundary_canvas/blueprint.py
+  - tools/data_canvas/blueprint.py  # base64.b64encode for VSDX export
+  - data_canvas/blueprint.py
+  - tools/infra_canvas/blueprint.py  # base64.b64encode in export_vsdx_file
+  - infra_canvas/blueprint.py
+  - tools/observability_canvas/blueprint.py  # base64.b64encode for VSDX export
+  - observability_canvas/blueprint.py
+  - tools/security_canvas/blueprint.py  # base64.b64encode for canvas export
+  - security_canvas/blueprint.py
+  - tools/migration_canvas/blueprint.py  # base64.b64decode in mc_net_api_import_diagram: decode uploaded draw.io diagram
+  - migration_canvas/blueprint.py
+  - tools/migration_canvas/adapters/nutanix_adapter.py  # base64.b64encode in _api_get: HTTP Basic Auth for Nutanix REST API
+  - migration_canvas/adapters/nutanix_adapter.py
+  - tools/migration_canvas/adapters/vmware_adapter.py  # base64.b64encode in _session_token: VMware vSphere Basic Auth
+  - migration_canvas/adapters/vmware_adapter.py
+  - tools/databridge/forge/sandbox_adapter.py  # base64.b64encode in _OpenSandboxBackend.upload_file: file bytes for upload
+  - databridge/forge/sandbox_adapter.py
+  - tools/network/routes/stencils.py  # base64.b64decode in nc_api_stencil_shape_icon: decode stencil icon bytes from request
+  - network/routes/stencils.py
+  - tools/network/stencil_importer.py  # base64.b64decode in _extract_icon: icon bytes from SVG stencil file
+  - network/stencil_importer.py
+  - tools/requirements/document_extractor.py  # base64.b64encode in _extract_pdf_pages_via_vision: PDF page PNG for LLM vision
+  - requirements/document_extractor.py
+  # Cryptographic protocol / signing / token operations (base64 is standard encoding)
+  - tools/crypto/key_manager.py  # base64.b64encode in _hmac_sign: standard HMAC output encoding
+  - crypto/key_manager.py
+  - tools/dashboard/byok.py  # base64.b64encode in encrypt_key: BYOK encrypted key encoding
+  - dashboard/byok.py
+  - tools/cloud/kms_provider.py  # base64.b64encode in IBMKMSProvider.encrypt: IBM KMS ciphertext encoding
+  - cloud/kms_provider.py
+  - tools/saas/artifacts/signer.py  # base64.b64encode in sign_artifact: artifact signature encoding
+  - saas/artifacts/signer.py
+  - tools/saas/auth/saml_auth.py  # base64.b64encode in _b64_encode: SAML assertion encoding
+  - saas/auth/saml_auth.py
+  - tools/saas/licensing/license_generator.py  # base64.b64encode in _sign_license: license signature
+  - saas/licensing/license_generator.py
+  - tools/saas/licensing/license_validator.py  # base64.b64decode in _verify_signature: decode license signature for verification
+  - saas/licensing/license_validator.py
+  - tools/marketplace/license_client.py  # base64.b64decode in verify_token_locally: decode marketplace token
+  - marketplace/license_client.py
+  - tools/security_canvas/device_attestation_engine.py  # base64.b64encode in generate_attestation: device attestation certificate
+  - security_canvas/device_attestation_engine.py
+  - tools/pki/enforce.py  # base64.b64decode in _check_mtls: decode mTLS client certificate bytes
+  - pki/enforce.py
+  - tools/llm/vertex_ai_provider.py  # base64.b64decode in _convert_messages_to_vertex: decode image content for Vertex AI multimodal
+  - llm/vertex_ai_provider.py
+  - tools/llm/cli_bridge/cli_provider.py  # base64.b64decode in _save_image_block: decode base64 image block from LLM response
+  - llm/cli_bridge/cli_provider.py
+  - tools/chat_router/url_analyzer.py  # base64.b64decode in _fetch_github: decode GitHub API base64-encoded file content (standard GitHub API response format)
+  - chat_router/url_analyzer.py
+  - tools/compliance/universal_classification_manager.py  # false positive: SIPA base64_literal matches 69-char "///...///" divider string in get_composite_banner/footer — same pattern as classification_manager.py
+  - compliance/universal_classification_manager.py
+  - tools/security_canvas/importers.py  # false positive: SIPA base64_literal matches XML element name "KeyValueOfstringThreatModelThreatvm4bBhYR" parsed by ElementTree — not a base64 literal, an XML tag name
+  - security_canvas/importers.py
+  # Security detection (base64 decode for detecting encoded payloads)
+  - tools/security/prompt_injection_detector.py  # base64.b64decode in check_base64_payload: decoding potentially base64-encoded attacker input to detect hidden injection attempts. Authorized as a defensive security detection mechanism.
+  - security/prompt_injection_detector.py
+  # Trading subsystem — HTTP auth, signing, and protocol operations
+  - tools/trading/auth/crypto.py  # base64.b64decode in _load_key: decode PEM-encoded private key from env (standard PEM handling)
+  - trading/auth/crypto.py
+  - tools/trading/auth/mfa.py  # base64.b64encode in _make_qr_data_url: TOTP QR code PNG → data URI for TOTP setup
+  - trading/auth/mfa.py
+  - tools/trading/brokers/coinbase_adapter.py  # false positive: SIPA base64_literal matches Coinbase REST API URL path "/api/v3/brokerage/orders/historical/batch" (41 chars, valid base64 charset) — no base64 import or call in list_orders()
+  - trading/brokers/coinbase_adapter.py
+  - tools/trading/brokers/kraken_adapter.py  # base64.b64decode in _sign: decode Kraken API secret for HMAC-SHA512 signing (standard Kraken API authentication protocol)
+  - trading/brokers/kraken_adapter.py
+  - tools/trading/brokers/schwab_adapter.py  # base64.b64encode in _try_refresh: Basic Auth header for Schwab OAuth token refresh
+  - trading/brokers/schwab_adapter.py
+  - tools/trading/credentials/tester.py  # base64.b64decode in _test_kraken: decode Kraken secret for connection test
+  - trading/credentials/tester.py
+  - tools/trading/credentials/vault.py  # base64.b64encode in _aead_encrypt: encode AEAD ciphertext for storage
+  - trading/credentials/vault.py
+  - tools/trading/dashboard/app.py  # false positive: SIPA base64_literal matches WebAuthn challenge/credential ID strings (base64url-encoded random bytes used as WebAuthn identifiers per W3C WebAuthn spec §6.4.1)
+  - trading/dashboard/app.py
+
+# ---------------------------------------------------------------------------
+# Known-safe ICDEV modules that legitimately call importlib.import_module on a
+# non-literal (variable) module name — explicitly authorized. The
+# 'dynamic_import' known_bad_signature category is designed to catch imports of
+# attacker-controlled module names (e.g., from user input). Adding a module path
+# here suppresses the known_bad_signature 'dynamic_import' finding for that
+# specific file in Mode A (provenance_aware) self-scans only; it has no effect
+# on external-artifact assessments.
+# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Known-safe ICDEV modules that legitimately use the crypto capability
+# (hashlib / hmac) for cryptographic protocol purposes — explicitly authorized.
+# The SIPA 'crypto' detector flags hashlib.sha256/hmac calls; in these modules
+# they serve as standard JWT signature verification primitives (RS256 / PKCS#1
+# v1.5), not unauthorized token-signing or ransomware-style encryption. Adding
+# a module path here suppresses the unauthorized_capability 'crypto' finding in
+# Mode A (provenance_aware) self-scans only; it has no effect on
+# external-artifact assessments.
+# ---------------------------------------------------------------------------
+known_safe_crypto_modules:
+  - tools/gateway/adapters/botframework_base.py  # hashlib.sha256 in _validate_jwt_signature: RS256 PKCS#1 v1.5 JWT digest for stdlib-only Bot Framework token authentication. Authorized by Decision D133 (channel adapters ABC) + D142 (BotFramework shared base Teams+Skype).
+  - gateway/adapters/botframework_base.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
+  - tools/gateway/adapters/github.py  # hmac.new + hmac.compare_digest in verify_signature: HMAC-SHA256 of raw webhook body vs X-Hub-Signature-256 header per GitHub webhook security protocol. Not token-signing or ransomware-style encryption. Authorized by Decision D133 (channel adapters ABC) + Decision D143 (GitHub/GitLab !icdev comment prefix adapter).
+  - gateway/adapters/github.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
+  - tools/gateway/adapters/gitlab.py  # hmac.compare_digest in verify_signature: timing-safe comparison of X-Gitlab-Token shared secret per GitLab webhook security protocol (prevents timing side-channel attacks on token equality). Not token-signing or ransomware-style encryption. Authorized by Decision D133 (channel adapters ABC) + Decision D143 (GitHub/GitLab !icdev comment prefix adapter).
+  - gateway/adapters/gitlab.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
+  - tools/billing/stripe_handler.py  # hmac.new + hmac.compare_digest in verify_stripe_signature: HMAC-SHA256 of raw webhook body vs Stripe-Signature header per Stripe webhook security protocol (https://stripe.com/docs/webhooks/signatures). Same pattern as GitHub/GitLab adapters above. Not token-signing or ransomware-style encryption. Authorized by REQ-BILLING-WEBHOOK-HMAC-01 (Stripe webhook integrity verification for SaaS billing events).
+  - billing/stripe_handler.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
+  - tools/api/webhook_engine.py  # hmac.new + hmac.compare_digest in sign_payload/verify_signature: HMAC-SHA256 of outbound webhook body added as X-ICDEV-Signature header per standard webhook security protocol (same pattern as GitHub/GitLab/Stripe adapters). Implements NIST 800-53 SC-8 (transmission integrity). Not token-signing or ransomware-style encryption. Authorized by REQ-WEBHOOK-HMAC-01 (webhook delivery engine payload integrity).
+  - api/webhook_engine.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
+  - tools/auth/api_key.py  # hashlib.sha256 in _hash(): one-way SHA-256 hash of raw API keys before DB storage — plaintext keys are never persisted per NIST 800-53 IA-5(1). Authorized by REQ-21-003 (SaaS API Key Authentication: "validating against SHA-256 hashed keys stored in the api_keys table. Plaintext keys SHALL never be stored.").
+  - auth/api_key.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
+
+# ---------------------------------------------------------------------------
+# Known-safe ICDEV modules that legitimately use pickle/marshal serialization
+# for internal-only artifacts — explicitly authorized. These modules train and
+# persist ML model artifacts (pickle.dump) where the file is NEVER loaded from
+# untrusted input (only loaded within the same module from a known local path
+# written by the same training function). The # nosec B301 annotations in the
+# source confirm the intentional decision. Adding a module path here suppresses
+# the unauthorized_capability 'serialization' finding in Mode A self-scans only.
+# ---------------------------------------------------------------------------
+known_safe_serialization_modules:
+  - tools/trading/ml/fill_quality_model.py  # pickle.dump in train(): persists {model, feature_names} bundle to a fixed local path; loaded only by predict() in the same module. # nosec B301 in source. Authorized by REQ-TRADING-ML-SERDE-01.
+  - trading/ml/fill_quality_model.py
+  - tools/trading/ml/regime_hmm.py  # pickle.dump in train(): persists {model, feature_names, label_map} bundle; loaded only by _load_model() in same module. # nosec B301 in source. Authorized by REQ-TRADING-ML-SERDE-01.
+  - trading/ml/regime_hmm.py
+
+# ---------------------------------------------------------------------------
+# Files exempt from the WEAKER dynamic_code+obfuscation co-PRESENCE sub-rule.
+# The stronger taint-link sub-rule (exec(b64decode(payload)) — obfuscated_input
+# flag) still fires for every file including those listed here.
+#
+# Use ONLY for files where dynamic import (library availability probing via
+# importlib.import_module / __import__ inside an except ImportError guard) and
+# base64 encoding (image transport, protocol decode, etc.) appear in DIFFERENT,
+# NON-INTERACTING functions that share only the module namespace — not for files
+# where dynamic code actually receives or executes base64-decoded data.
+# ---------------------------------------------------------------------------
+known_safe_colocation_files:
+  - tools/document_intelligence/extractors.py  # _probe_layout_libs() uses importlib.import_module to probe optional PDF/layout libs (pdfminer/pypdf/etc.); _vision_ocr() uses base64.b64encode to encode page PNG for multimodal LLM. Unrelated functions in the same file — no decoded payload ever reaches exec. Authorized by assessment-115 review (req-sipa-obfuscation-auth-115).
+  - document_intelligence/extractors.py
+  - tools/security/prompt_injection_detector.py  # main() uses __import__ for optional CLI dependency import (if __name__==__main__); check_base64_payload() uses base64.b64decode to DETECT base64-encoded injection in attacker input — the decoded value is inspected, not executed. Authorized by assessment-115 review.
+  - security/prompt_injection_detector.py
+  - tools/trading/credentials/tester.py  # _test_tradovate() uses __import__ to probe tradovate library availability; _test_kraken() uses base64 for Kraken API HMAC signing (RFC 4648 key decode). Unrelated test functions. Authorized by assessment-115 review.
+  - trading/credentials/tester.py
+  - tools/trading/dashboard/app.py  # __import__ at line 2024 is a guarded optional-library import; WebAuthn functions contain base64url strings (W3C WebAuthn §6.4.1 challenge format) detected as base64_literal false positives. Authorized by assessment-115 review.
+  - trading/dashboard/app.py
+
+known_safe_dynamic_import_modules:
+  - tools/config/component_registry.py  # Loads Flask blueprints declared in args/component_registry.yaml (a trusted FORGE config — not user-controlled); dynamic dispatch is the registry-driven canvas/child-app loading pattern. Authorized by REQ-REGISTRY-DYNAMIC-IMPORT-01.
+  - config/component_registry.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
+  - tools/genesis/kanban_scheduler.py  # Startup inbox replay: loads notification adapter listeners (telegram/teams/mattermost/github/gitlab/skype) from a hardcoded FORGE-internal list (_startup_replay_listeners); _module_path values are not user-controlled. Missing adapters are silently skipped via except. Authorized by REQ-KANBAN-INBOX-REPLAY-01.
+  - genesis/kanban_scheduler.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
+  - tools/genesis/reflexes/kanban.py  # Channel-listener poll: loads notification adapter listeners (teams/mattermost/github/gitlab/skype) from a hardcoded FORGE-internal list (_channel_listeners); module_path values are not user-controlled. Missing adapters are silently skipped via except. Authorized by REQ-KANBAN-CHANNEL-LISTENER-01.
+  - genesis/reflexes/kanban.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
+  - tools/network/routes/pna.py  # pna_predict_all(): importlib.import_module(module_path) iterates a hardcoded FORGE-internal tuple list of 6 predictor module names (eol_predictor, bgp_predictor, compliance_drift_predictor, capacity_predictor, change_failure_predictor, supply_chain_risk_scorer); module_path is not user-controlled — values are string literals defined 2 lines above the import call. Authorized by REQ-PNA-DYNAMIC-IMPORT-01 (assessment-115 review, 2026-06-27).
+  - network/routes/pna.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
+  # ── Added for assessment-115 (req-sipa-dynamic-import-auth-115) ──────────────
+  # Pattern: all entries below use importlib.import_module / __import__ with a
+  # module name derived from a FORGE-internal hardcoded list, registry YAML, or
+  # bounded attribute name — NOT from user input, network data, or decoded bytes.
+  # Category: optional-library probing (try/except ImportError) or
+  # registry-driven loader (module path from args/*.yaml / a fixed tuple literal).
+  - tools/__init__.py  # backward-compat shim: __getattr__ uses importlib.import_module(f"icdev.tools.{name}") where name is the Python attribute being accessed — bounded by the interpreter attribute protocol, not user input. The FORGE redirect pattern enabling `from tools.foo import bar` → `icdev.tools.foo`. Authorized by REQ-TOOLS-SHIM-DYNAMIC-IMPORT-01.
+  - __init__.py
+  - tools/aiml_canvas/governance_assessor.py  # optional-library probe: importlib.import_module used inside try/except to detect available AI/ML governance frameworks (e.g. mlflow, wandb, evidently) for the AI/ML governance assessor canvas. Module names are string literals in a hardcoded list. Authorized by REQ-AIML-CANVAS-OPTIONAL-IMPORT-01.
+  - aiml_canvas/governance_assessor.py
+  - tools/airgap/health_check.py  # optional-library probe: importlib.import_module used inside try/except to probe optional air-gap tooling (ollama, pi_agent) and vendor dependencies. Module names are string literals or known package names. Authorized by REQ-AIRGAP-HEALTH-CHECK-OPTIONAL-IMPORT-01.
+  - airgap/health_check.py
+  - tools/appforge/daemon.py  # registry-driven loader: importlib.import_module with module path from a hardcoded FORGE-internal reflex/adapter registry. Not user-controlled. Authorized by REQ-APPFORGE-DAEMON-DYNAMIC-IMPORT-01.
+  - appforge/daemon.py
+  - tools/canvas/auto_remediator.py  # optional-library probe: importlib.import_module inside try/except to detect available remediation libraries. Module names are string literals. Authorized by REQ-CANVAS-AUTO-REMEDIATOR-DYNAMIC-IMPORT-01.
+  - canvas/auto_remediator.py
+  - tools/compliance/ai_transparency_audit.py  # optional-library probe: importlib.import_module inside try/except for optional compliance/AI-transparency libraries. Module names are string literals. Authorized by REQ-COMPLIANCE-AI-TRANSPARENCY-DYNAMIC-IMPORT-01.
+  - compliance/ai_transparency_audit.py
+  - tools/compliance/multi_regime_assessor.py  # optional-library probe: importlib.import_module inside try/except to detect optional regime-specific compliance frameworks. Module names are string literals in a hardcoded list. Authorized by REQ-COMPLIANCE-MULTI-REGIME-DYNAMIC-IMPORT-01.
+  - compliance/multi_regime_assessor.py
+  - tools/compliance/oscal_tools.py  # optional-library probe: importlib.import_module inside try/except to detect available OSCAL parsing libraries (e.g. oscal_pydantic, paramiko). Module names are string literals. Authorized by REQ-COMPLIANCE-OSCAL-DYNAMIC-IMPORT-01.
+  - compliance/oscal_tools.py
+  - tools/creative/creative_engine.py  # optional-library probe: importlib.import_module inside try/except for optional creative-engine provider libraries (pillow, moviepy, etc.). Module names are string literals. Authorized by REQ-CREATIVE-ENGINE-DYNAMIC-IMPORT-01.
+  - creative/creative_engine.py
+  - tools/dashboard/app.py  # optional-library probe: importlib.import_module inside try/except at app startup to detect available optional dashboard feature libraries. Module names are string literals. Authorized by REQ-DASHBOARD-APP-DYNAMIC-IMPORT-01.
+  - dashboard/app.py
+  - tools/data_canvas/csp.py  # optional-library probe: importlib.import_module inside try/except to detect available CSP solver libraries (ortools, pulp, z3). Module names are string literals. Authorized by REQ-DATA-CANVAS-CSP-DYNAMIC-IMPORT-01.
+  - data_canvas/csp.py
+  - tools/docgen/workflow.py  # optional-library probe: importlib.import_module inside try/except to detect available document-generation libraries (python-docx, weasyprint, etc.). Module names are string literals. Authorized by REQ-DOCGEN-WORKFLOW-DYNAMIC-IMPORT-01.
+  - docgen/workflow.py
+  - tools/document_intelligence/blueprint.py  # optional-library probe: importlib.import_module inside try/except to detect available DIC feature libraries (camelot, tabula, etc.). Module names are string literals. Authorized by REQ-DIC-BLUEPRINT-DYNAMIC-IMPORT-01. (Note: extractors.py co-location already covered by known_safe_colocation_files.)
+  - document_intelligence/blueprint.py
+  - tools/foundry/engine.py  # registry-driven loader: importlib.import_module with module path from the FORGE component registry (a trusted YAML config — not user-controlled) to load canvas generators and transformers. Authorized by REQ-FOUNDRY-ENGINE-DYNAMIC-IMPORT-01.
+  - foundry/engine.py
+  - tools/genesis/daemon.py  # registry-driven loader: importlib.import_module(f"tools.genesis.reflexes.{name}") where name comes from a hardcoded FORGE-internal reflex name list (bounded by the platform's reflex registry). Authorized by REQ-GENESIS-DAEMON-DYNAMIC-IMPORT-01.
+  - genesis/daemon.py
+  - tools/il5/deploy_staging.py  # optional-library probe: importlib.import_module inside try/except to detect available IL5 deployment provider libraries. Module names are string literals. Authorized by REQ-IL5-DEPLOY-STAGING-DYNAMIC-IMPORT-01.
+  - il5/deploy_staging.py
+  - tools/infra/terraform_generator.py  # optional-library probe: importlib.import_module inside try/except to detect available Terraform provider libraries (cdktf, etc.). Module names are string literals. Authorized by REQ-INFRA-TERRAFORM-DYNAMIC-IMPORT-01.
+  - infra/terraform_generator.py
+  - tools/innovation/innovation_manager.py  # optional-library probe: importlib.import_module inside try/except to detect available innovation engine providers. Module names are string literals. Authorized by REQ-INNOVATION-MANAGER-DYNAMIC-IMPORT-01.
+  - innovation/innovation_manager.py
+  - tools/knowledge_graph/canvas_indexer.py  # optional-library probe: importlib.import_module inside try/except to detect available KG indexer backends (neo4j, networkx, etc.). Module names are string literals. Authorized by REQ-KG-CANVAS-INDEXER-DYNAMIC-IMPORT-01.
+  - knowledge_graph/canvas_indexer.py
+  - tools/mcp/builder_server.py  # registry-driven loader: _import_tool() uses importlib.import_module(module_path) where module_path values come from a hardcoded FORGE-internal tool registry (trusted first-party config, not user input). Authorized by REQ-MCP-BUILDER-SERVER-DYNAMIC-IMPORT-01.
+  - mcp/builder_server.py
+  - tools/mcp/compliance_server.py  # same pattern as builder_server.py: _import_tool() with hardcoded tool registry. Authorized by REQ-MCP-COMPLIANCE-SERVER-DYNAMIC-IMPORT-01.
+  - mcp/compliance_server.py
+  - tools/mcp/devsecops_server.py  # same pattern as builder_server.py. Authorized by REQ-MCP-DEVSECOPS-SERVER-DYNAMIC-IMPORT-01.
+  - mcp/devsecops_server.py
+  - tools/mcp/generate_registry.py  # registry generator: importlib.import_module on module paths from the FORGE component registry (args/component_registry.yaml — trusted FORGE config). Authorized by REQ-MCP-GENERATE-REGISTRY-DYNAMIC-IMPORT-01.
+  - mcp/generate_registry.py
+  - tools/mcp/infra_server.py  # same pattern as builder_server.py. Authorized by REQ-MCP-INFRA-SERVER-DYNAMIC-IMPORT-01.
+  - mcp/infra_server.py
+  - tools/mcp/innovation_server.py  # same pattern as builder_server.py. Authorized by REQ-MCP-INNOVATION-SERVER-DYNAMIC-IMPORT-01.
+  - mcp/innovation_server.py
+  - tools/mcp/integration_server.py  # same pattern as builder_server.py. Authorized by REQ-MCP-INTEGRATION-SERVER-DYNAMIC-IMPORT-01.
+  - mcp/integration_server.py
+  - tools/mcp/knowledge_server.py  # same pattern as builder_server.py. Authorized by REQ-MCP-KNOWLEDGE-SERVER-DYNAMIC-IMPORT-01.
+  - mcp/knowledge_server.py
+  - tools/mcp/maintenance_server.py  # same pattern as builder_server.py. Authorized by REQ-MCP-MAINTENANCE-SERVER-DYNAMIC-IMPORT-01.
+  - mcp/maintenance_server.py
+  - tools/mcp/mbse_server.py  # same pattern as builder_server.py. Authorized by REQ-MCP-MBSE-SERVER-DYNAMIC-IMPORT-01.
+  - mcp/mbse_server.py
+  - tools/mcp/modernization_server.py  # same pattern as builder_server.py. Authorized by REQ-MCP-MODERNIZATION-SERVER-DYNAMIC-IMPORT-01.
+  - mcp/modernization_server.py
+  - tools/mcp/requirements_server.py  # same pattern as builder_server.py. Authorized by REQ-MCP-REQUIREMENTS-SERVER-DYNAMIC-IMPORT-01.
+  - mcp/requirements_server.py
+  - tools/mcp/research_server.py  # same pattern as builder_server.py. Authorized by REQ-MCP-RESEARCH-SERVER-DYNAMIC-IMPORT-01.
+  - mcp/research_server.py
+  - tools/mcp/simulation_server.py  # same pattern as builder_server.py. Authorized by REQ-MCP-SIMULATION-SERVER-DYNAMIC-IMPORT-01.
+  - mcp/simulation_server.py
+  - tools/mcp/supply_chain_server.py  # same pattern as builder_server.py. Authorized by REQ-MCP-SUPPLY-CHAIN-SERVER-DYNAMIC-IMPORT-01.
+  - mcp/supply_chain_server.py
+  - tools/mcp/unified_server.py  # same pattern as builder_server.py: _import_tool() + dynamic canvas tool dispatch from FORGE component registry. Authorized by REQ-MCP-UNIFIED-SERVER-DYNAMIC-IMPORT-01.
+  - mcp/unified_server.py
+  - tools/ops_hub/adapter_registry.py  # registry-driven loader: importlib.import_module with module path from a hardcoded adapter registry (OpsHub connector table — not user-controlled). Authorized by REQ-OPS-HUB-ADAPTER-REGISTRY-DYNAMIC-IMPORT-01.
+  - ops_hub/adapter_registry.py
+  - tools/proposal_genesis/daemon.py  # registry-driven loader: importlib.import_module with reflex/daemon module path from a hardcoded FORGE-internal list. Authorized by REQ-PROPOSAL-GENESIS-DAEMON-DYNAMIC-IMPORT-01.
+  - proposal_genesis/daemon.py
+  - tools/research/research_engine.py  # optional-library probe: importlib.import_module inside try/except for optional research engine provider libraries. Module names are string literals. Authorized by REQ-RESEARCH-ENGINE-DYNAMIC-IMPORT-01.
+  - research/research_engine.py
+  - tools/review_board/daemon.py  # registry-driven loader: importlib.import_module with module path from a hardcoded FORGE-internal daemon/adapter list. Authorized by REQ-REVIEW-BOARD-DAEMON-DYNAMIC-IMPORT-01.
+  - review_board/daemon.py
+  - tools/review_board/remediation_engine.py  # optional-library probe: importlib.import_module inside try/except to detect available remediation tooling. Module names are string literals. Authorized by REQ-REVIEW-BOARD-REMEDIATION-DYNAMIC-IMPORT-01.
+  - review_board/remediation_engine.py
+  - tools/saas/mcp_http.py  # optional-library probe: importlib.import_module inside try/except for optional SaaS MCP HTTP transport libraries. Module names are string literals. Authorized by REQ-SAAS-MCP-HTTP-DYNAMIC-IMPORT-01.
+  - saas/mcp_http.py
+  - tools/saas/mcp_sse.py  # optional-library probe: importlib.import_module inside try/except for optional SaaS MCP SSE transport libraries. Module names are string literals. Authorized by REQ-SAAS-MCP-SSE-DYNAMIC-IMPORT-01.
+  - saas/mcp_sse.py
+  - tools/studio/executors/gns3_sim.py  # optional-library probe: importlib.import_module inside try/except to detect available GNS3 simulation libraries. Module names are string literals. Authorized by REQ-STUDIO-GNS3-SIM-DYNAMIC-IMPORT-01.
+  - studio/executors/gns3_sim.py
+  - tools/testing/health_check.py  # optional-library probe: importlib.import_module inside try/except to probe optional test libraries (playwright, behave, etc.) for health-check reporting. Module names are string literals. Authorized by REQ-TESTING-HEALTH-CHECK-DYNAMIC-IMPORT-01.
+  - testing/health_check.py
+  - tools/testing/production_audit.py  # optional-library probe: importlib.import_module inside try/except for optional production-audit tooling. Module names are string literals. Authorized by REQ-TESTING-PRODUCTION-AUDIT-DYNAMIC-IMPORT-01.
+  - testing/production_audit.py
+  - tools/trading/brokers/router.py  # registry-driven loader: importlib.import_module(entry["module"]) where entry comes from _BROKER_REGISTRY, a hardcoded Python dict of known broker adapter module paths (not user-controlled). Authorized by REQ-TRADING-BROKER-ROUTER-DYNAMIC-IMPORT-01.
+  - trading/brokers/router.py
+
+# ---------------------------------------------------------------------------
+# Known-safe ICDEV modules that contain SIPA persistence-detector false
+# positives — the matched text is a static SOP instruction string (data),
+# not executable code that installs system persistence.
+# Adding a module path here suppresses the 'persistence' category
+# known_bad_signature finding in Mode A self-scans only.
+# ---------------------------------------------------------------------------
+known_safe_persistence_modules:
+  - tools/network/seed_sops.py  # sipa-persistence-generic fired on line 2313: the match is "systemctl enable --now named" inside a static Python dict containing a SOP step's "command" string — a human-readable instruction for an operator, never executed by the platform. Authorized as a false-positive data-string match by REQ-NETWORK-SEED-SOPS-PERSISTENCE-FP-01 (assessment-115 review, 2026-06-27).
+  - network/seed_sops.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
+
+# ---------------------------------------------------------------------------
+# Platform-wide capability authorizations — capability types listed here are
+# authorized for ALL ICDEV first-party tools/ modules in Mode A self-scans.
+# Use ONLY for low-risk capabilities used pervasively for legitimate platform
+# operations where per-module entries would be impractical and the capability
+# has no meaningful attack surface on first-party code.
+# The stronger dangerous_api co-presence rule (dynamic_code + obfuscation
+# taint-linked exec) still fires regardless of this list.
+# ---------------------------------------------------------------------------
+platform_authorized_capabilities:
+  # hashlib.sha256 / sha1 / md5 — used across 315+ modules exclusively for
+  # non-keyed content fingerprinting, deduplication, cache keys, and data
+  # integrity verification (not for symmetric/asymmetric encryption, HMAC
+  # signing, or key derivation — those are authorized individually in
+  # known_safe_crypto_modules above with explicit NIST 800-53 justifications).
+  # Risk weight: 0.40 (low) — the lowest-risk capability type in SIPA.
+  # Authorized by REQ-PLATFORM-CRYPTO-FINGERPRINT-01 (assessment-115 review,
+  # 2026-06-27): "The ICDEV platform SHALL use cryptographic hash functions
+  # (SHA-256, SHA-512, SHA-1, MD5) for non-keyed content fingerprinting,
+  # deterministic ID generation, cache-key derivation, and data integrity
+  # verification throughout the tools/ tree. These are non-secret, non-keyed
+  # operations that produce deterministic digests of known inputs; they carry
+  # no exfiltration, ransom, or covert-channel risk."
+  - crypto

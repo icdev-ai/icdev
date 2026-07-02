@@ -1,0 +1,6 @@
+# IQE-BID-002: Knowledge Graph growth over time for a chosen project
+# Chart-ready time series (nodes_added, edges_added, cumulative_*) for the
+# built-in self-awareness graph — pass any graph_id as the collection arg.
+
+foreach t in bi.kg_timeseries("kg-icdev-self-awareness")
+select t.date, t.nodes_added, t.edges_added, t.cumulative_nodes, t.cumulative_edges

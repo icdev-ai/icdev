@@ -194,6 +194,7 @@ _ALLOWLIST_KEY: Dict[str, str] = {
     "process_exec": "known_safe_process_exec_modules",
     "filesystem": "known_safe_filesystem_modules",
     "env_secret": "known_safe_env_vars",
+    "dynamic_import": "known_safe_dynamic_import_modules",
 }
 
 _ALLOWLIST_VERIFY: Dict[str, str] = {
@@ -216,6 +217,13 @@ _ALLOWLIST_VERIFY: Dict[str, str] = {
         "import yaml; d=yaml.safe_load(open('args/integrity_config.yaml')); "
         "keys=d.get('known_safe_env_vars') or []; "
         "print('AUTHORIZED' if '{rel_path}' in keys else 'NOT AUTHORIZED')"
+        "\""
+    ),
+    "dynamic_import": (
+        "python -c \""
+        "import yaml; d=yaml.safe_load(open('args/integrity_config.yaml')); "
+        "mods=d.get('known_safe_dynamic_import_modules') or []; "
+        "print('AUTHORIZED' if any('{rel_path}' in m for m in mods) else 'NOT AUTHORIZED')"
         "\""
     ),
 }

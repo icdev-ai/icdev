@@ -42,3 +42,32 @@ HANDOFF_SESSION_STATES: list[str] = ["open", "closed"]
 HANDOFF_ITEM_KINDS: list[str] = ["interview", "generated_doc", "orphan_flag"]
 
 HANDOFF_ITEM_STATES: list[str] = ["pending", "answered", "generated"]
+
+# ── Tech Writer ───────────────────────────────────────────────────────────────
+
+TEMPLATE_TYPES: list[str] = [
+    "STANDARD_GUIDE",
+    "SOP",
+    "RUNBOOK",
+    "ARCH_NETWORK",
+    "ARCH_APPLICATION",
+    "ARCH_SYSTEM",
+]
+
+WRITEGUARD_MODES: list[str] = [
+    "default",
+    "standard_guide",
+    "architecture_doc",
+    "sop_runbook",
+    "policy_language",
+    "runbook",
+]
+
+TEMPLATE_TYPE_TO_WRITEGUARD_MODE: dict[str, str] = {
+    "STANDARD_GUIDE": "standard_guide",
+    "SOP": "sop_runbook",
+    "RUNBOOK": "sop_runbook",
+    "ARCH_NETWORK": "architecture_doc",
+    "ARCH_APPLICATION": "architecture_doc",
+    "ARCH_SYSTEM": "architecture_doc",
+}

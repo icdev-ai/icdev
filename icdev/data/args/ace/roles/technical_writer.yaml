@@ -49,8 +49,7 @@ steps:
 communication:
   protocol: a2a
   listen_topics:
-    - task.assigned
-    - doc.review_feedback
+    - task.assigned              # bootstrap only — doc.review_feedback handled by reactive step trigger
   emit_topics:
     - doc.draft_ready
     - doc.report_ready
@@ -63,3 +62,11 @@ tool_permissions:
   - Glob
   - icdev.tools.ace.llm_step.invoke
 genesis_reflex: documentation
+rules:
+  - "Never document a feature without first verifying the implementation matches the described behavior."
+  - "Never omit version numbers from documentation — 'latest' becomes stale immediately after the next release."
+  - "Never publish documentation that includes live credentials, API keys, or internal hostnames."
+  - "Never produce a how-to guide without testing each step against the actual system."
+  - "Never strip mandatory classification markings, CUI banners, or CAPCO portion marks from technical documents."
+  - "Never present optional configuration as mandatory (SHOULD vs SHALL) without checking the authoritative spec."
+  - "Never close a documentation ticket without verifying the corresponding code PR has been merged."

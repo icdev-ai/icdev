@@ -867,6 +867,30 @@ def _is_safe_dynamic_import(file_path: Optional[str], safe_set: frozenset) -> bo
     return any(normalised.endswith(m.replace("\\", "/")) for m in safe_set)
 
 
+def _load_safe_persistence_modules() -> frozenset:
+    """Load known_safe_persistence_modules from integrity_config.yaml.
+
+    Returns module paths whose 'persistence' category known_bad_signature
+    findings are suppressed in Mode A self-scans only.  Intended for files
+    where the persistence-detector rule fires on a static string that contains
+    persistence-related text (e.g. SOP command strings) but the Python module
+    itself never executes any persistence mechanism.
+    """
+    try:
+        data = _load_config()
+        return frozenset(data.get("known_safe_persistence_modules") or [])
+    except Exception:
+        return frozenset()
+
+
+def _is_safe_persistence_module(file_path: Optional[str], safe_set: frozenset) -> bool:
+    """True when file_path matches an entry in known_safe_persistence_modules."""
+    if not file_path or not safe_set:
+        return False
+    normalised = Path(file_path).as_posix()
+    return any(normalised.endswith(m.replace("\\", "/")) for m in safe_set)
+
+
 def _normalize_signatures(hits: list[dict], root: Path, engine: str) -> list[dict]:
     """Unified signature hits -> integrity_findings tuples (known_bad_signature).
 

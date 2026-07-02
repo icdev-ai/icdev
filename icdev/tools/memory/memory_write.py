@@ -59,7 +59,8 @@ def write_to_db(
     Normalizes content before hashing so case/whitespace variants deduplicate.
 
     Args:
-        tier: Memory tier — 'episodic', 'semantic', 'procedural' (migration 226).
+        tier: Memory tier — 'episodic' (dated events), 'semantic' (durable facts),
+              'procedural' (instructions/skills). Added by migration 226.
         session_ref: agent_loop_sessions.session_id that produced this entry.
         trace_id: OTel span / agent_loop correlation ID (migration 229).
 
@@ -94,6 +95,8 @@ def write_to_db(
         return {"id": existing[0], "status": "duplicate_merged", "fingerprint": fingerprint}
 
     _tier = tier if tier in VALID_TIERS else "episodic"
+    # tier, session_ref columns added by migration 226; trace_id by migration 229.
+    # Fall back gracefully when migration is not yet applied.
     try:
         c.execute(
             "INSERT INTO memory_entries "
@@ -105,6 +108,7 @@ def write_to_db(
         )
     except Exception:
         try:
+            # trace_id column missing (migration 229 not yet applied)
             c.execute(
                 "INSERT INTO memory_entries "
                 "(content, type, importance, content_hash, user_id, tenant_id, source, "
@@ -114,6 +118,7 @@ def write_to_db(
                  1.0, classification, compartment, _tier, session_ref),
             )
         except Exception:
+            # Migration 226 also not yet applied
             c.execute(
                 "INSERT INTO memory_entries "
                 "(content, type, importance, content_hash, user_id, tenant_id, source, "
