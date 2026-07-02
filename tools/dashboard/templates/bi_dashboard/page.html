@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+{# CUI // SP-CTI — BI Dashboard Canvas: NL-driven chart/dashboard builder #}
+{% block content %}
+<style>
+  .bid-wrap{max-width:1200px;margin:0 auto;padding:8px 4px 60px;color:#e2e8f0;}
+  .bid-wrap h1{font-size:22px;margin:0 0 2px;}
+  .bid-sub{color:#94a3b8;font-size:13px;margin-bottom:18px;}
+  .bid-panel{background:#0f172a;border:1px solid #1e293b;border-radius:12px;padding:20px;margin-bottom:20px;}
+  .bid-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+  .bid-fld{margin-bottom:12px;}
+  .bid-fld label{display:block;font-size:13px;color:#cbd5e1;margin-bottom:6px;font-weight:600;}
+  .bid-fld input[type=file],.bid-fld select,.bid-fld textarea{
+    width:100%;box-sizing:border-box;background:#1e293b;border:1px solid #334155;color:#e2e8f0;
+    border-radius:8px;padding:10px 12px;font-size:14px;}
+  .bid-fld textarea{resize:vertical;min-height:60px;}
+  .btn{background:#1e293b;border:1px solid #334155;color:#e2e8f0;border-radius:8px;padding:9px 16px;
+    font-size:13px;cursor:pointer;}
+  .btn:hover{border-color:#475569;} .btn.primary{background:#2563eb;border-color:#2563eb;color:#fff;}
+  .btn:disabled{opacity:.5;cursor:not-allowed;}
+  .bid-status{font-size:12px;color:#94a3b8;margin-top:8px;}
+  .bid-status.err{color:#f87171;}
+  .bid-chart{width:100%;height:420px;margin-top:16px;border:1px solid #1e293b;border-radius:10px;background:#0b1120;}
+  .bid-list{list-style:none;padding:0;margin:0;}
+  .bid-list li{padding:10px 12px;border:1px solid #1e293b;border-radius:8px;margin-bottom:8px;
+    display:flex;justify-content:space-between;align-items:center;background:#0b1120;}
+  .bid-list a{color:#93c5fd;text-decoration:none;} .bid-list a:hover{text-decoration:underline;}
+  .bid-meta{font-size:11px;color:#64748b;}
+</style>
+
+<div class="bid-wrap">
+  <h1>BI Studio</h1>
+  <p class="bid-sub">Describe a chart in plain language — AI drafts it from your data.</p>
+
+  <div class="bid-panel">
+    <div class="bid-fld">
+      <label>Upload a dataset (CSV / XLSX / JSON)</label>
+      <input type="file" id="bidFile" accept=".csv,.json,.xlsx">
+    </div>
+    <div class="bid-row">
+      <button class="btn" id="bidUploadBtn" onclick="bidUpload()">Upload</button>
+      <span class="bid-status" id="bidUploadStatus"></span>
+    </div>
+  </div>
+
+  <div class="bid-panel">
+    <div class="bid-fld">
+      <label>Dataset</label>
+      <select id="bidSourceSelect">
+        <option value="">— select a dataset —</option>
+        {% for ds in datasets %}
+        <option value="{{ ds.id }}">{{ ds.name }} ({{ ds.row_count }} rows)</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="bid-fld">
+      <label>What do you want to see?</label>
+      <textarea id="bidPrompt" placeholder="e.g. show sales by region as a bar chart"></textarea>
+    </div>
+    <div class="bid-row">
+      <button class="btn primary" id="bidGenerateBtn" onclick="bidGenerate()">Generate Chart</button>
+      <button class="btn" id="bidSaveBtn" onclick="bidSaveDashboard()" disabled>Save as Dashboard</button>
+      <span class="bid-status" id="bidGenStatus"></span>
+    </div>
+    <div id="bidChart" class="bid-chart" style="display:none;"></div>
+  </div>
+
+  <div class="bid-panel">
+    <h2 style="font-size:16px;margin:0 0 12px;">Your Dashboards</h2>
+    <ul class="bid-list" id="bidDashboardList">
+      {% for d in dashboards %}
+      <li>
+        <a href="/bi_dashboard/{{ d.id }}">{{ d.title }}</a>
+        <span class="bid-meta">updated {{ d.updated_at }}</span>
+      </li>
+      {% else %}
+      <li class="bid-meta">No dashboards yet — generate a chart above and save it.</li>
+      {% endfor %}
+    </ul>
+  </div>
+
+  {% set iqe_canvas = "bi_dashboard" %}
+  {% set iqe_api_route = "/bi_dashboard/api/iqe-query" %}
+  {% set iqe_title = "Ask BI Studio" %}
+  {% set iqe_examples = [
+    {"label": "KG growth", "query": "foreach t in bi.kg_timeseries('kg-icdev-self-awareness') select *"},
+    {"label": "My datasets", "query": "foreach d in bi.uploaded_datasets select *"},
+  ] %}
+  {% include "includes/iqe_query_widget.html" ignore missing %}
+</div>
+
+<script src="/static/vendor/echarts/echarts.min.js"></script>
+<script src="/static/vendor/echarts/echarts-gl.min.js"></script>
+<script>
+(function(){
+  var currentSpec = null;
+  var chart = null;
+
+  window.bidUpload = function() {
+    var input = document.getElementById('bidFile');
+    var statusEl = document.getElementById('bidUploadStatus');
+    if (!input.files.length) { statusEl.textContent = 'Choose a file first.'; statusEl.className = 'bid-status err'; return; }
+    var fd = new FormData();
+    fd.append('file', input.files[0]);
+    statusEl.textContent = 'Uploading…'; statusEl.className = 'bid-status';
+    fetch('/bi_dashboard/api/upload', { method: 'POST', body: fd })
+      .then(function(r){ return r.json(); })
+      .then(function(data){
+        if (data.success) {
+          statusEl.textContent = 'Uploaded ' + data.dataset.name + ' (' + data.dataset.rows.length + ' rows).';
+          var opt = document.createElement('option');
+          opt.value = data.id; opt.textContent = data.dataset.name + ' (' + data.dataset.rows.length + ' rows)';
+          var sel = document.getElementById('bidSourceSelect');
+          sel.appendChild(opt); sel.value = data.id;
+        } else {
+          statusEl.textContent = data.error || 'Upload failed.'; statusEl.className = 'bid-status err';
+        }
+      })
+      .catch(function(e){ statusEl.textContent = String(e); statusEl.className = 'bid-status err'; });
+  };
+
+  window.bidGenerate = function() {
+    var sourceId = document.getElementById('bidSourceSelect').value;
+    var prompt = document.getElementById('bidPrompt').value.trim();
+    var statusEl = document.getElementById('bidGenStatus');
+    if (!sourceId) { statusEl.textContent = 'Select a dataset first.'; statusEl.className = 'bid-status err'; return; }
+    if (!prompt) { statusEl.textContent = 'Describe what you want to see.'; statusEl.className = 'bid-status err'; return; }
+
+    statusEl.textContent = 'Thinking…'; statusEl.className = 'bid-status';
+    fetch('/bi_dashboard/api/generate', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({prompt: prompt, source_id: sourceId, prior_structure: window.__bidPriorStructure || null})
+    })
+      .then(function(r){ return r.json(); })
+      .then(function(data){
+        if (data.error) { statusEl.textContent = data.error; statusEl.className = 'bid-status err'; return; }
+        currentSpec = data.spec;
+        window.__bidPriorStructure = data.structure;
+        statusEl.textContent = 'Generated via ' + data.method + '.'; statusEl.className = 'bid-status';
+        bidRenderChart(data.spec);
+        document.getElementById('bidSaveBtn').disabled = false;
+      })
+      .catch(function(e){ statusEl.textContent = String(e); statusEl.className = 'bid-status err'; });
+  };
+
+  window.bidRenderChart = function(spec) {
+    var el = document.getElementById('bidChart');
+    el.style.display = 'block';
+    if (!chart) chart = echarts.init(el);
+    if (spec.kind === 'chart3d') {
+      var pts = spec.points || [];
+      var option = {
+        title: {text: spec.title, textStyle: {color:'#e2e8f0'}}, tooltip: {},
+        backgroundColor: 'transparent',
+        xAxis3D: {type: spec.chart_type === 'bar3d' ? 'category' : 'value', data: spec.x_categories, name: spec.x_label},
+        yAxis3D: {type: spec.chart_type === 'bar3d' ? 'category' : 'value', data: spec.y_categories, name: spec.y_label},
+        zAxis3D: {type: 'value', name: spec.z_label || spec.unit},
+        grid3D: {},
+        series: [{type: {bar3d:'bar3D', scatter3d:'scatter3D', surface3d:'surface'}[spec.chart_type] || 'scatter3D', data: pts}]
+      };
+      chart.setOption(option, true);
+      return;
+    }
+    var colors = ['#C8A951','#4A90D9','#2ECC71','#E67E22','#9B59B6'];
+    var option = {
+      title: {text: spec.title, textStyle: {color:'#e2e8f0'}}, color: colors, backgroundColor: 'transparent',
+      tooltip: {trigger: (spec.chart_type==='pie'||spec.chart_type==='donut'||spec.chart_type==='gauge') ? 'item' : 'axis'}
+    };
+    if (spec.chart_type === 'gauge') {
+      var v = (spec.series[0] && spec.series[0].values[0]) || 0;
+      option.series = [{type:'gauge', max: spec.max_value || 100, detail:{formatter:'{value}'+spec.unit},
+        data:[{value:v, name:spec.title}]}];
+    } else if (spec.chart_type === 'pie' || spec.chart_type === 'donut') {
+      var s = spec.series[0] || {values:[]};
+      var data = spec.categories.map(function(c,i){ return {name:c, value:s.values[i]||0}; });
+      option.legend = {data: spec.categories, textStyle:{color:'#94a3b8'}};
+      option.series = [{type:'pie', radius: spec.chart_type==='donut'?['50%','70%']:'70%', data:data}];
+    } else {
+      var catAxis = {type:'category', data: spec.categories};
+      var valAxis = {type:'value', name: spec.unit};
+      option.legend = {data: spec.series.map(function(s){return s.name;}), textStyle:{color:'#94a3b8'}};
+      if (spec.chart_type === 'bar') { option.xAxis = valAxis; option.yAxis = catAxis; }
+      else { option.xAxis = catAxis; option.yAxis = valAxis; }
+      option.series = spec.series.map(function(s){
+        var t = spec.chart_type === 'bar' ? 'bar' : (spec.chart_type === 'area' ? 'line' : (spec.chart_type === 'line' ? 'line' : (spec.chart_type === 'column' ? 'bar' : 'bar')));
+        var item = {name: s.name, type: t, data: s.values};
+        if (spec.chart_type === 'area') item.areaStyle = {};
+        return item;
+      });
+    }
+    chart.setOption(option, true);
+  };
+
+  window.bidSaveDashboard = function() {
+    if (!currentSpec) return;
+    var title = prompt('Dashboard title:', document.getElementById('bidPrompt').value.slice(0, 60) || 'My Dashboard');
+    if (!title) return;
+    fetch('/bi_dashboard/api/dashboards', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({title: title, tiles: [{spec: currentSpec, w: 12}]})
+    })
+      .then(function(r){ return r.json(); })
+      .then(function(data){
+        if (data.id) window.location.href = '/bi_dashboard/' + data.id;
+      });
+  };
+})();
+</script>
+{% endblock %}

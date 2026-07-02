@@ -656,3 +656,20 @@ scanner then runs against the *staged copy as data* — the target is read, hash
   - `fill_and_export()` writes only to the fixed `tools/presentations/slides/` output directory, using a timestamp+hash-derived filename — never a user-supplied path.
   - Malformed/corrupt `.pptx` uploads raise inside `python-pptx`'s parser and are caught, returning a 400 — the partial upload is deleted, nothing is persisted.
 - **Revisit if:** the parsing/fill pipeline ever shells out (e.g. LibreOffice conversion), evaluates macros, or the upload directory becomes user-path-controlled.
+
+### Gap 24 — BI Dashboard Dataset Upload (`tools/bi_dashboard/data_source.py`, `tools/bi_dashboard/blueprint.py` — `/bi_dashboard/api/upload`)
+
+**Module:** `tools/bi_dashboard/data_source.py` (`ingest_upload()`), which delegates parsing to `tools/viz/dataset.py::parse_dataset()`; ingress at `tools/bi_dashboard/blueprint.py` route `POST /bi_dashboard/api/upload`.
+
+**Ingress path:** A user uploads an arbitrary CSV, JSON, or XLSX file (their own analytics data) via multipart HTTP. `parse_dataset()` parses CSV/JSON with the Python stdlib `csv`/`json` modules and XLSX with `openpyxl` in `read_only=True, data_only=True` mode, capped at `MAX_ROWS=5000`/`MAX_COLS=40`. The parsed table is stored as JSON in `bi_data_sources`; no file is ever written to disk or re-opened as a workbook.
+
+- **Decision:** **bypass-documented** (safe by construction, no code-execution surface)
+- **Rationale:** `csv`/`json` are pure stdlib text parsers. `openpyxl.load_workbook(..., read_only=True, data_only=True)` never evaluates VBA macros or formulas — `data_only=True` reads only the last-cached *computed* value of any formula cell, it does not execute the formula. `.xlsm` (macro-enabled) workbooks are rejected outright by extension before any parsing is attempted — see `_TIME_LIKE_RE`-adjacent guard in `tools/viz/dataset.py::parse_dataset()`. No `exec()`/`eval()`/`subprocess`/dynamic import exists anywhere in the ingestion path, and parsed values are only ever placed into `ChartSpec`/`Chart3DSpec` numeric fields or displayed as escaped text — never template-rendered unescaped or passed to a shell.
+- **Guardrails:**
+  - `.xlsm` extension rejected unconditionally in `parse_dataset()` before any parsing.
+  - `MAX_ROWS`/`MAX_COLS` bound memory and DB-row size regardless of upload size.
+  - `MAX_UPLOAD_BYTES` (10 MB) enforced at the Flask route before the file is even read into memory.
+  - `openpyxl` opened `read_only=True` — no write-back path, no macro/VBA execution.
+  - Any parse failure (corrupt file, unsupported format, empty dataset) returns `None` → the route responds 400, nothing is persisted.
+  - Regression test: `tests/viz/test_dataset_story.py::test_parse_xlsm_rejected` fails the build if `.xlsm` parsing is ever silently allowed.
+- **Revisit if:** the ingestion pipeline ever shells out (e.g. LibreOffice-based conversion for other formats), adds a formula-evaluation ("live recalculate") mode, or the upload path becomes user-path-controlled.

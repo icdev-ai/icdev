@@ -347,6 +347,38 @@ components:
     iqe_adapter: true
     nav_link: true
     seed_queries: context/iqe/queries/migration/
+- key: bi_dashboard
+  kind: canvas
+  cli_name: bi-dashboard
+  display_name: BI Studio
+  description: Natural-language-driven analyst/executive dashboards — AI drafts 2D/3D charts from real data.
+  env_flag: ICDEV_BI_DASHBOARD_ENABLED
+  default_enabled: false
+  module: tools.bi_dashboard.blueprint
+  blueprint_attr: create_bi_dashboard_blueprint
+  url_prefix: /bi_dashboard
+  min_il: IL4
+  default_roles:
+  - developer
+  - analyst
+  nav:
+    section: Canvases
+    label: BI Studio
+  iqe:
+    adapter_module: tools.iqe.adapters.bi_dashboard
+    collections:
+    - bi.uploaded_datasets
+    - bi.kg_timeseries
+    - bi.kg_coverage
+    - bi.sql_query
+  completeness:
+    template: tools/dashboard/templates/bi_dashboard/page.html
+    blueprint: true
+    constants: tools/bi_dashboard/constants.py
+    db_migration: tools/bi_dashboard/db
+    iqe_adapter: true
+    nav_link: true
+    seed_queries: context/iqe/queries/bi_dashboard/
 - key: aadc
   kind: canvas
   display_name: Agentic AI Canvas

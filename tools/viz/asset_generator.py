@@ -538,14 +538,50 @@ class AssetGenerator:
     # ── Provider: viz_kernel (placeholder) ─────────────────────────────────────
 
     def _provider_viz_kernel(self, req: AssetRequest, cache_key: str) -> Dict[str, Any]:
-        """Reserved for tools/viz/ rendering kernel integration.
+        """Render chart_json/table_json/diagram_json/kpis_json via tools/viz/.
 
-        Once the VIZ branch (irad/feature) merges, this provider will render
-        chart_json/table_json/diagram_json/kpis_json into PNG/SVG deterministically.
+        Deterministic — the kernel only draws numbers it is given, it never
+        fabricates data. PNG is used for chart/diagram; SVG/HTML tables and
+        KPI tiles have no PNG renderer in the kernel today.
         """
         if not any((req.chart_json, req.table_json, req.diagram_json, req.kpis_json)):
             return {"success": False, "error": "no structured viz payload", "method": "viz_kernel"}
-        return {"success": False, "error": "viz_kernel not yet available on this branch", "method": "viz_kernel"}
+
+        start = time.time()
+        theme = req.theme or "midnight_executive"
+        try:
+            from tools.viz.spec import ChartSpec, DiagramSpec
+
+            output_path = self._resolve_output_path(req, cache_key, "png")
+
+            if req.chart_json:
+                from tools.viz.render_png import chart_to_png
+                spec = ChartSpec.from_dict(req.chart_json)
+                path = chart_to_png(spec, theme=theme, out_path=output_path)
+            elif req.diagram_json:
+                from tools.viz.render_png import diagram_to_png
+                spec = DiagramSpec.from_dict(req.diagram_json)
+                path = diagram_to_png(spec, theme=theme, out_path=output_path)
+            else:
+                # table_json / kpis_json have no PNG renderer — fall back to HTML fragment.
+                from tools.viz.render_html import table_to_html, kpis_to_html
+                from tools.viz.spec import TableSpec, KpiSpec
+                if req.table_json:
+                    html = table_to_html(TableSpec.from_dict(req.table_json), theme=theme)
+                else:
+                    html = kpis_to_html(KpiSpec.from_dict(req.kpis_json), theme=theme)
+                output_path = self._resolve_output_path(req, cache_key, "html")
+                Path(output_path).write_text(html, encoding="utf-8")
+                path = output_path
+
+            return {
+                "success": True,
+                "path": path,
+                "method": "viz_kernel",
+                "elapsed_ms": int((time.time() - start) * 1000),
+            }
+        except Exception as exc:
+            return {"success": False, "error": str(exc), "method": "viz_kernel"}
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 

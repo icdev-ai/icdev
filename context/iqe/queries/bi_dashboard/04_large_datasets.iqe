@@ -1,0 +1,6 @@
+# IQE-BID-004: Uploaded datasets with more than 100 rows
+# Filters bi.uploaded_datasets down to substantial datasets worth charting.
+
+foreach d in bi.uploaded_datasets
+where d.row_count > 100
+select d.id, d.name, d.row_count, d.created_at

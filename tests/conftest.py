@@ -1766,6 +1766,40 @@ CREATE TABLE IF NOT EXISTS forecast_audit (
     created_at     TEXT DEFAULT (datetime('now')),
     classification TEXT DEFAULT 'CUI'
 );
+CREATE TABLE IF NOT EXISTS bi_dashboards (
+    id              TEXT    PRIMARY KEY,
+    title           TEXT    NOT NULL,
+    owner_id        TEXT    DEFAULT '',
+    tiles_json      TEXT    DEFAULT '[]',
+    created_at      TEXT    DEFAULT (datetime('now')),
+    updated_at      TEXT    DEFAULT (datetime('now')),
+    tenant_id       TEXT    DEFAULT 'default',
+    classification  TEXT    DEFAULT 'CUI'
+);
+CREATE TABLE IF NOT EXISTS bi_data_sources (
+    id               TEXT    PRIMARY KEY,
+    name             TEXT    NOT NULL,
+    source_type      TEXT    DEFAULT 'upload',
+    columns_json     TEXT    DEFAULT '[]',
+    dimensions_json  TEXT    DEFAULT '[]',
+    measures_json    TEXT    DEFAULT '[]',
+    rows_json        TEXT    DEFAULT '[]',
+    row_count        INTEGER DEFAULT 0,
+    created_at       TEXT    DEFAULT (datetime('now')),
+    tenant_id        TEXT    DEFAULT 'default',
+    classification   TEXT    DEFAULT 'CUI'
+);
+CREATE TABLE IF NOT EXISTS bi_generation_log (
+    id              TEXT    PRIMARY KEY,
+    dashboard_id    TEXT    DEFAULT '',
+    prompt          TEXT    NOT NULL,
+    structure_json  TEXT    DEFAULT '{}',
+    method          TEXT    DEFAULT 'heuristic',
+    accepted        INTEGER DEFAULT 1,
+    created_at      TEXT    DEFAULT (datetime('now')),
+    tenant_id       TEXT    DEFAULT 'default',
+    classification  TEXT    DEFAULT 'CUI'
+);
 """
 
 
