@@ -101,7 +101,7 @@ test.describe('Mission Canvas Dashboard', () => {
 
     const missionLink = page.locator('a[href="/mission-canvas/"]').first();
     await expect(missionLink).toBeVisible();
-    await expect(missionLink).toContainText('Dashboard');
+    await expect(missionLink).toContainText('Mission Overview');
   });
 });
 

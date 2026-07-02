@@ -2289,20 +2289,26 @@ def create_app(testing: bool = False) -> Flask:
     for _ck, _cbp in _CANVAS_BLUEPRINTS.items():
         try:
             prefix = _CANVAS_ROUTES.get(_ck, f"/{_ck}")
-            if not _cbp.url_prefix:
-                app.register_blueprint(_cbp, url_prefix=prefix)
-            else:
-                app.register_blueprint(_cbp)
-            app.logger.info("Canvas %s registered at %s/", _ck.upper(), prefix)
 
             # Attach RBAC + canvas-access guard (backward-compatible unless
-            # ICDEV_ENFORCE_CANVAS_ACCESS is set).
+            # ICDEV_ENFORCE_CANVAS_ACCESS is set) BEFORE registering the
+            # blueprint on the app — Flask forbids adding before_request
+            # hooks to a blueprint that has already been registered once,
+            # so doing this after register_blueprint() silently no-ops the
+            # guard for every canvas (it raises, caught below as a generic
+            # "registration failed" warning even though routes still work).
             if guard_component_access:
                 _comp_meta = _REGISTRY.get(_ck)
                 if _comp_meta:
                     _cbp.before_request(
                         guard_component_access(_ck, _comp_meta.min_il)
                     )
+
+            if not _cbp.url_prefix:
+                app.register_blueprint(_cbp, url_prefix=prefix)
+            else:
+                app.register_blueprint(_cbp)
+            app.logger.info("Canvas %s registered at %s/", _ck.upper(), prefix)
         except Exception as exc:
             app.logger.warning("Canvas %s registration failed: %s", _ck.upper(), exc)
 
@@ -11241,7 +11247,15 @@ if __name__ == "__main__":
     parser.add_argument("--debug", action="store_true", default=DEBUG, help="Enable debug mode")
     args = parser.parse_args()
 
-    app = create_app()
+    # `app` is already built by the unconditional `app = create_app()` above
+    # (needed for WSGI imports like `from tools.dashboard.app import app`).
+    # Re-calling create_app() here ran the entire app-setup a second time in
+    # every `python tools/dashboard/app.py` invocation — including CI's E2E
+    # server start — which double-registered every canvas blueprint. Flask
+    # blueprint objects are module-level singletons, so the second
+    # registration pass raised on `.before_request()` for every canvas with
+    # an RBAC/IL-level guard (caught as a generic "registration failed"
+    # warning), silently disabling canvas-access enforcement.
     print(f"[ICDEV™ Dashboard] Starting on http://127.0.0.1:{args.port}")
     print(f"[ICDEV™ Dashboard] Database: {DB_PATH}")
     print(f"[ICDEV™ Dashboard] CUI Marking: {CUI_BANNER_TOP or '(none)'}")
