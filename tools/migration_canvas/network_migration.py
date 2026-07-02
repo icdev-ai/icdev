@@ -377,11 +377,11 @@ def fetch_hardware_profiles(src_model: str, tgt_model: str) -> dict[str, Any]:
     """
     with _nc_conn() as conn:
         src = conn.execute(
-            "SELECT * FROM nc_hardware_profiles WHERE LOWER(model)=LOWER(%s) OR LOWER(id)=LOWER(%s)",
+            "SELECT * FROM nc_hardware_profiles WHERE LOWER(model)=LOWER(?) OR LOWER(id)=LOWER(?)",
             (src_model, f"hw-{src_model.lower().replace(' ','-')}"),
         ).fetchone()
         tgt = conn.execute(
-            "SELECT * FROM nc_hardware_profiles WHERE LOWER(model)=LOWER(%s) OR LOWER(id)=LOWER(%s)",
+            "SELECT * FROM nc_hardware_profiles WHERE LOWER(model)=LOWER(?) OR LOWER(id)=LOWER(?)",
             (tgt_model, f"hw-{tgt_model.lower().replace(' ','-')}"),
         ).fetchone()
 
@@ -2611,7 +2611,7 @@ def load_device_config_from_db(device_id: str) -> str | None:
         with _nc_conn() as nc:
             row = nc.execute(
                 """SELECT config_text FROM ni_device_configs
-                   WHERE device_id=%s
+                   WHERE device_id=?
                    ORDER BY CASE config_type
                      WHEN 'running' THEN 1
                      WHEN 'startup' THEN 2
@@ -2835,7 +2835,7 @@ def _target_vendor_from_model(tgt_model: str) -> str:
     try:
         with _nc_conn() as nc:
             row = nc.execute(
-                "SELECT vendor FROM nc_hardware_profiles WHERE LOWER(model)=LOWER(%s) OR LOWER(id)=LOWER(%s) LIMIT 1",
+                "SELECT vendor FROM nc_hardware_profiles WHERE LOWER(model)=LOWER(?) OR LOWER(id)=LOWER(?) LIMIT 1",
                 (tgt_model, f"hw-{lowered.replace(' ', '-')}"),
             ).fetchone()
         if row:
@@ -3393,7 +3393,7 @@ def recommend_hardware(
                 dict(r) for r in nc.execute(
                     "SELECT id, vendor, model, device_type, throughput_gbps, rack_units, "
                     "power_typical_w, ports_json, eol_date, tags FROM nc_hardware_profiles "
-                    "WHERE device_type=%s ORDER BY throughput_gbps DESC LIMIT 20",
+                    "WHERE device_type=? ORDER BY throughput_gbps DESC LIMIT 20",
                     (dtype,),
                 ).fetchall()
             ]
@@ -3813,7 +3813,7 @@ def plan_protocol_migration(session_id: str, variant_overrides: dict | None = No
     try:
         with _nc_conn() as nc:
             hw = nc.execute(
-                "SELECT vendor FROM nc_hardware_profiles WHERE model=%s LIMIT 1",
+                "SELECT vendor FROM nc_hardware_profiles WHERE model=? LIMIT 1",
                 (sess.get("tgt_model", ""),),
             ).fetchone()
             if hw:
@@ -4031,7 +4031,7 @@ def _ensure_import_topology(label: str, nc_conn) -> str:
     """Return existing topology id by label, or create a new one."""
     import uuid as _uuid
     row = nc_conn.execute(
-        "SELECT id FROM topologies WHERE name = %s LIMIT 1", (label,)
+        "SELECT id FROM topologies WHERE name = ? LIMIT 1", (label,)
     ).fetchone()
     if row:
         return row["id"] if hasattr(row, "keys") else row[0]
@@ -4039,7 +4039,7 @@ def _ensure_import_topology(label: str, nc_conn) -> str:
     now = _now()
     nc_conn.execute(
         "INSERT INTO topologies (id, name, graph_json, classification, created_at, updated_at) "
-        "VALUES (%s, %s, %s, %s, %s, %s)",
+        "VALUES (?, ?, ?, ?, ?, ?)",
         (topology_id, label, "{}", "CUI // SP-CTI", now, now),
     )
     nc_conn.commit()
@@ -4165,7 +4165,7 @@ def ingest_devices_topology(src_topology_id: str) -> dict:
     """
     with _nc_conn() as nc:
         row = nc.execute(
-            "SELECT id, name, graph_json FROM topologies WHERE id = %s LIMIT 1",
+            "SELECT id, name, graph_json FROM topologies WHERE id = ? LIMIT 1",
             (src_topology_id,),
         ).fetchone()
         if not row:

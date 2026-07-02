@@ -160,10 +160,14 @@ test.describe.serial('WFC Lifecycle', () => {
   });
 
   // ── 6. Export PPTX ────────────────────────────────────────────────────────
+  // File-generation endpoints (build a document, write it, read it back) run
+  // noticeably heavier than the plain API calls the global 10s actionTimeout
+  // is tuned for; give them the same 30s budget as page navigation rather
+  // than tightening everything else's patience to match a slow-path outlier.
   test('Export form as PPTX returns valid file', async ({ page }) => {
     const resp = await page.request.post(
       `${BASE}/workflow-canvas/api/forms/${formId}/export/pptx`,
-      { headers: { 'Content-Type': 'application/json' } }
+      { headers: { 'Content-Type': 'application/json' }, timeout: 30000 }
     );
     expect(resp.status()).toBe(200);
     expect(resp.headers()['content-type']).toContain('presentationml');
@@ -174,7 +178,7 @@ test.describe.serial('WFC Lifecycle', () => {
   test('Export form as PDF returns valid file', async ({ page }) => {
     const resp = await page.request.post(
       `${BASE}/workflow-canvas/api/forms/${formId}/export/pdf`,
-      { headers: { 'Content-Type': 'application/json' } }
+      { headers: { 'Content-Type': 'application/json' }, timeout: 30000 }
     );
     expect(resp.status()).toBe(200);
     expect(resp.headers()['content-type']).toContain('pdf');
@@ -185,7 +189,7 @@ test.describe.serial('WFC Lifecycle', () => {
   test('Export form as DOCX returns valid file', async ({ page }) => {
     const resp = await page.request.post(
       `${BASE}/workflow-canvas/api/forms/${formId}/export/docx`,
-      { headers: { 'Content-Type': 'application/json' } }
+      { headers: { 'Content-Type': 'application/json' }, timeout: 30000 }
     );
     expect(resp.status()).toBe(200);
     expect(resp.headers()['content-type']).toContain('wordprocessingml');

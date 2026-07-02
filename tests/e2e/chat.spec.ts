@@ -104,8 +104,10 @@ test.describe('Chat Multi-Pane Interface', () => {
     });
 
     const chatBodyText = await page.textContent('body');
-    // Page should still load without errors
-    expect(chatBodyText).not.toContain('500');
+    // Page should still load without errors. Not checking for a bare '500'
+    // substring — page.textContent('body') includes inline <script> text,
+    // and this page's own JS builds HTML containing `font-weight:500`,
+    // making that check a false-positive on legitimate CSS.
     expect(chatBodyText).not.toContain('Internal Server Error');
     expect(chatBodyText).toContain(CUI_BANNER);
   });
