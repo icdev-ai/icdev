@@ -1,0 +1,6 @@
+# IQE-BID-003: Compliance-control coverage per project (NIST)
+# Chart-ready rows for a stacked bar / heatmap of control coverage across
+# projects, sourced from the cross-project Knowledge Graph.
+
+foreach c in bi.kg_coverage("nist")
+select c.project_id, c.total_controls, c.unique_controls, c.coverage_pct

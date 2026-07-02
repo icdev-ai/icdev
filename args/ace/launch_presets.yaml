@@ -114,3 +114,16 @@ presets:
     canvas: rfi_canvas
     color: "#1e3a6e"
     problem_text: "Assemble a 5-role RFI color team: Writer (draft sections addressing all requirements), Editor (structural markdown repair + style guide), Reviewer (Shipley Red Team government-evaluator perspective + coverage check), Researcher (TRL/FAR/benchmark validation), Compliance Reviewer (FAR Part 12, DFARS 252.204-7012, CAGE/UEI, NAICS, NDAA §889, UNCLASSIFIED markings). Pipeline: Writer → Editor → Reviewer → Researcher → Compliance. Iterate until all requirements covered and compliance gate passes."
+
+  # ── BI Dashboard ───────────────────────────────────────────────────────────
+  - id: bi_build_dashboard
+    label: "Build Me a Dashboard"
+    canvas: bi_dashboard
+    color: "#C8A951"
+    problem_text: "Ask what dataset and question the user wants charted (or use an already-uploaded dataset), generate a chart structure from real data via tools/bi_dashboard/spec_generator.py, present it, and iterate on feedback (chart type, columns, title) until the user accepts it. Save the accepted chart as a dashboard tile."
+
+  - id: bi_kg_insights
+    label: "Chart Our Knowledge Graph"
+    canvas: bi_dashboard
+    color: "#C8A951"
+    problem_text: "Pull Knowledge Graph growth and cross-project compliance-coverage data via the bi.kg_timeseries and bi.kg_coverage IQE collections, then draft 2-3 executive-ready charts (growth trend, coverage by project) with a one-paragraph So What / Now What summary."

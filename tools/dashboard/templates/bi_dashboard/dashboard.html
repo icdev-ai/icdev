@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{# CUI // SP-CTI — BI Dashboard Canvas: saved dashboard viewer #}
+{% block content %}
+<style>
+  .bid-view-wrap{max-width:1200px;margin:0 auto;padding:8px 4px 60px;color:#e2e8f0;}
+  .bid-view-wrap h1{font-size:22px;margin:0 0 14px;}
+  .bid-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:16px;}
+  .bid-tile{background:#0f172a;border:1px solid #1e293b;border-radius:12px;padding:14px;height:380px;}
+  .bid-tile-chart{width:100%;height:100%;}
+</style>
+
+<div class="bid-view-wrap">
+  <h1>{{ dashboard.title }}</h1>
+  <div class="bid-grid" id="bidGrid"></div>
+</div>
+
+<script src="/static/vendor/echarts/echarts.min.js"></script>
+<script src="/static/vendor/echarts/echarts-gl.min.js"></script>
+<script>
+(function(){
+  var tiles = {{ dashboard.tiles | tojson }};
+  var grid = document.getElementById('bidGrid');
+  var colors = ['#C8A951','#4A90D9','#2ECC71','#E67E22','#9B59B6'];
+
+  function toOption(spec) {
+    if (spec.kind === 'chart3d') {
+      return {
+        title: {text: spec.title, textStyle:{color:'#e2e8f0'}}, tooltip:{}, backgroundColor:'transparent',
+        xAxis3D: {type: spec.chart_type === 'bar3d' ? 'category' : 'value', data: spec.x_categories, name: spec.x_label},
+        yAxis3D: {type: spec.chart_type === 'bar3d' ? 'category' : 'value', data: spec.y_categories, name: spec.y_label},
+        zAxis3D: {type: 'value', name: spec.z_label || spec.unit}, grid3D: {},
+        series: [{type: {bar3d:'bar3D', scatter3d:'scatter3D', surface3d:'surface'}[spec.chart_type] || 'scatter3D', data: spec.points || []}]
+      };
+    }
+    var option = {title:{text:spec.title, textStyle:{color:'#e2e8f0'}}, color: colors, backgroundColor:'transparent',
+      tooltip:{trigger:(spec.chart_type==='pie'||spec.chart_type==='donut'||spec.chart_type==='gauge')?'item':'axis'}};
+    if (spec.chart_type === 'gauge') {
+      var v = (spec.series[0] && spec.series[0].values[0]) || 0;
+      option.series = [{type:'gauge', max: spec.max_value || 100, detail:{formatter:'{value}'+spec.unit}, data:[{value:v, name:spec.title}]}];
+    } else if (spec.chart_type === 'pie' || spec.chart_type === 'donut') {
+      var s = spec.series[0] || {values:[]};
+      option.legend = {data: spec.categories, textStyle:{color:'#94a3b8'}};
+      option.series = [{type:'pie', radius: spec.chart_type==='donut'?['50%','70%']:'70%',
+        data: spec.categories.map(function(c,i){return {name:c, value:s.values[i]||0};})}];
+    } else {
+      var catAxis = {type:'category', data: spec.categories}, valAxis = {type:'value', name: spec.unit};
+      option.legend = {data: spec.series.map(function(s){return s.name;}), textStyle:{color:'#94a3b8'}};
+      if (spec.chart_type === 'bar') { option.xAxis = valAxis; option.yAxis = catAxis; }
+      else { option.xAxis = catAxis; option.yAxis = valAxis; }
+      option.series = spec.series.map(function(s){
+        var t = spec.chart_type === 'bar' ? 'bar' : (spec.chart_type === 'column' ? 'bar' : 'line');
+        var item = {name: s.name, type: t, data: s.values};
+        if (spec.chart_type === 'area') item.areaStyle = {};
+        return item;
+      });
+    }
+    return option;
+  }
+
+  tiles.forEach(function(tile, i) {
+    var wrap = document.createElement('div');
+    wrap.className = 'bid-tile';
+    wrap.style.gridColumn = 'span ' + (tile.w || 6);
+    var chartEl = document.createElement('div');
+    chartEl.className = 'bid-tile-chart';
+    chartEl.id = 'bidTile' + i;
+    wrap.appendChild(chartEl);
+    grid.appendChild(wrap);
+    var chart = echarts.init(chartEl);
+    chart.setOption(toOption(tile.spec));
+    window.addEventListener('resize', function(){ chart.resize(); });
+  });
+})();
+</script>
+{% endblock %}

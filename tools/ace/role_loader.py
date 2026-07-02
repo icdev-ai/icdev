@@ -9,7 +9,7 @@ from typing import Any
 
 import yaml
 
-_ROLES_DIR = Path(__file__).parents[3] / "args" / "ace" / "roles"
+_ROLES_DIR = Path(__file__).parents[2] / "args" / "ace" / "roles"
 _REQUIRED_FIELDS = {"role_id", "steps", "trust_tier", "tool_permissions"}
 _CACHE_TTL = 60  # seconds
 
