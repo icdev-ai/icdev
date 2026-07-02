@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from tools.viz.spec import (
     ChartSpec,
+    Chart3DSpec,
     DashboardSpec,
     DiagramSpec,
     KpiSpec,
@@ -30,6 +31,7 @@ from tools.viz.spec import (
 
 __all__ = [
     "ChartSpec",
+    "Chart3DSpec",
     "DashboardSpec",
     "DiagramSpec",
     "KpiSpec",

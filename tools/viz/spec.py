@@ -18,6 +18,7 @@ from typing import Any
 
 # ── Chart types the kernel knows how to draw in every target ─────────────────
 CHART_TYPES: list[str] = ["bar", "column", "line", "area", "pie", "donut", "gauge"]
+CHART3D_TYPES: list[str] = ["bar3d", "scatter3d", "surface3d"]
 DIAGRAM_LAYOUTS: list[str] = ["spring", "layered", "grid"]
 
 
@@ -71,6 +72,58 @@ class ChartSpec:
             series=[Series.from_dict(s) for s in d.get("series", [])],
             unit=str(d.get("unit", "")),
             max_value=(float(d["max_value"]) if d.get("max_value") is not None else None),
+        )
+
+
+@dataclass
+class Chart3DSpec:
+    """A 3D chart driven by real point/grid data.
+
+    Kept as a sibling of :class:`ChartSpec` rather than folded into it, since
+    3D data doesn't fit the categories/series shape: it needs three axes.
+
+    ``points`` is a flat list of ``[x, y, z]`` triples. For ``bar3d``, ``x``/``y``
+    index into ``x_categories``/``y_categories`` (so bars sit on a labeled
+    grid); for ``scatter3d``/``surface3d``, ``x``/``y``/``z`` are all numeric.
+    """
+    title: str = ""
+    chart_type: str = "scatter3d"      # one of CHART3D_TYPES
+    x_categories: list[str] = field(default_factory=list)
+    y_categories: list[str] = field(default_factory=list)
+    points: list[list[float]] = field(default_factory=list)
+    x_label: str = ""
+    y_label: str = ""
+    z_label: str = ""
+    unit: str = ""
+
+    kind = "chart3d"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "kind": "chart3d",
+            "title": self.title,
+            "chart_type": self.chart_type,
+            "x_categories": list(self.x_categories),
+            "y_categories": list(self.y_categories),
+            "points": [list(p) for p in self.points],
+            "x_label": self.x_label,
+            "y_label": self.y_label,
+            "z_label": self.z_label,
+            "unit": self.unit,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "Chart3DSpec":
+        return cls(
+            title=str(d.get("title", "")),
+            chart_type=str(d.get("chart_type", "scatter3d")),
+            x_categories=[str(c) for c in d.get("x_categories", [])],
+            y_categories=[str(c) for c in d.get("y_categories", [])],
+            points=[[float(v) for v in p] for p in d.get("points", [])],
+            x_label=str(d.get("x_label", "")),
+            y_label=str(d.get("y_label", "")),
+            z_label=str(d.get("z_label", "")),
+            unit=str(d.get("unit", "")),
         )
 
 
@@ -252,10 +305,11 @@ class DashboardSpec:
 
 
 # Union alias for type hints / dispatch
-VizSpec = Any  # ChartSpec | TableSpec | DiagramSpec | KpiSpec | TimelineSpec | DashboardSpec
+VizSpec = Any  # ChartSpec | Chart3DSpec | TableSpec | DiagramSpec | KpiSpec | TimelineSpec | DashboardSpec
 
 _KIND_MAP = {
     "chart": ChartSpec,
+    "chart3d": Chart3DSpec,
     "table": TableSpec,
     "diagram": DiagramSpec,
     "kpis": KpiSpec,
