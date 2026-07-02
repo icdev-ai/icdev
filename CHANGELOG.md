@@ -6,6 +6,20 @@ All notable changes to ICDEV™ are documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.34] - 2026-07-02
+
+### Added
+- **BI Dashboard Canvas** — NL-driven 2D/3D chart canvas at `/bi_dashboard`: describe a chart in plain English, rendered via a ported VIZ kernel + ECharts-gl against real project data (bar, scatter3d, surface3d, bar3d). Two new ACE Quick Launch presets (`bi_build_dashboard`, `bi_kg_insights`) (#78).
+- **Rubric-gated agent loop** — `run_agent_loop_with_rubric()` in `icdev/tools/llm/agent_loop.py`: declares a rubric up front, runs the agent loop, then has a separate tool-free grader LLM judge the result (satisfied / needs_revision / failed), resuming from the existing transcript on `needs_revision` for up to `max_grading_iterations` rounds. Adapted from deepagents' RubricMiddleware pattern, framework-agnostic (no LangGraph dependency). 12 new tests (#79).
+
+### Fixed
+- **BI Dashboard bar3d aggregation** — `_structure_to_spec()` treated bar3d's categorical x/y fields as raw floats, silently dropping every row; now builds `x_categories`/`y_categories` from real column values and aggregates z per (x, y) pair per the ECharts `bar3D` contract (#78).
+- **Coherence checker nav-link false positive** — `check_new_page_completeness`'s nav-link sub-check only recognized hardcoded `href="/<canvas>"` strings, false-positiving on registry-driven canvases whose nav link renders dynamically from `component_registry.yaml`. The check is now registry-aware (#78).
+- **Untrusted SVG parsing (Bandit B314)** — `tools/viz/svg_to_pptx.py` now parses SVG input via `defusedxml` instead of stdlib `xml.etree.ElementTree` (#77).
+- **Config duplicate-key sweep** — removed silent duplicate top-level mapping keys across `args/llm_config.yaml`, `args/genesis_config.yaml`, `args/security_gates.yaml`, and `args/simulation_canvas_registry.yaml`, and fixed a YAML indentation parse error in `args/package_exclusions.yaml` that broke the installer's exclusion loader outright (#80).
+
+---
+
 ## [1.2.33] - 2026-07-01
 
 ### Added
