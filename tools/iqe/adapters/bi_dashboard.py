@@ -27,11 +27,15 @@ from tools.iqe.executor import register_collection
 
 
 def uploaded_datasets_adapter(conn: Any = None) -> list[dict]:
-    """Return dataset rows from bi_data_sources (populated by the upload endpoint)."""
+    """Return dataset rows from bi_data_sources (populated by the upload endpoint).
+
+    bi_data_sources carries tenant_id/classification columns, so RLS applies
+    normally via get_connection() — no get_canvas_connection() bypass needed.
+    """
     try:
         if conn is None:
-            from tools.db.storage import get_canvas_connection  # noqa: PLC0415
-            conn = get_canvas_connection("BI_DASHBOARD_DATABASE_URL")
+            from tools.db.storage import get_connection  # noqa: PLC0415
+            conn = get_connection()
         cur = conn.execute(
             "SELECT id, name, columns_json, dimensions_json, measures_json, "
             "row_count, classification, tenant_id, created_at FROM bi_data_sources "

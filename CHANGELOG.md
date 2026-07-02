@@ -17,6 +17,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 - **Slides schema dialect mismatch** — `tools/slides/db/init_db.py` picked its SQL dialect from the configured backend (`_SLIDES_BACKEND`, default `postgresql`) instead of what `get_connection()` actually resolved to, so `SERIAL PRIMARY KEY` silently landed on a SQLite-backed connection whenever PG was unreachable, breaking autoincrement for every table in the canvas. Schema selection is now resolved from the live connection.
 - A latent bug where a `.svg` `image_path` silently failed under `add_picture` (`python-pptx` cannot rasterize SVG) is now handled by the new native-shape renderer.
+- **Bandit B314 (SVG XML parsing)** — `tools/viz/svg_to_pptx.py` parsed untrusted SVG input with stdlib `xml.etree.ElementTree`, flagged by Bandit as XML-attack-surface (B314). Parsing now goes through `defusedxml`, eliminating the finding; `docs/security/sandbox-coverage.md` updated to match.
 
 ---
 

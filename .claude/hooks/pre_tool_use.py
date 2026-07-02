@@ -553,6 +553,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # ACE QA Agent (NIST AU — test evidence is immutable)
         "ace_qa_runs",
         "ace_qa_failures",
+        # BI Dashboard Canvas — AI chart-generation audit trail (NIST AU)
+        "bi_generation_log",
     ]
 
     if tool_name == "Bash":
