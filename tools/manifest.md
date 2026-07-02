@@ -1143,3 +1143,14 @@
 | Rfi Engine Runner | tools\govcon\rfi_engine_runner.py | Auto-registered: govcon/rfi_engine_runner.py | --json | JSON |
 | Rfi Markdown Validator | tools\govcon\rfi_markdown_validator.py | Auto-registered: govcon/rfi_markdown_validator.py | --json | JSON |
 | Rfi Style Engine | tools\govcon\rfi_style_engine.py | Auto-registered: govcon/rfi_style_engine.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Deck Model | tools\viz\deck_model.py | Auto-registered: viz/deck_model.py | --json | JSON |
+| Render Diagram Export | tools\viz\render_diagram_export.py | Auto-registered: viz/render_diagram_export.py | --json | JSON |
+| Render Html | tools\viz\render_html.py | Auto-registered: viz/render_html.py | --json | JSON |
+| Render Png | tools\viz\render_png.py | Auto-registered: viz/render_png.py | --json | JSON |
+| Render Pptx | tools\viz\render_pptx.py | Auto-registered: viz/render_pptx.py | --json | JSON |
+| Story Builder | tools\viz\story_builder.py | Auto-registered: viz/story_builder.py | --json | JSON |

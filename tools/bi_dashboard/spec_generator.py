@@ -140,15 +140,40 @@ def _structure_to_spec(structure: dict, dataset: dict) -> ChartSpec | Chart3DSpe
     columns = dataset.get("columns", [])
 
     if structure["kind"] == "chart3d":
+        chart_type = structure["chart_type"]
         x_field, y_field, z_field = structure["x_field"], structure["y_field"], structure["z_field"]
         xi, yi, zi = columns.index(x_field), columns.index(y_field), columns.index(z_field)
-        points: list[list[float]] = []
+
+        if chart_type == "bar3d":
+            # x/y are categorical (e.g. region/quarter) — aggregate z per (x, y) pair,
+            # then index into x_categories/y_categories per the ECharts bar3D contract.
+            x_cats = sorted({str(r[xi]) for r in rows if xi < len(r)})
+            y_cats = sorted({str(r[yi]) for r in rows if yi < len(r)})
+            x_idx = {v: i for i, v in enumerate(x_cats)}
+            y_idx = {v: i for i, v in enumerate(y_cats)}
+            totals: dict[tuple[int, int], float] = {}
+            for row in rows:
+                if xi >= len(row) or yi >= len(row) or zi >= len(row):
+                    continue
+                try:
+                    z_val = float(row[zi])
+                except (ValueError, TypeError):
+                    continue
+                key = (x_idx[str(row[xi])], y_idx[str(row[yi])])
+                totals[key] = totals.get(key, 0.0) + z_val
+            points = [[float(xk), float(yk), v] for (xk, yk), v in sorted(totals.items())]
+            return Chart3DSpec(title=title, chart_type=chart_type, points=points,
+                               x_categories=x_cats, y_categories=y_cats,
+                               x_label=x_field, y_label=y_field, z_label=z_field, unit=unit)
+
+        # scatter3d / surface3d — all three fields are numeric.
+        points = []
         for row in rows:
             try:
                 points.append([float(row[xi]), float(row[yi]), float(row[zi])])
             except (ValueError, TypeError, IndexError):
                 continue
-        return Chart3DSpec(title=title, chart_type=structure["chart_type"], points=points,
+        return Chart3DSpec(title=title, chart_type=chart_type, points=points,
                            x_label=x_field, y_label=y_field, z_label=z_field, unit=unit)
 
     dimension = structure.get("dimension") or ""

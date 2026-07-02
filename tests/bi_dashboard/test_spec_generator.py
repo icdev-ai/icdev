@@ -130,6 +130,33 @@ def test_structure_to_spec_builds_chart3d_points():
     assert spec.points == [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
 
 
+def test_structure_to_spec_bar3d_aggregates_by_category_pair():
+    # bar3d needs categorical x/y indices (per the ECharts bar3D contract), not
+    # raw float(row[xi]) like scatter3d/surface3d — region/quarter are strings.
+    dataset = {
+        "columns": ["region", "quarter", "sales"],
+        "dimensions": ["region", "quarter"],
+        "measures": ["sales"],
+        "rows": [
+            ["East", "Q1", 100], ["East", "Q1", 50],  # East/Q1 sums to 150
+            ["East", "Q2", 80],
+            ["West", "Q1", 200],
+        ],
+    }
+    structure = {"kind": "chart3d", "chart_type": "bar3d",
+                 "x_field": "region", "y_field": "quarter", "z_field": "sales",
+                 "title": "Sales by Region/Quarter", "unit": "$"}
+    spec = _structure_to_spec(structure, dataset)
+    assert isinstance(spec, Chart3DSpec)
+    assert spec.x_categories == ["East", "West"]
+    assert spec.y_categories == ["Q1", "Q2"]
+    # East=0, West=1 / Q1=0, Q2=1 -> [xi, yi, summed_z]
+    points_by_idx = {(p[0], p[1]): p[2] for p in spec.points}
+    assert points_by_idx[(0.0, 0.0)] == 150.0  # East/Q1
+    assert points_by_idx[(0.0, 1.0)] == 80.0   # East/Q2
+    assert points_by_idx[(1.0, 0.0)] == 200.0  # West/Q1
+
+
 def test_structure_to_spec_gauge_sums_single_measure():
     structure = {"kind": "chart", "chart_type": "gauge", "dimension": "",
                  "measures": ["sales"], "title": "Total Sales", "unit": "$"}
