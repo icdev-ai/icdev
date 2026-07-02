@@ -955,6 +955,53 @@ def _load_page_completeness_whitelist() -> Set[str]:
     return skip
 
 
+def _load_registry_nav_dirs() -> Set[str]:
+    """Return template-dir names of canvases with a registry-declared nav link.
+
+    Modern canvases (component_registry.yaml `nav: {section, label}`) render
+    their Canvases-dropdown link dynamically from `nav_tree` in base.html
+    (`{{ link.href }}`, built from the registry) rather than as a literal
+    `href="/<canvas>"` string. A hardcoded-HTML grep can never find those —
+    it would false-positive on every registry-driven canvas (confirmed on
+    data_canvas, migration_canvas, and any new canvas following the current
+    scaffolding convention). This is the registry-aware alternative check:
+    trust `nav.section` the same way `component_registry.validate_canvas_completeness`
+    already does, instead of re-implementing an inferior HTML heuristic.
+
+    Keyed by template directory name (`completeness.template`'s parent dir,
+    falling back to the registry `key`) so it matches the `canvas` variable
+    used by the page.html glob loop even when key != template dir name.
+
+    Missing/malformed registry → empty set (fail-safe: falls back to the
+    hardcoded-href heuristic, gate gets stricter not looser).
+    """
+    try:
+        import yaml  # type: ignore
+    except ImportError:
+        return set()
+
+    registry_path = PROJECT_ROOT / "args" / "component_registry.yaml"
+    if not registry_path.exists():
+        return set()
+    try:
+        data = yaml.safe_load(registry_path.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return set()
+
+    dirs: Set[str] = set()
+    for comp in data.get("components", []):
+        if not isinstance(comp, dict) or comp.get("kind") != "canvas":
+            continue
+        nav = comp.get("nav") or {}
+        if not isinstance(nav, dict) or not nav.get("section"):
+            continue
+        template_str = (comp.get("completeness") or {}).get("template", "")
+        template_dir = Path(template_str).parent.name if template_str else ""
+        dirs.add(template_dir or str(comp.get("key", "")))
+    dirs.discard("")
+    return dirs
+
+
 def _run_ruff_lint(
     targets: List[Path],
     rules: Tuple[str, ...] = _RUFF_GATE_RULES,
@@ -2880,6 +2927,7 @@ def check_new_page_completeness() -> CoherenceCheck:
     iqe_adapters_dir = PROJECT_ROOT / "tools" / "iqe" / "adapters"
     iqe_queries_dir = PROJECT_ROOT / "context" / "iqe" / "queries"
     whitelist = _load_page_completeness_whitelist()
+    registry_nav_dirs = _load_registry_nav_dirs()
 
     violations: List[str] = []
     whitelisted_count = 0
@@ -2918,9 +2966,13 @@ def check_new_page_completeness() -> CoherenceCheck:
         else:
             missing.append(f"tools/{canvas}/ directory missing")
 
-        # 4. Nav link to /<canvas> in base.html
-        if f'href="/{canvas}' not in base_html_text and f"href='/{canvas}" not in base_html_text:
-            missing.append(f"no nav link to /{canvas} in base.html")
+        # 4. Nav link to /<canvas>: either a literal href in base.html (legacy
+        # canvases), or a registry-declared nav.section (modern canvases,
+        # rendered dynamically via nav_tree — see _load_registry_nav_dirs).
+        has_hardcoded_href = f'href="/{canvas}' in base_html_text or f"href='/{canvas}" in base_html_text
+        has_registry_nav = canvas in registry_nav_dirs
+        if not has_hardcoded_href and not has_registry_nav:
+            missing.append(f"no nav link to /{canvas} in base.html (checked hardcoded href and registry nav.section)")
 
         # 5. IQE adapter
         iqe_adapter = iqe_adapters_dir / f"{canvas}.py"

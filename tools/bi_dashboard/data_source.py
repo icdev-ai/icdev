@@ -41,7 +41,7 @@ def ingest_upload(filename: str, content_bytes: bytes | None = None, text: str |
     conn.execute(
         "INSERT INTO bi_data_sources "
         "(id, name, source_type, columns_json, dimensions_json, measures_json, rows_json, "
-        "row_count, tenant_id, classification) VALUES (?, ?, 'upload', ?, ?, ?, ?, ?, ?, ?)",
+        "row_count, tenant_id, classification) VALUES (%s, %s, 'upload', %s, %s, %s, %s, %s, %s, %s)",
         (
             source_id, dataset["name"],
             json.dumps(dataset["columns"]), json.dumps(dataset["dimensions"]),
@@ -59,7 +59,7 @@ def get_dataset(source_id: str) -> dict[str, Any] | None:
     conn = get_connection()
     cur = conn.execute(
         "SELECT name, columns_json, dimensions_json, measures_json, rows_json "
-        "FROM bi_data_sources WHERE id = ?",
+        "FROM bi_data_sources WHERE id = %s",
         (source_id,),
     )
     row = cur.fetchone()
@@ -80,7 +80,7 @@ def list_datasets(tenant_id: str = "default", limit: int = 100) -> list[dict[str
     conn = get_connection()
     cur = conn.execute(
         "SELECT id, name, source_type, row_count, created_at FROM bi_data_sources "
-        "WHERE tenant_id = ? ORDER BY created_at DESC LIMIT ?",
+        "WHERE tenant_id = %s ORDER BY created_at DESC LIMIT %s",
         (tenant_id, limit),
     )
     cols = ["id", "name", "source_type", "row_count", "created_at"]

@@ -20,7 +20,7 @@ def create_dashboard(title: str, tiles: list[dict], owner_id: str = "",
     conn = get_connection()
     conn.execute(
         "INSERT INTO bi_dashboards (id, title, owner_id, tiles_json, tenant_id, classification) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s)",
         (dashboard_id, title, owner_id, json.dumps(tiles), tenant_id, classification),
     )
     conn.commit()
@@ -32,7 +32,7 @@ def get_dashboard(dashboard_id: str) -> dict[str, Any] | None:
     conn = get_connection()
     cur = conn.execute(
         "SELECT id, title, owner_id, tiles_json, created_at, updated_at, tenant_id, classification "
-        "FROM bi_dashboards WHERE id = ?",
+        "FROM bi_dashboards WHERE id = %s",
         (dashboard_id,),
     )
     row = cur.fetchone()
@@ -49,7 +49,7 @@ def list_dashboards(tenant_id: str = "default", limit: int = 100) -> list[dict[s
     conn = get_connection()
     cur = conn.execute(
         "SELECT id, title, owner_id, created_at, updated_at FROM bi_dashboards "
-        "WHERE tenant_id = ? ORDER BY updated_at DESC LIMIT ?",
+        "WHERE tenant_id = %s ORDER BY updated_at DESC LIMIT %s",
         (tenant_id, limit),
     )
     cols = ["id", "title", "owner_id", "created_at", "updated_at"]
@@ -61,7 +61,7 @@ def list_dashboards(tenant_id: str = "default", limit: int = 100) -> list[dict[s
 def update_dashboard_tiles(dashboard_id: str, tiles: list[dict]) -> bool:
     conn = get_connection()
     cur = conn.execute(
-        "UPDATE bi_dashboards SET tiles_json = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        "UPDATE bi_dashboards SET tiles_json = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s",
         (json.dumps(tiles), dashboard_id),
     )
     conn.commit()
@@ -72,7 +72,7 @@ def update_dashboard_tiles(dashboard_id: str, tiles: list[dict]) -> bool:
 
 def delete_dashboard(dashboard_id: str) -> bool:
     conn = get_connection()
-    cur = conn.execute("DELETE FROM bi_dashboards WHERE id = ?", (dashboard_id,))
+    cur = conn.execute("DELETE FROM bi_dashboards WHERE id = %s", (dashboard_id,))
     conn.commit()
     deleted = cur.rowcount > 0
     conn.close()
@@ -88,7 +88,7 @@ def log_generation(prompt: str, structure: dict, method: str, dashboard_id: str 
     conn.execute(
         "INSERT INTO bi_generation_log "
         "(id, dashboard_id, prompt, structure_json, method, accepted, tenant_id, classification) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
         (log_id, dashboard_id, prompt, json.dumps(structure), method, int(accepted), tenant_id, classification),
     )
     conn.commit()

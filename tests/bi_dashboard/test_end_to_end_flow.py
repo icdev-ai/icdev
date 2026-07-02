@@ -29,7 +29,11 @@ def sqlite_conn(tmp_path, monkeypatch):
     conn.commit()
 
     def _get_connection():
-        return sqlite3.connect(str(db_path), check_same_thread=False)
+        # Wrapped in StorageConnection so translate_sql() converts the %s
+        # placeholders our runtime code uses (PG-primary convention) back to
+        # SQLite's native ? — matching what get_connection() does for real.
+        from tools.db.storage import StorageConnection
+        return StorageConnection(sqlite3.connect(str(db_path), check_same_thread=False), "sqlite")
 
     for mod_name in ("tools.db.storage", "icdev.tools.db.storage"):
         try:
