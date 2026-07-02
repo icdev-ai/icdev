@@ -22,6 +22,8 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
 
+from defusedxml.ElementTree import fromstring as _safe_fromstring
+
 from pptx.util import Emu, Pt
 from pptx.dml.color import RGBColor
 
@@ -491,7 +493,7 @@ def render_svg_into_slide(slide, svg_source: str, left, top, width, height) -> l
     malformed XML, matching how callers already wrap graphics generation in
     try/except).
     """
-    root = ET.fromstring(svg_source)
+    root = _safe_fromstring(svg_source)
     vb = root.get("viewBox")
     if vb:
         parts = [float(v) for v in re.split(r"[,\s]+", vb.strip()) if v]
