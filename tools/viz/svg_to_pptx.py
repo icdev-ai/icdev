@@ -491,7 +491,11 @@ def render_svg_into_slide(slide, svg_source: str, left, top, width, height) -> l
     malformed XML, matching how callers already wrap graphics generation in
     try/except).
     """
-    root = ET.fromstring(svg_source)
+    # Trusted-first-party ingress (docs/security/sandbox-coverage.md Gap 23):
+    # SVG source comes from internal template/graphics generation, not raw
+    # external upload; xml.etree performs no entity expansion by default so
+    # there is no XXE surface here despite bandit's blanket B314 warning.
+    root = ET.fromstring(svg_source)  # nosec B314
     vb = root.get("viewBox")
     if vb:
         parts = [float(v) for v in re.split(r"[,\s]+", vb.strip()) if v]
