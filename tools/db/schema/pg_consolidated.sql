@@ -62283,6 +62283,136 @@ CREATE INDEX IF NOT EXISTS idx_domain_coverage_checked ON public.domain_coverage
 
 
 --
+-- Migration 215 — user_preferences (added post-snapshot; see
+-- tools/db/migrations/215_user_preferences/up.py for the canonical DDL).
+-- bootstrap_pg.py marks every discovered migration as applied against this
+-- snapshot regardless of whether its table is present, so an omission here
+-- is never replayed by migrate.py --up on a fresh PG bootstrap.
+--
+
+CREATE TABLE IF NOT EXISTS public.user_preferences (
+    user_id          TEXT PRIMARY KEY,
+    tenant_id        TEXT NOT NULL DEFAULT 'default',
+    onboarding_state TEXT NOT NULL DEFAULT '{}',
+    updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+
+--
+-- Migration 223 — Second Brain user identity model (added post-snapshot;
+-- see tools/db/migrations/223_user_identity.sql for the canonical DDL, whose
+-- SQLite-dialect datetime('now') defaults are rewritten here to the
+-- PG/SQLite-portable CURRENT_TIMESTAMP).
+--
+
+CREATE TABLE IF NOT EXISTS public.user_identity_profiles (
+    user_id          TEXT NOT NULL,
+    tenant_id        TEXT NOT NULL DEFAULT 'default',
+    full_name        TEXT,
+    work_email       TEXT,
+    title            TEXT,
+    seniority_tier   TEXT CHECK(seniority_tier IN ('ic','lead','manager','director','executive')),
+    department       TEXT,
+    timezone         TEXT NOT NULL DEFAULT 'UTC',
+    work_start       TEXT NOT NULL DEFAULT '09:00',
+    work_end         TEXT NOT NULL DEFAULT '18:00',
+    focus_block      TEXT NOT NULL DEFAULT 'am' CHECK(focus_block IN ('am','pm','none')),
+    meeting_heavy_days TEXT NOT NULL DEFAULT '[]',
+    briefing_time    TEXT NOT NULL DEFAULT '08:00',
+    delivery_channels TEXT NOT NULL DEFAULT '["dashboard"]',
+    comm_style       INTEGER NOT NULL DEFAULT 3,
+    org_name         TEXT,
+    org_industry     TEXT,
+    org_size         TEXT,
+    team_mission     TEXT,
+    profile_summary  TEXT,
+    context_complete INTEGER NOT NULL DEFAULT 0,
+    created_at       TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at       TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (user_id, tenant_id)
+);
+
+CREATE TABLE IF NOT EXISTS public.user_objectives (
+    id          TEXT PRIMARY KEY,
+    user_id     TEXT NOT NULL,
+    tenant_id   TEXT NOT NULL DEFAULT 'default',
+    title       TEXT NOT NULL,
+    description TEXT,
+    horizon     TEXT CHECK(horizon IN ('week','quarter','long_term')),
+    metric      TEXT,
+    status      TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','done','dropped')),
+    sort_order  INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_obj
+    ON public.user_objectives (user_id, tenant_id, status);
+
+CREATE TABLE IF NOT EXISTS public.user_relationships (
+    id                TEXT PRIMARY KEY,
+    user_id           TEXT NOT NULL,
+    tenant_id         TEXT NOT NULL DEFAULT 'default',
+    name              TEXT NOT NULL,
+    title             TEXT,
+    email             TEXT,
+    org               TEXT,
+    relationship_type TEXT CHECK(relationship_type IN ('boss','direct','peer','stakeholder','customer','vendor','other')),
+    notes             TEXT,
+    last_contact_at   TEXT,
+    created_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_rel
+    ON public.user_relationships (user_id, tenant_id);
+
+CREATE TABLE IF NOT EXISTS public.user_challenges (
+    id                   TEXT PRIMARY KEY,
+    user_id              TEXT NOT NULL,
+    tenant_id            TEXT NOT NULL DEFAULT 'default',
+    challenge_key        TEXT,
+    custom_description   TEXT,
+    severity             TEXT NOT NULL DEFAULT 'medium' CHECK(severity IN ('low','medium','high')),
+    status               TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','resolved')),
+    created_at           TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_chal
+    ON public.user_challenges (user_id, tenant_id, status);
+
+CREATE TABLE IF NOT EXISTS public.user_integrations (
+    id                TEXT PRIMARY KEY,
+    user_id           TEXT NOT NULL,
+    tenant_id         TEXT NOT NULL DEFAULT 'default',
+    service           TEXT NOT NULL CHECK(service IN ('gmail','gcal','slack','github','gitlab','jira','linear','notion')),
+    access_token_enc  TEXT,
+    refresh_token_enc TEXT,
+    token_expiry      TEXT,
+    scopes            TEXT,
+    metadata_json     TEXT NOT NULL DEFAULT '{}',
+    status            TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','revoked','error')),
+    last_sync_at      TEXT,
+    created_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, tenant_id, service)
+);
+
+CREATE TABLE IF NOT EXISTS public.user_daily_briefings (
+    id                   TEXT PRIMARY KEY,
+    user_id              TEXT NOT NULL,
+    tenant_id            TEXT NOT NULL DEFAULT 'default',
+    briefing_date        TEXT NOT NULL,
+    content_json         TEXT NOT NULL DEFAULT '{}',
+    delivery_channels    TEXT NOT NULL DEFAULT '["dashboard"]',
+    delivery_status_json TEXT NOT NULL DEFAULT '{}',
+    opened_at            TEXT,
+    created_at           TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, tenant_id, briefing_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_briefing
+    ON public.user_daily_briefings (user_id, tenant_id, briefing_date);
+
+
+--
 -- PostgreSQL database dump complete
 --
 

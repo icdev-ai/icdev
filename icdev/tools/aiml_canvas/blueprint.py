@@ -147,10 +147,12 @@ def create_aiml_blueprint() -> Blueprint | None:
     @bp.route("/assessments/<assessment_id>")
     def assessment_detail(assessment_id: str):
         from tools.aiml_canvas.db.init_db import get_connection
+        from tools.db.storage import sql_placeholder
         conn = get_connection()
         try:
+            ph = sql_placeholder(conn)
             row = conn.execute(
-                "SELECT * FROM aiml_assessments WHERE id=%s", (assessment_id,)
+                f"SELECT * FROM aiml_assessments WHERE id={ph}", (assessment_id,)
             ).fetchone()
             if not row:
                 return redirect(url_for("aiml_canvas.index"))
@@ -305,11 +307,13 @@ def create_aiml_blueprint() -> Blueprint | None:
     @bp.route("/api/designs/<design_id>/artifacts", methods=["GET"])
     def api_list_artifacts(design_id: str):
         from tools.aiml_canvas.db.init_db import get_connection
+        from tools.db.storage import sql_placeholder
         conn = get_connection()
         try:
+            ph = sql_placeholder(conn)
             rows = conn.execute(
                 "SELECT id, design_id, artifact_type, title, format, created_at "
-                "FROM aiml_artifacts WHERE design_id=%s ORDER BY created_at DESC",
+                f"FROM aiml_artifacts WHERE design_id={ph} ORDER BY created_at DESC",
                 (design_id,),
             ).fetchall()
             return jsonify([dict(r) for r in rows])

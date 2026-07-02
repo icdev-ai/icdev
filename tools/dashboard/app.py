@@ -2051,6 +2051,7 @@ def create_app(testing: bool = False) -> Flask:
             "cui_banner_bottom": CUI_BANNER_BOTTOM,
             "cui_banner_enabled": CUI_BANNER_ENABLED,
             "cui_designation": CUI_DESIGNATION,
+            "auth_bypass": os.environ.get("ICDEV_AUTH_BYPASS", "").lower() in ("1", "true", "yes"),
             "current_role": role,
             "theme_pref": theme_pref,
             "role_config": role_config,
