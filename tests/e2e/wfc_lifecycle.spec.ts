@@ -160,10 +160,15 @@ test.describe.serial('WFC Lifecycle', () => {
   });
 
   // ── 6. Export PPTX ────────────────────────────────────────────────────────
+  // Extra timeout headroom for file-generation endpoints (build a document,
+  // write it, read it back) vs. the global 10s actionTimeout tuned for plain
+  // API calls. The original CI 500 was actually python-pptx/python-docx
+  // missing from requirements.txt (see that file) — this timeout is
+  // defensive margin, not the fix for that.
   test('Export form as PPTX returns valid file', async ({ page }) => {
     const resp = await page.request.post(
       `${BASE}/workflow-canvas/api/forms/${formId}/export/pptx`,
-      { headers: { 'Content-Type': 'application/json' } }
+      { headers: { 'Content-Type': 'application/json' }, timeout: 30000 }
     );
     expect(resp.status()).toBe(200);
     expect(resp.headers()['content-type']).toContain('presentationml');
@@ -174,7 +179,7 @@ test.describe.serial('WFC Lifecycle', () => {
   test('Export form as PDF returns valid file', async ({ page }) => {
     const resp = await page.request.post(
       `${BASE}/workflow-canvas/api/forms/${formId}/export/pdf`,
-      { headers: { 'Content-Type': 'application/json' } }
+      { headers: { 'Content-Type': 'application/json' }, timeout: 30000 }
     );
     expect(resp.status()).toBe(200);
     expect(resp.headers()['content-type']).toContain('pdf');
@@ -185,7 +190,7 @@ test.describe.serial('WFC Lifecycle', () => {
   test('Export form as DOCX returns valid file', async ({ page }) => {
     const resp = await page.request.post(
       `${BASE}/workflow-canvas/api/forms/${formId}/export/docx`,
-      { headers: { 'Content-Type': 'application/json' } }
+      { headers: { 'Content-Type': 'application/json' }, timeout: 30000 }
     );
     expect(resp.status()).toBe(200);
     expect(resp.headers()['content-type']).toContain('wordprocessingml');
