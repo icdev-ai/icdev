@@ -40,6 +40,39 @@ def test_parse_rejects_non_tabular():
     assert d is None or len(d["columns"]) < 2
 
 
+def _xlsx_bytes(rows):
+    import io
+    import openpyxl
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    for r in rows:
+        ws.append(r)
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def test_parse_xlsx_infers_types():
+    raw = _xlsx_bytes([["region", "sales"], ["East", 100], ["West", 200], ["East", 50]])
+    d = ds.parse_dataset(file_bytes=raw, filename="sales.xlsx", name="Sales")
+    assert d["columns"] == ["region", "sales"]
+    assert len(d["rows"]) == 3
+    assert d["measures"] == ["sales"]
+    assert d["dimensions"] == ["region"]
+    cats, vals = ds.aggregate(d["rows"], d["columns"], "region", "sales", "sum")
+    assert dict(zip(cats, vals)) == {"East": 150.0, "West": 200.0}
+
+
+def test_parse_xlsm_rejected():
+    raw = _xlsx_bytes([["a", "b"], [1, 2]])
+    assert ds.parse_dataset(file_bytes=raw, filename="macro.xlsm", name="bad") is None
+
+
+def test_parse_xlsx_empty_rejected():
+    raw = _xlsx_bytes([["a", "b"]])
+    assert ds.parse_dataset(file_bytes=raw, filename="empty.xlsx", name="empty") is None
+
+
 def test_aggregate_sum_and_count():
     d = ds.parse_dataset(text=_CSV, name="Sales")
     cats, vals = ds.aggregate(d["rows"], d["columns"], "region", "revenue", "sum")

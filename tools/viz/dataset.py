@@ -1,7 +1,7 @@
 # CUI // SP-CTI
-"""Dataset ingestion for the Viz Kernel — CSV/JSON → typed table.
+"""Dataset ingestion for the Viz Kernel — CSV/JSON/XLSX → typed table.
 
-Turns a user-uploaded CSV or JSON dataset into a normalized table the
+Turns a user-uploaded CSV, JSON, or XLSX dataset into a normalized table the
 storytelling layer can build dashboards over:
 
     {
@@ -65,9 +65,67 @@ def _infer_types(columns: list[str], rows: list[list]) -> tuple[list[str], list[
     return dims, meas
 
 
+def _parse_xlsx(file_bytes: bytes | None, path: str | None, name: str) -> dict[str, Any] | None:
+    """Parse the first worksheet of an XLSX file into a typed table dict."""
+    try:
+        import openpyxl
+    except ImportError:
+        return None
+
+    try:
+        source = io.BytesIO(file_bytes) if file_bytes is not None else path
+        if source is None:
+            return None
+        wb = openpyxl.load_workbook(source, read_only=True, data_only=True)
+        try:
+            ws = wb.worksheets[0]
+            rows_iter = ws.iter_rows(values_only=True)
+            try:
+                header = next(rows_iter)
+            except StopIteration:
+                return None
+            columns = [
+                (str(c).strip() if c not in (None, "") else f"col{i + 1}")
+                for i, c in enumerate(header)
+            ][:MAX_COLS]
+            rows: list[list] = []
+            for i, r in enumerate(rows_iter):
+                if i >= MAX_ROWS:
+                    break
+                row = ["" if v is None else v for v in r][:MAX_COLS]
+                if any(str(v).strip() for v in row):
+                    rows.append(row)
+        finally:
+            wb.close()
+    except Exception:
+        return None
+
+    if not columns or not rows:
+        return None
+    dims, meas = _infer_types(columns, rows)
+    return {"name": name, "columns": columns, "rows": rows,
+            "dimensions": dims, "measures": meas}
+
+
 def parse_dataset(text: str | None = None, path: str | None = None,
+                  file_bytes: bytes | None = None, filename: str = "",
                   name: str = "Dataset") -> dict[str, Any] | None:
-    """Parse CSV or JSON text/file into a typed table dict, or None on failure."""
+    """Parse CSV, JSON, or XLSX text/file/bytes into a typed table dict, or None on failure.
+
+    XLSX is routed by extension (``filename`` or ``path``), read via openpyxl
+    in read-only/data-only mode. ``.xlsm`` (macro-enabled) workbooks are
+    rejected outright — never parsed, macros never executed.
+    """
+    ext = ""
+    src_for_ext = filename or path or ""
+    if "." in src_for_ext:
+        ext = src_for_ext.rsplit(".", 1)[-1].lower()
+
+    if ext == "xlsm":
+        return None
+    if ext == "xlsx":
+        return _parse_xlsx(file_bytes=file_bytes, path=path if not file_bytes else None, name=name)
+
     raw = text or ""
     if not raw and path:
         try:

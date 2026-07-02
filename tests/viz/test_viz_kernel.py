@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from tools.viz.spec import (
-    ChartSpec, Series, TableSpec, DiagramSpec, KpiSpec, KpiTile,
+    ChartSpec, Chart3DSpec, Series, TableSpec, DiagramSpec, KpiSpec, KpiTile,
     TimelineSpec, Milestone, spec_from_dict,
 )
 
@@ -67,9 +67,23 @@ def _kpis() -> KpiSpec:
         KpiTile("Canvases", "56", "+3"), KpiTile("Tests", "330", unit=" passing")])
 
 
+def _bar3d() -> Chart3DSpec:
+    return Chart3DSpec(title="Sales by Region/Quarter", chart_type="bar3d",
+                       x_categories=["East", "West"], y_categories=["Q1", "Q2"],
+                       points=[[0, 0, 100], [0, 1, 120], [1, 0, 80], [1, 1, 90]],
+                       x_label="Region", y_label="Quarter", z_label="Sales", unit="$")
+
+
+def _scatter3d() -> Chart3DSpec:
+    return Chart3DSpec(title="Risk vs Impact vs Cost", chart_type="scatter3d",
+                       points=[[1.0, 2.0, 3.0], [4.0, 1.0, 2.5]],
+                       x_label="Risk", y_label="Impact", z_label="Cost")
+
+
 # ── spec round-trip ──────────────────────────────────────────────────────────
 
-@pytest.mark.parametrize("spec_fn", [_bar, _multi_line, _pie, _gauge, _table, _diagram, _kpis])
+@pytest.mark.parametrize("spec_fn", [_bar, _multi_line, _pie, _gauge, _table, _diagram, _kpis,
+                                     _bar3d, _scatter3d])
 def test_spec_roundtrip(spec_fn):
     spec = spec_fn()
     d = spec.to_dict()
