@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-# ACE Quick Launch Presets — 16 presets across 8 canvases
+# ACE Quick Launch Presets — 17 presets across 9 canvases
 # Each preset auto-fills the launch textarea and is color-coded by canvas.
 # canvas values map to CSS class: preset-canvas-<canvas>
 
@@ -107,3 +107,10 @@ presets:
     canvas: strategy
     color: "#be185d"
     problem_text: "Draft a competitive analysis and market positioning strategy for the target segment. Identify differentiators, gaps vs. top 5 competitors, and a go-to-market recommendation with win/loss themes."
+
+  # ── RFI / Proposal ─────────────────────────────────────────────────────────
+  - id: rfi_response_team
+    label: "RFI Response Team"
+    canvas: rfi_canvas
+    color: "#1e3a6e"
+    problem_text: "Assemble a 5-role RFI color team: Writer (draft sections addressing all requirements), Editor (structural markdown repair + style guide), Reviewer (Shipley Red Team government-evaluator perspective + coverage check), Researcher (TRL/FAR/benchmark validation), Compliance Reviewer (FAR Part 12, DFARS 252.204-7012, CAGE/UEI, NAICS, NDAA §889, UNCLASSIFIED markings). Pipeline: Writer → Editor → Reviewer → Researcher → Compliance. Iterate until all requirements covered and compliance gate passes."

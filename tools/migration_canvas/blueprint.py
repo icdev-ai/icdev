@@ -937,13 +937,13 @@ def create_migration_blueprint():
             if vendor:
                 rows = conn.execute(
                     f"SELECT {_CATALOG_COLS} FROM nc_hardware_profiles "  # nosec B608
-                    "WHERE LOWER(vendor)=LOWER(%s) AND device_type=%s ORDER BY vendor, model",
+                    "WHERE LOWER(vendor)=LOWER(?) AND device_type=? ORDER BY vendor, model",
                     (vendor, device_type),
                 ).fetchall()
             else:
                 rows = conn.execute(
                     f"SELECT {_CATALOG_COLS} FROM nc_hardware_profiles "  # nosec B608
-                    "WHERE device_type=%s ORDER BY vendor, model",
+                    "WHERE device_type=? ORDER BY vendor, model",
                     (device_type,),
                 ).fetchall()
         return jsonify({"devices": [_row_to_dict(r) for r in rows]})

@@ -51,9 +51,67 @@ def _mc_conn():
     return _mc_get_connection()
 
 
+# Minimal nc_hardware_profiles schema/seed, self-contained here rather than
+# depending on tools.network.db.init_db — that module only runs when the
+# (much larger, PG/SQLite-dual-backend) Network Design Canvas is enabled,
+# which CI leaves off (ICDEV_NETWORK_ENABLED=false — shared-DB table
+# collisions pending the PGP migration). Only the columns this module's own
+# queries actually select are populated; everything else defaults per the
+# canonical schema in tools/network/db/init_db.py.
+_NC_HW_SCHEMA = """
+CREATE TABLE IF NOT EXISTS nc_hardware_profiles (
+    id                  TEXT PRIMARY KEY,
+    vendor              TEXT NOT NULL,
+    model               TEXT NOT NULL,
+    model_family        TEXT,
+    device_type         TEXT NOT NULL,
+    form_factor         TEXT DEFAULT 'rack',
+    rack_units          INTEGER DEFAULT 1,
+    power_typical_w     INTEGER,
+    power_max_w         INTEGER,
+    throughput_gbps     REAL,
+    routing_table_size  INTEGER,
+    arp_table_size      INTEGER,
+    ports_json          TEXT DEFAULT '[]',
+    eol_date            TEXT,
+    tags                TEXT DEFAULT '[]',
+    UNIQUE(vendor, model)
+);
+"""
+
+_NC_HW_SEED = [
+    ("hw-juniper-mx204", "Juniper", "MX204", "MX Series", "router", "rack", 1, 200, 275, 400.0,
+     2000000, 128000,
+     json.dumps([{"count": 4, "speed": "100GbE", "type": "QSFP28"}, {"count": 8, "speed": "10GbE", "type": "SFP+"}]),
+     "2030-06-30", json.dumps(["access", "cpe", "small-core"])),
+    ("hw-cisco-asr9901", "Cisco", "ASR-9901", "ASR 9000 Series", "router", "rack", 2, 600, 850, 2400.0,
+     6000000, 256000,
+     json.dumps([{"count": 20, "speed": "100GbE", "type": "QSFP28"}, {"count": 4, "speed": "10GbE", "type": "SFP+"}]),
+     "2031-12-31", json.dumps(["core", "peering", "aggregation"])),
+    ("hw-juniper-mx480", "Juniper", "MX480", "MX Series", "router", "chassis", 8, 1200, 1800, 2400.0,
+     4000000, 256000,
+     json.dumps([{"count": 6, "speed": "MPC slot", "type": "MPC"}]),
+     "2029-03-31", json.dumps(["core", "aggregation"])),
+    ("hw-cisco-8201", "Cisco", "8201", "8000 Series", "router", "rack", 1, 450, 600, 10800.0,
+     8000000, 512000,
+     json.dumps([{"count": 24, "speed": "400GbE", "type": "QSFP-DD"}, {"count": 12, "speed": "100GbE", "type": "QSFP28"}]),
+     "2034-12-31", json.dumps(["core", "edge", "peering"])),
+]
+
+
 def _nc_conn() -> sqlite3.Connection:
     conn = sqlite3.connect(str(_NC_DB_PATH))
     conn.row_factory = sqlite3.Row
+    conn.executescript(_NC_HW_SCHEMA)
+    if conn.execute("SELECT COUNT(*) FROM nc_hardware_profiles").fetchone()[0] == 0:
+        conn.executemany(
+            "INSERT OR IGNORE INTO nc_hardware_profiles "
+            "(id, vendor, model, model_family, device_type, form_factor, rack_units, "
+            "power_typical_w, power_max_w, throughput_gbps, routing_table_size, "
+            "arp_table_size, ports_json, eol_date, tags) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            _NC_HW_SEED,
+        )
+        conn.commit()
     return conn
 
 
