@@ -69,6 +69,16 @@ def mock_router():
                 "excluded_functions": ["pulse_generation"],
                 "per_function": {},
             },
+            "council": {
+                "enabled": True,
+                "num_advisors": 5,
+                "chairman_role": "council_chairman",
+                "advisor_pool_role": "council_advisor_pool",
+                "chairman_model": "claude-sonnet",
+                "advisor_models": ["qwen3-local", "claude-sonnet", "openai-gpt4o"],
+                "excluded_functions": ["pulse_generation"],
+                "per_function": {},
+            },
         },
         # routing: dict enables _invoke_model to detect role keys vs direct model names
         "routing": {
@@ -77,6 +87,8 @@ def mock_router():
             "cot_synthesizer":   {"chain": ["claude-sonnet", "qwen3-local"]},
             "cod_debater_pool":  {"chain": ["qwen3-local", "llama-local", "claude-haiku"]},
             "cod_judge":         {"chain": ["claude-sonnet", "qwen3-local"]},
+            "council_advisor_pool": {"chain": ["qwen3-local", "llama-local", "claude-haiku", "deepseek-local", "gpt-4o-mini"]},
+            "council_chairman":     {"chain": ["claude-sonnet", "qwen3-local"]},
         },
     }
     router.get_model_pricing.return_value = {
@@ -285,6 +297,119 @@ class TestChainOfDebate:
         for row in rows:
             assert row["function"] == "architecture_review"
             assert row["chain_mode"] == "cod"
+
+
+# ---------------------------------------------------------------------------
+# Council Tests
+# ---------------------------------------------------------------------------
+
+
+class TestCouncil:
+    def test_council_returns_chairman_verdict(self, mock_router, tmp_db):
+        """Council returns a chairman-synthesized verdict after advisors
+        respond and peer-review."""
+        with patch("tools.llm.chain_orchestrator.get_connection", lambda: sqlite3.connect(str(tmp_db))):
+            orch = ChainOrchestrator(router=mock_router)
+            req = LLMRequest(messages=[{"role": "user", "content": "Should we build X?"}])
+            result = orch.invoke_council("idealab_council_query", req)
+
+        assert isinstance(result, ChainResult)
+        assert result.chain_mode == "council"
+        assert result.content != ""
+        assert result.stop_reason == "completed"
+        assert result.total_input_tokens > 0
+        assert result.total_output_tokens > 0
+
+        # 5 advisor steps + at least 1 peer-review step + 1 chairman step
+        advisor_steps = [r for r in result.rounds if str(r["step"]).startswith("advisor:")]
+        peer_review_steps = [r for r in result.rounds if r["step"] == "peer_review"]
+        chairman_steps = [r for r in result.rounds if r["step"] == "chairman"]
+        assert len(advisor_steps) == 5
+        assert len(peer_review_steps) == 5
+        assert len(chairman_steps) == 1
+
+        # All 5 fixed cognitive lenses show up, not generated stances
+        advisor_names = {s["step"].split(":", 1)[1] for s in advisor_steps}
+        assert advisor_names == {
+            "The Contrarian", "The First Principles Thinker", "The Expansionist",
+            "The Outsider", "The Executor",
+        }
+
+    def test_council_excluded_function_raises(self, mock_router, tmp_db):
+        with patch("tools.llm.chain_orchestrator.get_connection", lambda: sqlite3.connect(str(tmp_db))):
+            orch = ChainOrchestrator(router=mock_router)
+            req = LLMRequest(messages=[{"role": "user", "content": "test prompt"}])
+            with pytest.raises(RuntimeError, match="excluded from Council"):
+                orch.invoke_council("pulse_generation", req)
+
+    def test_council_telemetry_written(self, mock_router, tmp_db):
+        with patch("tools.llm.chain_orchestrator.get_connection", lambda: sqlite3.connect(str(tmp_db))):
+            orch = ChainOrchestrator(router=mock_router)
+            req = LLMRequest(messages=[{"role": "user", "content": "test prompt"}])
+            result = orch.invoke_council("idealab_council_query", req)
+
+        conn = sqlite3.connect(str(tmp_db))
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT * FROM llm_chain_telemetry WHERE session_id = ?",
+            (result.trace_id,),
+        ).fetchall()
+        conn.close()
+
+        assert len(rows) > 0
+        for row in rows:
+            assert row["function"] == "idealab_council_query"
+            assert row["chain_mode"] == "council"
+
+    def test_council_degrades_cleanly_when_all_advisors_fail(self, mock_router, tmp_db):
+        """Regression: if every advisor call raises, invoke_council must
+        return an empty-content ChainResult (stop_reason=all_advisors_failed)
+        instead of raising or crashing on an empty anonymization/peer-review
+        step -- callers (the MCP handler) treat this like any other
+        unavailable-LLM case. Advisor calls resolve to direct pool model
+        names, so they go through _invoke_model_direct, not invoke_for_role."""
+        def always_fail(model_name, request):
+            raise RuntimeError("simulated provider outage")
+
+        mock_router._invoke_model_direct = always_fail
+        with patch("tools.llm.chain_orchestrator.get_connection", lambda: sqlite3.connect(str(tmp_db))):
+            orch = ChainOrchestrator(router=mock_router)
+            req = LLMRequest(messages=[{"role": "user", "content": "test prompt"}])
+            result = orch.invoke_council("idealab_council_query", req)
+
+        assert result.content == ""
+        assert result.stop_reason == "all_advisors_failed"
+
+    def test_council_peer_review_sees_anonymized_labels_not_advisor_names(self, mock_router, tmp_db):
+        """Regression: peer review must anonymize responses (Response A-E)
+        -- an advisor's own name/persona must never leak into what the
+        reviewer sees, or reviewers could defer to a persona instead of
+        judging the argument on merit. Advisor/peer-review calls resolve to
+        direct pool model names (get_diverse_models), so they go through
+        _invoke_model_direct, not invoke_for_role (which is only used for the
+        single fixed chairman role key)."""
+        captured_review_prompts = []
+
+        def capturing_invoke_direct(model_name, request):
+            content = (request.messages[0]["content"] if request.messages else "")
+            if "[RESPONSE" in content:
+                captured_review_prompts.append(content)
+            return LLMResponse(
+                content="an independent advisor argument", model_id=model_name,
+                input_tokens=100, output_tokens=50, provider="mock",
+            )
+
+        mock_router._invoke_model_direct = capturing_invoke_direct
+        with patch("tools.llm.chain_orchestrator.get_connection", lambda: sqlite3.connect(str(tmp_db))):
+            orch = ChainOrchestrator(router=mock_router)
+            req = LLMRequest(messages=[{"role": "user", "content": "test prompt"}])
+            orch.invoke_council("idealab_council_query", req)
+
+        assert captured_review_prompts, "expected at least one peer-review prompt to be captured"
+        for prompt in captured_review_prompts:
+            assert "The Contrarian" not in prompt
+            assert "The Executor" not in prompt
+            assert "[RESPONSE A]" in prompt or "[RESPONSE B]" in prompt
 
 
 # ---------------------------------------------------------------------------

@@ -2085,6 +2085,58 @@ class LLMRouter:
 
         return response
 
+    def invoke_council(self, function: str, request: LLMRequest) -> LLMResponse:
+        """Invoke an LLM Council via ChainOrchestrator.
+
+        Fixed-perspective advisors (Contrarian, First Principles Thinker,
+        Expansionist, Outsider, Executor) each respond independently, peer-
+        review each other anonymously, and a chairman synthesizes a
+        structured verdict (agreement / clashes / blind spots / recommendation
+        / next step) as `response.content`. See
+        `tools.llm.chain_orchestrator.ChainOrchestrator.invoke_council` for
+        the full mechanism. Reads `chain_orchestration.council` config.
+        """
+        try:
+            from tools.llm.chain_orchestrator import ChainOrchestrator
+        except ImportError as exc:
+            raise LLMUnavailableError(
+                f"ChainOrchestrator not available: {exc}",
+                function=function,
+                no_llm_mode=False,
+            ) from exc
+
+        orchestrator = ChainOrchestrator(router=self)
+        result = orchestrator.invoke_council(function, request)
+
+        response = LLMResponse(
+            content=result.content,
+            model_id=",".join(result.models_used),
+            provider="chain_orchestrator",
+            input_tokens=result.total_input_tokens,
+            output_tokens=result.total_output_tokens,
+            duration_ms=result.total_duration_ms,
+            stop_reason=result.stop_reason,
+            classification=request.classification,
+        )
+        response.chain_trace_id = result.trace_id  # type: ignore[attr-defined]
+        response.chain_mode = result.chain_mode  # type: ignore[attr-defined]
+        response.chain_rounds = result.rounds  # type: ignore[attr-defined]
+        response.chain_confidence = result.confidence  # type: ignore[attr-defined]
+
+        try:
+            self._log_telemetry(
+                function=function,
+                request=request,
+                response=response,
+                model_id=",".join(result.models_used),
+                provider_name="chain_orchestrator",
+                latency_ms=result.total_duration_ms,
+            )
+        except Exception:
+            pass
+
+        return response
+
     def invoke_streaming(self, function: str, request: LLMRequest):
         """Resolve provider and invoke with streaming + fallback."""
         # Explicit no-LLM mode: short-circuit so streaming UIs can render

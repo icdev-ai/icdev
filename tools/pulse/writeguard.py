@@ -960,3 +960,20 @@ def _generate_recommendations(results: dict) -> list[str]:
         recs.append("High similarity detected — rephrase flagged sections")
 
     return recs
+
+
+def handle_writeguard_analyze(args: dict) -> dict:
+    """MCP-tool adapter for `run_full_quality_check` -- exposes WriteGuard's
+    full deterministic quality check to cross-repo callers (e.g. idea_lab)
+    over the `writeguard_analyze` MCP tool. No `opportunity_id` is passed,
+    so the plagiarism check's DB-backed similarity lookup safely no-ops
+    (`run_full_quality_check` -> `check_plagiarism` degrades to a neutral
+    score rather than raising)."""
+    try:
+        text = args.get("text") or ""
+        if not text.strip():
+            return {"error": "text is required"}
+        return run_full_quality_check(text)
+    except Exception as exc:
+        logger.warning("handle_writeguard_analyze: %s", exc)
+        return {"error": str(exc)}

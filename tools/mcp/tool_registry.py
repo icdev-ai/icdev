@@ -43,9 +43,10 @@ Categories:
     system_graph (3)
     intelligence (3)
     integrity (2)
-    nova (8)
+    nova (9)
+    pulse (1)
 
-Total: 278 tools, 6 resources
+Total: 280 tools, 6 resources
 """
 
 TOOL_REGISTRY = {
@@ -6779,6 +6780,74 @@ TOOL_REGISTRY = {
             "properties": {
                 "limit": {"type": "integer", "default": 20, "description": "Max entries to return"},
             },
+        },
+    },
+    "ace_persona_query": {
+        "category": "nova",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_ace_persona_query",
+        "description": (
+            "Get a one-shot, persona-informed answer from a specific ICDEV domain expert "
+            "(e.g. architect, devops_engineer, ai_developer), grounded in that role's SOUL.md "
+            "identity. Synchronous, single LLM call -- NOT the async multi-role ACE team launch. "
+            "role_id is optional if domain_description is given: with no known role_id, a persona "
+            "for that domain is generated on the fly (or reused if already generated for that "
+            "domain) via tools.ace.persona_generator, instead of returning no consultation at all. "
+            "The response's role_id reports which persona actually answered. Primary use case is "
+            "cross-repo callers (e.g. idea_lab) consulting an ACE persona."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "role_id": {"type": "string", "description": "ACE role id, e.g. 'architect', 'devops_engineer', 'ai_developer'. Optional if domain_description is given."},
+                "question": {"type": "string", "description": "The question to ask the persona"},
+                "context": {"type": "string", "description": "Optional additional context"},
+                "domain_description": {"type": "string", "description": "Free-text domain description used to generate (or reuse) a persona when role_id is omitted/unknown"},
+            },
+            "required": ["question"],
+        },
+    },
+    "council_query": {
+        "category": "nova",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_council_query",
+        "description": (
+            "Pressure-test a high-stakes question or decision through an LLM Council: 5 fixed-"
+            "perspective advisors (Contrarian, First Principles Thinker, Expansionist, Outsider, "
+            "Executor) respond independently and in parallel, anonymously peer-review each "
+            "other's responses, and a chairman synthesizes a structured verdict (where the "
+            "council agrees, where it clashes, blind spots peer review caught, a direct "
+            "recommendation, and one concrete next step). Adapted from Karpathy's LLM Council "
+            "methodology, distinct from Chain of Debate (no debate-to-a-winner; independent "
+            "single-pass analysis from fixed cognitive lenses). Primary use case is cross-repo "
+            "callers (e.g. idea_lab) pressure-testing a validated idea before committing to it."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "question": {"type": "string", "description": "The high-stakes question/decision to bring to the council"},
+                "context": {"type": "string", "description": "Optional additional context (e.g. the idea's Q&A answers, scores)"},
+            },
+            "required": ["question"],
+        },
+    },
+    # ============================================================
+    # PULSE — Writing Quality (WriteGuard) (1 tool)
+    # ============================================================
+    "writeguard_analyze": {
+        "category": "pulse",
+        "module": "tools.pulse.writeguard",
+        "handler": "handle_writeguard_analyze",
+        "description": (
+            "Run WriteGuard's full deterministic writing-quality check (grammar, readability, "
+            "tone, plagiarism, AI-content detection, style, structure, composite scores) on "
+            "Markdown/text. No LLM calls. Primary use case is cross-repo callers (e.g. idea_lab) "
+            "gating generated reports/specs."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"text": {"type": "string", "description": "Markdown or plain text to analyze"}},
+            "required": ["text"],
         },
     },
 }
