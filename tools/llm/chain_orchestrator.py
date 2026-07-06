@@ -44,6 +44,45 @@ DEFAULT_COST_CAP_USD = 0.50
 DEFAULT_TOKEN_CAP = 32000
 DEFAULT_TIMEOUT_SECONDS = 120
 
+# Fixed cognitive lenses for Council mode -- NOT generated per-function like
+# CoD's bull/bear/neutral positions. These are deliberately reusable across
+# any question: the differentiation mechanism is the lens, not the model or
+# a generated stance. (name, thinking-style description) pairs, in the order
+# advisor slots are assigned.
+_COUNCIL_ADVISORS: list[tuple[str, str]] = [
+    (
+        "The Contrarian",
+        "Actively looks for what's wrong, what's missing, what will fail. Assumes "
+        "the idea has a fatal flaw and tries to find it. Not a pessimist -- the "
+        "friend who saves you from a bad deal by asking the questions you're avoiding.",
+    ),
+    (
+        "The First Principles Thinker",
+        "Ignores the surface-level question and asks what you're actually trying "
+        "to solve. Strips away assumptions and rebuilds the problem from the "
+        "ground up. Sometimes the most valuable output is saying you're asking "
+        "the wrong question entirely.",
+    ),
+    (
+        "The Expansionist",
+        "Looks for upside everyone else is missing. What could be bigger? What "
+        "adjacent opportunity is hiding? Doesn't care about risk -- cares what "
+        "happens if this works even better than expected.",
+    ),
+    (
+        "The Outsider",
+        "Has zero context about the domain or history involved. Responds purely "
+        "to what's in front of them. Catches the curse of knowledge: things "
+        "obvious to an expert but confusing to everyone else.",
+    ),
+    (
+        "The Executor",
+        "Only cares whether this can actually be done and the fastest path to "
+        "doing it. Ignores theory and big-picture strategy. If an idea sounds "
+        "brilliant but has no clear first step, says so.",
+    ),
+]
+
 
 @dataclass
 class ChainStepResult:
@@ -132,6 +171,18 @@ class ChainOrchestrator:
                 # Legacy direct model names — fallback when pool returns nothing
                 "judge_model": mode_cfg.get("judge_model", "claude-sonnet"),
                 "debater_models": mode_cfg.get("debater_models", ["qwen3-local", "claude-sonnet", "openai-gpt4o"]),
+                "excluded_functions": mode_cfg.get("excluded_functions", []),
+            })
+        elif mode == "council":
+            defaults.update({
+                "enabled": mode_cfg.get("enabled", True),
+                "num_advisors": mode_cfg.get("num_advisors", 5),
+                # Role routing keys for multi-LLM council
+                "chairman_role": mode_cfg.get("chairman_role", "council_chairman"),
+                "advisor_pool_role": mode_cfg.get("advisor_pool_role", "council_advisor_pool"),
+                # Legacy direct model names — fallback when pool/role resolves to nothing
+                "chairman_model": mode_cfg.get("chairman_model", "claude-sonnet"),
+                "advisor_models": mode_cfg.get("advisor_models", ["qwen3-local", "claude-sonnet", "openai-gpt4o"]),
                 "excluded_functions": mode_cfg.get("excluded_functions", []),
             })
 
@@ -852,6 +903,229 @@ class ChainOrchestrator:
             confidence=confidence if "confidence" in dir() else 0.0,
         )
         self._write_chain_telemetry(result, function)
+        return result
+
+    def invoke_council(self, function: str, request: LLMRequest) -> ChainResult:
+        """Run an LLM Council: fixed-perspective advisors respond independently
+        and in parallel -> responses are anonymized -> each advisor peer-
+        reviews all anonymized responses -> a chairman synthesizes everything
+        (de-anonymized) plus all peer reviews into a structured verdict.
+
+        Distinct from Chain of Debate (see _COUNCIL_ADVISORS' module comment):
+        built for decision-quality analysis via structural adversarial
+        diversity, not debate-to-a-winner. Primary use case is cross-repo
+        callers (e.g. idea_lab) pressure-testing a high-stakes idea/decision
+        via the `council_query` MCP tool.
+
+        Degrades cleanly: if every advisor call fails, returns an empty-
+        content ChainResult with stop_reason="all_advisors_failed" rather
+        than raising -- callers (e.g. the MCP handler) treat that the same
+        as any other unavailable-LLM case.
+        """
+        cfg = self._get_function_config(function, "council")
+        trace_id = self._session_id
+        start_time = time.time()
+
+        if not cfg["enabled"]:
+            raise RuntimeError("Council is disabled in config")
+        if self._is_excluded(function, "council"):
+            raise RuntimeError(f"Function '{function}' is excluded from Council")
+
+        self._check_module_budget(function, estimated_cost=cfg.get("cost_cap_usd", 0.0))
+
+        num_advisors = min(cfg["num_advisors"], len(_COUNCIL_ADVISORS))
+        timeout = cfg["timeout_seconds"]
+        deadline = time.time() + timeout
+
+        advisor_pool_key = cfg.get("advisor_pool_role") or ""
+        advisor_models_assigned: List[str] = []
+        if advisor_pool_key:
+            try:
+                advisor_models_assigned = self.router.get_diverse_models(advisor_pool_key, num_advisors)
+            except Exception as exc:
+                logger.debug("get_diverse_models failed for '%s': %s — using legacy list", advisor_pool_key, exc)
+        if not advisor_models_assigned:
+            advisor_models_assigned = cfg.get("advisor_models", ["qwen3-local"])
+
+        chairman_role = cfg.get("chairman_role") or cfg.get("chairman_model", "claude-sonnet")
+
+        user_prompt = ""
+        if request.messages and isinstance(request.messages[0], dict):
+            user_prompt = str(request.messages[0].get("content", ""))
+
+        advisors = _COUNCIL_ADVISORS[:num_advisors]
+        rounds: List[Dict[str, Any]] = []
+        models_used: set = set()
+        total_cost = 0.0
+        total_tokens = 0
+
+        # ---- STEP 1: advisors respond independently, in parallel ----
+        advisor_results: List[Optional[Dict[str, Any]]] = [None] * num_advisors
+        with ThreadPoolExecutor(max_workers=num_advisors) as executor:
+            futures = {}
+            for i, (name, style) in enumerate(advisors):
+                model_name = advisor_models_assigned[i % len(advisor_models_assigned)]
+                sys_prompt, usr_prompt = ChainPrompts.council_advisor(
+                    user_prompt, name, style,
+                    system_prompt=request.system_prompt or "",
+                    output_schema=request.output_schema,
+                )
+                advisor_req = self._build_request(request, sys_prompt, usr_prompt)
+                fut = executor.submit(
+                    self._invoke_model, model_name, advisor_req, function, deadline - time.time()
+                )
+                futures[fut] = i
+
+            for future in as_completed(futures):
+                i = futures[future]
+                name, _style = advisors[i]
+                model_name = advisor_models_assigned[i % len(advisor_models_assigned)]
+                try:
+                    resp, elapsed = future.result(timeout=max(deadline - time.time(), 0.1))
+                    content = resp.content or ""
+                    cost = self._compute_cost(resp.model_id or model_name, resp.input_tokens, resp.output_tokens)
+                    total_cost += cost
+                    total_tokens += resp.input_tokens + resp.output_tokens
+                    models_used.add(resp.model_id or model_name)
+                    advisor_results[i] = {
+                        "name": name, "response": content, "model_id": resp.model_id or model_name,
+                    }
+                    rounds.append({
+                        "step": f"advisor:{name}",
+                        "model_id": resp.model_id or model_name,
+                        "input_tokens": resp.input_tokens,
+                        "output_tokens": resp.output_tokens,
+                        "cost_usd": round(cost, 6),
+                        "duration_ms": int(elapsed * 1000),
+                    })
+                except Exception as exc:
+                    logger.warning("Council advisor '%s' failed: %s", name, exc)
+
+        answered = [(i, r) for i, r in enumerate(advisor_results) if r and r["response"]]
+
+        if not answered:
+            total_duration_ms = int((time.time() - start_time) * 1000)
+            result = ChainResult(
+                content="", chain_mode="council", models_used=sorted(models_used), rounds=rounds,
+                total_input_tokens=total_tokens, total_output_tokens=0,
+                total_cost_usd=round(total_cost, 6), total_duration_ms=total_duration_ms,
+                stop_reason="all_advisors_failed", trace_id=trace_id,
+            )
+            self._write_chain_telemetry(result, function)
+            return result
+
+        # ---- STEP 2: anonymize + shuffle for peer review ----
+        import random
+
+        shuffled = list(answered)
+        random.shuffle(shuffled)
+        labels = [chr(ord("A") + j) for j in range(len(shuffled))]
+        anonymized = [{"label": labels[j], "response": r["response"]} for j, (_i, r) in enumerate(shuffled)]
+
+        # ---- STEP 3: peer review, in parallel (one review per answered advisor) ----
+        peer_reviews: List[str] = []
+        if time.time() < deadline:
+            try:
+                self._check_budget(total_cost, total_tokens, cfg)
+            except BudgetExceededError:
+                peer_reviews = []
+            else:
+                with ThreadPoolExecutor(max_workers=len(answered)) as executor:
+                    futures = {}
+                    for i, r in answered:
+                        model_name = advisor_models_assigned[i % len(advisor_models_assigned)]
+                        sys_prompt, usr_prompt = ChainPrompts.council_peer_review(
+                            user_prompt, anonymized, system_prompt=request.system_prompt or "",
+                        )
+                        review_req = self._build_request(request, sys_prompt, usr_prompt)
+                        fut = executor.submit(
+                            self._invoke_model, model_name, review_req, function, deadline - time.time()
+                        )
+                        futures[fut] = i
+
+                    for future in as_completed(futures):
+                        i = futures[future]
+                        try:
+                            resp, elapsed = future.result(timeout=max(deadline - time.time(), 0.1))
+                            review_text = resp.content or ""
+                            cost = self._compute_cost(resp.model_id or "", resp.input_tokens, resp.output_tokens)
+                            total_cost += cost
+                            total_tokens += resp.input_tokens + resp.output_tokens
+                            if resp.model_id:
+                                models_used.add(resp.model_id)
+                            peer_reviews.append(review_text)
+                            rounds.append({
+                                "step": "peer_review",
+                                "model_id": resp.model_id or "",
+                                "input_tokens": resp.input_tokens,
+                                "output_tokens": resp.output_tokens,
+                                "cost_usd": round(cost, 6),
+                                "duration_ms": int(elapsed * 1000),
+                            })
+                        except Exception as exc:
+                            logger.warning("Council peer review (advisor index %d) failed: %s", i, exc)
+
+        # ---- STEP 4: chairman synthesis ----
+        if time.time() > deadline:
+            stop_reason = "timeout"
+            final_content = answered[0][1]["response"]
+            confidence = 0.0
+        else:
+            try:
+                self._check_budget(total_cost, total_tokens, cfg)
+                sys_prompt, usr_prompt = ChainPrompts.council_chairman(
+                    user_prompt,
+                    [{"name": r["name"], "response": r["response"]} for _i, r in answered],
+                    peer_reviews,
+                    system_prompt=request.system_prompt or "",
+                    output_schema=request.output_schema,
+                )
+                chairman_req = self._build_request(request, sys_prompt, usr_prompt)
+                resp, elapsed = self._invoke_model(chairman_role, chairman_req, function, deadline - time.time())
+                final_content = resp.content or ""
+                cost = self._compute_cost(resp.model_id or chairman_role, resp.input_tokens, resp.output_tokens)
+                total_cost += cost
+                total_tokens += resp.input_tokens + resp.output_tokens
+                models_used.add(resp.model_id or chairman_role)
+                rounds.append({
+                    "step": "chairman",
+                    "model_id": resp.model_id or chairman_role,
+                    "input_tokens": resp.input_tokens,
+                    "output_tokens": resp.output_tokens,
+                    "cost_usd": round(cost, 6),
+                    "duration_ms": int(elapsed * 1000),
+                })
+                stop_reason = "completed"
+                confidence = self._extract_confidence(final_content)
+            except Exception as exc:
+                logger.warning("Council chairman failed: %s", exc)
+                final_content = answered[0][1]["response"]
+                stop_reason = f"chairman_error: {exc}"
+                confidence = 0.0
+
+        total_duration_ms = int((time.time() - start_time) * 1000)
+        result = ChainResult(
+            content=final_content,
+            chain_mode="council",
+            models_used=sorted(models_used),
+            rounds=rounds,
+            total_input_tokens=sum(r.get("input_tokens", 0) for r in rounds),
+            total_output_tokens=sum(r.get("output_tokens", 0) for r in rounds),
+            total_cost_usd=round(total_cost, 6),
+            total_duration_ms=total_duration_ms,
+            stop_reason=stop_reason,
+            trace_id=trace_id,
+            confidence=confidence,
+        )
+        self._write_chain_telemetry(result, function)
+        self._record_canvas_decision(
+            decision_type="council",
+            decision="Council verdict",
+            rationale=final_content[:2000],
+            model_used=",".join(sorted(models_used)),
+            confidence=confidence,
+            alternatives=[r["response"][:500] for _i, r in answered],
+        )
         return result
 
     def _generate_positions(self, user_prompt: str, num_debaters: int) -> List[str]:
