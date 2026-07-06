@@ -12,6 +12,7 @@ Multi-LLM orchestration engine.
 |--------|-------------|
 | `ChainOrchestrator.invoke_chain_of_thought(function, request)` | Run CoT: reasoner → critic → synthesizer (up to `max_rounds`). Returns `ChainResult`. |
 | `ChainOrchestrator.invoke_chain_of_debate(function, request)` | Run CoD: N parallel debaters → neutral judge synthesis. Returns `ChainResult`. |
+| `ChainOrchestrator.invoke_council(question, context)` | Run the LLM Council (adapted from Karpathy's methodology): 5 fixed-perspective advisors (Contrarian, First Principles Thinker, Expansionist, Outsider, Executor) respond independently and in parallel, anonymously peer-review each other, then a chairman synthesizes a structured verdict (agreement, clashes, blind spots, recommendation, next step). Distinct from CoD — no debate-to-a-winner, independent single-pass analysis from fixed cognitive lenses. Routing: `council_advisor_pool` / `council_chairman` in `args/llm_config.yaml`, plus `chain_orchestration.council.per_function.idealab_council_query`. Exposed as the `council_query` MCP tool (`gap_handlers.py::handle_council_query`); primary caller is cross-repo (e.g. idea_lab pressure-testing a validated idea before committing to it). |
 
 **Config:** `args/llm_config.yaml` → `chain_orchestration` section (cost cap, token cap, timeout, per-function overrides, model assignments, role keys).
 
@@ -99,7 +100,7 @@ migration generator, AI-ify — see `docs/security/sandbox-coverage.md`.
 | **Kanban** | `cot_enabled` flag + `cot_trace_id` in `TransitionResult` |
 | **Loop Engine** | `cot_config` in acceptance criteria |
 | **Auto-Remediate** | CoT reasoning stored in remediation decisions |
-| **MCP** | `cot_invoke` + `cod_invoke` tools in `tool_registry.py`; handlers in `gap_handlers.py` |
+| **MCP** | `cot_invoke` + `cod_invoke` tools in `tool_registry.py`; handlers in `gap_handlers.py`. `council_query` tool likewise (`gap_handlers.py::handle_council_query`), primary caller cross-repo (idea_lab). |
 | **Knowledge Graph** | `reasoning_step` node type indexed by `kg_builder.py` with step_name, model_id, chain_mode, trace_id, round_num |
 | **Event Bus** | `cot_reasoning_completed` published after every chain invocation |
 | **Cost Intelligence** | `enable_cot` / `enable_cod` recommendation types for high-cost functions |

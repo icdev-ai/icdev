@@ -2883,6 +2883,26 @@ python tools/kanban/seed_ace_kanban.py [--dry-run]
 ICDEV_ACE_ENABLED=true
 ```
 
+### Cross-Repo SME Consult (MCP tools, idea_lab bridge)
+Three MCP tools let an external process (primary caller: the standalone
+`idea_lab` project's Specialist advisor) consult ICDEV without launching a
+full async ACE team session:
+
+```bash
+# ace_persona_query — one-shot, persona-informed answer from a single ACE
+# role (or an on-the-fly generated persona if role_id is omitted/unknown
+# but domain_description is given). tools/ace/persona_query.py + persona_generator.py
+# council_query — pressure-test a decision through the 5-perspective LLM
+# Council + chairman synthesis. tools/llm/chain_orchestrator.py::invoke_council()
+# writeguard_analyze — full deterministic WriteGuard quality check, zero LLM.
+# tools/pulse/writeguard.py::handle_writeguard_analyze
+
+# Registered in tools/mcp/tool_registry.py; handlers in tools/mcp/gap_handlers.py
+# (ace_persona_query, council_query) and tools/pulse/writeguard.py (writeguard_analyze).
+# See tools/manifest/ace.md, tools/manifest/llm-chain-orchestration.md, and
+# tools/manifest/writeguard-writing-quality-analysis.md for full details.
+```
+
 ## Autonomous Capability Foundry (ACF) Commands
 ```bash
 # ── Engine — run one harvest→synth→novelty→score→CoD→spec→task-graph→seed cycle ──
