@@ -456,6 +456,8 @@ known_safe_dynamic_import_modules:
   - testing/production_audit.py
   - tools/trading/brokers/router.py  # registry-driven loader: importlib.import_module(entry["module"]) where entry comes from _BROKER_REGISTRY, a hardcoded Python dict of known broker adapter module paths (not user-controlled). Authorized by REQ-TRADING-BROKER-ROUTER-DYNAMIC-IMPORT-01.
   - trading/brokers/router.py
+  - tools/ace/step_executor.py  # registry-driven loader: _resolve_tool() uses importlib.import_module(module_path) where module_path is a dotted tool path from a CoWorkerStep, gated by spec.tool_permissions — a whitelist loaded from trusted first-party role YAML files (args/ace/roles/*.yaml via role_loader.py, yaml.safe_load) — not user-controlled or network input. Authorized by REQ-ACE-STEP-EXECUTOR-DYNAMIC-IMPORT-01 (assessment-127 review, 2026-07-06).
+  - ace/step_executor.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
 
 # ---------------------------------------------------------------------------
 # Known-safe ICDEV modules that contain SIPA persistence-detector false
