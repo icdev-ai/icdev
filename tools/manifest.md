@@ -1154,3 +1154,15 @@
 | Render Png | tools\viz\render_png.py | Auto-registered: viz/render_png.py | --json | JSON |
 | Render Pptx | tools\viz\render_pptx.py | Auto-registered: viz/render_pptx.py | --json | JSON |
 | Story Builder | tools\viz\story_builder.py | Auto-registered: viz/story_builder.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Agent Coordination | tools\ace\agent_coordination.py | Auto-registered: ace/agent_coordination.py | --json | JSON |
+| Chat Trigger | tools\ace\chat_trigger.py | Auto-registered: ace/chat_trigger.py | --json | JSON |
+| Llm Step | tools\ace\llm_step.py | Auto-registered: ace/llm_step.py | --json | JSON |
+| Markov Sequencer | tools\ace\markov_sequencer.py | Auto-registered: ace/markov_sequencer.py | --json | JSON |
+| Message Bus | tools\ace\message_bus.py | Auto-registered: ace/message_bus.py | --json | JSON |
+| Step Executor | tools\ace\step_executor.py | Auto-registered: ace/step_executor.py | --json | JSON |
+| Team Assembler | tools\ace\team_assembler.py | Auto-registered: ace/team_assembler.py | --json | JSON |
