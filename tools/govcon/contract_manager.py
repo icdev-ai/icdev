@@ -130,14 +130,17 @@ def create_contract(data):
     """Create a new contract."""
     contract_id = _uuid()
     conn = _get_db()
+    obligated_value = data.get("obligated_value", 0.0)
+    billed_value = data.get("billed_value", 0.0)
     conn.execute(
         "INSERT INTO cpmp_contracts "
         "(id, contract_number, title, agency, "
         "cor_name, cor_email, cor_phone, contract_type, idiq_contract_id, naics_code, "
-        "total_value, funded_value, ceiling_value, pop_start, pop_end, "
+        "total_value, funded_value, obligated_value, remaining_obligation, billed_value, ceiling_value, "
+        "pop_start, pop_end, period_type, option_number, "
         "status, opportunity_id, notes, "
         "created_at, updated_at, created_by) "
-        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
         (
             contract_id,
             data.get("contract_number", ""),
@@ -151,9 +154,14 @@ def create_contract(data):
             data.get("naics_code"),
             data.get("total_value", 0.0),
             data.get("funded_value", 0.0),
+            obligated_value,
+            obligated_value - billed_value,
+            billed_value,
             data.get("ceiling_value"),
             data.get("pop_start"),
             data.get("pop_end"),
+            data.get("period_type", "base"),
+            data.get("option_number", 0),
             "draft",
             data.get("opportunity_id"),
             data.get("notes"),
@@ -237,9 +245,13 @@ def update_contract(contract_id, data):
         "contract_type",
         "total_value",
         "funded_value",
+        "obligated_value",
+        "billed_value",
         "ceiling_value",
         "pop_start",
         "pop_end",
+        "period_type",
+        "option_number",
         "naics_code",
         "notes",
         "idiq_contract_id",
@@ -250,6 +262,19 @@ def update_contract(contract_id, data):
         if field in data:
             sets.append(f"{field} = ?")
             params.append(data[field])
+
+    # remaining_obligation is derived from obligated_value/billed_value; recompute
+    # whenever either input changes so it never drifts from the underlying values.
+    if "obligated_value" in data or "billed_value" in data:
+        current = dict(
+            conn.execute(
+                "SELECT obligated_value, billed_value FROM cpmp_contracts WHERE id = %s", (contract_id,)
+            ).fetchone()
+        )
+        obligated_value = data.get("obligated_value", current.get("obligated_value") or 0.0)
+        billed_value = data.get("billed_value", current.get("billed_value") or 0.0)
+        sets.append("remaining_obligation = ?")
+        params.append(obligated_value - billed_value)
 
     if not sets:
         conn.close()
