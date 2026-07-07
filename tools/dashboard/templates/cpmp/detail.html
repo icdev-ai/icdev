@@ -164,6 +164,7 @@
 <!-- Tab Navigation -->
 <div class="tab-nav">
     <button class="tab-btn active" onclick="switchTab('overview')">Overview <span class="tab-help-btn" onclick="event.stopPropagation();showTabHelp('overview')" title="Help">?</span></button>
+    <button class="tab-btn" onclick="switchTab('periods')">Periods</button>
     <button class="tab-btn" onclick="switchTab('clins')">CLINs <span class="tab-help-btn" onclick="event.stopPropagation();showTabHelp('clins')" title="Help">?</span></button>
     <button class="tab-btn" onclick="switchTab('wbs')">WBS <span class="tab-help-btn" onclick="event.stopPropagation();showTabHelp('wbs')" title="Help">?</span></button>
     <button class="tab-btn" onclick="switchTab('deliverables')">Deliverables <span class="tab-help-btn" onclick="event.stopPropagation();showTabHelp('deliverables')" title="Help">?</span></button>
@@ -224,6 +225,52 @@
         </div>
     </div>
 
+    <!-- Obligation Tracking Panel -->
+    {% set obs = obligation_summary if obligation_summary and obligation_summary.status == 'ok' else {} %}
+    {% set total_obl = obs.get('total_obligated', contract.obligated_value or contract.funded_value or 0) %}
+    {% set total_bld = obs.get('total_billed', 0) %}
+    {% set remaining = obs.get('remaining_obligation', total_obl - total_bld) %}
+    {% set burn_pct = obs.get('burn_rate_pct', 0) %}
+    {% set obl_color = '#dc3545' if burn_pct >= 90 else ('#ffc107' if burn_pct >= 70 else '#28a745') %}
+    <div class="card" style="padding:16px; margin-top:16px;">
+        <div class="card-label">Obligation &amp; Burn Rate</div>
+        <div class="stat-grid" style="margin-top:12px;">
+            <div class="stat-card">
+                <div class="stat-value" style="font-size:18px;">{% if total_obl %}${{ total_obl|round(0)|int }}{% else %}---{% endif %}</div>
+                <div class="stat-label">Total Obligated</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" style="font-size:18px;">{% if total_bld %}${{ total_bld|round(0)|int }}{% else %}$0{% endif %}</div>
+                <div class="stat-label">Billed (Expended)</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" style="font-size:18px; color:{{ '#dc3545' if remaining < 0 else '#28a745' }};">
+                    {% if total_obl %}${{ remaining|round(0)|int }}{% else %}---{% endif %}
+                </div>
+                <div class="stat-label">Remaining Obligation</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" style="font-size:18px; color:{{ obl_color }};">{{ burn_pct }}%</div>
+                <div class="stat-label">Burn Rate</div>
+            </div>
+        </div>
+        {% if total_obl %}
+        <div class="funding-gauge" style="margin-top:12px;">
+            <div class="funding-gauge-fill" style="width:{{ [burn_pct, 100]|min }}%; background:{{ obl_color }};"></div>
+            <div class="funding-gauge-label">{{ burn_pct }}% of ${{ total_obl|round(0)|int }} obligated expended</div>
+        </div>
+        {% endif %}
+        {% if contract.period_type or contract.option_number is defined %}
+        <div style="margin-top:10px; font-size:12px; color:var(--text-secondary);">
+            Current period:
+            <strong style="color:var(--text-primary);">
+                {{ (contract.period_type or 'base')|replace('_', ' ')|title }}
+                {% if contract.option_number %} (Option {{ contract.option_number }}){% endif %}
+            </strong>
+        </div>
+        {% endif %}
+    </div>
+
     <!-- Status Timeline -->
     <div class="card" style="padding:16px; margin-top:16px;">
         <div class="card-label">Contract Status Timeline</div>
@@ -242,6 +289,110 @@
             {% endfor %}
         </div>
     </div>
+</div>
+
+<!-- ===================== Periods Tab ===================== -->
+<div id="tab-periods" class="tab-panel">
+    <!-- Obligation Summary Cards -->
+    {% set obs = obligation_summary if obligation_summary and obligation_summary.status == 'ok' else {} %}
+    {% set total_obl = obs.get('total_obligated', 0) %}
+    {% set total_bld = obs.get('total_billed', 0) %}
+    {% set remaining = obs.get('remaining_obligation', 0) %}
+    {% set burn_pct = obs.get('burn_rate_pct', 0) %}
+    {% set obl_color = '#dc3545' if burn_pct >= 90 else ('#ffc107' if burn_pct >= 70 else '#28a745') %}
+    <div class="stat-grid" style="margin-top:16px;">
+        <div class="stat-card">
+            <div class="stat-value" style="font-size:18px;">{% if total_obl %}${{ total_obl|round(0)|int }}{% else %}---{% endif %}</div>
+            <div class="stat-label">Portfolio Obligated</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" style="font-size:18px;">${{ total_bld|round(0)|int }}</div>
+            <div class="stat-label">Total Billed</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" style="font-size:18px; color:{{ '#dc3545' if remaining < 0 else '#28a745' }};">
+                ${{ remaining|round(0)|int }}
+            </div>
+            <div class="stat-label">Remaining Obligation</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" style="font-size:18px; color:{{ obl_color }};">{{ burn_pct }}%</div>
+            <div class="stat-label">Burn Rate vs Obligation</div>
+        </div>
+    </div>
+
+    <!-- Periods Table -->
+    <div class="table-container" style="margin-top:16px;">
+        <div class="table-header">
+            <h2>Base + Option Periods</h2>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Period</th>
+                    <th>Type</th>
+                    <th>POP Start</th>
+                    <th>POP End</th>
+                    <th>Obligated</th>
+                    <th>Funded</th>
+                    <th>Ceiling</th>
+                    <th>Remaining Oblig.</th>
+                    <th>Burn Rate</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in periods %}
+                {% set p_oblig = p.obligated_value or 0 %}
+                {% set p_remaining = p.remaining_obligation if p.remaining_obligation is defined else 0 %}
+                {% set p_burn = p.burn_rate_pct if p.burn_rate_pct is defined else 0 %}
+                {% set p_burn_color = '#dc3545' if p_burn >= 90 else ('#ffc107' if p_burn >= 70 else '#28a745') %}
+                {% set status_colors = {'active': 'success', 'exercised': 'success', 'unexercised': 'info', 'expired': 'warning'} %}
+                <tr>
+                    <td><strong>{{ (p.period_type or 'base')|replace('_', ' ')|title }}</strong></td>
+                    <td>{% if p.option_number == 0 %}Base{% else %}Option {{ p.option_number }}{% endif %}</td>
+                    <td>{{ p.pop_start or '---' }}</td>
+                    <td>{{ p.pop_end or '---' }}</td>
+                    <td>{% if p_oblig %}${{ p_oblig|round(0)|int }}{% else %}---{% endif %}</td>
+                    <td>{% if p.funded_value %}${{ p.funded_value|round(0)|int }}{% else %}---{% endif %}</td>
+                    <td>{% if p.ceiling_value %}${{ p.ceiling_value|round(0)|int }}{% else %}---{% endif %}</td>
+                    <td style="color:{{ '#dc3545' if p_remaining < 0 else '' }};">
+                        {% if p_oblig %}${{ p_remaining|round(0)|int }}{% else %}---{% endif %}
+                    </td>
+                    <td style="color:{{ p_burn_color }};">
+                        {% if p_oblig %}{{ p_burn }}%{% else %}---{% endif %}
+                    </td>
+                    <td><span class="badge badge-{{ status_colors.get(p.status, 'info') }}">{{ (p.status or 'unknown')|replace('_', ' ')|title }}</span></td>
+                </tr>
+                {% else %}
+                <tr><td colspan="10" style="text-align:center; color:var(--text-secondary);">No periods defined. Use the API to add base/option periods.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Per-Period Burn Rate Chart (visual) -->
+    {% if periods|length > 0 %}
+    <div class="card" style="padding:16px; margin-top:16px;">
+        <div class="card-label">Period Obligation Utilization</div>
+        {% for p in periods %}
+        {% set p_oblig = p.obligated_value or 0 %}
+        {% set p_burn = p.burn_rate_pct if p.burn_rate_pct is defined else 0 %}
+        {% set bar_color = '#dc3545' if p_burn >= 90 else ('#ffc107' if p_burn >= 70 else '#28a745') %}
+        {% if p_oblig %}
+        <div style="margin-top:10px;">
+            <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--text-secondary); margin-bottom:3px;">
+                <span>{{ (p.period_type or 'base')|replace('_', ' ')|title }}</span>
+                <span style="color:{{ bar_color }};">{{ p_burn }}% of ${{ p_oblig|round(0)|int }}</span>
+            </div>
+            <div class="funding-gauge" style="height:16px;">
+                <div class="funding-gauge-fill" style="width:{{ [p_burn, 100]|min }}%; background:{{ bar_color }};"></div>
+            </div>
+        </div>
+        {% endif %}
+        {% endfor %}
+    </div>
+    {% endif %}
 </div>
 
 <!-- ===================== CLINs Tab ===================== -->

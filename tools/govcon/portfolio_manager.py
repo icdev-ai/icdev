@@ -275,6 +275,7 @@ def get_portfolio_summary():
     value_row = conn.execute(
         "SELECT COALESCE(SUM(c.total_value), 0) as total_val, "
         "COALESCE(SUM(c.funded_value), 0) as funded_val, "
+        "COALESCE(SUM(c.obligated_value), 0) as obligated_val, "
         "COALESCE((SELECT SUM(cl.billed_value) FROM cpmp_clins cl "
         "JOIN cpmp_contracts cc ON cl.contract_id = cc.id "
         "WHERE cc.status IN ('active', 'option_pending')), 0) as billed_val "
@@ -345,13 +346,16 @@ def get_portfolio_summary():
         cd["value"] = cd.get("total_value", 0) or 0
         contracts.append(cd)
 
-    burn_rate = (value_row["billed_val"] / max(value_row["funded_val"], 1)) * 100 if value_row["funded_val"] else 0
+    obligated_val = value_row["obligated_val"] if value_row["obligated_val"] else value_row["funded_val"]
+    burn_rate = (value_row["billed_val"] / max(obligated_val, 1)) * 100 if obligated_val else 0
 
     # Ensure health_distribution always has all 3 keys
     for key in ("green", "yellow", "red"):
         health_dist.setdefault(key, 0)
 
     conn.close()
+    remaining_obligation = (obligated_val or 0) - (value_row["billed_val"] or 0)
+
     return {
         "status": "ok",
         "portfolio": {
@@ -359,7 +363,9 @@ def get_portfolio_summary():
             "active_contracts": active,
             "total_value": value_row["total_val"],
             "funded_value": value_row["funded_val"],
+            "obligated_value": obligated_val,
             "billed_value": value_row["billed_val"],
+            "remaining_obligation": round(remaining_obligation, 2),
             "burn_rate_pct": round(burn_rate, 1),
             "overdue_deliverables": overdue,
             "at_risk_contracts": at_risk,
