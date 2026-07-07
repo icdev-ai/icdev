@@ -896,7 +896,8 @@ class TestGenerateAllPersistence:
         assert data["total"] == 3
 
     def test_get_status_reads_from_file_when_not_in_memory(self, tmp_path, monkeypatch):
-        import json, tools.govcon.rfi_workbench as wb
+        import json
+        import tools.govcon.rfi_workbench as wb
         monkeypatch.setattr(wb, "_GENALL_TMP_DIR", tmp_path)
         # Ensure session not in memory
         wb._generate_all_progress.pop("sess-y", None)
