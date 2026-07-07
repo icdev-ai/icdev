@@ -345,6 +345,11 @@
           <div class="wb-card-body">
             <div id="ace-reviewer-summary" style="font-size:11px;color:#94a3b8;font-style:italic;margin-bottom:8px;"></div>
             <div id="ace-reviewer-issues"></div>
+            <div id="ace-specialist-consult" style="display:none;margin-top:10px;padding-top:8px;border-top:1px solid #2d1b69;">
+              <div style="font-size:9px;color:#7c6ab0;text-transform:uppercase;font-weight:600;margin-bottom:4px;">🌐 Independent Pressure-Test (idea_lab Specialist)</div>
+              <div id="ace-specialist-consult-verdict" style="font-size:11px;color:#b8d0e8;white-space:pre-wrap;"></div>
+              <div id="ace-specialist-consult-source" style="font-size:9px;color:#5a7aa0;margin-top:4px;"></div>
+            </div>
           </div>
         </div>
 
@@ -1683,17 +1688,33 @@ function renderReviewerFeedback(fb) {
   const issues = fb.issues || [];
   if (!issues.length) {
     issuesEl.innerHTML = '<div style="font-size:11px;color:#22c55e;">✓ No evaluator concerns.</div>';
-    return;
+  } else {
+    const typeColors = {evaluator_concern:'#a78bfa',missing_data:'#ef4444',vague_claim:'#f59e0b',compliance_gap:'#f87171'};
+    issuesEl.innerHTML = issues.slice(0,5).map(i => {
+      const col = typeColors[i.type] || '#94a3b8';
+      const sug = i.suggestion ? `<div style="font-size:10px;color:#5a7aa0;margin-top:2px;">→ ${i.suggestion}</div>` : '';
+      return `<div style="margin-bottom:6px;padding:5px 7px;border-left:2px solid ${col};background:rgba(0,0,0,.15);">
+        <span style="font-size:9px;color:${col};text-transform:uppercase;font-weight:600;">${i.type.replace(/_/g,' ')}</span>
+        <div style="font-size:11px;color:#b8d0e8;margin-top:1px;">${i.message}</div>${sug}
+      </div>`;
+    }).join('');
   }
-  const typeColors = {evaluator_concern:'#a78bfa',missing_data:'#ef4444',vague_claim:'#f59e0b',compliance_gap:'#f87171'};
-  issuesEl.innerHTML = issues.slice(0,5).map(i => {
-    const col = typeColors[i.type] || '#94a3b8';
-    const sug = i.suggestion ? `<div style="font-size:10px;color:#5a7aa0;margin-top:2px;">→ ${i.suggestion}</div>` : '';
-    return `<div style="margin-bottom:6px;padding:5px 7px;border-left:2px solid ${col};background:rgba(0,0,0,.15);">
-      <span style="font-size:9px;color:${col};text-transform:uppercase;font-weight:600;">${i.type.replace(/_/g,' ')}</span>
-      <div style="font-size:11px;color:#b8d0e8;margin-top:1px;">${i.message}</div>${sug}
-    </div>`;
-  }).join('');
+
+  // Optional: idea_lab Specialist Council pressure-test (off by default,
+  // ICDEV_RFI_SPECIALIST_CONSULT_ENABLED). Additive to the local reviewer
+  // pass above -- absent when the consult wasn't attempted or failed.
+  const consultCard = document.getElementById('ace-specialist-consult');
+  if (consultCard) {
+    if (fb.specialist_consult && fb.specialist_consult.verdict) {
+      consultCard.style.display = '';
+      document.getElementById('ace-specialist-consult-verdict').textContent = fb.specialist_consult.verdict;
+      const srcLabel = fb.specialist_consult.source === 'local_fallback'
+        ? 'idea_lab local fallback (ICDEV Council unavailable)' : 'idea_lab LLM Council';
+      document.getElementById('ace-specialist-consult-source').textContent = `Source: ${srcLabel}`;
+    } else {
+      consultCard.style.display = 'none';
+    }
+  }
 }
 
 function _pollReviewer(sectionId) {
