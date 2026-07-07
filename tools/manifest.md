@@ -1166,3 +1166,9 @@
 | Message Bus | tools\ace\message_bus.py | Auto-registered: ace/message_bus.py | --json | JSON |
 | Step Executor | tools\ace\step_executor.py | Auto-registered: ace/step_executor.py | --json | JSON |
 | Team Assembler | tools\ace\team_assembler.py | Auto-registered: ace/team_assembler.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Specialist Consult | tools\govcon\specialist_consult.py | Auto-registered: govcon/specialist_consult.py | --json | JSON |

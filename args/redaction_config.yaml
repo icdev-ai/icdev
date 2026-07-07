@@ -171,6 +171,7 @@ scope:
     - requirement_extraction # R5 Extract — redact before cloud LLM
     - bid_scoring            # R9 Decide — redact if cloud-routed
     - color_review           # R15 Review — redact if cloud-routed
+    - specialist_consult     # Egress to idea_lab (cloud-routed, separate process) — always redact
     # Core ICDEV™
     - code_generation        # May contain customer code with PII
     - narrative_generation   # Compliance narratives may reference people/orgs
