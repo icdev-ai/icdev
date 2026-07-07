@@ -1249,6 +1249,20 @@ def update_finding(find_id):
 # =====================================================================
 
 
+def _notify_reviewer_handoff(title, body):
+    """Best-effort ops notification for a reviewer hand-off event.
+
+    Never raises — a missing/unconfigured Telegram channel must not block
+    the assignment write, matching the pattern in
+    tools/genesis/reflexes/govcon_scan.py.
+    """
+    try:
+        from tools.notifications.adapters.telegram import send
+        send(title, body, severity="info")
+    except Exception:
+        pass
+
+
 @proposals_api.route("/reviews/<rev_id>/assignments", methods=["GET"])
 def list_assignments(rev_id):
     """GET /api/proposals/reviews/<rev_id>/assignments — List all reviewer assignments."""
@@ -1294,6 +1308,10 @@ def assign_reviewer(rev_id):
         _record_status_change(conn, "review", rev_id, rev["status"], rev["status"], assigned_by,
                               reason=f"assignment:assigned:{reviewer}")
         conn.commit()
+        _notify_reviewer_handoff(
+            "Reviewer Assigned",
+            f"{reviewer} was assigned to review {rev_id} by {assigned_by}.",
+        )
         return jsonify({"id": asgn_id, "reviewer": reviewer, "status": "pending"}), 201
     finally:
         conn.close()
@@ -1397,6 +1415,10 @@ def reassign_reviewer(asgn_id):
                               assigned_by,
                               reason=f"assignment:reassigned:{asgn['reviewer']}→{new_reviewer}")
         conn.commit()
+        _notify_reviewer_handoff(
+            "Reviewer Reassigned",
+            f"{asgn['reviewer']} → {new_reviewer} for review {asgn['review_id']} (by {assigned_by}).",
+        )
         return jsonify({"id": new_id, "reviewer": new_reviewer, "status": "pending",
                         "supersedes": asgn_id})
     finally:
