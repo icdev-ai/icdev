@@ -114,6 +114,11 @@ def _build_app() -> Flask:
 
     app = Flask(__name__)
     app.config["TESTING"] = True
+    @app.before_request
+    def _inject_fake_auth_0():
+        from flask import g
+        g.current_user = {"username": "test_user", "role": "admin", "email": "test@test.mil", "classification": "CUI"}
+
     app.register_blueprint(cpmp_api)
     return app
 

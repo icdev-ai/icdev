@@ -525,6 +525,11 @@ class TestProposalGenesisAPI:
         conn, db_path = pg_db
         app = Flask(__name__)
         app.config["TESTING"] = True
+        @app.before_request
+        def _inject_fake_auth_0():
+            from flask import g
+            g.current_user = {"username": "test_user", "role": "admin", "email": "test@test.mil", "classification": "CUI"}
+
         app.register_blueprint(proposal_genesis_api)
 
         def _mock_get_db():
@@ -1303,6 +1308,11 @@ class TestProposalGenesisPhaseCAPI:
         conn, db_path = pg_db
         app = Flask(__name__)
         app.config["TESTING"] = True
+        @app.before_request
+        def _inject_fake_auth_1():
+            from flask import g
+            g.current_user = {"username": "test_user", "role": "admin", "email": "test@test.mil", "classification": "CUI"}
+
         app.register_blueprint(proposal_genesis_api)
 
         def _mock_get_db():
@@ -1689,6 +1699,11 @@ class TestProposalGenesisPhaseD:
         conn, db_path = pg_db
         app = Flask(__name__)
         app.config["TESTING"] = True
+        @app.before_request
+        def _inject_fake_auth_2():
+            from flask import g
+            g.current_user = {"username": "test_user", "role": "admin", "email": "test@test.mil", "classification": "CUI"}
+
         app.register_blueprint(proposal_genesis_api)
 
         def _mock_get_db():
@@ -2162,6 +2177,11 @@ class TestProposalGenesisPhaseEAPI:
 
         app = Flask(__name__)
         app.config["TESTING"] = True
+        @app.before_request
+        def _inject_fake_auth_3():
+            from flask import g
+            g.current_user = {"username": "test_user", "role": "admin", "email": "test@test.mil", "classification": "CUI"}
+
         app.register_blueprint(proposal_genesis_api)
 
         def _mock_get_db():
@@ -2747,6 +2767,11 @@ class TestProposalGenesisPhaseF_API:
 
         app = Flask(__name__)
         app.config["TESTING"] = True
+        @app.before_request
+        def _inject_fake_auth_4():
+            from flask import g
+            g.current_user = {"username": "test_user", "role": "admin", "email": "test@test.mil", "classification": "CUI"}
+
         app.register_blueprint(proposal_genesis_api)
 
         def _mock_get_db():
