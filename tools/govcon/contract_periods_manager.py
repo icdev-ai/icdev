@@ -54,7 +54,7 @@ def _audit(conn, action, details="", actor="contract_periods_manager"):
     try:
         conn.execute(
             "INSERT INTO audit_trail (event_type, actor, action, details, session_id) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s)",
             ("hook_event_logged", actor, action, details, "cpmp"),
         )
     except Exception:
@@ -63,7 +63,7 @@ def _audit(conn, action, details="", actor="contract_periods_manager"):
 
 def _get_billed(conn, contract_id: str) -> float:
     row = conn.execute(
-        "SELECT COALESCE(SUM(billed_value), 0) as billed FROM cpmp_clins WHERE contract_id = ?",
+        "SELECT COALESCE(SUM(billed_value), 0) as billed FROM cpmp_clins WHERE contract_id = %s",
         (contract_id,),
     ).fetchone()
     return float(row["billed"]) if row else 0.0
@@ -92,14 +92,14 @@ def create_period(
         return {"status": "error", "message": f"period_type must be one of {PERIOD_TYPES}"}
 
     conn = _get_db()
-    contract = conn.execute("SELECT id FROM cpmp_contracts WHERE id = ?", (contract_id,)).fetchone()
+    contract = conn.execute("SELECT id FROM cpmp_contracts WHERE id = %s", (contract_id,)).fetchone()
     if not contract:
         conn.close()
         return {"status": "error", "message": f"Contract {contract_id} not found"}
 
     # Reject duplicate period_type for the same contract
     existing = conn.execute(
-        "SELECT id FROM cpmp_contract_periods WHERE contract_id = ? AND period_type = ?",
+        "SELECT id FROM cpmp_contract_periods WHERE contract_id = %s AND period_type = %s",
         (contract_id, period_type),
     ).fetchone()
     if existing:
@@ -115,7 +115,7 @@ def create_period(
         "(id, contract_id, period_type, option_number, pop_start, pop_end, "
         "obligated_value, funded_value, ceiling_value, status, notes, "
         "created_at, updated_at, classification) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
         (
             period_id, contract_id, period_type, option_number,
             pop_start, pop_end, obligated_value, funded_value, ceiling_value,
@@ -126,9 +126,9 @@ def create_period(
     # If base period, update the contract's own pop_start/pop_end and period_type
     if period_type == "base":
         conn.execute(
-            "UPDATE cpmp_contracts SET period_type = ?, option_number = ?, "
-            "pop_start = COALESCE(pop_start, ?), pop_end = COALESCE(pop_end, ?), "
-            "updated_at = ? WHERE id = ?",
+            "UPDATE cpmp_contracts SET period_type = %s, option_number = %s, "
+            "pop_start = COALESCE(pop_start, %s), pop_end = COALESCE(pop_end, %s), "
+            "updated_at = %s WHERE id = %s",
             ("base", 0, pop_start, pop_end, _now(), contract_id),
         )
 
@@ -143,7 +143,7 @@ def list_periods(contract_id: str) -> dict:
     """List all periods for a contract with computed remaining_obligation."""
     conn = _get_db()
     rows = conn.execute(
-        "SELECT * FROM cpmp_contract_periods WHERE contract_id = ? ORDER BY option_number ASC",
+        "SELECT * FROM cpmp_contract_periods WHERE contract_id = %s ORDER BY option_number ASC",
         (contract_id,),
     ).fetchall()
     billed = _get_billed(conn, contract_id)
@@ -164,7 +164,7 @@ def get_period(period_id: str) -> dict:
     """Fetch a single period."""
     conn = _get_db()
     row = conn.execute(
-        "SELECT * FROM cpmp_contract_periods WHERE id = ?", (period_id,)
+        "SELECT * FROM cpmp_contract_periods WHERE id = %s", (period_id,)
     ).fetchone()
     conn.close()
     if not row:
@@ -179,7 +179,7 @@ def exercise_option(period_id: str, obligated_value: float, exercised_by: str | 
     """
     conn = _get_db()
     row = conn.execute(
-        "SELECT * FROM cpmp_contract_periods WHERE id = ?", (period_id,)
+        "SELECT * FROM cpmp_contract_periods WHERE id = %s", (period_id,)
     ).fetchone()
     if not row:
         conn.close()
@@ -193,8 +193,8 @@ def exercise_option(period_id: str, obligated_value: float, exercised_by: str | 
 
     now = _now()
     conn.execute(
-        "UPDATE cpmp_contract_periods SET status = 'exercised', obligated_value = ?, "
-        "exercised_at = ?, exercised_by = ?, updated_at = ? WHERE id = ?",
+        "UPDATE cpmp_contract_periods SET status = 'exercised', obligated_value = %s, "
+        "exercised_at = %s, exercised_by = %s, updated_at = %s WHERE id = %s",
         (obligated_value, now, exercised_by, now, period_id),
     )
 
@@ -202,13 +202,13 @@ def exercise_option(period_id: str, obligated_value: float, exercised_by: str | 
     sum_row = conn.execute(
         "SELECT COALESCE(SUM(obligated_value), 0) as total "
         "FROM cpmp_contract_periods "
-        "WHERE contract_id = ? AND status IN ('active', 'exercised')",
+        "WHERE contract_id = %s AND status IN ('active', 'exercised')",
         (row["contract_id"],),
     ).fetchone()
     total_obligated = float(sum_row["total"]) if sum_row else obligated_value
 
     conn.execute(
-        "UPDATE cpmp_contracts SET obligated_value = ?, period_type = ?, option_number = ?, updated_at = ? WHERE id = ?",
+        "UPDATE cpmp_contracts SET obligated_value = %s, period_type = %s, option_number = %s, updated_at = %s WHERE id = %s",
         (total_obligated, row["period_type"], row["option_number"], now, row["contract_id"]),
     )
 
@@ -247,7 +247,7 @@ def get_obligation_summary(contract_id: str) -> dict:
     conn = _get_db()
 
     contract = conn.execute(
-        "SELECT id, obligated_value, funded_value, total_value, billed_value FROM cpmp_contracts WHERE id = ?",
+        "SELECT id, obligated_value, funded_value, total_value, billed_value FROM cpmp_contracts WHERE id = %s",
         (contract_id,),
     ).fetchone()
     if not contract:
@@ -261,7 +261,7 @@ def get_obligation_summary(contract_id: str) -> dict:
     periods_raw = conn.execute(
         "SELECT id, period_type, option_number, pop_start, pop_end, "
         "obligated_value, funded_value, ceiling_value, status "
-        "FROM cpmp_contract_periods WHERE contract_id = ? ORDER BY option_number ASC",
+        "FROM cpmp_contract_periods WHERE contract_id = %s ORDER BY option_number ASC",
         (contract_id,),
     ).fetchall()
     conn.close()
