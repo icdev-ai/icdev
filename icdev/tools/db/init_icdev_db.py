@@ -5509,7 +5509,8 @@ CREATE TABLE IF NOT EXISTS proposal_opportunities (
     questions_due_date TEXT,
     amendment_count INTEGER DEFAULT 0,
     question_count INTEGER DEFAULT 0,
-    contract_id TEXT
+    contract_id TEXT,
+    tenant_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_prop_opp_status ON proposal_opportunities(status);
 CREATE INDEX IF NOT EXISTS idx_prop_opp_due ON proposal_opportunities(due_date);
@@ -5532,7 +5533,8 @@ CREATE TABLE IF NOT EXISTS proposal_volumes (
         'not_started', 'in_progress', 'review', 'final')),
     classification TEXT DEFAULT 'CUI',
     created_at TEXT DEFAULT (datetime('now')),
-    updated_at TEXT DEFAULT (datetime('now'))
+    updated_at TEXT DEFAULT (datetime('now')),
+    tenant_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_prop_vol_opp ON proposal_volumes(opportunity_id);
 
@@ -5566,7 +5568,8 @@ CREATE TABLE IF NOT EXISTS proposal_sections (
     sort_order INTEGER DEFAULT 0,
     classification TEXT DEFAULT 'CUI',
     created_at TEXT DEFAULT (datetime('now')),
-    updated_at TEXT DEFAULT (datetime('now'))
+    updated_at TEXT DEFAULT (datetime('now')),
+    tenant_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_prop_sec_vol ON proposal_sections(volume_id);
 CREATE INDEX IF NOT EXISTS idx_prop_sec_opp ON proposal_sections(opportunity_id);
@@ -5583,7 +5586,8 @@ CREATE TABLE IF NOT EXISTS proposal_section_dependencies (
         'content', 'data', 'approval', 'pricing')),
     required_status TEXT DEFAULT 'drafting',
     classification TEXT DEFAULT 'CUI',
-    created_at TEXT DEFAULT (datetime('now'))
+    created_at TEXT DEFAULT (datetime('now')),
+    tenant_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_prop_dep_section ON proposal_section_dependencies(section_id);
 CREATE INDEX IF NOT EXISTS idx_prop_dep_depends ON proposal_section_dependencies(depends_on_section_id);
@@ -5604,7 +5608,8 @@ CREATE TABLE IF NOT EXISTS proposal_compliance_matrix (
     sort_order INTEGER DEFAULT 0,
     classification TEXT DEFAULT 'CUI',
     created_at TEXT DEFAULT (datetime('now')),
-    updated_at TEXT DEFAULT (datetime('now'))
+    updated_at TEXT DEFAULT (datetime('now')),
+    tenant_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_prop_cm_opp ON proposal_compliance_matrix(opportunity_id);
 CREATE INDEX IF NOT EXISTS idx_prop_cm_status ON proposal_compliance_matrix(compliance_status);
@@ -5628,7 +5633,8 @@ CREATE TABLE IF NOT EXISTS proposal_reviews (
     overall_rating TEXT CHECK(overall_rating IN (
         'pass', 'pass_with_findings', 'major_rework', 'fail')),
     classification TEXT DEFAULT 'CUI',
-    created_at TEXT DEFAULT (datetime('now'))
+    created_at TEXT DEFAULT (datetime('now')),
+    tenant_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_prop_rev_opp ON proposal_reviews(opportunity_id);
 CREATE INDEX IF NOT EXISTS idx_prop_rev_type ON proposal_reviews(review_type);
@@ -5653,7 +5659,8 @@ CREATE TABLE IF NOT EXISTS proposal_review_findings (
     resolved_at TEXT,
     resolution_notes TEXT,
     classification TEXT DEFAULT 'CUI',
-    created_at TEXT DEFAULT (datetime('now'))
+    created_at TEXT DEFAULT (datetime('now')),
+    tenant_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_prop_find_review ON proposal_review_findings(review_id);
 CREATE INDEX IF NOT EXISTS idx_prop_find_section ON proposal_review_findings(section_id);
@@ -5671,7 +5678,8 @@ CREATE TABLE IF NOT EXISTS proposal_status_history (
     changed_by TEXT,
     reason TEXT,
     classification TEXT DEFAULT 'CUI',
-    created_at TEXT DEFAULT (datetime('now'))
+    created_at TEXT DEFAULT (datetime('now')),
+    tenant_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_prop_hist_entity ON proposal_status_history(entity_type, entity_id);
 CREATE INDEX IF NOT EXISTS idx_prop_hist_created ON proposal_status_history(created_at);
@@ -5691,7 +5699,8 @@ CREATE TABLE IF NOT EXISTS proposal_reviewer_assignments (
     rejected_at TEXT,
     rejection_reason TEXT,
     classification TEXT DEFAULT 'CUI',
-    created_at TEXT DEFAULT (datetime('now'))
+    created_at TEXT DEFAULT (datetime('now')),
+    tenant_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_prop_asgn_review ON proposal_reviewer_assignments(review_id);
 CREATE INDEX IF NOT EXISTS idx_prop_asgn_reviewer ON proposal_reviewer_assignments(reviewer);
@@ -5724,7 +5733,8 @@ CREATE TABLE IF NOT EXISTS sam_gov_opportunities (
     metadata TEXT DEFAULT '{}',
     first_seen TEXT NOT NULL,
     last_synced TEXT NOT NULL,
-    classification TEXT DEFAULT 'CUI'
+    classification TEXT DEFAULT 'CUI',
+    tenant_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_sam_naics ON sam_gov_opportunities(naics_code);
 CREATE INDEX IF NOT EXISTS idx_sam_type ON sam_gov_opportunities(notice_type);
@@ -5772,7 +5782,8 @@ CREATE TABLE IF NOT EXISTS rfp_shall_statements (
     source_section TEXT,
     content_hash TEXT NOT NULL,
     extracted_at TEXT NOT NULL,
-    classification TEXT DEFAULT 'CUI'
+    classification TEXT DEFAULT 'CUI',
+    tenant_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_shall_sam ON rfp_shall_statements(sam_opportunity_id);
 CREATE INDEX IF NOT EXISTS idx_shall_prop ON rfp_shall_statements(proposal_opportunity_id);
@@ -5801,7 +5812,8 @@ CREATE TABLE IF NOT EXISTS rfp_requirement_patterns (
     first_seen TEXT NOT NULL,
     last_seen TEXT NOT NULL,
     metadata TEXT DEFAULT '{}',
-    classification TEXT DEFAULT 'CUI'
+    classification TEXT DEFAULT 'CUI',
+    tenant_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_rfp_pattern_domain ON rfp_requirement_patterns(domain_category);
 CREATE INDEX IF NOT EXISTS idx_rfp_pattern_freq ON rfp_requirement_patterns(frequency);
@@ -5846,7 +5858,8 @@ CREATE TABLE IF NOT EXISTS proposal_section_drafts (
     metadata TEXT DEFAULT '{}',
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now')),
-    classification TEXT DEFAULT 'CUI'
+    classification TEXT DEFAULT 'CUI',
+    tenant_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_draft_section ON proposal_section_drafts(section_id);
 CREATE INDEX IF NOT EXISTS idx_draft_opp ON proposal_section_drafts(opportunity_id);
@@ -5880,7 +5893,8 @@ CREATE TABLE IF NOT EXISTS proposal_knowledge_base (
         CHECK(status IN ('active', 'archived', 'draft')),
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-    classification TEXT DEFAULT 'CUI'
+    classification TEXT DEFAULT 'CUI',
+    tenant_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_kb_category ON proposal_knowledge_base(category);
 CREATE INDEX IF NOT EXISTS idx_kb_domain ON proposal_knowledge_base(domain);
@@ -5994,7 +6008,8 @@ CREATE TABLE IF NOT EXISTS cpmp_contracts (
     updated_at TEXT DEFAULT (datetime('now')),
     created_by TEXT,
     classification TEXT DEFAULT 'CUI',
-    compartments TEXT NOT NULL DEFAULT '[]'
+    compartments TEXT NOT NULL DEFAULT '[]',
+    tenant_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_cpmp_contract_number ON cpmp_contracts(contract_number);
 CREATE INDEX IF NOT EXISTS idx_cpmp_contract_agency ON cpmp_contracts(agency);
@@ -6021,7 +6036,8 @@ CREATE TABLE IF NOT EXISTS cpmp_clins (
     metadata TEXT DEFAULT '{}',
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now')),
-    classification TEXT DEFAULT 'CUI'
+    classification TEXT DEFAULT 'CUI',
+    tenant_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_cpmp_clin_contract ON cpmp_clins(contract_id);
 CREATE INDEX IF NOT EXISTS idx_cpmp_clin_number ON cpmp_clins(clin_number);
@@ -6050,7 +6066,8 @@ CREATE TABLE IF NOT EXISTS cpmp_wbs (
     metadata TEXT DEFAULT '{}',
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now')),
-    classification TEXT DEFAULT 'CUI'
+    classification TEXT DEFAULT 'CUI',
+    tenant_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_cpmp_wbs_contract ON cpmp_wbs(contract_id);
 CREATE INDEX IF NOT EXISTS idx_cpmp_wbs_parent ON cpmp_wbs(parent_id);
@@ -6086,7 +6103,8 @@ CREATE TABLE IF NOT EXISTS cpmp_deliverables (
     metadata TEXT DEFAULT '{}',
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now')),
-    classification TEXT DEFAULT 'CUI'
+    classification TEXT DEFAULT 'CUI',
+    tenant_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_cpmp_deliv_contract ON cpmp_deliverables(contract_id);
 CREATE INDEX IF NOT EXISTS idx_cpmp_deliv_status ON cpmp_deliverables(status);
@@ -6106,7 +6124,9 @@ CREATE TABLE IF NOT EXISTS cpmp_status_history (
     changed_by TEXT,
     reason TEXT,
     metadata TEXT DEFAULT '{}',
-    created_at TEXT DEFAULT (datetime('now'))
+    created_at TEXT DEFAULT (datetime('now')),
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI'
 );
 CREATE INDEX IF NOT EXISTS idx_cpmp_hist_entity ON cpmp_status_history(entity_type, entity_id);
 CREATE INDEX IF NOT EXISTS idx_cpmp_hist_created ON cpmp_status_history(created_at);
@@ -6144,7 +6164,8 @@ CREATE TABLE IF NOT EXISTS cpmp_evm_periods (
     notes TEXT,
     metadata TEXT DEFAULT '{}',
     created_at TEXT DEFAULT (datetime('now')),
-    classification TEXT DEFAULT 'CUI'
+    classification TEXT DEFAULT 'CUI',
+    tenant_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_cpmp_evm_contract ON cpmp_evm_periods(contract_id);
 CREATE INDEX IF NOT EXISTS idx_cpmp_evm_wbs ON cpmp_evm_periods(wbs_id);
@@ -6177,7 +6198,8 @@ CREATE TABLE IF NOT EXISTS cpmp_subcontractors (
     metadata TEXT DEFAULT '{}',
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now')),
-    classification TEXT DEFAULT 'CUI'
+    classification TEXT DEFAULT 'CUI',
+    tenant_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_cpmp_sub_contract ON cpmp_subcontractors(contract_id);
 CREATE INDEX IF NOT EXISTS idx_cpmp_sub_name ON cpmp_subcontractors(company_name);
@@ -6211,7 +6233,8 @@ CREATE TABLE IF NOT EXISTS cpmp_cpars_assessments (
     metadata TEXT DEFAULT '{}',
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now')),
-    classification TEXT DEFAULT 'CUI'
+    classification TEXT DEFAULT 'CUI',
+    tenant_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_cpmp_cpars_contract ON cpmp_cpars_assessments(contract_id);
 CREATE INDEX IF NOT EXISTS idx_cpmp_cpars_status ON cpmp_cpars_assessments(status);
@@ -6245,7 +6268,8 @@ CREATE TABLE IF NOT EXISTS cpmp_negative_events (
     metadata TEXT DEFAULT '{}',
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now')),
-    classification TEXT DEFAULT 'CUI'
+    classification TEXT DEFAULT 'CUI',
+    tenant_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_cpmp_neg_contract ON cpmp_negative_events(contract_id);
 CREATE INDEX IF NOT EXISTS idx_cpmp_neg_type ON cpmp_negative_events(event_type);
@@ -6281,7 +6305,8 @@ CREATE TABLE IF NOT EXISTS cpmp_small_business_plan (
     metadata TEXT DEFAULT '{}',
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now')),
-    classification TEXT DEFAULT 'CUI'
+    classification TEXT DEFAULT 'CUI',
+    tenant_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_cpmp_sb_contract ON cpmp_small_business_plan(contract_id);
 CREATE INDEX IF NOT EXISTS idx_cpmp_sb_period ON cpmp_small_business_plan(reporting_period);
@@ -6308,7 +6333,8 @@ CREATE TABLE IF NOT EXISTS cpmp_cdrl_generations (
     approved_by TEXT,
     metadata TEXT DEFAULT '{}',
     created_at TEXT DEFAULT (datetime('now')),
-    classification TEXT DEFAULT 'CUI'
+    classification TEXT DEFAULT 'CUI',
+    tenant_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_cpmp_cdrl_gen_deliv ON cpmp_cdrl_generations(deliverable_id);
 CREATE INDEX IF NOT EXISTS idx_cpmp_cdrl_gen_contract ON cpmp_cdrl_generations(contract_id);
@@ -6341,7 +6367,8 @@ CREATE TABLE IF NOT EXISTS cpmp_sam_contract_awards (
     raw_json TEXT,
     metadata TEXT DEFAULT '{}',
     discovered_at TEXT DEFAULT (datetime('now')),
-    classification TEXT DEFAULT 'CUI'
+    classification TEXT DEFAULT 'CUI',
+    tenant_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_cpmp_sam_award_id ON cpmp_sam_contract_awards(sam_award_id);
 CREATE INDEX IF NOT EXISTS idx_cpmp_sam_piid ON cpmp_sam_contract_awards(piid);
@@ -6361,7 +6388,9 @@ CREATE TABLE IF NOT EXISTS cpmp_cor_access_log (
     ip_address TEXT,
     user_agent TEXT,
     metadata TEXT DEFAULT '{}',
-    created_at TEXT DEFAULT (datetime('now'))
+    created_at TEXT DEFAULT (datetime('now')),
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI'
 );
 CREATE INDEX IF NOT EXISTS idx_cpmp_cor_user ON cpmp_cor_access_log(user_id);
 CREATE INDEX IF NOT EXISTS idx_cpmp_cor_contract ON cpmp_cor_access_log(contract_id);
@@ -6388,7 +6417,8 @@ CREATE TABLE IF NOT EXISTS cpmp_milestones (
     metadata TEXT DEFAULT '{}',
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now')),
-    classification TEXT DEFAULT 'CUI'
+    classification TEXT DEFAULT 'CUI',
+    tenant_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_cpmp_ms_contract ON cpmp_milestones(contract_id);
 CREATE INDEX IF NOT EXISTS idx_cpmp_ms_wbs ON cpmp_milestones(wbs_id);
@@ -6407,6 +6437,7 @@ CREATE TABLE IF NOT EXISTS cpmp_milestone_deps (
     notes TEXT,
     created_at TEXT DEFAULT (datetime('now')),
     classification TEXT DEFAULT 'CUI',
+    tenant_id TEXT,
     UNIQUE(predecessor_id, successor_id)
 );
 CREATE INDEX IF NOT EXISTS idx_cpmp_msdep_contract ON cpmp_milestone_deps(contract_id);
@@ -6467,7 +6498,8 @@ CREATE TABLE IF NOT EXISTS proposal_questions (
     submitted_at TEXT,
     classification TEXT DEFAULT 'CUI',
     created_at TEXT DEFAULT (datetime('now')),
-    updated_at TEXT DEFAULT (datetime('now'))
+    updated_at TEXT DEFAULT (datetime('now')),
+    tenant_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_prop_q_opp ON proposal_questions(opportunity_id);
 CREATE INDEX IF NOT EXISTS idx_prop_q_status ON proposal_questions(status);
@@ -6490,7 +6522,8 @@ CREATE TABLE IF NOT EXISTS proposal_amendments (
     changes_detected INTEGER DEFAULT 0,
     uploaded_by TEXT,
     classification TEXT DEFAULT 'CUI',
-    created_at TEXT DEFAULT (datetime('now'))
+    created_at TEXT DEFAULT (datetime('now')),
+    tenant_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_prop_amend_opp ON proposal_amendments(opportunity_id);
 CREATE INDEX IF NOT EXISTS idx_prop_amend_version ON proposal_amendments(opportunity_id, version_number);
@@ -6507,7 +6540,8 @@ CREATE TABLE IF NOT EXISTS proposal_question_responses (
     impact_notes TEXT,
     recorded_by TEXT,
     classification TEXT DEFAULT 'CUI',
-    created_at TEXT DEFAULT (datetime('now'))
+    created_at TEXT DEFAULT (datetime('now')),
+    tenant_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_prop_qr_question ON proposal_question_responses(question_id);
 CREATE INDEX IF NOT EXISTS idx_prop_qr_opp ON proposal_question_responses(opportunity_id);
@@ -6538,7 +6572,8 @@ CREATE TABLE IF NOT EXISTS proposal_competitors (
     notes TEXT,
     classification TEXT DEFAULT 'CUI',
     created_at TEXT DEFAULT (datetime('now')),
-    updated_at TEXT DEFAULT (datetime('now'))
+    updated_at TEXT DEFAULT (datetime('now')),
+    tenant_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_prop_comp_opp ON proposal_competitors(opportunity_id);
 
@@ -6555,7 +6590,8 @@ CREATE TABLE IF NOT EXISTS proposal_teaming_partners (
     notes TEXT,
     classification TEXT DEFAULT 'CUI',
     created_at TEXT DEFAULT (datetime('now')),
-    updated_at TEXT DEFAULT (datetime('now'))
+    updated_at TEXT DEFAULT (datetime('now')),
+    tenant_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_prop_team_opp ON proposal_teaming_partners(opportunity_id);
 
@@ -6570,7 +6606,8 @@ CREATE TABLE IF NOT EXISTS proposal_versions (
     snapshot_json TEXT,
     created_by TEXT,
     classification TEXT DEFAULT 'CUI',
-    created_at TEXT DEFAULT (datetime('now'))
+    created_at TEXT DEFAULT (datetime('now')),
+    tenant_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_prop_ver_opp ON proposal_versions(opportunity_id);
 
@@ -6588,7 +6625,8 @@ CREATE TABLE IF NOT EXISTS proposal_shred_items (
     notes TEXT,
     classification TEXT DEFAULT 'CUI',
     created_at TEXT DEFAULT (datetime('now')),
-    updated_at TEXT DEFAULT (datetime('now'))
+    updated_at TEXT DEFAULT (datetime('now')),
+    tenant_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_prop_shred_opp ON proposal_shred_items(opportunity_id);
 CREATE INDEX IF NOT EXISTS idx_prop_shred_status ON proposal_shred_items(status);
@@ -7406,7 +7444,8 @@ CREATE TABLE IF NOT EXISTS proposal_taxonomy (
     weight REAL NOT NULL DEFAULT 1.0,
     is_active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    classification TEXT NOT NULL DEFAULT 'CUI'
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    tenant_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_prop_tax_opp ON proposal_taxonomy(opportunity_id);
 CREATE INDEX IF NOT EXISTS idx_prop_tax_parent ON proposal_taxonomy(parent_id);
@@ -8722,7 +8761,9 @@ CREATE TABLE IF NOT EXISTS pg_proposal_genesis_audit (
     duration_ms     INTEGER,
     metric_name     TEXT,
     metric_value    REAL,
-    created_at      TEXT NOT NULL
+    created_at      TEXT NOT NULL,
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI'
 );
 CREATE INDEX IF NOT EXISTS idx_pg_audit_type ON pg_proposal_genesis_audit(event_type);
 CREATE INDEX IF NOT EXISTS idx_pg_audit_reflex ON pg_proposal_genesis_audit(reflex_name);
@@ -8743,14 +8784,18 @@ CREATE TABLE IF NOT EXISTS pg_proposal_genesis_state (
     total_failures      INTEGER NOT NULL DEFAULT 0,
     last_metric_value   REAL,
     last_error          TEXT,
-    updated_at          TEXT NOT NULL
+    updated_at          TEXT NOT NULL,
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI'
 );
 
 -- Daemon configuration overrides (D-PG-3: toggle)
 CREATE TABLE IF NOT EXISTS pg_proposal_genesis_config (
     key             TEXT PRIMARY KEY,
     value           TEXT NOT NULL,
-    updated_at      TEXT NOT NULL
+    updated_at      TEXT NOT NULL,
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI'
 );
 
 -- Amendment tracking diffs (R1 Discover → R5 Extract)
@@ -8763,7 +8808,9 @@ CREATE TABLE IF NOT EXISTS pg_amendment_diffs (
     old_text        TEXT,
     new_text        TEXT,
     re_extracted    INTEGER NOT NULL DEFAULT 0,
-    created_at      TEXT NOT NULL
+    created_at      TEXT NOT NULL,
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI'
 );
 CREATE INDEX IF NOT EXISTS idx_pg_amend_opp ON pg_amendment_diffs(opportunity_id);
 
@@ -8775,7 +8822,9 @@ CREATE TABLE IF NOT EXISTS pg_pulse_proposal_links (
     section_id      TEXT,
     link_type       TEXT NOT NULL CHECK(link_type IN ('article_to_proposal', 'capability_to_article', 'cdrl_to_case_study')),
     relevance_score REAL DEFAULT 0.0,
-    created_at      TEXT NOT NULL
+    created_at      TEXT NOT NULL,
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI'
 );
 CREATE INDEX IF NOT EXISTS idx_pg_pulse_link_post ON pg_pulse_proposal_links(pulse_post_id);
 CREATE INDEX IF NOT EXISTS idx_pg_pulse_link_opp ON pg_pulse_proposal_links(opportunity_id);
@@ -8796,7 +8845,9 @@ CREATE TABLE IF NOT EXISTS pg_proposal_quality_scores (
     passed          INTEGER NOT NULL DEFAULT 0,
     findings        TEXT,
     check_details   TEXT,
-    created_at      TEXT NOT NULL
+    created_at      TEXT NOT NULL,
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI'
 );
 CREATE INDEX IF NOT EXISTS idx_pg_quality_opp ON pg_proposal_quality_scores(opportunity_id);
 CREATE INDEX IF NOT EXISTS idx_pg_quality_created ON pg_proposal_quality_scores(created_at);
@@ -8810,7 +8861,9 @@ CREATE TABLE IF NOT EXISTS pg_bid_decisions (
     score_breakdown TEXT,
     rationale       TEXT,
     decided_by      TEXT DEFAULT 'autonomous',
-    created_at      TEXT NOT NULL
+    created_at      TEXT NOT NULL,
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI'
 );
 CREATE INDEX IF NOT EXISTS idx_pg_bid_opp ON pg_bid_decisions(opportunity_id);
 
@@ -8822,7 +8875,9 @@ CREATE TABLE IF NOT EXISTS pg_bid_decision_outcomes (
     actual_award_date TEXT,
     award_amount    REAL,
     notes           TEXT,
-    created_at      TEXT NOT NULL
+    created_at      TEXT NOT NULL,
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI'
 );
 
 -- Win/loss records (R13 Analyze — Phase B)
@@ -8835,7 +8890,9 @@ CREATE TABLE IF NOT EXISTS pg_win_loss_records (
     our_strengths   TEXT,
     our_weaknesses  TEXT,
     lessons_learned TEXT,
-    created_at      TEXT NOT NULL
+    created_at      TEXT NOT NULL,
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI'
 );
 CREATE INDEX IF NOT EXISTS idx_pg_winloss_opp ON pg_win_loss_records(opportunity_id);
 
@@ -8847,7 +8904,9 @@ CREATE TABLE IF NOT EXISTS pg_win_loss_lessons (
     lesson          TEXT NOT NULL,
     actionable      INTEGER NOT NULL DEFAULT 1,
     applied         INTEGER NOT NULL DEFAULT 0,
-    created_at      TEXT NOT NULL
+    created_at      TEXT NOT NULL,
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI'
 );
 
 -- Win/loss analysis runs (win_loss_engine.py — Phase B)
@@ -8889,7 +8948,9 @@ CREATE TABLE IF NOT EXISTS pg_crm_accounts (
     notes           TEXT,
     status          TEXT DEFAULT 'active' CHECK(status IN ('active', 'inactive', 'prospect')),
     created_at      TEXT NOT NULL,
-    updated_at      TEXT NOT NULL
+    updated_at      TEXT NOT NULL,
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI'
 );
 CREATE INDEX IF NOT EXISTS idx_pg_crm_acct_name ON pg_crm_accounts(name);
 
@@ -8906,7 +8967,9 @@ CREATE TABLE IF NOT EXISTS pg_crm_contacts (
     notes           TEXT,
     last_contact_at TEXT,
     created_at      TEXT NOT NULL,
-    updated_at      TEXT NOT NULL
+    updated_at      TEXT NOT NULL,
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI'
 );
 CREATE INDEX IF NOT EXISTS idx_pg_crm_contact_acct ON pg_crm_contacts(account_id);
 
@@ -8920,7 +8983,9 @@ CREATE TABLE IF NOT EXISTS pg_crm_interactions (
     notes           TEXT,
     opportunity_id  TEXT,
     interaction_date TEXT NOT NULL,
-    created_at      TEXT NOT NULL
+    created_at      TEXT NOT NULL,
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI'
 );
 CREATE INDEX IF NOT EXISTS idx_pg_crm_interact_contact ON pg_crm_interactions(contact_id);
 CREATE INDEX IF NOT EXISTS idx_pg_crm_interact_acct ON pg_crm_interactions(account_id);
@@ -8935,7 +9000,9 @@ CREATE TABLE IF NOT EXISTS pg_crm_engagement_scores (
     last_interaction_at TEXT,
     opportunity_count INTEGER DEFAULT 0,
     win_rate        REAL,
-    created_at      TEXT NOT NULL
+    created_at      TEXT NOT NULL,
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI'
 );
 CREATE INDEX IF NOT EXISTS idx_pg_crm_eng_acct ON pg_crm_engagement_scores(account_id);
 
@@ -8951,7 +9018,9 @@ CREATE TABLE IF NOT EXISTS pg_capture_plans (
     gate_reviews    TEXT,
     current_phase   TEXT DEFAULT 'qualify' CHECK(current_phase IN ('qualify','pursue','capture','bid','proposal')),
     created_at      TEXT NOT NULL,
-    updated_at      TEXT NOT NULL
+    updated_at      TEXT NOT NULL,
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI'
 );
 CREATE INDEX IF NOT EXISTS idx_pg_capture_opp ON pg_capture_plans(opportunity_id);
 
@@ -8964,7 +9033,9 @@ CREATE TABLE IF NOT EXISTS pg_capture_activities (
     assigned_to     TEXT,
     due_date        TEXT,
     status          TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'in_progress', 'completed', 'cancelled')),
-    created_at      TEXT NOT NULL
+    created_at      TEXT NOT NULL,
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI'
 );
 CREATE INDEX IF NOT EXISTS idx_pg_capture_act_plan ON pg_capture_activities(capture_plan_id);
 
@@ -8979,7 +9050,9 @@ CREATE TABLE IF NOT EXISTS pg_capture_gate_decisions (
     rationale TEXT,
     decided_by TEXT,
     gate_criteria_met TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI'
 );
 CREATE INDEX IF NOT EXISTS idx_pg_cap_gates_plan ON pg_capture_gate_decisions(capture_plan_id);
 CREATE INDEX IF NOT EXISTS idx_pg_cap_gates_created ON pg_capture_gate_decisions(created_at);
@@ -8996,7 +9069,9 @@ CREATE TABLE IF NOT EXISTS pg_teaming_partners (
     set_asides      TEXT,
     status          TEXT DEFAULT 'active' CHECK(status IN ('active', 'inactive', 'prospect')),
     created_at      TEXT NOT NULL,
-    updated_at      TEXT NOT NULL
+    updated_at      TEXT NOT NULL,
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI'
 );
 CREATE INDEX IF NOT EXISTS idx_pg_team_name ON pg_teaming_partners(name);
 
@@ -9009,7 +9084,9 @@ CREATE TABLE IF NOT EXISTS pg_teaming_assessments (
     capability_gaps_filled TEXT,
     risk_assessment TEXT,
     recommendation  TEXT CHECK(recommendation IN ('strong_fit', 'good_fit', 'marginal', 'not_recommended')),
-    created_at      TEXT NOT NULL
+    created_at      TEXT NOT NULL,
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI'
 );
 CREATE INDEX IF NOT EXISTS idx_pg_team_assess_opp ON pg_teaming_assessments(opportunity_id);
 
@@ -9033,6 +9110,8 @@ CREATE TABLE IF NOT EXISTS pg_compliance_matrix (
     notes               TEXT,
     created_at          TEXT NOT NULL,
     updated_at          TEXT NOT NULL,
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI',
     FOREIGN KEY (opportunity_id) REFERENCES proposal_opportunities(id)
 );
 CREATE INDEX IF NOT EXISTS idx_pg_cmatrix_opp ON pg_compliance_matrix(opportunity_id);
@@ -9053,6 +9132,8 @@ CREATE TABLE IF NOT EXISTS pg_review_findings (
     resolution_notes    TEXT,
     created_at          TEXT NOT NULL,
     resolved_at         TEXT,
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI',
     FOREIGN KEY (opportunity_id) REFERENCES proposal_opportunities(id)
 );
 CREATE INDEX IF NOT EXISTS idx_pg_review_opp ON pg_review_findings(opportunity_id);
@@ -9079,6 +9160,8 @@ CREATE TABLE IF NOT EXISTS pg_cost_volumes (
     status                  TEXT DEFAULT 'draft' CHECK(status IN ('draft', 'reviewed', 'approved', 'submitted')),
     created_at              TEXT NOT NULL,
     updated_at              TEXT NOT NULL,
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI',
     FOREIGN KEY (opportunity_id) REFERENCES proposal_opportunities(id)
 );
 CREATE INDEX IF NOT EXISTS idx_pg_costvol_opp ON pg_cost_volumes(opportunity_id);
@@ -9094,6 +9177,8 @@ CREATE TABLE IF NOT EXISTS pg_lcat_allocations (
     annual_cost         REAL,
     basis_of_estimate   TEXT,
     created_at          TEXT NOT NULL,
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI',
     FOREIGN KEY (cost_volume_id) REFERENCES pg_cost_volumes(id)
 );
 CREATE INDEX IF NOT EXISTS idx_pg_lcat_vol ON pg_lcat_allocations(cost_volume_id);
@@ -9114,6 +9199,8 @@ CREATE TABLE IF NOT EXISTS pg_cmmc_supply_chain (
     compliance_status       TEXT DEFAULT 'unknown' CHECK(compliance_status IN ('compliant', 'poam', 'non_compliant', 'unknown', 'expired')),
     flow_down_generated     INTEGER DEFAULT 0,
     checked_at              TEXT NOT NULL,
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI',
     FOREIGN KEY (opportunity_id) REFERENCES proposal_opportunities(id)
 );
 CREATE INDEX IF NOT EXISTS idx_pg_cmmc_opp ON pg_cmmc_supply_chain(opportunity_id);
@@ -9133,6 +9220,8 @@ CREATE TABLE IF NOT EXISTS pg_ai_clause_compliance (
     status                      TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'generated', 'reviewed', 'attached')),
     created_at                  TEXT NOT NULL,
     updated_at                  TEXT NOT NULL,
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI',
     FOREIGN KEY (opportunity_id) REFERENCES proposal_opportunities(id)
 );
 CREATE INDEX IF NOT EXISTS idx_pg_aiclause_opp ON pg_ai_clause_compliance(opportunity_id);
@@ -9270,7 +9359,9 @@ CREATE TABLE IF NOT EXISTS pg_talent_signals (
     scan_date                   TEXT NOT NULL,
     correlated_opportunity_id   TEXT,
     signal_type                 TEXT CHECK(signal_type IN ('velocity_spike', 'role_cluster', 'new_capability', 'pricing_intel', 'general')),
-    created_at                  TEXT NOT NULL
+    created_at                  TEXT NOT NULL,
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI'
 );
 CREATE INDEX IF NOT EXISTS idx_pg_talent_comp ON pg_talent_signals(competitor_name);
 CREATE INDEX IF NOT EXISTS idx_pg_talent_date ON pg_talent_signals(scan_date);
@@ -9284,7 +9375,9 @@ CREATE TABLE IF NOT EXISTS pg_talent_velocity (
     dominant_role_category  TEXT,
     dominant_location       TEXT,
     dominant_clearance      TEXT,
-    created_at              TEXT NOT NULL
+    created_at              TEXT NOT NULL,
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI'
 );
 CREATE INDEX IF NOT EXISTS idx_pg_talvel_comp ON pg_talent_velocity(competitor_name);
 
@@ -9301,6 +9394,8 @@ CREATE TABLE IF NOT EXISTS pg_win_themes (
     status              TEXT DEFAULT 'active' CHECK(status IN ('active', 'archived', 'superseded')),
     created_at          TEXT NOT NULL,
     updated_at          TEXT NOT NULL,
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI',
     FOREIGN KEY (opportunity_id) REFERENCES proposal_opportunities(id)
 );
 CREATE INDEX IF NOT EXISTS idx_pg_wintheme_opp ON pg_win_themes(opportunity_id);
@@ -9313,6 +9408,8 @@ CREATE TABLE IF NOT EXISTS pg_theme_tracking (
     density_score           REAL,
     reviewer_notes          TEXT,
     checked_at              TEXT NOT NULL,
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI',
     FOREIGN KEY (theme_id) REFERENCES pg_win_themes(id)
 );
 CREATE INDEX IF NOT EXISTS idx_pg_themetrack_theme ON pg_theme_tracking(theme_id);
@@ -9333,6 +9430,8 @@ CREATE TABLE IF NOT EXISTS pg_teaming_workshare (
     reliability_score   REAL,
     created_at          TEXT NOT NULL,
     updated_at          TEXT NOT NULL,
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI',
     FOREIGN KEY (opportunity_id) REFERENCES proposal_opportunities(id)
 );
 CREATE INDEX IF NOT EXISTS idx_pg_workshare_opp ON pg_teaming_workshare(opportunity_id);

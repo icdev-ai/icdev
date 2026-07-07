@@ -325,7 +325,8 @@ CREATE TABLE IF NOT EXISTS cpmp_contracts (
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now')),
     created_by TEXT,
-    classification TEXT DEFAULT 'CUI'
+    classification TEXT DEFAULT 'CUI',
+    tenant_id TEXT
 );
 CREATE TABLE IF NOT EXISTS cpmp_clins (
     id TEXT PRIMARY KEY,
@@ -342,7 +343,8 @@ CREATE TABLE IF NOT EXISTS cpmp_clins (
     metadata TEXT DEFAULT '{}',
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now')),
-    classification TEXT DEFAULT 'CUI'
+    classification TEXT DEFAULT 'CUI',
+    tenant_id TEXT
 );
 CREATE TABLE IF NOT EXISTS cpmp_wbs (
     id TEXT PRIMARY KEY,
@@ -366,7 +368,8 @@ CREATE TABLE IF NOT EXISTS cpmp_wbs (
     metadata TEXT DEFAULT '{}',
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now')),
-    classification TEXT DEFAULT 'CUI'
+    classification TEXT DEFAULT 'CUI',
+    tenant_id TEXT
 );
 CREATE TABLE IF NOT EXISTS cpmp_deliverables (
     id TEXT PRIMARY KEY,
@@ -393,7 +396,8 @@ CREATE TABLE IF NOT EXISTS cpmp_deliverables (
     metadata TEXT DEFAULT '{}',
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now')),
-    classification TEXT DEFAULT 'CUI'
+    classification TEXT DEFAULT 'CUI',
+    tenant_id TEXT
 );
 CREATE TABLE IF NOT EXISTS cpmp_status_history (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -404,7 +408,9 @@ CREATE TABLE IF NOT EXISTS cpmp_status_history (
     changed_by TEXT,
     reason TEXT,
     metadata TEXT DEFAULT '{}',
-    created_at TEXT DEFAULT (datetime('now'))
+    created_at TEXT DEFAULT (datetime('now')),
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI'
 );
 CREATE TABLE IF NOT EXISTS cpmp_evm_periods (
     id TEXT PRIMARY KEY,
@@ -436,7 +442,8 @@ CREATE TABLE IF NOT EXISTS cpmp_evm_periods (
     notes TEXT,
     metadata TEXT DEFAULT '{}',
     created_at TEXT DEFAULT (datetime('now')),
-    classification TEXT DEFAULT 'CUI'
+    classification TEXT DEFAULT 'CUI',
+    tenant_id TEXT
 );
 CREATE TABLE IF NOT EXISTS cpmp_subcontractors (
     id TEXT PRIMARY KEY,
@@ -462,7 +469,8 @@ CREATE TABLE IF NOT EXISTS cpmp_subcontractors (
     metadata TEXT DEFAULT '{}',
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now')),
-    classification TEXT DEFAULT 'CUI'
+    classification TEXT DEFAULT 'CUI',
+    tenant_id TEXT
 );
 CREATE TABLE IF NOT EXISTS cpmp_cpars_assessments (
     id TEXT PRIMARY KEY,
@@ -489,7 +497,8 @@ CREATE TABLE IF NOT EXISTS cpmp_cpars_assessments (
     metadata TEXT DEFAULT '{}',
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now')),
-    classification TEXT DEFAULT 'CUI'
+    classification TEXT DEFAULT 'CUI',
+    tenant_id TEXT
 );
 CREATE TABLE IF NOT EXISTS cpmp_negative_events (
     id TEXT PRIMARY KEY,
@@ -513,7 +522,8 @@ CREATE TABLE IF NOT EXISTS cpmp_negative_events (
     metadata TEXT DEFAULT '{}',
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now')),
-    classification TEXT DEFAULT 'CUI'
+    classification TEXT DEFAULT 'CUI',
+    tenant_id TEXT
 );
 CREATE TABLE IF NOT EXISTS cpmp_small_business_plan (
     id TEXT PRIMARY KEY,
@@ -543,7 +553,8 @@ CREATE TABLE IF NOT EXISTS cpmp_small_business_plan (
     metadata TEXT DEFAULT '{}',
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now')),
-    classification TEXT DEFAULT 'CUI'
+    classification TEXT DEFAULT 'CUI',
+    tenant_id TEXT
 );
 CREATE TABLE IF NOT EXISTS cpmp_cdrl_generations (
     id TEXT PRIMARY KEY,
@@ -562,7 +573,8 @@ CREATE TABLE IF NOT EXISTS cpmp_cdrl_generations (
     approved_by TEXT,
     metadata TEXT DEFAULT '{}',
     created_at TEXT DEFAULT (datetime('now')),
-    classification TEXT DEFAULT 'CUI'
+    classification TEXT DEFAULT 'CUI',
+    tenant_id TEXT
 );
 CREATE TABLE IF NOT EXISTS cpmp_sam_contract_awards (
     id TEXT PRIMARY KEY,
@@ -590,7 +602,8 @@ CREATE TABLE IF NOT EXISTS cpmp_sam_contract_awards (
     raw_json TEXT,
     metadata TEXT DEFAULT '{}',
     discovered_at TEXT DEFAULT (datetime('now')),
-    classification TEXT DEFAULT 'CUI'
+    classification TEXT DEFAULT 'CUI',
+    tenant_id TEXT
 );
 CREATE TABLE IF NOT EXISTS cpmp_cor_access_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -601,7 +614,9 @@ CREATE TABLE IF NOT EXISTS cpmp_cor_access_log (
     ip_address TEXT,
     user_agent TEXT,
     metadata TEXT DEFAULT '{}',
-    created_at TEXT DEFAULT (datetime('now'))
+    created_at TEXT DEFAULT (datetime('now')),
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI'
 );
 CREATE TABLE IF NOT EXISTS cpmp_milestones (
     id TEXT PRIMARY KEY,
@@ -619,7 +634,8 @@ CREATE TABLE IF NOT EXISTS cpmp_milestones (
     metadata TEXT DEFAULT '{}',
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now')),
-    classification TEXT DEFAULT 'CUI'
+    classification TEXT DEFAULT 'CUI',
+    tenant_id TEXT
 );
 CREATE TABLE IF NOT EXISTS cpmp_milestone_deps (
     id TEXT PRIMARY KEY,
@@ -630,7 +646,8 @@ CREATE TABLE IF NOT EXISTS cpmp_milestone_deps (
     dep_type TEXT DEFAULT 'finish_to_start',
     notes TEXT,
     created_at TEXT DEFAULT (datetime('now')),
-    classification TEXT DEFAULT 'CUI'
+    classification TEXT DEFAULT 'CUI',
+    tenant_id TEXT
 );
 CREATE TABLE IF NOT EXISTS cpmp_contract_mods (
     id TEXT PRIMARY KEY,
@@ -733,7 +750,9 @@ CREATE TABLE IF NOT EXISTS pg_capture_gate_decisions (
     rationale TEXT,
     decided_by TEXT,
     gate_criteria_met TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI'
 );
 CREATE TABLE IF NOT EXISTS dic_handoff_sessions (
     session_id          TEXT    PRIMARY KEY,
