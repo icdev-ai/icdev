@@ -36,7 +36,7 @@ _OPTION_NUMBER = {t: i for i, t in enumerate(PERIOD_TYPES)}
 
 def _get_db():
     conn = get_connection()
-    conn.set_security_context(None)
+    conn.set_security_context(None)  # rls-bypass: cpmp tables use CUI universally; RLS JOIN injection breaks subqueries
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
