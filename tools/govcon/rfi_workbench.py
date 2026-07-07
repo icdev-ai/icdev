@@ -7,6 +7,7 @@ requirements layer (extract/CRUD/coverage), ACE team integration.
 from __future__ import annotations
 
 import json
+import os
 import threading
 import time
 import uuid
@@ -1162,6 +1163,30 @@ def run_ace_reviewer_pass(section_id: str) -> dict:
 
         feedback["source"] = "reviewer"
         feedback["reviewed_at"] = _now()
+
+        # Optional, off-by-default: an independent Council pressure-test via
+        # idea_lab's Specialist (tools/govcon/specialist_consult.py), additive
+        # to -- never a replacement for -- the local qwen3/llama-local
+        # reviewer pass above. Only the evaluator's own summary/score is sent
+        # (never raw section content), and specialist_consult.py sanitizes
+        # that before it leaves this process. Any failure/timeout/disabled
+        # config is silently skipped -- this must never block the reviewer
+        # pass finishing and persisting.
+        if os.environ.get("ICDEV_RFI_SPECIALIST_CONSULT_ENABLED", "").strip().lower() in ("1", "true", "yes"):
+            try:
+                from tools.govcon.specialist_consult import request_council_consult
+
+                consult_question = (
+                    f"Independent pressure-test requested for RFI section "
+                    f"{section.get('item_number')} ({section.get('title')}). "
+                    f"Evaluator summary: {feedback.get('summary', '')} "
+                    f"(evaluator_score={feedback.get('evaluator_score')})."
+                )
+                consult_result = request_council_consult("RFI response review", consult_question)
+                if consult_result:
+                    feedback["specialist_consult"] = consult_result
+            except Exception as consult_exc:
+                logger.debug("Specialist Council consult skipped for %s: %s", section_id, consult_exc)
 
         # Merge into existing ace_feedback — preserve editor findings
         existing = section.get("ace_feedback")

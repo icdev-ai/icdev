@@ -4018,8 +4018,100 @@ CREATE TABLE IF NOT EXISTS audit_trail (
 
 
 # ---------------------------------------------------------------------------
-# Tests: draft records have composite quality_score (gcpl-dft-06)
+# Tests: optional Specialist Council consult wiring (idea_lab reverse
+# integration, off-by-default via ICDEV_PROPOSAL_SPECIALIST_CONSULT_ENABLED)
 # ---------------------------------------------------------------------------
+
+
+class _FakeDraftCursor:
+    def __init__(self, row):
+        self._row = row
+
+    def fetchone(self):
+        return self._row
+
+
+class _FakeDraftConn:
+    """Lightweight, DB-free stand-in for draft_response()'s `conn` -- avoids
+    the pre-existing %s/sqlite3 placeholder mismatch that already fails
+    TestDraftDefaultStatus's real-sqlite fixture in this environment
+    (response_drafter.py's SQL is authored for PostgreSQL, per CLAUDE.md;
+    a raw sqlite3.connect() has no %s support). This fake only needs to
+    answer the one SELECT and capture the one INSERT draft_response() does."""
+
+    def __init__(self, shall_row):
+        self._shall_row = shall_row
+        self.inserted_params = None
+
+    def execute(self, sql, params=None):
+        if "SELECT * FROM rfp_shall_statements" in sql:
+            return _FakeDraftCursor(dict(self._shall_row))
+        if "INSERT INTO proposal_section_drafts" in sql:
+            self.inserted_params = params
+        return _FakeDraftCursor(None)
+
+    def commit(self):
+        pass
+
+    def close(self):
+        pass
+
+
+class TestSpecialistConsultWiring:
+    """draft_response() must only call out to idea_lab's Specialist when
+    explicitly enabled, and a consult failure must never break drafting."""
+
+    def _draft_via(self, shall_id="shall-specialist-test"):
+        shall_row = {
+            "id": shall_id,
+            "sam_opportunity_id": "opp-specialist-test",
+            "statement_text": "The system shall implement ZTA.",
+            "domain_category": "devsecops",
+            "keywords": "[]",
+        }
+        fake_conn = _FakeDraftConn(shall_row)
+
+        with patch("tools.govcon.response_drafter._get_db", return_value=fake_conn):
+            with patch("tools.govcon.response_drafter._try_llm_draft", return_value=(None, None)):
+                with patch("tools.govcon.capability_mapper.load_capability_catalog", return_value=[]):
+                    with patch("tools.govcon.knowledge_base.search_blocks", return_value={"results": []}):
+                        from tools.govcon.response_drafter import draft_response
+                        result = draft_response(shall_id)
+        return result, fake_conn
+
+    def _inserted_metadata(self, fake_conn):
+        # metadata is the last positional param in the INSERT (see
+        # tools/govcon/response_drafter.py's proposal_section_drafts insert).
+        return _json.loads(fake_conn.inserted_params[-1])
+
+    def test_consult_not_attempted_when_flag_off(self, monkeypatch):
+        monkeypatch.delenv("ICDEV_PROPOSAL_SPECIALIST_CONSULT_ENABLED", raising=False)
+
+        with patch("tools.govcon.specialist_consult.request_council_consult") as mock_consult:
+            result, fake_conn = self._draft_via()
+
+        mock_consult.assert_not_called()
+        assert result.get("status") == "ok"
+        assert "specialist_consult" not in self._inserted_metadata(fake_conn)
+
+    def test_consult_result_attached_to_metadata_when_flag_on(self, monkeypatch):
+        monkeypatch.setenv("ICDEV_PROPOSAL_SPECIALIST_CONSULT_ENABLED", "true")
+
+        fake_result = {"verdict": "Proceed with caution.", "stop_reason": "completed", "source": "icdev_council"}
+        with patch("tools.govcon.specialist_consult.request_council_consult", return_value=fake_result):
+            result, fake_conn = self._draft_via()
+
+        assert result.get("status") == "ok"
+        assert self._inserted_metadata(fake_conn)["specialist_consult"] == fake_result
+
+    def test_consult_failure_does_not_break_draft_response(self, monkeypatch):
+        monkeypatch.setenv("ICDEV_PROPOSAL_SPECIALIST_CONSULT_ENABLED", "true")
+
+        with patch("tools.govcon.specialist_consult.request_council_consult", side_effect=RuntimeError("boom")):
+            result, fake_conn = self._draft_via()
+
+        assert result.get("status") == "ok", f"draft_response failed: {result}"
+        assert "specialist_consult" not in self._inserted_metadata(fake_conn)
 
 
 class TestDraftQualityScorePresence:

@@ -10,6 +10,7 @@ No server or real DB required; Group 3 uses monkeypatch to bypass DB calls.
 """
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -633,6 +634,93 @@ class TestAceReviewerPass:
         result = wb.run_ace_reviewer_pass("sec-rev-01")
         assert result.get("source") == "reviewer"
         assert result.get("overall") in ("pass", "warn", "fail")
+
+    def test_specialist_consult_not_attempted_when_flag_off(self, monkeypatch):
+        import tools.govcon.rfi_workbench as wb
+        from unittest.mock import MagicMock
+
+        monkeypatch.delenv("ICDEV_RFI_SPECIALIST_CONSULT_ENABLED", raising=False)
+        section = self._make_section("Well-structured technical section.")
+        monkeypatch.setattr(wb, "get_section", lambda sid: section)
+        monkeypatch.setattr(wb, "get_requirements", lambda sid: [])
+
+        llm_resp = MagicMock()
+        llm_resp.content = '{"issues": [], "evaluator_score": 4, "overall": "pass", "summary": "Solid."}'
+        router_mock = MagicMock()
+        router_mock.invoke.return_value = llm_resp
+
+        class _FakeConn:
+            def execute(self, sql, params=None):
+                class _R: pass
+                return _R()
+            def commit(self): pass
+
+        monkeypatch.setattr(wb, "_get_router", lambda: router_mock)
+        monkeypatch.setattr(wb, "get_db", lambda: _FakeConn())
+
+        with patch("tools.govcon.specialist_consult.request_council_consult") as mock_consult:
+            result = wb.run_ace_reviewer_pass("sec-rev-01")
+
+        mock_consult.assert_not_called()
+        assert "specialist_consult" not in result
+
+    def test_specialist_consult_attached_when_flag_on(self, monkeypatch):
+        import tools.govcon.rfi_workbench as wb
+        from unittest.mock import MagicMock
+
+        monkeypatch.setenv("ICDEV_RFI_SPECIALIST_CONSULT_ENABLED", "true")
+        section = self._make_section("Well-structured technical section.")
+        monkeypatch.setattr(wb, "get_section", lambda sid: section)
+        monkeypatch.setattr(wb, "get_requirements", lambda sid: [])
+
+        llm_resp = MagicMock()
+        llm_resp.content = '{"issues": [], "evaluator_score": 4, "overall": "pass", "summary": "Solid."}'
+        router_mock = MagicMock()
+        router_mock.invoke.return_value = llm_resp
+
+        class _FakeConn:
+            def execute(self, sql, params=None):
+                class _R: pass
+                return _R()
+            def commit(self): pass
+
+        monkeypatch.setattr(wb, "_get_router", lambda: router_mock)
+        monkeypatch.setattr(wb, "get_db", lambda: _FakeConn())
+
+        fake_consult_result = {"verdict": "Proceed.", "stop_reason": "completed", "source": "icdev_council"}
+        with patch("tools.govcon.specialist_consult.request_council_consult", return_value=fake_consult_result):
+            result = wb.run_ace_reviewer_pass("sec-rev-01")
+
+        assert result["specialist_consult"] == fake_consult_result
+
+    def test_specialist_consult_failure_does_not_break_reviewer_pass(self, monkeypatch):
+        import tools.govcon.rfi_workbench as wb
+        from unittest.mock import MagicMock
+
+        monkeypatch.setenv("ICDEV_RFI_SPECIALIST_CONSULT_ENABLED", "true")
+        section = self._make_section("Well-structured technical section.")
+        monkeypatch.setattr(wb, "get_section", lambda sid: section)
+        monkeypatch.setattr(wb, "get_requirements", lambda sid: [])
+
+        llm_resp = MagicMock()
+        llm_resp.content = '{"issues": [], "evaluator_score": 4, "overall": "pass", "summary": "Solid."}'
+        router_mock = MagicMock()
+        router_mock.invoke.return_value = llm_resp
+
+        class _FakeConn:
+            def execute(self, sql, params=None):
+                class _R: pass
+                return _R()
+            def commit(self): pass
+
+        monkeypatch.setattr(wb, "_get_router", lambda: router_mock)
+        monkeypatch.setattr(wb, "get_db", lambda: _FakeConn())
+
+        with patch("tools.govcon.specialist_consult.request_council_consult", side_effect=RuntimeError("boom")):
+            result = wb.run_ace_reviewer_pass("sec-rev-01")
+
+        assert result.get("source") == "reviewer"
+        assert "specialist_consult" not in result
 
     def test_merges_into_existing_editor_feedback(self, monkeypatch):
         import tools.govcon.rfi_workbench as wb

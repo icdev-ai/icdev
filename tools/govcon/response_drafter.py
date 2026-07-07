@@ -524,6 +524,26 @@ def draft_response(shall_id):
     best_coverage = capabilities[0]["score"] if capabilities else 0
     confidence = round(best_coverage * 0.7 + (0.3 if knowledge_blocks else 0), 2)
 
+    # Optional, off-by-default: an independent Council pressure-test via
+    # idea_lab's Specialist (tools/govcon/specialist_consult.py) as a third
+    # opinion before this draft is stored -- additive to, never a
+    # replacement for, the two-tier qwen3/Claude drafting pipeline above.
+    # Only the requirement text + domain are sent (never the drafted
+    # response itself), and specialist_consult.py sanitizes that before it
+    # leaves this process. Any failure/timeout/disabled config is silently
+    # skipped -- this must never block the draft from being stored.
+    specialist_consult_result = None
+    if os.environ.get("ICDEV_PROPOSAL_SPECIALIST_CONSULT_ENABLED", "").strip().lower() in ("1", "true", "yes"):
+        try:
+            from tools.govcon.specialist_consult import request_council_consult
+
+            specialist_consult_result = request_council_consult(
+                "GovCon proposal response drafting",
+                f"Third-opinion pressure-test requested for this requirement: {shall_text[:300]}",
+            )
+        except Exception as consult_exc:
+            print(f"Specialist Council consult skipped: {consult_exc}", file=sys.stderr)
+
     # Store draft
     draft_id = str(uuid.uuid4())
     conn.execute(
@@ -551,6 +571,7 @@ def draft_response(shall_id):
                     "capability_count": len(capabilities),
                     "kb_count": len(knowledge_blocks),
                     "best_coverage": best_coverage,
+                    **({"specialist_consult": specialist_consult_result} if specialist_consult_result else {}),
                 }
             ),
         ),
