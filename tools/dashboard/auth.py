@@ -323,8 +323,25 @@ RBAC_MATRIX = {
     # Usage: admin sees all, others see own
     "usage": {"admin", "pm", "developer", "isso", "co"},
     # CPMP (Phase 60)
-    "cpmp": {"admin", "pm", "developer", "isso", "co"},
-    "cpmp_cor": {"admin", "pm", "isso", "co", "cor"},
+    "cpmp": {"admin", "pm", "developer", "isso", "co", "contract_mgr"},
+    "cpmp_cor": {"admin", "pm", "isso", "co", "cor", "contract_mgr"},
+    # GovCon (prop-fix-08) — capture/BD surfaces
+    "govcon": {"admin", "bd", "capture_mgr", "pm", "isso"},
+    "govcon_requirements": {"admin", "bd", "capture_mgr", "pm", "isso"},
+    "govcon_capabilities": {"admin", "bd", "capture_mgr", "pm", "isso"},
+    # Proposals (prop-fix-08)
+    "proposals_list": {"admin", "bd", "capture_mgr", "pm", "reviewer"},
+    "proposals_detail": {"admin", "bd", "capture_mgr", "pm", "reviewer"},
+    "proposals_section_detail": {"admin", "bd", "capture_mgr", "pm", "reviewer"},
+    "proposals_compliance_gaps": {"admin", "bd", "capture_mgr", "pm", "reviewer"},
+    "proposals_reviews_dashboard": {"admin", "pm", "reviewer"},
+    "proposals_language": {"admin", "bd", "capture_mgr", "pm", "reviewer"},
+    "proposals_ptw": {"admin", "capture_mgr", "pm"},
+    # CPMP detail/deliverable surfaces (prop-fix-08)
+    "cpmp_detail": {"admin", "pm", "contract_mgr", "co", "cor", "isso"},
+    "cpmp_deliverable_detail": {"admin", "pm", "contract_mgr", "co", "cor", "isso"},
+    # Proposal Genesis (prop-fix-08)
+    "proposal_genesis": {"admin", "pm", "bd", "capture_mgr"},
 }
 
 

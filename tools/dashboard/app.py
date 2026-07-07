@@ -222,6 +222,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
     """
 
     @app.route("/cpmp")
+    @require_role("admin", "pm", "developer", "isso", "co", "contract_mgr")
     def cpmp_portfolio_page():
         """CPMP Portfolio — contract performance overview, health scoring."""
         try:
@@ -336,6 +337,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
             )
 
     @app.route("/cpmp/<contract_id>")
+    @require_role("admin", "pm", "contract_mgr", "co", "cor", "isso")
     def cpmp_detail_page(contract_id):
         """CPMP Contract Detail — 7-tab view."""
         try:
@@ -439,6 +441,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
             ), 200
 
     @app.route("/cpmp/<contract_id>/deliverables/<deliverable_id>")
+    @require_role("admin", "pm", "contract_mgr", "co", "cor", "isso")
     def cpmp_deliverable_detail_page(contract_id, deliverable_id):
         """CPMP Deliverable Detail — status pipeline, CDRL generation."""
         try:
@@ -473,6 +476,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
             ), 200
 
     @app.route("/cpmp/cor")
+    @require_role("admin", "pm", "isso", "co", "cor", "contract_mgr")
     def cpmp_cor_portal_page():
         """COR Portal — read-only government view of assigned contracts."""
         user = getattr(g, "current_user", None)
@@ -497,6 +501,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
             conn.close()
 
     @app.route("/cpmp/cor/<contract_id>")
+    @require_role("admin", "pm", "isso", "co", "cor", "contract_mgr")
     def cpmp_cor_detail_page(contract_id):
         """COR Contract Detail — read-only, no internal cost data."""
         user = getattr(g, "current_user", None)
@@ -562,6 +567,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
             conn.close()
 
     @app.route("/cpmp/deliverables")
+    @require_role("admin", "pm", "developer", "isso", "co", "contract_mgr")
     def cpmp_deliverable_center_page():
         """Deliverable Command Center — all deliverables across all active contracts."""
         return render_template("cpmp/deliverable_center.html")
@@ -636,6 +642,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
             )
 
     @app.route("/proposals")
+    @require_role("admin", "bd", "capture_mgr", "pm", "reviewer")
     def proposals_list_page():
         """Proposal Opportunities — GovCon proposal writing lifecycle tracker."""
         conn = _get_db()
@@ -708,6 +715,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
             conn.close()
 
     @app.route("/proposals/<opp_id>")
+    @require_role("admin", "bd", "capture_mgr", "pm", "reviewer")
     def proposals_detail_page(opp_id):
         """Proposal Opportunity Detail — 6-tab view with sections, compliance, reviews."""
         conn = _get_db()
@@ -903,6 +911,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
             conn.close()
 
     @app.route("/proposals/<opp_id>/sections/<sec_id>")
+    @require_role("admin", "bd", "capture_mgr", "pm", "reviewer")
     def proposals_section_detail_page(opp_id, sec_id):
         """Proposal Section Detail — status pipeline, notes, compliance, findings, history."""
         conn = _get_db()
@@ -1010,6 +1019,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
             conn.close()
 
     @app.route("/proposals/reviews-dashboard")
+    @require_role("admin", "pm", "reviewer")
     def proposals_reviews_dashboard():
         """Executive cross-proposal review dashboard (prop-rev-07)."""
         from datetime import date
@@ -1076,6 +1086,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
             conn.close()
 
     @app.route("/proposals/<opp_id>/language")
+    @require_role("admin", "bd", "capture_mgr", "pm", "reviewer")
     def proposals_language_page(opp_id):
         """Proposal Language Settings — glossary, wall of truth, taxonomy, style templates."""
         conn = _get_db()
@@ -1114,6 +1125,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
             conn.close()
 
     @app.route("/proposals/<opp_id>/ptw")
+    @require_role("admin", "capture_mgr", "pm")
     def proposals_ptw_page(opp_id):
         """Black-hat / PTW workspace — competitor intelligence + price-to-win (prop-cap-13)."""
         conn = _get_db()
@@ -1172,6 +1184,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
         )
 
     @app.route("/proposals/<opp_id>/compliance/gaps")
+    @require_role("admin", "bd", "capture_mgr", "pm", "reviewer")
     def proposals_compliance_gaps(opp_id):
         """Compliance gap drill-down — all not_addressed requirements (prop-cmp-10)."""
         conn = _get_db()
@@ -8828,6 +8841,7 @@ def create_app(testing: bool = False) -> Flask:
     # ── Proposal Genesis — Autonomous Capture Pipeline Dashboard ─────────────
 
     @app.route("/proposal-genesis")
+    @require_role("admin", "pm", "bd", "capture_mgr")
     def proposal_genesis():
         """Proposal Genesis — autonomous capture-to-delivery pipeline dashboard."""
         status = {}
