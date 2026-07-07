@@ -9130,6 +9130,8 @@ CREATE TABLE public.cpmp_clins (
     created_at text DEFAULT now(),
     updated_at text DEFAULT now(),
     classification text DEFAULT 'CUI'::text,
+    tenant_id text,
+    obligated_value real DEFAULT 0.0,
     CONSTRAINT cpmp_clins_clin_type_check CHECK ((clin_type = ANY (ARRAY['labor'::text, 'materials'::text, 'travel'::text, 'odc'::text, 'subcontract'::text, 'fixed_price'::text]))),
     CONSTRAINT cpmp_clins_status_check CHECK ((status = ANY (ARRAY['active'::text, 'fully_funded'::text, 'expended'::text, 'deobligated'::text])))
 );
@@ -9163,6 +9165,31 @@ CREATE TABLE public.cpmp_contract_mods (
     updated_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
     CONSTRAINT cpmp_contract_mods_status_check CHECK ((status = ANY (ARRAY['requested'::text, 'in_review'::text, 'approved'::text, 'rejected'::text, 'executed'::text]))),
     CONSTRAINT cpmp_contract_mods_type_check CHECK ((type = ANY (ARRAY['admin'::text, 'funding'::text, 'scope'::text, 'pop'::text])))
+);
+
+
+--
+-- Name: cpmp_contract_periods; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.cpmp_contract_periods (
+    id text NOT NULL,
+    contract_id text NOT NULL,
+    period_type text DEFAULT 'base'::text NOT NULL,
+    option_number integer DEFAULT 0,
+    pop_start text,
+    pop_end text,
+    obligated_value real DEFAULT 0.0,
+    funded_value real DEFAULT 0.0,
+    ceiling_value real DEFAULT 0.0,
+    status text DEFAULT 'unexercised'::text NOT NULL,
+    exercised_at text,
+    exercised_by text,
+    notes text,
+    created_at text DEFAULT now(),
+    updated_at text DEFAULT now(),
+    classification text DEFAULT 'CUI'::text,
+    tenant_id text
 );
 
 
@@ -9206,6 +9233,10 @@ CREATE TABLE public.cpmp_contracts (
     created_by text,
     classification text DEFAULT 'CUI'::text,
     compartments text DEFAULT '[]'::text NOT NULL,
+    tenant_id text,
+    obligated_value real DEFAULT 0.0,
+    period_type text DEFAULT 'base'::text,
+    option_number integer DEFAULT 0,
     CONSTRAINT cpmp_contracts_contract_type_check CHECK ((contract_type = ANY (ARRAY['FFP'::text, 'T&M'::text, 'CPFF'::text, 'CPIF'::text, 'IDIQ'::text, 'BPA'::text, 'BOA'::text]))),
     CONSTRAINT cpmp_contracts_health_check CHECK ((health = ANY (ARRAY['green'::text, 'yellow'::text, 'red'::text]))),
     CONSTRAINT cpmp_contracts_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'active'::text, 'option_pending'::text, 'complete'::text, 'closed'::text, 'terminated'::text])))
@@ -38682,6 +38713,14 @@ ALTER TABLE ONLY public.cpmp_contract_mods
 
 
 --
+-- Name: cpmp_contract_periods cpmp_contract_periods_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cpmp_contract_periods
+    ADD CONSTRAINT cpmp_contract_periods_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: cpmp_contracts cpmp_contracts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -50250,6 +50289,20 @@ CREATE INDEX idx_cpmp_contract_health ON public.cpmp_contracts USING btree (heal
 --
 
 CREATE INDEX idx_cpmp_contract_idiq ON public.cpmp_contracts USING btree (idiq_contract_id);
+
+
+--
+-- Name: idx_cpmp_contract_periods_contract; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_cpmp_contract_periods_contract ON public.cpmp_contract_periods USING btree (contract_id);
+
+
+--
+-- Name: idx_cpmp_contract_periods_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_cpmp_contract_periods_status ON public.cpmp_contract_periods USING btree (contract_id, status);
 
 
 --
