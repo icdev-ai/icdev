@@ -555,6 +555,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "ace_qa_failures",
         # BI Dashboard Canvas — AI chart-generation audit trail (NIST AU)
         "bi_generation_log",
+        # prop-sec-05 — Aggregation Guard / mosaic-effect rule evaluation log (NIST AU)
+        "aggregation_events",
     ]
 
     if tool_name == "Bash":

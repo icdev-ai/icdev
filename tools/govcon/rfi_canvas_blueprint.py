@@ -9,7 +9,8 @@ Routes:
   POST /api/rfi/<session_id>/sections/<sid>/hitl           — HITL action
   POST /api/rfi/<session_id>/sections/<sid>/writeguard     — WriteGuard
   POST /api/rfi/<session_id>/sections/<sid>/save           — save edits
-  POST /api/rfi/<session_id>/export/<fmt>                  — export (docx|md)
+  POST /api/rfi/<session_id>/export/<fmt>                  — export (docx|md); 409 if aggregation guard blocks
+  POST /api/rfi/<session_id>/aggregation-guard/override     — clear an aggregation guard block (HITL)
   GET  /api/rfi/<session_id>/download/<fmt>                — download exported file
   DELETE /api/rfi/<session_id>                             — delete session
   POST /api/rfi/iqe-query                                  — IQE dispatch
@@ -192,8 +193,33 @@ def api_export(session_id, fmt):
     try:
         path = wb.assemble_and_export(session_id, fmt)
         return jsonify({"ok": True, "path": path, "download_url": f"/api/rfi/{session_id}/download/{fmt}"})
+    except wb.AggregationGuardBlocked as exc:
+        return (
+            jsonify(
+                {
+                    "error": "Aggregation guard: derived classification exceeds surface ceiling — review required",
+                    "gate": "aggregation_guard",
+                    "derived": exc.derived,
+                    "fired_rules": exc.fired_rules,
+                }
+            ),
+            409,
+        )
     except Exception as exc:
         logger.exception("Export error for session %s", session_id)
+        return jsonify({"error": str(exc)}), 500
+
+
+@rfi_canvas_bp.route("/api/rfi/<session_id>/aggregation-guard/override", methods=["POST"])
+def api_aggregation_guard_override(session_id):
+    data = request.get_json(force=True) or {}
+    comment = data.get("comment", "")
+    try:
+        resolved_by = getattr(request, "remote_user", None) or "unknown"
+        count = wb.override_aggregation_guard(session_id, comment=comment, resolved_by=resolved_by)
+        return jsonify({"ok": True, "resolved_count": count})
+    except Exception as exc:
+        logger.exception("Aggregation guard override error for session %s", session_id)
         return jsonify({"error": str(exc)}), 500
 
 

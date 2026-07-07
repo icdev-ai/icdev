@@ -552,12 +552,129 @@ def run_writeguard(section_id):
     return result
 
 
+# ── Aggregation Guard (prop-sec-07) — classification-by-compilation gate ──────
+
+class AggregationGuardBlocked(Exception):
+    """Raised when the aggregation guard blocks export/finalize pending HITL review."""
+
+    def __init__(self, fired_rules, derived, session_id):
+        self.fired_rules = fired_rules
+        self.derived = derived
+        self.session_id = session_id
+        super().__init__(f"Aggregation guard blocked session {session_id}: derived={derived}")
+
+
+def _content_signature(sections) -> str:
+    import hashlib
+
+    joined = "\x1f".join((s.get("content") or s.get("ai_draft") or "") for s in sections)
+    return hashlib.sha256(joined.encode("utf-8")).hexdigest()
+
+
+def _section_result_set(sections):
+    return [
+        {
+            "element_id": s["id"],
+            "label": f"{s.get('item_number', '')} {s.get('title', '')}".strip(),
+            "text": s.get("content") or s.get("ai_draft") or "",
+        }
+        for s in sections
+    ]
+
+
+def check_aggregation_guard(session_id: str) -> dict:
+    """Run the mosaic-effect guard across all sections of an RFI session.
+
+    Returns the guard_result dict. If action == 'block' and no resolved
+    override exists for the current content signature, raises
+    AggregationGuardBlocked. Editing flagged content changes the signature,
+    so a fresh guard check after an edit naturally re-evaluates rather than
+    requiring an explicit "recheck" action.
+    """
+    from tools.db.storage import get_connection
+    from tools.security.aggregation_guard import guard_result
+
+    sections = get_sections(session_id)
+    result_set = _section_result_set(sections)
+    signature = _content_signature(sections)
+
+    guard = guard_result(result_set, ctx={"surface_ceiling": "CUI"}, surface="rfi/export")
+
+    if guard["action"] != "block":
+        return guard
+
+    conn = get_connection()
+    for rule in guard["fired_rules"]:
+        if rule["action"] != "block":
+            continue
+        existing = conn.execute(
+            """SELECT resolution FROM document_aggregation_findings
+               WHERE surface=%s AND document_id=%s AND rule_id=%s AND content_signature=%s""",
+            ("rfi", session_id, rule["rule_id"], signature),
+        ).fetchone()
+        if existing and dict(existing).get("resolution") == "override":
+            continue
+        if not existing:
+            conn.execute(
+                """INSERT INTO document_aggregation_findings
+                   (id, surface, document_id, rule_id, derived_classification,
+                    matched_elements, content_signature, created_at)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
+                (
+                    str(uuid.uuid4()),
+                    "rfi",
+                    session_id,
+                    rule["rule_id"],
+                    guard["derived"],
+                    json.dumps(rule["matched_elements"]),
+                    signature,
+                    _now(),
+                ),
+            )
+            conn.commit()
+        raise AggregationGuardBlocked(guard["fired_rules"], guard["derived"], session_id)
+
+    return guard
+
+
+def override_aggregation_guard(session_id: str, comment: str = "", resolved_by: str = "") -> int:
+    """Resolve all open (unresolved) findings for the CURRENT content signature.
+
+    Returns the number of findings resolved. Does not re-attempt export —
+    the caller re-invokes assemble_and_export(), which re-checks and now
+    passes because the signature matches a resolved override.
+    """
+    from tools.db.storage import get_connection
+
+    sections = get_sections(session_id)
+    signature = _content_signature(sections)
+    conn = get_connection()
+    now = _now()
+    rows = conn.execute(
+        """SELECT id FROM document_aggregation_findings
+           WHERE surface=%s AND document_id=%s AND content_signature=%s AND resolution IS NULL""",
+        ("rfi", session_id, signature),
+    ).fetchall()
+    for row in rows:
+        rid = dict(row)["id"]
+        conn.execute(
+            """UPDATE document_aggregation_findings
+               SET resolution='override', resolved_by=%s, resolved_at=%s, resolution_comment=%s
+               WHERE id=%s""",
+            (resolved_by, now, comment, rid),
+        )
+    conn.commit()
+    return len(rows)
+
+
 # ── Export ────────────────────────────────────────────────────────────────────
 
 def assemble_and_export(session_id, export_format="docx"):
     session = get_session(session_id)
     if not session:
         raise ValueError(f"Session {session_id} not found")
+
+    check_aggregation_guard(session_id)
 
     sections = get_sections(session_id)
     profile = _load_profile(session.get("profile_name", "own_company"))

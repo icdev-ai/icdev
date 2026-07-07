@@ -466,6 +466,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "nc_agreement_amendments",
         # ISP/Telco — Cross-Connect Order Workflow (NIST AU, append-only order state log)
         "ccc_xc_order_events",
+        # prop-sec-05 — Aggregation Guard / mosaic-effect rule evaluation log (NIST AU)
+        "aggregation_events",
     ]
 
     if tool_name == "Bash":
