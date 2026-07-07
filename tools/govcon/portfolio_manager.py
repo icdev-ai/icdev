@@ -17,6 +17,7 @@ Usage:
     python tools/govcon/portfolio_manager.py --portfolio --json
     python tools/govcon/portfolio_manager.py --health --contract-id <id> --json
     python tools/govcon/portfolio_manager.py --transition --opportunity-id <id> --json
+    python tools/govcon/portfolio_manager.py --burn-rate-summary --json
 """
 
 import argparse
@@ -370,6 +371,45 @@ def get_portfolio_summary():
     }
 
 
+# ── Burn Rate / Obligation Aggregation ───────────────────────────────
+
+
+def get_burn_rate_summary(status_filter=("active", "option_pending")):
+    """Aggregate burn rate and outstanding obligation data grouped by contract ID.
+
+    Delegates per-contract computation to contract_manager.get_obligation_summary
+    so base-period vs. option-period logic lives in a single place.
+    """
+    from tools.govcon.contract_manager import get_obligation_summary
+
+    conn = _get_db()
+    query = "SELECT id, contract_number, title, status FROM cpmp_contracts"
+    params = []
+    if status_filter:
+        placeholders = ", ".join(["%s"] * len(status_filter))
+        query += f" WHERE status IN ({placeholders})"  # nosec B608 -- placeholders bound via params, not interpolated values
+        params.extend(status_filter)
+    contracts = conn.execute(query, params).fetchall()
+    conn.close()
+
+    by_contract = {}
+    for c in contracts:
+        summary = get_obligation_summary(c["id"])
+        if summary.get("status") != "ok":
+            continue
+        by_contract[c["id"]] = {
+            "contract_number": c["contract_number"],
+            "title": c["title"],
+            "status": c["status"],
+            "burn_rate_pct": summary["burn_rate_pct"],
+            "total_owed": summary["total_owed"],
+            "spent_so_far": summary["spent_so_far"],
+            "current_option": summary["current_option"],
+        }
+
+    return {"status": "ok", "total": len(by_contract), "contracts": by_contract}
+
+
 # ── Proposal → Contract Transition Bridge (D-CPMP-9) ────────────────
 
 
@@ -540,6 +580,7 @@ def main():
     group.add_argument("--health", action="store_true", help="Compute contract health score")
     group.add_argument("--transition", action="store_true", help="Create contract from won opportunity")
     group.add_argument("--refresh-all-health", action="store_true", help="Recompute health for all active contracts")
+    group.add_argument("--burn-rate-summary", action="store_true", help="Aggregate burn rate/obligation data by contract")
 
     parser.add_argument("--contract-id")
     parser.add_argument("--opportunity-id")
@@ -571,6 +612,8 @@ def main():
             r = compute_contract_health(c["id"])
             results.append(r)
         result = {"status": "ok", "contracts_refreshed": len(results), "results": results}
+    elif args.burn_rate_summary:
+        result = get_burn_rate_summary()
     else:
         result = {"status": "error", "message": "Unknown command"}
 
