@@ -28,10 +28,13 @@ CREATE TABLE IF NOT EXISTS cpmp_contracts (
     naics_code TEXT,
     total_value REAL DEFAULT 0.0,
     funded_value REAL DEFAULT 0.0,
+    obligated_value REAL DEFAULT 0.0,
     ceiling_value REAL,
     billed_value REAL DEFAULT 0.0,
     pop_start TEXT,
     pop_end TEXT,
+    period_type TEXT DEFAULT 'base',
+    option_number INTEGER DEFAULT 0,
     status TEXT DEFAULT 'draft',
     health TEXT DEFAULT 'green',
     health_score REAL,
@@ -44,6 +47,28 @@ CREATE TABLE IF NOT EXISTS cpmp_contracts (
     updated_at TEXT DEFAULT (datetime('now')),
     created_by TEXT,
     classification TEXT DEFAULT 'CUI'
+)
+"""
+
+_CPMP_CONTRACT_PERIODS_DDL = """
+CREATE TABLE IF NOT EXISTS cpmp_contract_periods (
+    id TEXT PRIMARY KEY,
+    contract_id TEXT NOT NULL,
+    period_type TEXT NOT NULL DEFAULT 'base',
+    option_number INTEGER DEFAULT 0,
+    pop_start TEXT,
+    pop_end TEXT,
+    obligated_value REAL DEFAULT 0.0,
+    funded_value REAL DEFAULT 0.0,
+    ceiling_value REAL DEFAULT 0.0,
+    status TEXT NOT NULL DEFAULT 'unexercised',
+    exercised_at TEXT,
+    exercised_by TEXT,
+    notes TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI',
+    tenant_id TEXT
 )
 """
 
@@ -561,8 +586,14 @@ _CPMP_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_cpmp_creq_discipline ON cpmp_collection_requirements(discipline)",
 ]
 
+_CPMP_INDEXES = _CPMP_INDEXES + [
+    "CREATE INDEX IF NOT EXISTS idx_cpmp_periods_contract ON cpmp_contract_periods(contract_id)",
+    "CREATE INDEX IF NOT EXISTS idx_cpmp_periods_status   ON cpmp_contract_periods(contract_id, status)",
+]
+
 _ALL_DDLS = [
     _CPMP_CONTRACTS_DDL,
+    _CPMP_CONTRACT_PERIODS_DDL,
     _CPMP_CLINS_DDL,
     _CPMP_WBS_DDL,
     _CPMP_DELIVERABLES_DDL,

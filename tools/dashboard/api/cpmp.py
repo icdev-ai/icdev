@@ -1098,6 +1098,80 @@ def _sanitize_for_cor(data):
     return data
 
 
+# =====================================================================
+# Phase D — Contract Periods + Obligation Tracking (D-CPMP-10)
+# =====================================================================
+
+
+@cpmp_api.route("/contracts/<contract_id>/periods", methods=["GET"])
+def list_contract_periods(contract_id):
+    """GET /api/cpmp/contracts/<id>/periods — List base+option periods."""
+    try:
+        from tools.govcon.contract_periods_manager import list_periods
+
+        result = list_periods(contract_id)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@cpmp_api.route("/contracts/<contract_id>/periods", methods=["POST"])
+@require_role("admin", "co", "contract_mgr")
+def create_contract_period(contract_id):
+    """POST /api/cpmp/contracts/<id>/periods — Create a period of performance."""
+    try:
+        from tools.govcon.contract_periods_manager import create_period
+
+        data = request.get_json(silent=True) or {}
+        period_type = data.get("period_type")
+        if not period_type:
+            return jsonify({"status": "error", "message": "period_type required"}), 400
+        result = create_period(
+            contract_id,
+            period_type,
+            pop_start=data.get("pop_start"),
+            pop_end=data.get("pop_end"),
+            obligated_value=float(data.get("obligated_value", 0)),
+            funded_value=float(data.get("funded_value", 0)),
+            ceiling_value=float(data.get("ceiling_value", 0)),
+            notes=data.get("notes"),
+            created_by=getattr(g, "current_user", {}).get("username") if hasattr(g, "current_user") else None,
+        )
+        return jsonify(result), 201 if result.get("status") == "ok" else 400
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@cpmp_api.route("/periods/<period_id>/exercise", methods=["PUT"])
+@require_role("admin", "co", "contract_mgr")
+def exercise_period_option(period_id):
+    """PUT /api/cpmp/periods/<id>/exercise — Exercise an option period."""
+    try:
+        from tools.govcon.contract_periods_manager import exercise_option
+
+        data = request.get_json(silent=True) or {}
+        obligated_value = float(data.get("obligated_value", 0))
+        exercised_by = getattr(g, "current_user", {}).get("username") if hasattr(g, "current_user") else None
+        result = exercise_option(period_id, obligated_value, exercised_by)
+        if result.get("status") == "error":
+            return jsonify(result), 400
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@cpmp_api.route("/contracts/<contract_id>/obligation-summary", methods=["GET"])
+def contract_obligation_summary(contract_id):
+    """GET /api/cpmp/contracts/<id>/obligation-summary — Burn-rate vs obligation."""
+    try:
+        from tools.govcon.contract_periods_manager import get_obligation_summary
+
+        result = get_obligation_summary(contract_id)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 @cpmp_api.route("/cor/contracts", methods=["GET"])
 @require_role("admin", "pm", "isso", "co", "cor")
 def cor_list_contracts():

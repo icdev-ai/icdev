@@ -390,6 +390,14 @@ def _register_govcon_pages(app: "Flask", _get_db):
             except Exception:
                 risks = []
                 risk_matrix = {}
+            try:
+                from tools.govcon.contract_periods_manager import list_periods, get_obligation_summary
+
+                periods = list_periods(contract_id).get("periods", [])
+                obligation_summary = get_obligation_summary(contract_id)
+            except Exception:
+                periods = []
+                obligation_summary = {}
             return render_template(
                 "cpmp/detail.html",
                 contract=contract,
@@ -404,6 +412,8 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 milestone_deps=milestone_deps,
                 risks=risks,
                 risk_matrix=risk_matrix,
+                periods=periods,
+                obligation_summary=obligation_summary,
             )
         except Exception as e:
             import traceback
@@ -423,6 +433,8 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 milestone_deps=[],
                 risks=[],
                 risk_matrix={},
+                periods=[],
+                obligation_summary={},
                 error=str(e),
             ), 200
 
