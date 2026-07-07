@@ -604,6 +604,92 @@ def init_cpmp_tables(conn=None) -> dict:
             conn.close()
 
 
+def seed_sample_risk_data(conn=None) -> dict:
+    """Seed one sample cpmp_risks row so the risk register has demo data.
+
+    Idempotent: no-ops if cpmp_risks already has any rows. Creates a sample
+    cpmp_contracts row (and reuses/creates a sample cpmp_milestones row) first
+    so the risk's contract_id/milestone_id foreign keys are always satisfied
+    before the risk row is inserted.
+    """
+    import uuid
+    from datetime import datetime, timezone
+
+    from tools.db.storage import get_connection
+
+    _close = conn is None
+    if conn is None:
+        conn = get_connection()
+    try:
+        conn.set_security_context(None)  # rls-bypass: govcon service-layer; cpmp tables lack tenant_id/classification RLS columns
+        existing = conn.execute("SELECT COUNT(*) AS n FROM cpmp_risks").fetchone()
+        if dict(existing)["n"] > 0:
+            return {"status": "skipped", "reason": "cpmp_risks already has data"}
+
+        now = datetime.now(timezone.utc).isoformat()
+
+        contract_row = conn.execute(
+            "SELECT id FROM cpmp_contracts ORDER BY created_at LIMIT 1"
+        ).fetchone()
+        if contract_row:
+            contract_id = dict(contract_row)["id"]
+        else:
+            contract_id = str(uuid.uuid4())
+            conn.execute(
+                """
+                INSERT INTO cpmp_contracts
+                    (id, contract_number, title, agency, contract_type, status,
+                     created_at, updated_at, classification)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (contract_id, "SAMPLE-0001", "Sample Contract (Risk Register Seed)",
+                 "Sample Agency", "FFP", "active", now, now, "CUI"),
+            )
+
+        milestone_row = conn.execute(
+            "SELECT id FROM cpmp_milestones WHERE contract_id = %s LIMIT 1",
+            (contract_id,),
+        ).fetchone()
+        if milestone_row:
+            milestone_id = dict(milestone_row)["id"]
+        else:
+            milestone_id = str(uuid.uuid4())
+            conn.execute(
+                """
+                INSERT INTO cpmp_milestones
+                    (id, contract_id, title, status, created_at, updated_at, classification)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """,
+                (milestone_id, contract_id, "Sample Milestone (Risk Register Seed)",
+                 "pending", now, now, "CUI"),
+            )
+
+        risk_id = str(uuid.uuid4())
+        conn.execute(
+            """
+            INSERT INTO cpmp_risks
+                (id, contract_id, title, category, probability, impact, exposure,
+                 mitigation, owner, status, milestone_id, classification,
+                 metadata, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (risk_id, contract_id, "Sample schedule slip on key deliverable",
+             "schedule", 3, 3, 9,
+             "Track weekly status against baseline; escalate if slip exceeds 5 days.",
+             "Program Manager", "open", milestone_id, "CUI", "{}", now, now),
+        )
+        conn.commit()
+        return {
+            "status": "ok",
+            "risk_id": risk_id,
+            "contract_id": contract_id,
+            "milestone_id": milestone_id,
+        }
+    finally:
+        if _close:
+            conn.close()
+
+
 # =========================================================================
 # GovCon Intelligence tables (Phase 59, D361-D373)
 # proposal_opportunities, rfp_shall_statements, rfp_requirement_patterns,
@@ -924,3 +1010,5 @@ def init_govcon_intelligence_tables(conn=None) -> dict:
 if __name__ == "__main__":
     result = init_cpmp_tables()
     print(result)
+    seed_result = seed_sample_risk_data()
+    print(seed_result)
