@@ -515,6 +515,50 @@ def get_portfolio():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+@cpmp_api.route("/portfolio/<contract_id>", methods=["GET"])
+def get_portfolio_contract_detail(contract_id):
+    """GET /api/cpmp/portfolio/<id> — Portfolio detail view for a single contract.
+
+    Nests obligation_summary (obligated_value, funded_value, burn_rate_pct) and the
+    base/option period breakdown alongside the base contract fields.
+    """
+    try:
+        from tools.govcon.contract_manager import get_contract as _get_contract
+        from tools.govcon.contract_periods_manager import get_obligation_summary
+
+        result = _get_contract(contract_id)
+        if result.get("status") == "error":
+            return jsonify(result), 404
+        # Bell-LaPadula: no-read-up check on the contract
+        denied = _mac_deny_read(result)
+        if denied:
+            return denied
+
+        contract = result.get("contract", {})
+        obligation = get_obligation_summary(contract_id)
+        if obligation.get("status") == "ok":
+            result["obligation_summary"] = {
+                "obligated_value": obligation.get("total_obligated"),
+                "funded_value": contract.get("funded_value", 0),
+                "billed_value": obligation.get("total_billed"),
+                "remaining_obligation": obligation.get("remaining_obligation"),
+                "burn_rate_pct": obligation.get("burn_rate_pct"),
+                "periods": obligation.get("by_period", []),
+            }
+        else:
+            result["obligation_summary"] = {
+                "obligated_value": contract.get("obligated_value", 0),
+                "funded_value": contract.get("funded_value", 0),
+                "billed_value": 0,
+                "remaining_obligation": 0,
+                "burn_rate_pct": 0,
+                "periods": [],
+            }
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 @cpmp_api.route("/from-opportunity/<opp_id>", methods=["POST"])
 def transition_from_opportunity(opp_id):
     """POST /api/cpmp/from-opportunity/<opp_id> — Create contract from won proposal."""

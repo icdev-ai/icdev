@@ -1800,6 +1800,33 @@ CREATE TABLE IF NOT EXISTS bi_generation_log (
     tenant_id       TEXT    DEFAULT 'default',
     classification  TEXT    DEFAULT 'CUI'
 );
+CREATE TABLE IF NOT EXISTS aggregation_events (
+    id                      TEXT PRIMARY KEY,
+    occurred_at             TEXT NOT NULL DEFAULT (datetime('now')),
+    user_id                 TEXT,
+    tenant_id               TEXT,
+    surface                 TEXT,
+    rule_name               TEXT,
+    derived_classification  TEXT NOT NULL,
+    surface_ceiling         TEXT,
+    action                  TEXT NOT NULL DEFAULT 'derive' CHECK (action IN ('derive', 'warn', 'block')),
+    element_summary         TEXT,
+    classification          TEXT NOT NULL DEFAULT 'CUI'
+);
+CREATE TABLE IF NOT EXISTS document_aggregation_findings (
+    id                      TEXT PRIMARY KEY,
+    surface                 TEXT NOT NULL,
+    document_id             TEXT NOT NULL,
+    rule_id                 TEXT NOT NULL,
+    derived_classification  TEXT NOT NULL,
+    matched_elements        TEXT,
+    content_signature       TEXT NOT NULL,
+    resolution              TEXT CHECK (resolution IN ('override')),
+    resolved_by             TEXT,
+    resolved_at             TEXT,
+    resolution_comment      TEXT,
+    created_at              TEXT NOT NULL DEFAULT (datetime('now'))
+);
 """
 
 
