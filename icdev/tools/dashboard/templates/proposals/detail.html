@@ -1300,6 +1300,91 @@ document.addEventListener('DOMContentLoaded', function() {
     </div>
 </div>
 
+<!-- Assign Reviewer Modal (prop-rev-09) -->
+<div id="assign-reviewer-modal" class="modal-overlay" style="display:none;">
+    <div class="modal-content" style="max-width:480px;">
+        <div class="modal-header">
+            <h2>Assign Reviewer</h2>
+            <button class="modal-close" onclick="closePropModal('assign-reviewer-modal')">&times;</button>
+        </div>
+        <form id="assign-reviewer-form" onsubmit="return submitAssignReviewer(event)">
+            <input type="hidden" id="assign-review-id" name="review_id">
+            <div class="form-grid">
+                <div class="form-group" style="grid-column:span 2;">
+                    <label>Reviewer *</label>
+                    <input type="text" name="reviewer" required placeholder="Name or email">
+                </div>
+                <div class="form-group" style="grid-column:span 2;">
+                    <label>Assigned By</label>
+                    <input type="text" name="assigned_by" value="{{ current_user.display_name if current_user else '' }}" placeholder="Your name">
+                </div>
+                <div class="form-group" style="grid-column:span 2;">
+                    <label>Notes</label>
+                    <textarea name="notes" rows="2" placeholder="Optional instructions for the reviewer..." style="background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);padding:8px;border-radius:4px;width:100%;resize:vertical;"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closePropModal('assign-reviewer-modal')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Assign Reviewer</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Reject Assignment Modal (prop-rev-09) -->
+<div id="reject-assignment-modal" class="modal-overlay" style="display:none;">
+    <div class="modal-content" style="max-width:480px;">
+        <div class="modal-header">
+            <h2>Reject Assignment</h2>
+            <button class="modal-close" onclick="closePropModal('reject-assignment-modal')">&times;</button>
+        </div>
+        <form id="reject-assignment-form" onsubmit="return submitRejectAssignment(event)">
+            <input type="hidden" id="reject-assignment-id" name="assignment_id">
+            <div class="form-grid">
+                <div class="form-group" style="grid-column:span 2;">
+                    <label>Rejection Reason *</label>
+                    <textarea name="rejection_reason" required rows="3" placeholder="Why can't you take this review?" style="background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);padding:8px;border-radius:4px;width:100%;resize:vertical;"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closePropModal('reject-assignment-modal')">Cancel</button>
+                <button type="submit" class="btn btn-error">Reject</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Reassign Reviewer Modal (prop-rev-09) -->
+<div id="reassign-modal" class="modal-overlay" style="display:none;">
+    <div class="modal-content" style="max-width:480px;">
+        <div class="modal-header">
+            <h2>Reassign Reviewer</h2>
+            <button class="modal-close" onclick="closePropModal('reassign-modal')">&times;</button>
+        </div>
+        <form id="reassign-form" onsubmit="return submitReassign(event)">
+            <input type="hidden" id="reassign-assignment-id" name="assignment_id">
+            <div class="form-grid">
+                <div class="form-group" style="grid-column:span 2;">
+                    <label>New Reviewer *</label>
+                    <input type="text" name="reviewer" required placeholder="Name or email">
+                </div>
+                <div class="form-group" style="grid-column:span 2;">
+                    <label>Assigned By</label>
+                    <input type="text" name="assigned_by" value="{{ current_user.display_name if current_user else '' }}" placeholder="Your name">
+                </div>
+                <div class="form-group" style="grid-column:span 2;">
+                    <label>Notes</label>
+                    <textarea name="notes" rows="2" placeholder="Optional handoff notes..." style="background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);padding:8px;border-radius:4px;width:100%;resize:vertical;"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closePropModal('reassign-modal')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Reassign</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <style>
 .modal-overlay { position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:1000; display:flex; align-items:center; justify-content:center; }
 .modal-content { background:var(--bg-card, #16213e); border:1px solid var(--border-color, #2a2a4a); border-radius:8px; padding:24px; max-width:700px; width:90%; max-height:85vh; overflow-y:auto; }
@@ -2055,6 +2140,86 @@ function submitCloseFinding(event) {
     }).then(function(r) { return r.json(); }).then(function(resp) {
         if (resp.error) { alert(resp.error); }
         else { closePropModal('close-finding-modal'); location.reload(); }
+    });
+    return false;
+}
+
+// ── Reviewer Assignment + Hand-off (prop-rev-09) ───────────────────────
+
+function openAssignModal(reviewId) {
+    document.getElementById('assign-review-id').value = reviewId;
+    openPropModal('assign-reviewer-modal');
+}
+
+function submitAssignReviewer(event) {
+    event.preventDefault();
+    var form = document.getElementById('assign-reviewer-form');
+    var fd = new FormData(form);
+    var reviewId = fd.get('review_id');
+    var data = {
+        reviewer: fd.get('reviewer'),
+        assigned_by: fd.get('assigned_by'),
+        notes: fd.get('notes') || null
+    };
+    fetch('/api/proposals/reviews/' + reviewId + '/assign', {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)
+    }).then(function(r) { return r.json(); }).then(function(resp) {
+        if (resp.error) { alert(resp.error); }
+        else { closePropModal('assign-reviewer-modal'); location.reload(); }
+    });
+    return false;
+}
+
+function acceptAssignment(asgnId) {
+    if (!confirm('Accept this review assignment?')) return;
+    fetch('/api/proposals/assignments/' + asgnId + '/accept', {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({})
+    }).then(function(r) { return r.json(); }).then(function(resp) {
+        if (resp.error) { alert(resp.error); }
+        else { location.reload(); }
+    });
+}
+
+function openRejectModal(asgnId) {
+    document.getElementById('reject-assignment-id').value = asgnId;
+    openPropModal('reject-assignment-modal');
+}
+
+function submitRejectAssignment(event) {
+    event.preventDefault();
+    var form = document.getElementById('reject-assignment-form');
+    var fd = new FormData(form);
+    var asgnId = fd.get('assignment_id');
+    var data = { rejection_reason: fd.get('rejection_reason') };
+    fetch('/api/proposals/assignments/' + asgnId + '/reject', {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)
+    }).then(function(r) { return r.json(); }).then(function(resp) {
+        if (resp.error) { alert(resp.error); }
+        else { closePropModal('reject-assignment-modal'); location.reload(); }
+    });
+    return false;
+}
+
+function openReassignModal(asgnId) {
+    document.getElementById('reassign-assignment-id').value = asgnId;
+    openPropModal('reassign-modal');
+}
+
+function submitReassign(event) {
+    event.preventDefault();
+    var form = document.getElementById('reassign-form');
+    var fd = new FormData(form);
+    var asgnId = fd.get('assignment_id');
+    var data = {
+        reviewer: fd.get('reviewer'),
+        assigned_by: fd.get('assigned_by'),
+        notes: fd.get('notes') || null
+    };
+    fetch('/api/proposals/assignments/' + asgnId + '/reassign', {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)
+    }).then(function(r) { return r.json(); }).then(function(resp) {
+        if (resp.error) { alert(resp.error); }
+        else { closePropModal('reassign-modal'); location.reload(); }
     });
     return false;
 }

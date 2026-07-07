@@ -10,7 +10,7 @@
     </div>
 </div>
 
-<div class="stat-grid" style="grid-template-columns: repeat(5, 1fr); margin-bottom:20px;">
+<div class="stat-grid" style="grid-template-columns: repeat(6, 1fr); margin-bottom:20px;">
     <div class="stat-card">
         <div class="stat-value">{{ opportunities|length }}</div>
         <div class="stat-label">Active Proposals</div>
@@ -30,6 +30,10 @@
     <div class="stat-card">
         <div class="stat-value" style="color:var(--status-red);">{{ failed }}</div>
         <div class="stat-label">Failed Reviews</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" style="color:var(--status-yellow, #ffc107);">{{ pending_assignments }}</div>
+        <div class="stat-label">Pending Reviewer Assignments</div>
     </div>
 </div>
 
