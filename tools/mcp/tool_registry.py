@@ -6832,6 +6832,44 @@ TOOL_REGISTRY = {
         },
     },
     # ============================================================
+    # COMPASS — Reverse bridge to a standalone Compass backend (2 tools)
+    # ============================================================
+    "compass_lcat_lookup": {
+        "category": "compass",
+        "module": "tools.integrations.compass_mcp_handlers",
+        "handler": "handle_compass_lcat_lookup",
+        "description": (
+            "Look up the best-matching BLS SOC labor category for a task description or "
+            "resume via a running Compass backend (C:\\AI\\standalone\\compass -- LCAT/staffing, "
+            "document analysis, rate-card automation, AI-assisted writing for GovCon teams). "
+            "Compass is optional and separately run; returns an error dict (not raised) if it "
+            "isn't configured/reachable. Reverse direction of Compass's own bridge into ICDEV "
+            "(dic_search/dic_ingest/ace_persona_query/council_query)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string", "description": "Task description or resume text to map to a labor category"},
+            },
+            "required": ["text"],
+        },
+    },
+    "compass_staffing_summary": {
+        "category": "compass",
+        "module": "tools.integrations.compass_mcp_handlers",
+        "handler": "handle_compass_staffing_summary",
+        "description": (
+            "Fetch a running Compass backend's current staffing matrix (personnel vs. resume-"
+            "matched LCAT compliance, mismatch/unresolved counts). Compass is optional and "
+            "separately run; returns an error dict (not raised) if it isn't configured/reachable."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
+    # ============================================================
     # PULSE — Writing Quality (WriteGuard) (1 tool)
     # ============================================================
     "writeguard_analyze": {

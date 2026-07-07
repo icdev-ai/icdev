@@ -2903,6 +2903,25 @@ full async ACE team session:
 # tools/manifest/writeguard-writing-quality-analysis.md for full details.
 ```
 
+### Cross-Repo Compass Bridge (MCP tools, optional)
+Two MCP tools let ICDEV's CPMP/GovCon modules query a separate, standalone
+Compass app (`C:\AI\standalone\compass` — LCAT/staffing/rate-card automation)
+instead of duplicating its taxonomy. Reverse direction of Compass's own
+bridge into ICDEV (dic_search/dic_ingest/ace_persona_query/council_query).
+
+```bash
+# compass_lcat_lookup — best-matching BLS SOC labor category for a task
+# description or resume, via Compass's live LCAT taxonomy.
+# compass_staffing_summary — Compass's current staffing matrix (personnel
+# vs. resume-matched LCAT compliance, mismatch/unresolved counts).
+
+# Registered in tools/mcp/tool_registry.py; handlers + HTTP client in
+# tools/integrations/compass_mcp_handlers.py + compass_client.py.
+# Optional: degrades to an error dict (never raises) if Compass isn't
+# configured/reachable. Config: args/compass_integration.yaml.
+# See tools/manifest/govcon-intelligence.md for full details.
+```
+
 ## Autonomous Capability Foundry (ACF) Commands
 ```bash
 # ── Engine — run one harvest→synth→novelty→score→CoD→spec→task-graph→seed cycle ──
