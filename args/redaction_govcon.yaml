@@ -64,8 +64,11 @@ custom_terms:
 # These are auto-detected — no deny-list needed.
 contract_patterns:
   - name: DoD_contract
-    # W91CRB-20-D-0001, FA8750-21-C-0502, N00024-18-C-5100
-    pattern: "\\b[A-Z]{1,6}\\d{2,3}[A-Z]?-?\\d{2}-[A-Z]-\\d{4,5}\\b"
+    # W91CRB-20-D-0001, FA8750-21-C-0502, N00024-18-C-5100 — the prefix is a
+    # 6-character alphanumeric contracting office/activity code (letters and
+    # digits in any arrangement), not "letters then digits" (the previous
+    # pattern didn't actually match any of its own documented examples).
+    pattern: "\\b[A-Z0-9]{6}-\\d{2}-[A-Z]-\\d{4,5}\\b"
     treatment: redact
     confidence: 0.95
 
@@ -78,8 +81,9 @@ contract_patterns:
     context_words: ["task order", "delivery order", "CLIN", "contract"]
 
   - name: solicitation_number
-    # W91CRB-24-R-0001, FA8750-24-Q-0001
-    pattern: "\\b[A-Z]{1,6}\\d{2,3}-\\d{2}-[RQBI]-\\d{4,5}\\b"
+    # W91CRB-24-R-0001, FA8750-24-Q-0001 — same 6-char alphanumeric prefix fix
+    # as DoD_contract above.
+    pattern: "\\b[A-Z0-9]{6}-\\d{2}-[RQBI]-\\d{4,5}\\b"
     treatment: redact
     confidence: 0.95
 

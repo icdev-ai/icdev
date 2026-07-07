@@ -466,6 +466,133 @@ def get_language_config(opp_id):
         conn.close()
 
 
+def _opportunity_content_signature(opp_id, conn):
+    import hashlib
+
+    rows = conn.execute(
+        """SELECT d.draft_content
+           FROM proposal_section_drafts d
+           WHERE d.opportunity_id = %s
+           ORDER BY d.section_id, d.created_at DESC""",
+        (opp_id,),
+    ).fetchall()
+    joined = "\x1f".join((dict(r).get("draft_content") or "") for r in rows)
+    return hashlib.sha256(joined.encode("utf-8")).hexdigest()
+
+
+def _opportunity_result_set(opp_id, conn):
+    """Latest draft per section for this opportunity, as aggregation_guard elements.
+
+    Avoids PostgreSQL-only `DISTINCT ON` (not SQLite-portable, and CLAUDE.md's
+    PG-portability guardrail prefers computing reductions in Python over
+    dialect-specific SQL) — fetches all drafts ordered newest-first and keeps
+    the first (= latest) occurrence per section_id.
+    """
+    rows = conn.execute(
+        """SELECT d.section_id, d.draft_content, d.classification, s.title
+           FROM proposal_section_drafts d
+           LEFT JOIN proposal_sections s ON s.id = d.section_id
+           WHERE d.opportunity_id = %s
+           ORDER BY d.created_at DESC""",
+        (opp_id,),
+    ).fetchall()
+    latest_by_section = {}
+    for r in rows:
+        d = dict(r)
+        latest_by_section.setdefault(d["section_id"], d)
+    return [
+        {
+            "element_id": sec_id,
+            "label": d.get("title") or sec_id,
+            "text": d.get("draft_content") or "",
+            "classification": d.get("classification") or "CUI",
+        }
+        for sec_id, d in latest_by_section.items()
+    ]
+
+
+def _check_aggregation_guard_for_opportunity(opp_id, conn):
+    """Run the aggregation guard for an opportunity's section drafts.
+
+    Returns None if not blocked, or a response-body dict (409 shape,
+    gate='aggregation_guard') if a block-action rule fired and no resolved
+    override exists for the current content signature.
+    """
+    from tools.security.aggregation_guard import guard_result
+
+    result_set = _opportunity_result_set(opp_id, conn)
+    signature = _opportunity_content_signature(opp_id, conn)
+    guard = guard_result(result_set, ctx={"surface_ceiling": "CUI"}, surface="proposals/submit")
+
+    if guard["action"] != "block":
+        return None
+
+    for rule in guard["fired_rules"]:
+        if rule["action"] != "block":
+            continue
+        existing = conn.execute(
+            """SELECT resolution FROM document_aggregation_findings
+               WHERE surface=%s AND document_id=%s AND rule_id=%s AND content_signature=%s""",
+            ("proposals", opp_id, rule["rule_id"], signature),
+        ).fetchone()
+        if existing and dict(existing).get("resolution") == "override":
+            continue
+        if not existing:
+            conn.execute(
+                """INSERT INTO document_aggregation_findings
+                   (id, surface, document_id, rule_id, derived_classification,
+                    matched_elements, content_signature, created_at)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
+                (
+                    str(uuid.uuid4()),
+                    "proposals",
+                    opp_id,
+                    rule["rule_id"],
+                    guard["derived"],
+                    _mac_json.dumps(rule["matched_elements"]),
+                    signature,
+                    now_iso(),
+                ),
+            )
+            conn.commit()
+        return {
+            "error": "Aggregation guard: derived classification exceeds surface ceiling — review required",
+            "gate": "aggregation_guard",
+            "derived": guard["derived"],
+            "fired_rules": guard["fired_rules"],
+        }
+    return None
+
+
+@proposals_api.route("/opportunities/<opp_id>/aggregation-guard/override", methods=["POST"])
+def override_aggregation_guard(opp_id):
+    """POST /api/proposals/opportunities/<id>/aggregation-guard/override — HITL clear."""
+    data = request.get_json(force=True, silent=True) or {}
+    comment = data.get("comment", "")
+    resolved_by = data.get("resolved_by") or "unknown"
+    conn = _get_db()
+    try:
+        signature = _opportunity_content_signature(opp_id, conn)
+        rows = conn.execute(
+            """SELECT id FROM document_aggregation_findings
+               WHERE surface=%s AND document_id=%s AND content_signature=%s AND resolution IS NULL""",
+            ("proposals", opp_id, signature),
+        ).fetchall()
+        now = now_iso()
+        for row in rows:
+            rid = dict(row)["id"]
+            conn.execute(
+                """UPDATE document_aggregation_findings
+                   SET resolution='override', resolved_by=%s, resolved_at=%s, resolution_comment=%s
+                   WHERE id=%s""",
+                (resolved_by, now, comment, rid),
+            )
+        conn.commit()
+        return jsonify({"ok": True, "resolved_count": len(rows)})
+    finally:
+        conn.close()
+
+
 @proposals_api.route("/opportunities/<opp_id>/status", methods=["PUT"])
 def change_opportunity_status(opp_id):
     """PUT /api/proposals/opportunities/<id>/status — Change opportunity status.
@@ -504,6 +631,16 @@ def change_opportunity_status(opp_id):
                         "'pass_with_findings' must exist before this opportunity can be submitted."
                     ),
                 }), 409
+
+            # Aggregation guard (prop-sec-07): classification-by-compilation /
+            # mosaic-effect check across this opportunity's section drafts.
+            # Unlike the Gold-team gate's unaudited `force` bypass, this gate
+            # can only be cleared via the override endpoint below (recorded,
+            # attributed, auditable) — "block + HITL review required" is a
+            # locked-in decision, not to be weakened by force=true.
+            blocked = _check_aggregation_guard_for_opportunity(opp_id, conn)
+            if blocked:
+                return jsonify(blocked), 409
 
         conn.execute(
             "UPDATE proposal_opportunities SET status = %s, updated_at = %s WHERE id = %s",
