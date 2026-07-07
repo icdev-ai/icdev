@@ -576,6 +576,7 @@ function renderSection(sec) {
   const hasContent = !!(sec.content || sec.ai_draft);
   if (previewActive) {
     document.getElementById('markdown-preview').innerHTML = renderMarkdown(document.getElementById('content-editor').value);
+    renderMermaidInPreview();
   } else if (hasContent) {
     togglePreview();
   }
@@ -667,6 +668,7 @@ function togglePreview() {
   const btn = document.getElementById('preview-btn');
   if (previewActive) {
     preview.innerHTML = renderMarkdown(editor.value);
+    renderMermaidInPreview();
     preview.style.display = '';
     editor.style.display = 'none';
     btn.textContent = '✏️ Edit';
@@ -682,7 +684,7 @@ function renderMarkdown(text) {
   const lines = text.split('\n');
   let html = '';
   let inList = false, inTable = false, tableFirstRow = false;
-  let inCode = false, codeLines = [];
+  let inCode = false, codeLines = [], codeLang = '';
   for (let i = 0; i < lines.length; i++) {
     let raw = lines[i];
     // Fenced code block
@@ -691,10 +693,17 @@ function renderMarkdown(text) {
         if (inList) { html += '</ul>'; inList = false; }
         if (inTable) { html += '</tbody></table>'; inTable = false; }
         inCode = true; codeLines = [];
+        const langMatch = raw.match(/^```(\w+)?/);
+        codeLang = (langMatch && langMatch[1] || '').toLowerCase();
       } else {
         inCode = false;
         const body = codeLines.map(l => esc(l)).join('\n');
-        html += `<pre style="background:#0a0f1a;border:1px solid #1e3a6e;border-radius:5px;padding:.75rem;overflow-x:auto;margin:.5rem 0"><code style="font-family:'Consolas','Courier New',monospace;font-size:.8rem;color:#a8d1f0;line-height:1.5;white-space:pre">${body}</code></pre>`;
+        if (codeLang === 'mermaid') {
+          html += `<pre class="mermaid" style="background:#0a0f1a;border:1px solid #1e3a6e;border-radius:5px;padding:.75rem;margin:.5rem 0">${body}</pre>`;
+        } else {
+          html += `<pre style="background:#0a0f1a;border:1px solid #1e3a6e;border-radius:5px;padding:.75rem;overflow-x:auto;margin:.5rem 0"><code style="font-family:'Consolas','Courier New',monospace;font-size:.8rem;color:#a8d1f0;line-height:1.5;white-space:pre">${body}</code></pre>`;
+        }
+        codeLang = '';
       }
       continue;
     }
@@ -735,8 +744,21 @@ function renderMarkdown(text) {
   }
   if (inList) html += '</ul>';
   if (inTable) html += '</tbody></table>';
-  if (inCode) { const body = codeLines.map(l => esc(l)).join('\n'); html += `<pre style="background:#0a0f1a;border:1px solid #1e3a6e;border-radius:5px;padding:.75rem;overflow-x:auto;margin:.5rem 0"><code style="font-family:'Consolas','Courier New',monospace;font-size:.8rem;color:#a8d1f0;line-height:1.5;white-space:pre">${body}</code></pre>`; }
+  if (inCode) {
+    const body = codeLines.map(l => esc(l)).join('\n');
+    if (codeLang === 'mermaid') {
+      html += `<pre class="mermaid" style="background:#0a0f1a;border:1px solid #1e3a6e;border-radius:5px;padding:.75rem;margin:.5rem 0">${body}</pre>`;
+    } else {
+      html += `<pre style="background:#0a0f1a;border:1px solid #1e3a6e;border-radius:5px;padding:.75rem;overflow-x:auto;margin:.5rem 0"><code style="font-family:'Consolas','Courier New',monospace;font-size:.8rem;color:#a8d1f0;line-height:1.5;white-space:pre">${body}</code></pre>`;
+    }
+  }
   return html;
+}
+
+function renderMermaidInPreview() {
+  if (window.ICDEV && typeof window.ICDEV.renderMermaidDiagrams === 'function') {
+    try { window.ICDEV.renderMermaidDiagrams(); } catch (e) {}
+  }
 }
 
 function applyInline(s) {
