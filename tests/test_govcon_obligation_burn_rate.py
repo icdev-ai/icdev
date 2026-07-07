@@ -13,6 +13,7 @@ Verifies:
 5. portfolio_manager.get_burn_rate_summary aggregates obligation data across
    contracts, grouped by contract ID, and honors the status filter.
 """
+
 import sqlite3
 import uuid
 
@@ -48,8 +49,15 @@ def _insert_contract(db_file, **overrides):
     conn.execute(
         "INSERT INTO cpmp_contracts (id, contract_number, title, agency, status, funded_value, billed_value) "
         "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (contract_id, fields["contract_number"], fields["title"], fields["agency"],
-         fields["status"], fields["funded_value"], fields["billed_value"]),
+        (
+            contract_id,
+            fields["contract_number"],
+            fields["title"],
+            fields["agency"],
+            fields["status"],
+            fields["funded_value"],
+            fields["billed_value"],
+        ),
     )
     conn.commit()
     conn.close()
@@ -59,8 +67,7 @@ def _insert_contract(db_file, **overrides):
 def _insert_clin(db_file, contract_id, funded_value, billed_value):
     conn = sqlite3.connect(str(db_file))
     conn.execute(
-        "INSERT INTO cpmp_clins (id, contract_id, clin_number, funded_value, billed_value) "
-        "VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO cpmp_clins (id, contract_id, clin_number, funded_value, billed_value) VALUES (?, ?, ?, ?, ?)",
         (str(uuid.uuid4()), contract_id, "0001", funded_value, billed_value),
     )
     conn.commit()
@@ -145,10 +152,12 @@ class TestGetBurnRateSummary:
     def test_groups_by_contract_id(self, cpmp_db):
         from tools.govcon.portfolio_manager import get_burn_rate_summary
 
-        c1 = _insert_contract(cpmp_db, contract_number="C-001", status="active",
-                               funded_value=100000.0, billed_value=20000.0)
-        c2 = _insert_contract(cpmp_db, contract_number="C-002", status="active",
-                               funded_value=200000.0, billed_value=100000.0)
+        c1 = _insert_contract(
+            cpmp_db, contract_number="C-001", status="active", funded_value=100000.0, billed_value=20000.0
+        )
+        c2 = _insert_contract(
+            cpmp_db, contract_number="C-002", status="active", funded_value=200000.0, billed_value=100000.0
+        )
 
         result = get_burn_rate_summary()
 

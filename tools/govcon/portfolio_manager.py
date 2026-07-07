@@ -580,7 +580,9 @@ def main():
     group.add_argument("--health", action="store_true", help="Compute contract health score")
     group.add_argument("--transition", action="store_true", help="Create contract from won opportunity")
     group.add_argument("--refresh-all-health", action="store_true", help="Recompute health for all active contracts")
-    group.add_argument("--burn-rate-summary", action="store_true", help="Aggregate burn rate/obligation data by contract")
+    group.add_argument(
+        "--burn-rate-summary", action="store_true", help="Aggregate burn rate/obligation data by contract"
+    )
 
     parser.add_argument("--contract-id")
     parser.add_argument("--opportunity-id")
