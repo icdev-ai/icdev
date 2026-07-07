@@ -1865,3 +1865,37 @@ def pmc_db(tmp_path, monkeypatch):
     conn = get_connection()
     yield conn
     conn.close()
+
+
+@pytest.fixture
+def cpmp_risk_db(tmp_path, monkeypatch):
+    """SQLite-backed cpmp_risks register, seeded with a parent contract and
+    milestone so risk_manager CRUD (which FKs to both) works out of the box.
+
+    Yields a live ``tools.db.storage`` connection (matching risk_manager.py's
+    own ``_get_db()`` path) with ``cpmp_risks`` empty and ready for
+    create/update/delete assertions.
+    """
+    db_path = tmp_path / "icdev.db"
+    seed_conn = sqlite3.connect(str(db_path))
+    seed_conn.executescript(MINIMAL_ICDEV_SCHEMA)
+    seed_conn.execute(
+        "INSERT INTO cpmp_contracts (id, contract_number, title, agency, status) "
+        "VALUES (?, ?, ?, ?, ?)",
+        ("ctr-risk-fixture-0001", "W91CRB-24-C-0001", "Risk Fixture Contract", "DoD", "active"),
+    )
+    seed_conn.execute(
+        "INSERT INTO cpmp_milestones (id, contract_id, title, status) VALUES (?, ?, ?, ?)",
+        ("ms-risk-fixture-0001", "ctr-risk-fixture-0001", "Risk Fixture Milestone", "pending"),
+    )
+    seed_conn.commit()
+    seed_conn.close()
+
+    monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
+    monkeypatch.setenv("ICDEV_DB_PATH", str(db_path))
+
+    from tools.db.storage import get_connection
+    conn = get_connection()
+    conn.set_security_context(None)
+    yield conn
+    conn.close()
