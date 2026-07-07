@@ -24,6 +24,7 @@ Usage:
     python tools/govcon/contract_manager.py --create-deliverable --contract-id <id> --data '{}' --json
     python tools/govcon/contract_manager.py --transition-deliverable --deliverable-id <id> --new-status submitted --json
     python tools/govcon/contract_manager.py --wbs-tree --contract-id <id> --json
+    python tools/govcon/contract_manager.py --obligation-summary --contract-id <id> --json
 """
 
 import argparse
@@ -31,7 +32,7 @@ import json
 import os
 import uuid
 from tools.db.storage import get_connection
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 import yaml
@@ -362,6 +363,84 @@ def update_clin(clin_id, data):
     conn.commit()
     conn.close()
     return {"status": "ok", "clin_id": clin_id}
+
+
+# ── Obligation Tracking & Burn Rate ─────────────────────────────────
+
+
+def get_obligation_summary(contract_id):
+    """Compute burn rate and outstanding obligation for a contract.
+
+    Aggregates funded/billed totals from CLINs (falling back to the
+    contract-level columns when no CLINs are recorded) to derive:
+        - spent_so_far: total billed to date
+        - total_owed: remaining obligation (funded_value - billed, floored at 0)
+        - burn_rate_pct: spent_so_far as a percentage of funded_value
+
+    When an option period is currently exercised and in-window, its
+    ceiling_value is reported separately as `current_option` so base-period
+    and option-period spend are never conflated.
+    """
+    conn = _get_db()
+    contract = conn.execute(
+        "SELECT id, contract_number, funded_value, billed_value FROM cpmp_contracts WHERE id = %s",
+        (contract_id,),
+    ).fetchone()
+    if not contract:
+        conn.close()
+        return {"status": "error", "message": f"Contract {contract_id} not found"}
+
+    clin_totals = conn.execute(
+        "SELECT COALESCE(SUM(funded_value), 0) AS funded, COALESCE(SUM(billed_value), 0) AS billed "
+        "FROM cpmp_clins WHERE contract_id = %s",
+        (contract_id,),
+    ).fetchone()
+
+    funded = clin_totals["funded"] or contract["funded_value"] or 0.0
+    spent_so_far = clin_totals["billed"] or contract["billed_value"] or 0.0
+    total_owed = max(funded - spent_so_far, 0.0)
+    burn_rate_pct = round((spent_so_far / funded * 100.0), 1) if funded else 0.0
+
+    base_period = {
+        "funded_value": round(funded, 2),
+        "spent_so_far": round(spent_so_far, 2),
+        "total_owed": round(total_owed, 2),
+        "burn_rate_pct": burn_rate_pct,
+    }
+
+    current_option = None
+    try:
+        today = date.today().isoformat()
+        opt_row = conn.execute(
+            "SELECT option_number, ceiling_value, period_start, period_end "
+            "FROM cpmp_option_periods WHERE contract_id = %s AND status = 'exercised' "
+            "AND (period_start IS NULL OR period_start <= %s) "
+            "AND (period_end IS NULL OR period_end >= %s) "
+            "ORDER BY option_number DESC LIMIT 1",
+            (contract_id, today, today),
+        ).fetchone()
+        if opt_row:
+            ceiling = opt_row["ceiling_value"] or 0.0
+            current_option = {
+                "option_number": opt_row["option_number"],
+                "ceiling_value": round(ceiling, 2),
+                "period_start": opt_row["period_start"],
+                "period_end": opt_row["period_end"],
+            }
+    except Exception:
+        current_option = None  # cpmp_option_periods may not exist in this environment
+
+    conn.close()
+    return {
+        "status": "ok",
+        "contract_id": contract_id,
+        "contract_number": contract["contract_number"],
+        "burn_rate_pct": burn_rate_pct,
+        "total_owed": base_period["total_owed"],
+        "spent_so_far": base_period["spent_so_far"],
+        "base_period": base_period,
+        "current_option": current_option,
+    }
 
 
 # ── WBS ──────────────────────────────────────────────────────────────
@@ -697,6 +776,7 @@ def main():
     group.add_argument("--wbs-tree", action="store_true")
     group.add_argument("--create-wbs", action="store_true")
     group.add_argument("--compute-overdue", action="store_true")
+    group.add_argument("--obligation-summary", action="store_true")
 
     parser.add_argument("--contract-id")
     parser.add_argument("--deliverable-id")
@@ -742,6 +822,8 @@ def main():
         result = create_wbs(args.contract_id, data)
     elif args.compute_overdue:
         result = compute_overdue_deliverables(args.contract_id)
+    elif args.obligation_summary:
+        result = get_obligation_summary(args.contract_id)
     else:
         result = {"status": "error", "message": "Unknown command"}
 
