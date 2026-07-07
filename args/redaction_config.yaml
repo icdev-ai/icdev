@@ -172,6 +172,15 @@ scope:
     - bid_scoring            # R9 Decide — redact if cloud-routed
     - color_review           # R15 Review — redact if cloud-routed
     - specialist_consult     # Egress to idea_lab (cloud-routed, separate process) — always redact
+    # GovCon / RFI Workbench (CMMC L3 / NIST 800-172 defense-in-depth: these 5 chains
+    # are local-only today with no cloud fallback, but that's a routing fact, not a
+    # sanitization guarantee — enforce explicitly so raw RFI/RFP CUI text is never sent
+    # unsanitized even if a cloud fallback model is added to these chains later)
+    - rfi_writer_drafting        # RFI Writer — drafts from raw uploaded RFI/RFP text
+    - rfi_editor_drafting        # RFI Editor — repair pass over writer draft
+    - rfi_reviewer_review        # RFI Reviewer — evaluator pass over accepted sections
+    - rfi_researcher_knowledge   # RFI Researcher — reserved, not yet wired to a call site
+    - rfi_compliance_assessment  # RFI Compliance — reserved, not yet wired to a call site
     # Core ICDEV™
     - code_generation        # May contain customer code with PII
     - narrative_generation   # Compliance narratives may reference people/orgs
