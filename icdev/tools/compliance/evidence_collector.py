@@ -46,7 +46,7 @@ FRAMEWORK_EVIDENCE_MAP: Dict[str, Dict[str, Any]] = {
     },
     "cmmc": {
         "description": "CMMC Level 2/3 Practice Evidence",
-        "tables": ["cmmc_assessments", "control_implementations"],
+        "tables": ["cmmc_assessments", "control_implementations", "redaction_audit"],
         "file_patterns": ["**/cmmc_*.json"],
         "required": False,
     },
