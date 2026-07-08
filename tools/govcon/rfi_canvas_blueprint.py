@@ -188,10 +188,15 @@ def api_save(session_id, section_id):
 
 @rfi_canvas_bp.route("/api/rfi/<session_id>/export/<fmt>", methods=["POST"])
 def api_export(session_id, fmt):
-    if fmt not in ("docx", "md"):
-        return jsonify({"error": "Supported formats: docx, md"}), 400
+    if fmt not in ("docx", "md", "questions"):
+        return jsonify({"error": "Supported formats: docx, md, questions"}), 400
     try:
-        path = wb.assemble_and_export(session_id, fmt)
+        if fmt == "questions":
+            # Part 6 questions to the Government — separate ARC/email
+            # submission, never part of the response document.
+            path = wb.export_questions(session_id)
+        else:
+            path = wb.assemble_and_export(session_id, fmt)
         return jsonify({"ok": True, "path": path, "download_url": f"/api/rfi/{session_id}/download/{fmt}"})
     except wb.AggregationGuardBlocked as exc:
         return (
@@ -432,7 +437,9 @@ def rfi_preview(session_id):
     session = wb.get_session(session_id)
     if not session:
         abort(404)
-    sections = wb.get_sections(session_id)
+    # Preview mirrors the exported response document — Part 6 (questions to
+    # the Government) is submitted separately and excluded here too.
+    sections = [s for s in wb.get_sections(session_id) if s.get("part") != "part6"]
     profile = wb._load_profile(session.get("profile_name", "own_company"))
     annex = wb.build_compliance_annex(sections)
     return render_template(
