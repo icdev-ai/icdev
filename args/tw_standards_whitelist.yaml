@@ -1,0 +1,119 @@
+# CUI // SP-CTI
+# Tech Writer standards-reference whitelist (ground-tw-04)
+# Consumed by tools/document_intelligence/tech_writing_assist.py::validate_standards_references
+# Deterministic identifier whitelist — extend as new standards are cited.
+
+# Known NIST SP 800-series document numbers (suffix after "800-").
+nist_sp_800:
+  - "12"
+  - "18"
+  - "30"
+  - "34"
+  - "37"
+  - "39"
+  - "40"
+  - "41"
+  - "46"
+  - "47"
+  - "52"
+  - "53"
+  - "53A"
+  - "53B"
+  - "55"
+  - "60"
+  - "61"
+  - "63"
+  - "63A"
+  - "63B"
+  - "63C"
+  - "70"
+  - "77"
+  - "82"
+  - "88"
+  - "92"
+  - "94"
+  - "101"
+  - "111"
+  - "115"
+  - "116"
+  - "121"
+  - "122"
+  - "124"
+  - "125"
+  - "128"
+  - "131A"
+  - "137"
+  - "144"
+  - "145"
+  - "146"
+  - "150"
+  - "153"
+  - "160"
+  - "161"
+  - "162"
+  - "163"
+  - "167"
+  - "171"
+  - "171A"
+  - "172"
+  - "172A"
+  - "175B"
+  - "177"
+  - "181"
+  - "184"
+  - "190"
+  - "193"
+  - "204"
+  - "204A"
+  - "204B"
+  - "204C"
+  - "204D"
+  - "205"
+  - "207"
+  - "207A"
+  - "210"
+  - "213"
+  - "218"
+  - "219"
+  - "221"
+  - "223"
+  - "226"
+
+# CMMC 2.0
+cmmc:
+  levels: [1, 2, 3]
+  domains:
+    - AC
+    - AT
+    - AU
+    - CA
+    - CM
+    - IA
+    - IR
+    - MA
+    - MP
+    - PE
+    - PS
+    - RA
+    - SC
+    - SI
+
+# FedRAMP impact baselines
+fedramp_baselines:
+  - Low
+  - Moderate
+  - High
+  - LI-SaaS
+
+# DoD/DISA STIG identifier shapes (structural validation, not per-STIG enumeration)
+stig:
+  vuln_id_min_digits: 5      # V-##### … V-######
+  vuln_id_max_digits: 6
+  # SRG-XX(-YY)-###### style identifiers must use one of these component codes
+  srg_components:
+    - OS
+    - APP
+    - NET
+    - DB
+    - GPOS
+    - APSC
