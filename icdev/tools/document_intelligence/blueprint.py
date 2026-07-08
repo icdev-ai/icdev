@@ -2022,10 +2022,49 @@ def api_review_approve(item_id):
         return _forbid("reviewer")
     conn = _conn()
     try:
+        resp = {"status": "approved", "item_id": item_id}
+        force_note = ""
         if item_type == "version":
+            # Publish gate (ground-dic-05): a version cannot move to approved
+            # while any section still contains unresolved [PLACEHOLDER] tokens,
+            # unless the reviewer explicitly forces the override.
+            force = bool(data.get("force"))
+            gate: dict = {}
+            try:
+                from tools.document_intelligence.consistency_checker import (
+                    check_version_consistency,
+                )
+                gate = check_version_consistency(item_id)
+            except Exception as exc:
+                logger.warning("dic approve: consistency gate error: %s", exc)
+            placeholder_hits = gate.get("placeholders") or []
+            numeric_conflicts = gate.get("numeric_conflicts") or []
+            if placeholder_hits and not force:
+                return jsonify({
+                    "error": "unresolved_placeholders",
+                    "message": (
+                        f"{len(placeholder_hits)} section(s) contain unresolved "
+                        "placeholder tokens. Resolve them or resubmit with "
+                        "force=true to override."
+                    ),
+                    "placeholders": placeholder_hits,
+                    "numeric_conflicts": numeric_conflicts,
+                    "item_id": item_id,
+                }), 409
             conn.execute(
                 "UPDATE dic_versions SET status='approved' WHERE version_id=%s", (item_id,)
             )
+            resp["numeric_conflicts"] = numeric_conflicts
+            if placeholder_hits and force:
+                resp["forced"] = True
+                summary = "; ".join(
+                    f"{f['item_number']}: {', '.join(f['placeholders'][:4])}"
+                    for f in placeholder_hits[:5]
+                )
+                force_note = (
+                    f"FORCE-APPROVED with unresolved placeholders in "
+                    f"{len(placeholder_hits)} section(s): {summary}"
+                )
         else:
             # Try ACOIC approve helper first.
             try:
@@ -2037,9 +2076,11 @@ def api_review_approve(item_id):
                     (reviewer, _now(), item_id),
                 )
         conn.commit()
+        if force_note:
+            _record_review_note(item_id, "version", force_note, reviewer)
         if note:
             _record_review_note(item_id, item_type, note, reviewer)
-        return jsonify({"status": "approved", "item_id": item_id})
+        return jsonify(resp)
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
     finally:

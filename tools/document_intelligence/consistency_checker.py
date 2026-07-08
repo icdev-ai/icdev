@@ -7,6 +7,8 @@ enabling propagation of review flags when source content is updated.
 Public API:
   extract_changed_concepts(before, after) -> list[str]
   find_related_docs(doc_id, changed_concepts, tenant_id="", limit=20) -> list[dict]
+  check_numeric_claims(sections) -> list[dict]
+  check_version_consistency(version_id) -> dict
 """
 from __future__ import annotations
 
@@ -15,6 +17,10 @@ from typing import Any
 
 from tools.db.storage import get_connection
 from tools.logging.icdev_logger import get_logger
+from tools.quality.content_grounding import (
+    check_numeric_claims as _grounding_numeric_claims,
+    placeholder_findings as _grounding_placeholder_findings,
+)
 
 logger = get_logger(__name__)
 
@@ -165,6 +171,70 @@ def _find_related(conn, doc_id: str, changed_concepts: list[str],
         })
 
     return related[:limit]
+
+
+# ── Cross-section numeric / placeholder consistency (ground-dic-05) ───────────
+
+def _normalize_sections(sections: list[dict]) -> list[dict]:
+    """Map dic_sections rows (heading/content) to the item_number/content
+    shape expected by tools.quality.content_grounding."""
+    normalized = []
+    for s in sections:
+        normalized.append({
+            "item_number": s.get("heading") or s.get("item_number")
+                           or s.get("section_id") or s.get("title") or "?",
+            "content": s.get("content") or s.get("ai_draft") or "",
+        })
+    return normalized
+
+
+def check_numeric_claims(sections: list[dict]) -> list[dict]:
+    """Detect cross-section money (ROM total) and prototype-timeline conflicts.
+
+    Accepts dic_sections rows (heading/content). Delegates to the shared
+    tools.quality.content_grounding detector so DIC reports numeric conflicts
+    alongside the KG concept-overlap detection above.
+    Returns [{type, sections[], message, severity}].
+    """
+    return _grounding_numeric_claims(_normalize_sections(sections))
+
+
+def check_version_consistency(version_id: str) -> dict:
+    """Publish-gate report for a dic_versions version.
+
+    Loads all sections of the version and returns:
+      {placeholders: [{item_number, placeholders[]}],
+       numeric_conflicts: [{type, sections[], message, severity}],
+       section_count: int}
+    Empty placeholders + numeric_conflicts means the gate passes. Errors are
+    reported under "error" with empty findings so a DB hiccup never hard-fails
+    an approve (the route decides whether to proceed).
+    """
+    sections: list[dict] = []
+    try:
+        with get_connection() as conn:
+            rows = conn.execute(
+                "SELECT section_id, heading, content FROM dic_sections "
+                "WHERE version_id = %s ORDER BY created_at",
+                (version_id,),
+            ).fetchall()
+            for r in rows:
+                sections.append({
+                    "section_id": _r(r, "section_id", 0),
+                    "heading": _r(r, "heading", 1),
+                    "content": _r(r, "content", 2),
+                })
+    except Exception as exc:
+        logger.warning("consistency_checker.check_version_consistency error: %s", exc)
+        return {"placeholders": [], "numeric_conflicts": [], "section_count": 0,
+                "error": str(exc)}
+
+    normalized = _normalize_sections(sections)
+    return {
+        "placeholders": _grounding_placeholder_findings(normalized),
+        "numeric_conflicts": _grounding_numeric_claims(normalized),
+        "section_count": len(sections),
+    }
 
 
 def _get_doc_meta(conn, doc_id: str) -> dict:
