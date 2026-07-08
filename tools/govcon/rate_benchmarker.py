@@ -227,7 +227,7 @@ def ptw_analysis(opportunity_id):
     amounts = [
         r[1] if isinstance(r, (tuple, list)) else r["award_amount"]
         for r in rows
-        if (r[1] if isinstance(r, (tuple, list)) else r.get("award_amount"))
+        if (r[1] if isinstance(r, (tuple, list)) else r["award_amount"])
     ]
     if not amounts:
         return {
