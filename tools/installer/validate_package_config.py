@@ -17,6 +17,12 @@ Runs a checklist before `python -m build` to prevent broken releases:
 
   5. Entry points in pyproject.toml resolve to actual files
 
+  6. .env.example has every variable .env.sample defines — .env.sample is
+     the comprehensive reference; .env.example seeds `icdev init`'s
+     .env.template and tools/awareness/enablement.py's runtime defaults,
+     so a var missing from .env.example is invisible to a fresh
+     `pip install icdev` user even though it's fully shipped and working.
+
 Exit code 0 if everything is green, 1 on any failure. Designed to run as
 a pre-commit hook, in CI, and inside tools/installer/build_release.py.
 
@@ -45,6 +51,8 @@ SYNC_SCRIPT = REPO_ROOT / "tools" / "installer" / "sync_package_tree.py"
 PYPROJECT = REPO_ROOT / "pyproject.toml"
 MANIFEST = REPO_ROOT / "MANIFEST.in"
 _PKG_CONFIG = REPO_ROOT / "args" / "package_config.yaml"
+ENV_EXAMPLE = REPO_ROOT / ".env.example"
+ENV_SAMPLE = REPO_ROOT / ".env.sample"
 
 
 def _load_pkg_config() -> dict:
@@ -289,6 +297,42 @@ def check_entry_points() -> dict:
     }
 
 
+def _parse_env_keys(path: Path) -> set[str]:
+    """Extract VAR_NAME= keys from an env file, ignoring comments/blanks."""
+    keys: set[str] = set()
+    if not path.is_file():
+        return keys
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        m = re.match(r"([A-Za-z_][A-Za-z0-9_]*)=", line)
+        if m:
+            keys.add(m.group(1))
+    return keys
+
+
+def check_env_files_sync() -> dict:
+    """CHECK 6: .env.example has every key .env.sample defines.
+
+    .env.sample is the comprehensive reference; .env.example is what
+    icdev init actually seeds a new project's .env.template from, and what
+    tools/awareness/enablement.py reads as its runtime defaults layer. A key
+    present only in .env.sample is invisible to both — extra keys in
+    .env.example (not in .env.sample) are fine, not a failure.
+    """
+    sample_keys = _parse_env_keys(ENV_SAMPLE)
+    example_keys = _parse_env_keys(ENV_EXAMPLE)
+    missing_in_example = sample_keys - example_keys
+    return {
+        "check": "env_files_sync",
+        "ok": not missing_in_example,
+        "sample_key_count": len(sample_keys),
+        "example_key_count": len(example_keys),
+        "missing_in_example": sorted(missing_in_example),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -299,6 +343,7 @@ def validate() -> dict:
         check_bootstrap_populated(),
         check_forge_data_dirs(),
         check_entry_points(),
+        check_env_files_sync(),
     ]
     overall_ok = all(c["ok"] for c in checks)
     return {
@@ -325,7 +370,8 @@ def _print_human(result: dict) -> None:
         else:
             # Show key positive stat
             for k in ("parent_only_count", "present_count",
-                      "slash_command_count", "total_entries"):
+                      "slash_command_count", "total_entries",
+                      "sample_key_count"):
                 if k in c:
                     print(f"       {k}: {c[k]}")
     print()
