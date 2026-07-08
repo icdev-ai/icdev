@@ -343,6 +343,84 @@ def test_watcher_fails_gracefully_on_fetch_exception():
     assert "gh down" in report.actions[0].reason
 
 
+def _green_pr_state(base_ref=None):
+    state = {
+        "state": "OPEN",
+        "mergeable": "MERGEABLE",
+        "reviews": [{"state": "APPROVED", "author": "b"}],
+        "statusCheckRollup": [{"conclusion": "SUCCESS", "name": "tests"}],
+    }
+    if base_ref is not None:
+        state["baseRefName"] = base_ref
+    return state
+
+
+def _build_auto_merge_watcher(pr_url, base_ref, allowed_bases=None):
+    tasks = [_FakeRow(
+        id="task-green", title="T", description="",
+        status="in_progress",
+        executor_url=pr_url,
+    )]
+    config = {
+        "auto_merge_enabled": True,
+        "auto_merge_require_approval": False,
+        "max_resume_cycles_per_task": 5,
+    }
+    if allowed_bases is not None:
+        config["auto_merge_allowed_bases"] = allowed_bases
+    queue_log = []
+    w = _build_watcher(
+        tasks, {pr_url: _green_pr_state(base_ref)}, queue_log, config=config,
+    )
+    merge_calls = []
+    w._auto_merge = lambda url: merge_calls.append(url) or True  # noqa: SLF001
+    return w, merge_calls
+
+
+def test_watcher_auto_merges_when_base_is_main():
+    url = "https://github.com/o/r/pull/20"
+    w, merge_calls = _build_auto_merge_watcher(url, base_ref="main")
+    report = w.poll_once()
+    assert report.actions[0].action == "merge"
+    assert report.actions[0].reason == "auto-merge ok"
+    assert merge_calls == [url]
+
+
+def test_watcher_escalates_stacked_pr_on_feature_base():
+    url = "https://github.com/o/r/pull/21"
+    w, merge_calls = _build_auto_merge_watcher(
+        url, base_ref="feat/rfi-six-parts",
+    )
+    report = w.poll_once()
+    assert report.actions[0].action == "escalate"
+    assert "stacked PR (base=feat/rfi-six-parts)" in report.actions[0].reason
+    assert merge_calls == []
+
+
+def test_watcher_escalates_when_base_ref_missing():
+    url = "https://github.com/o/r/pull/22"
+    w, merge_calls = _build_auto_merge_watcher(url, base_ref=None)
+    report = w.poll_once()
+    assert report.actions[0].action == "escalate"
+    assert "stacked PR (base=unknown)" in report.actions[0].reason
+    assert merge_calls == []
+
+
+def test_watcher_honors_custom_allowed_bases():
+    url = "https://github.com/o/r/pull/23"
+    w, merge_calls = _build_auto_merge_watcher(
+        url, base_ref="develop", allowed_bases=["main", "develop"],
+    )
+    report = w.poll_once()
+    assert report.actions[0].action == "merge"
+    assert merge_calls == [url]
+
+
+def test_load_config_defaults_include_allowed_bases(tmp_path):
+    cfg = pw.load_config(tmp_path / "missing.yaml")
+    assert cfg["auto_merge_allowed_bases"] == ["main"]
+
+
 def test_cli_dry_run_json(monkeypatch, capsys):
     # Empty task set — the CLI should still print a report
     def fake_list(*args, **kwargs):

@@ -11,5 +11,11 @@ max_resume_cycles_per_task: 5
 auto_merge_enabled: true
 auto_merge_require_approval: false
 
+# Only auto-merge PRs whose base branch is in this list. Stacked PRs
+# (base = a feature branch) escalate instead — squashing into a feature
+# branch strands the delta if that branch was already merged (see PR #114).
+auto_merge_allowed_bases:
+  - main
+
 # Truncate CI log excerpts before injecting as resume context
 ci_log_max_chars: 4000

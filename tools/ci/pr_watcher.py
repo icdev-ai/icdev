@@ -108,6 +108,7 @@ def load_config(path: Optional[pathlib.Path] = None) -> dict:
             "max_resume_cycles_per_task": 5,
             "auto_merge_enabled": False,
             "auto_merge_require_approval": True,
+            "auto_merge_allowed_bases": ["main"],
             "ci_log_max_chars": DEFAULT_CI_LOG_MAX,
         }
     with open(p, "r", encoding="utf-8") as fh:
@@ -183,7 +184,7 @@ def list_pr_tasks(
 
 _GH_JSON_FIELDS = (
     "state,statusCheckRollup,reviews,mergeable,"
-    "headRefName,updatedAt,number,url"
+    "headRefName,baseRefName,updatedAt,number,url"
 )
 
 
@@ -485,6 +486,10 @@ class PRWatcher:
         require_approval = bool(
             self.config.get("auto_merge_require_approval", True)
         )
+        allowed_bases = [
+            str(b) for b in
+            (self.config.get("auto_merge_allowed_bases") or ["main"])
+        ]
 
         for task in tasks:
             report.tasks_checked += 1
@@ -525,6 +530,21 @@ class PRWatcher:
                         task_id=task["id"], pr_url=pr_url,
                         classification="done",
                         action=action_label, reason=reason,
+                        resume_cycle=cycle,
+                    )
+                elif (state.get("baseRefName") or "") not in allowed_bases:
+                    # Stacked PR — squashing into a feature branch strands
+                    # the delta if that branch was already merged (see #114)
+                    base_ref = state.get("baseRefName") or "unknown"
+                    action = WatcherAction(
+                        task_id=task["id"], pr_url=pr_url,
+                        classification="done",
+                        action="escalate",
+                        reason=(
+                            f"stacked PR (base={base_ref}); auto-merge "
+                            f"restricted to {', '.join(allowed_bases)} — "
+                            "merge manually or forward after base merges"
+                        ),
                         resume_cycle=cycle,
                     )
                 else:
