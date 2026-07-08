@@ -23896,7 +23896,7 @@ CREATE TABLE public.proposal_review_findings (
     created_at text DEFAULT now(),
     resolved_evidence text,
     closure_approved_by text,
-    CONSTRAINT proposal_review_findings_finding_type_check CHECK ((finding_type = ANY (ARRAY['compliance_gap'::text, 'content_weakness'::text, 'competitive_risk'::text, 'formatting'::text, 'pricing_concern'::text, 'technical_error'::text, 'missing_content'::text, 'other'::text]))),
+    CONSTRAINT proposal_review_findings_finding_type_check CHECK ((finding_type = ANY (ARRAY['compliance_gap'::text, 'content_weakness'::text, 'competitive_risk'::text, 'formatting'::text, 'pricing_concern'::text, 'technical_error'::text, 'missing_content'::text, 'invalid_citation'::text, 'other'::text]))),
     CONSTRAINT proposal_review_findings_severity_check CHECK ((severity = ANY (ARRAY['critical'::text, 'major'::text, 'minor'::text, 'observation'::text]))),
     CONSTRAINT proposal_review_findings_status_check CHECK ((status = ANY (ARRAY['open'::text, 'in_progress'::text, 'resolved'::text, 'deferred'::text, 'wont_fix'::text])))
 );
