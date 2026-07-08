@@ -49,6 +49,33 @@ def _get_db():
     return _PGCompatConn(conn)
 
 
+def _mac_filter_by_classification(rows):
+    """Bell-LaPadula no-read-up filter (prop-sec-02).
+
+    Win/loss records and lessons (pg_win_loss_records/pg_win_loss_lessons)
+    are genuinely SECRET-capable competitive intelligence — why we won or
+    lost against a named competitor, our own weaknesses — but classify
+    per-row (classification column, default CUI), not per-endpoint. A
+    blanket @require_clearance("SECRET") on the whole route would hide the
+    (usually CUI) majority of records from ordinary capture/proposal roles;
+    filtering per-row here matches the pattern already used in
+    tools/dashboard/api/proposals.py's _mac_filter().
+
+    No-op (returns rows unchanged) when g.security_context is unset
+    (system/unauthenticated context) — same compatibility fallback as
+    classification_enforcer.can_read(None).
+    """
+    try:
+        from flask import g
+        ctx = getattr(g, "security_context", None)
+    except RuntimeError:
+        ctx = None
+    if ctx is None:
+        return rows
+    from tools.security.classification_enforcer import can_read
+    return [r for r in rows if can_read(r.get("classification") or "CUI", ctx)]
+
+
 def _run_daemon_cmd(args_list, timeout=30):
     """Run proposal_genesis daemon CLI and parse JSON output."""
     try:
@@ -1024,7 +1051,7 @@ def api_pg_win_loss_records():
         rows = conn.execute(
             "SELECT wl.id, wl.opportunity_id, wl.outcome, wl.competitor_name, "
             "wl.competitor_strengths, wl.our_strengths, wl.our_weaknesses, "
-            "wl.lessons_learned, wl.created_at, "
+            "wl.lessons_learned, wl.created_at, wl.classification, "
             "o.title AS opportunity_title, o.agency "
             "FROM pg_win_loss_records wl "
             "LEFT JOIN sam_gov_opportunities o ON o.id = wl.opportunity_id "
@@ -1039,6 +1066,7 @@ def api_pg_win_loss_records():
             except Exception:
                 rec["lessons_parsed"] = []
             records.append(rec)
+        records = _mac_filter_by_classification(records)
         return jsonify({"records": records, "count": len(records)})
     except Exception as exc:
         return jsonify({"records": [], "count": 0, "note": str(exc)})
@@ -1058,7 +1086,7 @@ def api_pg_win_loss_lessons():
     try:
         query = (
             "SELECT l.id, l.win_loss_id, l.category, l.lesson, "
-            "l.actionable, l.applied, l.created_at, "
+            "l.actionable, l.applied, l.created_at, l.classification, "
             "wl.outcome, wl.opportunity_id, "
             "o.title AS opportunity_title, o.agency "
             "FROM pg_win_loss_lessons l "
@@ -1072,7 +1100,7 @@ def api_pg_win_loss_lessons():
         query += "ORDER BY l.created_at DESC LIMIT ?"
         params.append(limit)
         rows = conn.execute(query, params).fetchall()
-        lessons = [dict(r) for r in rows]
+        lessons = _mac_filter_by_classification([dict(r) for r in rows])
         return jsonify({"lessons": lessons, "count": len(lessons)})
     except Exception as exc:
         return jsonify({"lessons": [], "count": 0, "note": str(exc)})
