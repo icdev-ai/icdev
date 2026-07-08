@@ -32,6 +32,7 @@ logger = get_logger(__name__)
 from tools.common.helpers import now_isoformat
 from tools.dashboard.auth import require_role
 from tools.dashboard.config import DEFAULT_CLASSIFICATION
+from tools.security.abac_engine import abac_protect
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
@@ -423,6 +424,16 @@ def bid_recommendation(opp_id):
 # =====================================================================
 
 
+def _draft_resource_attrs(request):
+    """ABAC resource dict for a draft approve/reject decision (prop-sec-01).
+
+    Separation of duties, not ownership: privileged/reviewer roles decide;
+    a section_writer never self-approves/rejects (see proposal_draft_*
+    policies in args/security_config.yaml), so no per-draft lookup is needed.
+    """
+    return {"type": "proposal_draft"}
+
+
 @govcon_api.route("/opportunities/<opp_id>/auto-draft", methods=["POST"])
 @require_role(*GOVCON_WRITE_ROLES)
 def auto_draft(opp_id):
@@ -492,21 +503,60 @@ def list_drafts(opp_id):
 
 
 @govcon_api.route("/drafts/<draft_id>/approve", methods=["PUT"])
+@abac_protect(_draft_resource_attrs, "approve")
 def approve_draft(draft_id):
     """PUT /api/govcon/drafts/<id>/approve — Approve a draft.
 
     When approved, the draft content flows into the linked proposal_section
     and advances the section to 'drafting' status if currently 'not_started' or 'outlining'.
+
+    Blocked with 409 gate=placeholder_guard while unresolved [PLACEHOLDER]
+    tokens remain in the draft (ground-prop-03, mirroring the RFI export
+    gate). Body {"force_placeholders": true} bypasses after human review
+    and writes an explicit audit trail entry.
     """
     conn = _get_db()
     try:
         data = request.get_json(silent=True) or {}
         reviewer = data.get("reviewed_by", "govcon_api")
+        force = bool(data.get("force_placeholders"))
 
         draft = conn.execute("SELECT * FROM proposal_section_drafts WHERE id = %s", (draft_id,)).fetchone()
         if not draft:
             return jsonify({"error": "Draft not found"}), 404
         draft = dict(draft)
+
+        # Placeholder gate (ground-prop-03)
+        try:
+            from tools.govcon.response_drafter import unresolved_placeholders
+            placeholder_tokens = unresolved_placeholders(draft)
+        except Exception:
+            import json as _json
+            try:
+                meta = _json.loads(draft.get("metadata") or "{}")
+                placeholder_tokens = list(meta.get("placeholder_tokens") or [])
+            except (ValueError, TypeError):
+                placeholder_tokens = []
+        if placeholder_tokens and not force:
+            return (
+                jsonify(
+                    {
+                        "error": "Placeholder gate: unresolved [PLACEHOLDER] tokens remain — resolve or force",
+                        "gate": "placeholder_guard",
+                        "placeholder_tokens": placeholder_tokens,
+                        "draft_id": draft_id,
+                    }
+                ),
+                409,
+            )
+        if placeholder_tokens:
+            _audit(
+                conn,
+                "placeholder_guard_override",
+                f"Draft {draft_id} approved by {reviewer} despite {len(placeholder_tokens)} "
+                f"unresolved placeholder token(s): {', '.join(placeholder_tokens)}",
+                actor=reviewer,
+            )
 
         # Update draft status (new row for audit trail)
         conn.execute(
@@ -556,6 +606,7 @@ def approve_draft(draft_id):
 
 
 @govcon_api.route("/drafts/<draft_id>/reject", methods=["PUT"])
+@abac_protect(_draft_resource_attrs, "reject")
 def reject_draft(draft_id):
     """PUT /api/govcon/drafts/<id>/reject — Reject a draft with feedback."""
     conn = _get_db()
