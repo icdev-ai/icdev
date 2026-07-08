@@ -2710,6 +2710,42 @@ def delete_blackhat_assessment(bh_id):
         conn.close()
 
 
+@proposals_api.route("/iqe-query", methods=["POST"])
+def proposals_iqe_query():
+    """IQE NL-to-SQL for the Proposals canvas (prop-iqe-01). Mirrors
+    tools/dashboard/api/govcon.py::govcon_iqe_query."""
+    from tools.iqe.nl_to_iqe import nl_to_iqe
+    from tools.iqe.parser import IQESyntaxError, parse
+    from tools.iqe.executor import execute_query
+    import tools.iqe.adapters.proposals  # noqa: F401
+
+    data = request.get_json(silent=True) or {}
+    question = (data.get("question") or "").strip()
+    if not question:
+        return jsonify({"error": "question is required"}), 400
+
+    collections = [
+        "proposals.opportunities", "proposals.sections",
+        "proposals.compliance", "proposals.reviews",
+    ]
+    translation = nl_to_iqe(question, collections)
+    iqe_str = translation.get("iqe", "")
+    explanation = translation.get("explanation", "")
+
+    if not data.get("execute", True):
+        return jsonify({"ok": True, "iqe": iqe_str, "explanation": explanation}), 200
+
+    try:
+        ast = parse(iqe_str)
+        rows = execute_query(ast, None)
+        return jsonify({"ok": True, "iqe": iqe_str, "explanation": explanation,
+                        "results": rows, "row_count": len(rows)}), 200
+    except IQESyntaxError as exc:
+        return jsonify({"error": f"IQE syntax error: {exc}", "iqe": iqe_str}), 400
+    except Exception as exc:
+        return jsonify({"error": str(exc), "iqe": iqe_str}), 500
+
+
 # ---------------------------------------------------------------------------
 # Inline Annotations
 # ---------------------------------------------------------------------------
