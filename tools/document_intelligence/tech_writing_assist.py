@@ -5,7 +5,10 @@ so callers can degrade gracefully (air-gap, missing LLM, no embedding index).
 """
 from __future__ import annotations
 
+import os
+import re
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from tools.logging.icdev_logger import get_logger
 
@@ -112,6 +115,134 @@ class DiagramResult:
     error: str = ""
 
 
+# ── Standards-reference validation (ground-tw-04) ────────────────────────────
+
+_WHITELIST_PATH = Path(__file__).resolve().parents[2] / "args" / "tw_standards_whitelist.yaml"
+_whitelist_cache: dict | None = None
+
+_NIST_RE = re.compile(r"\bNIST\s+(?:SP\s+)?800-(\d+[A-Za-z]?)?", re.IGNORECASE)
+_CMMC_LEVEL_RE = re.compile(r"\bCMMC\s+(?:Level\s+|L)(\d+)", re.IGNORECASE)
+_CMMC_PRACTICE_RE = re.compile(r"\b([A-Z]{2})\.L(\d)-(\d+\.\d+\.\d+)\b")
+_FEDRAMP_RE = re.compile(r"\bFedRAMP\s+(Low|Moderate|High|LI-SaaS)\b", re.IGNORECASE)
+_FEDRAMP_UNKNOWN_RE = re.compile(r"\bFedRAMP\s+([A-Z][A-Za-z-]+)\b")
+_SRG_RE = re.compile(r"\bSRG-([A-Z]{2,4})-(\d+)\b")
+_STIG_V_RE = re.compile(r"\bV-(\d+)\b")
+_REFERENCES_RE = re.compile(
+    r"^#{0,6}\s*(?:\d+\.?\s*)?References\b.*?$(.*?)(?=^#{1,6}\s|\Z)",
+    re.IGNORECASE | re.MULTILINE | re.DOTALL,
+)
+
+
+def _load_standards_whitelist() -> dict:
+    """Load args/tw_standards_whitelist.yaml once. Empty dict on any failure."""
+    global _whitelist_cache
+    if _whitelist_cache is None:
+        try:
+            import yaml
+            with open(_WHITELIST_PATH, encoding="utf-8") as fh:
+                _whitelist_cache = yaml.safe_load(fh) or {}
+        except Exception as exc:
+            logger.warning("standards whitelist unavailable: %s", exc)
+            _whitelist_cache = {}
+    return _whitelist_cache
+
+
+def validate_standards_references(text: str) -> list[str]:
+    """Deterministic whitelist check of standards citations in a draft.
+
+    Scans the References section when one exists, otherwise the whole text.
+    Flags unknown or malformed NIST SP 800-*, CMMC, FedRAMP, and DISA
+    SRG/STIG identifiers. Never raises; returns [] when the whitelist is
+    missing or the text is empty.
+    """
+    if not text:
+        return []
+    wl = _load_standards_whitelist()
+    if not wl:
+        return []
+
+    ref_match = _REFERENCES_RE.search(text)
+    scope = ref_match.group(0) if ref_match else text
+    warnings: list[str] = []
+    seen: set[str] = set()
+
+    def _warn(msg: str) -> None:
+        if msg not in seen:
+            seen.add(msg)
+            warnings.append(msg)
+
+    nist_pubs = {str(p).upper() for p in (wl.get("nist_sp_800") or [])}
+    for m in _NIST_RE.finditer(scope):
+        pub = (m.group(1) or "").upper()
+        if not pub:
+            _warn("Standards check: malformed NIST citation — 'NIST SP 800-' with no publication number")
+        elif pub not in nist_pubs:
+            _warn(f"Standards check: unknown NIST publication 'SP 800-{pub}' — not in whitelist")
+
+    cmmc = wl.get("cmmc") or {}
+    levels = {int(v) for v in (cmmc.get("levels") or [])}
+    domains = {str(d).upper() for d in (cmmc.get("domains") or [])}
+    for m in _CMMC_LEVEL_RE.finditer(scope):
+        if int(m.group(1)) not in levels:
+            _warn(f"Standards check: unknown CMMC level '{m.group(1)}' — valid levels are {sorted(levels)}")
+    for m in _CMMC_PRACTICE_RE.finditer(scope):
+        domain, level = m.group(1), int(m.group(2))
+        if domain not in domains:
+            _warn(f"Standards check: unknown CMMC practice domain '{domain}' in '{m.group(0)}'")
+        elif level not in levels:
+            _warn(f"Standards check: malformed CMMC practice id '{m.group(0)}' — level {level} is invalid")
+
+    baselines = {str(b).lower() for b in ((wl.get("fedramp") or {}).get("baselines") or [])}
+    known_fr = {m.group(1).lower() for m in _FEDRAMP_RE.finditer(scope)}
+    for m in _FEDRAMP_UNKNOWN_RE.finditer(scope):
+        token = m.group(1).lower()
+        if token not in baselines and token not in known_fr and token not in {"authorized", "ready", "marketplace"}:
+            _warn(f"Standards check: unknown FedRAMP baseline '{m.group(1)}' — not in whitelist")
+
+    stig = wl.get("stig") or {}
+    srg_families = {str(f).upper() for f in (stig.get("srg_families") or [])}
+    v_min = int(stig.get("v_id_digits_min", 5))
+    v_max = int(stig.get("v_id_digits_max", 6))
+    for m in _SRG_RE.finditer(scope):
+        family, num = m.group(1), m.group(2)
+        if family not in srg_families:
+            _warn(f"Standards check: unknown SRG family '{family}' in '{m.group(0)}'")
+        elif len(num) != 6:
+            _warn(f"Standards check: malformed SRG id '{m.group(0)}' — expected a 6-digit number")
+    for m in _STIG_V_RE.finditer(scope):
+        if not (v_min <= len(m.group(1)) <= v_max):
+            _warn(f"Standards check: malformed STIG vulnerability id '{m.group(0)}' — expected V-{{{v_min}-{v_max} digits}}")
+
+    return warnings
+
+
+# ── Chain of Debate gating for ARCH_* templates (ground-tw-04) ────────────────
+
+def _tw_cod_enabled() -> bool:
+    """ICDEV_TW_COD_ENABLED gates Chain-of-Debate drafting. Default off."""
+    return os.environ.get("ICDEV_TW_COD_ENABLED", "false").strip().lower() in ("1", "true", "yes")
+
+
+def _cod_draft(user_msg: str, system_prompt: str) -> str:
+    """Chain-of-Debate draft attempt. Returns '' on any failure (caller falls
+    back to single-shot), mirroring tools/govcon/rfi_workbench._generate_draft."""
+    from tools.llm.chain_orchestrator import ChainOrchestrator
+
+    orch = ChainOrchestrator(router=LLMRouter())
+    req = LLMRequest(
+        messages=[{"role": "user", "content": user_msg}],
+        system_prompt=system_prompt,
+        max_tokens=2048,
+        temperature=0.4,
+    )
+    cod_result = orch.invoke_chain_of_debate("tech_writing_draft", req)
+    content = (getattr(cod_result, "content", "") or "").strip()
+    if content:
+        models = getattr(cod_result, "models_used", None) or []
+        logger.info("CoD tech-writing draft via %s", ",".join(models))
+    return content
+
+
 # ── Main functions ────────────────────────────────────────────────────────────
 
 def research_and_draft(
@@ -209,19 +340,29 @@ def research_and_draft(
     )
 
     if LLMRouter is not None and LLMRequest is not None:
-        try:
-            router = LLMRouter()
-            req = LLMRequest(
-                messages=[{"role": "user", "content": user_msg}],
-                system_prompt=system_prompt,
-                max_tokens=2048,
-                temperature=0.4,
-            )
-            response = router.invoke("tech_writing_draft", req)
-            result.draft_content = (response.content or "").strip()
-        except Exception as exc:
-            result.error = f"LLM draft failed: {exc}"
-            logger.warning("LLM draft failed: %s", exc)
+        tt = template_type.upper() if template_type else ""
+        # Judgment-heavy architecture sections: Chain of Debate (debaters +
+        # judge synthesis) when enabled; any failure falls back to single-shot.
+        if tt.startswith("ARCH_") and _tw_cod_enabled():
+            try:
+                result.draft_content = _cod_draft(user_msg, system_prompt)
+            except Exception as exc:
+                result.warnings.append(f"CoD draft failed — fell back to single-shot: {exc}")
+                logger.warning("CoD draft failed for %s (%s) — falling back to single-shot", tt, exc)
+        if not result.draft_content:
+            try:
+                router = LLMRouter()
+                req = LLMRequest(
+                    messages=[{"role": "user", "content": user_msg}],
+                    system_prompt=system_prompt,
+                    max_tokens=2048,
+                    temperature=0.4,
+                )
+                response = router.invoke("tech_writing_draft", req)
+                result.draft_content = (response.content or "").strip()
+            except Exception as exc:
+                result.error = f"LLM draft failed: {exc}"
+                logger.warning("LLM draft failed: %s", exc)
     else:
         result.error = "LLM not available."
 
@@ -237,6 +378,7 @@ def research_and_draft(
                 )
         except Exception as exc:
             logger.debug("placeholder check failed: %s", exc)
+        result.warnings.extend(validate_standards_references(result.draft_content))
 
     return result
 

@@ -335,7 +335,7 @@ prov = get_chunk_provenance(
 
 | Tool | Purpose |
 |------|---------|
-| `tools/document_intelligence/tech_writing_assist.py` | AI research + drafting + diagram generation for the Tech Writer workspace. `research_and_draft(query, section_heading, template_type, ...)` → `ResearchResult`; `generate_diagram_syntax(description, diagram_type, template_type)` → `DiagramResult`. Never raises — all errors surface in result.error. Uses module-level optional imports (RAGRetriever, kg_retrieve, LLMRouter, fetch_content, is_airgap) so tests can patch them. Air-gap aware (skips web when air-gapped). |
+| `tools/document_intelligence/tech_writing_assist.py` | AI research + drafting + diagram generation for the Tech Writer workspace. `research_and_draft(query, section_heading, template_type, ...)` → `ResearchResult`; `generate_diagram_syntax(description, diagram_type, template_type)` → `DiagramResult`. Never raises — all errors surface in result.error. Uses module-level optional imports (RAGRetriever, kg_retrieve, LLMRouter, fetch_content, is_airgap) so tests can patch them. Air-gap aware (skips web when air-gapped). `validate_standards_references(text)` — deterministic whitelist check (args/tw_standards_whitelist.yaml) of NIST SP 800-*, CMMC, FedRAMP, DISA SRG/STIG citations in the draft's References section; warnings land in `ResearchResult.warnings` and the WriteGuard sidebar. ARCH_* drafts route through `ChainOrchestrator.invoke_chain_of_debate` with single-shot fallback when `ICDEV_TW_COD_ENABLED=true` (default off). |
 
 Routes added to `blueprint.py`:
 - `GET /techwriter` — Tech Writer workspace page (6 template-type cards + continue-writing list)
