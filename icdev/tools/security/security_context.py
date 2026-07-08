@@ -163,13 +163,26 @@ def _extract_from_flask_g() -> Optional[SecurityContext]:
         user_role = getattr(g, "user_role", None) or user.get("role", "")
         user_id = getattr(g, "user_id", None) or user.get("id", "") or user.get("user_id", "")
 
-        # Compartments may be stored on the user dict or g
-        compartments = set(user.get("compartments", []))
+        # Compartments may be stored on the user dict (dashboard_users.compartments,
+        # a JSON-encoded string, e.g. '["COI_FINANCE","LAC_DC_EAST"]') or on g.
+        raw_compartments = user.get("compartments", [])
+        if isinstance(raw_compartments, str):
+            try:
+                raw_compartments = json.loads(raw_compartments) if raw_compartments else []
+            except (ValueError, TypeError):
+                raw_compartments = []
+        compartments = set(raw_compartments) if isinstance(raw_compartments, (list, tuple, set)) else set()
         extra = getattr(g, "compartments", None)
         if isinstance(extra, (list, tuple, set)):
             compartments |= set(extra)
 
-        classification = user.get("classification", "CUI")
+        # dashboard_users.clearance_level (TEXT, e.g. 'CUI'/'SECRET') is the
+        # subject's own MAC clearance (prop-sec-02) — distinct from
+        # "classification", which describes a resource's sensitivity, not a
+        # subject's authorization. Older callers may still set g.classification
+        # directly (e.g. non-dashboard-user contexts); prefer clearance_level
+        # when present.
+        classification = user.get("clearance_level") or user.get("classification", "CUI")
         clearance = _get_clearance_order(classification)
 
         mtls_cn = request.headers.get("X-Client-Cert-CN") if request else None
