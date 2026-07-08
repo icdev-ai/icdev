@@ -183,8 +183,43 @@ def list_pr_tasks(
 
 _GH_JSON_FIELDS = (
     "state,statusCheckRollup,reviews,mergeable,"
-    "headRefName,updatedAt,number,url"
+    "headRefName,baseRefName,updatedAt,number,url"
 )
+
+
+def repo_default_branch(*, runner=None, gh_bin: str = "gh") -> str:
+    """Resolve the repository's default branch name.
+
+    Tries `gh repo view --json defaultBranchRef`, then
+    `git symbolic-ref refs/remotes/origin/HEAD`, then falls back to
+    "main". Pass `runner` in tests to avoid hitting the real CLIs.
+    """
+    if runner is None:
+        runner = subprocess.run
+    try:
+        proc = runner(
+            [gh_bin, "repo", "view", "--json", "defaultBranchRef"],
+            capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=30,
+        )
+        if proc.returncode == 0:
+            ref = json.loads(proc.stdout or "{}").get("defaultBranchRef") or {}
+            name = (ref.get("name") or "").strip()
+            if name:
+                return name
+    except Exception:
+        pass
+    try:
+        proc = runner(
+            ["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
+            capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=10,
+        )
+        if proc.returncode == 0 and proc.stdout.strip():
+            return proc.stdout.strip().removeprefix("origin/")
+    except Exception:
+        pass
+    return "main"
 
 
 def fetch_pr_state(
@@ -335,6 +370,7 @@ class PRWatcher:
         fetch_state=None,
         fetch_logs=None,
         auto_merge_runner=None,
+        default_branch_resolver=None,
         dry_run: bool = False,
     ):
         self.config = config or load_config()
@@ -345,6 +381,10 @@ class PRWatcher:
         self._fetch_state = fetch_state or fetch_pr_state
         self._fetch_logs = fetch_logs or fetch_ci_logs
         self._auto_merge_runner = auto_merge_runner or subprocess.run
+        self._default_branch_resolver = (
+            default_branch_resolver or repo_default_branch
+        )
+        self._default_branch_cache: Optional[str] = None
 
     # ── helpers ─────────────────────────────────────────────────────
 
@@ -375,6 +415,17 @@ class PRWatcher:
         except Exception as exc:
             logger.warning("pr_watcher: queue_message import failed: %s", exc)
             return False
+
+    def _default_branch(self) -> str:
+        if self._default_branch_cache is None:
+            try:
+                self._default_branch_cache = self._default_branch_resolver()
+            except Exception as exc:
+                logger.warning(
+                    "pr_watcher: default-branch resolution failed: %s", exc
+                )
+                self._default_branch_cache = "main"
+        return self._default_branch_cache
 
     def _auto_merge(self, pr_url: str) -> bool:
         if self.dry_run:
@@ -528,6 +579,33 @@ class PRWatcher:
                         resume_cycle=cycle,
                     )
                 else:
+                    # Base-branch guard (incident 2026-07-08, PR #114):
+                    # never auto-merge a PR whose base is not the repo
+                    # default branch — merging into a feature branch
+                    # strands the change off-main. Unknown base is
+                    # treated as unsafe.
+                    base_ref = (state.get("baseRefName") or "").strip()
+                    default_branch = self._default_branch()
+                    if base_ref != default_branch:
+                        logger.warning(
+                            "pr_watcher: refusing auto-merge for %s — "
+                            "PR base '%s' is not the default branch '%s'",
+                            pr_url, base_ref or "<unknown>", default_branch,
+                        )
+                        action = WatcherAction(
+                            task_id=task["id"], pr_url=pr_url,
+                            classification="done",
+                            action="wait",
+                            reason=(
+                                f"refusing auto-merge: PR base "
+                                f"'{base_ref or '<unknown>'}' is not the "
+                                f"default branch '{default_branch}'"
+                            ),
+                            resume_cycle=cycle,
+                        )
+                        report.actions.append(action)
+                        self._audit(action)
+                        continue
                     approved_ok = (
                         not require_approval
                         or ec.is_approved_and_passing(state)
