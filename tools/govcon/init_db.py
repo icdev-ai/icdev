@@ -492,7 +492,8 @@ CREATE TABLE IF NOT EXISTS cpmp_int_coverage (
     metadata TEXT DEFAULT '{}',
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now')),
-    classification TEXT DEFAULT 'CUI'
+    classification TEXT DEFAULT 'CUI',
+    tenant_id TEXT
 )
 """
 
@@ -513,7 +514,8 @@ CREATE TABLE IF NOT EXISTS cpmp_collection_requirements (
     metadata TEXT DEFAULT '{}',
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now')),
-    classification TEXT DEFAULT 'CUI'
+    classification TEXT DEFAULT 'CUI',
+    tenant_id TEXT
 )
 """
 
