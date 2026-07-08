@@ -67,6 +67,25 @@ def _compute_quality_score(confidence_score: float, best_coverage: float) -> flo
     return float(round(confidence_score * 0.6 + best_coverage * 0.4, 4))
 
 
+def unresolved_placeholders(draft_row):
+    """Unresolved [PLACEHOLDER] tokens for a proposal_section_drafts row.
+
+    Re-scans draft_content (source of truth — covers drafts stored before
+    metadata.placeholder_tokens existed); falls back to the tokens recorded
+    by draft_response() if the scanner is unavailable.
+    """
+    d = dict(draft_row)
+    try:
+        from tools.quality.content_grounding import find_placeholders
+        return find_placeholders(d.get("draft_content") or "")
+    except Exception:
+        try:
+            meta = json.loads(d.get("metadata") or "{}")
+            return list(meta.get("placeholder_tokens") or [])
+        except (ValueError, TypeError):
+            return []
+
+
 def _load_config():
     try:
         import yaml
@@ -520,6 +539,15 @@ def draft_response(shall_id):
     if not draft_text:
         draft_text, method = _template_draft(shall_text, capabilities, knowledge_blocks, domain)
 
+    # Deterministic anti-hallucination check: unresolved [PLACEHOLDER] tokens
+    # in the draft are recorded so reviewers/WriteGuard can flag them before
+    # the section is promoted.
+    try:
+        from tools.quality.content_grounding import find_placeholders
+        placeholder_tokens = find_placeholders(draft_text)
+    except Exception:
+        placeholder_tokens = []
+
     # Compute confidence
     best_coverage = capabilities[0]["score"] if capabilities else 0
     confidence = round(best_coverage * 0.7 + (0.3 if knowledge_blocks else 0), 2)
@@ -571,6 +599,7 @@ def draft_response(shall_id):
                     "capability_count": len(capabilities),
                     "kb_count": len(knowledge_blocks),
                     "best_coverage": best_coverage,
+                    **({"placeholder_tokens": placeholder_tokens} if placeholder_tokens else {}),
                     **({"specialist_consult": specialist_consult_result} if specialist_consult_result else {}),
                 }
             ),
@@ -590,6 +619,7 @@ def draft_response(shall_id):
         "capabilities_matched": len(capabilities),
         "kb_blocks_used": len(knowledge_blocks),
         "draft_length": len(draft_text),
+        "placeholder_tokens": placeholder_tokens,
     }
 
 
@@ -647,11 +677,16 @@ def list_drafts(opportunity_id=None, status=None):
     }
 
 
-def approve_draft(draft_id, reviewer="human", notes=""):
+def approve_draft(draft_id, reviewer="human", notes="", force_placeholders=False):
     """Approve a draft for inclusion in proposal.
 
     Changes status from 'draft' to 'approved'.
     Approved drafts can be pushed to proposal_sections via the proposal API.
+
+    Promotion is blocked while unresolved [PLACEHOLDER] tokens remain in the
+    draft (gate=placeholder_guard, mirroring the RFI export gate).
+    force_placeholders=True bypasses after human review and writes an
+    explicit audit trail entry.
     """
     conn = _get_db()
 
@@ -666,9 +701,29 @@ def approve_draft(draft_id, reviewer="human", notes=""):
         conn.close()
         return {"status": "error", "message": f"Draft status is '{draft['status']}', expected 'draft' or 'reviewed'"}
 
+    d = dict(draft)
+
+    # Placeholder gate (ground-prop-03)
+    placeholder_tokens = unresolved_placeholders(d)
+    if placeholder_tokens and not force_placeholders:
+        conn.close()
+        return {
+            "status": "blocked",
+            "gate": "placeholder_guard",
+            "message": "Unresolved [PLACEHOLDER] tokens remain — resolve or pass force_placeholders=True",
+            "placeholder_tokens": placeholder_tokens,
+            "draft_id": draft_id,
+        }
+    if placeholder_tokens:
+        _audit(
+            conn,
+            "placeholder_guard_override",
+            f"Draft {draft_id} promoted by {reviewer} despite {len(placeholder_tokens)} "
+            f"unresolved placeholder token(s): {', '.join(placeholder_tokens)}",
+        )
+
     # Create new approved record (append-only: new row, not update)
     approved_id = str(uuid.uuid4())
-    d = dict(draft)
     conn.execute(
         "INSERT INTO proposal_section_drafts "
         "(id, opportunity_id, shall_statement_id, capability_ids, knowledge_block_ids, "
@@ -694,6 +749,11 @@ def approve_draft(draft_id, reviewer="human", notes=""):
                     "original_draft_id": draft_id,
                     "reviewer": reviewer,
                     "approved_at": _now(),
+                    **(
+                        {"placeholder_guard_override": placeholder_tokens}
+                        if placeholder_tokens
+                        else {}
+                    ),
                 }
             ),
         ),
@@ -728,6 +788,11 @@ def main():
     parser.add_argument("--reviewer", default="human", help="Reviewer name")
     parser.add_argument("--notes", default="", help="Reviewer notes")
     parser.add_argument("--status", help="Filter by draft status")
+    parser.add_argument(
+        "--force-placeholders",
+        action="store_true",
+        help="Approve despite unresolved [PLACEHOLDER] tokens (audited override)",
+    )
     parser.add_argument("--json", action="store_true", help="JSON output")
 
     args = parser.parse_args()
@@ -753,7 +818,12 @@ def main():
         if not args.draft_id:
             print("Error: --draft-id required", file=sys.stderr)
             sys.exit(1)
-        result = approve_draft(args.draft_id, reviewer=args.reviewer, notes=args.notes)
+        result = approve_draft(
+            args.draft_id,
+            reviewer=args.reviewer,
+            notes=args.notes,
+            force_placeholders=args.force_placeholders,
+        )
 
     print(json.dumps(result, indent=2, default=str))
 

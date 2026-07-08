@@ -33,7 +33,10 @@ DEFAULT_POLL_INTERVAL_MS = 3000
 
 
 def _get_db():
-    conn = get_connection(db_path=str(DB_PATH))
+    # No explicit db_path: let storage resolve backend + ICDEV_DB_PATH env
+    # override. Hardcoding BASE_DIR/data/icdev.db broke worktree/verify runs
+    # by silently creating an empty SQLite DB (prop-vv-02).
+    conn = get_connection()
     return conn
 
 

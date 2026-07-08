@@ -465,8 +465,25 @@ def generate_document(
             except Exception as exc:
                 logger.warning("doc_generator: verifier error: %s", exc)
 
+        # Deterministic placeholder check — unresolved [BRACKETED] tokens
+        # force a HITL flag regardless of verifier confidence.
+        placeholder_tokens: list = []
+        try:
+            from tools.quality.content_grounding import find_placeholders
+            placeholder_tokens = find_placeholders(raw_text)
+        except Exception:
+            pass
+
         # Apply confidence threshold gate
         if not abstained:
+            if placeholder_tokens and not low_confidence:
+                low_confidence = True
+                hitl_note = (
+                    f"⚠ Unresolved placeholders {', '.join(placeholder_tokens[:6])} — "
+                    f"resolve before publishing."
+                )
+                flagged_headings.append(heading)
+                raw_text = f"{raw_text}\n\n> {hitl_note}"
             if confidence >= 0.7:
                 pass  # include normally
             elif confidence >= 0.4:
@@ -475,7 +492,8 @@ def generate_document(
                     f"⚠ Confidence {confidence:.0%} — below 0.7 threshold; "
                     f"verify against source documents before publishing."
                 )
-                flagged_headings.append(heading)
+                if heading not in flagged_headings:
+                    flagged_headings.append(heading)
                 raw_text = f"{raw_text}\n\n> {hitl_note}"
             else:
                 # Very low confidence — exclude (abstain)
