@@ -1376,6 +1376,24 @@ components:
     - govcon.awards
     - govcon.blackhat
     - govcon.competitors
+    - govcon.requirements
+- key: proposals
+  kind: feature
+  display_name: Proposals
+  description: 'Proposal writing lifecycle: opportunities, volumes, sections, compliance matrix, color-team reviews. Shares GovCon''s enablement flag (routes registered together in _register_govcon_pages).'
+  env_flag: ICDEV_GOVCON_ENABLED
+  default_enabled: false
+  url_prefix: /proposals
+  min_il: IL4
+  default_roles: []
+  nav: {}
+  iqe:
+    adapter_module: tools.iqe.adapters.proposals
+    collections:
+    - proposals.opportunities
+    - proposals.sections
+    - proposals.compliance
+    - proposals.reviews
 - key: finetune
   kind: feature
   display_name: Fine-Tuning Pipeline

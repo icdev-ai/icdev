@@ -24,6 +24,7 @@ Usage examples:
 
 import argparse
 import json
+import secrets
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -48,6 +49,39 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _record_manual_transition(conn, task_id: str, from_status, to_status: str) -> None:
+    """Append a 'manual' row to kanban_status_transitions (best-effort).
+
+    The scheduler's stale-reaper (tools/genesis/reflexes/kanban.py::
+    _reap_stale_in_progress) fast-reaps any in_progress task after just
+    KANBAN_SILENT_DISPATCH_THRESHOLD_SECONDS (default 60s) if its
+    .tmp/kanban/<id>.log is empty and it isn't tracked in the scheduler's
+    own _running dict — a signal meant to catch a scheduler-dispatched
+    subprocess that died before writing any output. This CLI never spawns
+    a subprocess or writes that log file, so without this record the
+    reaper cannot distinguish "scheduler dispatch died silently" from "a
+    human/external session is legitimately working this task out-of-band"
+    and reaps it back to backlog within a minute regardless of how long
+    the real work actually takes. Recording actor='manual' here lets the
+    reaper apply its normal (much longer) timeout instead. Never raises —
+    audit-log failure (e.g. migration 025 not yet run) must not block the
+    primary status update.
+    """
+    try:
+        conn.execute(
+            "INSERT INTO kanban_status_transitions "
+            "(id, task_id, from_status, to_status, actor, reason, recorded_at) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            (
+                "kst-" + secrets.token_hex(6),
+                task_id, from_status, to_status, "manual",
+                "tools/kanban/cli.py --set-status", _now(),
+            ),
+        )
+    except Exception:
+        pass
+
+
 def cmd_set_status(task_ids: list, status: str, json_out: bool) -> int:
     if status not in VALID_STATUSES:
         print(
@@ -60,6 +94,11 @@ def cmd_set_status(task_ids: list, status: str, json_out: bool) -> int:
     results = []
     with get_connection() as conn:
         for tid in task_ids:
+            prior_row = conn.execute(
+                "SELECT status FROM kanban_tasks WHERE id = %s", (tid,)
+            ).fetchone()
+            prior_status = dict(prior_row)["status"] if prior_row else None
+
             if status == "done":
                 conn.execute(
                     "UPDATE kanban_tasks SET status = %s, updated_at = %s, completed_at = %s WHERE id = %s",
@@ -70,6 +109,8 @@ def cmd_set_status(task_ids: list, status: str, json_out: bool) -> int:
                     "UPDATE kanban_tasks SET status = %s, updated_at = %s WHERE id = %s",
                     (status, now, tid),
                 )
+            if prior_row:
+                _record_manual_transition(conn, tid, prior_status, status)
             row = conn.execute(
                 "SELECT id, title, status FROM kanban_tasks WHERE id = %s", (tid,)
             ).fetchone()

@@ -3410,8 +3410,17 @@ CREATE TABLE IF NOT EXISTS dashboard_users (
     id TEXT PRIMARY KEY,
     email TEXT UNIQUE NOT NULL,
     display_name TEXT NOT NULL,
+    -- Keep in sync with tools/dashboard/auth.py::VALID_DASHBOARD_ROLES.
+    -- bd/capture_mgr/contract_mgr/reviewer (prop-fix-08, RBAC_MATRIX) and
+    -- migration_engineer/component_admin/auditor/ciso (migration 139,
+    -- tools/govlift/rbac.py::GOVLIFT_ROLES) were both added to their
+    -- respective Python role lists but never reached this CHECK constraint
+    -- until now -- those roles could never actually be assigned to a user
+    -- (dashboard-users-role-check-constraint).
     role TEXT NOT NULL DEFAULT 'developer'
-        CHECK(role IN ('admin', 'pm', 'developer', 'isso', 'co', 'cor')),
+        CHECK(role IN ('admin', 'pm', 'developer', 'isso', 'co', 'cor',
+                        'migration_engineer', 'component_admin', 'auditor', 'ciso',
+                        'bd', 'capture_mgr', 'contract_mgr', 'reviewer')),
     status TEXT NOT NULL DEFAULT 'active'
         CHECK(status IN ('active', 'suspended')),
     created_by TEXT,

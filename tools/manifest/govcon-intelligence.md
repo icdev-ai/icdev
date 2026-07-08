@@ -5,7 +5,7 @@
 ## GovCon Intelligence (Phase 59)
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
-| SAM.gov Scanner | tools/govcon/sam_scanner.py | Poll SAM.gov Opportunities API v2. Extracts opportunities by NAICS, notice type. Stores in sam_gov_opportunities. Auto-backfills full descriptions. | --scan, --backfill, --naics, --list-cached, --json | Opportunity JSON |
+| SAM.gov Scanner | tools/govcon/sam_scanner.py | Poll SAM.gov Opportunities API v2. Extracts opportunities by NAICS, notice type. Stores in sam_gov_opportunities. Auto-backfills full descriptions. `list_forecast_notices()` (prop-cap-14) reads cached presolicitation ('p') notices as the BD-view forecast feed — SAM.gov has no distinct "Forecast" notice type. | --scan, --backfill, --naics, --list-cached, --json | Opportunity JSON |
 | SAM.gov Quota Tracker | tools/govcon/quota_tracker.py | Persistent daily API call counter for SAM.gov. Proactive quota check before each request, 429 response parsing, audit trail. | --status, --check, --reset, --json | Quota status JSON |
 | Requirement Extractor | tools/govcon/requirement_extractor.py | Extract shall/must/will statements from RFP descriptions. Domain-classify (9 domains). Cluster by keyword fingerprint (D364). | --extract-all, --patterns, --domain, --json | Requirements + patterns JSON |
 | Capability Mapper | tools/govcon/capability_mapper.py | Map requirement patterns to ICDEV™ capability catalog. Compute coverage scores (L/M/N). | --map-all, --coverage, --gaps, --json | Compliance matrix JSON |
@@ -18,6 +18,7 @@
 | Question Exporter | tools/govcon/question_exporter.py | Export questions to formatted HTML for government Q&A submission (D-QTG-4). CUI banner, print-friendly. | --export, --opp-id, --status, --output, --json | HTML document |
 | Award Tracker | tools/govcon/award_tracker.py | Poll SAM.gov for award notices. Extract vendor, value, NAICS. Cross-ref with creative_competitors. | --scan, --list, --vendor, --json | Award data JSON |
 | Competitor Profiler | tools/govcon/competitor_profiler.py | Aggregate competitor intelligence: total awards, contract value, agencies/NAICS diversity, leaderboard. | --profile, --leaderboard, --compare, --vendor, --json | Competitor profile JSON |
+| CRM Engagement Heat | tools/govcon/crm_heat.py | Per-agency CRM relationship warmth for the GovCon BD pipeline view (prop-cap-14). Joins pg_crm_accounts (by agency) to each account's most recent pg_crm_engagement_scores row; aggregates to level (cold/warm/hot), score, interaction count, last interaction. | --agencies, --json | Engagement heat by agency JSON |
 | GovCon Engine | tools/govcon/govcon_engine.py | Pipeline orchestrator: DISCOVER → EXTRACT → MAP → DRAFT. Daemon mode with quiet hours. Status and reporting. | --run, --stage, --status, --pipeline-report, --daemon, --json | Pipeline results JSON |
 | GovCon API | tools/dashboard/api/govcon.py | Flask Blueprint with 20+ REST endpoints for GovCon Intelligence. Bridges govcon tools into proposal lifecycle. | (REST API) | JSON responses |
 | Contract Manager | tools/govcon/contract_manager.py | CRUD for CPMP contracts, CLINs, WBS, deliverables. State machine transition enforcement. Status history tracking. | --create-contract, --list-contracts, --create-deliverable, --transition, --json | Contract/CLIN/WBS/deliverable JSON |

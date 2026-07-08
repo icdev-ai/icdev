@@ -99,6 +99,11 @@ def app(tmp_path):
 
     with patch("tools.dashboard.api.proposals._get_db", _get_db):
         from tools.dashboard.api.proposals import proposals_api
+        @flask_app.before_request
+        def _inject_fake_auth_0():
+            from flask import g
+            g.current_user = {"username": "test_user", "role": "admin", "email": "test@test.mil", "classification": "CUI"}
+
         flask_app.register_blueprint(proposals_api, url_prefix="/api/proposals")
         yield flask_app
 
