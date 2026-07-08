@@ -108,6 +108,34 @@
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
+  // ── Research warnings (standards-reference validation etc.) ──────────────
+  var _researchWarnings = [];
+
+  function _warningsHtml() {
+    if (!_researchWarnings.length) return '';
+    var html = '<div style="background:#2e1a05;border-left:3px solid #fbbf24;border-radius:0 4px 4px 0;padding:7px 9px;margin-bottom:10px;font-size:11px;">' +
+      '<div style="color:#fbbf24;font-weight:600;margin-bottom:4px;">⚠ Research warnings (' + _researchWarnings.length + ')</div>';
+    _researchWarnings.forEach(function (w) {
+      html += '<div style="color:#b8d0e8;margin-bottom:3px;">• ' + _esc(w) + '</div>';
+    });
+    html += '</div>';
+    return html;
+  }
+
+  function _renderWarnings() {
+    var el = _sidebar();
+    if (!el) return;
+    var box = el.querySelector('.wg-sb-warnings');
+    if (!box) {
+      box = document.createElement('div');
+      box.className = 'wg-sb-warnings';
+      var body = el.querySelector('.wg-sb-body');
+      if (body && body.parentNode) body.parentNode.insertBefore(box, body);
+      else el.appendChild(box);
+    }
+    box.innerHTML = _warningsHtml();
+  }
+
   // ── Analysis call ─────────────────────────────────────────────────────────
   function _analyze() {
     var text = _activeTextarea ? _activeTextarea.value : '';
@@ -213,6 +241,13 @@
       _mode = mode;
       _lastText = '';
       _analyze();
+    },
+
+    // Surface ResearchResult.warnings (e.g. standards-reference validation)
+    // in the sidebar, above WriteGuard analysis findings.
+    showWarnings: function (warnings) {
+      _researchWarnings = Array.isArray(warnings) ? warnings : [];
+      _renderWarnings();
     }
   };
 

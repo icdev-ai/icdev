@@ -377,6 +377,9 @@ function runResearch(sectionId) {
     }
     if (actionsEl && data.draft_content) actionsEl.style.display = 'block';
     if (airgapEl) airgapEl.style.display = data.is_airgap ? 'inline-block' : 'none';
+    if (window.DICTechWriterSidebar && DICTechWriterSidebar.showWarnings) {
+      DICTechWriterSidebar.showWarnings(data.warnings || []);
+    }
     // Render sources
     if (sourcesBody) {
       var parts = [];
