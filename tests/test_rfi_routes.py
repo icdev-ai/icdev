@@ -321,6 +321,38 @@ class TestAcceptAll:
         assert r.get_json()["accepted"] == 0
 
 
+class TestPlaceholderGate:
+    def test_export_blocked_on_unresolved_placeholders(self, client):
+        sid = _seed_session(client._db)
+        _seed_section(client._db, sid, status="accepted", content="Our UEI is [UEI_NUMBER].")
+        r = client.post(f"/api/rfi/{sid}/export/md")
+        assert r.status_code == 409
+        body = r.get_json()
+        assert body["gate"] == "placeholder_guard"
+        assert body["findings"][0]["placeholders"] == ["[UEI_NUMBER]"]
+
+    def test_export_force_bypasses_gate(self, client):
+        sid = _seed_session(client._db)
+        _seed_section(client._db, sid, status="accepted", content="Our UEI is [UEI_NUMBER].")
+        r = client.post(f"/api/rfi/{sid}/export/md", json={"force_placeholders": True})
+        assert r.status_code != 409
+
+    def test_clean_content_exports(self, client):
+        sid = _seed_session(client._db)
+        _seed_section(client._db, sid, status="accepted", content="Our UEI is ABC123DEF456.")
+        r = client.post(f"/api/rfi/{sid}/export/md")
+        assert r.status_code != 409
+
+    def test_accept_all_reports_placeholder_warnings(self, client):
+        sid = _seed_session(client._db)
+        _seed_section(client._db, sid, status="ai_draft_ready", content="CAGE [CAGE_CODE] pending.")
+        r = client.post(f"/api/rfi/{sid}/accept-all")
+        assert r.status_code == 200
+        body = r.get_json()
+        assert body["accepted"] == 1
+        assert body["placeholder_warnings"][0]["placeholders"] == ["[CAGE_CODE]"]
+
+
 class TestSave:
     def test_save_section_content(self, client):
         sid = _seed_session(client._db)

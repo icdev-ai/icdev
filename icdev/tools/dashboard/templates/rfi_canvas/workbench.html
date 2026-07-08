@@ -874,6 +874,10 @@ function applyHitl(action) {
     const labels = {approve:'✅ Approved', reject:'❌ Rejected', accept:'🏁 Accepted as final'};
     msg.textContent = labels[action] || 'Done';
     msg.style.color = action === 'reject' ? '#f87171' : '#4ade80';
+    if ((d.section.placeholder_warnings || []).length) {
+      msg.textContent += ' — ⚠ unresolved: ' + d.section.placeholder_warnings.join(', ');
+      msg.style.color = '#fbbf24';
+    }
     currentSection = d.section;
     const badge = document.getElementById('editor-status-badge');
     badge.textContent = d.section.status.replace(/_/g,' ');
@@ -928,14 +932,24 @@ function updateProgress() {
   document.getElementById('progress-label').textContent = approved + '/' + items.length + ' accepted';
 }
 
-function doExport(fmt) {
+function doExport(fmt, forcePlaceholders) {
   const btn = document.getElementById('export-docx-btn');
   const spinner = document.getElementById('export-spinner');
   if (fmt === 'docx') { btn.disabled = true; spinner.style.display = 'inline-block'; }
-  fetch(`/api/rfi/${SESSION_ID}/export/${fmt}`, {method:'POST'})
+  fetch(`/api/rfi/${SESSION_ID}/export/${fmt}`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(forcePlaceholders ? {force_placeholders: true} : {})
+  })
     .then(r => r.json())
     .then(d => {
       btn.disabled = false; spinner.style.display = 'none';
+      if (d.gate === 'placeholder_guard') {
+        const detail = (d.findings || []).map(f => `${f.item_number}: ${f.placeholders.join(', ')}`).join('\n');
+        if (confirm('Unresolved placeholders remain:\n\n' + detail + '\n\nExport anyway?')) {
+          doExport(fmt, true);
+        }
+        return;
+      }
       if (d.error) { alert('Export error: ' + d.error); return; }
       window.location.href = `/api/rfi/${SESSION_ID}/download/${fmt}`;
     })
@@ -1533,6 +1547,11 @@ function acceptAllDrafted() {
     .then(d => {
       btn.disabled = false;
       if (d.error) { alert('Accept-all error: ' + d.error); return; }
+      if ((d.placeholder_warnings || []).length) {
+        alert('Accepted, but unresolved placeholders remain:\n\n'
+          + d.placeholder_warnings.map(w => `${w.item_number}: ${w.placeholders.join(', ')}`).join('\n')
+          + '\n\nResolve them before export — the export gate will flag these.');
+      }
       _refreshSidebarStatuses();
       if (currentSectionId) loadSection(currentSectionId);
     })
