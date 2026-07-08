@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 import time
 import uuid
@@ -30,16 +31,18 @@ _EXPORT_DIR = _ROOT / ".tmp" / "rfi_exports"
 
 # ── Default sections when parser produces no questionnaire parts ──────────────
 
-_DEFAULT_SECTIONS = [
+_QUESTIONNAIRE_DEFAULT_SECTIONS = [
     ("part1", "1.1", "Entity Data",             "Part 1", "Provide company name, contact info, CAGE code, and SAM.gov UEI."),
     ("part1", "1.2", "Business Size",           "Part 1", "Identify business size and socioeconomic status for the primary NAICS code."),
     ("part1", "1.3", "NDC Status",              "Part 1", "Do you qualify as a Nontraditional Defense Contractor per 10 U.S.C. 3014?"),
     ("part1", "1.4", "Foreign Interest (FOCI)", "Part 1", "Is the entity or any parent company foreign-owned, controlled, or influenced?"),
     ("part1", "1.5", "Security Clearances",     "Part 1", "Do personnel hold active clearances? Specify clearance levels available."),
     ("part2", "2.1", "Current TRL",             "Part 2", "Identify the Technology Readiness Level of your proposed solution."),
-    ("part2", "2.2", "Statefulness & Cold-Start","Part 2", "Is the orchestration stateless or stateful? How is state synchronized? How does the orchestrator handle cold-start of new processing resources?"),
+    ("part2", "2.2", "Statefulness",            "Part 2", "Is the orchestration stateless or stateful? How is state synchronized across a distributed architecture without introducing latency?"),
+    ("part2", "2.3", "Cold-Start/Scaling",      "Part 2", "How does the orchestrator handle cold-start of new processing resources? Can it dynamically trigger spin-up of new containerized processing nodes?"),
     ("part2", "2.4", "Technical Approach",      "Part 2", "Describe your approach to meeting the objectives. What modifications would be required?"),
-    ("part2", "2.5", "Commerciality & Cybersecurity","Part 2", "Is the solution a Commercial Product per FAR 2.101? Describe cybersecurity posture and supply chain risk."),
+    ("part2", "2.5", "Commerciality",           "Part 2", "Is the solution a Commercial Product per FAR 2.101? If not, what percentage is developmental?"),
+    ("part2", "2.6", "Cybersecurity & Supply Chain", "Part 2", "Describe cybersecurity posture (NIST SP 800-171, CMMC level) and NDAA Section 889 supply chain risk."),
     ("part2", "2.7", "Mission-Specific Questions","Part 2", "Address latency at scale, multi-constraint logic, dynamic priority injection, failure recovery, and cost tracking."),
     ("part3", "3.1", "Timeline",                "Part 3", "Estimated time from award to delivery of first working prototype."),
     ("part3", "3.2", "Key Risk Areas",          "Part 3", "Identify the top two technical or schedule risks."),
@@ -48,9 +51,24 @@ _DEFAULT_SECTIONS = [
     ("part4", "4.2", "ROM Cost Estimate",       "Part 4", "Rough Order of Magnitude cost estimate. Break down by hardware, software, labor, ODC."),
     ("part4", "4.3", "Teaming / Cost Share",    "Part 4", "NDC teaming plan or 1/3 cost-share per 10 U.S.C. 4022."),
     ("part5", "5.1", "Industry Insights",       "Part 5", "What did the Government miss? What technical or programmatic considerations should be added?"),
+]
+
+# Part 6 — pre-submission questions TO the Government (RFI Q&A window).
+# Not part of the exported response document; exported separately for
+# ARC/email submission before the questions deadline.
+_PART6_SECTIONS = [
+    ("part6", "6.1", "Gap & Omission Questions",     "Part 6", "Questions surfacing what the RFI leaves out — intentionally or unintentionally (data characteristics, integration environment, accreditation path, GFE/GFI, evaluation criteria, follow-on vehicle)."),
+    ("part6", "6.2", "Intent & Goal Clarification",  "Part 6", "Questions that clarify the customer's underlying intention and mission goals, so we can determine whether and how our solution fits."),
+    ("part6", "6.3", "Strategic Leverage Questions", "Part 6", "Questions whose answers sharpen our capability roadmap and competitive positioning for the anticipated solicitation."),
+    ("part6", "6.4", "RFI Clarifications",           "Part 6", "Questions resolving ambiguities or conflicts within the RFI text itself (format, scope wording, classification handling, submission mechanics)."),
+]
+
+_APPENDIX_SECTIONS = [
     ("appendix", "A", "Architecture Overview",  "Appendix", "Technical architecture — Intelligence Layer, Execution Layer, and cloud-native deployment."),
     ("appendix", "B", "Adaptive Learning Loop", "Appendix", "Learning loop — ECHO, SOUL, TRUST, SELA components and feedback latency benchmarks."),
 ]
+
+_DEFAULT_SECTIONS = _QUESTIONNAIRE_DEFAULT_SECTIONS + _PART6_SECTIONS + _APPENDIX_SECTIONS
 
 # ── Section generation prompts ────────────────────────────────────────────────
 
@@ -61,9 +79,11 @@ _SECTION_PROMPTS = {
     "1.4": "Generate Part 1.4 FOCI disclosure for {entity_name}. Confirm no foreign ownership, control, or influence.",
     "1.5": "Generate Part 1.5 security clearances for {entity_name}. Clearances available: {clearances}. Include SCIF capability statement.",
     "2.1": "Generate Part 2.1 TRL assessment for {entity_name} addressing: {rfi_title}. Use Hybrid TRL 6: core components TRL 8 (commercially deployed), NSA integration layer TRL 5-6. Include a table mapping component to TRL with evidence.",
-    "2.2": "Generate Part 2.2/2.3 statefulness and cold-start response for {entity_name}. Explain stateful-light architecture: routing decisions are stateless per object; resource-availability sidecar maintains eventually-consistent view via gossip protocol (100ms intervals); policy store is GitOps hot-reload (atomic swap, zero restart). Cold-start: KEDA event-driven autoscaling + pre-warm pools + graceful degradation to best-effort with provenance flag. {hitl_context}",
+    "2.2": "Generate Part 2.2 statefulness response for {entity_name}. Explain stateful-light architecture: routing decisions are stateless per object; resource-availability sidecar maintains eventually-consistent view via gossip protocol (100ms intervals); policy store is GitOps hot-reload (atomic swap, zero restart); no synchronization latency on the per-object decision path. {hitl_context}",
+    "2.3": "Generate Part 2.3 cold-start and scaling response for {entity_name}. Cold-start: KEDA event-driven autoscaling triggered by orchestrator surge detection + pre-warm pools for premium tiers + graceful degradation to best-effort with provenance flag while new containerized processing nodes spin up. Include the surge-detection → spin-up → warm-ready flow. {hitl_context}",
     "2.4": "Generate Part 2.4 technical approach for {entity_name}'s response to RFI {rfi_number}. Describe the three-tier governed orchestration: Rule Engine (<100µs, 90% of volume) → CoD (<15ms, 8%) → CoT (<2s, 2%). Map to objectives: {objectives_list}. Include an architecture diagram as a Mermaid flowchart inside a ```mermaid fenced code block (graph TD or flowchart TD syntax) — do not use ASCII art. Emphasize intelligence layer (async, policy timescale) vs execution layer (per-object timescale). {hitl_context}",
-    "2.5": "Generate Part 2.5/2.6 commerciality and cybersecurity for {entity_name}. Confirm commercial product per FAR 2.101, ~70% commercial/30% developmental. Cybersecurity table: CMMC Level 2, NIST SP 800-171, CycloneDX SBOM, container hardening, NDAA §889 supply chain compliance. {hitl_context}",
+    "2.5": "Generate Part 2.5 commerciality response for {entity_name}. Confirm commercial product per FAR 2.101, ~70% commercial/30% developmental; identify which components are commercially deployed today versus developmental for this mission. {hitl_context}",
+    "2.6": "Generate Part 2.6 cybersecurity and supply chain response for {entity_name}. Cybersecurity table: CMMC Level 2, NIST SP 800-171, CycloneDX SBOM, container hardening, secure SDLC. State NDAA Section 889 supply chain compliance and any known supply chain risks (none if applicable). {hitl_context}",
     "2.7": "Generate Part 2.7 mission-specific Q&A for {entity_name}. Cover: (1) Latency benchmarks (Python prototype ~2ms, production C/Rust target <50µs, O(log N) scaling); (2) Multi-constraint logic (secondary pool → queue → CoD degradation → guaranteed retry); (3) Dynamic priority injection (REST API + YAML hot-reload, <1s propagation, atomic rule-tree swap); (4) Failure recovery (circuit breaker, dead-letter queue, W3C PROV-AGENT provenance); (5) Cost tracking (per-routing-decision cost ledger, cost_usd + duration_ms per step). {hitl_context}",
     "3.1": "Generate Part 3.1 project timeline for {entity_name}: M1-2 environment setup + test data integration; M3 core prototype (three-tier stack + HITL + XAI dashboard); M4 integration testing (latency benchmarks, priority injection, failure recovery); M5 adaptive learning (NOVA feedback loop + Bayesian tuning); M6 prototype demo. Present as a table. {hitl_context}",
     "3.2": "Generate Part 3.2 key risks for {entity_name}. Risk 1: Latency validation in customer environment (mitigation: sidecar co-located with processing resources, validate by Month 2). Risk 2: Mission metrics API dependency (mitigation: YAML static rules as fallback; live dynamic injection as Phase 2). {hitl_context}",
@@ -72,6 +92,10 @@ _SECTION_PROMPTS = {
     "4.2": "Generate Part 4.2 ROM cost estimate for {entity_name}. Table: Labor ~$1.2M (6 engineers x 6 months, blended $200K/yr), Software/Cloud ~$75K, Hardware (GPU dev cluster) ~$150K, ODC ~$50K, ROM Total ~$1.475M (±30%). Annual O&M: ~$400K/year. Annual licensing: ~$250K/year. {hitl_context}",
     "4.3": "Generate Part 4.3 teaming/cost share for {entity_name}. {ndc_status}. Option A — NDC Teaming (Preferred): identify NDC partner at solicitation stage, >1/3 technical effort on novel AI/ML core components. Option B — IR&D Cost Share: ~$490K against $1.475M ROM from existing IR&D commitments per 10 U.S.C. 4022. {hitl_context}",
     "5.1": "Generate Part 5 industry insights for {entity_name}'s response to {rfi_title}. Provide 4 recommendations the Government missed: (1) Data provenance/routing lineage — recommend adding as a required objective; (2) Federated learning for sensitive routing feedback — modify Objective F; (3) Multi-classification routing scope — clarify whether orchestrator must span ILs; (4) Human-machine teaming escalation — recommend adding analyst override objective. Each recommendation should include specific proposed solicitation language. {hitl_context}",
+    "6.1": "You are preparing pre-submission questions to the Contracting Officer for {rfi_title} ({rfi_number}), due before the Q&A deadline. Identify what the RFI leaves out — intentionally or unintentionally. Consider: unstated data characteristics (volume mix, formats, classification levels), the existing integration environment and its constraints, security accreditation path (ATO/cATO expectations), government-furnished equipment/information/APIs, how responses will be evaluated, and the anticipated follow-on acquisition vehicle. RFI objectives for context: {objectives_list}. Generate 4-6 numbered questions. For each: one sentence of context citing the specific RFI section it concerns, then a professionally worded question. All questions must be unclassified and safe for the Government's consolidated public Q&A publication. {hitl_context}",
+    "6.2": "You are preparing pre-submission questions to the Contracting Officer for {rfi_title} ({rfi_number}). Generate questions that clarify the customer's underlying intention and mission goals so {entity_name} can determine whether {solution_name} can solution the need — and shape the response if so. Probe: what mission outcomes define success for the orchestration layer; how 'premium' vs 'best-effort' processing is decided today and who owns that policy; the real latency/throughput envelope versus aspirational figures; whether the Government intends to own the routing policy or expects vendor-managed learning; and where the boundary sits between this orchestration layer and the future internally-engineered architecture. RFI objectives: {objectives_list}. Generate 4-6 numbered questions, each with one sentence of context then the question. Unclassified, suitable for public Q&A. {hitl_context}",
+    "6.3": "You are preparing pre-submission questions to the Contracting Officer for {rfi_title} ({rfi_number}). Generate strategic-leverage questions for {entity_name}: questions whose ANSWERS improve our capability roadmap and competitive positioning regardless of whether this RFI leads to award. Probe: the expected prototype-to-production transition path under 10 U.S.C. 4022 (OT follow-on production potential); the Government's appetite for modular/severable components versus an integrated platform; which capability gaps the Government weights highest among objectives ({objectives_list}); teaming expectations and NDC participation preferences; and timeline to any anticipated solicitation. Generate 4-6 numbered questions with one sentence of context each. Flag any question we should submit as PROPRIETARY (individual response) rather than public — the Government asks that proprietary questions be minimal. {hitl_context}",
+    "6.4": "You are preparing pre-submission questions to the Contracting Officer for {rfi_title} ({rfi_number}). Generate questions that resolve ambiguities or conflicts within the RFI text itself. Consider: page-limit mechanics (what counts against the limit, appendix rules, cover page exclusions), whether graphics/tables count toward font requirements, the openness to alternative NAICS codes, how classified integration details will be handled with qualified respondents, ROM cost format expectations given commercial pricing models, and file naming/portal submission mechanics. Reference the section under question: {question_text}. Generate 3-5 numbered questions, each with one sentence of context citing the RFI section, then the question. Unclassified, suitable for public Q&A. {hitl_context}",
     "A": "Generate Appendix A architecture overview for {entity_name}'s FORGE framework. Intelligence Layer (policy timescale): NOVA learning, XAI engine (AgentSHAP + W3C PROV-AGENT), HITL override API, RTM traceability. Execution Layer (object timescale): Rule Engine (<50µs compiled), CoD engine (ThreadPoolExecutor, 3 debaters, <15ms), CoT engine (reason→critic→synthesize, async audit, <2s). For the AWS GovCloud/C2S deployment diagram, output EXACTLY this format and nothing else for the diagram (fill in real node labels, keep the fence markers verbatim, do not draw any box-and-line/ASCII art):\n```mermaid\nflowchart TD\n    A[Node] --> B[Node]\n```\n{hitl_context}",
     "B": "Generate Appendix B adaptive learning loop for {entity_name}'s NOVA system. ECHO: ingests mission outcome signals tagged to routing decisions, append-only feedback store, no sensitive content stored. SOUL: Bayesian policy update, hourly cadence, outputs candidate artifact (not direct deployment). TRUST: confidence scoring, KL-divergence limit, auto-deploy above threshold, HITL gate below threshold. SELA: 1-2% traffic probe to non-standard tiers, results feed ECHO. Learning cycle: 6-12 hours standard, <5 minutes emergency. {hitl_context}",
 }
@@ -128,12 +152,19 @@ def _seed_sections(session_id, parsed_data):
             key = (p.get("part", ""), p.get("item_number", ""))
             if key in seen:
                 continue
+            # Only questionnaire parts — headings from other RFI sections
+            # (submission instructions, Q&A) must not become response sections.
+            if not re.match(r"^Part\s+\d+$", p.get("part", ""), re.IGNORECASE):
+                continue
             seen.add(key)
             part_key = p.get("part", "unknown").lower().replace(" ", "")
             item = p.get("item_number", "?")
             title = p.get("topic", f"Section {item}")
             question = p.get("question", "")
             rows.append((part_key, item, title, p.get("part", ""), question))
+        # Part 6 (questions to the Government) and the technical appendix are
+        # workbench-native parts, always present regardless of parse results.
+        rows += [(s[0], s[1], s[2], s[3], s[4]) for s in _PART6_SECTIONS + _APPENDIX_SECTIONS]
     else:
         rows = [(s[0], s[1], s[2], s[3], s[4]) for s in _DEFAULT_SECTIONS]
 
@@ -716,7 +747,53 @@ def assemble_and_export(session_id, export_format="docx"):
     return str(_EXPORT_DIR / f"{base_name}.docx")
 
 
+def export_questions(session_id):
+    """Export Part 6 (questions to the Government) as a standalone markdown
+    file formatted for ARC/email submission during the RFI Q&A window."""
+    session = get_session(session_id)
+    if not session:
+        raise ValueError(f"Session {session_id} not found")
+
+    sections = [s for s in get_sections(session_id) if s.get("part") == "part6"]
+    if not sections:
+        raise ValueError("No Part 6 (Questions for the Government) sections in this session")
+
+    profile = _load_profile(session.get("profile_name", "own_company"))
+    parsed = session.get("parsed_data") or {}
+    submission = parsed.get("submission_requirements") or {}
+    entity = profile.get("entity_name", "Organization")
+    rfi_num = session.get("rfi_number", "RFI-UNKNOWN")
+    rfi_title = session.get("rfi_title", "")
+
+    lines = [
+        f"# Questions — {rfi_title} ({rfi_num})",
+        "",
+        f"**From:** {entity}",
+        f"**To:** {parsed.get('poc_name', '')} <{parsed.get('poc_email', '')}>".strip(),
+        f"**Subject:** RFI Question – {rfi_title} – {entity}",
+    ]
+    q_due = submission.get("questions_due_date") or parsed.get("questions_due_date")
+    if q_due:
+        lines.append(f"**Questions due:** {q_due}")
+    lines += ["", "---", ""]
+    for sec in sections:
+        content = sec.get("content") or sec.get("ai_draft")
+        if not content:
+            continue
+        lines += [f"## {sec['item_number']} {sec['title']}", "", content, ""]
+
+    _EXPORT_DIR.mkdir(parents=True, exist_ok=True)
+    entity_slug = entity.replace(" ", "_").replace(".", "")
+    path = _EXPORT_DIR / f"{entity_slug}_{rfi_num.replace('/', '-')}_Questions.md"
+    path.write_text("\n".join(lines), encoding="utf-8")
+    _record_export(session_id, "questions", str(path))
+    return str(path)
+
+
 def _build_markdown(session, sections, profile, parsed):
+    # Part 6 (questions to the Government) is submitted separately during the
+    # Q&A window — never part of the exported response document.
+    sections = [s for s in sections if s.get("part") != "part6"]
     entity = profile.get("entity_name", "Organization")
     rfi_num = session.get("rfi_number", "RFI-UNKNOWN")
     rfi_title = session.get("rfi_title", "AI/ML Orchestration")

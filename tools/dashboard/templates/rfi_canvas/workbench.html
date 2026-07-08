@@ -78,6 +78,8 @@
       onchange="saveDeadline(this.value)" onblur="document.getElementById('deadline-input').style.display='none'">
     <a href="/rfi/{{ session.id }}/preview" target="_blank"
       style="background:#0a1a30;color:#38bdf8;border:1px solid #0ea5e9;border-radius:4px;padding:5px 10px;font-size:11px;text-decoration:none;">👁 Preview</a>
+    <button onclick="doExport('questions')" title="Export Part 6 questions for ARC/email submission (separate from the response document)"
+      style="background:#1a1030;color:#c4b5fd;border:1px solid #6d28d9;border-radius:4px;padding:5px 10px;font-size:11px;cursor:pointer;">❓ Questions</button>
     <button onclick="doExport('md')"
       style="background:#0d1b2e;color:#94a3b8;border:1px solid #334155;border-radius:4px;padding:5px 10px;font-size:11px;cursor:pointer;">⬇ MD</button>
     <button onclick="doExport('docx')" id="export-docx-btn"
@@ -106,7 +108,7 @@
     </div>
     <div id="section-tree">
       {% set ns = namespace(cur_part='') %}
-      {% set part_labels = {'part1':'Part 1 — Admin','part2':'Part 2 — Technical','part3':'Part 3 — Schedule','part4':'Part 4 — Business','part5':'Part 5 — Insights','appendix':'Appendix'} %}
+      {% set part_labels = {'part1':'Part 1 — Admin','part2':'Part 2 — Technical','part3':'Part 3 — Schedule','part4':'Part 4 — Business','part5':'Part 5 — Insights','part6':'Part 6 — Questions to Gov','appendix':'Appendix'} %}
       {% for sec in sections %}
         {% if sec.part != ns.cur_part %}
           {% set ns.cur_part = sec.part %}
