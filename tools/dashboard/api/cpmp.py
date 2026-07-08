@@ -40,9 +40,18 @@ cpmp_api = Blueprint("cpmp_api", __name__, url_prefix="/api/cpmp")
 
 def _get_db():
     conn = get_connection(db_path=str(DB_PATH))
-    # Clear RLS context — cpmp tables use classification=CUI universally;
-    # complex JOIN queries break when RLS injects c.classification into subqueries.
-    conn.set_security_context(None)  # rls-bypass: cpmp tables use CUI universally; RLS JOIN injection breaks subqueries
+    # RLS-aware (prop-fix-12): in a request context _attach_flask_security_context()
+    # already wired g.security_context into the connection, so tenant_id +
+    # classification predicates inject automatically (migrations 245/246/247 added
+    # the columns to every cpmp_* table). The historical set_security_context(None)
+    # bypass here cited subquery/JOIN injection bugs that _find_outer_where /
+    # _depth0_skeleton have since fixed.
+    try:
+        from flask import has_request_context
+        if not has_request_context():
+            conn.set_security_context(None)  # rls-bypass: CLI / background tasks run without a user session; no tenant context available.
+    except Exception:
+        pass
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
