@@ -154,6 +154,11 @@ def client(db_path):
 
     app = Flask(__name__)
     app.config["TESTING"] = True
+    @app.before_request
+    def _inject_fake_auth_0():
+        from flask import g
+        g.current_user = {"username": "test_user", "role": "admin", "email": "test@test.mil", "classification": "CUI"}
+
     app.register_blueprint(cpmp_api)
 
     with patch("tools.dashboard.api.cpmp._get_db", side_effect=lambda: _open(db_path)):
