@@ -5657,7 +5657,7 @@ CREATE TABLE IF NOT EXISTS proposal_review_findings (
     finding_type TEXT NOT NULL CHECK(finding_type IN (
         'compliance_gap', 'content_weakness', 'competitive_risk',
         'formatting', 'pricing_concern', 'technical_error',
-        'missing_content', 'other')),
+        'missing_content', 'invalid_citation', 'other')),
     severity TEXT NOT NULL DEFAULT 'medium' CHECK(severity IN (
         'critical', 'major', 'minor', 'observation')),
     description TEXT NOT NULL,
