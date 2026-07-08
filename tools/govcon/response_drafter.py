@@ -520,6 +520,15 @@ def draft_response(shall_id):
     if not draft_text:
         draft_text, method = _template_draft(shall_text, capabilities, knowledge_blocks, domain)
 
+    # Deterministic anti-hallucination check: unresolved [PLACEHOLDER] tokens
+    # in the draft are recorded so reviewers/WriteGuard can flag them before
+    # the section is promoted.
+    try:
+        from tools.quality.content_grounding import find_placeholders
+        placeholder_tokens = find_placeholders(draft_text)
+    except Exception:
+        placeholder_tokens = []
+
     # Compute confidence
     best_coverage = capabilities[0]["score"] if capabilities else 0
     confidence = round(best_coverage * 0.7 + (0.3 if knowledge_blocks else 0), 2)
@@ -571,6 +580,7 @@ def draft_response(shall_id):
                     "capability_count": len(capabilities),
                     "kb_count": len(knowledge_blocks),
                     "best_coverage": best_coverage,
+                    **({"placeholder_tokens": placeholder_tokens} if placeholder_tokens else {}),
                     **({"specialist_consult": specialist_consult_result} if specialist_consult_result else {}),
                 }
             ),
@@ -590,6 +600,7 @@ def draft_response(shall_id):
         "capabilities_matched": len(capabilities),
         "kb_blocks_used": len(knowledge_blocks),
         "draft_length": len(draft_text),
+        "placeholder_tokens": placeholder_tokens,
     }
 
 

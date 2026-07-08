@@ -225,6 +225,19 @@ def research_and_draft(
     else:
         result.error = "LLM not available."
 
+    # Deterministic placeholder check — unresolved [BRACKETED] tokens surface
+    # as warnings the WriteGuard sidebar / editor can display.
+    if result.draft_content:
+        try:
+            from tools.quality.content_grounding import find_placeholders
+            tokens = find_placeholders(result.draft_content)
+            if tokens:
+                result.warnings.append(
+                    "Unresolved placeholders in draft: " + ", ".join(tokens[:8])
+                )
+        except Exception as exc:
+            logger.debug("placeholder check failed: %s", exc)
+
     return result
 
 

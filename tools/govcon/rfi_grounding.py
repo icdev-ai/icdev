@@ -20,27 +20,26 @@ All functions are pure/deterministic (regex + dict lookups, no LLM, no DB).
 from __future__ import annotations
 
 import re
+import sys
+from pathlib import Path
 
-# ── Placeholders ──────────────────────────────────────────────────────────────
+_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
 
-# [UPPERCASE_TOKEN] style placeholders: starts with an uppercase letter, then
-# uppercase letters/digits/space/underscore/dash/slash/&/#. Excludes markdown
-# links ("[Title](url)" — mixed case and followed by "(") and checkboxes.
-_PLACEHOLDER_RE = re.compile(r"\[([A-Z][A-Z0-9 _/&#.-]{1,40})\](?!\()")
-
-
-def find_placeholders(text: str) -> list[str]:
-    """Return sorted unique unresolved placeholder tokens like [UEI_NUMBER]."""
-    if not text:
-        return []
-    return sorted({f"[{m.group(1)}]" for m in _PLACEHOLDER_RE.finditer(text)})
-
+# Generic pieces live in the shared, surface-agnostic module; re-exported
+# here so existing rfi_workbench/test imports keep working.
+from tools.quality.content_grounding import (  # noqa: F401
+    check_numeric_claims,
+    find_placeholders,
+    placeholder_findings,
+    substitute_facts,
+)
 
 # ── Identity-fact substitution ────────────────────────────────────────────────
 
-def _fact_patterns(profile: dict, parsed: dict) -> list[tuple[re.Pattern, str]]:
+def _fact_patterns(profile: dict, parsed: dict) -> list[tuple[str, str]]:
     """Build (pattern, replacement) pairs for facts we know deterministically."""
-    contact_name = profile.get("contact_name") or ""
     pairs = [
         (r"\[(?:SAM[\s_.-]*)?(?:GOV[\s_.-]*)?UEI(?:[\s_-]*(?:NUMBER|NO|#))?\]",
          profile.get("sam_uei")),
@@ -53,42 +52,22 @@ def _fact_patterns(profile: dict, parsed: dict) -> list[tuple[re.Pattern, str]]:
         (r"\[(?:PHONE|TELEPHONE)(?:[\s_-]*(?:NUMBER|NO))?\]",
          profile.get("contact_phone")),
         (r"\[EMAIL(?:[\s_-]*ADDRESS)?\]", profile.get("contact_email")),
-        (r"\[(?:POC|CONTACT)(?:[\s_-]*NAME)?\]", contact_name),
-    ]
-    compiled = [
-        (re.compile(pat, re.IGNORECASE), str(val))
-        for pat, val in pairs
-        if val
+        (r"\[(?:POC|CONTACT)(?:[\s_-]*NAME)?\]", profile.get("contact_name")),
     ]
     # Mangled RFI numbers like "RFI-26-[TASK_ORDER]" — replace the whole run
     # with the real RFI number when we know it.
-    rfi_number = parsed.get("rfi_number")
-    if rfi_number:
-        compiled.append((
-            re.compile(r"RFI[-\s]?\d{2}[-\s]?\[[A-Z0-9 _-]{1,30}\]"),
-            str(rfi_number),
-        ))
-    return compiled
+    if parsed.get("rfi_number"):
+        pairs.append((r"RFI[-\s]?\d{2}[-\s]?\[[A-Z0-9 _-]{1,30}\]", parsed["rfi_number"]))
+    return [(p, str(v)) for p, v in pairs if v]
 
 
 def substitute_profile_facts(text: str, profile: dict, parsed: dict) -> tuple[str, list[dict]]:
     """Replace identity-fact placeholders with known values.
 
-    Returns (new_text, substitutions) where substitutions is a list of
-    {token, value, count}. Tokens without a known value are left untouched
-    for find_placeholders() / the export gate to flag.
+    Returns (new_text, substitutions). Tokens without a known value are left
+    untouched for find_placeholders() / the export gate to flag.
     """
-    if not text:
-        return text, []
-    substitutions = []
-    for pattern, value in _fact_patterns(profile or {}, parsed or {}):
-        new_text, count = pattern.subn(value, text)
-        if count:
-            substitutions.append({
-                "pattern": pattern.pattern, "value": value, "count": count,
-            })
-            text = new_text
-    return text, substitutions
+    return substitute_facts(text, _fact_patterns(profile or {}, parsed or {}))
 
 
 # ── Citation validation ───────────────────────────────────────────────────────
@@ -226,65 +205,3 @@ def build_ground_truth_block(parsed: dict) -> str:
         "or company profile."
     )
     return "\n".join(lines)
-
-
-# ── Cross-section numeric consistency ─────────────────────────────────────────
-
-_MONEY_RE = re.compile(
-    r"\$\s?([\d][\d,]*(?:\.\d+)?)\s*(M\b|K\b|million|thousand)?", re.IGNORECASE
-)
-_MONTHS_RE = re.compile(r"\b(\d{1,2})\s*(?:-|to\s+)?\s*months?\b", re.IGNORECASE)
-
-
-def _normalize_money(num: str, suffix: str | None) -> float:
-    val = float(num.replace(",", ""))
-    sfx = (suffix or "").lower()
-    if sfx in ("m", "million"):
-        val *= 1_000_000
-    elif sfx in ("k", "thousand"):
-        val *= 1_000
-    return val
-
-
-def check_numeric_claims(sections: list[dict]) -> list[dict]:
-    """Detect cross-section numeric conflicts in ROM totals and prototype
-    timeline months. Returns conflict dicts in the same shape as
-    check_cross_section_consistency()."""
-    rom_totals: dict[str, set[float]] = {}
-    proto_months: dict[str, set[int]] = {}
-
-    for s in sections:
-        text = s.get("content") or s.get("ai_draft") or ""
-        item = s.get("item_number", "?")
-        if not text:
-            continue
-        for m in _MONEY_RE.finditer(text):
-            ctx = text[max(0, m.start() - 60):m.start()].lower()
-            if "rom total" in ctx or "total rom" in ctx or ("total" in ctx and "rom" in ctx):
-                rom_totals.setdefault(item, set()).add(
-                    _normalize_money(m.group(1), m.group(2)))
-        for m in _MONTHS_RE.finditer(text):
-            ctx = text[max(0, m.start() - 80):min(len(text), m.end() + 40)].lower()
-            if "prototype" in ctx and ("award" in ctx or "deliver" in ctx or "working" in ctx):
-                proto_months.setdefault(item, set()).add(int(m.group(1)))
-
-    conflicts = []
-    all_roms = {v for vals in rom_totals.values() for v in vals}
-    if len(all_roms) > 1:
-        conflicts.append({
-            "type": "rom_total_mismatch",
-            "sections": sorted(rom_totals.keys()),
-            "message": "ROM total differs across sections: "
-                       + ", ".join(f"${v:,.0f}" for v in sorted(all_roms)),
-            "severity": "error",
-        })
-    all_months = {v for vals in proto_months.values() for v in vals}
-    if len(all_months) > 1:
-        conflicts.append({
-            "type": "prototype_timeline_mismatch",
-            "sections": sorted(proto_months.keys()),
-            "message": "Prototype timeline differs across sections: "
-                       + ", ".join(f"{v} months" for v in sorted(all_months)),
-            "severity": "warning",
-        })
-    return conflicts
