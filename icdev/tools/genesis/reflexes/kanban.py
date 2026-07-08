@@ -1339,6 +1339,56 @@ def _post_merge_route_smoke(task_id: str, commit_summary: str) -> None:
         logger.warning("Failed to create smoke-fail bug task for %s: %s", task_id, exc)
 
 
+def _ensure_pr_base(pr_ref: str, task_id: str) -> str | None:
+    """Verify a PR targets the repo default branch; retarget it if not.
+
+    Incident 2026-07-08: PR #114 (ground-dic-05) was opened with base
+    feat/rfi-six-parts instead of main and auto-merged there by
+    pr_watcher, stranding the change off-main. ``pr_ref`` may be a PR
+    URL, number, or head branch name — the branch form also catches PRs
+    the task agent opened itself with an explicit wrong --base.
+
+    Returns the PR URL if one exists for ``pr_ref``, else None.
+    """
+    import json as _json
+    import subprocess as _sp
+
+    default_branch = _default_branch()
+    try:
+        view = _sp.run(
+            ["gh", "pr", "view", pr_ref, "--json", "baseRefName,url"],
+            cwd=str(BASE_DIR), capture_output=True, text=True, timeout=30,
+        )
+        if view.returncode != 0:
+            logger.warning(
+                "PR flow: base check failed for %s (%s): %s",
+                task_id, pr_ref, view.stderr.strip(),
+            )
+            return None
+        data = _json.loads(view.stdout or "{}")
+        pr_url = (data.get("url") or "").strip() or None
+        base = (data.get("baseRefName") or "").strip()
+        if not base or base == default_branch:
+            return pr_url
+        logger.warning(
+            "PR flow: PR %s for task %s targets '%s' instead of default "
+            "'%s' — retargeting", pr_url or pr_ref, task_id, base, default_branch,
+        )
+        edit = _sp.run(
+            ["gh", "pr", "edit", pr_ref, "--base", default_branch],
+            cwd=str(BASE_DIR), capture_output=True, text=True, timeout=30,
+        )
+        if edit.returncode != 0:
+            logger.warning(
+                "PR flow: retarget to %s failed for %s: %s",
+                default_branch, task_id, edit.stderr.strip(),
+            )
+        return pr_url
+    except Exception as exc:
+        logger.warning("PR flow: base verification errored for %s: %s", task_id, exc)
+        return None
+
+
 def _push_branch_and_open_pr(task_id: str, commit_summary: str) -> str | None:
     """Push the kanban branch to origin and open a GitHub PR.
 
@@ -1398,9 +1448,17 @@ def _push_branch_and_open_pr(task_id: str, commit_summary: str) -> str | None:
     )
     if create.returncode != 0:
         logger.warning("PR flow: gh pr create failed for %s: %s", task_id, create.stderr.strip())
-        return None
+        # The task agent may already have opened a PR for this branch
+        # (possibly with a wrong --base). The base guard resolves the PR
+        # by head branch, retargets it to the default branch if needed,
+        # and returns its URL so the watcher tracks the right PR.
+        existing_url = _ensure_pr_base(branch_name, task_id)
+        if existing_url:
+            logger.info("PR flow: reusing existing PR %s for task %s", existing_url, task_id)
+        return existing_url
 
     pr_url = create.stdout.strip()
+    _ensure_pr_base(pr_url, task_id)
     logger.info("PR flow: opened PR %s for task %s", pr_url, task_id)
     return pr_url
 
