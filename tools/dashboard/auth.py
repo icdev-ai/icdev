@@ -302,6 +302,23 @@ def reactivate_user(user_id, reactivated_by=None):
 # RBAC — role-based access control (D172)
 # ---------------------------------------------------------------------------
 
+# Single source of truth for dashboard_users.role. Keep in sync with the
+# CHECK constraint in tools/db/init_icdev_db.py's dashboard_users CREATE
+# TABLE (SQL CHECK constraints can't reference a Python constant directly,
+# so this list and that constraint must be updated together). Every role
+# referenced anywhere in RBAC_MATRIX below, or in any @require_role(...)
+# call, must appear here -- otherwise create_user() can never actually
+# persist a user with that role (dashboard-users-role-check-constraint;
+# bd/capture_mgr/contract_mgr/reviewer were added to RBAC_MATRIX by
+# prop-fix-08 but never reached the CHECK constraint until this fix).
+VALID_DASHBOARD_ROLES = frozenset({
+    "admin", "pm", "developer", "isso", "co", "cor",
+    # GovLift (migration 139) — see tools/govlift/rbac.py::GOVLIFT_ROLES
+    "migration_engineer", "component_admin", "auditor", "ciso",
+    # GovCon / Proposals / CPMP (prop-fix-08) — see RBAC_MATRIX below
+    "bd", "capture_mgr", "contract_mgr", "reviewer",
+})
+
 # Maps page/action to allowed roles
 RBAC_MATRIX = {
     # Pages accessible to all authenticated users
