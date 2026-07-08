@@ -293,7 +293,13 @@ def apply_hitl(section_id, action, comment=""):
     _recalculate_session_progress(section_id)
     if action in ("approve", "accept"):
         threading.Thread(target=_ace_reviewer_pass_background, args=(section_id,), daemon=True).start()
-    return get_section(section_id)
+    result = get_section(section_id)
+    if result and action in ("approve", "accept"):
+        from tools.govcon.rfi_grounding import find_placeholders
+        tokens = find_placeholders(result.get("content") or result.get("ai_draft") or "")
+        if tokens:
+            result["placeholder_warnings"] = tokens
+    return result
 
 
 def accept_all_drafted(session_id):
@@ -315,7 +321,17 @@ def accept_all_drafted(session_id):
     db.commit()
     if ids:
         _recalculate_session_progress(ids[0])
-    return {"accepted": len(ids)}
+
+    # Non-blocking warning: unresolved placeholders in what was just accepted.
+    from tools.govcon.rfi_grounding import find_placeholders
+    warnings = []
+    for sec in get_sections(session_id):
+        if sec["id"] not in set(ids):
+            continue
+        tokens = find_placeholders(sec.get("content") or sec.get("ai_draft") or "")
+        if tokens:
+            warnings.append({"item_number": sec.get("item_number"), "placeholders": tokens})
+    return {"accepted": len(ids), "placeholder_warnings": warnings}
 
 
 def _recalculate_session_progress(section_id):
@@ -421,6 +437,15 @@ def generate_section_content(section_id, profile_name, parsed_data):
             style_parts.append(compliance_notes[:300].strip())
         prompt += "\n\n[Style Requirements]\n" + "\n".join(style_parts)
 
+    # Ground the model in the RFI's real structure so it cannot invent
+    # section numbers ("Section IV.B") or unsourced claims.
+    from tools.govcon.rfi_grounding import (
+        build_ground_truth_block, substitute_profile_facts, validate_references,
+    )
+    ground_block = build_ground_truth_block(parsed_data)
+    if ground_block:
+        prompt += "\n\n" + ground_block
+
     session_id = section.get("session_id", "")
 
     # Phase B: inject weighted source context (uploads, KG, RAG, engines)
@@ -438,7 +463,31 @@ def generate_section_content(section_id, profile_name, parsed_data):
         logger.warning("Engine context assembly failed (non-fatal): %s", exc)
 
     role_key = f"{session_id}:rfi_writer" if session_id else "rfi_writer"
-    draft = _call_llm(prompt, section["title"], item, role_key=role_key, llm_function="rfi_writer_drafting")
+    draft = _generate_draft(prompt, section, item, role_key)
+
+    # Deterministic anti-hallucination post-pass: substitute identity facts
+    # the LLM should never generate, then validate every RFI citation. One
+    # corrective retry with the specific errors as feedback.
+    draft, substitutions = substitute_profile_facts(draft, profile, parsed_data)
+    ref_check = validate_references(draft, parsed_data)
+    if not ref_check["valid"]:
+        errs = "; ".join(f"{r['ref']} ({r['reason']})" for r in ref_check["invalid_refs"][:8])
+        retry_prompt = (
+            prompt
+            + "\n\n[CITATION ERRORS IN PREVIOUS DRAFT — FIX THESE]\n"
+            + f"Your previous draft cited references that do not exist in the RFI: {errs}. "
+            + "Rewrite the section citing only the structure in [RFI GROUND TRUTH]."
+        )
+        retry = _call_llm(retry_prompt, section["title"], item, role_key=role_key, llm_function="rfi_writer_drafting")
+        retry, retry_subs = substitute_profile_facts(retry, profile, parsed_data)
+        retry_check = validate_references(retry, parsed_data)
+        if len(retry_check["invalid_refs"]) < len(ref_check["invalid_refs"]):
+            draft, ref_check = retry, retry_check
+            substitutions += retry_subs
+        logger.info(
+            "Citation retry for %s: %d invalid refs remain",
+            item, len(ref_check["invalid_refs"]),
+        )
 
     # Run deterministic markdown validator — attach as transient field
     try:
@@ -447,6 +496,11 @@ def generate_section_content(section_id, profile_name, parsed_data):
     except Exception as exc:
         logger.warning("Markdown validator failed: %s", exc)
         md_validation = {"valid": True, "issues": []}
+    md_validation["grounding"] = {
+        "substitutions": substitutions,
+        "invalid_references": ref_check["invalid_refs"],
+        "references_checked": ref_check["checked"],
+    }
 
     db = get_db()
     db.execute(
@@ -517,6 +571,47 @@ def _get_router():
         finally:
             _logging.raiseExceptions = old_raise
     return _ROUTER
+
+
+# Judgment-heavy sections where multi-perspective debate materially improves
+# quality: technical approach, mission Q&A, industry insights, questions to Gov.
+_COD_ITEMS = {"2.4", "2.7", "5.1", "6.1", "6.2", "6.3", "6.4"}
+
+
+def _cod_enabled() -> bool:
+    return os.environ.get("ICDEV_RFI_COD_ENABLED", "true").strip().lower() in ("1", "true", "yes")
+
+
+def _generate_draft(prompt, section, item_number, role_key):
+    """Route generation: Chain of Debate for judgment sections (debaters +
+    judge synthesis reduces single-model confabulation), single-shot for
+    factual/boilerplate sections. Any CoD failure falls back to single-shot."""
+    if item_number in _COD_ITEMS and _cod_enabled() and role_key not in _role_blocked:
+        try:
+            from tools.llm.chain_orchestrator import ChainOrchestrator
+            from tools.llm.router import LLMRequest
+            orch = ChainOrchestrator(router=_get_router())
+            req = LLMRequest(
+                messages=[{
+                    "role": "user",
+                    "content": (
+                        f"You are an expert GovCon proposal writer for a defense/IC contractor. "
+                        f"Write the '{section['title']}' (Item {item_number}) section of an RFI response. "
+                        f"Be specific, professional, and avoid vague claims. UNCLASSIFIED content only. "
+                        f"Format as clean markdown. Keep to ≤400 words unless the section requires detail.\n\n"
+                        f"{prompt}"
+                    ),
+                }],
+                max_tokens=900,
+            )
+            result = orch.invoke_chain_of_debate("rfi_writer_drafting", req)
+            if result and getattr(result, "content", "").strip():
+                _track_llm_success(role_key)
+                logger.info("CoD draft for %s via %s", item_number, ",".join(result.models_used or []))
+                return result.content
+        except Exception as exc:
+            logger.warning("CoD generation failed for %s (%s) — falling back to single-shot", item_number, exc)
+    return _call_llm(prompt, section["title"], item_number, role_key=role_key, llm_function="rfi_writer_drafting")
 
 
 def _call_llm(prompt, section_title, item_number, role_key: str = "rfi_writer", llm_function: str = "rfi_writer_drafting"):
@@ -722,7 +817,32 @@ def override_aggregation_guard(session_id: str, comment: str = "", resolved_by: 
 
 # ── Export ────────────────────────────────────────────────────────────────────
 
-def assemble_and_export(session_id, export_format="docx"):
+class PlaceholderGateBlocked(Exception):
+    """Raised when unresolved [PLACEHOLDER] tokens remain in content that is
+    about to leave the workbench. findings: [{item_number, placeholders[]}]"""
+
+    def __init__(self, findings):
+        self.findings = findings
+        super().__init__(f"Unresolved placeholders in {len(findings)} section(s)")
+
+
+def _check_placeholder_gate(sections, force=False):
+    """Block export while [BRACKETED] tokens (incl. [VERIFY]) remain in any
+    section that will be exported. force=True bypasses after human review."""
+    if force:
+        return
+    from tools.govcon.rfi_grounding import find_placeholders
+    findings = []
+    for sec in sections:
+        content = sec.get("content") or sec.get("ai_draft") or ""
+        tokens = find_placeholders(content)
+        if tokens:
+            findings.append({"item_number": sec.get("item_number"), "placeholders": tokens})
+    if findings:
+        raise PlaceholderGateBlocked(findings)
+
+
+def assemble_and_export(session_id, export_format="docx", force_placeholders=False):
     session = get_session(session_id)
     if not session:
         raise ValueError(f"Session {session_id} not found")
@@ -730,6 +850,9 @@ def assemble_and_export(session_id, export_format="docx"):
     check_aggregation_guard(session_id)
 
     sections = get_sections(session_id)
+    _check_placeholder_gate(
+        [s for s in sections if s.get("part") != "part6"], force=force_placeholders
+    )
     profile = _load_profile(session.get("profile_name", "own_company"))
     parsed = session.get("parsed_data") or {}
 
@@ -769,7 +892,7 @@ def assemble_and_export(session_id, export_format="docx"):
     return str(_EXPORT_DIR / f"{base_name}.docx")
 
 
-def export_questions(session_id):
+def export_questions(session_id, force_placeholders=False):
     """Export Part 6 (questions to the Government) as a standalone markdown
     file formatted for ARC/email submission during the RFI Q&A window."""
     session = get_session(session_id)
@@ -779,6 +902,7 @@ def export_questions(session_id):
     sections = [s for s in get_sections(session_id) if s.get("part") == "part6"]
     if not sections:
         raise ValueError("No Part 6 (Questions for the Government) sections in this session")
+    _check_placeholder_gate(sections, force=force_placeholders)
 
     profile = _load_profile(session.get("profile_name", "own_company"))
     parsed = session.get("parsed_data") or {}
@@ -1338,16 +1462,45 @@ def run_ace_reviewer_pass(section_id: str) -> dict:
     reqs = get_requirements(section_id)
     req_list = "\n".join(f"  [{r['id'][:8]}] {r['text']}" for r in reqs) if reqs else "None extracted."
 
+    # Deterministic grounding evidence for the evaluator: the RFI's real
+    # structure plus any invalid citations / unresolved placeholders found
+    # by the regex validators (ground truth the LLM judge can't invent).
+    grounding_note = ""
+    parsed_data = {}
+    try:
+        from tools.govcon.rfi_grounding import (
+            build_ground_truth_block, find_placeholders, validate_references,
+        )
+        sess = get_session(section.get("session_id", ""))
+        parsed_data = (sess or {}).get("parsed_data") or {}
+        ref_check = validate_references(content, parsed_data)
+        tokens = find_placeholders(content)
+        findings = []
+        if ref_check["invalid_refs"]:
+            findings.append("Invalid citations detected: " + "; ".join(
+                f"{r['ref']} ({r['reason']})" for r in ref_check["invalid_refs"][:6]))
+        if tokens:
+            findings.append("Unresolved placeholders: " + ", ".join(tokens[:10]))
+        gt = build_ground_truth_block(parsed_data)
+        grounding_note = (
+            ("\nDeterministic validator findings (treat as fact):\n" + "\n".join(findings) + "\n" if findings else "")
+            + (f"\n{gt}\n" if gt else "")
+        )
+    except Exception as exc:
+        logger.debug("Grounding context for reviewer unavailable: %s", exc)
+
     prompt = (
         f"You are a Government contracting officer evaluating an RFI response section.\n"
         f"Section: {section.get('item_number')} — {section.get('title')}\n\n"
-        f"Content:\n{content[:2000]}\n\n"
+        f"Content:\n{content[:2000]}\n"
+        f"{grounding_note}\n"
         f"Requirements this section must address:\n{req_list}\n\n"
         f"Evaluate from the Government's perspective:\n"
         f"1. Does it directly answer what was asked, or does it sell instead of answer?\n"
         f"2. Are technical claims specific and verifiable, or vague and aspirational?\n"
-        f"3. Are there any red flags (unsupported assertions, missing data, compliance gaps)?\n"
-        f"4. How would you score this section 1-5 for technical merit?\n\n"
+        f"3. Does every RFI reference (section/item/objective) actually exist per the ground truth above?\n"
+        f"4. Are there any red flags (unsupported assertions, missing data, compliance gaps)?\n"
+        f"5. How would you score this section 1-5 for technical merit?\n\n"
         f"Return ONLY a JSON object:\n"
         f'{{"issues": [{{"type": "evaluator_concern", "message": "...", "suggestion": "..."}}], '
         f'"evaluator_score": 3, "overall": "pass", '
@@ -1379,6 +1532,37 @@ def run_ace_reviewer_pass(section_id: str) -> dict:
 
         feedback["source"] = "reviewer"
         feedback["reviewed_at"] = _now()
+
+        # Deterministic validator findings become first-class evaluator
+        # issues — regex facts, not LLM opinions.
+        try:
+            from tools.govcon.rfi_grounding import find_placeholders, validate_references
+            det_refs = validate_references(content, parsed_data)
+            for r in det_refs["invalid_refs"]:
+                feedback.setdefault("issues", []).append({
+                    "type": "invalid_citation",
+                    "message": f"{r['ref']}: {r['reason']}",
+                    "suggestion": "Cite only sections/items/objectives that exist in the RFI.",
+                })
+            for tok in find_placeholders(content):
+                feedback.setdefault("issues", []).append({
+                    "type": "unresolved_placeholder",
+                    "message": f"Placeholder {tok} remains in the content",
+                    "suggestion": "Replace with the real value from the company profile.",
+                })
+            if det_refs["invalid_refs"] and feedback.get("overall") == "pass":
+                feedback["overall"] = "warn"
+        except Exception as exc:
+            logger.debug("Deterministic reviewer findings failed: %s", exc)
+
+        # Optional confabulation heuristics (Phase 48 detector) — advisory.
+        try:
+            from tools.security.confabulation_detector import check_output
+            confab = check_output(section.get("session_id", "rfi"), content)
+            if isinstance(confab, dict) and not confab.get("error"):
+                feedback["confabulation"] = confab
+        except Exception as exc:
+            logger.debug("Confabulation check unavailable: %s", exc)
 
         # Optional, off-by-default: an independent Council pressure-test via
         # idea_lab's Specialist (tools/govcon/specialist_consult.py), additive
@@ -1480,6 +1664,13 @@ def check_cross_section_consistency(session_id: str, skip_llm: bool = False) -> 
             "message": f"[VERIFY] placeholders remain in accepted sections: {', '.join(verify_secs)}",
             "severity": "error",
         })
+
+    # 2b. Numeric claim conflicts (ROM totals, prototype timeline months)
+    try:
+        from tools.govcon.rfi_grounding import check_numeric_claims
+        conflicts.extend(check_numeric_claims(accepted))
+    except Exception as exc:
+        logger.debug("Numeric claim check failed: %s", exc)
 
     # 3. LLM semantic pass (cap at 12 sections to stay within token budget)
     router = _get_router()

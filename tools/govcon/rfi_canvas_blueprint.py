@@ -201,14 +201,26 @@ def api_save(session_id, section_id):
 def api_export(session_id, fmt):
     if fmt not in ("docx", "md", "questions"):
         return jsonify({"error": "Supported formats: docx, md, questions"}), 400
+    force = bool((request.get_json(silent=True) or {}).get("force_placeholders"))
     try:
         if fmt == "questions":
             # Part 6 questions to the Government — separate ARC/email
             # submission, never part of the response document.
-            path = wb.export_questions(session_id)
+            path = wb.export_questions(session_id, force_placeholders=force)
         else:
-            path = wb.assemble_and_export(session_id, fmt)
+            path = wb.assemble_and_export(session_id, fmt, force_placeholders=force)
         return jsonify({"ok": True, "path": path, "download_url": f"/api/rfi/{session_id}/download/{fmt}"})
+    except wb.PlaceholderGateBlocked as exc:
+        return (
+            jsonify(
+                {
+                    "error": "Placeholder gate: unresolved [PLACEHOLDER] tokens remain — resolve or force",
+                    "gate": "placeholder_guard",
+                    "findings": exc.findings,
+                }
+            ),
+            409,
+        )
     except wb.AggregationGuardBlocked as exc:
         return (
             jsonify(
