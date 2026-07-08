@@ -132,6 +132,17 @@ def api_generate_all_cancel(session_id):
     return jsonify({"ok": True})
 
 
+@rfi_canvas_bp.route("/api/rfi/<session_id>/accept-all", methods=["POST"])
+def api_accept_all(session_id):
+    """Bulk-accept every drafted section as final (skips pending/rejected)."""
+    try:
+        result = wb.accept_all_drafted(session_id)
+        return jsonify({"ok": True, **result})
+    except Exception as exc:
+        logger.exception("Accept-all error for session %s", session_id)
+        return jsonify({"error": str(exc)}), 500
+
+
 @rfi_canvas_bp.route("/api/rfi/<session_id>/readiness")
 def api_readiness(session_id):
     return jsonify(wb.get_session_readiness(session_id))

@@ -296,6 +296,28 @@ def apply_hitl(section_id, action, comment=""):
     return get_section(section_id)
 
 
+def accept_all_drafted(session_id):
+    """Bulk-accept every drafted section (ai_draft_ready or hitl_approved)
+    as final. Pending sections (no draft yet) and explicitly rejected
+    sections are left untouched. Skips the per-section ACE reviewer pass —
+    bulk acceptance is a deliberate human shortcut, not a review trigger."""
+    db = get_db()
+    rows = db.execute(
+        "SELECT id FROM rfi_workbench_sections WHERE session_id=%s AND status IN ('ai_draft_ready','hitl_approved')",
+        (session_id,),
+    ).fetchall()
+    ids = [list(r)[0] if not hasattr(r, "keys") else r["id"] for r in rows]
+    for sec_id in ids:
+        db.execute(
+            "UPDATE rfi_workbench_sections SET hitl_action='accept', status='accepted', updated_at=%s WHERE id=%s",
+            (_now(), sec_id),
+        )
+    db.commit()
+    if ids:
+        _recalculate_session_progress(ids[0])
+    return {"accepted": len(ids)}
+
+
 def _recalculate_session_progress(section_id):
     db = get_db()
     row = db.execute("SELECT session_id FROM rfi_workbench_sections WHERE id=%s", (section_id,)).fetchone()
