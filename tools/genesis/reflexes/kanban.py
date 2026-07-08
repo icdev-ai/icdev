@@ -5664,6 +5664,43 @@ def _task_log_is_empty(tid: str) -> bool:
         return False
 
 
+def _task_dispatched_by_scheduler(tid: str, conn) -> bool:
+    """Return False only if the most recent transition into in_progress for
+    *tid* was explicitly recorded with a non-scheduler actor (e.g. 'manual',
+    via tools/kanban/cli.py --set-status).
+
+    The silent-dispatch fast-reap (_SILENT_DISPATCH_THRESHOLD, default 1 min)
+    exists to catch a scheduler-spawned subprocess that died before writing
+    any output — but an externally/manually managed task (an interactive
+    session working a task directly, not through the scheduler's subprocess
+    dispatch) also has an empty log by construction, since nothing ever
+    writes one for it. Without this check the two are indistinguishable and
+    genuinely-in-progress manual work gets reaped back to backlog within a
+    minute regardless of how long the real work takes (observed 2026-07-08:
+    6 tasks worked via isolated worktrees + manual CLI status updates were
+    repeatedly bounced backlog<->in_progress by this fast path even though
+    the work was already complete and merged).
+
+    Defaults to True (preserve existing aggressive behavior) when no
+    transition row exists or the audit table/query fails — this only ever
+    *relaxes* the threshold for tasks explicitly marked manual, it never
+    tightens it for anything else.
+    """
+    try:
+        row = conn.execute(
+            "SELECT actor FROM kanban_status_transitions "
+            "WHERE task_id = %s AND to_status = 'in_progress' "
+            "ORDER BY recorded_at DESC LIMIT 1",
+            (tid,),
+        ).fetchone()
+        if not row:
+            return True
+        actor = dict(row).get("actor")
+        return actor in (None, "scheduler")
+    except Exception:
+        return True
+
+
 def _detect_execution_anomaly(age_seconds: float) -> Tuple[bool, str]:
     """Detect if age_seconds is anomalously long vs historical task durations.
 
@@ -6256,11 +6293,19 @@ def _reap_stale_in_progress() -> None:
          instead of resetting to backlog.
       3. Silent dispatch failure — task promoted to in_progress but subprocess
          never started (execution_id still NULL, log file empty). Fast-reaped
-         after _SILENT_DISPATCH_THRESHOLD (5 min) so the board never shows a
-         ghost in_progress for more than one scheduler cycle window.
+         after _SILENT_DISPATCH_THRESHOLD (default 1 min, see env var
+         KANBAN_SILENT_DISPATCH_THRESHOLD_SECONDS) so the board never shows a
+         ghost in_progress for more than one scheduler cycle window. Skipped
+         for tasks whose most recent in_progress transition was recorded with
+         a non-scheduler actor (see _task_dispatched_by_scheduler) — those
+         fall through to the normal threshold instead, since an empty log is
+         expected (not evidence of a dead subprocess) for externally/manually
+         managed work.
 
     Normal threshold: 2× task timeout (30–80 min).
-    Silent-dispatch threshold: 5 min (log empty + not in _running).
+    Silent-dispatch threshold: _SILENT_DISPATCH_THRESHOLD (default 1 min;
+    log empty + not in _running + last in_progress transition actor is
+    'scheduler' or unrecorded).
     Only resets tasks NOT currently in _running to avoid killing live agents.
     """
     conn = None
@@ -6324,7 +6369,15 @@ def _reap_stale_in_progress() -> None:
             # is still empty — subprocess never wrote a single byte, so it
             # never actually started. Use a short 5-min window instead of the
             # normal 2× budget to catch these within the next cycle or two.
-            elif _task_log_is_empty(tid) and age_seconds >= _SILENT_DISPATCH_THRESHOLD:
+            # Skipped for tasks explicitly marked actor='manual' in
+            # kanban_status_transitions (tools/kanban/cli.py --set-status) —
+            # an externally-managed task also has an empty log by
+            # construction, but that's not evidence of a dead subprocess.
+            elif (
+                _task_log_is_empty(tid)
+                and age_seconds >= _SILENT_DISPATCH_THRESHOLD
+                and _task_dispatched_by_scheduler(tid, conn)
+            ):
                 threshold = _SILENT_DISPATCH_THRESHOLD
                 reap_label = "silent-dispatch (no log output)"
             else:
