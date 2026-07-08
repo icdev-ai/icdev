@@ -358,9 +358,33 @@ class TestRBACMatrix:
         assert auth.RBAC_MATRIX["admin"] == {"admin"}
 
     def test_all_matrix_entries_have_valid_roles(self, auth):
-        valid_roles = {"admin", "pm", "developer", "isso", "co", "cor"}
+        """Every role in RBAC_MATRIX must be storable in dashboard_users.role
+        (auth.VALID_DASHBOARD_ROLES, single source of truth) -- a role that's
+        RBAC-gateable but can never actually be assigned to a user is a
+        latent bug (dashboard-users-role-check-constraint)."""
         for page, roles in auth.RBAC_MATRIX.items():
-            assert roles.issubset(valid_roles), f"Page '{page}' has invalid roles: {roles - valid_roles}"
+            assert roles.issubset(auth.VALID_DASHBOARD_ROLES), (
+                f"Page '{page}' has roles not in VALID_DASHBOARD_ROLES: "
+                f"{roles - auth.VALID_DASHBOARD_ROLES}"
+            )
+
+    def test_valid_dashboard_roles_matches_check_constraint(self, auth, tmp_db):
+        """auth.VALID_DASHBOARD_ROLES must match the live
+        dashboard_users.role CHECK constraint exactly -- every role in the
+        constant must be insertable, and no role outside it should be."""
+        conn = sqlite3.connect(str(tmp_db))
+        for role in auth.VALID_DASHBOARD_ROLES:
+            conn.execute(
+                "INSERT INTO dashboard_users (id, email, display_name, role) VALUES (?, ?, ?, ?)",
+                (f"u-{role}", f"{role}@example.mil", role, role),
+            )
+        conn.commit()
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                "INSERT INTO dashboard_users (id, email, display_name, role) VALUES (?, ?, ?, ?)",
+                ("u-bogus", "bogus@example.mil", "Bogus", "not_a_real_role"),
+            )
+        conn.close()
 
 
 # ===================================================================
