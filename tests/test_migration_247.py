@@ -11,7 +11,6 @@ import importlib.util
 import sys
 from pathlib import Path
 
-import pytest
 
 _MIGRATION_DIR = (
     Path(__file__).resolve().parent.parent
