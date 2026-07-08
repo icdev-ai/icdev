@@ -190,13 +190,26 @@ class PDP:
         if not self._policies:
             self.load_from_config()
 
-        # PIP resolution: expand ${...} references in policy conditions
+        # PIP resolution: expand ${...} references in policy conditions.
+        # References are resolved against a NESTED context so "${subject.user_id}"
+        # walks ctx["subject"]["user_id"]. A reference that resolves to None must
+        # NOT collapse to a match-all condition (prop-sec-01): substitute a
+        # sentinel that can never equal a real attribute value, so the policy
+        # simply fails to match and evaluation falls through (default deny).
+        ref_ctx = {"subject": subject, "resource": resource, "environment": env}
         resolved_policies = []
         for policy in self._policies:
             resolved = {}
             for key, val in policy.items():
                 if key in ("subject", "resource", "environment") and isinstance(val, dict):
-                    resolved[key] = {k: PIP.resolve(v, {**subject, **resource, **env}) for k, v in val.items()}
+                    section = {}
+                    for k, v in val.items():
+                        is_ref = isinstance(v, str) and v.startswith("${") and v.endswith("}")
+                        rv = PIP.resolve(v, ref_ctx)
+                        if is_ref and rv is None:
+                            rv = "__UNRESOLVED_ABAC_REF__"
+                        section[k] = rv
+                    resolved[key] = section
                 else:
                     resolved[key] = val
             resolved_policies.append(resolved)

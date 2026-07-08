@@ -32,6 +32,7 @@ logger = get_logger(__name__)
 from tools.common.helpers import now_isoformat
 from tools.dashboard.auth import require_role
 from tools.dashboard.config import DEFAULT_CLASSIFICATION
+from tools.security.abac_engine import abac_protect
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
@@ -73,6 +74,33 @@ def _get_db():
 
 def _uuid():
     return str(uuid.uuid4())
+
+
+def _draft_resource_attrs(request):
+    """Build ABAC resource dict for a proposal draft endpoint (prop-sec-01).
+
+    Resolves the draft's linked proposal_sections.writer_email so the
+    ``proposal_draft_writer_own`` policy can enforce need-to-know: a
+    section_writer may only act on drafts for sections assigned to them.
+    """
+    draft_id = (request.view_args or {}).get("draft_id", "")
+    writer_email = ""
+    if draft_id:
+        try:
+            conn = _get_db()
+            row = conn.execute(
+                """SELECT s.writer_email
+                   FROM proposal_section_drafts d
+                   LEFT JOIN proposal_sections s ON s.id = d.section_id
+                   WHERE d.id = %s""",
+                (draft_id,),
+            ).fetchone()
+            conn.close()
+            if row:
+                writer_email = row["writer_email"] or ""
+        except Exception:
+            pass
+    return {"type": "proposal_draft", "writer_email": writer_email}
 
 
 def _audit(conn, action, details="", actor="govcon_api"):
@@ -492,6 +520,7 @@ def list_drafts(opp_id):
 
 
 @govcon_api.route("/drafts/<draft_id>/approve", methods=["PUT"])
+@abac_protect(_draft_resource_attrs, "PUT")
 def approve_draft(draft_id):
     """PUT /api/govcon/drafts/<id>/approve — Approve a draft.
 
@@ -556,6 +585,7 @@ def approve_draft(draft_id):
 
 
 @govcon_api.route("/drafts/<draft_id>/reject", methods=["PUT"])
+@abac_protect(_draft_resource_attrs, "PUT")
 def reject_draft(draft_id):
     """PUT /api/govcon/drafts/<id>/reject — Reject a draft with feedback."""
     conn = _get_db()
@@ -602,6 +632,7 @@ def reject_draft(draft_id):
 
 @govcon_api.route("/drafts/<draft_id>/rewrite-save", methods=["POST"])
 @require_role(*GOVCON_WRITE_ROLES)
+@abac_protect(_draft_resource_attrs, "POST")
 def rewrite_save_draft(draft_id):
     """POST /api/govcon/drafts/<id>/rewrite-save — Save a WriteGuard rewrite as a new draft row.
 

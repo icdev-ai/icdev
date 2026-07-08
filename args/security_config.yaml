@@ -176,6 +176,46 @@ abac_policies:
       - PATCH
     decision: Deny
 
+  # --- Proposal draft write policies (approve/reject/rewrite) ---
+
+  - name: proposal_draft_privileged_write
+    subject:
+      role:
+        operator: in
+        values:
+          - capture_mgr
+          - proposal_mgr
+          - reviewer
+          - tenant_admin
+          - admin
+    resource:
+      type: proposal_draft
+    action:
+      - PUT
+      - POST
+    decision: Permit
+
+  - name: proposal_draft_writer_own
+    subject:
+      role: section_writer
+    resource:
+      type: proposal_draft
+      writer_email: "${subject.user_id}"
+    action:
+      - PUT
+      - POST
+    decision: Permit
+
+  - name: proposal_draft_writer_deny_unassigned
+    subject:
+      role: section_writer
+    resource:
+      type: proposal_draft
+    action:
+      - PUT
+      - POST
+    decision: Deny
+
 # ---------------------------------------------------------------------------
 # Column-Level Security — per-role, per-table column masking
 # ---------------------------------------------------------------------------
@@ -264,6 +304,56 @@ column_policies:
     role: co
     columns:
       value: "null"
+  - table: pg_cost_volumes
+    role: reviewer
+    columns:
+      total_evaluated_price: "null"
+      direct_labor_cost: "null"
+      fringe_rate: "null"
+      overhead_rate: "null"
+      g_and_a_rate: "null"
+      fee_rate: "null"
+      subcontractor_cost: "null"
+      odc_cost: "null"
+      ptw_estimate_low: "null"
+      ptw_estimate_high: "null"
+      calc_benchmark_median: "null"
+  - table: pg_cost_volumes
+    role: co
+    columns:
+      total_evaluated_price: "null"
+      direct_labor_cost: "null"
+      fringe_rate: "null"
+      overhead_rate: "null"
+      g_and_a_rate: "null"
+      fee_rate: "null"
+      subcontractor_cost: "null"
+      odc_cost: "null"
+      ptw_estimate_low: "null"
+      ptw_estimate_high: "null"
+      calc_benchmark_median: "null"
+  - table: pg_win_themes
+    role: reviewer
+    columns:
+      theme_statement: redact
+      supporting_evidence: "null"
+      ghost_competitor: "null"
+  - table: pg_win_themes
+    role: co
+    columns:
+      theme_statement: redact
+      supporting_evidence: "null"
+      ghost_competitor: "null"
+  - table: pg_competitor_awards
+    role: reviewer
+    columns:
+      award_amount: "null"
+      labor_categories: "null"
+  - table: pg_competitor_awards
+    role: co
+    columns:
+      award_amount: "null"
+      labor_categories: "null"
 
 # ---------------------------------------------------------------------------
 # Field-Level Security — API response field filtering
