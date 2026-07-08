@@ -898,7 +898,7 @@ function commentAndRegenerate() {
 function refreshSidebarItem(id, status) {
   const el = document.querySelector(`.section-item[data-id="${id}"]`);
   if (!el) return;
-  el.className = 'section-item active status-' + status;
+  el.className = 'section-item status-' + status + (el.classList.contains('active') ? ' active' : '');
   const badge = el.querySelector('.s-badge');
   if (badge) {
     const icons = {accepted:'✓', hitl_approved:'✓', hitl_rejected:'✗', ai_draft_ready:'⚡', pending:'○'};
@@ -960,6 +960,9 @@ document.addEventListener('DOMContentLoaded', () => {
     parse_fallback: {{ 'true' if (session.rfi_number == 'RFI-UNKNOWN' or not session.get('parsed_data') or not session.get('parsed_data', {}).get('questionnaire_parts')) else 'false' }},
   };
   checkParseWarning();
+  // Resume generate-all polling if a run is in flight (e.g. page was
+  // reloaded mid-run); when idle this also syncs stale sidebar badges.
+  _pollGenerateAll();
 });
 
 // ── Requirements ──────────────────────────────────────────────────────────────
@@ -1504,6 +1507,7 @@ function _pollGenerateAll() {
       const status = document.getElementById('gen-all-status');
       if (d.running) {
         status.textContent = `${d.done}/${d.total} — generating ${d.current_item || '…'}`;
+        btn.textContent = '⏹ Cancel'; btn.onclick = cancelGenerateAll;
         _genAllPollTimer = setTimeout(_pollGenerateAll, 2000);
         if (d.done > 0) _refreshSidebarStatuses();
       } else {
