@@ -72,6 +72,7 @@ class GeneratedSection:
     confidence: float = 1.0
     low_confidence: bool = False
     hitl_note: str = ""
+    confabulation: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -103,6 +104,7 @@ class GenerateResult:
                     "confidence": round(s.confidence, 3),
                     "low_confidence": s.low_confidence,
                     "hitl_note": s.hitl_note,
+                    "confabulation": s.confabulation,
                 }
                 for s in self.sections
             ],
@@ -504,6 +506,27 @@ def generate_document(
                     heading, confidence,
                 )
 
+        # halluc-03: non-blocking confabulation assessment (fabricated-citation
+        # patterns, internal contradictions, hedging) — complements DIC's
+        # confidence verifier, which does not target these specifically. Skips
+        # abstained sections (no claims). Elevates hitl_note on high risk.
+        confab: dict = {}
+        if not abstained and raw_text:
+            try:
+                from tools.security.confabulation_detector import assess as _confab_assess
+                confab = _confab_assess(raw_text)
+                if confab.get("risk_level") == "high" and not low_confidence:
+                    low_confidence = True
+                    if heading not in flagged_headings:
+                        flagged_headings.append(heading)
+                    note = (
+                        f"⚠ Confabulation risk {confab.get('risk_score')} "
+                        f"({confab.get('findings_count')} finding(s)) — review before publishing."
+                    )
+                    hitl_note = f"{hitl_note} {note}".strip()
+            except Exception:
+                confab = {}
+
         generated_sections.append(GeneratedSection(
             heading=heading,
             content=raw_text,
@@ -513,6 +536,7 @@ def generate_document(
             confidence=confidence,
             low_confidence=low_confidence,
             hitl_note=hitl_note,
+            confabulation=confab,
         ))
 
     result.sections = generated_sections
