@@ -22311,7 +22311,9 @@ CREATE TABLE public.pg_competitor_awards (
     naics_code text,
     labor_categories text,
     source text,
-    created_at text NOT NULL
+    created_at text NOT NULL,
+    tenant_id text,
+    classification text DEFAULT 'CUI'::text
 );
 
 
@@ -22640,7 +22642,9 @@ CREATE TABLE public.pg_pwin_assessments (
     past_performance_fit real,
     factor_breakdown text NOT NULL,
     method text DEFAULT 'logistic_weighted'::text NOT NULL,
-    assessed_at text NOT NULL
+    assessed_at text NOT NULL,
+    tenant_id text,
+    classification text DEFAULT 'CUI'::text
 );
 
 

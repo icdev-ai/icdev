@@ -101,7 +101,9 @@ def _ensure_tables(conn):
             naics_code TEXT,
             labor_categories TEXT,
             source TEXT,
-            created_at TEXT NOT NULL
+            created_at TEXT NOT NULL,
+            tenant_id TEXT,
+            classification TEXT DEFAULT 'CUI'
         )
     """)
     conn.commit()
