@@ -142,10 +142,94 @@ def _load_config():
         return {}
 
 
+# ── Solicitation grounding (ground-prop-02) ───────────────────────────────────
+
+# parse_solicitation() re-reads the PDF/DOCX; cache per document path so a
+# --draft-all run parses each solicitation once.
+_PARSED_SOLICITATION_CACHE: dict = {}
+
+
+def _load_parsed_solicitation(conn, shall_row):
+    """Resolve and parse the solicitation document behind a shall statement.
+
+    Follows proposal_opportunity_id (or the SAM.gov link) to
+    proposal_opportunities.rfp_document_path and runs solicitation_parser on
+    it. Returns the parsed dict, or None when no document is on file or
+    parsing fails — drafting proceeds ungrounded (air-gap safe).
+    """
+    s = dict(shall_row)
+    prop_opp_id = s.get("proposal_opportunity_id")
+    sam_opp_id = s.get("sam_opportunity_id")
+    try:
+        row = None
+        if prop_opp_id:
+            row = conn.execute(
+                "SELECT rfp_document_path FROM proposal_opportunities WHERE id = %s",
+                (prop_opp_id,),
+            ).fetchone()
+        if not row and sam_opp_id:
+            row = conn.execute(
+                "SELECT rfp_document_path FROM proposal_opportunities "
+                "WHERE sam_gov_opportunity_id = %s OR id = "
+                "(SELECT proposal_opportunity_id FROM sam_gov_opportunities WHERE id = %s)",
+                (sam_opp_id, sam_opp_id),
+            ).fetchone()
+        doc_path = dict(row).get("rfp_document_path") if row else None
+        if not doc_path or not Path(doc_path).exists():
+            return None
+        if doc_path in _PARSED_SOLICITATION_CACHE:
+            return _PARSED_SOLICITATION_CACHE[doc_path]
+        from tools.govcon.solicitation_parser import parse_solicitation
+
+        parsed = parse_solicitation(doc_path)
+        _PARSED_SOLICITATION_CACHE[doc_path] = parsed
+        return parsed
+    except Exception as exc:
+        print(f"Warning: solicitation grounding unavailable: {exc}", file=sys.stderr)
+        return None
+
+
 # ── LLM drafting ──────────────────────────────────────────────────────
 
 
-def _try_llm_draft(shall_text, capabilities, knowledge_blocks, domain):
+def _build_draft_prompt(shall_text, cap_descriptions, kb_content, domain, product_context, ground_truth_block=""):
+    """Assemble the qwen3 worker prompt.
+
+    When a parsed-solicitation ground-truth block is available it is injected
+    as a hard citation constraint (ground-prop-02): the model sees the real
+    section/factor/CLIN structure instead of inventing one.
+    """
+    grounding_section = f"{ground_truth_block}\n\n" if ground_truth_block else ""
+    grounding_rule = (
+        "- Cite ONLY the sections, instructions, volumes, factors, and CLINs "
+        "listed in the SOLICITATION GROUND TRUTH block\n"
+        if ground_truth_block
+        else ""
+    )
+    return (
+        f"{grounding_section}"
+        f"Draft a concise proposal response (~400 words) to this requirement:\n\n"
+        f"REQUIREMENT: {shall_text}\n\n"
+        f"DOMAIN: {domain}\n"
+        f"{product_context}\n"
+        f"OUR CAPABILITIES:\n{cap_descriptions}\n\n"
+        f"SUPPORTING EVIDENCE:\n{kb_content}\n\n"
+        f"INSTRUCTIONS:\n"
+        f"{grounding_rule}"
+        f"- Write in third person ('The Contractor shall...' or 'Our approach...')\n"
+        f"- Reference specific tools and frameworks by name\n"
+        f"- Include NIST 800-53 control references where applicable\n"
+        f"- Be specific about HOW we implement, not just WHAT\n"
+        f"- Include measurable outcomes or metrics where possible\n"
+        f"- Mention automation and repeatability\n"
+        f"- Keep to ~400 words, use bullet points for clarity\n"
+        f"- For every factual claim, cite the supporting evidence inline using "
+        f"[source: <id>] with an id shown in SUPPORTING EVIDENCE above. Do NOT "
+        f"cite an id that is not listed, and omit a claim rather than invent one.\n"
+    )
+
+
+def _try_llm_draft(shall_text, capabilities, knowledge_blocks, domain, parsed_solicitation=None):
     """Attempt two-tier LLM draft via tools.llm.router.
 
     Returns (draft_text, method) or (None, None) if unavailable.
@@ -170,6 +254,16 @@ def _try_llm_draft(shall_text, capabilities, knowledge_blocks, domain):
             for kb in knowledge_blocks[:3]
         )
 
+        # Solicitation ground-truth constraint (ground-prop-02)
+        ground_truth_block = ""
+        if parsed_solicitation:
+            try:
+                from tools.govcon.solicitation_grounding import build_ground_truth_block
+
+                ground_truth_block = build_ground_truth_block(parsed_solicitation)
+            except Exception:
+                ground_truth_block = ""
+
         # Check for product-level context
         product_key = _detect_product_template(shall_text, domain)
         product_context = ""
@@ -190,24 +284,8 @@ def _try_llm_draft(shall_text, capabilities, knowledge_blocks, domain):
                 "closes the Shipley lifecycle from proposal to contract delivery.\n"
             )
 
-        prompt = (
-            f"Draft a concise proposal response (~400 words) to this requirement:\n\n"
-            f"REQUIREMENT: {shall_text}\n\n"
-            f"DOMAIN: {domain}\n"
-            f"{product_context}\n"
-            f"OUR CAPABILITIES:\n{cap_descriptions}\n\n"
-            f"SUPPORTING EVIDENCE:\n{kb_content}\n\n"
-            f"INSTRUCTIONS:\n"
-            f"- Write in third person ('The Contractor shall...' or 'Our approach...')\n"
-            f"- Reference specific tools and frameworks by name\n"
-            f"- Include NIST 800-53 control references where applicable\n"
-            f"- Be specific about HOW we implement, not just WHAT\n"
-            f"- Include measurable outcomes or metrics where possible\n"
-            f"- Mention automation and repeatability\n"
-            f"- Keep to ~400 words, use bullet points for clarity\n"
-            f"- For every factual claim, cite the supporting evidence inline using "
-            f"[source: <id>] with an id shown in SUPPORTING EVIDENCE above. Do NOT "
-            f"cite an id that is not listed, and omit a claim rather than invent one.\n"
+        prompt = _build_draft_prompt(
+            shall_text, cap_descriptions, kb_content, domain, product_context, ground_truth_block
         )
 
         # Phase 70: Sanitize prompt before LLM invocation (defense-in-depth)
@@ -597,7 +675,13 @@ def draft_response(shall_id):
     cfg = _load_config().get("response_drafting", {})
     cfg.get("confidence_threshold", 0.70)
 
-    draft_text, method = _try_llm_draft(shall_text, capabilities, knowledge_blocks, domain)
+    # Ground drafting against the real solicitation structure when the
+    # opportunity has a parsed document on file (ground-prop-02).
+    parsed_solicitation = _load_parsed_solicitation(conn, s)
+
+    draft_text, method = _try_llm_draft(
+        shall_text, capabilities, knowledge_blocks, domain, parsed_solicitation=parsed_solicitation
+    )
     if not draft_text:
         draft_text, method = _template_draft(shall_text, capabilities, knowledge_blocks, domain)
 
@@ -627,6 +711,21 @@ def draft_response(shall_id):
         confab_report = _confab_assess(draft_text)
     except Exception:
         confab_report = None
+
+    # Citation validation against the parsed solicitation (ground-prop-02):
+    # any Section/Factor/Volume/CLIN reference that doesn't exist in the
+    # document is recorded for reviewers/WriteGuard (invalid_citation).
+    invalid_references = []
+    citations_checked = 0
+    if parsed_solicitation:
+        try:
+            from tools.govcon.solicitation_grounding import validate_references
+
+            ref_check = validate_references(draft_text, parsed_solicitation)
+            invalid_references = ref_check["invalid_refs"]
+            citations_checked = ref_check["checked"]
+        except Exception as exc:
+            print(f"Warning: citation validation failed: {exc}", file=sys.stderr)
 
     # Compute confidence
     best_coverage = capabilities[0]["score"] if capabilities else 0
@@ -682,6 +781,11 @@ def draft_response(shall_id):
                     **({"placeholder_tokens": placeholder_tokens} if placeholder_tokens else {}),
                     **({"citation_report": citation_report} if citation_report else {}),
                     **({"confabulation": confab_report} if confab_report else {}),
+                    **(
+                        {"citations_checked": citations_checked, "invalid_references": invalid_references}
+                        if parsed_solicitation
+                        else {}
+                    ),
                     **({"specialist_consult": specialist_consult_result} if specialist_consult_result else {}),
                 }
             ),
@@ -704,6 +808,9 @@ def draft_response(shall_id):
         "placeholder_tokens": placeholder_tokens,
         "citation_report": citation_report,
         "confabulation": confab_report,
+        "grounded": bool(parsed_solicitation),
+        "citations_checked": citations_checked,
+        "invalid_references": invalid_references,
     }
 
 

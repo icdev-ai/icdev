@@ -40,9 +40,18 @@ cpmp_api = Blueprint("cpmp_api", __name__, url_prefix="/api/cpmp")
 
 def _get_db():
     conn = get_connection(db_path=str(DB_PATH))
-    # Clear RLS context — cpmp tables use classification=CUI universally;
-    # complex JOIN queries break when RLS injects c.classification into subqueries.
-    conn.set_security_context(None)  # rls-bypass: cpmp tables use CUI universally; RLS JOIN injection breaks subqueries
+    # RLS-aware (prop-fix-12): in a request context _attach_flask_security_context()
+    # already wired g.security_context into the connection, so tenant_id +
+    # classification predicates inject automatically (migrations 245/246/247 added
+    # the columns to every cpmp_* table). The historical set_security_context(None)
+    # bypass here cited subquery/JOIN injection bugs that _find_outer_where /
+    # _depth0_skeleton have since fixed.
+    try:
+        from flask import has_request_context
+        if not has_request_context():
+            conn.set_security_context(None)  # rls-bypass: CLI / background tasks run without a user session; no tenant context available.
+    except Exception:
+        pass
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
@@ -510,6 +519,50 @@ def get_portfolio():
         from tools.govcon.portfolio_manager import get_portfolio_summary
 
         result = get_portfolio_summary()
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@cpmp_api.route("/portfolio/<contract_id>", methods=["GET"])
+def get_portfolio_contract_detail(contract_id):
+    """GET /api/cpmp/portfolio/<id> — Portfolio detail view for a single contract.
+
+    Nests obligation_summary (obligated_value, funded_value, burn_rate_pct) and the
+    base/option period breakdown alongside the base contract fields.
+    """
+    try:
+        from tools.govcon.contract_manager import get_contract as _get_contract
+        from tools.govcon.contract_periods_manager import get_obligation_summary
+
+        result = _get_contract(contract_id)
+        if result.get("status") == "error":
+            return jsonify(result), 404
+        # Bell-LaPadula: no-read-up check on the contract
+        denied = _mac_deny_read(result)
+        if denied:
+            return denied
+
+        contract = result.get("contract", {})
+        obligation = get_obligation_summary(contract_id)
+        if obligation.get("status") == "ok":
+            result["obligation_summary"] = {
+                "obligated_value": obligation.get("total_obligated"),
+                "funded_value": contract.get("funded_value", 0),
+                "billed_value": obligation.get("total_billed"),
+                "remaining_obligation": obligation.get("remaining_obligation"),
+                "burn_rate_pct": obligation.get("burn_rate_pct"),
+                "periods": obligation.get("by_period", []),
+            }
+        else:
+            result["obligation_summary"] = {
+                "obligated_value": contract.get("obligated_value", 0),
+                "funded_value": contract.get("funded_value", 0),
+                "billed_value": 0,
+                "remaining_obligation": 0,
+                "burn_rate_pct": 0,
+                "periods": [],
+            }
         return jsonify(result)
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -1096,6 +1149,80 @@ def _sanitize_for_cor(data):
     if isinstance(data, list):
         return [_sanitize_for_cor(item) for item in data]
     return data
+
+
+# =====================================================================
+# Phase D — Contract Periods + Obligation Tracking (D-CPMP-10)
+# =====================================================================
+
+
+@cpmp_api.route("/contracts/<contract_id>/periods", methods=["GET"])
+def list_contract_periods(contract_id):
+    """GET /api/cpmp/contracts/<id>/periods — List base+option periods."""
+    try:
+        from tools.govcon.contract_periods_manager import list_periods
+
+        result = list_periods(contract_id)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@cpmp_api.route("/contracts/<contract_id>/periods", methods=["POST"])
+@require_role("admin", "co", "contract_mgr")
+def create_contract_period(contract_id):
+    """POST /api/cpmp/contracts/<id>/periods — Create a period of performance."""
+    try:
+        from tools.govcon.contract_periods_manager import create_period
+
+        data = request.get_json(silent=True) or {}
+        period_type = data.get("period_type")
+        if not period_type:
+            return jsonify({"status": "error", "message": "period_type required"}), 400
+        result = create_period(
+            contract_id,
+            period_type,
+            pop_start=data.get("pop_start"),
+            pop_end=data.get("pop_end"),
+            obligated_value=float(data.get("obligated_value", 0)),
+            funded_value=float(data.get("funded_value", 0)),
+            ceiling_value=float(data.get("ceiling_value", 0)),
+            notes=data.get("notes"),
+            created_by=getattr(g, "current_user", {}).get("username") if hasattr(g, "current_user") else None,
+        )
+        return jsonify(result), 201 if result.get("status") == "ok" else 400
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@cpmp_api.route("/periods/<period_id>/exercise", methods=["PUT"])
+@require_role("admin", "co", "contract_mgr")
+def exercise_period_option(period_id):
+    """PUT /api/cpmp/periods/<id>/exercise — Exercise an option period."""
+    try:
+        from tools.govcon.contract_periods_manager import exercise_option
+
+        data = request.get_json(silent=True) or {}
+        obligated_value = float(data.get("obligated_value", 0))
+        exercised_by = getattr(g, "current_user", {}).get("username") if hasattr(g, "current_user") else None
+        result = exercise_option(period_id, obligated_value, exercised_by)
+        if result.get("status") == "error":
+            return jsonify(result), 400
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@cpmp_api.route("/contracts/<contract_id>/obligation-summary", methods=["GET"])
+def contract_obligation_summary(contract_id):
+    """GET /api/cpmp/contracts/<id>/obligation-summary — Burn-rate vs obligation."""
+    try:
+        from tools.govcon.contract_periods_manager import get_obligation_summary
+
+        result = get_obligation_summary(contract_id)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 
 @cpmp_api.route("/cor/contracts", methods=["GET"])
