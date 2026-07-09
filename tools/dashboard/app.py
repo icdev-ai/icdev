@@ -1471,6 +1471,16 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 recommendations = rec_result.get("recommendations", [])[:15]
             except Exception:
                 pass
+            # Cross-RFI capability-gap demand signals (tools/govcon/rfi_demand.py):
+            # unmet RFI requirements aggregated across opportunities, highest demand
+            # first. Best-effort — absent table / disabled feature yields an empty list.
+            rfi_demand_signals = []
+            try:
+                from tools.govcon.rfi_demand import list_demand_signals
+
+                rfi_demand_signals = list_demand_signals(limit=20)
+            except Exception:
+                pass
             return render_template(
                 "govcon/capabilities.html",
                 coverage=coverage,
@@ -1478,6 +1488,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 gaps=gaps,
                 total_gaps=total_gaps,
                 recommendations=recommendations,
+                rfi_demand_signals=rfi_demand_signals,
             )
         finally:
             conn.close()
