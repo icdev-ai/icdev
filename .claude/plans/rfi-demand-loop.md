@@ -1,8 +1,8 @@
 # RFI Capability-Gap → Demand Signal → Kanban SUGGESTED Pipeline
 
 > **Status:** Implemented (built directly this session; validated on PostgreSQL) · **Branch:** `feat/rfi-demand-loop`
-> Core pipeline (store → det → emit → fdry → ui → vv) complete. Deferred: optional MCP
-> gateway tool `rfi_demand_scan` (pipeline runs via the workbench hook + `rfi_demand.py --scan` CLI).
+> Core pipeline (store → det → emit → fdry → ui → vv) complete, incl. MCP tool
+> `rfi_demand_scan`. Pipeline also runs via the workbench hook + `rfi_demand.py --scan` CLI.
 > Note: `projects.yaml` roadmap seeding was skipped — the work was built directly, not via kanban tasks.
 
 ## Context
@@ -145,9 +145,10 @@ What&why / Files / Acceptance / Test-verify.
 - [x] `rfidem-vv-01` Unit tests: hybrid truth table, aggregation dedup, priority math.
 - [x] `rfidem-vv-02` Integration: fake RFI session w/ known-uncovered requirement →
       assert `rfi_capability_gaps` row + SUGGESTED task `dispatch_source='rfi_demand'`.
-- [~] `rfidem-vv-03` Manifest shard entry added; ruff clean; coherence gate shows no
-      NEW findings (all failures pre-existing, unrelated files). **Deferred:** MCP
-      `rfi_demand_scan` gateway tool (optional — CLI + auto-hook already cover it).
+- [x] `rfidem-vv-03` MCP `rfi_demand_scan` tool registered (tool_registry.py +
+      gap_handlers.py, modes list/scan; 29 MCP tests green); manifest shard entry
+      added; ruff clean; coherence gate shows no NEW findings (all failures
+      pre-existing, unrelated files).
 
 ## Verification (end-to-end)
 

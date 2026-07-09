@@ -2529,3 +2529,18 @@ def handle_pvm_create_patch_plan(args: dict) -> dict:
     except Exception as exc:
         logger.warning("handle_pvm_create_patch_plan: %s", exc)
         return {"error": str(exc)}
+
+
+def handle_rfi_demand_scan(args: dict) -> dict:
+    """RFI capability-gap demand: list cross-RFI demand signals, or re-scan open
+    gaps and emit atomic SUGGESTED kanban build tasks. See tools/govcon/rfi_demand.py."""
+    try:
+        from tools.govcon import rfi_demand
+
+        mode = (args.get("mode") or "list").lower()
+        if mode == "scan":
+            return rfi_demand.scan(min_priority=args.get("min_priority"))
+        return {"signals": rfi_demand.list_demand_signals(limit=int(args.get("limit") or 50))}
+    except Exception as exc:
+        logger.warning("handle_rfi_demand_scan: %s", exc)
+        return {"error": str(exc)}
