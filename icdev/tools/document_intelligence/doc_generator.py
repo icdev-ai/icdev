@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -58,6 +59,18 @@ a claim, omit it rather than inventing it."""
 
 # Minimum evidence length to justify CoT (cheaper direct call below this)
 _COT_EVIDENCE_THRESHOLD = 500
+
+
+def _dic_cot_enabled() -> bool:
+    """Whether DIC drafting uses Chain-of-Thought / CoD compression.
+
+    Default OFF: CoT leaks reasoner/critic scaffolding into output on many
+    models; the direct _SECTION_PROMPT path produces clean, cited, TRUST-
+    compliant prose. Set ICDEV_DIC_COT_ENABLED=true to opt into the richer
+    (but leak-prone) CoT path.
+    """
+    import os
+    return os.environ.get("ICDEV_DIC_COT_ENABLED", "false").strip().lower() in ("1", "true", "yes")
 # Minimum section word count to trigger CoD compression
 _COD_WORD_THRESHOLD = 800
 
@@ -221,6 +234,93 @@ def _llm_generate(
     return None
 
 
+# ── TRUST: leaked-reasoning scrubber ──────────────────────────────────────────
+# Some models emit their Chain-of-Thought / Chain-of-Debate scaffolding
+# ("Step 1: Analyze…", "[INSTRUCTION]", "Critique E1-E3", meta-narration) into
+# the synthesizer output. That reasoning must never reach published section
+# prose — it is not grounded, cited, or reader-facing. This deterministic
+# scrubber removes it so generated content is TRUST-compliant.
+# Bracketed control tags: named ([SYNTHESIS]) or "[X APPLIED]"/"[X CRITIQUE]" etc.
+_ARTIFACT_TOKEN_RE = re.compile(
+    r"\[(?:ARGUMENT|JUDGMENT|SYNTHESIS|INSTRUCTION|CRITIQUE|REASONING|TASK|"
+    r"FINAL\s*ANSWER|ANSWER|THOUGHT|PLAN|STEP|SELF[- ]?CRITIQUE|SELF[- ]?CORRECTION)\]"
+    r"|\[[A-Z][A-Z0-9 _/-]{1,28}?(?:APPLIED|CRITIQUE|CORRECTION|REVISION|REASONING|EDIT)\]",
+    re.IGNORECASE,
+)
+_FINAL_MARKER_RE = re.compile(
+    r"(?:^|\n)\s*\*{0,2}(?:final answer|final section|final response|final|"
+    r"answer|output|section text|final draft|clean(?:ed)? (?:version|text|draft))\*{0,2}"
+    r"\s*[:\-–—]\s*",
+    re.IGNORECASE,
+)
+# A paragraph is reasoning scaffolding (not reader-facing prose) if it opens
+# with any of these. Broadened from real observed CoT/CoD leaks.
+_REASONING_PARA_RE = re.compile(
+    r"^\s*[#>*_\s]*(?:"
+    r"step\s+\d+\b"
+    r"|critique\s+e?\d"
+    r"|reasoning(?:\s+step)?s?\b"
+    r"|(?:self[- ]?)?correction\b"
+    r"|self[- ]?critique\b"
+    r"|refining\b|revising\b|rewriting\b|drafting\b"
+    r"|wait[,.\s]|hmm[,.\s]|okay[,.\s]|let'?s\b"
+    r"|the (?:central|core|main) (?:error|issue|problem)\b"
+    r"|the user (?:has )?(?:provided|requests|asks|wants)"
+    r"|(?:this|the) (?:task|input|prompt|evidence) (?:description|requests?|asks?)"
+    r"|the prompt (?:asks|requests|says|wants)"
+    r"|to (?:be|make it) (?:\"?denser|more concise)"
+    r"|i(?:'ll| will| need to| must| should| have to| can) (?:analyze|break down|identify|compress|reason|synthesize|ensure|make|combine|keep|stick|avoid|not)"
+    r"|let me (?:analyze|break|think|start|see|re-?read)"
+    r"|here(?:'s| is) (?:my|the) (?:reasoning|analysis|breakdown|thought|step-by-step)"
+    r"|here(?:'s| is) (?:the )?step-by-step"
+    r"|based on (?:my|the) (?:reasoning|analysis)"
+    r"|looking at the\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _strip_reasoning_artifacts(text: str) -> str:
+    """Remove leaked CoT/CoD reasoning scaffolding from generated section prose.
+
+    - Keeps only what follows the last explicit final-answer/synthesis marker.
+    - Drops individual lines that open with reasoning meta-narration (handles
+      single-block reasoning, not just leading paragraphs).
+    - Strips inline control tokens; collapses the blank lines left behind.
+    Returns clean prose. If scrubbing would remove nearly everything (the output
+    was pure reasoning), falls back to the token-stripped original so a real
+    section is never silently emptied; a no-op for already-clean content.
+    """
+    if not text or not text.strip():
+        return text
+    original = text
+    matches = list(_FINAL_MARKER_RE.finditer(text))
+    if matches:
+        text = text[matches[-1].end():]
+    kept = [ln for ln in text.split("\n") if not _REASONING_PARA_RE.match(ln.strip())]
+    text = _ARTIFACT_TOKEN_RE.sub("", "\n".join(kept))
+    text = re.sub(r"\n{3,}", "\n\n", text).strip()
+    if len(text) < 40 <= len(original.strip()):
+        text = _ARTIFACT_TOKEN_RE.sub("", original).strip()
+    return text
+
+
+# Residual reasoning cues that survive scrubbing → the section is polluted and
+# must be flagged for human review (never silently published as clean).
+_RESIDUE_RE = re.compile(
+    r"\bstep\s+\d+\b|\[(?:INSTRUCTION|CRITIQUE|SYNTHESIS|ARGUMENT|JUDGMENT)\b"
+    r"|critique\s+e?\d|self[- ]?correction|self[- ]?critique|the (?:central|core) error"
+    r"|the prompt (?:asks|requests|says)|i must ensure|the following (?:section|evidence|chunks)"
+    r"|compress(?:ed|ion)?\b.*\bdenser|reasoning steps?\b|the task is\b.*\bcompress",
+    re.IGNORECASE,
+)
+
+
+def _has_reasoning_residue(text: str) -> bool:
+    """True if generation artifacts remain after scrubbing (flag for HITL)."""
+    return bool(text) and bool(_RESIDUE_RE.search(text))
+
+
 def _cot_generate(
     heading: str,
     evidence: str,
@@ -246,7 +346,10 @@ def _cot_generate(
             skip_injection_scan=True,
         )
         result = orchestrator.invoke_chain_of_thought(function, req)
-        return result.content.strip() if result and result.content else None
+        if result and result.content:
+            # Scrub any leaked CoT reasoning so only clean prose is returned.
+            return _strip_reasoning_artifacts(result.content).strip() or None
+        return None
     except Exception as exc:
         logger.debug("doc_generator: CoT failed (%s), falling back to direct LLM", exc)
         return None
@@ -287,10 +390,9 @@ def _cod_compress(text: str, heading: str, *, function: str = "document_qna") ->
         # CoD produces argument evaluations, not compressed prose.
         result = orchestrator.invoke_chain_of_thought(function, req)
         compressed = result.content.strip() if result and result.content else None
-        # Strip any residual chain-marker artifacts from prompt templates
+        # Scrub leaked CoT/CoD reasoning scaffolding (TRUST compliance).
         if compressed:
-            import re
-            compressed = re.sub(r"\[ARGUMENT\]|\[JUDGMENT\]|\[SYNTHESIS\]", "", compressed).strip()
+            compressed = _strip_reasoning_artifacts(compressed).strip()
         if compressed and len(compressed) > 100:
             logger.info(
                 "doc_generator: CoD compressed '%s' from %d → %d words",
@@ -413,9 +515,13 @@ def generate_document(
         # Build section-specific evidence
         sec_evidence = evidence  # per-section targeted retrieval would improve this further
 
-        # 4. Draft — CoT when evidence is rich, direct otherwise
+        # 4. Draft — direct clean-prose prompt by default; CoT only when opted in.
+        # CoT (reasoner→critic→synthesizer) tends to leak its reasoning into the
+        # output on many models; the direct _SECTION_PROMPT mandates clean prose
+        # with [source:] citations, which is TRUST-compliant. Enable the richer
+        # CoT path with ICDEV_DIC_COT_ENABLED=true (accepts the leakage risk).
         raw_text: str | None = None
-        if len(sec_evidence) > _COT_EVIDENCE_THRESHOLD:
+        if _dic_cot_enabled() and len(sec_evidence) > _COT_EVIDENCE_THRESHOLD:
             raw_text = _cot_generate(heading, sec_evidence)
 
         if not raw_text:
@@ -441,8 +547,12 @@ def generate_document(
                 )
                 continue
 
-        # 5. CoD compression for verbose sections
-        raw_text = _cod_compress(raw_text, heading)
+        # 5. CoD compression for verbose sections (opt-in — the CoT-based
+        # compressor also leaks reasoning; off by default for clean output).
+        if _dic_cot_enabled():
+            raw_text = _cod_compress(raw_text, heading)
+        # TRUST: scrub so no leaked reasoning reaches published prose.
+        raw_text = _strip_reasoning_artifacts(raw_text)
 
         # 6. Verify and confidence-gate
         confidence = 1.0
@@ -467,6 +577,12 @@ def generate_document(
             except Exception as exc:
                 logger.warning("doc_generator: verifier error: %s", exc)
 
+        # TRUST: scrub AFTER the verifier (which may reintroduce reasoning by
+        # replacing raw_text with its verified_text) so the final stored/published
+        # prose carries no leaked CoT/CoD scaffolding.
+        if not abstained:
+            raw_text = _strip_reasoning_artifacts(raw_text)
+
         # Deterministic placeholder check — unresolved [BRACKETED] tokens
         # force a HITL flag regardless of verifier confidence.
         placeholder_tokens: list = []
@@ -478,6 +594,16 @@ def generate_document(
 
         # Apply confidence threshold gate
         if not abstained:
+            # TRUST: if generation artifacts survived scrubbing, never publish
+            # silently — flag for human review / regeneration.
+            if _has_reasoning_residue(raw_text) and not low_confidence:
+                low_confidence = True
+                hitl_note = (
+                    "⚠ Generation artifacts detected (leaked reasoning) — "
+                    "regenerate or edit this section before publishing."
+                )
+                if heading not in flagged_headings:
+                    flagged_headings.append(heading)
             if placeholder_tokens and not low_confidence:
                 low_confidence = True
                 hitl_note = (
@@ -706,6 +832,8 @@ def regenerate_section(
             "If the evidence does not support a claim, omit it rather than inventing it."
         )
     raw_text = _llm_generate(prompt)
+    if raw_text:
+        raw_text = _strip_reasoning_artifacts(raw_text)  # TRUST: no leaked reasoning
     if not raw_text:
         return {
             "version_id": version_id,
