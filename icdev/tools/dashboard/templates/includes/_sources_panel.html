@@ -1,0 +1,9 @@
+{# Reusable Sources panel (trust-cite-04) — renders the evidence a generated
+   artifact was drafted from, for consistent citation/provenance UI across
+   RFI, proposals, DIC and Tech Writer. Caller passes `sources` (a list of
+   label strings). Renders nothing when the list is empty. #}
+{% if sources %}
+<div class="sources-panel" style="margin-top:8px;font-size:11px;color:#64748b;">
+  <strong style="color:#94a3b8;">Sources:</strong> {{ sources|join(', ') }}
+</div>
+{% endif %}

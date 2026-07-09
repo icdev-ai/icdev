@@ -10394,7 +10394,7 @@ CREATE TABLE public.dashboard_users (
     classification character varying(50) DEFAULT 'CUI'::character varying,
     clearance_level text DEFAULT 'CUI'::text NOT NULL,
     compartments text DEFAULT '[]'::text NOT NULL,
-    CONSTRAINT dashboard_users_role_check CHECK ((role = ANY (ARRAY['admin'::text, 'pm'::text, 'developer'::text, 'isso'::text, 'co'::text, 'cor'::text]))),
+    CONSTRAINT dashboard_users_role_check CHECK ((role = ANY (ARRAY['admin'::text, 'pm'::text, 'developer'::text, 'isso'::text, 'co'::text, 'cor'::text, 'bd'::text, 'capture_mgr'::text, 'contract_mgr'::text, 'reviewer'::text]))),
     CONSTRAINT dashboard_users_status_check CHECK ((status = ANY (ARRAY['active'::text, 'suspended'::text])))
 );
 
@@ -24517,6 +24517,36 @@ CREATE TABLE public.rag_chunks (
     kg_node_ids text DEFAULT '[]'::text,
     CONSTRAINT rag_chunks_tier_check CHECK ((tier = ANY (ARRAY['hot'::text, 'warm'::text, 'cold'::text])))
 );
+
+
+--
+-- Name: rag_provenance_ledger; Type: TABLE; Schema: public; Owner: -
+-- Append-only AIA chain-of-custody ledger (D-AIDP, NIST AU-3). trust-cite-04:
+-- materialized here so fresh-PG bootstrap has it (bootstrap_pg marks migrations
+-- applied, so migration 250 alone would not reach a fresh database).
+--
+
+CREATE TABLE IF NOT EXISTS public.rag_provenance_ledger (
+    id SERIAL PRIMARY KEY,
+    chunk_uuid text NOT NULL,
+    parent_doc_uuid text,
+    sha256_hash text,
+    token_count integer DEFAULT 0,
+    classification_label text,
+    version_tree_ref text,
+    model_id text,
+    hyperparams_json text DEFAULT '{}'::text,
+    prompt_sha256 text,
+    signature text,
+    event_type text NOT NULL DEFAULT 'ingest'::text,
+    ingest_timestamp timestamp without time zone,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT rag_provenance_ledger_event_type_check CHECK ((event_type = ANY (ARRAY['ingest'::text, 'chain_of_custody'::text])))
+);
+
+CREATE INDEX IF NOT EXISTS idx_rag_prov_chunk ON public.rag_provenance_ledger(chunk_uuid);
+CREATE INDEX IF NOT EXISTS idx_rag_prov_parent_doc ON public.rag_provenance_ledger(parent_doc_uuid);
+CREATE INDEX IF NOT EXISTS idx_rag_prov_event_type ON public.rag_provenance_ledger(event_type);
 
 
 --

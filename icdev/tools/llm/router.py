@@ -74,6 +74,24 @@ class LLMUnavailableError(RuntimeError):
         self.no_llm_mode = no_llm_mode
 
 
+class RedactionUnavailableError(RuntimeError):
+    """Raised (only when ``redaction.fail_closed`` is enabled) when the PII/CUI
+    sanitizer that MUST run before an LLM call is missing or errors — so raw
+    sensitive text is never sent unredacted (trust-mask-01).
+
+    Fail-open (the default) logs and proceeds; fail-closed raises this to abort
+    the LLM call. Legitimate skips (redaction disabled, excluded function,
+    local-only routing) never raise — they are not failures.
+
+    Attributes:
+        function: ICDEV™ function whose egress was blocked.
+    """
+
+    def __init__(self, message: str, *, function: str = ""):
+        super().__init__(message)
+        self.function = function
+
+
 def _expand_env(value):
     """Expand ${VAR:-default} patterns in string values."""
     if not isinstance(value, str):
@@ -854,9 +872,15 @@ class LLMRouter:
         scope and whether routing is local-only (skips if configured).
 
         Returns session_id for de-anonymization, or None if skipped.
+
+        trust-mask-01: when ``redaction.fail_closed`` is enabled, a sanitizer
+        that MUST run but is missing/errors raises RedactionUnavailableError
+        (aborting the LLM call) instead of proceeding unredacted. Default is
+        fail-open (log + proceed). Legitimate skips below never raise.
         """
         # D-RDT-4: Config toggle — skip redaction if explicitly disabled
         rdcfg = self._config.get("redaction", {})
+        fail_closed = bool(rdcfg.get("fail_closed", False))
         if not rdcfg.get("enabled", True):
             return None
 
@@ -869,6 +893,14 @@ class LLMRouter:
 
         sanitizer = self._get_sanitizer()
         if sanitizer is None:
+            # Sanitizer module unavailable. Fail-open: skip (legacy). Fail-closed:
+            # block egress — raw PII/CUI must never leave unredacted.
+            if fail_closed:
+                raise RedactionUnavailableError(
+                    f"Redaction sanitizer unavailable for '{function}' and "
+                    f"redaction.fail_closed is enabled — LLM call blocked.",
+                    function=function,
+                )
             return None
 
         try:
@@ -905,7 +937,17 @@ class LLMRouter:
 
             return sanitizer.session_id
 
+        except RedactionUnavailableError:
+            raise
         except Exception as exc:
+            # Sanitization errored mid-flight. Fail-closed blocks egress;
+            # fail-open logs and proceeds (legacy default).
+            if fail_closed:
+                raise RedactionUnavailableError(
+                    f"Redaction failed for '{function}' ({exc}) and "
+                    f"redaction.fail_closed is enabled — LLM call blocked.",
+                    function=function,
+                ) from exc
             logger.debug("Pre-invoke redaction failed (non-blocking): %s", exc)
             return None
 
@@ -2055,6 +2097,58 @@ class LLMRouter:
 
         orchestrator = ChainOrchestrator(router=self)
         result = orchestrator.invoke_chain_of_debate(function, request)
+
+        response = LLMResponse(
+            content=result.content,
+            model_id=",".join(result.models_used),
+            provider="chain_orchestrator",
+            input_tokens=result.total_input_tokens,
+            output_tokens=result.total_output_tokens,
+            duration_ms=result.total_duration_ms,
+            stop_reason=result.stop_reason,
+            classification=request.classification,
+        )
+        response.chain_trace_id = result.trace_id  # type: ignore[attr-defined]
+        response.chain_mode = result.chain_mode  # type: ignore[attr-defined]
+        response.chain_rounds = result.rounds  # type: ignore[attr-defined]
+        response.chain_confidence = result.confidence  # type: ignore[attr-defined]
+
+        try:
+            self._log_telemetry(
+                function=function,
+                request=request,
+                response=response,
+                model_id=",".join(result.models_used),
+                provider_name="chain_orchestrator",
+                latency_ms=result.total_duration_ms,
+            )
+        except Exception:
+            pass
+
+        return response
+
+    def invoke_council(self, function: str, request: LLMRequest) -> LLMResponse:
+        """Invoke an LLM Council via ChainOrchestrator.
+
+        Fixed-perspective advisors (Contrarian, First Principles Thinker,
+        Expansionist, Outsider, Executor) each respond independently, peer-
+        review each other anonymously, and a chairman synthesizes a
+        structured verdict (agreement / clashes / blind spots / recommendation
+        / next step) as `response.content`. See
+        `tools.llm.chain_orchestrator.ChainOrchestrator.invoke_council` for
+        the full mechanism. Reads `chain_orchestration.council` config.
+        """
+        try:
+            from tools.llm.chain_orchestrator import ChainOrchestrator
+        except ImportError as exc:
+            raise LLMUnavailableError(
+                f"ChainOrchestrator not available: {exc}",
+                function=function,
+                no_llm_mode=False,
+            ) from exc
+
+        orchestrator = ChainOrchestrator(router=self)
+        result = orchestrator.invoke_council(function, request)
 
         response = LLMResponse(
             content=result.content,

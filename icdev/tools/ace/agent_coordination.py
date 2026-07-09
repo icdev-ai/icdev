@@ -82,7 +82,7 @@ def post_result(namespace: str, key: str, value: object, *, posted_by: str = "")
             conn.execute(
                 "INSERT OR REPLACE INTO agent_coordination "
                 "(id, namespace, key, value_json, posted_by, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
                 (row_id, namespace, key, value_json, posted_by, now, now),
             )
         conn.commit()
@@ -111,7 +111,7 @@ def read_result(namespace: str, key: str) -> object:
             ).fetchone()
         except Exception:
             row = conn.execute(
-                "SELECT value_json FROM agent_coordination WHERE namespace=? AND key=?",
+                "SELECT value_json FROM agent_coordination WHERE namespace=%s AND key=%s",
                 (namespace, key),
             ).fetchone()
     finally:
@@ -139,7 +139,7 @@ def list_results(namespace: str) -> list[dict]:
         except Exception:
             rows = conn.execute(
                 "SELECT key, value_json, posted_by, updated_at FROM agent_coordination "
-                "WHERE namespace=? ORDER BY updated_at DESC",
+                "WHERE namespace=%s ORDER BY updated_at DESC",
                 (namespace,),
             ).fetchall()
     finally:

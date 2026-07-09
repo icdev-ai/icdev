@@ -201,15 +201,31 @@ def api_save(session_id, section_id):
 def api_export(session_id, fmt):
     if fmt not in ("docx", "md", "questions"):
         return jsonify({"error": "Supported formats: docx, md, questions"}), 400
-    force = bool((request.get_json(silent=True) or {}).get("force_placeholders"))
+    _body = request.get_json(silent=True) or {}
+    force = bool(_body.get("force_placeholders"))
+    force_refs = bool(_body.get("force_references"))
     try:
         if fmt == "questions":
             # Part 6 questions to the Government — separate ARC/email
             # submission, never part of the response document.
             path = wb.export_questions(session_id, force_placeholders=force)
         else:
-            path = wb.assemble_and_export(session_id, fmt, force_placeholders=force)
+            path = wb.assemble_and_export(
+                session_id, fmt, force_placeholders=force, force_references=force_refs
+            )
         return jsonify({"ok": True, "path": path, "download_url": f"/api/rfi/{session_id}/download/{fmt}"})
+    except wb.ReferenceGateBlocked as exc:
+        return (
+            jsonify(
+                {
+                    "error": "Citation gate: section(s) cite RFI references that do not "
+                             "exist — fix the citations or force",
+                    "gate": "citation_guard",
+                    "findings": exc.findings,
+                }
+            ),
+            409,
+        )
     except wb.PlaceholderGateBlocked as exc:
         return (
             jsonify(
@@ -463,6 +479,10 @@ def rfi_preview(session_id):
     # Preview mirrors the exported response document — Part 6 (questions to
     # the Government) is submitted separately and excluded here too.
     sections = [s for s in wb.get_sections(session_id) if s.get("part") != "part6"]
+    # trust-cite-03: expose the evidence each section was drafted from as a
+    # rendered Sources list (parsed from sources_json here so the template stays simple).
+    for s in sections:
+        s["source_labels"] = wb._section_source_labels(s)
     profile = wb._load_profile(session.get("profile_name", "own_company"))
     annex = wb.build_compliance_annex(sections)
     return render_template(

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import importlib
-import logging
 import re
 import time
 from dataclasses import dataclass, field
@@ -11,8 +10,9 @@ from typing import Any
 
 from icdev.tools.daemon.base import TrustKernelBase
 from icdev.tools.db.storage import get_connection
+from icdev.tools.logging.icdev_logger import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 # ---------------------------------------------------------------------------

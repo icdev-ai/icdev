@@ -3411,7 +3411,8 @@ CREATE TABLE IF NOT EXISTS dashboard_users (
     email TEXT UNIQUE NOT NULL,
     display_name TEXT NOT NULL,
     role TEXT NOT NULL DEFAULT 'developer'
-        CHECK(role IN ('admin', 'pm', 'developer', 'isso', 'co', 'cor')),
+        CHECK(role IN ('admin', 'pm', 'developer', 'isso', 'co', 'cor',
+                       'bd', 'capture_mgr', 'contract_mgr', 'reviewer')),
     status TEXT NOT NULL DEFAULT 'active'
         CHECK(status IN ('active', 'suspended')),
     created_by TEXT,

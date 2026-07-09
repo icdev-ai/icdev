@@ -242,6 +242,7 @@ DIRECTORY_TREE = [
     "tools/mcp",
     "tools/builder",
     "tools/security",  # D-EPSEC-7: security is always-on, not conditional
+    "tools/quality",  # trust-cite-05: anti-hallucination grounding (content + citation) is always-on
     "tools/workflow",  # Coherence engine — implementation drift detection
     "tools/llm",
     "tools/compat",
