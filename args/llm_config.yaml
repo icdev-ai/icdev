@@ -821,7 +821,13 @@ routing:
     effort: medium
 
   default:
-    chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
+    chain: [kimi-cloud, qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
+    effort: medium
+
+  # DIC document generation — Kimi 2.7 cloud primary (fast TTFT; local qwen3
+  # CoT is too slow for interactive HITL). Falls back to local + others.
+  document_qna:
+    chain: [kimi-cloud, qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
     effort: medium
 
 # -----------------------------------------------------------------------
