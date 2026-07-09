@@ -1234,6 +1234,8 @@ def _register_govcon_pages(app: "Flask", _get_db):
         try:
             from tools.govcon.govcon_engine import get_status
             from tools.govcon.bayesian_bid_scorer import pipeline_value_rollup
+            from tools.govcon.crm_heat import get_engagement_heat_by_agency
+            from tools.govcon.sam_scanner import list_forecast_notices
 
             stats = get_status()
             try:
@@ -1293,9 +1295,27 @@ def _register_govcon_pages(app: "Flask", _get_db):
             except Exception:
                 pass
 
+            # BD view: CRM engagement heat per agency (prop-cap-14)
+            try:
+                heat_by_agency = get_engagement_heat_by_agency(
+                    [opp.get("agency") for opp in active_proposals]
+                )
+                for opp in active_proposals:
+                    opp["engagement_heat"] = heat_by_agency.get(opp.get("agency"))
+            except Exception:
+                for opp in active_proposals:
+                    opp["engagement_heat"] = None
+
+            # BD view: SAM.gov forecast/presolicitation notice feed (prop-cap-14)
+            try:
+                forecast_notices = list_forecast_notices(limit=10)
+            except Exception:
+                forecast_notices = {"notices": [], "count": 0}
+
             return render_template(
                 "govcon/pipeline.html", stats=stats, opportunities=opportunities, linked_opp_ids=linked_opp_ids,
                 pipeline_rollup=pipeline_rollup, active_proposals=active_proposals,
+                forecast_notices=forecast_notices,
             )
         except Exception:
             stats = {
@@ -1310,7 +1330,10 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 "domain_distribution": {},
                 "last_pipeline_run": None,
             }
-            return render_template("govcon/pipeline.html", stats=stats, opportunities=[], linked_opp_ids=set())
+            return render_template(
+                "govcon/pipeline.html", stats=stats, opportunities=[], linked_opp_ids=set(),
+                forecast_notices={"notices": [], "count": 0},
+            )
         finally:
             conn.close()
 

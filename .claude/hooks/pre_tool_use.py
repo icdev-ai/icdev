@@ -291,6 +291,7 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "pg_capture_activities",
         "pg_capture_gate_decisions",
         "pg_teaming_assessments",
+        "pg_pwin_assessments",
         # Proposal Genesis Enhancement (append-only review/theme/experiment tracking)
         "pg_review_findings",
         "pg_theme_tracking",

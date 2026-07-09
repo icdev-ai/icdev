@@ -162,13 +162,17 @@ class Executor:
             return lv == rv
         if op == "!=":
             return lv != rv
-        if op == ">":
-            return lv > rv
-        if op == "<":
-            return lv < rv
-        if op == ">=":
-            return lv >= rv
-        if op == "<=":
+        if op in (">", "<", ">=", "<="):
+            # SQL NULL semantics: a comparison against a missing/NULL operand
+            # is neither true nor false, so it never matches a WHERE clause.
+            if lv is None or rv is None:
+                return False
+            if op == ">":
+                return lv > rv
+            if op == "<":
+                return lv < rv
+            if op == ">=":
+                return lv >= rv
             return lv <= rv
         if op == "contains":
             return rv in lv if lv is not None else False

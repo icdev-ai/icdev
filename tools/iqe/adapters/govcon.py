@@ -1,11 +1,12 @@
 # CUI // SP-CTI
-"""IQE adapter — GovCon / Proposals canvas (prop-cap-13).
+"""IQE adapter — GovCon / Proposals canvas (prop-cap-13, prop-iqe-01).
 
 Collections:
     govcon.opportunities  — proposal_opportunities (active pipeline)
     govcon.awards         — govcon_awards (competitor award history)
     govcon.blackhat       — proposal_blackhat_assessments (black-hat models)
     govcon.competitors    — proposal_competitors (per-opportunity competitor sub-table)
+    govcon.requirements   — rfp_requirement_patterns (extracted shall/must/will patterns)
 """
 from __future__ import annotations
 
@@ -98,7 +99,23 @@ def competitors_adapter(conn: Any) -> list[dict]:
         return []
 
 
+def requirements_adapter(conn: Any) -> list[dict]:
+    c = _conn(conn)
+    try:
+        cur = c.execute(
+            "SELECT id, pattern_name, description, domain_category, frequency, "
+            "keywords, representative_text, capability_coverage, status, "
+            "first_seen, last_seen, classification "
+            "FROM rfp_requirement_patterns ORDER BY frequency DESC"
+        )
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, row)) for row in cur.fetchall()]
+    except Exception:
+        return []
+
+
 register_collection("govcon.opportunities", opportunities_adapter)
 register_collection("govcon.awards", awards_adapter)
 register_collection("govcon.blackhat", blackhat_adapter)
 register_collection("govcon.competitors", competitors_adapter)
+register_collection("govcon.requirements", requirements_adapter)

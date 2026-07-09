@@ -1607,7 +1607,7 @@ def govcon_iqe_query():
     if not question:
         return jsonify({"error": "question is required"}), 400
 
-    collections = ["govcon.opportunities", "govcon.awards", "govcon.blackhat", "govcon.competitors"]
+    collections = ["govcon.opportunities", "govcon.awards", "govcon.blackhat", "govcon.competitors", "govcon.requirements"]
     translation = nl_to_iqe(question, collections)
     iqe_str = translation.get("iqe", "")
     explanation = translation.get("explanation", "")
