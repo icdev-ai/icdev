@@ -523,6 +523,14 @@ function aiAssistSection(sectionId, heading, collectionId) {
     .then(function(data) {
       statusEl.style.display = 'none';
       if (data.error) { alert('AI Assist failed: ' + data.error); return; }
+      // Surface an abstention explicitly instead of silently reloading into the
+      // same empty section (transient no-evidence / empty-LLM outcome).
+      if (data.abstained || !(data.content && String(data.content).trim())) {
+        alert('AI Assist could not generate this section:\n\n' +
+              (data.content || 'The model returned no content. Please try again.') +
+              '\n\nClick ✨ AI Assist again to retry.');
+        return;
+      }
       // Refresh the page to show updated section
       window.location.reload();
     })

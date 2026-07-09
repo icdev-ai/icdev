@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import uuid
 from dataclasses import dataclass, field
@@ -190,7 +191,13 @@ def _build_evidence_pool(
     return "\n\n".join(parts) or "(no evidence available)"
 
 
-_LLM_TIMEOUT = 45  # seconds — guards against CLI-bridge poll thread hanging
+# Per-attempt timeout guards against a hung CLI-bridge poll loop. Cloud providers
+# (e.g. Kimi) can take well over the old 45s to synthesize a full 2k-token section,
+# so the default is generous and env-overridable. Empty (not timed-out) responses
+# are retried a bounded number of times because cloud models intermittently return
+# an empty completion — a single empty answer must not silently abstain a section.
+_LLM_TIMEOUT = int(os.environ.get("ICDEV_DIC_LLM_TIMEOUT", "90"))  # seconds per attempt
+_LLM_EMPTY_RETRIES = int(os.environ.get("ICDEV_DIC_LLM_RETRIES", "2"))  # extra tries on empty
 
 
 def _llm_generate(
@@ -200,7 +207,10 @@ def _llm_generate(
 
     Degrades gracefully to ``None`` when no LLM provider is available (air-gapped
     / headless mode) so the caller can abstain rather than hallucinate.
-    Times out after _LLM_TIMEOUT seconds to avoid hanging on CLI-bridge poll loops.
+    Each attempt times out after _LLM_TIMEOUT seconds to avoid hanging on CLI-bridge
+    poll loops. A non-empty answer returns immediately; an *empty* completion is
+    retried up to _LLM_EMPTY_RETRIES times (transient cloud emptiness), while a
+    timeout stops retrying (it would only double the wait).
     """
     import concurrent.futures as _cf
     try:
@@ -219,16 +229,22 @@ def _llm_generate(
             max_tokens=max_tokens,
             skip_injection_scan=True,
         )
-        _ex = _cf.ThreadPoolExecutor(max_workers=1)
-        _fut = _ex.submit(router.invoke, function, req)
-        try:
-            resp = _fut.result(timeout=_LLM_TIMEOUT)
-            if resp and getattr(resp, "content", None):
-                return resp.content.strip() or None
-        except _cf.TimeoutError:
-            pass  # timed out — CLI-bridge not running; degrade gracefully
-        finally:
-            _ex.shutdown(wait=False)  # don't block on CLI-bridge poll thread
+        for attempt in range(1 + max(0, _LLM_EMPTY_RETRIES)):
+            _ex = _cf.ThreadPoolExecutor(max_workers=1)
+            _fut = _ex.submit(router.invoke, function, req)
+            try:
+                resp = _fut.result(timeout=_LLM_TIMEOUT)
+                text = (resp.content.strip() if resp and getattr(resp, "content", None) else "")
+                if text:
+                    return text
+                logger.warning(
+                    "doc_generator: empty LLM completion (attempt %d/%d); retrying",
+                    attempt + 1, 1 + max(0, _LLM_EMPTY_RETRIES),
+                )
+            except _cf.TimeoutError:
+                break  # timed out — CLI-bridge not running / provider stalled; degrade
+            finally:
+                _ex.shutdown(wait=False)  # don't block on CLI-bridge poll thread
     except Exception as exc:
         logger.warning("doc_generator: LLM call failed: %s", exc)
     return None
