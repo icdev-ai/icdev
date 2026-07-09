@@ -3661,6 +3661,25 @@ TOOL_REGISTRY = {
     # ============================================================
     # CLOUD (5 tools)
     # ============================================================
+    "rfi_demand_scan": {
+        "category": "govcon",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_rfi_demand_scan",
+        "description": "RFI capability-gap demand signals: list cross-RFI unmet-capability demand (mode='list', default) or re-scan open gaps and emit atomic SUGGESTED kanban build tasks (mode='scan').",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "mode": {
+                    "type": "string",
+                    "enum": ["list", "scan"],
+                    "default": "list",
+                    "description": "list = read demand signals; scan = emit SUGGESTED tasks for eligible open gaps",
+                },
+                "limit": {"type": "integer", "default": 50, "description": "max signals to return (mode=list)"},
+                "min_priority": {"type": "number", "description": "override the priority threshold for task emission (mode=scan)"},
+            },
+        },
+    },
     "csp_monitor_scan": {
         "category": "cloud",
         "module": "tools.mcp.gap_handlers",

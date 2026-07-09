@@ -179,12 +179,25 @@ _SOURCES: tuple[dict, ...] = (
         "keywords_col": None,
         "tag_cols": ("prediction_type", "severity"),
     },
+    # RFI capability-gap demand signals (tools/govcon/rfi_demand.py). Recurring
+    # unmet RFI requirements aggregate here with a frequency-weighted `priority`;
+    # harvesting them lets the Foundry novelty-gate and cluster real customer
+    # demand alongside internally-discovered gaps. PK is content_hash, not id.
+    {
+        "engine": "rfi",
+        "table": "rfi_capability_gaps",
+        "id_col": "content_hash",
+        "theme_col": "capability_need",
+        "score_col": "priority",
+        "keywords_col": "keywords",
+        "tag_cols": ("domain",),
+    },
 )
 
 # Engines harvested each cycle, in deterministic order. innovation/creative/
 # research/genesis are table-backed (``_SOURCES`` descriptors); telemetry is
 # computed from the introspective analyzer's read-only analyses.
-_ENGINES: tuple[str, ...] = ("innovation", "creative", "research", "genesis", "telemetry")
+_ENGINES: tuple[str, ...] = ("innovation", "creative", "research", "genesis", "rfi", "telemetry")
 
 
 def _caller_context() -> tuple[str, str]:
@@ -233,7 +246,7 @@ def _parse_keywords(raw: Any, tags: list[str]) -> list[str]:
 def _harvest_source(conn: Any, spec: dict, cap: int) -> list[dict]:
     """Read + normalize one engine store table. Returns [] on any error (missing
     table, unmigrated schema, empty store)."""
-    cols = ["id", spec["theme_col"], spec["score_col"]]
+    cols = [spec.get("id_col", "id"), spec["theme_col"], spec["score_col"]]
     if spec["keywords_col"]:
         cols.append(spec["keywords_col"])
     cols.extend(spec["tag_cols"])

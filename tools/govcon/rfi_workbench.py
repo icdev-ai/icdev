@@ -1128,11 +1128,29 @@ def build_compliance_annex(sections: list) -> dict:
 
     overall_cov = round((covered_total + partial_total * 0.5) / total_reqs * 100) if total_reqs else 0
     overall_wg = round(sum(wg_scores) / len(wg_scores), 1) if wg_scores else None
+
+    # Capability-gap demand signals raised by THIS session's requirements
+    # (tools/govcon/rfi_demand.py). Best-effort; JSON refs filtered in Python (no
+    # json_extract at runtime). Absent table / disabled feature -> empty list.
+    demand_signals = []
+    try:
+        session_id = next((s.get("session_id") for s in sections if s.get("session_id")), None)
+        if session_id:
+            from tools.govcon.rfi_demand import list_demand_signals
+
+            demand_signals = [
+                s for s in list_demand_signals(limit=200)
+                if any(str(ref).startswith(str(session_id)) for ref in (s.get("rfi_refs") or []))
+            ]
+    except Exception:
+        pass
+
     return {
         "coverage": coverage_rows,
         "quality": quality_rows,
         "overall_coverage_pct": overall_cov,
         "overall_wg_score": overall_wg,
+        "demand_signals": demand_signals,
     }
 
 
@@ -1166,6 +1184,26 @@ def _build_compliance_annex_md(annex: dict) -> str:
         passed = "✓" if r["passed"] else "✗" if r["wg_score"] is not None else "—"
         lines.append(f"| {r['title']} | {wg} | {style} | {passed} |")
     lines.append("")
+
+    # Capability-gap demand signals (unmet requirements captured for the roadmap).
+    demand = annex.get("demand_signals") or []
+    if demand:
+        lines += ["### Capability Gaps → Demand Signals", ""]
+        lines.append(
+            "Requirements this RFI surfaced that ICDEV cannot yet fully satisfy. "
+            "Each has been logged as a demand signal and queued as SUGGESTED build "
+            "task(s) to close the gap for future opportunities."
+        )
+        lines.append("")
+        lines.append("| Capability Need | Domain | Priority | High Demand |")
+        lines.append("|-----------------|--------|----------|-------------|")
+        for s in demand:
+            need = (s.get("capability_need") or "")[:80].replace("|", "/")
+            prio = s.get("priority")
+            prio_s = f"{prio:.2f}" if isinstance(prio, (int, float)) else "—"
+            high = "▲" if s.get("is_high_demand") else ""
+            lines.append(f"| {need} | {s.get('domain', '')} | {prio_s} | {high} |")
+        lines.append("")
     return "\n".join(lines)
 
 
@@ -1427,6 +1465,16 @@ def _check_coverage_background(section_id: str):
         check_requirement_coverage(section_id)
     except Exception as exc:
         logger.warning("Background coverage check failed for section %s: %s", section_id, exc)
+    # Capability-gap demand loop: once coverage is judged, surface any requirement that
+    # is BOTH a capability-catalog miss (grade N) AND uncovered/partial as a demand
+    # signal -> SUGGESTED kanban card. Guarded + fail-soft so it never breaks drafting.
+    try:
+        from tools.govcon import rfi_demand
+
+        if rfi_demand.is_enabled():
+            rfi_demand.process_section(section_id)
+    except Exception as exc:
+        logger.warning("RFI demand-gap detection failed for section %s: %s", section_id, exc)
 
 
 # ── ACE Editor one-pass review (item 8) ──────────────────────────────────────
