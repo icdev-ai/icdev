@@ -24548,6 +24548,48 @@ CREATE INDEX IF NOT EXISTS idx_rag_prov_chunk ON public.rag_provenance_ledger(ch
 CREATE INDEX IF NOT EXISTS idx_rag_prov_parent_doc ON public.rag_provenance_ledger(parent_doc_uuid);
 CREATE INDEX IF NOT EXISTS idx_rag_prov_event_type ON public.rag_provenance_ledger(event_type);
 
+--
+-- Name: rag_queries; Type: TABLE; Schema: public; Owner: -
+-- RAG knowledge search requests + lifecycle. Queried by
+-- notification_service/render_handler_service.py; materialized here so fresh-PG
+-- bootstrap has it (bootstrap_pg marks migrations applied, so migration 252
+-- alone would not reach a fresh database).
+--
+
+CREATE TABLE IF NOT EXISTS public.rag_queries (
+    id text PRIMARY KEY,
+    query_text text NOT NULL,
+    lens text DEFAULT 'default'::text,
+    status text DEFAULT 'pending'::text,
+    agent_id text,
+    tenant_id text DEFAULT ''::text,
+    classification text DEFAULT 'CUI'::text,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    completed_at timestamp without time zone,
+    CONSTRAINT rag_queries_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'running'::text, 'done'::text, 'failed'::text])))
+);
+
+CREATE INDEX IF NOT EXISTS idx_rag_queries_status ON public.rag_queries(status);
+CREATE INDEX IF NOT EXISTS idx_rag_queries_agent ON public.rag_queries(agent_id);
+
+--
+-- Name: rag_citations; Type: TABLE; Schema: public; Owner: -
+-- Source citations attached to a rag_queries result.
+--
+
+CREATE TABLE IF NOT EXISTS public.rag_citations (
+    id BIGSERIAL PRIMARY KEY,
+    query_id text NOT NULL REFERENCES public.rag_queries(id),
+    source_doc text NOT NULL,
+    citation_text text,
+    confidence real DEFAULT 0.0,
+    tenant_id text DEFAULT ''::text,
+    classification text DEFAULT 'CUI'::text,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_rag_citations_query ON public.rag_citations(query_id);
+
 
 --
 -- Name: rag_evaluation_campaigns; Type: TABLE; Schema: public; Owner: -

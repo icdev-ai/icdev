@@ -6918,6 +6918,32 @@ CREATE INDEX IF NOT EXISTS idx_rag_prov_parent_doc
 CREATE INDEX IF NOT EXISTS idx_rag_prov_event_type
     ON rag_provenance_ledger(event_type);
 
+-- rag_queries: tracks RAG knowledge search requests and their lifecycle
+CREATE TABLE IF NOT EXISTS rag_queries (
+    id              TEXT    PRIMARY KEY,
+    query_text      TEXT    NOT NULL,
+    lens            TEXT    DEFAULT 'default',
+    status          TEXT    DEFAULT 'pending'
+        CHECK(status IN ('pending', 'running', 'done', 'failed')),
+    agent_id        TEXT,
+    tenant_id       TEXT    DEFAULT '',
+    classification  TEXT    DEFAULT 'CUI',
+    created_at      TEXT    DEFAULT CURRENT_TIMESTAMP,
+    completed_at    TEXT
+);
+
+-- rag_citations: source citations attached to a rag_queries result
+CREATE TABLE IF NOT EXISTS rag_citations (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    query_id        TEXT    NOT NULL REFERENCES rag_queries(id),
+    source_doc      TEXT    NOT NULL,
+    citation_text   TEXT,
+    confidence      REAL    DEFAULT 0.0,
+    tenant_id       TEXT    DEFAULT '',
+    classification  TEXT    DEFAULT 'CUI',
+    created_at      TEXT    DEFAULT CURRENT_TIMESTAMP
+);
+
 -- ============================================================
 -- FINE-TUNING SUBSYSTEM (Phase 64 Extension, D-FT-1 through D-FT-22)
 -- ============================================================
