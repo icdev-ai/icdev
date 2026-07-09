@@ -6,6 +6,27 @@ All notable changes to ICDEV™ are documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.36] - 2026-07-09
+
+### Security
+- **ABAC ownership references no longer collapse to match-all (fail-open).** `${subject.user_id}` was resolved against a flattened context, so the dotted path returned `None`, which the matcher treats as match-all. With first-match-wins evaluation, `proposal_section_writer_own` (Permit) preceded `proposal_section_writer_deny_unassigned` (Deny), letting any `section_writer` edit **any** proposal section. References now resolve against a nested context and unresolvable references become a non-matching sentinel, so evaluation falls through to deny. `developer_readwrite_own` ownership scoping was affected the same way (#131).
+
+### Fixed
+- **Canvases invisible after `pip install`** — the packaged `.env.template` (derived from `.env.example`) was missing ~90 capability flags, hiding Document Intelligence, Tech Writer, Notebook, Slides, and the RFI canvas on a fresh `icdev init`. It now documents all 62 registry-declared enablement flags, guarded by two new release checks: `env_files_sync` and `env_flags_documented` (#120).
+- **DIC AI Assist silently abstained** on a transient empty LLM completion, leaving the section blank with no feedback. Empty completions are now retried (bounded, `ICDEV_DIC_LLM_RETRIES`), the per-attempt timeout is configurable (`ICDEV_DIC_LLM_TIMEOUT`, default 90s), and abstentions are surfaced to the reviewer (#127).
+- **`rag_queries` / `rag_citations` materialized** in `pg_consolidated.sql`, `init_icdev_db.py`, and migration 252 — the RAG result-card renderer already queried them, so PostgreSQL raised `UndefinedTable` (#128).
+- **RLS columns on capture/pWin/competitor tables** — `tenant_id` / `classification` added to `pg_pwin_assessments`, `pg_competitor_awards`, `pg_capture_gate_decisions` (ensure-table helpers, PG schema, migration 253). The injected RLS predicate previously raised `UndefinedColumn` on every read (#130).
+
+## [1.2.35] - 2026-07-09
+
+### Added
+- **TRUST initiative** — universal source citations with data provenance on every generated artifact (proposals, RFI, DIC, Tech Writer, generated child apps), enforced by a blocking `citation_guard` on promote/export with HITL override + audit, built on a shared `tools/quality/citation_grounding.py` core and backed by the materialized `rag_provenance_ledger` (#121, #122).
+- **Fail-closed-capable data masking** — LLM egress can abort rather than send raw PII/CUI when the sanitizer is unavailable (`redaction.fail_closed`); ingestion-time masking (`redaction.mask_at_ingestion`); a scheduled `redaction_scan_reflex` files remediation cards for unmasked data at rest. All toggles default off.
+- **Anti-hallucination consistency** — the deterministic confabulation detector is wired into RFI, proposals, and DIC generation as a reviewer signal; `coherence_checker.check_trust_coverage` enforces TRUST invariants.
+
+### Fixed
+- **DIC generation leaked Chain-of-Thought / Chain-of-Debate reasoning** into published prose. Reasoning scaffolding is scrubbed, CoT is gated off by default, and any residue flags the section for human review (#125).
+
 ## [1.2.34] - 2026-07-02
 
 ### Added
