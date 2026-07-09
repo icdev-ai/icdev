@@ -101,7 +101,9 @@ def _ensure_tables(conn):
             naics_code TEXT,
             labor_categories TEXT,
             source TEXT,
-            created_at TEXT NOT NULL
+            created_at TEXT NOT NULL,
+            tenant_id TEXT,
+            classification TEXT DEFAULT 'CUI'
         )
     """)
     conn.commit()
@@ -227,7 +229,7 @@ def ptw_analysis(opportunity_id):
     amounts = [
         r[1] if isinstance(r, (tuple, list)) else r["award_amount"]
         for r in rows
-        if (r[1] if isinstance(r, (tuple, list)) else r.get("award_amount"))
+        if (r[1] if isinstance(r, (tuple, list)) else r["award_amount"])
     ]
     if not amounts:
         return {

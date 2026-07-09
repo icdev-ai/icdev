@@ -450,7 +450,9 @@ def _ensure_pwin_table(conn):
             past_performance_fit REAL,
             factor_breakdown TEXT NOT NULL,
             method TEXT NOT NULL DEFAULT 'logistic_weighted',
-            assessed_at TEXT NOT NULL
+            assessed_at TEXT NOT NULL,
+            tenant_id TEXT,
+            classification TEXT DEFAULT 'CUI'
         )
     """)
     conn.commit()

@@ -259,6 +259,10 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "cpmp_cor_access_log",
         # RFI Workbench (migration 236) — export log is append-only
         "rfi_workbench_exports",
+        # RFI Capability-Gap Demand Loop (migration 251) — provenance links are
+        # immutable (gap -> emitted kanban task). rfi_capability_gaps itself is NOT
+        # append-only (frequency/priority update in place).
+        "rfi_gap_task_links",
         # Phase 61 — ANVIL Critique (Feature 3)
         "anvil_critique_sessions",
         "anvil_critique_findings",
@@ -291,6 +295,7 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "pg_capture_activities",
         "pg_capture_gate_decisions",
         "pg_teaming_assessments",
+        "pg_pwin_assessments",
         # Proposal Genesis Enhancement (append-only review/theme/experiment tracking)
         "pg_review_findings",
         "pg_theme_tracking",

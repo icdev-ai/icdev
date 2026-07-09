@@ -492,7 +492,8 @@ CREATE TABLE IF NOT EXISTS cpmp_int_coverage (
     metadata TEXT DEFAULT '{}',
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now')),
-    classification TEXT DEFAULT 'CUI'
+    classification TEXT DEFAULT 'CUI',
+    tenant_id TEXT
 )
 """
 
@@ -513,7 +514,8 @@ CREATE TABLE IF NOT EXISTS cpmp_collection_requirements (
     metadata TEXT DEFAULT '{}',
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now')),
-    classification TEXT DEFAULT 'CUI'
+    classification TEXT DEFAULT 'CUI',
+    tenant_id TEXT
 )
 """
 
@@ -888,6 +890,47 @@ CREATE TABLE IF NOT EXISTS proposal_questions (
 )
 """
 
+# RFI Capability-Gap Demand Loop (rfidem-store-01/02).
+# Aggregation store: one row per distinct unmet capability, deduped by content_hash
+# across RFIs so recurring gaps accrue frequency/priority. NOT append-only — frequency
+# and priority are updated in place (mirrors pulse_demand_signals).
+_GOVCON_RFI_GAPS_DDL = """
+CREATE TABLE IF NOT EXISTS rfi_capability_gaps (
+    content_hash TEXT PRIMARY KEY,
+    capability_need TEXT NOT NULL DEFAULT '',
+    keywords TEXT NOT NULL DEFAULT '[]',
+    domain TEXT,
+    frequency INTEGER NOT NULL DEFAULT 1,
+    velocity REAL NOT NULL DEFAULT 0.0,
+    best_coverage REAL NOT NULL DEFAULT 0.0,
+    priority REAL NOT NULL DEFAULT 0.0,
+    is_high_demand INTEGER NOT NULL DEFAULT 0,
+    rfi_refs TEXT NOT NULL DEFAULT '[]',
+    prediction_id TEXT,
+    status TEXT NOT NULL DEFAULT 'open',
+    first_seen TEXT NOT NULL,
+    last_seen TEXT NOT NULL,
+    metadata TEXT NOT NULL DEFAULT '{}',
+    classification TEXT DEFAULT 'CUI'
+)
+"""
+
+# Append-only provenance: which kanban task(s) a gap produced, via which route
+# (direct SUGGESTED decomposition vs Foundry harvest). Immutable — see
+# APPEND_ONLY_TABLES in .claude/hooks/pre_tool_use.py. UNIQUE(gap_hash,task_id) makes
+# emission idempotent so re-runs never duplicate cards.
+_GOVCON_RFI_GAP_LINKS_DDL = """
+CREATE TABLE IF NOT EXISTS rfi_gap_task_links (
+    id TEXT PRIMARY KEY,
+    gap_hash TEXT NOT NULL DEFAULT '',
+    task_id TEXT NOT NULL DEFAULT '',
+    route TEXT NOT NULL DEFAULT 'direct',
+    emitted_at TEXT NOT NULL,
+    classification TEXT DEFAULT 'CUI',
+    UNIQUE (gap_hash, task_id)
+)
+"""
+
 _GOVCON_INTELLIGENCE_DDLS = [
     _GOVCON_SAM_OPPS_DDL,
     _GOVCON_PROP_OPPS_DDL,
@@ -900,6 +943,8 @@ _GOVCON_INTELLIGENCE_DDLS = [
     _GOVCON_COMPLIANCE_MATRIX_DDL,
     _GOVCON_STATUS_HISTORY_DDL,
     _GOVCON_QUESTIONS_DDL,
+    _GOVCON_RFI_GAPS_DDL,
+    _GOVCON_RFI_GAP_LINKS_DDL,
 ]
 
 _GOVCON_INTELLIGENCE_INDEXES = [
@@ -921,6 +966,10 @@ _GOVCON_INTELLIGENCE_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_prop_cm_opp    ON proposal_compliance_matrix(opportunity_id)",
     "CREATE INDEX IF NOT EXISTS idx_prop_q_opp     ON proposal_questions(opportunity_id)",
     "CREATE INDEX IF NOT EXISTS idx_prop_q_status  ON proposal_questions(status)",
+    "CREATE INDEX IF NOT EXISTS idx_rfi_gaps_priority ON rfi_capability_gaps(priority)",
+    "CREATE INDEX IF NOT EXISTS idx_rfi_gaps_status   ON rfi_capability_gaps(status)",
+    "CREATE INDEX IF NOT EXISTS idx_rfi_gaps_high     ON rfi_capability_gaps(is_high_demand)",
+    "CREATE INDEX IF NOT EXISTS idx_rfi_gap_links_gap ON rfi_gap_task_links(gap_hash)",
 ]
 
 
@@ -930,7 +979,8 @@ def init_govcon_intelligence_tables(conn=None) -> dict:
     Creates: sam_gov_opportunities, proposal_opportunities, rfp_shall_statements,
     rfp_requirement_patterns, icdev_capability_map, proposal_section_drafts,
     proposal_knowledge_base, govcon_awards, proposal_compliance_matrix,
-    proposal_status_history, proposal_questions.
+    proposal_status_history, proposal_questions, rfi_capability_gaps,
+    rfi_gap_task_links.
 
     All DDL uses CREATE TABLE IF NOT EXISTS — idempotent and safe to call
     on both fresh SQLite databases (CI/E2E) and production DBs.

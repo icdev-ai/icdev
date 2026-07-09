@@ -673,3 +673,18 @@ scanner then runs against the *staged copy as data* — the target is read, hash
   - Any parse failure (corrupt file, unsupported format, empty dataset) returns `None` → the route responds 400, nothing is persisted.
   - Regression test: `tests/viz/test_dataset_story.py::test_parse_xlsm_rejected` fails the build if `.xlsm` parsing is ever silently allowed.
 - **Revisit if:** the ingestion pipeline ever shells out (e.g. LibreOffice-based conversion for other formats), adds a formula-evaluation ("live recalculate") mode, or the upload path becomes user-path-controlled.
+
+### Gap 25 — Solicitation Parser (`tools/govcon/solicitation_parser.py`)
+
+**Module:** `tools/govcon/solicitation_parser.py` (`parse_solicitation()`), ground-sol-01; same posture as the pre-existing `tools/govcon/rfi_document_parser.py` it mirrors.
+
+**Ingress path:** A user (or the /proposals pipeline) points the parser at a solicitation PDF/DOCX/TXT on local disk. Text extraction delegates to `rfi_document_parser.extract_text()` (pdfminer → pypdf → PyPDF2 chain, python-docx for DOCX); PDF CLIN tables are additionally read via `pdfplumber` word coordinates. All downstream processing is pure `re` pattern matching over the extracted text producing a plain dict — no DB writes, no file writes, no rendering.
+
+- **Decision:** **sandboxed-on-demand** (native PDF parsers on user-supplied documents — same class as Gap 3, `pdf_provider.py`)
+- **Rationale:** The only native-parser exposure is the PDF/DOCX decode step in third-party libraries (`pdfminer.six`/`pypdf`/`pdfplumber`/`python-docx`). A malformed document could theoretically trigger a parser CVE, but the module itself contains no `exec()`/`eval()`/`subprocess`/dynamic import, never executes or renders extracted content, and returns structured data only. Solicitation documents are supplied by authenticated proposal operators, not anonymous input.
+- **Guardrails:**
+  - No code-execution or shell surface anywhere in the module (regex + dict assembly only).
+  - `pdfplumber` failures are caught and degrade to the text-regex fallback; extraction failures raise `ValueError` to the caller.
+  - Dependabot + `tools/maintenance/` audits track `pdfminer.six`/`pypdf`/`pdfplumber`/`python-docx` CVEs (shared with Gap 3).
+  - `ICDEV_STRICT_SANDBOX=1` (IL5/air-gap) routes PDF parsing through `SandboxExecutor` per the Gap 3 mechanism when wired at the call site.
+- **Revisit if:** the parser output is ever rendered unescaped, fed to a shell, or the intake path accepts unauthenticated uploads — or a PDF parser CVE with known ICDEV™ exposure ships (promote to `sandboxed`).

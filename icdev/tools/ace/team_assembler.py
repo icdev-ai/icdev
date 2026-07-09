@@ -196,12 +196,12 @@ class TeamAssembler:
             # If a pending stub row was pre-inserted by launch(), update it in-place
             # so the browser page never 404s during the async assembly phase.
             existing = conn.execute(
-                "SELECT id FROM ace_instances WHERE id = ?", (instance_id,)
+                "SELECT id FROM ace_instances WHERE id = %s", (instance_id,)
             ).fetchone()
             if existing:
                 conn.execute(
-                    "UPDATE ace_instances SET name=?, role_id=?, state='assembling', "
-                    "trust_tier=?, config_json=?, updated_at=? WHERE id=?",
+                    "UPDATE ace_instances SET name=%s, role_id=%s, state='assembling', "
+                    "trust_tier=%s, config_json=%s, updated_at=%s WHERE id=%s",
                     (
                         context.get("name", instance_id),
                         primary_role,
@@ -215,7 +215,7 @@ class TeamAssembler:
                 conn.execute(
                     "INSERT INTO ace_instances "
                     "(id, name, role_id, state, trust_tier, config_json, created_at, updated_at) "
-                    "VALUES (?, ?, ?, 'assembling', ?, ?, ?, ?)",
+                    "VALUES (%s, %s, %s, 'assembling', %s, %s, %s, %s)",
                     (
                         instance_id,
                         context.get("name", instance_id),
@@ -231,7 +231,7 @@ class TeamAssembler:
                 conn.execute(
                     "INSERT INTO ace_coworkers "
                     "(id, instance_id, role_id, display_name, state, trust_tier, created_at) "
-                    "VALUES (?, ?, ?, ?, 'idle', ?, ?)",
+                    "VALUES (%s, %s, %s, %s, 'idle', %s, %s)",
                     (
                         spec.coworker_id,
                         instance_id,
@@ -246,7 +246,7 @@ class TeamAssembler:
             conn.execute(
                 "INSERT INTO ace_agent_workflows "
                 "(id, instance_id, name, state, config_json, created_at) "
-                "VALUES (?, ?, ?, 'pending', '{}', ?)",
+                "VALUES (%s, %s, %s, 'pending', '{}', %s)",
                 (workflow_id, instance_id, workflow_name, now),
             )
 

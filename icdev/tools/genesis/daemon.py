@@ -102,6 +102,7 @@ REFLEX_NAMES = [
     "critical_task_watchdog_reflex",  # polls for critical kanban tasks → watchdog_alerts + sidecar JSON
     "api_contract_reflex",            # OpenAPI spec vs live responses → [API-CONTRACT] kanban tasks
     "route_perf_reflex",              # NAV_ROUTES smoke + p50 latency regression detection → [PERF] tasks
+    "redaction_scan_reflex",          # scheduled at-rest PII/CUI scan → [PII-SCAN] remediation tasks
     "log_triage",
     "inspect_adapt",
     "cpmp_monitor",

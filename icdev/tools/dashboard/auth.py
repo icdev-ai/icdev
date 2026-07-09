@@ -14,6 +14,7 @@ Provides:
 
 import functools
 import hashlib
+import json
 import os
 import secrets
 import uuid
@@ -90,15 +91,29 @@ def log_auth_event(user_id, event_type, ip_address=None, user_agent=None, detail
 # ---------------------------------------------------------------------------
 
 
-def create_user(email, display_name, role="developer", created_by=None, tenant_id=None):
-    """Create a new dashboard user. Returns user dict."""
+def create_user(
+    email, display_name, role="developer", created_by=None, tenant_id=None,
+    clearance_level="CUI", compartments=None,
+):
+    """Create a new dashboard user. Returns user dict.
+
+    clearance_level / compartments are the Bell-LaPadula MAC subject
+    attributes (prop-sec-02) — dashboard_users.clearance_level (TEXT,
+    e.g. 'CUI'/'SECRET'/'TOP SECRET') and .compartments (JSON array of
+    COI_*/LAC_*/SCI strings). Both default to the least-privileged value
+    so existing callers are unaffected.
+    """
     user_id = str(uuid.uuid4())
+    compartments_json = json.dumps(list(compartments) if compartments else [])
     conn = _get_db()
     try:
         conn.execute(
-            """INSERT INTO dashboard_users (id, email, display_name, role, created_by, tenant_id)
-               VALUES (%s, %s, %s, %s, %s, %s)""",
-            (user_id, email, display_name, role, created_by, tenant_id),
+            """INSERT INTO dashboard_users
+               (id, email, display_name, role, created_by, tenant_id,
+                clearance_level, compartments)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+            (user_id, email, display_name, role, created_by, tenant_id,
+             clearance_level, compartments_json),
         )
         conn.commit()
     finally:
@@ -112,6 +127,8 @@ def create_user(email, display_name, role="developer", created_by=None, tenant_i
         "role": role,
         "status": "active",
         "tenant_id": tenant_id,
+        "clearance_level": clearance_level,
+        "compartments": compartments_json,
     }
 
 
@@ -152,6 +169,7 @@ def validate_api_key(raw_key):
     try:
         row = conn.execute(
             """SELECT u.id, u.email, u.display_name, u.role, u.status,
+                      u.clearance_level, u.compartments,
                       k.id as key_id, k.expires_at
                FROM dashboard_api_keys k
                JOIN dashboard_users u ON k.user_id = u.id
@@ -302,6 +320,23 @@ def reactivate_user(user_id, reactivated_by=None):
 # RBAC — role-based access control (D172)
 # ---------------------------------------------------------------------------
 
+# Single source of truth for dashboard_users.role. Keep in sync with the
+# CHECK constraint in tools/db/init_icdev_db.py's dashboard_users CREATE
+# TABLE (SQL CHECK constraints can't reference a Python constant directly,
+# so this list and that constraint must be updated together). Every role
+# referenced anywhere in RBAC_MATRIX below, or in any @require_role(...)
+# call, must appear here -- otherwise create_user() can never actually
+# persist a user with that role (dashboard-users-role-check-constraint;
+# bd/capture_mgr/contract_mgr/reviewer were added to RBAC_MATRIX by
+# prop-fix-08 but never reached the CHECK constraint until this fix).
+VALID_DASHBOARD_ROLES = frozenset({
+    "admin", "pm", "developer", "isso", "co", "cor",
+    # GovLift (migration 139) — see tools/govlift/rbac.py::GOVLIFT_ROLES
+    "migration_engineer", "component_admin", "auditor", "ciso",
+    # GovCon / Proposals / CPMP (prop-fix-08) — see RBAC_MATRIX below
+    "bd", "capture_mgr", "contract_mgr", "reviewer",
+})
+
 # Maps page/action to allowed roles
 RBAC_MATRIX = {
     # Pages accessible to all authenticated users
@@ -323,8 +358,25 @@ RBAC_MATRIX = {
     # Usage: admin sees all, others see own
     "usage": {"admin", "pm", "developer", "isso", "co"},
     # CPMP (Phase 60)
-    "cpmp": {"admin", "pm", "developer", "isso", "co"},
-    "cpmp_cor": {"admin", "pm", "isso", "co", "cor"},
+    "cpmp": {"admin", "pm", "developer", "isso", "co", "contract_mgr"},
+    "cpmp_cor": {"admin", "pm", "isso", "co", "cor", "contract_mgr"},
+    # GovCon (prop-fix-08) — capture/BD surfaces
+    "govcon": {"admin", "bd", "capture_mgr", "pm", "isso"},
+    "govcon_requirements": {"admin", "bd", "capture_mgr", "pm", "isso"},
+    "govcon_capabilities": {"admin", "bd", "capture_mgr", "pm", "isso"},
+    # Proposals (prop-fix-08)
+    "proposals_list": {"admin", "bd", "capture_mgr", "pm", "reviewer"},
+    "proposals_detail": {"admin", "bd", "capture_mgr", "pm", "reviewer"},
+    "proposals_section_detail": {"admin", "bd", "capture_mgr", "pm", "reviewer"},
+    "proposals_compliance_gaps": {"admin", "bd", "capture_mgr", "pm", "reviewer"},
+    "proposals_reviews_dashboard": {"admin", "pm", "reviewer"},
+    "proposals_language": {"admin", "bd", "capture_mgr", "pm", "reviewer"},
+    "proposals_ptw": {"admin", "capture_mgr", "pm"},
+    # CPMP detail/deliverable surfaces (prop-fix-08)
+    "cpmp_detail": {"admin", "pm", "contract_mgr", "co", "cor", "isso"},
+    "cpmp_deliverable_detail": {"admin", "pm", "contract_mgr", "co", "cor", "isso"},
+    # Proposal Genesis (prop-fix-08)
+    "proposal_genesis": {"admin", "pm", "bd", "capture_mgr"},
 }
 
 
@@ -381,6 +433,25 @@ def _extract_api_key_from_request():
     return request.args.get("api_key", "")
 
 
+def _attach_security_context():
+    """Derive g.security_context from g.current_user (prop-sec-02).
+
+    Must be called after g.current_user is set to an authenticated user
+    dict. Without this, tools.security.classification_enforcer's
+    @require_clearance/@require_compartment decorators and the Bell-LaPadula
+    MAC helpers used across tools/dashboard/api/proposals.py and cpmp.py
+    (_mac_ctx() et al.) always see g.security_context as unset and silently
+    no-op (their "ctx is None -> allow" compatibility fallback), regardless
+    of the authenticated user's actual clearance_level/compartments.
+    """
+    try:
+        from tools.security.security_context import _extract_from_flask_g
+        _extract_from_flask_g()
+    except Exception:
+        # Never let MAC-context derivation break the primary auth flow.
+        pass
+
+
 def _auth_before_request():
     """Flask before_request hook for authentication."""
     g.current_user = None
@@ -405,6 +476,7 @@ def _auth_before_request():
         user = get_user_by_id(user_id)
         if user and user["status"] == "active":
             g.current_user = dict(user)
+            _attach_security_context()
             return None
         else:
             # Session invalid — clear it
@@ -417,6 +489,7 @@ def _auth_before_request():
         user = validate_api_key(raw_key)
         if user:
             g.current_user = dict(user)
+            _attach_security_context()
             # Set session so subsequent requests use cookie
             session["user_id"] = user["id"]
             log_auth_event(
@@ -445,6 +518,7 @@ def _auth_before_request():
         user = bootstrap_env_user(env_key)
         if user:
             g.current_user = dict(user)
+            _attach_security_context()
             session["user_id"] = user["id"]
             return None
 

@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% block title %}Forecasting - ICDEV™ Monitoring{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>TimesFM Forecasting</h1>
+    <p class="subtitle">Self-hostable time-series forecasting for telemetry, capacity, and security-event trends</p>
+</div>
+
+<div class="health-banner {% if model_status.available %}healthy{% else %}degraded{% endif %}" role="alert">
+    <span class="status-dot {% if model_status.available %}green{% else %}yellow{% endif %}" role="img" aria-label="{% if model_status.available %}available{% else %}unavailable{% endif %}"></span>
+    {% if model_status.available %}&#x2713;{% else %}&#x26A0;{% endif %}
+    Model Status: {% if model_status.available %}Ready{% else %}Unavailable{% endif %}
+    {% if not model_status.available %} &mdash; Install the <code>timesfm</code> package and mount model weights to enable inference{% endif %}
+</div>
+
+<div class="card" style="padding: 20px; margin-bottom: 24px;">
+    <h2 class="section-header">Run Forecast</h2>
+    <form id="forecast-form">
+        <div class="fld">
+            <label for="fc-values">Time-series values (comma-separated)</label>
+            <textarea id="fc-values" rows="4" placeholder="1.0, 2.1, 3.4, 4.2, ...">1,2,3,4,5,6,7,8,9,10</textarea>
+            <div class="hint">At least 2 numeric samples. Longer series improve accuracy.</div>
+        </div>
+        <div class="row" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px;">
+            <div class="fld">
+                <label for="fc-freq">Frequency</label>
+                <select id="fc-freq">
+                    <option value="H" selected>Hourly (H)</option>
+                    <option value="T">Minute (T)</option>
+                    <option value="D">Daily (D)</option>
+                    <option value="W">Weekly (W)</option>
+                    <option value="M">Monthly (M)</option>
+                </select>
+            </div>
+            <div class="fld">
+                <label for="fc-horizon">Horizon</label>
+                <input id="fc-horizon" type="number" min="1" max="128" value="12">
+            </div>
+            <div class="fld">
+                <label for="fc-quantile">Quantile</label>
+                <input id="fc-quantile" type="number" step="0.05" min="0" max="1" value="0.9">
+            </div>
+        </div>
+        <div class="fld">
+            <label for="fc-context">Context / label (optional)</label>
+            <input id="fc-context" type="text" maxlength="200" placeholder="e.g. CPU utilization for web tier">
+        </div>
+        <button type="submit" class="btn primary" id="fc-submit">Run Forecast</button>
+        <span id="fc-spinner" class="spin" style="display:none;margin-left:10px;"></span>
+    </form>
+    <div id="fc-result" style="margin-top: 20px; display:none;">
+        <h3>Prediction</h3>
+        <pre id="fc-output" style="background: var(--bg-tertiary, #12122a); padding: 12px; border-radius: 6px; overflow:auto;"></pre>
+    </div>
+    <div id="fc-error" class="verdict-banner v-not_suitable" style="margin-top: 20px; display:none;"></div>
+</div>
+
+<div class="table-container">
+    <div class="table-header">
+        <h2>Recent Forecast Jobs</h2>
+    </div>
+    {% if recent_jobs %}
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Source</th>
+                <th>Context</th>
+                <th>Samples</th>
+                <th>Status</th>
+                <th>Created</th>
+                <th>Completed</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for job in recent_jobs %}
+            <tr>
+                <td>{{ job.id }}</td>
+                <td>{{ job.source }}</td>
+                <td>{{ job.context or "—" }}</td>
+                <td>{{ job.input_rows }}</td>
+                <td><span class="badge {% if job.status == 'completed' %}b-ai_ready{% elif job.status == 'failed' %}b-not_suitable{% else %}b-partial{% endif %}">{{ job.status }}</span></td>
+                <td>{{ job.created_at }}</td>
+                <td>{{ job.completed_at or "—" }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">
+        <p>No forecast jobs yet. Submit the form above to create the first one.</p>
+    </div>
+    {% endif %}
+</div>
+
+{% set iqe_title = "Forecast IQE" %}
+{% set iqe_canvas = "forecast" %}
+{% set iqe_api_route = "/api/iqe-query" %}
+{% set iqe_examples = [
+    {"label": "Recent jobs", "query": "show recent forecast jobs"},
+    {"label": "Failed jobs", "query": "list failed forecast jobs today"},
+    {"label": "Completed jobs", "query": "show completed forecast jobs"}
+] %}
+{% include "includes/iqe_query_widget.html" %}
+
+<script>
+document.getElementById('forecast-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    var submit = document.getElementById('fc-submit');
+    var spinner = document.getElementById('fc-spinner');
+    var resultPanel = document.getElementById('fc-result');
+    var output = document.getElementById('fc-output');
+    var errorPanel = document.getElementById('fc-error');
+    resultPanel.style.display = 'none';
+    errorPanel.style.display = 'none';
+    submit.disabled = true;
+    spinner.style.display = 'inline-block';
+    try {
+        var values = document.getElementById('fc-values').value.split(',').map(function(v) { return parseFloat(v.trim()); });
+        var payload = {
+            values: values,
+            freq: document.getElementById('fc-freq').value,
+            horizon: parseInt(document.getElementById('fc-horizon').value, 10),
+            quantile: parseFloat(document.getElementById('fc-quantile').value),
+            context: document.getElementById('fc-context').value
+        };
+        var resp = await fetch('/api/forecast', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        });
+        var data = await resp.json();
+        if (!resp.ok || data.error) {
+            errorPanel.textContent = (data.error || 'Request failed') + ' (HTTP ' + resp.status + ')';
+            errorPanel.style.display = '';
+        } else {
+            output.textContent = JSON.stringify(data, null, 2);
+            resultPanel.style.display = '';
+        }
+    } catch (err) {
+        errorPanel.textContent = 'Error: ' + err.message;
+        errorPanel.style.display = '';
+    } finally {
+        submit.disabled = false;
+        spinner.style.display = 'none';
+    }
+});
+</script>
+{% endblock %}

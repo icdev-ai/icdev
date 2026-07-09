@@ -3410,8 +3410,17 @@ CREATE TABLE IF NOT EXISTS dashboard_users (
     id TEXT PRIMARY KEY,
     email TEXT UNIQUE NOT NULL,
     display_name TEXT NOT NULL,
+    -- Keep in sync with tools/dashboard/auth.py::VALID_DASHBOARD_ROLES.
+    -- bd/capture_mgr/contract_mgr/reviewer (prop-fix-08, RBAC_MATRIX) and
+    -- migration_engineer/component_admin/auditor/ciso (migration 139,
+    -- tools/govlift/rbac.py::GOVLIFT_ROLES) were both added to their
+    -- respective Python role lists but never reached this CHECK constraint
+    -- until now -- those roles could never actually be assigned to a user
+    -- (dashboard-users-role-check-constraint).
     role TEXT NOT NULL DEFAULT 'developer'
-        CHECK(role IN ('admin', 'pm', 'developer', 'isso', 'co', 'cor')),
+        CHECK(role IN ('admin', 'pm', 'developer', 'isso', 'co', 'cor',
+                        'migration_engineer', 'component_admin', 'auditor', 'ciso',
+                        'bd', 'capture_mgr', 'contract_mgr', 'reviewer')),
     status TEXT NOT NULL DEFAULT 'active'
         CHECK(status IN ('active', 'suspended')),
     created_by TEXT,
@@ -6908,6 +6917,32 @@ CREATE INDEX IF NOT EXISTS idx_rag_prov_parent_doc
     ON rag_provenance_ledger(parent_doc_uuid);
 CREATE INDEX IF NOT EXISTS idx_rag_prov_event_type
     ON rag_provenance_ledger(event_type);
+
+-- rag_queries: tracks RAG knowledge search requests and their lifecycle
+CREATE TABLE IF NOT EXISTS rag_queries (
+    id              TEXT    PRIMARY KEY,
+    query_text      TEXT    NOT NULL,
+    lens            TEXT    DEFAULT 'default',
+    status          TEXT    DEFAULT 'pending'
+        CHECK(status IN ('pending', 'running', 'done', 'failed')),
+    agent_id        TEXT,
+    tenant_id       TEXT    DEFAULT '',
+    classification  TEXT    DEFAULT 'CUI',
+    created_at      TEXT    DEFAULT CURRENT_TIMESTAMP,
+    completed_at    TEXT
+);
+
+-- rag_citations: source citations attached to a rag_queries result
+CREATE TABLE IF NOT EXISTS rag_citations (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    query_id        TEXT    NOT NULL REFERENCES rag_queries(id),
+    source_doc      TEXT    NOT NULL,
+    citation_text   TEXT,
+    confidence      REAL    DEFAULT 0.0,
+    tenant_id       TEXT    DEFAULT '',
+    classification  TEXT    DEFAULT 'CUI',
+    created_at      TEXT    DEFAULT CURRENT_TIMESTAMP
+);
 
 -- ============================================================
 -- FINE-TUNING SUBSYSTEM (Phase 64 Extension, D-FT-1 through D-FT-22)

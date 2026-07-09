@@ -10394,7 +10394,7 @@ CREATE TABLE public.dashboard_users (
     classification character varying(50) DEFAULT 'CUI'::character varying,
     clearance_level text DEFAULT 'CUI'::text NOT NULL,
     compartments text DEFAULT '[]'::text NOT NULL,
-    CONSTRAINT dashboard_users_role_check CHECK ((role = ANY (ARRAY['admin'::text, 'pm'::text, 'developer'::text, 'isso'::text, 'co'::text, 'cor'::text]))),
+    CONSTRAINT dashboard_users_role_check CHECK ((role = ANY (ARRAY['admin'::text, 'pm'::text, 'developer'::text, 'isso'::text, 'co'::text, 'cor'::text, 'bd'::text, 'capture_mgr'::text, 'contract_mgr'::text, 'reviewer'::text]))),
     CONSTRAINT dashboard_users_status_check CHECK ((status = ANY (ARRAY['active'::text, 'suspended'::text])))
 );
 
@@ -22311,7 +22311,9 @@ CREATE TABLE public.pg_competitor_awards (
     naics_code text,
     labor_categories text,
     source text,
-    created_at text NOT NULL
+    created_at text NOT NULL,
+    tenant_id text,
+    classification text DEFAULT 'CUI'::text
 );
 
 
@@ -22640,7 +22642,9 @@ CREATE TABLE public.pg_pwin_assessments (
     past_performance_fit real,
     factor_breakdown text NOT NULL,
     method text DEFAULT 'logistic_weighted'::text NOT NULL,
-    assessed_at text NOT NULL
+    assessed_at text NOT NULL,
+    tenant_id text,
+    classification text DEFAULT 'CUI'::text
 );
 
 
@@ -23896,7 +23900,7 @@ CREATE TABLE public.proposal_review_findings (
     created_at text DEFAULT now(),
     resolved_evidence text,
     closure_approved_by text,
-    CONSTRAINT proposal_review_findings_finding_type_check CHECK ((finding_type = ANY (ARRAY['compliance_gap'::text, 'content_weakness'::text, 'competitive_risk'::text, 'formatting'::text, 'pricing_concern'::text, 'technical_error'::text, 'missing_content'::text, 'other'::text]))),
+    CONSTRAINT proposal_review_findings_finding_type_check CHECK ((finding_type = ANY (ARRAY['compliance_gap'::text, 'content_weakness'::text, 'competitive_risk'::text, 'formatting'::text, 'pricing_concern'::text, 'technical_error'::text, 'missing_content'::text, 'invalid_citation'::text, 'other'::text]))),
     CONSTRAINT proposal_review_findings_severity_check CHECK ((severity = ANY (ARRAY['critical'::text, 'major'::text, 'minor'::text, 'observation'::text]))),
     CONSTRAINT proposal_review_findings_status_check CHECK ((status = ANY (ARRAY['open'::text, 'in_progress'::text, 'resolved'::text, 'deferred'::text, 'wont_fix'::text])))
 );
@@ -24517,6 +24521,78 @@ CREATE TABLE public.rag_chunks (
     kg_node_ids text DEFAULT '[]'::text,
     CONSTRAINT rag_chunks_tier_check CHECK ((tier = ANY (ARRAY['hot'::text, 'warm'::text, 'cold'::text])))
 );
+
+
+--
+-- Name: rag_provenance_ledger; Type: TABLE; Schema: public; Owner: -
+-- Append-only AIA chain-of-custody ledger (D-AIDP, NIST AU-3). trust-cite-04:
+-- materialized here so fresh-PG bootstrap has it (bootstrap_pg marks migrations
+-- applied, so migration 250 alone would not reach a fresh database).
+--
+
+CREATE TABLE IF NOT EXISTS public.rag_provenance_ledger (
+    id SERIAL PRIMARY KEY,
+    chunk_uuid text NOT NULL,
+    parent_doc_uuid text,
+    sha256_hash text,
+    token_count integer DEFAULT 0,
+    classification_label text,
+    version_tree_ref text,
+    model_id text,
+    hyperparams_json text DEFAULT '{}'::text,
+    prompt_sha256 text,
+    signature text,
+    event_type text NOT NULL DEFAULT 'ingest'::text,
+    ingest_timestamp timestamp without time zone,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT rag_provenance_ledger_event_type_check CHECK ((event_type = ANY (ARRAY['ingest'::text, 'chain_of_custody'::text])))
+);
+
+CREATE INDEX IF NOT EXISTS idx_rag_prov_chunk ON public.rag_provenance_ledger(chunk_uuid);
+CREATE INDEX IF NOT EXISTS idx_rag_prov_parent_doc ON public.rag_provenance_ledger(parent_doc_uuid);
+CREATE INDEX IF NOT EXISTS idx_rag_prov_event_type ON public.rag_provenance_ledger(event_type);
+
+--
+-- Name: rag_queries; Type: TABLE; Schema: public; Owner: -
+-- RAG knowledge search requests + lifecycle. Queried by
+-- notification_service/render_handler_service.py; materialized here so fresh-PG
+-- bootstrap has it (bootstrap_pg marks migrations applied, so migration 252
+-- alone would not reach a fresh database).
+--
+
+CREATE TABLE IF NOT EXISTS public.rag_queries (
+    id text PRIMARY KEY,
+    query_text text NOT NULL,
+    lens text DEFAULT 'default'::text,
+    status text DEFAULT 'pending'::text,
+    agent_id text,
+    tenant_id text DEFAULT ''::text,
+    classification text DEFAULT 'CUI'::text,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    completed_at timestamp without time zone,
+    CONSTRAINT rag_queries_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'running'::text, 'done'::text, 'failed'::text])))
+);
+
+CREATE INDEX IF NOT EXISTS idx_rag_queries_status ON public.rag_queries(status);
+CREATE INDEX IF NOT EXISTS idx_rag_queries_agent ON public.rag_queries(agent_id);
+
+--
+-- Name: rag_citations; Type: TABLE; Schema: public; Owner: -
+-- Source citations attached to a rag_queries result.
+--
+
+CREATE TABLE IF NOT EXISTS public.rag_citations (
+    id BIGSERIAL PRIMARY KEY,
+    query_id text NOT NULL REFERENCES public.rag_queries(id),
+    source_doc text NOT NULL,
+    citation_text text,
+    confidence real DEFAULT 0.0,
+    tenant_id text DEFAULT ''::text,
+    classification text DEFAULT 'CUI'::text,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_rag_citations_query ON public.rag_citations(query_id);
 
 
 --

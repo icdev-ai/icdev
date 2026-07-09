@@ -1,11 +1,12 @@
 # CUI // SP-CTI
-"""IQE adapter — GovCon / Proposals canvas (prop-cap-13).
+"""IQE adapter — GovCon / Proposals canvas (prop-cap-13, prop-iqe-01).
 
 Collections:
     govcon.opportunities  — proposal_opportunities (active pipeline)
     govcon.awards         — govcon_awards (competitor award history)
     govcon.blackhat       — proposal_blackhat_assessments (black-hat models)
     govcon.competitors    — proposal_competitors (per-opportunity competitor sub-table)
+    govcon.requirements   — rfp_requirement_patterns (extracted shall/must/will patterns)
 """
 from __future__ import annotations
 
@@ -26,7 +27,8 @@ def opportunities_adapter(conn: Any) -> list[dict]:
     try:
         cur = c.execute(
             "SELECT id, title, agency, sub_agency, solicitation_number, naics_code, "
-            "due_date, status, proposal_type, set_aside_type, contract_value, "
+            "due_date, status, proposal_type, set_aside_type, "
+            "estimated_value_low, estimated_value_high, "
             "win_probability, ptw_low, ptw_high, capture_phase, capture_manager, "
             "classification, created_at "
             "FROM proposal_opportunities ORDER BY due_date ASC"
@@ -42,7 +44,8 @@ def awards_adapter(conn: Any) -> list[dict]:
     try:
         cur = c.execute(
             "SELECT awardee_name, contract_number, award_amount, agency, naics_code, "
-            "set_aside_type, award_date, period_of_performance "
+            "set_aside_type, award_date, "
+            "period_of_performance_start, period_of_performance_end "
             "FROM govcon_awards ORDER BY award_date DESC LIMIT 500"
         )
         cols = [d[0] for d in cur.description]
@@ -96,7 +99,23 @@ def competitors_adapter(conn: Any) -> list[dict]:
         return []
 
 
+def requirements_adapter(conn: Any) -> list[dict]:
+    c = _conn(conn)
+    try:
+        cur = c.execute(
+            "SELECT id, pattern_name, description, domain_category, frequency, "
+            "keywords, representative_text, capability_coverage, status, "
+            "first_seen, last_seen, classification "
+            "FROM rfp_requirement_patterns ORDER BY frequency DESC"
+        )
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, row)) for row in cur.fetchall()]
+    except Exception:
+        return []
+
+
 register_collection("govcon.opportunities", opportunities_adapter)
 register_collection("govcon.awards", awards_adapter)
 register_collection("govcon.blackhat", blackhat_adapter)
 register_collection("govcon.competitors", competitors_adapter)
+register_collection("govcon.requirements", requirements_adapter)

@@ -160,42 +160,59 @@ def check_confidence_indicators(text: str) -> List[Dict]:
     return findings
 
 
+def assess(text: str) -> Dict:
+    """Run all confabulation checks and score risk — PURE, no DB write.
+
+    Used by drafting post-passes (RFI/proposals) to surface a non-blocking
+    confabulation warning per generated section without a DB round-trip.
+    check_output() wraps this and persists the result.
+
+    Returns {risk_score, risk_level, findings[], findings_count, checks_performed}.
+    """
+    all_findings: List[Dict] = []
+    all_findings.extend(check_citation_patterns(text))
+    all_findings.extend(check_internal_contradictions(text))
+    all_findings.extend(check_confidence_indicators(text))
+
+    severity_weights = {"info": 0.1, "low": 0.2, "medium": 0.5, "high": 0.8, "critical": 1.0}
+    total_weight = sum(severity_weights.get(f["severity"], 0.3) for f in all_findings)
+    risk_score = min(1.0, total_weight / 5.0)
+
+    return {
+        "risk_score": round(risk_score, 3),
+        "risk_level": ("high" if risk_score >= 0.7 else "medium" if risk_score >= 0.3 else "low"),
+        "findings": all_findings,
+        "findings_count": len(all_findings),
+        "checks_performed": [
+            "citation_verification",
+            "internal_contradiction",
+            "confidence_indicators",
+        ],
+    }
+
+
 def check_output(
     project_id: str,
     text: str,
     db_path: Path = DB_PATH,
 ) -> Dict:
-    """Run all confabulation checks on text output."""
+    """Run all confabulation checks on text output and persist the result."""
     conn = _get_connection(db_path)
     try:
         _ensure_table(conn)
         now = datetime.now(timezone.utc).isoformat()
         input_hash = hashlib.sha256(text.encode()).hexdigest()[:16]
 
-        all_findings = []
-        all_findings.extend(check_citation_patterns(text))
-        all_findings.extend(check_internal_contradictions(text))
-        all_findings.extend(check_confidence_indicators(text))
-
-        # Calculate risk score
-        severity_weights = {"info": 0.1, "low": 0.2, "medium": 0.5, "high": 0.8, "critical": 1.0}
-        total_weight = sum(severity_weights.get(f["severity"], 0.3) for f in all_findings)
-        risk_score = min(1.0, total_weight / 5.0)
+        assessment = assess(text)
+        all_findings = assessment["findings"]
+        risk_score = assessment["risk_score"]
 
         result = {
             "project_id": project_id,
             "input_hash": input_hash,
             "input_length": len(text),
             "check_timestamp": now,
-            "risk_score": round(risk_score, 3),
-            "risk_level": ("high" if risk_score >= 0.7 else "medium" if risk_score >= 0.3 else "low"),
-            "findings": all_findings,
-            "findings_count": len(all_findings),
-            "checks_performed": [
-                "citation_verification",
-                "internal_contradiction",
-                "confidence_indicators",
-            ],
+            **assessment,
         }
 
         # Store in DB (append-only)

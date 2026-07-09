@@ -64,6 +64,16 @@
     <div id="govcon-status" style="margin-top:8px; font-size:12px; color:var(--text-secondary); display:none;"></div>
 </div>
 
+<!-- IQE Query Widget (prop-iqe-01) -->
+{% set iqe_canvas = "proposals" %}
+{% set iqe_api_route = "/api/proposals/iqe-query" %}
+{% set iqe_examples = [
+    {"label": "Sections behind schedule", "query": "show sections with status drafting past due date"},
+    {"label": "Non-compliant requirements", "query": "list compliance items with status non_compliant for opportunity " ~ opp.id},
+    {"label": "Recent color-team reviews", "query": "show reviews for opportunity " ~ opp.id}
+] %}
+{% include "includes/iqe_query_widget.html" %}
+
 {% if opp.status == 'won' %}
 <!-- CPMP Transition Banner (D-CPMP-9) -->
 <div class="card" style="padding:12px; margin-top:16px; border-left:3px solid #27ae60; background:rgba(39,174,96,0.06);">

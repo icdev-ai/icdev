@@ -48,7 +48,9 @@ CREATE TABLE IF NOT EXISTS kanban_tasks (
     last_run_metadata     TEXT,
     max_runtime_seconds   INTEGER,
     acceptance_criteria   TEXT,
-    triage_prompt         TEXT
+    triage_prompt         TEXT,
+    loop_type             TEXT DEFAULT 'deterministic',
+    adversarial_enabled   INTEGER DEFAULT 0
 )
 """
 

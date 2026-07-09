@@ -65,6 +65,7 @@ ICDEV™ is a **meta-builder** — an autonomous AI engineering platform that ge
 - CUI markings applied at generation time (not post-processing)
 - Append-only audit trails satisfying NIST AU controls
 - Multi-cloud deployment manifests (Terraform + Ansible + K8s + Helm)
+- **TRUST guarantees** — inline `[source:]` citations with data provenance on every generated artifact (blocking `citation_guard` on promote/export), fail-closed-capable PII/CUI data masking at both LLM egress and ingestion, and anti-hallucination checks that scrub leaked model reasoning and flag anything non-compliant for human review
 
 **And the applications it builds can build their own features** — a recursive, self-improving engineering system with grandchild prevention guardrails.
 

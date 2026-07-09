@@ -267,7 +267,16 @@
           <td style="text-align:center;font-size:1rem;" title="{{ stage_name }}">{{ stage_icon }}</td>
           <td><a href="/proposals/{{ opp.id }}" style="color:{{ stage_color }};font-weight:700;">{{ opp.solicitation_number }}</a></td>
           <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ opp.title }}">{{ opp.title[:48] }}{% if opp.title|length > 48 %}…{% endif %}</td>
-          <td style="color:var(--text-secondary);font-size:0.82rem;">{{ opp.agency or '—' }}</td>
+          <td style="color:var(--text-secondary);font-size:0.82rem;">
+            {{ opp.agency or '—' }}
+            {% if opp.engagement_heat %}
+              {% set heat = opp.engagement_heat %}
+              {% if heat.level == 'hot' %}{% set heat_icon = '🔥' %}
+              {% elif heat.level == 'warm' %}{% set heat_icon = '🌤️' %}
+              {% else %}{% set heat_icon = '❄️' %}{% endif %}
+              <span title="CRM engagement: {{ heat.level }} ({{ heat.score }}, {{ heat.interaction_count }} interactions)">{{ heat_icon }}</span>
+            {% endif %}
+          </td>
           <td style="color:var(--text-secondary);font-size:0.82rem;">{{ opp.due_date or '—' }}</td>
           <td style="font-weight:700;{% if opp.days_left is not none and opp.days_left <= 7 %}color:var(--status-red,#dc3545);{% elif opp.days_left is not none and opp.days_left <= 14 %}color:var(--status-yellow,#ffc107);{% else %}color:{{ stage_color }};{% endif %}">
             {{ opp.days_left if opp.days_left is not none else '—' }}
@@ -317,6 +326,36 @@
         </tr>
         {% else %}
         <tr><td colspan="11" style="text-align:center;padding:1.5rem;color:var(--text-muted);">No active proposals in the pipeline.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- BD View: SAM.gov Forecast / Presolicitation Notices (prop-cap-14) -->
+  <div class="gc-section-hdr">
+    <h2>Forecast Notices</h2>
+    <span class="badge">{{ forecast_notices.count }} presolicitation</span>
+  </div>
+  <div class="table-container" style="margin-bottom:20px;">
+    <table class="gc-table">
+      <thead>
+        <tr>
+          <th>Solicitation #</th>
+          <th>Title</th>
+          <th>Agency</th>
+          <th>Posted</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for n in forecast_notices.notices %}
+        <tr>
+          <td>{{ n.solicitation_number or '—' }}</td>
+          <td style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ n.title }}">{{ n.title }}</td>
+          <td style="color:var(--text-secondary);font-size:0.82rem;">{{ n.agency or '—' }}</td>
+          <td style="color:var(--text-secondary);font-size:0.82rem;">{{ n.posted_date or '—' }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" style="text-align:center;padding:1.5rem;color:var(--text-muted);">No forecast (presolicitation) notices cached yet.</td></tr>
         {% endfor %}
       </tbody>
     </table>

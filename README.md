@@ -6,7 +6,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License">
   <img src="https://img.shields.io/badge/python-3.9%2B-brightgreen" alt="Python 3.9+">
-  <img src="https://img.shields.io/badge/version-1.2.34-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-1.2.35-blue" alt="Version">
   <a href="https://pypi.org/project/icdev/"><img src="https://img.shields.io/pypi/v/icdev?color=informational&label=PyPI" alt="PyPI Version"></a>
   <a href="https://pypi.org/project/icdev/"><img src="https://img.shields.io/pypi/dm/icdev?label=PyPI%20downloads" alt="PyPI Downloads"></a>
   <img src="https://img.shields.io/badge/compliance%20frameworks-42-orange" alt="Compliance Frameworks">
@@ -27,7 +27,7 @@
 
 ## Table of Contents
 
-- [What's New](#whats-new-in-1234--bi-dashboard-canvas--rubric-gated-agent-loop)
+- [What's New](#whats-new-in-1235--trust-anti-hallucination-citations-provenance--fail-closed-data-masking)
 - [What ICDEV™ Builds](#what-icdev-builds)
 - [10 Design Canvases](#10-design-canvases)
 - [Quick Start](#quick-start)
@@ -45,6 +45,17 @@
 - [Testing](#testing)
 - [Project Structure](#project-structure)
 - [License](#license)
+
+---
+
+## What's New in 1.2.35 — TRUST: Anti-Hallucination Citations, Provenance & Fail-Closed Data Masking
+
+The **TRUST** initiative makes everything ICDEV™ generates cite its sources with real data provenance, and enforces data masking across the ecosystem.
+
+- **Universal source citations + provenance** — Everything ICDEV™ generates (proposals, RFI responses, DIC documents, Tech Writer drafts, and generated child apps) now carries inline `[source:]` citations validated against its evidence, with a blocking `citation_guard` on promote/export (HITL `force_*` override + audit, mirroring `placeholder_guard`). Built on a shared `tools/quality/citation_grounding.py` core; per-artifact provenance is backed by the materialized `rag_provenance_ledger`.
+- **Fail-closed data masking** — LLM egress can abort (`RedactionUnavailableError`) rather than send raw PII/CUI when the sanitizer is unavailable (`redaction.fail_closed`); ingestion-time masking (`redaction.mask_at_ingestion`) anonymizes content before it reaches the vector store; a scheduled `redaction_scan_reflex` files `[PII-SCAN]` remediation cards for unmasked data at rest. All toggles default off for safe rollout.
+- **Anti-hallucination consistency** — the deterministic confabulation detector (fabricated-citation patterns, contradictions, hedging) is wired into RFI, proposals, and DIC generation as a non-blocking reviewer signal, complementing DIC's verifier + abstention. Every AI-generated draft is HITL-gated — labeled `ai_generated` and promoted only by a human approver, never auto-published.
+- **Coherence gate** — `coherence_checker.check_trust_coverage` enforces that the grounding modules ship in both package trees, child apps inherit them, and the redaction toggles are present.
 
 ---
 

@@ -322,16 +322,25 @@ def accept_all_drafted(session_id):
     if ids:
         _recalculate_session_progress(ids[0])
 
-    # Non-blocking warning: unresolved placeholders in what was just accepted.
+    # Non-blocking warnings: unresolved placeholders + hallucinated RFI
+    # citations in what was just accepted. The hard block is enforced at
+    # export (placeholder_guard / citation_guard); here we surface so a
+    # reviewer sees issues before they reach the export gate (trust-cite-03).
     from tools.govcon.rfi_grounding import find_placeholders
+    session = get_session(session_id)
+    parsed = (session or {}).get("parsed_data") or {}
+    accepted = [s for s in get_sections(session_id) if s["id"] in set(ids)]
     warnings = []
-    for sec in get_sections(session_id):
-        if sec["id"] not in set(ids):
-            continue
+    for sec in accepted:
         tokens = find_placeholders(sec.get("content") or sec.get("ai_draft") or "")
         if tokens:
             warnings.append({"item_number": sec.get("item_number"), "placeholders": tokens})
-    return {"accepted": len(ids), "placeholder_warnings": warnings}
+    citation_warnings = _reference_findings(accepted, parsed)
+    return {
+        "accepted": len(ids),
+        "placeholder_warnings": warnings,
+        "citation_warnings": citation_warnings,
+    }
 
 
 def _recalculate_session_progress(section_id):
@@ -448,16 +457,20 @@ def generate_section_content(section_id, profile_name, parsed_data):
 
     session_id = section.get("session_id", "")
 
-    # Phase B: inject weighted source context (uploads, KG, RAG, engines)
+    # Phase B: inject weighted source context (uploads, KG, RAG, engines).
+    # sources_used is persisted (trust-cite-03) so the evidence behind a
+    # section is traceable in the export/Sources panel, not dropped here.
+    sources_used: list = []
     try:
         from tools.govcon.rfi_engine_runner import assemble_weighted_prompt_context
         topic = f"{section['title']} {section.get('question_text', '')[:200]}"
         engine_ctx = assemble_weighted_prompt_context(session_id, section_id, topic)
         if engine_ctx.get("context"):
             prompt += "\n\n[Source Context — weighted from enabled engines]\n" + engine_ctx["context"]
+            sources_used = list(engine_ctx.get("sources_used") or [])
             logger.debug(
                 "Engine context assembled: sources=%s chars=%d",
-                engine_ctx.get("sources_used"), engine_ctx.get("total_chars", 0),
+                sources_used, engine_ctx.get("total_chars", 0),
             )
     except Exception as exc:
         logger.warning("Engine context assembly failed (non-fatal): %s", exc)
@@ -501,13 +514,32 @@ def generate_section_content(section_id, profile_name, parsed_data):
         "invalid_references": ref_check["invalid_refs"],
         "references_checked": ref_check["checked"],
     }
+    # halluc-01: non-blocking confabulation assessment (fabricated citations,
+    # internal contradictions, hedging) surfaced to the reviewer/WriteGuard.
+    try:
+        from tools.security.confabulation_detector import assess as _confab_assess
+        md_validation["confabulation"] = _confab_assess(draft)
+    except Exception:
+        pass
 
     db = get_db()
-    db.execute(
-        "UPDATE rfi_workbench_sections SET ai_draft=%s, content=%s, status='ai_draft_ready', generation_count=generation_count+1, updated_at=%s WHERE id=%s",
-        (draft, draft, _now(), section_id),
-    )
-    db.commit()
+    # Persist sources_json alongside the draft. Falls back to the pre-249
+    # column set if migration 249 hasn't run yet (completeness gate #6).
+    try:
+        db.execute(
+            "UPDATE rfi_workbench_sections SET ai_draft=%s, content=%s, sources_json=%s, "
+            "status='ai_draft_ready', generation_count=generation_count+1, updated_at=%s WHERE id=%s",
+            (draft, draft, json.dumps(sources_used), _now(), section_id),
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        db.execute(
+            "UPDATE rfi_workbench_sections SET ai_draft=%s, content=%s, "
+            "status='ai_draft_ready', generation_count=generation_count+1, updated_at=%s WHERE id=%s",
+            (draft, draft, _now(), section_id),
+        )
+        db.commit()
 
     # Kick off coverage check in background
     threading.Thread(target=_check_coverage_background, args=(section_id,), daemon=True).start()
@@ -826,6 +858,63 @@ class PlaceholderGateBlocked(Exception):
         super().__init__(f"Unresolved placeholders in {len(findings)} section(s)")
 
 
+class ReferenceGateBlocked(Exception):
+    """Raised when a section cites an RFI reference (Section/Part/Item/Objective)
+    that does not exist in the parsed RFI structure — a hallucinated citation
+    (trust-cite-03). findings: [{item_number, invalid_refs:[{ref,reason}]}]"""
+
+    def __init__(self, findings):
+        self.findings = findings
+        super().__init__(f"Invalid citations in {len(findings)} section(s)")
+
+
+def _section_source_labels(sec: dict) -> list[str]:
+    """Human-readable source keys persisted for a section (trust-cite-03).
+
+    Reads sources_json (list of engine source keys). Returns [] when the
+    column is absent/empty so pre-249 sessions render unchanged.
+    """
+    raw = sec.get("sources_json")
+    if not raw:
+        return []
+    try:
+        vals = raw if isinstance(raw, list) else json.loads(raw)
+    except (ValueError, TypeError):
+        return []
+    return [str(v) for v in vals if v]
+
+
+def _reference_findings(sections, parsed):
+    """Per-section invalid-citation findings via rfi_grounding.validate_references.
+
+    Empty list == every citation resolves to real RFI structure. Sections with
+    no content and abstained/pending sections contribute nothing.
+    """
+    from tools.govcon.rfi_grounding import validate_references
+    findings = []
+    for sec in sections:
+        content = sec.get("content") or sec.get("ai_draft") or ""
+        if not content:
+            continue
+        check = validate_references(content, parsed or {})
+        if not check.get("valid", True) and check.get("invalid_refs"):
+            findings.append({
+                "item_number": sec.get("item_number"),
+                "invalid_refs": check["invalid_refs"],
+            })
+    return findings
+
+
+def _check_reference_gate(sections, parsed, force=False):
+    """Block export while any section cites a non-existent RFI reference
+    (gate=citation_guard). force=True bypasses after human review."""
+    if force:
+        return
+    findings = _reference_findings(sections, parsed)
+    if findings:
+        raise ReferenceGateBlocked(findings)
+
+
 def _check_placeholder_gate(sections, force=False):
     """Block export while [BRACKETED] tokens (incl. [VERIFY]) remain in any
     section that will be exported. force=True bypasses after human review."""
@@ -842,7 +931,7 @@ def _check_placeholder_gate(sections, force=False):
         raise PlaceholderGateBlocked(findings)
 
 
-def assemble_and_export(session_id, export_format="docx", force_placeholders=False):
+def assemble_and_export(session_id, export_format="docx", force_placeholders=False, force_references=False):
     session = get_session(session_id)
     if not session:
         raise ValueError(f"Session {session_id} not found")
@@ -850,9 +939,10 @@ def assemble_and_export(session_id, export_format="docx", force_placeholders=Fal
     check_aggregation_guard(session_id)
 
     sections = get_sections(session_id)
-    _check_placeholder_gate(
-        [s for s in sections if s.get("part") != "part6"], force=force_placeholders
-    )
+    _exportable = [s for s in sections if s.get("part") != "part6"]
+    _check_placeholder_gate(_exportable, force=force_placeholders)
+    # trust-cite-03: hallucinated RFI citations block export (was advisory).
+    _check_reference_gate(_exportable, session.get("parsed_data") or {}, force=force_references)
     profile = _load_profile(session.get("profile_name", "own_company"))
     parsed = session.get("parsed_data") or {}
 
@@ -970,6 +1060,12 @@ def _build_markdown(session, sections, profile, parsed):
         lines.append("")
         lines.append(content)
         lines.append("")
+        # trust-cite-03: surface the evidence this section was drafted from so
+        # claims are traceable to their source instead of being dropped.
+        src_labels = _section_source_labels(sec)
+        if src_labels:
+            lines.append(f"*Sources: {', '.join(src_labels)}*")
+            lines.append("")
 
     lines += ["", "---", "", "> UNCLASSIFIED//FOUO", ""]
     annex = build_compliance_annex(sections)
@@ -1032,11 +1128,29 @@ def build_compliance_annex(sections: list) -> dict:
 
     overall_cov = round((covered_total + partial_total * 0.5) / total_reqs * 100) if total_reqs else 0
     overall_wg = round(sum(wg_scores) / len(wg_scores), 1) if wg_scores else None
+
+    # Capability-gap demand signals raised by THIS session's requirements
+    # (tools/govcon/rfi_demand.py). Best-effort; JSON refs filtered in Python (no
+    # json_extract at runtime). Absent table / disabled feature -> empty list.
+    demand_signals = []
+    try:
+        session_id = next((s.get("session_id") for s in sections if s.get("session_id")), None)
+        if session_id:
+            from tools.govcon.rfi_demand import list_demand_signals
+
+            demand_signals = [
+                s for s in list_demand_signals(limit=200)
+                if any(str(ref).startswith(str(session_id)) for ref in (s.get("rfi_refs") or []))
+            ]
+    except Exception:
+        pass
+
     return {
         "coverage": coverage_rows,
         "quality": quality_rows,
         "overall_coverage_pct": overall_cov,
         "overall_wg_score": overall_wg,
+        "demand_signals": demand_signals,
     }
 
 
@@ -1070,6 +1184,26 @@ def _build_compliance_annex_md(annex: dict) -> str:
         passed = "✓" if r["passed"] else "✗" if r["wg_score"] is not None else "—"
         lines.append(f"| {r['title']} | {wg} | {style} | {passed} |")
     lines.append("")
+
+    # Capability-gap demand signals (unmet requirements captured for the roadmap).
+    demand = annex.get("demand_signals") or []
+    if demand:
+        lines += ["### Capability Gaps → Demand Signals", ""]
+        lines.append(
+            "Requirements this RFI surfaced that ICDEV cannot yet fully satisfy. "
+            "Each has been logged as a demand signal and queued as SUGGESTED build "
+            "task(s) to close the gap for future opportunities."
+        )
+        lines.append("")
+        lines.append("| Capability Need | Domain | Priority | High Demand |")
+        lines.append("|-----------------|--------|----------|-------------|")
+        for s in demand:
+            need = (s.get("capability_need") or "")[:80].replace("|", "/")
+            prio = s.get("priority")
+            prio_s = f"{prio:.2f}" if isinstance(prio, (int, float)) else "—"
+            high = "▲" if s.get("is_high_demand") else ""
+            lines.append(f"| {need} | {s.get('domain', '')} | {prio_s} | {high} |")
+        lines.append("")
     return "\n".join(lines)
 
 
@@ -1331,6 +1465,16 @@ def _check_coverage_background(section_id: str):
         check_requirement_coverage(section_id)
     except Exception as exc:
         logger.warning("Background coverage check failed for section %s: %s", section_id, exc)
+    # Capability-gap demand loop: once coverage is judged, surface any requirement that
+    # is BOTH a capability-catalog miss (grade N) AND uncovered/partial as a demand
+    # signal -> SUGGESTED kanban card. Guarded + fail-soft so it never breaks drafting.
+    try:
+        from tools.govcon import rfi_demand
+
+        if rfi_demand.is_enabled():
+            rfi_demand.process_section(section_id)
+    except Exception as exc:
+        logger.warning("RFI demand-gap detection failed for section %s: %s", section_id, exc)
 
 
 # ── ACE Editor one-pass review (item 8) ──────────────────────────────────────
