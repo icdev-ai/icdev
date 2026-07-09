@@ -9,6 +9,7 @@ and basic invocation patterns.
 
 import sys
 from pathlib import Path
+import importlib
 from unittest.mock import patch, MagicMock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -21,7 +22,7 @@ import pytest
 def test_skill_router_imports():
     """Verify module can be imported without errors."""
     try:
-        import tools.agent.skill_router
+        importlib.import_module("tools.agent.skill_router")
     except ImportError as e:
         pytest.skip(f"Import dependency missing: {e}")
 
@@ -190,7 +191,7 @@ def test_skill_router_main_invocation():
     mock_conn.execute.return_value.fetchall.return_value = []
     with patch("tools.db.storage.get_connection", return_value=mock_conn):
         try:
-            result = main()
+            main()
         except (TypeError, ValueError, KeyError, AttributeError):
             pass  # Expected with mock data
         except Exception as e:
