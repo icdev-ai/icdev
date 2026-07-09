@@ -145,7 +145,7 @@ class ACEController:
                 conn.execute(
                     "INSERT INTO ace_instances "
                     "(id, name, state, config_json, created_at, updated_at) "
-                    "VALUES (?, ?, 'pending', ?, ?, ?)",
+                    "VALUES (%s, %s, 'pending', %s, %s, %s)",
                     (instance_id, name, json.dumps(config), now, now),
                 )
                 conn.commit()
@@ -170,13 +170,13 @@ class ACEController:
             conn = get_canvas_connection(_DB_ENV)
             try:
                 row = conn.execute(
-                    "SELECT id, name, state, trust_tier, created_at, updated_at FROM ace_instances WHERE id = ?",
+                    "SELECT id, name, state, trust_tier, created_at, updated_at FROM ace_instances WHERE id = %s",
                     (instance_id,),
                 ).fetchone()
                 if not row:
                     return {"instance_id": instance_id, "error": "not_found"}
                 coworkers = conn.execute(
-                    "SELECT id, role_id, state, assigned_step FROM ace_coworkers WHERE instance_id = ?",
+                    "SELECT id, role_id, state, assigned_step FROM ace_coworkers WHERE instance_id = %s",
                     (instance_id,),
                 ).fetchall()
             finally:
@@ -209,7 +209,7 @@ class ACEController:
         conn = get_canvas_connection(_DB_ENV)
         try:
             row = conn.execute(
-                "SELECT id FROM ace_instances WHERE id = ?", (instance_id,)
+                "SELECT id FROM ace_instances WHERE id = %s", (instance_id,)
             ).fetchone()
         finally:
             conn.close()
@@ -526,7 +526,7 @@ class ACEController:
                     try:
                         for t in threads:
                             row = conn.execute(
-                                "SELECT state FROM ace_coworkers WHERE id = ?",
+                                "SELECT state FROM ace_coworkers WHERE id = %s",
                                 (t.spec.coworker_id,),
                             ).fetchone()
                             state = (row[0] if isinstance(row, (list, tuple)) else row.get("state", "")) if row else ""
@@ -567,7 +567,7 @@ class ACEController:
             ace_conn = get_canvas_connection(_DB_ENV)
             try:
                 inst_row = ace_conn.execute(
-                    "SELECT role_id FROM ace_instances WHERE id = ?", (instance_id,)
+                    "SELECT role_id FROM ace_instances WHERE id = %s", (instance_id,)
                 ).fetchone()
                 if not inst_row:
                     return
@@ -575,7 +575,7 @@ class ACEController:
 
                 art_row = ace_conn.execute(
                     "SELECT content_md FROM ace_artifacts"
-                    " WHERE instance_id = ? ORDER BY created_at DESC LIMIT 1",
+                    " WHERE instance_id = %s ORDER BY created_at DESC LIMIT 1",
                     (instance_id,),
                 ).fetchone()
             finally:
@@ -596,15 +596,15 @@ class ACEController:
                     nova_conn.execute(
                         "INSERT INTO ace_coworker_memory"
                         " (id, role_id, fact_type, content, confidence, source_task_id, created_at)"
-                        " VALUES (?, ?, 'outcome', ?, 0.8, ?, ?)",
+                        " VALUES (%s, %s, 'outcome', %s, 0.8, %s, %s)",
                         (uuid.uuid4().hex, role_id, fact, instance_id, now),
                     )
                 # Cap at _MEMORY_CAP rows per role — delete oldest by created_at
                 nova_conn.execute(
                     "DELETE FROM ace_coworker_memory"
-                    " WHERE role_id = ? AND id NOT IN ("
+                    " WHERE role_id = %s AND id NOT IN ("
                     "   SELECT id FROM ace_coworker_memory"
-                    "   WHERE role_id = ? ORDER BY created_at DESC LIMIT ?"
+                    "   WHERE role_id = %s ORDER BY created_at DESC LIMIT %s"
                     ")",
                     (role_id, role_id, _MEMORY_CAP),
                 )
@@ -628,7 +628,7 @@ class ACEController:
             conn = get_canvas_connection(_DB_ENV)
             try:
                 conn.execute(
-                    "UPDATE ace_instances SET state = ?, updated_at = ? WHERE id = ?",
+                    "UPDATE ace_instances SET state = %s, updated_at = %s WHERE id = %s",
                     (state, now, instance_id),
                 )
                 conn.commit()
@@ -650,7 +650,7 @@ class ACEController:
                 """
                 INSERT INTO kanban_tasks
                     (id, title, description, status, priority, source, created_at, updated_at)
-                VALUES (?, ?, ?, 'backlog', 'high', 'ace_trust', ?, ?)
+                VALUES (%s, %s, %s, 'backlog', 'high', 'ace_trust', %s, %s)
                 """,
                 (
                     task_id,
@@ -744,7 +744,7 @@ class ACEController:
             conn = get_canvas_connection(_DB_ENV)
             try:
                 conn.execute(
-                    "UPDATE ace_instances SET webhook_url = ?, updated_at = ? WHERE id = ?",
+                    "UPDATE ace_instances SET webhook_url = %s, updated_at = %s WHERE id = %s",
                     (webhook_url, now, instance_id),
                 )
                 conn.commit()

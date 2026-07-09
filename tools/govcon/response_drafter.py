@@ -86,6 +86,52 @@ def unresolved_placeholders(draft_row):
             return []
 
 
+def citation_findings(draft_row):
+    """Citation defects for a proposal_section_drafts row (trust-cite-02).
+
+    Returns citation_gate findings — one per issue — for the draft's content
+    validated against the knowledge blocks it was built from. Citations are
+    REQUIRED only when the draft was LLM-generated from at least one knowledge
+    block (a template/air-gap draft with no KB has no per-claim sourcing to
+    enforce); a citation to an id outside the block set is ALWAYS flagged as a
+    hallucinated citation. Empty list == gate passes.
+    """
+    d = dict(draft_row)
+    try:
+        from tools.quality.citation_grounding import citation_gate
+    except Exception:
+        return []
+    try:
+        kb_ids = json.loads(d.get("knowledge_block_ids") or "[]")
+    except (ValueError, TypeError):
+        kb_ids = []
+    allowed = [str(k) for k in kb_ids if k]
+    method = d.get("draft_method") or ""
+    require = bool(allowed) and method != "template"
+    section = {
+        "item_number": d.get("shall_statement_id") or d.get("id") or "?",
+        "content": d.get("draft_content") or "",
+        "allowed_sources": allowed,
+    }
+    return citation_gate([section], require_citations=require)
+
+
+def _redaction_fail_closed() -> bool:
+    """True when args/redaction_config.yaml sets fail_closed (trust-mask-01).
+
+    Defaults to False (fail-open) — including when the config can't be read —
+    so behavior is unchanged unless an operator explicitly opts in.
+    """
+    try:
+        import yaml
+
+        cfg_path = _ROOT / "args" / "redaction_config.yaml"
+        with open(cfg_path, encoding="utf-8") as f:
+            return bool((yaml.safe_load(f) or {}).get("fail_closed", False))
+    except Exception:
+        return False
+
+
 def _load_config():
     try:
         import yaml
@@ -177,6 +223,9 @@ def _build_draft_prompt(shall_text, cap_descriptions, kb_content, domain, produc
         f"- Include measurable outcomes or metrics where possible\n"
         f"- Mention automation and repeatability\n"
         f"- Keep to ~400 words, use bullet points for clarity\n"
+        f"- For every factual claim, cite the supporting evidence inline using "
+        f"[source: <id>] with an id shown in SUPPORTING EVIDENCE above. Do NOT "
+        f"cite an id that is not listed, and omit a claim rather than invent one.\n"
     )
 
 
@@ -197,8 +246,12 @@ def _try_llm_draft(shall_text, capabilities, knowledge_blocks, domain, parsed_so
 
         # Build prompt for qwen3 worker
         cap_descriptions = "\n".join(f"- {c['capability_name']}: {c.get('evidence', '')}" for c in capabilities[:3])
+        # Label each knowledge block with its id so the model can cite it inline
+        # via [source: <id>]. The same ids are persisted as knowledge_block_ids,
+        # so the citation gate can validate the draft against them (trust-cite-02).
         kb_content = "\n".join(
-            f"- {kb.get('title', '')}: {(kb.get('content', '') or '')[:200]}" for kb in knowledge_blocks[:3]
+            f"- [source: {kb.get('id', '?')}] {kb.get('title', '')}: {(kb.get('content', '') or '')[:200]}"
+            for kb in knowledge_blocks[:3]
         )
 
         # Solicitation ground-truth constraint (ground-prop-02)
@@ -249,7 +302,16 @@ def _try_llm_draft(shall_text, capabilities, knowledge_blocks, domain, parsed_so
                 is_local_only=True,  # Routes to Ollama — skip_for_local honored
             )
         except ImportError:
-            pass  # Redaction module not installed — proceed unsanitized
+            # trust-mask-01: honor redaction.fail_closed here too. Default
+            # (fail-open) proceeds unsanitized as before; fail-closed aborts.
+            # The central router gate (_pre_invoke_redaction) is the primary
+            # enforcement — this is defense-in-depth on the pre-LLM prompt.
+            if _redaction_fail_closed():
+                raise RuntimeError(
+                    "Redaction module unavailable and redaction.fail_closed is "
+                    "enabled — proposal draft LLM call blocked."
+                )
+            # Redaction module not installed — proceed unsanitized (fail-open)
 
         request = LLMRequest(
             messages=[{"role": "user", "content": prompt}],
@@ -632,6 +694,24 @@ def draft_response(shall_id):
     except Exception:
         placeholder_tokens = []
 
+    # Citation validation: does the draft cite only the knowledge blocks it was
+    # built from? Recorded at draft time for reviewer visibility; enforced as a
+    # blocking gate on approve_draft (trust-cite-02).
+    try:
+        from tools.quality.citation_grounding import validate_citations
+        _kb_ids_for_cite = [kb.get("id", "") for kb in knowledge_blocks[:3] if kb.get("id")]
+        citation_report = validate_citations(draft_text, _kb_ids_for_cite)
+    except Exception:
+        citation_report = None
+
+    # halluc-01: non-blocking confabulation assessment recorded for reviewer
+    # visibility (fabricated citations / contradictions / hedging).
+    try:
+        from tools.security.confabulation_detector import assess as _confab_assess
+        confab_report = _confab_assess(draft_text)
+    except Exception:
+        confab_report = None
+
     # Citation validation against the parsed solicitation (ground-prop-02):
     # any Section/Factor/Volume/CLIN reference that doesn't exist in the
     # document is recorded for reviewers/WriteGuard (invalid_citation).
@@ -699,6 +779,8 @@ def draft_response(shall_id):
                     "kb_count": len(knowledge_blocks),
                     "best_coverage": best_coverage,
                     **({"placeholder_tokens": placeholder_tokens} if placeholder_tokens else {}),
+                    **({"citation_report": citation_report} if citation_report else {}),
+                    **({"confabulation": confab_report} if confab_report else {}),
                     **(
                         {"citations_checked": citations_checked, "invalid_references": invalid_references}
                         if parsed_solicitation
@@ -724,6 +806,8 @@ def draft_response(shall_id):
         "kb_blocks_used": len(knowledge_blocks),
         "draft_length": len(draft_text),
         "placeholder_tokens": placeholder_tokens,
+        "citation_report": citation_report,
+        "confabulation": confab_report,
         "grounded": bool(parsed_solicitation),
         "citations_checked": citations_checked,
         "invalid_references": invalid_references,
@@ -784,16 +868,18 @@ def list_drafts(opportunity_id=None, status=None):
     }
 
 
-def approve_draft(draft_id, reviewer="human", notes="", force_placeholders=False):
+def approve_draft(draft_id, reviewer="human", notes="", force_placeholders=False, force_citations=False):
     """Approve a draft for inclusion in proposal.
 
     Changes status from 'draft' to 'approved'.
     Approved drafts can be pushed to proposal_sections via the proposal API.
 
     Promotion is blocked while unresolved [PLACEHOLDER] tokens remain in the
-    draft (gate=placeholder_guard, mirroring the RFI export gate).
-    force_placeholders=True bypasses after human review and writes an
-    explicit audit trail entry.
+    draft (gate=placeholder_guard, mirroring the RFI export gate), or while the
+    draft has citation defects — missing citations on grounded content or a
+    citation to a source it was not built from (gate=citation_guard,
+    trust-cite-02). force_placeholders / force_citations bypass the respective
+    gate after human review and write an explicit audit trail entry.
     """
     conn = _get_db()
 
@@ -829,6 +915,26 @@ def approve_draft(draft_id, reviewer="human", notes="", force_placeholders=False
             f"unresolved placeholder token(s): {', '.join(placeholder_tokens)}",
         )
 
+    # Citation gate (trust-cite-02) — mirrors placeholder_guard semantics.
+    citation_issues = citation_findings(d)
+    if citation_issues and not force_citations:
+        conn.close()
+        return {
+            "status": "blocked",
+            "gate": "citation_guard",
+            "message": "Draft has citation defects — add [source: <id>] citations or "
+                       "pass force_citations=True after review",
+            "citation_findings": citation_issues,
+            "draft_id": draft_id,
+        }
+    if citation_issues:
+        _audit(
+            conn,
+            "citation_guard_override",
+            f"Draft {draft_id} promoted by {reviewer} despite {len(citation_issues)} "
+            f"citation defect(s): {json.dumps(citation_issues)}",
+        )
+
     # Create new approved record (append-only: new row, not update)
     approved_id = str(uuid.uuid4())
     conn.execute(
@@ -859,6 +965,11 @@ def approve_draft(draft_id, reviewer="human", notes="", force_placeholders=False
                     **(
                         {"placeholder_guard_override": placeholder_tokens}
                         if placeholder_tokens
+                        else {}
+                    ),
+                    **(
+                        {"citation_guard_override": citation_issues}
+                        if citation_issues
                         else {}
                     ),
                 }
@@ -900,6 +1011,11 @@ def main():
         action="store_true",
         help="Approve despite unresolved [PLACEHOLDER] tokens (audited override)",
     )
+    parser.add_argument(
+        "--force-citations",
+        action="store_true",
+        help="Approve despite citation defects (audited override)",
+    )
     parser.add_argument("--json", action="store_true", help="JSON output")
 
     args = parser.parse_args()
@@ -930,6 +1046,7 @@ def main():
             reviewer=args.reviewer,
             notes=args.notes,
             force_placeholders=args.force_placeholders,
+            force_citations=args.force_citations,
         )
 
     print(json.dumps(result, indent=2, default=str))

@@ -512,14 +512,17 @@ def approve_draft(draft_id):
 
     Blocked with 409 gate=placeholder_guard while unresolved [PLACEHOLDER]
     tokens remain in the draft (ground-prop-03, mirroring the RFI export
-    gate). Body {"force_placeholders": true} bypasses after human review
-    and writes an explicit audit trail entry.
+    gate), or 409 gate=citation_guard when the draft has citation defects
+    (trust-cite-02). Body {"force_placeholders": true} / {"force_citations":
+    true} bypasses the respective gate after human review and writes an
+    explicit audit trail entry.
     """
     conn = _get_db()
     try:
         data = request.get_json(silent=True) or {}
         reviewer = data.get("reviewed_by", "govcon_api")
         force = bool(data.get("force_placeholders"))
+        force_citations = bool(data.get("force_citations"))
 
         draft = conn.execute("SELECT * FROM proposal_section_drafts WHERE id = %s", (draft_id,)).fetchone()
         if not draft:
@@ -555,6 +558,35 @@ def approve_draft(draft_id):
                 "placeholder_guard_override",
                 f"Draft {draft_id} approved by {reviewer} despite {len(placeholder_tokens)} "
                 f"unresolved placeholder token(s): {', '.join(placeholder_tokens)}",
+                actor=reviewer,
+            )
+
+        # Citation gate (trust-cite-02, mirrors placeholder_guard)
+        try:
+            from tools.govcon.response_drafter import citation_findings
+            citation_issues = citation_findings(draft)
+        except Exception:
+            citation_issues = []
+        if citation_issues and not force_citations:
+            return (
+                jsonify(
+                    {
+                        "error": "Citation gate: draft has citation defects — add "
+                                 "[source: <id>] citations or force",
+                        "gate": "citation_guard",
+                        "citation_findings": citation_issues,
+                        "draft_id": draft_id,
+                    }
+                ),
+                409,
+            )
+        if citation_issues:
+            import json as _json
+            _audit(
+                conn,
+                "citation_guard_override",
+                f"Draft {draft_id} approved by {reviewer} despite {len(citation_issues)} "
+                f"citation defect(s): {_json.dumps(citation_issues)}",
                 actor=reviewer,
             )
 

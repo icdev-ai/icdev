@@ -364,6 +364,26 @@ def _check_tools(project_dir: Path) -> List[GotchaCheck]:
             )
         )
 
+    # trust-cite-05: anti-hallucination grounding must ship with every child app
+    # so generated apps cite sources / gate placeholders like the parent does.
+    grounding = ["tools/quality/content_grounding.py", "tools/quality/citation_grounding.py"]
+    missing_grounding = [g for g in grounding if not (project_dir / g).is_file()]
+    checks.append(
+        GotchaCheck(
+            check_id="FORGE-03c",
+            check_name="Anti-hallucination grounding modules present",
+            layer="tools",
+            status="pass" if not missing_grounding else "fail",
+            expected="tools/quality/{content_grounding,citation_grounding}.py",
+            actual="present" if not missing_grounding else f"missing: {', '.join(missing_grounding)}",
+            fix_suggestion="Ensure 'tools/quality' is in DIRECTORY_TREE so the shared "
+                           "grounding modules are copied into the child app",
+            message="Grounding: content + citation grounding modules present"
+                    if not missing_grounding
+                    else f"Grounding modules missing: {', '.join(missing_grounding)}",
+        )
+    )
+
     return checks
 
 

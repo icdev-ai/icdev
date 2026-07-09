@@ -764,6 +764,49 @@ def check_append_only() -> CoherenceCheck:
     )
 
 
+def check_trust_coverage() -> CoherenceCheck:
+    """Verify the TRUST invariants (xcut-01): the anti-hallucination grounding
+    modules ship in both package trees and are inheritable by child apps, and
+    the redaction fail-closed / ingestion-masking toggles exist in config.
+
+    Guards against a recurrence of the mirror-sync drift that dropped grounding
+    modules from icdev/, and against silently losing the mask toggles.
+    """
+    checks = {
+        "tools/quality/content_grounding.py": (PROJECT_ROOT / "tools/quality/content_grounding.py").is_file(),
+        "tools/quality/citation_grounding.py": (PROJECT_ROOT / "tools/quality/citation_grounding.py").is_file(),
+        "icdev/tools/quality/content_grounding.py": (PROJECT_ROOT / "icdev/tools/quality/content_grounding.py").is_file(),
+        "icdev/tools/quality/citation_grounding.py": (PROJECT_ROOT / "icdev/tools/quality/citation_grounding.py").is_file(),
+    }
+    # Child apps inherit grounding only if tools/quality is in DIRECTORY_TREE.
+    cag = PROJECT_ROOT / "tools/builder/child_app_generator.py"
+    checks["tools/quality in child-app DIRECTORY_TREE"] = (
+        cag.is_file() and '"tools/quality"' in _read_text(cag)
+    )
+    # Redaction toggles present in config.
+    rc = PROJECT_ROOT / "args/redaction_config.yaml"
+    rc_text = _read_text(rc) if rc.is_file() else ""
+    checks["redaction.fail_closed toggle"] = "fail_closed:" in rc_text
+    checks["redaction.mask_at_ingestion toggle"] = "mask_at_ingestion:" in rc_text
+
+    missing = sorted(k for k, ok in checks.items() if not ok)
+    status = "pass" if not missing else "fail"
+    return CoherenceCheck(
+        check_id="trust_coverage",
+        check_name="TRUST Grounding & Masking Coverage",
+        status=status,
+        expected=sorted(checks.keys()),
+        actual=sorted(k for k, ok in checks.items() if ok),
+        missing=missing,
+        extra=[],
+        message=(
+            "All TRUST invariants present"
+            if not missing
+            else f"{len(missing)} TRUST invariant(s) missing: {missing}"
+        ),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Check 7: Import Usage Coherence
 # ---------------------------------------------------------------------------
@@ -4607,6 +4650,7 @@ CHECK_REGISTRY = {
     "fixture_schema": check_fixture_schema,
     "manifest": check_manifest,
     "append_only": check_append_only,
+    "trust_coverage": check_trust_coverage,
     "import_usage": check_import_usage,
     "ruff_lint": check_ruff_lint,
     "api_wiring": check_api_wiring,

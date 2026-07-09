@@ -4,6 +4,37 @@
 # Human edits to name/description/briefs are preserved.
 
 projects:
+- key: kanban_pr_base
+  name: Kanban Pr Base Project
+  description: Auto-registered project for tasks with prefix 'kanban-pr-base-'. Update
+    name and description to reflect the project purpose.
+  task_prefix: kanban-pr-base-
+  default_open: true
+  briefs: []
+  epics:
+  - key: guard
+    title: GUARD
+    priority: medium
+- key: ground
+  name: Ground Project
+  description: Auto-registered project for tasks with prefix 'ground-'. Update name
+    and description to reflect the project purpose.
+  task_prefix: ground-
+  default_open: true
+  briefs: []
+  epics:
+  - key: dic
+    title: DIC
+    priority: medium
+  - key: prop
+    title: PROP
+    priority: medium
+  - key: sol
+    title: SOL
+    priority: medium
+  - key: tw
+    title: TW
+    priority: medium
 - key: test
   name: Test Project
   description: Auto-registered project for tasks with prefix 'test-'. Update name
@@ -11908,4 +11939,42 @@ projects:
     priority: medium
   - key: scs
     title: Supply Chain Risk — Vendor/model CVE risk aggregation
+    priority: medium
+- key: trust
+  name: TRUST — Trustworthy Generation Hardening
+  description: Guarantee that everything ICDEV builds and generates cites its sources
+    with real data provenance, and that the entire ecosystem enforces data masking.
+    Ports DIC's mandatory-citation + abstention model to /rfi and /proposals, makes
+    redaction fail-closed with ingestion-time masking and scheduled DB scanning, and
+    wires the confabulation detector into every drafting pipeline. Plan file
+    .claude/plans/we-implement-anti-hallucination-and-clever-canyon.md.
+  task_prefix: trust-
+  default_open: true
+  briefs:
+  - 'cite: Universal citation & provenance — extract a shared citation_grounding core
+    from DIC, add mandatory [source:] citations + blocking gate to /proposals and /rfi,
+    attach a PROV lineage object to every generated artifact, materialize
+    rag_provenance_ledger, and cover generated child apps (trust-cite-01..05)'
+  - 'mask: Fail-closed data masking — abort LLM egress when the sanitizer is
+    missing/errors, mask at RAG ingestion and document upload, add a scheduled DB-scan
+    + remediation reflex, populate the GovCon deny-lists, and add core-engine unit
+    tests (trust-mask-01..05)'
+  - 'halluc: Anti-hallucination consistency — wire confabulation_detector.check_output
+    into the RFI/proposals/DIC generation post-pass and decide the CoD default for
+    judgment/architecture sections (trust-halluc-01..02)'
+  - 'xcut: Cross-cutting — coherence-checker assertions for citation/ingestion/sources
+    coverage plus a CLAUDE.md guardrail and append-only table registration
+    (trust-xcut-01..02)'
+  epics:
+  - key: cite
+    title: Universal Citation & Provenance — mandatory sources on every generated artifact
+    priority: high
+  - key: mask
+    title: Fail-Closed Masking — egress gate, ingestion masking, scheduled DB scan
+    priority: high
+  - key: halluc
+    title: Anti-Hallucination Consistency — confabulation detector + CoD default
+    priority: medium
+  - key: xcut
+    title: Cross-Cutting — coherence gate, guardrail, table registration
     priority: medium

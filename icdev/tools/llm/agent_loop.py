@@ -270,6 +270,11 @@ def _load_budget_defaults() -> dict[str, Any]:
             defaults["memory_top_k"] = int(mem_cfg["top_k"])
         if "tier" in mem_cfg:
             defaults["memory_tier"] = str(mem_cfg["tier"])
+        rubric_cfg = raw.get("agent_loop", {}).get("rubric", {})
+        if "max_grading_iterations" in rubric_cfg:
+            defaults["max_grading_iterations"] = int(rubric_cfg["max_grading_iterations"])
+        if "grader_max_tokens" in rubric_cfg:
+            defaults["grader_max_tokens"] = int(rubric_cfg["grader_max_tokens"])
     except Exception as exc:
         logger.debug("agent_loop: failed to load budget defaults: %s", exc)
     return defaults
@@ -519,6 +524,7 @@ def run_agent_loop(
     tenant_id: str = "",
     user_id: str = "",
     sanitize_tool_results: bool = True,
+    initial_messages: list[dict[str, Any]] | None = None,
 ) -> AgentLoopResult:
     """Run an agentic LLM loop with native tool use until the task is done.
 
@@ -592,6 +598,11 @@ def run_agent_loop(
             ``ResultSubtype.error_consecutive_tool_failures``. ``None`` disables
             this guard. Default 3. Loaded from
             ``args/llm_config.yaml`` ``agent_loop.budgets.max_consecutive_errors``.
+        initial_messages: Pre-built message history to start from, taking
+            precedence over both ``resume_session_id`` and ``user_prompt``-based
+            seeding. Used by :func:`run_agent_loop_with_rubric` to resume a
+            transcript with grader feedback appended; also usable directly by
+            callers that maintain their own message history.
 
     Returns:
         :class:`AgentLoopResult`.
@@ -638,7 +649,7 @@ def run_agent_loop(
         memory_tier = budget_defaults.get("memory_tier", "episodic|semantic")
 
     # Inject retrieved memory into system_prompt before the first turn.
-    if memory_enabled and not resume_session_id:
+    if memory_enabled and not resume_session_id and initial_messages is None:
         _mem_ctx = _retrieve_memory_context(user_prompt, memory_top_k, memory_tier)
         if _mem_ctx:
             system_prompt = system_prompt + "\n\n" + _mem_ctx
@@ -657,7 +668,9 @@ def run_agent_loop(
     # found or the DB is unavailable.
     messages: list[dict[str, Any]]
     _checkpoint_start_turn = 0
-    if resume_session_id:
+    if initial_messages is not None:
+        messages = list(initial_messages)
+    elif resume_session_id:
         # Try new session_store checkpoint first (richer: turn_number + cost tracking).
         _ckpt_data = None
         try:
@@ -1364,3 +1377,249 @@ def run_staged_agent_loop(
 
     staged.done = len(staged.stages_failed) == 0 and len(staged.stages_completed) == len(stages)
     return staged
+
+
+# ---------------------------------------------------------------------------
+# Rubric-gated self-iteration — declare "what done looks like", loop until a
+# grader agrees. Adapted from deepagents' RubricMiddleware pattern.
+# ---------------------------------------------------------------------------
+
+
+class RubricVerdict:
+    """String constants for :attr:`RubricGrade.verdict`.
+
+    ``satisfied`` / ``needs_revision`` / ``failed`` are emitted by the grader
+    LLM call. ``max_iterations_reached`` and ``grader_error`` are synthesized
+    by :func:`run_agent_loop_with_rubric` itself — the grader cannot emit them.
+    """
+
+    satisfied = "satisfied"
+    """Every rubric criterion is met — the loop stops here."""
+
+    needs_revision = "needs_revision"
+    """At least one criterion fails; ``feedback`` explains what to fix."""
+
+    failed = "failed"
+    """The rubric is malformed or impossible to evaluate against the response."""
+
+    max_iterations_reached = "max_iterations_reached"
+    """``needs_revision`` fired on the final allowed attempt; the loop stops
+    with the agent's last response intact rather than looping forever."""
+
+    grader_error = "grader_error"
+    """The grader call itself failed (bad JSON, provider error, timeout)."""
+
+
+RUBRIC_GRADER_SYSTEM_PROMPT = """You are a strict grader evaluating whether an agent's response satisfies a rubric.
+
+You will be shown the rubric and the agent's final response. Judge ONLY against the rubric criteria — do not
+reward style, verbosity, or effort that isn't called for by the rubric.
+
+Return ONLY a JSON object with exactly these two fields, no other text:
+
+{"verdict": "satisfied" | "needs_revision" | "failed", "feedback": "<concise, actionable feedback>"}
+
+- "satisfied": every rubric criterion is met. "feedback" may be a short confirmation.
+- "needs_revision": at least one criterion is not met. "feedback" MUST say exactly what to fix so the
+  agent can act on it directly.
+- "failed": the rubric itself is unmeetable or malformed given the response, or you genuinely cannot
+  evaluate it. Use this sparingly — prefer "needs_revision" whenever a fix is describable."""
+
+_RUBRIC_OUTPUT_SCHEMA: dict[str, Any] = {
+    "required": ["verdict", "feedback"],
+    "properties": {
+        "verdict": {"type": "string"},
+        "feedback": {"type": "string"},
+    },
+}
+
+
+@dataclass
+class RubricGrade:
+    """One grading round's verdict from :func:`run_agent_loop_with_rubric`."""
+
+    verdict: str = ""
+    feedback: str = ""
+    raw_response: str = ""
+
+
+@dataclass
+class RubricLoopResult:
+    """Outcome of :func:`run_agent_loop_with_rubric`."""
+
+    result: AgentLoopResult = field(default_factory=AgentLoopResult)
+    """The underlying agent loop's result from the final (or only) attempt."""
+
+    satisfied: bool = False
+    """True only if a grading round returned :attr:`RubricVerdict.satisfied`."""
+
+    grades: list[RubricGrade] = field(default_factory=list)
+    """One entry per grading round attempted, in order."""
+
+    grading_attempts: int = 0
+    """Number of grading rounds actually run (0 if the agent loop never completed)."""
+
+
+def _grade_against_rubric(
+    router: Any,
+    *,
+    rubric: str,
+    final_content: str,
+    llm_function: str,
+    max_tokens: int,
+    effort: str,
+) -> RubricGrade:
+    """Single grader LLM call: judge *final_content* against *rubric*.
+
+    Not itself an agent loop — one plain, tool-free ``router.invoke`` call with
+    a JSON-only system prompt, validated against :data:`_RUBRIC_OUTPUT_SCHEMA`.
+    """
+    from tools.llm.provider import LLMRequest
+
+    grader_user_prompt = (
+        f"## Rubric\n{rubric}\n\n## Agent's final response\n{final_content or '(empty response)'}"
+    )
+    request = LLMRequest(
+        system_prompt=RUBRIC_GRADER_SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": grader_user_prompt}],
+        tools=[],
+        max_tokens=max_tokens,
+        temperature=0.0,
+        effort=effort,
+    )
+    try:
+        response = router.invoke(llm_function, request)
+        raw = getattr(response, "content", "") or ""
+        parsed = json.loads(raw)
+        _validate_output_schema(parsed, _RUBRIC_OUTPUT_SCHEMA)
+        verdict = str(parsed.get("verdict", "")).strip().lower()
+        if verdict not in (RubricVerdict.satisfied, RubricVerdict.needs_revision, RubricVerdict.failed):
+            raise ValueError(f"Ungraded/unrecognized verdict: {verdict!r}")
+        return RubricGrade(verdict=verdict, feedback=str(parsed.get("feedback", "")), raw_response=raw)
+    except Exception as exc:  # noqa: BLE001 — any grader failure degrades to grader_error
+        logger.warning("agent_loop: rubric grading failed: %s", exc)
+        return RubricGrade(verdict=RubricVerdict.grader_error, feedback=str(exc))
+
+
+def run_agent_loop_with_rubric(
+    router: Any,
+    *,
+    rubric: str,
+    max_grading_iterations: int | None = None,
+    grader_llm_function: str | None = None,
+    grader_max_tokens: int | None = None,
+    on_grade: Callable[[int, RubricGrade], None] | None = None,
+    **kwargs: Any,
+) -> RubricLoopResult:
+    """Run :func:`run_agent_loop` and grade its output against *rubric*.
+
+    Declares "what done looks like" up front instead of trusting the agent's
+    own judgment that it is finished. Each round:
+
+      1. Run (or resume) the agent loop.
+      2. If it did not complete cleanly (``result.done is False`` — truncated,
+         budget-capped, errored), stop immediately. Grading a partial or
+         failed response is not meaningful.
+      3. A separate, tool-free grader LLM call judges ``result.final_content``
+         against *rubric* and returns ``satisfied`` / ``needs_revision`` / ``failed``.
+      4. On ``needs_revision``, the grader's feedback is appended to the
+         transcript as a user message and the agent loop resumes from that
+         point (via ``initial_messages``) with a fresh turn budget — it does
+         not restart from ``user_prompt``.
+
+    Grading stops on ``satisfied``, ``failed``, ``grader_error``, or after
+    ``max_grading_iterations`` rounds — whichever comes first. The agent's
+    last response is always preserved in the returned result, even when the
+    grader never reaches ``satisfied``.
+
+    Args:
+        router: An ``LLMRouter`` instance.
+        rubric: Free-text description of what a satisfactory response looks
+            like. Passed verbatim to the grader.
+        max_grading_iterations: Max grade-then-revise rounds before giving up.
+            Loaded from ``args/llm_config.yaml``
+            ``agent_loop.rubric.max_grading_iterations`` when not set
+            explicitly; falls back to 3.
+        grader_llm_function: Router function key for the grader call. Defaults
+            to the same ``llm_function`` used for the agent loop.
+        grader_max_tokens: Max output tokens for the grader's JSON response.
+            Loaded from ``args/llm_config.yaml``
+            ``agent_loop.rubric.grader_max_tokens`` when not set explicitly;
+            falls back to 1024.
+        on_grade: Optional ``callback(attempt, RubricGrade)`` fired after each
+            grading round (for audit/observability).
+        **kwargs: Forwarded to :func:`run_agent_loop` (``system_prompt``,
+            ``user_prompt``, ``tools``, ``tool_handlers``, etc.). Must not
+            include ``initial_messages`` — it is managed internally.
+
+    Returns:
+        :class:`RubricLoopResult`.
+
+    Raises:
+        ValueError: ``initial_messages`` was passed in ``kwargs``.
+    """
+    if "initial_messages" in kwargs:
+        raise ValueError(
+            "run_agent_loop_with_rubric manages initial_messages internally; "
+            "do not pass it explicitly."
+        )
+
+    budget_defaults = _load_budget_defaults()
+    if max_grading_iterations is None:
+        max_grading_iterations = budget_defaults.get("max_grading_iterations", 3)
+    if grader_max_tokens is None:
+        grader_max_tokens = budget_defaults.get("grader_max_tokens", 1024)
+
+    agent_llm_function = kwargs.get("llm_function", "code_generation")
+    effective_grader_function = grader_llm_function or agent_llm_function
+    effort = kwargs.get("effort", "medium")
+
+    loop_result = RubricLoopResult()
+    prior_messages: list[dict[str, Any]] | None = None
+
+    for attempt in range(1, max_grading_iterations + 1):
+        call_kwargs = dict(kwargs)
+        if prior_messages is not None:
+            call_kwargs["initial_messages"] = prior_messages
+
+        result = run_agent_loop(router, **call_kwargs)
+        loop_result.result = result
+
+        if not result.done:
+            break  # agent loop itself didn't complete cleanly — nothing to grade
+
+        grade = _grade_against_rubric(
+            router,
+            rubric=rubric,
+            final_content=result.final_content,
+            llm_function=effective_grader_function,
+            max_tokens=grader_max_tokens,
+            effort=effort,
+        )
+        loop_result.grades.append(grade)
+        loop_result.grading_attempts = attempt
+        if on_grade is not None:
+            try:
+                on_grade(attempt, grade)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("run_agent_loop_with_rubric: on_grade raised: %s", exc)
+
+        if grade.verdict == RubricVerdict.satisfied:
+            loop_result.satisfied = True
+            break
+        if grade.verdict in (RubricVerdict.failed, RubricVerdict.grader_error):
+            break
+        if attempt >= max_grading_iterations:
+            grade.verdict = RubricVerdict.max_iterations_reached
+            break
+
+        # needs_revision — inject feedback and resume from the current transcript.
+        prior_messages = list(result.messages) + [{
+            "role": "user",
+            "content": (
+                f"[Rubric grader] Your response needs revision:\n{grade.feedback}\n\n"
+                "Please address this feedback and provide an updated final response."
+            ),
+        }]
+
+    return loop_result

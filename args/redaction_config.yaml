@@ -6,6 +6,20 @@
 # Master toggle — disable to bypass all redaction
 enabled: true
 
+# Fail-closed egress (trust-mask-01). When true, an LLM call whose sanitizer
+# MUST run but is missing or errors is BLOCKED (raises RedactionUnavailableError)
+# instead of proceeding with unredacted text. Legitimate skips (redaction
+# disabled, excluded_functions, local-only routing) never block.
+# Default false = fail-open (log + proceed) for backward compatibility; set true
+# to guarantee no raw PII/CUI ever egresses to a cloud LLM on sanitizer failure.
+fail_closed: false
+
+# Ingestion-time masking (trust-mask-02). When true, RAG ingestion anonymizes
+# content BEFORE chunking/embedding, so raw PII/CUI never lands in the vector
+# store at rest (not only masked at LLM egress). Default false (opt-in) — adds
+# per-row detection cost (regex + optional local NER) during ingestion.
+mask_at_ingestion: false
+
 # ---------------------------------------------------------------------------
 # Detection Engine
 # ---------------------------------------------------------------------------
