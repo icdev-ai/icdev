@@ -6,7 +6,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License">
   <img src="https://img.shields.io/badge/python-3.9%2B-brightgreen" alt="Python 3.9+">
-  <img src="https://img.shields.io/badge/version-1.2.35-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-1.2.36-blue" alt="Version">
   <a href="https://pypi.org/project/icdev/"><img src="https://img.shields.io/pypi/v/icdev?color=informational&label=PyPI" alt="PyPI Version"></a>
   <a href="https://pypi.org/project/icdev/"><img src="https://img.shields.io/pypi/dm/icdev?label=PyPI%20downloads" alt="PyPI Downloads"></a>
   <img src="https://img.shields.io/badge/compliance%20frameworks-42-orange" alt="Compliance Frameworks">
@@ -27,7 +27,7 @@
 
 ## Table of Contents
 
-- [What's New](#whats-new-in-1235--trust-anti-hallucination-citations-provenance--fail-closed-data-masking)
+- [What's New](#whats-new-in-1236--security-fix-abac-need-to-know--canvases-discoverable-after-pip-install)
 - [What ICDEV™ Builds](#what-icdev-builds)
 - [10 Design Canvases](#10-design-canvases)
 - [Quick Start](#quick-start)
@@ -45,6 +45,15 @@
 - [Testing](#testing)
 - [Project Structure](#project-structure)
 - [License](#license)
+
+---
+
+## What's New in 1.2.36 — Security Fix: ABAC Need-to-Know & Canvases Discoverable After `pip install`
+
+- **Security — ABAC ownership enforcement (fail-open fix).** Attribute references like `${subject.user_id}` were resolved against a *flattened* context, so the dotted path never resolved and yielded `None` — which the matcher treats as match-all. Because evaluation is first-match-wins and `proposal_section_writer_own` (Permit) precedes `proposal_section_writer_deny_unassigned` (Deny), any `section_writer` could edit **any** proposal section, not just their own. References now resolve against a nested context, and an unresolvable reference becomes a sentinel that can never match — so evaluation falls through to deny (fail-closed). Ownership scoping on `developer_readwrite_own` was affected the same way. **Upgrade if you rely on ABAC need-to-know.**
+- **Canvases are discoverable after `pip install`.** `icdev init` seeds a project's `.env` from the packaged template, which was missing ~90 capability flags — so Document Intelligence, Tech Writer, Notebook, Slides, and the RFI canvas were invisible on a fresh install even though the code shipped. The template now documents **62/62** registry-declared enablement flags, and two new release gates (`env_files_sync`, `env_flags_documented`) keep it from drifting again. (Already-installed users can run `icdev enable dic` today — it reads the registry directly.)
+- **DIC AI Assist no longer silently abstains.** A single transient empty completion from a cloud model left the section blank with no feedback. Empty completions are now retried (bounded), the per-attempt timeout is configurable and more generous, and an abstention is surfaced to the reviewer instead of silently reloading.
+- **Schema completeness.** `rag_queries` / `rag_citations` are materialized in the PG schema and init (the RAG result-card renderer already queried them), and `tenant_id` / `classification` RLS columns were added to `pg_pwin_assessments`, `pg_competitor_awards`, and `pg_capture_gate_decisions`, which previously raised `UndefinedColumn` on every read.
 
 ---
 
