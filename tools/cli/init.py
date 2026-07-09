@@ -197,6 +197,9 @@ def _next_steps(target: Path) -> str:
         f"  3. icdev-init-db                 # initialize databases\n"
         f"  4. icdev-dashboard               # start dashboard on :5050\n"
         f"  5. Open the project in Claude Code — CLAUDE.md will guide the agent.\n"
+        f"\n"
+        f"Canvases (Tech Writer, Notebook, BI Dashboard, etc.) are opt-in —\n"
+        f"run 'icdev enable --list' to see them, 'icdev enable <name>' to turn one on.\n"
     )
 
 

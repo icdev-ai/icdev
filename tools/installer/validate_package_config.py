@@ -17,6 +17,18 @@ Runs a checklist before `python -m build` to prevent broken releases:
 
   5. Entry points in pyproject.toml resolve to actual files
 
+  6. .env.example has every variable .env.sample defines — .env.sample is
+     the comprehensive reference; .env.example seeds `icdev init`'s
+     .env.template and tools/awareness/enablement.py's runtime defaults,
+     so a var missing from .env.example is invisible to a fresh
+     `pip install icdev` user even though it's fully shipped and working.
+
+  7. .env.example documents every enablement env_flag declared in
+     args/component_registry.yaml (the authoritative source for canvases
+     and components). A canvas/component whose env_flag is absent here is
+     undiscoverable to a pip-install user — this is the root-cause guard
+     for the DIC/Tech Writer "where did it go?" class of bug.
+
 Exit code 0 if everything is green, 1 on any failure. Designed to run as
 a pre-commit hook, in CI, and inside tools/installer/build_release.py.
 
@@ -45,6 +57,9 @@ SYNC_SCRIPT = REPO_ROOT / "tools" / "installer" / "sync_package_tree.py"
 PYPROJECT = REPO_ROOT / "pyproject.toml"
 MANIFEST = REPO_ROOT / "MANIFEST.in"
 _PKG_CONFIG = REPO_ROOT / "args" / "package_config.yaml"
+ENV_EXAMPLE = REPO_ROOT / ".env.example"
+ENV_SAMPLE = REPO_ROOT / ".env.sample"
+COMPONENT_REGISTRY = REPO_ROOT / "args" / "component_registry.yaml"
 
 
 def _load_pkg_config() -> dict:
@@ -289,6 +304,88 @@ def check_entry_points() -> dict:
     }
 
 
+def _parse_env_keys(path: Path) -> set[str]:
+    """Extract VAR_NAME= keys from an env file, ignoring comments/blanks."""
+    keys: set[str] = set()
+    if not path.is_file():
+        return keys
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        m = re.match(r"([A-Za-z_][A-Za-z0-9_]*)=", line)
+        if m:
+            keys.add(m.group(1))
+    return keys
+
+
+def check_env_files_sync() -> dict:
+    """CHECK 6: .env.example has every key .env.sample defines.
+
+    .env.sample is the comprehensive reference; .env.example is what
+    icdev init actually seeds a new project's .env.template from, and what
+    tools/awareness/enablement.py reads as its runtime defaults layer. A key
+    present only in .env.sample is invisible to both — extra keys in
+    .env.example (not in .env.sample) are fine, not a failure.
+    """
+    sample_keys = _parse_env_keys(ENV_SAMPLE)
+    example_keys = _parse_env_keys(ENV_EXAMPLE)
+    missing_in_example = sample_keys - example_keys
+    return {
+        "check": "env_files_sync",
+        "ok": not missing_in_example,
+        "sample_key_count": len(sample_keys),
+        "example_key_count": len(example_keys),
+        "missing_in_example": sorted(missing_in_example),
+    }
+
+
+def _registry_env_flags() -> set[str]:
+    """Primary env_flags declared by canvases/components in the registry."""
+    flags: set[str] = set()
+    if _yaml is None or not COMPONENT_REGISTRY.is_file():
+        return flags
+    try:
+        with open(COMPONENT_REGISTRY, encoding="utf-8") as fh:
+            data = _yaml.safe_load(fh) or {}
+    except Exception:
+        return flags
+
+    def walk(obj: object) -> None:
+        if isinstance(obj, dict):
+            ef = obj.get("env_flag")
+            if isinstance(ef, str) and ef:
+                flags.add(ef)
+            for v in obj.values():
+                walk(v)
+        elif isinstance(obj, list):
+            for item in obj:
+                walk(item)
+
+    walk(data)
+    return flags
+
+
+def check_env_flags_documented() -> dict:
+    """CHECK 7: .env.example documents every registry-declared env_flag.
+
+    args/component_registry.yaml is authoritative for canvas/component
+    enablement. Any component whose primary env_flag is missing from
+    .env.example is undiscoverable to a pip-install user (and, if
+    default_enabled is false, effectively unreachable via `icdev init`'s
+    generated .env). Extra flags in .env.example are fine.
+    """
+    registry_flags = _registry_env_flags()
+    example_keys = _parse_env_keys(ENV_EXAMPLE)
+    undocumented = registry_flags - example_keys
+    return {
+        "check": "env_flags_documented",
+        "ok": not undocumented,
+        "registry_flag_count": len(registry_flags),
+        "undocumented_in_example": sorted(undocumented),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -299,6 +396,8 @@ def validate() -> dict:
         check_bootstrap_populated(),
         check_forge_data_dirs(),
         check_entry_points(),
+        check_env_files_sync(),
+        check_env_flags_documented(),
     ]
     overall_ok = all(c["ok"] for c in checks)
     return {
@@ -325,7 +424,8 @@ def _print_human(result: dict) -> None:
         else:
             # Show key positive stat
             for k in ("parent_only_count", "present_count",
-                      "slash_command_count", "total_entries"):
+                      "slash_command_count", "total_entries",
+                      "sample_key_count", "registry_flag_count"):
                 if k in c:
                     print(f"       {k}: {c[k]}")
     print()

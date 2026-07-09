@@ -536,6 +536,12 @@ pip install icdev
 # Interactive setup wizard — choose DB, canvases, LLM, features
 icdev-setup
 
+# Canvases (Tech Writer, Notebook, BI Dashboard, etc.) are opt-in and
+# disabled by default if you skip the wizard — check/enable them anytime:
+icdev status              # show what's currently on
+icdev enable --list       # list every available canvas/subsystem toggle
+icdev enable dic          # e.g. turn on the Document Intelligence Canvas
+
 # Or skip the wizard with a mission profile:
 pip install 'icdev[developer]'       # local LLM + dev tools
 pip install 'icdev[govcloud]'        # IL4/IL5 GovCloud (Bedrock + security)

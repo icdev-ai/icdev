@@ -36,7 +36,7 @@ Mirrors the full repo into the `icdev/` package directory:
 
 ### Step 2: Validate (`tools/installer/validate_package_config.py --gate`)
 
-Runs 5 guards before the wheel is built:
+Runs 7 guards before the wheel is built:
 
 1. **`PARENT_ONLY_DIRS` sync** — matches across `sync_package_tree.py`,
    `pyproject.toml` `[tool.setuptools.packages.find] exclude`, and
@@ -52,6 +52,18 @@ Runs 5 guards before the wheel is built:
    `hardprompts/`, `context/` all exist with files.
 5. **Entry points resolve** — every `[project.scripts]` target points to
    a real module (not a dangling reference).
+6. **`.env.example` / `.env.sample` sync** — every variable defined in
+   `.env.sample` (the comprehensive reference) also exists in
+   `.env.example` (what `icdev init` seeds a new project's `.env.template`
+   from, and what `tools/awareness/enablement.py` reads as its runtime
+   defaults layer). A new canvas/subsystem toggle added only to
+   `.env.sample` fails this check instead of silently shipping invisible
+   to `pip install` users.
+7. **Registry env_flags documented** — every enablement `env_flag`
+   declared in `args/component_registry.yaml` (authoritative for canvases
+   and components) appears in `.env.example`. This is the root-cause guard
+   for the "canvas exists in the wheel but a pip-install user can't find
+   it" class of bug (e.g. Document Intelligence / Tech Writer / RFI).
 
 Any failure aborts the release.
 
