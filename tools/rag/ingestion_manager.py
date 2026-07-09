@@ -44,6 +44,70 @@ _DB_BUSY_TIMEOUT_MS = 5000   # SQLite busy_timeout (ms) before raising lock erro
 _SKIP_RATE_ANOMALY  = 0.95   # dedup skip-rate above this flags an anomalous ingestion run
 
 
+# ---------------------------------------------------------------------------
+# Ingestion-time PII/CUI masking (trust-mask-02)
+# ---------------------------------------------------------------------------
+# When args/redaction_config.yaml sets ``mask_at_ingestion: true``, content is
+# anonymized BEFORE chunking/hashing/embedding, so raw sensitive text never
+# lands in the vector store at rest. Default off (opt-in) — enabling it adds
+# per-row detection cost (regex + optional local NER).
+
+_ingestion_anonymizer = None
+_ingestion_anonymizer_loaded = False
+
+
+def _mask_at_ingestion_enabled() -> bool:
+    """True when redaction.mask_at_ingestion is set (default False = off)."""
+    try:
+        import yaml
+
+        cfg_path = BASE_DIR / "args" / "redaction_config.yaml"
+        with open(cfg_path, encoding="utf-8") as f:
+            cfg = yaml.safe_load(f) or {}
+        return bool(cfg.get("enabled", True)) and bool(cfg.get("mask_at_ingestion", False))
+    except Exception:
+        return False
+
+
+def _get_ingestion_anonymizer():
+    """Cached RedactionAnonymizer; None if the redaction module is unavailable."""
+    global _ingestion_anonymizer, _ingestion_anonymizer_loaded
+    if _ingestion_anonymizer_loaded:
+        return _ingestion_anonymizer
+    _ingestion_anonymizer_loaded = True
+    try:
+        from tools.redaction.anonymizer import RedactionAnonymizer
+
+        _ingestion_anonymizer = RedactionAnonymizer()
+    except Exception:
+        _ingestion_anonymizer = None
+    return _ingestion_anonymizer
+
+
+def _mask_row_content(row_dict: dict, content_cols: list, impact_level: str = "IL4") -> int:
+    """Anonymize the content columns of a source row in place (trust-mask-02).
+
+    Returns the number of PII/CUI entities masked. No-op (returns 0) when
+    masking is disabled or the redaction module is unavailable.
+    """
+    anonymizer = _get_ingestion_anonymizer()
+    if anonymizer is None:
+        return 0
+    masked = 0
+    for col in content_cols:
+        val = row_dict.get(col)
+        if not isinstance(val, str) or not val.strip():
+            continue
+        try:
+            result = anonymizer.anonymize(val, impact_level=impact_level)
+            if result.detections:
+                row_dict[col] = result.anonymized_text
+                masked += len(result.detections)
+        except Exception:
+            continue  # never block ingestion on a masking error
+    return masked
+
+
 def _load_anomaly_cfg() -> dict:
     """Load ingestion_manager.anomaly_detection config from args/rag_config.yaml."""
     config_path = BASE_DIR / "args" / "rag_config.yaml"
@@ -346,11 +410,19 @@ def ingest_source(
     total_chunks = 0
     total_skipped = 0
     total_embedded = 0
+    total_masked = 0
     ingestion_mode = mode or cfg.get("mode", "batch")
+    # trust-mask-02: decide once per run whether to mask content at ingestion.
+    _mask_ingest = _mask_at_ingestion_enabled()
 
     for row in rows:
         row_dict = dict(row)
         row_id = str(row_dict[pk])
+
+        # trust-mask-02: anonymize sensitive content BEFORE chunking/hashing so
+        # raw PII/CUI never lands in the vector store at rest.
+        if _mask_ingest:
+            total_masked += _mask_row_content(row_dict, content_cols)
 
         # Build metadata
         meta = {}
@@ -428,6 +500,7 @@ def ingest_source(
         "embed_batch_size": embed_batch_size,
         "skip_rate": round(skip_rate, 3),
         "skip_rate_anomaly": skip_anomaly,
+        "masked_at_ingestion": total_masked,
     }
 
 

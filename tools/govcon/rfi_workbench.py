@@ -514,6 +514,13 @@ def generate_section_content(section_id, profile_name, parsed_data):
         "invalid_references": ref_check["invalid_refs"],
         "references_checked": ref_check["checked"],
     }
+    # halluc-01: non-blocking confabulation assessment (fabricated citations,
+    # internal contradictions, hedging) surfaced to the reviewer/WriteGuard.
+    try:
+        from tools.security.confabulation_detector import assess as _confab_assess
+        md_validation["confabulation"] = _confab_assess(draft)
+    except Exception:
+        pass
 
     db = get_db()
     # Persist sources_json alongside the draft. Falls back to the pre-249

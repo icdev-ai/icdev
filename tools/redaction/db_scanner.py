@@ -184,6 +184,52 @@ class DBScanner:
 
 
 # ---------------------------------------------------------------------------
+# Remediation planning (trust-mask-03)
+# ---------------------------------------------------------------------------
+
+# Entity types that warrant hard redaction rather than reversible masking.
+_HARD_REDACT_ENTITIES = {"US_SSN", "CREDIT_CARD", "US_PASSPORT", "US_BANK_NUMBER", "US_ITIN", "IBAN_CODE"}
+
+
+def _recommend_treatment(entity_types: Dict[str, int]) -> str:
+    """Recommend a redaction treatment from the entity types found in a column."""
+    types = set(entity_types or {})
+    if types & _HARD_REDACT_ENTITIES:
+        return "redact"
+    if "PERSON" in types or "LOCATION" in types:
+        return "surrogate"
+    return "mask"
+
+
+def remediation_plan(scan_result: Dict[str, Any], threshold: float = 0.3) -> List[Dict[str, Any]]:
+    """Turn a scan() result into a structured anonymize plan (trust-mask-03).
+
+    Returns one item per column whose ``pii_density`` meets ``threshold``:
+      {table, column, pii_density, entity_types, recommended_treatment}
+    sorted by density (highest first). Empty list == nothing to remediate.
+    """
+    items: List[Dict[str, Any]] = []
+    for table, tres in (scan_result.get("tables") or {}).items():
+        if not isinstance(tres, dict):
+            continue
+        for col, cres in (tres.get("columns") or {}).items():
+            if not isinstance(cres, dict):
+                continue
+            density = cres.get("pii_density", 0) or 0
+            if density >= threshold:
+                entity_types = cres.get("entity_types") or {}
+                items.append({
+                    "table": table,
+                    "column": col,
+                    "pii_density": round(float(density), 3),
+                    "entity_types": entity_types,
+                    "recommended_treatment": _recommend_treatment(entity_types),
+                })
+    items.sort(key=lambda x: x["pii_density"], reverse=True)
+    return items
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 

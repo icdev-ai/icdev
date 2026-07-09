@@ -620,6 +620,14 @@ def draft_response(shall_id):
     except Exception:
         citation_report = None
 
+    # halluc-01: non-blocking confabulation assessment recorded for reviewer
+    # visibility (fabricated citations / contradictions / hedging).
+    try:
+        from tools.security.confabulation_detector import assess as _confab_assess
+        confab_report = _confab_assess(draft_text)
+    except Exception:
+        confab_report = None
+
     # Compute confidence
     best_coverage = capabilities[0]["score"] if capabilities else 0
     confidence = round(best_coverage * 0.7 + (0.3 if knowledge_blocks else 0), 2)
@@ -673,6 +681,7 @@ def draft_response(shall_id):
                     "best_coverage": best_coverage,
                     **({"placeholder_tokens": placeholder_tokens} if placeholder_tokens else {}),
                     **({"citation_report": citation_report} if citation_report else {}),
+                    **({"confabulation": confab_report} if confab_report else {}),
                     **({"specialist_consult": specialist_consult_result} if specialist_consult_result else {}),
                 }
             ),
@@ -694,6 +703,7 @@ def draft_response(shall_id):
         "draft_length": len(draft_text),
         "placeholder_tokens": placeholder_tokens,
         "citation_report": citation_report,
+        "confabulation": confab_report,
     }
 
 

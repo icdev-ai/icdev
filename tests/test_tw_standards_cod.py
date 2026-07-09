@@ -166,12 +166,24 @@ def _install_fake_cod(monkeypatch, content="cod draft", raise_exc=None):
     return calls
 
 
-def test_cod_disabled_by_default_for_arch(monkeypatch):
+def test_cod_enabled_by_default_for_arch(monkeypatch):
+    # halluc-02: CoD defaults ON for ARCH_* sections (matches RFI's default).
     monkeypatch.delenv("ICDEV_TW_COD_ENABLED", raising=False)
+    calls = _install_fake_cod(monkeypatch, content="cod draft")
+    router = _FakeRouter("single-shot draft")
+    result = _run_draft(monkeypatch, router, template_type="ARCH_SYSTEM")
+    assert calls == ["tech_writing_draft"], "CoD must run by default for ARCH sections"
+    assert result.draft_content == "cod draft"
+    assert router.invoked == []
+
+
+def test_cod_off_when_explicitly_disabled(monkeypatch):
+    # Operators can still opt out (cost-constrained / air-gapped).
+    monkeypatch.setenv("ICDEV_TW_COD_ENABLED", "false")
     calls = _install_fake_cod(monkeypatch)
     router = _FakeRouter("single-shot draft")
     result = _run_draft(monkeypatch, router, template_type="ARCH_SYSTEM")
-    assert calls == [], "CoD must be off unless ICDEV_TW_COD_ENABLED is set"
+    assert calls == []
     assert result.draft_content == "single-shot draft"
     assert router.invoked == ["tech_writing_draft"]
 
@@ -213,10 +225,12 @@ def test_cod_empty_content_falls_back(monkeypatch):
 
 
 def test_tw_cod_flag_parsing(monkeypatch):
+    # halluc-02: default ON (unset -> True); explicit falsey values disable.
     monkeypatch.delenv("ICDEV_TW_COD_ENABLED", raising=False)
-    assert twmod._tw_cod_enabled() is False
+    assert twmod._tw_cod_enabled() is True
     for val in ("1", "true", "YES"):
         monkeypatch.setenv("ICDEV_TW_COD_ENABLED", val)
         assert twmod._tw_cod_enabled() is True
-    monkeypatch.setenv("ICDEV_TW_COD_ENABLED", "false")
-    assert twmod._tw_cod_enabled() is False
+    for val in ("false", "0", "no"):
+        monkeypatch.setenv("ICDEV_TW_COD_ENABLED", val)
+        assert twmod._tw_cod_enabled() is False

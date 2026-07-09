@@ -14,6 +14,12 @@ enabled: true
 # to guarantee no raw PII/CUI ever egresses to a cloud LLM on sanitizer failure.
 fail_closed: false
 
+# Ingestion-time masking (trust-mask-02). When true, RAG ingestion anonymizes
+# content BEFORE chunking/embedding, so raw PII/CUI never lands in the vector
+# store at rest (not only masked at LLM egress). Default false (opt-in) — adds
+# per-row detection cost (regex + optional local NER) during ingestion.
+mask_at_ingestion: false
+
 # ---------------------------------------------------------------------------
 # Detection Engine
 # ---------------------------------------------------------------------------

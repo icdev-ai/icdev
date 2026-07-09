@@ -220,7 +220,16 @@ def validate_standards_references(text: str, whitelist_path: Path | None = None)
 # ── Chain of Debate gating for architecture templates ─────────────────────────
 
 def _tw_cod_enabled() -> bool:
-    return os.environ.get("ICDEV_TW_COD_ENABLED", "false").strip().lower() in ("1", "true", "yes")
+    """Whether architecture sections use Chain-of-Debate (debate + judge synthesis).
+
+    halluc-02: defaults ON to match RFI's judgment-section default
+    (ICDEV_RFI_COD_ENABLED) — CoD materially reduces single-model confabulation
+    on architecture claims. Cost is bounded: it applies only to ARCH_* template
+    types (~3× LLM calls per such section), falls back to single-shot on any
+    failure, and self-limits via the per-role failure auto-block. Set
+    ICDEV_TW_COD_ENABLED=false to disable (e.g. cost-constrained / air-gapped).
+    """
+    return os.environ.get("ICDEV_TW_COD_ENABLED", "true").strip().lower() in ("1", "true", "yes")
 
 
 # ── Main functions ────────────────────────────────────────────────────────────
