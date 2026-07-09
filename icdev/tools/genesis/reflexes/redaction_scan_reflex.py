@@ -29,7 +29,8 @@ _DEFAULT_MAX_CARDS = 20    # cap remediation cards filed per run (avoid flooding
 
 def _card_id(table: str, column: str) -> str:
     """Deterministic id per (table, column) so re-runs dedup via task_factory."""
-    h = hashlib.sha1(f"{table}:{column}".encode()).hexdigest()[:10]  # noqa: S324 — id only, not security
+    # usedforsecurity=False: this is a dedup id, not a security digest.
+    h = hashlib.sha1(f"{table}:{column}".encode(), usedforsecurity=False).hexdigest()[:10]
     return f"task-piiscan-{h}"
 
 
