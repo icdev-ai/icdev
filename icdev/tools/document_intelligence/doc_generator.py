@@ -72,6 +72,7 @@ class GeneratedSection:
     confidence: float = 1.0
     low_confidence: bool = False
     hitl_note: str = ""
+    confabulation: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -103,6 +104,7 @@ class GenerateResult:
                     "confidence": round(s.confidence, 3),
                     "low_confidence": s.low_confidence,
                     "hitl_note": s.hitl_note,
+                    "confabulation": s.confabulation,
                 }
                 for s in self.sections
             ],
@@ -465,8 +467,25 @@ def generate_document(
             except Exception as exc:
                 logger.warning("doc_generator: verifier error: %s", exc)
 
+        # Deterministic placeholder check — unresolved [BRACKETED] tokens
+        # force a HITL flag regardless of verifier confidence.
+        placeholder_tokens: list = []
+        try:
+            from tools.quality.content_grounding import find_placeholders
+            placeholder_tokens = find_placeholders(raw_text)
+        except Exception:
+            pass
+
         # Apply confidence threshold gate
         if not abstained:
+            if placeholder_tokens and not low_confidence:
+                low_confidence = True
+                hitl_note = (
+                    f"⚠ Unresolved placeholders {', '.join(placeholder_tokens[:6])} — "
+                    f"resolve before publishing."
+                )
+                flagged_headings.append(heading)
+                raw_text = f"{raw_text}\n\n> {hitl_note}"
             if confidence >= 0.7:
                 pass  # include normally
             elif confidence >= 0.4:
@@ -475,7 +494,8 @@ def generate_document(
                     f"⚠ Confidence {confidence:.0%} — below 0.7 threshold; "
                     f"verify against source documents before publishing."
                 )
-                flagged_headings.append(heading)
+                if heading not in flagged_headings:
+                    flagged_headings.append(heading)
                 raw_text = f"{raw_text}\n\n> {hitl_note}"
             else:
                 # Very low confidence — exclude (abstain)
@@ -486,6 +506,27 @@ def generate_document(
                     heading, confidence,
                 )
 
+        # halluc-03: non-blocking confabulation assessment (fabricated-citation
+        # patterns, internal contradictions, hedging) — complements DIC's
+        # confidence verifier, which does not target these specifically. Skips
+        # abstained sections (no claims). Elevates hitl_note on high risk.
+        confab: dict = {}
+        if not abstained and raw_text:
+            try:
+                from tools.security.confabulation_detector import assess as _confab_assess
+                confab = _confab_assess(raw_text)
+                if confab.get("risk_level") == "high" and not low_confidence:
+                    low_confidence = True
+                    if heading not in flagged_headings:
+                        flagged_headings.append(heading)
+                    note = (
+                        f"⚠ Confabulation risk {confab.get('risk_score')} "
+                        f"({confab.get('findings_count')} finding(s)) — review before publishing."
+                    )
+                    hitl_note = f"{hitl_note} {note}".strip()
+            except Exception:
+                confab = {}
+
         generated_sections.append(GeneratedSection(
             heading=heading,
             content=raw_text,
@@ -495,6 +536,7 @@ def generate_document(
             confidence=confidence,
             low_confidence=low_confidence,
             hitl_note=hitl_note,
+            confabulation=confab,
         ))
 
     result.sections = generated_sections
