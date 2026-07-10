@@ -201,6 +201,42 @@ def step_inspect_wheel() -> dict:
 # ---------------------------------------------------------------------------
 # Step 5: smoke test install in throwaway venv
 # ---------------------------------------------------------------------------
+#: Subsystems that must import from the *installed* package. Each previously
+#: raised ``ModuleNotFoundError: No module named 'tools'`` inside the wheel.
+_SMOKE_SUBSYSTEMS = (
+    "icdev.tools.db.storage",
+    "icdev.tools.security.abac_engine",
+    "icdev.tools.security.column_security",
+    "icdev.tools.llm.router",
+)
+
+_SUBSYSTEM_IMPORT_PROBE = (
+    "import importlib, sys\n"
+    "mods = {mods!r}\n"
+    "bad = []\n"
+    "for m in mods:\n"
+    "    try:\n"
+    "        importlib.import_module(m)\n"
+    "    except Exception as exc:\n"
+    "        bad.append('%s -> %s: %s' % (m, type(exc).__name__, exc))\n"
+    "if bad:\n"
+    "    print('FAILED_IMPORTS: ' + ' | '.join(bad))\n"
+    "    sys.exit(1)\n"
+    "print('SUBSYSTEM_IMPORTS_OK (%d)' % len(mods))\n"
+).format(mods=list(_SMOKE_SUBSYSTEMS))
+
+_COLUMN_POLICY_PROBE = (
+    "import sys\n"
+    "from icdev.tools.security import column_security as cs\n"
+    "path = cs._resolve_config_path()\n"
+    "n = len(cs._load_config().get('column_policies', []))\n"
+    "print('CONFIG=%s POLICIES=%d' % (path, n))\n"
+    "if n == 0:\n"
+    "    print('FAILED: zero column policies loaded (config not found in wheel layout)')\n"
+    "    sys.exit(1)\n"
+)
+
+
 def step_smoke_test() -> dict:
     wheels = sorted(DIST_DIR.glob("*.whl")) if DIST_DIR.exists() else []
     if not wheels:
@@ -233,25 +269,54 @@ def step_smoke_test() -> dict:
             return result
         result["install_ok"] = True
 
+        # Every probe below MUST run with cwd outside the repo. `python -c` puts
+        # the cwd on sys.path, so running from REPO_ROOT (the _run default) makes
+        # `import icdev` / `import tools` resolve to the *source tree* instead of
+        # the installed wheel — which is why a wheel whose modules could not
+        # import still passed this smoke test.
+        probe_cwd = tmpdir
+
         # Test: import icdev
-        r = _run([str(py), "-c", "import icdev; print(icdev.__version__)"], timeout=30)
+        r = _run([str(py), "-c", "import icdev; print(icdev.__version__)"],
+                 cwd=probe_cwd, timeout=30)
         result["import_ok"] = (r.returncode == 0)
         result["version"] = r.stdout.strip()
 
         # Test: icdev init --list in a fresh project dir
         proj_dir = tmpdir / "proj"
         proj_dir.mkdir()
-        r = _run([str(icdev_bin), "init", str(proj_dir), "--list"], timeout=30)
+        r = _run([str(icdev_bin), "init", str(proj_dir), "--list"],
+                 cwd=probe_cwd, timeout=30)
         # Fallback: invoke via python -m if entry-point shim not found
         if r.returncode != 0 and "No such" in (r.stderr or ""):
             r = _run([str(py), "-m", "icdev.tools.cli.init",
-                      str(proj_dir), "--list"], timeout=30)
+                      str(proj_dir), "--list"], cwd=probe_cwd, timeout=30)
         result["init_list_ok"] = (r.returncode == 0)
         result["init_list_output"] = (r.stdout or "")[-500:]
 
+        # Test: core icdev.tools.* subsystems actually import in the installed
+        # package. ~1,900 packaged modules import their siblings through the
+        # absolute ``tools.*`` namespace, which the wheel does not ship as a
+        # top-level package. A missing alias made db.storage / abac_engine /
+        # llm.router unimportable and silently disabled column masking, while
+        # `import icdev` alone still succeeded — so this gap shipped unnoticed.
+        r = _run([str(py), "-c", _SUBSYSTEM_IMPORT_PROBE], cwd=probe_cwd, timeout=90)
+        result["subsystem_imports_ok"] = (r.returncode == 0)
+        if r.returncode != 0:
+            result["subsystem_imports_error"] = (r.stdout or r.stderr or "")[-600:]
+
+        # Test: the shipped security config resolves and column policies load.
+        # A wrong config path silently degrades every policy to "no policy",
+        # i.e. unmasked rows, with no error anywhere.
+        r = _run([str(py), "-c", _COLUMN_POLICY_PROBE], cwd=probe_cwd, timeout=60)
+        result["column_policies_ok"] = (r.returncode == 0)
+        result["column_policies_info"] = (r.stdout or r.stderr or "").strip()[-300:]
+
         result["ok"] = all((result.get("install_ok"),
                             result.get("import_ok"),
-                            result.get("init_list_ok")))
+                            result.get("init_list_ok"),
+                            result.get("subsystem_imports_ok"),
+                            result.get("column_policies_ok")))
     return result
 
 
@@ -303,6 +368,12 @@ def run(skip_smoke: bool = False) -> dict:
         results.append(r5)
         print(f"  install={r5.get('install_ok')}  import={r5.get('import_ok')} "
               f"(v{r5.get('version')})  init_list={r5.get('init_list_ok')}")
+        print(f"  subsystem_imports={r5.get('subsystem_imports_ok')}  "
+              f"column_policies={r5.get('column_policies_ok')}")
+        if r5.get("column_policies_info"):
+            print(f"    {r5['column_policies_info']}")
+        if r5.get("subsystem_imports_error"):
+            print(f"    {r5['subsystem_imports_error']}")
         if not r5["ok"]:
             if r5.get("error"):
                 print(f"  error: {r5['error']}")
