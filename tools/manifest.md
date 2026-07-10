@@ -55,6 +55,7 @@
 - [SharePoint Integration (Phase E / P4.1)](manifest/sharepoint.md)
 - [Agent Execution Framework (Phase 39)](manifest/agent-execution-framework.md)
 - [LLM Provider Abstraction (Vendor-Agnostic)](manifest/llm-provider-abstraction.md)
+- [ICDEV Cortex (Unified AI Facade)](manifest/cortex.md)
 - [Bedrock Client (Opus 4.6 Multi-Agent — Phase A)](manifest/bedrock-client.md)
 - [Multi-Agent Orchestration (Opus 4.6 Multi-Agent — Phase B)](manifest/multi-agent-orchestration.md)
 - [Agent Collaboration (Opus 4.6 Multi-Agent — Phase C)](manifest/agent-collaboration.md)
