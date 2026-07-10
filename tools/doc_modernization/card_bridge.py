@@ -40,8 +40,13 @@ def _connect():
     return get_connection()
 
 
+# 'Awaiting review' includes drafted redlines — a finding with a pending
+# redline still needs a human; its kanban card must stay open.
+_AWAITING_STATES = ("open", "redline_drafted")
+
+
 def emit_rollups(conn=None) -> dict:
-    """One prediction per document with open, above-threshold findings."""
+    """One prediction per document with awaiting-review, above-threshold findings."""
     from tools.doc_modernization import get_findings
     from tools.doc_modernization.pack_loader import load_config
 
@@ -51,8 +56,9 @@ def emit_rollups(conn=None) -> dict:
     try:
         threshold = float(load_config().get("confidence_threshold", 0.7) or 0.7)
         open_findings = [
-            f for f in get_findings(state="open", conn=conn)
-            if (f.get("confidence") or 0) >= threshold
+            f for f in get_findings(conn=conn)
+            if f.get("state") in _AWAITING_STATES
+            and (f.get("confidence") or 0) >= threshold
         ]
         by_doc: dict[str, list[dict]] = {}
         for f in open_findings:
@@ -134,7 +140,8 @@ def reconcile(conn=None) -> dict:
         ).fetchall()]
         closed = []
         for r in rows:
-            still_open = get_findings(doc_id=r["subject_id"], state="open", conn=conn)
+            still_open = [f for f in get_findings(doc_id=r["subject_id"], conn=conn)
+                          if f.get("state") in _AWAITING_STATES]
             if not still_open:
                 # 'confirmed' per the oracle outcome vocabulary — the predicted
                 # modernization need was addressed.
