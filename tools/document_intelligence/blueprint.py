@@ -550,16 +550,39 @@ def templates_page():
 def techwriter():
     """Tech Writer Workspace — template picker + list of active drafts."""
     tenant_id, classification = _security_context()
+    current_user = _current_user()
     conn = _conn()
     try:
+        # docmod-ux-04: enrich with freshness state, latest-version review
+        # status/assignee, last approval date, and pending-suggestion counts.
         active_docs = _safe_rows(
             conn,
-            "SELECT doc_id, title, template_type, writeguard_mode, created_at "
-            "FROM dic_documents "
-            "WHERE tenant_id = %s AND template_type IS NOT NULL "
-            "ORDER BY created_at DESC LIMIT 50",
+            "SELECT d.doc_id, d.title, d.template_type, d.writeguard_mode, d.created_at, "
+            "  f.state AS freshness_state, "
+            "  (SELECT v.status FROM dic_versions v WHERE v.doc_id = d.doc_id "
+            "     ORDER BY v.version_no DESC LIMIT 1) AS review_status, "
+            "  (SELECT v.assigned_to FROM dic_versions v WHERE v.doc_id = d.doc_id "
+            "     ORDER BY v.version_no DESC LIMIT 1) AS assigned_to, "
+            "  (SELECT v.created_at FROM dic_versions v WHERE v.doc_id = d.doc_id "
+            "     AND v.status = 'approved' ORDER BY v.version_no DESC LIMIT 1) AS last_approved, "
+            "  (SELECT COUNT(*) FROM dic_suggestions sg WHERE sg.doc_id = d.doc_id "
+            "     AND sg.status = 'pending') AS pending_suggestions "
+            "FROM dic_documents d "
+            "LEFT JOIN dic_doc_freshness f ON f.doc_id = d.doc_id "
+            "WHERE d.tenant_id = %s AND d.template_type IS NOT NULL "
+            "ORDER BY d.created_at DESC LIMIT 50",
             (tenant_id,),
         )
+        if not active_docs:
+            # Graceful degradation when the join tables don't exist yet.
+            active_docs = _safe_rows(
+                conn,
+                "SELECT doc_id, title, template_type, writeguard_mode, created_at "
+                "FROM dic_documents "
+                "WHERE tenant_id = %s AND template_type IS NOT NULL "
+                "ORDER BY created_at DESC LIMIT 50",
+                (tenant_id,),
+            )
     finally:
         conn.close()
     from tools.document_intelligence.constants import (
@@ -573,6 +596,7 @@ def techwriter():
         template_types=TEMPLATE_TYPES,
         type_to_mode=TEMPLATE_TYPE_TO_WRITEGUARD_MODE,
         tw_templates=tw_templates,
+        current_user=current_user,
         pages=_PAGES,
     )
 

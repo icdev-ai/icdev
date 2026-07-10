@@ -984,6 +984,16 @@ reflexes:
     cooldown_minutes: 720      # minimum 12h between runs
     description: "DIC Review Cadence: check each collection with review_interval_days set; emit dic.review_overdue canvas_events and notify editors/reviewers when last HITL approval exceeds the configured interval."
     dry_run: false
+
+  doc_modernization_sweep:
+    timeout_seconds: 300
+    enabled: true
+    risk_tier: green
+    schedule: "daily 03:30"
+    interval_seconds: 86400    # nightly
+    cooldown_minutes: 720      # minimum 12h between runs
+    description: "Document Modernization Sweep: refresh EOL caches + de facto deployment standards, incrementally scan DIC documents for stale/EOL/deprecated content, draft capped TRUST-gated redlines, emit suggested kanban rollups."
+    dry_run: false
     success_metric:
       name: dic_overdue_events_emitted
       threshold: 0

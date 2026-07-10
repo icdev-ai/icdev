@@ -223,6 +223,54 @@ def api_list_sessions():
     return jsonify(sessions)
 
 
+@docgen_bp.route("/api/sessions/<session_id>/refresh", methods=["POST"])
+def api_refresh_session(session_id: str):
+    """One-click 'Re-run with updated sources' (docmod-ux-03): clone a stale
+    session — same title/domain/doc_type/uploads by file reference — re-hash
+    the sources, and start the clone at stage 0 for a fresh generation run."""
+    from tools.docgen import session_manager as sm
+
+    old = sm.get_session(session_id)
+    if not old:
+        return jsonify({"error": "not found"}), 404
+
+    clone = sm.create_session(
+        title=f"{old['title']} (refreshed)",
+        domain=old.get("domain") or "network",
+        doc_type=old.get("doc_type") or "runbook",
+        template_id=old.get("template_id"),
+        created_by=old.get("created_by") or "dashboard",
+        tenant_id=old.get("tenant_id"),
+        classification=old.get("classification") or "CUI",
+    )
+    paths: list[str] = []
+    for up in sm.list_uploads(session_id):
+        sm.add_upload(
+            clone["id"],
+            filename=up.get("filename") or "upload",
+            upload_type=up.get("upload_type") or "doc",
+            file_path=up.get("file_path"),
+            file_hash=up.get("file_hash"),
+            tenant_id=up.get("tenant_id"),
+        )
+        if up.get("file_path"):
+            paths.append(up["file_path"])
+    try:
+        from tools.docgen.workflow import record_source_hash
+        record_source_hash(clone["id"], paths)
+    except Exception as exc:
+        logger.warning("docgen refresh: source hash snapshot failed: %s", exc)
+    if old.get("source_dic_doc_id") or old.get("dic_collection_id"):
+        sm.set_field(
+            clone["id"],
+            source_dic_doc_id=old.get("source_dic_doc_id"),
+            dic_collection_id=old.get("dic_collection_id"),
+        )
+    logger.info("docgen: session %s refreshed -> %s (%d uploads)",
+                session_id, clone["id"], len(paths))
+    return jsonify({"session_id": clone["id"], "uploads": len(paths)}), 201
+
+
 @docgen_bp.route("/api/sessions/<session_id>", methods=["GET"])
 def api_get_session(session_id: str):
     from tools.docgen import session_manager as sm
