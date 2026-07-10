@@ -57,6 +57,7 @@ class LLMRequest:
     # Tracking metadata
     agent_id: str = ""
     project_id: str = ""
+    tenant_id: str = ""
     classification: str = "CUI"
 
 
