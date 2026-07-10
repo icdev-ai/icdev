@@ -53,7 +53,12 @@ Thumbs.db
 
 # Logs
 *.log
-logs/
+# Anchored to the repo root. A bare `logs/` matches ANY directory named logs at any
+# depth, which silently swallowed source directories belonging to the /logs canvas:
+# context/iqe/queries/logs/, icdev/tools/dashboard/templates/logs/, and
+# tools/dashboard/templates/logs/ (that one was force-added; its icdev mirror and
+# IQE seed queries were not, which is why the canvas failed the completeness gate).
+/logs/
 
 # Agent output directories
 agents/
