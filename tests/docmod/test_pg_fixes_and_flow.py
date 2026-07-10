@@ -222,3 +222,68 @@ def test_evidence_reads_use_rls_free_connection():
     assert "combined_evidence_hash(packs, ev_conn)" in src
     assert "combined_evidence_hash(packs, ev)" in src
     assert "combined_evidence_hash(packs, conn)" not in src
+
+
+def test_findings_list_endpoint_and_visibility(client, db):
+    """User feedback: '11 open findings, I can't see them' — the corpus-wide
+    findings API + the clickable tile panel + findings-only table rows."""
+    doc_id = _seed_chunked_doc(collection_id="col-vis")
+    from tools.doc_modernization.packs.crypto_protocols import CryptoProtocolsPack
+    from tools.doc_modernization.scanner import scan_document
+
+    scan_document(doc_id, packs={"crypto_protocols": CryptoProtocolsPack(
+        config={"pack_id": "crypto_protocols"})}, force=True)
+
+    rows = client.get(
+        "/document-intelligence/api/modernization/findings?state=open"
+    ).get_json()
+    mine = [r for r in rows if r["doc_id"] == doc_id]
+    assert mine, "seeded finding missing from the corpus findings list"
+    f = mine[0]
+    assert f["doc_title"] == "PG Doc"          # titles joined in
+    assert f["entity_label"].startswith("TLS")
+    assert f["recommended_replacement"]
+    assert f["evidence"]                        # citation-shaped evidence exposed
+
+    # type filter works
+    filtered = client.get(
+        "/document-intelligence/api/modernization/findings?finding_type=eol_hardware"
+    ).get_json()
+    assert all(r["finding_type"] == "eol_hardware" for r in filtered)
+
+
+def test_freshness_scan_all_collections_by_default(client, db, monkeypatch):
+    """Scan-now regression: omitted collection_id must scan EVERY collection,
+    not the literal 'default' one."""
+    import tools.document_intelligence.freshness_engine as fe
+
+    scanned = []
+
+    class _R:
+        scan_id = "s"; collection_id = "c"; stale_count = 1
+        aging_count = 0; fresh_count = 2; regen_priority = 0.0; docs_scanned = 3
+
+    monkeypatch.setattr(fe, "scan_collection",
+                        lambda cid, **kw: scanned.append(cid) or _R())
+    _seed_chunked_doc(collection_id="col-a")
+    _seed_chunked_doc(collection_id="col-b")
+
+    resp = client.post("/document-intelligence/api/freshness/scan", json={})
+    assert resp.status_code == 200, resp.get_json()
+    assert {"col-a", "col-b"} <= set(scanned)
+    assert resp.get_json()["collections_scanned"] >= 2
+
+    # explicit collection still scans just that one
+    scanned.clear()
+    client.post("/document-intelligence/api/freshness/scan",
+                json={"collection_id": "col-a"})
+    assert scanned == ["col-a"]
+
+
+def test_freshness_template_findings_visibility_markup():
+    tpl = (REPO_ROOT / "tools" / "dashboard" / "templates" / "document_intelligence"
+           / "freshness.html").read_text(encoding="utf-8")
+    assert "toggleFindingsPanel" in tpl          # 🧭 tile is clickable
+    assert "findings-panel-body" in tpl
+    assert "/api/modernization/findings" in tpl
+    assert "not scored" in tpl                   # findings-only docs render as rows

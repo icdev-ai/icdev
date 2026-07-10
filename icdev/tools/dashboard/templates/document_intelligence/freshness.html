@@ -30,12 +30,35 @@
     <div style="color:#7a8cb0;font-size:11px;margin-top:4px;">🔴 Stale</div>
   </div>
   <!-- Modernization finding tiles (filled by JS from /api/modernization/summary) -->
-  <div style="flex:1;min-width:110px;background:#16213e;border:1px solid #4a2a6e;border-radius:8px;padding:14px;text-align:center;">
+  <div onclick="toggleFindingsPanel()" title="Click to show the findings"
+    style="flex:1;min-width:110px;background:#16213e;border:1px solid #4a2a6e;border-radius:8px;padding:14px;text-align:center;cursor:pointer;">
     <div id="mod-total" style="font-size:24px;font-weight:700;color:#a78bfa;">—</div>
-    <div style="color:#7a8cb0;font-size:11px;margin-top:4px;">🧭 Open findings</div>
+    <div style="color:#7a8cb0;font-size:11px;margin-top:4px;">🧭 Open findings <span id="mod-total-caret">▼</span></div>
   </div>
   <div style="flex:2;min-width:220px;background:#16213e;border:1px solid #4a2a6e;border-radius:8px;padding:14px;">
     <div id="mod-by-type" style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center;color:#7a8cb0;font-size:11px;">Modernization engine not scanned yet.</div>
+  </div>
+</div>
+
+<!-- Open findings list (click the 🧭 tile) — the findings themselves, not just counts -->
+<div id="findings-panel" style="display:none;background:#140a24;border:1px solid #4a2a6e;border-radius:8px;padding:14px;margin-bottom:18px;">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+    <h3 style="margin:0;color:#a78bfa;font-size:13px;">🧭 Open Modernization Findings</h3>
+    <span style="color:#5a7aa0;font-size:10px;">Deterministic evidence · click a row to open the document at that finding</span>
+  </div>
+  <div style="overflow-x:auto;">
+    <table style="width:100%;border-collapse:collapse;font-size:12px;">
+      <thead>
+        <tr style="color:#7a8cb0;text-align:left;border-bottom:1px solid #241640;">
+          <th style="padding:6px;">Type</th><th style="padding:6px;">Severity</th>
+          <th style="padding:6px;">Found</th><th style="padding:6px;">Document / Section</th>
+          <th style="padding:6px;">Why</th><th style="padding:6px;">Recommended</th>
+        </tr>
+      </thead>
+      <tbody id="findings-panel-body">
+        <tr><td colspan="6" style="padding:14px;color:#5a7aa0;">Loading…</td></tr>
+      </tbody>
+    </table>
   </div>
 </div>
 
@@ -140,16 +163,84 @@ fetch('/document-intelligence/api/modernization/summary')
     // per-doc chips, worst-first sort
     var counts = {};
     (d.documents || []).forEach(function(doc) { counts[doc.doc_id] = doc; });
+    var shown = {};
     document.querySelectorAll('.mod-chips').forEach(function(cell) {
       var doc = counts[cell.dataset.doc];
       if (!doc) return;
+      shown[doc.doc_id] = true;
       cell.innerHTML = Object.keys(doc.types).map(function(k) {
         return '<span style="background:#2a1a3a;color:#a78bfa;padding:1px 6px;border-radius:3px;font-size:10px;margin-right:3px;">'
           + (TYPE_LABELS[k] || k) + ' ' + doc.types[k] + '</span>';
       }).join('');
     });
+    // Docs with open findings but no freshness score yet must still be
+    // visible, clickable rows — never hide findings behind a missing scan.
+    var tbody = document.querySelector('table tbody');
+    (d.documents || []).forEach(function(doc) {
+      if (shown[doc.doc_id]) return;
+      var empty = tbody.querySelector('td[colspan]');
+      if (empty) empty.closest('tr').remove();
+      var chips = Object.keys(doc.types).map(function(k) {
+        return '<span style="background:#2a1a3a;color:#a78bfa;padding:1px 6px;border-radius:3px;font-size:10px;margin-right:3px;">'
+          + (TYPE_LABELS[k] || k) + ' ' + doc.types[k] + '</span>';
+      }).join('');
+      var tr = document.createElement('tr');
+      tr.className = 'heatmap-row';
+      tr.style.borderBottom = '1px solid #0d1b30';
+      tr.innerHTML =
+        '<td style="padding:8px;"><input type="checkbox" class="doc-check" value="' + doc.doc_id + '" onchange="updateBulkBar()"></td>' +
+        '<td style="padding:8px;"><span style="background:#1e293b;color:#94a3b8;padding:2px 8px;border-radius:3px;font-size:10px;">not scored</span></td>' +
+        '<td style="padding:8px;color:#eaeaea;">' + (doc.title || doc.doc_id) + '</td>' +
+        '<td style="padding:8px;color:#94a3b8;">—</td>' +
+        '<td style="padding:8px;color:#7a8cb0;">—</td>' +
+        '<td style="padding:8px;">' + chips + '</td>' +
+        '<td style="padding:8px;color:#7a8cb0;font-size:11px;">' + doc.open_findings + ' open modernization finding(s)</td>' +
+        '<td style="padding:8px;text-align:right;white-space:nowrap;">' +
+        '<a href="/docgen/new?source_doc_id=' + doc.doc_id + '" style="color:#a78bfa;font-size:11px;text-decoration:none;margin-right:8px;">🔄 Regenerate</a>' +
+        '<a href="/document-intelligence/doc/' + doc.doc_id + '" style="color:#7ab3f0;font-size:11px;text-decoration:none;">Open →</a></td>';
+      tbody.appendChild(tr);
+    });
   })
   .catch(function(){ /* engine not installed — freshness view stands alone */ });
+
+// ── Open-findings panel (click the 🧭 tile) ──────────────────────────────────
+var SEV_COLORS = {critical:'#f87171', high:'#fb923c', medium:'#fbbf24', low:'#94a3b8', info:'#7a8cb0'};
+var _findingsLoaded = false;
+
+function toggleFindingsPanel() {
+  var panel = document.getElementById('findings-panel');
+  var open = panel.style.display !== 'none';
+  panel.style.display = open ? 'none' : 'block';
+  document.getElementById('mod-total-caret').textContent = open ? '▼' : '▲';
+  if (open || _findingsLoaded) return;
+  fetch('/document-intelligence/api/modernization/findings?state=open')
+    .then(function(r){ return r.json(); })
+    .then(function(rows) {
+      _findingsLoaded = true;
+      var body = document.getElementById('findings-panel-body');
+      if (!rows.length) {
+        body.innerHTML = '<tr><td colspan="6" style="padding:14px;color:#5a7aa0;">No open findings 🎉</td></tr>';
+        return;
+      }
+      body.innerHTML = rows.map(function(f) {
+        var docLink = '/document-intelligence/doc/' + f.doc_id;
+        var rec = f.recommended_replacement
+          ? '<span style="color:#7fd8a0;">' + f.recommended_replacement + '</span>'
+          : '<span style="color:#5a7aa0;">flag only — review &amp; remove</span>';
+        return '<tr style="border-bottom:1px solid #241640;cursor:pointer;" onclick="window.location=\'' + docLink + '\'">'
+          + '<td style="padding:6px;"><span style="background:#2a1a3a;color:#a78bfa;padding:1px 6px;border-radius:3px;font-size:10px;">' + (TYPE_LABELS[f.finding_type] || f.finding_type) + '</span></td>'
+          + '<td style="padding:6px;color:' + (SEV_COLORS[f.severity] || '#94a3b8') + ';">' + f.severity + '</td>'
+          + '<td style="padding:6px;color:#eaeaea;font-weight:600;">' + f.entity_label + '</td>'
+          + '<td style="padding:6px;color:#94a3b8;">' + (f.doc_title || f.doc_id) + (f.section_heading ? ' · ' + f.section_heading : '') + '</td>'
+          + '<td style="padding:6px;color:#7a8cb0;font-size:11px;max-width:320px;">' + (f.rationale || '') + '</td>'
+          + '<td style="padding:6px;font-size:11px;">' + rec + '</td></tr>';
+      }).join('');
+    })
+    .catch(function(e) {
+      document.getElementById('findings-panel-body').innerHTML =
+        '<tr><td colspan="6" style="padding:14px;color:#f87171;">Failed to load findings: ' + e.message + '</td></tr>';
+    });
+}
 
 // ── Bulk actions ─────────────────────────────────────────────────────────────
 function selectedDocs() {

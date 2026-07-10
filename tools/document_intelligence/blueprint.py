@@ -3058,10 +3058,36 @@ def api_handoff_answer(item_id):
 @dic_bp.route("/api/freshness/scan", methods=["POST"])
 def api_freshness_scan():
     data = request.get_json(silent=True) or {}
-    collection_id = data.get("collection_id", "default")
+    # Omitted collection_id scans EVERY collection. The old literal 'default'
+    # meant the Scan-now button silently never scored real collections, so
+    # documents with findings stayed invisible on the freshness board.
+    collection_id = (data.get("collection_id") or "").strip() or None
     tenant_id, classification = _security_context()
     try:
         from tools.document_intelligence.freshness_engine import scan_collection
+
+        if collection_id is None:
+            conn = _conn()
+            try:
+                cids = [dict(r)["collection_id"] for r in conn.execute(
+                    "SELECT collection_id FROM dic_collections"
+                ).fetchall()] or ["default"]
+            finally:
+                conn.close()
+            totals = {"collections_scanned": 0, "docs_scanned": 0,
+                      "stale_count": 0, "aging_count": 0, "fresh_count": 0}
+            for cid in cids:
+                try:
+                    r = scan_collection(cid, tenant_id=tenant_id, classification=classification)
+                    totals["collections_scanned"] += 1
+                    totals["docs_scanned"] += getattr(r, "docs_scanned", 0) or 0
+                    totals["stale_count"] += getattr(r, "stale_count", 0) or 0
+                    totals["aging_count"] += getattr(r, "aging_count", 0) or 0
+                    totals["fresh_count"] += getattr(r, "fresh_count", 0) or 0
+                except Exception as exc:
+                    logger.warning("dic freshness: collection %s scan failed: %s", cid, exc)
+            return jsonify(totals)
+
         result = scan_collection(collection_id, tenant_id=tenant_id, classification=classification)
         return jsonify({
             "scan_id": result.scan_id,

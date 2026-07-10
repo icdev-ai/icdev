@@ -49,6 +49,63 @@ def _open_findings(doc_id: str | None = None) -> list[dict]:
         return []
 
 
+@dic_bp.route("/api/modernization/findings", methods=["GET"])
+def api_modernization_findings():
+    """Corpus-wide findings list — the tiles show counts; this shows the
+    findings themselves (user feedback: '11 open findings, I can't see them').
+
+    Query params: state (default 'open'), finding_type, limit (default 200).
+    """
+    import json as _json
+
+    state = (request.args.get("state") or "open").strip() or None
+    finding_type = (request.args.get("finding_type") or "").strip() or None
+    limit = min(int(request.args.get("limit", 200) or 200), 1000)
+    try:
+        from tools.doc_modernization import get_findings
+        findings = get_findings(state=state, finding_type=finding_type)[:limit]
+    except Exception as exc:
+        logger.debug("dic modernization: engine unavailable: %s", exc)
+        return jsonify([])
+
+    titles: dict[str, str] = {}
+    try:
+        conn = _conn()
+        try:
+            for doc_id in {f["doc_id"] for f in findings}:
+                row = conn.execute(
+                    "SELECT title FROM dic_documents WHERE doc_id = %s", (doc_id,)
+                ).fetchone()
+                titles[doc_id] = (dict(row).get("title") if row else None) or doc_id
+        finally:
+            conn.close()
+    except Exception:
+        pass
+
+    out = []
+    for f in findings:
+        try:
+            evidence = _json.loads(f.get("evidence_json") or "[]")
+        except Exception:
+            evidence = []
+        out.append({
+            "finding_id": f["finding_id"],
+            "doc_id": f["doc_id"],
+            "doc_title": titles.get(f["doc_id"], f["doc_id"]),
+            "section_heading": f.get("section_heading"),
+            "finding_type": f["finding_type"],
+            "severity": f.get("severity") or "medium",
+            "entity_label": f["entity_label"],
+            "currency_verdict": f["currency_verdict"],
+            "rationale": f.get("rationale"),
+            "recommended_replacement": f.get("recommended_replacement"),
+            "redline_suggestion_id": f.get("redline_suggestion_id"),
+            "state": f.get("state"),
+            "evidence": evidence,
+        })
+    return jsonify(out)
+
+
 @dic_bp.route("/api/modernization/summary", methods=["GET"])
 def api_modernization_summary():
     """Corpus triage: finding counts by type + worst-first document list."""
