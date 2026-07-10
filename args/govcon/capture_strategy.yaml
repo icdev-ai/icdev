@@ -1,0 +1,86 @@
+# CUI // UNCLASSIFIED
+# Company-wide capture strategy — the single message every generated RFI part and
+# proposal section must carry. Editable here, or via the dashboard (which writes the
+# `capture_strategy` table). This file wins over the DB when it exists, mirroring
+# args/govcon/company_style_guide.yaml.
+#
+# A win theme is: "Because <discriminator>, you <customer benefit>, as proven by <evidence>."
+# Evaluators score evidence, not adjectives. Leave `evidence` empty only if you accept
+# that generation will emit the literal token [VERIFY], which BLOCKS export until you
+# supply real proof. That is deliberate: it stops unproven claims from shipping.
+#
+# Do not use the puffery banned in company_style_guide.yaml forbidden_phrases
+# ("world-class", "state of the art", "innovative solution", "cutting-edge").
+
+golden_thread: >-
+  We retire your risk before you pay for it, and we prove it with your data, not ours.
+
+win_themes:
+  - statement: >-
+      Because we model your mission workflows in a program digital twin and run Monte Carlo
+      what-if analysis before production code is written, you retire integration and schedule
+      risk during the base period instead of discovering it at IOC.
+    evidence: ""   # [VERIFY] simulated scenarios + schedule-variance reduction + program name
+    target_eval_factor: "Technical Approach"
+    priority: 1
+
+  - statement: >-
+      Because our AI Innovation Lab validates and auto-prototypes capability under automated
+      quality gates with internal research and development funding, you field proven capability
+      rather than paying to mature a prototype.
+    evidence: ""   # [VERIFY] ideas validated, gate-pass rate, lab-to-production transitions
+    target_eval_factor: "Technical Approach"
+    priority: 2
+
+  # Currently unbacked by any system in the portfolio: nothing measures productivity
+  # before/after. This is stated as a METHOD COMMITMENT, not a past result. Do not
+  # soften the wording into an implied outcome you cannot evidence.
+  - statement: >-
+      Because we instrument every workflow with baseline-and-delta measurement from day one,
+      you receive productivity gains audited against your own pre-award baseline rather than
+      vendor benchmarks.
+    evidence: ""   # [VERIFY] measured throughput improvement against a customer baseline
+    target_eval_factor: "Management Approach"
+    priority: 3
+
+  - statement: >-
+      Because we deliver under Government Purpose Rights with the Government owning all mission
+      data and derivative models, innovation we fund transfers across your portfolio instead of
+      locking you to a single vendor.
+    evidence: ""   # [VERIFY] prior GPR delivery / contract number
+    target_eval_factor: "Intellectual Property"
+    priority: 4
+
+discriminators:
+  - statement: "Pre-award digital twin of the customer's mission workflows."
+    evidence: ""
+  - statement: "Internally funded AI Innovation Lab; capability matures at contractor risk."
+    evidence: ""
+  - statement: "Customer-baseline instrumentation, not vendor benchmarks."
+    evidence: ""
+  - statement: "Government Purpose Rights; the Government owns mission data and derivative models."
+    evidence: ""
+
+# Never name a competitor — differentiate on merit. The RFI 'Why Us' prompt already
+# enforces this, and these statements are argued as approach weaknesses, not as attacks.
+ghosting:
+  - statement: >-
+      Solutions validated only in a vendor laboratory on synthetic data transfer integration
+      risk to the Government at first contact with real mission traffic.
+  - statement: >-
+      Approaches that bill capability maturation as contract cost make the Government fund
+      vendor research and development.
+  - statement: >-
+      Vendor-reported benchmarks cannot be audited against the Government's own mission baseline.
+  - statement: >-
+      Proprietary models delivered as closed components with restricted rights create long-term
+      dependence on a single supplier.
+
+# Fill these per pursuit; they steer emphasis, not claims.
+hot_buttons:
+  - "Latency at operational scale"
+  - "ATO / cATO timeline"
+  - "Avoiding vendor lock-in"
+  - "Analyst throughput and burnout"
+
+proof_points: []

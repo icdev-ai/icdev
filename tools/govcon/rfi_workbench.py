@@ -446,6 +446,18 @@ def generate_section_content(section_id, profile_name, parsed_data):
             style_parts.append(compliance_notes[:300].strip())
         prompt += "\n\n[Style Requirements]\n" + "\n".join(style_parts)
 
+    # Inject the capture strategy so every part of the response argues one message
+    # rather than reading as six separately-authored documents. Returns "" for
+    # administrative sections (Part 1) and the ROM cost table (4.2), where
+    # positioning does not belong. Every section — including generate_all_sections —
+    # funnels through here, so this single insertion covers the whole response.
+    from tools.govcon.capture_strategy import build_strategy_block, resolve_strategy
+
+    strategy = resolve_strategy(session_id=section.get("session_id", ""))
+    strategy_block = build_strategy_block(strategy, item)
+    if strategy_block:
+        prompt += "\n\n" + strategy_block
+
     # Ground the model in the RFI's real structure so it cannot invent
     # section numbers ("Section IV.B") or unsourced claims.
     from tools.govcon.rfi_grounding import (
