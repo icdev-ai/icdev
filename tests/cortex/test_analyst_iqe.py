@@ -90,8 +90,10 @@ def test_ask_second_collection_resolves_by_name():
 
 
 def test_unmatched_question_raises_typed_error():
+    # mode="iqe": in auto mode an unmatched question falls back to the NLQ
+    # engine instead of raising (ctx-analyst-02).
     with pytest.raises(CortexAnalystError) as exc_info:
-        ask("show all unicorns", conn=StubConn())
+        ask("show all unicorns", mode="iqe", conn=StubConn())
     err = exc_info.value
     assert err.question == "show all unicorns"
     assert err.governance.outcomes.get("collection_resolution") == "fail"

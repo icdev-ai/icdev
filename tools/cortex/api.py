@@ -5,7 +5,7 @@ Import Cortex capabilities from here (or from ``tools.cortex`` directly);
 the per-capability modules (``analyst``, …) are implementation detail.
 Later ctx-* epics add ``search()``, ``complete()``, etc. alongside ``ask()``.
 """
-from .analyst import CortexAnalystError, ask
+from .analyst import CortexAnalystError, CortexQueryBlocked, ask
 from .schemas import (
     CORTEX_BACKENDS,
     Citation,
@@ -20,6 +20,7 @@ __all__ = [
     "Citation",
     "CortexAnalystError",
     "CortexContext",
+    "CortexQueryBlocked",
     "CortexResult",
     "CortexSearchResult",
     "GovernanceReport",

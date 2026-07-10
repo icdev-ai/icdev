@@ -14,9 +14,28 @@ Pipeline::
              → nl_to_iqe() → parse() → authorize collections → execute_query()
              → CortexResult(text summary, rows in .data, Citation per collection)
 
-Questions that resolve to no registered collection — and translated queries
-that target an unregistered collection — raise :class:`CortexAnalystError`.
-The semantic-search fallback is layered on top by ctx-analyst-02, not here.
+In ``mode="auto"`` (the default), questions the IQE path cannot serve — no
+matching collection, untranslatable, or targeting an unregistered collection —
+fall back to the dashboard's NL→SQL pipeline (``tools.dashboard.nlq_processor``,
+decision D34 read-only enforcement). ``mode="iqe"`` and ``mode="nlq"`` pin one
+engine. The fallback never runs when the caller pinned the scope explicitly
+via ``canvas=`` or ``collections=`` — an error there is a caller error.
+
+A shared safety layer runs before EITHER engine executes anything:
+
+1. Injection screen on the raw question — deterministic SQL-injection shapes
+   (stacked statements, ``DROP TABLE``, ``UNION SELECT`` exfil, comment
+   terminators) plus ``tools.llm.gateway.check_text()`` guardrails.
+2. SELECT-only statement check on generated SQL (rejects INSERT/UPDATE/
+   DELETE/DDL and multi-statement input) — reuses ``nlq_processor.validate_sql``.
+3. Collection/table allowlist — only collections registered in
+   ``args/component_registry.yaml`` ``iqe:`` blocks (via ``get_iqe_mapping()``)
+   or directly on the IQE executor are queryable; SQL table names match a
+   collection's dotted name or its ``dots→underscores`` table form
+   (``aadc.designs`` → ``aadc_designs``).
+
+Every safety rejection is audited (best-effort ``nlq_queries`` row with
+status ``blocked``) and raised as :class:`CortexQueryBlocked`.
 
 NOTE ON IMPORT NAMESPACE: the IQE collection registry is a module-level
 singleton inside ``tools.iqe.executor``, and the ``tools/`` shim does NOT
@@ -43,13 +62,41 @@ from .schemas import Citation, CortexContext, CortexResult, GovernanceReport
 
 logger = get_logger(__name__)
 
-_VALID_MODES = ("auto", "iqe")
+_VALID_MODES = ("auto", "iqe", "nlq")
 
 # Governance gate names, in execution order, recorded on every ask().
 _GATE_RESOLUTION = "collection_resolution"
 _GATE_TRANSLATION = "iqe_translation"
 _GATE_AUTHORIZATION = "collection_authorization"
 _GATE_EXECUTION = "iqe_execution"
+# Safety-layer and NLQ-fallback gates (ctx-analyst-02). The safety screen is
+# recorded only when it warns or blocks — a clean pass adds no gate entry, so
+# the IQE happy-path gate sequence asserted by ctx-analyst-01 stays stable.
+_GATE_SAFETY = "safety_screen"
+_GATE_NLQ_TRANSLATION = "nlq_translation"
+_GATE_SQL_READONLY = "sql_readonly"
+_GATE_ALLOWLIST = "table_allowlist"
+_GATE_NLQ_EXECUTION = "nlq_execution"
+
+# IQE gate failures that make an auto-mode question eligible for the NLQ
+# fallback: the question could not be served, as opposed to a valid query
+# whose execution failed (those propagate — masking data-layer errors by
+# re-asking a different engine hides real faults).
+_FALLBACK_GATES = (_GATE_RESOLUTION, _GATE_TRANSLATION, _GATE_AUTHORIZATION)
+
+# Deterministic SQL-injection shapes screened on the RAW question before
+# either engine runs. Patterns are attack-shaped, not keyword-shaped, so
+# ordinary analytics phrasing ("recently updated projects") is not caught.
+_QUESTION_INJECTION_PATTERNS = [
+    (r";\s*\S", "stacked statement after ';'"),
+    (r"\b(?:DROP|TRUNCATE|ALTER)\s+(?:TABLE|DATABASE|INDEX|VIEW)\b", "DDL statement"),
+    (r"\bUNION\s+(?:ALL\s+)?SELECT\b", "UNION-based exfiltration"),
+    (r"\bINSERT\s+INTO\b", "INSERT statement"),
+    (r"\bDELETE\s+FROM\b", "DELETE statement"),
+    (r"\bUPDATE\s+\S+\s+SET\b", "UPDATE statement"),
+    (r"\bOR\s+['\"]?\d+['\"]?\s*=\s*['\"]?\d+", "tautology (OR 1=1)"),
+    (r"--\s*$|/\*", "SQL comment terminator"),
+]
 
 
 class CortexAnalystError(Exception):
@@ -76,6 +123,16 @@ class CortexAnalystError(Exception):
         self.governance = governance or GovernanceReport()
 
 
+class CortexQueryBlocked(CortexAnalystError):
+    """A question or generated query was refused by the shared safety layer.
+
+    Raised on injection-shaped questions, non-SELECT / multi-statement SQL,
+    and off-allowlist tables. The refusal is audited (``nlq_queries`` row,
+    status ``blocked``) before this is raised; it is never eligible for the
+    NLQ fallback — a blocked question stays blocked on every engine.
+    """
+
+
 def _record(report: GovernanceReport, gate: str, outcome: str) -> None:
     report.gates_run.append(gate)
     report.outcomes[gate] = outcome
@@ -98,6 +155,183 @@ def _mentions(question_lc: str, collection: str) -> bool:
     if len(root) < 3:
         return False
     return re.search(rf"\b{re.escape(root)}", question_lc) is not None
+
+
+# ---------------------------------------------------------------------------
+# Shared safety layer (ctx-analyst-02) — applies to BOTH engines pre-execution
+# ---------------------------------------------------------------------------
+def _audit_refusal(
+    question: str, sql: Optional[str], reason: str, ctx: CortexContext, started: float
+) -> None:
+    """Best-effort audited refusal — an ``nlq_queries`` row with status 'blocked'."""
+    try:
+        from tools.dashboard.nlq_processor import log_nlq_query
+
+        log_nlq_query(
+            question,
+            sql,
+            0,
+            int((time.perf_counter() - started) * 1000),
+            ctx.user_id or "cortex-analyst",
+            "blocked",
+            reason,
+        )
+    except Exception as exc:  # noqa: BLE001 — audit sink down must not mask the refusal
+        logger.warning("cortex.analyst: refusal audit failed: %s", exc)
+
+
+def _refuse(
+    question: str,
+    sql: Optional[str],
+    reason: str,
+    ctx: CortexContext,
+    governance: GovernanceReport,
+    gate: str,
+    started: float,
+) -> None:
+    """Record the gate failure, audit the refusal, raise CortexQueryBlocked."""
+    _record(governance, gate, "fail")
+    _audit_refusal(question, sql, reason, ctx, started)
+    raise CortexQueryBlocked(reason, question=question, governance=governance)
+
+
+def _screen_question(
+    question: str, ctx: CortexContext, governance: GovernanceReport, started: float
+) -> None:
+    """Injection screen on the raw question, before either engine runs.
+
+    Deterministic SQL-injection shapes first (no config/DB dependency), then
+    the LLM gateway's guardrails. A gateway outage fails open — the
+    deterministic screen already ran — unless ``ctx.fail_closed`` is set.
+    """
+    for pattern, label in _QUESTION_INJECTION_PATTERNS:
+        if re.search(pattern, question, re.IGNORECASE):
+            _refuse(
+                question,
+                None,
+                f"question rejected by injection screen: {label}",
+                ctx,
+                governance,
+                _GATE_SAFETY,
+                started,
+            )
+    try:
+        from tools.llm.gateway import check_text
+
+        verdict = check_text(question).get("pre_invoke") or {}
+    except Exception as exc:  # noqa: BLE001
+        if ctx.fail_closed:
+            _refuse(
+                question,
+                None,
+                f"gateway screen unavailable and ctx.fail_closed is set: {exc}",
+                ctx,
+                governance,
+                _GATE_SAFETY,
+                started,
+            )
+        logger.warning("cortex.analyst: gateway check_text unavailable: %s", exc)
+        return
+    if not verdict.get("allowed", True):
+        _refuse(
+            question,
+            None,
+            f"question rejected by LLM gateway: {verdict.get('blocked_reason')}",
+            ctx,
+            governance,
+            _GATE_SAFETY,
+            started,
+        )
+    if verdict.get("warnings"):
+        _record(governance, _GATE_SAFETY, "warn")
+
+
+def _allowed_tables() -> set:
+    """Queryable identifiers: registered IQE collections and their table forms.
+
+    Built from the component registry's ``iqe:`` blocks (``get_iqe_mapping()``)
+    plus collections registered directly on the executor. Each collection
+    allows both its dotted name and the dots→underscores variant
+    (``aadc.designs`` → ``aadc_designs``) — the convention every IQE adapter
+    uses for its backing table.
+    """
+    names = set(list_collections())
+    for _module, colls in _canvas_iqe_mapping().values():
+        names.update(colls)
+    allowed = set()
+    for name in names:
+        n = str(name).lower()
+        allowed.add(n)
+        allowed.add(n.replace(".", "_"))
+    return allowed
+
+
+_CTE_NAME_RE = re.compile(r"(?:\bWITH\b|,)\s*([A-Za-z_]\w*)\s+AS\s*\(", re.IGNORECASE)
+_TABLE_REF_RE = re.compile(r"\b(?:FROM|JOIN)\s+([A-Za-z_][\w.]*)", re.IGNORECASE)
+
+
+def _extract_sql_tables(sql: str) -> list[str]:
+    """Table identifiers a SELECT reads from, excluding its own CTE names."""
+    ctes = {m.lower() for m in _CTE_NAME_RE.findall(sql)}
+    tables: list[str] = []
+    for match in _TABLE_REF_RE.findall(sql):
+        t = match.lower()
+        if t not in ctes and t not in tables:
+            tables.append(t)
+    return tables
+
+
+def _validate_sql_safety(
+    question: str,
+    sql: str,
+    ctx: CortexContext,
+    governance: GovernanceReport,
+    started: float,
+) -> None:
+    """SELECT-only + single-statement + table-allowlist gates on generated SQL."""
+    try:
+        from tools.dashboard.nlq_processor import validate_sql
+
+        ok, err = validate_sql(sql)
+    except Exception as exc:  # noqa: BLE001 — validator unavailable = fail closed
+        ok, err = False, f"read-only validator unavailable: {exc}"
+    if ok and ";" in sql.rstrip().rstrip(";"):
+        ok, err = False, "multi-statement SQL is not allowed"
+    if not ok:
+        _refuse(
+            question,
+            sql,
+            f"generated SQL rejected: {err}",
+            ctx,
+            governance,
+            _GATE_SQL_READONLY,
+            started,
+        )
+    _record(governance, _GATE_SQL_READONLY, "pass")
+
+    tables = _extract_sql_tables(sql)
+    if not tables:
+        _refuse(
+            question,
+            sql,
+            "no table reference found in generated SQL; cannot verify allowlist",
+            ctx,
+            governance,
+            _GATE_ALLOWLIST,
+            started,
+        )
+    off_allowlist = [t for t in tables if t not in _allowed_tables()]
+    if off_allowlist:
+        _refuse(
+            question,
+            sql,
+            f"table(s) not on the registered-collection allowlist: {off_allowlist}",
+            ctx,
+            governance,
+            _GATE_ALLOWLIST,
+            started,
+        )
+    _record(governance, _GATE_ALLOWLIST, "pass")
 
 
 def _canvas_iqe_mapping() -> dict[str, tuple[str, list[str]]]:
@@ -234,6 +468,88 @@ def _format_answer(rows: list[dict], targets: list[str], explanation: str) -> st
     return "\n".join(lines)
 
 
+def _ask_nlq(
+    question: str,
+    ctx: CortexContext,
+    governance: GovernanceReport,
+    started: float,
+    mode: str,
+) -> CortexResult:
+    """NL→SQL path: nlq_processor generation, shared safety gates, execution.
+
+    Reuses the dashboard NLQ pipeline piecewise (rather than
+    ``process_nlq_query``) so the allowlist + read-only gates run between
+    generation and execution. Execution goes through ``execute_safely``
+    (row cap + timeout, decision D34); successes and refusals both land in
+    the ``nlq_queries`` audit table.
+    """
+    from tools.dashboard import nlq_processor as _nlq
+
+    try:
+        schema = _nlq.extract_schema()
+    except Exception as exc:  # noqa: BLE001 — schema context is best-effort
+        logger.warning("cortex.analyst: NLQ schema extraction failed: %s", exc)
+        schema = {}
+
+    sql = (_nlq.generate_sql_via_bedrock(question, schema) or "").strip()
+    if not sql:
+        _record(governance, _GATE_NLQ_TRANSLATION, "fail")
+        raise CortexAnalystError(
+            "question did not translate to SQL (NLQ fallback)",
+            question=question,
+            governance=governance,
+        )
+    _record(governance, _GATE_NLQ_TRANSLATION, "pass")
+
+    _validate_sql_safety(question, sql, ctx, governance, started)
+
+    try:
+        results = _nlq.execute_safely(sql)
+    except Exception as exc:
+        _record(governance, _GATE_NLQ_EXECUTION, "fail")
+        raise CortexAnalystError(
+            f"NLQ execution failed: {exc}", question=question, governance=governance
+        ) from exc
+    _record(governance, _GATE_NLQ_EXECUTION, "pass")
+
+    duration_ms = int((time.perf_counter() - started) * 1000)
+    rows = results.get("rows", [])
+    _nlq.log_nlq_query(
+        question, sql, len(rows), duration_ms, ctx.user_id or "cortex-analyst", "success"
+    )
+
+    tables = _extract_sql_tables(sql)
+    citations = [
+        Citation(
+            source_id=f"nlq:{table}",
+            source_type="analyst",
+            source_table=table,
+            title=f"NL-to-SQL query over {table}",
+            snippet=sql,
+            classification=ctx.classification or "CUI",
+        )
+        for table in tables
+    ]
+
+    return CortexResult(
+        text=_format_answer(rows, tables, ""),
+        citations=citations,
+        governance=governance,
+        provider="nlq",
+        latency_ms=duration_ms,
+        grounded=True,
+        data={
+            "rows": rows,
+            "row_count": results.get("row_count", len(rows)),
+            "columns": results.get("columns", []),
+            "truncated": results.get("truncated", False),
+            "sql": sql,
+            "collections": tables,
+            "mode": mode,
+        },
+    )
+
+
 def ask(
     question: str,
     mode: str = "auto",
@@ -243,29 +559,38 @@ def ask(
     collections: Optional[list[str]] = None,
     conn: Any = None,
 ) -> CortexResult:
-    """Answer a natural-language data question through the IQE engine.
+    """Answer a natural-language data question (IQE primary, NL→SQL fallback).
 
     Args:
         question:    Free-form question (e.g. "show all satellites").
-        mode:        "auto" or "iqe" — both take the IQE-primary path here;
-                     "auto" additionally allows the ctx-analyst-02 fallback
-                     layered above this function.
+        mode:        "auto" — IQE first, NL→SQL fallback when IQE cannot
+                     resolve/translate/authorize the question (never on
+                     execution failures, and never when ``canvas=`` or
+                     ``collections=`` pinned the scope);
+                     "iqe" — IQE only; "nlq" — NL→SQL only.
         ctx:         Caller identity/policy context; tenant_id and
-                     classification are threaded into the DB connection.
+                     classification are threaded into the DB connection on
+                     the IQE path. ``fail_closed`` also hardens the safety
+                     screen (gateway outage blocks instead of degrading).
         canvas:      Restrict to one canvas's collections (component registry key).
         collections: Explicit collection names, bypassing resolution.
-        conn:        Existing DB connection; one is opened (and closed) via
-                     ``get_connection()`` when omitted. The security context
-                     is applied either way.
+        conn:        Existing DB connection for the IQE path; one is opened
+                     (and closed) via ``get_connection()`` when omitted. The
+                     NLQ path always manages its own connection via
+                     ``execute_safely``.
 
     Returns:
         CortexResult — ``text`` is a formatted summary, ``data`` holds
-        ``rows``/``row_count``/``iqe``, and ``citations`` carries one
-        synthesized ``Citation(source_type="analyst")`` per collection read.
+        ``rows``/``row_count`` plus the executed ``iqe`` or ``sql``, and
+        ``citations`` carries one ``Citation(source_type="analyst")`` per
+        collection/table read. ``provider`` is "iqe" or "nlq".
 
     Raises:
-        CortexAnalystError: no matching/registered collection, untranslatable
-            question, or execution failure.
+        CortexQueryBlocked: the shared safety layer refused the question or
+            the generated SQL (injection shape, non-SELECT, multi-statement,
+            or off-allowlist table). The refusal is audited first.
+        CortexAnalystError: no engine could answer the question, or
+            execution failed.
     """
     started = time.perf_counter()
     governance = GovernanceReport()
@@ -281,6 +606,58 @@ def ask(
         )
     ctx = ctx or CortexContext()
 
+    _screen_question(question, ctx, governance, started)
+
+    if mode == "nlq":
+        return _ask_nlq(question, ctx, governance, started, mode)
+
+    try:
+        return _ask_iqe(
+            question,
+            mode,
+            ctx,
+            governance,
+            started,
+            canvas=canvas,
+            collections=collections,
+            conn=conn,
+        )
+    except CortexQueryBlocked:
+        raise
+    except CortexAnalystError as exc:
+        failed_gates = {g for g, o in exc.governance.outcomes.items() if o == "fail"}
+        eligible = (
+            mode == "auto"
+            and not canvas
+            and not collections
+            and failed_gates
+            and failed_gates <= set(_FALLBACK_GATES)
+        )
+        if not eligible:
+            raise
+        logger.info("cortex.analyst: IQE path failed (%s); falling back to NLQ", exc)
+        # The IQE gate failure stays recorded in outcomes as history, but it
+        # is a degrade, not a refusal — only a safety/NLQ failure below may
+        # re-set blocked on the report the caller finally receives.
+        governance.blocked = False
+        try:
+            return _ask_nlq(question, ctx, governance, started, mode)
+        except CortexAnalystError as nlq_exc:
+            raise nlq_exc from exc
+
+
+def _ask_iqe(
+    question: str,
+    mode: str,
+    ctx: CortexContext,
+    governance: GovernanceReport,
+    started: float,
+    *,
+    canvas: Optional[str] = None,
+    collections: Optional[list[str]] = None,
+    conn: Any = None,
+) -> CortexResult:
+    """IQE-primary path: resolve → translate → authorize → execute."""
     try:
         resolved = _resolve_collections(question, canvas, collections)
     except CortexAnalystError as exc:
