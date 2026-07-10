@@ -34,15 +34,16 @@ from __future__ import annotations
 
 import concurrent.futures
 import importlib
-import logging
 import re
 import time
 from pathlib import Path
 from typing import Optional
 
+from tools.logging.icdev_logger import get_logger
+
 from .schemas import CORTEX_BACKENDS, Citation, CortexContext, CortexSearchResult
 
-logger = logging.getLogger(__name__)
+logger = get_logger("icdev.cortex.search")
 
 # "tools" when loaded via the shim namespace, "icdev.tools" when canonical.
 _NS = __name__.rsplit(".cortex.", 1)[0]
