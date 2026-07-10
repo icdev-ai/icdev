@@ -14,9 +14,11 @@ from .schemas import (
     CortexSearchResult,
     GovernanceReport,
 )
+from .search_service import CORTEX_STRATEGIES, classify_route, search
 
 __all__ = [
     "CORTEX_BACKENDS",
+    "CORTEX_STRATEGIES",
     "Citation",
     "CortexContext",
     "CortexResult",
@@ -25,5 +27,7 @@ __all__ = [
     "GovernanceBlockedError",
     "GovernancePipeline",
     "GovernanceReport",
+    "classify_route",
     "governed",
+    "search",
 ]

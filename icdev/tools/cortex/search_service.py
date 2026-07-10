@@ -24,11 +24,20 @@ never breaking the other backends.
 Backends are imported lazily from the same namespace root this module was
 loaded from (``tools.*`` shim or canonical ``icdev.tools.*``) so both
 namespaces — and monkeypatched tests — resolve consistently.
+
+On top of the adapters sits the strategy router (``search()``): queries are
+classified (pattern rules + the RAG taxonomy classifier) and routed to the
+right backend(s), with ambiguous queries fanning out in parallel under
+per-backend timeouts from ``args/cortex_config.yaml``.
 """
 from __future__ import annotations
 
+import concurrent.futures
 import importlib
 import logging
+import re
+import time
+from pathlib import Path
 from typing import Optional
 
 from .schemas import CORTEX_BACKENDS, Citation, CortexContext, CortexSearchResult
@@ -338,3 +347,321 @@ def search_all(
         merged.extend(adapter(query, top_k=top_k, ctx=ctx))
     merged.sort(key=lambda r: r.score, reverse=True)
     return merged
+
+
+# ---------------------------------------------------------------------------
+# Strategy router (ctx-search-02) — query classification -> backend selection
+# ---------------------------------------------------------------------------
+
+# Valid values for the ``strategy=`` override on search().
+CORTEX_STRATEGIES = ("auto", "all") + CORTEX_BACKENDS
+
+# Routing labels the classifier can emit and the backends each one selects.
+# "ambiguous" fans out to search.fan_out.backends from args/cortex_config.yaml.
+ROUTE_LABEL_BACKENDS = {
+    "relational": ["graph"],
+    "document": ["dic"],
+    "factual": ["rag"],
+    "exact_term": ["kb"],
+}
+
+_DEFAULT_TIMEOUTS = {"default": 10.0, "rag": 10.0, "graph": 8.0, "dic": 10.0, "kb": 5.0}
+_DEFAULT_FAN_OUT_BACKENDS = ["rag", "graph", "dic"]
+_DEFAULT_FACTUAL_CONFIDENCE = 0.75
+
+# Exact-term / identifier lookups -> keyword KB. Quoted phrases, snake_case
+# identifiers, dotted module paths, CVE ids, hex constants, vendor error codes.
+_EXACT_TERM_PATTERNS = re.compile(
+    r"(\"[^\"]{2,}\""
+    r"|\b[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+\b"
+    r"|\b[A-Za-z][A-Za-z0-9]*(?:\.[A-Za-z_][A-Za-z0-9_]*){2,}\b"
+    r"|\bCVE-\d{4}-\d{4,}\b"
+    r"|\b0x[0-9a-fA-F]{4,}\b"
+    r"|\b[A-Z]{2,5}\d{3,}\b"
+    r")"
+)
+
+# Relational / entity-traversal queries -> knowledge graph.
+_RELATIONAL_PATTERNS = re.compile(
+    r"\b(relationships?|related to|relates? to|connect(?:s|ed|ions?) (?:to|of|between)|"
+    r"depends? on|dependenc(?:y|ies)|linked to|links? between|"
+    r"neighbou?rs? of|topology|upstream|downstream|"
+    r"who (?:owns|manages|maintains))\b",
+    re.IGNORECASE,
+)
+
+# Document / clearance-scoped queries -> DIC grounded search.
+_DOCUMENT_PATTERNS = re.compile(
+    r"\b(documents?|policy|policies|sops?|sow|rfp|rfi|contract|report|manual|memo|"
+    r"attachments?|appendix|section|page|clause|paragraph|"
+    r"clearance|classified|cleared)\b",
+    re.IGNORECASE,
+)
+
+_config_cache: Optional[dict] = None
+
+
+def _find_repo_root() -> Optional[Path]:
+    """Walk up from this file until a directory containing ``args/`` is found.
+
+    Works from both namespace roots (``tools/`` and ``icdev/tools/``) and from
+    git worktrees; never consults ``os.getcwd()``.
+    """
+    for parent in Path(__file__).resolve().parents:
+        if (parent / "args").is_dir():
+            return parent
+    return None
+
+
+def load_cortex_config(refresh: bool = False) -> dict:
+    """Load and cache ``args/cortex_config.yaml``; missing file -> ``{}``."""
+    global _config_cache
+    if _config_cache is not None and not refresh:
+        return _config_cache
+    cfg: dict = {}
+    root = _find_repo_root()
+    path = root / "args" / "cortex_config.yaml" if root else None
+    if path is not None and path.exists():
+        try:
+            import yaml
+
+            with open(path, encoding="utf-8") as fh:
+                cfg = yaml.safe_load(fh) or {}
+        except Exception as exc:
+            logger.warning("Cortex config load failed (%s): %s", path, exc)
+    _config_cache = cfg
+    return cfg
+
+
+def _taxonomy_label(query: str) -> dict:
+    """Label a query via the RAG query classifier (D-RAG-24 taxonomy).
+
+    Failure degrades to confidence 0.0, which classify_route() treats as
+    ambiguous (fan-out) rather than trusting a guessed label.
+    """
+    try:
+        qc = _backend("rag.query_classifier")
+        result = qc.classify_query(query) or {}
+        return {
+            "label": str(result.get("label") or ""),
+            "confidence": float(result.get("confidence") or 0.0),
+            "method": str(result.get("method") or ""),
+        }
+    except Exception as exc:
+        logger.warning("Cortex router taxonomy classification failed: %s", exc)
+        return {"label": "", "confidence": 0.0, "method": "error"}
+
+
+def classify_route(query: str, config: Optional[dict] = None) -> dict:
+    """Classify a query into a routing label and the backends to run.
+
+    Deterministic pattern rules are checked first (exact_term -> kb,
+    relational -> graph, document -> dic); only pattern-free queries consult
+    the RAG taxonomy classifier: a confident ``fact_single`` routes to rag,
+    everything else is ambiguous and fans out to the configured backend set.
+
+    Returns ``{label, backends, method, reason}`` (+ ``taxonomy`` when the
+    classifier was consulted).
+    """
+    cfg = config if config is not None else load_cortex_config()
+    search_cfg = cfg.get("search") or {}
+    fan_out = list(
+        (search_cfg.get("fan_out") or {}).get("backends")
+        or _DEFAULT_FAN_OUT_BACKENDS
+    )
+    q = (query or "").strip()
+    if not q:
+        return {
+            "label": "ambiguous",
+            "backends": fan_out,
+            "method": "default",
+            "reason": "Empty query — fan-out to default backends.",
+        }
+    if _EXACT_TERM_PATTERNS.search(q):
+        return {
+            "label": "exact_term",
+            "backends": list(ROUTE_LABEL_BACKENDS["exact_term"]),
+            "method": "pattern",
+            "reason": "Query contains an exact term/identifier (quoted phrase, "
+            "snake_case, dotted path, CVE/error code).",
+        }
+    if _RELATIONAL_PATTERNS.search(q):
+        return {
+            "label": "relational",
+            "backends": list(ROUTE_LABEL_BACKENDS["relational"]),
+            "method": "pattern",
+            "reason": "Query asks about entity relationships/connections.",
+        }
+    if _DOCUMENT_PATTERNS.search(q):
+        return {
+            "label": "document",
+            "backends": list(ROUTE_LABEL_BACKENDS["document"]),
+            "method": "pattern",
+            "reason": "Query targets documents or clearance-scoped content.",
+        }
+    taxonomy = _taxonomy_label(q)
+    factual_confidence = float(
+        (search_cfg.get("router") or {}).get(
+            "factual_confidence", _DEFAULT_FACTUAL_CONFIDENCE
+        )
+    )
+    if (
+        taxonomy["label"] == "fact_single"
+        and taxonomy["confidence"] >= factual_confidence
+    ):
+        return {
+            "label": "factual",
+            "backends": list(ROUTE_LABEL_BACKENDS["factual"]),
+            "method": f"taxonomy:{taxonomy['method']}",
+            "reason": "Taxonomy classifier labeled the query fact_single with "
+            f"confidence {taxonomy['confidence']:.2f}.",
+            "taxonomy": taxonomy,
+        }
+    return {
+        "label": "ambiguous",
+        "backends": fan_out,
+        "method": f"taxonomy:{taxonomy['method']}",
+        "reason": "No routing pattern matched and taxonomy label "
+        f"{taxonomy['label'] or 'unknown'!r} (confidence "
+        f"{taxonomy['confidence']:.2f}) is not confidently factual — fan-out.",
+        "taxonomy": taxonomy,
+    }
+
+
+def _run_backends(
+    query: str,
+    top_k: int,
+    ctx: Optional[CortexContext],
+    backends: list,
+    search_cfg: dict,
+) -> tuple:
+    """Run backends concurrently with per-backend timeouts.
+
+    Returns ``(results, ran, timed_out)``. A backend that exceeds its timeout
+    is abandoned (its worker thread is not joined) and logged; the results
+    from the backends that finished are still returned — partial results beat
+    no results.
+    """
+    valid = []
+    for name in backends:
+        if name in BACKEND_ADAPTERS:
+            valid.append(name)
+        else:
+            logger.warning("Cortex search: unknown backend %r skipped", name)
+    if not valid:
+        return [], [], []
+
+    timeouts = {**_DEFAULT_TIMEOUTS, **(search_cfg.get("timeouts") or {})}
+    default_timeout = float(timeouts.get("default", 10.0))
+    max_workers = int(
+        (search_cfg.get("fan_out") or {}).get("max_workers") or len(valid)
+    )
+    merged: list[CortexSearchResult] = []
+    timed_out: list = []
+    executor = concurrent.futures.ThreadPoolExecutor(
+        max_workers=max(1, min(max_workers, len(valid))),
+        thread_name_prefix="cortex-search",
+    )
+    start = time.monotonic()
+    try:
+        futures = {
+            name: executor.submit(
+                BACKEND_ADAPTERS[name], query, top_k=top_k, ctx=ctx
+            )
+            for name in valid
+        }
+        for name, future in futures.items():
+            budget = float(timeouts.get(name, default_timeout))
+            remaining = max(0.0, start + budget - time.monotonic())
+            try:
+                merged.extend(future.result(timeout=remaining))
+            except concurrent.futures.TimeoutError:
+                future.cancel()
+                timed_out.append(name)
+                logger.warning(
+                    "Cortex %s backend timed out after %.1fs — returning "
+                    "partial results",
+                    name,
+                    budget,
+                )
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
+    merged.sort(key=lambda r: r.score, reverse=True)
+    return merged, valid, timed_out
+
+
+def search(
+    query: str,
+    top_k: int = 5,
+    ctx: Optional[CortexContext] = None,
+    strategy: str = "auto",
+    config: Optional[dict] = None,
+) -> list[CortexSearchResult]:
+    """Unified Cortex search with agentic strategy routing.
+
+    ``strategy`` is one of CORTEX_STRATEGIES: ``"auto"`` classifies the query
+    via classify_route(); a backend name (``"rag"``/``"graph"``/``"dic"``/
+    ``"kb"``) or ``"all"`` bypasses classification entirely. ``ctx.domain``
+    intersects the selection with that domain's allowed backends from
+    ``search.domains`` in args/cortex_config.yaml and records the domain's
+    collection scope in metadata (consumption hook for ctx-canvas-04).
+
+    Every result records the routing decision: ``result.strategy`` becomes
+    ``"<strategy>:<label>[backend+backend]"`` (the adapter's native strategy
+    moves to ``metadata["backend_strategy"]``), and ``metadata["router"]``
+    carries the full decision including any timed-out backends. ``top_k``
+    applies per backend, so fan-out can return more than ``top_k`` results.
+    """
+    ctx = ctx or CortexContext()
+    cfg = config if config is not None else load_cortex_config()
+    search_cfg = cfg.get("search") or {}
+    strategy = (strategy or "auto").lower()
+    if strategy not in CORTEX_STRATEGIES:
+        raise ValueError(
+            f"Unknown Cortex search strategy {strategy!r}; "
+            f"expected one of {CORTEX_STRATEGIES}"
+        )
+
+    route: Optional[dict] = None
+    if strategy == "auto":
+        route = classify_route(query, config=cfg)
+        label = route["label"]
+        backends = list(route["backends"])
+    elif strategy == "all":
+        label = "override"
+        backends = list(CORTEX_BACKENDS)
+    else:
+        label = "override"
+        backends = [strategy]
+
+    domain_scope: dict = {}
+    if ctx.domain:
+        domain_cfg = (search_cfg.get("domains") or {}).get(ctx.domain) or {}
+        allowed = domain_cfg.get("backends") or []
+        if allowed:
+            scoped = [b for b in backends if b in allowed]
+            backends = scoped or [b for b in allowed if b in BACKEND_ADAPTERS]
+        domain_scope = {
+            "domain": ctx.domain,
+            "collections": list(domain_cfg.get("collections") or []),
+        }
+
+    results, ran, timed_out = _run_backends(query, top_k, ctx, backends, search_cfg)
+
+    strategy_tag = f"{strategy}:{label}[{'+'.join(ran)}]"
+    router_record = {
+        "strategy": strategy,
+        "label": label,
+        "backends": ran,
+        "timed_out": timed_out,
+    }
+    if route is not None:
+        router_record["reason"] = route.get("reason", "")
+        router_record["method"] = route.get("method", "")
+    if domain_scope:
+        router_record["domain_scope"] = domain_scope
+    for r in results:
+        r.metadata["backend_strategy"] = r.strategy
+        r.metadata["router"] = dict(router_record)
+        r.strategy = strategy_tag
+    return results
