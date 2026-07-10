@@ -226,3 +226,26 @@ def test_iqe_collection_and_seed_queries(db):
     names = {p.name for p in qdir.glob("2*.iqe")}
     assert {"20_open_modernization_findings.iqe", "21_redlines_pending_review.iqe",
             "22_finding_counts_by_type.iqe"} <= names
+
+
+def test_docmod_redline_llm_routing_is_config_driven():
+    """User rule: provider selection comes from args/llm_config.yaml, never
+    hardcoded — an unrouted function falls to 'default' and can surprise
+    non-Anthropic deployments (e.g. Ollama/Kimi) with wrong-provider key
+    prompts when the chain walks to a cloud fallback."""
+    import yaml
+
+    from tools.llm.config_path import resolve_llm_config_path
+
+    cfg = yaml.safe_load(Path(resolve_llm_config_path()).read_text(encoding="utf-8"))
+    route = (cfg.get("routing") or {}).get("docmod_redline")
+    assert route and route.get("chain"), "docmod_redline missing from llm_config routing"
+    # primary must be the configured cloud/local default, not a hardcoded vendor
+    assert route["chain"][0] in ("kimi-cloud", "qwen3-local"), route["chain"]
+
+    # and the drafter must invoke through the router with that function name
+    src = (REPO_ROOT / "tools" / "doc_modernization" / "redline_drafter.py").read_text(
+        encoding="utf-8"
+    )
+    assert 'invoke("docmod_redline"' in src
+    assert "ANTHROPIC_API_KEY" not in src  # no vendor-specific env handling
