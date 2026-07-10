@@ -125,8 +125,10 @@ jobs:
           ollama serve &
           sleep 5
 
-      - name: Pull qwen3:1.7b (scanner-tier)
-        run: ollama pull qwen3:1.7b
+      # Must match args/llm_config.yaml models.qwen3-dual.model_id (the scanner tier).
+      # qwen3:1.7b is no longer published — the pull failed and took the job with it.
+      - name: Pull qwen3:0.6b (scanner-tier)
+        run: ollama pull qwen3:0.6b
 
       - name: Verify two-tier LLM routing
         run: |

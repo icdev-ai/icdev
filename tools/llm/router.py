@@ -37,7 +37,16 @@ except ImportError:
 logger = get_logger("icdev.llm.router")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-DEFAULT_CONFIG_PATH = BASE_DIR / "args" / "llm_config.yaml"
+
+# Resolved centrally rather than as BASE_DIR/"args"/... — this module exists twice
+# (tools/llm and icdev/tools/llm) and the naive expression made each copy read a
+# different config file. See tools/llm/config_path.py.
+try:
+    from tools.llm.config_path import resolve_llm_config_path
+except ImportError:  # packaged-only install
+    from icdev.tools.llm.config_path import resolve_llm_config_path
+
+DEFAULT_CONFIG_PATH = resolve_llm_config_path()
 
 
 class CrossGraderViolation(RuntimeError):

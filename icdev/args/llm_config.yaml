@@ -4,24 +4,6 @@
 # Single source of truth — replaces scattered hardcoded model IDs.
 
 # -----------------------------------------------------------------------
-# Context Compression (adapt-hd-01)
-# Headroom-inspired reversible token-budget-aware compression middleware.
-# Applied in router.py::invoke() before the fallback chain.
-# -----------------------------------------------------------------------
-compression:
-  enabled: false                        # Set true to activate; default off
-  threshold_tokens: 6000                # Only compress when estimated tokens exceed this
-  strategy: truncate_middle             # "truncate_middle" — keep first 40% + last 40%
-  max_compression_ratio: 0.6            # Never compress below 60% of original length
-  log_savings: true                     # Emit compression_saved_tokens to audit trail
-  exempt_functions:                     # These functions bypass compression (always send full context)
-    - compliance_generation
-    - ssp_generation
-    - evidence_collection
-    - security_audit
-    - fine_tuning_generation
-
-# -----------------------------------------------------------------------
 # Provider Definitions
 # -----------------------------------------------------------------------
 providers:
@@ -82,49 +64,67 @@ providers:
     base_url: ${OLLAMA_CLOUD_BASE_URL:-https://ollama.com}
     api_key_env: OLLAMA_API_KEY
 
+  # Claude CLI bridge — routes through the locally authenticated Claude Code
+  # session. Used when ANTHROPIC_API_KEY is absent (this environment).
+  claude-cli:
+    type: cli
+    cli_binary: claude
+    backend: auto
+    soft_wait_seconds: 360
+
+# -----------------------------------------------------------------------
+# Model Registry
+# -----------------------------------------------------------------------
+
   # Claude Code CLI provider — routes through the authenticated local `claude` CLI
   # binary. Auto-enabled when no cloud API keys are present (air-gap / no ANTHROPIC_API_KEY).
   # Requires `claude` on PATH (installed via Claude Code).
   cli:
     type: cli
     cli_binary: ${CLAUDE_CLI_BINARY:-claude}
-
-# -----------------------------------------------------------------------
-# Model Registry
-# -----------------------------------------------------------------------
 models:
-  # -- Claude Code CLI bridge — uses locally authenticated `claude` CLI binary --
-  # This is the primary provider when ANTHROPIC_API_KEY is not set.
-  # The cli_bridge auto-prepends this to every routing chain when enabled.
-  claude-cli:
-    provider: cli
-    model_id: claude-cli
-    max_output_tokens: 32768
-    supports_thinking: true
-    supports_tools: false
-    supports_structured_output: false
-    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
-
-  # -- Anthropic direct API (user has Anthropic subscription, not Bedrock) --
+  # -- Anthropic Claude --
+  #
+  # These declare the Anthropic API provider. That is deliberate and portable: the
+  # router SKIPS any model whose provider's api_key_env is unset and falls through
+  # to the next entry in the chain. So an environment with ANTHROPIC_API_KEY serves
+  # these directly, and one without it gets the CLI bridge — auto-enabled when no
+  # cloud key is present — which prepends `claude-cli` to every chain and serves the
+  # same requests through the local `claude` binary.
+  #
+  # Do NOT hardcode provider: claude-cli here; that pins every environment to the
+  # CLI even where an API key exists.
   claude-opus:
     provider: anthropic
-    model_id: claude-opus-4-6
+    model_id: claude-opus-4-8
     max_output_tokens: 128000
     supports_thinking: true
     supports_tools: true
     supports_structured_output: true
     supports_vision: true
-    pricing: { input_per_1k: 0.005, output_per_1k: 0.025 }
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
 
   claude-sonnet:
-    provider: anthropic  # Anthropic direct API (not Bedrock) — ANTHROPIC_API_KEY
-    model_id: "claude-sonnet-4-5-20250929"
+    provider: anthropic
+    model_id: claude-sonnet-4-6
     max_output_tokens: 64000
     supports_thinking: true
     supports_tools: true
     supports_structured_output: true
     supports_vision: true
-    pricing: { input_per_1k: 0.003, output_per_1k: 0.015 }
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
+  # Claude Sonnet via CLI bridge — used when ANTHROPIC_API_KEY is absent.
+  # Identical capabilities to claude-sonnet; routes through local claude CLI.
+  claude-sonnet-cli:
+    provider: claude-cli
+    model_id: claude-sonnet-4-6
+    max_output_tokens: 64000
+    supports_thinking: true
+    supports_tools: true
+    supports_structured_output: true
+    supports_vision: true
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
 
   claude-haiku:
     provider: anthropic
@@ -133,7 +133,7 @@ models:
     supports_thinking: false
     supports_tools: true
     supports_structured_output: false
-    pricing: { input_per_1k: 0.001, output_per_1k: 0.005 }
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
 
   # -- Anthropic Direct API --
   claude-opus-api:
@@ -216,29 +216,46 @@ models:
 
   # -- Local Models (Ollama) --
   # Model IDs configurable via .env: OLLAMA_MODEL overrides primary local model
+  #
+  # Every model_id below MUST be present in `ollama list`. The aliases are kept
+  # (llama-local alone is referenced 52 times in routing preferred[] chains), but
+  # they now point at installed models. Previously they named llama3.3:70b,
+  # codestral:22b, deepseek-r1:70b, qwen3:8b and qwen3:1.7b — none installed — so
+  # every fallback that reached them failed at request time rather than at config load.
+  #
+  # Installed (2026-07-10): qwen3.5:latest (6.6GB), qwen3:4b (2.5GB),
+  # qwen3:0.6b (522MB), gemma4:e4b (9.6GB, vision), nomic-embed-text, kimi-k2.6:cloud.
+  #
+  # qwen3 runs with thinking disabled (disable_thinking) — thinking mode caused
+  # request timeouts; see the two_tier worker-tier note below.
   llama-local:
     provider: ollama
-    model_id: llama3.3:70b
+    model_id: qwen3:4b
     max_output_tokens: 8192
     supports_thinking: false
+    disable_thinking: true
     supports_tools: true
     supports_structured_output: false
     pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
 
   codestral-local:
     provider: ollama
-    model_id: codestral:22b
+    model_id: qwen3:4b
     max_output_tokens: 8192
     supports_thinking: false
+    disable_thinking: true
     supports_tools: false
     supports_structured_output: false
     pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
 
+  # Reasoning fallback. supports_thinking was true for deepseek-r1; qwen3.5 runs
+  # with thinking disabled, so the flag is corrected rather than carried over.
   deepseek-local:
     provider: ollama
-    model_id: deepseek-r1:70b
+    model_id: "qwen3.5:latest"
     max_output_tokens: 8192
-    supports_thinking: true
+    supports_thinking: false
+    disable_thinking: true
     supports_tools: false
     supports_structured_output: false
     pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
@@ -253,21 +270,62 @@ models:
     supports_structured_output: true
     pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
 
-  # kimi-k2.6 via Ollama cloud (OLLAMA_API_KEY) — primary inference model
+  # Primary Ollama cloud model — kimi-k2.6:cloud (vision-capable, 3s TTFT).
+  # Tag corrected 2026-07-10: `kimi-k2.7-code` is not published; `ollama list`
+  # shows kimi-k2.6:cloud. Requires OLLAMA_API_KEY.
   kimi-cloud:
     provider: ollama_cloud
     model_id: "kimi-k2.6:cloud"
     max_output_tokens: 32768
     supports_thinking: false
+    disable_thinking: false
+    supports_tools: true
+    supports_structured_output: true
+    supports_vision: true
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
+  # MiniMax M3 via Ollama cloud — vision-capable, 7s TTFT, strong multimodal reasoning
+  minimax-cloud:
+    provider: ollama_cloud
+    model_id: "minimax-m3"
+    max_output_tokens: 32768
+    supports_thinking: false
+    disable_thinking: false
+    supports_tools: true
+    supports_structured_output: true
+    supports_vision: true
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
+  # devstral-small-2:24b — fast text model (2.3s), no vision
+  devstral-cloud:
+    provider: ollama_cloud
+    model_id: "devstral-small-2:24b"
+    max_output_tokens: 32768
+    supports_thinking: false
+    disable_thinking: false
     supports_tools: true
     supports_structured_output: true
     pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
 
+  # Local stand-in when the Kimi cloud endpoint is unavailable. Despite the name
+  # this is an ollama (not ollama_cloud) model and must be an installed local tag.
   kimi-local:
     provider: ollama
-    model_id: "kimi-k2.6:cloud"
+    model_id: "qwen3.5:latest"
     max_output_tokens: 32768
     supports_thinking: false
+    disable_thinking: true
+    supports_tools: true
+    supports_structured_output: true
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
+  # DeepSeek v3.2 via Ollama cloud — strong reasoning fallback
+  deepseek-cloud:
+    provider: ollama_cloud
+    model_id: "deepseek-v3.2"
+    max_output_tokens: 32768
+    supports_thinking: false
+    disable_thinking: true
     supports_tools: true
     supports_structured_output: true
     pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
@@ -292,100 +350,28 @@ models:
     supports_structured_output: true
     pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
 
-  # MiniMax M3 — 1M context, native multimodality, vision reasoning (Ollama cloud)
-  minimax-m3:
-    provider: ollama_cloud
-    model_id: "minimax-m3:latest"
-    max_output_tokens: 32768
-    context_window: 1000000
-    supports_thinking: true
-    supports_tools: true
-    supports_structured_output: true
-    supports_vision: true
-    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
-
-  # ── Ollama-cloud diverse debater models (ACF CoD pool) ──────────────────
-  # Distinct model FAMILIES so get_diverse_models() yields genuinely different
-  # perspectives in a Chain-of-Debate. Discovered via /api/tags on ollama.com.
-  glm5-cloud:
-    provider: ollama_cloud
-    model_id: "glm-5"
-    max_output_tokens: 32768
-    supports_thinking: true
-    supports_tools: true
-    supports_structured_output: true
-    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
-
-  qwen3next-cloud:
-    provider: ollama_cloud
-    model_id: "qwen3-next:80b"
-    max_output_tokens: 32768
-    supports_thinking: true
-    supports_tools: true
-    supports_structured_output: true
-    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
-
-  deepseek-cloud:
-    provider: ollama_cloud
-    model_id: "deepseek-v3.2"
-    max_output_tokens: 32768
-    supports_thinking: true
-    supports_tools: true
-    supports_structured_output: true
-    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
-
-  mistral-large-cloud:
-    provider: ollama_cloud
-    model_id: "mistral-large-3:675b"
-    max_output_tokens: 32768
-    supports_thinking: false
-    supports_tools: true
-    supports_structured_output: true
-    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
-
-  nemotron-cloud:
-    provider: ollama_cloud
-    model_id: "nemotron-3-super"
-    max_output_tokens: 32768
-    supports_thinking: true
-    supports_tools: true
-    supports_structured_output: true
-    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
-
-  gemini3-cloud:
-    provider: ollama_cloud
-    model_id: "gemini-3-flash-preview"
-    max_output_tokens: 32768
-    supports_thinking: true
-    supports_tools: true
-    supports_structured_output: true
-    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
-
-  cogito-cloud:
-    provider: ollama_cloud
-    model_id: "cogito-2.1:671b"
-    max_output_tokens: 32768
-    supports_thinking: true
-    supports_tools: true
-    supports_structured_output: true
-    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
-
-  # Dual-model optimized: text-only Qwen3 1.7B for simultaneous VRAM residency
-  # alongside Gemma3 (multimodal). Total VRAM: ~6.5GB / 8GB RTX 4060 Ti.
-  # Use this as tier1_model when OLLAMA_MAX_LOADED_MODELS=2.
+  # Dual-model optimized: small text-only Qwen3 for simultaneous VRAM residency
+  # alongside a multimodal model. qwen3:0.6b is 522MB, leaving headroom on an 8GB
+  # card. Use this as tier1_model when OLLAMA_MAX_LOADED_MODELS=2.
   qwen3-dual:
     provider: ollama
-    model_id: "qwen3:1.7b"
+    model_id: "qwen3:0.6b"
     max_output_tokens: 16384
-    supports_thinking: true
+    supports_thinking: false
+    disable_thinking: true
     supports_tools: true
     supports_structured_output: true
     pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
 
   # -- Vision Models (Local) --
+  # gemma4:e4b is the only installed local vision model. `gemma4-local` below is the
+  # canonical alias, but every vision chain in this file names gemma3-local and
+  # llava-local (8 and 6 references) while gemma4-local was referenced nowhere — so
+  # local vision fell through to cloud on every request. These two are kept as
+  # compat aliases pointing at the installed model rather than rewriting 14 chains.
   gemma3-local:
     provider: ollama
-    model_id: gemma3:latest
+    model_id: gemma4:e4b
     max_output_tokens: 4096
     supports_thinking: false
     supports_tools: false
@@ -395,7 +381,7 @@ models:
 
   llava-local:
     provider: ollama
-    model_id: llava:13b
+    model_id: gemma4:e4b
     max_output_tokens: 4096
     supports_thinking: false
     supports_tools: false
@@ -465,6 +451,95 @@ models:
 # Maps task categories to preferred models in priority order.
 # Used by LLMRouter.get_models_for_category() and CoT/CoD role selection.
 # Add new Ollama models to the appropriate categories when you pull them.
+
+  # ── Merged from the packaged config (icdev/args) 2026-07-10 ──────────────
+  # Additive cloud models plus the CLI-bridge model. `claude-cli` is what makes
+  # the bridge selectable: without it registered, cli_bridge prepended a model
+  # name the router could not resolve, so the bridge was a silent no-op.
+  # ── Merged from the packaged config (icdev/args) 2026-07-10 ──────────────
+  # Additive cloud models + the CLI-bridge model. Root keeps its own claude-*
+  # entries, which route via the `claude-cli` provider because this environment
+  # has no ANTHROPIC_API_KEY.
+  # -- Claude Code CLI bridge — uses locally authenticated `claude` CLI binary --
+  # This is the primary provider when ANTHROPIC_API_KEY is not set.
+  # The cli_bridge auto-prepends this to every routing chain when enabled.
+  claude-cli:
+    provider: cli
+    model_id: claude-cli
+    max_output_tokens: 32768
+    supports_thinking: true
+    supports_tools: false
+    supports_structured_output: false
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
+  cogito-cloud:
+    provider: ollama_cloud
+    model_id: "cogito-2.1:671b"
+    max_output_tokens: 32768
+    supports_thinking: true
+    supports_tools: true
+    supports_structured_output: true
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
+  gemini3-cloud:
+    provider: ollama_cloud
+    model_id: "gemini-3-flash-preview"
+    max_output_tokens: 32768
+    supports_thinking: true
+    supports_tools: true
+    supports_structured_output: true
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
+  # ── Ollama-cloud diverse debater models (ACF CoD pool) ──────────────────
+  # Distinct model FAMILIES so get_diverse_models() yields genuinely different
+  # perspectives in a Chain-of-Debate. Discovered via /api/tags on ollama.com.
+  glm5-cloud:
+    provider: ollama_cloud
+    model_id: "glm-5"
+    max_output_tokens: 32768
+    supports_thinking: true
+    supports_tools: true
+    supports_structured_output: true
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
+  # MiniMax M3 — 1M context, native multimodality, vision reasoning (Ollama cloud)
+  minimax-m3:
+    provider: ollama_cloud
+    model_id: "minimax-m3:latest"
+    max_output_tokens: 32768
+    context_window: 1000000
+    supports_thinking: true
+    supports_tools: true
+    supports_structured_output: true
+    supports_vision: true
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
+  mistral-large-cloud:
+    provider: ollama_cloud
+    model_id: "mistral-large-3:675b"
+    max_output_tokens: 32768
+    supports_thinking: false
+    supports_tools: true
+    supports_structured_output: true
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
+  nemotron-cloud:
+    provider: ollama_cloud
+    model_id: "nemotron-3-super"
+    max_output_tokens: 32768
+    supports_thinking: true
+    supports_tools: true
+    supports_structured_output: true
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
+  qwen3next-cloud:
+    provider: ollama_cloud
+    model_id: "qwen3-next:80b"
+    max_output_tokens: 32768
+    supports_thinking: true
+    supports_tools: true
+    supports_structured_output: true
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
 task_categories:
   coding:
     preferred: [qwen3-local, codestral-local, claude-sonnet, gpt-4o, llama-local]
@@ -479,7 +554,7 @@ task_categories:
     description: "Long-form prose, narrative, documentation"
 
   vision:
-    preferred: [gemma3-local, gemma4-local, llava-local, claude-sonnet, gpt-4o]
+    preferred: [kimi-cloud, minimax-cloud, claude-sonnet, gpt-4o]
     description: "Image analysis, screenshots, UI understanding"
 
   summarization:
@@ -532,36 +607,12 @@ routing:
     chain: [qwen3-local, claude-sonnet, gpt-4o-mini, gemini-2.5-flash, llama-local]
     effort: medium
 
+  agent_readiness_anomaly:
+    chain: [claude-haiku, qwen3-local, gpt-4o-mini, gemini-2.0-flash, llama-local]
+    effort: low
+
   agent_monitor:
     chain: [qwen3-local, claude-haiku, gpt-4o-mini, gemini-2.0-flash, llama-local]
-    effort: low
-
-  oracle_anomaly_detection:
-    chain: [claude-haiku, qwen3-local, gpt-4o-mini, llama-local]
-    effort: low
-
-  harness_anomaly_detection:
-    chain: [claude-haiku, qwen3-local, gpt-4o-mini, llama-local]
-    effort: low
-
-  # DIC knowledge-graph anomaly severity grading (aiify-opp-6090:
-  # hardcoded_threshold -> anomaly_detection). Cheap, bounded judgement layered
-  # on top of the deterministic threshold baseline; falls back to heuristics.
-  # DIC Notebook: document Q&A, study guide, FAQ, timeline, audio — cloud first, Ollama last resort
-  document_qna:
-    chain: [claude-sonnet-api, gpt-4o, claude-cli, claude-haiku, qwen3-local]
-    effort: medium
-
-  dic_anomaly_severity:
-    chain: [claude-haiku, qwen3-local, gpt-4o-mini, llama-local]
-    effort: low
-
-  oracle_triage_nlp_extract:
-    chain: [claude-haiku, qwen3-local, gpt-4o-mini, llama-local]
-    effort: low
-
-  convergence_nlp_extract:
-    chain: [claude-haiku, qwen3-local, gpt-4o-mini, llama-local]
     effort: low
 
   agent_mbse:
@@ -575,14 +626,6 @@ routing:
   agent_requirements_analyst:
     chain: [kimi-cloud, qwen3-local, claude-opus, gemini-2.5-pro, gpt-4o]
     effort: high
-
-  agent_product_manager:
-    chain: [kimi-cloud, qwen3-local, claude-sonnet, gemini-2.5-pro, gpt-4o, llama-local]
-    effort: high
-
-  agent_software_craftsperson:
-    chain: [kimi-cloud, qwen3-local, claude-opus, gemini-2.5-pro, gpt-4o, llama-local]
-    effort: max
 
   agent_supply_chain:
     chain: [qwen3-local, claude-sonnet, gpt-4o-mini, gemini-2.5-flash, llama-local]
@@ -621,8 +664,12 @@ routing:
     chain: [qwen3-local, gpt-4o-mini, gemini-2.0-flash, claude-haiku, llama-local]
     effort: low
 
+  chart_generation:
+    chain: [qwen3-local, kimi-cloud, claude-sonnet, gpt-4o-mini, gemini-2.0-flash, llama-local]
+    effort: low
+
   code_generation:
-    chain: [qwen3-local, claude-sonnet, gemini-2.5-pro, gpt-4o, codestral-local]
+    chain: [qwen3-local, kimi-cloud, claude-sonnet, gemini-2.5-pro, gpt-4o, codestral-local]
     effort: high
 
   saas_proxy:
@@ -637,8 +684,17 @@ routing:
     chain: [gemma3-local, llava-local, qwen3-local]
     effort: medium
 
+  # Network Diagram Analysis — kimi-cloud primary (vision-verified); CLI bridge + local fallbacks
+  ndc_diagram_quick_scan:
+    chain: [kimi-cloud, minimax-cloud, deepseek-cloud, claude-sonnet-cli, qwen3-local]
+    effort: low
+
+  ndc_diagram_analysis:
+    chain: [kimi-cloud, minimax-cloud, deepseek-cloud, claude-sonnet-cli, qwen3-local]
+    effort: medium
+
   document_vision:
-    chain: [claude-sonnet, gpt-4o, gemini-2.5-flash, gemma3-local, llava-local]
+    chain: [kimi-cloud, minimax-cloud, claude-sonnet-cli, claude-sonnet, gpt-4o]
     effort: medium
 
   ui_analysis:
@@ -677,9 +733,23 @@ routing:
     chain: [kimi-cloud, qwen3-local, claude-sonnet, claude-opus, gpt-4o, gemini-2.5-flash]
     effort: medium
 
+  # Synchronous single-persona query (tools.ace.persona_query.query_persona),
+  # exposed as the ace_persona_query MCP tool for cross-repo callers (e.g.
+  # idea_lab). NOT the async multi-role ACE team launch -- one focused
+  # expert answer, so this favors a strong single model over a long chain.
+  ace_persona_query:
+    chain: [claude-sonnet, kimi-cloud, gpt-4o, gemini-2.5-flash]
+    effort: medium
+
   ip_planning:
     chain: [qwen3-local, claude-haiku, gpt-4o-mini, gemini-2.0-flash, llama-local]
     effort: low
+
+  ndc_config_review:
+    # Use Ollama cloud (kimi-k2.6:cloud) first when OLLAMA_API_KEY is present,
+    # then fall back through cloud providers and local Ollama models.
+    chain: [kimi-cloud, kimi-local, qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
+    effort: medium
 
   # Panel fires N calls in parallel — use fast/cheap models to keep wall-clock latency low
   panel_persona_response:
@@ -714,15 +784,6 @@ routing:
   # Reasoned-codegen advisor — lightweight enable/mode recommendation (cheap tier).
   # Heuristic baseline runs with no LLM; this chain only powers optional LLM refine.
   reasoned_codegen_advisor:
-    chain: [qwen3-local, claude-haiku, gpt-4o-mini, gemini-2.0-flash, llama-local]
-    effort: low
-
-  # SIPA intent reconciliation (sipa-intent-04) — ADVISORY second opinion only.
-  # The deterministic rule-based reconciler in tools/integrity/intent_reconciler.py
-  # ALWAYS computes the primary verdict first (air-gap safe, no LLM required); this
-  # chain powers an optional match/mismatch judgement gated on integrity_config.yaml
-  # llm_assist.enabled. Local-first so it degrades cleanly with no cloud provider.
-  intent_reconciliation:
     chain: [qwen3-local, claude-haiku, gpt-4o-mini, gemini-2.0-flash, llama-local]
     effort: low
 
@@ -764,34 +825,11 @@ routing:
 
   # GovCon Proposal Functions — LOCAL ONLY (Phase 70: Redaction & Data Protection)
   # Proposal content contains CUI program names, past performance, pricing.
-  # PMO AI Advisor — CUI data stays local-first
-  pmo_corrective_action:
-    chain: [qwen3-local, claude-sonnet, gpt-4o]
-    effort: high
-
-  pmo_award_fee_narrative:
-    chain: [qwen3-local, claude-sonnet]
-    effort: medium
-
-  pmo_recommendations:
-    chain: [kimi-cloud, qwen3-local, claude-sonnet]
-    effort: medium
-
   # Route to Ollama only — never send raw proposal content to cloud LLMs.
   # WriteGuard rewrite (wg_rewrite) stays on Claude (rewrites style, not content).
   proposal_drafting:
     chain: [qwen3-local, llama-local]
     effort: medium
-
-  # Proposal Genesis NLP keyword/entity extraction (aiify-opp-5401).
-  # Semantic keyword extraction over opportunity title/description for Pulse
-  # content-reuse matching, replacing brittle regex+stopword extraction.
-  # Local-first to keep proposal context off cloud where possible; claude-haiku
-  # (recommended) is the cloud fallback. Input is user-provided opportunity
-  # text — injection scanning stays ON (skip_injection_scan defaults False).
-  pg_keyword_extraction:
-    chain: [qwen3-local, claude-haiku, gpt-4o-mini, llama-local]
-    effort: low
 
   requirement_extraction:
     chain: [kimi-cloud, qwen3-local]
@@ -804,6 +842,30 @@ routing:
   color_review:
     chain: [qwen3-local, llama-local]
     effort: medium
+
+  # Per-role RFI routing — Hermes-Agent pattern 1: each role gets its own
+  # model chain + effort tier. LOCAL ONLY (CUI content — never cloud LLMs).
+  # effort=low for Writer (quantity/speed), medium for Editor (repair pass),
+  # high for Reviewer/Researcher/Compliance (evaluation & gate functions).
+  rfi_writer_drafting:
+    chain: [qwen3-local, llama-local]
+    effort: low
+
+  rfi_editor_drafting:
+    chain: [qwen3-local, llama-local]
+    effort: medium
+
+  rfi_reviewer_review:
+    chain: [qwen3-local, llama-local]
+    effort: high
+
+  rfi_researcher_knowledge:
+    chain: [qwen3-local, llama-local]
+    effort: high
+
+  rfi_compliance_assessment:
+    chain: [qwen3-local, llama-local]
+    effort: high
 
   # Failure triage — Claude for diagnose (thinking/reasoning),
   # Ollama for patch (building/code-gen). Explicit two-tier split per
@@ -854,6 +916,63 @@ routing:
     chain: [claude-sonnet, qwen3-local, gpt-4o, gemini-2.5-pro]
     effort: high
 
+  # -----------------------------------------------------------------------
+  # Council role chains (fixed-perspective panel + anonymized peer review +
+  # chairman synthesis -- see tools.llm.chain_orchestrator.invoke_council)
+  # council_advisor_pool: same diverse-model-pool idea as cod_debater_pool,
+  #   but each slot is paired with a FIXED cognitive lens (Contrarian, First
+  #   Principles Thinker, ...) rather than a generated stance.
+  # council_chairman: best available model for the final structured verdict.
+  # -----------------------------------------------------------------------
+  council_advisor_pool:
+    chain: [qwen3-local, llama-local, deepseek-local, claude-haiku, claude-sonnet, gpt-4o, gpt-4o-mini, gemini-2.5-flash, kimi-cloud]
+    effort: medium
+
+  council_chairman:
+    chain: [claude-sonnet, qwen3-local, gpt-4o, gemini-2.5-pro]
+    effort: high
+
+  # Slide Deck Generator functions
+  slides_outline_planning:
+    chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
+    effort: medium
+
+  slides_content_generation:
+    chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
+    effort: medium
+
+  slides_content_revision:
+    chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
+    effort: medium
+
+  slides_visual_prompt:
+    chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
+    effort: low
+
+  slides_topic_research:
+    chain: [kimi-cloud, qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
+    effort: medium
+
+  default:
+    chain: [kimi-cloud, qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
+    effort: medium
+
+  # DIC document generation — Kimi 2.7 cloud primary (fast TTFT; local qwen3
+  # CoT is too slow for interactive HITL). Falls back to local + others.
+  document_qna:
+    chain: [kimi-cloud, qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
+    effort: medium
+
+# -----------------------------------------------------------------------
+# Per-Agent Effort Defaults (Enhancement #4 — used by agent_executor)
+# -----------------------------------------------------------------------
+
+  # ── Merged from the packaged config (icdev/args) 2026-07-10 ──────────────
+  # These chains existed only in icdev/args, so anything importing tools.llm.*
+  # (rather than icdev.tools.llm.*) fell through to the `default` chain.
+  # ── Merged from the packaged config (icdev/args) 2026-07-10 ──────────────
+  # These chains existed only in icdev/args, so anything importing tools.llm.*
+  # (rather than icdev.tools.llm.*) fell through to the `default` chain.
   # ── ACF (Autonomous Capability Foundry) deliberation — ALL Ollama-cloud ──
   # CLOUD-ONLY (no local models). All entries are provider 'ollama_cloud' with distinct
   # model families; get_diverse_models() returns N distinct cloud models per debate.
@@ -867,39 +986,72 @@ routing:
     chain: [glm5-cloud, kimi-cloud, deepseek-cloud, minimax-m3]
     effort: high
 
+  agent_product_manager:
+    chain: [kimi-cloud, qwen3-local, claude-sonnet, gemini-2.5-pro, gpt-4o, llama-local]
+    effort: high
+
+  agent_software_craftsperson:
+    chain: [kimi-cloud, qwen3-local, claude-opus, gemini-2.5-pro, gpt-4o, llama-local]
+    effort: max
+
   # Plain router.invoke() fallback for the deliberation function (non-chain path) — cloud-only
   capability_deliberation:
     chain: [glm5-cloud, kimi-cloud, deepseek-cloud, minimax-m3]
     effort: medium
 
-  default:
-    chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
-    effort: medium
-
-  # ── Slides Deck Generator (tools/slides/) ───────────────────────────────
-  slides_outline_planning:
-    chain: [minimax-m3, claude-sonnet, gpt-4o, qwen3-local]
-    effort: medium
-    description: "Plan slide deck outline from gathered ICDEV content. minimax-m3 first: 1M context ingests full source data."
-
-  slides_content_generation:
-    chain: [qwen3-local, minimax-m3, claude-sonnet, gpt-4o]
+  convergence_nlp_extract:
+    chain: [claude-haiku, qwen3-local, gpt-4o-mini, llama-local]
     effort: low
-    description: "Generate bullets, speaker notes, and visual context per slide."
 
-  slides_content_revision:
+  dic_anomaly_severity:
+    chain: [claude-haiku, qwen3-local, gpt-4o-mini, llama-local]
+    effort: low
+
+  harness_anomaly_detection:
+    chain: [claude-haiku, qwen3-local, gpt-4o-mini, llama-local]
+    effort: low
+
+  # SIPA intent reconciliation (sipa-intent-04) — ADVISORY second opinion only.
+  # The deterministic rule-based reconciler in tools/integrity/intent_reconciler.py
+  # ALWAYS computes the primary verdict first (air-gap safe, no LLM required); this
+  # chain powers an optional match/mismatch judgement gated on integrity_config.yaml
+  # llm_assist.enabled. Local-first so it degrades cleanly with no cloud provider.
+  intent_reconciliation:
+    chain: [qwen3-local, claude-haiku, gpt-4o-mini, gemini-2.0-flash, llama-local]
+    effort: low
+
+  oracle_anomaly_detection:
+    chain: [claude-haiku, qwen3-local, gpt-4o-mini, llama-local]
+    effort: low
+
+  oracle_triage_nlp_extract:
+    chain: [claude-haiku, qwen3-local, gpt-4o-mini, llama-local]
+    effort: low
+
+  # Proposal Genesis NLP keyword/entity extraction (aiify-opp-5401).
+  # Semantic keyword extraction over opportunity title/description for Pulse
+  # content-reuse matching, replacing brittle regex+stopword extraction.
+  # Local-first to keep proposal context off cloud where possible; claude-haiku
+  # (recommended) is the cloud fallback. Input is user-provided opportunity
+  # text — injection scanning stays ON (skip_injection_scan defaults False).
+  pg_keyword_extraction:
+    chain: [qwen3-local, claude-haiku, gpt-4o-mini, llama-local]
+    effort: low
+
+  pmo_award_fee_narrative:
+    chain: [qwen3-local, claude-sonnet]
+    effort: medium
+
+  # GovCon Proposal Functions — LOCAL ONLY (Phase 70: Redaction & Data Protection)
+  # Proposal content contains CUI program names, past performance, pricing.
+  # PMO AI Advisor — CUI data stays local-first
+  pmo_corrective_action:
     chain: [qwen3-local, claude-sonnet, gpt-4o]
-    effort: low
-    description: "Revise a single slide based on HITL feedback."
+    effort: high
 
-  slides_visual_prompt:
-    chain: [minimax-m3, gemma4-local, claude-sonnet]
-    effort: low
-    description: "Generate descriptive image prompt from slide content. minimax-m3 first: vision + multimodal reasoning."
-
-# -----------------------------------------------------------------------
-# Per-Agent Effort Defaults (Enhancement #4 — used by agent_executor)
-# -----------------------------------------------------------------------
+  pmo_recommendations:
+    chain: [kimi-cloud, qwen3-local, claude-sonnet]
+    effort: medium
 agent_effort_defaults:
   orchestrator-agent: high
   architect-agent: max
@@ -1018,11 +1170,12 @@ redaction:
     - pulse_rewrite
     - wg_rewrite
     - narrative_generation
+    - ndc_config_review  # config text is the analyzed artifact; redaction breaks JSON schema keys like "remediation"
 
 two_tier:
   enabled: true
   tier1_model: kimi-cloud       # Worker — kimi-k2.6 cloud first; qwen3-local (no-think) fallback
-  tier2_model: claude-sonnet-api  # Planner/Reviewer — Anthropic API (not Bedrock)
+  tier2_model: claude-sonnet  # Planner/Reviewer — CLI bridge (no ANTHROPIC_API_KEY in this environment)
 
   # Dual-model mode: swap tier1 + overrides for simultaneous VRAM residency
   # Toggle via: env ICDEV_DUAL_MODEL=true, or dashboard toggle, or API
@@ -1069,7 +1222,7 @@ two_tier:
   # Override tier1_model for specific functions
   function_model_overrides:
     pulse_draft: gemma3-local        # gemma3 for article writing (no thinking mode)
-    wg_rewrite: claude-sonnet-api    # Claude for WriteGuard rewriting (scanner path, Claude override)
+    wg_rewrite: claude-sonnet    # Claude for WriteGuard rewriting (scanner path, CLI bridge)
     pulse_rewrite: qwen3-local      # qwen3.5 for Pulse rewriting (think:false via provider)
 
 # -----------------------------------------------------------------------
@@ -1091,6 +1244,8 @@ rag:
       - ui_analysis
       - diagram_extraction
       - compliance_diagram
+      - ndc_diagram_quick_scan
+      - ndc_diagram_analysis
       - e2e_testing
       - playwright_execution
       - browser_automation
@@ -1205,7 +1360,6 @@ chain_orchestration:
         reasoner_model: qwen3-local
         critic_model: qwen3-local
         synthesizer_model: qwen3-local
-      # ACF concept synthesis — Ollama-cloud-diverse CoT (reasoner cloud, judge synthesizes)
       capability_deliberation:
         max_rounds: 2
         self_consistency_runs: 1
@@ -1224,7 +1378,7 @@ chain_orchestration:
     debater_models:
       - qwen3-local
       - claude-sonnet
-      - openai-gpt4o
+      - gpt-4o
     excluded_functions:
       - pulse_generation
     per_function:
@@ -1246,9 +1400,6 @@ chain_orchestration:
           - Bull case (strong buy / buy)
           - Bear case (sell / strong sell)
           - Neutral case (hold / wait)
-      # ACF go/no-go approval gate — debate across 4 DISTINCT Ollama-cloud models.
-      # debater_pool_role -> get_diverse_models picks 4 distinct cloud models; the legacy
-      # debater_models list is the fallback if the pool resolves empty.
       capability_deliberation:
         num_debaters: 5
         debate_rounds: 2
@@ -1261,61 +1412,25 @@ chain_orchestration:
           - deepseek-cloud
           - kimi-cloud
           - minimax-m3
-
-# -----------------------------------------------------------------------
-# Reasoned Codegen (tools/llm/reasoned_codegen.py)
-# Opt-in Generate -> Critique -> Verify -> Repair loop that composes the
-# chain_orchestration engine (CoT/CoD) + anvil_critique + an injected verifier.
-# When a function resolves to mode:off and critique:false the wrapper is a
-# byte-identical passthrough to router.invoke (zero added cost).
-#
-# Cost scaling (why expensive paths default OFF):
-#   CoT      ~= chain_orchestration.cot.max_rounds sequential calls
-#   CoD      ~= num_debaters * debate_rounds + 1 judge
-#   critique  += len(anvil_critique.critics) parallel calls PER round
-#   outer loop multiplies the above by max_repair_rounds
-#   Worst case (code_generation CoD 3x2 + critique 3 + repair 2) ~= 20 calls.
-# Hard backstops remain chain_orchestration.cost_cap_usd / token_cap and
-# module_budgets; cost_cap_usd below aborts the OUTER repair loop.
-# -----------------------------------------------------------------------
-reasoned_codegen:
-  enabled: true
-  default_mode: off          # off | cot | cod  (global default OFF)
-  default_critique: false
-  max_repair_rounds: 2
-  cost_cap_usd: 1.00         # outer-loop cap; >= chain_orchestration.cost_cap_usd
-  token_cap: 64000
-  per_function:
-    # PHASE 1 — default ON. Translation already has verify+repair (pass@k + Phase 5).
-    code_translation:
-      enabled: true
-      mode: cot
-      critique: false
-      max_repair_rounds: 3
-    # PHASE 2 — wired but default OFF until validated on translation.
-    code_generation:
-      enabled: false
-      mode: cot
-      critique: true
-      max_repair_rounds: 2
-    # PHASE 3 — wired but default OFF.
-    child_app:
-      enabled: false
-      mode: cot
-      critique: true
-
-# -----------------------------------------------------------------------
-# Agent Loop Primitive Budget Defaults (D-ALG-3)
-# -----------------------------------------------------------------------
-# Default hard/soft guardrails for the reusable run_agent_loop() primitive.
-# Per-role overrides can be set in role YAML as agent_max_total_tokens,
-# agent_max_cost_usd, agent_context_window_tokens, agent_compression_budget_tokens.
-agent_loop:
-  budgets:
-    max_total_tokens: 128000
-    context_window_tokens: 64000
-    compression_budget_tokens: 48000
-    max_cost_usd: 5.00
+  council:
+    enabled: true
+    num_advisors: 5
+    # Role routing keys for true multi-LLM council (see routing: section above)
+    chairman_role: council_chairman
+    advisor_pool_role: council_advisor_pool
+    # Legacy direct model names — used as fallback when pool/role resolves to nothing
+    chairman_model: claude-sonnet
+    advisor_models:
+      - qwen3-local
+      - claude-sonnet
+      - gpt-4o
+    excluded_functions: []
+    per_function:
+      # idea_lab's cross-repo council_query MCP tool -- pressure-testing a
+      # high-stakes idea/decision, not a code/architecture review, so the
+      # default 5-advisor panel + medium cost cap is appropriate as-is.
+      idealab_council_query:
+        num_advisors: 5
 
 # -----------------------------------------------------------------------
 # Response Cache + Context Caching (D-CACHE-1 through D-CACHE-10)
@@ -1411,3 +1526,103 @@ response_cache:
     ddc:
       ttl_seconds: 7200
       context_cache: true
+
+# ---------------------------------------------------------------------------
+# Speculative Decoding (Ollama path only — auto-detected)
+# ---------------------------------------------------------------------------
+speculative_decoding:
+  enabled: auto           # auto | true | false
+                          # auto: probes Ollama /api/tags at startup; activates if a
+                          #   dspark/eagle3/dflash draft model is already loaded.
+                          #   Zero cost for non-Ollama providers (no network call).
+  draft_model: ""         # leave blank to auto-discover; or pin e.g. deepseek-ai/dspark_qwen3_4b_block7
+  draft_tokens: 5
+  verification_ratio: 0.7
+  fallback_on_failure: true
+  target_endpoint: "${OLLAMA_BASE_URL:-http://localhost:11434}"
+
+# ---------------------------------------------------------------------------
+# Agent Loop Defaults (D-ALG-3)
+# Consumed by icdev/tools/llm/agent_loop._load_budget_defaults().
+# Per-role overrides can be set in role YAML as agent_max_total_tokens,
+# agent_max_cost_usd, agent_context_window_tokens, agent_compression_budget_tokens
+# (read via getattr(role, ...) in tools/ace/coworker_thread.py).
+# ---------------------------------------------------------------------------
+agent_loop:
+  budgets:
+    max_total_tokens: 128000          # hard cap on cumulative input+output tokens
+    max_cost_usd: 5.0                 # hard cap on cumulative USD cost per run
+    context_window_tokens: 64000      # soft threshold; triggers history compression
+    compression_budget_tokens: 48000  # target budget after compression
+    tool_timeout_seconds: 30.0        # per-tool execution timeout
+    tool_result_max_chars: 32768      # truncate large tool results to this many chars
+    llm_call_timeout_seconds: 120.0   # wrap each router.invoke() in this timeout
+    stall_threshold: 3                # abort after N turns with no novel tool call
+  memory:
+    enabled: true
+    top_k: 5
+    tier: "episodic|semantic"
+  rubric:
+    max_grading_iterations: 3   # grade-then-revise rounds before giving up
+    grader_max_tokens: 1024     # max output tokens for the grader's JSON verdict
+
+
+# -----------------------------------------------------------------------
+# Context Compression (adapt-hd-01)
+# Headroom-inspired reversible token-budget-aware compression middleware.
+# Applied in router.py::invoke() before the fallback chain.
+# -----------------------------------------------------------------------
+compression:
+  enabled: false                        # Set true to activate; default off
+  threshold_tokens: 6000                # Only compress when estimated tokens exceed this
+  strategy: truncate_middle             # "truncate_middle" — keep first 40% + last 40%
+  max_compression_ratio: 0.6            # Never compress below 60% of original length
+  log_savings: true                     # Emit compression_saved_tokens to audit trail
+  exempt_functions:                     # These functions bypass compression (always send full context)
+    - compliance_generation
+    - ssp_generation
+    - evidence_collection
+    - security_audit
+    - fine_tuning_generation
+
+# -----------------------------------------------------------------------
+# Reasoned Codegen (tools/llm/reasoned_codegen.py)
+# Opt-in Generate -> Critique -> Verify -> Repair loop that composes the
+# chain_orchestration engine (CoT/CoD) + anvil_critique + an injected verifier.
+# When a function resolves to mode:off and critique:false the wrapper is a
+# byte-identical passthrough to router.invoke (zero added cost).
+#
+# Cost scaling (why expensive paths default OFF):
+#   CoT      ~= chain_orchestration.cot.max_rounds sequential calls
+#   CoD      ~= num_debaters * debate_rounds + 1 judge
+#   critique  += len(anvil_critique.critics) parallel calls PER round
+#   outer loop multiplies the above by max_repair_rounds
+#   Worst case (code_generation CoD 3x2 + critique 3 + repair 2) ~= 20 calls.
+# Hard backstops remain chain_orchestration.cost_cap_usd / token_cap and
+# module_budgets; cost_cap_usd below aborts the OUTER repair loop.
+# -----------------------------------------------------------------------
+reasoned_codegen:
+  enabled: true
+  default_mode: off          # off | cot | cod  (global default OFF)
+  default_critique: false
+  max_repair_rounds: 2
+  cost_cap_usd: 1.00         # outer-loop cap; >= chain_orchestration.cost_cap_usd
+  token_cap: 64000
+  per_function:
+    # PHASE 1 — default ON. Translation already has verify+repair (pass@k + Phase 5).
+    code_translation:
+      enabled: true
+      mode: cot
+      critique: false
+      max_repair_rounds: 3
+    # PHASE 2 — wired but default OFF until validated on translation.
+    code_generation:
+      enabled: false
+      mode: cot
+      critique: true
+      max_repair_rounds: 2
+    # PHASE 3 — wired but default OFF.
+    child_app:
+      enabled: false
+      mode: cot
+      critique: true
