@@ -1076,7 +1076,9 @@ def _load_registry_nav_dirs() -> Set[str]:
 
     dirs: Set[str] = set()
     for comp in data.get("components", []):
-        if not isinstance(comp, dict) or comp.get("kind") != "canvas":
+        # core_extensions (e.g. standards_catalog) render their nav link from
+        # the registry exactly like canvases do — same nav_tree path.
+        if not isinstance(comp, dict) or comp.get("kind") not in ("canvas", "core_extension"):
             continue
         nav = comp.get("nav") or {}
         if not isinstance(nav, dict) or not nav.get("section"):
