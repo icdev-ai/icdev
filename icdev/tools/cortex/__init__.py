@@ -1,5 +1,6 @@
 # CUI // SP-CTI
 """ICDEV Cortex — unified AI facade over the platform's retrieval backends."""
+from .analyst import CortexAnalystError, CortexQueryBlocked, ask
 from .governance import (
     GATE_ORDER,
     GovernanceBlockedError,
@@ -20,13 +21,16 @@ __all__ = [
     "CORTEX_BACKENDS",
     "CORTEX_STRATEGIES",
     "Citation",
+    "CortexAnalystError",
     "CortexContext",
+    "CortexQueryBlocked",
     "CortexResult",
     "CortexSearchResult",
     "GATE_ORDER",
     "GovernanceBlockedError",
     "GovernancePipeline",
     "GovernanceReport",
+    "ask",
     "classify_route",
     "governed",
     "search",
