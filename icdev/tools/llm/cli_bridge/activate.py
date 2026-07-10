@@ -176,8 +176,43 @@ def cli_bridge_enabled() -> bool:
     return should_enable()
 
 
+def _is_local_only_provider(provider_name: str, providers: dict) -> bool:
+    """True for a provider that never leaves the machine.
+
+    `ollama` and `ollama_cloud` share `type: ollama`, so the type alone cannot
+    distinguish them. The cloud endpoint is the one carrying an `api_key_env`.
+    """
+    spec = providers.get(provider_name) or {}
+    return spec.get("type") == "ollama" and not spec.get("api_key_env")
+
+
+def is_local_only_chain(chain, models: dict, providers: dict) -> bool:
+    """True when every model in `chain` runs on a local-only provider.
+
+    Such a chain is a deliberate compliance boundary, not an accident. The GovCon
+    proposal and RFI functions declare `chain: [qwen3-local, llama-local]` under a
+    "LOCAL ONLY — never send raw proposal content to cloud LLMs" comment, because
+    the content is CUI.
+    """
+    if not chain:
+        return False
+    for model_name in chain:
+        spec = models.get(model_name)
+        if not spec:
+            return False
+        if not _is_local_only_provider(spec.get("provider", ""), providers):
+            return False
+    return True
+
+
 def prepend_cli_to_chains(config: dict, model_name: str = CLI_MODEL_NAME) -> dict:
     """Return a copy of ``config`` with ``model_name`` first in every chain.
+
+    Local-only chains are skipped. Prepending the CLI to them would route CUI
+    proposal and RFI content out through the Claude CLI, silently overriding an
+    explicit Ollama-only routing decision. Registering the ``claude-cli`` model
+    made this reachable: before, the prepended name resolved to no model and the
+    router skipped it, so the bridge was an accidental no-op on every chain.
 
     The original ``config`` is left untouched (operates on a deep copy).
     Idempotent: if a chain already starts with ``model_name`` it is left as-is;
@@ -188,17 +223,29 @@ def prepend_cli_to_chains(config: dict, model_name: str = CLI_MODEL_NAME) -> dic
     if not isinstance(routing, dict):
         return new_config
 
-    for route in routing.values():
+    models = new_config.get("models") or {}
+    providers = new_config.get("providers") or {}
+
+    skipped = []
+    for name, route in routing.items():
         if not isinstance(route, dict):
             continue
         chain = route.get("chain")
         if not isinstance(chain, list):
+            continue
+        if is_local_only_chain(chain, models, providers):
+            skipped.append(name)
             continue
         if chain and chain[0] == model_name:
             continue  # already first — don't double-prepend
         deduped = [m for m in chain if m != model_name]
         route["chain"] = [model_name] + deduped
 
+    if skipped:
+        logger.info(
+            "CLI bridge skipped %d local-only chain(s) (CUI): %s",
+            len(skipped), ", ".join(sorted(skipped)[:6]),
+        )
     return new_config
 
 
