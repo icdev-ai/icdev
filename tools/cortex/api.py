@@ -1,5 +1,10 @@
 # CUI // SP-CTI
-"""ICDEV Cortex — unified AI facade over the platform's retrieval backends."""
+"""ICDEV Cortex public API facade.
+
+Import Cortex capabilities from here (or from ``tools.cortex`` directly);
+the per-capability modules (``analyst``, …) are implementation detail.
+Later ctx-* epics add ``search()``, ``complete()``, etc. alongside ``ask()``.
+"""
 from .analyst import CortexAnalystError, ask
 from .schemas import (
     CORTEX_BACKENDS,
