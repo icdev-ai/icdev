@@ -30,7 +30,7 @@ _DDL = [
         created_by TEXT, created_at TEXT)""",
     """CREATE TABLE IF NOT EXISTS kg_nodes (
         id TEXT PRIMARY KEY, graph_id TEXT, label TEXT, entity_type TEXT,
-        properties TEXT, created_at TEXT)""",
+        properties TEXT, embedding TEXT, centrality REAL, created_at TEXT)""",
 ]
 
 _DOCMOD_DDL_KEYS = ("docmod_eol_products", "docmod_defacto_standards",
@@ -48,8 +48,10 @@ def db():
     for stmt in MINIMAL_ICDEV_SCHEMA.split(";"):
         if any(k in stmt for k in _DOCMOD_DDL_KEYS) and "CREATE TABLE" in stmt:
             conn.execute(stmt)
-    # clean slate for learner/eol tables shared across tests
-    for t in ("docmod_defacto_standards", "docmod_eol_products", "ni_devices"):
+    # clean slate for evidence tables shared across tests (file-scoped SQLite DB).
+    # docmod_catalog_entries is mutable (not append-only) — safe to clear in tests.
+    for t in ("docmod_defacto_standards", "docmod_eol_products", "ni_devices",
+              "nc_hardware_profiles", "nc_device_profiles", "docmod_catalog_entries"):
         conn.execute(f"DELETE FROM {t}")
     conn.commit()
     conn.close()
