@@ -51,6 +51,10 @@ def combined_evidence_hash(packs: dict[str, DomainPack], conn) -> str:
             parts.append(f"{pid}:{packs[pid].evidence_snapshot(conn)}")
         except Exception as exc:
             logger.warning("docmod: evidence_snapshot failed for %s: %s", pid, exc)
+            try:
+                conn.rollback()  # PG: failed statement poisons the transaction
+            except Exception:
+                pass
             parts.append(f"{pid}:error")
     return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
 
@@ -69,12 +73,20 @@ def _doc_chunks(conn, doc_id: str, version_id: str) -> list[tuple[str, ChunkRef]
     chunks: list[tuple[str, ChunkRef]] = []
     try:
         rows = conn.execute(
-            "SELECT dcl.id AS link_id, dcl.page, dcl.section, rc.content "
+            "SELECT dcl.link_id, dcl.page, dcl.section, rc.content "
             "FROM dic_chunk_links dcl JOIN rag_chunks rc ON dcl.rag_chunk_id = rc.id "
             "WHERE dcl.version_id = %s",
             (version_id,),
         ).fetchall()
-    except Exception:
+    except Exception as exc:
+        # PG poisons the whole transaction after a failed statement — roll back
+        # or every later query fails with InFailedSqlTransaction. Never swallow
+        # silently: this exact pattern hid an UndefinedColumn in production.
+        logger.warning("docmod: chunk-link query failed (%s) — falling back to sections", exc)
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         rows = []
     for r in rows:
         d = dict(r)
@@ -94,7 +106,12 @@ def _doc_chunks(conn, doc_id: str, version_id: str) -> list[tuple[str, ChunkRef]
             "WHERE version_id = %s ORDER BY section_id",
             (version_id,),
         ).fetchall()
-    except Exception:
+    except Exception as exc:
+        logger.warning("docmod: section fallback query failed: %s", exc)
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         rows = []
     for r in rows:
         d = dict(r)
@@ -198,34 +215,55 @@ def scan_document(doc_id: str, conn=None, packs: dict[str, DomainPack] | None = 
         seen_keys: set[str] = set()
         findings_new = 0
 
-        for text, chunk_ref in _doc_chunks(conn, doc_id, version_id):
-            for pack in packs.values():
-                try:
-                    entities = pack.extract(text, chunk_ref)
-                except Exception as exc:
-                    logger.warning("docmod: %s.extract failed: %s", pack.pack_id, exc)
-                    continue
-                for entity in entities:
+        # Packs read evidence on a SEPARATE connection: on PostgreSQL a single
+        # failed statement aborts the whole transaction, so a pack's evidence
+        # query error must never poison the write connection that carries the
+        # scan-run row and finding inserts.
+        ev_conn = _connect()
+
+        def _ev_rollback():
+            try:
+                ev_conn.rollback()
+            except Exception:
+                pass
+
+        try:
+            for text, chunk_ref in _doc_chunks(ev_conn, doc_id, version_id):
+                for pack in packs.values():
                     try:
-                        verdict = pack.evaluate(entity, conn)
+                        entities = pack.extract(text, chunk_ref)
                     except Exception as exc:
-                        logger.warning("docmod: %s.evaluate failed: %s", pack.pack_id, exc)
+                        logger.warning("docmod: %s.extract failed: %s", pack.pack_id, exc)
+                        _ev_rollback()
                         continue
-                    if not verdict.is_finding or verdict.confidence < threshold:
-                        continue
-                    key = dedupe_key(doc_id, pack.pack_id, entity.label, verdict.finding_type)
-                    if key in seen_keys or key in existing_open:
+                    for entity in entities:
+                        try:
+                            verdict = pack.evaluate(entity, ev_conn)
+                        except Exception as exc:
+                            logger.warning("docmod: %s.evaluate failed: %s", pack.pack_id, exc)
+                            _ev_rollback()
+                            continue
+                        if not verdict.is_finding or verdict.confidence < threshold:
+                            continue
+                        key = dedupe_key(doc_id, pack.pack_id, entity.label, verdict.finding_type)
+                        if key in seen_keys or key in existing_open:
+                            seen_keys.add(key)
+                            continue
                         seen_keys.add(key)
-                        continue
-                    seen_keys.add(key)
-                    replacement = None
-                    try:
-                        replacement = pack.recommend(entity, verdict, conn)
-                    except Exception as exc:
-                        logger.warning("docmod: %s.recommend failed: %s", pack.pack_id, exc)
-                    _insert_finding(conn, run_id, doc_id, version_id, entity, verdict,
-                                    replacement, key, tenant_id, classification)
-                    findings_new += 1
+                        replacement = None
+                        try:
+                            replacement = pack.recommend(entity, verdict, ev_conn)
+                        except Exception as exc:
+                            logger.warning("docmod: %s.recommend failed: %s", pack.pack_id, exc)
+                            _ev_rollback()
+                        _insert_finding(conn, run_id, doc_id, version_id, entity, verdict,
+                                        replacement, key, tenant_id, classification)
+                        findings_new += 1
+        finally:
+            try:
+                ev_conn.close()
+            except Exception:
+                pass
 
         # Resolve open findings whose entity no longer matches (append supersede row).
         findings_resolved = 0

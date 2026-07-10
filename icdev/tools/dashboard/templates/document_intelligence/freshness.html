@@ -183,8 +183,13 @@ function bulkAction(action) {
 function scanNow() {
   var btn = document.getElementById('scan-now-btn');
   btn.disabled = true; btn.textContent = 'Scanning…';
-  fetch('/document-intelligence/api/freshness/scan', {method: 'POST'})
-    .then(function(){ location.reload(); })
+  // Run BOTH scans: freshness (time/drift score) + modernization (content findings)
+  Promise.allSettled([
+    fetch('/document-intelligence/api/freshness/scan', {method: 'POST'}),
+    fetch('/document-intelligence/api/modernization/scan', {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'
+    })
+  ]).then(function(){ location.reload(); })
     .catch(function(){ btn.disabled = false; btn.textContent = '🔍 Scan now'; });
 }
 </script>

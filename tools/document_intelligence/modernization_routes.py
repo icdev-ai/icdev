@@ -124,6 +124,76 @@ def _all_findings_states(doc_id: str) -> list[dict]:
         return []
 
 
+@dic_bp.route("/api/modernization/scan", methods=["POST"])
+def api_modernization_scan():
+    """One-click modernization scan — the missing link after upload.
+    Body: {collection_id?} — omitted scans the whole corpus."""
+    body = request.get_json(silent=True) or {}
+    collection_id = (body.get("collection_id") or "").strip() or None
+    try:
+        from tools.doc_modernization.scanner import scan_collection
+        result = scan_collection(collection_id=collection_id, trigger="api",
+                                 force=bool(body.get("force", False)))
+        return jsonify(result)
+    except Exception as exc:
+        logger.warning("dic modernization scan failed: %s", exc)
+        return jsonify({"error": str(exc)}), 500
+
+
+@dic_bp.route("/api/collections/<collection_id>", methods=["DELETE"])
+def api_delete_collection(collection_id: str):
+    """Delete a collection and its documents (admin only).
+
+    Removes documents, sections, chunk links, freshness rows, suggestions, and
+    linked rag chunks. dic_versions rows are retained (append-only, NIST AU) as
+    orphaned history; docmod findings likewise keep their append-only trail.
+    """
+    from tools.document_intelligence.blueprint import _require_role
+
+    if not _require_role(collection_id, "admin"):
+        return jsonify({"error": "admin role required"}), 403
+    conn = _conn()
+    try:
+        doc_rows = [dict(r)["doc_id"] for r in conn.execute(
+            "SELECT doc_id FROM dic_documents WHERE collection_id = %s", (collection_id,)
+        ).fetchall()]
+        chunk_ids = [dict(r)["rag_chunk_id"] for r in conn.execute(
+            "SELECT rag_chunk_id FROM dic_chunk_links WHERE collection_id = %s", (collection_id,)
+        ).fetchall()]
+        for stmt, params in [
+            ("DELETE FROM dic_sections WHERE doc_id IN (SELECT doc_id FROM dic_documents WHERE collection_id = %s)", (collection_id,)),
+            ("DELETE FROM dic_chunk_links WHERE collection_id = %s", (collection_id,)),
+            ("DELETE FROM dic_doc_freshness WHERE collection_id = %s", (collection_id,)),
+            ("DELETE FROM dic_suggestions WHERE collection_id = %s", (collection_id,)),
+            ("DELETE FROM dic_documents WHERE collection_id = %s", (collection_id,)),
+            ("DELETE FROM dic_collections WHERE collection_id = %s", (collection_id,)),
+        ]:
+            try:
+                conn.execute(stmt, params)
+            except Exception as exc:
+                logger.warning("dic delete-collection step failed (%s): %s", stmt[:40], exc)
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+        for cid in chunk_ids:
+            try:
+                conn.execute("DELETE FROM rag_chunks WHERE id = %s", (cid,))
+            except Exception:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                break
+        conn.commit()
+        logger.info("dic: collection %s deleted (%d docs, %d chunks)",
+                    collection_id, len(doc_rows), len(chunk_ids))
+        return jsonify({"deleted": collection_id, "documents": len(doc_rows),
+                        "chunks": len(chunk_ids)})
+    finally:
+        conn.close()
+
+
 @dic_bp.route("/api/modernization/bulk", methods=["POST"])
 def api_modernization_bulk():
     """Bulk actions from the triage board. All HITL-gated downstream."""

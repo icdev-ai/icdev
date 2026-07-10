@@ -98,6 +98,24 @@
       if (idx >= fileArr.length) {
         status.textContent = fileArr.length + ' file(s) complete.';
         bar.style.width = '100%';
+        // docmod: don't leave the user hanging - offer the next step inline.
+        results.innerHTML +=
+          '<div style="margin-top:10px;display:flex;gap:8px;align-items:center;">' +
+          '<button id="post-upload-scan" style="background:#2a1a3a;color:#a78bfa;padding:7px 14px;border:1px solid #4a2a6e;border-radius:5px;cursor:pointer;font-size:12px;">' +
+          '🧭 Scan for outdated content →</button>' +
+          '<a href="/document-intelligence/freshness" style="color:#7ab3f0;font-size:11px;">or open Freshness &amp; Modernization</a>' +
+          '<span id="post-upload-scan-status" style="color:#7a8cb0;font-size:11px;"></span></div>';
+        document.getElementById('post-upload-scan').addEventListener('click', function() {
+          var btn = this, st = document.getElementById('post-upload-scan-status');
+          btn.disabled = true; st.textContent = 'Scanning…';
+          fetch('/document-intelligence/api/modernization/scan', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({collection_id: collectionId})
+          }).then(function(r){ return r.json(); }).then(function(d) {
+            if (d.error) { st.textContent = 'Scan failed: ' + d.error; btn.disabled = false; return; }
+            window.location.href = '/document-intelligence/freshness';
+          }).catch(function(e){ st.textContent = 'Scan failed: ' + e.message; btn.disabled = false; });
+        });
         return;
       }
       var file = fileArr[idx++];

@@ -63,8 +63,12 @@ class NetworkHardwarePack(DomainPack):
                     "WHERE model IS NOT NULL AND model != ''"
                 ).fetchall():
                     terms.add(dict(r)["model"].strip())
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("docmod hw pack: inventory vocab failed: %s", exc)
+                try:
+                    conn.rollback()  # PG: failed statement poisons the transaction
+                except Exception:
+                    pass
         for provider in getattr(self._catalog, "providers", []):
             vocab = getattr(provider, "vocabulary", None)
             if callable(vocab):
@@ -229,6 +233,10 @@ class NetworkHardwarePack(DomainPack):
                 for r in (dict(x) for x in rows)
             )
         except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
             parts.append("no-mc-eol")
         try:
             rows = conn.execute(
@@ -240,5 +248,9 @@ class NetworkHardwarePack(DomainPack):
                 for r in (dict(x) for x in rows)
             )
         except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
             parts.append("no-defacto")
         return hashlib.sha256("|".join(sorted(parts)).encode("utf-8")).hexdigest()
