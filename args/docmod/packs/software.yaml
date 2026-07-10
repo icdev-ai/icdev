@@ -1,9 +1,8 @@
 # CUI // SP-CTI
 # Software currency pack — endoflife.date cache (docmod_eol_products).
-# Evaluator ships with docmod-packs-04; disabled until then.
 pack_id: software
 label: Software
-enabled: false
+enabled: true
 evaluator: tools.doc_modernization.packs.software.SoftwarePack
 entity_types: [software_product]
 extraction:

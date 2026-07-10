@@ -16,7 +16,20 @@
 | Scanner | tools/doc_modernization/scanner.py | Scan pipeline: latest approved dic_version → chunks (dic_chunk_links⋈rag_chunks, dic_sections fallback) → packs → docmod_findings w/ dedupe + supersede rows + incremental evidence-hash skip (docmod_doc_scan_state) | `scan_document(doc_id)` / `scan_collection(cid)` | dict summary |
 | Catalog | tools/doc_modernization/catalog.py | CatalogProvider interface; GenericStoreProvider (docmod_catalog_entries), NetworkCatalogAdapter (READ-ONLY over nc_hardware_profiles/nc_device_profiles, graceful when absent), MergedCatalog (source-labelled), `propose_from_defacto()` (draft entry + audit row) | Python API | CatalogEntry list |
 
+| Crypto Pack | tools/doc_modernization/packs/crypto_protocols.py | Rulebook pack (args/docmod/rulebook_crypto.yaml): TLS 1.0/1.1, SSLv2/3, SSHv1, telnet, SNMPv1/2c, MD5/SHA-1/DES/RC4 → deprecated_tech findings citing rule ids | pack API | Verdict/Replacement |
+| Software Pack | tools/doc_modernization/packs/software.py | Product+version extraction; verdicts from docmod_eol_products; unmapped → `unknown` never `eol`; replacement = newest supported cycle | pack API | Verdict/Replacement |
+| Network HW Pack | tools/doc_modernization/packs/network_hardware.py | Curated catalog PRIMARY (NetworkCatalogAdapter + generic store) → mc_net_eol_data fallback → de facto stats tie-breaker; inventory-vocabulary extraction | pack API | Verdict/Replacement |
+| Policy Pack | tools/doc_modernization/packs/policy_refs.py | Supersession map (args/docmod/rulebook_policy.yaml): NIST rev withdrawals, RFC obsoletions, FIPS 140-2→3; KG standard-node corroboration | pack API | Verdict/Replacement |
+| EOL Products Sync | tools/doc_modernization/eol_products_sync.py | endoflife.date cache (docmod_eol_products): live sync + `args/docmod/eol_products.yaml` seed + `import_dataset()` air-gap bundle; `get_product_eol()` alias-aware lookup; `newest_supported_cycle()` | `--seed/--sync/--import <path> --json` | JSON |
+| De Facto Learner | tools/doc_modernization/defacto_learner.py | Recency-weighted (half-life 180d) deployment stats over ni_devices → docmod_defacto_standards; `get_recommended(category)`; `cross_check(catalog)` → divergence/gap records | `recompute()` | dict |
+
+KG hook: `tools/knowledge_graph/text_network.py::EXTRA_ENTITY_PATTERNS` — pack
+regexes are published at load time so ingested docs grow hardware_model /
+software_product / protocol / crypto_algorithm KG nodes. MCP repair:
+`handle_kg_stale_entities` in tools/mcp/gap_handlers.py now backs the
+previously-dangling `kg_stale_entities` tool via knowledge_graph/temporal.py.
+
 Config: `args/docmod/docmod_config.yaml` (thresholds, cadence, offline flag) +
-`args/docmod/packs/{network_hardware,software,crypto_protocols,policy_refs}.yaml`
-(launch packs ship `enabled: false` until their evaluators land — docmod-packs-01..05).
-Tests: `tests/docmod/test_core_engine.py`.
+`args/docmod/packs/*.yaml` (all four launch packs enabled) +
+`args/docmod/{rulebook_crypto,rulebook_policy,eol_products}.yaml`.
+Tests: `tests/docmod/test_core_engine.py`, `tests/docmod/test_domain_packs.py`.

@@ -162,12 +162,11 @@ def test_append_only_tables_registered_in_hook():
 
 # ── pack loader ───────────────────────────────────────────────────────────────
 
-def test_load_packs_skips_disabled_launch_packs():
+def test_load_packs_loads_four_launch_packs():
     from tools.doc_modernization.pack_loader import load_packs
 
     packs = load_packs(force=True)
-    # The four launch pack YAMLs ship enabled: false until their evaluators land.
-    assert packs == {}
+    assert set(packs) == {"crypto_protocols", "network_hardware", "software", "policy_refs"}
 
 
 def test_load_packs_validation_errors(tmp_path, monkeypatch):

@@ -308,6 +308,13 @@ def _ensure_tables(conn=None):
 # Words to strip from entity label starts (articles, prepositions, etc.)
 _STRIP_PREFIXES = {"the", "a", "an", "this", "that", "each", "every", "its"}
 
+# Extension hook: (compiled_regex, entity_type) pairs consulted by
+# _extract_entities AFTER the built-in patterns. Populated at runtime by
+# tools.doc_modernization.pack_loader (entity types: hardware_model,
+# software_product, protocol, crypto_algorithm) — do NOT hardcode new
+# domain types here; declare them in args/docmod/packs/*.yaml instead.
+EXTRA_ENTITY_PATTERNS: list = []
+
 
 # =========================================================================
 # ENTITY EXTRACTION
@@ -376,6 +383,11 @@ def _extract_entities(text):
     # Persons
     for m in _RE_PERSON.finditer(text):
         _add(m.group(1), "person")
+
+    # Runtime-registered domain patterns (see EXTRA_ENTITY_PATTERNS above)
+    for pattern, etype in EXTRA_ENTITY_PATTERNS:
+        for m in pattern.finditer(text):
+            _add(m.group(0), etype)
 
     return entities
 

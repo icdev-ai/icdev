@@ -2215,6 +2215,22 @@ def get_gepa_optimizer_handler(args: dict) -> dict:
     except Exception as exc:
         logger.warning("get_gepa_optimizer_handler: %s", exc)
         return {"applied": [], "skipped": [], "errors": [str(exc)]}
+# ── Knowledge Graph temporal handlers ──────────────────────────────────────
+
+def handle_kg_stale_entities(args: dict) -> dict:
+    """Find KG nodes older than N days (backs the kg_stale_entities MCP tool —
+    previously a dangling stub; logic lives in knowledge_graph.temporal)."""
+    try:
+        from tools.knowledge_graph.temporal import find_stale_entities
+        return find_stale_entities(
+            graph_id=args.get("graph_id"),
+            stale_days=int(args.get("stale_days", 90)),
+        )
+    except Exception as exc:
+        logger.warning("handle_kg_stale_entities: %s", exc)
+        return {"error": str(exc)}
+
+
 # ── Document Intelligence Canvas (DIC) handlers ────────────────────────────
 
 def handle_dic_ingest(args: dict) -> dict:

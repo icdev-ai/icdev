@@ -2215,6 +2215,22 @@ def get_gepa_optimizer_handler(args: dict) -> dict:
     except Exception as exc:
         logger.warning("get_gepa_optimizer_handler: %s", exc)
         return {"applied": [], "skipped": [], "errors": [str(exc)]}
+# ── Knowledge Graph temporal handlers ──────────────────────────────────────
+
+def handle_kg_stale_entities(args: dict) -> dict:
+    """Find KG nodes older than N days (backs the kg_stale_entities MCP tool —
+    previously a dangling stub; logic lives in knowledge_graph.temporal)."""
+    try:
+        from tools.knowledge_graph.temporal import find_stale_entities
+        return find_stale_entities(
+            graph_id=args.get("graph_id"),
+            stale_days=int(args.get("stale_days", 90)),
+        )
+    except Exception as exc:
+        logger.warning("handle_kg_stale_entities: %s", exc)
+        return {"error": str(exc)}
+
+
 # ── Document Intelligence Canvas (DIC) handlers ────────────────────────────
 
 def handle_dic_ingest(args: dict) -> dict:
@@ -2389,6 +2405,78 @@ def handle_nova_trust_summary(args: dict) -> dict:
         return {"error": str(exc)}
 
 
+def handle_ace_persona_query(args: dict) -> dict:
+    """One-shot, persona-informed answer from a single ACE role -- NOT the
+    async multi-role ACE team launch. See tools.ace.persona_query for the
+    synchronous implementation; the primary caller is cross-repo (e.g.
+    idea_lab), which has no other way to consult an ACE persona directly.
+
+    `role_id` is optional if `domain_description` is provided: when no
+    known role_id applies, a persona for that domain is generated on the
+    fly (or reused, if one was already generated for the same normalized
+    domain) via tools.ace.persona_generator, instead of the caller getting
+    no consultation at all. The response's `role_id` reports which persona
+    actually answered (the caller's input role_id, or the generated one)
+    so the caller can record which one was used."""
+    try:
+        role_id = (args.get("role_id") or "").strip()
+        question = (args.get("question") or "").strip()
+        context = args.get("context") or ""
+        domain_description = (args.get("domain_description") or "").strip()
+        if not question:
+            return {"error": "question is required"}
+        if not role_id and not domain_description:
+            return {"error": "role_id or domain_description is required"}
+
+        if not role_id:
+            from tools.ace.persona_generator import get_or_generate_persona
+            generated = get_or_generate_persona(domain_description)
+            role_id = generated["role_id"]
+
+        from tools.ace.persona_query import query_persona
+        answer = query_persona(role_id, question, context)
+        return {"answer": answer, "role_id": role_id}
+    except Exception as exc:
+        logger.warning("handle_ace_persona_query: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_council_query(args: dict) -> dict:
+    """Pressure-test a high-stakes question/decision through an LLM Council:
+    5 fixed-perspective advisors (Contrarian, First Principles Thinker,
+    Expansionist, Outsider, Executor) respond independently, anonymously
+    peer-review each other, and a chairman synthesizes a structured verdict.
+    See tools.llm.chain_orchestrator.ChainOrchestrator.invoke_council. Primary
+    caller is cross-repo (e.g. idea_lab), pressure-testing a validated idea
+    before committing to it."""
+    try:
+        question = (args.get("question") or "").strip()
+        context = args.get("context") or ""
+        if not question:
+            return {"error": "question is required"}
+
+        from tools.llm import get_router
+        from tools.llm.provider import LLMRequest
+
+        router = get_router()
+        user_content = f"Context:\n{context}\n\nQuestion:\n{question}" if context else question
+        response = router.invoke_council(
+            "idealab_council_query",
+            LLMRequest(messages=[{"role": "user", "content": user_content}]),
+        )
+        return {
+            "verdict": (response.content or "").strip(),
+            "advisor_rounds": [
+                r for r in (getattr(response, "chain_rounds", None) or [])
+                if str(r.get("step", "")).startswith("advisor:")
+            ],
+            "stop_reason": response.stop_reason,
+        }
+    except Exception as exc:
+        logger.warning("handle_council_query: %s", exc)
+        return {"error": str(exc)}
+
+
 # ── PVM — Predictive Vulnerability Management ─────────────────────────────────
 
 def handle_pvm_predict_risk(args: dict) -> dict:
@@ -2456,4 +2544,19 @@ def handle_pvm_create_patch_plan(args: dict) -> dict:
         return create_patch_plan(approved_by=approved_by)
     except Exception as exc:
         logger.warning("handle_pvm_create_patch_plan: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_rfi_demand_scan(args: dict) -> dict:
+    """RFI capability-gap demand: list cross-RFI demand signals, or re-scan open
+    gaps and emit atomic SUGGESTED kanban build tasks. See tools/govcon/rfi_demand.py."""
+    try:
+        from tools.govcon import rfi_demand
+
+        mode = (args.get("mode") or "list").lower()
+        if mode == "scan":
+            return rfi_demand.scan(min_priority=args.get("min_priority"))
+        return {"signals": rfi_demand.list_demand_signals(limit=int(args.get("limit") or 50))}
+    except Exception as exc:
+        logger.warning("handle_rfi_demand_scan: %s", exc)
         return {"error": str(exc)}

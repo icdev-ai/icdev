@@ -2,10 +2,9 @@
 # Network hardware currency pack. Curated nc_hardware_profiles (via the
 # read-only NetworkCatalogAdapter) is the authoritative standard; de facto
 # deployment stats corroborate and drive divergence/catalog_gap findings.
-# Evaluator ships with docmod-packs-02; disabled until then.
 pack_id: network_hardware
 label: Network Hardware
-enabled: false
+enabled: true
 evaluator: tools.doc_modernization.packs.network_hardware.NetworkHardwarePack
 entity_types: [hardware_model]
 extraction:
