@@ -91,7 +91,10 @@ class PolicyRefsPack(DomainPack):
                     "detail": f"KG standard node for {entity.label}", "date": "",
                 })
         except Exception:
-            pass  # no KG — rulebook evidence stands alone
+            try:
+                conn.rollback()  # PG: failed statement poisons the transaction
+            except Exception:
+                pass  # no KG — rulebook evidence stands alone
         return Verdict(
             currency_verdict=rule.get("verdict", "retired"),
             finding_type="superseded_standard",

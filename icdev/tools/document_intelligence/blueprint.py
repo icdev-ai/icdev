@@ -1052,6 +1052,19 @@ def api_ingest():
                     "chunks": outcome.chunks,
                     "errors": outcome.errors,
                 }
+            # Preserve the uploaded filename — ingest_file only sees the temp
+            # path, which otherwise lands as e.g. 'tmp9x41vmaz.txt'.
+            try:
+                c = _conn()
+                c.execute(
+                    "UPDATE dic_documents SET filename = %s, "
+                    "title = COALESCE(NULLIF(title, ''), %s) WHERE doc_id = %s",
+                    (filename, Path(filename).stem, outcome.doc_id),
+                )
+                c.commit()
+                c.close()
+            except Exception as exc:
+                logger.warning("dic: filename restore failed: %s", exc)
             # Best-effort DB update (may fail if INSERT never succeeded).
             try:
                 c = _conn()

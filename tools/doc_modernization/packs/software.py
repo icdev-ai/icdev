@@ -116,5 +116,9 @@ class SoftwarePack(DomainPack):
                 for r in (dict(x) for x in rows)
             )
         except Exception:
+            try:
+                conn.rollback()  # PG: failed statement poisons the transaction
+            except Exception:
+                pass
             payload = "no-cache"
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
