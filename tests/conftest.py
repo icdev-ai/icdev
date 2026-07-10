@@ -1848,128 +1848,121 @@ CREATE TABLE IF NOT EXISTS document_aggregation_findings (
     resolution_comment      TEXT,
     created_at              TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Document Modernization Engine (docmod, migration 258)
 CREATE TABLE IF NOT EXISTS docmod_scan_runs (
     run_id          TEXT PRIMARY KEY,
-    scope_type      TEXT NOT NULL DEFAULT 'all'
-                        CHECK (scope_type IN ('all','collection','doc')),
+    scope_type      TEXT NOT NULL,
     scope_id        TEXT,
-    pack_ids        TEXT DEFAULT '[]',
+    pack_ids        TEXT,
     evidence_hash   TEXT,
-    docs_scanned    INTEGER NOT NULL DEFAULT 0,
-    findings_new    INTEGER NOT NULL DEFAULT 0,
-    findings_resolved INTEGER NOT NULL DEFAULT 0,
-    started_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    finished_at     TIMESTAMP,
-    triggered_by    TEXT NOT NULL DEFAULT 'manual'
-                        CHECK (triggered_by IN ('manual','reflex','daemon','api')),
+    docs_scanned    INTEGER DEFAULT 0,
+    findings_new    INTEGER DEFAULT 0,
+    findings_resolved INTEGER DEFAULT 0,
+    trigger         TEXT DEFAULT 'manual',
+    started_at      TEXT NOT NULL,
+    finished_at     TEXT,
     tenant_id       TEXT,
-    classification  TEXT DEFAULT 'CUI'
+    classification  TEXT
 );
 CREATE TABLE IF NOT EXISTS docmod_findings (
     finding_id      TEXT PRIMARY KEY,
-    run_id          TEXT NOT NULL REFERENCES docmod_scan_runs(run_id),
+    run_id          TEXT NOT NULL,
     doc_id          TEXT NOT NULL,
-    version_id      TEXT,
+    version_id      TEXT NOT NULL,
     chunk_link_id   TEXT,
     section_heading TEXT,
     page            INTEGER,
     pack_id         TEXT NOT NULL,
     entity_label    TEXT NOT NULL,
-    entity_type     TEXT NOT NULL,
+    entity_type     TEXT,
     finding_type    TEXT NOT NULL,
-    currency_verdict TEXT NOT NULL DEFAULT 'unknown'
-                        CHECK (currency_verdict IN ('current','deprecated','eol','retired','divergent','unknown')),
-    severity        TEXT NOT NULL DEFAULT 'medium'
-                        CHECK (severity IN ('critical','high','medium','low','info')),
+    currency_verdict TEXT NOT NULL,
+    severity        TEXT NOT NULL DEFAULT 'medium',
     rationale       TEXT,
-    evidence_json   TEXT DEFAULT '[]',
+    evidence_json   TEXT,
     recommended_replacement TEXT,
-    replacement_evidence_json TEXT DEFAULT '[]',
-    confidence      REAL NOT NULL DEFAULT 0.0,
-    state           TEXT NOT NULL DEFAULT 'open'
-                        CHECK (state IN ('open','redline_drafted','accepted','rejected','resolved','superseded','stale')),
+    replacement_evidence_json TEXT,
+    confidence      REAL,
+    state           TEXT NOT NULL DEFAULT 'open',
+    supersedes_id   TEXT,
     redline_suggestion_id TEXT,
     prediction_id   TEXT,
-    dedupe_key      TEXT NOT NULL,
-    supersedes_id   TEXT REFERENCES docmod_findings(finding_id),
+    dedupe_key      TEXT,
+    created_at      TEXT NOT NULL,
     tenant_id       TEXT,
-    classification  TEXT DEFAULT 'CUI',
-    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    classification  TEXT
 );
-CREATE INDEX IF NOT EXISTS idx_docmod_findings_doc    ON docmod_findings(doc_id, state);
-CREATE INDEX IF NOT EXISTS idx_docmod_findings_dedupe ON docmod_findings(dedupe_key);
 CREATE TABLE IF NOT EXISTS docmod_eol_products (
-    id              TEXT PRIMARY KEY,
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
     product         TEXT NOT NULL,
     cycle           TEXT NOT NULL,
     eol_date        TEXT,
     eos_date        TEXT,
     latest_version  TEXT,
-    lts             INTEGER NOT NULL DEFAULT 0,
-    source          TEXT NOT NULL DEFAULT 'endoflife.date'
-                        CHECK (source IN ('endoflife.date','seed','manual')),
-    synced_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    lts             INTEGER DEFAULT 0,
+    source          TEXT NOT NULL DEFAULT 'static_seed',
+    synced_at       TEXT,
     tenant_id       TEXT,
-    classification  TEXT DEFAULT 'CUI',
-    UNIQUE (product, cycle)
+    classification  TEXT,
+    UNIQUE(product, cycle)
 );
 CREATE TABLE IF NOT EXISTS docmod_defacto_standards (
-    id              TEXT PRIMARY KEY,
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
     domain          TEXT NOT NULL,
     category        TEXT NOT NULL,
     vendor          TEXT,
     product         TEXT NOT NULL,
     version         TEXT,
-    deploy_count    INTEGER NOT NULL DEFAULT 0,
-    weighted_score  REAL NOT NULL DEFAULT 0.0,
-    share_pct       REAL NOT NULL DEFAULT 0.0,
-    computed_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    deploy_count    INTEGER DEFAULT 0,
+    weighted_score  REAL DEFAULT 0,
+    share_pct       REAL DEFAULT 0,
+    computed_at     TEXT NOT NULL,
     tenant_id       TEXT,
-    classification  TEXT DEFAULT 'CUI'
+    classification  TEXT,
+    UNIQUE(domain, category, vendor, product, version)
 );
 CREATE TABLE IF NOT EXISTS docmod_doc_scan_state (
-    doc_id             TEXT PRIMARY KEY,
-    last_version_id    TEXT,
+    doc_id          TEXT PRIMARY KEY,
+    last_version_id TEXT,
     last_evidence_hash TEXT,
-    last_scanned_at    TIMESTAMP,
-    open_findings      INTEGER NOT NULL DEFAULT 0,
-    tenant_id          TEXT,
-    classification     TEXT DEFAULT 'CUI'
+    last_scanned_at TEXT,
+    open_findings   INTEGER DEFAULT 0,
+    tenant_id       TEXT,
+    classification  TEXT
 );
 CREATE TABLE IF NOT EXISTS docmod_catalog_entries (
     entry_id        TEXT PRIMARY KEY,
     domain          TEXT NOT NULL,
-    category        TEXT NOT NULL,
+    category        TEXT,
     vendor          TEXT,
     product         TEXT NOT NULL,
     model_family    TEXT,
     version         TEXT,
-    status          TEXT NOT NULL DEFAULT 'approved'
-                        CHECK (status IN ('approved','deprecated','retired')),
+    status          TEXT NOT NULL DEFAULT 'approved',
     eol_date        TEXT,
     eos_date        TEXT,
-    replacement_entry_id TEXT REFERENCES docmod_catalog_entries(entry_id),
-    metadata_json   TEXT DEFAULT '{}',
-    tags_json       TEXT DEFAULT '[]',
-    source          TEXT NOT NULL DEFAULT 'manual'
-                        CHECK (source IN ('manual','imported','promoted_from_defacto')),
-    is_builtin      INTEGER NOT NULL DEFAULT 0,
+    replacement_entry_id TEXT,
+    metadata_json   TEXT,
+    tags_json       TEXT,
+    source          TEXT NOT NULL DEFAULT 'manual',
+    is_builtin      INTEGER DEFAULT 0,
     created_by      TEXT,
-    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT,
     tenant_id       TEXT,
-    classification  TEXT DEFAULT 'CUI',
-    UNIQUE (domain, category, vendor, product, version)
+    classification  TEXT,
+    UNIQUE(domain, category, vendor, product, version)
 );
 CREATE TABLE IF NOT EXISTS docmod_catalog_audit (
-    id              TEXT PRIMARY KEY,
+    audit_id        TEXT PRIMARY KEY,
     entry_id        TEXT NOT NULL,
-    event_type      TEXT NOT NULL,
-    actor           TEXT NOT NULL DEFAULT 'system',
-    details         TEXT DEFAULT '{}',
-    recorded_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    action          TEXT NOT NULL,
+    actor           TEXT,
+    detail_json     TEXT,
+    created_at      TEXT NOT NULL,
     tenant_id       TEXT,
-    classification  TEXT DEFAULT 'CUI'
+    classification  TEXT
 );
 """
 
