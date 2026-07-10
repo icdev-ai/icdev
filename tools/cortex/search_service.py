@@ -590,38 +590,21 @@ def _run_backends(
     return merged, valid, timed_out
 
 
-def search(
+def _routed_pass(
     query: str,
-    top_k: int = 5,
-    ctx: Optional[CortexContext] = None,
-    strategy: str = "auto",
-    config: Optional[dict] = None,
+    top_k: int,
+    ctx: CortexContext,
+    strategy: str,
+    cfg: dict,
+    search_cfg: dict,
 ) -> list[CortexSearchResult]:
-    """Unified Cortex search with agentic strategy routing.
+    """One route -> domain-scope -> fan-out -> stamp pass over the backends.
 
-    ``strategy`` is one of CORTEX_STRATEGIES: ``"auto"`` classifies the query
-    via classify_route(); a backend name (``"rag"``/``"graph"``/``"dic"``/
-    ``"kb"``) or ``"all"`` bypasses classification entirely. ``ctx.domain``
-    intersects the selection with that domain's allowed backends from
-    ``search.domains`` in args/cortex_config.yaml and records the domain's
-    collection scope in metadata (consumption hook for ctx-canvas-04).
-
-    Every result records the routing decision: ``result.strategy`` becomes
-    ``"<strategy>:<label>[backend+backend]"`` (the adapter's native strategy
-    moves to ``metadata["backend_strategy"]``), and ``metadata["router"]``
-    carries the full decision including any timed-out backends. ``top_k``
-    applies per backend, so fan-out can return more than ``top_k`` results.
+    Returns results sorted by score descending, each stamped with the routing
+    decision (``result.strategy`` tag + ``metadata["router"]``). search()
+    runs this once, and a second time on the rewritten query when the CRAG
+    corrective loop triggers.
     """
-    ctx = ctx or CortexContext()
-    cfg = config if config is not None else load_cortex_config()
-    search_cfg = cfg.get("search") or {}
-    strategy = (strategy or "auto").lower()
-    if strategy not in CORTEX_STRATEGIES:
-        raise ValueError(
-            f"Unknown Cortex search strategy {strategy!r}; "
-            f"expected one of {CORTEX_STRATEGIES}"
-        )
-
     route: Optional[dict] = None
     if strategy == "auto":
         route = classify_route(query, config=cfg)
@@ -665,3 +648,173 @@ def search(
         r.metadata["router"] = dict(router_record)
         r.strategy = strategy_tag
     return results
+
+
+# ---------------------------------------------------------------------------
+# CRAG corrective loop (ctx-search-04) — low-confidence rewrite + re-retrieve
+# ---------------------------------------------------------------------------
+
+_REWRITE_SYSTEM_PROMPT = (
+    "You rewrite search queries whose retrieval results scored poorly. "
+    "Produce ONE alternative query that surfaces the same information with "
+    "different phrasing: expand acronyms, add synonyms, drop filler words. "
+    "Return ONLY the rewritten query text, nothing else."
+)
+_REWRITE_MAX_TOKENS = 128
+_REWRITE_SNIPPET_COUNT = 3
+
+
+def rewrite_query(
+    query: str,
+    results: list,
+    ctx: Optional[CortexContext] = None,
+) -> str:
+    """Rewrite a low-confidence query via the ``cortex_search_rewrite`` chain.
+
+    The routing chain keeps a local ollama-tier fallback (air-gap invariant
+    from ctx-core-03), and air-gapped contexts are forced local-only through
+    ``api._invoke``. Any unavailability (missing model, budget exceeded,
+    provider error) raises — search() converts that into a
+    ``corrective_skipped`` marker instead of failing the search.
+    """
+    # Late import: api runs assert_airgap_ready() at import time, and its
+    # failure is exactly the "rewrite path unavailable" signal callers catch.
+    from . import api
+
+    context = ctx or CortexContext()
+    snippets = "\n".join(
+        f"- {r.content[:_SNIPPET_CHARS]}" for r in results[:_REWRITE_SNIPPET_COUNT]
+    )
+    prompt = (
+        f"Original query: {query}\n"
+        f"Best results so far (low relevance):\n{snippets or '- (none)'}\n\n"
+        "Rewritten query:"
+    )
+    request = api._build_request(
+        prompt,
+        context,
+        system_prompt=_REWRITE_SYSTEM_PROMPT,
+        max_tokens=_REWRITE_MAX_TOKENS,
+        temperature=0.0,
+    )
+    response = api._invoke(api.CORTEX_SEARCH_REWRITE_FUNCTION, request, context)
+    rewritten = (response.content or "").strip().splitlines()
+    return rewritten[0].strip().strip('"') if rewritten else ""
+
+
+def _merge_corrective(
+    original: list[CortexSearchResult],
+    corrective: list[CortexSearchResult],
+) -> list[CortexSearchResult]:
+    """Fuse both passes: dedupe by (backend, source_id), best score wins."""
+    best: dict = {}
+    for r in original + corrective:
+        key = (r.backend, r.citation.source_id, r.content)
+        if key not in best or r.score > best[key].score:
+            best[key] = r
+    merged = list(best.values())
+    merged.sort(key=lambda r: r.score, reverse=True)
+    return merged
+
+
+def _corrective_pass(
+    query: str,
+    results: list[CortexSearchResult],
+    top_k: int,
+    ctx: CortexContext,
+    strategy: str,
+    cfg: dict,
+    search_cfg: dict,
+) -> list[CortexSearchResult]:
+    """CRAG corrective loop: rewrite + re-retrieve once when confidence is low.
+
+    Evaluator: the fused top score against ``search.crag_threshold`` from
+    args/cortex_config.yaml. A missing/zero threshold disables the loop
+    entirely. At most ONE corrective iteration runs (latency stays bounded by
+    the same per-backend timeouts), and the outcome is always observable in
+    result metadata: ``corrective_pass=True`` + a ``crag`` record when the
+    re-retrieve ran, ``corrective_skipped=<reason>`` when the rewrite path
+    was unavailable or produced nothing new.
+    """
+    threshold = float(search_cfg.get("crag_threshold") or 0.0)
+    if threshold <= 0.0:
+        return results
+    top_score = results[0].score if results else 0.0
+    if top_score >= threshold:
+        return results
+
+    crag_record = {
+        "threshold": threshold,
+        "original_top_score": round(top_score, 6),
+        "original_query": query,
+    }
+
+    def _skip(reason: str) -> list[CortexSearchResult]:
+        logger.info("Cortex CRAG corrective pass skipped: %s", reason)
+        for r in results:
+            r.metadata["corrective_skipped"] = reason
+            r.metadata["crag"] = dict(crag_record)
+        return results
+
+    try:
+        rewritten = rewrite_query(query, results, ctx)
+    except Exception as exc:
+        return _skip(f"rewrite unavailable: {exc}")
+    if not rewritten or rewritten.strip().lower() == (query or "").strip().lower():
+        return _skip("rewrite produced no usable new query")
+
+    crag_record["rewritten_query"] = rewritten
+    logger.info(
+        "Cortex CRAG corrective pass: top score %.3f < %.2f — re-retrieving "
+        "with rewritten query %r",
+        top_score,
+        threshold,
+        rewritten,
+    )
+    corrective = _routed_pass(rewritten, top_k, ctx, strategy, cfg, search_cfg)
+    merged = _merge_corrective(results, corrective)
+    for r in merged:
+        r.metadata["corrective_pass"] = True
+        r.metadata["crag"] = dict(crag_record)
+    return merged
+
+
+def search(
+    query: str,
+    top_k: int = 5,
+    ctx: Optional[CortexContext] = None,
+    strategy: str = "auto",
+    config: Optional[dict] = None,
+) -> list[CortexSearchResult]:
+    """Unified Cortex search with agentic strategy routing + CRAG correction.
+
+    ``strategy`` is one of CORTEX_STRATEGIES: ``"auto"`` classifies the query
+    via classify_route(); a backend name (``"rag"``/``"graph"``/``"dic"``/
+    ``"kb"``) or ``"all"`` bypasses classification entirely. ``ctx.domain``
+    intersects the selection with that domain's allowed backends from
+    ``search.domains`` in args/cortex_config.yaml and records the domain's
+    collection scope in metadata (consumption hook for ctx-canvas-04).
+
+    Every result records the routing decision: ``result.strategy`` becomes
+    ``"<strategy>:<label>[backend+backend]"`` (the adapter's native strategy
+    moves to ``metadata["backend_strategy"]``), and ``metadata["router"]``
+    carries the full decision including any timed-out backends. ``top_k``
+    applies per backend, so fan-out can return more than ``top_k`` results.
+
+    When the top fused score falls below ``search.crag_threshold``, one
+    corrective iteration rewrites the query (routing function
+    ``cortex_search_rewrite``) and re-runs routing+fusion; see
+    _corrective_pass() for the metadata contract.
+    """
+    ctx = ctx or CortexContext()
+    cfg = config if config is not None else load_cortex_config()
+    search_cfg = cfg.get("search") or {}
+    strategy = (strategy or "auto").lower()
+    if strategy not in CORTEX_STRATEGIES:
+        raise ValueError(
+            f"Unknown Cortex search strategy {strategy!r}; "
+            f"expected one of {CORTEX_STRATEGIES}"
+        )
+
+    results = _routed_pass(query, top_k, ctx, strategy, cfg, search_cfg)
+    return _corrective_pass(query, results, top_k, ctx, strategy, cfg, search_cfg)
