@@ -4349,3 +4349,9 @@ def api_attach_coworker(collection_id):
         "coworker_url": f"/coworker?dic_collection={collection_id}",
         "message": "Collection attached. Open Co-Worker and launch with DIC context pre-loaded.",
     })
+
+
+# ── Modernization routes (docmod hitl-04..06, ux-02) — registered on dic_bp ──
+# Kept in a separate module so this file stops growing; import has side effects
+# (route registration) and must stay at the bottom after dic_bp is fully built.
+from tools.document_intelligence import modernization_routes  # noqa: E402,F401

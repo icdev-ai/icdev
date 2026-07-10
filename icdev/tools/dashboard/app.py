@@ -222,6 +222,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
     """
 
     @app.route("/cpmp")
+    @require_role("admin", "pm", "developer", "isso", "co", "contract_mgr")
     def cpmp_portfolio_page():
         """CPMP Portfolio — contract performance overview, health scoring."""
         try:
@@ -336,6 +337,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
             )
 
     @app.route("/cpmp/<contract_id>")
+    @require_role("admin", "pm", "contract_mgr", "co", "cor", "isso")
     def cpmp_detail_page(contract_id):
         """CPMP Contract Detail — 7-tab view."""
         try:
@@ -390,6 +392,14 @@ def _register_govcon_pages(app: "Flask", _get_db):
             except Exception:
                 risks = []
                 risk_matrix = {}
+            try:
+                from tools.govcon.contract_periods_manager import list_periods, get_obligation_summary
+
+                periods = list_periods(contract_id).get("periods", [])
+                obligation_summary = get_obligation_summary(contract_id)
+            except Exception:
+                periods = []
+                obligation_summary = {}
             return render_template(
                 "cpmp/detail.html",
                 contract=contract,
@@ -404,6 +414,8 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 milestone_deps=milestone_deps,
                 risks=risks,
                 risk_matrix=risk_matrix,
+                periods=periods,
+                obligation_summary=obligation_summary,
             )
         except Exception as e:
             import traceback
@@ -423,10 +435,13 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 milestone_deps=[],
                 risks=[],
                 risk_matrix={},
+                periods=[],
+                obligation_summary={},
                 error=str(e),
             ), 200
 
     @app.route("/cpmp/<contract_id>/deliverables/<deliverable_id>")
+    @require_role("admin", "pm", "contract_mgr", "co", "cor", "isso")
     def cpmp_deliverable_detail_page(contract_id, deliverable_id):
         """CPMP Deliverable Detail — status pipeline, CDRL generation."""
         try:
@@ -461,6 +476,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
             ), 200
 
     @app.route("/cpmp/cor")
+    @require_role("admin", "pm", "isso", "co", "cor", "contract_mgr")
     def cpmp_cor_portal_page():
         """COR Portal — read-only government view of assigned contracts."""
         user = getattr(g, "current_user", None)
@@ -485,6 +501,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
             conn.close()
 
     @app.route("/cpmp/cor/<contract_id>")
+    @require_role("admin", "pm", "isso", "co", "cor", "contract_mgr")
     def cpmp_cor_detail_page(contract_id):
         """COR Contract Detail — read-only, no internal cost data."""
         user = getattr(g, "current_user", None)
@@ -550,6 +567,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
             conn.close()
 
     @app.route("/cpmp/deliverables")
+    @require_role("admin", "pm", "developer", "isso", "co", "contract_mgr")
     def cpmp_deliverable_center_page():
         """Deliverable Command Center — all deliverables across all active contracts."""
         return render_template("cpmp/deliverable_center.html")
@@ -624,6 +642,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
             )
 
     @app.route("/proposals")
+    @require_role("admin", "bd", "capture_mgr", "pm", "reviewer")
     def proposals_list_page():
         """Proposal Opportunities — GovCon proposal writing lifecycle tracker."""
         conn = _get_db()
@@ -696,6 +715,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
             conn.close()
 
     @app.route("/proposals/<opp_id>")
+    @require_role("admin", "bd", "capture_mgr", "pm", "reviewer")
     def proposals_detail_page(opp_id):
         """Proposal Opportunity Detail — 6-tab view with sections, compliance, reviews."""
         conn = _get_db()
@@ -891,6 +911,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
             conn.close()
 
     @app.route("/proposals/<opp_id>/sections/<sec_id>")
+    @require_role("admin", "bd", "capture_mgr", "pm", "reviewer")
     def proposals_section_detail_page(opp_id, sec_id):
         """Proposal Section Detail — status pipeline, notes, compliance, findings, history."""
         conn = _get_db()
@@ -998,6 +1019,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
             conn.close()
 
     @app.route("/proposals/reviews-dashboard")
+    @require_role("admin", "pm", "reviewer")
     def proposals_reviews_dashboard():
         """Executive cross-proposal review dashboard (prop-rev-07)."""
         from datetime import date
@@ -1064,6 +1086,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
             conn.close()
 
     @app.route("/proposals/<opp_id>/language")
+    @require_role("admin", "bd", "capture_mgr", "pm", "reviewer")
     def proposals_language_page(opp_id):
         """Proposal Language Settings — glossary, wall of truth, taxonomy, style templates."""
         conn = _get_db()
@@ -1102,6 +1125,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
             conn.close()
 
     @app.route("/proposals/<opp_id>/ptw")
+    @require_role("admin", "capture_mgr", "pm")
     def proposals_ptw_page(opp_id):
         """Black-hat / PTW workspace — competitor intelligence + price-to-win (prop-cap-13)."""
         conn = _get_db()
@@ -1163,6 +1187,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
         )
 
     @app.route("/proposals/<opp_id>/compliance/gaps")
+    @require_role("admin", "bd", "capture_mgr", "pm", "reviewer")
     def proposals_compliance_gaps(opp_id):
         """Compliance gap drill-down — all not_addressed requirements (prop-cmp-10)."""
         conn = _get_db()
@@ -1212,6 +1237,8 @@ def _register_govcon_pages(app: "Flask", _get_db):
         try:
             from tools.govcon.govcon_engine import get_status
             from tools.govcon.bayesian_bid_scorer import pipeline_value_rollup
+            from tools.govcon.crm_heat import get_engagement_heat_by_agency
+            from tools.govcon.sam_scanner import list_forecast_notices
 
             stats = get_status()
             try:
@@ -1271,9 +1298,27 @@ def _register_govcon_pages(app: "Flask", _get_db):
             except Exception:
                 pass
 
+            # BD view: CRM engagement heat per agency (prop-cap-14)
+            try:
+                heat_by_agency = get_engagement_heat_by_agency(
+                    [opp.get("agency") for opp in active_proposals]
+                )
+                for opp in active_proposals:
+                    opp["engagement_heat"] = heat_by_agency.get(opp.get("agency"))
+            except Exception:
+                for opp in active_proposals:
+                    opp["engagement_heat"] = None
+
+            # BD view: SAM.gov forecast/presolicitation notice feed (prop-cap-14)
+            try:
+                forecast_notices = list_forecast_notices(limit=10)
+            except Exception:
+                forecast_notices = {"notices": [], "count": 0}
+
             return render_template(
                 "govcon/pipeline.html", stats=stats, opportunities=opportunities, linked_opp_ids=linked_opp_ids,
                 pipeline_rollup=pipeline_rollup, active_proposals=active_proposals,
+                forecast_notices=forecast_notices,
             )
         except Exception:
             stats = {
@@ -1288,7 +1333,10 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 "domain_distribution": {},
                 "last_pipeline_run": None,
             }
-            return render_template("govcon/pipeline.html", stats=stats, opportunities=[], linked_opp_ids=set())
+            return render_template(
+                "govcon/pipeline.html", stats=stats, opportunities=[], linked_opp_ids=set(),
+                forecast_notices={"notices": [], "count": 0},
+            )
         finally:
             conn.close()
 
@@ -1426,6 +1474,16 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 recommendations = rec_result.get("recommendations", [])[:15]
             except Exception:
                 pass
+            # Cross-RFI capability-gap demand signals (tools/govcon/rfi_demand.py):
+            # unmet RFI requirements aggregated across opportunities, highest demand
+            # first. Best-effort — absent table / disabled feature yields an empty list.
+            rfi_demand_signals = []
+            try:
+                from tools.govcon.rfi_demand import list_demand_signals
+
+                rfi_demand_signals = list_demand_signals(limit=20)
+            except Exception:
+                pass
             return render_template(
                 "govcon/capabilities.html",
                 coverage=coverage,
@@ -1433,6 +1491,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 gaps=gaps,
                 total_gaps=total_gaps,
                 recommendations=recommendations,
+                rfi_demand_signals=rfi_demand_signals,
             )
         finally:
             conn.close()
@@ -8819,6 +8878,7 @@ def create_app(testing: bool = False) -> Flask:
     # ── Proposal Genesis — Autonomous Capture Pipeline Dashboard ─────────────
 
     @app.route("/proposal-genesis")
+    @require_role("admin", "pm", "bd", "capture_mgr")
     def proposal_genesis():
         """Proposal Genesis — autonomous capture-to-delivery pipeline dashboard."""
         status = {}
@@ -11344,6 +11404,50 @@ if __name__ == "__main__":
 
     except Exception as _ks_err:
         print(f"[ICDEV™ Dashboard] Kanban scheduler failed to start: {_ks_err}")
+
+    # ── DIC freshness scan daemon (docmod-ux-01) ───────────────────────────
+    # Keeps freshness scores + modernization findings live even when the
+    # Genesis daemon isn't running. ICDEV_DIC_FRESHNESS_SCAN_HOURS: default 24,
+    # 0 disables. Exception-safe per tick; never starts under pytest.
+    try:
+        _fs_hours = float(os.environ.get("ICDEV_DIC_FRESHNESS_SCAN_HOURS", "24") or 0)
+        if _fs_hours > 0 and not os.environ.get("PYTEST_CURRENT_TEST"):
+            import threading as _fs_threading
+
+            def _dic_freshness_daemon():
+                import time as _ft
+                while True:
+                    _ft.sleep(_fs_hours * 3600)
+                    try:
+                        from tools.document_intelligence.freshness_engine import scan_collection as _fs_scan
+                        from tools.db.storage import get_connection as _fs_conn
+                        _c = _fs_conn()
+                        try:
+                            _rows = _c.execute(
+                                "SELECT collection_id FROM dic_collections"
+                            ).fetchall()
+                        finally:
+                            _c.close()
+                        for _r in _rows:
+                            try:
+                                _fs_scan(dict(_r)["collection_id"])
+                            except Exception:
+                                pass  # one collection must not kill the tick
+                    except Exception as _fe:
+                        print(f"[ICDEV™ Dashboard] DIC freshness daemon tick error: {_fe}")
+                    try:  # docmod sweep hook — graceful before engine install
+                        from tools.doc_modernization.scanner import scan_collection as _dm_scan
+                        _dm_scan(collection_id=None, trigger="daemon")
+                    except Exception:
+                        pass
+
+            _fs_t = _fs_threading.Thread(
+                target=_dic_freshness_daemon, name="dic-freshness-scan-daemon", daemon=True
+            )
+            _fs_t.start()
+            print(f"[ICDEV™ Dashboard] DIC freshness scan daemon started (every {_fs_hours}h)")
+    except Exception as _fs_err:
+        print(f"[ICDEV™ Dashboard] DIC freshness daemon failed to start: {_fs_err}")
 
     # Optional inbound TLS / mTLS (IL5+/GovCloud). Env vars:
     #   ICDEV_DASHBOARD_TLS_CERT      server certificate (PEM)
