@@ -23,8 +23,11 @@ from tools.logging.icdev_logger import get_logger
 
 logger = get_logger(__name__)
 
+# Core-extension convention: app.py registers these blueprints WITHOUT a
+# url_prefix (unlike canvases), so the prefix must live on the Blueprint itself.
 docmod_bp = Blueprint(
-    "standards_catalog", __name__, template_folder="../dashboard/templates"
+    "standards_catalog", __name__, template_folder="../dashboard/templates",
+    url_prefix="/standards-catalog",
 )
 
 # Launch domains; future packs appear automatically via pack_loader.

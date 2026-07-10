@@ -1051,7 +1051,7 @@ components:
   default_enabled: true
   module: tools.doc_modernization.blueprint
   blueprint_attr: docmod_bp
-  url_prefix: /standards-catalog
+  url_prefix: ''
   min_il: IL4
   default_roles: []
   nav:

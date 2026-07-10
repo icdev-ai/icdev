@@ -163,8 +163,11 @@ class NetworkCatalogAdapter(CatalogProvider):
 
     def __init__(self, conn_factory=None):
         if conn_factory is None:
-            from tools.db.storage import get_connection
-            conn_factory = get_connection
+            # nc_* tables have no tenant_id/classification columns — the global
+            # RLS predicate from get_connection() raises UndefinedColumn under
+            # an active dashboard security context (canonical canvas gotcha).
+            from tools.db.storage import get_canvas_connection
+            conn_factory = get_canvas_connection
         self._connect = conn_factory
 
     def _hardware_rows(self) -> list[CatalogEntry]:
