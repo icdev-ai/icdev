@@ -536,7 +536,13 @@ def api_generate(session_id: str):
         return jsonify({"error": "Generation failed — check logs"}), 500
 
     if doc_id:
-        sm.set_field(session_id, dic_collection_id=context["session_id"])
+        # Persist the DIC document generation created so the Tech Writer bridge
+        # can reuse it (Path A) instead of rebuilding an empty scaffold.
+        sm.set_field(
+            session_id,
+            dic_collection_id=context["session_id"],
+            dic_doc_id=doc_id,
+        )
 
     from tools.docgen.domain_profiles import get_ato_doc_type as _get_ato
     ato_cfg = _get_ato(context.get("doc_type"))

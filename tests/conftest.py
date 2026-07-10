@@ -1546,6 +1546,8 @@ CREATE TABLE IF NOT EXISTS idr_sessions (
     last_source_hash TEXT,
     source_hash_checked_at TEXT,
     final_doc_text  TEXT,
+    dic_doc_id      TEXT,
+    source_dic_doc_id TEXT,
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
     updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );

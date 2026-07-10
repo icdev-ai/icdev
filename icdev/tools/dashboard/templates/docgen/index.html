@@ -109,12 +109,10 @@
           <span id="session-status-badge" style="font-size:11px;padding:3px 9px;border-radius:4px;background:#1a2a3a;color:#7ab3f0;">
             Stage {{ session.stage }}: {{ session.status }}
           </span>
-          {% if session.doc_type in ('runbook','design_doc','standard_guide') %}
-          <button onclick="openInTechWriter('{{ session.id }}', '{{ session.title | replace("'","") }}', '{{ session.doc_type }}', '{{ session.classification or 'CUI' }}')"
+          <button onclick="openInTechWriter('{{ session.id }}', '{{ session.title | replace("'","") }}', '{{ session.classification or 'CUI' }}')"
             style="background:#1a1a3a;color:#a78bfa;padding:4px 10px;border:1px solid #3a2a6e;border-radius:4px;cursor:pointer;font-size:11px;">
             ✍️ Open in Tech Writer
           </button>
-          {% endif %}
         </div>
       </div>
     </div>
@@ -474,21 +472,15 @@ if (fileInput) {
 }
 
 // ── Docgen → Tech Writer ──────────────────────────────────────────────────────
-var _DOCTYPE_TO_TEMPLATE = {
-  'runbook': 'RUNBOOK',
-  'design_doc': 'ARCH_SYSTEM',
-  'standard_guide': 'STANDARD_GUIDE'
-};
-
-function openInTechWriter(sessionId, title, docType, classification) {
-  var templateType = _DOCTYPE_TO_TEMPLATE[docType] || 'ARCH_SYSTEM';
+// Template resolution moved server-side (DOCGEN_DOCTYPE_TO_TEMPLATE in
+// tools/document_intelligence/constants.py) — the server maps every doc_type.
+function openInTechWriter(sessionId, title, classification) {
   fetch('/document-intelligence/api/import-from-docgen', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({
       session_id: sessionId,
       title: title,
-      template_type: templateType,
       classification: classification || 'CUI'
     })
   })

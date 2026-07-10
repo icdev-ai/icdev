@@ -71,3 +71,29 @@ TEMPLATE_TYPE_TO_WRITEGUARD_MODE: dict[str, str] = {
     "ARCH_APPLICATION": "architecture_doc",
     "ARCH_SYSTEM": "architecture_doc",
 }
+
+# docgen (IDR) doc_type -> Tech Writer template. Single source of truth for the
+# docgen -> Tech Writer bridge; the client no longer carries its own map.
+DOCGEN_DOCTYPE_TO_TEMPLATE: dict[str, str] = {
+    "runbook": "RUNBOOK",
+    "playbook": "RUNBOOK",
+    "design_doc": "ARCH_SYSTEM",
+    "api_design_doc": "ARCH_APPLICATION",
+    "security_design": "ARCH_SYSTEM",
+    "migration_plan": "RUNBOOK",
+    "standard_guide": "STANDARD_GUIDE",
+    "baseline": "STANDARD_GUIDE",
+    "sop": "SOP",
+    "policy_doc": "STANDARD_GUIDE",
+    "change_request": "SOP",
+    "assessment": "STANDARD_GUIDE",
+    "adr": "ARCH_SYSTEM",
+    # ATO structured types
+    "ato_ssp": "ARCH_SYSTEM",
+    "ssp": "ARCH_SYSTEM",
+    "stig_checklist": "STANDARD_GUIDE",
+    "poam": "STANDARD_GUIDE",
+    "boundary_narrative": "ARCH_NETWORK",
+    "evidence_package": "STANDARD_GUIDE",
+}
+DOCGEN_DEFAULT_TEMPLATE: str = "ARCH_SYSTEM"
