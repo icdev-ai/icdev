@@ -1,0 +1,36 @@
+# CUI // SP-CTI
+# ICDEV Cortex facade configuration.
+#
+# search: settings for the Cortex search strategy router
+# (tools/cortex/search_service.py::search). Change behavior here, not in code.
+search:
+  router:
+    # Minimum taxonomy confidence required to route a fact_single query to the
+    # rag backend alone; below this the query is treated as ambiguous and
+    # fans out to search.fan_out.backends.
+    factual_confidence: 0.75
+
+  # Per-backend fan-out timeouts in seconds. A backend that exceeds its
+  # timeout is abandoned and the router returns partial results from the
+  # backends that finished. "default" applies to any backend without an
+  # explicit entry.
+  timeouts:
+    default: 10.0
+    rag: 10.0
+    graph: 8.0
+    dic: 10.0
+    kb: 5.0
+
+  fan_out:
+    # Backends queried in parallel when a query is ambiguous (2-3 recommended).
+    backends: [rag, graph, dic]
+    max_workers: 4
+
+  # Domain scoping hook (ctx-canvas-04): when ctx.domain matches a key here,
+  # the router intersects its backend selection with "backends" and records
+  # "collections" as the advisory collection scope in result metadata.
+  # Adapters do not yet consume the collection scope; ctx-canvas-04 wires it.
+  domains:
+    security:
+      backends: [rag, graph, kb]
+      collections: [security]
