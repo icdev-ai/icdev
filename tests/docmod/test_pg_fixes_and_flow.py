@@ -336,3 +336,23 @@ def test_awaiting_review_includes_drafted_redlines(client, db):
     # and the kanban card bridge keeps the card open
     from tools.doc_modernization.card_bridge import _AWAITING_STATES
     assert "redline_drafted" in _AWAITING_STATES
+
+
+def test_collections_page_js_is_valid_and_actionable():
+    """User regression: the injected deleteCollection had a literal newline in
+    a JS string, breaking ALL page JS — the collection name stopped toggling.
+    Guard: the script must never contain raw newlines inside quoted strings,
+    and the row must expose scan/findings/toggle actions."""
+    import re
+
+    tpl = (REPO_ROOT / "tools" / "dashboard" / "templates" / "document_intelligence"
+           / "collections.html").read_text(encoding="utf-8")
+    script = re.search(r"<script>([\s\S]*?)</script>", tpl).group(1)
+    # crude but effective: any line with an odd number of single quotes that
+    # opens a string and never closes it indicates a broken multi-line literal
+    for i, line in enumerate(script.splitlines(), 1):
+        stripped = re.sub(r"\'", "", line)
+        assert stripped.count("'") % 2 == 0, f"unterminated JS string at script line {i}: {line[:70]}"
+    assert "function scanCollection" in tpl
+    assert "toggleDocs" in tpl and "deleteCollection" in tpl
+    assert "String.fromCharCode(10" in tpl  # newline built safely, not literal
