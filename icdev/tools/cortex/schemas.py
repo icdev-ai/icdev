@@ -123,6 +123,11 @@ class CortexResult:
     ``data`` carries the structured payload behind the text, when one exists
     (e.g. the Cortex Analyst puts its result rows here: ``{"rows": [...],
     "row_count": N, "iqe": "..."}``). Search-style answers leave it empty.
+
+    ``metadata`` carries TRUST labels about the answer itself (not the
+    payload): the analyst records ``confidence`` ("include"/"flag"/"abstain"),
+    ``confidence_score``, ``grounding`` mode, and the citation-validation
+    report here so governance layers can gate without re-deriving them.
     """
 
     text: str = ""
@@ -134,6 +139,7 @@ class CortexResult:
     latency_ms: int = 0
     grounded: bool = False
     data: dict = field(default_factory=dict)
+    metadata: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -146,6 +152,7 @@ class CortexResult:
             "latency_ms": self.latency_ms,
             "grounded": self.grounded,
             "data": self.data,
+            "metadata": self.metadata,
         }
 
     @classmethod

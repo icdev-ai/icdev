@@ -67,7 +67,9 @@ def test_ask_returns_rows_and_citations():
     assert isinstance(cit, Citation)
     assert cit.source_type == "analyst"
     assert cit.source_table == "satellites"
-    assert "foreach" in cit.snippet  # citation carries the executed IQE
+    # ctx-analyst-03: the snippet is the row-summary evidence text; the
+    # executed IQE stays in data["iqe"].
+    assert cit.snippet.startswith("3 rows")
 
 
 def test_ask_applies_where_filter():

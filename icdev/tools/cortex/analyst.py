@@ -37,6 +37,20 @@ A shared safety layer runs before EITHER engine executes anything:
 Every safety rejection is audited (best-effort ``nlq_queries`` row with
 status ``blocked``) and raised as :class:`CortexQueryBlocked`.
 
+TRUST labeling (ctx-analyst-03): every result leaving ``ask()`` carries
+validated citations and a confidence label so governance layers can gate
+analyst answers exactly like search-derived ones. Each collection/table read
+gets a ``Citation(source_type="analyst")`` whose ``snippet`` is a compact row
+summary (the evidence text). Raw row answers are grounded by construction and
+marked ``grounding="rows_by_construction"``. When ``summarize=True`` produces
+LLM prose, the prose must carry inline ``[source: <id>]`` tags referencing
+those citations; the SHARED ``tools.quality.citation_grounding`` module
+(TRUST invariant — never re-implemented here) parses/validates the tags and
+scores attribution, and missing/hallucinated tags or an "abstain" attribution
+band flag the result ``grounded=False`` (a degrade, not a refusal — the text
+is returned, flagged, and the ``citation_validation`` gate records "fail"
+without setting ``governance.blocked``).
+
 NOTE ON IMPORT NAMESPACE: the IQE collection registry is a module-level
 singleton inside ``tools.iqe.executor``, and the ``tools/`` shim does NOT
 alias ``tools.iqe.*`` and ``icdev.tools.iqe.*`` to the same module objects.
@@ -57,6 +71,12 @@ from tools.iqe.executor import execute_query, list_collections
 from tools.iqe.nl_to_iqe import nl_to_iqe
 from tools.iqe.parser import IQESyntaxError, parse
 from tools.logging.icdev_logger import get_logger
+from tools.quality.citation_grounding import (
+    classify_confidence,
+    compute_attribution_score,
+    parse_citations,
+    validate_citations,
+)
 
 from .schemas import Citation, CortexContext, CortexResult, GovernanceReport
 
@@ -77,6 +97,10 @@ _GATE_NLQ_TRANSLATION = "nlq_translation"
 _GATE_SQL_READONLY = "sql_readonly"
 _GATE_ALLOWLIST = "table_allowlist"
 _GATE_NLQ_EXECUTION = "nlq_execution"
+# Citation/grounding gate (ctx-analyst-03): recorded only when the answer text
+# is LLM-summarized — raw row answers are grounded by construction and add no
+# gate entry, so the gate sequences asserted by ctx-analyst-01/-02 stay stable.
+_GATE_CITATION = "citation_validation"
 
 # IQE gate failures that make an auto-mode question eligible for the NLQ
 # fallback: the question could not be served, as opposed to a valid query
@@ -468,12 +492,144 @@ def _format_answer(rows: list[dict], targets: list[str], explanation: str) -> st
     return "\n".join(lines)
 
 
+# ---------------------------------------------------------------------------
+# Citations + confidence labeling (ctx-analyst-03) — TRUST layer on ask()
+# ---------------------------------------------------------------------------
+def _rows_snippet(rows: list, limit: int = 3) -> str:
+    """Compact row summary used as citation evidence (``Citation.snippet``).
+
+    This is the text attribution is scored against, so it holds data values,
+    not the executed query (that stays in ``data["iqe"]``/``data["sql"]``).
+    Rows from a join/union are not attributable per source deterministically,
+    so every citation on a multi-source result carries the same summary.
+    """
+    n = len(rows)
+    parts = [f"{n} row{'s' if n != 1 else ''}"]
+    for row in rows[:limit]:
+        parts.append(", ".join(f"{k}={row[k]!r}" for k in list(row)[:6]))
+    return "; ".join(parts)
+
+
+def _label_rows_result(result: CortexResult) -> CortexResult:
+    """Mark a raw row-only answer grounded by construction.
+
+    No LLM touched the answer text — every value is a real row from a
+    registered collection — so it is grounded without citation tags.
+    """
+    result.grounded = True
+    result.metadata.update(
+        {
+            "grounding": "rows_by_construction",
+            "confidence": "include",
+            "confidence_score": 1.0,
+        }
+    )
+    return result
+
+
+def _label_llm_result(result: CortexResult) -> CortexResult:
+    """Validate and grade an LLM-summarized answer via the SHARED grounding module.
+
+    Inline ``[source: <id>]`` tags are parsed/validated by
+    ``tools.quality.citation_grounding`` against this result's citation ids
+    (``source_id`` or ``source_table`` forms both accepted); attribution is
+    the best token-overlap of any citation snippet with the answer text.
+    ``grounded`` requires tags present, none hallucinated, and a non-"abstain"
+    attribution band. A defect degrades (result returned flagged) rather than
+    refuses, so the gate outcome is recorded without setting
+    ``governance.blocked`` — that flag means the question was refused.
+    """
+    allowed: set = set()
+    for c in result.citations:
+        allowed.update(x for x in (c.source_id, c.source_table) if x)
+    cited = parse_citations(result.text)
+    report = validate_citations(result.text, allowed)
+
+    attribution = {
+        c.source_id: compute_attribution_score(c.snippet, result.text)
+        for c in result.citations
+        if c.source_id
+    }
+    score = max(attribution.values(), default=0.0)
+    label = classify_confidence(score)
+
+    result.grounded = bool(cited) and report["valid"] and label != "abstain"
+    result.metadata.update(
+        {
+            "grounding": "llm_summary",
+            "confidence": label,
+            "confidence_score": score,
+            "citation_report": report,
+            "attribution": attribution,
+        }
+    )
+    result.governance.gates_run.append(_GATE_CITATION)
+    result.governance.outcomes[_GATE_CITATION] = "pass" if result.grounded else "fail"
+    return result
+
+
+def _llm_summarize(question: str, rows: list, citations: list) -> Optional[str]:
+    """LLM prose summary of the result rows; None degrades to the raw format.
+
+    The prompt requires an inline ``[source: <id>]`` tag per claim, citing
+    only this result's citation ids — but the output is never trusted:
+    ``_label_llm_result`` validates whatever comes back.
+    """
+    ids = ", ".join(c.source_id for c in citations if c.source_id)
+    evidence = "\n".join(f"[{c.source_id}] {c.snippet}" for c in citations if c.source_id)
+    try:
+        from tools.llm.provider import LLMRequest
+        from tools.llm.router import LLMRouter
+
+        response = LLMRouter().invoke(
+            "summarization",
+            LLMRequest(
+                system_prompt=(
+                    "Summarize the query result rows as a direct answer to the "
+                    "user's question, in at most 4 sentences. Every factual "
+                    "claim MUST end with an inline citation tag of the form "
+                    f"[source: <id>], using ONLY these source ids: {ids}. "
+                    "Never state a value that is not present in the rows."
+                ),
+                messages=[
+                    {
+                        "role": "user",
+                        "content": (
+                            f"Question: {question}\n\nEvidence:\n{evidence}\n\n"
+                            f"Rows:\n{rows[:20]!r}"
+                        ),
+                    }
+                ],
+                max_tokens=512,
+                temperature=0.0,
+                skip_injection_scan=True,  # question already passed _screen_question
+            ),
+        )
+        return (response.content or "").strip() or None
+    except Exception as exc:  # noqa: BLE001 — summarization is optional
+        logger.warning("cortex.analyst: LLM summarization unavailable: %s", exc)
+        return None
+
+
+def _finalize_result(result: CortexResult, question: str, summarize: bool) -> CortexResult:
+    """TRUST labeling applied to every result before it leaves ask()."""
+    if summarize:
+        rows = result.data.get("rows") or []
+        text = _llm_summarize(question, rows, result.citations) if rows else None
+        if text:
+            result.text = text
+            result.data["summarized"] = True
+            return _label_llm_result(result)
+    return _label_rows_result(result)
+
+
 def _ask_nlq(
     question: str,
     ctx: CortexContext,
     governance: GovernanceReport,
     started: float,
     mode: str,
+    summarize: bool = False,
 ) -> CortexResult:
     """NL→SQL path: nlq_processor generation, shared safety gates, execution.
 
@@ -525,19 +681,18 @@ def _ask_nlq(
             source_type="analyst",
             source_table=table,
             title=f"NL-to-SQL query over {table}",
-            snippet=sql,
+            snippet=_rows_snippet(rows),
             classification=ctx.classification or "CUI",
         )
         for table in tables
     ]
 
-    return CortexResult(
+    result = CortexResult(
         text=_format_answer(rows, tables, ""),
         citations=citations,
         governance=governance,
         provider="nlq",
         latency_ms=duration_ms,
-        grounded=True,
         data={
             "rows": rows,
             "row_count": results.get("row_count", len(rows)),
@@ -548,6 +703,7 @@ def _ask_nlq(
             "mode": mode,
         },
     )
+    return _finalize_result(result, question, summarize)
 
 
 def ask(
@@ -558,6 +714,7 @@ def ask(
     canvas: Optional[str] = None,
     collections: Optional[list[str]] = None,
     conn: Any = None,
+    summarize: bool = False,
 ) -> CortexResult:
     """Answer a natural-language data question (IQE primary, NL→SQL fallback).
 
@@ -578,12 +735,24 @@ def ask(
                      (and closed) via ``get_connection()`` when omitted. The
                      NLQ path always manages its own connection via
                      ``execute_safely``.
+        summarize:   When True, replace the deterministic row summary with
+                     LLM prose carrying inline ``[source: ...]`` tags, then
+                     validate the tags and grade attribution via the shared
+                     ``citation_grounding`` module. Missing/hallucinated tags
+                     or an "abstain" attribution band flag the result
+                     ``grounded=False``. An unavailable LLM degrades back to
+                     the deterministic (grounded-by-construction) summary.
 
     Returns:
         CortexResult — ``text`` is a formatted summary, ``data`` holds
         ``rows``/``row_count`` plus the executed ``iqe`` or ``sql``, and
         ``citations`` carries one ``Citation(source_type="analyst")`` per
-        collection/table read. ``provider`` is "iqe" or "nlq".
+        collection/table read (``snippet`` is a compact row summary).
+        ``provider`` is "iqe" or "nlq". ``metadata`` carries the TRUST
+        labels: ``confidence`` ("include"/"flag"/"abstain"),
+        ``confidence_score``, ``grounding`` ("rows_by_construction" or
+        "llm_summary"), and — on LLM-summarized answers — the
+        ``citation_report`` and per-source ``attribution`` scores.
 
     Raises:
         CortexQueryBlocked: the shared safety layer refused the question or
@@ -609,7 +778,7 @@ def ask(
     _screen_question(question, ctx, governance, started)
 
     if mode == "nlq":
-        return _ask_nlq(question, ctx, governance, started, mode)
+        return _ask_nlq(question, ctx, governance, started, mode, summarize)
 
     try:
         return _ask_iqe(
@@ -621,6 +790,7 @@ def ask(
             canvas=canvas,
             collections=collections,
             conn=conn,
+            summarize=summarize,
         )
     except CortexQueryBlocked:
         raise
@@ -641,7 +811,7 @@ def ask(
         # re-set blocked on the report the caller finally receives.
         governance.blocked = False
         try:
-            return _ask_nlq(question, ctx, governance, started, mode)
+            return _ask_nlq(question, ctx, governance, started, mode, summarize)
         except CortexAnalystError as nlq_exc:
             raise nlq_exc from exc
 
@@ -656,6 +826,7 @@ def _ask_iqe(
     canvas: Optional[str] = None,
     collections: Optional[list[str]] = None,
     conn: Any = None,
+    summarize: bool = False,
 ) -> CortexResult:
     """IQE-primary path: resolve → translate → authorize → execute."""
     try:
@@ -721,19 +892,18 @@ def _ask_iqe(
             source_type="analyst",
             source_table=target,
             title=f"IQE query over {target}",
-            snippet=iqe_str,
+            snippet=_rows_snippet(rows),
             classification=ctx.classification or "CUI",
         )
         for target in targets
     ]
 
-    return CortexResult(
+    result = CortexResult(
         text=_format_answer(rows, targets, explanation),
         citations=citations,
         governance=governance,
         provider="iqe",
         latency_ms=int((time.perf_counter() - started) * 1000),
-        grounded=True,
         data={
             "rows": rows,
             "row_count": len(rows),
@@ -743,3 +913,4 @@ def _ask_iqe(
             "mode": mode,
         },
     )
+    return _finalize_result(result, question, summarize)

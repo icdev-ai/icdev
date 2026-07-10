@@ -124,7 +124,9 @@ def test_parse_failure_falls_back_to_nlq(monkeypatch):
     assert g.outcomes["nlq_execution"] == "pass"
     assert g.blocked is False  # a degrade, not a refusal
     assert result.citations[0].source_table == "satellites"
-    assert result.citations[0].snippet == "SELECT id, name FROM satellites"
+    # ctx-analyst-03: the snippet is the row-summary evidence text; the
+    # executed SQL stays in data["sql"].
+    assert result.citations[0].snippet == "1 row; id=1, name='alpha'"
 
 
 def test_no_matching_collection_falls_back_to_nlq(monkeypatch):
