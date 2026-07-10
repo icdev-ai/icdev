@@ -267,3 +267,15 @@ register_collection("dic.handoff_sessions", handoff_sessions_adapter)
 register_collection("dic.handoff_items", handoff_items_adapter)
 register_collection("dic.generated_outputs", generated_outputs_adapter)
 register_collection("dic.techwriter_docs", techwriter_docs_adapter)
+
+
+def modernization_findings_adapter(conn: Any) -> list[dict]:
+    """Latest-state docmod findings (append-only supersede chains resolved)."""
+    try:
+        from tools.doc_modernization import get_findings
+        return get_findings(conn=conn)
+    except Exception:
+        return []
+
+
+register_collection("dic.modernization_findings", modernization_findings_adapter)

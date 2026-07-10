@@ -55,6 +55,17 @@
   </div>
 </div>
 
+<!-- docmod-hitl-05: Modernization findings panel -->
+<div id="mod-findings-panel" style="display:none;margin-bottom:18px;">
+  <div style="background:#140a24;border:1px solid #4a2a6e;border-radius:8px;padding:14px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+      <h3 style="margin:0;color:#a78bfa;font-size:13px;">🧭 Modernization Findings <span id="mod-findings-count" style="font-weight:400;color:#7a8cb0;"></span></h3>
+      <span style="color:#5a7aa0;font-size:10px;">Deterministic evidence · AI redlines are HITL-gated</span>
+    </div>
+    <div id="mod-findings-list"></div>
+  </div>
+</div>
+
 <!-- dsyn-patch-03: AI Suggestions panel -->
 <div id="ai-suggestions-panel" style="margin-bottom:18px;display:none;">
   <div style="background:#1a1a0a;border:1px solid #5a3a1a;border-radius:8px;padding:14px;">
@@ -81,10 +92,11 @@
     {% if doc.template_type %}<span style="margin-left:8px;font-size:10px;background:#1a1a3a;color:#a78bfa;padding:2px 8px;border-radius:8px;">{{ doc.template_type | replace('_', ' ') }}</span>{% endif %}
   </h3>
   {% for s in sections %}
-  <div style="background:#0b1726;border:1px solid #1a3560;border-radius:8px;padding:16px;margin-bottom:14px;" id="sec-{{ s.section_id }}">
+  <div style="background:#0b1726;border:1px solid #1a3560;border-radius:8px;padding:16px;margin-bottom:14px;" id="sec-{{ s.section_id }}" data-heading="{{ s.heading }}">
     <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px;">
       <div>
         <strong style="color:#eaeaea;font-size:14px;">{{ s.heading }}</strong>
+        <span class="mod-badges" data-heading="{{ s.heading }}"></span>
         <span style="margin-left:8px;font-size:10px;padding:2px 7px;border-radius:3px;
           {% if s.status == 'approved' %}background:#052e16;color:#4ade80;{% elif s.status == 'pending_review' %}background:#1a2e52;color:#7ab3f0;{% elif s.status == 'rejected' %}background:#2e0505;color:#f87171;{% elif s.status == 'needs_revision' %}background:#2e1a05;color:#fbbf24;{% else %}background:#1e293b;color:#94a3b8;{% endif %}">
           {{ s.status or 'draft' }}
@@ -1175,6 +1187,65 @@ function _presenceInit(docId) {
 </div>
 
 <script>
+// ── docmod-hitl-05: modernization findings + inline badges ───────────────────
+var MOD_TYPE_LABELS = {eol_hardware:'EOL HW', eol_software:'EOL SW', deprecated_tech:'Deprecated',
+                       stale_reference:'Stale ref', superseded_standard:'Superseded',
+                       defacto_divergence:'Divergence', catalog_gap:'Catalog gap'};
+var MOD_SEV_COLORS = {critical:'#f87171', high:'#fb923c', medium:'#fbbf24', low:'#94a3b8', info:'#7a8cb0'};
+
+fetch('/document-intelligence/api/modernization/doc/{{ doc.doc_id }}/findings')
+  .then(function(r){ return r.json(); })
+  .then(function(findings) {
+    if (!findings || !findings.length) return;
+    // inline badges on matching section headers
+    findings.forEach(function(f) {
+      if (!f.section_heading) return;
+      document.querySelectorAll('.mod-badges').forEach(function(el) {
+        if ((el.dataset.heading || '').toLowerCase() !== f.section_heading.toLowerCase()) return;
+        var chip = document.createElement('span');
+        chip.title = (f.rationale || '') + (f.evidence || []).map(function(e){ return '
+• ' + e.source + ': ' + (e.detail || ''); }).join('');
+        chip.style.cssText = 'margin-left:6px;font-size:10px;padding:2px 7px;border-radius:3px;background:#2a1a3a;color:' + (MOD_SEV_COLORS[f.severity] || '#a78bfa') + ';cursor:help;';
+        chip.textContent = '🧭 ' + (MOD_TYPE_LABELS[f.finding_type] || f.finding_type) + ': ' + f.entity_label;
+        el.appendChild(chip);
+      });
+    });
+    // findings panel with redline links + resolve actions
+    var panel = document.getElementById('mod-findings-panel');
+    var list = document.getElementById('mod-findings-list');
+    document.getElementById('mod-findings-count').textContent = '(' + findings.length + ')';
+    list.innerHTML = findings.map(function(f) {
+      var redline = f.redline_suggestion_id
+        ? '<span style="background:#1a2e08;color:#7fd8a0;padding:1px 6px;border-radius:3px;font-size:10px;">✏️ redline drafted — review it in the ⚡ suggestions panel of section '' + (f.section_heading || '') + ''</span>'
+        : '<span style="color:#5a7aa0;font-size:10px;">no redline yet</span>';
+      var rec = f.recommended_replacement
+        ? '<div style="color:#7fd8a0;font-size:11px;margin-top:2px;">→ recommended: ' + f.recommended_replacement + '</div>' : '';
+      return '<div style="border-bottom:1px solid #241640;padding:8px 0;display:flex;justify-content:space-between;gap:10px;align-items:start;">'
+        + '<div><span style="color:' + (MOD_SEV_COLORS[f.severity] || '#a78bfa') + ';font-size:11px;font-weight:700;">'
+        + (MOD_TYPE_LABELS[f.finding_type] || f.finding_type) + '</span> '
+        + '<span style="color:#eaeaea;font-size:12px;">' + f.entity_label + '</span> '
+        + '<span style="color:#7a8cb0;font-size:11px;">(' + (f.section_heading || 'document') + ')</span>'
+        + '<div style="color:#94a3b8;font-size:11px;margin-top:2px;">' + (f.rationale || '') + '</div>' + rec
+        + '<div style="margin-top:4px;">' + redline + '</div></div>'
+        + '<div style="white-space:nowrap;">'
+        + '<button onclick="resolveFinding('' + f.finding_id + '', 'accepted')" style="background:#052e16;color:#4ade80;border:1px solid #14532d;border-radius:4px;font-size:10px;cursor:pointer;padding:3px 8px;margin-right:4px;">✓ Resolved</button>'
+        + '<button onclick="resolveFinding('' + f.finding_id + '', 'rejected')" style="background:#2e0505;color:#f87171;border:1px solid #7f1d1d;border-radius:4px;font-size:10px;cursor:pointer;padding:3px 8px;">✕ Not an issue</button>'
+        + '</div></div>';
+    }).join('');
+    panel.style.display = 'block';
+  })
+  .catch(function(){ /* engine not installed */ });
+
+function resolveFinding(findingId, disposition) {
+  fetch('/document-intelligence/api/modernization/findings/' + findingId + '/resolve', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({disposition: disposition})
+  }).then(function(r){ return r.json(); }).then(function(d) {
+    if (d.error) { alert('Resolve failed: ' + d.error); return; }
+    location.reload();
+  });
+}
+
 // dsyn-suggest-01: Suggest Edit modal
 function openSuggestModal(sectionId, heading, currentContent) {
   document.getElementById('sug-modal-section-id').value = sectionId;

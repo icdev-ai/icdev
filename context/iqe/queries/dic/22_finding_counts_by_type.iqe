@@ -1,0 +1,5 @@
+# IQE-DIC-022: Modernization finding counts by type
+# Corpus-level staleness profile for reporting.
+
+foreach f in dic.modernization_findings
+select f.finding_type, f.currency_verdict, f.severity

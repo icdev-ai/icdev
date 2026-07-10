@@ -11405,6 +11405,50 @@ if __name__ == "__main__":
     except Exception as _ks_err:
         print(f"[ICDEV™ Dashboard] Kanban scheduler failed to start: {_ks_err}")
 
+    # ── DIC freshness scan daemon (docmod-ux-01) ───────────────────────────
+    # Keeps freshness scores + modernization findings live even when the
+    # Genesis daemon isn't running. ICDEV_DIC_FRESHNESS_SCAN_HOURS: default 24,
+    # 0 disables. Exception-safe per tick; never starts under pytest.
+    try:
+        _fs_hours = float(os.environ.get("ICDEV_DIC_FRESHNESS_SCAN_HOURS", "24") or 0)
+        if _fs_hours > 0 and not os.environ.get("PYTEST_CURRENT_TEST"):
+            import threading as _fs_threading
+
+            def _dic_freshness_daemon():
+                import time as _ft
+                while True:
+                    _ft.sleep(_fs_hours * 3600)
+                    try:
+                        from tools.document_intelligence.freshness_engine import scan_collection as _fs_scan
+                        from tools.db.storage import get_connection as _fs_conn
+                        _c = _fs_conn()
+                        try:
+                            _rows = _c.execute(
+                                "SELECT collection_id FROM dic_collections"
+                            ).fetchall()
+                        finally:
+                            _c.close()
+                        for _r in _rows:
+                            try:
+                                _fs_scan(dict(_r)["collection_id"])
+                            except Exception:
+                                pass  # one collection must not kill the tick
+                    except Exception as _fe:
+                        print(f"[ICDEV™ Dashboard] DIC freshness daemon tick error: {_fe}")
+                    try:  # docmod sweep hook — graceful before engine install
+                        from tools.doc_modernization.scanner import scan_collection as _dm_scan
+                        _dm_scan(collection_id=None, trigger="daemon")
+                    except Exception:
+                        pass
+
+            _fs_t = _fs_threading.Thread(
+                target=_dic_freshness_daemon, name="dic-freshness-scan-daemon", daemon=True
+            )
+            _fs_t.start()
+            print(f"[ICDEV™ Dashboard] DIC freshness scan daemon started (every {_fs_hours}h)")
+    except Exception as _fs_err:
+        print(f"[ICDEV™ Dashboard] DIC freshness daemon failed to start: {_fs_err}")
+
     # Optional inbound TLS / mTLS (IL5+/GovCloud). Env vars:
     #   ICDEV_DASHBOARD_TLS_CERT      server certificate (PEM)
     #   ICDEV_DASHBOARD_TLS_KEY       server private key (PEM)
