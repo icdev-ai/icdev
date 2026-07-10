@@ -963,6 +963,41 @@ routing:
     chain: [kimi-cloud, qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
     effort: medium
 
+  # Document Modernization redlines (docmod) — cited replacement prose around
+  # deterministic findings. Kimi cloud primary (user's provider), local qwen3
+  # fallback; cloud alternates only if configured. Provider selection is
+  # entirely THIS file — never hardcoded in tools/doc_modernization/.
+  docmod_redline:
+    chain: [kimi-cloud, qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
+    effort: medium
+
+  # ICDEV Cortex facade (tools/cortex/api.py) — one routing entry per facade
+  # function so admins retune Cortex here, never in code. complete() is
+  # general-purpose drafting; classify() and extract() are short structured
+  # calls routed to the cheap tier first.
+  cortex_complete:
+    chain: [kimi-cloud, qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
+    effort: medium
+
+  cortex_classify:
+    chain: [qwen3-local, kimi-cloud, gpt-4o-mini, gemini-2.0-flash, claude-haiku, llama-local]
+    effort: low
+
+  cortex_extract:
+    chain: [qwen3-local, kimi-cloud, claude-sonnet, gpt-4o-mini, gemini-2.0-flash, llama-local]
+    effort: low
+
+  # Short query-rewrite calls issued by the Cortex unified search fan-out
+  # (CRAG corrective retrieval) — cheap tier first, local model available.
+  cortex_search_rewrite:
+    chain: [qwen3-local, kimi-cloud, gpt-4o-mini, gemini-2.0-flash, claude-haiku, llama-local]
+    effort: low
+
+  # Cortex analyst (NLQ over platform data) — reasoning-heavy, mid tier.
+  cortex_analyst:
+    chain: [kimi-cloud, qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
+    effort: medium
+
 # -----------------------------------------------------------------------
 # Per-Agent Effort Defaults (Enhancement #4 — used by agent_executor)
 # -----------------------------------------------------------------------
