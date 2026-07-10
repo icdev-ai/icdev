@@ -68,7 +68,7 @@ CORTEX_CONFIG_DEFAULTS: Dict = {
         "strategy_weights": {"rag": 1.0, "graph": 0.8, "dic": 0.9, "kb": 0.6},
         "rrf_k": 60,
         "crag_threshold": 0.55,
-        "fan_out_timeouts": {"default": 8.0},
+        "timeouts": {"default": 10.0},
     },
     "governance": {
         "fail_closed": True,

@@ -297,7 +297,7 @@ def test_repo_cortex_config_has_required_blocks():
     assert set(search["strategy_weights"]) == {"rag", "graph", "dic", "kb"}
     assert search["rrf_k"] == 60
     assert 0.0 < search["crag_threshold"] < 1.0
-    assert "default" in search["fan_out_timeouts"]
+    assert "default" in search["timeouts"]
     governance = config["governance"]
     assert governance["fail_closed"] is True
     assert governance["skip_grounding_for_plain_complete"] is True

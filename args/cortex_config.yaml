@@ -1,12 +1,13 @@
 # CUI // SP-CTI
 # -----------------------------------------------------------------------
-# ICDEV Cortex behavior configuration (ctx-core-03)
+# ICDEV Cortex behavior configuration
 # -----------------------------------------------------------------------
-# Consumed via tools/cortex/api.py::load_cortex_config(). Later Cortex
-# search / governance / analyst modules read these values instead of
-# hardcoding them — admins retune Cortex here, never in code.
+# Consumed via tools/cortex/config.py::load_cortex_config() (defaults +
+# deep-merge + $ICDEV_CORTEX_CONFIG override) and by the search strategy
+# router (tools/cortex/search_service.py::search). Change behavior here,
+# not in code.
 #
-# Resolution order (tools/cortex/api.py::resolve_cortex_config_path):
+# Resolution order (tools/cortex/config.py::resolve_cortex_config_path):
 #   1. $ICDEV_CORTEX_CONFIG — explicit override
 #   2. cortex_config.yaml next to the resolved args/llm_config.yaml
 #      (single-source rule from PR #139: resolve_llm_config_path())
@@ -15,6 +16,12 @@
 # edit here and copy across, same as args/llm_config.yaml.
 
 search:
+  router:
+    # Minimum taxonomy confidence required to route a fact_single query to the
+    # rag backend alone; below this the query is treated as ambiguous and
+    # fans out to search.fan_out.backends.
+    factual_confidence: 0.75
+
   # Per-backend fusion weights for the unified search fan-out. Keys are the
   # normalized CORTEX_BACKENDS names (tools/cortex/schemas.py).
   strategy_weights:
@@ -31,14 +38,30 @@ search:
   # (routing function cortex_search_rewrite) and retries.
   crag_threshold: 0.55
 
-  # Per-backend fan-out timeout budget, seconds. `default` applies to any
-  # backend without an explicit entry.
-  fan_out_timeouts:
-    rag: 8.0
-    graph: 5.0
-    dic: 8.0
-    kb: 3.0
-    default: 8.0
+  # Per-backend fan-out timeouts in seconds. A backend that exceeds its
+  # timeout is abandoned and the router returns partial results from the
+  # backends that finished. "default" applies to any backend without an
+  # explicit entry.
+  timeouts:
+    default: 10.0
+    rag: 10.0
+    graph: 8.0
+    dic: 10.0
+    kb: 5.0
+
+  fan_out:
+    # Backends queried in parallel when a query is ambiguous (2-3 recommended).
+    backends: [rag, graph, dic]
+    max_workers: 4
+
+  # Domain scoping hook (ctx-canvas-04): when ctx.domain matches a key here,
+  # the router intersects its backend selection with "backends" and records
+  # "collections" as the advisory collection scope in result metadata.
+  # Adapters do not yet consume the collection scope; ctx-canvas-04 wires it.
+  domains:
+    security:
+      backends: [rag, graph, kb]
+      collections: [security]
 
 governance:
   # Fail-closed grounding for CUI+ content: when the TRUST pipeline cannot

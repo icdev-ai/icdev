@@ -25,6 +25,7 @@ from .schemas import (
     CortexSearchResult,
     GovernanceReport,
 )
+from .search_service import CORTEX_STRATEGIES, classify_route, search
 
 __all__ = [
     "AIRGAP_ENV_VAR",
@@ -35,6 +36,7 @@ __all__ = [
     "CORTEX_EXTRACT_FUNCTION",
     "CORTEX_ROUTING_FUNCTIONS",
     "CORTEX_SEARCH_REWRITE_FUNCTION",
+    "CORTEX_STRATEGIES",
     "Citation",
     "CortexAirgapError",
     "CortexContext",
@@ -44,8 +46,10 @@ __all__ = [
     "airgap_active",
     "assert_airgap_ready",
     "classify",
+    "classify_route",
     "complete",
     "extract",
     "load_cortex_config",
     "resolve_cortex_config_path",
+    "search",
 ]
