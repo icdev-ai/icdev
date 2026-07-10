@@ -36,6 +36,7 @@ REGISTRY: List[ReflexEntry] = [
     # ── CORE ─────────────────────────────────────────────────────────────────
     ReflexEntry("research",          CORE,      1.0,  "Autonomous research and knowledge synthesis"),
     ReflexEntry("scout",             CORE,      2.0,  "Scan for new tasks and surface opportunities"),
+    ReflexEntry("doc_modernization_sweep", DOMAIN, 24.0, "Nightly document modernization: EOL/defacto evidence refresh, stale-doc scan, TRUST redlines, kanban rollups"),
     ReflexEntry("ingest",            CORE,      1.0,  "Ingest external data into the knowledge graph"),
     ReflexEntry("learn",             CORE,      6.0,  "Consolidate memory and update embeddings"),
     ReflexEntry("heal",              CORE,      4.0,  "Self-healing: detect and remediate drift"),

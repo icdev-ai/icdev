@@ -1,0 +1,89 @@
+# CUI // SP-CTI
+# DocGen Wizard template gallery — hot-reloaded (mtime) like profiles.yaml.
+# Editing this file takes effect without a restart. The Python TEMPLATE_GALLERY
+# list in tools/docgen/domain_profiles.py is the fallback when this file is
+# absent. (docmod-ux-03: gallery moved out of code; SOP/Policy/Standard added.)
+templates:
+- id: tpl-network-runbook
+  name: Network Runbook
+  description: Standard operating procedures for network infrastructure management
+  doc_type: runbook
+  domain: network
+  query_string: >-
+    Generate a comprehensive network runbook covering device roles, maintenance
+    procedures, escalation paths, and change management protocols.
+  ace_roles: [network_engineer, technical_writer]
+  icon: net
+- id: tpl-ir-playbook
+  name: Incident Response Playbook
+  description: Step-by-step IR procedures for network security incidents
+  doc_type: playbook
+  domain: security
+  query_string: >-
+    Generate a network incident response playbook covering detection, containment,
+    eradication, recovery, and lessons learned phases.
+  ace_roles: [security_analyst, technical_writer]
+  icon: ir
+- id: tpl-config-baseline
+  name: Configuration Baseline
+  description: Approved configuration standards for network devices
+  doc_type: baseline
+  domain: network
+  query_string: >-
+    Generate a configuration baseline document covering hardening standards,
+    approved configurations, deviation procedures, and compliance requirements.
+  ace_roles: [network_engineer, compliance_officer]
+  icon: cfg
+- id: tpl-ato-package
+  name: ATO Evidence Package
+  description: FedRAMP/DoD ATO package with SSP, POAM, and control narratives
+  doc_type: ato_ssp
+  domain: security
+  query_string: >-
+    Generate a FedRAMP ATO evidence package covering system boundary,
+    control implementations, POAM items, and continuous monitoring strategy.
+  ace_roles: [compliance_officer, ato_author, technical_writer]
+  icon: ato
+- id: tpl-change-request
+  name: Change Request
+  description: Network change request with risk assessment and rollback plan
+  doc_type: change_request
+  domain: network
+  query_string: >-
+    Generate a network change request document covering change description,
+    risk assessment, implementation steps, rollback plan, and testing criteria.
+  ace_roles: [network_engineer, technical_writer]
+  icon: cr
+- id: tpl-sop
+  name: Standard Operating Procedure (SOP)
+  description: Purpose, scope, responsibilities, step-by-step procedure, verification, rollback
+  doc_type: sop
+  domain: standard_guide
+  query_string: >-
+    Generate a standard operating procedure covering purpose, scope,
+    responsibilities, prerequisites, the step-by-step procedure, verification
+    steps, and rollback plan.
+  ace_roles: [technical_writer]
+  icon: sop
+- id: tpl-policy
+  name: Policy Document
+  description: Enterprise policy with policy statements, roles, compliance mapping, review cycle
+  doc_type: policy_doc
+  domain: compliance
+  query_string: >-
+    Generate an enterprise policy document covering policy statements, scope
+    and applicability, roles and responsibilities, compliance requirements,
+    exceptions process, and review cycle.
+  ace_roles: [compliance_officer, technical_writer]
+  icon: pol
+- id: tpl-standard-guide
+  name: Standard / Technical Guide
+  description: Enterprise technical standard with scope, controls, implementation, references
+  doc_type: standard_guide
+  domain: standard_guide
+  query_string: >-
+    Generate an enterprise technical standard covering executive summary,
+    scope and applicability, mandated technologies and versions, security
+    controls, implementation steps, operational procedures, and references.
+  ace_roles: [technical_writer, compliance_officer]
+  icon: std
