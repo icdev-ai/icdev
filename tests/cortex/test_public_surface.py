@@ -12,7 +12,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
-CORTEX_MODULES = ["__init__.py", "api.py", "config.py", "schemas.py", "search_service.py"]
+CORTEX_MODULES = ["__init__.py", "api.py", "config.py", "governance.py", "schemas.py", "search_service.py"]
 
 
 # ---------------------------------------------------------------------------

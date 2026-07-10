@@ -17,6 +17,12 @@ from .api import (
     load_cortex_config,
     resolve_cortex_config_path,
 )
+from .governance import (
+    GATE_ORDER,
+    GovernanceBlockedError,
+    GovernancePipeline,
+    governed,
+)
 from .schemas import (
     CORTEX_BACKENDS,
     Citation,
@@ -42,6 +48,9 @@ __all__ = [
     "CortexContext",
     "CortexResult",
     "CortexSearchResult",
+    "GATE_ORDER",
+    "GovernanceBlockedError",
+    "GovernancePipeline",
     "GovernanceReport",
     "airgap_active",
     "assert_airgap_ready",
@@ -49,6 +58,7 @@ __all__ = [
     "classify_route",
     "complete",
     "extract",
+    "governed",
     "load_cortex_config",
     "resolve_cortex_config_path",
     "search",

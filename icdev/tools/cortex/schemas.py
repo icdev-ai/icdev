@@ -100,9 +100,10 @@ class GovernanceReport:
     """Record of the governance gates applied to one Cortex invocation."""
 
     gates_run: list = field(default_factory=list)  # gate names, in execution order
-    outcomes: dict = field(default_factory=dict)  # gate name -> "pass" | "warn" | "fail"
+    outcomes: dict = field(default_factory=dict)  # gate name -> "pass" | "warn" | "fail" | "skip"
     redactions_applied: int = 0
     blocked: bool = False
+    blocked_reason: str = ""  # populated when blocked is True
 
     def to_dict(self) -> dict:
         return asdict(self)
