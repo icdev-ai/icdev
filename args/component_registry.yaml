@@ -1343,6 +1343,12 @@ components:
     - label: RFI Workbench
       href: /rfi/
       enabled: true
+    - label: Capture Strategy
+      href: /capture/strategy
+      enabled: true
+    - label: Evidence Library
+      href: /capture/evidence
+      enabled: true
   iqe:
     adapter_module: tools.iqe.adapters.rfi_canvas
     collections:
