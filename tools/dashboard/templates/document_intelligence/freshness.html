@@ -227,6 +227,9 @@ function toggleFindingsPanel() {
         var rec = f.recommended_replacement
           ? '<span style="color:#7fd8a0;">' + f.recommended_replacement + '</span>'
           : '<span style="color:#5a7aa0;">flag only — review &amp; remove</span>';
+        if (f.redline_suggestion_id) {
+          rec = '<span style="background:#1a2e08;color:#7fd8a0;padding:1px 6px;border-radius:3px;font-size:10px;margin-right:4px;">✏️ redline ready</span>' + rec;
+        }
         return '<tr style="border-bottom:1px solid #241640;cursor:pointer;" onclick="window.location=\'' + docLink + '\'">'
           + '<td style="padding:6px;"><span style="background:#2a1a3a;color:#a78bfa;padding:1px 6px;border-radius:3px;font-size:10px;">' + (TYPE_LABELS[f.finding_type] || f.finding_type) + '</span></td>'
           + '<td style="padding:6px;color:' + (SEV_COLORS[f.severity] || '#94a3b8') + ';">' + f.severity + '</td>'

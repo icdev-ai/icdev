@@ -40,10 +40,16 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+# 'Awaiting review' = open AND redline_drafted: once the sweep drafts a
+# redline the finding still needs a human — it must never drop off the board.
+_AWAITING_STATES = ("open", "redline_drafted")
+
+
 def _open_findings(doc_id: str | None = None) -> list[dict]:
     try:
         from tools.doc_modernization import get_findings
-        return get_findings(doc_id=doc_id, state="open")
+        return [f for f in get_findings(doc_id=doc_id)
+                if f.get("state") in _AWAITING_STATES]
     except Exception as exc:
         logger.debug("dic modernization: engine unavailable: %s", exc)
         return []
@@ -63,7 +69,12 @@ def api_modernization_findings():
     limit = min(int(request.args.get("limit", 200) or 200), 1000)
     try:
         from tools.doc_modernization import get_findings
-        findings = get_findings(state=state, finding_type=finding_type)[:limit]
+        if state == "open":
+            # default view = awaiting review (open + redline_drafted)
+            findings = [f for f in get_findings(finding_type=finding_type)
+                        if f.get("state") in _AWAITING_STATES][:limit]
+        else:
+            findings = get_findings(state=state, finding_type=finding_type)[:limit]
     except Exception as exc:
         logger.debug("dic modernization: engine unavailable: %s", exc)
         return jsonify([])

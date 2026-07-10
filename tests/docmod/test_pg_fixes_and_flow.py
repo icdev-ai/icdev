@@ -287,3 +287,52 @@ def test_freshness_template_findings_visibility_markup():
     assert "findings-panel-body" in tpl
     assert "/api/modernization/findings" in tpl
     assert "not scored" in tpl                   # findings-only docs render as rows
+
+
+def test_awaiting_review_includes_drafted_redlines(client, db):
+    """User-visible regression: the sweep drafted redlines and 9 findings
+    vanished from every surface — redline_drafted is still awaiting review."""
+    import tools.document_intelligence.blueprint  # noqa: F401
+    from tools.db.storage import get_connection
+
+    doc_id = _seed_chunked_doc(collection_id="col-await")
+    from tools.doc_modernization.packs.crypto_protocols import CryptoProtocolsPack
+    from tools.doc_modernization.scanner import scan_document
+
+    scan_document(doc_id, packs={"crypto_protocols": CryptoProtocolsPack(
+        config={"pack_id": "crypto_protocols"})}, force=True)
+
+    # simulate the sweep: append a redline_drafted state row for the finding
+    from tools.doc_modernization import get_findings
+    f = get_findings(doc_id=doc_id, state="open")[0]
+    conn = get_connection()
+    conn.execute(
+        """INSERT INTO docmod_findings
+           (finding_id, run_id, doc_id, version_id, pack_id, entity_label, entity_type,
+            finding_type, currency_verdict, severity, state, supersedes_id,
+            redline_suggestion_id, dedupe_key, created_at)
+           SELECT 'fnd-drafted-x', run_id, doc_id, version_id, pack_id, entity_label,
+                  entity_type, finding_type, currency_verdict, severity,
+                  'redline_drafted', finding_id, 'sug_x', dedupe_key,
+                  '2026-07-10T23:59:59'
+           FROM docmod_findings WHERE finding_id = %s""",
+        (f["finding_id"],),
+    )
+    conn.commit()
+    conn.close()
+
+    # default findings list still shows it, flagged with the redline pointer
+    rows = client.get(
+        "/document-intelligence/api/modernization/findings"
+    ).get_json()
+    mine = [r for r in rows if r["doc_id"] == doc_id]
+    assert mine and mine[0]["state"] == "redline_drafted"
+    assert mine[0]["redline_suggestion_id"] == "sug_x"
+
+    # summary counts it too
+    summary = client.get("/document-intelligence/api/modernization/summary").get_json()
+    assert any(d["doc_id"] == doc_id for d in summary["documents"])
+
+    # and the kanban card bridge keeps the card open
+    from tools.doc_modernization.card_bridge import _AWAITING_STATES
+    assert "redline_drafted" in _AWAITING_STATES
