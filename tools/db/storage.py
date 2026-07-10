@@ -52,6 +52,9 @@ import os
 import re
 import sqlite3
 from pathlib import Path
+
+#: Tables whose column-masking failure has already been reported (warn once each).
+_MASK_FAILURE_WARNED: set[str] = set()
 from typing import Any, Optional
 
 from tools.config.core_profile import profile_default
@@ -945,6 +948,17 @@ class StorageCursor:
                 return row
             return DictRow(mask_columns(row_dict, policies))
         except Exception:
+            # Fail-open by design (a masking error must not break reads), but it
+            # must never be silent: an ImportError here previously disabled every
+            # column policy in the installed package with no trace. Warn once per
+            # table so the leak is visible without flooding per-row.
+            table = self._table_name or "?"
+            if table not in _MASK_FAILURE_WARNED:
+                _MASK_FAILURE_WARNED.add(table)
+                get_logger(__name__).exception(
+                    "column masking FAILED for table %r (role=%r); returning UNMASKED row",
+                    table, role,
+                )
             return row
 
     def fetchmany(self, size=None):

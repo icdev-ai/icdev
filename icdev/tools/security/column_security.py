@@ -33,16 +33,31 @@ logger = get_logger("security.column")
 
 _BASE_DIR = Path(__file__).resolve().parent.parent.parent
 _CONFIG_PATH = _BASE_DIR / "args" / "security_config.yaml"
+# Installed layout: sync_package_tree.py ships args/ under <package>/data/args/,
+# so the source-checkout path above does not exist inside the wheel. Without this
+# fallback every column policy silently resolved to "no policy" (unmasked).
+_PACKAGED_CONFIG_PATH = _BASE_DIR / "data" / "args" / "security_config.yaml"
+
+
+def _resolve_config_path() -> Path:
+    """Return the security config path for the current layout (source or wheel)."""
+    if _CONFIG_PATH.exists():
+        return _CONFIG_PATH
+    return _PACKAGED_CONFIG_PATH
 
 
 def _load_config() -> dict:
-    if not _CONFIG_PATH.exists():
+    path = _resolve_config_path()
+    if not path.exists():
+        logger.warning("column masking: security_config.yaml not found (looked in %s, %s)",
+                       _CONFIG_PATH, _PACKAGED_CONFIG_PATH)
         return {}
     try:
         import yaml  # type: ignore[import-untyped]
-        with open(_CONFIG_PATH, "r", encoding="utf-8") as fh:
+        with open(path, "r", encoding="utf-8") as fh:
             return yaml.safe_load(fh) or {}
     except Exception:
+        logger.exception("column masking: failed to load %s", path)
         return {}
 
 
