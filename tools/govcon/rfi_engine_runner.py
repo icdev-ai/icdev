@@ -46,6 +46,19 @@ _EVIDENCE_SOURCE_TYPES = [
     "prior_submissions",
 ]
 
+# 'primary' evidence is a document we actually submitted or were graded on.
+# Everything else is 'derived' — prose this system generated that a human approved.
+# The tier follows from the source_type rather than a chunk metadata field, because
+# metadata_cols must map to real table columns for the batch ingest path.
+_PRIMARY_SOURCE_TYPES = frozenset({"prior_submissions"})
+
+# Outcomes whose prose must never be reused as supporting evidence.
+_NON_CITABLE_OUTCOMES = frozenset({"lost"})
+
+
+def evidence_tier(source_type: str) -> str:
+    return "primary" if source_type in _PRIMARY_SOURCE_TYPES else "derived"
+
 # Max characters contributed per source (before weight-scaling)
 _MAX_CHARS_PER_SOURCE = 1200
 
@@ -331,21 +344,33 @@ def _gather_prior_submissions(topic: str, max_chars: int) -> str:
     evidence is listed first, and the tier is stated inline so the model — and the
     reviewer reading the Sources panel — can tell ground truth from our own words.
     """
-    results = _rag_search(topic, top_k=6, source_types=_EVIDENCE_SOURCE_TYPES)
+    results = _rag_search(topic, top_k=8, source_types=_EVIDENCE_SOURCE_TYPES)
 
-    def _tier(r) -> str:
-        return (r.metadata or {}).get("evidence_tier", "derived")
+    # A lost proposal's prose is not persuasive evidence. Its lessons belong in the
+    # capture strategy (pg_win_loss_records.lessons_learned), not in the next draft.
+    results = [r for r in results if (r.metadata or {}).get("outcome") not in _NON_CITABLE_OUTCOMES]
 
     # Primary evidence outranks derived, then fall back to the retriever's score.
-    results.sort(key=lambda r: (_tier(r) != "primary", -r.final_score))
+    results.sort(key=lambda r: (evidence_tier(r.source_type) != "primary", -r.final_score))
+    results = results[:6]
 
     parts = []
     for result in results:
         text = (result.content or "").strip()
         if not text:
             continue
-        parts.append(f"- [source: {result.source_id}] ({_tier(result)}) {text[:280]}")
-    return "\n".join(parts)[:max_chars]
+        tier = evidence_tier(result.source_type)
+        parts.append(f"- [source: {result.source_id}] ({tier}) {text[:280]}")
+
+    if not parts:
+        return ""
+
+    header = (
+        "Evidence marked (primary) comes from a document we submitted or were graded on. "
+        "Evidence marked (derived) is our own previously-approved prose: reuse its framing, "
+        "but do not treat it as proof of a number, a metric, or a customer outcome."
+    )
+    return (header + "\n" + "\n".join(parts))[:max_chars]
 
 
 def _gather_innovation_signals(topic: str, max_chars: int) -> str:

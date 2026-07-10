@@ -28,6 +28,7 @@ import argparse
 import json
 import os
 import sys
+import threading
 import uuid
 from tools.db.storage import get_connection
 from datetime import datetime, timezone
@@ -1019,12 +1020,29 @@ def approve_draft(draft_id, reviewer="human", notes="", force_placeholders=False
     conn.commit()
     conn.close()
 
+    # Approved prose becomes reusable evidence for the next pursuit. Backgrounded so
+    # approval stays responsive; promote_proposal_draft is idempotent, never raises,
+    # and declines drafts that were force-approved past a gate.
+    threading.Thread(
+        target=_promote_evidence_background, args=(approved_id,), daemon=True
+    ).start()
+
     return {
         "status": "ok",
         "approved_draft_id": approved_id,
         "original_draft_id": draft_id,
         "reviewer": reviewer,
     }
+
+
+def _promote_evidence_background(approved_draft_id):
+    """Index an approved proposal draft into the evidence corpus. Never raises."""
+    try:
+        from tools.govcon.evidence_corpus import promote_proposal_draft
+
+        promote_proposal_draft(approved_draft_id)
+    except Exception as exc:
+        print(f"Warning: evidence promotion failed: {exc}", file=sys.stderr)
 
 
 # ── CLI ───────────────────────────────────────────────────────────────
