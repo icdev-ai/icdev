@@ -14,7 +14,6 @@ handles missing/invalid entries gracefully.
 
 from __future__ import annotations
 
-import contextlib
 import sqlite3
 
 import pytest
@@ -200,8 +199,15 @@ def test_registry_has_all_legacy_app_defs(registry):
 
 
 def test_registry_default_enabled_matches_legacy(registry):
-    """The set of default-enabled canvases matches _CANVAS_DEFAULTS_TRUE."""
-    assert registry.get_default_enabled_flags() == _EXPECTED_CANVAS_DEFAULTS_TRUE
+    """Every canvas that was default-enabled under _CANVAS_DEFAULTS_TRUE still is.
+
+    Superset, not equality: canvases added after the registry migration may also be
+    default-enabled. Pinning exact equality made every new canvas fail this test,
+    which is a snapshot of a completed migration, not a policy on future canvases.
+    """
+    enabled = registry.get_default_enabled_flags()
+    regressed = _EXPECTED_CANVAS_DEFAULTS_TRUE - set(enabled)
+    assert not regressed, f"canvases silently default-disabled since migration: {sorted(regressed)}"
 
 
 def test_registry_url_prefixes_match_legacy_routes(registry):
@@ -216,13 +222,19 @@ def test_registry_url_prefixes_match_legacy_routes(registry):
 
 
 def test_registry_iqe_mapping_matches_legacy_subset(registry):
-    """Registry IQE mapping contains expected legacy entries."""
+    """Registry IQE mapping still contains every legacy entry.
+
+    Subset, not equality: a canvas may register additional collections over time
+    (ndc has gained eight since this snapshot). The guarantee worth pinning is that
+    no legacy collection was dropped in the move off the hardcoded _CANVAS_MAP.
+    """
     iqe_map = registry.get_iqe_mapping()
     for key, (expected_module, expected_collections) in _EXPECTED_IQE_MAP_SUBSET.items():
         assert key in iqe_map, f"missing IQE mapping for {key}"
         module, collections = iqe_map[key]
         assert module == expected_module
-        assert collections == expected_collections
+        dropped = set(expected_collections) - set(collections)
+        assert not dropped, f"{key} dropped legacy IQE collections: {sorted(dropped)}"
 
 
 def test_registry_cli_toggles_match_legacy(registry):
@@ -247,12 +259,21 @@ def test_registry_cli_descriptions_present(registry):
 
 
 def test_registry_counts(registry):
-    """Expected high-level counts."""
-    assert len(registry.list_all(kind="canvas")) == 28
-    assert len(registry.list_all(kind="child_app")) == 4
-    assert len(registry.list_all(kind="feature")) == 8
-    assert len(registry.list_all(kind="core_extension")) == 15  # +admin_console
-    assert len(registry) == 55  # +admin_console
+    """No component kind lost members since the registry migration.
+
+    Lower bounds rather than exact counts: the registry is meant to grow, and an
+    exact assertion turns "someone added a canvas" into a test failure. The counts
+    below are the Phase-0 migration snapshot and must never regress.
+    """
+    assert len(registry.list_all(kind="canvas")) >= 28
+    assert len(registry.list_all(kind="child_app")) >= 4
+    assert len(registry.list_all(kind="feature")) >= 8
+    assert len(registry.list_all(kind="core_extension")) >= 15
+    assert len(registry) >= 55
+    # Every canvas the legacy _CANVAS_DEFS knew about is still registered.
+    keys = {c.key for c in registry.list_all(kind="canvas")}
+    legacy = {k for k, _, _, _ in _EXPECTED_CANVAS_DEFS}
+    assert legacy <= keys, f"canvases dropped from the registry: {sorted(legacy - keys)}"
 
 
 def test_component_enablement_uses_primary_env_flag(registry):
@@ -299,6 +320,7 @@ def test_get_blueprint_returns_none_for_missing_module(registry):
         blueprint_attr="bp",
         url_prefix="/fake",
         min_il="IL2",
+        min_tier="community",  # required field added to Component after this test was written
         default_roles=[],
         nav={},
         iqe={},
@@ -379,12 +401,50 @@ def test_nav_context_default_dashboard_for_components_without_links(registry):
 # ---------------------------------------------------------------------------
 
 
+class _FakeConn:
+    """A SQLite connection that behaves like tools/db/storage.py's wrapper.
+
+    Two behaviours matter and a raw sqlite3.Connection has neither:
+
+    * Runtime SQL is authored for PostgreSQL, so it uses %s placeholders. The real
+      wrapper rewrites them via translate_sql(..., backend="sqlite").
+    * The real context manager commits on clean exit and rolls back on error.
+      contextlib.closing merely closes.
+
+    Without both, every `with get_connection() as conn: conn.execute(INSERT ...)`
+    under test either raised (and was swallowed by the caller's except) or was
+    rolled back, so tenant overrides and audit rows never persisted.
+    """
+
+    def __init__(self, conn):
+        self._conn = conn
+
+    def execute(self, sql, params=None):
+        from tools.db.storage import translate_sql
+
+        return self._conn.execute(translate_sql(sql, backend="sqlite"), params or ())
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type:
+            self._conn.rollback()
+        else:
+            self._conn.commit()
+        self._conn.close()
+        return False
+
+
 def _sqlite_conn_factory(db_path):
     """Return a get_connection-style factory bound to a SQLite file."""
     def _factory():
         conn = sqlite3.connect(str(db_path), check_same_thread=False)
         conn.row_factory = sqlite3.Row
-        return contextlib.closing(conn)
+        return _FakeConn(conn)
     return _factory
 
 

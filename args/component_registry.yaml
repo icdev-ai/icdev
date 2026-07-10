@@ -1620,6 +1620,7 @@ components:
   completeness:
     template: tools/dashboard/templates/canvas_health/page.html
     blueprint: true
+    constants: tools/canvas_health/constants.py
     iqe_adapter: true
     nav_link: true
     seed_queries: context/iqe/queries/canvas_health/
