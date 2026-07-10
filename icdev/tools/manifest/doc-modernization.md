@@ -4,7 +4,7 @@
 > domain packs (args/docmod/packs/*.yaml) detect EOL hardware/software,
 > deprecated technology (TLS 1.1, telnet, MD5…), and superseded standards;
 > verdicts are deterministic (TRUST — no LLM in evaluation); redlines/regen are
-> HITL-gated. Schema: migration 258 (docmod_findings and docmod_scan_runs and
+> HITL-gated. Schema: migration 257 — merged via PR #141 (docmod_findings and docmod_scan_runs and
 > docmod_catalog_audit are APPEND-ONLY). Kanban project: docmod-.
 
 | Tool | File | Description | Input | Output |

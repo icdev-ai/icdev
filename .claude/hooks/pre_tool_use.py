@@ -130,11 +130,6 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "ad_options_coach_events",
         # FathomDesk lessons (Phase 6.5) — quiz attempt audit (NIST AU; anti-cheat + learning analytics)
         "ad_user_quiz_attempts",
-        # Document Modernization Engine (docmod, migration 258) — findings state
-        # transitions are superseding rows; scan runs and catalog curation are audit
-        "docmod_findings",
-        "docmod_scan_runs",
-        "docmod_catalog_audit",
         # Phase 44 — Innovation Adaptation
         "extension_execution_log",
         "memory_consolidation_log",

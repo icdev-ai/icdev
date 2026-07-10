@@ -17,17 +17,23 @@ FINDING_TYPES: list[str] = [
     "catalog_gap",           # heavily deployed item missing from curated catalog
 ]
 
-# Currency verdict for an extracted entity.
-CURRENCY_VERDICTS: list[str] = ["current", "aging", "deprecated", "eol", "unknown"]
+# Currency verdict for an extracted entity. Mirrors the CHECK constraint in
+# migration 257 (tools/db/migrations/257_doc_modernization.sql).
+CURRENCY_VERDICTS: list[str] = [
+    "current", "deprecated", "eol", "retired", "divergent", "unknown",
+]
 
-# Finding lifecycle. Transitions are APPEND-ONLY: a state change is a new row
-# whose supersedes_id points at the previous row for the same dedupe_key.
+# Finding lifecycle (mirrors migration 257 CHECK). Transitions are APPEND-ONLY:
+# a state change is a new row whose supersedes_id points at the previous row
+# for the same dedupe_key.
 FINDING_STATES: list[str] = [
     "open",
     "redline_drafted",
     "accepted",
     "rejected",
+    "resolved",
     "superseded",
+    "stale",
 ]
 
 # Catalog entry lifecycle (docmod_catalog_entries.status).
@@ -36,7 +42,19 @@ CATALOG_STATUSES: list[str] = ["approved", "deprecated", "retired"]
 # Catalog entry provenance (docmod_catalog_entries.source).
 CATALOG_SOURCES: list[str] = ["manual", "imported", "promoted_from_defacto"]
 
-SEVERITIES: list[str] = ["low", "medium", "high", "critical"]
+SEVERITIES: list[str] = ["info", "low", "medium", "high", "critical"]
+
+# docmod_eol_products.source CHECK vocabulary (migration 257).
+EOL_PRODUCT_SOURCES: list[str] = ["endoflife.date", "seed", "manual"]
+
+# docmod_scan_runs vocab (migration 257 CHECKs).
+SCAN_SCOPE_TYPES: list[str] = ["all", "collection", "doc"]
+SCAN_TRIGGERS: list[str] = ["manual", "reflex", "daemon", "api"]
+
+# docmod_catalog_audit.event_type vocabulary (migration 257 comment).
+CATALOG_AUDIT_EVENTS: list[str] = [
+    "create", "update", "status_change", "import", "promote",
+]
 
 # New KG entity types contributed via text_network.EXTRA_ENTITY_PATTERNS.
 KG_ENTITY_TYPES: list[str] = [
@@ -46,8 +64,11 @@ KG_ENTITY_TYPES: list[str] = [
     "crypto_algorithm",
 ]
 
-# Tables that must never be UPDATEd/DELETEd (mirrored into
-# .claude/hooks/pre_tool_use.py APPEND_ONLY_TABLES).
+# Tables that must never be UPDATEd/DELETEd (registered in
+# .claude/hooks/pre_tool_use.py APPEND_ONLY_TABLES by migration 257's PR).
+# Exception documented in scanner.py: docmod_scan_runs counters/finished_at
+# receive one completion UPDATE because findings FK-reference the run row,
+# which therefore must exist before the scan's outcome is known.
 APPEND_ONLY_TABLES: tuple[str, ...] = (
     "docmod_findings",
     "docmod_scan_runs",
