@@ -297,9 +297,29 @@ def _forbid(role: str, msg: str = "Insufficient permissions") -> tuple:
 
 # ── Page Routes ───────────────────────────────────────────────────────────────
 
+def _corpus_doc_count(tenant_id: str) -> int:
+    """Best-effort count of ingested docs — drives first-run empty states."""
+    try:
+        conn = _conn()
+        try:
+            row = conn.execute(
+                "SELECT COUNT(*) FROM dic_documents WHERE tenant_id = %s", (tenant_id,)
+            ).fetchone()
+            return row[0] if row else 0
+        finally:
+            conn.close()
+    except Exception:
+        return 0
+
+
 @dic_bp.route("/")
 def index():
-    return render_template("document_intelligence/index.html", pages=_PAGES)
+    tenant_id, _ = _security_context()
+    return render_template(
+        "document_intelligence/index.html",
+        pages=_PAGES,
+        doc_count=_corpus_doc_count(tenant_id),
+    )
 
 
 @dic_bp.route("/collections")
@@ -932,7 +952,12 @@ def freshness():
     for row in heatmap:
         cid = row.get("collection_id") or "default"
         by_collection.setdefault(cid, []).append(row)
-    return render_template("document_intelligence/freshness.html", heatmap=heatmap, by_collection=by_collection)
+    return render_template(
+        "document_intelligence/freshness.html",
+        heatmap=heatmap,
+        by_collection=by_collection,
+        doc_count=_corpus_doc_count(tenant_id),
+    )
 
 
 @dic_bp.route("/explorer")
@@ -4349,3 +4374,8 @@ def api_attach_coworker(collection_id):
         "coworker_url": f"/coworker?dic_collection={collection_id}",
         "message": "Collection attached. Open Co-Worker and launch with DIC context pre-loaded.",
     })
+
+
+# ── Document Modernization routes (docmod-ux-02) — one-import registration ────
+# Import at module bottom so the routes attach to the fully-initialized dic_bp.
+from tools.document_intelligence import modernization_routes as _modernization_routes  # noqa: E402,F401

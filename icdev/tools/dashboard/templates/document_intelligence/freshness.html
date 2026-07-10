@@ -11,6 +11,28 @@
   <a href="/document-intelligence/" style="background:#0f3460;color:#7ab3f0;padding:8px 16px;border-radius:5px;text-decoration:none;font-size:13px;">← Back to DIC</a>
 </div>
 
+{% if doc_count == 0 %}
+<!-- First-run onboarding (docmod-ux-02) — corpus is empty -->
+<div id="freshness-onboarding" style="background:#101d38;border:1px solid #2a4a7e;border-radius:8px;padding:20px;margin-bottom:20px;">
+  <h3 style="margin:0 0 4px;color:#eaeaea;font-size:15px;">👋 No documents yet — nothing to scan</h3>
+  <p style="color:#7a8cb0;font-size:12px;margin:0 0 14px;">Three steps to your first modernization findings:</p>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;">
+    <div style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:6px;padding:12px;">
+      <div style="color:#4f8ef7;font-size:12px;font-weight:700;margin-bottom:4px;">1 · Bulk-upload legacy docs</div>
+      <div style="color:#94a3b8;font-size:11px;"><a href="/document-intelligence/" style="color:#7ab3f0;">Upload</a> hundreds of files in one batch with per-file progress.</div>
+    </div>
+    <div style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:6px;padding:12px;">
+      <div style="color:#fbbf24;font-size:12px;font-weight:700;margin-bottom:4px;">2 · Run a staleness scan</div>
+      <div style="color:#94a3b8;font-size:11px;">One click after ingest — stale docs surface right here.</div>
+    </div>
+    <div style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:6px;padding:12px;">
+      <div style="color:#4ade80;font-size:12px;font-weight:700;margin-bottom:4px;">3 · Review modernization findings</div>
+      <div style="color:#94a3b8;font-size:11px;">Stale docs float to the top with reasons — remediate via HITL review.</div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 <!-- Summary cards -->
 <div style="display:flex;gap:12px;margin-bottom:20px;">
   <div style="flex:1;background:#16213e;border:1px solid #1e3a6e;border-radius:8px;padding:14px;text-align:center;">

@@ -17,6 +17,115 @@
   </div>
 </div>
 
+<!-- Bulk Legacy-Doc Ingest (docmod-ux-02) -->
+<div id="bulk-ingest-panel" style="background:#0d1b2e;border:2px dashed #1e3a6e;border-radius:8px;padding:18px;margin-bottom:20px;">
+  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+    <div>
+      <h3 style="margin:0;color:#eaeaea;font-size:14px;">📦 Bulk Legacy-Doc Ingest</h3>
+      <p style="color:#7a8cb0;font-size:11px;margin:4px 0 0;">Select hundreds of files — one batch, per-file progress.</p>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <input type="file" id="bulk-file-input" multiple style="display:none">
+      <input type="text" id="bulk-collection-input" placeholder="Collection ID (default)"
+        style="background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:7px 12px;border-radius:5px;font-size:12px;width:180px;">
+      <button onclick="document.getElementById('bulk-file-input').click()"
+        style="background:#0f3460;color:#7ab3f0;padding:8px 18px;border:1px solid #1e3a6e;border-radius:5px;cursor:pointer;font-size:13px;">
+        Choose Files
+      </button>
+    </div>
+  </div>
+  <div id="bulk-progress" style="display:none;margin-top:12px;">
+    <div style="background:#0a1525;border-radius:4px;height:6px;overflow:hidden;">
+      <div id="bulk-progress-bar" style="background:#4f8ef7;height:100%;width:0%;transition:width .3s;"></div>
+    </div>
+    <div id="bulk-status" style="color:#7ab3f0;font-size:12px;margin-top:6px;"></div>
+  </div>
+  <div id="bulk-file-list" style="margin-top:8px;max-height:180px;overflow-y:auto;"></div>
+  <div id="bulk-freshness-cta" style="display:none;margin-top:10px;">
+    <button id="bulk-freshness-btn" onclick="bulkRunFreshnessScan()"
+      style="background:#14532d;color:#4ade80;padding:8px 18px;border:1px solid #166534;border-radius:5px;cursor:pointer;font-size:13px;"></button>
+    <span id="bulk-freshness-status" style="color:#7ab3f0;font-size:12px;margin-left:8px;"></span>
+  </div>
+</div>
+
+<script>
+(function() {
+  var input = document.getElementById('bulk-file-input');
+  var bar = document.getElementById('bulk-progress-bar');
+  var status = document.getElementById('bulk-status');
+  var list = document.getElementById('bulk-file-list');
+  var lastCollection = 'default';
+
+  input.addEventListener('change', function() {
+    var files = Array.from(input.files || []);
+    if (!files.length) return;
+    lastCollection = document.getElementById('bulk-collection-input').value.trim() || 'default';
+    document.getElementById('bulk-progress').style.display = 'block';
+    document.getElementById('bulk-freshness-cta').style.display = 'none';
+    list.innerHTML = '';
+    bar.style.width = '2%';
+    status.textContent = 'Uploading ' + files.length + ' file(s)…';
+
+    var fd = new FormData();
+    files.forEach(function(f) { fd.append('files', f); });
+    fd.append('collection_id', lastCollection);
+
+    fetch('/document-intelligence/api/ingest/batch', { method: 'POST', body: fd })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.error || !data.job_id) { status.textContent = '✗ ' + (data.error || 'no job id'); return; }
+        var src = new EventSource('/document-intelligence/api/ingest/' + data.job_id + '/stream');
+        src.onmessage = function(e) {
+          var ev; try { ev = JSON.parse(e.data); } catch(ex) { return; }
+          if (ev.stage === 'heartbeat') return;
+          if (ev.pct != null) bar.style.width = Math.min(ev.pct, 98) + '%';
+          if (ev.stage === 'batch_file') {
+            status.textContent = 'Ingesting ' + ev.file + ' of ' + ev.of + ' — ' + (ev.filename || '');
+            list.innerHTML += '<div style="padding:3px 8px;font-size:12px;color:#4ade80;">✓ ' +
+              (ev.filename || ('file ' + ev.file)) + ' <span style="color:#5a7aa0;">(' + ev.file + '/' + ev.of + ')</span></div>';
+          } else if (ev.stage === 'done') {
+            bar.style.width = '100%';
+            var ok = ev.succeeded != null ? ev.succeeded : files.length;
+            status.textContent = ok + ' of ' + (ev.total || files.length) + ' ingested' + (ev.failed ? ' · ' + ev.failed + ' failed' : '') + '.';
+            (ev.errors || []).forEach(function(err) {
+              if (err) list.innerHTML += '<div style="padding:2px 8px;font-size:11px;color:#fbbf24;">⚠ ' + err + '</div>';
+            });
+            if (ok) {
+              document.getElementById('bulk-freshness-btn').textContent =
+                '🌡️ Run a freshness scan on these ' + ok + ' documents';
+              document.getElementById('bulk-freshness-cta').style.display = 'block';
+            }
+            src.close();
+          } else if (ev.stage === 'error') {
+            status.textContent = '✗ ' + (ev.message || 'ingest error');
+            src.close();
+          }
+        };
+        src.onerror = function() { status.textContent = '✗ connection lost'; src.close(); };
+      })
+      .catch(function(e) { status.textContent = '✗ upload failed: ' + e.message; });
+    input.value = '';
+  });
+
+  window.bulkRunFreshnessScan = function() {
+    var st = document.getElementById('bulk-freshness-status');
+    st.textContent = 'Scanning…';
+    fetch('/document-intelligence/api/freshness/scan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ collection_id: lastCollection }),
+    })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (d.error) { st.textContent = '✗ ' + d.error; return; }
+        st.innerHTML = '✓ ' + (d.docs_scanned || 0) + ' scanned · ' + (d.stale_count || 0) +
+          ' stale — <a href="/document-intelligence/freshness" style="color:#7ab3f0;">view heatmap →</a>';
+      })
+      .catch(function(e) { st.textContent = '✗ ' + e.message; });
+  };
+})();
+</script>
+
 <!-- Collections Table -->
 <div style="background:#0b1726;border:1px solid #1a3560;border-radius:8px;overflow:hidden;margin-bottom:24px;">
   <table style="width:100%;border-collapse:collapse;font-size:12px;">

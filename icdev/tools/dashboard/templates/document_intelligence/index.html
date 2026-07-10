@@ -10,6 +10,28 @@
   </div>
 </div>
 
+{% if doc_count == 0 %}
+<!-- First-run onboarding (docmod-ux-02) — shown only when the corpus is empty -->
+<div id="dic-onboarding" style="background:#101d38;border:1px solid #2a4a7e;border-radius:8px;padding:20px;margin-bottom:20px;">
+  <h3 style="margin:0 0 4px;color:#eaeaea;font-size:15px;">👋 Get started — modernize your legacy documents</h3>
+  <p style="color:#7a8cb0;font-size:12px;margin:0 0 14px;">Your corpus is empty. Three steps to your first modernization findings:</p>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;">
+    <div style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:6px;padding:12px;">
+      <div style="color:#4f8ef7;font-size:12px;font-weight:700;margin-bottom:4px;">1 · Bulk-upload legacy docs</div>
+      <div style="color:#94a3b8;font-size:11px;">Drop hundreds of files below — they ingest in one batch with per-file progress.</div>
+    </div>
+    <div style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:6px;padding:12px;">
+      <div style="color:#fbbf24;font-size:12px;font-weight:700;margin-bottom:4px;">2 · Run a staleness scan</div>
+      <div style="color:#94a3b8;font-size:11px;">One click after ingest — the <a href="/document-intelligence/freshness" style="color:#7ab3f0;">freshness heatmap</a> flags stale content.</div>
+    </div>
+    <div style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:6px;padding:12px;">
+      <div style="color:#4ade80;font-size:12px;font-weight:700;margin-bottom:4px;">3 · Review modernization findings</div>
+      <div style="color:#94a3b8;font-size:11px;">Stale docs float to the top with reasons — remediate via HITL review.</div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 <!-- Upload Widget -->
 <div style="background:#0d1b2e;border:2px dashed #1e3a6e;border-radius:8px;padding:24px;margin-bottom:24px;text-align:center;" id="drop-zone">
   <div style="color:#5a7aa0;font-size:13px;margin-bottom:12px;">📎 Drag &amp; drop files here or click to browse</div>
@@ -37,6 +59,11 @@
     <div id="upload-status" style="color:#7ab3f0;font-size:12px;margin-top:6px;"></div>
   </div>
   <div id="upload-results" style="margin-top:12px;text-align:left;max-height:120px;overflow-y:auto;"></div>
+  <div id="freshness-cta" style="display:none;margin-top:12px;">
+    <button id="freshness-cta-btn" onclick="runFreshnessScan()"
+      style="background:#14532d;color:#4ade80;padding:8px 18px;border:1px solid #166534;border-radius:5px;cursor:pointer;font-size:13px;"></button>
+    <span id="freshness-cta-status" style="color:#7ab3f0;font-size:12px;margin-left:8px;"></span>
+  </div>
 </div>
 
 <!-- Canvas Pages -->
@@ -82,120 +109,100 @@
   dropZone.addEventListener('drop', function(e) { e.preventDefault(); dropZone.style.borderColor = '#1e3a6e'; uploadFiles(e.dataTransfer.files); });
   fileInput.addEventListener('change', function() { uploadFiles(fileInput.files); });
 
+  var lastCollectionId = 'default';
+
   function uploadFiles(files) {
     if (!files || !files.length) return;
     var collectionId = document.getElementById('collection-input').value.trim() || 'default';
+    lastCollectionId = collectionId;
     progress.style.display = 'block';
     results.innerHTML = '';
+    document.getElementById('freshness-cta').style.display = 'none';
     bar.style.width = '2%';
-    status.textContent = 'Sending ' + files[0].name + '…';
 
-    // Process files sequentially so the progress bar is meaningful.
+    // Bulk ingest (docmod-ux-02): one POST, per-file SSE progress.
     var fileArr = Array.from(files);
-    var idx = 0;
+    status.textContent = 'Uploading ' + fileArr.length + ' file(s)…';
+    var fd = new FormData();
+    fileArr.forEach(function(f) { fd.append('files', f); });
+    fd.append('collection_id', collectionId);
 
-    function processNext() {
-      if (idx >= fileArr.length) {
-        status.textContent = fileArr.length + ' file(s) complete.';
-        bar.style.width = '100%';
-        return;
-      }
-      var file = fileArr[idx++];
-      var fd = new FormData();
-      fd.append('file', file);
-      fd.append('collection_id', collectionId);
+    fetch('/document-intelligence/api/ingest/batch', { method: 'POST', body: fd })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.error || !data.job_id) {
+          results.innerHTML += rowHtml('batch', false, data.error || 'no job id returned');
+          return;
+        }
+        openBatchStream(data.job_id, fileArr.length);
+      })
+      .catch(function(e) {
+        results.innerHTML += rowHtml('batch', false, 'upload failed: ' + e.message);
+      });
 
-      // Step 1: POST the file — server responds immediately with job_id (202).
-      fetch('/document-intelligence/api/ingest', { method: 'POST', body: fd })
-        .then(function(r) { return r.json(); })
-        .then(function(data) {
-          if (data.error) {
-            results.innerHTML += rowHtml(file.name, false, data.error);
-            processNext();
-            return;
-          }
-          if (!data.job_id) {
-            // Fallback: old sync response (shouldn't happen post-fix).
-            results.innerHTML += rowHtml(file.name, true, (data.chunks || 0) + ' chunks');
-            processNext();
-            return;
-          }
-          // Step 2: Open SSE stream for live progress.
-          openStream(data.job_id, file.name, processNext);
-        })
-        .catch(function(e) {
-          results.innerHTML += rowHtml(file.name, false, 'upload failed: ' + e.message);
-          processNext();
-        });
-    }
-
-    processNext();
-    fileInput.value = '';  // allow re-uploading the same file
+    fileInput.value = '';  // allow re-uploading the same files
   }
 
-  function openStream(jobId, filename, onDone) {
+  function openBatchStream(jobId, total) {
     var src = new EventSource('/document-intelligence/api/ingest/' + jobId + '/stream');
-    var stageLabel = {
-      extracting: '📄 Extracting text…',
-      chunking:   '✂️ Chunking…',
-      embedding:  '🧠 Embedding',
-      kg_bridge:  '🕸️ Building knowledge graph…',
-      done:       '✓ Done',
-      error:      '✗ Error',
-      heartbeat:  null,
-    };
 
     src.onmessage = function(e) {
       var ev;
       try { ev = JSON.parse(e.data); } catch(ex) { return; }
-
       var stage = ev.stage || '';
       if (stage === 'heartbeat') return;
 
-      var pct = ev.pct != null ? ev.pct : 50;
-      bar.style.width = Math.min(pct, 98) + '%';
+      if (ev.pct != null) bar.style.width = Math.min(ev.pct, 98) + '%';
 
-      if (stage === 'embedding' && ev.pct != null) {
-        status.textContent = filename + ' — ' + ev.detail;
-      } else if (stageLabel[stage]) {
-        status.textContent = filename + ' — ' + (ev.detail || stageLabel[stage]);
-      }
-
-      if (stage === 'done') {
+      if (stage === 'batch_file') {
+        status.textContent = 'Ingesting ' + ev.file + ' of ' + ev.of + ' — ' + (ev.filename || '');
+        results.innerHTML += rowHtml(ev.filename || ('file ' + ev.file), true, ev.file + '/' + ev.of + ' ' + (ev.status || 'ingested'));
+      } else if (stage === 'done') {
         bar.style.width = '100%';
-        var chunkCount = ev.chunks || 0;
-        var hasWarnings = ev.errors && ev.errors.length;
-        var isDuplicate = hasWarnings && ev.errors.some(function(e) { return e.indexOf('Duplicate') >= 0; });
-        var isEmpty = chunkCount === 0 && !isDuplicate;
-        var info = chunkCount + ' chunks';
-        if (ev.kg_entities) info += ' · ' + ev.kg_entities + ' KG entities';
-        if (isDuplicate) {
-          info = 'Duplicate detected — linked to existing document' + (ev.doc_id ? ' (' + ev.doc_id + ')' : '');
-        }
-        if (isEmpty) {
-          info = '0 chunks — file may be image-based, corrupted, or unsupported. Try re-exporting as text.';
-        }
-        results.innerHTML += rowHtml(filename, !isEmpty, info);
-        if (hasWarnings) {
-          ev.errors.forEach(function(err) {
-            results.innerHTML += '<div style="padding:2px 8px;font-size:11px;color:#fbbf24;">⚠ ' + err + '</div>';
-          });
-        }
+        var ok = ev.succeeded != null ? ev.succeeded : total;
+        var failed = ev.failed || 0;
+        status.textContent = ok + ' of ' + (ev.total || total) + ' file(s) ingested' + (failed ? ' · ' + failed + ' failed' : '') + '.';
+        (ev.errors || []).forEach(function(err) {
+          if (err) results.innerHTML += '<div style="padding:2px 8px;font-size:11px;color:#fbbf24;">⚠ ' + err + '</div>';
+        });
+        showFreshnessCta(ok);
         src.close();
-        if (onDone) onDone();
       } else if (stage === 'error') {
-        results.innerHTML += rowHtml(filename, false, ev.message || 'ingest error');
+        results.innerHTML += rowHtml('batch', false, ev.message || 'ingest error');
         src.close();
-        if (onDone) onDone();
       }
     };
 
     src.onerror = function() {
-      results.innerHTML += rowHtml(filename, false, 'connection lost — check dashboard logs');
+      results.innerHTML += rowHtml('batch', false, 'connection lost — check dashboard logs');
       src.close();
-      if (onDone) onDone();
     };
   }
+
+  function showFreshnessCta(count) {
+    if (!count) return;
+    var cta = document.getElementById('freshness-cta');
+    document.getElementById('freshness-cta-btn').textContent =
+      '🌡️ Run a freshness scan on these ' + count + ' documents';
+    cta.style.display = 'block';
+  }
+
+  window.runFreshnessScan = function() {
+    var st = document.getElementById('freshness-cta-status');
+    st.textContent = 'Scanning…';
+    fetch('/document-intelligence/api/freshness/scan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ collection_id: lastCollectionId }),
+    })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (d.error) { st.textContent = '✗ ' + d.error; return; }
+        st.innerHTML = '✓ ' + (d.docs_scanned || 0) + ' scanned · ' + (d.stale_count || 0) +
+          ' stale — <a href="/document-intelligence/freshness" style="color:#7ab3f0;">view heatmap →</a>';
+      })
+      .catch(function(e) { st.textContent = '✗ ' + e.message; });
+  };
 
   function rowHtml(name, ok, msg) {
     return '<div style="padding:4px 8px;font-size:12px;color:' + (ok ? '#4ade80' : '#f87171') + '">' +
