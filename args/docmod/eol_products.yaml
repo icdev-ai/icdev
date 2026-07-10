@@ -1,0 +1,37 @@
+# CUI // SP-CTI
+# Air-gap seed + sync product list for docmod_eol_products (endoflife.date slugs).
+# Live sync refreshes every product listed here; the dates below are the
+# offline fallback (verified against endoflife.date as of 2026-07).
+products:
+  windows-server:
+    "2012":     {eol_date: "2023-10-10", eos_date: "2018-10-09"}
+    "2012-R2":  {eol_date: "2023-10-10", eos_date: "2018-10-09"}
+    "2016":     {eol_date: "2027-01-12", eos_date: "2022-01-11"}
+    "2019":     {eol_date: "2029-01-09", eos_date: "2024-01-09"}
+    "2022":     {eol_date: "2031-10-14", eos_date: "2026-10-13"}
+    "2025":     {eol_date: "2034-10-10", eos_date: "2029-10-09", latest_version: "2025"}
+  centos:
+    "7":        {eol_date: "2024-06-30"}
+    "8":        {eol_date: "2021-12-31"}
+  rhel:
+    "7":        {eol_date: "2024-06-30", lts: true}
+    "8":        {eol_date: "2029-05-31", lts: true}
+    "9":        {eol_date: "2032-05-31", lts: true}
+  ubuntu:
+    "18.04":    {eol_date: "2023-05-31", lts: true}
+    "20.04":    {eol_date: "2025-05-31", lts: true}
+    "22.04":    {eol_date: "2027-06-01", lts: true}
+    "24.04":    {eol_date: "2029-05-31", lts: true}
+  python:
+    "2.7":      {eol_date: "2020-01-01"}
+    "3.8":      {eol_date: "2024-10-07"}
+    "3.9":      {eol_date: "2025-10-05"}
+    "3.12":     {eol_date: "2028-10-02"}
+    "3.13":     {eol_date: "2029-10-01"}
+  java:
+    "8":        {eol_date: "2030-12-31", lts: true}
+    "11":       {eol_date: "2032-01-31", lts: true}
+    "17":       {eol_date: "2029-09-30", lts: true}
+    "21":       {eol_date: "2031-09-30", lts: true}
+  dotnetfx:
+    "4.8":      {eol_date: null}

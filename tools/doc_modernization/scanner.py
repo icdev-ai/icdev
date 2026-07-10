@@ -179,9 +179,6 @@ def scan_document(doc_id: str, conn=None, packs: dict[str, DomainPack] | None = 
         own_run = run_id is None
         started_at = _now()
         if own_run:
-<<<<<<< HEAD
-            run_id = f"run-{uuid.uuid4().hex[:12]}"
-=======
             # docmod_findings.run_id FK-references docmod_scan_runs, so the run
             # row must exist BEFORE findings insert. Counters get one completion
             # UPDATE below — the sole sanctioned exception to append-only for
@@ -195,7 +192,6 @@ def scan_document(doc_id: str, conn=None, packs: dict[str, DomainPack] | None = 
                 (run_id, doc_id, json.dumps(sorted(packs)), evidence_hash,
                  started_at, tenant_id, classification),
             )
->>>>>>> feat/docmod-core-v2
 
         threshold = float(load_config().get("confidence_threshold", 0.0) or 0.0)
         existing_open = _open_findings(conn, doc_id)
@@ -264,23 +260,10 @@ def scan_document(doc_id: str, conn=None, packs: dict[str, DomainPack] | None = 
             (doc_id, version_id, evidence_hash, _now(), open_count, tenant_id, classification),
         )
         if own_run:
-<<<<<<< HEAD
-            # scan_runs is append-only: one row written at completion, no UPDATEs.
-            conn.execute(
-                """INSERT INTO docmod_scan_runs
-                   (run_id, scope_type, scope_id, pack_ids, evidence_hash, trigger,
-                    docs_scanned, findings_new, findings_resolved,
-                    started_at, finished_at, tenant_id, classification)
-                   VALUES (%s,'document',%s,%s,%s,'manual',1,%s,%s,%s,%s,%s,%s)""",
-                (run_id, doc_id, json.dumps(sorted(packs)), evidence_hash,
-                 findings_new, findings_resolved, started_at, _now(),
-                 tenant_id, classification),
-=======
             conn.execute(
                 "UPDATE docmod_scan_runs SET docs_scanned=1, findings_new=%s, "
                 "findings_resolved=%s, finished_at=%s WHERE run_id=%s",
                 (findings_new, findings_resolved, _now(), run_id),
->>>>>>> feat/docmod-core-v2
             )
         conn.commit()
         return {"doc_id": doc_id, "scanned": True, "findings_new": findings_new,
@@ -299,8 +282,6 @@ def scan_collection(collection_id: str | None = None, trigger: str = "manual",
         run_id = f"run-{uuid.uuid4().hex[:12]}"
         started_at = _now()
         evidence_hash = combined_evidence_hash(packs, conn)
-<<<<<<< HEAD
-=======
         # Run row first — findings FK-reference it (see scan_document note).
         conn.execute(
             """INSERT INTO docmod_scan_runs
@@ -310,7 +291,6 @@ def scan_collection(collection_id: str | None = None, trigger: str = "manual",
             (run_id, "collection" if collection_id else "all", collection_id,
              json.dumps(sorted(packs)), evidence_hash, trigger, started_at),
         )
->>>>>>> feat/docmod-core-v2
         if collection_id:
             rows = conn.execute(
                 "SELECT doc_id FROM dic_documents WHERE collection_id=%s", (collection_id,)
@@ -326,22 +306,10 @@ def scan_collection(collection_id: str | None = None, trigger: str = "manual",
                 scanned += 1
                 new += result.get("findings_new", 0)
                 resolved += result.get("findings_resolved", 0)
-<<<<<<< HEAD
-        # scan_runs is append-only: one summary row at completion, no UPDATEs.
-        conn.execute(
-            """INSERT INTO docmod_scan_runs
-               (run_id, scope_type, scope_id, pack_ids, evidence_hash, trigger,
-                docs_scanned, findings_new, findings_resolved, started_at, finished_at)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-            (run_id, "collection" if collection_id else "sweep", collection_id,
-             json.dumps(sorted(packs)), evidence_hash, trigger,
-             scanned, new, resolved, started_at, _now()),
-=======
         conn.execute(
             "UPDATE docmod_scan_runs SET docs_scanned=%s, findings_new=%s, "
             "findings_resolved=%s, finished_at=%s WHERE run_id=%s",
             (scanned, new, resolved, _now(), run_id),
->>>>>>> feat/docmod-core-v2
         )
         conn.commit()
         return {"run_id": run_id, "docs_total": len(doc_ids), "docs_scanned": scanned,

@@ -1,9 +1,8 @@
 # CUI // SP-CTI
 # Policy/standards reference pack — supersession map (rulebook_policy.yaml).
-# Evaluator ships with docmod-packs-05; disabled until then.
 pack_id: policy_refs
 label: Policy & Standards References
-enabled: false
+enabled: true
 evaluator: tools.doc_modernization.packs.policy_refs.PolicyRefsPack
 entity_types: [standard]
 extraction:

@@ -143,14 +143,11 @@ def test_constants_sanity():
         "docmod_findings", "docmod_scan_runs", "docmod_catalog_audit"
     }
     assert c.CONF_INCLUDE == 0.7 and c.CONF_ABSTAIN == 0.4
-<<<<<<< HEAD
-=======
     # vocab mirrors migration 257 CHECK constraints
     assert "aging" not in c.CURRENCY_VERDICTS
     assert {"retired", "divergent"} <= set(c.CURRENCY_VERDICTS)
     assert {"resolved", "stale"} <= set(c.FINDING_STATES)
     assert c.SCAN_SCOPE_TYPES == ["all", "collection", "doc"]
->>>>>>> feat/docmod-core-v2
 
 
 def test_append_only_tables_registered_in_hook():
@@ -364,8 +361,4 @@ def test_propose_from_defacto_creates_draft_and_audit(db):
     conn.close()
 
     assert entry["source"] == "promoted_from_defacto"
-<<<<<<< HEAD
-    assert audits and audits[0]["action"] == "propose" and audits[0]["actor"] == "tester"
-=======
     assert audits and audits[0]["event_type"] == "promote" and audits[0]["actor"] == "tester"
->>>>>>> feat/docmod-core-v2

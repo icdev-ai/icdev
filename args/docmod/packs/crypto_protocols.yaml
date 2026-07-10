@@ -1,10 +1,10 @@
 # CUI // SP-CTI
 # Crypto & protocol currency pack — pure rulebook, air-gap safe.
-# Evaluator ships with docmod-packs-01; disabled until then so pack_loader
-# does not fail on the missing module.
+
+
 pack_id: crypto_protocols
 label: Crypto & Protocols
-enabled: false
+enabled: true
 evaluator: tools.doc_modernization.packs.crypto_protocols.CryptoProtocolsPack
 entity_types: [protocol, crypto_algorithm]
 extraction:
