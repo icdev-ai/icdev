@@ -3086,3 +3086,30 @@ python tools/iqe/cli.py --file context/iqe/queries/network/pvm_01_risk_trajector
 python tools/iqe/cli.py --file context/iqe/queries/network/pvm_02_attack_surface.iqe   --adapter ndc --json
 python tools/iqe/cli.py --file context/iqe/queries/network/pvm_03_triage_queue.iqe     --adapter ndc --json
 ```
+
+## Document Modernization Engine (docmod)
+
+```bash
+# Scan documents for stale content (EOL hardware/software, deprecated tech, superseded standards)
+python -c "from tools.doc_modernization import scan_collection; import json; print(json.dumps(scan_collection(), indent=2))"
+python -c "from tools.doc_modernization import scan_document; import json; print(json.dumps(scan_document('<doc_id>'), indent=2))"
+
+# Latest-state findings (append-only supersede chains resolved)
+python -c "from tools.doc_modernization import get_findings; import json; print(json.dumps(get_findings(state='open'), indent=2, default=str))"
+
+# endoflife.date cache — seed (air-gap), live sync, bundle import
+python -m tools.doc_modernization.eol_products_sync --seed --json
+python -m tools.doc_modernization.eol_products_sync --sync --json
+python -m tools.doc_modernization.eol_products_sync --import bundle.yaml --json
+
+# De facto deployment standards from ni_devices (recency-weighted)
+python -c "from tools.doc_modernization.defacto_learner import recompute; print(recompute())"
+
+# Nightly sweep reflex (standalone)
+python -m tools.genesis.reflexes.doc_modernization_sweep --dry-run --json
+
+# UI: http://localhost:5050/standards-catalog (curated standards, all domains)
+#     http://localhost:5050/document-intelligence/freshness (staleness triage)
+# Config: args/docmod/docmod_config.yaml + args/docmod/packs/*.yaml + rulebooks
+# MCP tools: docmod_scan, docmod_findings, docmod_redline
+```

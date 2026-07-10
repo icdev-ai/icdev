@@ -2231,6 +2231,52 @@ def handle_kg_stale_entities(args: dict) -> dict:
         return {"error": str(exc)}
 
 
+# ── Document Modernization Engine (docmod) handlers ────────────────────────
+
+def handle_docmod_scan(args: dict) -> dict:
+    """Scan document(s) for stale content (deterministic verdicts, incremental)."""
+    try:
+        doc_id = (args.get("doc_id") or "").strip()
+        collection_id = (args.get("collection_id") or "").strip() or None
+        force = bool(args.get("force", False))
+        if doc_id:
+            from tools.doc_modernization import scan_document
+            return scan_document(doc_id, force=force)
+        from tools.doc_modernization import scan_collection
+        return scan_collection(collection_id=collection_id, trigger="api", force=force)
+    except Exception as exc:
+        logger.warning("handle_docmod_scan: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_docmod_findings(args: dict) -> dict:
+    """Latest-state modernization findings (supersede chains resolved)."""
+    try:
+        from tools.doc_modernization import get_findings
+        findings = get_findings(
+            doc_id=(args.get("doc_id") or "").strip() or None,
+            state=(args.get("state") or "").strip() or None,
+            finding_type=(args.get("finding_type") or "").strip() or None,
+        )
+        return {"count": len(findings), "findings": findings}
+    except Exception as exc:
+        logger.warning("handle_docmod_findings: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_docmod_redline(args: dict) -> dict:
+    """Draft one TRUST-gated redline for an open finding."""
+    try:
+        finding_id = (args.get("finding_id") or "").strip()
+        if not finding_id:
+            return {"error": "finding_id required"}
+        from tools.doc_modernization.redline_drafter import draft_redline
+        return draft_redline(finding_id).to_dict()
+    except Exception as exc:
+        logger.warning("handle_docmod_redline: %s", exc)
+        return {"error": str(exc)}
+
+
 # ── Document Intelligence Canvas (DIC) handlers ────────────────────────────
 
 def handle_dic_ingest(args: dict) -> dict:

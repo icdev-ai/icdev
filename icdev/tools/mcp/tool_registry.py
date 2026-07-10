@@ -43,9 +43,10 @@ Categories:
     system_graph (3)
     intelligence (3)
     integrity (2)
-    nova (8)
+    nova (9)
+    pulse (1)
 
-Total: 278 tools, 6 resources
+Total: 280 tools, 6 resources
 """
 
 TOOL_REGISTRY = {
@@ -3660,6 +3661,25 @@ TOOL_REGISTRY = {
     # ============================================================
     # CLOUD (5 tools)
     # ============================================================
+    "rfi_demand_scan": {
+        "category": "govcon",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_rfi_demand_scan",
+        "description": "RFI capability-gap demand signals: list cross-RFI unmet-capability demand (mode='list', default) or re-scan open gaps and emit atomic SUGGESTED kanban build tasks (mode='scan').",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "mode": {
+                    "type": "string",
+                    "enum": ["list", "scan"],
+                    "default": "list",
+                    "description": "list = read demand signals; scan = emit SUGGESTED tasks for eligible open gaps",
+                },
+                "limit": {"type": "integer", "default": 50, "description": "max signals to return (mode=list)"},
+                "min_priority": {"type": "number", "description": "override the priority threshold for task emission (mode=scan)"},
+            },
+        },
+    },
     "csp_monitor_scan": {
         "category": "cloud",
         "module": "tools.mcp.gap_handlers",
@@ -6635,6 +6655,69 @@ TOOL_REGISTRY = {
         },
     },
     # ============================================================
+    # DOCMOD — Document Modernization Engine (3 tools)
+    # ============================================================
+    "docmod_scan": {
+        "category": "docmod",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_docmod_scan",
+        "description": (
+            "Scan DIC documents for stale content: EOL hardware/software, deprecated "
+            "technology (TLS 1.1, telnet, MD5...), superseded standards. Deterministic "
+            "verdicts (catalog/EOL/rulebook evidence, no LLM). Incremental — unchanged "
+            "documents are skipped. Returns scan-run summary with findings_new/resolved."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "doc_id": {"type": "string", "description": "Scan one document (omit for a corpus/collection sweep)"},
+                "collection_id": {"type": "string", "description": "Scan one collection (omit with doc_id absent = whole corpus)"},
+                "force": {"type": "boolean", "description": "Ignore the incremental evidence-hash skip (default false)"},
+            },
+            "required": [],
+        },
+    },
+    "docmod_findings": {
+        "category": "docmod",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_docmod_findings",
+        "description": (
+            "List Document Modernization findings (latest state per append-only "
+            "supersede chain). Filter by doc_id, state (open/redline_drafted/accepted/"
+            "rejected/resolved/superseded/stale) and finding_type (eol_hardware, "
+            "eol_software, deprecated_tech, superseded_standard, defacto_divergence, "
+            "catalog_gap...). Returns finding rows with evidence and recommendations."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "doc_id": {"type": "string", "description": "Filter to one document"},
+                "state": {"type": "string", "description": "Filter by lifecycle state (e.g. 'open')"},
+                "finding_type": {"type": "string", "description": "Filter by finding type"},
+            },
+            "required": [],
+        },
+    },
+    "docmod_redline": {
+        "category": "docmod",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_docmod_redline",
+        "description": (
+            "Draft a TRUST-gated redline (cited replacement text) for one open "
+            "modernization finding. The LLM words prose around deterministic evidence "
+            "only; hallucinated citations or out-of-candidate replacements are blocked; "
+            "low confidence abstains. Returns {status: drafted|abstained|blocked, "
+            "suggestion_id, confidence, band, reason}."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "finding_id": {"type": "string", "description": "Open docmod finding to draft for"},
+            },
+            "required": ["finding_id"],
+        },
+    },
+    # ============================================================
     # NOVA — Autonomous Self-Learning Digital Coworker (5 tools)
     # ============================================================
     "nova_get_trust_score": {
@@ -6779,6 +6862,112 @@ TOOL_REGISTRY = {
             "properties": {
                 "limit": {"type": "integer", "default": 20, "description": "Max entries to return"},
             },
+        },
+    },
+    "ace_persona_query": {
+        "category": "nova",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_ace_persona_query",
+        "description": (
+            "Get a one-shot, persona-informed answer from a specific ICDEV domain expert "
+            "(e.g. architect, devops_engineer, ai_developer), grounded in that role's SOUL.md "
+            "identity. Synchronous, single LLM call -- NOT the async multi-role ACE team launch. "
+            "role_id is optional if domain_description is given: with no known role_id, a persona "
+            "for that domain is generated on the fly (or reused if already generated for that "
+            "domain) via tools.ace.persona_generator, instead of returning no consultation at all. "
+            "The response's role_id reports which persona actually answered. Primary use case is "
+            "cross-repo callers (e.g. idea_lab) consulting an ACE persona."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "role_id": {"type": "string", "description": "ACE role id, e.g. 'architect', 'devops_engineer', 'ai_developer'. Optional if domain_description is given."},
+                "question": {"type": "string", "description": "The question to ask the persona"},
+                "context": {"type": "string", "description": "Optional additional context"},
+                "domain_description": {"type": "string", "description": "Free-text domain description used to generate (or reuse) a persona when role_id is omitted/unknown"},
+            },
+            "required": ["question"],
+        },
+    },
+    "council_query": {
+        "category": "nova",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_council_query",
+        "description": (
+            "Pressure-test a high-stakes question or decision through an LLM Council: 5 fixed-"
+            "perspective advisors (Contrarian, First Principles Thinker, Expansionist, Outsider, "
+            "Executor) respond independently and in parallel, anonymously peer-review each "
+            "other's responses, and a chairman synthesizes a structured verdict (where the "
+            "council agrees, where it clashes, blind spots peer review caught, a direct "
+            "recommendation, and one concrete next step). Adapted from Karpathy's LLM Council "
+            "methodology, distinct from Chain of Debate (no debate-to-a-winner; independent "
+            "single-pass analysis from fixed cognitive lenses). Primary use case is cross-repo "
+            "callers (e.g. idea_lab) pressure-testing a validated idea before committing to it."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "question": {"type": "string", "description": "The high-stakes question/decision to bring to the council"},
+                "context": {"type": "string", "description": "Optional additional context (e.g. the idea's Q&A answers, scores)"},
+            },
+            "required": ["question"],
+        },
+    },
+    # ============================================================
+    # COMPASS — Reverse bridge to a standalone Compass backend (2 tools)
+    # ============================================================
+    "compass_lcat_lookup": {
+        "category": "compass",
+        "module": "tools.integrations.compass_mcp_handlers",
+        "handler": "handle_compass_lcat_lookup",
+        "description": (
+            "Look up the best-matching BLS SOC labor category for a task description or "
+            "resume via a running Compass backend (C:\\AI\\standalone\\compass -- LCAT/staffing, "
+            "document analysis, rate-card automation, AI-assisted writing for GovCon teams). "
+            "Compass is optional and separately run; returns an error dict (not raised) if it "
+            "isn't configured/reachable. Reverse direction of Compass's own bridge into ICDEV "
+            "(dic_search/dic_ingest/ace_persona_query/council_query)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string", "description": "Task description or resume text to map to a labor category"},
+            },
+            "required": ["text"],
+        },
+    },
+    "compass_staffing_summary": {
+        "category": "compass",
+        "module": "tools.integrations.compass_mcp_handlers",
+        "handler": "handle_compass_staffing_summary",
+        "description": (
+            "Fetch a running Compass backend's current staffing matrix (personnel vs. resume-"
+            "matched LCAT compliance, mismatch/unresolved counts). Compass is optional and "
+            "separately run; returns an error dict (not raised) if it isn't configured/reachable."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
+    # ============================================================
+    # PULSE — Writing Quality (WriteGuard) (1 tool)
+    # ============================================================
+    "writeguard_analyze": {
+        "category": "pulse",
+        "module": "tools.pulse.writeguard",
+        "handler": "handle_writeguard_analyze",
+        "description": (
+            "Run WriteGuard's full deterministic writing-quality check (grammar, readability, "
+            "tone, plagiarism, AI-content detection, style, structure, composite scores) on "
+            "Markdown/text. No LLM calls. Primary use case is cross-repo callers (e.g. idea_lab) "
+            "gating generated reports/specs."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"text": {"type": "string", "description": "Markdown or plain text to analyze"}},
+            "required": ["text"],
         },
     },
 }

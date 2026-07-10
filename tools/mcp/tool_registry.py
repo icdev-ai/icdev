@@ -6655,6 +6655,69 @@ TOOL_REGISTRY = {
         },
     },
     # ============================================================
+    # DOCMOD — Document Modernization Engine (3 tools)
+    # ============================================================
+    "docmod_scan": {
+        "category": "docmod",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_docmod_scan",
+        "description": (
+            "Scan DIC documents for stale content: EOL hardware/software, deprecated "
+            "technology (TLS 1.1, telnet, MD5...), superseded standards. Deterministic "
+            "verdicts (catalog/EOL/rulebook evidence, no LLM). Incremental — unchanged "
+            "documents are skipped. Returns scan-run summary with findings_new/resolved."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "doc_id": {"type": "string", "description": "Scan one document (omit for a corpus/collection sweep)"},
+                "collection_id": {"type": "string", "description": "Scan one collection (omit with doc_id absent = whole corpus)"},
+                "force": {"type": "boolean", "description": "Ignore the incremental evidence-hash skip (default false)"},
+            },
+            "required": [],
+        },
+    },
+    "docmod_findings": {
+        "category": "docmod",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_docmod_findings",
+        "description": (
+            "List Document Modernization findings (latest state per append-only "
+            "supersede chain). Filter by doc_id, state (open/redline_drafted/accepted/"
+            "rejected/resolved/superseded/stale) and finding_type (eol_hardware, "
+            "eol_software, deprecated_tech, superseded_standard, defacto_divergence, "
+            "catalog_gap...). Returns finding rows with evidence and recommendations."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "doc_id": {"type": "string", "description": "Filter to one document"},
+                "state": {"type": "string", "description": "Filter by lifecycle state (e.g. 'open')"},
+                "finding_type": {"type": "string", "description": "Filter by finding type"},
+            },
+            "required": [],
+        },
+    },
+    "docmod_redline": {
+        "category": "docmod",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_docmod_redline",
+        "description": (
+            "Draft a TRUST-gated redline (cited replacement text) for one open "
+            "modernization finding. The LLM words prose around deterministic evidence "
+            "only; hallucinated citations or out-of-candidate replacements are blocked; "
+            "low confidence abstains. Returns {status: drafted|abstained|blocked, "
+            "suggestion_id, confidence, band, reason}."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "finding_id": {"type": "string", "description": "Open docmod finding to draft for"},
+            },
+            "required": ["finding_id"],
+        },
+    },
+    # ============================================================
     # NOVA — Autonomous Self-Learning Digital Coworker (5 tools)
     # ============================================================
     "nova_get_trust_score": {
