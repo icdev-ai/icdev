@@ -1,5 +1,6 @@
 # CUI // SP-CTI
 """ICDEV Cortex — unified AI facade over the platform's retrieval backends."""
+from .analyst import CortexAnalystError, CortexQueryBlocked, ask
 from .api import (
     AIRGAP_ENV_VAR,
     CORTEX_ANALYST_FUNCTION,
@@ -45,7 +46,9 @@ __all__ = [
     "CORTEX_STRATEGIES",
     "Citation",
     "CortexAirgapError",
+    "CortexAnalystError",
     "CortexContext",
+    "CortexQueryBlocked",
     "CortexResult",
     "CortexSearchResult",
     "GATE_ORDER",
@@ -53,6 +56,7 @@ __all__ = [
     "GovernancePipeline",
     "GovernanceReport",
     "airgap_active",
+    "ask",
     "assert_airgap_ready",
     "classify",
     "classify_route",

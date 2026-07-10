@@ -1,5 +1,8 @@
 # CUI // SP-CTI
-"""ICDEV Cortex facade — complete / classify / extract over the LLM router.
+"""ICDEV Cortex facade — ask / complete / classify / extract over the LLM router.
+
+Import Cortex capabilities from here (or from ``tools.cortex`` directly);
+the per-capability modules (``analyst``, …) are implementation detail.
 
 First 3 of the 7 Cortex facade functions (ctx-core-02). Callers import one
 namespace (``tools.cortex``) instead of wiring LLMRouter/LLMRequest per call
@@ -23,6 +26,10 @@ from typing import Any, Dict, List, Optional, Union
 
 from tools.logging.icdev_logger import get_logger
 
+# Analyst endpoint (ctx-analyst-01/02/03) — re-exported so callers keep one
+# import surface for the whole facade.
+from .analyst import CortexAnalystError, CortexQueryBlocked, ask  # noqa: F401 - re-exports
+
 # Behavior config + air-gap invariant live in .config (this module must stay
 # free of provider/model references — see test_no_model_id_literals_in_module).
 # Re-exported here so callers keep importing everything from tools.cortex.api.
@@ -36,7 +43,14 @@ from .config import (  # noqa: F401 - re-exports
     load_cortex_config,
     resolve_cortex_config_path,
 )
-from .schemas import CortexContext, CortexResult, GovernanceReport
+from .schemas import (  # noqa: F401 - re-exports
+    CORTEX_BACKENDS,
+    Citation,
+    CortexContext,
+    CortexResult,
+    CortexSearchResult,
+    GovernanceReport,
+)
 
 logger = get_logger("icdev.cortex.api")
 
