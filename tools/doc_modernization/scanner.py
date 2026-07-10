@@ -39,6 +39,20 @@ def _connect():
     return get_connection()
 
 
+def _evidence_connect():
+    """RLS-free connection for evidence reads.
+
+    Evidence spans tables without tenant_id/classification columns
+    (mc_net_eol_data, ni_devices, kg corroboration): under the dashboard's
+    Flask security context the RLS predicate raises UndefinedColumn on them,
+    and any rollback of a SHARED write connection silently discards the
+    scan-run row -> FK violations on the first finding insert. Evidence is
+    read-only backend context, so the canvas (security_context=None)
+    connection is the correct isolation."""
+    from tools.db.storage import get_canvas_connection
+    return get_canvas_connection()
+
+
 def dedupe_key(doc_id: str, pack_id: str, entity_label: str, finding_type: str) -> str:
     raw = f"{doc_id}|{pack_id}|{entity_label.lower().strip()}|{finding_type}"
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
@@ -177,7 +191,8 @@ def scan_document(doc_id: str, conn=None, packs: dict[str, DomainPack] | None = 
         if not version_id:
             return {"doc_id": doc_id, "scanned": False, "reason": "no approved version"}
 
-        evidence_hash = combined_evidence_hash(packs, conn)
+        ev_conn = _evidence_connect()
+        evidence_hash = combined_evidence_hash(packs, ev_conn)
         state_row = conn.execute(
             "SELECT last_version_id, last_evidence_hash FROM docmod_doc_scan_state WHERE doc_id=%s",
             (doc_id,),
@@ -215,12 +230,10 @@ def scan_document(doc_id: str, conn=None, packs: dict[str, DomainPack] | None = 
         seen_keys: set[str] = set()
         findings_new = 0
 
-        # Packs read evidence on a SEPARATE connection: on PostgreSQL a single
-        # failed statement aborts the whole transaction, so a pack's evidence
-        # query error must never poison the write connection that carries the
-        # scan-run row and finding inserts.
-        ev_conn = _connect()
-
+        # Packs read evidence on the SEPARATE RLS-free connection created above:
+        # on PostgreSQL a single failed statement aborts the whole transaction,
+        # so a pack's evidence error must never poison the write connection
+        # that carries the scan-run row and finding inserts.
         def _ev_rollback():
             try:
                 ev_conn.rollback()
@@ -319,7 +332,14 @@ def scan_collection(collection_id: str | None = None, trigger: str = "manual",
         packs = load_packs()
         run_id = f"run-{uuid.uuid4().hex[:12]}"
         started_at = _now()
-        evidence_hash = combined_evidence_hash(packs, conn)
+        ev = _evidence_connect()
+        try:
+            evidence_hash = combined_evidence_hash(packs, ev)
+        finally:
+            try:
+                ev.close()
+            except Exception:
+                pass
         # Run row first — findings FK-reference it (see scan_document note).
         conn.execute(
             """INSERT INTO docmod_scan_runs
