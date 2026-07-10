@@ -336,6 +336,7 @@ python tools/workflow/coherence_checker.py --all --gate                # coheren
 - Child apps: ALWAYS use `child_app_generator.py` + `forge_validator.py --gate`
 - Before writing tests: ALWAYS run `api_surface_extractor.py --file <module> --json`
 - **Cross-platform:** pathlib.Path, `encoding='utf-8'`, `tempfile.gettempdir()`, `datetime.now(timezone.utc)`, `hashlib.sha256` not md5
+- **NEVER hand a `/tmp/...` path between Bash and Python on Windows.** In Git Bash, `> /tmp/report.json` writes to the MSYS temp dir (`C:\Users\<user>\AppData\Local\Temp\`). Python's `open('/tmp/report.json')` resolves the path literally, i.e. `C:\tmp\report.json`. **They are different files, and neither call errors.** A redirect that succeeds followed by a read that succeeds can silently serve you a stale file written weeks ago by another session — indistinguishable from fresh output. Write scratch files to the session scratchpad using an absolute Windows path, and pass that path explicitly to both sides. Corollary: when a generated report names a file, `ls` the file before acting on the report — if it does not exist in the checkout, the report is stale, not the tree wrong.
 - **LLM config via `.env`**, never hardcode model IDs in Python
 - **New tool/module registration checklist (8 points):**
   1. `tools/manifest/<topic>.md` — add tool entry to the appropriate shard (index at `tools/manifest.md`)
