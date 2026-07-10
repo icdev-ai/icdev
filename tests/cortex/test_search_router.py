@@ -255,12 +255,17 @@ def test_domain_with_no_overlap_falls_back_to_domain_backends(monkeypatch):
     assert {r.backend for r in results} == {"rag", "kb"}
 
 
-def test_results_sorted_by_score(monkeypatch):
+def test_multi_backend_results_fused(monkeypatch):
+    def _ranked_hit(backend, source_id, score):
+        hit = _hit(backend, score=score)
+        hit.citation.source_id = source_id
+        return hit
+
     def rag(query, top_k=5, ctx=None):
-        return [_hit("rag", score=0.3), _hit("rag", score=0.9)]
+        return [_ranked_hit("rag", "r-1", 0.9), _ranked_hit("rag", "r-2", 0.3)]
 
     def graph(query, top_k=5, ctx=None):
-        return [_hit("graph", score=0.6)]
+        return [_ranked_hit("graph", "g-1", 0.6)]
 
     monkeypatch.setitem(search_service.BACKEND_ADAPTERS, "rag", rag)
     monkeypatch.setitem(search_service.BACKEND_ADAPTERS, "graph", graph)
@@ -274,7 +279,14 @@ def test_results_sorted_by_score(monkeypatch):
     }
     results = search_service.search("compare things", config=cfg)
 
-    assert [r.score for r in results] == [0.9, 0.6, 0.3]
+    # Cross-backend RRF (ctx-search-03): the two rank-1 hits tie at the top
+    # (backend order breaks the tie), rag's rank-2 hit follows; scores are
+    # normalized 0-1 and the fused ordering is recorded in raw_scores.
+    assert [r.backend for r in results] == ["rag", "graph", "rag"]
+    assert [r.raw_scores["fused_rank"] for r in results] == [1, 2, 3]
+    assert [r.score for r in results] == pytest.approx([1.0, 1.0, 61 / 62])
+    scores = [r.score for r in results]
+    assert scores == sorted(scores, reverse=True)
 
 
 # ---------------------------------------------------------------------------

@@ -26,6 +26,14 @@ search:
     backends: [rag, graph, dic]
     max_workers: 4
 
+  # Cross-backend result fusion (ctx-search-03), applied whenever more than
+  # one backend contributes results (tools/cortex/search_service.py::fuse_results).
+  fusion:
+    rrf_k: 60            # RRF denominator constant (RRF paper default)
+    rerank_enabled: true # final rerank pass over the fused top-N
+    rerank_top_n: 10     # fused results forwarded to tools/rag/reranker.py
+    rerank: {}           # passthrough config for rerank_results (e.g. rerank_weight)
+
   # Domain scoping hook (ctx-canvas-04): when ctx.domain matches a key here,
   # the router intersects its backend selection with "backends" and records
   # "collections" as the advisory collection scope in result metadata.

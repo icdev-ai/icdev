@@ -29,6 +29,13 @@ On top of the adapters sits the strategy router (``search()``): queries are
 classified (pattern rules + the RAG taxonomy classifier) and routed to the
 right backend(s), with ambiguous queries fanning out in parallel under
 per-backend timeouts from ``args/cortex_config.yaml``.
+
+When more than one backend contributes hits, ``fuse_results`` merges the
+per-backend rankings into one list via cross-backend Reciprocal Rank Fusion
+(ctx-search-03): duplicates collapse by ``(citation.source_table,
+citation.source_id)`` with merged provenance, a final rerank pass runs over
+the fused top-N via ``tools/rag/reranker.py``, and scores are normalized to
+[0, 1]. A single contributing backend passes through untouched.
 """
 from __future__ import annotations
 
@@ -48,6 +55,11 @@ logger = logging.getLogger(__name__)
 _NS = __name__.rsplit(".cortex.", 1)[0]
 
 _SNIPPET_CHARS = 200
+
+# Fusion fallback defaults — overridable from args/cortex_config.yaml under
+# search.fusion.  Change config, not code.
+_RRF_K_DEFAULT = 60  # RRF paper default k (score denominator)
+_RERANK_TOP_N_DEFAULT = 10  # fused results forwarded to the final rerank pass
 
 
 def _backend(module: str):
@@ -332,21 +344,24 @@ def search_all(
     ctx: Optional[CortexContext] = None,
     backends: Optional[list] = None,
 ) -> list[CortexSearchResult]:
-    """Run the requested backends (default: all four) and merge results.
+    """Run the requested backends (default: all four) and fuse the results.
 
-    Returns the combined list sorted by normalized score descending. Each
-    adapter is already exception-isolated, so one failing backend degrades
-    to zero results without affecting the others.
+    When two or more backends return hits, the per-backend rankings are
+    fused via cross-backend RRF (``fuse_results``): duplicates collapse
+    with merged provenance, a final rerank pass runs over the fused top-N,
+    and scores are normalized to [0, 1]. A single contributing backend
+    passes through untouched. Each adapter is already exception-isolated,
+    so one failing backend degrades to zero results without affecting the
+    others.
     """
-    merged: list[CortexSearchResult] = []
+    per_backend: list[list[CortexSearchResult]] = []
     for name in backends or CORTEX_BACKENDS:
         adapter = BACKEND_ADAPTERS.get(name)
         if adapter is None:
             logger.warning("Cortex search: unknown backend %r skipped", name)
             continue
-        merged.extend(adapter(query, top_k=top_k, ctx=ctx))
-    merged.sort(key=lambda r: r.score, reverse=True)
-    return merged
+        per_backend.append(adapter(query, top_k=top_k, ctx=ctx))
+    return fuse_results(query, per_backend)
 
 
 # ---------------------------------------------------------------------------
@@ -537,10 +552,11 @@ def _run_backends(
 ) -> tuple:
     """Run backends concurrently with per-backend timeouts.
 
-    Returns ``(results, ran, timed_out)``. A backend that exceeds its timeout
-    is abandoned (its worker thread is not joined) and logged; the results
-    from the backends that finished are still returned — partial results beat
-    no results.
+    Returns ``(per_backend, ran, timed_out)`` where ``per_backend`` is one
+    ranked result list per backend that finished (fusion input). A backend
+    that exceeds its timeout is abandoned (its worker thread is not joined)
+    and logged; the lists from the backends that finished are still
+    returned — partial results beat no results.
     """
     valid = []
     for name in backends:
@@ -556,7 +572,7 @@ def _run_backends(
     max_workers = int(
         (search_cfg.get("fan_out") or {}).get("max_workers") or len(valid)
     )
-    merged: list[CortexSearchResult] = []
+    per_backend: list[list[CortexSearchResult]] = []
     timed_out: list = []
     executor = concurrent.futures.ThreadPoolExecutor(
         max_workers=max(1, min(max_workers, len(valid))),
@@ -574,7 +590,7 @@ def _run_backends(
             budget = float(timeouts.get(name, default_timeout))
             remaining = max(0.0, start + budget - time.monotonic())
             try:
-                merged.extend(future.result(timeout=remaining))
+                per_backend.append(future.result(timeout=remaining) or [])
             except concurrent.futures.TimeoutError:
                 future.cancel()
                 timed_out.append(name)
@@ -586,8 +602,7 @@ def _run_backends(
                 )
     finally:
         executor.shutdown(wait=False, cancel_futures=True)
-    merged.sort(key=lambda r: r.score, reverse=True)
-    return merged, valid, timed_out
+    return per_backend, valid, timed_out
 
 
 def search(
@@ -611,6 +626,10 @@ def search(
     moves to ``metadata["backend_strategy"]``), and ``metadata["router"]``
     carries the full decision including any timed-out backends. ``top_k``
     applies per backend, so fan-out can return more than ``top_k`` results.
+
+    When more than one backend contributes hits, the per-backend rankings
+    are fused via cross-backend RRF (``fuse_results``); a single
+    contributing backend passes through untouched.
     """
     ctx = ctx or CortexContext()
     cfg = config if config is not None else load_cortex_config()
@@ -646,7 +665,8 @@ def search(
             "collections": list(domain_cfg.get("collections") or []),
         }
 
-    results, ran, timed_out = _run_backends(query, top_k, ctx, backends, search_cfg)
+    per_backend, ran, timed_out = _run_backends(query, top_k, ctx, backends, search_cfg)
+    results = fuse_results(query, per_backend, config=cfg)
 
     strategy_tag = f"{strategy}:{label}[{'+'.join(ran)}]"
     router_record = {
@@ -665,3 +685,181 @@ def search(
         r.metadata["router"] = dict(router_record)
         r.strategy = strategy_tag
     return results
+
+
+# ---------------------------------------------------------------------------
+# Cross-backend RRF fusion (ctx-search-03)
+# ---------------------------------------------------------------------------
+
+
+def _dedupe_key(result: CortexSearchResult, fallback) -> tuple:
+    """Provenance identity used for cross-backend dedupe.
+
+    Results without a ``source_id`` have no usable provenance identity and
+    are never merged with each other (keyed on ``fallback``, the object id).
+    """
+    source_id = result.citation.source_id if result.citation else ""
+    if not source_id:
+        return ("", fallback)
+    return (result.citation.source_table, source_id)
+
+
+def _rerank_fused(
+    query: str,
+    results: list[CortexSearchResult],
+    top_n: int,
+    fusion_cfg: dict,
+) -> list[CortexSearchResult]:
+    """Final rerank pass over the fused list via ``tools/rag/reranker.py``.
+
+    The fused results are wrapped in RAG ``SearchResult`` stubs (chunk_id =
+    fused index) so ``rerank_results`` can score them; reranked hits come
+    back first with the blended score, hits the reranker did not return keep
+    their fused score and order after it. Any failure keeps the fused
+    ordering — the rerank pass can only refine, never lose results.
+    """
+    if top_n <= 0 or len(results) <= 1:
+        return results
+    try:
+        reranker = _backend("rag.reranker")
+        vsp = _backend("rag.vector_store_provider")
+        stubs = [
+            vsp.SearchResult(
+                chunk_id=str(i),
+                content=r.content,
+                score=r.score,
+                final_score=r.score,
+            )
+            for i, r in enumerate(results)
+        ]
+        ranked = reranker.rerank_results(
+            query,
+            stubs,
+            top_k=min(top_n, len(results)),
+            config=fusion_cfg.get("rerank") or {},
+        )
+        if not ranked:
+            return results
+        out: list[CortexSearchResult] = []
+        used: set = set()
+        for stub in ranked:
+            try:
+                idx = int(stub.chunk_id)
+            except (TypeError, ValueError):
+                continue
+            if idx < 0 or idx >= len(results) or idx in used:
+                continue
+            used.add(idx)
+            result = results[idx]
+            rerank_score = getattr(stub, "rerank_score", 0.0)
+            if rerank_score:
+                result.raw_scores["fused_rerank"] = rerank_score
+            result.score = _clamp(stub.final_score)
+            out.append(result)
+        for i, result in enumerate(results):
+            if i not in used:
+                out.append(result)
+        return out
+    except Exception as exc:
+        logger.warning("Cortex rerank pass failed, keeping fused order: %s", exc)
+        return results
+
+
+def fuse_results(
+    query: str,
+    backend_results: list,
+    rrf_k: Optional[int] = None,
+    rerank: Optional[bool] = None,
+    rerank_top_n: Optional[int] = None,
+    config: Optional[dict] = None,
+) -> list[CortexSearchResult]:
+    """Fuse per-backend CortexSearchResult rankings into one list (RRF).
+
+    Cross-backend variant of the intra-backend RRF in
+    ``tools/rag/retriever.py``: each backend list is one ranking, and every
+    appearance of a result contributes ``1 / (k + rank)`` to its fused
+    score (``k`` from ``search.fusion.rrf_k`` in args/cortex_config.yaml,
+    default 60). Duplicates by ``(citation.source_table,
+    citation.source_id)`` collapse to one result — contributions sum, the
+    best-ranked duplicate supplies content/citation, ``raw_scores`` merge
+    (collisions namespaced as ``"<backend>:<key>"``), and
+    ``metadata["fused_backends"]`` records which backends agreed.
+
+    The fused RRF value is kept in ``raw_scores["rrf"]`` and the pre-rerank
+    ordering in ``raw_scores["fused_rank"]`` (1-based); ``score`` is
+    normalized to [0, 1]. When more than one backend contributed, a final
+    rerank pass runs over the fused top-N (``_rerank_fused``). Ties are
+    order-stable: first appearance (backend order, then rank) wins.
+
+    A single contributing backend (or none) passes through untouched —
+    no RRF, no rerank, no re-scoring.
+    """
+    contributing = [lst for lst in (backend_results or []) if lst]
+    if not contributing:
+        return []
+    if len(contributing) == 1:
+        return list(contributing[0])
+
+    cfg = config if config is not None else load_cortex_config()
+    fusion_cfg = (cfg.get("search") or {}).get("fusion") or {}
+    k = rrf_k if rrf_k is not None else fusion_cfg.get("rrf_k", _RRF_K_DEFAULT)
+
+    entries: dict = {}
+    for lst in contributing:
+        for rank, result in enumerate(lst, start=1):
+            contribution = 1.0 / (k + rank)
+            key = _dedupe_key(result, id(result))
+            entry = entries.get(key)
+            if entry is None:
+                entries[key] = {
+                    "result": result,
+                    "fused": contribution,
+                    "best": contribution,
+                    "order": len(entries),
+                    "backends": [result.backend],
+                    "raw": dict(result.raw_scores or {}),
+                }
+                continue
+            entry["fused"] += contribution
+            if result.backend not in entry["backends"]:
+                entry["backends"].append(result.backend)
+            for name, value in (result.raw_scores or {}).items():
+                if name in entry["raw"] and entry["raw"][name] != value:
+                    entry["raw"][f"{result.backend}:{name}"] = value
+                else:
+                    entry["raw"].setdefault(name, value)
+            if contribution > entry["best"]:
+                entry["result"] = result
+                entry["best"] = contribution
+
+    # Stable for ties: equal fused scores keep first-appearance order.
+    ordered = sorted(entries.values(), key=lambda e: (-e["fused"], e["order"]))
+
+    peak = ordered[0]["fused"]
+    fused: list[CortexSearchResult] = []
+    for position, entry in enumerate(ordered, start=1):
+        result = entry["result"]
+        raw = entry["raw"]
+        raw["rrf"] = entry["fused"]
+        raw["fused_rank"] = position
+        result.raw_scores = raw
+        result.score = _clamp(entry["fused"] / peak)
+        if len(entry["backends"]) > 1:
+            result.metadata["fused_backends"] = list(entry["backends"])
+        fused.append(result)
+
+    do_rerank = (
+        rerank if rerank is not None else bool(fusion_cfg.get("rerank_enabled", True))
+    )
+    if do_rerank:
+        top_n = (
+            rerank_top_n
+            if rerank_top_n is not None
+            else fusion_cfg.get("rerank_top_n", _RERANK_TOP_N_DEFAULT)
+        )
+        fused = _rerank_fused(query, fused, top_n=top_n, fusion_cfg=fusion_cfg)
+        norm = max((r.score for r in fused), default=0.0)
+        if 0.0 < norm < 1.0:
+            for r in fused:
+                r.score = _clamp(r.score / norm)
+    return fused
