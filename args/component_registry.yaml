@@ -1343,6 +1343,12 @@ components:
     - label: RFI Workbench
       href: /rfi/
       enabled: true
+    - label: Capture Strategy
+      href: /capture/strategy
+      enabled: true
+    - label: Evidence Library
+      href: /capture/evidence
+      enabled: true
   iqe:
     adapter_module: tools.iqe.adapters.rfi_canvas
     collections:
@@ -1614,6 +1620,7 @@ components:
   completeness:
     template: tools/dashboard/templates/canvas_health/page.html
     blueprint: true
+    constants: tools/canvas_health/constants.py
     iqe_adapter: true
     nav_link: true
     seed_queries: context/iqe/queries/canvas_health/

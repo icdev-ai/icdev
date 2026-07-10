@@ -249,15 +249,21 @@ class _FakeDB:
 
 
 class TestEngineRunnerWeights:
-    def test_default_weights_has_six_keys(self):
-        assert len(_DEFAULT_WEIGHTS) == 6
+    def test_default_weights_has_seven_keys(self):
+        assert len(_DEFAULT_WEIGHTS) == 7
 
     def test_default_weights_expected_keys(self):
         expected = {
-            "uploads", "kg_past_performance", "rag_general",
+            "uploads", "kg_past_performance", "prior_submissions", "rag_general",
             "innovation_engine", "creative_engine", "research_engine",
         }
         assert set(_DEFAULT_WEIGHTS.keys()) == expected
+
+    def test_every_source_has_a_gatherer_and_a_backing_table(self):
+        """Guard against the silent-zero class of bug: a weighted source whose
+        gatherer or backing table does not exist contributes nothing forever."""
+        assert set(_DEFAULT_WEIGHTS) == set(_runner._GATHERERS)
+        assert set(_DEFAULT_WEIGHTS) == set(_runner._SOURCE_TABLES)
 
     def test_all_source_weights_are_positive(self):
         # Each source has a positive weight (they are relative, normalized at assembly time)
@@ -288,14 +294,13 @@ class TestEngineRunnerAssembly:
         return {k: {"enabled": True, "weight": v["weight"]} for k, v in _DEFAULT_WEIGHTS.items()}
 
     def _gatherers_all_ok(self):
-        return {
-            "uploads": lambda s, t, c: "Upload content here",
-            "kg_past_performance": lambda t, c: "KG content here",
-            "rag_general": lambda t, c: "RAG content here",
-            "innovation_engine": lambda t, c: "Innovation signals",
-            "creative_engine": lambda t, c: "Creative specs",
-            "research_engine": lambda t, c: "Research dossier",
+        """Derived from _DEFAULT_WEIGHTS so a new source cannot silently go unmocked
+        (which would drop it from weights_applied and skew the normalisation)."""
+        gatherers = {
+            key: (lambda k: lambda t, c: f"{k} content here")(key) for key in _DEFAULT_WEIGHTS
         }
+        gatherers["uploads"] = lambda s, t, c: "Upload content here"  # takes session_id
+        return gatherers
 
     def test_assemble_no_enabled_sources_returns_empty(self, monkeypatch):
         monkeypatch.setattr(_runner, "get_effective_weights", lambda *a: self._all_disabled_weights())
@@ -312,14 +317,11 @@ class TestEngineRunnerAssembly:
         assert len(result["sources_used"]) > 0
         assert result["total_chars"] > 0
 
-    def test_mocked_gatherers_all_six_contribute(self, monkeypatch):
+    def test_mocked_gatherers_all_contribute(self, monkeypatch):
         monkeypatch.setattr(_runner, "get_effective_weights", lambda *a: self._all_enabled_weights())
         monkeypatch.setattr(_runner, "_GATHERERS", self._gatherers_all_ok())
         result = assemble_weighted_prompt_context("s1", "sec1", "topic")
-        assert set(result["sources_used"]) == {
-            "uploads", "kg_past_performance", "rag_general",
-            "innovation_engine", "creative_engine", "research_engine",
-        }
+        assert set(result["sources_used"]) == set(_DEFAULT_WEIGHTS)
 
     def test_gatherer_failure_graceful_other_sources_contribute(self, monkeypatch):
         def _boom(*a): raise Exception("uploads DB offline")

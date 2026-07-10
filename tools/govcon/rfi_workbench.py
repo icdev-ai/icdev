@@ -293,6 +293,10 @@ def apply_hitl(section_id, action, comment=""):
     _recalculate_session_progress(section_id)
     if action in ("approve", "accept"):
         threading.Thread(target=_ace_reviewer_pass_background, args=(section_id,), daemon=True).start()
+        # Approved prose becomes evidence for the next pursuit. Backgrounded because
+        # indexing embeds the content, and Accept must stay instant. promote_rfi_section
+        # is idempotent and never raises, so a failure here cannot lose the approval.
+        threading.Thread(target=_promote_evidence_background, args=(section_id,), daemon=True).start()
     result = get_section(section_id)
     if result and action in ("approve", "accept"):
         from tools.govcon.rfi_grounding import find_placeholders
@@ -321,6 +325,13 @@ def accept_all_drafted(session_id):
     db.commit()
     if ids:
         _recalculate_session_progress(ids[0])
+        # Bulk accept is the common path; without this the flywheel would only turn
+        # for sections approved one at a time. promote_rfi_section skips anything
+        # still holding [VERIFY], so a shortcut cannot smuggle unproven claims in.
+        for sec_id in ids:
+            threading.Thread(
+                target=_promote_evidence_background, args=(sec_id,), daemon=True
+            ).start()
 
     # Non-blocking warnings: unresolved placeholders + hallucinated RFI
     # citations in what was just accepted. The hard block is enforced at
@@ -445,6 +456,18 @@ def generate_section_content(section_id, profile_name, parsed_data):
         if compliance_notes:
             style_parts.append(compliance_notes[:300].strip())
         prompt += "\n\n[Style Requirements]\n" + "\n".join(style_parts)
+
+    # Inject the capture strategy so every part of the response argues one message
+    # rather than reading as six separately-authored documents. Returns "" for
+    # administrative sections (Part 1) and the ROM cost table (4.2), where
+    # positioning does not belong. Every section — including generate_all_sections —
+    # funnels through here, so this single insertion covers the whole response.
+    from tools.govcon.capture_strategy import build_strategy_block, resolve_strategy
+
+    strategy = resolve_strategy(session_id=section.get("session_id", ""))
+    strategy_block = build_strategy_block(strategy, item)
+    if strategy_block:
+        prompt += "\n\n" + strategy_block
 
     # Ground the model in the RFI's real structure so it cannot invent
     # section numbers ("Section IV.B") or unsourced claims.
@@ -1759,6 +1782,37 @@ def _ace_reviewer_pass_background(section_id: str) -> None:
         logger.debug("ACE Reviewer pass complete for section %s", section_id)
     except Exception as exc:
         logger.warning("ACE Reviewer background error for %s: %s", section_id, exc)
+
+
+def _promote_evidence_background(section_id: str) -> None:
+    """Index an approved section into the evidence corpus. Never raises."""
+    try:
+        from tools.govcon.evidence_corpus import promote_rfi_section
+
+        result = promote_rfi_section(section_id)
+        logger.info(
+            "Evidence promotion for section %s: %s (%s)",
+            section_id, result["status"], result.get("reason") or f"{result['chunks']} chunks",
+        )
+    except Exception as exc:
+        logger.warning("Evidence promotion background error for %s: %s", section_id, exc)
+
+
+def get_section_evidence_status(section_id: str) -> dict:
+    """Whether this section is indexed as reusable evidence — drives the 'Reusable' chip."""
+    try:
+        from tools.db.storage import get_connection
+        from tools.govcon.evidence_corpus import RFI_SOURCE_TYPE
+
+        row = get_connection().execute(
+            "SELECT COUNT(*) AS cnt FROM rag_chunks WHERE source_type = %s AND source_id = %s",
+            (RFI_SOURCE_TYPE, section_id),
+        ).fetchone()
+        chunks = int(dict(row)["cnt"]) if row else 0
+        return {"indexed": chunks > 0, "chunks": chunks}
+    except Exception as exc:
+        logger.warning("Could not read evidence status for %s: %s", section_id, exc)
+        return {"indexed": False, "chunks": 0}
 
 
 # ── Cross-section consistency check (item 3) ─────────────────────────────────

@@ -375,7 +375,7 @@ def _render_win_strategy(themes: List[Dict]) -> str:
         return "\n".join(lines)
     wt = [t for t in themes if t.get("theme_type") == "win_theme"]
     disc = [t for t in themes if t.get("theme_type") == "discriminator"]
-    ghosts = [t for t in themes if t.get("theme_type") == "ghost"]
+    ghosts = [t for t in themes if t.get("theme_type") == "ghost_strategy"]
     if wt:
         lines.append("### Win Themes\n")
         for i, t in enumerate(wt, 1):

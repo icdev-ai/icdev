@@ -28,6 +28,7 @@ import argparse
 import json
 import os
 import sys
+import threading
 import uuid
 from tools.db.storage import get_connection
 from datetime import datetime, timezone
@@ -192,14 +193,26 @@ def _load_parsed_solicitation(conn, shall_row):
 # ── LLM drafting ──────────────────────────────────────────────────────
 
 
-def _build_draft_prompt(shall_text, cap_descriptions, kb_content, domain, product_context, ground_truth_block=""):
+def _build_draft_prompt(
+    shall_text,
+    cap_descriptions,
+    kb_content,
+    domain,
+    product_context,
+    ground_truth_block="",
+    strategy_block="",
+):
     """Assemble the qwen3 worker prompt.
 
     When a parsed-solicitation ground-truth block is available it is injected
     as a hard citation constraint (ground-prop-02): the model sees the real
     section/factor/CLIN structure instead of inventing one.
+
+    The capture-strategy block carries the company win themes so every drafted
+    section argues one message instead of being written in isolation.
     """
     grounding_section = f"{ground_truth_block}\n\n" if ground_truth_block else ""
+    strategy_section = f"{strategy_block}\n\n" if strategy_block else ""
     grounding_rule = (
         "- Cite ONLY the sections, instructions, volumes, factors, and CLINs "
         "listed in the SOLICITATION GROUND TRUTH block\n"
@@ -208,6 +221,7 @@ def _build_draft_prompt(shall_text, cap_descriptions, kb_content, domain, produc
     )
     return (
         f"{grounding_section}"
+        f"{strategy_section}"
         f"Draft a concise proposal response (~400 words) to this requirement:\n\n"
         f"REQUIREMENT: {shall_text}\n\n"
         f"DOMAIN: {domain}\n"
@@ -229,7 +243,9 @@ def _build_draft_prompt(shall_text, cap_descriptions, kb_content, domain, produc
     )
 
 
-def _try_llm_draft(shall_text, capabilities, knowledge_blocks, domain, parsed_solicitation=None):
+def _try_llm_draft(
+    shall_text, capabilities, knowledge_blocks, domain, parsed_solicitation=None, opportunity_id=""
+):
     """Attempt two-tier LLM draft via tools.llm.router.
 
     Returns (draft_text, method) or (None, None) if unavailable.
@@ -284,8 +300,27 @@ def _try_llm_draft(shall_text, capabilities, knowledge_blocks, domain, parsed_so
                 "closes the Shipley lifecycle from proposal to contract delivery.\n"
             )
 
+        # Capture strategy — the same win themes the RFI workbench injects, so an RFI
+        # response and the proposal that follows it argue one message. resolve_strategy
+        # accepts a SAM solicitation number as well as a proposal_opportunities.id.
+        strategy_block = ""
+        try:
+            from tools.govcon.capture_strategy import MODE_FULL, build_strategy_block, resolve_strategy
+
+            strategy_block = build_strategy_block(
+                resolve_strategy(opportunity_id=opportunity_id), mode=MODE_FULL
+            )
+        except Exception as exc:
+            print(f"Warning: capture strategy unavailable: {exc}", file=sys.stderr)
+
         prompt = _build_draft_prompt(
-            shall_text, cap_descriptions, kb_content, domain, product_context, ground_truth_block
+            shall_text,
+            cap_descriptions,
+            kb_content,
+            domain,
+            product_context,
+            ground_truth_block,
+            strategy_block,
         )
 
         # Phase 70: Sanitize prompt before LLM invocation (defense-in-depth)
@@ -680,7 +715,12 @@ def draft_response(shall_id):
     parsed_solicitation = _load_parsed_solicitation(conn, s)
 
     draft_text, method = _try_llm_draft(
-        shall_text, capabilities, knowledge_blocks, domain, parsed_solicitation=parsed_solicitation
+        shall_text,
+        capabilities,
+        knowledge_blocks,
+        domain,
+        parsed_solicitation=parsed_solicitation,
+        opportunity_id=opp_id,
     )
     if not draft_text:
         draft_text, method = _template_draft(shall_text, capabilities, knowledge_blocks, domain)
@@ -980,12 +1020,29 @@ def approve_draft(draft_id, reviewer="human", notes="", force_placeholders=False
     conn.commit()
     conn.close()
 
+    # Approved prose becomes reusable evidence for the next pursuit. Backgrounded so
+    # approval stays responsive; promote_proposal_draft is idempotent, never raises,
+    # and declines drafts that were force-approved past a gate.
+    threading.Thread(
+        target=_promote_evidence_background, args=(approved_id,), daemon=True
+    ).start()
+
     return {
         "status": "ok",
         "approved_draft_id": approved_id,
         "original_draft_id": draft_id,
         "reviewer": reviewer,
     }
+
+
+def _promote_evidence_background(approved_draft_id):
+    """Index an approved proposal draft into the evidence corpus. Never raises."""
+    try:
+        from tools.govcon.evidence_corpus import promote_proposal_draft
+
+        promote_proposal_draft(approved_draft_id)
+    except Exception as exc:
+        print(f"Warning: evidence promotion failed: {exc}", file=sys.stderr)
 
 
 # ── CLI ───────────────────────────────────────────────────────────────

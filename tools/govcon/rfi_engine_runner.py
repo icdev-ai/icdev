@@ -31,11 +31,33 @@ logger = get_logger("icdev.govcon.rfi_engine_runner")
 _DEFAULT_WEIGHTS: dict = {
     "uploads": {"enabled": True, "weight": 40},
     "kg_past_performance": {"enabled": True, "weight": 30},
+    "prior_submissions": {"enabled": True, "weight": 25},
     "rag_general": {"enabled": True, "weight": 20},
     "innovation_engine": {"enabled": False, "weight": 10},
     "creative_engine": {"enabled": False, "weight": 10},
     "research_engine": {"enabled": False, "weight": 10},
 }
+
+# RAG source_types that make up the reusable-evidence corpus: approved RFI
+# sections, approved proposal drafts, and uploaded prior submissions.
+_EVIDENCE_SOURCE_TYPES = [
+    "rfi_approved_sections",
+    "proposal_approved_drafts",
+    "prior_submissions",
+]
+
+# 'primary' evidence is a document we actually submitted or were graded on.
+# Everything else is 'derived' — prose this system generated that a human approved.
+# The tier follows from the source_type rather than a chunk metadata field, because
+# metadata_cols must map to real table columns for the batch ingest path.
+_PRIMARY_SOURCE_TYPES = frozenset({"prior_submissions"})
+
+# Outcomes whose prose must never be reused as supporting evidence.
+_NON_CITABLE_OUTCOMES = frozenset({"lost"})
+
+
+def evidence_tier(source_type: str) -> str:
+    return "primary" if source_type in _PRIMARY_SOURCE_TYPES else "derived"
 
 # Max characters contributed per source (before weight-scaling)
 _MAX_CHARS_PER_SOURCE = 1200
@@ -268,47 +290,87 @@ def _gather_uploads(session_id: str, topic: str, max_chars: int) -> str:
 
 
 def _gather_kg_past_performance(topic: str, max_chars: int) -> str:
-    """Query KG for past-performance entities relevant to the topic."""
-    try:
-        from tools.knowledge.kg_engine import search_entities
-        results = search_entities(topic, entity_type="past_performance", limit=5)
-        snippets = []
-        for r in results:
-            desc = r.get("description") or r.get("summary") or ""
-            if desc:
-                snippets.append(f"- {r.get('name', 'entity')}: {desc[:200]}")
-        return "\n".join(snippets)[:max_chars]
-    except Exception:
-        pass
-    # Fallback: direct DB query
-    try:
-        from tools.db.storage import get_canvas_connection
-        db = get_canvas_connection("ICDEV_DB_URL")
-        rows = db.execute(
-            "SELECT name, description FROM kg_entities WHERE entity_type='past_performance' "
-            "AND (name ILIKE %s OR description ILIKE %s) LIMIT 5",
-            (f"%{topic[:30]}%", f"%{topic[:30]}%"),
-        ).fetchall()
-        return "\n".join(f"- {dict(r).get('name','')}: {dict(r).get('description','')[:200]}"
-                         for r in rows)[:max_chars]
-    except Exception:
-        return ""
+    """Retrieve past-performance knowledge blocks relevant to the topic.
+
+    Historically this queried a `kg_entities` table via `tools.knowledge.kg_engine`.
+    Neither exists — the import raised ImportError and the fallback query hit a
+    non-existent table, so this source silently contributed nothing despite
+    carrying 30% of the default evidence weight.
+
+    The live past-performance store is `proposal_knowledge_base`, already used by
+    `response_drafter.draft_response()`. Blocks are emitted with their id so the
+    `[source: <id>]` citation gate can validate any claim drawn from them.
+    """
+    from tools.govcon.knowledge_base import search_blocks
+
+    result = search_blocks(topic, category="past_performance", top_k=5)
+    snippets = []
+    for block in result.get("results", []):
+        content = (block.get("content") or "").strip()
+        if not content:
+            continue
+        snippets.append(
+            f"- [source: {block.get('id', '?')}] {block.get('title', 'block')}: {content[:200]}"
+        )
+    return "\n".join(snippets)[:max_chars]
+
+
+def _rag_search(topic: str, top_k: int, source_types: "list | None" = None) -> list:
+    """Thin wrapper over the real RAG retriever.
+
+    The retriever lives at tools.rag.get_retriever(...).search(...); the previously
+    imported `tools.rag.rag_engine` module has never existed.
+    """
+    from tools.rag import get_retriever
+
+    return get_retriever().search(topic, top_k=top_k, source_types=source_types)
 
 
 def _gather_rag_general(topic: str, max_chars: int) -> str:
     """Retrieve relevant RAG chunks for the topic."""
-    try:
-        from tools.rag.rag_engine import search as rag_search
-        results = rag_search(topic, top_k=4)
-        chunks = []
-        for r in results:
-            text = r.get("text") or r.get("content") or r.get("chunk", "")
-            if text:
-                chunks.append(text[:300])
-        return "\n\n".join(chunks)[:max_chars]
-    except Exception as exc:
-        logger.debug("RAG gather failed (non-critical): %s", exc)
+    chunks = []
+    for result in _rag_search(topic, top_k=4):
+        text = (result.content or "").strip()
+        if text:
+            chunks.append(text[:300])
+    return "\n\n".join(chunks)[:max_chars]
+
+
+def _gather_prior_submissions(topic: str, max_chars: int) -> str:
+    """Retrieve evidence from approved RFI/proposal content and uploaded prior submissions.
+
+    Chunks carry an `evidence_tier` of 'primary' (a document we actually submitted)
+    or 'derived' (prose this system generated and a human approved). Primary
+    evidence is listed first, and the tier is stated inline so the model — and the
+    reviewer reading the Sources panel — can tell ground truth from our own words.
+    """
+    results = _rag_search(topic, top_k=8, source_types=_EVIDENCE_SOURCE_TYPES)
+
+    # A lost proposal's prose is not persuasive evidence. Its lessons belong in the
+    # capture strategy (pg_win_loss_records.lessons_learned), not in the next draft.
+    results = [r for r in results if (r.metadata or {}).get("outcome") not in _NON_CITABLE_OUTCOMES]
+
+    # Primary evidence outranks derived, then fall back to the retriever's score.
+    results.sort(key=lambda r: (evidence_tier(r.source_type) != "primary", -r.final_score))
+    results = results[:6]
+
+    parts = []
+    for result in results:
+        text = (result.content or "").strip()
+        if not text:
+            continue
+        tier = evidence_tier(result.source_type)
+        parts.append(f"- [source: {result.source_id}] ({tier}) {text[:280]}")
+
+    if not parts:
         return ""
+
+    header = (
+        "Evidence marked (primary) comes from a document we submitted or were graded on. "
+        "Evidence marked (derived) is our own previously-approved prose: reuse its framing, "
+        "but do not treat it as proof of a number, a metric, or a customer outcome."
+    )
+    return (header + "\n" + "\n".join(parts))[:max_chars]
 
 
 def _gather_innovation_signals(topic: str, max_chars: int) -> str:
@@ -400,6 +462,7 @@ def _gather_research_dossier(topic: str, max_chars: int) -> str:
 _GATHERERS = {
     "uploads": _gather_uploads,
     "kg_past_performance": _gather_kg_past_performance,
+    "prior_submissions": _gather_prior_submissions,
     "rag_general": _gather_rag_general,
     "innovation_engine": _gather_innovation_signals,
     "creative_engine": _gather_creative_specs,
@@ -408,7 +471,8 @@ _GATHERERS = {
 
 _SOURCE_LABELS = {
     "uploads": "Past Performance / Uploads",
-    "kg_past_performance": "KG Past Performance",
+    "kg_past_performance": "Past Performance Knowledge Base",
+    "prior_submissions": "Prior RFIs & Proposals",
     "rag_general": "RAG Knowledge Base",
     "innovation_engine": "Innovation Engine Signals",
     "creative_engine": "Creative Engine Specs",
@@ -478,9 +542,13 @@ def assemble_weighted_prompt_context(
 
 # ── Source availability check (Item 2) ───────────────────────────────────────
 
+# Backing table per source, used to report "is there anything indexed for this source?"
+# kg_past_performance previously pointed at `kg_entities`, which has never existed, so
+# the panel reported it unavailable forever while its gatherer silently returned "".
 _SOURCE_TABLES = {
     "uploads": ("rfi_session_uploads", "session_id"),
-    "kg_past_performance": ("kg_entities", None),
+    "kg_past_performance": ("proposal_knowledge_base", None),
+    "prior_submissions": ("rag_chunks", None),
     "rag_general": ("rag_chunks", None),
     "innovation_engine": ("innovation_signals", None),
     "creative_engine": ("creative_specs", None),

@@ -33,6 +33,14 @@
 .wb-card-body{padding:12px 14px}
 .wb-btn{width:100%;border-radius:5px;padding:7px 12px;font-size:12px;font-weight:600;cursor:pointer;margin-bottom:6px;transition:all .15s;border:1px solid transparent}
 #req-panel{background:#0a1525;border:1px solid #1e3a6e;border-radius:6px;margin-top:10px;overflow:hidden}
+.prov-label{color:#5a7aa0;font-size:10px;margin-right:6px;text-transform:uppercase;letter-spacing:.4px}
+.prov-chip{display:inline-block;background:#0a1628;border:1px solid #1e3a6e;color:#7ab3f0;font-size:10px;padding:2px 8px;border-radius:10px;margin-right:5px}
+.prov-reusable{background:#0a2e1a;border-color:#10603a;color:#34d399}
+.cov-grid{display:flex;flex-wrap:wrap;gap:4px}
+.cov{font-size:10px;font-weight:600;padding:3px 6px;border-radius:3px;cursor:default}
+.cov-ok{background:#0a2e1a;color:#34d399}
+.cov-miss{background:#3a2a0a;color:#f0b429}
+.cov-na{background:#141f33;color:#3d5a80}
 #req-panel-hdr{display:flex;align-items:center;gap:8px;padding:7px 12px;background:#0f1f3a;border-bottom:1px solid #1e3a6e;cursor:pointer;user-select:none}
 #req-list{max-height:220px;overflow-y:auto;padding:6px 8px}
 .req-item{display:flex;align-items:flex-start;gap:7px;padding:5px 6px;border-radius:4px;margin-bottom:3px;border:1px solid #1a2b4a;background:#060f1c}
@@ -215,6 +223,9 @@
         </div>
       </div>
 
+      <!-- Provenance chips — the evidence behind this draft (sources_json, migration 249) -->
+      <div id="provenance" style="margin-top:8px;"></div>
+
       <!-- Generate Why Us panel — shown for section 5.1 (Industry Insights) -->
       <div id="why-us-panel" style="display:none;margin-top:8px;background:#050d1f;border:1px solid #1e3a6e;border-radius:6px;overflow:hidden;">
         <div style="background:#0a1628;padding:7px 12px;display:flex;align-items:center;gap:8px;border-bottom:1px solid #1e3a6e;">
@@ -246,6 +257,15 @@
 
   <!-- RIGHT: Controls panel -->
   <div id="wb-panel">
+    <!-- Message coverage — one glance answers "does the whole response argue one thing?" -->
+    <div class="wb-card" style="margin:12px;">
+      <div class="wb-card-hdr" style="background:#0c2a3a;color:#38bdf8;">
+        <span>🎯 Message Coverage</span>
+        <a href="/capture/strategy" style="color:#4f8ef7;font-size:10px;font-weight:400;text-decoration:none;">edit strategy</a>
+      </div>
+      <div class="wb-card-body" id="coverage-body"></div>
+    </div>
+
     <div id="panel-placeholder" style="text-align:center;padding:48px 16px;">
       <div style="font-size:2.5rem;margin-bottom:10px;">🛠️</div>
       <div style="color:#7a8cb0;font-size:12px;font-weight:600;">Select a section to see AI Assist, WriteGuard, and HITL controls</div>
@@ -506,6 +526,8 @@ let currentSectionId = null;
 let currentSection = null;
 let saveTimer = null;
 let previewActive = false;
+
+document.addEventListener('DOMContentLoaded', loadCoverage);
 let sessionWordsPerPage = 250;
 let sectionWordLimit = null;
 let sectionPageLimit = null;
@@ -520,6 +542,7 @@ function loadSection(id) {
     .then(secs => {
       currentSection = secs.find(s => s.id === id);
       if (currentSection) renderSection(currentSection);
+      loadCoverage();   // drafts change as sections are generated and accepted
     });
 }
 
@@ -610,6 +633,61 @@ function renderSection(sec) {
     document.getElementById('why-us-actions').style.display = 'none';
     document.getElementById('why-us-spinner').style.display = 'none';
     _whyUsParagraph = '';
+  }
+
+  loadProvenance(sec.id);
+}
+
+// ── Provenance: what evidence produced this draft ─────────────────────────────
+// sources_json has been persisted since migration 249 and shown nowhere. A writer
+// who can see WHY the model said something can trust it or correct it.
+async function loadProvenance(sectionId) {
+  const box = document.getElementById('provenance');
+  if (!box) return;
+  box.innerHTML = '';
+  try {
+    const d = await (await fetch(`/api/rfi/${SESSION_ID}/sections/${sectionId}/provenance`)).json();
+    const chips = (d.sources || []).map(s =>
+      `<span class="prov-chip">${s}</span>`).join('');
+    const reusable = d.evidence && d.evidence.indexed
+      ? `<span class="prov-chip prov-reusable" title="Indexed as reusable evidence for the next pursuit">♻ Reusable · ${d.evidence.chunks} chunks</span>`
+      : '';
+    box.innerHTML = (chips || reusable)
+      ? `<span class="prov-label">Evidence used:</span>${chips}${reusable}`
+      : '';
+  } catch (e) { /* advisory */ }
+}
+
+// ── Message coverage: is the response uniform, or off-message in places? ──────
+async function loadCoverage() {
+  const box = document.getElementById('coverage-body');
+  if (!box) return;
+  box.innerHTML = '<span style="color:#5a7aa0;font-size:11px;">Loading…</span>';
+  try {
+    const d = await (await fetch(`/api/rfi/${SESSION_ID}/theme-coverage`)).json();
+    if (d.error) { box.innerHTML = `<span style="color:#e94560;font-size:11px;">${d.error}</span>`; return; }
+    if (!(d.themes || []).length) {
+      box.innerHTML = '<span style="color:#5a7aa0;font-size:11px;">No win themes set. <a href="/capture/strategy" style="color:#4f8ef7;">Set a capture strategy →</a></span>';
+      return;
+    }
+    const hit = new Set(Object.values(d.matrix || {}).flat());
+    const cells = (d.sections || []).map(s => {
+      // Parts 1 and 4.2 are excluded by design — grey means "not applicable", not "failed".
+      if (s.policy === 'none')      return `<span class="cov cov-na"      title="${s.item_number}: excluded by design (administrative / cost table)">${s.item_number}</span>`;
+      if (s.policy === 'questions') return `<span class="cov cov-na"      title="${s.item_number}: questions to the Government — asserts nothing">${s.item_number}</span>`;
+      if (hit.has(s.item_number))   return `<span class="cov cov-ok"      title="${s.item_number}: on message">${s.item_number}</span>`;
+      return `<span class="cov cov-miss" title="${s.item_number}: no win theme detected — reads off-message">${s.item_number}</span>`;
+    }).join('');
+    const unused = (d.findings || []).filter(f => f.type === 'theme_unused').length;
+    box.innerHTML = `<div class="cov-grid">${cells}</div>
+      <div style="color:#5a7aa0;font-size:10px;margin-top:8px;line-height:1.5;">
+        Score ${d.score}/100 · <span style="color:#34d399;">■</span> on message
+        <span style="color:#f0b429;">■</span> off message
+        <span style="color:#3d5a80;">■</span> excluded by design
+        ${unused ? `<br><span style="color:#f0b429;">${unused} theme(s) never appear in any section.</span>` : ''}
+      </div>`;
+  } catch (e) {
+    box.innerHTML = `<span style="color:#e94560;font-size:11px;">${e}</span>`;
   }
 }
 

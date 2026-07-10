@@ -998,6 +998,49 @@ def _load_page_completeness_whitelist() -> Set[str]:
     return skip
 
 
+def _load_registry_module_dirs() -> Dict[str, Tuple[Path, Path]]:
+    """Map template-dir name → (blueprint_file, package_dir) from the registry.
+
+    The 8-component gate historically assumed a canvas's Python package sits at
+    `tools/<canvas>/blueprint.py`, deriving the path from the *template* directory
+    name. That is wrong whenever the package name differs from the template/URL
+    name — `logs` is served by `tools/logging/blueprint.py`, and `rfi_canvas` by
+    `tools/govcon/rfi_canvas_blueprint.py`. Both were reported as missing their
+    blueprint and backing module even though the pages work.
+
+    component_registry.yaml already declares the truth in `module:`, so resolve it
+    from there. Missing/malformed registry → empty map, and callers fall back to
+    the historical `tools/<canvas>/` guess (fail-safe: gate gets stricter, not looser).
+    """
+    try:
+        import yaml  # type: ignore
+    except ImportError:
+        return {}
+    registry_path = PROJECT_ROOT / "args" / "component_registry.yaml"
+    if not registry_path.exists():
+        return {}
+    try:
+        data = yaml.safe_load(registry_path.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return {}
+
+    resolved: Dict[str, Tuple[Path, Path]] = {}
+    for comp in data.get("components", []) or []:
+        module = comp.get("module")
+        if not module:
+            continue
+        template = (comp.get("completeness") or {}).get("template")
+        canvas = Path(template).parent.name if template else comp.get("key")
+        if not canvas:
+            continue
+        parts = str(module).split(".")
+        if len(parts) < 2:
+            continue
+        bp_file = PROJECT_ROOT.joinpath(*parts).with_suffix(".py")
+        resolved[canvas] = (bp_file, bp_file.parent)
+    return resolved
+
+
 def _load_registry_nav_dirs() -> Set[str]:
     """Return template-dir names of canvases with a registry-declared nav link.
 
@@ -1810,11 +1853,16 @@ def check_attribution_claims(changed_files: Optional[List[Path]] = None) -> Cohe
         for phrase in _ATTRIBUTION_PHRASES:
             # Match: <phrase> <ProjectName> where ProjectName starts uppercase
             # or looks like a URL/path/identifier.
+            #
+            # The phrase itself is case-insensitive ("Based on the" / "based on the"),
+            # but the project name must NOT be. A blanket re.IGNORECASE made the
+            # leading [A-Z] match lowercase words, so ordinary prose such as
+            # "Based on the requirements analysis" was reported as an unregistered
+            # upstream citation. Scope the flag to the phrase with (?i:...).
             pattern = re.compile(
-                rf"{re.escape(phrase)}\s+"
+                rf"(?i:{re.escape(phrase)})\s+"
                 rf"([A-Z][A-Za-z0-9_\-./]+(?:\s+[A-Za-z0-9][A-Za-z0-9_\-./]*)?"
-                rf"|[a-z][a-z0-9_\-]+[/.][A-Za-z0-9_\-./]+)",
-                re.IGNORECASE,
+                rf"|[a-z][a-z0-9_\-]+[/.][A-Za-z0-9_\-./]+)"
             )
             for match in pattern.finditer(text):
                 raw_project = match.group(1).strip().rstrip("'s").strip()
@@ -2872,6 +2920,12 @@ def check_security_context() -> CoherenceCheck:
             except OSError:
                 continue
             for lineno, line in enumerate(lines, 1):
+                # A comment that merely *describes* a bypass is not a bypass. Without
+                # this, prose explaining why a historical set_security_context(None)
+                # was removed is itself reported as an undocumented bypass — which is
+                # why tools/workflow had to be dir-exempted above.
+                if line.lstrip().startswith("#"):
+                    continue
                 if bypass_re.search(line) and not bypass_ok_re.search(line):
                     rel = py_file.relative_to(PROJECT_ROOT)
                     undocumented.append(f"{rel}:{lineno}")
@@ -2971,6 +3025,7 @@ def check_new_page_completeness() -> CoherenceCheck:
     iqe_queries_dir = PROJECT_ROOT / "context" / "iqe" / "queries"
     whitelist = _load_page_completeness_whitelist()
     registry_nav_dirs = _load_registry_nav_dirs()
+    registry_modules = _load_registry_module_dirs()
 
     violations: List[str] = []
     whitelisted_count = 0
@@ -2990,24 +3045,28 @@ def check_new_page_completeness() -> CoherenceCheck:
         if not mirror.exists():
             missing.append("icdev/ mirror missing")
 
-        # 2. Blueprint with @route
-        bp_file = PROJECT_ROOT / "tools" / canvas / "blueprint.py"
+        # 2. Blueprint with @route. Prefer the registry-declared module path over
+        #    guessing tools/<canvas>/ — the package name need not match the
+        #    template/URL name (logs -> tools/logging, rfi_canvas -> tools/govcon).
+        bp_file, canvas_dir = registry_modules.get(
+            canvas,
+            (PROJECT_ROOT / "tools" / canvas / "blueprint.py", PROJECT_ROOT / "tools" / canvas),
+        )
         if not bp_file.exists():
-            missing.append("tools/<canvas>/blueprint.py missing")
+            missing.append(f"{bp_file.name} missing (expected at {bp_file.parent.name}/)")
         elif not re.search(r"@\w+\.route\s*\(", _read_text(bp_file)):
-            missing.append("blueprint.py has no @route decorator")
+            missing.append("blueprint has no @route decorator")
 
-        # 3. Backing module (any .py other than __init__.py and blueprint.py)
-        canvas_dir = PROJECT_ROOT / "tools" / canvas
+        # 3. Backing module (any .py other than __init__.py and the blueprint itself)
         if canvas_dir.exists():
             py_modules = [
                 f for f in canvas_dir.glob("*.py")
-                if f.name not in ("__init__.py", "blueprint.py")
+                if f.name not in ("__init__.py", bp_file.name)
             ]
             if not py_modules:
-                missing.append("no backing module in tools/<canvas>/")
+                missing.append(f"no backing module in {canvas_dir.name}/")
         else:
-            missing.append(f"tools/{canvas}/ directory missing")
+            missing.append(f"{canvas_dir.relative_to(PROJECT_ROOT)} directory missing")
 
         # 4. Nav link to /<canvas>: either a literal href in base.html (legacy
         # canvases), or a registry-declared nav.section (modern canvases,
@@ -4189,7 +4248,10 @@ def check_canvas_completeness(changed_files: Optional[List[Path]] = None) -> Coh
             report = registry.validate_canvas_completeness(comp.key)
             if not report.passed:
                 for item in report.items:
-                    if not item.present:
+                    # `required` is False for components the registry never declared —
+                    # e.g. a canvas with no DB migration. Reporting those as missing
+                    # rendered the gate as "missing None" and buried the real gaps.
+                    if item.required and not item.present:
                         missing_issues.append(f"{comp.key}: {item.point} ({item.path or item.message})")
     except Exception as exc:
         return CoherenceCheck(

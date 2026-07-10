@@ -19,6 +19,7 @@ import os
 import secrets
 import uuid
 from tools.db.storage import get_connection
+from tools.logging.icdev_logger import get_logger
 from datetime import datetime, timezone
 
 from flask import (
@@ -63,11 +64,33 @@ def key_prefix(raw_key: str) -> str:
 # ---------------------------------------------------------------------------
 
 
+logger = get_logger("icdev.dashboard.auth")
+
+
 def _get_db():
     """Get a connection to the ICDEV™ database."""
     conn = get_connection(db_path=str(DB_PATH))
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
+
+
+def _dashboard_users_table_exists(conn) -> bool:
+    """Portable existence probe.
+
+    A `sqlite_master` lookup would be wrong on PostgreSQL, which is the primary
+    backend. Probing the table itself is true on both. PostgreSQL aborts the
+    transaction on a failed statement, so roll back before the caller reuses
+    the connection.
+    """
+    try:
+        conn.execute("SELECT 1 FROM dashboard_users LIMIT 1").fetchone()
+        return True
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return False
 
 
 def log_auth_event(user_id, event_type, ip_address=None, user_agent=None, details=None):
@@ -542,13 +565,37 @@ def _auto_provision_env_key():
 
     On first install: creates admin user, generates key, appends to .env,
     and sets the env var for the current process. Prints key to console.
+
+    Provisioning is a convenience, not an enforcement step, and it runs from
+    register_dashboard_auth() -> create_app() -> module scope. So a database
+    without the auth schema (a fresh checkout, or any test that merely imports
+    tools.dashboard.app) made `import tools.dashboard.app` raise
+    OperationalError: no such table: dashboard_users, taking whole test modules
+    down at collection time.
+
+    Degrading here is fail-closed: with no ICDEV_DASHBOARD_API_KEY the
+    before_request hook treats the caller as unauthenticated and redirects or
+    401s. Never swallow the registration of the auth middleware itself.
     """
     if os.environ.get("ICDEV_DASHBOARD_API_KEY"):
         return  # Already configured
 
     # Generate key and provision admin user
     email = "admin@icdev.local"
-    conn = _get_db()
+    try:
+        conn = _get_db()
+    except Exception as exc:  # DB unreachable — cannot provision, stay fail-closed
+        logger.warning("Dashboard API key auto-provision skipped (no database): %s", exc)
+        return
+
+    if not _dashboard_users_table_exists(conn):
+        conn.close()
+        logger.warning(
+            "Dashboard API key auto-provision skipped: dashboard_users table not found. "
+            "Run the auth migrations, then restart to receive a generated key."
+        )
+        return
+
     try:
         row = conn.execute("SELECT id FROM dashboard_users WHERE email = %s", (email,)).fetchone()
         if row:

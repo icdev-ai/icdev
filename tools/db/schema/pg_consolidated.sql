@@ -22943,7 +22943,7 @@ CREATE TABLE public.pg_win_themes (
     updated_at text NOT NULL,
     classification character varying(50) DEFAULT 'CUI'::character varying,
     CONSTRAINT pg_win_themes_status_check CHECK ((status = ANY (ARRAY['active'::text, 'archived'::text, 'superseded'::text]))),
-    CONSTRAINT pg_win_themes_theme_type_check CHECK ((theme_type = ANY (ARRAY['win_theme'::text, 'discriminator'::text, 'ghost'::text])))
+    CONSTRAINT pg_win_themes_theme_type_check CHECK ((theme_type = ANY (ARRAY['win_theme'::text, 'discriminator'::text, 'ghost_strategy'::text])))
 );
 
 

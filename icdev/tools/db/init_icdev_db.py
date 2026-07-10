@@ -9420,7 +9420,7 @@ CREATE INDEX IF NOT EXISTS idx_pg_talvel_comp ON pg_talent_velocity(competitor_n
 CREATE TABLE IF NOT EXISTS pg_win_themes (
     id                  TEXT PRIMARY KEY,
     opportunity_id      TEXT NOT NULL,
-    theme_type          TEXT NOT NULL CHECK(theme_type IN ('win_theme', 'discriminator', 'ghost')),
+    theme_type          TEXT NOT NULL CHECK(theme_type IN ('win_theme', 'discriminator', 'ghost_strategy')),
     theme_statement     TEXT NOT NULL,
     supporting_evidence TEXT,
     target_eval_factor  TEXT,

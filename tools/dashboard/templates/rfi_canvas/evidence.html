@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+{% block title %}Evidence Library{% endblock %}
+{% block content %}
+<div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;margin-bottom:12px;">CUI // SP-CTI</div>
+
+<style>
+  .ev-card{background:#16213e;border:1px solid #1e3a6e;border-radius:8px;margin-bottom:16px;overflow:hidden}
+  .ev-hdr{background:#0f3460;padding:10px 16px;display:flex;align-items:center;gap:8px}
+  .ev-hdr .t{color:#7ab3f0;font-weight:600;font-size:13px}
+  .ev-body{padding:16px}
+  .drop{background:#0d1b2e;border:2px dashed #1e3a6e;border-radius:6px;padding:28px;text-align:center;cursor:pointer;transition:.2s}
+  .drop.hot{border-color:#4f8ef7;background:#0f2440}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th{text-align:left;color:#5a7aa0;font-weight:600;font-size:11px;padding:8px;border-bottom:1px solid #1e3a6e}
+  td{padding:8px;border-bottom:1px solid #142440;color:#b8d0e8}
+  tr.derived td{opacity:.66}
+  .chip{display:inline-block;font-size:10px;font-weight:600;padding:2px 7px;border-radius:10px}
+  .c-won{background:#0a2e1a;color:#34d399}
+  .c-lost{background:#3a1220;color:#f87171}
+  .c-unknown{background:#1e2a3e;color:#7a8cb0}
+  .c-primary{background:#0a2340;color:#7ab3f0;border:1px solid #2a5298}
+  .c-derived{background:#1e2a3e;color:#7a8cb0}
+  .sel{background:#0d1b2e;border:1px solid #1e3a6e;border-radius:5px;color:#eaeaea;padding:7px 9px;font-size:12px}
+  .row{display:grid;grid-template-columns:1fr 150px 150px 130px;gap:10px;margin-top:12px}
+  .hint{color:#5a7aa0;font-size:11px;line-height:1.5}
+  .steps{display:flex;gap:6px;align-items:center;margin-bottom:18px;font-size:11px;color:#5a7aa0}
+  .steps b{color:#7ab3f0}
+  #log div{font-size:12px;padding:6px 0;border-bottom:1px solid #142440}
+</style>
+
+<div style="margin-bottom:16px;">
+  <h2 style="margin:0;color:#eaeaea;font-size:20px;">📚 Evidence Library</h2>
+  <p style="color:#7a8cb0;font-size:12px;margin:4px 0 0;">Prior submissions and approved content that back your win themes.</p>
+</div>
+
+<div class="steps">
+  Upload RFI &rsaquo; <a href="/capture/strategy" style="color:#4f8ef7;">Set Strategy</a> &rsaquo; <b>Attach Evidence</b> &rsaquo; Generate &rsaquo; Approve
+</div>
+
+<div class="ev-card">
+  <div class="ev-hdr"><span>📎</span><span class="t">Add a prior RFI, proposal, award or CPARS</span></div>
+  <div class="ev-body">
+    <div id="drop" class="drop">
+      <div style="font-size:24px;margin-bottom:6px;">📥</div>
+      <div style="color:#5a7aa0;font-size:13px;">Drag &amp; drop, or <span style="color:#4f8ef7;font-weight:600;">browse</span></div>
+      <div class="hint" style="margin-top:6px;">PDF, DOCX, TXT or MD. We hash on arrival, so re-uploading a document you already have costs nothing.</div>
+      <input id="file" type="file" style="display:none" accept=".pdf,.docx,.doc,.txt,.md">
+    </div>
+    <div class="row">
+      <input id="title" class="sel" placeholder="Title (defaults to the file name)">
+      <select id="doc_type" class="sel">
+        <option value="proposal">Proposal</option>
+        <option value="rfi">RFI response</option>
+        <option value="award">Award</option>
+        <option value="cpars">CPARS</option>
+      </select>
+      <select id="outcome" class="sel">
+        <option value="unknown">Outcome unknown</option>
+        <option value="won">Won</option>
+        <option value="lost">Lost</option>
+        <option value="no_award">No award</option>
+      </select>
+      <input id="solicitation" class="sel" placeholder="Solicitation #">
+    </div>
+    <div class="hint" style="margin-top:10px;">
+      A <strong style="color:#b8d0e8;">lost</strong> proposal is stored but never retrieved as supporting
+      evidence — its prose did not persuade. Record it so its lessons can shape the strategy instead.
+    </div>
+    <div id="log" style="margin-top:12px;"></div>
+  </div>
+</div>
+
+<div class="ev-card">
+  <div class="ev-hdr" style="background:#0c2a3a;"><span>📊</span><span class="t" style="color:#38bdf8;">Indexed evidence</span></div>
+  <div class="ev-body">
+    <div id="stats" class="hint" style="margin-bottom:12px;"></div>
+    <table>
+      <thead><tr>
+        <th>Document</th><th>Type</th><th>Outcome</th><th>Tier</th><th>Chunks</th><th>Status</th><th>Added</th>
+      </tr></thead>
+      <tbody id="rows"><tr><td colspan="7" style="color:#5a7aa0;">Loading…</td></tr></tbody>
+    </table>
+    <div class="hint" style="margin-top:12px;">
+      <strong style="color:#7ab3f0;">Primary</strong> evidence is a document you submitted or were graded on.
+      <strong style="color:#7a8cb0;">Derived</strong> evidence is prose this system generated that you approved —
+      reusable for framing, but never proof of a number.
+    </div>
+  </div>
+</div>
+
+<script>
+const drop = document.getElementById('drop'), fileInput = document.getElementById('file');
+drop.onclick = () => fileInput.click();
+['dragover','dragenter'].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.classList.add('hot'); }));
+['dragleave','drop'].forEach(e => drop.addEventListener(e, () => drop.classList.remove('hot')));
+drop.addEventListener('drop', ev => { ev.preventDefault(); if (ev.dataTransfer.files[0]) upload(ev.dataTransfer.files[0]); });
+fileInput.onchange = () => fileInput.files[0] && upload(fileInput.files[0]);
+
+function say(html, color){
+  const el = document.createElement('div');
+  el.innerHTML = html; el.style.color = color || '#b8d0e8';
+  document.getElementById('log').prepend(el);
+}
+
+async function upload(file){
+  say(`<span style="color:#7ab3f0;">${file.name}</span> — extracting…`);
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('title', document.getElementById('title').value);
+  fd.append('doc_type', document.getElementById('doc_type').value);
+  fd.append('outcome', document.getElementById('outcome').value);
+  fd.append('solicitation_number', document.getElementById('solicitation').value);
+
+  try {
+    const r = await fetch('/api/capture/evidence/upload', {method:'POST', body: fd});
+    const d = await r.json();
+    if (r.status === 409 && d.status === 'duplicate') {
+      const when = (d.existing.created_at || '').slice(0,10);
+      say(`<span style="color:#f0b429;">${file.name}</span> — already in your library (added ${when}). Nothing re-ingested.`, '#f0b429');
+    } else if (d.status === 'ingested') {
+      say(`<span style="color:#34d399;">${file.name}</span> — indexed as primary evidence (${d.chunks} chunks).`, '#34d399');
+    } else if (d.error) {
+      say(`<span style="color:#e94560;">${file.name}</span> — ${d.error}`, '#e94560');
+    } else {
+      say(`<span style="color:#e94560;">${file.name}</span> — ${d.status}: ${d.message || d.reason || ''}`, '#e94560');
+    }
+  } catch (e) { say(`Upload failed: ${e}`, '#e94560'); }
+  load();
+}
+
+function chip(v, map){ return `<span class="chip ${map[v] || map._}">${v}</span>`; }
+
+async function load(){
+  try {
+    const d = await (await fetch('/api/capture/evidence')).json();
+    const stats = d.stats || {};
+    document.getElementById('stats').innerHTML = Object.entries(stats).map(([k,v]) =>
+      `<span style="margin-right:16px;">
+         <span style="color:${v.available ? '#34d399' : '#5a7aa0'};">●</span>
+         ${k} — ${v.chunks} chunks${v.available ? '' : ' (nothing indexed)'}
+       </span>`).join('') || 'No chunk statistics available.';
+
+    const items = d.items || [];
+    document.getElementById('rows').innerHTML = items.length ? items.map(i => `
+      <tr class="${i.evidence_tier === 'derived' ? 'derived' : ''}">
+        <td>${i.title}${i.citable ? '' : ' <span class="hint">(not used as evidence)</span>'}</td>
+        <td>${i.doc_type}</td>
+        <td>${chip(i.outcome, {won:'c-won', lost:'c-lost', _:'c-unknown'})}</td>
+        <td>${chip(i.evidence_tier, {primary:'c-primary', _:'c-derived'})}</td>
+        <td>${i.chunk_count || 0}</td>
+        <td>${i.status}</td>
+        <td>${(i.created_at || '').slice(0,10)}</td>
+      </tr>`).join('')
+      : '<tr><td colspan="7" style="color:#5a7aa0;">Nothing uploaded yet. Approved RFI sections appear here automatically.</td></tr>';
+  } catch (e) {
+    document.getElementById('rows').innerHTML = `<tr><td colspan="7" style="color:#e94560;">Could not load: ${e}</td></tr>`;
+  }
+}
+load();
+</script>
+{% endblock %}

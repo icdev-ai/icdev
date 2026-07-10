@@ -393,7 +393,7 @@ def _run_persuasiveness_critic(opportunity_id: str, sections: List[Dict]) -> Lis
                 win_themes.append(entry)
             elif entry["theme_type"] == "discriminator":
                 discriminators.append(entry)
-            elif entry["theme_type"] == "ghost":
+            elif entry["theme_type"] == "ghost_strategy":
                 ghosts.append(entry)
 
     if not win_themes and not discriminators:
@@ -864,7 +864,7 @@ def _run_strategy_critic(opportunity_id: str, sections: List[Dict]) -> List[Dict
     if _table_exists(conn, "pg_win_themes"):
         row = conn.execute(
             "SELECT COUNT(*) AS cnt FROM pg_win_themes "
-            "WHERE opportunity_id = %s AND theme_type = 'ghost' AND status = 'active'",
+            "WHERE opportunity_id = %s AND theme_type = 'ghost_strategy' AND status = 'active'",
             (opportunity_id,),
         ).fetchone()
         ghost_count = row["cnt"] if row else 0

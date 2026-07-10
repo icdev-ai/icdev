@@ -1,0 +1,3 @@
+foreach e in logs.entries
+  where e.level == "ERROR"
+  select e.ts, e.component, e.message, e.trace_id
