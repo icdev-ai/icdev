@@ -81,6 +81,40 @@ def new_session_page():
     domain = request.args.get("domain", "network")
     from_topo = request.args.get("from_topo")
     profiles = list_profiles()
+
+    # docmod-regen-01: 'Regenerate in DocGen' from a stale DIC document —
+    # prefill title/classification/doc_type from the source doc so generation
+    # appends a new pending_review version on the SAME document.
+    source_doc = None
+    source_doc_id = (request.args.get("source_doc_id") or "").strip()
+    if source_doc_id:
+        try:
+            from tools.db.storage import get_connection
+            conn = get_connection()
+            try:
+                row = conn.execute(
+                    "SELECT doc_id, title, collection_id, classification, template_type "
+                    "FROM dic_documents WHERE doc_id = %s",
+                    (source_doc_id,),
+                ).fetchone()
+            finally:
+                conn.close()
+            if row:
+                source_doc = dict(row)
+                from tools.document_intelligence.constants import (
+                    DOCGEN_DOCTYPE_TO_TEMPLATE,
+                )
+                # first doc_type per template wins — the map lists canonical
+                # doc_types before aliases (standard_guide before baseline, ...)
+                reverse_map: dict = {}
+                for dt, tpl in DOCGEN_DOCTYPE_TO_TEMPLATE.items():
+                    reverse_map.setdefault(tpl, dt)
+                source_doc["doc_type"] = reverse_map.get(
+                    source_doc.get("template_type") or "", "standard_guide"
+                )
+        except Exception as exc:
+            logger.warning("docgen: source_doc prefill failed: %s", exc)
+
     return render_template(
         "docgen/index.html",
         session=None,
@@ -88,6 +122,7 @@ def new_session_page():
         profiles=profiles,
         preselect_domain=domain,
         from_topo=from_topo,
+        source_doc=source_doc,
         page_title="New Doc Regeneration",
     )
 
@@ -210,6 +245,29 @@ def api_create_session():
         tenant_id=tenant_id,
         classification=classification,
     )
+
+    # docmod-regen-01: sessions started from a DIC document regenerate THAT
+    # document — persist the source link and reuse its collection as evidence.
+    source_dic_doc_id = (data.get("source_dic_doc_id") or "").strip()
+    if source_dic_doc_id:
+        fields = {"source_dic_doc_id": source_dic_doc_id}
+        try:
+            from tools.db.storage import get_connection
+            conn = get_connection()
+            try:
+                row = conn.execute(
+                    "SELECT collection_id FROM dic_documents WHERE doc_id = %s",
+                    (source_dic_doc_id,),
+                ).fetchone()
+            finally:
+                conn.close()
+            if row and dict(row).get("collection_id"):
+                fields["dic_collection_id"] = dict(row)["collection_id"]
+        except Exception as exc:
+            logger.warning("docgen: source doc collection lookup failed: %s", exc)
+        sm.set_field(session["id"], **fields)
+        session = sm.get_session(session["id"]) or session
+
     return jsonify(session), 201
 
 
@@ -559,13 +617,54 @@ def api_generate(session_id: str):
     try:
         from tools.document_intelligence.doc_generator import generate_document as _dic_gen
 
+        # docmod-regen-01: sessions started from a DIC doc rebuild THAT doc —
+        # old approved text + open modernization findings become mandatory
+        # OPERATOR-tier context, and generation appends version N+1 on the
+        # same document (target_doc_id) instead of minting a new one.
+        supplemental = context.get("supplemental_text", "")
+        target_doc_id = (session.get("source_dic_doc_id") or "").strip() or None
+        if target_doc_id:
+            try:
+                from tools.doc_modernization.regen_orchestrator import _approved_text
+
+                from tools.db.storage import get_connection
+                _conn = get_connection()
+                try:
+                    _, old_text = _approved_text(_conn, target_doc_id)
+                    try:
+                        from tools.doc_modernization import get_findings
+                        findings = get_findings(doc_id=target_doc_id, state="open", conn=_conn)
+                    except Exception:
+                        findings = []  # engine tables absent — old text still injects
+                finally:
+                    _conn.close()
+                change_lines = [
+                    f"- '{f['entity_label']}' is {f['currency_verdict']}"
+                    + (f" -> replace with '{f['recommended_replacement']}'"
+                       if f.get("recommended_replacement") else "")
+                    for f in findings
+                ]
+                regen_ctx = (
+                    "CURRENT APPROVED DOCUMENT (modernize its content, keep its "
+                    "purpose and structure):\n" + old_text
+                )
+                if change_lines:
+                    regen_ctx += (
+                        "\n\nMANDATORY MODERNIZATION CHANGES (deterministic "
+                        "findings — apply each):\n" + "\n".join(change_lines)
+                    )
+                supplemental = f"{supplemental}\n\n{regen_ctx}".strip()
+            except Exception as _exc:
+                logger.warning("IDR regen context assembly failed: %s", _exc)
+
         result = _dic_gen(
             query=context["query_string"],
             collection_id=None,  # full DIC KB search; falls back to session-scoped internally
             classification=context.get("classification", "CUI"),
             created_by="idr_pipeline",
-            supplemental_text=context.get("supplemental_text", ""),
+            supplemental_text=supplemental,
             kg_chunks=context.get("kg_chunks", []),
+            target_doc_id=target_doc_id,
         )
         doc_id = result.doc_id if result else None
         # Persist assembled text so WriteGuard / HITL review can read it

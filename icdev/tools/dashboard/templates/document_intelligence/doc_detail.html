@@ -12,6 +12,11 @@
     </p>
   </div>
   <div style="display:flex;gap:8px;align-items:center;">
+    <a href="/docgen/new?source_doc_id={{ doc.doc_id }}" id="regen-in-docgen-btn"
+      title="Rebuild this document from current evidence — the DocGen wizard appends a new pending-review version on this same document; compare with the Compare control, approve via the review queue"
+      style="background:#2a1a3a;color:#a78bfa;padding:7px 14px;border:1px solid #4a2a6e;border-radius:5px;text-decoration:none;font-size:12px;">
+      🔄 Regenerate in DocGen
+    </a>
     {% if doc.template_type %}
     <button onclick="exportToDocgen()" id="docgen-export-btn"
       style="background:#1a2a3a;color:#7adfb0;padding:7px 14px;border:1px solid #1a5a3a;border-radius:5px;cursor:pointer;font-size:12px;">

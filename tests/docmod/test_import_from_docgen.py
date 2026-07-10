@@ -43,10 +43,11 @@ _DIC_DDL = [
         id TEXT PRIMARY KEY, title TEXT NOT NULL,
         domain TEXT NOT NULL DEFAULT 'network',
         doc_type TEXT NOT NULL DEFAULT 'runbook',
-        stage INTEGER NOT NULL DEFAULT 0,
+        template_id TEXT, stage INTEGER NOT NULL DEFAULT 0,
         status TEXT NOT NULL DEFAULT 'setup',
         dic_collection_id TEXT, wg_result_id TEXT, final_doc_text TEXT,
         dic_doc_id TEXT, source_dic_doc_id TEXT,
+        created_by TEXT, tenant_id TEXT, classification TEXT DEFAULT 'CUI',
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP)""",
 ]
