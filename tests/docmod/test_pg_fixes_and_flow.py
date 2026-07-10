@@ -208,3 +208,17 @@ def test_flow_templates_wired():
 
     fresh = (base / "freshness.html").read_text(encoding="utf-8")
     assert fresh.count("/api/modernization/scan") >= 1  # unified Scan now
+
+
+def test_evidence_reads_use_rls_free_connection():
+    """Flask-RLS regression: evidence tables lack tenant columns, so evidence
+    must be read on get_canvas_connection (security_context=None) — never on
+    the write connection, whose rollback would discard the scan-run row and
+    trip the findings FK."""
+    src = (REPO_ROOT / "tools" / "doc_modernization" / "scanner.py").read_text(encoding="utf-8")
+    assert "def _evidence_connect" in src
+    assert "get_canvas_connection" in src
+    # both entry points hash evidence on the isolated connection
+    assert "combined_evidence_hash(packs, ev_conn)" in src
+    assert "combined_evidence_hash(packs, ev)" in src
+    assert "combined_evidence_hash(packs, conn)" not in src
