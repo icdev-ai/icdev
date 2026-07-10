@@ -688,3 +688,12 @@ scanner then runs against the *staged copy as data* — the target is read, hash
   - Dependabot + `tools/maintenance/` audits track `pdfminer.six`/`pypdf`/`pdfplumber`/`python-docx` CVEs (shared with Gap 3).
   - `ICDEV_STRICT_SANDBOX=1` (IL5/air-gap) routes PDF parsing through `SandboxExecutor` per the Gap 3 mechanism when wired at the call site.
 - **Revisit if:** the parser output is ever rendered unescaped, fed to a shell, or the intake path accepts unauthenticated uploads — or a PDF parser CVE with known ICDEV™ exposure ships (promote to `sandboxed`).
+
+### Gap 26 — endoflife.date EOL Product Sync (`tools/doc_modernization/eol_products_sync.py`)
+- **Surface:** outbound HTTPS GET to `endoflife.date/api/<product>.json` (allow-listed base URL from `args/docmod/docmod_config.yaml`); operator-supplied JSON/YAML bundle import for air-gapped sites.
+- **Data handled:** public software lifecycle dates only (product slug, cycle, eol/eos dates, latest version). No document content, no CUI leaves the enclave — the sync sends only product slugs from the local seed list.
+- **Decision:** **trusted-first-party** (bounded JSON/YAML parse into typed columns; no code-execution surface)
+  - Responses parsed with `json`/`yaml.safe_load` into fixed columns; unknown keys dropped; per-product failures swallowed (best-effort).
+  - `offline: true` in docmod_config (or air-gap mode) disables all outbound calls; seed + `import_dataset` remain.
+  - Values land in `docmod_eol_products` and are only compared as dates/strings — never rendered unescaped, never executed, never fed to a shell.
+- **Revisit if:** the sync ever posts local data outward, the base URL becomes user-configurable per request, or cache values are rendered into HTML without escaping (promote to `sandboxed-on-demand`).
