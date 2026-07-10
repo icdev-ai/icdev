@@ -1,0 +1,12 @@
+# CUI // SP-CTI
+# Document Modernization Engine — behavior settings (FORGE Args layer).
+# Change behavior here, not in code.
+
+confidence_threshold: 0.7        # findings below this never promote to kanban
+recency_half_life_days: 180      # de-facto learner deployment recency weighting
+max_redlines_per_sweep: 10       # cap AI redline drafts per reflex sweep
+scan_cadence_hours: 24
+
+# endoflife.date integration (software EOL). offline: true forces seed/import only.
+endoflife_base_url: "https://endoflife.date/api"
+offline: false

@@ -171,6 +171,7 @@
 - [System Graph — Federated Sigma.js Graph](manifest/system-graph.md)
 - [IC IE Data Fabric — Multi-Agency Data Sharing](manifest/ic-ie-data-fabric.md)
 - [AI Augmentation Canvas (AAC)](manifest/ai-augmentation-canvas.md)
+- [Document Modernization Engine (docmod)](manifest/doc-modernization.md)
 
 
 ## Auto-Registered (Coherence Fix)
