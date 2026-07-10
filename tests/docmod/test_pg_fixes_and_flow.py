@@ -3,7 +3,6 @@
 hygiene, the one-click modernization scan, and collection deletion."""
 from __future__ import annotations
 
-import json
 import uuid
 from pathlib import Path
 
