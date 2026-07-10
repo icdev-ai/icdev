@@ -278,8 +278,11 @@ def propose_from_defacto(record: dict, actor: str = "docmod", conn=None) -> str:
                VALUES (%s,%s,%s,%s,%s,%s,'approved','promoted_from_defacto',%s,%s,%s,%s)
                ON CONFLICT (domain, category, vendor, product, version) DO NOTHING""",
             (
+                # ''-coalesced uniqueness columns — SQL NULLs never collide in
+                # the UNIQUE constraint, which would allow duplicate proposals.
                 entry_id, record["domain"], record.get("category") or "general",
-                record.get("vendor"), record["product"], record.get("version"),
+                record.get("vendor") or "", record["product"],
+                record.get("version") or "",
                 actor, now, record.get("tenant_id"), record.get("classification"),
             ),
         )
