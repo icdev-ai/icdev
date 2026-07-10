@@ -39,7 +39,7 @@ def client():
             / "tools" / "dashboard" / "templates"
         ),
     )
-    app.register_blueprint(docmod_bp, url_prefix="/standards-catalog")
+    app.register_blueprint(docmod_bp)  # self-prefixed (core-extension convention)
     app.config["TESTING"] = True
     with app.test_client() as c:
         yield c
@@ -138,7 +138,9 @@ def test_registry_wiring():
     assert comps, "standards_catalog missing from component_registry.yaml"
     c = comps[0]
     assert c.kind == "core_extension"
-    assert c.url_prefix == "/standards-catalog"
+    # core extensions are registered WITHOUT the registry url_prefix — the
+    # Blueprint self-prefixes; registry carries '' per the cam/forecast convention
+    assert c.url_prefix == ""
     assert c.blueprint_attr == "docmod_bp"
     assert "standards_catalog.entries" in (c.iqe or {}).get("collections", [])
 
