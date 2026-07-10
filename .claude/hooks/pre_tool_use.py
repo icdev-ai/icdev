@@ -567,6 +567,12 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "bi_generation_log",
         # prop-sec-05 — Aggregation Guard / mosaic-effect rule evaluation log (NIST AU)
         "aggregation_events",
+        # Document Modernization Engine (docmod-core, migration 257) — scan runs and
+        # findings are append-only (state transitions = new row w/ supersedes_id);
+        # catalog curation audit is NIST AU append-only
+        "docmod_scan_runs",
+        "docmod_findings",
+        "docmod_catalog_audit",
     ]
 
     if tool_name == "Bash":

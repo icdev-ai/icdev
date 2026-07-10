@@ -94,7 +94,11 @@ class CatalogProvider:
 
 
 class GenericStoreProvider(CatalogProvider):
+<<<<<<< HEAD
     """Central docmod_catalog_entries store (migration 258)."""
+=======
+    """Central docmod_catalog_entries store (migration 257)."""
+>>>>>>> feat/docmod-core-v2
 
     source_label = "generic"
 
@@ -278,15 +282,27 @@ def propose_from_defacto(record: dict, actor: str = "docmod", conn=None) -> str:
                VALUES (%s,%s,%s,%s,%s,%s,'approved','promoted_from_defacto',%s,%s,%s,%s)
                ON CONFLICT (domain, category, vendor, product, version) DO NOTHING""",
             (
+<<<<<<< HEAD
                 entry_id, record["domain"], record.get("category"),
+=======
+                entry_id, record["domain"], record.get("category") or "general",
+>>>>>>> feat/docmod-core-v2
                 record.get("vendor"), record["product"], record.get("version"),
                 actor, now, record.get("tenant_id"), record.get("classification"),
             ),
         )
+<<<<<<< HEAD
         conn.execute(
             """INSERT INTO docmod_catalog_audit
                (audit_id, entry_id, action, actor, detail_json, created_at, tenant_id, classification)
                VALUES (%s,%s,'propose',%s,%s,%s,%s,%s)""",
+=======
+        # Audit columns per migration 257: id / event_type / details / recorded_at.
+        conn.execute(
+            """INSERT INTO docmod_catalog_audit
+               (id, entry_id, event_type, actor, details, recorded_at, tenant_id, classification)
+               VALUES (%s,%s,'promote',%s,%s,%s,%s,%s)""",
+>>>>>>> feat/docmod-core-v2
             (
                 f"aud-{uuid.uuid4().hex[:10]}", entry_id, actor,
                 json.dumps(record, default=str), now,
