@@ -455,6 +455,7 @@ def generate_document(
     created_by: str = "ai_assist",
     supplemental_text: str = "",
     kg_chunks: list[dict] | None = None,
+    target_doc_id: str | None = None,
 ) -> "GenerateResult":
     """Generate a document draft grounded in DIC search results.
 
@@ -687,7 +688,9 @@ def generate_document(
     try:
         from tools.db.storage import get_connection
 
-        doc_id = _hid("dic_gen", query, collection_id or "")
+        # target_doc_id: append the NEXT version to an existing document (full
+        # regeneration / reverse-bridge path) instead of minting a new doc.
+        doc_id = target_doc_id or _hid("dic_gen", query, collection_id or "")
         version_id = f"ver-{uuid.uuid4().hex[:16]}"
         full_text = "\n\n".join(
             f"## {s.heading}\n\n{s.content}" for s in generated_sections if not s.abstained
@@ -696,6 +699,13 @@ def generate_document(
 
         conn = get_connection()
         try:
+            version_no = 1
+            if target_doc_id:
+                row = conn.execute(
+                    "SELECT MAX(version_no) AS vmax FROM dic_versions WHERE doc_id = %s",
+                    (target_doc_id,),
+                ).fetchone()
+                version_no = int((dict(row).get("vmax") if row else 0) or 0) + 1
             conn.execute(
                 "INSERT OR IGNORE INTO dic_documents "
                 "(doc_id, collection_id, source_id, filename, content_type, provider, title, "
@@ -709,7 +719,7 @@ def generate_document(
                 "(version_id, doc_id, version_no, origin, status, assigned_to, review_notes, content_sha256, "
                 "created_at, created_by, tenant_id, classification) "
                 "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
-                (version_id, doc_id, 1, "ai_generated", "pending_review", None, None, sha,
+                (version_id, doc_id, version_no, "ai_generated", "pending_review", None, None, sha,
                  _now_utc(), created_by, tenant_id, classification),
             )
             for idx, sec in enumerate(generated_sections, start=1):
