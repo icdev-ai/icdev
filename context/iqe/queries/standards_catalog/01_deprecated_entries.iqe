@@ -1,0 +1,6 @@
+# IQE-SCAT-001: Deprecated and retired standards across all domains
+# The removal/replacement queue for documentation modernization.
+
+foreach e in standards_catalog.entries
+where e.status != "approved"
+select e.domain, e.vendor, e.product, e.version, e.status, e.eol_date

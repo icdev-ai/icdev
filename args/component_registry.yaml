@@ -1040,6 +1040,31 @@ components:
   # ═══════════════════════════════════════════════════════════════════════════
   # Core Extensions (registered separately in dashboard/app.py; IQE only here)
   # ═══════════════════════════════════════════════════════════════════════════
+- key: standards_catalog
+  kind: core_extension
+  cli_name: standards-catalog
+  display_name: Standards Catalog
+  description: Central, canvas-independent curated standards catalog (approved/deprecated/retired
+    per domain) powering Document Modernization findings and redlines. Network hardware
+    entries appear read-only via the nc_hardware_profiles adapter.
+  env_flag: ICDEV_STANDARDS_CATALOG_ENABLED
+  default_enabled: true
+  module: tools.doc_modernization.blueprint
+  blueprint_attr: docmod_bp
+  url_prefix: /standards-catalog
+  min_il: IL4
+  default_roles: []
+  nav:
+    section: Platform
+    label: Standards Catalog
+    links:
+    - label: Standards Catalog
+      href: /standards-catalog
+  iqe:
+    adapter_module: tools.iqe.adapters.standards_catalog
+    collections:
+    - standards_catalog.entries
+    - standards_catalog.audit
 - key: forecast
   kind: core_extension
   display_name: TimesFM Forecasting

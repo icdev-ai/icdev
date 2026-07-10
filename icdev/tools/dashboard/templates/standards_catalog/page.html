@@ -1,0 +1,200 @@
+{% extends "base.html" %}
+{% block title %}Standards Catalog — ICDEV™{% endblock %}
+{% block content %}
+<div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;margin-bottom:12px;">CUI // SP-CTI</div>
+
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+  <div>
+    <h2 style="margin:0;color:#eaeaea;">📚 Standards Catalog</h2>
+    <div style="color:#7a8cb0;font-size:12px;margin-top:4px;">
+      Team-curated approved / deprecated / retired standards per domain — the authoritative
+      evidence source for Document Modernization findings and redlines.
+    </div>
+  </div>
+  <div style="display:flex;gap:8px;">
+    <button onclick="openCreate()" style="background:#1e3a6e;color:#7ab3f0;padding:6px 14px;border:none;border-radius:5px;cursor:pointer;font-size:12px;">＋ New entry</button>
+    <button onclick="openImport()" style="background:#16213e;color:#94a3b8;padding:6px 14px;border:1px solid #1e3a6e;border-radius:5px;cursor:pointer;font-size:12px;">⬆ Import CSV/YAML</button>
+    <button onclick="runSeed()" style="background:#16213e;color:#94a3b8;padding:6px 14px;border:1px solid #1e3a6e;border-radius:5px;cursor:pointer;font-size:12px;">🌱 Seed defaults</button>
+  </div>
+</div>
+
+<!-- Domain tabs (driven by registered docmod packs — future domains appear automatically) -->
+<div id="domain-tabs" style="display:flex;gap:6px;margin-bottom:12px;">
+  {% for key, label in domains %}
+  <button class="domain-tab" data-domain="{{ key }}" onclick="selectDomain('{{ key }}')"
+    style="background:#0d1b2e;color:#94a3b8;padding:7px 16px;border:1px solid #1e3a6e;border-radius:6px 6px 0 0;cursor:pointer;font-size:12px;">
+    {{ label }}
+  </button>
+  {% endfor %}
+</div>
+
+<div style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:0 8px 8px 8px;padding:14px;">
+  <div style="display:flex;gap:10px;margin-bottom:10px;align-items:center;">
+    <select id="status-filter" onchange="loadEntries()" style="background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:5px 10px;border-radius:4px;font-size:12px;">
+      <option value="">All statuses</option>
+      <option value="approved">Approved</option>
+      <option value="deprecated">Deprecated</option>
+      <option value="retired">Retired</option>
+    </select>
+    <span id="entry-count" style="color:#5a7aa0;font-size:11px;"></span>
+  </div>
+  <div style="overflow-x:auto;">
+    <table style="width:100%;border-collapse:collapse;font-size:12px;">
+      <thead>
+        <tr style="color:#5a7aa0;text-align:left;border-bottom:1px solid #1e3a6e;">
+          <th style="padding:7px;">Vendor</th><th style="padding:7px;">Product</th>
+          <th style="padding:7px;">Category</th><th style="padding:7px;">Version</th>
+          <th style="padding:7px;">Status</th><th style="padding:7px;">EOL</th>
+          <th style="padding:7px;">EOS</th><th style="padding:7px;">Source</th>
+          <th style="padding:7px;">Actions</th>
+        </tr>
+      </thead>
+      <tbody id="entries-body">
+        <tr><td colspan="9" style="padding:18px;color:#5a7aa0;text-align:center;">Select a domain…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Create modal -->
+<div id="create-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:60;">
+  <div style="background:#16213e;border:1px solid #1e3a6e;border-radius:8px;max-width:460px;margin:8vh auto;padding:18px;">
+    <h3 style="margin:0 0 12px;color:#eaeaea;font-size:14px;">New catalog entry</h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+      <input id="c-vendor" placeholder="Vendor" style="background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:7px;border-radius:4px;font-size:12px;">
+      <input id="c-product" placeholder="Product / model *" style="background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:7px;border-radius:4px;font-size:12px;">
+      <input id="c-category" placeholder="Category (e.g. switch)" style="background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:7px;border-radius:4px;font-size:12px;">
+      <input id="c-version" placeholder="Version" style="background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:7px;border-radius:4px;font-size:12px;">
+      <input id="c-eol" placeholder="EOL date (YYYY-MM-DD)" style="background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:7px;border-radius:4px;font-size:12px;">
+      <input id="c-eos" placeholder="EOS date (YYYY-MM-DD)" style="background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:7px;border-radius:4px;font-size:12px;">
+    </div>
+    <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end;">
+      <button onclick="closeModal('create-modal')" style="background:#0a1525;color:#94a3b8;padding:6px 14px;border:1px solid #1e3a6e;border-radius:5px;cursor:pointer;font-size:12px;">Cancel</button>
+      <button onclick="createEntry()" style="background:#1e3a6e;color:#7ab3f0;padding:6px 14px;border:none;border-radius:5px;cursor:pointer;font-size:12px;">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- Import modal -->
+<div id="import-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:60;">
+  <div style="background:#16213e;border:1px solid #1e3a6e;border-radius:8px;max-width:460px;margin:8vh auto;padding:18px;">
+    <h3 style="margin:0 0 8px;color:#eaeaea;font-size:14px;">Import entries (CSV or YAML)</h3>
+    <div style="color:#7a8cb0;font-size:11px;margin-bottom:10px;">
+      Columns: domain, product (required); category, vendor, model_family, version, status, eol_date, eos_date.
+    </div>
+    <input type="file" id="import-file" accept=".csv,.yaml,.yml" style="color:#b8d0e8;font-size:12px;">
+    <div id="import-report" style="color:#7ab3f0;font-size:11px;margin-top:8px;"></div>
+    <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end;">
+      <button onclick="closeModal('import-modal')" style="background:#0a1525;color:#94a3b8;padding:6px 14px;border:1px solid #1e3a6e;border-radius:5px;cursor:pointer;font-size:12px;">Close</button>
+      <button onclick="doImport()" style="background:#1e3a6e;color:#7ab3f0;padding:6px 14px;border:none;border-radius:5px;cursor:pointer;font-size:12px;">Import</button>
+    </div>
+  </div>
+</div>
+
+{% include "includes/iqe_query_widget.html" %}
+
+<script>
+var CURRENT_DOMAIN = null;
+var BASE = '/standards-catalog';
+
+function selectDomain(d) {
+  CURRENT_DOMAIN = d;
+  document.querySelectorAll('.domain-tab').forEach(function(t) {
+    var active = t.dataset.domain === d;
+    t.style.background = active ? '#1e3a6e' : '#0d1b2e';
+    t.style.color = active ? '#7ab3f0' : '#94a3b8';
+  });
+  loadEntries();
+}
+
+function loadEntries() {
+  if (!CURRENT_DOMAIN) return;
+  var status = document.getElementById('status-filter').value;
+  var url = BASE + '/api/entries?domain=' + encodeURIComponent(CURRENT_DOMAIN)
+          + (status ? '&status=' + status : '');
+  fetch(url).then(function(r){return r.json();}).then(function(rows) {
+    var body = document.getElementById('entries-body');
+    document.getElementById('entry-count').textContent = rows.length + ' entries';
+    if (!rows.length) {
+      body.innerHTML = '<tr><td colspan="9" style="padding:18px;color:#5a7aa0;text-align:center;">' +
+        'No entries yet — add one, import a list, or approve proposals from the de facto learner.</td></tr>';
+      return;
+    }
+    var statusColors = {approved:'#4ade80', deprecated:'#fbbf24', retired:'#f87171'};
+    body.innerHTML = rows.map(function(e) {
+      var src = e.source === 'network_canvas'
+        ? '<a href="' + e.manage_href + '" style="color:#a78bfa;font-size:10px;" title="Read-only here — edited by the network team">Managed in Network Canvas ↗</a>'
+        : '<span style="color:#5a7aa0;font-size:10px;">Central store</span>';
+      var actions = e.editable
+        ? '<button onclick="changeStatus(\'' + e.entry_id + '\',\'deprecated\')" style="background:none;border:1px solid #6e5a1e;color:#fbbf24;border-radius:4px;font-size:10px;cursor:pointer;padding:2px 6px;">Deprecate</button> ' +
+          '<button onclick="changeStatus(\'' + e.entry_id + '\',\'retired\')" style="background:none;border:1px solid #6e1e1e;color:#f87171;border-radius:4px;font-size:10px;cursor:pointer;padding:2px 6px;">Retire</button>'
+        : '';
+      return '<tr style="border-bottom:1px solid #12233e;color:#b8d0e8;">' +
+        '<td style="padding:7px;">' + (e.vendor || '—') + '</td>' +
+        '<td style="padding:7px;font-weight:600;">' + e.product + '</td>' +
+        '<td style="padding:7px;">' + (e.category || '—') + '</td>' +
+        '<td style="padding:7px;">' + (e.version || '—') + '</td>' +
+        '<td style="padding:7px;"><span style="color:' + (statusColors[e.status] || '#94a3b8') + ';">' + e.status + '</span></td>' +
+        '<td style="padding:7px;">' + (e.eol_date || '—') + '</td>' +
+        '<td style="padding:7px;">' + (e.eos_date || '—') + '</td>' +
+        '<td style="padding:7px;">' + src + '</td>' +
+        '<td style="padding:7px;">' + actions + '</td></tr>';
+    }).join('');
+  });
+}
+
+function openCreate() { document.getElementById('create-modal').style.display = 'block'; }
+function openImport() { document.getElementById('import-modal').style.display = 'block'; }
+function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+
+function createEntry() {
+  fetch(BASE + '/api/entries', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      domain: CURRENT_DOMAIN,
+      vendor: document.getElementById('c-vendor').value,
+      product: document.getElementById('c-product').value,
+      category: document.getElementById('c-category').value,
+      version: document.getElementById('c-version').value,
+      eol_date: document.getElementById('c-eol').value || null,
+      eos_date: document.getElementById('c-eos').value || null,
+    })
+  }).then(function(r){return r.json();}).then(function(d) {
+    if (d.entry_id) { closeModal('create-modal'); loadEntries(); }
+    else alert('Create failed: ' + (d.error || JSON.stringify(d)));
+  });
+}
+
+function changeStatus(entryId, status) {
+  fetch(BASE + '/api/entries/' + entryId + '/status', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({status: status})
+  }).then(function(){ loadEntries(); });
+}
+
+function doImport() {
+  var f = document.getElementById('import-file').files[0];
+  if (!f) return;
+  var fd = new FormData();
+  fd.append('file', f);
+  fetch(BASE + '/api/import', {method: 'POST', body: fd})
+    .then(function(r){return r.json();}).then(function(d) {
+      document.getElementById('import-report').textContent =
+        'Imported ' + d.imported + ', skipped ' + (d.skipped ? d.skipped.length : 0);
+      loadEntries();
+    });
+}
+
+function runSeed() {
+  fetch(BASE + '/api/seed', {method: 'POST'})
+    .then(function(r){return r.json();})
+    .then(function(d){ alert('Seeded ' + d.seeded + ' entries'); loadEntries(); });
+}
+
+// default: first tab
+(function() {
+  var first = document.querySelector('.domain-tab');
+  if (first) selectDomain(first.dataset.domain);
+})();
+</script>
+{% endblock %}
