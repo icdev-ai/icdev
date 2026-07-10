@@ -1164,7 +1164,10 @@ def _register_govcon_pages(app: "Flask", _get_db):
         ptw = {}
         try:
             from tools.govcon.rate_benchmarker import ptw_analysis
-            ptw = ptw_analysis(opp_id)
+            from tools.security.column_security import current_role, mask_ptw_payload
+            # prop-sec-01: reviewer/co are denied the stored ptw_estimate_* columns,
+            # so they must not receive the same figures recomputed here either.
+            ptw = mask_ptw_payload(ptw_analysis(opp_id), current_role())
         except Exception:
             ptw = {}
         # Bayesian bid score with default mid-scores

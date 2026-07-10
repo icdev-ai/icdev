@@ -103,6 +103,52 @@ def get_column_policies_for_role(table: str, role: str) -> Dict[str, str]:
 
 
 # ---------------------------------------------------------------------------
+# Derived-figure masking (computed payloads DB-layer masking cannot protect)
+# ---------------------------------------------------------------------------
+
+#: Roles denied ``ptw_estimate_low/high`` and ``calc_benchmark_median`` on
+#: ``pg_cost_volumes`` by ``column_policies``.
+PTW_DENIED_ROLES = frozenset({"reviewer", "co"})
+
+
+def mask_ptw_payload(result: dict, role: str) -> dict:
+    """Withhold recomputed price-to-win figures from roles denied them at rest.
+
+    ``rate_benchmarker.ptw_analysis`` aggregates raw ``pg_competitor_awards``
+    rows server-side, so DB-layer column masking cannot protect the *output*
+    without corrupting the computation (a NULLed ``award_amount`` would make the
+    analysis silently report "no award amounts" with a bogus recommendation).
+    The derived figures are stripped from the payload here instead, keeping the
+    key shape stable (values nulled + ``*_masked`` flags) so clients don't break.
+    """
+    if not isinstance(result, dict) or result.get("status") != "ok":
+        return result
+    if str(role or "") not in PTW_DENIED_ROLES:
+        return result
+    out = dict(result)
+    if isinstance(out.get("ptw_range"), dict):
+        out["ptw_range"] = dict.fromkeys(out["ptw_range"])
+        out["ptw_range_masked"] = True
+    if isinstance(out.get("strategies"), dict):
+        out["strategies"] = {
+            name: ({**s, "target": None} if isinstance(s, dict) and "target" in s else s)
+            for name, s in out["strategies"].items()
+        }
+        out["strategies_masked"] = True
+    return out
+
+
+def current_role() -> str:
+    """Best-effort role of the caller from the Flask security context."""
+    try:
+        from flask import g
+        ctx = getattr(g, "security_context", None)
+    except Exception:
+        return ""
+    return str(getattr(ctx, "role", "") or "") if ctx else ""
+
+
+# ---------------------------------------------------------------------------
 # PostgreSQL DDL helpers
 # ---------------------------------------------------------------------------
 

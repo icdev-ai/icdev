@@ -2364,6 +2364,12 @@ def _mask_ptw_sensitive(row):
     return row
 
 
+def _mask_ptw_analysis(result: dict) -> dict:
+    """Strip recomputed PTW figures for roles denied them at rest (prop-sec-01)."""
+    from tools.security.column_security import current_role, mask_ptw_payload
+    return mask_ptw_payload(result, current_role())
+
+
 @proposals_api.route("/opportunities/<opp_id>/ptw/analysis", methods=["GET"])
 def ptw_analysis_endpoint(opp_id):
     """GET /api/proposals/opportunities/<opp_id>/ptw/analysis — rate_benchmarker PTW + SCG gate."""
@@ -2386,7 +2392,7 @@ def ptw_analysis_endpoint(opp_id):
             f"Aggregating pricing across {n_competitors} competitors may trigger SCG rule "
             "SCG-AGG-003 (pattern-of-life disclosure). Review disclosure permissions before sharing."
         )
-    return jsonify(result)
+    return jsonify(_mask_ptw_analysis(result))
 
 
 @proposals_api.route("/opportunities/<opp_id>/ptw/leaderboard", methods=["GET"])
