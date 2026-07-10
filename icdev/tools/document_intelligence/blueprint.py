@@ -667,17 +667,69 @@ def api_techwriter_diagram():
         return jsonify({"error": str(exc)}), 500
 
 
+def _split_generated_doc(final_doc_text: str, template_headings: list[str]) -> list[tuple[str, str]]:
+    """Split docgen final_doc_text on the '## ' headings api_generate emits and
+    map the pieces onto the target template's section headings.
+
+    Returns ordered (heading, content) pairs: template headings first (fuzzy-
+    matched content or empty stub), then any unmatched generated sections —
+    content is never dropped in favour of template purity.
+    """
+    import difflib
+    import re
+
+    pieces: list[tuple[str, str]] = []
+    current_heading, buf = None, []
+    for line in (final_doc_text or "").splitlines():
+        m = re.match(r"^##\s+(.+?)\s*$", line)
+        if m:
+            if current_heading is not None:
+                pieces.append((current_heading, "\n".join(buf).strip()))
+            current_heading, buf = m.group(1).strip(), []
+        elif current_heading is not None:
+            buf.append(line)
+    if current_heading is not None:
+        pieces.append((current_heading, "\n".join(buf).strip()))
+
+    norm = lambda s: re.sub(r"[^a-z0-9 ]", "", s.lower()).strip()
+    generated = {norm(h): (h, c) for h, c in pieces}
+    consumed: set[str] = set()
+
+    ordered: list[tuple[str, str]] = []
+    for th in template_headings:
+        match = difflib.get_close_matches(norm(th), list(generated), n=1, cutoff=0.6)
+        if match and match[0] not in consumed:
+            consumed.add(match[0])
+            ordered.append((th, generated[match[0]][1]))
+        else:
+            ordered.append((th, ""))
+    for key, (h, c) in generated.items():
+        if key not in consumed:
+            ordered.append((h, c))
+    return ordered
+
+
 @dic_bp.route("/api/import-from-docgen", methods=["POST"])
 def api_import_from_docgen():
-    """POST — create a DIC tech-writer document seeded from a docgen session.
+    """POST — open a docgen session's document in the Tech Writer.
 
-    Body: {session_id, title, template_type, classification}
-    Returns: {doc_id, collection_id, template_type, writeguard_mode}
+    Body: {session_id, title?, template_type?, classification?}
+    Returns: {doc_id, collection_id, template_type, writeguard_mode, path}
 
-    Docgen → Tech Writer bridge: imports docgen session metadata and creates a
-    pre-seeded DIC document with the matching template type and sections.
+    Path A (preferred): the session already carries dic_doc_id — the document
+    generation created. Tag it with the Tech Writer template and return it;
+    sections, citations, origin and review status are already correct.
+
+    Path B (legacy sessions): rebuild sections from final_doc_text, preserving
+    the generated content and citations, as origin='ai_generated' /
+    status='pending_review' so the doc enters the review queue.
+
+    Fallback (no session text at all): empty human_authored scaffold from
+    _TEMPLATE_SECTIONS (previous behaviour, minus the wrong 'approved' AI doc).
     """
     from tools.document_intelligence.constants import (
+        DOCGEN_DEFAULT_TEMPLATE,
+        DOCGEN_DOCTYPE_TO_TEMPLATE,
         TEMPLATE_TYPE_TO_WRITEGUARD_MODE,
         TEMPLATE_TYPES,
     )
@@ -685,69 +737,157 @@ def api_import_from_docgen():
     body = request.get_json(silent=True) or {}
     session_id = (body.get("session_id") or "").strip()
     title = (body.get("title") or "Untitled").strip()
-    template_type = (body.get("template_type") or "ARCH_SYSTEM").strip().upper()
     classification = (body.get("classification") or "CUI").strip()
 
+    session = None
+    if session_id:
+        try:
+            from tools.docgen import session_manager as _sm
+            session = _sm.get_session(session_id)
+        except Exception as exc:  # docgen unavailable — degrade to scaffold path
+            logger.warning("dic: import-from-docgen session lookup failed: %s", exc)
+
+    # Server-side template resolution (client map removed): explicit override
+    # wins, else the session's doc_type maps through the shared constant.
+    template_type = (body.get("template_type") or "").strip().upper()
+    if not template_type and session:
+        template_type = DOCGEN_DOCTYPE_TO_TEMPLATE.get(
+            (session.get("doc_type") or "").lower(), DOCGEN_DEFAULT_TEMPLATE
+        )
+    template_type = template_type or DOCGEN_DEFAULT_TEMPLATE
     if template_type not in TEMPLATE_TYPES:
         return jsonify({"error": f"Invalid template_type: {template_type}"}), 400
 
     tenant_id, _ = _security_context()
     writeguard_mode = TEMPLATE_TYPE_TO_WRITEGUARD_MODE.get(template_type, "default")
+    wg_result_id = (session or {}).get("wg_result_id")
 
     try:
         conn = _conn()
-        # Create a new collection for this import if no matching one exists
         import uuid as _uuid
-        doc_id = str(_uuid.uuid4())
-        collection_id = f"docgen-import-{session_id[:8]}" if session_id else str(_uuid.uuid4())[:8]
+        now = _now()
 
-        # Ensure the collection exists (upsert-style: ignore if duplicate)
+        # ── Path A: reuse the document generation already created ────────────
+        dic_doc_id = (session or {}).get("dic_doc_id")
+        if dic_doc_id:
+            row = conn.execute(
+                "SELECT doc_id, collection_id FROM dic_documents WHERE doc_id = %s",
+                (dic_doc_id,),
+            ).fetchone()
+            if row:
+                conn.execute(
+                    """UPDATE dic_documents
+                       SET template_type = %s, writeguard_mode = %s,
+                           source_idr_session_id = %s, source_wg_result_id = %s
+                       WHERE doc_id = %s""",
+                    (template_type, writeguard_mode, session_id, wg_result_id, dic_doc_id),
+                )
+                conn.commit() if hasattr(conn, "commit") else None
+                logger.info(
+                    "dic: import-from-docgen path=A doc_id=%s template=%s", dic_doc_id, template_type
+                )
+                return jsonify({
+                    "doc_id": dic_doc_id,
+                    "collection_id": dict(row).get("collection_id"),
+                    "template_type": template_type,
+                    "writeguard_mode": writeguard_mode,
+                    "path": "reused_generated_doc",
+                })
+
+        # ── Paths B / fallback: build a document ──────────────────────────────
+        doc_id = str(_uuid.uuid4())
+        collection_id = (session or {}).get("dic_collection_id") or (
+            f"docgen-import-{session_id[:8]}" if session_id else str(_uuid.uuid4())[:8]
+        )
         try:
             conn.execute(
                 """INSERT INTO dic_collections
                    (collection_id, name, tenant_id, classification, created_at)
-                   VALUES (%s,%s,%s,%s,NOW())
+                   VALUES (%s,%s,%s,%s,%s)
                    ON CONFLICT (collection_id) DO NOTHING""",
-                (collection_id, f"Docgen Import — {title[:60]}", tenant_id, classification),
+                (collection_id, f"Docgen Import — {title[:60]}", tenant_id, classification, now),
             )
         except Exception:
             pass  # collection already exists or ON CONFLICT not supported
 
+        final_doc_text = (session or {}).get("final_doc_text") or ""
+        ai_content = bool(final_doc_text.strip())
+        origin = "ai_generated" if ai_content else "human_authored"
+        status = "pending_review" if ai_content else "approved"
+
         conn.execute(
             """INSERT INTO dic_documents
                (doc_id, collection_id, title, filename, status, origin,
-                classification, template_type, writeguard_mode, tenant_id, created_at)
-               VALUES (%s,%s,%s,%s,'approved','human_authored',%s,%s,%s,%s,NOW())""",
+                classification, template_type, writeguard_mode,
+                source_idr_session_id, source_wg_result_id, tenant_id, created_at)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (
                 doc_id,
                 collection_id,
                 title,
                 f"docgen-{session_id[:8]}.doc" if session_id else "imported.doc",
+                status,
+                origin,
                 classification,
                 template_type,
                 writeguard_mode,
+                session_id or None,
+                wg_result_id,
                 tenant_id,
+                now,
             ),
         )
 
-        # Seed sections from _TEMPLATE_SECTIONS
-        sections = _TEMPLATE_SECTIONS.get(template_type, [])
-        for i, heading in enumerate(sections):
-            s_id = str(_uuid.uuid4())
+        # Every document needs a version row (dic_sections.version_id is NOT NULL —
+        # the previous scaffold insert violated this).
+        version_id = f"{doc_id}_v1"
+        conn.execute(
+            """INSERT INTO dic_versions
+               (version_id, doc_id, version_no, origin, status, created_at, created_by,
+                tenant_id, classification)
+               VALUES (%s,%s,1,%s,%s,%s,%s,%s,%s)""",
+            (version_id, doc_id, origin, status, now, "docgen_bridge", tenant_id, classification),
+        )
+
+        template_headings = _TEMPLATE_SECTIONS.get(template_type, ["Overview"])
+        if ai_content:
+            section_pairs = _split_generated_doc(final_doc_text, template_headings)
+        else:
+            section_pairs = [(h, "") for h in template_headings]
+
+        for i, (heading, content) in enumerate(section_pairs):
+            # section_id carries a sortable index — section listings ORDER BY section_id.
+            s_id = f"{doc_id[:8]}-s{i:03d}-{_uuid.uuid4().hex[:8]}"
             conn.execute(
                 """INSERT INTO dic_sections
-                   (section_id, doc_id, heading, content, section_order, status, created_at)
-                   VALUES (%s,%s,%s,%s,%s,'draft',NOW())""",
-                (s_id, doc_id, heading, "", i),
+                   (section_id, version_id, doc_id, heading, content,
+                    status, origin, created_at, tenant_id, classification)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                (
+                    s_id,
+                    version_id,
+                    doc_id,
+                    heading,
+                    content,
+                    "pending_review" if (ai_content and content) else "draft",
+                    origin if content else "human_authored",
+                    now,
+                    tenant_id,
+                    classification,
+                ),
             )
 
         conn.commit() if hasattr(conn, "commit") else None
-        logger.info("dic: import-from-docgen → doc_id=%s template=%s", doc_id, template_type)
+        logger.info(
+            "dic: import-from-docgen path=%s doc_id=%s template=%s sections=%d",
+            "B" if ai_content else "scaffold", doc_id, template_type, len(section_pairs),
+        )
         return jsonify({
             "doc_id": doc_id,
             "collection_id": collection_id,
             "template_type": template_type,
             "writeguard_mode": writeguard_mode,
+            "path": "rebuilt_from_text" if ai_content else "empty_scaffold",
         })
     except Exception as exc:
         logger.warning("dic: import-from-docgen error: %s", exc)
