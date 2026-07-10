@@ -1,12 +1,21 @@
 # CUI // SP-CTI
 """ICDEV Cortex — unified AI facade over the platform's retrieval backends."""
 from .api import (
+    AIRGAP_ENV_VAR,
+    CORTEX_ANALYST_FUNCTION,
     CORTEX_CLASSIFY_FUNCTION,
     CORTEX_COMPLETE_FUNCTION,
     CORTEX_EXTRACT_FUNCTION,
+    CORTEX_ROUTING_FUNCTIONS,
+    CORTEX_SEARCH_REWRITE_FUNCTION,
+    CortexAirgapError,
+    airgap_active,
+    assert_airgap_ready,
     classify,
     complete,
     extract,
+    load_cortex_config,
+    resolve_cortex_config_path,
 )
 from .schemas import (
     CORTEX_BACKENDS,
@@ -18,16 +27,25 @@ from .schemas import (
 )
 
 __all__ = [
+    "AIRGAP_ENV_VAR",
+    "CORTEX_ANALYST_FUNCTION",
     "CORTEX_BACKENDS",
     "CORTEX_CLASSIFY_FUNCTION",
     "CORTEX_COMPLETE_FUNCTION",
     "CORTEX_EXTRACT_FUNCTION",
+    "CORTEX_ROUTING_FUNCTIONS",
+    "CORTEX_SEARCH_REWRITE_FUNCTION",
     "Citation",
+    "CortexAirgapError",
     "CortexContext",
     "CortexResult",
     "CortexSearchResult",
     "GovernanceReport",
+    "airgap_active",
+    "assert_airgap_ready",
     "classify",
     "complete",
     "extract",
+    "load_cortex_config",
+    "resolve_cortex_config_path",
 ]

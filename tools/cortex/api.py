@@ -23,6 +23,19 @@ from typing import Any, Dict, List, Optional, Union
 
 from tools.logging.icdev_logger import get_logger
 
+# Behavior config + air-gap invariant live in .config (this module must stay
+# free of provider/model references — see test_no_model_id_literals_in_module).
+# Re-exported here so callers keep importing everything from tools.cortex.api.
+from .config import (  # noqa: F401 - re-exports
+    AIRGAP_ENV_VAR,
+    CORTEX_ROUTING_FUNCTIONS,
+    CortexAirgapError,
+    airgap_active,
+    airgap_exclusions,
+    assert_airgap_ready,
+    load_cortex_config,
+    resolve_cortex_config_path,
+)
 from .schemas import CortexContext, CortexResult, GovernanceReport
 
 logger = get_logger("icdev.cortex.api")
@@ -31,6 +44,8 @@ logger = get_logger("icdev.cortex.api")
 CORTEX_COMPLETE_FUNCTION = "cortex_complete"
 CORTEX_CLASSIFY_FUNCTION = "cortex_classify"
 CORTEX_EXTRACT_FUNCTION = "cortex_extract"
+CORTEX_SEARCH_REWRITE_FUNCTION = "cortex_search_rewrite"
+CORTEX_ANALYST_FUNCTION = "cortex_analyst"
 
 # provider/model markers for the deterministic classify() degradation path
 _FALLBACK_PROVIDER = "deterministic"
@@ -86,6 +101,21 @@ def _build_request(
     if output_schema is not None:
         request.output_schema = output_schema
     return request
+
+
+def _invoke(function: str, request, context: CortexContext):
+    """Invoke the router, forcing local-only resolution when air-gapped.
+
+    When ICDEV_AIRGAP=1 (or context.air_gap) is set, every model_id that only
+    resolves through a non-local provider is passed as exclude_model_ids so
+    chain-walking skips straight to the local tier. The kwarg is omitted
+    entirely otherwise, keeping plain calls signature-compatible.
+    """
+    router = _get_router()
+    exclusions = airgap_exclusions(context)
+    if exclusions:
+        return router.invoke(function, request, exclude_model_ids=exclusions)
+    return router.invoke(function, request)
 
 
 def _result_from_response(response, *, text: Optional[str] = None, elapsed_ms: int = 0) -> CortexResult:
@@ -159,15 +189,16 @@ def complete(
         CortexResult with provider/model/cost/latency_ms populated from the
         LLMResponse accounting fields. Router errors propagate.
     """
+    context = _coerce_context(ctx)
     request = _build_request(
         prompt,
-        ctx,
+        context,
         system_prompt=system_prompt,
         max_tokens=max_tokens,
         temperature=temperature,
     )
     started = time.perf_counter()
-    response = _get_router().invoke(function, request)
+    response = _invoke(function, request, context)
     elapsed_ms = int((time.perf_counter() - started) * 1000)
     return _result_from_response(response, elapsed_ms=elapsed_ms)
 
@@ -198,9 +229,10 @@ def classify(
         "Respond with the chosen label only — no explanation, no punctuation.\n\n"
         f"TEXT:\n{text}"
     )
+    context = _coerce_context(ctx)
     started = time.perf_counter()
     try:
-        response = _get_router().invoke(function, _build_request(prompt, ctx))
+        response = _invoke(function, _build_request(prompt, context), context)
         label = _match_label(response.content, labels)
         if label is not None:
             elapsed_ms = int((time.perf_counter() - started) * 1000)
@@ -247,9 +279,10 @@ def extract(
         f"JSON SCHEMA:\n{json.dumps(schema, ensure_ascii=False)}\n\n"
         f"TEXT:\n{text}"
     )
-    request = _build_request(prompt, ctx, output_schema=schema)
+    context = _coerce_context(ctx)
+    request = _build_request(prompt, context, output_schema=schema)
     started = time.perf_counter()
-    response = _get_router().invoke(function, request)
+    response = _invoke(function, request, context)
     elapsed_ms = int((time.perf_counter() - started) * 1000)
 
     payload = response.structured_output
@@ -257,3 +290,11 @@ def extract(
         payload = _parse_json_payload(response.content)
     text_out = json.dumps(payload, ensure_ascii=False) if payload is not None else (response.content or "")
     return _result_from_response(response, text=text_out, elapsed_ms=elapsed_ms)
+
+
+# ---------------------------------------------------------------------------
+# Day-one air-gap invariant (ctx-core-03): every cortex_* routing chain in
+# args/llm_config.yaml must keep a local-tier fallback. Fail at import, not
+# at the first offline call.
+# ---------------------------------------------------------------------------
+assert_airgap_ready()

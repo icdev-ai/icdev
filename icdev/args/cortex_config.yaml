@@ -1,0 +1,56 @@
+# CUI // SP-CTI
+# -----------------------------------------------------------------------
+# ICDEV Cortex behavior configuration (ctx-core-03)
+# -----------------------------------------------------------------------
+# Consumed via tools/cortex/api.py::load_cortex_config(). Later Cortex
+# search / governance / analyst modules read these values instead of
+# hardcoding them — admins retune Cortex here, never in code.
+#
+# Resolution order (tools/cortex/api.py::resolve_cortex_config_path):
+#   1. $ICDEV_CORTEX_CONFIG — explicit override
+#   2. cortex_config.yaml next to the resolved args/llm_config.yaml
+#      (single-source rule from PR #139: resolve_llm_config_path())
+#
+# icdev/args/cortex_config.yaml is a generated mirror of this file —
+# edit here and copy across, same as args/llm_config.yaml.
+
+search:
+  # Per-backend fusion weights for the unified search fan-out. Keys are the
+  # normalized CORTEX_BACKENDS names (tools/cortex/schemas.py).
+  strategy_weights:
+    rag: 1.0
+    graph: 0.8
+    dic: 0.9
+    kb: 0.6
+
+  # Reciprocal Rank Fusion constant: fused = weight / (rrf_k + rank).
+  rrf_k: 60
+
+  # CRAG corrective-retrieval trigger: when the best normalized score across
+  # backends falls below this, the search layer rewrites the query
+  # (routing function cortex_search_rewrite) and retries.
+  crag_threshold: 0.55
+
+  # Per-backend fan-out timeout budget, seconds. `default` applies to any
+  # backend without an explicit entry.
+  fan_out_timeouts:
+    rag: 8.0
+    graph: 5.0
+    dic: 8.0
+    kb: 3.0
+    default: 8.0
+
+governance:
+  # Fail-closed grounding for CUI+ content: when the TRUST pipeline cannot
+  # validate citations against evidence, block instead of passing through
+  # (mirrors redaction.fail_closed in args/llm_config.yaml).
+  fail_closed: true
+
+  # complete() is free-form drafting with no evidence set — skip the
+  # grounding pass for plain completions instead of failing it closed.
+  skip_grounding_for_plain_complete: true
+
+analyst:
+  # When the deterministic NLQ->SQL path returns nothing, fall back to the
+  # cortex_analyst LLM routing chain.
+  nlq_fallback_enabled: true
