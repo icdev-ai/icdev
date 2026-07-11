@@ -159,6 +159,43 @@ def cmd_show(task_id: str, json_out: bool) -> int:
     return 0
 
 
+def _ascii(s: object) -> str:
+    """ASCII-fold a string so CLI output is safe on Windows cp1252 consoles
+    (pipeline labels use '->' arrows, em-dashes, etc.)."""
+    if s is None:
+        return ""
+    out = (str(s).replace("→", "->").replace("—", "-")
+           .replace("–", "-").replace("…", "...")
+           .replace("✓", "ok").replace("✗", "x"))
+    return out.encode("ascii", "replace").decode("ascii")
+
+
+def cmd_pipeline(task_id: str, json_out: bool) -> int:
+    """Print a task's delivery-pipeline (gate) status — the CLI mirror of the
+    dashboard pipeline stepper. Pure view; provider/LLM-agnostic (no LLM call)."""
+    from tools.kanban.pipeline import assemble
+    r = assemble(task_id)
+    if json_out:
+        print(json.dumps(r, indent=2, default=str))
+        return 1 if "error" in r else 0
+    if "error" in r:
+        print(f"{str(r['error']).upper()}: {task_id}", file=sys.stderr)
+        return 1
+    badge = {"completed": "[x]", "current": "[>]", "failed": "[X]",
+             "pending": "[ ]", "not_run": "[-]"}
+    print(f"Pipeline: {task_id}  (current stage: {r.get('current_stage', '-')})")
+    for s in r.get("stages", []):
+        mark = badge.get(s.get("state"), "[?]")
+        det = f"  -- {_ascii(s['detail'])}" if s.get("detail") else ""
+        print(f"  {mark} {_ascii(s.get('label', s.get('key')))}{det}")
+    meta = r.get("meta", {})
+    if meta.get("branch_name"):
+        print(f"  branch: {_ascii(meta['branch_name'])}")
+    if meta.get("commit_subject"):
+        print(f"  commit: {_ascii(meta['commit_subject'])}")
+    return 0
+
+
 def cmd_list(prefix: str | None, status: str | None, json_out: bool) -> int:
     conditions = []
     params = []
@@ -312,6 +349,10 @@ def main():
     # --show <id>
     parser.add_argument("--show", metavar="TASK_ID", help="Show details of one task")
 
+    # --pipeline <id> — delivery-pipeline (gate) status; CLI mirror of the dashboard stepper
+    parser.add_argument("--pipeline", metavar="TASK_ID",
+                        help="Show a task's delivery-pipeline (gate) status (CLI view)")
+
     # --list [--prefix PREFIX] [--status STATUS]
     parser.add_argument("--list", action="store_true", help="List tasks")
     parser.add_argument("--prefix", metavar="PREFIX", help="Filter by id prefix (used with --list)")
@@ -352,6 +393,9 @@ def main():
 
     elif args.show:
         sys.exit(cmd_show(args.show, args.json_out))
+
+    elif args.pipeline:
+        sys.exit(cmd_pipeline(args.pipeline, args.json_out))
 
     elif args.list:
         sys.exit(cmd_list(args.prefix, args.status, args.json_out))
