@@ -48,13 +48,14 @@ import functools
 import hashlib
 import importlib
 import json
-import logging
 import uuid
 from typing import Callable, Optional
 
+from tools.logging.icdev_logger import get_logger
+
 from .schemas import CortexContext, CortexResult, GovernanceReport
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # "tools" when loaded via the shim namespace, "icdev.tools" when canonical.
 _NS = __name__.rsplit(".cortex.", 1)[0]
@@ -303,6 +304,7 @@ class GovernancePipeline:
         prompt: str = "",
         context_sources=None,
         retrieval: bool = True,
+        attach: bool = True,
     ) -> tuple:
         """Run ``fn(governed_prompt)`` inside the full TRUST chain.
 
@@ -310,6 +312,16 @@ class GovernancePipeline:
         :class:`GovernanceBlockedError` when a gate blocks (always for a
         pre-check block; for downstream gate failures only when
         ``ctx.fail_closed`` is True).
+
+        ``attach`` (default True) writes the report onto a returned
+        :class:`CortexResult` (``result.governance``/``result.grounded``) and
+        lets output redaction rewrite ``result.text``. Facades whose result
+        already carries a native governance report (the Cortex Analyst
+        ``ask``) or whose result is not a CortexResult (``search`` returns a
+        list) wrap with ``attach=False``: every gate still runs (screening +
+        audit + provenance are the "no bypass" guarantee), but the native
+        result is left byte-for-byte intact and the outer report is returned
+        separately for the caller to surface.
         """
         ctx = ctx or CortexContext()
         report = GovernanceReport()
@@ -426,10 +438,11 @@ class GovernancePipeline:
             report.redactions_applied += len(hits)
             if masked_text != text:
                 text = masked_text
-                if is_cortex_result:
-                    result.text = masked_text
-                elif isinstance(result, str):
-                    result = masked_text
+                if attach:
+                    if is_cortex_result:
+                        result.text = masked_text
+                    elif isinstance(result, str):
+                        result = masked_text
             self._record(
                 report, GATE_OUTPUT_REDACTION,
                 OUTCOME_WARN if hits else OUTCOME_PASS,
@@ -452,7 +465,7 @@ class GovernancePipeline:
             self._record(report, GATE_PROVENANCE, OUTCOME_WARN, str(exc))
         self._audit(report, ctx)
 
-        if is_cortex_result:
+        if attach and is_cortex_result:
             result.governance = report
             result.grounded = grounded and not any(
                 report.outcomes.get(g) in (OUTCOME_FAIL, OUTCOME_WARN)

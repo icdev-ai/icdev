@@ -166,5 +166,12 @@ def test_ask_exposed_from_package_and_api():
     from tools.cortex import CortexAnalystError as pkg_err, ask as pkg_ask
     from tools.cortex.api import CortexAnalystError as api_err, ask as api_ask
 
-    assert pkg_ask is ask and api_ask is ask
+    # ctx-govern-04: the package and api now expose the governance-wrapped
+    # facade (not the raw analyst ask). Both carry the marker and wrap a raw
+    # analyst ``ask`` (identity across the tools/icdev shim is not asserted —
+    # from-imports resolve to distinct module objects across that boundary).
+    assert getattr(pkg_ask, "__cortex_governed__", False) is True
+    assert getattr(api_ask, "__cortex_governed__", False) is True
+    assert pkg_ask.__wrapped__.__name__ == "ask"
+    assert api_ask.__wrapped__.__name__ == "ask"
     assert pkg_err is CortexAnalystError and api_err is CortexAnalystError
