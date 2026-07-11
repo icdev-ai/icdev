@@ -2287,6 +2287,61 @@ python tools/llm/model_monitor.py --gate                                        
 
 ---
 
+## ICDEV Cortex — Unified AI Facade (ctx-*)
+
+Cortex is a Python **API facade** (`tools/cortex/`, mirrored to `icdev/tools/cortex/`) over
+LLMRouter, the four retrieval backends (RAG / GraphRAG / DIC / KB), IQE, and the enforced
+TRUST governance chain. There is no standalone argparse CLI — call it in-process or via
+`python -c`. Routing is config-driven (`cortex_*` chains in `args/llm_config.yaml`); behavior
+tuning lives in `args/cortex_config.yaml` (`$ICDEV_CORTEX_CONFIG` overrides). All chains keep a
+local ollama tier so the facade is air-gap safe.
+
+```bash
+# --- Generation (api.py: complete / classify / extract) ---
+# Free-form completion via the cortex_complete routing chain
+python -c "from tools.cortex import complete; r = complete('Summarize NIST 800-53 AC-2'); print(r.text)"
+
+# Single-label classification (LLM chain, deterministic query_classifier fallback offline/air-gap)
+python -c "from tools.cortex import classify; r = classify('reset my password', ['billing','account','technical']); print(r.text, r.provider)"
+
+# Structured extraction to a JSON schema (output_schema + fenced-JSON parse)
+python -c "from tools.cortex import extract; r = extract('Contact: Jane Doe, jane@x.mil', {'type':'object','properties':{'name':{'type':'string'},'email':{'type':'string'}}}); print(r.text)"
+
+# --- Unified search (search_service.py: strategy routing + CRAG correction) ---
+# Agentic auto-routing (classify_route -> backend selection / fan-out), top_k=5
+python -c "from tools.cortex import search; [print(h.backend, round(h.score,3), h.content[:60]) for h in search('who owns satellite AX-7', top_k=5)]"
+
+# Force a specific backend or full fan-out (bypass classification): rag|graph|dic|kb|all
+python -c "from tools.cortex import search; print(len(search('quarterly revenue trend', strategy='all')))"
+
+# Inspect the routing decision without running backends
+python -c "from tools.cortex import classify_route; print(classify_route('list all vendors linked to CVE-2024-1234'))"
+
+# --- Analyst (analyst.py: ask-your-data, IQE primary + NL->SQL fallback) ---
+# Natural-language query over platform data (mode: auto | iqe | nlq)
+python -c "from tools.cortex import ask; r = ask('show all satellites', mode='auto'); print(r.provider); print(r.text)"
+
+# Pin a canvas scope and request an LLM prose summary (citations grounded/validated)
+python -c "from tools.cortex import ask; r = ask('top 5 open incidents', canvas='nocc', summarize=True); print(r.metadata.get('grounding')); print(r.text)"
+
+# --- Governance (governance.py: enforced TRUST chain — gateway, redaction, grounding, provenance) ---
+# Wrap any Cortex call so every gate in GATE_ORDER runs (fail-open unless ctx.fail_closed)
+python -c "from tools.cortex import GovernancePipeline, complete, CortexContext; ctx=CortexContext(tenant_id='t1', classification='CUI', fail_closed=True); res, rpt = GovernancePipeline().wrap(lambda: complete('draft an RFI intro'), ctx, prompt='draft an RFI intro'); print(rpt.gates_run, rpt.outcomes)"
+
+# --- Config / air-gap invariant (config.py) ---
+# Load the merged cortex config (weights, rrf_k, crag_threshold, timeouts)
+python -c "from tools.cortex import load_cortex_config; c = load_cortex_config(); print(c['search']['crag_threshold'], c['search']['timeouts'])"
+
+# Verify every cortex_* routing chain retains a local ollama tier (raises CortexAirgapError if not)
+python -c "from tools.cortex import assert_airgap_ready; assert_airgap_ready(); print('cortex air-gap ready')"
+```
+
+Related MCP tools (RAG taxonomy shared by the analyst/search routers): `query_classify`
+(4-label taxonomy: fact_single/summary/reasoning/unanswerable), `crag_benchmark_run`
+(CRAG evaluation campaign with hallucination-penalizing scoring).
+
+---
+
 ## Ops Hub Canvas (OHC) — Phase 71
 
 ```bash
