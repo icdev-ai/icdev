@@ -19,12 +19,21 @@ if str(ROOT) not in sys.path:
 
 
 @pytest.fixture
-def client():
+def client(icdev_db, monkeypatch):
     """Full dashboard app with the cortex blueprint guaranteed registered.
 
-    The canvas is default-disabled, so it may not be auto-registered; register
-    it on demand and create its SQLite tables for the DB-backed routes.
+    Points get_connection()/auth at conftest's temp DB (icdev_db) which carries
+    dashboard_users (+ 'test-admin') and the cortex_* chat tables, and logs the
+    session in as test-admin so the auth before_request hook is satisfied.
+    Runtime is PostgreSQL; SQLite is used only because conftest.py hard-forces
+    ICDEV_STORAGE_BACKEND=sqlite for the whole platform suite.
     """
+    monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
+    monkeypatch.setenv("ICDEV_DB_PATH", str(icdev_db))
+    import tools.dashboard.auth as _auth
+
+    monkeypatch.setattr(_auth, "DB_PATH", str(icdev_db))
+
     from tools.cortex.blueprint import cortex_bp
     from tools.dashboard.app import app
 
@@ -32,13 +41,9 @@ def client():
         app.register_blueprint(cortex_bp)
 
     app.config["TESTING"] = True
-    with app.app_context():
-        try:
-            from tools.cortex.db.init_db import init_db
-            init_db()
-        except Exception:
-            pass
     with app.test_client() as test_client:
+        with test_client.session_transaction() as sess:
+            sess["user_id"] = "test-admin"
         yield test_client
 
 

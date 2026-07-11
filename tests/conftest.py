@@ -29,6 +29,12 @@ CREATE TABLE IF NOT EXISTS dashboard_users (
 );
 INSERT OR IGNORE INTO dashboard_users (id, email, display_name, role)
 VALUES ('test-admin', 'admin@test.local', 'Test Admin', 'admin');
+CREATE TABLE IF NOT EXISTS dashboard_api_keys (
+    id TEXT PRIMARY KEY, user_id TEXT NOT NULL, key_hash TEXT NOT NULL,
+    key_prefix TEXT NOT NULL, label TEXT, status TEXT NOT NULL DEFAULT 'active',
+    last_used_at TIMESTAMP, expires_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, revoked_at TIMESTAMP, revoked_by TEXT
+);
 CREATE TABLE IF NOT EXISTS studio_workflows (
     workflow_id   TEXT PRIMARY KEY,
     name          TEXT NOT NULL,

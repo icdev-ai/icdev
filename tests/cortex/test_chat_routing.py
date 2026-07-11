@@ -89,22 +89,31 @@ class TestIntentRouter:
 # Blueprint /api/chat routing tests (cortex api fns monkeypatched)
 # ---------------------------------------------------------------------------
 @pytest.fixture
-def client():
-    # Uses conftest's shared test DB (carries the cortex tables + dashboard_users
-    # with the 'test-admin' user the auth before_request hook validates).
+def client(icdev_db, monkeypatch):
+    # Point the app's get_connection() at conftest's temp DB (icdev_db), which
+    # carries dashboard_users + the 'test-admin' user the auth before_request
+    # hook validates AND the cortex_* chat tables. NOTE: production/runtime is
+    # PostgreSQL; SQLite is used here only because conftest.py hard-forces
+    # ICDEV_STORAGE_BACKEND=sqlite for the whole platform test suite (CI Test
+    # gate). get_connection()'s SQLite branch re-reads ICDEV_DB_PATH at call
+    # time, so this redirect takes effect per request. Live-PG behaviour is
+    # proven separately by db/verify_tenant_isolation.py.
+    monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
+    monkeypatch.setenv("ICDEV_DB_PATH", str(icdev_db))
+    # auth._get_db() passes get_connection(db_path=config.DB_PATH) explicitly,
+    # which otherwise overrides ICDEV_DB_PATH and points the auth query at the
+    # real data/icdev.db (no dashboard_users). Pin it to the same temp DB so
+    # auth + cortex persistence share one SQLite file.
+    import tools.dashboard.auth as _auth
+
+    monkeypatch.setattr(_auth, "DB_PATH", str(icdev_db))
+
     from tools.cortex.blueprint import cortex_bp
     from tools.dashboard.app import app
 
     if "cortex" not in app.blueprints:
         app.register_blueprint(cortex_bp)
     app.config["TESTING"] = True
-    with app.app_context():
-        try:
-            from tools.cortex.db.init_db import init_db
-
-            init_db()
-        except Exception:
-            pass
     with app.test_client() as test_client:
         with test_client.session_transaction() as sess:
             sess["user_id"] = "test-admin"
