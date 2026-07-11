@@ -300,3 +300,43 @@ class TestHardenedCompleteness:
 
         assert result.status == "pass"
         assert result.missing == []
+
+
+class TestRegistryNavKindAgnostic:
+    """A registry nav link renders via nav_tree for ANY component with
+    nav.section — not only kind=canvas. Regression for the standards_catalog
+    false-positive (kind=core_extension, nav.section=Platform)."""
+
+    def _write_registry(self, root: Path) -> None:
+        _write(
+            root / "args" / "component_registry.yaml",
+            "components:\n"
+            "  - key: my_canvas\n"
+            "    kind: canvas\n"
+            "    nav:\n"
+            "      section: Canvases\n"
+            "      label: My Canvas\n"
+            "    completeness:\n"
+            "      template: tools/dashboard/templates/my_canvas/page.html\n"
+            "  - key: my_core_ext\n"
+            "    kind: core_extension\n"
+            "    nav:\n"
+            "      section: Platform\n"
+            "      label: My Core Ext\n"
+            "    completeness:\n"
+            "      template: tools/dashboard/templates/my_core_ext/page.html\n"
+            "  - key: no_nav_ext\n"
+            "    kind: core_extension\n",
+        )
+
+    def test_core_extension_with_nav_section_is_recognized(self, tmp_path, monkeypatch):
+        root = make_root(tmp_path)
+        self._write_registry(root)
+        from tools.workflow import coherence_checker as cc
+
+        monkeypatch.setattr(cc, "PROJECT_ROOT", root)
+        dirs = cc._load_registry_nav_dirs()
+
+        assert "my_canvas" in dirs          # canvas kind still recognized
+        assert "my_core_ext" in dirs        # core_extension with nav.section now recognized
+        assert "no_nav_ext" not in dirs     # no nav.section → not a nav dir
