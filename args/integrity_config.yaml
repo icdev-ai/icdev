@@ -380,6 +380,8 @@ known_safe_dynamic_import_modules:
   - compliance/multi_regime_assessor.py
   - tools/compliance/oscal_tools.py  # optional-library probe: importlib.import_module inside try/except to detect available OSCAL parsing libraries (e.g. oscal_pydantic, paramiko). Module names are string literals. Authorized by REQ-COMPLIANCE-OSCAL-DYNAMIC-IMPORT-01.
   - compliance/oscal_tools.py
+  - tools/cortex/analyst.py  # registry-driven loader: _import_adapter() uses importlib.import_module(module) where module comes from get_registry().get_iqe_mapping() (args/component_registry.yaml — trusted FORGE config, not user input, network data, or decoded bytes) to load IQE adapter modules so they register their collections. Same pattern as component_registry.py / foundry/engine.py. Authorized by REQ-CORTEX-ANALYST-DYNAMIC-IMPORT-01 (assessment-145 review, 2026-07-11).
+  - cortex/analyst.py
   - tools/creative/creative_engine.py  # optional-library probe: importlib.import_module inside try/except for optional creative-engine provider libraries (pillow, moviepy, etc.). Module names are string literals. Authorized by REQ-CREATIVE-ENGINE-DYNAMIC-IMPORT-01.
   - creative/creative_engine.py
   - tools/dashboard/app.py  # optional-library probe: importlib.import_module inside try/except at app startup to detect available optional dashboard feature libraries. Module names are string literals. Authorized by REQ-DASHBOARD-APP-DYNAMIC-IMPORT-01.
