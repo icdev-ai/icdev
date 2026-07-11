@@ -445,6 +445,89 @@ def _run_route_smoke(modified_files: List[str]) -> Tuple[bool, str, Dict[str, An
     return True, f"Route smoke passed ({len(results)} routes OK)", metrics
 
 
+def _playwright_specs_for_changed_files(modified_files: Optional[List[str]]) -> List[str]:
+    """Map changed UI files -> relevant tests/e2e/<slug>*.spec.ts spec(s).
+
+    Modeled on route_smoke._routes_for_changed_files. Returns [] (→ caller falls
+    back to Selenium) for backend-only diffs, or for too-broad changes (app.py /
+    base layout) so we never run the whole spec suite synchronously. Capped at 2.
+    """
+    files = modified_files or []
+    specs_dir = BASE_DIR / "tests" / "e2e"
+    if not specs_dir.is_dir():
+        return []
+    ui_exts = (".html", ".js", ".ts", ".css", ".jinja", ".jinja2")
+    slugs: Set[str] = set()
+    for f in files:
+        fp = f.replace("\\", "/")
+        # Too broad → bail to Selenium (never run the whole spec suite here).
+        if fp.endswith("app.py") or fp.endswith("/base.html") or "/templates/base.html" in fp:
+            return []
+        is_ui = any(fp.endswith(e) for e in ui_exts) or "/templates/" in fp or fp.endswith("blueprint.py")
+        if not is_ui:
+            continue
+        parts = fp.split("/")
+        # template subdir: .../templates/<slug>/...
+        if "templates" in parts:
+            i = parts.index("templates")
+            if i + 1 < len(parts) - 1:
+                slugs.add(parts[i + 1])
+        # canvas dir: tools/<canvas>/... (skip the generic "dashboard" bucket)
+        if len(parts) > 2 and parts[0] in ("tools", "icdev"):
+            idx = 1 if parts[0] == "tools" else 2
+            if idx < len(parts) and parts[idx] not in ("dashboard",):
+                slugs.add(parts[idx])
+        # basename slug: kanban.html -> kanban, task_pipeline.js -> task_pipeline
+        base = parts[-1]
+        for e in ui_exts:
+            if base.endswith(e):
+                slugs.add(base[: -len(e)])
+                break
+    specs: List[str] = []
+    for slug in sorted(slugs):
+        if not slug or not re.match(r"^[a-z0-9_]+$", slug):
+            continue
+        for cand in sorted(specs_dir.glob(slug + "*.spec.ts")):
+            p = str(cand)
+            if cand.is_file() and p not in specs:
+                specs.append(p)
+    return specs[:2]
+
+
+def _run_playwright(cwd: str, specs: List[str], time_budget: float) -> Tuple[Optional[bool], str, Dict[str, Any]]:
+    """Run the mapped Playwright spec(s) via e2e_runner.run_playwright_native.
+
+    Returns (passed | None, reason, metrics). None = not_run (unavailable /
+    npx or browser missing / timeout / error) → caller falls back to Selenium.
+    NEVER raises. ``cwd``/``time_budget`` are advisory (the runner uses its own
+    PROJECT_ROOT + internal timeout for a single spec).
+    """
+    if not specs:
+        return None, "no playwright spec mapped", {}
+    try:
+        from tools.testing.e2e_runner import run_playwright_native
+    except Exception as exc:
+        return None, f"playwright runner import failed: {exc}", {}
+    ran_any = False
+    all_pass = True
+    details: List[str] = []
+    for spec in specs:
+        run_id = "pipeline-e2e-" + os.path.basename(spec).replace(".spec.ts", "")
+        try:
+            results = run_playwright_native(run_id, logger, test_file=spec)
+        except Exception as exc:
+            return None, f"playwright unavailable/skipped: {exc}", {}
+        if not results:
+            return None, "playwright produced no results (npx/browser missing?)", {}
+        ran_any = True
+        spec_pass = all(getattr(r, "passed", False) for r in results)
+        all_pass = all_pass and spec_pass
+        details.append(os.path.basename(spec) + ":" + ("pass" if spec_pass else "fail"))
+    if not ran_any:
+        return None, "playwright did not run", {}
+    return all_pass, "; ".join(details), {}
+
+
 def _run_e2e(cwd: str, ui_touched: bool, modified_files: Optional[List[str]] = None) -> Tuple[bool, str, Dict[str, Any]]:
     """Run E2E test if UI files were modified AND dashboard is running.
 
@@ -495,6 +578,28 @@ def _run_e2e(cwd: str, ui_touched: bool, modified_files: Optional[List[str]] = N
     except Exception:
         metrics["e2e_ran"] = False
         return True, f"{smoke_reason}; kanban API unresponsive — full E2E skipped (transient load)", metrics
+
+    # ── Per-task Playwright (preferred E2E engine) ────────────────────────────
+    # Run the Playwright spec(s) mapped to the task's changed files. Falls through
+    # to the existing Selenium test below when no spec maps or Playwright can't
+    # run (npx/browser missing, error, timeout). A Playwright FAILURE blocks the
+    # task ONLY when KANBAN_PIPELINE_ENFORCE is on; otherwise it's record-only.
+    _pw_specs = _playwright_specs_for_changed_files(modified_files)
+    if _pw_specs:
+        _pw_passed, _pw_reason, _pw_metrics = _run_playwright(cwd, _pw_specs, 120.0)
+        if _pw_passed is not None:  # Playwright actually ran → it's the E2E verdict
+            metrics["e2e_ran"] = True
+            metrics["e2e_passed"] = _pw_passed
+            metrics["e2e_engine"] = "playwright"
+            if _pw_passed:
+                return True, f"E2E Playwright passed ({_pw_reason})", metrics
+            if _pipeline_enforce():
+                return False, f"E2E Playwright FAILED: {_pw_reason}", metrics
+            return True, f"E2E Playwright failed (record-only; {_pw_reason})", metrics
+        # not_run → fall through to the existing Selenium path (unchanged)
+        metrics["e2e_engine"] = "selenium"
+    else:
+        metrics["e2e_engine"] = "selenium"
 
     metrics["e2e_ran"] = True
     _cmd = ["python", "tests/e2e_kanban_depends_on.py"]
