@@ -5485,7 +5485,7 @@ def _run_post_task_validation(task_id: str) -> Tuple[bool, str, Dict[str, Any]]:
     Returns: (passed: bool, reason: str, metrics: dict)
     """
     import subprocess as _sp
-    from tools.workflow.validated_commit import validate_working_tree
+    from tools.workflow.validated_commit import validate_working_tree, _pipeline_enforce
 
     # Resolve the task's worktree — validation runs here, not in main.
     work_dir = _worktrees.get(task_id)
@@ -5519,13 +5519,31 @@ def _run_post_task_validation(task_id: str) -> Tuple[bool, str, Dict[str, Any]]:
     except Exception:
         modified = []
 
-    return validate_working_tree(
+    passed, reason, metrics = validate_working_tree(
         cwd=cwd,
         modified_files=modified,
         compare_to_main=True,
         run_e2e=True,
         run_companion=True,
     )
+
+    # Conformance Review gate (Governed Delivery Pipeline Phase 2). Needs the
+    # task's acceptance_criteria (which validate_working_tree doesn't see), so it
+    # runs here. RECORD-ONLY by default — it only blocks completion when
+    # KANBAN_PIPELINE_ENFORCE is on. Best-effort: never let it crash the gate.
+    try:
+        import json as _json
+        from tools.testing.conformance_reviewer import review_conformance
+        cr = review_conformance(task_id, changed_files=modified)
+        metrics["review_passed"] = cr.get("review_passed")
+        metrics["review_findings"] = _json.dumps(cr.get("findings") or [])[:4000]
+        if passed and cr.get("review_passed") is False and _pipeline_enforce():
+            passed = False
+            reason = f"conformance review failed: {cr.get('reason', '')}"
+    except Exception as _cexc:
+        logger.debug("conformance review skipped for %s: %s", task_id, _cexc)
+
+    return passed, reason, metrics
 
 
 def _update_verification_metrics(task_id: str, metrics: Dict[str, Any]) -> None:
@@ -5535,8 +5553,10 @@ def _update_verification_metrics(task_id: str, metrics: Dict[str, Any]) -> None:
             conn.execute(
                 "UPDATE kanban_verifications SET "
                 "codelens_passed = %s, ruff_issues = %s, bandit_issues = %s, "
-                "pytest_passed = %s, coherence_passed = %s, "
-                "e2e_ran = %s, e2e_passed = %s, companion_synced = %s "
+                "pytest_passed = %s, pytest_ran = %s, failed_tests = %s, "
+                "coherence_passed = %s, "
+                "e2e_ran = %s, e2e_passed = %s, companion_synced = %s, "
+                "review_passed = %s, review_findings = %s "
                 "WHERE task_id = %s AND id = ("
                 "  SELECT id FROM kanban_verifications WHERE task_id = %s "
                 "  ORDER BY verified_at DESC LIMIT 1)",
@@ -5545,10 +5565,14 @@ def _update_verification_metrics(task_id: str, metrics: Dict[str, Any]) -> None:
                     metrics.get("ruff_issues", 0),
                     metrics.get("bandit_issues", 0),
                     1 if metrics.get("pytest_passed") else 0 if metrics.get("pytest_passed") is False else None,
+                    1 if metrics.get("pytest_ran") else 0,
+                    metrics.get("failed_tests"),
                     1 if metrics.get("coherence_passed") else 0 if metrics.get("coherence_passed") is False else None,
                     1 if metrics.get("e2e_ran") else 0,
                     1 if metrics.get("e2e_passed") else 0 if metrics.get("e2e_passed") is False else None,
                     1 if metrics.get("companion_synced") else 0,
+                    1 if metrics.get("review_passed") else 0 if metrics.get("review_passed") is False else None,
+                    metrics.get("review_findings"),
                     task_id, task_id,
                 ),
             )
