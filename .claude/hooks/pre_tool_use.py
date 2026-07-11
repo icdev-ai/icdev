@@ -213,6 +213,10 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "rag_retrieval_log",
         # RAG provenance ledger — append-only AIA chain-of-custody (D-AIDP, NIST AU-3)
         "rag_provenance_ledger",
+        # ICDEV Cortex governance audit — one append-only row per governed Cortex
+        # call (ctx-govern-03, NIST AU). cortex_sessions is intentionally NOT here
+        # (mutable session lifecycle: status/updated_at).
+        "cortex_audit",
         # Phase 69 — Codebase Assistant (D-CA-6)
         "codebase_qa_cache",
         # Genesis v2.0 (D-GEN-6, D-GEN-10)
