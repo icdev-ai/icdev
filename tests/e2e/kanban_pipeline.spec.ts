@@ -101,6 +101,13 @@ test.describe('Governed Delivery Pipeline — full lifecycle', () => {
       expect(stepperText, `stepper missing stage label "${label}"`).toContain(label);
     }
 
+    // The lifecycle view surfaces the enforcement mode (ENFORCED vs RECORD-ONLY)
+    // so users can tell at a glance whether the gates block done.
+    const lifecycle = page.locator('#task-lifecycle-body');
+    const lifecycleText = (await lifecycle.textContent()) ?? '';
+    expect(lifecycleText).toContain('Pipeline mode');
+    expect(lifecycleText).toMatch(/ENFORCED|RECORD-ONLY/);
+
     await page.screenshot({ path: `${SCREENSHOT_DIR}/kanban_pipeline_stepper.png`, fullPage: false });
   });
 });

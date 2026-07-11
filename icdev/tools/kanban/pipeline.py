@@ -10,6 +10,7 @@ The canonical stage list lives in args/pipeline.yaml (single source of truth).
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -18,6 +19,18 @@ import yaml
 from tools.logging.icdev_logger import get_logger
 
 logger = get_logger(__name__)
+
+
+def _enforce_mode() -> str:
+    """Whether the delivery-pipeline gates currently BLOCK done or only record.
+
+    Reads ``KANBAN_PIPELINE_ENFORCE`` — the same switch
+    ``validated_commit._pipeline_enforce()`` gates on — so the pipeline view can
+    tell the user at a glance whether the gates are ``enforced`` (block done) or
+    ``record_only`` (recorded but non-blocking). A light env read so this module
+    stays dependency-free for the dashboard/CLI hot paths.
+    """
+    return "enforced" if os.environ.get("KANBAN_PIPELINE_ENFORCE", "0").lower() in ("1", "true", "yes") else "record_only"
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _PIPELINE_YAML = _REPO_ROOT / "args" / "pipeline.yaml"
@@ -283,6 +296,7 @@ def assemble(task_id: str) -> Dict[str, Any]:
             "gates": gates,
             "transitions": transitions,
             "meta": meta,
+            "enforce_mode": _enforce_mode(),
         }
     except Exception as exc:
         logger.warning("pipeline.assemble(%s) failed: %s", task_id, exc)

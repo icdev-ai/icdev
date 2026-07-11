@@ -55,6 +55,10 @@ function _lifecycleHtml(d, taskId){
       + '<div class="pipeline-label">'+_pipeEsc(st.label)+'</div>'+detail+'</div>';
   }).join("");
   var stepper = '<div class="progress-pipeline">'+steps+'</div>';
+  var enforced = (d.enforce_mode === "enforced");
+  var modeVal = enforced ? "ENFORCED" : "RECORD-ONLY";
+  var modeTip = enforced ? "Gates block a task from being marked done." : "Gates are recorded but do not block done (KANBAN_PIPELINE_ENFORCE off).";
+  var mode = '<div style="margin:4px 0 8px; font-size:12px; color:'+(enforced ? "#28a745" : "#6c757d")+';" title="'+_pipeEsc(modeTip)+'">Pipeline mode: <strong>'+modeVal+'</strong></div>';
   var branch = d.branch_state ? '<div style="margin:4px 0 8px; color:#dc3545; font-size:12px;">⚠ '+_pipeEsc(d.branch_state)+'</div>' : '';
   var m = d.meta||{};
   var metaRows = [];
@@ -71,7 +75,7 @@ function _lifecycleHtml(d, taskId){
   var timeline = tl ? '<details style="margin-top:8px;"><summary style="cursor:pointer; font-size:12px; color:var(--text-dim);">Transition timeline ('+(d.transitions||[]).length+')</summary><table style="width:100%; font-size:11px; margin-top:6px;">'+tl+'</table></details>' : '';
   var prBtn = '<button class="btn btn-sm" onclick="checkPrCi(\''+_pipeEsc(taskId)+'\')" style="margin-top:8px;">Check PR/CI (live)</button>';
   var prBox = '<div id="task-pr-ci" style="margin-top:8px;"></div>';
-  return stepper + branch + metaHtml + prBtn + prBox + timeline;
+  return stepper + mode + branch + metaHtml + prBtn + prBox + timeline;
 }
 
 function checkPrCi(taskId){
