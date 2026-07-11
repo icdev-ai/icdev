@@ -24,9 +24,9 @@ ad-hoc governance. The chain, in order:
 6. ``output_redaction``   — ``tools/llm/output_redactor`` masks PII/secrets in
                             the response text.
 7. ``provenance``         — ``tools/provenance/registry.register_citation``
-                            record + audit row. The dedicated cortex audit
-                            table lands in ctx-govern-03; until then the audit
-                            row is a structured logger record (stub).
+                            record + one append-only ``cortex_audit`` row
+                            (ctx-govern-03) written through the RLS-aware storage
+                            shim, plus a structured logger record for observability.
 
 Non-retrieval calls (``retrieval=False``) may skip the two grounding gates —
 NEVER redaction or provenance/audit — and the skip is recorded explicitly in
@@ -163,12 +163,19 @@ def _gate_register_provenance(
 
 
 def _gate_record_audit(payload: dict) -> None:
-    """Gate 7b: append-only audit row.
+    """Gate 7b: append-only audit row (NIST AU).
 
-    Logger stub until the cortex audit table lands in ctx-govern-03 — the
-    payload is already the exact row shape that migration will persist.
+    Persists one INSERT-only ``cortex_audit`` row (ctx-govern-03) through the
+    RLS-aware storage shim, and also emits a structured log line so the audit is
+    observable even when the DB write degrades. A persistence failure is logged,
+    never raised — the outer ``_audit`` guard already isolates it from the real
+    operation outcome, and governance must never fail because bookkeeping did.
     """
     logger.info("cortex_governance_audit %s", json.dumps(payload, default=str))
+    try:
+        _mod("cortex.db.init_db").record_audit(payload)
+    except Exception as exc:  # audit persistence must never mask the real outcome
+        logger.error("cortex governance audit persistence failed: %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -272,7 +279,11 @@ class GovernancePipeline:
         raise GovernanceBlockedError(gate, reason, report)
 
     def _audit(
-        self, report: GovernanceReport, ctx: CortexContext, blocked_gate: str = ""
+        self,
+        report: GovernanceReport,
+        ctx: CortexContext,
+        blocked_gate: str = "",
+        provenance_id: str = "",
     ) -> None:
         try:
             _gate_record_audit(
@@ -280,6 +291,7 @@ class GovernancePipeline:
                     "record_id": f"cgov-{uuid.uuid4().hex[:16]}",
                     "operation": self.operation,
                     "agent_id": self.agent_id,
+                    "session_id": getattr(ctx, "session_id", "") or "",
                     "tenant_id": ctx.tenant_id,
                     "user_id": ctx.user_id,
                     "classification": ctx.classification,
@@ -289,6 +301,7 @@ class GovernancePipeline:
                     "gates_run": list(report.gates_run),
                     "outcomes": dict(report.outcomes),
                     "redactions_applied": report.redactions_applied,
+                    "provenance_id": provenance_id,
                 }
             )
         except Exception as exc:  # audit stub must never mask the real outcome
@@ -440,6 +453,7 @@ class GovernancePipeline:
 
         # 7. Provenance record + audit row — never skipped, never blocking.
         record_id = f"cgov-{uuid.uuid4().hex[:16]}"
+        registry_id = ""
         try:
             registry_id = _gate_register_provenance(text, ctx, self.operation, record_id)
             self._record(
@@ -450,7 +464,7 @@ class GovernancePipeline:
         except Exception as exc:
             logger.warning("cortex governance provenance record failed: %s", exc)
             self._record(report, GATE_PROVENANCE, OUTCOME_WARN, str(exc))
-        self._audit(report, ctx)
+        self._audit(report, ctx, provenance_id=registry_id or "")
 
         if is_cortex_result:
             result.governance = report

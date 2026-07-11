@@ -1971,6 +1971,36 @@ CREATE TABLE IF NOT EXISTS docmod_catalog_audit (
     tenant_id       TEXT,
     classification  TEXT DEFAULT 'CUI'
 );
+CREATE TABLE IF NOT EXISTS cortex_sessions (
+    id              TEXT PRIMARY KEY,
+    tenant_id       TEXT NOT NULL DEFAULT 'default',
+    classification  TEXT NOT NULL DEFAULT 'CUI',
+    user_id         TEXT,
+    domain          TEXT,
+    air_gap         INTEGER NOT NULL DEFAULT 0,
+    status          TEXT NOT NULL DEFAULT 'active',
+    metadata_json   TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_cortex_sessions_tenant ON cortex_sessions(tenant_id);
+CREATE TABLE IF NOT EXISTS cortex_audit (
+    id              TEXT PRIMARY KEY,
+    session_id      TEXT,
+    tenant_id       TEXT NOT NULL DEFAULT 'default',
+    classification  TEXT NOT NULL DEFAULT 'CUI',
+    function        TEXT NOT NULL DEFAULT 'cortex',
+    agent_id        TEXT,
+    user_id         TEXT,
+    gates_json      TEXT,
+    outcome         TEXT NOT NULL DEFAULT 'pass'
+        CHECK (outcome IN ('pass', 'warn', 'fail', 'blocked')),
+    blocked         INTEGER NOT NULL DEFAULT 0,
+    provenance_id   TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_cortex_audit_session ON cortex_audit(session_id);
+CREATE INDEX IF NOT EXISTS idx_cortex_audit_tenant ON cortex_audit(tenant_id);
 """
 
 
