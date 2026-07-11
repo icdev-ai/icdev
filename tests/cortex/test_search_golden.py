@@ -274,9 +274,14 @@ def test_timeout_branch_returns_partial_results(monkeypatch):
 
 def test_search_and_result_type_exported_by_package():
     # Both the entry point and the result type ship on the public facade.
+    # Post-governance (ctx-govern-04) the public `search` entry point is the
+    # GOVERNED facade (tools/cortex/api.py, run through GovernancePipeline); the
+    # raw adapter stays available as search_service.search.
     import tools.cortex as cortex
 
-    assert cortex.search is search_service.search
+    assert callable(cortex.search)
+    assert cortex.search.__module__.endswith("cortex.api")
+    assert callable(search_service.search)
     assert cortex.CortexSearchResult is CortexSearchResult
     assert "search" in cortex.__all__
     assert "CortexSearchResult" in cortex.__all__
