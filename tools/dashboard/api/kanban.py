@@ -314,7 +314,9 @@ def list_tasks():
             # never get buried by a cap on the done bucket (which can be
             # thousands of rows). Only "done" is capped.
             active_rows = conn.execute(
-                f"{select}WHERE kt.status IN ('in_progress','suggested','token_exhausted') "
+                f"{select}WHERE kt.status IN ('in_progress','suggested','token_exhausted',"
+                "'validating','pr_opened','ci_failed','merge_conflict',"
+                "'changes_requested','failed','needs_decomposition','decomposed') "
                 f"ORDER BY {priority_case}, kt.created_at DESC"  # nosec B608
             ).fetchall()
             done_sql = (
