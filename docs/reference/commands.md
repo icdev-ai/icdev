@@ -3113,3 +3113,43 @@ python -m tools.genesis.reflexes.doc_modernization_sweep --dry-run --json
 # Config: args/docmod/docmod_config.yaml + args/docmod/packs/*.yaml + rulebooks
 # MCP tools: docmod_scan, docmod_findings, docmod_redline
 ```
+
+## ICDEV Cortex — REST API v1 (ctx-expose-02)
+
+Versioned HTTP surface over the Cortex facade for dashboard JS, child apps, and
+SaaS tenants. All endpoints are `POST` with a JSON body and a JSON response.
+Auth follows dashboard rules (401 when unauthenticated); tenant/user/
+classification are derived server-side from the session — a client-supplied
+`tenant_id`/`user_id`/`classification` is ignored (only `domain` is honored).
+
+```bash
+# All under /cortex/api/v1/ — authenticate with a dashboard API key.
+#   Authorization: Bearer icdev_dash_...   (or an authenticated session cookie)
+
+# Unified retrieval (strategy router + CRAG)
+curl -sX POST http://localhost:5050/cortex/api/v1/search \
+  -H "Authorization: Bearer $ICDEV_DASHBOARD_API_KEY" -H "Content-Type: application/json" \
+  -d '{"query": "satellite ground stations", "top_k": 5, "strategy": "auto", "domain": ""}'
+
+# Cortex Analyst (IQE primary, NL->SQL fallback)
+curl -sX POST http://localhost:5050/cortex/api/v1/ask \
+  -H "Authorization: Bearer $ICDEV_DASHBOARD_API_KEY" -H "Content-Type: application/json" \
+  -d '{"question": "how many open incidents?", "mode": "auto", "summarize": false}'
+
+# Governed completion / classification / extraction
+curl -sX POST http://localhost:5050/cortex/api/v1/complete \
+  -d '{"prompt": "draft a status note", "max_tokens": 256}' -H "Content-Type: application/json" ...
+curl -sX POST http://localhost:5050/cortex/api/v1/classify \
+  -d '{"text": "app crashes on launch", "labels": ["bug", "feature", "question"]}' ...
+curl -sX POST http://localhost:5050/cortex/api/v1/extract \
+  -d '{"text": "...", "schema": {"type": "object", "properties": {"name": {"type": "string"}}}}' ...
+
+# Run the TRUST governance chain over arbitrary text (dry-run)
+curl -sX POST http://localhost:5050/cortex/api/v1/govern \
+  -d '{"text": "candidate answer [source: 1]", "context_sources": ["1"], "retrieval": true}' ...
+
+# Responses: search -> {results:[CortexSearchResult...], count}; ask/complete/classify/extract
+#   -> CortexResult.to_dict() (incl. governance); govern -> {text, grounded, blocked, governance}.
+# Governance/analyst block -> HTTP 403 with the serialized GovernanceReport.
+# Version discipline: /v1/ is additive-only; breaking changes ship under /v2/.
+```

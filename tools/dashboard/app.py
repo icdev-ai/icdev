@@ -2594,6 +2594,14 @@ def create_app(testing: bool = False) -> Flask:
     except Exception as _exc:
         app.logger.warning("Ontology Explorer blueprint failed to register: %s", _exc)
 
+    # ---- Cortex REST API v1 (ctx-expose-02) ----
+    try:
+        from tools.cortex.blueprint import cortex_bp as _cortex_bp
+        app.register_blueprint(_cortex_bp)
+        app.logger.info("Cortex REST API blueprint registered at /cortex/api/v1")
+    except Exception as _exc:
+        app.logger.warning("Cortex REST API blueprint failed to register: %s", _exc)
+
     # ---- Cache Savings Blueprint ----
     try:
         from tools.cache_savings.blueprint import bp as _cache_savings_bp
