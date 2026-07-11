@@ -1,6 +1,7 @@
 # IQE-CORTEX-01: Recent Cortex canvas sessions
-# Most-recent chat/agent launches across all modes and domain lenses.
+# Chat/agent launches across all modes and domain lenses. The adapter already
+# returns rows most-recent-first (ORDER BY created_at DESC), so the IQE grammar
+# (foreach / where / select — no orderby clause) needs only projection here.
 
 foreach s in cortex.sessions
-orderby s.created_at desc
 select s.session_id, s.mode, s.domain, s.status, s.user_id, s.created_at
