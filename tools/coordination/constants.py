@@ -22,9 +22,13 @@ RES_SERVICE = "service"            # service:dashboard, service:genesis-daemon
 RES_FILE = "file"                  # file:tools/x.py  (soft / warn-only)
 RES_GIT = "git"                    # git:repo         (hard — commit serialization)
 RES_MIGRATION = "migration"        # migration:schema (hard — DDL serialization)
+RES_KANBAN = "kanban"              # kanban:task:<id>, kanban:runner:global
+                                   # (hard — exactly one owner per task, so the
+                                   # autonomous runner and an interactive CLI
+                                   # session never double-build the same task)
 
 # Hard-enforced namespaces (acquire-or-queue); others are advisory/warn-only.
-HARD_NAMESPACES = {RES_SERVICE, RES_GIT, RES_MIGRATION}
+HARD_NAMESPACES = {RES_SERVICE, RES_GIT, RES_MIGRATION, RES_KANBAN}
 
 # PostgreSQL advisory-lock key namespace salt (keeps our keys from colliding
 # with any other advisory-lock user).

@@ -85,6 +85,12 @@ _TRANSITIONS: Dict[Tuple[KanbanState, KanbanState], str] = {
     (KanbanState.SCHEDULED, KanbanState.BACKLOG): "unschedule",
     (KanbanState.SCHEDULED, KanbanState.FAILED): "cancel",
     (KanbanState.IN_PROGRESS, KanbanState.PR_OPENED): "pr_opened",
+    # NOTE (done-hardening): this in_progress→done edge lets a caller reach 'done'
+    # without passing through PR_OPENED/merge. The runner drives completion through
+    # reflexes/kanban.py::_move_task, which now enforces a git/origin merge-verify
+    # gate (a task can only reach 'done' when its work is actually on origin/main),
+    # so this edge must only ever be taken POST-verify. Left in place because other
+    # callers depend on it; the authoritative guarantee lives in _move_task.
     (KanbanState.IN_PROGRESS, KanbanState.DONE): "complete",
     (KanbanState.IN_PROGRESS, KanbanState.BACKLOG): "retry",
     (KanbanState.IN_PROGRESS, KanbanState.TOKEN_EXHAUSTED): "pause",
@@ -109,6 +115,17 @@ _TRANSITIONS: Dict[Tuple[KanbanState, KanbanState], str] = {
 
 
 #: When persisting to the existing DB schema, map extended states down.
+# TODO(kanban-hardening #4): PR_OPENED / CI_FAILED / MERGE_CONFLICT /
+# CHANGES_REQUESTED all collapse to 'in_progress' below, and FAILED collapses to
+# 'token_exhausted', because the PG kanban_tasks_status_check constraint only
+# permits {backlog, scheduled, in_progress, done, token_exhausted, suggested,
+# decomposed, validating, needs_decomposition}. Consequence: the board literally
+# cannot distinguish "PR open, awaiting merge" from "still coding," nor "failed"
+# from "token-exhausted" — it hides the true lifecycle. The follow-up is a coupled
+# change: (a) a migration expanding the CHECK constraint to add pr_opened, merged,
+# ci_failed, changes_requested, failed, blocked; (b) mapping each extended state to
+# itself here; (c) adding the matching board columns in dashboard/templates/
+# kanban.html. Deferred as a standalone PR because it touches schema + UI together.
 _STATE_TO_DB_STATUS: Dict[KanbanState, str] = {
     KanbanState.SUGGESTED: "suggested",
     KanbanState.BACKLOG: "backlog",

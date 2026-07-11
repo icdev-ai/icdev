@@ -193,6 +193,104 @@ def cmd_list(prefix: str | None, status: str | None, json_out: bool) -> int:
     return 0
 
 
+_RUNNER_PAUSE_RESOURCE = "kanban:runner:global"
+
+
+def _task_lease_resource(task_id: str) -> str:
+    return f"kanban:task:{task_id}"
+
+
+def cmd_claim(task_id: str, json_out: bool) -> int:
+    """Take exclusive ownership of a task for interactive (CLI) work.
+
+    Acquires the per-task coordination lease so the autonomous kanban runner
+    skips it, moves it to in_progress, and prints the task's stored branch +
+    commit so you continue that branch rather than rebuilding it.
+    """
+    from tools.coordination import leases
+    res = _task_lease_resource(task_id)
+    lease = leases.acquire(res, intent="cli-manual", ttl_seconds=3600, block=False)
+    if lease is None:
+        h = leases.holder(res) or {}
+        out = {"claimed": False, "task_id": task_id, "held_by": h.get("holder_session")}
+        if json_out:
+            print(json.dumps(out, indent=2))
+        else:
+            print(f"  CANNOT CLAIM {task_id}: held by session {h.get('holder_session', '?')}")
+        return 1
+    now = _now()
+    info = {"claimed": True, "task_id": task_id}
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT status, branch_name, commit_summary FROM kanban_tasks WHERE id = %s",
+            (task_id,),
+        ).fetchone()
+        if not row:
+            print(f"  NOT FOUND: {task_id} (lease acquired; no such task row)", file=sys.stderr)
+            return 1
+        d = dict(row)
+        prior = d.get("status")
+        conn.execute(
+            "UPDATE kanban_tasks SET status = %s, updated_at = %s WHERE id = %s",
+            ("in_progress", now, task_id),
+        )
+        _record_manual_transition(conn, task_id, prior, "in_progress")
+        info.update({
+            "prior_status": prior,
+            "branch": d.get("branch_name"),
+            "commit": d.get("commit_summary"),
+        })
+    if json_out:
+        print(json.dumps(info, indent=2, default=str))
+    else:
+        print(f"  CLAIMED {task_id} (was {info.get('prior_status')}) -> in_progress")
+        print(f"    branch: {info.get('branch') or '(none recorded — start fresh off origin/main)'}")
+        if info.get("commit"):
+            print(f"    last commit: {str(info['commit'])[:100]}")
+        print("    runner will skip this task until you --release it.")
+    return 0
+
+
+def cmd_release(task_id: str, json_out: bool) -> int:
+    """Release the per-task lease so the runner (or another session) can take it."""
+    from tools.coordination import leases
+    released = leases.release(_task_lease_resource(task_id))
+    if json_out:
+        print(json.dumps({"released": released, "task_id": task_id}, indent=2))
+    else:
+        print(f"  {'RELEASED' if released else 'NOT HELD BY THIS SESSION'}: {task_id}")
+    return 0 if released else 1
+
+
+def cmd_pause_runner(json_out: bool) -> int:
+    """Pause the autonomous kanban runner for the current session (interactive work)."""
+    from tools.coordination import leases
+    lease = leases.acquire(_RUNNER_PAUSE_RESOURCE, intent="cli-session", ttl_seconds=14400, block=False)
+    if lease is None:
+        h = leases.holder(_RUNNER_PAUSE_RESOURCE) or {}
+        if json_out:
+            print(json.dumps({"paused": False, "held_by": h.get("holder_session")}, indent=2))
+        else:
+            print(f"  ALREADY PAUSED by session {h.get('holder_session', '?')}")
+        return 1
+    if json_out:
+        print(json.dumps({"paused": True}, indent=2))
+    else:
+        print("  RUNNER PAUSED — the autonomous kanban runner will skip dispatch until --resume-runner.")
+    return 0
+
+
+def cmd_resume_runner(json_out: bool) -> int:
+    """Resume the autonomous kanban runner (release the global pause lease)."""
+    from tools.coordination import leases
+    released = leases.release(_RUNNER_PAUSE_RESOURCE)
+    if json_out:
+        print(json.dumps({"resumed": released}, indent=2))
+    else:
+        print(f"  {'RUNNER RESUMED' if released else 'NOT PAUSED BY THIS SESSION'}")
+    return 0 if released else 1
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Kanban task manager — always routes through get_connection() (PG in prod).",
@@ -219,9 +317,32 @@ def main():
     parser.add_argument("--prefix", metavar="PREFIX", help="Filter by id prefix (used with --list)")
     parser.add_argument("--status", metavar="STATUS", help="Filter by status (used with --list)")
 
+    # Cross-session coordination (CLI <-> autonomous runner handoff)
+    parser.add_argument("--claim", metavar="TASK_ID",
+                        help="Take exclusive ownership of a task for interactive work "
+                             "(runner will skip it); prints its branch/commit to continue")
+    parser.add_argument("--release", metavar="TASK_ID",
+                        help="Release a task lease so the runner can take it back")
+    parser.add_argument("--pause-runner", action="store_true",
+                        help="Pause the autonomous kanban runner for this session")
+    parser.add_argument("--resume-runner", action="store_true",
+                        help="Resume the autonomous kanban runner")
+
     args = parser.parse_args()
 
-    if args.set_status:
+    if args.claim:
+        sys.exit(cmd_claim(args.claim, args.json_out))
+
+    elif args.release:
+        sys.exit(cmd_release(args.release, args.json_out))
+
+    elif args.pause_runner:
+        sys.exit(cmd_pause_runner(args.json_out))
+
+    elif args.resume_runner:
+        sys.exit(cmd_resume_runner(args.json_out))
+
+    elif args.set_status:
         tokens = args.set_status
         if len(tokens) < 2:
             parser.error("--set-status requires at least one task ID and a status.")

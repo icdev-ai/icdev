@@ -440,14 +440,24 @@ def _get_task_timeout(task_id: str) -> int:
 
 # ── Token exhaustion detection ────────────────────────────────────────────────
 
-# Patterns that indicate Claude CLI hit a token/rate limit (case-insensitive)
+# Patterns that indicate the worker hit a token/rate/quota/capacity limit or was
+# interrupted (case-insensitive). PROVIDER-AGNOSTIC: the dispatch model may be
+# Claude (CLI), Kimi/Moonshot (cloud), or Ollama (local), and can SWAP between
+# them mid-task when credits are exhausted — so detection must not rely on any
+# single provider's phrasing. The authoritative done-gate is the git/origin
+# merge-verify check in _move_task, not this text scan; this only decides whether
+# an interrupted task parks at token_exhausted (retry) vs follows the fail path.
 TOKEN_EXHAUSTION_PATTERNS = [
+    # Generic rate/quota/limit (Claude, OpenAI/Kimi, most cloud providers)
     r"rate\s*limit",
+    r"rate_limit",
     r"token\s*limit",
     r"usage\s*limit",
     r"quota\s*exceeded",
+    r"insufficient_quota",
+    r"\bquota\b",
     r"too\s*many\s*requests",
-    r"429",
+    r"\b429\b",
     r"exceeded.*(?:daily|hourly|monthly)\s*(?:limit|quota|cap)",
     r"out\s*of\s*(?:tokens|credits)",
     r"billing.*limit",
@@ -459,6 +469,17 @@ TOKEN_EXHAUSTION_PATTERNS = [
     r"hit\s*your\s*limit",
     r"you'?ve\s*hit\s*your\s*limit",
     r"session\s+limit",
+    # Context-window exhaustion (any provider)
+    r"context\s*(?:length|window)",
+    r"maximum\s*context",
+    r"context.*exceeded",
+    # Ollama / local-model failures (credit-exhaustion fallback to local can fail)
+    r"connection\s*refused",
+    r"failed\s*to\s*connect\s*to\s*ollama",
+    r"model\s*not\s*found",
+    r"out\s*of\s*memory",
+    r"\boom\b",
+    r"cuda.*out\s*of\s*memory",
 ]
 _TOKEN_RE = re.compile("|".join(TOKEN_EXHAUSTION_PATTERNS), re.IGNORECASE)
 
@@ -469,10 +490,27 @@ TOKEN_MAX_RETRY_COUNT = 60  # Give up after ~5 hours of retries
 
 
 def _detect_token_exhaustion(exit_code: int, output: str) -> Tuple[bool, Optional[str]]:
-    """Check if Claude CLI output indicates token/rate-limit exhaustion.
+    """Check if a worker was token/rate/quota-exhausted or interrupted mid-task.
+
+    PROVIDER-AGNOSTIC: the worker may be Claude, Kimi/Moonshot, or Ollama and can
+    swap providers mid-task on credit exhaustion, so this must not depend on any
+    single provider's phrasing (see TOKEN_EXHAUSTION_PATTERNS). Detection here only
+    routes an interrupted task to token_exhausted (park + retry, branch preserved)
+    rather than 'done' — the authoritative done-gate is the git/origin merge-verify
+    check in _move_task, which is independent of the worker's model entirely.
 
     Returns (is_exhausted, estimated_reset_info).
     """
+    # Signal-kill / abnormal termination is a strong provider-independent
+    # "interrupted mid-task" signal (OOM killer = 137, SIGTERM = 143, negative =
+    # killed by signal on POSIX). Treat as exhaustion so the task parks and
+    # retries with its branch preserved rather than being scored as a clean
+    # failure. Plain exit code 1/2 is NOT treated as exhaustion here — that would
+    # mislabel genuine task failures; the merge-verify gate already prevents any
+    # of those from reaching 'done'.
+    if exit_code is not None and (exit_code < 0 or exit_code >= 128):
+        return True, None
+
     if not output:
         return False, None
 
@@ -490,8 +528,6 @@ def _detect_token_exhaustion(exit_code: int, output: str) -> Tuple[bool, Optiona
         reset_hint = reset_match.group(1).strip() if reset_match else None
         return True, reset_hint
 
-    # Exit code 1 with very short output is suspicious but not conclusive
-    # Exit code 2 is often used for rate limits by some CLI tools
     return False, None
 
 
@@ -832,6 +868,10 @@ def _create_worktree(task_id: str) -> Optional[str]:
     # prefer origin/main so tasks build on the latest pushed state even when
     # the local main branch hasn't been updated (e.g. after a detached-
     # worktree merge).  Falls back to the local default branch.
+    # NOTE (done-hardening #5): each task branches off origin/main here — NOT off
+    # a sibling task's branch — so branches don't stack and merges can't land out
+    # of dependency order. Dependency ordering itself is enforced by the
+    # parent-done guard in _move_task, so no extra gate is needed here.
     base_check = _sp.run(
         ["git", "rev-parse", "--verify", f"origin/{_default_branch()}"],
         cwd=str(BASE_DIR), capture_output=True, text=True, timeout=5,
@@ -1027,8 +1067,10 @@ def _merge_worktree_to_main(task_id: str) -> bool:
                 default_branch,
                 len(result.stdout.strip().splitlines()),
             )
-            _push_main(cwd=str(merge_wt))
-            return True
+            # FAIL-CLOSED: only report success if the push actually reached
+            # origin. A swallowed push failure here is what let tasks reach
+            # 'done' while origin/main never received the commit.
+            return _push_main(cwd=str(merge_wt))
 
         # 6) FF failed — rebase branch onto default_branch inside detached worktree
         logger.info(
@@ -1063,8 +1105,8 @@ def _merge_worktree_to_main(task_id: str) -> bool:
             logger.info(
                 "Merged kanban/%s to %s (rebase + fast-forward)", task_id, default_branch
             )
-            _push_main(cwd=str(merge_wt))
-            return True
+            # FAIL-CLOSED: success is contingent on the push reaching origin.
+            return _push_main(cwd=str(merge_wt))
 
         logger.warning(
             "Post-rebase FF merge still failed for %s: %s — branch preserved",
@@ -1094,7 +1136,56 @@ def _merge_worktree_to_main(task_id: str) -> bool:
             pass
 
 
-def _push_main(cwd: str) -> None:
+def _branch_has_unmerged_commits(task_id: str) -> bool:
+    """Return True IFF branch ``kanban/<task_id>`` exists locally AND has commits
+    that are not yet on ``origin/<default_branch>``.
+
+    This is the merge-verification primitive behind the done-gate: a task is only
+    allowed to reach 'done' when its work has actually landed on origin/main.
+
+    PROVIDER-AGNOSTIC: this checks git/origin state, NOT the worker's self-report.
+    The dispatch model may be Claude, Kimi/Moonshot, or Ollama and can swap on
+    credit exhaustion mid-task; none of that affects this check, which is why the
+    authoritative done-gate lives here and not in the worker's output parsing.
+
+    FAIL-OPEN on infrastructure errors: if the branch does not exist, git is
+    unavailable, or the compare errors, return False (do NOT block completion) —
+    an unreachable git must never wedge every task's completion. Only a positive
+    "branch exists AND has commits not on origin" signal blocks the transition.
+    """
+    import subprocess as _sp
+    branch_name = f"kanban/{task_id}"
+    default_branch = _default_branch()
+    try:
+        # Does the branch exist locally? If not, nothing to verify (fail-open).
+        exists = _sp.run(
+            ["git", "rev-parse", "--verify", "--quiet", branch_name],
+            cwd=str(BASE_DIR), capture_output=True, text=True, timeout=10,
+        )
+        if exists.returncode != 0:
+            return False
+        # Best-effort refresh of the origin ref so the compare is current; the
+        # check still works against the stale local origin ref if fetch fails.
+        try:
+            _sp.run(
+                ["git", "fetch", "origin", default_branch, "--quiet"],
+                cwd=str(BASE_DIR), capture_output=True, text=True, timeout=15,
+            )
+        except Exception:
+            pass
+        log = _sp.run(
+            ["git", "log", f"origin/{default_branch}..{branch_name}", "--oneline"],
+            cwd=str(BASE_DIR), capture_output=True, text=True, timeout=10,
+        )
+        if log.returncode != 0:
+            return False  # compare errored — fail-open
+        return bool(log.stdout.strip())
+    except Exception as exc:
+        logger.warning("_branch_has_unmerged_commits(%s) errored (fail-open): %s", task_id, exc)
+        return False
+
+
+def _push_main(cwd: str) -> bool:
     """Push the merged commit to origin/{default_branch}.
 
     Uses ``HEAD:{branch}`` so the push works from any detached/temp branch
@@ -1102,6 +1193,12 @@ def _push_main(cwd: str) -> None:
 
     The stop hook no longer pushes kanban branches — this is the ONLY
     point where validated work reaches origin/main.
+
+    Returns True iff the push actually reached origin (rc == 0). FAIL-CLOSED:
+    a failed or errored push returns False so the caller does NOT treat the
+    task as merged. Previously this swallowed push failures (returned None,
+    logged a warning), so a task whose push failed was still marked done while
+    origin/main never received the commit — the exact done-but-not-on-main bug.
     """
     import subprocess as _sp
     default_branch = _default_branch()
@@ -1115,14 +1212,17 @@ def _push_main(cwd: str) -> None:
         )
         if push.returncode == 0:
             logger.info("Pushed HEAD:%s to origin after merge", default_branch)
-        else:
-            logger.warning(
-                "Push HEAD:%s to origin failed: %s",
-                default_branch,
-                push.stderr[:200],
-            )
+            return True
+        logger.warning(
+            "Push HEAD:%s to origin failed (rc=%d): %s",
+            default_branch,
+            push.returncode,
+            push.stderr[:200],
+        )
+        return False
     except Exception as exc:
         logger.warning("Push HEAD:%s to origin error: %s", default_branch, exc)
+        return False
 
 
 # Batch 4 worktree age sweep threshold — worktrees whose owning task is NOT
@@ -2499,6 +2599,31 @@ def _move_task(task_id: str, new_status: str, actor: str = "scheduler",
             except ImportError:
                 pass  # HITL module not installed — gate is no-op
 
+        # Merge-verify gate (2026-07-11 done-hardening): a task may only reach
+        # 'done' when its work has actually landed on origin/main. If the task's
+        # branch still carries commits not on origin, REFUSE done and leave the
+        # branch preserved for merge. This is the PRIMARY, provider-independent
+        # guarantee against the "board says done but not on main" failure — it
+        # checks git/origin, not the worker's self-report, so it holds regardless
+        # of whether the dispatch model was Claude/Kimi/Ollama or swapped mid-task
+        # on credit exhaustion. Toggle off with KANBAN_REQUIRE_MERGE_FOR_DONE=0.
+        if new_status == "done" and __import__("os").getenv(
+            "KANBAN_REQUIRE_MERGE_FOR_DONE", "1"
+        ).lower() in ("1", "true", "yes"):
+            if _branch_has_unmerged_commits(task_id):
+                logger.warning(
+                    "_move_task: REFUSED done for %s — branch kanban/%s has "
+                    "commits not on origin/%s (unmerged)",
+                    task_id, task_id, _default_branch(),
+                )
+                conn.close()
+                _record_status_transition(
+                    task_id, prior_status, "REFUSED_done_unmerged",
+                    actor=actor,
+                    reason=f"guard: kanban/{task_id} has commits not on origin/{_default_branch()}",
+                )
+                return
+
         now = _utcnow_iso()
         sql = "UPDATE kanban_tasks SET status = ?, updated_at = ?"
         vals = [new_status, now]
@@ -2570,6 +2695,18 @@ def _move_task(task_id: str, new_status: str, actor: str = "scheduler",
         conn.close()
 
     _record_status_transition(task_id, prior_status, new_status, actor=actor, reason=reason)
+
+    # Release this session's per-task coordination lease once the task leaves the
+    # active state (terminal or re-queued). release() is ownership-aware — it only
+    # frees a lease THIS session holds, so it never disturbs a lease held by an
+    # interactive CLI session working the task out-of-band. Best-effort.
+    if new_status in ("done", "failed", "token_exhausted", "backlog", "suggested", "decomposed"):
+        try:
+            from tools.coordination import leases as _leases
+            _leases.release(f"kanban:task:{task_id}")
+        except Exception:
+            pass
+
     # Fire webhook subscriptions on terminal transitions
     _SUBSCRIPTION_EVENTS = {"done", "token_exhausted", "decomposed"}
     if new_status in _SUBSCRIPTION_EVENTS:
@@ -8058,6 +8195,33 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     # 4. Find due tasks
     due_tasks = _get_due_tasks()
 
+    # Global runner-pause: if an interactive CLI session holds the pause lease
+    # (`python -m tools.kanban.cli --pause-runner`), skip dispatch this cycle so
+    # the autonomous runner and a human never build in parallel. holder() is a
+    # non-mutating peek — the runner does not want to hold the pause, only detect
+    # it. This is the clean answer to switching between kanban and CLI: exactly
+    # one authority at a time, arbitrated by a lease that survives a model swap.
+    try:
+        from tools.coordination import leases as _leases
+        from tools.coordination.constants import get_session_id as _gsid
+        _pause = _leases.holder("kanban:runner:global")
+        if _pause and _pause.get("holder_session") != _gsid():
+            logger.info(
+                "kanban runner paused by session %s — skipping dispatch this cycle",
+                _pause.get("holder_session"),
+            )
+            return {
+                "success": True,
+                "metric_value": len(completed),
+                "details": {
+                    "status": "paused_by_session",
+                    "holder": _pause.get("holder_session"),
+                    "completed_this_cycle": completed,
+                },
+            }
+    except Exception as _pause_exc:
+        logger.debug("runner-pause check failed (continuing): %s", _pause_exc)
+
     if not due_tasks:
         return {
             "success": True,
@@ -8073,6 +8237,29 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     decomposed_this_cycle = []
 
     for task in due_tasks:
+        # Per-task coordination lease: claim exclusive ownership before spending
+        # any tokens. If another session already owns this task (e.g. an
+        # interactive CLI session working it out-of-band via `--claim`), skip it
+        # — this is what prevents the runner and a human from double-building the
+        # same task into divergent branches. The lease is released in _move_task
+        # on terminal/re-queue transitions; its TTL is a backstop if the task
+        # never terminates.
+        try:
+            from tools.coordination import leases as _leases
+            _task_lease = _leases.acquire(
+                f"kanban:task:{task['id']}", intent="kanban-runner",
+                ttl_seconds=3600, block=False,
+            )
+            if _task_lease is None:
+                logger.info(
+                    "kanban: task %s owned by another session — skipping", task["id"],
+                )
+                continue
+        except Exception as _lease_exc:
+            logger.debug(
+                "task-lease acquire failed for %s (continuing): %s", task["id"], _lease_exc,
+            )
+
         # Pre-dispatch complexity gate: score the task before spending any tokens.
         # If it looks too big for a single session (score ≥ 7) decompose it now
         # instead of letting it fail and waste a full 900s agent run.
