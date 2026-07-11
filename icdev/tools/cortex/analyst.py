@@ -449,21 +449,30 @@ def _ast_collections(ast: ForeachNode) -> list[str]:
     return [str(coll)]
 
 
+def _build_security_context(ctx: CortexContext) -> Any:
+    """Construct a platform SecurityContext from the CortexContext.
+
+    tenant_id and classification key the RLS predicates (tenant scope +
+    Bell-LaPadula read-down via ``classifications_dominated_by()``); an empty
+    tenant_id maps to ``None`` so the injector treats it as "unscoped" rather
+    than filtering on the literal empty string.
+    """
+    from tools.security.security_context import SecurityContext
+
+    return SecurityContext(
+        user_id=ctx.user_id,
+        tenant_id=ctx.tenant_id or None,
+        classification=ctx.classification or "CUI",
+    )
+
+
 def _apply_security_context(conn: Any, ctx: CortexContext) -> None:
     """Thread tenant/classification from the CortexContext into the connection."""
     setter = getattr(conn, "set_security_context", None)
     if setter is None:
         return
     try:
-        from tools.security.security_context import SecurityContext
-
-        setter(
-            SecurityContext(
-                user_id=ctx.user_id,
-                tenant_id=ctx.tenant_id or None,
-                classification=ctx.classification or "CUI",
-            )
-        )
+        setter(_build_security_context(ctx))
     except Exception as exc:  # noqa: BLE001
         if ctx.fail_closed:
             raise CortexAnalystError(
@@ -476,6 +485,46 @@ def _open_connection() -> Any:
     from tools.db.storage import get_connection
 
     return get_connection()
+
+
+def _execute_nlq_readonly(sql: str, ctx: CortexContext) -> dict:
+    """Execute a validated read-only SELECT with the caller's RLS context applied.
+
+    The dashboard's ``nlq_processor.execute_safely`` opens a security-context-
+    free connection, so on the NLQ fallback the tenant_id + classification
+    read-down isolation that the IQE path applies via ``_apply_security_context``
+    would be silently lost — tenant A's question could read tenant B's rows
+    (ctx-expose-03). This mirrors execute_safely's ``MAX_ROWS`` cap but threads
+    the CortexContext into the connection (PG session vars + app-level predicate
+    injection) so RLS filters the result set. Row shape is normalized for both
+    psycopg2 RealDictRow (mapping) and sqlite3 tuple cursors.
+    """
+    from tools.dashboard import nlq_processor as _nlq
+
+    conn = _open_connection()
+    _apply_security_context(conn, ctx)
+    try:
+        # busy_timeout is a SQLite pragma; issuing it on PG errors and aborts
+        # the transaction, so it is applied on the SQLite backend only.
+        if getattr(conn, "_backend", "sqlite") == "sqlite":
+            conn.execute(f"PRAGMA busy_timeout = {_nlq.QUERY_TIMEOUT_SECONDS * 1000}")
+        cursor = conn.execute(sql)
+        columns = [d[0] for d in cursor.description] if cursor.description else []
+        rows = cursor.fetchmany(_nlq.MAX_ROWS)
+        truncated = cursor.fetchone() is not None
+        out = [dict(r) if isinstance(r, dict) else dict(zip(columns, r)) for r in rows]
+        return {
+            "columns": columns,
+            "rows": out,
+            "row_count": len(out),
+            "truncated": truncated,
+            "max_rows": _nlq.MAX_ROWS,
+        }
+    finally:
+        try:
+            conn.close()
+        except Exception:  # noqa: BLE001, S110
+            pass
 
 
 def _format_answer(rows: list[dict], targets: list[str], explanation: str) -> str:
@@ -635,9 +684,11 @@ def _ask_nlq(
 
     Reuses the dashboard NLQ pipeline piecewise (rather than
     ``process_nlq_query``) so the allowlist + read-only gates run between
-    generation and execution. Execution goes through ``execute_safely``
-    (row cap + timeout, decision D34); successes and refusals both land in
-    the ``nlq_queries`` audit table.
+    generation and execution. Execution goes through ``_execute_nlq_readonly``
+    (row cap, decision D34) — NOT the dashboard's context-free
+    ``execute_safely`` — so the caller's tenant_id + classification RLS context
+    is threaded into the connection exactly like the IQE path (ctx-expose-03).
+    Successes and refusals both land in the ``nlq_queries`` audit table.
     """
     from tools.dashboard import nlq_processor as _nlq
 
@@ -660,7 +711,7 @@ def _ask_nlq(
     _validate_sql_safety(question, sql, ctx, governance, started)
 
     try:
-        results = _nlq.execute_safely(sql)
+        results = _execute_nlq_readonly(sql, ctx)
     except Exception as exc:
         _record(governance, _GATE_NLQ_EXECUTION, "fail")
         raise CortexAnalystError(

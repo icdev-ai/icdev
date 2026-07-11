@@ -95,10 +95,12 @@ def _isolated(monkeypatch, audit_log):
         "generate_sql_via_bedrock",
         lambda query, schema: pytest.fail("NLQ generation must not run in this test"),
     )
+    # ctx-expose-03: the NLQ fallback now executes through the analyst's own
+    # RLS-context-threading seam (_execute_nlq_readonly), NOT the dashboard's
+    # context-free execute_safely. Stub the seam the analyst actually calls.
     monkeypatch.setattr(
-        _nlq,
-        "execute_safely",
-        lambda sql, db_path=None: pytest.fail("NLQ execution must not run in this test"),
+        "tools.cortex.analyst._execute_nlq_readonly",
+        lambda sql, ctx: pytest.fail("NLQ execution must not run in this test"),
     )
     monkeypatch.setattr(
         _nlq,
@@ -116,7 +118,9 @@ def _isolated(monkeypatch, audit_log):
 
 def _enable_nlq(monkeypatch, sql: str, results: dict = _NLQ_RESULTS):
     monkeypatch.setattr(_nlq, "generate_sql_via_bedrock", lambda query, schema: sql)
-    monkeypatch.setattr(_nlq, "execute_safely", lambda s, db_path=None: dict(results))
+    monkeypatch.setattr(
+        "tools.cortex.analyst._execute_nlq_readonly", lambda s, ctx: dict(results)
+    )
 
 
 def _fail_iqe_translation(monkeypatch, reason="IQE translation must not run in this test"):
