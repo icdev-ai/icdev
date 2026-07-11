@@ -47,6 +47,7 @@ import argparse
 import ast
 import dataclasses
 import json
+import os
 import re
 import sys
 from datetime import datetime, timezone
@@ -5024,6 +5025,17 @@ def _format_human(report: CoherenceReport) -> str:
 
 
 def main() -> None:
+    # Normalize the process working directory to the repository root so results
+    # are independent of where the CLI was invoked from. The checker's own path
+    # resolution already uses PROJECT_ROOT, but several checks import application
+    # modules (e.g. tools.dashboard.app.create_app, blueprints, the icdev logger)
+    # that resolve cwd-relative paths such as ``.logs/`` and ``data/``. Without
+    # this, running from a subdirectory pollutes the tree with stray ``.logs/``
+    # and can flip a check (log-rotation errors, missing data dirs) so that the
+    # gate passes from the repo root but fails from another cwd. Resolving via
+    # PROJECT_ROOT (derived from ``__file__``) keeps this correct in worktrees.
+    os.chdir(PROJECT_ROOT)
+
     parser = argparse.ArgumentParser(description="Implementation Coherence Checker — internal consistency validation")
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--human", action="store_true", help="Human-readable output")
