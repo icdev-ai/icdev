@@ -48,10 +48,10 @@ _SEARCH_HISTORY = [
 ]
 
 _AUDIT = [
-    # audit_id, session_id, facade, outcome, blocked, detail
-    ("a-1", "sess-1", "search", "pass", 0, ""),
-    ("a-2", "sess-2", "ask", "pass", 0, ""),
-    ("a-3", "sess-3", "complete", "blocked", 1, "prompt-injection heuristic tripped"),
+    # id, session_id, function, outcome, blocked
+    ("a-1", "sess-1", "search", "pass", 0),
+    ("a-2", "sess-2", "ask", "pass", 0),
+    ("a-3", "sess-3", "complete", "blocked", 1),
 ]
 
 
@@ -102,8 +102,8 @@ def seeded_cortex_db(tmp_path, monkeypatch):
         )
         conn.executemany(
             "INSERT INTO cortex_audit "
-            "(audit_id, session_id, facade, outcome, blocked, detail) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "(id, session_id, function, outcome, blocked) "
+            "VALUES (?, ?, ?, ?, ?)",
             _AUDIT,
         )
         conn.commit()
@@ -130,7 +130,7 @@ class TestAdaptersReadSeededData:
         assert ids == ["sess-1", "sess-2", "sess-3"]
 
     def test_audit_collection_returns_all_rows(self, seeded_cortex_db):
-        rows = _run_iqe("foreach a in cortex.audit select a.audit_id")
+        rows = _run_iqe("foreach a in cortex.audit select a.id")
         assert len(rows) == 3
 
     def test_search_history_collection_returns_all_rows(self, seeded_cortex_db):
@@ -170,8 +170,8 @@ class TestShippedSeedQueries:
         rows = _run_iqe(text)
         # Only the single blocked == true audit row survives.
         assert len(rows) == 1
-        assert rows[0]["facade"] == "complete"
-        assert "injection" in rows[0]["detail"]
+        assert rows[0]["function"] == "complete"
+        assert rows[0]["outcome"] == "blocked"
 
     def test_all_seed_files_execute_without_error(self, seeded_cortex_db):
         """Smoke every shipped seed query — none may raise on real data."""

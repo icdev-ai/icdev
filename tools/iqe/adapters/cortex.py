@@ -43,7 +43,7 @@ def audit_adapter(conn: Any) -> list[dict]:
     c = _conn(conn)
     try:
         cur = c.execute(
-            "SELECT audit_id, session_id, facade, outcome, blocked, detail, "
+            "SELECT id, session_id, function, outcome, blocked, provenance_id, "
             "classification, tenant_id, created_at "
             "FROM cortex_audit ORDER BY created_at DESC LIMIT 500"
         )

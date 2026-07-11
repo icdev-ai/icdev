@@ -65,4 +65,4 @@ CANVAS_DISPLAY_NAME = "Cortex"
 CANVAS_URL_PREFIX = "/cortex"
 
 # IQE collection names the canvas exposes (mirrors args/component_registry.yaml).
-IQE_COLLECTIONS = ("cortex.sessions", "cortex.audit", "cortex.search_history")
+IQE_COLLECTIONS = ("cortex.chat_sessions", "cortex.audit", "cortex.search_history")

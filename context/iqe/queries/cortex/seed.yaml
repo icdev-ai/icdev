@@ -9,6 +9,6 @@ queries:
   - label: Ungrounded answers
     query: "foreach h in cortex.search_history where h.grounded == false select h.query_text, h.mode, h.domain"
   - label: Governance audit
-    query: "foreach a in cortex.audit select a.facade, a.outcome, a.blocked, a.created_at"
+    query: "foreach a in cortex.audit select a.function, a.outcome, a.blocked, a.created_at"
   - label: Blocked invocations
-    query: "foreach a in cortex.audit where a.blocked == true select a.facade, a.detail, a.created_at"
+    query: "foreach a in cortex.audit where a.blocked == true select a.function, a.created_at"
