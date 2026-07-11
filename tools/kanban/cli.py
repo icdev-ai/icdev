@@ -183,7 +183,9 @@ def cmd_pipeline(task_id: str, json_out: bool) -> int:
         return 1
     badge = {"completed": "[x]", "current": "[>]", "failed": "[X]",
              "pending": "[ ]", "not_run": "[-]"}
+    mode = "ENFORCED" if r.get("enforce_mode") == "enforced" else "RECORD-ONLY"
     print(f"Pipeline: {task_id}  (current stage: {r.get('current_stage', '-')})")
+    print(f"  mode: {mode}")
     for s in r.get("stages", []):
         mark = badge.get(s.get("state"), "[?]")
         det = f"  -- {_ascii(s['detail'])}" if s.get("detail") else ""
