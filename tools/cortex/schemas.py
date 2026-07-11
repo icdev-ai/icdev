@@ -182,6 +182,7 @@ class CortexContext:
     user_id: str = ""
     classification: str = "CUI"
     domain: str = ""
+    session_id: str = ""  # links audit rows to a persisted cortex_sessions row
     air_gap: bool = False
     fail_closed: bool = False
 
