@@ -20,6 +20,21 @@ os.environ["DSOC_STORAGE_BACKEND"] = "sqlite"
 
 
 MINIMAL_ICDEV_SCHEMA = """
+-- Dashboard auth: the before_request hook validates session user_id against
+-- dashboard_users; route tests set session["user_id"]="test-admin".
+CREATE TABLE IF NOT EXISTS dashboard_users (
+    id TEXT PRIMARY KEY, email TEXT UNIQUE, display_name TEXT,
+    role TEXT DEFAULT 'admin', status TEXT DEFAULT 'active',
+    created_by TEXT, created_at TIMESTAMP, updated_at TIMESTAMP
+);
+INSERT OR IGNORE INTO dashboard_users (id, email, display_name, role)
+VALUES ('test-admin', 'admin@test.local', 'Test Admin', 'admin');
+CREATE TABLE IF NOT EXISTS dashboard_api_keys (
+    id TEXT PRIMARY KEY, user_id TEXT NOT NULL, key_hash TEXT NOT NULL,
+    key_prefix TEXT NOT NULL, label TEXT, status TEXT NOT NULL DEFAULT 'active',
+    last_used_at TIMESTAMP, expires_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, revoked_at TIMESTAMP, revoked_by TEXT
+);
 CREATE TABLE IF NOT EXISTS studio_workflows (
     workflow_id   TEXT PRIMARY KEY,
     name          TEXT NOT NULL,
@@ -2004,6 +2019,49 @@ CREATE TABLE IF NOT EXISTS cortex_audit (
 );
 CREATE INDEX IF NOT EXISTS idx_cortex_audit_session ON cortex_audit(session_id);
 CREATE INDEX IF NOT EXISTS idx_cortex_audit_tenant ON cortex_audit(tenant_id);
+
+-- Cortex canvas (chat) tables — distinct from the governance cortex_sessions/cortex_audit.
+CREATE TABLE IF NOT EXISTS cortex_chat_sessions (
+    session_id      TEXT PRIMARY KEY,
+    user_id         TEXT DEFAULT '',
+    mode            TEXT DEFAULT 'ask',
+    domain          TEXT DEFAULT 'general',
+    title           TEXT DEFAULT '',
+    status          TEXT DEFAULT 'active',
+    classification  TEXT DEFAULT 'CUI',
+    tenant_id       TEXT DEFAULT 'default',
+    created_at      TEXT DEFAULT (datetime('now')),
+    updated_at      TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS cortex_messages (
+    message_id      TEXT PRIMARY KEY,
+    session_id      TEXT DEFAULT '',
+    turn_number     INTEGER DEFAULT 0,
+    role            TEXT DEFAULT 'user',
+    content         TEXT DEFAULT '',
+    facade          TEXT DEFAULT '',
+    grounded        INTEGER DEFAULT 0,
+    confidence      TEXT DEFAULT '',
+    citations       TEXT DEFAULT '',
+    governance      TEXT DEFAULT '',
+    classification  TEXT DEFAULT 'CUI',
+    tenant_id       TEXT DEFAULT 'default',
+    created_at      TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS cortex_search_history (
+    query_id        TEXT PRIMARY KEY,
+    session_id      TEXT DEFAULT '',
+    user_id         TEXT DEFAULT '',
+    mode            TEXT DEFAULT 'search',
+    domain          TEXT DEFAULT 'general',
+    query_text      TEXT DEFAULT '',
+    strategy        TEXT DEFAULT '',
+    result_count    INTEGER DEFAULT 0,
+    grounded        INTEGER DEFAULT 0,
+    classification  TEXT DEFAULT 'CUI',
+    tenant_id       TEXT DEFAULT 'default',
+    created_at      TEXT DEFAULT (datetime('now'))
+);
 """
 
 
