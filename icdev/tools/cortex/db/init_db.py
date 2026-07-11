@@ -77,6 +77,57 @@ CREATE INDEX IF NOT EXISTS idx_cortex_audit_session ON cortex_audit(session_id);
 CREATE INDEX IF NOT EXISTS idx_cortex_audit_tenant ON cortex_audit(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_cortex_audit_function ON cortex_audit(function);
 CREATE INDEX IF NOT EXISTS idx_cortex_audit_created_at ON cortex_audit(created_at);
+
+-- Cortex canvas (chat) tables — the /cortex chat surface's conversation store,
+-- distinct from the governance cortex_sessions/cortex_audit above. Deploy DDL:
+-- migration 263_cortex_canvas_tables.sql. ``grounded`` is INTEGER (0/1), not
+-- BOOLEAN, so the blueprint's best-effort writes never hit the PG int-vs-bool
+-- coercion issue.
+CREATE TABLE IF NOT EXISTS cortex_chat_sessions (
+    session_id      TEXT PRIMARY KEY,
+    user_id         TEXT,
+    mode            TEXT NOT NULL DEFAULT 'ask',
+    domain          TEXT NOT NULL DEFAULT 'general',
+    title           TEXT,
+    status          TEXT NOT NULL DEFAULT 'active',
+    classification  TEXT NOT NULL DEFAULT 'CUI',
+    tenant_id       TEXT NOT NULL DEFAULT 'default',
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_cortex_chat_sessions_tenant ON cortex_chat_sessions(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_cortex_chat_sessions_user ON cortex_chat_sessions(user_id);
+CREATE TABLE IF NOT EXISTS cortex_messages (
+    message_id      TEXT PRIMARY KEY,
+    session_id      TEXT,
+    turn_number     INTEGER NOT NULL DEFAULT 0,
+    role            TEXT NOT NULL DEFAULT 'user',
+    content         TEXT,
+    facade          TEXT,
+    grounded        INTEGER NOT NULL DEFAULT 0,
+    confidence      TEXT,
+    citations       TEXT,
+    governance      TEXT,
+    classification  TEXT NOT NULL DEFAULT 'CUI',
+    tenant_id       TEXT NOT NULL DEFAULT 'default',
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_cortex_messages_session ON cortex_messages(session_id, turn_number);
+CREATE TABLE IF NOT EXISTS cortex_search_history (
+    query_id        TEXT PRIMARY KEY,
+    session_id      TEXT,
+    user_id         TEXT,
+    mode            TEXT NOT NULL DEFAULT 'search',
+    domain          TEXT NOT NULL DEFAULT 'general',
+    query_text      TEXT,
+    strategy        TEXT,
+    result_count    INTEGER NOT NULL DEFAULT 0,
+    grounded        INTEGER NOT NULL DEFAULT 0,
+    classification  TEXT NOT NULL DEFAULT 'CUI',
+    tenant_id       TEXT NOT NULL DEFAULT 'default',
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_cortex_search_history_session ON cortex_search_history(session_id);
 """
 
 

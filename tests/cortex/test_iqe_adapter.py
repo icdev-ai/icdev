@@ -68,7 +68,8 @@ def seeded_cortex_db(tmp_path, monkeypatch):
     monkeypatch.setenv("ICDEV_DB_PATH", str(db_path))
 
     # Rebuild the canvas schema in this fresh DB (reset the once-only guard).
-    import tools.cortex.db.init_db as init_mod
+    import importlib
+    init_mod = importlib.import_module("tools.cortex.db.init_db")
     monkeypatch.setattr(init_mod, "_INIT_DONE", False, raising=False)
     init_mod.init_db()
 
@@ -76,7 +77,7 @@ def seeded_cortex_db(tmp_path, monkeypatch):
     # if a prior test cleared the registry.
     from tools.iqe import executor as _executor
     from tools.iqe.adapters import cortex as cortex_adapter  # noqa: F401
-    _executor.register_collection("cortex.sessions", cortex_adapter.sessions_adapter)
+    _executor.register_collection("cortex.chat_sessions", cortex_adapter.sessions_adapter)
     _executor.register_collection("cortex.audit", cortex_adapter.audit_adapter)
     _executor.register_collection(
         "cortex.search_history", cortex_adapter.search_history_adapter
@@ -87,7 +88,7 @@ def seeded_cortex_db(tmp_path, monkeypatch):
     conn = get_connection()
     try:
         conn.executemany(
-            "INSERT INTO cortex_sessions "
+            "INSERT INTO cortex_chat_sessions "
             "(session_id, user_id, mode, domain, title, status) "
             "VALUES (?, ?, ?, ?, ?, ?)",
             _SESSIONS,
@@ -124,7 +125,7 @@ def _run_iqe(iqe_text: str):
 # ── adapters return seeded rows ────────────────────────────────────────────────
 class TestAdaptersReadSeededData:
     def test_sessions_collection_returns_all_rows(self, seeded_cortex_db):
-        rows = _run_iqe("foreach s in cortex.sessions select s.session_id, s.status")
+        rows = _run_iqe("foreach s in cortex.chat_sessions select s.session_id, s.status")
         ids = sorted(r["session_id"] for r in rows)
         assert ids == ["sess-1", "sess-2", "sess-3"]
 
@@ -209,7 +210,7 @@ class TestBlueprintIqeRoute:
         payload = resp.get_json()
         assert payload["ok"] is True
         assert payload["iqe"].startswith("foreach")
-        # nl_to_iqe routes an unfiltered "sessions" question to cortex.sessions;
+        # nl_to_iqe routes an unfiltered "sessions" question to cortex.chat_sessions;
         # the three seeded rows come back.
         assert payload["row_count"] == len(_SESSIONS)
 

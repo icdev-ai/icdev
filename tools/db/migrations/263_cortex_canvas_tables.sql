@@ -15,8 +15,8 @@ CREATE TABLE IF NOT EXISTS cortex_chat_sessions (
     status          TEXT        DEFAULT 'active',
     classification  TEXT        DEFAULT 'CUI',
     tenant_id       TEXT        DEFAULT 'default',
-    created_at      TIMESTAMPTZ DEFAULT NOW(),
-    updated_at      TIMESTAMPTZ DEFAULT NOW()
+    created_at      TIMESTAMP   DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP   DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_cortex_chat_sessions_user ON cortex_chat_sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_cortex_chat_sessions_tenant ON cortex_chat_sessions(tenant_id);
@@ -28,13 +28,13 @@ CREATE TABLE IF NOT EXISTS cortex_messages (
     role            TEXT        DEFAULT 'user',
     content         TEXT        DEFAULT '',
     facade          TEXT        DEFAULT '',
-    grounded        BOOLEAN     DEFAULT FALSE,
+    grounded        INTEGER     DEFAULT 0,
     confidence      TEXT        DEFAULT '',
     citations       TEXT        DEFAULT '',
     governance      TEXT        DEFAULT '',
     classification  TEXT        DEFAULT 'CUI',
     tenant_id       TEXT        DEFAULT 'default',
-    created_at      TIMESTAMPTZ DEFAULT NOW()
+    created_at      TIMESTAMP   DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_cortex_messages_session ON cortex_messages(session_id, turn_number);
 
@@ -47,9 +47,9 @@ CREATE TABLE IF NOT EXISTS cortex_search_history (
     query_text      TEXT        DEFAULT '',
     strategy        TEXT        DEFAULT '',
     result_count    INTEGER     DEFAULT 0,
-    grounded        BOOLEAN     DEFAULT FALSE,
+    grounded        INTEGER     DEFAULT 0,
     classification  TEXT        DEFAULT 'CUI',
     tenant_id       TEXT        DEFAULT 'default',
-    created_at      TIMESTAMPTZ DEFAULT NOW()
+    created_at      TIMESTAMP   DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_cortex_search_history_session ON cortex_search_history(session_id);
