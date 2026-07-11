@@ -49,10 +49,10 @@ except ImportError:  # packaged-only install
 # Constrained-network mode: single-flight + inter-call pause, and a rotating
 # egress proxy. Both are OFF/no-op unless configured. See the modules' docs.
 try:
-    from tools.llm.rate_gate import rate_gate, resolve_rate_limit
+    from tools.llm.rate_gate import rate_gate, resolve_lease_config, resolve_rate_limit
     from tools.llm.proxy_resolver import apply_llm_proxy, resolve_llm_proxy
 except ImportError:  # packaged-only install
-    from icdev.tools.llm.rate_gate import rate_gate, resolve_rate_limit
+    from icdev.tools.llm.rate_gate import rate_gate, resolve_lease_config, resolve_rate_limit
     from icdev.tools.llm.proxy_resolver import apply_llm_proxy, resolve_llm_proxy
 
 DEFAULT_CONFIG_PATH = resolve_llm_config_path()
@@ -1887,7 +1887,11 @@ class LLMRouter:
         """
         self._apply_network_guard(provider)
         mp, pmin, pmax = resolve_rate_limit(self._config)
-        with rate_gate(mp, pmin, pmax):
+        cross, lease_name, lease_timeout = resolve_lease_config(self._config)
+        with rate_gate(
+            mp, pmin, pmax,
+            cross_process=cross, lease_name=lease_name, lease_timeout=lease_timeout,
+        ):
             return provider.invoke(request, model_id, model_cfg)
 
     def _provider_invoke_streaming(self, provider, request, model_id, model_cfg):
@@ -1901,9 +1905,13 @@ class LLMRouter:
         mp, pmin, pmax = resolve_rate_limit(self._config)
         if mp <= 0:
             return provider.invoke_streaming(request, model_id, model_cfg)
+        cross, lease_name, lease_timeout = resolve_lease_config(self._config)
 
         def _gated_stream():
-            with rate_gate(mp, pmin, pmax):
+            with rate_gate(
+                mp, pmin, pmax,
+                cross_process=cross, lease_name=lease_name, lease_timeout=lease_timeout,
+            ):
                 yield from provider.invoke_streaming(request, model_id, model_cfg)
 
         return _gated_stream()
