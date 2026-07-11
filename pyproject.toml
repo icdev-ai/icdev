@@ -266,6 +266,7 @@ testpaths = ["tests"]
 timeout = 30
 markers = [
     "selenium: marks tests that require a running Selenium/ChromeDriver (skip if unavailable)",
+    "integration: marks tests that exercise live backends/corpora (opt-in; skipped by default)",
 ]
 
 
