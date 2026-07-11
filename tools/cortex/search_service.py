@@ -619,18 +619,33 @@ def _routed_pass(
         backends = [strategy]
 
     domain_scope: dict = {}
+    domain_sources: list = []
     if ctx.domain:
         domain_cfg = (search_cfg.get("domains") or {}).get(ctx.domain) or {}
         allowed = domain_cfg.get("backends") or []
         if allowed:
             scoped = [b for b in backends if b in allowed]
             backends = scoped or [b for b in allowed if b in BACKEND_ADAPTERS]
+        domain_sources = list(domain_cfg.get("sources") or [])
         domain_scope = {
             "domain": ctx.domain,
             "collections": list(domain_cfg.get("collections") or []),
         }
 
     results, ran, timed_out = _run_backends(query, top_k, ctx, backends, search_cfg)
+
+    # Row-level domain scope (ctx-canvas-04): drop hits whose source table/id
+    # falls outside the domain's allowed source prefixes so security mode
+    # returns only threat/vuln/incident evidence. No-op when the domain
+    # declares no `sources` (general behavior). The drop count is recorded in
+    # metadata so the scoping is observable, not silent.
+    if domain_scope and domain_sources:
+        from .domains import filter_by_sources
+
+        kept, dropped = filter_by_sources(results, domain_sources)
+        results = kept
+        domain_scope["sources"] = list(domain_sources)
+        domain_scope["filtered_out"] = len(dropped)
 
     strategy_tag = f"{strategy}:{label}[{'+'.join(ran)}]"
     router_record = {
@@ -792,9 +807,13 @@ def search(
     ``strategy`` is one of CORTEX_STRATEGIES: ``"auto"`` classifies the query
     via classify_route(); a backend name (``"rag"``/``"graph"``/``"dic"``/
     ``"kb"``) or ``"all"`` bypasses classification entirely. ``ctx.domain``
-    intersects the selection with that domain's allowed backends from
-    ``search.domains`` in args/cortex_config.yaml and records the domain's
-    collection scope in metadata (consumption hook for ctx-canvas-04).
+    activates a domain lens (:mod:`tools.cortex.domains`): the backend
+    selection is intersected with that domain's allowed backends from
+    ``search.domains`` in args/cortex_config.yaml, and — when the domain
+    declares ``sources`` — hits whose source table/id fall outside those
+    prefixes are dropped (row-level scope). The domain's collection scope,
+    source prefixes, and drop count are recorded in
+    ``metadata["router"]["domain_scope"]``.
 
     Every result records the routing decision: ``result.strategy`` becomes
     ``"<strategy>:<label>[backend+backend]"`` (the adapter's native strategy

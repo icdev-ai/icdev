@@ -54,14 +54,38 @@ search:
     backends: [rag, graph, dic]
     max_workers: 4
 
-  # Domain scoping hook (ctx-canvas-04): when ctx.domain matches a key here,
-  # the router intersects its backend selection with "backends" and records
-  # "collections" as the advisory collection scope in result metadata.
-  # Adapters do not yet consume the collection scope; ctx-canvas-04 wires it.
+  # Domain lenses (ctx-canvas-04). When ctx.domain matches a key here the
+  # Cortex layer applies that lens as a configuration profile over the
+  # existing machinery — NO new machinery. Each lens is fully data-driven, so
+  # a new lens (compliance, program-management, …) is a YAML addition here:
+  #   backends    — the strategy router intersects its selection with these.
+  #   sources     — row-level scope: hits whose source table/id start with one
+  #                 of these prefixes are kept; the rest are dropped and the
+  #                 count recorded in metadata.router.domain_scope.filtered_out.
+  #   collections — advisory collection scope, echoed in result metadata.
+  #   persona     — SOC-analyst-style LLM system prompt injected on summaries.
+  #   intents     — labels a future intent router biases toward for this lens.
+  #   triage      — whether the lens has an XSIAM-style triage formatter.
+  # Code-side fallbacks live in tools/cortex/domains/<name>.py (used when this
+  # block is stripped / air-gapped); YAML wins field-by-field.
   domains:
     security:
+      display_name: "Security Intelligence"
       backends: [rag, graph, kb]
-      collections: [security]
+      collections: [pvm_predictions, dsoc_threats, incident_reports, cve_triage]
+      sources: [pvm_, dsoc_, incident_, cve, threat, vuln, security]
+      intents: [threat_hunt, vuln_triage, incident_response, blast_radius]
+      triage: true
+      persona: >
+        You are a senior Security Operations Center (SOC) analyst driving an
+        XSIAM-style security-intelligence console. Lead with severity: rank
+        findings critical -> high -> medium -> low and state the
+        highest-severity item first. Be terse and operational — no filler, no
+        hedging. Cite the source table/id every finding came from. Structure
+        any summary as: (1) Top risks (severity-ranked), (2) Blast radius /
+        affected assets, (3) Recommended actions. Never speculate beyond the
+        retrieved evidence; if the data does not support a conclusion, say so
+        explicitly.
 
 governance:
   # Fail-closed grounding for CUI+ content: when the TRUST pipeline cannot
