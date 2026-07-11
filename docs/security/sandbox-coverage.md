@@ -714,3 +714,18 @@ scanner then runs against the *staged copy as data* — the target is read, hash
   - TRUST governance pipeline (`governance.GovernancePipeline`) enforces `[source: …]` citation grounding on drafted output; citation defects gate promote/export.
   - No `exec()`/`eval()`/`subprocess`/`os.system`/`__import__` anywhere under `tools/cortex/` — the only `re.compile()` uses are static pattern definitions.
 - **Revisit if:** the analyst path is ever allowed to emit non-SELECT statements, the SELECT-only/allowlist gates are removed or bypassed, or any Cortex module adds a step that `exec`s, `eval`s, or `subprocess`-runs user-derived content → re-decide as **sandboxed** via `tools/security/sandbox_executor.py`.
+
+### Gap 28 — Rotating LLM egress-proxy resolver (`tools/llm/proxy_resolver.py`)
+
+**Module:** `tools/llm/proxy_resolver.py` (+ `icdev/` mirror) — resolves the current LLM egress proxy per call for constrained-network deployments and applies it to the standard proxy env vars. Invoked from the router choke point `LLMRouter._provider_invoke`.
+
+**Ingress path:** When `ICDEV_LLM_PROXY_CMD` (env) or `proxy.command` (config) is set, `_run_proxy_command()` executes that command with `shell=True` and reads its stdout as the current proxy URL (for proxies supplied by an external rotator/agent). The command is **operator/administrator configuration**, resolved fresh per call and TTL-cached. It is NOT derived from end-user request content — it sits at the same trust tier as `.env` / `args/llm_config.yaml`.
+
+- **Decision:** **trusted-first-party**
+- **Rationale:** The executed string is infrastructure configuration authored by whoever provisions the deployment (identical trust to the API keys and model routing already in `.env` / `llm_config.yaml`). `shell=True` is intentional so operators can express a proxy lookup as a pipeline (e.g. `aws ssm get-parameter … | jq -r .Value`). There is no path by which an end user, prompt, RAG document, or uploaded file can influence the command — it is read only from the process environment / config file. Sandboxing operator-owned config would add no security value against this threat model (OPT-58). The bandit B602 finding is annotated `# nosec B602` with this justification at the call site.
+- **Guardrails:**
+  - Command source is env/config only — never request/prompt/document content; no interpolation of user data into the command string.
+  - Bounded by a hard 10s `timeout`; failures degrade to the last cached value or `None` and never raise into the LLM call.
+  - Output is consumed solely as a proxy URL string (first stdout line) — never executed, never rendered.
+  - Resolving `None` never clobbers a pre-existing OS `HTTPS_PROXY`; the whole feature is opt-in and off by default.
+- **Revisit if:** the proxy command ever becomes settable from a per-request/API surface or from tenant-supplied data → re-decide as **sandboxed** (`tools/security/sandbox_executor.py`) or drop `shell=True` in favor of an argv allowlist.

@@ -46,6 +46,15 @@ try:
 except ImportError:  # packaged-only install
     from icdev.tools.llm.config_path import resolve_llm_config_path
 
+# Constrained-network mode: single-flight + inter-call pause, and a rotating
+# egress proxy. Both are OFF/no-op unless configured. See the modules' docs.
+try:
+    from tools.llm.rate_gate import rate_gate, resolve_rate_limit
+    from tools.llm.proxy_resolver import apply_llm_proxy, resolve_llm_proxy
+except ImportError:  # packaged-only install
+    from icdev.tools.llm.rate_gate import rate_gate, resolve_rate_limit
+    from icdev.tools.llm.proxy_resolver import apply_llm_proxy, resolve_llm_proxy
+
 DEFAULT_CONFIG_PATH = resolve_llm_config_path()
 
 
@@ -348,7 +357,8 @@ class LLMRouter:
         model_id = model_cfg.get("model_id", "")
         try:
             # Minimal request — hard 8-second timeout
-            resp = provider.invoke(
+            resp = self._provider_invoke(
+                provider,
                 LLMRequest(messages=[{"role": "user", "content": "ping"}]),
                 model_id,
                 model_cfg,
@@ -1049,7 +1059,7 @@ class LLMRouter:
             return None
         model_id = model_cfg.get("model_id", "")
         try:
-            return provider.invoke(request, model_id, model_cfg)
+            return self._provider_invoke(provider, request, model_id, model_cfg)
         except Exception as exc:
             logger.warning("Two-tier: direct invoke failed for %s/%s: %s", model_name, model_id, exc)
             return None
@@ -1314,7 +1324,7 @@ class LLMRouter:
         try:
             # Use the fine-tuned model name directly as model_id
             model_cfg = {"model_id": ollama_model_name, "provider": "ollama"}
-            return provider.invoke(request, ollama_model_name, model_cfg)
+            return self._provider_invoke(provider, request, ollama_model_name, model_cfg)
         except Exception as exc:
             logger.warning(
                 "Fine-tuned invoke failed for %s: %s",
@@ -1738,7 +1748,7 @@ class LLMRouter:
                 # Stamp route-level config onto request so providers can read flags like disable_thinking
                 route_cfg = self._config.get("routing", {}).get(function, {})
                 request._route_config = route_cfg
-                response = provider.invoke(request, model_id, model_cfg)
+                response = self._provider_invoke(provider, request, model_id, model_cfg)
                 _latency = int((time.time() - _start) * 1000)
 
                 if span:
@@ -1850,6 +1860,53 @@ class LLMRouter:
             chain=chain,
             no_llm_mode=False,
         )
+
+    def _apply_network_guard(self, provider) -> None:
+        """Apply the current egress proxy before a provider call.
+
+        Resolves the (possibly rotating) proxy fresh each call. When it changed,
+        invalidate the provider's cached SDK client so it rebuilds against the
+        new proxy (``requests``-based providers pick up env per request). No-op
+        and zero-overhead unless a proxy source is configured.
+        """
+        try:
+            proxy = resolve_llm_proxy(self._config)
+            if apply_llm_proxy(proxy) and hasattr(provider, "reset_client"):
+                provider.reset_client()
+        except Exception as exc:  # never let proxy plumbing crash an LLM call
+            logger.debug("network guard (proxy) skipped: %s", exc)
+
+    def _provider_invoke(self, provider, request, model_id, model_cfg):
+        """Single choke point for every non-streaming provider call.
+
+        ALL text and vision generation funnels through here (vision requests
+        carry image content in the same ``request``). Honors constrained-network
+        mode: rotating-proxy application + the rate-limit gate (serialize to
+        ``max_parallel`` + randomized inter-call pause). Both are no-ops unless
+        configured, so default behavior is unchanged.
+        """
+        self._apply_network_guard(provider)
+        mp, pmin, pmax = resolve_rate_limit(self._config)
+        with rate_gate(mp, pmin, pmax):
+            return provider.invoke(request, model_id, model_cfg)
+
+    def _provider_invoke_streaming(self, provider, request, model_id, model_cfg):
+        """Streaming counterpart of :meth:`_provider_invoke`.
+
+        Holds the rate-limit slot across the whole stream (releasing, with the
+        inter-call pause, once the generator is exhausted) so a streamed call
+        still counts as one in-flight LLM call.
+        """
+        self._apply_network_guard(provider)
+        mp, pmin, pmax = resolve_rate_limit(self._config)
+        if mp <= 0:
+            return provider.invoke_streaming(request, model_id, model_cfg)
+
+        def _gated_stream():
+            with rate_gate(mp, pmin, pmax):
+                yield from provider.invoke_streaming(request, model_id, model_cfg)
+
+        return _gated_stream()
 
     def invoke(
         self,
@@ -2220,7 +2277,7 @@ class LLMRouter:
                 continue
             model_id = model_cfg.get("model_id", "")
             try:
-                return provider.invoke_streaming(request, model_id, model_cfg)
+                return self._provider_invoke_streaming(provider, request, model_id, model_cfg)
             except Exception as exc:
                 logger.warning(
                     "Streaming provider %s (%s) failed for %s: %s — trying next",
@@ -2512,7 +2569,7 @@ class LLMRouter:
             model_id = model_cfg.get("model_id", "")
             try:
                 _start = time.time()
-                response = provider.invoke(request, model_id, model_cfg)
+                response = self._provider_invoke(provider, request, model_id, model_cfg)
                 _latency = int((time.time() - _start) * 1000)
                 try:
                     self._get_rl_router().record_outcome(role_key, model_name, success=True, latency_ms=_latency)

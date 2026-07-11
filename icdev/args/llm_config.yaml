@@ -1165,6 +1165,27 @@ embeddings:
         input_per_1k: 0.0
 
 # -----------------------------------------------------------------------
+# Constrained-network mode (OFF by default; zero overhead when disabled)
+# -----------------------------------------------------------------------
+# For environments with strict LLM rate limits and/or a constantly-changing
+# egress proxy. Applies to BOTH text and vision calls — every provider call
+# funnels through one choke point in tools/llm/router.py. Env vars override
+# these values so a deployment can toggle without editing this file.
+rate_limit:
+  enabled: false            # master toggle.            Env: ICDEV_LLM_RATE_LIMIT=true|false
+  max_parallel: 1           # max concurrent in-flight LLM calls when enabled. Env: ICDEV_LLM_MAX_PARALLEL
+  pause_min_seconds: 3.0    # randomized inter-call pause lower bound.         Env: ICDEV_LLM_PAUSE_MIN
+  pause_max_seconds: 5.0    # randomized inter-call pause upper bound.         Env: ICDEV_LLM_PAUSE_MAX
+proxy:
+  # Leave all blank to use the OS HTTPS_PROXY/HTTP_PROXY env unchanged. For a
+  # rotating proxy, prefer `command` (resolved fresh per call, TTL-cached) or
+  # write the current URL to the ICDEV_LLM_PROXY env; cached SDK clients rebuild
+  # automatically when the value changes. Priority: command > env > url.
+  url: ""                   # fixed proxy URL.                        Env: ICDEV_LLM_PROXY
+  command: ""               # command whose stdout is the current URL. Env: ICDEV_LLM_PROXY_CMD
+  command_ttl_seconds: 2.0  # cache the command result this long.      Env: ICDEV_LLM_PROXY_CMD_TTL
+
+# -----------------------------------------------------------------------
 # Global Settings
 # -----------------------------------------------------------------------
 settings:
