@@ -106,6 +106,9 @@ CREATE TABLE IF NOT EXISTS kanban_verifications (
     e2e_passed            INTEGER,
     e2e_errors            TEXT,
     companion_synced      INTEGER,
+    review_passed         INTEGER,
+    review_findings       TEXT,
+    pytest_ran            INTEGER DEFAULT 0,
     created_at            TEXT DEFAULT CURRENT_TIMESTAMP
 )
 """

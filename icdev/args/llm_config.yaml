@@ -823,6 +823,13 @@ routing:
     chain: [qwen3-local, claude-sonnet, leanstral, gpt-4o, gemini-2.5-pro]
     effort: high
 
+  # Governed Delivery Pipeline — Conformance Review gate (Phase 2). Judges
+  # whether a task's implementation conforms to its acceptance criteria. Local
+  # (qwen3) first for air-gap; small cloud judges as fallback.
+  conformance_review:
+    chain: [qwen3-local, claude-haiku, claude-sonnet, gpt-4o-mini, llama-local]
+    effort: low
+
   # GovCon Proposal Functions — LOCAL ONLY (Phase 70: Redaction & Data Protection)
   # Proposal content contains CUI program names, past performance, pricing.
   # Route to Ollama only — never send raw proposal content to cloud LLMs.

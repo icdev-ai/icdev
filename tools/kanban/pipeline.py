@@ -158,6 +158,17 @@ def _extract_gates(vrow: Optional[dict]) -> Dict[str, Dict[str, Any]]:
             detail = f"violations:{vrow.get('coherence_violations')}"
         elif stage_key == "unit_tests" and vrow.get("failed_tests") not in (None, ""):
             detail = f"failed:{vrow.get('failed_tests')}"
+        elif stage_key == "conformance" and vrow.get("review_findings") not in (None, ""):
+            try:
+                import json as _json
+                _f = _json.loads(vrow.get("review_findings") or "[]")
+                _unmet = [x for x in _f if isinstance(x, dict) and not x.get("met", True)]
+                if _unmet:
+                    detail = f"{len(_unmet)} unmet: " + "; ".join(
+                        (x.get("criterion") or "")[:40] for x in _unmet[:2]
+                    )
+            except Exception:
+                pass
         elif stage_key == "e2e":
             # e2e only meaningful when it ran; backend-only tasks skip it.
             if _norm_gate(vrow.get("e2e_ran")) != "pass":

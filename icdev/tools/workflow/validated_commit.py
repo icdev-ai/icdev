@@ -30,6 +30,7 @@ from tools.logging.icdev_logger import get_logger
 import concurrent.futures
 import json
 import os
+import re
 import subprocess
 import tempfile
 import time
@@ -565,6 +566,50 @@ def _verify_budget_sec() -> float:
         return 300.0
 
 
+def _pipeline_enforce() -> bool:
+    """Governed Delivery Pipeline enforcement switch. Default OFF: the Phase 2
+    gates (pytest, conformance) RUN and RECORD their result but never block a
+    task's completion. Flip KANBAN_PIPELINE_ENFORCE=1 to make them blocking."""
+    return os.environ.get("KANBAN_PIPELINE_ENFORCE", "0").lower() in ("1", "true", "yes")
+
+
+def _run_pytest(
+    cwd: str, modified_files: List[str], time_budget: float
+) -> Tuple[Optional[bool], List[str]]:
+    """Unit-test gate — runs pytest ONLY on the task's changed test files (never
+    the whole suite, which would blow the budget). Returns (passed, failed_ids):
+      - (None, []) when no test files changed or pytest is unavailable → not_run
+      - (True/False, [...]) on a real run.
+    Never raises; degrades to not_run."""
+    test_files = [
+        f for f in modified_files
+        if f.endswith(".py") and (
+            "/test_" in f.replace("\\", "/")
+            or Path(f).name.startswith("test_")
+            or f.replace("\\", "/").startswith("tests/")
+        )
+    ]
+    if not test_files:
+        return None, []
+    timeout = max(15, min(120, int(time_budget)))
+    try:
+        env = dict(os.environ)
+        env["PYTHONPATH"] = cwd
+        env.setdefault("ICDEV_STORAGE_BACKEND", "sqlite")
+        proc = subprocess.run(  # nosec B603 — fixed args, shell=False
+            ["python", "-m", "pytest", *test_files, "-q", "--no-header",
+             "-p", "no:cacheprovider", "-o", "addopts="],
+            cwd=cwd, capture_output=True, text=True, encoding="utf-8",
+            errors="replace", timeout=timeout, env=env,
+        )
+    except Exception as exc:
+        logger.debug("pytest gate: run skipped (%s)", exc)
+        return None, []
+    out = (proc.stdout or "") + (proc.stderr or "")
+    failed = re.findall(r"^FAILED (\S+)", out, flags=re.MULTILINE)
+    return (proc.returncode == 0), failed[:20]
+
+
 def validate_working_tree(
     cwd: str,
     modified_files: Optional[List[str]] = None,
@@ -685,6 +730,19 @@ def validate_working_tree(
     if _over_budget():
         metrics["elapsed_sec"] = round(time.monotonic() - t0, 2)
         return False, f"BUDGET EXHAUSTED after CodeLens+Coherence ({budget:.0f}s)", metrics
+
+    # 2b. Unit tests (Governed Delivery Pipeline Phase 2) — pytest on the task's
+    #     changed test files only. RECORD-ONLY by default: a failure blocks the
+    #     task ONLY when KANBAN_PIPELINE_ENFORCE is on. not_run when no test
+    #     files changed. Existing gates above are unaffected.
+    pytest_passed, failed_tests = _run_pytest(cwd, modified_files, _remaining())
+    metrics["pytest_ran"] = pytest_passed is not None
+    metrics["pytest_passed"] = pytest_passed
+    if failed_tests:
+        metrics["failed_tests"] = ", ".join(failed_tests)
+    if pytest_passed is False and _pipeline_enforce():
+        metrics["elapsed_sec"] = round(time.monotonic() - t0, 2)
+        return False, f"UNIT TESTS FAILED: {', '.join(failed_tests) or 'see pytest output'}", metrics
 
     # 3. E2E
     # Only trigger E2E for actual UI surface changes: templates, JS/CSS/TS assets,
