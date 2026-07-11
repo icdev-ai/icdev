@@ -1,0 +1,78 @@
+# CUI // SP-CTI
+#
+# Canonical task delivery pipeline — the single ordered source of truth for the
+# stages every kanban task flows through. Consumed by:
+#   - tools/kanban/pipeline.py        (assemble per-task pipeline state for the UI)
+#   - tools/dashboard/templates/kanban.html  (card stage pill + modal stepper)
+#   - (Phase 2+) tools/workflow/validated_commit.py + eval_harness gate registry
+#
+# Phase 1 is visualization-only: it SURFACES the gates that already run in
+# validate_working_tree / kanban_verifications. Stages whose backing signal does
+# not exist yet (conformance review, pytest) simply render as "not run".
+#
+# Per stage:
+#   key      — stable identifier (do not rename; the UI + DB map to it)
+#   label    — short display name
+#   tooltip  — plain-English explanation shown on hover (card pill + stepper)
+#   blocking — whether a failure blocks the task from reaching "done"
+#   source   — how the stage's state is derived:
+#                status              -> from kanban_tasks.status
+#                verification:<col>  -> from the latest kanban_verifications row
+#                git                 -> live gh (on-demand PR/CI)
+
+version: 1
+
+stages:
+  - key: implement
+    label: Implement
+    tooltip: The agent writes the code for this task in an isolated git worktree.
+    blocking: false
+    source: status
+
+  - key: code_quality
+    label: Code Quality
+    tooltip: "Static checks: the code compiles, passes ruff lint, and adds no new bandit security findings vs main."
+    blocking: true
+    source: verification:codelens_passed
+
+  - key: coherence
+    label: Coherence
+    tooltip: "Cross-file consistency: schema↔code, config↔code, manifests, and wiring stay intact — the change doesn't break the system's internal contracts."
+    blocking: true
+    source: verification:coherence_passed
+
+  - key: conformance
+    label: Conformance Review
+    tooltip: "Did we build what was asked? An LLM judge compares the diff against the task's requirements + acceptance criteria and flags scope drift or missing requirements."
+    blocking: true
+    source: verification:review_passed
+
+  - key: unit_tests
+    label: Unit Tests
+    tooltip: "pytest: the task's unit and integration tests pass."
+    blocking: true
+    source: verification:pytest_passed
+
+  - key: e2e
+    label: E2E Playwright
+    tooltip: "Browser test: the affected pages actually render and work end-to-end (runs only when UI files changed)."
+    blocking: true
+    source: verification:e2e_passed
+
+  - key: pr
+    label: PR Opened
+    tooltip: A pull request is opened for the task's branch, awaiting CI.
+    blocking: false
+    source: status
+
+  - key: ci
+    label: CI
+    tooltip: "GitHub CI checks (Lint, Test, Security Scan, Helm Lint) pass on the PR."
+    blocking: true
+    source: git
+
+  - key: merged
+    label: "Merged → main"
+    tooltip: The branch is merged and verified present on origin/main. A task only becomes DONE here.
+    blocking: true
+    source: status
