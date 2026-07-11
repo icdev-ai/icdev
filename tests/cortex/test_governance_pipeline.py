@@ -168,17 +168,21 @@ def test_input_redaction_masks_prompt_before_operation(calls, monkeypatch):
     assert report.outcomes[GATE_INPUT_REDACTION] == OUTCOME_PASS
 
 
-def test_input_redaction_error_fails_open_by_default(calls, monkeypatch):
+def test_input_redaction_error_fails_open_with_explicit_fail_closed_false(calls, monkeypatch):
+    # ctx-govern-02: unset fail_closed defaults CLOSED for CUI (see
+    # tests/cortex/test_citation_gate.py); fail-open needs an explicit False.
     def boom(text, cls):
         raise RuntimeError("anonymizer unavailable")
 
     monkeypatch.setattr(governance, "_gate_redact_input", boom)
     seen = []
     _, report = GovernancePipeline().wrap(
-        lambda p: seen.append(p) or "ok", CortexContext(), prompt="raw", retrieval=False
+        lambda p: seen.append(p) or "ok",
+        CortexContext(fail_closed=False), prompt="raw", retrieval=False,
     )
     assert seen == ["raw"], "fail-open passes the original prompt through"
     assert report.outcomes[GATE_INPUT_REDACTION] == OUTCOME_WARN
+    assert "skipped" in report.details[GATE_INPUT_REDACTION]
 
 
 def test_input_redaction_error_blocks_when_fail_closed(calls, monkeypatch):
@@ -250,13 +254,17 @@ def test_hallucinated_citation_blocks_when_fail_closed(calls):
     assert exc_info.value.report.blocked is True
 
 
-def test_uncited_output_warns_pending_ctx_govern_02(calls):
+def test_uncited_output_downgrades_with_visible_banner(calls, monkeypatch):
+    monkeypatch.setattr(
+        governance, "_governance_config", lambda: {"uncited_policy": "downgrade"}
+    )
     result, report = GovernancePipeline().wrap(
         lambda p: CortexResult(text="Answer without any citation tags."),
         CortexContext(), prompt="q", context_sources=SOURCES,
     )
     assert report.outcomes[GATE_CITATION_GROUNDING] == OUTCOME_WARN
     assert result.grounded is False
+    assert result.banner == governance.UNGROUNDED_BANNER
 
 
 def test_retrieval_without_injected_sources_warns(calls):

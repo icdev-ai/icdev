@@ -73,6 +73,13 @@ CORTEX_CONFIG_DEFAULTS: Dict = {
     "governance": {
         "fail_closed": True,
         "skip_grounding_for_plain_complete": True,
+        # ctx-govern-02: retrieval answers with zero valid citations are
+        # "reject"ed (typed refusal) or "downgrade"d (grounded=False + banner).
+        "uncited_policy": "downgrade",
+        # ctx-govern-02: when CortexContext.fail_closed is unset, redaction
+        # outages fail CLOSED for these classifications (prefix match, so
+        # "CUI" also covers "CUI//SP-CTI").
+        "redaction_fail_closed_classifications": ["CUI", "SECRET"],
     },
     "analyst": {
         "nlq_fallback_enabled": True,

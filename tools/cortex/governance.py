@@ -14,10 +14,16 @@ ad-hoc governance. The chain, in order:
 3. ``operation``          — the wrapped callable itself (LLM budget guardrails
                             apply automatically inside ``LLMRouter``).
 4. ``citation_grounding`` — shared ``tools/quality/citation_grounding``
-                            validation of ``[source: N]`` tags against the
-                            injected sources (full promote/export policy lands
-                            in ctx-govern-02; hallucinated citations already
-                            fail here).
+                            ``citation_gate()`` findings against the injected
+                            sources. ``[SOURCE-N]`` refs (the RAG retriever
+                            prompt convention) are normalized to the shared
+                            ``[source: N]`` form BEFORE validation so
+                            citation_grounding stays the single validator.
+                            Hallucinated citations fail; a retrieval answer
+                            with ZERO valid citations is rejected or visibly
+                            downgraded (``CortexResult.grounded=False`` +
+                            ``banner``) per ``args/cortex_config.yaml``
+                            ``governance.uncited_policy`` (ctx-govern-02).
 5. ``content_grounding``  — ``tools/quality/content_grounding`` placeholder
                             scan plus token-overlap cross-check of the output
                             against the injected context.
@@ -33,10 +39,15 @@ NEVER redaction or provenance/audit — and the skip is recorded explicitly in
 the :class:`GovernanceReport` (outcome ``"skip"``) so governance stays
 observable, not implied.
 
-Fail-open/fail-closed: gate errors degrade to ``"warn"`` by default (matching
-``args/redaction_config.yaml`` ``fail_closed: false``); when
-``CortexContext.fail_closed`` is True, any gate error or ``"fail"`` outcome
-blocks the response instead.
+Fail-open/fail-closed: when ``CortexContext.fail_closed`` is True, any gate
+error or ``"fail"`` outcome blocks the response; when False, gates degrade to
+``"warn"`` and the skip is noted in ``GovernanceReport.details``. When it is
+left unset (``None``), most gates degrade fail-open — EXCEPT the two
+redaction gates, which fail CLOSED for CUI+ classifications (ctx-govern-02:
+a redaction outage must refuse, with an audited error, rather than pass
+unredacted CUI through). The classification list lives in
+``args/cortex_config.yaml`` ``governance.redaction_fail_closed_classifications``;
+the platform-wide ``redaction.fail_closed`` toggle keeps its own semantics.
 
 Test seams: every external module call goes through a module-level
 ``_gate_*`` function so tests monkeypatch ``governance._gate_check_text`` etc.
@@ -49,6 +60,7 @@ import hashlib
 import importlib
 import json
 import logging
+import re
 import uuid
 from typing import Callable, Optional
 
@@ -83,6 +95,22 @@ OUTCOME_WARN = "warn"
 OUTCOME_FAIL = "fail"
 OUTCOME_SKIP = "skip"
 
+# governance.uncited_policy values (args/cortex_config.yaml).
+UNCITED_REJECT = "reject"
+UNCITED_DOWNGRADE = "downgrade"
+
+# Visible downgrade banner attached to CortexResult.banner when a
+# retrieval-derived answer survives the citation gate ungrounded.
+UNGROUNDED_BANNER = (
+    "UNGROUNDED: this answer contains no valid [source: ...] citations "
+    "against the injected evidence and must not be treated as evidence-backed."
+)
+
+# RAG-injection citation form "[SOURCE-3]" (tools/rag/retriever.py prompt
+# convention, case-insensitive) -> shared "[source: 3]" form so
+# tools/quality/citation_grounding.py stays the single validator.
+_SOURCE_N_REF_RE = re.compile(r"\[source-(\d+)\]", re.IGNORECASE)
+
 # Minimum token-overlap recall for the output to count as grounded in the
 # injected context (content_grounding gate). Deliberately low: the gate warns
 # on *zero* overlap, it does not demand extractive answers.
@@ -106,6 +134,30 @@ def _mod(module: str):
     return importlib.import_module(f"{_NS}.{module}")
 
 
+def normalize_citation_format(text: str) -> str:
+    """Translate ``[SOURCE-N]`` refs to the shared ``[source: N]`` form.
+
+    Run BEFORE citation validation so both citation formats in the wild —
+    ``[source: ...]`` (tools/quality convention) and ``[SOURCE-N]`` (the RAG
+    retriever prompt convention, any casing) — validate through the single
+    shared parser in ``tools/quality/citation_grounding.py``.
+    """
+    if not text:
+        return text
+    return _SOURCE_N_REF_RE.sub(lambda m: f"[source: {m.group(1)}]", text)
+
+
+def _governance_config() -> dict:
+    """governance: section of args/cortex_config.yaml (patchable test seam)."""
+    try:
+        from .config import load_cortex_config
+
+        return load_cortex_config().get("governance") or {}
+    except Exception as exc:  # config must never take the pipeline down
+        logger.warning("cortex governance config unavailable, using defaults: %s", exc)
+        return {}
+
+
 # ---------------------------------------------------------------------------
 # Gate seams — one thin patchable function per external dependency
 # ---------------------------------------------------------------------------
@@ -124,9 +176,15 @@ def _gate_redact_input(text: str, classification: str) -> tuple:
     return result.anonymized_text, len(result.replacements)
 
 
-def _gate_validate_citations(text: str, allowed_sources) -> dict:
-    """Gate 4: shared citation validation report."""
-    return _mod("quality.citation_grounding").validate_citations(text, allowed_sources)
+def _gate_citation_findings(text: str, allowed_sources) -> list:
+    """Gate 4: shared ``citation_gate()`` findings; empty list == gate passes.
+
+    ``text`` must already be citation-format-normalized
+    (:func:`normalize_citation_format`). Findings carry ``issue`` of
+    ``"hallucinated_citation"`` or ``"missing_citations"``.
+    """
+    section = {"id": "cortex-answer", "content": text, "allowed_sources": allowed_sources}
+    return _mod("quality.citation_grounding").citation_gate([section])
 
 
 def _gate_find_placeholders(text: str) -> list:
@@ -249,16 +307,42 @@ class GovernancePipeline:
             report.gates_run.append(gate)
         report.outcomes[gate] = outcome
         if detail:
+            report.details[gate] = detail
             logger.debug("cortex governance gate %s=%s: %s", gate, outcome, detail)
+
+    @staticmethod
+    def _fail_closed_for(ctx: CortexContext, gate: str) -> bool:
+        """Effective fail-closed policy for one gate.
+
+        An explicit ``ctx.fail_closed`` True/False always wins. When unset
+        (None), the two redaction gates fail closed for CUI+ classifications
+        (governance.redaction_fail_closed_classifications, prefix match);
+        every other gate defaults fail-open.
+        """
+        if ctx.fail_closed is not None:
+            return bool(ctx.fail_closed)
+        if gate in (GATE_INPUT_REDACTION, GATE_OUTPUT_REDACTION):
+            classification = (ctx.classification or "").strip().upper()
+            marked = _governance_config().get(
+                "redaction_fail_closed_classifications", ["CUI", "SECRET"]
+            )
+            for m in marked or []:
+                m = str(m).strip().upper()
+                if m and (classification == m or classification.startswith(m + "//")):
+                    return True
+        return False
 
     def _degrade(
         self, report: GovernanceReport, ctx: CortexContext, gate: str, exc: Exception
     ) -> None:
         """Gate error: warn and continue (fail-open) or block on fail_closed."""
-        if ctx.fail_closed:
+        if self._fail_closed_for(ctx, gate):
             self._block(report, ctx, gate, f"{gate} unavailable: {exc}")
         logger.warning("cortex governance gate %s degraded (fail-open): %s", gate, exc)
-        self._record(report, gate, OUTCOME_WARN, str(exc))
+        self._record(
+            report, gate, OUTCOME_WARN,
+            f"{gate} unavailable, gate skipped (fail-open): {exc}",
+        )
 
     def _block(
         self, report: GovernanceReport, ctx: CortexContext, gate: str, reason: str
@@ -355,32 +439,58 @@ class GovernancePipeline:
 
         is_cortex_result = isinstance(result, CortexResult)
         text = result.text if is_cortex_result else (result if isinstance(result, str) else str(result))
+        # Both grounding gates see the citation-normalized text ([SOURCE-N]
+        # -> [source: N]) so RAG-convention refs validate as citations and
+        # are not misread as unresolved [PLACEHOLDER] tokens; the returned
+        # text keeps its original form.
+        normalized_text = normalize_citation_format(text)
 
         # 4. Citation grounding (retrieval calls only; skip recorded).
+        #    [SOURCE-N] refs are normalized to [source: N] BEFORE validation
+        #    so citation_grounding.py stays the single validator; a
+        #    zero-citation answer is rejected or visibly downgraded per
+        #    governance.uncited_policy (ctx-govern-02).
         grounded = True
+        banner = ""
         if retrieval:
             allowed = _allowed_source_ids(context_sources)
             if allowed is None:
                 # Nothing to validate against — a retrieval call should
                 # always inject its sources; surface that, don't fail.
                 grounded = False
+                banner = UNGROUNDED_BANNER
                 self._record(
                     report, GATE_CITATION_GROUNDING, OUTCOME_WARN,
                     "retrieval call without injected sources",
                 )
             else:
                 try:
-                    citation_report = _gate_validate_citations(text, allowed)
-                    if citation_report.get("hallucinated_citations"):
+                    findings = _gate_citation_findings(normalized_text, allowed)
+                    hallucinated = [
+                        f for f in findings if f.get("issue") == "hallucinated_citation"
+                    ]
+                    missing = [f for f in findings if f.get("issue") == "missing_citations"]
+                    if hallucinated:
                         grounded = False
-                        detail = f"hallucinated citations: {citation_report['hallucinated_citations']}"
-                        if ctx.fail_closed:
+                        banner = UNGROUNDED_BANNER
+                        detail = "hallucinated citations: {}".format(
+                            sorted({str(c) for f in hallucinated for c in f.get("detail") or []})
+                        )
+                        if self._fail_closed_for(ctx, GATE_CITATION_GROUNDING):
                             self._block(report, ctx, GATE_CITATION_GROUNDING, detail)
                         self._record(report, GATE_CITATION_GROUNDING, OUTCOME_FAIL, detail)
-                    elif not citation_report.get("cited_count"):
-                        # Presence policy hardens in ctx-govern-02; today it warns.
+                    elif missing:
                         grounded = False
-                        self._record(report, GATE_CITATION_GROUNDING, OUTCOME_WARN, "no citations in output")
+                        banner = UNGROUNDED_BANNER
+                        detail = "no valid citations in retrieval-derived answer"
+                        policy = str(
+                            _governance_config().get("uncited_policy", UNCITED_DOWNGRADE)
+                        ).strip().lower()
+                        if policy == UNCITED_REJECT or self._fail_closed_for(
+                            ctx, GATE_CITATION_GROUNDING
+                        ):
+                            self._block(report, ctx, GATE_CITATION_GROUNDING, detail)
+                        self._record(report, GATE_CITATION_GROUNDING, OUTCOME_WARN, detail)
                     else:
                         self._record(report, GATE_CITATION_GROUNDING, OUTCOME_PASS)
                 except GovernanceBlockedError:
@@ -396,18 +506,18 @@ class GovernancePipeline:
         if retrieval:
             try:
                 issues = []
-                placeholders = _gate_find_placeholders(text)
+                placeholders = _gate_find_placeholders(normalized_text)
                 if placeholders:
                     issues.append(f"unresolved placeholders: {placeholders}")
                 chunks = _context_texts(context_sources)
-                if chunks and text:
-                    best = max(_gate_attribution_score(c, text) for c in chunks)
+                if chunks and normalized_text:
+                    best = max(_gate_attribution_score(c, normalized_text) for c in chunks)
                     if best < _ATTRIBUTION_FLOOR:
                         issues.append(f"output shares no content with injected context (recall={best})")
                 if issues:
                     grounded = False
                     detail = "; ".join(issues)
-                    if ctx.fail_closed:
+                    if self._fail_closed_for(ctx, GATE_CONTENT_GROUNDING):
                         self._block(report, ctx, GATE_CONTENT_GROUNDING, detail)
                     self._record(report, GATE_CONTENT_GROUNDING, OUTCOME_WARN, detail)
                 else:
@@ -458,6 +568,8 @@ class GovernancePipeline:
                 report.outcomes.get(g) in (OUTCOME_FAIL, OUTCOME_WARN)
                 for g in (GATE_CITATION_GROUNDING, GATE_CONTENT_GROUNDING)
             )
+            if banner and not result.grounded:
+                result.banner = banner
         return result, report
 
 

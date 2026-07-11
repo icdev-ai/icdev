@@ -101,6 +101,7 @@ class GovernanceReport:
 
     gates_run: list = field(default_factory=list)  # gate names, in execution order
     outcomes: dict = field(default_factory=dict)  # gate name -> "pass" | "warn" | "fail" | "skip"
+    details: dict = field(default_factory=dict)  # gate name -> human-readable note (skips, degradations)
     redactions_applied: int = 0
     blocked: bool = False
     blocked_reason: str = ""  # populated when blocked is True
@@ -119,7 +120,9 @@ class CortexResult:
 
     ``grounded`` is False whenever the text is not fully supported by
     ``citations`` — callers must surface that rather than presenting the
-    text as evidence-backed.
+    text as evidence-backed. When the citation gate downgrades an answer
+    instead of rejecting it, ``banner`` carries the visible warning every
+    consumer must render alongside the text (ctx-govern-02).
     """
 
     text: str = ""
@@ -130,6 +133,7 @@ class CortexResult:
     cost: float = 0.0  # USD
     latency_ms: int = 0
     grounded: bool = False
+    banner: str = ""  # non-empty when the answer was visibly downgraded
 
     def to_dict(self) -> dict:
         return {
@@ -141,6 +145,7 @@ class CortexResult:
             "cost": self.cost,
             "latency_ms": self.latency_ms,
             "grounded": self.grounded,
+            "banner": self.banner,
         }
 
     @classmethod
@@ -162,7 +167,11 @@ class CortexContext:
     ``tenant_id`` and ``classification`` are mandatory members from day one
     so RLS predicates and read-down filtering can key off the context without
     a retrofit. ``fail_closed`` mirrors the platform redaction toggle: when
-    True, any governance failure blocks the response instead of degrading.
+    True, any governance failure blocks the response instead of degrading;
+    when False, gates degrade fail-open. The default ``None`` means
+    "unset" — the GovernancePipeline resolves the effective policy from the
+    classification (redaction outages fail closed for CUI+ by default, per
+    ``args/cortex_config.yaml`` — ctx-govern-02).
     """
 
     tenant_id: str = ""
@@ -170,7 +179,7 @@ class CortexContext:
     classification: str = "CUI"
     domain: str = ""
     air_gap: bool = False
-    fail_closed: bool = False
+    fail_closed: Optional[bool] = None
 
     def to_dict(self) -> dict:
         return asdict(self)

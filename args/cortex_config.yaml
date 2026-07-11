@@ -73,6 +73,24 @@ governance:
   # grounding pass for plain completions instead of failing it closed.
   skip_grounding_for_plain_complete: true
 
+  # ctx-govern-02: policy for a retrieval-derived answer (search()/ask()
+  # context injected) that contains ZERO valid inline citations after
+  # [SOURCE-N] -> [source: N] normalization:
+  #   reject    — raise GovernanceBlockedError (audited typed refusal)
+  #   downgrade — return it with CortexResult.grounded=False and a visible
+  #               CortexResult.banner the consuming surface must render
+  # An explicit CortexContext.fail_closed=True always rejects regardless.
+  uncited_policy: downgrade
+
+  # ctx-govern-02: when CortexContext.fail_closed is left unset (None), a
+  # redaction module import/call failure fails CLOSED (refuse, audited) for
+  # any classification matching this list (prefix match — "CUI" also covers
+  # "CUI//SP-CTI"). Explicit ctx.fail_closed=True/False always wins. This is
+  # additive to — never a replacement for — the platform-wide
+  # redaction.fail_closed toggle in args/llm_config.yaml, whose semantics
+  # are preserved unchanged.
+  redaction_fail_closed_classifications: [CUI, SECRET]
+
 analyst:
   # When the deterministic NLQ->SQL path returns nothing, fall back to the
   # cortex_analyst LLM routing chain.
