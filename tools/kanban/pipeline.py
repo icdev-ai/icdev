@@ -86,6 +86,44 @@ def _norm_gate(v: Any) -> str:
     return "not_run"
 
 
+_MOJIBAKE_MARKERS = ("â€", "Ãƒ", "â")
+
+
+def _fix_mojibake(s: Optional[str]) -> Optional[str]:
+    """Best-effort repair of UTF-8-decoded-as-cp1252 text (e.g. em-dash '—'
+    stored by the runner's git capture as 'a-euro-...'). Only touches strings
+    that carry the tell-tale markers, and reverts if the round-trip fails."""
+    if not s or not any(m in s for m in _MOJIBAKE_MARKERS):
+        return s
+    # cp1252 (not latin-1) — it's the codec the mojibake came from, so it round-
+    # trips €, em-dash and smart quotes that latin-1 can't encode.
+    for enc in ("cp1252", "latin-1"):
+        try:
+            repaired = s.encode(enc).decode("utf-8")
+            if "�" not in repaired:  # reject if it introduced replacement chars
+                return repaired
+        except (UnicodeError, ValueError):
+            continue
+    return s
+
+
+def _commit_subject(summary: Optional[str]) -> Optional[str]:
+    """First line of a (possibly multi-commit) commit_summary, mojibake-repaired
+    and truncated — for a clean one-line display instead of the raw blob."""
+    if not summary:
+        return None
+    lines = [ln for ln in str(summary).strip().splitlines() if ln.strip()]
+    if not lines:
+        return None
+    subj = _fix_mojibake(lines[0].strip())
+    extra = len(lines) - 1
+    if subj and len(subj) > 100:
+        subj = subj[:99] + "…"
+    if extra > 0:
+        subj = f"{subj}  (+{extra} more)"
+    return subj
+
+
 def _fetch_row(conn, sql: str, params: tuple) -> Optional[dict]:
     # Best-effort ENRICHMENT reads only (verification row, meta). Failures here
     # degrade gracefully to None. NEVER use this for the task-existence check —
@@ -217,7 +255,8 @@ def assemble(task_id: str) -> Dict[str, Any]:
         meta = {
             "status": status,
             "branch_name": task.get("branch_name"),
-            "commit_summary": task.get("commit_summary"),
+            "commit_summary": _fix_mojibake(task.get("commit_summary")),
+            "commit_subject": _commit_subject(task.get("commit_summary")),
             "files_changed": task.get("files_changed"),
             "lines_added": task.get("lines_added"),
             "lines_removed": task.get("lines_removed"),

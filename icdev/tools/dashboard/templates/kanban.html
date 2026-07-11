@@ -310,7 +310,7 @@ function _lifecycleHtml(d, taskId){
   var m = d.meta||{};
   var metaRows = [];
   if (m.branch_name) metaRows.push("branch: "+_pipeEsc(m.branch_name));
-  if (m.commit_summary) metaRows.push("commit: "+_pipeEsc(m.commit_summary));
+  if (m.commit_subject) metaRows.push("commit: "+_pipeEsc(m.commit_subject));
   if (m.files_changed) metaRows.push("files: "+_pipeEsc(m.files_changed)+" (+"+_pipeEsc(m.lines_added||0)+"/-"+_pipeEsc(m.lines_removed||0)+")");
   var metaHtml = metaRows.length ? '<div style="font-size:11px; color:var(--text-dim); margin:6px 0;">'+metaRows.join(" &middot; ")+'</div>' : '';
   var tl = (d.transitions||[]).map(function(t){
