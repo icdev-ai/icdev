@@ -1,0 +1,6 @@
+# IQE-CORTEX-02: Ungrounded search/ask invocations
+# Answers not fully supported by citations — surface for TRUST review.
+
+foreach h in cortex.search_history
+where h.grounded == false
+select h.query_text, h.mode, h.domain, h.strategy, h.result_count

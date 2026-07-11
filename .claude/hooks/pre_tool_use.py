@@ -85,6 +85,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # Core audit
         "audit_trail",
         "hook_events",
+        # Cortex canvas governance/facade audit (ctx-canvas-01)
+        "cortex_audit",
         # Phase-E V&V hardening (migration 025) — append-only status transition log
         "kanban_status_transitions",
         # FathomDesk auto-trading (append-only NIST AU)

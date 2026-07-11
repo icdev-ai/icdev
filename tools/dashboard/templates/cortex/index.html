@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Cortex — ICDEV™{% endblock %}
+{% block content %}
+<div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;margin-bottom:12px;">CUI // SP-CTI</div>
+
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+  <div>
+    <h2 style="margin:0;color:#eaeaea;font-size:20px;letter-spacing:.3px;">🧠 Cortex</h2>
+    <p style="color:#7a8cb0;font-size:12px;margin:4px 0 0;">Unified AI layer — one governed facade over RAG, knowledge graph, documents, and keyword search · complete · classify · extract · search · ask · govern · agent</p>
+  </div>
+</div>
+
+<!-- Ask surface -->
+<div style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:8px;padding:20px;margin-bottom:24px;">
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">
+    <label style="color:#7a8cb0;font-size:11px;">Mode
+      <select id="cortex-mode" style="background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:6px 10px;border-radius:5px;font-size:12px;margin-left:6px;">
+        {% for m in modes %}
+        <option value="{{ m.key }}" {% if m.key == default_mode %}selected{% endif %}>{{ m.icon }} {{ m.label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label style="color:#7a8cb0;font-size:11px;">Domain lens
+      <select id="cortex-domain" style="background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:6px 10px;border-radius:5px;font-size:12px;margin-left:6px;">
+        {% for d in domain_lenses %}
+        <option value="{{ d.key }}" {% if d.key == default_domain %}selected{% endif %}>{{ d.icon }} {{ d.label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </div>
+  <div style="display:flex;gap:8px;align-items:flex-end;">
+    <textarea id="cortex-question" rows="2" placeholder="Ask Cortex anything…"
+      style="flex:1;background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:9px 12px;border-radius:5px;font-size:13px;resize:vertical;"></textarea>
+    <button id="cortex-send" onclick="cortexAsk()"
+      style="background:#0f3460;color:#7ab3f0;padding:10px 22px;border:1px solid #1e3a6e;border-radius:5px;cursor:pointer;font-size:13px;">Ask</button>
+  </div>
+  <div id="cortex-answer" style="margin-top:14px;color:#b8d0e8;font-size:13px;line-height:1.5;"></div>
+</div>
+
+<!-- Modes -->
+<h3 style="color:#eaeaea;font-size:14px;margin:0 0 10px;">Facades</h3>
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;margin-bottom:24px;">
+  {% for m in modes %}
+  <div style="background:#16213e;border:1px solid #1e3a6e;border-radius:8px;padding:14px;">
+    <h4 style="margin:0 0 6px;color:#eaeaea;font-size:13px;">{{ m.icon }} {{ m.label }}</h4>
+    <p style="color:#7a8cb0;font-size:12px;margin:0;">{{ m.desc }}</p>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- Domain lenses -->
+<h3 style="color:#eaeaea;font-size:14px;margin:0 0 10px;">Domain lenses</h3>
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;margin-bottom:24px;">
+  {% for d in domain_lenses %}
+  <div style="background:#0e1730;border:1px solid #243a5e;border-radius:8px;padding:14px;">
+    <h4 style="margin:0 0 6px;color:#cfe0f5;font-size:13px;">{{ d.icon }} {{ d.label }}</h4>
+    <p style="color:#5a6e8c;font-size:12px;margin:0;">{{ d.desc }}</p>
+  </div>
+  {% endfor %}
+</div>
+
+<script>
+function cortexAsk() {
+  var q = document.getElementById('cortex-question').value.trim();
+  var out = document.getElementById('cortex-answer');
+  if (!q) { out.textContent = 'Enter a question first.'; return; }
+  var btn = document.getElementById('cortex-send');
+  btn.disabled = true;
+  out.textContent = 'Thinking…';
+  fetch('/cortex/api/chat', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      question: q,
+      mode: document.getElementById('cortex-mode').value,
+      domain: document.getElementById('cortex-domain').value
+    })
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    if (d.error) { out.textContent = 'Error: ' + d.error; return; }
+    var badge = d.grounded ? '<span style="color:#4ade80;">grounded</span>' : '<span style="color:#f59e0b;">ungrounded stub</span>';
+    out.innerHTML = '<div>' + (d.answer || '') + '</div>' +
+      '<div style="margin-top:6px;font-size:11px;color:#5a6e8c;">' + badge +
+      ' · mode: ' + d.mode + ' · domain: ' + d.domain + '</div>';
+  }).catch(function(e) {
+    out.textContent = 'Request failed: ' + e;
+  }).finally(function() { btn.disabled = false; });
+}
+</script>
+
+<!-- IQE Query Widget -->
+{% set iqe_canvas = "cortex" %}
+{% set iqe_api_route = "/cortex/api/iqe-query" %}
+{% set iqe_title = "IQE Query — Cortex" %}
+{% set iqe_examples = [
+  {"label": "Recent sessions", "query": "foreach s in cortex.sessions select s.session_id, s.mode, s.domain, s.status"},
+  {"label": "Search history", "query": "foreach h in cortex.search_history select h.query_text, h.mode, h.domain, h.result_count"},
+  {"label": "Governance audit", "query": "foreach a in cortex.audit select a.facade, a.outcome, a.blocked, a.created_at"}
+] %}
+{% include "includes/iqe_query_widget.html" %}
+{% endblock %}

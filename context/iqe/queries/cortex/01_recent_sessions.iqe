@@ -1,0 +1,6 @@
+# IQE-CORTEX-01: Recent Cortex canvas sessions
+# Most-recent chat/agent launches across all modes and domain lenses.
+
+foreach s in cortex.sessions
+orderby s.created_at desc
+select s.session_id, s.mode, s.domain, s.status, s.user_id, s.created_at

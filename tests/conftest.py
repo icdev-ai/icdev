@@ -1971,6 +1971,46 @@ CREATE TABLE IF NOT EXISTS docmod_catalog_audit (
     tenant_id       TEXT,
     classification  TEXT DEFAULT 'CUI'
 );
+
+CREATE TABLE IF NOT EXISTS cortex_sessions (
+    session_id      TEXT PRIMARY KEY,
+    user_id         TEXT DEFAULT '',
+    mode            TEXT DEFAULT 'ask',
+    domain          TEXT DEFAULT 'general',
+    title           TEXT DEFAULT '',
+    status          TEXT DEFAULT 'active',
+    classification  TEXT DEFAULT 'CUI',
+    tenant_id       TEXT DEFAULT 'default',
+    created_at      TEXT DEFAULT (datetime('now')),
+    updated_at      TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS cortex_audit (
+    audit_id        TEXT PRIMARY KEY,
+    session_id      TEXT DEFAULT '',
+    facade          TEXT NOT NULL,
+    outcome         TEXT DEFAULT 'pass',
+    blocked         INTEGER DEFAULT 0,
+    detail          TEXT DEFAULT '',
+    classification  TEXT DEFAULT 'CUI',
+    tenant_id       TEXT DEFAULT 'default',
+    created_at      TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS cortex_search_history (
+    query_id        TEXT PRIMARY KEY,
+    session_id      TEXT DEFAULT '',
+    user_id         TEXT DEFAULT '',
+    mode            TEXT DEFAULT 'search',
+    domain          TEXT DEFAULT 'general',
+    query_text      TEXT DEFAULT '',
+    strategy        TEXT DEFAULT '',
+    result_count    INTEGER DEFAULT 0,
+    grounded        INTEGER DEFAULT 0,
+    classification  TEXT DEFAULT 'CUI',
+    tenant_id       TEXT DEFAULT 'default',
+    created_at      TEXT DEFAULT (datetime('now'))
+);
 """
 
 
