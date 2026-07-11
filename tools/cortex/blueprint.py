@@ -8,9 +8,10 @@ query widget. Facade wiring (complete/classify/extract/search/ask/govern/agent)
 lands in follow-on tasks; the chat endpoint degrades gracefully until then.
 
 Routes:
-  GET  /cortex/                 index — mode + domain-lens picker
-  POST /cortex/api/chat         conversational stub (records session + history)
-  POST /cortex/api/iqe-query    IQE natural-language query over cortex.* collections
+  GET  /cortex/                     index — mode + domain-lens picker
+  POST /cortex/api/chat             message → intent routing → cortex.* facade
+  GET  /cortex/api/session/<id>     reload a session's persisted turns
+  POST /cortex/api/iqe-query        IQE natural-language query over cortex.* collections
 """
 from __future__ import annotations
 
@@ -127,47 +128,260 @@ def index():
 
 # ── API Routes ──────────────────────────────────────────────────────────────────
 
+def _cortex_context(domain: str):
+    """Build a CortexContext from the request's security context + domain lens."""
+    from tools.cortex.schemas import CortexContext
+
+    tenant_id, classification = _security_context()
+    return CortexContext(
+        tenant_id=tenant_id,
+        user_id=_current_user(),
+        classification=classification,
+        domain=domain if domain != DEFAULT_DOMAIN else "",
+    )
+
+
+def _serialize_citations(citations) -> list:
+    """Normalize a list of Citation dataclasses (or dicts) to JSON-able dicts."""
+    out = []
+    for c in citations or []:
+        if hasattr(c, "to_dict"):
+            out.append(c.to_dict())
+        elif isinstance(c, dict):
+            out.append(c)
+    return out
+
+
+def _resolve_facade(question: str, requested_mode: str) -> tuple[str, dict]:
+    """Pick the cortex.* facade: explicit mode override, else intent routing.
+
+    A concrete mode from the picker (one of CORTEX_MODE_KEYS) is honored as a
+    manual override. Anything else — absent, ``auto``, or unknown — is routed
+    by the intent classifier so a bare chat message reaches the right facade.
+    """
+    if requested_mode in CORTEX_MODE_KEYS:
+        return requested_mode, {
+            "intent": requested_mode,
+            "facade": requested_mode,
+            "confidence": 1.0,
+            "reason": "explicit mode selection",
+            "requires_confirm": requested_mode == "agent",
+            "source": "user",
+        }
+    from tools.cortex import intent_router
+
+    decision = intent_router.route(question)
+    decision["source"] = "auto"
+    return decision["facade"], decision
+
+
+def _run_facade(facade: str, question: str, ctx, confirm_agent: bool) -> dict:
+    """Dispatch one chat turn to the resolved cortex.* facade.
+
+    Returns a normalized response dict. Facade errors degrade to an ungrounded,
+    citation-free answer (HTTP 200) — the endpoint never fabricates evidence
+    and never 500s on a downstream failure.
+    """
+    from tools.cortex import api as cortex_api
+
+    if facade == "agent":
+        # TRUST + safety: never auto-launch an agent loop / ACE team from chat.
+        # Surface a confirm affordance; the caller must re-submit with a
+        # dedicated confirm action (the agent facade itself is not wired here).
+        return {
+            "answer": (
+                "This looks like a multi-step goal best handled by a Cortex agent "
+                "(cortex.agent). Agents can take actions across the platform, so "
+                "they are not launched automatically — confirm to proceed."
+            ),
+            "grounded": False,
+            "confidence": "",
+            "citations": [],
+            "governance": {"gates_run": [], "outcomes": {}, "blocked": False},
+            "requires_confirm": True,
+            "degraded": False,
+        }
+
+    try:
+        if facade == "search":
+            results = cortex_api.search(question, ctx=ctx)
+            return _response_from_search(results)
+        if facade == "ask":
+            result = cortex_api.ask(question, ctx=ctx)
+            return _response_from_result(result)
+        if facade == "complete":
+            result = cortex_api.complete(question, ctx=ctx)
+            # complete() is generative + ungrounded by construction.
+            return _response_from_result(result, grounded_override=False)
+        # classify / extract / govern need structured params a free-form chat
+        # turn doesn't carry — surface that rather than guessing.
+        return _degraded(
+            f"The '{facade}' facade needs structured inputs (labels / schema / "
+            "sources) not available from a chat message. Use the API directly "
+            "or pick search / ask / complete.",
+            facade,
+        )
+    except Exception as exc:  # noqa: BLE001 — degrade, never 500
+        logger.warning("cortex.chat: facade %s failed: %s", facade, exc)
+        return _degraded(
+            f"The '{facade}' facade could not answer this right now ({exc}). "
+            "Your message was recorded.",
+            facade,
+        )
+
+
+def _response_from_result(result, grounded_override=None) -> dict:
+    """Normalize a CortexResult into the chat response shape."""
+    grounded = result.grounded if grounded_override is None else grounded_override
+    return {
+        "answer": result.text or "",
+        "grounded": bool(grounded),
+        "confidence": str(result.metadata.get("confidence", "")),
+        "citations": _serialize_citations(result.citations),
+        "governance": result.governance.to_dict() if result.governance else {},
+        "requires_confirm": False,
+        "degraded": False,
+    }
+
+
+def _response_from_search(results: list) -> dict:
+    """Synthesize a chat answer from a list of CortexSearchResult hits."""
+    citations = []
+    lines = []
+    for i, r in enumerate(results, 1):
+        cit = getattr(r, "citation", None)
+        if cit and getattr(cit, "source_id", ""):
+            citations.append(cit.to_dict())
+        snippet = (getattr(r, "content", "") or "").strip().replace("\n", " ")
+        if snippet:
+            lines.append(f"{i}. {snippet[:220]}")
+    grounded = bool(citations)
+    if lines:
+        answer = f"Found {len(results)} result(s):\n" + "\n".join(lines[:5])
+    else:
+        answer = "No matching results were found across the Cortex backends."
+    return {
+        "answer": answer,
+        "grounded": grounded,
+        "confidence": "include" if grounded else "abstain",
+        "citations": citations,
+        "governance": {
+            "gates_run": ["retrieval"],
+            "outcomes": {"retrieval": "pass" if results else "warn"},
+            "blocked": False,
+        },
+        "requires_confirm": False,
+        "degraded": False,
+    }
+
+
+def _degraded(message: str, facade: str) -> dict:
+    return {
+        "answer": message,
+        "grounded": False,
+        "confidence": "",
+        "citations": [],
+        "governance": {"gates_run": [], "outcomes": {}, "blocked": False},
+        "requires_confirm": False,
+        "degraded": True,
+    }
+
+
 @cortex_bp.route("/api/chat", methods=["POST"])
 def api_chat():
-    """Conversational stub over the Cortex facade.
+    """Route a chat message to the right Cortex facade and persist the turn.
 
-    Body: {question, mode?, domain?, session_id?}
-    Returns: {answer, mode, domain, session_id, grounded, citations, stub}
+    Body: ``{question, mode?, domain?, session_id?, confirm_agent?}``
 
-    Skeleton behaviour: validates input, normalizes mode/domain, records the
-    turn in cortex_search_history, and returns a non-fabricated stub answer.
-    No citations are invented — ``grounded`` is False and ``citations`` empty,
-    so the TRUST contract (no uncited content presented as evidence) holds.
+    A concrete ``mode`` (one of the seven facades) is honored as a manual
+    override; otherwise the message is classified (retrieval → search,
+    data-question → ask, generative → complete, multi-step goal → agent behind
+    a confirm affordance). The user turn and the assistant turn are persisted to
+    cortex_messages so the session reloads via ``GET /api/session/<id>``.
+
+    Returns the answer plus routing provenance, citations, a grounded/confidence
+    badge, and a GovernanceReport summary (which gates ran). Ungrounded answers
+    carry ``grounded=False`` so the UI shows the visible banner. Facade failures
+    degrade to an ungrounded answer — this route never 500s on a downstream error.
     """
     data = request.get_json(silent=True) or {}
     question = (data.get("question") or "").strip()
     if not question:
         return jsonify({"error": "question is required"}), 400
 
-    mode = (data.get("mode") or DEFAULT_MODE).strip().lower()
-    if mode not in CORTEX_MODE_KEYS:
-        mode = DEFAULT_MODE
+    requested_mode = (data.get("mode") or "auto").strip().lower()
     domain = (data.get("domain") or DEFAULT_DOMAIN).strip().lower()
     if domain not in CORTEX_DOMAIN_KEYS:
         domain = DEFAULT_DOMAIN
     session_id = (data.get("session_id") or uuid.uuid4().hex).strip()
+    confirm_agent = bool(data.get("confirm_agent"))
 
-    _record_history(session_id, mode, domain, question)
+    facade, routing = _resolve_facade(question, requested_mode)
+    ctx = _cortex_context(domain)
+    outcome = _run_facade(facade, question, ctx, confirm_agent)
 
-    answer = (
-        "Cortex canvas is live as a skeleton. The "
-        f"'{mode}' facade over the '{domain}' domain lens is not yet wired into "
-        "this endpoint — grounded answers with citations land in a follow-on task. "
-        "Your query was recorded."
-    )
+    # THIN session persistence: session row + user turn + assistant turn.
+    tenant_id, classification = _security_context()
+    _persist_turn(session_id, facade, domain, question, outcome, tenant_id, classification)
+    _record_history(session_id, facade, domain, question, grounded=outcome["grounded"])
+
     return jsonify({
-        "answer": answer,
-        "mode": mode,
+        "answer": outcome["answer"],
+        "mode": facade,
+        "intent": routing.get("intent", facade),
+        "routing": routing,
         "domain": domain,
         "session_id": session_id,
-        "grounded": False,
-        "citations": [],
-        "stub": True,
+        "grounded": outcome["grounded"],
+        "confidence": outcome["confidence"],
+        "citations": outcome["citations"],
+        "governance": outcome["governance"],
+        "requires_confirm": outcome["requires_confirm"],
+        "degraded": outcome["degraded"],
+    })
+
+
+def _persist_turn(session_id, facade, domain, question, outcome, tenant_id, classification):
+    """Best-effort THIN persistence of one user+assistant exchange."""
+    try:
+        from tools.cortex import chat_session
+
+        chat_session.ensure_session(
+            session_id, user_id=_current_user(), mode=facade, domain=domain,
+            tenant_id=tenant_id, classification=classification, title=question,
+        )
+        chat_session.record_turn(
+            session_id, "user", question, facade=facade,
+            tenant_id=tenant_id, classification=classification,
+        )
+        chat_session.record_turn(
+            session_id, "assistant", outcome["answer"], facade=facade,
+            grounded=outcome["grounded"], confidence=outcome["confidence"],
+            citations=outcome["citations"], governance=outcome["governance"],
+            tenant_id=tenant_id, classification=classification,
+        )
+        chat_session.record_audit(
+            session_id, facade,
+            outcome="fail" if outcome["governance"].get("blocked") else "pass",
+            blocked=bool(outcome["governance"].get("blocked")),
+            tenant_id=tenant_id, classification=classification,
+        )
+    except Exception as exc:  # noqa: BLE001 — persistence never breaks the answer
+        logger.debug("cortex.chat: turn persistence skipped: %s", exc)
+
+
+@cortex_bp.route("/api/session/<session_id>", methods=["GET"])
+def api_session(session_id):
+    """Reload a session's metadata and persisted turns (conversation history)."""
+    from tools.cortex import chat_session
+
+    session = chat_session.load_session(session_id)
+    turns = chat_session.load_turns(session_id)
+    return jsonify({
+        "session_id": session_id,
+        "session": session,
+        "turns": turns,
+        "turn_count": len(turns),
     })
 
 

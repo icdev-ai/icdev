@@ -2011,6 +2011,22 @@ CREATE TABLE IF NOT EXISTS cortex_search_history (
     tenant_id       TEXT DEFAULT 'default',
     created_at      TEXT DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS cortex_messages (
+    message_id      TEXT PRIMARY KEY,
+    session_id      TEXT DEFAULT '',
+    turn_number     INTEGER DEFAULT 0,
+    role            TEXT DEFAULT 'user',
+    content         TEXT DEFAULT '',
+    facade          TEXT DEFAULT '',
+    grounded        INTEGER DEFAULT 0,
+    confidence      TEXT DEFAULT '',
+    citations       TEXT DEFAULT '',
+    governance      TEXT DEFAULT '',
+    classification  TEXT DEFAULT 'CUI',
+    tenant_id       TEXT DEFAULT 'default',
+    created_at      TEXT DEFAULT (datetime('now'))
+);
 """
 
 

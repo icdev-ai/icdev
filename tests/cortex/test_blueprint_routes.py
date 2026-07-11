@@ -63,8 +63,22 @@ class TestPageRoutes:
         assert b"/cortex/api/iqe-query" in resp.data
 
 
-class TestChatStub:
-    def test_chat_returns_ungrounded_stub(self, client):
+class TestChatSurface:
+    @pytest.fixture(autouse=True)
+    def _no_llm_facades(self, monkeypatch):
+        """Stub the facades so route-shape tests never reach a live LLM."""
+        import tools.cortex.api as cortex_api
+
+        def _raise(*a, **k):
+            raise RuntimeError("no LLM in test")
+
+        monkeypatch.setattr(cortex_api, "ask", _raise)
+        monkeypatch.setattr(cortex_api, "complete", _raise)
+        monkeypatch.setattr(cortex_api, "search", _raise)
+
+    def test_chat_explicit_mode_is_honored_and_ungrounded(self, client):
+        # Explicit "ask" mode with no matching data → facade degrades; the
+        # answer stays ungrounded and never fabricates citations (TRUST).
         resp = client.post(
             "/cortex/api/chat",
             data=json.dumps({"question": "hello cortex", "mode": "ask", "domain": "compliance"}),
@@ -72,15 +86,16 @@ class TestChatStub:
         )
         assert resp.status_code == 200
         data = resp.get_json()
-        assert data["stub"] is True
         assert data["grounded"] is False
-        # TRUST: a stub never fabricates citations.
         assert data["citations"] == []
         assert data["mode"] == "ask"
         assert data["domain"] == "compliance"
         assert data["session_id"]
+        assert data["routing"]["source"] == "user"
 
-    def test_chat_normalizes_unknown_mode_and_domain(self, client):
+    def test_chat_normalizes_unknown_domain_and_auto_routes(self, client):
+        # Unknown mode falls through to intent routing; a signal-free message
+        # defaults to the ask facade. Unknown domain normalizes to general.
         resp = client.post(
             "/cortex/api/chat",
             data=json.dumps({"question": "q", "mode": "bogus", "domain": "nope"}),
@@ -88,8 +103,9 @@ class TestChatStub:
         )
         assert resp.status_code == 200
         data = resp.get_json()
-        assert data["mode"] == "ask"          # DEFAULT_MODE
+        assert data["mode"] == "ask"          # DEFAULT_INTENT
         assert data["domain"] == "general"    # DEFAULT_DOMAIN
+        assert data["routing"]["source"] == "auto"
 
     def test_chat_requires_question(self, client):
         resp = client.post(

@@ -67,6 +67,23 @@ CREATE TABLE IF NOT EXISTS cortex_search_history (
     created_at      TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_cortex_search_history_session ON cortex_search_history(session_id);
+
+CREATE TABLE IF NOT EXISTS cortex_messages (
+    message_id      TEXT        PRIMARY KEY,
+    session_id      TEXT        DEFAULT '',
+    turn_number     INTEGER     DEFAULT 0,
+    role            TEXT        DEFAULT 'user',
+    content         TEXT        DEFAULT '',
+    facade          TEXT        DEFAULT '',
+    grounded        BOOLEAN     DEFAULT FALSE,
+    confidence      TEXT        DEFAULT '',
+    citations       TEXT        DEFAULT '',
+    governance      TEXT        DEFAULT '',
+    classification  TEXT        DEFAULT 'CUI',
+    tenant_id       TEXT        DEFAULT 'default',
+    created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_cortex_messages_session ON cortex_messages(session_id, turn_number);
 """
 
 _SCHEMA_SQLITE = """
@@ -112,6 +129,23 @@ CREATE TABLE IF NOT EXISTS cortex_search_history (
     created_at      TEXT        DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_cortex_search_history_session ON cortex_search_history(session_id);
+
+CREATE TABLE IF NOT EXISTS cortex_messages (
+    message_id      TEXT        PRIMARY KEY,
+    session_id      TEXT        DEFAULT '',
+    turn_number     INTEGER     DEFAULT 0,
+    role            TEXT        DEFAULT 'user',
+    content         TEXT        DEFAULT '',
+    facade          TEXT        DEFAULT '',
+    grounded        INTEGER     DEFAULT 0,
+    confidence      TEXT        DEFAULT '',
+    citations       TEXT        DEFAULT '',
+    governance      TEXT        DEFAULT '',
+    classification  TEXT        DEFAULT 'CUI',
+    tenant_id       TEXT        DEFAULT 'default',
+    created_at      TEXT        DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_cortex_messages_session ON cortex_messages(session_id, turn_number);
 """
 
 _INIT_DONE = False
