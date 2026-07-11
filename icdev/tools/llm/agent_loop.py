@@ -1501,10 +1501,42 @@ def _grade_against_rubric(
         return RubricGrade(verdict=RubricVerdict.grader_error, feedback=str(exc))
 
 
+def _invoke_pluggable_grader(
+    grader: Callable[[AgentLoopResult], RubricGrade],
+    result: AgentLoopResult,
+) -> RubricGrade:
+    """Call a pluggable, code-based grader, degrading failures to grader_error.
+
+    Mirrors the failure contract of :func:`_grade_against_rubric`: the rubric
+    loop must never crash because a caller's grader raised or returned garbage.
+    The grader inspects real state (build/test/gate results) instead of judging
+    text with a model, so it is fully LLM-agnostic — it never touches the router.
+    """
+    try:
+        grade = grader(result)
+        if not isinstance(grade, RubricGrade):
+            raise TypeError(
+                f"grader returned {type(grade).__name__}, expected RubricGrade"
+            )
+        verdict = str(grade.verdict).strip().lower()
+        if verdict not in (
+            RubricVerdict.satisfied,
+            RubricVerdict.needs_revision,
+            RubricVerdict.failed,
+        ):
+            raise ValueError(f"grader returned unrecognized verdict: {grade.verdict!r}")
+        grade.verdict = verdict
+        return grade
+    except Exception as exc:  # noqa: BLE001 — any grader failure degrades to grader_error
+        logger.warning("agent_loop: pluggable grader failed: %s", exc)
+        return RubricGrade(verdict=RubricVerdict.grader_error, feedback=str(exc))
+
+
 def run_agent_loop_with_rubric(
     router: Any,
     *,
-    rubric: str,
+    rubric: str | None = None,
+    grader: Callable[[AgentLoopResult], RubricGrade] | None = None,
     max_grading_iterations: int | None = None,
     grader_llm_function: str | None = None,
     grader_max_tokens: int | None = None,
@@ -1512,6 +1544,14 @@ def run_agent_loop_with_rubric(
     **kwargs: Any,
 ) -> RubricLoopResult:
     """Run :func:`run_agent_loop` and grade its output against *rubric*.
+
+    LLM-agnostic: this primitive never constructs an LLM client and never
+    assumes a provider. It routes every model call through the injected
+    ``router`` by FUNCTION NAME (``llm_function`` / ``grader_llm_function``),
+    which ``args/llm_config.yaml`` maps to whatever provider is configured
+    (Claude / Kimi / Ollama / …, with air-gap fallback chains). Pass a custom
+    ``grader`` for a code-based rubric (e.g. the delivery-pipeline gates); it
+    is plain Python and touches no model at all.
 
     Declares "what done looks like" up front instead of trusting the agent's
     own judgment that it is finished. Each round:
@@ -1535,7 +1575,17 @@ def run_agent_loop_with_rubric(
     Args:
         router: An ``LLMRouter`` instance.
         rubric: Free-text description of what a satisfactory response looks
-            like. Passed verbatim to the grader.
+            like. Passed verbatim to the LLM grader. Provide EITHER ``rubric``
+            OR ``grader`` — not both, and not neither.
+        grader: Optional pluggable, code-based grader
+            ``callback(AgentLoopResult) -> RubricGrade``. When supplied it
+            REPLACES the LLM rubric grader: no ``router`` call is made for
+            grading, so verdicts come from real state (build/test/gate results)
+            rather than a model judging text. Must return a :class:`RubricGrade`
+            whose verdict is ``satisfied`` / ``needs_revision`` / ``failed``;
+            any exception or bad return degrades to ``grader_error`` (loop
+            stops). ``needs_revision`` feedback is injected verbatim and the
+            agent loop resumes to fix it, exactly as with an LLM rubric.
         max_grading_iterations: Max grade-then-revise rounds before giving up.
             Loaded from ``args/llm_config.yaml``
             ``agent_loop.rubric.max_grading_iterations`` when not set
@@ -1563,6 +1613,16 @@ def run_agent_loop_with_rubric(
             "run_agent_loop_with_rubric manages initial_messages internally; "
             "do not pass it explicitly."
         )
+    if grader is not None and rubric is not None:
+        raise ValueError(
+            "run_agent_loop_with_rubric: pass either 'rubric' (LLM grader) or "
+            "'grader' (code grader), not both."
+        )
+    if grader is None and rubric is None:
+        raise ValueError(
+            "run_agent_loop_with_rubric: exactly one of 'rubric' or 'grader' "
+            "is required."
+        )
 
     budget_defaults = _load_budget_defaults()
     if max_grading_iterations is None:
@@ -1588,14 +1648,17 @@ def run_agent_loop_with_rubric(
         if not result.done:
             break  # agent loop itself didn't complete cleanly — nothing to grade
 
-        grade = _grade_against_rubric(
-            router,
-            rubric=rubric,
-            final_content=result.final_content,
-            llm_function=effective_grader_function,
-            max_tokens=grader_max_tokens,
-            effort=effort,
-        )
+        if grader is not None:
+            grade = _invoke_pluggable_grader(grader, result)
+        else:
+            grade = _grade_against_rubric(
+                router,
+                rubric=rubric,
+                final_content=result.final_content,
+                llm_function=effective_grader_function,
+                max_tokens=grader_max_tokens,
+                effort=effort,
+            )
         loop_result.grades.append(grade)
         loop_result.grading_attempts = attempt
         if on_grade is not None:
