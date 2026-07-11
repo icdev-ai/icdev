@@ -1174,3 +1174,14 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Specialist Consult | tools\govcon\specialist_consult.py | Auto-registered: govcon/specialist_consult.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Modernization Routes | tools\document_intelligence\modernization_routes.py | Auto-registered: document_intelligence/modernization_routes.py | --json | JSON |
+| Card Bridge | tools\doc_modernization\card_bridge.py | Auto-registered: doc_modernization/card_bridge.py | --json | JSON |
+| Redline Drafter | tools\doc_modernization\redline_drafter.py | Auto-registered: doc_modernization/redline_drafter.py | --json | JSON |
+| Regen Orchestrator | tools\doc_modernization\regen_orchestrator.py | Auto-registered: doc_modernization/regen_orchestrator.py | --json | JSON |
+| Standards Catalog | tools\iqe\adapters\standards_catalog.py | Auto-registered: adapters/standards_catalog.py | --json | JSON |
+| Doc Modernization Sweep | tools\genesis\reflexes\doc_modernization_sweep.py | Auto-registered: reflexes/doc_modernization_sweep.py | --json | JSON |

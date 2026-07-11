@@ -1076,8 +1076,13 @@ def _load_registry_nav_dirs() -> Set[str]:
 
     dirs: Set[str] = set()
     for comp in data.get("components", []):
-        if not isinstance(comp, dict) or comp.get("kind") != "canvas":
+        if not isinstance(comp, dict):
             continue
+        # Mirror component_registry.get_nav_context(): ANY component with a
+        # nav.section renders a dynamic nav link via nav_tree, regardless of
+        # kind (canvas, core_extension, etc.). Restricting to kind=="canvas"
+        # false-positived on core_extensions with a page.html template and a
+        # registry nav link (e.g. standards_catalog → /standards-catalog).
         nav = comp.get("nav") or {}
         if not isinstance(nav, dict) or not nav.get("section"):
             continue
