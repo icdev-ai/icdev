@@ -409,6 +409,27 @@ def list_tasks():
         conn.close()
 
 
+@kanban_api.route("/tasks/<task_id>/pipeline", methods=["GET"])
+def task_pipeline(task_id):
+    """Delivery-pipeline view for a task: per-stage states, gate outcomes, and
+    the status-transition timeline (read-only; surfaces existing gates).
+
+    ``?live=1`` additionally attaches live PR/CI state via gh (best-effort;
+    omitted when gh / network is unavailable, so the default view stays fast
+    and air-gap-safe).
+    """
+    try:
+        from tools.kanban import pipeline as _pipeline
+        data = _pipeline.assemble(task_id)
+        if str(request.args.get("live", "")).lower() in ("1", "true", "yes"):
+            pr = _pipeline.resolve_pr_live(task_id)
+            if pr:
+                data["pr"] = pr
+        return jsonify(data)
+    except Exception as exc:  # noqa: BLE001 - endpoint must not 500 the board
+        return jsonify({"error": str(exc), "task_id": task_id}), 500
+
+
 def _maybe_auto_close_parent(conn, child_task_id: str) -> None:
     """If *child_task_id* has a parent, attempt to auto-close it.
 
