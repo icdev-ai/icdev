@@ -1,0 +1,10 @@
+{
+  "id": "260",
+  "name": "kanban_status_lifecycle",
+  "description": "Expand kanban_tasks.status CHECK to represent the true task lifecycle: add pr_opened, ci_failed, merge_conflict, changes_requested, failed. Previously these collapsed to in_progress / token_exhausted in _STATE_TO_DB_STATUS, so the board could not distinguish 'PR open, awaiting merge' from 'still coding', and genuine failures masqueraded as (auto-resumable) token_exhausted.",
+  "created_at": "2026-07-11",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true,
+  "requires_downtime": false
+}

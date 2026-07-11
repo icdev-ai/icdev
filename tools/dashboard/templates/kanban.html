@@ -33,6 +33,8 @@
         ("scheduled", "Scheduled"),
         ("triage", "Triage"),
         ("in_progress", "In Progress"),
+        ("pr_opened", "Awaiting Merge"),
+        ("blocked", "Blocked"),
         ("done", "Done")
     ] %}
     {% for status_key, status_label in columns %}
@@ -625,7 +627,7 @@ function renderTaskKanban(tasks) {
     if (!board) return;
     _clearKvIntervals();
 
-    var columns = { suggested: [], backlog: [], scheduled: [], triage: [], in_progress: [], done: [] };
+    var columns = { suggested: [], backlog: [], scheduled: [], triage: [], in_progress: [], pr_opened: [], blocked: [], done: [] };
     tasks.forEach(function(t) {
         var s = t.status || 'backlog';
         // 'decomposed' and 'needs_decomposition' are internal scheduler states —
@@ -633,6 +635,13 @@ function renderTaskKanban(tasks) {
         // needs_decomposition = queued for LLM decomposer next cycle.
         // Both belong in Done visually (work is handed off); never bucket as Backlog.
         if (s === 'decomposed' || s === 'needs_decomposition') s = 'done';
+        // Lifecycle states (migration 260). 'pr_opened' has its own "Awaiting
+        // Merge" column. ci_failed/merge_conflict/changes_requested (transient
+        // PR-review states), failed (terminal), token_exhausted (paused) and
+        // validating (awaiting integration) group under "Blocked" — previously
+        // they fell into Backlog, misleadingly reading as fresh queued work.
+        if (s === 'ci_failed' || s === 'merge_conflict' || s === 'changes_requested'
+            || s === 'failed' || s === 'token_exhausted' || s === 'validating') s = 'blocked';
         if (s === 'triage' && !columns['triage']) s = 'backlog';
         if (columns[s]) columns[s].push(t); else columns.backlog.push(t);
     });
