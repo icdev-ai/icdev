@@ -139,6 +139,20 @@ class LLMProvider(ABC):
             True if the model can accept requests.
         """
 
+    def reset_client(self) -> None:
+        """Drop any cached SDK/HTTP client so the next call rebuilds it.
+
+        Called by the router when the egress proxy rotates: SDK clients
+        (Anthropic/OpenAI) read proxy env only at construction, so a cached
+        client must be invalidated to pick up a new proxy. ``requests``-based
+        providers (e.g. Ollama) read env per request and need no rebuild.
+
+        The default resets the conventional ``self._client`` attribute if
+        present; providers that cache under a different name should override.
+        """
+        if getattr(self, "_client", None) is not None:
+            self._client = None
+
 
 # ---------------------------------------------------------------------------
 # Abstract base: Embedding Provider
