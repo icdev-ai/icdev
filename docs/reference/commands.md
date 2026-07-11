@@ -2334,6 +2334,24 @@ python -c "from tools.cortex import load_cortex_config; c = load_cortex_config()
 
 # Verify every cortex_* routing chain retains a local ollama tier (raises CortexAirgapError if not)
 python -c "from tools.cortex import assert_airgap_ready; assert_airgap_ready(); print('cortex air-gap ready')"
+
+# --- Domain lenses (domains/: data-driven config profiles over the facade, ctx-canvas-04) ---
+# Load the security (XSIAM-style) lens; scope search to threat/vuln/incident sources
+python -c "from tools.cortex import load_domain_profile, list_domain_names; print(list_domain_names()); print(load_domain_profile('security').sources)"
+
+# --- MCP server (cortex_server.py: 7 cortex_* tools, ctx-expose-01) ---
+# Start the Cortex MCP server over stdio (cortex_search/ask/complete/classify/extract/govern/agent_launch)
+python tools/mcp/cortex_server.py
+
+# --- REST API v1 (rest_v1.py folded onto the /cortex blueprint, ctx-expose-02) ---
+# POST JSON to the versioned surface (identity derived server-side; only `domain` is caller-supplied):
+#   POST /cortex/api/v1/search   {"query": "...", "top_k": 5, "strategy": "auto", "domain": "security"}
+#   POST /cortex/api/v1/ask      {"question": "...", "mode": "auto", "summarize": true}
+#   POST /cortex/api/v1/complete {"prompt": "...", "system_prompt": "..."}
+#   POST /cortex/api/v1/classify {"text": "...", "labels": ["a", "b"]}
+#   POST /cortex/api/v1/extract  {"text": "...", "schema": {"type": "object"}}
+#   POST /cortex/api/v1/govern   {"text": "...", "retrieval": false}
+# Governed ops return 403 + serialized GovernanceReport on a TRUST block; 400 on validation; 422 unanswerable.
 ```
 
 Related MCP tools (RAG taxonomy shared by the analyst/search routers): `query_classify`

@@ -45,8 +45,9 @@ Categories:
     integrity (2)
     nova (9)
     pulse (1)
+    cortex (7)
 
-Total: 280 tools, 6 resources
+Total: 443 tools, 6 resources
 """
 
 TOOL_REGISTRY = {
@@ -6968,6 +6969,220 @@ TOOL_REGISTRY = {
             "type": "object",
             "properties": {"text": {"type": "string", "description": "Markdown or plain text to analyze"}},
             "required": ["text"],
+        },
+    },
+    # ============================================================
+    # CORTEX — Unified AI Facade (ctx-expose-01, 7 tools)
+    # ============================================================
+    # Programmable MCP surface of the ICDEV Cortex pattern: one unified layer
+    # over LLMRouter / RAG / KG / DIC / IQE / ACE with an enforced TRUST
+    # (governance) pipeline. Handlers are thin one-liners into tools/cortex/api.
+    # Every tool exposes optional tenant_id/classification/domain/user_id
+    # (mapped to CortexContext) for RLS + read-down.
+    "cortex_search": {
+        "category": "cortex",
+        "module": "tools.mcp.cortex_server",
+        "handler": "handle_cortex_search",
+        "description": (
+            "Unified Cortex search across all retrieval backends (rag / graph / dic / kb) with "
+            "agentic strategy routing + CRAG corrective loop. Returns normalized CortexSearchResults "
+            "(score 0-1, per-result citation + routing metadata)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Natural language search query"},
+                "top_k": {"type": "integer", "description": "Results per backend (default 5)", "default": 5},
+                "strategy": {
+                    "type": "string",
+                    "description": "auto | rag | graph | dic | kb | all (auto classifies + routes)",
+                    "default": "auto",
+                },
+                "tenant_id": {"type": "string", "description": "Tenant ID for multi-tenant RLS isolation"},
+                "classification": {"type": "string", "description": "Data classification (default CUI)"},
+                "domain": {"type": "string", "description": "Optional domain scope (intersects backends)"},
+                "user_id": {"type": "string", "description": "Caller user ID (RLS)"},
+                "fail_closed": {"type": "boolean", "default": False},
+            },
+            "required": ["query"],
+        },
+    },
+    "cortex_ask": {
+        "category": "cortex",
+        "module": "tools.mcp.cortex_server",
+        "handler": "handle_cortex_ask",
+        "description": (
+            "Answer a natural-language data question through the Cortex Analyst (IQE primary, "
+            "NL->SQL fallback) with a shared injection/SELECT-only safety screen. Returns a "
+            "CortexResult with row data, executed IQE/SQL, analyst citations, and TRUST labels."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "question": {"type": "string", "description": "Free-form data question"},
+                "mode": {"type": "string", "description": "auto | iqe | nlq", "default": "auto"},
+                "canvas": {"type": "string", "description": "Restrict to one canvas's collections"},
+                "collections": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Explicit collection names (bypasses resolution)",
+                },
+                "summarize": {
+                    "type": "boolean",
+                    "description": "Replace deterministic row summary with cited LLM prose",
+                    "default": False,
+                },
+                "tenant_id": {"type": "string", "description": "Tenant ID for multi-tenant RLS isolation"},
+                "classification": {"type": "string", "description": "Data classification (default CUI)"},
+                "domain": {"type": "string", "description": "Optional domain scope"},
+                "user_id": {"type": "string", "description": "Caller user ID (RLS)"},
+                "fail_closed": {"type": "boolean", "default": False},
+            },
+            "required": ["question"],
+        },
+    },
+    "cortex_complete": {
+        "category": "cortex",
+        "module": "tools.mcp.cortex_server",
+        "handler": "handle_cortex_complete",
+        "description": (
+            "Free-form LLM completion via the config-routed Cortex chain, governed end to end "
+            "(injection screen, input/output redaction, provenance, audit). Returns a CortexResult "
+            "with provider/model/cost/latency accounting and the GovernanceReport."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "prompt": {"type": "string", "description": "User prompt text"},
+                "system_prompt": {"type": "string", "description": "Optional system prompt"},
+                "max_tokens": {"type": "integer", "description": "Max output tokens (optional)"},
+                "temperature": {"type": "number", "description": "Sampling temperature (optional)"},
+                "tenant_id": {"type": "string", "description": "Tenant ID for multi-tenant RLS isolation"},
+                "classification": {"type": "string", "description": "Data classification (default CUI)"},
+                "domain": {"type": "string", "description": "Optional domain scope"},
+                "user_id": {"type": "string", "description": "Caller user ID (cost attribution / RLS)"},
+                "fail_closed": {"type": "boolean", "default": False},
+            },
+            "required": ["prompt"],
+        },
+    },
+    "cortex_classify": {
+        "category": "cortex",
+        "module": "tools.mcp.cortex_server",
+        "handler": "handle_cortex_classify",
+        "description": (
+            "Classify text into exactly one of the supplied labels via the Cortex chain, degrading "
+            "to deterministic query-classifier heuristics when the router is unavailable. Returns a "
+            "CortexResult whose text is the chosen label."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string", "description": "Text to classify"},
+                "labels": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Candidate labels (exactly one is chosen)",
+                },
+                "tenant_id": {"type": "string", "description": "Tenant ID for multi-tenant RLS isolation"},
+                "classification": {"type": "string", "description": "Data classification (default CUI)"},
+                "domain": {"type": "string", "description": "Optional domain scope"},
+                "user_id": {"type": "string", "description": "Caller user ID (RLS)"},
+                "fail_closed": {"type": "boolean", "default": False},
+            },
+            "required": ["text", "labels"],
+        },
+    },
+    "cortex_extract": {
+        "category": "cortex",
+        "module": "tools.mcp.cortex_server",
+        "handler": "handle_cortex_extract",
+        "description": (
+            "Extract structured data from text as a single JSON object conforming to the supplied "
+            "JSON schema (native structured output when the provider supports it, fenced-JSON parse "
+            "otherwise). Returns a CortexResult whose text is the extracted JSON."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string", "description": "Source text to extract from"},
+                "schema": {"type": "object", "description": "JSON schema the output must conform to"},
+                "tenant_id": {"type": "string", "description": "Tenant ID for multi-tenant RLS isolation"},
+                "classification": {"type": "string", "description": "Data classification (default CUI)"},
+                "domain": {"type": "string", "description": "Optional domain scope"},
+                "user_id": {"type": "string", "description": "Caller user ID (RLS)"},
+                "fail_closed": {"type": "boolean", "default": False},
+            },
+            "required": ["text", "schema"],
+        },
+    },
+    "cortex_govern": {
+        "category": "cortex",
+        "module": "tools.mcp.cortex_server",
+        "handler": "handle_cortex_govern",
+        "description": (
+            "Run the enforced Cortex TRUST chain standalone over already-produced text: gateway "
+            "pre-check, input/output redaction, citation + content grounding against the supplied "
+            "sources, provenance, and audit. Returns the GovernanceReport."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string", "description": "Drafted text to govern"},
+                "sources": {
+                    "type": ["integer", "array"],
+                    "description": "Grounding sources: an int source count, or a list of id strings/dicts",
+                    "items": {"type": ["string", "object"]},
+                },
+                "tenant_id": {"type": "string", "description": "Tenant ID for multi-tenant RLS isolation"},
+                "classification": {"type": "string", "description": "Data classification (default CUI)"},
+                "domain": {"type": "string", "description": "Optional domain scope"},
+                "user_id": {"type": "string", "description": "Caller user ID (RLS)"},
+                "fail_closed": {"type": "boolean", "default": False},
+            },
+            "required": ["text"],
+        },
+    },
+    "cortex_agent_launch": {
+        "category": "cortex",
+        "module": "tools.mcp.cortex_server",
+        "handler": "handle_cortex_agent_launch",
+        "description": (
+            "Run a goal through the multi-agent stack, governed end to end. mode='team' (or 'auto' "
+            "with roles) launches a non-blocking ACE run and returns its instance_id; mode='single' "
+            "(or 'auto' without roles) runs a single agent-loop and returns its final content. "
+            "Returns a CortexResult."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "goal": {"type": "string", "description": "The goal / problem statement for the agent(s)"},
+                "roles": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "ACE role IDs for a team launch (implies mode=team under auto)",
+                },
+                "mode": {"type": "string", "description": "auto | team | single", "default": "auto"},
+                "trigger_source": {"type": "string", "description": "Audit trigger source label"},
+                "trigger_ref": {"type": "string", "description": "Audit trigger reference"},
+                "webhook_url": {"type": "string", "description": "Optional completion webhook (team mode)"},
+                "llm_function": {
+                    "type": "string",
+                    "description": "Routing function for the single-agent loop (default code_generation)",
+                    "default": "code_generation",
+                },
+                "max_iterations": {
+                    "type": "integer",
+                    "description": "Max single-agent loop iterations (default 12)",
+                    "default": 12,
+                },
+                "tenant_id": {"type": "string", "description": "Tenant ID (RLS + cost attribution)"},
+                "classification": {"type": "string", "description": "Data classification (default CUI)"},
+                "domain": {"type": "string", "description": "Optional domain scope"},
+                "user_id": {"type": "string", "description": "Caller user ID (cost attribution / RLS)"},
+                "fail_closed": {"type": "boolean", "default": False},
+            },
+            "required": ["goal"],
         },
     },
 }

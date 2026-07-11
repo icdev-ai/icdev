@@ -423,3 +423,13 @@ def api_iqe_query():
     except Exception as exc:
         logger.warning("cortex: iqe-query error: %s", exc)
         return jsonify({"error": str(exc), "iqe": iqe_str}), 500
+
+
+# ---- Cortex REST API v1 (ctx-expose-02) ----
+# Fold the programmatic /cortex/api/v1/* surface onto THIS canvas blueprint so
+# the web canvas and the machine API share one Blueprint, one url_prefix, and
+# one auth path (the dashboard auth middleware, which does not defer
+# /cortex/api/v1 to the JWT-only /api/v1 seam).
+from .rest_v1 import register_rest_v1  # noqa: E402
+
+register_rest_v1(cortex_bp)

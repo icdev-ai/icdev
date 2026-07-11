@@ -37,9 +37,27 @@ from .schemas import (
     CortexSearchResult,
     GovernanceReport,
 )
+from .domains import (
+    SECURITY_DOMAIN,
+    DomainProfile,
+    apply_persona,
+    domain_intents,
+    filter_by_sources,
+    list_domain_names,
+    load_domain_profile,
+    triage_summary,
+)
 from .search_service import CORTEX_STRATEGIES, classify_route
 
 __all__ = [
+    "SECURITY_DOMAIN",
+    "DomainProfile",
+    "apply_persona",
+    "domain_intents",
+    "filter_by_sources",
+    "list_domain_names",
+    "load_domain_profile",
+    "triage_summary",
     "AIRGAP_ENV_VAR",
     "CORTEX_ANALYST_FUNCTION",
     "CORTEX_BACKENDS",
