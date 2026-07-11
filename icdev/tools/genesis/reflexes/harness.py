@@ -110,8 +110,15 @@ def _create_degradation_card(
     alert: dict,
     echo_context: str = "",
     skill_prompt: str = "",
+    status: str = "backlog",
 ) -> str | None:
-    """Insert a kanban_tasks row for a degradation alert."""
+    """Insert a kanban_tasks row for a degradation alert.
+
+    ``status`` defaults to 'backlog' (auto-dispatched remediation) for reflex
+    gate failures. Delivery-pipeline health alerts pass status='suggested' so a
+    human triages them in the Suggested lane before any dispatch — pipeline
+    pass-rate degradation is an observation to review, not a concrete code task
+    to auto-run."""
     import uuid
     reflex = alert["reflex"]
     metric = alert["metric"]
@@ -140,12 +147,13 @@ def _create_degradation_card(
             """
             INSERT INTO kanban_tasks
                 (id, title, description, status, priority, dispatch_source, created_at, updated_at)
-            VALUES (%s, %s, %s, 'backlog', %s, 'harness_reflex', %s, %s)
+            VALUES (%s, %s, %s, %s, %s, 'harness_reflex', %s, %s)
             """,
             (
                 task_id,
                 title,
                 body,
+                status,
                 "high" if severity == "high" else "medium",
                 _utcnow(),
                 _utcnow(),
@@ -319,7 +327,31 @@ def run(config: dict[str, Any], trust: Any) -> dict[str, Any]:
             except Exception as exc:
                 LOG.warning("[harness] co-learning pass failed: %s", exc)
 
-    status = "ok" if not alerts else ("degraded" if new_cards else "cards_exist")
+    # Delivery-pipeline co-learner (Phase 3a): watch the task pipeline's gate
+    # pass-rates (from kanban_verifications) and surface a degradation card when
+    # one degrades. Best-effort — never break the harness cycle.
+    pipeline_alerts: list[dict] = []
+    try:
+        from tools.genesis.harness.eval_harness import check_pipeline_gates
+        pipeline_alerts = check_pipeline_gates()
+        for palert in pipeline_alerts:
+            preflex, pmetric = palert["reflex"], palert["metric"]
+            if _open_degradation_card_exists(preflex, pmetric):
+                LOG.debug("[harness] skipping %s.%s — card already open", preflex, pmetric)
+                continue
+            if not dry_run:
+                # Pipeline health degradation → Suggested lane (human triages
+                # before dispatch); reflex gate failures above stay auto-dispatch.
+                _pcard = _create_degradation_card(palert, status="suggested")
+                if _pcard:
+                    new_cards.append(_pcard)
+            else:
+                LOG.info("[harness] [dry-run] would create pipeline card for %s.%s", preflex, pmetric)
+                new_cards.append(f"dry-run:{preflex}.{pmetric}")
+    except Exception as _pexc:
+        LOG.warning("[harness] delivery-pipeline co-learner skipped: %s", _pexc)
+
+    status = "ok" if not (alerts or pipeline_alerts) else ("degraded" if new_cards else "cards_exist")
 
     # Meta-harness: run once per day to propose structural amendments
     meta_result: dict = {}

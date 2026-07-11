@@ -42,6 +42,28 @@ _DEFAULT_GATES = {
     "min_decisions": 10,
 }
 
+# Delivery-pipeline gate pass-rate floors (Phase 3a co-learner). The harness
+# watches the task pipeline's gate pass-rates (from kanban_verifications) and
+# surfaces a degradation card when one drops below its floor over a meaningful
+# sample. Override via args/genesis_config.yaml -> harness.pipeline_gates.
+_DEFAULT_PIPELINE_GATES = {
+    "codelens_pass_rate_min": 0.85,
+    "coherence_pass_rate_min": 0.85,
+    "conformance_pass_rate_min": 0.60,
+    "pytest_pass_rate_min": 0.75,
+    "e2e_pass_rate_min": 0.70,
+    "pipeline_min_sample": 10,
+}
+
+# gate key -> (kanban_verifications column, threshold key, human label)
+_PIPELINE_GATE_COLUMNS = {
+    "codelens": ("codelens_passed", "codelens_pass_rate_min", "Code Quality (CodeLens)"),
+    "coherence": ("coherence_passed", "coherence_pass_rate_min", "Coherence"),
+    "conformance": ("review_passed", "conformance_pass_rate_min", "Conformance Review"),
+    "pytest": ("pytest_passed", "pytest_pass_rate_min", "Unit Tests (pytest)"),
+    "e2e": ("e2e_passed", "e2e_pass_rate_min", "E2E"),
+}
+
 
 # ---------------------------------------------------------------------------
 # Config loader
@@ -503,6 +525,117 @@ def check_gates() -> list[dict[str, Any]]:
             })
 
     return alerts
+
+
+# ---------------------------------------------------------------------------
+# Delivery-pipeline health (Phase 3a co-learner)
+# ---------------------------------------------------------------------------
+
+def _pipeline_thresholds() -> dict:
+    """Pipeline gate floors: code defaults overridable via
+    genesis_config.yaml -> harness.pipeline_gates."""
+    base = dict(_DEFAULT_PIPELINE_GATES)
+    try:
+        cfg = _load_harness_config()
+        # _load_harness_config only surfaces gates/anomaly; re-read pipeline_gates
+        search = Path(__file__).resolve()
+        for parent in search.parents:
+            candidate = parent / "args" / "genesis_config.yaml"
+            if candidate.exists():
+                import yaml  # noqa: PLC0415
+                with open(candidate, encoding="utf-8") as f:
+                    raw = yaml.safe_load(f) or {}
+                base.update((raw.get("harness", {}) or {}).get("pipeline_gates", {}) or {})
+                break
+        _ = cfg  # keep the idle-safe load pattern consistent
+    except Exception as exc:
+        LOG.debug("[harness] pipeline_gates config load failed, using defaults: %s", exc)
+    return base
+
+
+def compute_pipeline_health(window_days: int = 14) -> dict[str, Any]:
+    """Per-gate pass-rates for the delivery pipeline over the recent window,
+    read from kanban_verifications. NULL/not_run rows are excluded; e2e counts
+    only rows where e2e_ran=1. Never raises — returns {} on error."""
+    conn = None
+    try:
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=int(window_days))).isoformat()
+        conn = _conn()
+        rows = conn.execute(
+            "SELECT codelens_passed, coherence_passed, review_passed, "
+            "pytest_passed, e2e_ran, e2e_passed "
+            "FROM kanban_verifications WHERE verified_at >= %s",
+            (cutoff,),
+        ).fetchall()
+        rows = [dict(r) for r in rows]
+    except Exception as exc:
+        LOG.debug("[harness] compute_pipeline_health query failed: %s", exc)
+        return {}
+    finally:
+        _safe_close(conn)
+
+    def _truthy(v: Any) -> bool | None:
+        if v in (1, True, "1", "true", "True"):
+            return True
+        if v in (0, False, "0", "false", "False"):
+            return False
+        return None  # NULL / not_run
+
+    rates: dict[str, float] = {}
+    samples: dict[str, int] = {}
+    for gate, (col, _tkey, _label) in _PIPELINE_GATE_COLUMNS.items():
+        passed = failed = 0
+        for r in rows:
+            if gate == "e2e" and _truthy(r.get("e2e_ran")) is not True:
+                continue  # e2e didn't run for this task → not part of the rate
+            val = _truthy(r.get(col))
+            if val is True:
+                passed += 1
+            elif val is False:
+                failed += 1
+        n = passed + failed
+        samples[gate] = n
+        rates[gate] = (passed / n) if n else None
+    return {"gate_pass_rates": rates, "sample_sizes": samples, "window_days": int(window_days)}
+
+
+def check_pipeline_gates() -> list[dict[str, Any]]:
+    """Delivery-pipeline degradation alerts (same dict shape as check_gates, so
+    reflexes.harness._create_degradation_card consumes them unchanged). A gate
+    alerts only when its sample >= pipeline_min_sample AND pass-rate < floor —
+    the min-sample guard prevents noise alerts on a handful of tasks. Never
+    raises → returns []."""
+    try:
+        th = _pipeline_thresholds()
+        min_sample = int(th.get("pipeline_min_sample", _DEFAULT_PIPELINE_GATES["pipeline_min_sample"]))
+        health = compute_pipeline_health()
+        rates = health.get("gate_pass_rates", {})
+        samples = health.get("sample_sizes", {})
+        alerts: list[dict] = []
+        for gate, (_col, tkey, label) in _PIPELINE_GATE_COLUMNS.items():
+            rate = rates.get(gate)
+            n = samples.get(gate, 0)
+            floor = float(th.get(tkey, _DEFAULT_PIPELINE_GATES[tkey]))
+            if rate is None or n < min_sample or rate >= floor:
+                continue
+            alerts.append({
+                "reflex": "delivery_pipeline",
+                "metric": f"{gate}_pass_rate",
+                "value": float(rate),
+                "threshold": floor,
+                "adaptive": False,
+                "severity": "high" if gate in ("codelens", "coherence") else "medium",
+                "recommendation": (
+                    f"Delivery-pipeline {label} pass-rate {rate:.0%} < {floor:.0%} "
+                    f"over the last {n} verified task(s). Investigate recurring "
+                    f"{label} failures in kanban_verifications; consider whether "
+                    "task specs / acceptance criteria or the gate config need attention."
+                ),
+            })
+        return alerts
+    except Exception as exc:
+        LOG.debug("[harness] check_pipeline_gates failed: %s", exc)
+        return []
 
 
 # ---------------------------------------------------------------------------
