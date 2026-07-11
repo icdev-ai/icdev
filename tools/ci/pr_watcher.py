@@ -35,6 +35,7 @@ from tools.logging.icdev_logger import get_logger
 
 import argparse
 import json
+import os
 import pathlib
 import re
 import subprocess
@@ -42,7 +43,7 @@ import sys
 import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
 
@@ -124,6 +125,45 @@ def _parse_pr_url(text: Optional[str]) -> Optional[str]:
         return None
     match = _PR_URL_RE.search(text)
     return match.group(0) if match else None
+
+
+def _enforced_done_ok(get_connection, task_id: str) -> Tuple[bool, str]:
+    """Enforced done-gate for auto-merge (Governed Delivery Pipeline).
+
+    Under ``KANBAN_PIPELINE_ENFORCE``, a kanban PR may auto-merge only after the
+    task's ICDEV done-verification (conformance + code-quality/coherence/tests,
+    recorded in ``kanban_verifications``) has PASSED — CI green alone is not
+    enough. This closes the gap where a conformance failure could still be
+    merged (a PR can go CI-green while ``review_passed`` is false).
+
+    Returns ``(ok, reason)``. Enforcement OFF → always ``ok`` (no new blocker,
+    behavior unchanged). **Fail-closed** under enforcement: a missing, failed, or
+    unreadable verification holds the merge (the watcher retries next cycle).
+    """
+    if os.environ.get("KANBAN_PIPELINE_ENFORCE", "0").strip().lower() not in ("1", "true", "yes"):
+        return True, "enforcement off"
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT result, review_passed FROM kanban_verifications "
+            "WHERE task_id = %s ORDER BY verified_at DESC LIMIT 1",
+            (task_id,),
+        )
+        row = cur.fetchone()
+    except Exception as exc:  # noqa: BLE001 — hold the merge, don't merge blind
+        return False, f"enforced gate: verification unreadable, holding ({exc})"
+    if not row:
+        return False, "enforced gate: awaiting ICDEV done-verification"
+    result = str((row["result"] if isinstance(row, dict) else row[0]) or "").lower()
+    review_passed = row["review_passed"] if isinstance(row, dict) else row[1]
+    if result == "failed":
+        return False, "enforced gate: ICDEV verification result=failed (e.g. conformance)"
+    if review_passed == 0:  # int 0 or bool False — conformance failed (None = not judged, allowed)
+        return False, "enforced gate: conformance review_passed=false"
+    if result in ("pass", "passed", "bypassed"):
+        return True, f"enforced gate passed (result={result})"
+    return False, f"enforced gate: verification not yet passed (result={result or 'pending'})"
 
 
 def list_pr_tasks(
@@ -579,6 +619,22 @@ class PRWatcher:
                         resume_cycle=cycle,
                     )
                 else:
+                    # Enforced done-gate (Governed Delivery Pipeline): under
+                    # KANBAN_PIPELINE_ENFORCE, hold the merge until the task's
+                    # ICDEV verification (conformance + gates) has PASSED — CI
+                    # green alone is not enough.
+                    gate_ok, gate_reason = _enforced_done_ok(get_conn, task["id"])
+                    if not gate_ok:
+                        action = WatcherAction(
+                            task_id=task["id"], pr_url=pr_url,
+                            classification="done",
+                            action="wait",
+                            reason=gate_reason,
+                            resume_cycle=cycle,
+                        )
+                        report.actions.append(action)
+                        self._audit(action)
+                        continue
                     # Base-branch guard (incident 2026-07-08, PR #114):
                     # never auto-merge a PR whose base is not the repo
                     # default branch — merging into a feature branch
