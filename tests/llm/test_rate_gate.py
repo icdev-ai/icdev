@@ -6,7 +6,7 @@ import pytest
 
 from tools.llm import rate_gate
 from tools.llm.rate_gate import rate_gate as gate
-from tools.llm.rate_gate import resolve_rate_limit
+from tools.llm.rate_gate import resolve_lease_config, resolve_rate_limit
 
 
 @pytest.fixture(autouse=True)
@@ -16,11 +16,73 @@ def _clean(monkeypatch):
         "ICDEV_LLM_MAX_PARALLEL",
         "ICDEV_LLM_PAUSE_MIN",
         "ICDEV_LLM_PAUSE_MAX",
+        "ICDEV_LLM_RATE_LIMIT_SCOPE",
+        "ICDEV_LLM_LEASE_NAME",
+        "ICDEV_LLM_LEASE_TIMEOUT",
     ):
         monkeypatch.delenv(var, raising=False)
     rate_gate._reset_for_tests()
     yield
     rate_gate._reset_for_tests()
+
+
+def test_lease_config_process_by_default():
+    assert resolve_lease_config({}) == (False, "llm", None)
+    assert resolve_lease_config({"rate_limit": {"scope": "process"}}) == (False, "llm", None)
+
+
+def test_lease_config_global_from_config():
+    cross, name, timeout = resolve_lease_config(
+        {"rate_limit": {"scope": "global", "lease_name": "k", "lease_timeout_seconds": 30}}
+    )
+    assert cross is True and name == "k" and timeout == 30.0
+
+
+def test_lease_config_env_overrides(monkeypatch):
+    monkeypatch.setenv("ICDEV_LLM_RATE_LIMIT_SCOPE", "global")
+    monkeypatch.setenv("ICDEV_LLM_LEASE_NAME", "envkey")
+    monkeypatch.setenv("ICDEV_LLM_LEASE_TIMEOUT", "12.5")
+    assert resolve_lease_config({"rate_limit": {"scope": "process"}}) == (True, "envkey", 12.5)
+
+
+def test_gate_cross_process_acquires_and_releases_lease(monkeypatch):
+    monkeypatch.setattr(rate_gate.time, "sleep", lambda s: None)
+    monkeypatch.setattr(rate_gate.random, "uniform", lambda a, b: 0.0)
+    calls = {}
+
+    class _FakeLease:
+        def release(self):
+            calls["released"] = True
+
+    def _fake_acquire(name, max_slots, timeout):
+        calls["acquire"] = (name, max_slots, timeout)
+        return _FakeLease()
+
+    monkeypatch.setattr(rate_gate._cpl, "acquire", _fake_acquire)
+    with gate(1, 3.0, 5.0, cross_process=True, lease_name="k", lease_timeout=9.0):
+        pass
+    assert calls["acquire"] == ("k", 1, 9.0)
+    assert calls.get("released") is True
+
+
+def test_gate_cross_process_failopen_when_lease_none(monkeypatch):
+    # Lease unavailable -> acquire returns None -> call still proceeds, no crash.
+    monkeypatch.setattr(rate_gate.time, "sleep", lambda s: None)
+    monkeypatch.setattr(rate_gate.random, "uniform", lambda a, b: 0.0)
+    monkeypatch.setattr(rate_gate._cpl, "acquire", lambda *a, **k: None)
+    ran = []
+    with gate(1, 3.0, 5.0, cross_process=True):
+        ran.append(True)
+    assert ran == [True]
+
+
+def test_gate_no_lease_when_cross_process_false(monkeypatch):
+    monkeypatch.setattr(rate_gate.time, "sleep", lambda s: None)
+    called = []
+    monkeypatch.setattr(rate_gate._cpl, "acquire", lambda *a, **k: called.append(True))
+    with gate(1, 3.0, 5.0, cross_process=False):
+        pass
+    assert called == []  # in-process only — lease never touched
 
 
 def test_disabled_by_default_and_no_op(monkeypatch):
