@@ -1033,8 +1033,14 @@ def _load_registry_nav_dirs() -> Set[str]:
 
     dirs: Set[str] = set()
     for comp in data.get("components", []):
-        if not isinstance(comp, dict) or comp.get("kind") != "canvas":
+        if not isinstance(comp, dict):
             continue
+        # A registry nav link renders via nav_tree / get_nav_context() for ANY
+        # component that declares nav.section — not only kind=canvas. Core
+        # extensions with a page (e.g. standards_catalog, kind=core_extension,
+        # nav.section=Platform, href=/standards-catalog) are genuinely
+        # navigable, so match get_nav_context's kind-agnostic logic here or the
+        # completeness gate false-positives on a page that IS reachable.
         nav = comp.get("nav") or {}
         if not isinstance(nav, dict) or not nav.get("section"):
             continue
