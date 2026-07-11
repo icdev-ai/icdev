@@ -775,6 +775,17 @@ class PRWatcher:
 
 
 def main(argv: Optional[List[str]] = None) -> int:
+    # Load .env so KANBAN_PIPELINE_ENFORCE (and API keys) are set even when the
+    # daemon is started outside a shell that exported them — mirrors
+    # kanban_scheduler. Without this the enforced done-gate goes inert on a bare
+    # restart, silently reverting to CI-only auto-merge.
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv(ROOT / ".env")
+    except ImportError:
+        pass
+
     ap = argparse.ArgumentParser(
         description="OPT-70 autonomous PR watcher"
     )

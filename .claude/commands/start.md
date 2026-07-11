@@ -174,6 +174,16 @@ with get_connection() as conn:
    echo "Kanban scheduler PID: $($ks.Id)"
    ```
 
+8b. Always start the PR Watcher fresh (autonomous kanban-PR merge, gated on the enforced done-verification). Kill any stale/duplicate instance first, then launch. It loads `.env` itself (so `KANBAN_PIPELINE_ENFORCE` is honored), but two instances would race on auto-merge — always dedup:
+   ```powershell
+   Get-Process python -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like "*pr_watcher*" } | Stop-Process -Force -ErrorAction SilentlyContinue
+   Start-Sleep -Seconds 1
+   $env:PYTHONPATH = "C:\AI\ICDev"
+   $pw = Start-Process python -ArgumentList "tools/ci/pr_watcher.py","--daemon","--interval","30" -RedirectStandardOutput ".tmp/pr_watcher.log" -RedirectStandardError ".tmp/pr_watcher_err.log" -WindowStyle Hidden -PassThru
+   Set-Content ".tmp/pr_watcher.pid" -Value $pw.Id -Encoding ascii
+   echo "PR watcher PID: $($pw.Id)"
+   ```
+
 9. Check if the Genesis daemon (failure_triage, oracle_triage, awareness, heal, and 20+ other reflexes) is running.
    Write a temp check script (avoids PowerShell quote-escaping):
    ```powershell
