@@ -18361,7 +18361,7 @@ CREATE TABLE public.kanban_tasks (
     tags text,
     classification character varying(50) DEFAULT 'CUI'::character varying,
     CONSTRAINT kanban_tasks_priority_check CHECK ((priority = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text, 'critical'::text]))),
-    CONSTRAINT kanban_tasks_status_check CHECK ((status = ANY (ARRAY['backlog'::text, 'scheduled'::text, 'in_progress'::text, 'done'::text, 'token_exhausted'::text, 'suggested'::text, 'decomposed'::text, 'validating'::text, 'needs_decomposition'::text]))),
+    CONSTRAINT kanban_tasks_status_check CHECK ((status = ANY (ARRAY['backlog'::text, 'scheduled'::text, 'in_progress'::text, 'done'::text, 'token_exhausted'::text, 'suggested'::text, 'decomposed'::text, 'validating'::text, 'needs_decomposition'::text, 'pr_opened'::text, 'ci_failed'::text, 'merge_conflict'::text, 'changes_requested'::text, 'failed'::text]))),
     CONSTRAINT kanban_tasks_task_type_check CHECK ((task_type = ANY (ARRAY['build'::text, 'run'::text, 'fix'::text, 'research'::text, 'deploy'::text, 'test'::text, 'chore'::text])))
 );
 

@@ -255,7 +255,7 @@ exclude = [
     "static/**/*.css", "static/**/*.js",
     "static/vendor/**/*.js", "static/vendor/**/*.css",
 ]
-"icdev.tools.db" = ["migrations/**/*.sql", "migrations/**/*.py"]
+"icdev.tools.db" = ["migrations/**/*.sql", "migrations/**/*.py", "migrations/**/*.json"]
 
 [tool.setuptools.exclude-package-data]
 "*" = ["__pycache__/*", "*.pyc", "*.pyo"]

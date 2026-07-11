@@ -114,16 +114,21 @@ _STATE_TO_DB_STATUS: Dict[KanbanState, str] = {
     KanbanState.BACKLOG: "backlog",
     KanbanState.SCHEDULED: "scheduled",
     KanbanState.IN_PROGRESS: "in_progress",
-    KanbanState.PR_OPENED: "in_progress",
-    KanbanState.CI_FAILED: "in_progress",
-    KanbanState.MERGE_CONFLICT: "in_progress",
-    KanbanState.CHANGES_REQUESTED: "in_progress",
+    # Lifecycle states persist as themselves (migration 260 widened the
+    # kanban_tasks.status CHECK). Previously these collapsed to in_progress /
+    # token_exhausted, which hid "PR open, awaiting merge" from the board and let
+    # genuine failures masquerade as resumable pauses. None of these are in the
+    # dispatcher pickup set (backlog/scheduled/in_progress), so making them
+    # distinct does not cause re-dispatch — it stops pr_opened tasks from being
+    # counted as active work and stops failed tasks from auto-resuming.
+    KanbanState.PR_OPENED: "pr_opened",
+    KanbanState.CI_FAILED: "ci_failed",
+    KanbanState.MERGE_CONFLICT: "merge_conflict",
+    KanbanState.CHANGES_REQUESTED: "changes_requested",
     KanbanState.TOKEN_EXHAUSTED: "token_exhausted",
     KanbanState.DECOMPOSED: "decomposed",
     KanbanState.DONE: "done",
-    # `failed` has no direct schema slot; map to token_exhausted so the
-    # scheduler keeps it out of the active queue.
-    KanbanState.FAILED: "token_exhausted",
+    KanbanState.FAILED: "failed",
 }
 
 
