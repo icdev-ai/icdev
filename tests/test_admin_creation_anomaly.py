@@ -20,42 +20,29 @@ from tools.dashboard.api.admin import (
     _detect_admin_creation_anomaly,
 )
 
-# ---------------------------------------------------------------------------
-# Minimal schema for temp DB used by tests
-# ---------------------------------------------------------------------------
-
-_SCHEMA = """
-CREATE TABLE IF NOT EXISTS dashboard_users (
-    id TEXT PRIMARY KEY,
-    email TEXT UNIQUE NOT NULL,
-    display_name TEXT NOT NULL,
-    role TEXT NOT NULL DEFAULT 'developer',
-    status TEXT NOT NULL DEFAULT 'active',
-    created_by TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-"""
-
 
 @pytest.fixture()
-def tmp_db(tmp_path, monkeypatch):
-    """Create a minimal dashboard DB and return its path string."""
-    db_file = tmp_path / "admin_test.db"
-    conn = sqlite3.connect(str(db_file))
-    conn.executescript(_SCHEMA)
+def tmp_db(icdev_db):
+    """Temp dashboard DB for the anomaly tests, standardized on conftest.
+
+    Uses conftest's shared ``icdev_db`` (built from MINIMAL_ICDEV_SCHEMA) rather
+    than a private per-file schema, then clears the seeded rows so these
+    count-sensitive tests control the admin population exactly.
+
+    Critically, it does NOT mock ``get_connection``: the earlier raw
+    ``sqlite3.connect`` mock bypassed StorageConnection.translate_sql, so the
+    function's PG-native ``%s`` placeholders raised OperationalError (SQLite
+    wants ``?``) and every signal was swallowed to None. Passing this temp DB
+    path — which differs from ICDEV_DB_PATH — routes get_connection through the
+    no-RLS dedicated-file branch AND translate_sql, exercising the real code
+    path. Runtime is PostgreSQL; SQLite is only the conftest-forced test
+    backend.
+    """
+    conn = sqlite3.connect(str(icdev_db))
+    conn.execute("DELETE FROM dashboard_users")
     conn.commit()
     conn.close()
-
-    # Monkeypatch get_connection so it opens the temp DB, not the real one.
-    import tools.dashboard.api.admin as admin_mod
-
-    _original_get_conn = admin_mod.get_connection
-
-    def _fake_get_connection(db_path=None, **kwargs):
-        return sqlite3.connect(db_path or str(db_file))
-
-    monkeypatch.setattr(admin_mod, "get_connection", _fake_get_connection)
-    return str(db_file)
+    return str(icdev_db)
 
 
 def _insert_admin(db_path: str, email: str, created_at: str | None = None) -> None:

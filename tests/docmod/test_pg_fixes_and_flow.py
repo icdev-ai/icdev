@@ -3,7 +3,9 @@
 hygiene, the one-click modernization scan, and collection deletion."""
 from __future__ import annotations
 
+import hashlib
 import uuid
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import flask
@@ -102,7 +104,14 @@ def _seed_chunked_doc(collection_id="col-pg", content="Use TLS 1.1 everywhere.")
         (f"{doc_id}_v1", doc_id),
     )
     chunk_id = f"rc-{uuid.uuid4().hex[:8]}"
-    conn.execute("INSERT INTO rag_chunks (id, content) VALUES (%s,%s)", (chunk_id, content))
+    # rag_chunks.content_hash is NOT NULL in the real/shared schema; the test's
+    # private CREATE (content_hash nullable) loses to it via IF NOT EXISTS, so
+    # supply the hash explicitly rather than relying on the drifted local DDL.
+    chunk_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+    conn.execute(
+        "INSERT INTO rag_chunks (id, content, content_hash) VALUES (%s,%s,%s)",
+        (chunk_id, content, chunk_hash),
+    )
     conn.execute(
         "INSERT INTO dic_chunk_links (link_id, doc_id, version_id, rag_chunk_id, "
         "collection_id, chunk_index, page, section, created_at) "
@@ -302,9 +311,15 @@ def test_awaiting_review_includes_drafted_redlines(client, db):
     scan_document(doc_id, packs={"crypto_protocols": CryptoProtocolsPack(
         config={"pack_id": "crypto_protocols"})}, force=True)
 
-    # simulate the sweep: append a redline_drafted state row for the finding
+    # simulate the sweep: append a redline_drafted state row for the finding.
+    # docmod_findings is append-only and get_findings keeps the NEWEST row per
+    # dedupe_key, so the redline row must be timestamped AFTER the scan-created
+    # open finding to supersede it. Compute now()+1d rather than a hardcoded
+    # literal (a fixed date silently rots into the past and lets the stale open
+    # row win once the wall clock passes it).
     from tools.doc_modernization import get_findings
     f = get_findings(doc_id=doc_id, state="open")[0]
+    newer_ts = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
     conn = get_connection()
     conn.execute(
         """INSERT INTO docmod_findings
@@ -314,9 +329,9 @@ def test_awaiting_review_includes_drafted_redlines(client, db):
            SELECT 'fnd-drafted-x', run_id, doc_id, version_id, pack_id, entity_label,
                   entity_type, finding_type, currency_verdict, severity,
                   'redline_drafted', finding_id, 'sug_x', dedupe_key,
-                  '2026-07-10T23:59:59'
+                  %s
            FROM docmod_findings WHERE finding_id = %s""",
-        (f["finding_id"],),
+        (newer_ts, f["finding_id"]),
     )
     conn.commit()
     conn.close()
