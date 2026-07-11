@@ -20,15 +20,27 @@ deterministic equivalent and propagate router errors to the caller.
 """
 from __future__ import annotations
 
+import functools
+import inspect
 import json
 import time
 from typing import Any, Dict, List, Optional, Union
 
 from tools.logging.icdev_logger import get_logger
 
-# Analyst endpoint (ctx-analyst-01/02/03) — re-exported so callers keep one
-# import surface for the whole facade.
-from .analyst import CortexAnalystError, CortexQueryBlocked, ask  # noqa: F401 - re-exports
+# Analyst endpoint (ctx-analyst-01/02/03). Imported as the raw impl so the
+# public ``ask`` on this module is the governance-wrapped facade (below);
+# the error types are re-exported so callers keep one import surface.
+from .analyst import CortexAnalystError, CortexQueryBlocked  # noqa: F401 - re-exports
+from .analyst import ask as _ask_impl
+
+# The enforced TRUST chain (ctx-govern-01). Every public facade on this module
+# runs through it — see _governed_facade / CORTEX_FACADES below.
+from .governance import GovernancePipeline
+
+# Unified search backend (ctx-search-01/02/04). Imported as the raw impl for
+# the same reason as ``ask``; the public ``search`` below is governance-wrapped.
+from .search_service import search as _search_impl
 
 # Behavior config + air-gap invariant live in .config (this module must stay
 # free of provider/model references — see test_no_model_id_literals_in_module).
@@ -87,6 +99,152 @@ def _coerce_context(ctx: Union[CortexContext, dict, None]) -> CortexContext:
     if isinstance(ctx, dict):
         return CortexContext.from_dict(ctx)
     return ctx
+
+
+# ---------------------------------------------------------------------------
+# Governance enforcement — no bypass path (ctx-govern-04)
+# ---------------------------------------------------------------------------
+# The names of every public Cortex facade. The introspection guard in
+# tests/cortex/test_api_governed.py asserts this set equals the public
+# functions defined in this module and that each carries __cortex_governed__,
+# so a new facade added without wrapping fails the suite instead of silently
+# bypassing the TRUST chain.
+CORTEX_FACADES = (
+    "complete",
+    "classify",
+    "extract",
+    "search",
+    "ask",
+    "govern",
+    "agent",
+)
+
+# Key under which the outer pipeline report is stashed on results whose native
+# governance must not be clobbered (``ask`` carries the analyst TRUST report;
+# ``search`` returns a list). Distinct from ``CortexResult.governance``.
+_OUTER_GOVERNANCE_KEY = "pipeline_governance"
+
+
+def _stash_outer_report(result: Any, report: GovernanceReport) -> None:
+    """Surface the outer pipeline report on a non-attach result.
+
+    ``ask``/``search`` wrap with ``attach=False`` so their native result stays
+    pristine (the analyst report on ``result.governance``; the search list
+    unchanged). The enforced-pipeline report is still observable here under
+    ``_OUTER_GOVERNANCE_KEY`` in the result's metadata.
+    """
+    report_dict = report.to_dict()
+    if isinstance(result, CortexResult):
+        result.metadata[_OUTER_GOVERNANCE_KEY] = report_dict
+    elif isinstance(result, list):
+        for item in result:
+            meta = getattr(item, "metadata", None)
+            if isinstance(meta, dict):
+                meta[_OUTER_GOVERNANCE_KEY] = report_dict
+
+
+def _governed_facade(
+    operation: str,
+    *,
+    text_param: str,
+    retrieval: bool = False,
+    attach: bool = True,
+    sources_param: Optional[str] = None,
+    return_report: bool = False,
+):
+    """Route a Cortex facade through :class:`GovernancePipeline`.
+
+    ``text_param`` names the argument screened as the governed prompt (the
+    user text — ``prompt``/``text``/``query``/``question``/``goal``); the
+    pipeline's input redaction masks it before the wrapped function ever sees
+    it. ``sources_param`` (when set) names the argument carrying the injected
+    context the output is grounded against. Every facade accepts ``ctx``,
+    which is threaded into the pipeline for RLS/redaction policy and audit.
+
+    ``attach=True`` writes the report onto the returned CortexResult
+    (complete/classify/extract/agent). ``attach=False`` leaves the native
+    result untouched and stashes the report via _stash_outer_report
+    (ask/search). ``return_report=True`` returns the GovernanceReport itself
+    instead of the wrapped result (``govern``).
+
+    The wrapper is stamped ``__cortex_governed__`` so the introspection guard
+    can prove no public facade bypasses the chain.
+    """
+
+    def decorate(func: Any):
+        sig = inspect.signature(func)
+
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            bound = sig.bind(*args, **kwargs)
+            bound.apply_defaults()
+            ctx = _coerce_context(bound.arguments.get("ctx"))
+            text = str(bound.arguments.get(text_param) or "")
+            sources = bound.arguments.get(sources_param) if sources_param else None
+
+            def _operation(governed_text: str):
+                bound.arguments[text_param] = governed_text
+                return func(*bound.args, **bound.kwargs)
+
+            result, report = GovernancePipeline(operation=operation).wrap(
+                _operation,
+                ctx,
+                prompt=text,
+                context_sources=sources,
+                retrieval=retrieval,
+                attach=attach,
+            )
+            if return_report:
+                return report
+            if not attach:
+                _stash_outer_report(result, report)
+            return result
+
+        wrapper.__cortex_governed__ = True
+        wrapper.__cortex_operation__ = operation
+        # Anchor the wrapper to this module (functools.wraps copies the impl's
+        # __module__) so the introspection guard's module filter sees it.
+        wrapper.__module__ = __name__
+        return wrapper
+
+    return decorate
+
+
+# ACE / agent-loop seams — one thin patchable indirection per backend so
+# tests can inject a stub controller / loop without importing the heavy
+# subsystems (mirrors governance._gate_* seams).
+def _get_ace_controller():
+    """Late-bound ACE controller singleton for team launches."""
+    from tools.ace.controller import ACEController
+
+    return ACEController.get_instance()
+
+
+def _run_single_agent(
+    router,
+    *,
+    system_prompt: str,
+    user_prompt: str,
+    tools: list,
+    tool_handlers: dict,
+    llm_function: str,
+    max_iterations: int,
+    ctx: CortexContext,
+):
+    """Late-bound single-agent loop for goal execution."""
+    from tools.llm.agent_loop import run_agent_loop
+
+    return run_agent_loop(
+        router,
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        tools=tools,
+        tool_handlers=tool_handlers,
+        llm_function=llm_function,
+        max_iterations=max_iterations,
+        tenant_id=ctx.tenant_id,
+        user_id=ctx.user_id,
+    )
 
 
 def _build_request(
@@ -182,6 +340,7 @@ def _parse_json_payload(content: str) -> Optional[Any]:
 # ---------------------------------------------------------------------------
 # Facade functions
 # ---------------------------------------------------------------------------
+@_governed_facade("cortex.complete", text_param="prompt", retrieval=False)
 def complete(
     prompt: str,
     function: str = CORTEX_COMPLETE_FUNCTION,
@@ -217,6 +376,7 @@ def complete(
     return _result_from_response(response, elapsed_ms=elapsed_ms)
 
 
+@_governed_facade("cortex.classify", text_param="text", retrieval=False)
 def classify(
     text: str,
     labels: List[str],
@@ -273,6 +433,7 @@ def classify(
     )
 
 
+@_governed_facade("cortex.extract", text_param="text", retrieval=False)
 def extract(
     text: str,
     schema: Dict,
@@ -304,6 +465,151 @@ def extract(
         payload = _parse_json_payload(response.content)
     text_out = json.dumps(payload, ensure_ascii=False) if payload is not None else (response.content or "")
     return _result_from_response(response, text=text_out, elapsed_ms=elapsed_ms)
+
+
+# ---------------------------------------------------------------------------
+# search / ask — governance-wrapped facades over the retrieval + analyst
+# subsystems. Both carry their own native reporting (search returns a list of
+# CortexSearchResult; ask attaches the analyst TRUST report to
+# result.governance), so the enforced pipeline wraps with attach=False: its
+# gates still run for screening + provenance + audit ("no bypass"), the native
+# result is left intact, and the outer report is surfaced under
+# _OUTER_GOVERNANCE_KEY (see _stash_outer_report). retrieval=False: neither
+# call is an LLM answer graded against injected sources — search PRODUCES the
+# sources and ask grounds its own answer internally.
+search = _governed_facade(
+    "cortex.search", text_param="query", retrieval=False, attach=False
+)(_search_impl)
+
+ask = _governed_facade(
+    "cortex.ask", text_param="question", retrieval=False, attach=False
+)(_ask_impl)
+
+
+# ---------------------------------------------------------------------------
+# govern — the pipeline as a standalone entry (ctx-govern-04)
+# ---------------------------------------------------------------------------
+@_governed_facade(
+    "cortex.govern",
+    text_param="text",
+    retrieval=True,
+    attach=False,
+    sources_param="sources",
+    return_report=True,
+)
+def govern(
+    text: str,
+    sources: Any = None,
+    ctx: Union[CortexContext, dict, None] = None,
+) -> GovernanceReport:
+    """Run the enforced TRUST chain standalone over already-produced ``text``.
+
+    The standalone governance entry for external / non-Cortex callers: pass a
+    drafted ``text`` plus the ``sources`` it should be grounded against (an int
+    count, or an iterable of id strings / dicts / CortexSearchResult) and
+    receive the :class:`GovernanceReport` — pre-check, input/output redaction,
+    citation + content grounding against ``sources``, provenance, and audit,
+    exactly as the Cortex facades run it. Lets other tools adopt the TRUST
+    chain incrementally without importing the pipeline internals.
+
+    Returns the :class:`GovernanceReport` (the caller already holds the text).
+    The function body is the identity operation the pipeline governs — the
+    decorator supplies all governance behavior.
+    """
+    return text
+
+
+# ---------------------------------------------------------------------------
+# agent — governed team / single-agent execution (ctx-govern-04)
+# ---------------------------------------------------------------------------
+@_governed_facade("cortex.agent", text_param="goal", retrieval=False)
+def agent(
+    goal: str,
+    roles: Optional[List[str]] = None,
+    ctx: Union[CortexContext, dict, None] = None,
+    *,
+    mode: str = "auto",
+    trigger_source: str = "cortex.agent",
+    trigger_ref: str = "",
+    webhook_url: str = "",
+    system_prompt: str = "You are an ICDEV autonomous agent. Complete the goal.",
+    tools: Optional[List[dict]] = None,
+    tool_handlers: Optional[Dict[str, Any]] = None,
+    llm_function: str = "code_generation",
+    max_iterations: int = 12,
+) -> CortexResult:
+    """Run a goal through the multi-agent stack, governed end to end.
+
+    Two execution modes, selected by ``mode`` (default ``"auto"``):
+
+    - **team** (``mode="team"`` or ``"auto"`` with ``roles``): launches an ACE
+      run via ``ACEController.get_instance().launch(...)``. The launch is
+      non-blocking and returns an ``instance_id``; the CortexResult ``text``
+      names the run and ``data`` carries ``instance_id``/``roles`` for the
+      caller to poll ``/coworker/<id>``.
+    - **single** (``mode="single"`` or ``"auto"`` without ``roles``): runs
+      ``tools.llm.agent_loop.run_agent_loop`` for one agent over the provided
+      ``tools``/``tool_handlers``; the CortexResult ``text`` is the loop's
+      final content and ``data`` carries the loop accounting.
+
+    ``ctx`` threads tenant_id/user_id into the launch/loop (cost attribution,
+    RLS) and into the governance pipeline. Because this facade is governed
+    (``retrieval=False``), the goal is injection-screened and input-redacted
+    before dispatch and the agent output passes through the output-redaction,
+    provenance, and audit gates — the report is attached to
+    ``result.governance``.
+    """
+    context = _coerce_context(ctx)
+    use_team = mode == "team" or (mode == "auto" and bool(roles))
+
+    if use_team:
+        controller = _get_ace_controller()
+        instance_id = controller.launch(
+            problem_text=goal,
+            trigger_source=trigger_source,
+            trigger_ref=trigger_ref or (context.tenant_id or "cortex"),
+            user_id=context.user_id or "system",
+            project_id=context.tenant_id or "",
+            webhook_url=webhook_url,
+            role_ids=list(roles) if roles else None,
+        )
+        return CortexResult(
+            text=f"Launched ACE team run {instance_id} for goal: {goal}",
+            provider="ace",
+            data={
+                "mode": "team",
+                "instance_id": instance_id,
+                "roles": list(roles) if roles else [],
+                "goal": goal,
+            },
+        )
+
+    router = _get_router()
+    loop = _run_single_agent(
+        router,
+        system_prompt=system_prompt,
+        user_prompt=goal,
+        tools=tools or [],
+        tool_handlers=tool_handlers or {},
+        llm_function=llm_function,
+        max_iterations=max_iterations,
+        ctx=context,
+    )
+    return CortexResult(
+        text=loop.final_content or "",
+        provider=loop.provider or "agent_loop",
+        model=loop.model_id or "",
+        cost=float(loop.total_cost_usd or 0.0),
+        data={
+            "mode": "single",
+            "result_subtype": loop.result_subtype,
+            "turns": loop.turns,
+            "done": loop.done,
+            "truncated": loop.truncated,
+            "session_id": loop.session_id,
+            "tool_call_log": loop.tool_call_log,
+        },
+    )
 
 
 # ---------------------------------------------------------------------------

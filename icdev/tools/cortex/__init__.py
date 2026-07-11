@@ -1,22 +1,27 @@
 # CUI // SP-CTI
 """ICDEV Cortex — unified AI facade over the platform's retrieval backends."""
-from .analyst import CortexAnalystError, CortexQueryBlocked, ask
+from .analyst import CortexAnalystError, CortexQueryBlocked
 from .api import (
     AIRGAP_ENV_VAR,
     CORTEX_ANALYST_FUNCTION,
     CORTEX_CLASSIFY_FUNCTION,
     CORTEX_COMPLETE_FUNCTION,
     CORTEX_EXTRACT_FUNCTION,
+    CORTEX_FACADES,
     CORTEX_ROUTING_FUNCTIONS,
     CORTEX_SEARCH_REWRITE_FUNCTION,
     CortexAirgapError,
+    agent,
     airgap_active,
+    ask,
     assert_airgap_ready,
     classify,
     complete,
     extract,
+    govern,
     load_cortex_config,
     resolve_cortex_config_path,
+    search,
 )
 from .governance import (
     GATE_ORDER,
@@ -32,7 +37,7 @@ from .schemas import (
     CortexSearchResult,
     GovernanceReport,
 )
-from .search_service import CORTEX_STRATEGIES, classify_route, search
+from .search_service import CORTEX_STRATEGIES, classify_route
 
 __all__ = [
     "AIRGAP_ENV_VAR",
@@ -41,6 +46,7 @@ __all__ = [
     "CORTEX_CLASSIFY_FUNCTION",
     "CORTEX_COMPLETE_FUNCTION",
     "CORTEX_EXTRACT_FUNCTION",
+    "CORTEX_FACADES",
     "CORTEX_ROUTING_FUNCTIONS",
     "CORTEX_SEARCH_REWRITE_FUNCTION",
     "CORTEX_STRATEGIES",
@@ -55,6 +61,7 @@ __all__ = [
     "GovernanceBlockedError",
     "GovernancePipeline",
     "GovernanceReport",
+    "agent",
     "airgap_active",
     "ask",
     "assert_airgap_ready",
@@ -62,6 +69,7 @@ __all__ = [
     "classify_route",
     "complete",
     "extract",
+    "govern",
     "governed",
     "load_cortex_config",
     "resolve_cortex_config_path",
