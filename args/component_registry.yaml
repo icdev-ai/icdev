@@ -713,6 +713,41 @@ components:
   completeness:
     blueprint: true
     nav_link: false
+- key: cortex
+  kind: canvas
+  display_name: Cortex
+  description: 'Unified AI layer — one governed facade over RAG, KG, documents, and keyword search (complete/classify/extract/search/ask/govern/agent).'
+  env_flag: ICDEV_CORTEX_ENABLED
+  default_enabled: false
+  module: tools.cortex.blueprint
+  blueprint_attr: cortex_bp
+  url_prefix: /cortex
+  min_il: IL4
+  default_roles:
+  - researcher
+  - intelligence_analyst
+  - writer
+  nav:
+    section: Canvases
+    label: Cortex
+    links:
+    - label: 🧠 Cortex
+      href: /cortex/
+      style: color:#a78bfa;
+  iqe:
+    adapter_module: tools.iqe.adapters.cortex
+    collections:
+    - cortex.chat_sessions
+    - cortex.audit
+    - cortex.search_history
+  completeness:
+    template: tools/dashboard/templates/cortex/index.html
+    blueprint: true
+    constants: tools/cortex/constants.py
+    db_migration: tools/cortex/db/migrations
+    iqe_adapter: true
+    nav_link: true
+    seed_queries: context/iqe/queries/cortex/
 - key: dic
   kind: canvas
   display_name: Document Intelligence Canvas

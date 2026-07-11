@@ -42,6 +42,11 @@ from .governance import GovernancePipeline
 # the same reason as ``ask``; the public ``search`` below is governance-wrapped.
 from .search_service import search as _search_impl
 
+# Search endpoint (ctx-search-01..04) — re-exported so the single facade
+# namespace (``tools.cortex.api``) also fronts unified search; the intent
+# router / chat surface dispatch to ``cortex_api.search`` alongside ask/complete.
+from .search_service import search  # noqa: F401 - re-export
+
 # Behavior config + air-gap invariant live in .config (this module must stay
 # free of provider/model references — see test_no_model_id_literals_in_module).
 # Re-exported here so callers keep importing everything from tools.cortex.api.
