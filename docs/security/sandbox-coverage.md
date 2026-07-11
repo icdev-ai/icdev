@@ -697,3 +697,20 @@ scanner then runs against the *staged copy as data* — the target is read, hash
   - `offline: true` in docmod_config (or air-gap mode) disables all outbound calls; seed + `import_dataset` remain.
   - Values land in `docmod_eol_products` and are only compared as dates/strings — never rendered unescaped, never executed, never fed to a shell.
 - **Revisit if:** the sync ever posts local data outward, the base URL becomes user-configurable per request, or cache values are rendered into HTML without escaping (promote to `sandboxed-on-demand`).
+
+### Gap 27 — ICDEV Cortex unified AI facade (`tools/cortex/`)
+
+**Modules:** `tools/cortex/api.py` (`search`/`ask`/`complete`/`classify`/`extract`), `tools/cortex/analyst.py` (text-to-SQL analyst), `tools/cortex/search_service.py` (strategy router), `tools/cortex/governance.py` (TRUST gate pipeline).
+
+**Ingress path:** Cortex is the unified facade over the platform's retrieval/LLM backends (LLMRouter, RAG, KG, DIC, IQE, ACE). Every entry point ingests **user-provided natural-language queries and prompts** — free-form `question`/`query`/`prompt` strings from authenticated dashboard users and MCP callers. The highest-risk surface is `analyst.ask()`, which asks an LLM to translate a NL question into SQL (`mode="iqe"`/`"nlq"`); the other paths (`search`, `complete`, `classify`, `extract`) pass the user text to LLMRouter/RAG/KG as prompt content and return structured results with `[source: …]` citations. No user text is ever executed as code — the only `compile(` occurrences under `tools/cortex/` are stdlib `re.compile()` pattern definitions, and there is no `exec()`/`eval()`/`subprocess`/`os.system`/`__import__`.
+
+- **Decision:** **trusted-first-party**
+- **Rationale:** Cortex is first-party facade code that treats all user input as data, not code. The text-to-SQL analyst — the one path that produces something executable — is gated **before** execution by a defense-in-depth chain (D34 read-only enforcement): (1) an injection-shape regex pre-filter (stacked statements, `DROP`/`TRUNCATE`/`ALTER` DDL, `UNION SELECT` exfil, `INSERT`/`UPDATE`/`DELETE`, comment sequences), (2) a SELECT-only + single-statement check on the generated SQL via the shared `nlq_processor.validate_sql`, and (3) a table-allowlist gate restricting reads to known collections. Refusals are audited and surfaced as `CortexQueryBlocked`; generated SQL runs read-only through the same RLS-aware `get_connection()` path as IQE/NLQ. The non-analyst paths perform no code execution at all — they route prompt text to LLMRouter/RAG/KG and return cited results through the governance/TRUST pipeline. There is no attacker-controlled execution surface to isolate; sandboxing would add latency with no concrete threat model (OPT-58).
+- **Guardrails:**
+  - Injection-shape pre-filter + SELECT-only/single-statement validator + table allowlist on every analyst-generated SQL statement before it reaches the DB (`analyst.py` gates, reusing `nlq_processor.validate_sql`).
+  - Read-only enforcement (D34) — non-SELECT / multi-statement / DDL generated SQL is rejected and audited, never executed.
+  - Generated SQL executes through RLS-aware `get_connection()`; tenant_id/classification predicates are injected by the storage layer, not by user input.
+  - Air-gap egress guard: `assert_airgap_ready()` (`CortexAirgapError`) blocks cloud LLM routing when `ICDEV_CORTEX_AIRGAP`/strict mode is set, keeping CUI prompts local-only.
+  - TRUST governance pipeline (`governance.GovernancePipeline`) enforces `[source: …]` citation grounding on drafted output; citation defects gate promote/export.
+  - No `exec()`/`eval()`/`subprocess`/`os.system`/`__import__` anywhere under `tools/cortex/` — the only `re.compile()` uses are static pattern definitions.
+- **Revisit if:** the analyst path is ever allowed to emit non-SELECT statements, the SELECT-only/allowlist gates are removed or bypassed, or any Cortex module adds a step that `exec`s, `eval`s, or `subprocess`-runs user-derived content → re-decide as **sandboxed** via `tools/security/sandbox_executor.py`.
