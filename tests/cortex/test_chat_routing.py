@@ -90,6 +90,8 @@ class TestIntentRouter:
 # ---------------------------------------------------------------------------
 @pytest.fixture
 def client():
+    # Uses conftest's shared test DB (carries the cortex tables + dashboard_users
+    # with the 'test-admin' user the auth before_request hook validates).
     from tools.cortex.blueprint import cortex_bp
     from tools.dashboard.app import app
 
@@ -104,6 +106,8 @@ def client():
         except Exception:
             pass
     with app.test_client() as test_client:
+        with test_client.session_transaction() as sess:
+            sess["user_id"] = "test-admin"
         yield test_client
 
 

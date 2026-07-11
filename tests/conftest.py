@@ -20,6 +20,15 @@ os.environ["DSOC_STORAGE_BACKEND"] = "sqlite"
 
 
 MINIMAL_ICDEV_SCHEMA = """
+-- Dashboard auth: the before_request hook validates session user_id against
+-- dashboard_users; route tests set session["user_id"]="test-admin".
+CREATE TABLE IF NOT EXISTS dashboard_users (
+    id TEXT PRIMARY KEY, email TEXT UNIQUE, display_name TEXT,
+    role TEXT DEFAULT 'admin', status TEXT DEFAULT 'active',
+    created_by TEXT, created_at TIMESTAMP, updated_at TIMESTAMP
+);
+INSERT OR IGNORE INTO dashboard_users (id, email, display_name, role)
+VALUES ('test-admin', 'admin@test.local', 'Test Admin', 'admin');
 CREATE TABLE IF NOT EXISTS studio_workflows (
     workflow_id   TEXT PRIMARY KEY,
     name          TEXT NOT NULL,
