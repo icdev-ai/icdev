@@ -1887,10 +1887,10 @@ class LLMRouter:
         """
         self._apply_network_guard(provider)
         mp, pmin, pmax = resolve_rate_limit(self._config)
-        cross, lease_name, lease_timeout = resolve_lease_config(self._config)
+        lease_backend, lease_name, lease_timeout = resolve_lease_config(self._config)
         with rate_gate(
             mp, pmin, pmax,
-            cross_process=cross, lease_name=lease_name, lease_timeout=lease_timeout,
+            lease_backend=lease_backend, lease_name=lease_name, lease_timeout=lease_timeout,
         ):
             return provider.invoke(request, model_id, model_cfg)
 
@@ -1905,12 +1905,12 @@ class LLMRouter:
         mp, pmin, pmax = resolve_rate_limit(self._config)
         if mp <= 0:
             return provider.invoke_streaming(request, model_id, model_cfg)
-        cross, lease_name, lease_timeout = resolve_lease_config(self._config)
+        lease_backend, lease_name, lease_timeout = resolve_lease_config(self._config)
 
         def _gated_stream():
             with rate_gate(
                 mp, pmin, pmax,
-                cross_process=cross, lease_name=lease_name, lease_timeout=lease_timeout,
+                lease_backend=lease_backend, lease_name=lease_name, lease_timeout=lease_timeout,
             ):
                 yield from provider.invoke_streaming(request, model_id, model_cfg)
 

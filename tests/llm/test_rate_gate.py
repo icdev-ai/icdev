@@ -27,25 +27,33 @@ def _clean(monkeypatch):
 
 
 def test_lease_config_process_by_default():
-    assert resolve_lease_config({}) == (False, "llm", None)
-    assert resolve_lease_config({"rate_limit": {"scope": "process"}}) == (False, "llm", None)
+    assert resolve_lease_config({}) == ("", "llm", None)
+    assert resolve_lease_config({"rate_limit": {"scope": "process"}}) == ("", "llm", None)
+    # unknown scope falls back to in-process
+    assert resolve_lease_config({"rate_limit": {"scope": "bogus"}}) == ("", "llm", None)
 
 
-def test_lease_config_global_from_config():
-    cross, name, timeout = resolve_lease_config(
+def test_lease_config_global_maps_to_file():
+    backend, name, timeout = resolve_lease_config(
         {"rate_limit": {"scope": "global", "lease_name": "k", "lease_timeout_seconds": 30}}
     )
-    assert cross is True and name == "k" and timeout == 30.0
+    assert backend == "file" and name == "k" and timeout == 30.0
+    assert resolve_lease_config({"rate_limit": {"scope": "host"}})[0] == "file"
+
+
+def test_lease_config_cluster_maps_to_pg():
+    assert resolve_lease_config({"rate_limit": {"scope": "cluster"}})[0] == "pg"
+    assert resolve_lease_config({"rate_limit": {"scope": "multi-host"}})[0] == "pg"
 
 
 def test_lease_config_env_overrides(monkeypatch):
-    monkeypatch.setenv("ICDEV_LLM_RATE_LIMIT_SCOPE", "global")
+    monkeypatch.setenv("ICDEV_LLM_RATE_LIMIT_SCOPE", "cluster")
     monkeypatch.setenv("ICDEV_LLM_LEASE_NAME", "envkey")
     monkeypatch.setenv("ICDEV_LLM_LEASE_TIMEOUT", "12.5")
-    assert resolve_lease_config({"rate_limit": {"scope": "process"}}) == (True, "envkey", 12.5)
+    assert resolve_lease_config({"rate_limit": {"scope": "process"}}) == ("pg", "envkey", 12.5)
 
 
-def test_gate_cross_process_acquires_and_releases_lease(monkeypatch):
+def test_gate_file_backend_acquires_and_releases_lease(monkeypatch):
     monkeypatch.setattr(rate_gate.time, "sleep", lambda s: None)
     monkeypatch.setattr(rate_gate.random, "uniform", lambda a, b: 0.0)
     calls = {}
@@ -59,30 +67,55 @@ def test_gate_cross_process_acquires_and_releases_lease(monkeypatch):
         return _FakeLease()
 
     monkeypatch.setattr(rate_gate._cpl, "acquire", _fake_acquire)
-    with gate(1, 3.0, 5.0, cross_process=True, lease_name="k", lease_timeout=9.0):
+    with gate(1, 3.0, 5.0, lease_backend="file", lease_name="k", lease_timeout=9.0):
         pass
     assert calls["acquire"] == ("k", 1, 9.0)
     assert calls.get("released") is True
 
 
-def test_gate_cross_process_failopen_when_lease_none(monkeypatch):
-    # Lease unavailable -> acquire returns None -> call still proceeds, no crash.
+def test_gate_pg_backend_routes_to_pg_lease(monkeypatch):
     monkeypatch.setattr(rate_gate.time, "sleep", lambda s: None)
     monkeypatch.setattr(rate_gate.random, "uniform", lambda a, b: 0.0)
-    monkeypatch.setattr(rate_gate._cpl, "acquire", lambda *a, **k: None)
+    calls = {}
+
+    class _FakeLease:
+        def release(self):
+            calls["released"] = True
+
+    def _pg_acquire(name, max_slots, timeout):
+        calls["pg"] = (name, max_slots, timeout)
+        return _FakeLease()
+
+    def _file_acquire(*a, **k):
+        raise AssertionError("file backend used for a pg scope")
+
+    monkeypatch.setattr(rate_gate._pgl, "acquire", _pg_acquire)
+    monkeypatch.setattr(rate_gate._cpl, "acquire", _file_acquire)
+    with gate(1, 3.0, 5.0, lease_backend="pg", lease_name="cluster-key", lease_timeout=7.0):
+        pass
+    assert calls["pg"] == ("cluster-key", 1, 7.0)
+    assert calls.get("released") is True
+
+
+def test_gate_failopen_when_lease_none(monkeypatch):
+    # Lease unavailable (DB down / lock error) -> None -> call still proceeds.
+    monkeypatch.setattr(rate_gate.time, "sleep", lambda s: None)
+    monkeypatch.setattr(rate_gate.random, "uniform", lambda a, b: 0.0)
+    monkeypatch.setattr(rate_gate._pgl, "acquire", lambda *a, **k: None)
     ran = []
-    with gate(1, 3.0, 5.0, cross_process=True):
+    with gate(1, 3.0, 5.0, lease_backend="pg"):
         ran.append(True)
     assert ran == [True]
 
 
-def test_gate_no_lease_when_cross_process_false(monkeypatch):
+def test_gate_no_lease_when_backend_empty(monkeypatch):
     monkeypatch.setattr(rate_gate.time, "sleep", lambda s: None)
     called = []
-    monkeypatch.setattr(rate_gate._cpl, "acquire", lambda *a, **k: called.append(True))
-    with gate(1, 3.0, 5.0, cross_process=False):
+    monkeypatch.setattr(rate_gate._cpl, "acquire", lambda *a, **k: called.append("file"))
+    monkeypatch.setattr(rate_gate._pgl, "acquire", lambda *a, **k: called.append("pg"))
+    with gate(1, 3.0, 5.0, lease_backend=""):
         pass
-    assert called == []  # in-process only — lease never touched
+    assert called == []  # in-process only — no lease backend touched
 
 
 def test_disabled_by_default_and_no_op(monkeypatch):
