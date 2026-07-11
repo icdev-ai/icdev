@@ -48,13 +48,14 @@ import functools
 import hashlib
 import importlib
 import json
-import logging
 import uuid
 from typing import Callable, Optional
 
+from tools.logging.icdev_logger import get_logger
+
 from .schemas import CortexContext, CortexResult, GovernanceReport
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # "tools" when loaded via the shim namespace, "icdev.tools" when canonical.
 _NS = __name__.rsplit(".cortex.", 1)[0]

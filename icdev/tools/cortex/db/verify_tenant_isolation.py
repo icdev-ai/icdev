@@ -152,6 +152,7 @@ def _tenants_seen(conn: Any, ctx) -> set:
 
     _apply_security_context(conn, ctx)
     rows = conn.execute(f"SELECT tenant_id FROM {_PROBE_TABLE}").fetchall()
+    # rls-bypass: reset the probe connection to the no-tenant baseline between isolation checks — this is a standalone leakage verifier (task ctx-expose-03), not runtime request-handling code; the reset prevents one check's seeded context from leaking into the next.
     conn.set_security_context(None)
     return {(dict(r) if isinstance(r, dict) else {"tenant_id": r[0]})["tenant_id"] for r in rows}
 
@@ -164,6 +165,7 @@ def _classifications_seen(conn: Any, ctx) -> set:
         f"SELECT classification FROM {_PROBE_TABLE} WHERE tenant_id = %s",
         (ctx.tenant_id,),
     ).fetchall()
+    # rls-bypass: reset the probe connection to the no-tenant baseline between isolation checks — this is a standalone leakage verifier (task ctx-expose-03), not runtime request-handling code; the reset prevents one check's seeded context from leaking into the next.
     conn.set_security_context(None)
     return {
         (dict(r) if isinstance(r, dict) else {"classification": r[0]})["classification"]
