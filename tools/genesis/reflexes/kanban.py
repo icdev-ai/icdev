@@ -3606,6 +3606,121 @@ def _dispatch_via_claude_cli(task: dict, prompt_path: str, instruction: str,
         print(f"  Kanban: claude dispatch error for {task_id}: {e}")
 
 
+def _rubric_loop_enabled() -> bool:
+    """Phase 3b opt-in: build via the rubric-gated agent loop (which can EDIT
+    files) instead of the text-only LLMRouter path. Default OFF —
+    ``_dispatch_via_claude_cli`` stays primary and the existing air-gap path is
+    byte-unchanged unless ``KANBAN_RUBRIC_LOOP`` is truthy."""
+    import os
+    return os.environ.get("KANBAN_RUBRIC_LOOP", "0").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _dispatch_via_rubric_loop(task: dict, prompt_path: str, instruction: str,
+                              work_dir: str, task_log: Path) -> None:
+    """Rubric-gated build loop (Phase 3b) — air-gap executor that actually EDITS
+    files. Runs ``run_agent_loop_with_rubric`` with the delivery-pipeline gates
+    (``make_pipeline_grader``) as the rubric, so a task builds -> runs the gates
+    -> revises in-session until it satisfies the pipeline or hits the
+    iteration/budget cap. LLM-agnostic: every model call routes through the
+    injected ``LLMRouter`` by function name — no provider is assumed. Opt-in via
+    ``KANBAN_RUBRIC_LOOP``; ``_dispatch_via_claude_cli`` remains primary.
+    """
+    task_id = task["id"]
+
+    def _runner():
+        import threading
+
+        # import-as form so a monkeypatched ``tools.llm.*`` module is the same
+        # object the loop uses (see _dispatch_via_llm_router for the rationale).
+        import tools.llm.router as _llm_router_mod
+        # run_agent_loop_with_rubric lives ONLY in the canonical icdev copy —
+        # the physical tools/llm/agent_loop.py is a stale shim without it.
+        try:
+            import icdev.tools.llm.agent_loop as _agent_loop_mod
+        except ImportError:
+            import tools.llm.agent_loop as _agent_loop_mod
+        from tools.genesis.rubric_build_tools import build_worktree_toolset
+        from tools.workflow.pipeline_grader import make_pipeline_grader
+
+        def _changed():
+            # Git-changed files in the worktree; never let a diff failure crash
+            # the grader (make_pipeline_grader accepts a callable).
+            try:
+                from tools.integrity.pr_gates import _git_changed_files
+                return _git_changed_files("origin/main", False, Path(work_dir))
+            except Exception:
+                return []
+
+        with open(task_log, "w", encoding="utf-8", errors="replace") as fh:
+            fh.write(f"[rubric-loop dispatch — task {task_id}]\n")
+            fh.write(f"[work_dir {work_dir}]\n\n")
+
+            tools_schema, tool_handlers = build_worktree_toolset(work_dir)
+            grader = make_pipeline_grader(
+                cwd=work_dir,
+                task_id=task_id,
+                modified_files=_changed,
+                run_e2e=False,
+                run_conformance=True,
+                compare_to_main=True,
+            )
+            router = _llm_router_mod.LLMRouter()
+            stop_event = threading.Event()
+            system_prompt = (
+                "You are an autonomous software engineer building ONE kanban task "
+                "inside an isolated git worktree. Use write_file / patch_file to "
+                "implement the change and read_file / list_files to inspect the "
+                "tree, then call done. Your work is graded by the delivery "
+                "pipeline (code quality, coherence, conformance to the task's "
+                "acceptance criteria, and tests); if it fails you receive specific "
+                "feedback and must fix it. Make the smallest correct change that "
+                "satisfies the task."
+            )
+
+            def _on_grade(round_no, grade):
+                fh.write(f"[grade {round_no}] {grade.verdict}: {str(grade.feedback)[:400]}\n")
+                try:
+                    fh.flush()
+                except Exception:
+                    pass
+
+            result = _agent_loop_mod.run_agent_loop_with_rubric(
+                router,
+                grader=grader,
+                max_grading_iterations=3,
+                on_grade=_on_grade,
+                system_prompt=system_prompt,
+                user_prompt=instruction,
+                tools=tools_schema,
+                tool_handlers=tool_handlers,
+                llm_function="code_generation",
+                max_iterations=12,
+                stop_event=stop_event,
+            )
+
+            ar = result.result
+            fh.write(
+                f"\n[rubric-loop done] satisfied={result.satisfied} "
+                f"grading_attempts={result.grading_attempts} "
+                f"loop_done={getattr(ar, 'done', None)} "
+                f"cost_usd={getattr(ar, 'total_cost_usd', 0)}\n"
+            )
+            if not result.satisfied:
+                # In-session revision exhausted without passing the gates. Signal
+                # failure (returncode 1) so the task is NOT marked done; the
+                # standard post-task verify/remediation/lesson chain still runs.
+                raise RuntimeError(
+                    f"rubric loop did not satisfy the pipeline after "
+                    f"{result.grading_attempts} round(s)"
+                )
+
+    handle = _LLMTaskHandle(task_id=task_id, log_path=task_log)
+    handle.start(_runner)
+    _running[task_id] = handle
+    _dispatch_times[task_id] = datetime.now(timezone.utc)
+    print(f"  Kanban: dispatched {task_id} via rubric-gated agent loop (Phase 3b)")
+
+
 def _dispatch_via_llm_router(task: dict, prompt_path: str, instruction: str,
                              work_dir: str, task_log: Path) -> None:
     """LocalPythonTaskExecutor — air-gap fallback that runs the prompt through
@@ -3619,6 +3734,12 @@ def _dispatch_via_llm_router(task: dict, prompt_path: str, instruction: str,
     OPT-42 anvil/* CLI wrappers.
     """
     task_id = task["id"]
+
+    # Phase 3b opt-in: when enabled, build with the rubric-gated agent loop
+    # (which can edit files + self-verify against the pipeline) instead of this
+    # text-only path. Default OFF keeps this path byte-unchanged.
+    if _rubric_loop_enabled():
+        return _dispatch_via_rubric_loop(task, prompt_path, instruction, work_dir, task_log)
 
     def _runner():
         # Use `import … as` form so the attribute-access chain goes through
