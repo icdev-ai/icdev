@@ -1176,13 +1176,18 @@ rate_limit:
   max_parallel: 1           # max concurrent in-flight LLM calls when enabled. Env: ICDEV_LLM_MAX_PARALLEL
   pause_min_seconds: 3.0    # randomized inter-call pause lower bound.         Env: ICDEV_LLM_PAUSE_MIN
   pause_max_seconds: 5.0    # randomized inter-call pause upper bound.         Env: ICDEV_LLM_PAUSE_MAX
-  # Scope of the cap. 'process' (default) = per-process only. 'global' = ALSO
-  # hold a host-wide file-lock lease so the cap holds ACROSS processes that
-  # share one API key (dashboard + kanban_scheduler + genesis daemon). Same
-  # host + OS user; fails open if the lock subsystem is unavailable.
-  scope: process            # process | global.         Env: ICDEV_LLM_RATE_LIMIT_SCOPE
-  lease_name: llm           # shared lease key; processes sharing a key must match. Env: ICDEV_LLM_LEASE_NAME
-  lease_timeout_seconds:    # blank = wait indefinitely (OS frees locks on crash). Env: ICDEV_LLM_LEASE_TIMEOUT
+  # Scope of the cap:
+  #   process (default) = per-process only.
+  #   global (a.k.a. host) = ALSO hold a host-wide OS file-lock lease so the cap
+  #     holds across processes on one host (dashboard + kanban_scheduler +
+  #     genesis daemon). Same host + OS user.
+  #   cluster (a.k.a. multi-host) = ALSO hold a PostgreSQL advisory-lock lease so
+  #     the cap holds across EVERY host sharing this database. No extra infra —
+  #     reuses the shared PG; the lock auto-releases if a host/connection dies.
+  # Either lease fails open (in-process cap only) if the lock subsystem/DB is down.
+  scope: process            # process | global | cluster. Env: ICDEV_LLM_RATE_LIMIT_SCOPE
+  lease_name: llm           # shared lease key; callers sharing an API key must match. Env: ICDEV_LLM_LEASE_NAME
+  lease_timeout_seconds:    # blank = wait indefinitely (locks free on crash).    Env: ICDEV_LLM_LEASE_TIMEOUT
 proxy:
   # Leave all blank to use the OS HTTPS_PROXY/HTTP_PROXY env unchanged. For a
   # rotating proxy, prefer `command` (resolved fresh per call, TTL-cached) or
