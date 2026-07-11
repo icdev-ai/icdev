@@ -1219,6 +1219,7 @@ python tools/mcp/supply_chain_server.py            # Start Supply Chain MCP serv
 python tools/mcp/simulation_server.py              # Start Simulation MCP server
 python tools/mcp/integration_server.py             # Start Integration MCP server
 python tools/mcp/research_server.py                # Start Research MCP server
+python tools/mcp/cortex_server.py                  # Start Cortex MCP server (7 tools: cortex_search/ask/complete/classify/extract/govern/agent_launch)
 
 # Requirements Intake (RICOAS)
 python tools/requirements/intake_engine.py --project-id "proj-123" --customer-name "Jane Smith" --customer-org "DoD PEO" --impact-level IL5 --json  # New session
