@@ -54,9 +54,15 @@ def _run_proxy_command(command: str, ttl: float) -> Optional[str]:
         if _cmd_cache_value is not None and (now - _cmd_cache_at) < ttl:
             return _cmd_cache_value
     try:
-        out = subprocess.run(
+        # nosec B602 — `command` is operator-configured infrastructure (the
+        # ICDEV_LLM_PROXY_CMD env / proxy.command config, same trust tier as
+        # .env / llm_config.yaml), NOT end-user input. shell=True is intentional
+        # so operators can pipe a proxy lookup, e.g. `aws ssm get-parameter … |
+        # jq -r .Value`. Bounded by a 10s timeout; output is used only as a
+        # proxy URL string, never executed. See sandbox-coverage.md Gap 28.
+        out = subprocess.run(  # nosec B602
             command,
-            shell=True,
+            shell=True,  # nosec B602
             capture_output=True,
             text=True,
             timeout=10,
