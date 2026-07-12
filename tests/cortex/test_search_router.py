@@ -30,13 +30,13 @@ TEST_CONFIG = {
 }
 
 
-def _hit(backend, score=0.5, strategy="native"):
+def _hit(backend, score=0.5, strategy="native", sid="1"):
     return CortexSearchResult(
         content=f"{backend} hit",
         score=score,
         backend=backend,
         strategy=strategy,
-        citation=Citation(source_id=f"{backend}-1", source_type=f"{backend}_src"),
+        citation=Citation(source_id=f"{backend}-{sid}", source_type=f"{backend}_src"),
     )
 
 
@@ -257,7 +257,8 @@ def test_domain_with_no_overlap_falls_back_to_domain_backends(monkeypatch):
 
 def test_results_sorted_by_score(monkeypatch):
     def rag(query, top_k=5, ctx=None):
-        return [_hit("rag", score=0.3), _hit("rag", score=0.9)]
+        # Distinct sources (sid a/b) — two different rag documents, not a dup.
+        return [_hit("rag", score=0.3, sid="a"), _hit("rag", score=0.9, sid="b")]
 
     def graph(query, top_k=5, ctx=None):
         return [_hit("graph", score=0.6)]
@@ -274,7 +275,11 @@ def test_results_sorted_by_score(monkeypatch):
     }
     results = search_service.search("compare things", config=cfg)
 
+    # RRF ranks each backend's list, then orders by fused score with ties broken
+    # by raw score: rag@0.9 (rank1) and graph@0.6 (rank1) tie on 1/(60+1) -> raw
+    # score wins, then rag@0.3 (rank2, 1/(60+2)). Same intuitive order here.
     assert [r.score for r in results] == [0.9, 0.6, 0.3]
+    assert all("rrf" in (r.raw_scores or {}) for r in results)
 
 
 # ---------------------------------------------------------------------------
