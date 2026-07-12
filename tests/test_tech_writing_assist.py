@@ -34,6 +34,17 @@ def _offline(monkeypatch, router):
     monkeypatch.setattr(twa, "RAGRetriever", None)
     monkeypatch.setattr(twa, "kg_retrieve", None)
     monkeypatch.setattr(twa, "is_airgap", lambda **kw: True)
+    # The single-shot draft now routes through the GOVERNED cortex.complete facade
+    # (adoption pilot). Bridge it to the fake router so the existing _Router.invoke()
+    # responses still drive draft_content — proving the call path without a real LLM.
+    import tools.cortex.api as cortex_api
+    from tools.cortex.schemas import CortexResult
+
+    def _fake_complete(prompt, function="", ctx=None, system_prompt="", **kw):
+        resp = router().invoke(function, _Req(content=prompt))  # type: ignore[misc]
+        return CortexResult(text=(resp.content or ""))
+
+    monkeypatch.setattr(cortex_api, "complete", _fake_complete)
 
 
 # ── Result dataclasses ────────────────────────────────────────────────────────
@@ -114,6 +125,39 @@ def test_research_and_draft_llm_exception_surfaces_in_error(monkeypatch):
     _offline(monkeypatch, _Router)
     result = twa.research_and_draft("controls", "Design", template_type="SOP")
     assert "provider down" in result.error
+
+
+def test_draft_routes_through_governed_cortex_complete(monkeypatch):
+    # Adoption pilot proof: the draft goes through cortex.complete (governed),
+    # is attributed to the dic-tech-writer agent, uses the tech_writing_draft
+    # routing function, and surfaces any governance redaction count to WriteGuard.
+    monkeypatch.setattr(twa, "LLMRouter", object)  # non-None -> passes LLM guard
+    monkeypatch.setattr(twa, "LLMRequest", _Req)
+    monkeypatch.setattr(twa, "RAGRetriever", None)
+    monkeypatch.setattr(twa, "kg_retrieve", None)
+    monkeypatch.setattr(twa, "is_airgap", lambda **kw: True)
+
+    import tools.cortex.api as cortex_api
+    from tools.cortex.schemas import CortexResult, GovernanceReport
+
+    calls = {}
+
+    def _complete(prompt, function="", ctx=None, system_prompt="", **kw):
+        calls["function"] = function
+        calls["agent_id"] = getattr(ctx, "agent_id", None)
+        calls["domain"] = getattr(ctx, "domain", None)
+        gr = GovernanceReport()
+        gr.redactions_applied = 2
+        return CortexResult(text="governed draft", governance=gr)
+
+    monkeypatch.setattr(cortex_api, "complete", _complete)
+
+    result = twa.research_and_draft("backup cadence", "Steps", template_type="SOP")
+    assert result.draft_content == "governed draft"
+    assert calls["function"] == "tech_writing_draft"
+    assert calls["agent_id"] == "dic-tech-writer"
+    assert calls["domain"] == "document"
+    assert any("masked 2 sensitive" in w for w in result.warnings)
 
 
 # ── generate_diagram_syntax ───────────────────────────────────────────────────
