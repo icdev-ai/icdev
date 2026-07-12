@@ -150,3 +150,27 @@ class TestPrFlowGate:
         guard = reflex_src.split("_will_open_pr = (", 1)[1].split("if not _will_open_pr", 1)[0]
         assert "_pr_flow_enabled()" in guard
         assert "_check_worktree_commits(task_id)" in guard
+
+
+class TestPromoteNeverTouchesAManualGate:
+    def test_a_gate_sitting_in_backlog_is_not_promoted(self, db):
+        """A gate has NO dependencies, so _deps_satisfied() calls it "ready" and the
+        promoter would schedule it straight out of the state that makes it a gate.
+        (Observed live: prem-gate-00 went in_progress -> backlog -> scheduled.)"""
+        db.execute("INSERT INTO kanban_tasks (id, title, status) VALUES "
+                   "('zg-gate-00', 'MANUAL-MODE GATE - do not complete', 'backlog')")
+        db.commit()
+
+        promoted = promote_mod.promote()
+
+        assert "zg-gate-00" not in promoted
+        row = dict(db.execute(
+            "SELECT status FROM kanban_tasks WHERE id = 'zg-gate-00'").fetchone())
+        assert row["status"] == "backlog"
+
+    def test_a_gate_identified_only_by_title_is_also_skipped(self, db):
+        db.execute("INSERT INTO kanban_tasks (id, title, status) VALUES "
+                   "('zg-oddname', 'MANUAL-MODE GATE - hold me', 'backlog')")
+        db.commit()
+
+        assert "zg-oddname" not in promote_mod.promote()
