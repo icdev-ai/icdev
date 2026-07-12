@@ -34,7 +34,9 @@ from __future__ import annotations
 
 import concurrent.futures
 import importlib
+import os
 import re
+import threading
 import time
 from pathlib import Path
 from typing import Optional
@@ -49,6 +51,52 @@ logger = get_logger(__name__)
 _NS = __name__.rsplit(".cortex.", 1)[0]
 
 _SNIPPET_CHARS = 200
+
+# ---------------------------------------------------------------------------
+# Shared search fan-out thread pool.
+#
+# _run_backends used to create a fresh ThreadPoolExecutor per call and shut it
+# down with wait=False. A backend that exceeded its timeout left its worker
+# thread running (Python cannot force-kill a thread), so under sustained
+# timeouts every new call spawned MORE threads that never went away — an
+# unbounded leak. A single process-wide, bounded pool fixes this: threads are
+# reused across calls and the total is capped. A timed-out task's thread simply
+# returns to the pool once the (already time-limited) adapter finally completes,
+# instead of accumulating. Size via CORTEX_SEARCH_MAX_WORKERS or the first
+# call's fan_out.max_workers; default 16.
+_SEARCH_EXECUTOR: Optional[concurrent.futures.ThreadPoolExecutor] = None
+_SEARCH_EXECUTOR_LOCK = threading.Lock()
+_DEFAULT_SEARCH_MAX_WORKERS = 16
+
+
+def _get_search_executor(search_cfg: Optional[dict] = None) -> concurrent.futures.ThreadPoolExecutor:
+    """Return the lazily-initialized, process-wide search fan-out pool.
+
+    Thread-safe (double-checked lock). The pool is sized once, on first use,
+    from ``fan_out.max_workers`` (if a config is supplied) else the
+    ``CORTEX_SEARCH_MAX_WORKERS`` env var else the default. It is intentionally
+    never shut down per call — it is shared across every search.
+    """
+    global _SEARCH_EXECUTOR
+    if _SEARCH_EXECUTOR is None:
+        with _SEARCH_EXECUTOR_LOCK:
+            if _SEARCH_EXECUTOR is None:
+                cfg_workers = None
+                if search_cfg:
+                    cfg_workers = (search_cfg.get("fan_out") or {}).get("max_workers")
+                try:
+                    max_workers = int(
+                        cfg_workers
+                        or os.environ.get("CORTEX_SEARCH_MAX_WORKERS")
+                        or _DEFAULT_SEARCH_MAX_WORKERS
+                    )
+                except (ValueError, TypeError):
+                    max_workers = _DEFAULT_SEARCH_MAX_WORKERS
+                _SEARCH_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
+                    max_workers=max(1, max_workers),
+                    thread_name_prefix="cortex-search",
+                )
+    return _SEARCH_EXECUTOR
 
 
 def _backend(module: str):
@@ -554,39 +602,33 @@ def _run_backends(
 
     timeouts = {**_DEFAULT_TIMEOUTS, **(search_cfg.get("timeouts") or {})}
     default_timeout = float(timeouts.get("default", 10.0))
-    max_workers = int(
-        (search_cfg.get("fan_out") or {}).get("max_workers") or len(valid)
-    )
     merged: list[CortexSearchResult] = []
     timed_out: list = []
-    executor = concurrent.futures.ThreadPoolExecutor(
-        max_workers=max(1, min(max_workers, len(valid))),
-        thread_name_prefix="cortex-search",
-    )
+    # Submit onto the shared, bounded pool — never create/shut down a per-call
+    # executor (that leaked a thread per timed-out backend). A timed-out future
+    # is abandoned; its worker is reused by the pool once the adapter returns.
+    executor = _get_search_executor(search_cfg)
     start = time.monotonic()
-    try:
-        futures = {
-            name: executor.submit(
-                BACKEND_ADAPTERS[name], query, top_k=top_k, ctx=ctx
+    futures = {
+        name: executor.submit(
+            BACKEND_ADAPTERS[name], query, top_k=top_k, ctx=ctx
+        )
+        for name in valid
+    }
+    for name, future in futures.items():
+        budget = float(timeouts.get(name, default_timeout))
+        remaining = max(0.0, start + budget - time.monotonic())
+        try:
+            merged.extend(future.result(timeout=remaining))
+        except concurrent.futures.TimeoutError:
+            future.cancel()
+            timed_out.append(name)
+            logger.warning(
+                "Cortex %s backend timed out after %.1fs — returning "
+                "partial results",
+                name,
+                budget,
             )
-            for name in valid
-        }
-        for name, future in futures.items():
-            budget = float(timeouts.get(name, default_timeout))
-            remaining = max(0.0, start + budget - time.monotonic())
-            try:
-                merged.extend(future.result(timeout=remaining))
-            except concurrent.futures.TimeoutError:
-                future.cancel()
-                timed_out.append(name)
-                logger.warning(
-                    "Cortex %s backend timed out after %.1fs — returning "
-                    "partial results",
-                    name,
-                    budget,
-                )
-    finally:
-        executor.shutdown(wait=False, cancel_futures=True)
     merged.sort(key=lambda r: r.score, reverse=True)
     return merged, valid, timed_out
 
