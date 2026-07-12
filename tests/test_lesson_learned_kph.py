@@ -50,6 +50,16 @@ class TestClassifyKphOutcomes:
         assert _c(outcome="success", fc=0, tc=1) == LessonPattern.SUCCESS_FIRST_TRY
         assert _c(reason="timeout", fc=3) == LessonPattern.TIMEOUT_QUARANTINE
 
+    def test_real_coherence_gate_messages_auto_classify(self):
+        # migration_numbering / icdev_mirror_parity failures flow into
+        # last_failure_reason as "[check_id] message" (validated_commit
+        # _parse_coherence_failures), so the EXISTING task-failure lesson hook
+        # classifies them with no dedicated emitter needed.
+        mig = "[migration_numbering] 1 changed migration(s) reuse an existing number; next free is 264."
+        assert _c(outcome="failure", reason=mig) == LessonPattern.MIGRATION_NUMBER_COLLISION
+        mir = "[icdev_mirror_parity] 1 changed tools/ module(s) not mirrored to icdev/ (roots: tools/cortex)"
+        assert _c(outcome="failure", reason=mir) == LessonPattern.MISSING_ICDEV_MIRROR
+
 
 class TestKphPatternsSystemic:
     def test_all_four_are_systemic(self):
