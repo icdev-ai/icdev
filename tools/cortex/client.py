@@ -1,0 +1,211 @@
+# CUI // SP-CTI
+"""Cortex service client SDK — stdlib-only, safe to vendor (ctx-expose-06).
+
+CANONICAL SOURCE: icdev tools/cortex/client.py. Standalone apps (compass,
+idea_lab) vendor this file verbatim into tools/integrations/cortex_client.py
+with a provenance header — keep it importable with ZERO icdev dependencies
+(urllib/json/os only) so copies never drift into needing the platform.
+
+Server surfaces this client speaks to (one ICDEV host):
+
+    POST {host}/cortex/api/v1/{search,ask,complete,classify,extract,govern}
+    GET  {host}/cortex/api/v1/health                      (unauthenticated)
+    GET/POST {host}/api/databridge/v1/<connector>/<table> (IRIS feeds)
+
+Auth: an ``icdev_ctx_`` Cortex service key sent as ``Authorization: Bearer``.
+The key row binds tenant/classification/scopes SERVER-SIDE
+(tools/cortex/service_keys.py) — this client sends no identity fields; the
+only caller-supplied context is ``domain`` (narrows, never widens).
+
+Degradation contract (mirrors compass tools/integrations/icdev_client.py):
+methods return the parsed JSON dict on success and ``None`` when Cortex is
+UNREACHABLE (disabled config, missing key, refused connection, timeout, 5xx,
+malformed JSON). They NEVER raise. 4xx responses with a JSON body — 400
+validation, 401/403 auth/scope/governance-blocked, 422 analyst-unanswerable
+— are returned as that body, so callers can distinguish "Cortex refused /
+could not answer" (surface it) from "Cortex unavailable" (degrade silently).
+Blocked responses carry ``{"blocked": True, "governance": {...}}``.
+
+Usage::
+
+    from tools.cortex.client import CortexClient
+
+    client = CortexClient(
+        base_url="http://icdev-host:5050",
+        api_key=os.environ.get("COMPASS_CORTEX_API_KEY", ""),
+    )
+    result = client.ask("How many tasks are blocked?")   # dict | None
+    if result and not result.get("error"):
+        answer = result["text"]        # CortexResult.to_dict() shape
+"""
+from __future__ import annotations
+
+import json
+import os
+from typing import Any, Dict, List, Optional
+from urllib import error, request as urlrequest
+
+DEFAULT_TIMEOUT = 60          # seconds — complete/classify/extract/search/govern
+DEFAULT_ASK_TIMEOUT = 120     # seconds — ask fans out across retrieval backends
+_USER_AGENT = "ICDEV-CortexClient/1.0"
+
+_CORTEX_PREFIX = "/cortex/api/v1"
+_DATABRIDGE_PREFIX = "/api/databridge/v1"
+
+
+class CortexClient:
+    """HTTP client for the ICDEV Cortex service surface."""
+
+    def __init__(
+        self,
+        base_url: str = "",
+        api_key: str = "",
+        *,
+        api_key_env: str = "ICDEV_CORTEX_API_KEY",
+        timeout: int = DEFAULT_TIMEOUT,
+        ask_timeout: int = DEFAULT_ASK_TIMEOUT,
+        enabled: bool = True,
+    ) -> None:
+        # base_url is the ICDEV host root, e.g. "http://icdev-host:5050".
+        self.base_url = (base_url or os.environ.get("ICDEV_CORTEX_BASE_URL", "")).rstrip("/")
+        self.api_key = api_key or os.environ.get(api_key_env, "")
+        self.timeout = timeout
+        self.ask_timeout = ask_timeout
+        self.enabled = enabled
+
+    # -- plumbing --------------------------------------------------------------
+
+    def _request(self, method: str, path: str, payload: Optional[dict],
+                 timeout: Optional[int]) -> Optional[dict]:
+        """One HTTP round trip. Parsed JSON on 2xx; 4xx JSON bodies returned
+        (refusals are answers); None on any transport failure or 5xx."""
+        if not self.enabled or not self.base_url:
+            return None
+        headers = {
+            "Accept": "application/json",
+            "User-Agent": _USER_AGENT,
+        }
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        body = None
+        if payload is not None:
+            headers["Content-Type"] = "application/json"
+            try:
+                body = json.dumps(payload).encode("utf-8")
+            except (TypeError, ValueError):
+                return None
+        req = urlrequest.Request(
+            f"{self.base_url}{path}", data=body, headers=headers, method=method
+        )
+        try:
+            with urlrequest.urlopen(req, timeout=timeout or self.timeout) as resp:  # noqa: S310
+                text = resp.read().decode("utf-8", errors="replace")
+                return json.loads(text) if text.strip() else None
+        except error.HTTPError as exc:
+            if 400 <= exc.code < 500:
+                try:
+                    parsed = json.loads(exc.read().decode("utf-8", errors="replace"))
+                    if isinstance(parsed, dict):
+                        parsed.setdefault("http_status", exc.code)
+                        return parsed
+                except Exception:  # noqa: BLE001
+                    return None
+            return None
+        except Exception:  # noqa: BLE001 — refused/timeout/DNS/malformed JSON
+            return None
+
+    def _post(self, name: str, payload: dict, timeout: Optional[int] = None) -> Optional[dict]:
+        return self._request("POST", f"{_CORTEX_PREFIX}/{name}", payload, timeout)
+
+    @staticmethod
+    def _with_domain(payload: dict, domain: str) -> dict:
+        if domain:
+            payload["domain"] = domain
+        return payload
+
+    # -- the six REST operations -------------------------------------------------
+
+    def search(self, query: str, *, top_k: int = 5, strategy: str = "auto",
+               domain: str = "", timeout: Optional[int] = None) -> Optional[dict]:
+        """Unified retrieval. Success shape: {"results": [...], "count": N}."""
+        payload = {"query": query, "top_k": top_k, "strategy": strategy}
+        return self._post("search", self._with_domain(payload, domain), timeout)
+
+    def ask(self, question: str, *, mode: str = "auto", canvas: str = "",
+            collections: Optional[List[str]] = None, summarize: bool = False,
+            domain: str = "", timeout: Optional[int] = None) -> Optional[dict]:
+        """Ask-your-data. Success shape: CortexResult.to_dict()."""
+        payload: Dict[str, Any] = {"question": question, "mode": mode, "summarize": summarize}
+        if canvas:
+            payload["canvas"] = canvas
+        if collections:
+            payload["collections"] = collections
+        return self._post("ask", self._with_domain(payload, domain), timeout or self.ask_timeout)
+
+    def complete(self, prompt: str, *, system_prompt: str = "",
+                 max_tokens: Optional[int] = None, temperature: Optional[float] = None,
+                 domain: str = "", timeout: Optional[int] = None) -> Optional[dict]:
+        """Governed free-form completion. Success shape: CortexResult.to_dict()."""
+        payload: Dict[str, Any] = {"prompt": prompt}
+        if system_prompt:
+            payload["system_prompt"] = system_prompt
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
+        if temperature is not None:
+            payload["temperature"] = temperature
+        return self._post("complete", self._with_domain(payload, domain), timeout)
+
+    def classify(self, text: str, labels: List[str], *, domain: str = "",
+                 timeout: Optional[int] = None) -> Optional[dict]:
+        """Single-label classification. CortexResult.to_dict(); text = label."""
+        payload = {"text": text, "labels": labels}
+        return self._post("classify", self._with_domain(payload, domain), timeout)
+
+    def extract(self, text: str, schema: dict, *, domain: str = "",
+                timeout: Optional[int] = None) -> Optional[dict]:
+        """Structured extraction. CortexResult.to_dict(); text = JSON string."""
+        payload = {"text": text, "schema": schema}
+        return self._post("extract", self._with_domain(payload, domain), timeout)
+
+    def govern(self, text: str, *, context_sources: Any = None, retrieval: bool = True,
+               operation: str = "", domain: str = "",
+               timeout: Optional[int] = None) -> Optional[dict]:
+        """Run the TRUST chain over drafted text.
+
+        Success shape: {"text": <governed/redacted>, "grounded": bool,
+        "blocked": bool, "governance": GovernanceReport dict}.
+        """
+        payload: Dict[str, Any] = {"text": text, "retrieval": retrieval}
+        if context_sources is not None:
+            payload["context_sources"] = context_sources
+        if operation:
+            payload["operation"] = operation
+        return self._post("govern", self._with_domain(payload, domain), timeout)
+
+    # -- health / availability -------------------------------------------------
+
+    def health(self, *, timeout: int = 10) -> Optional[dict]:
+        return self._request("GET", f"{_CORTEX_PREFIX}/health", None, timeout)
+
+    def is_available(self) -> bool:
+        result = self.health()
+        return bool(result and result.get("ok"))
+
+    # -- DataBridge feeds (IRIS et al.) -----------------------------------------
+
+    def feed_read(self, connector: str, table: str, *, limit: Optional[int] = None,
+                  filters: Optional[dict] = None,
+                  timeout: Optional[int] = None) -> Optional[dict]:
+        """Read rows from an exposed DataBridge connector feed (e.g. iris)."""
+        params = dict(filters or {})
+        if limit is not None:
+            params["limit"] = limit
+        query = "&".join(f"{k}={v}" for k, v in params.items())
+        path = f"{_DATABRIDGE_PREFIX}/{connector}/{table}" + (f"?{query}" if query else "")
+        return self._request("GET", path, None, timeout)
+
+    def feed_write(self, connector: str, table: str, payload: dict,
+                   *, timeout: Optional[int] = None) -> Optional[dict]:
+        """Write a payload to an exposed DataBridge connector feed."""
+        return self._request("POST", f"{_DATABRIDGE_PREFIX}/{connector}/{table}",
+                             payload, timeout)

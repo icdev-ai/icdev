@@ -442,8 +442,15 @@ PUBLIC_ENDPOINTS = frozenset(
         "api_events.ingest_event",
         "api_events.healthcheck",
         "api_contact_submit",
+        # Cortex service liveness probe (ctx-expose-02) — status only, no data.
+        "cortex.api_v1_health",
     }
 )
+
+# Cortex service keys (external server-to-server callers) are honored only on
+# these prefixes — see the icdev_ctx_ branch in _auth_before_request.
+_CORTEX_SERVICE_KEY_PREFIX = "icdev_ctx_"
+_CORTEX_SERVICE_PATHS = ("/cortex/api/v1/", "/api/databridge/v1/")
 
 
 def _extract_api_key_from_request():
@@ -483,6 +490,47 @@ def _auth_before_request():
     # Phase C / P1.3). This hook stays authoritative for legacy /api/* and
     # Jinja page routes; it only steps aside for the versioned surface.
     if request.path.startswith("/api/v1/"):
+        return None
+
+    # Cortex service keys (icdev_ctx_ — tools/cortex/service_keys.py): scoped,
+    # tenant-bound credentials for external server-to-server consumers
+    # (compass, idea_lab) of the Cortex REST surface and DataBridge feeds
+    # (ctx-expose-02/05). Resolved here so rest_v1's _server_context() reads
+    # the same g.security_context seam it reads for session users; the key
+    # row — never the request — supplies tenant/classification. Keys are only
+    # honored on the two service prefixes: they are not dashboard users.
+    service_key = _extract_api_key_from_request()
+    if service_key.startswith(_CORTEX_SERVICE_KEY_PREFIX):
+        if not request.path.startswith(_CORTEX_SERVICE_PATHS):
+            abort(401)
+        try:
+            from tools.cortex.service_keys import resolve_context
+            binding = resolve_context(service_key, None)
+        except Exception:
+            binding = None
+        if binding is None:
+            log_auth_event(
+                None,
+                "login_failed",
+                ip_address=request.remote_addr,
+                user_agent=request.headers.get("User-Agent", "")[:256],
+                details="invalid_cortex_service_key",
+            )
+            abort(401)
+        ctx = binding["ctx"]
+        g.cortex_binding = binding
+        g.current_user = {
+            "id": f"cortex-svc:{binding['label']}",
+            "display_name": f"Cortex service ({binding['label']})",
+            "role": "service",
+            "tenant_id": ctx.tenant_id,
+            "clearance_level": ctx.classification,
+        }
+        g.security_context = {
+            "tenant_id": ctx.tenant_id,
+            "user_id": ctx.user_id or f"cortex-svc:{binding['label']}",
+            "classification": ctx.classification,
+        }
         return None
 
     # Skip auth for public endpoints
