@@ -47,7 +47,10 @@ API_KEY_PREFIX = "icdev_ctx_"
 # The REST v1 operations a key can be scoped to (tools/cortex/rest_v1.py).
 # ``agent`` is deliberately absent from the REST surface — team launches are
 # same-machine MCP only (cortex_agent_launch).
-REST_OPERATIONS = ("search", "ask", "complete", "classify", "extract", "govern")
+REST_OPERATIONS = ("search", "ask", "complete", "classify", "extract", "govern",
+                   # Deterministic deck assembly from a caller-supplied spec —
+                   # no LLM spend, so it rides in the default grant.
+                   "slides")
 
 # Scope vocabulary. cortex:<operation> per facade; databridge:<connector>:<rw>
 # for the feeds surface (tools/dashboard/api/databridge_feeds.py);
@@ -187,6 +190,45 @@ def verify_key(raw_key: str) -> Optional[Dict[str, Any]]:
         return None
 
 
+def grant_scopes(key_id: str, scopes: List[str]) -> Dict[str, Any]:
+    """Add scopes to an ACTIVE key, without re-issuing it.
+
+    A key's scopes are frozen at creation, so every key issued before a new
+    scope existed would 403 on it forever — the only remedy being revoke +
+    re-issue + redistribute the secret to the integrator. That is a bad trade
+    for a purely additive grant, so scopes can be widened in place.
+
+    Additive only: this never removes a scope (use revoke_key to kill a key).
+    """
+    unknown = [s for s in scopes if s not in ALL_SCOPES]
+    if unknown:
+        raise ValueError(
+            f"unknown scopes: {', '.join(unknown)} (valid: {', '.join(ALL_SCOPES)})")
+
+    conn = _get_db()
+    try:
+        row = conn.execute(
+            "SELECT scopes FROM cortex_service_keys WHERE id = %s AND status = 'active'",
+            (key_id,),
+        ).fetchone()
+        if row is None:
+            raise ValueError(f"no active service key {key_id}")
+
+        current = _parse_scopes(dict(row)["scopes"])
+        merged = sorted(set(current) | set(scopes))
+        conn.execute(
+            "UPDATE cortex_service_keys SET scopes = %s WHERE id = %s",
+            (json.dumps(merged), key_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    logger.info("cortex service key %s granted scopes: %s", key_id,
+                ", ".join(sorted(set(scopes) - set(current))) or "(no change)")
+    return {"id": key_id, "scopes": merged, "added": sorted(set(scopes) - set(current))}
+
+
 def revoke_key(key_id: str, revoked_by: str = "") -> bool:
     conn = _get_db()
     try:
@@ -300,6 +342,12 @@ def _cli_main() -> int:
     p_list = sub.add_parser("list", help="List service keys (hashes redacted)")
     p_list.add_argument("--json", action="store_true")
 
+    p_grant = sub.add_parser(
+        "grant", help="Add scopes to an existing active key (additive; no re-issue)")
+    p_grant.add_argument("--key-id", required=True)
+    p_grant.add_argument("--scopes", required=True, help="Comma-separated")
+    p_grant.add_argument("--json", action="store_true")
+
     p_revoke = sub.add_parser("revoke", help="Revoke a service key")
     p_revoke.add_argument("--key-id", required=True)
     p_revoke.add_argument("--revoked-by", default="cli")
@@ -316,6 +364,10 @@ def _cli_main() -> int:
         print("\nStore the raw_key now — it is not retrievable later.", flush=True)
     elif args.command == "list":
         print(json.dumps(list_keys(), indent=None if args.json else 2, default=str))
+    elif args.command == "grant":
+        scopes = [s.strip() for s in args.scopes.split(",") if s.strip()]
+        result = grant_scopes(args.key_id, scopes)
+        print(json.dumps(result, indent=None if args.json else 2))
     elif args.command == "revoke":
         ok = revoke_key(args.key_id, revoked_by=args.revoked_by)
         print(json.dumps({"revoked": ok, "key_id": args.key_id}))

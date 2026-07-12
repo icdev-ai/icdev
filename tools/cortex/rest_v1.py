@@ -41,6 +41,14 @@ logger = get_logger("icdev.cortex.rest_v1")
 
 _API_V1 = "/api/v1"
 
+# Deck-spec allowlist for the /slides surface. Content only — no path-bearing
+# keys (see api_v1_slides: image_path on a remote surface is a file-read hole).
+_SLIDE_KEYS = (
+    "slide_type", "title", "bullets", "speaker_notes", "citations",
+    "headings", "cards", "rows", "columns", "mermaid_code", "svg_code",
+)
+_MAX_SLIDES = 60
+
 
 # ---------------------------------------------------------------------------
 # Identity — derived server-side, never from the client body
@@ -317,6 +325,69 @@ def api_v1_govern(data):
     }
 
 
+@_cortex_api
+def api_v1_slides(data):
+    """Assemble a themed .pptx from a caller-supplied deck spec (prem-msr-07).
+
+    Deterministic: the caller sends finished slide content and we render it in
+    an ICDEV theme. No LLM runs here — this is the presentation layer, not a
+    content generator, so it carries no token spend and no governance chain
+    (there is no model output to govern).
+
+    The PPTX comes back base64-encoded inside the normal JSON envelope so the
+    surface stays uniform for service-key clients.
+
+    SECURITY: the builder honours an ``image_path`` per slide, which on a
+    remote surface would be an arbitrary-file-read primitive — any caller could
+    embed /etc/passwd or a host secret into a deck we hand back. Slide dicts are
+    therefore rebuilt from an allowlist of content-only keys; path-bearing keys
+    never reach the builder.
+    """
+    import base64
+    from pathlib import Path
+
+    from tools.slides.constants import DEFAULT_THEME, THEMES
+    from tools.slides.pptx_builder import build
+
+    if not isinstance(data, dict):
+        raise validators.CortexValidationError("body must be a JSON object")
+
+    slides = data.get("slides")
+    if not isinstance(slides, list) or not slides:
+        raise validators.CortexValidationError("slides must be a non-empty list")
+    if len(slides) > _MAX_SLIDES:
+        raise validators.CortexValidationError(
+            f"too many slides ({len(slides)}); max is {_MAX_SLIDES}")
+
+    theme = data.get("theme") or DEFAULT_THEME
+    if theme not in THEMES:
+        raise validators.CortexValidationError(
+            f"unknown theme '{theme}' (valid: {', '.join(THEMES)})")
+
+    clean = []
+    for index, slide in enumerate(slides):
+        if not isinstance(slide, dict):
+            raise validators.CortexValidationError(f"slide {index} must be an object")
+        # Allowlist — never a blocklist. image_path and friends are dropped.
+        clean.append({key: slide[key] for key in _SLIDE_KEYS if key in slide})
+
+    title = str(data.get("title") or "ICDEV™ Presentation")
+    path = Path(build(clean, theme=theme, title=title))
+    try:
+        payload = base64.b64encode(path.read_bytes()).decode("ascii")
+    finally:
+        path.unlink(missing_ok=True)
+
+    return {
+        "filename": path.name,
+        "content_type": ("application/vnd.openxmlformats-officedocument"
+                         ".presentationml.presentation"),
+        "pptx_base64": payload,
+        "theme": theme,
+        "slide_count": len(clean),
+    }
+
+
 def api_v1_health():
     """Liveness probe — config + air-gap posture, no LLM call, no auth.
 
@@ -334,7 +405,7 @@ def api_v1_health():
             "airgap": bool(airgap_active(None)),
             "operations": [
                 "search", "ask", "complete", "classify", "extract", "govern",
-                "intake",
+                "intake", "slides",
             ],
         })
     except Exception as exc:  # noqa: BLE001
@@ -356,6 +427,7 @@ def register_rest_v1(cortex_bp) -> None:
         ("classify", api_v1_classify),
         ("extract", api_v1_extract),
         ("govern", api_v1_govern),
+        ("slides", api_v1_slides),
     ):
         cortex_bp.add_url_rule(
             f"{_API_V1}/{name}", f"api_v1_{name}", view, methods=["POST"]

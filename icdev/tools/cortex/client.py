@@ -184,6 +184,27 @@ class CortexClient:
             payload["operation"] = operation
         return self._post("govern", self._with_domain(payload, domain), timeout)
 
+    # -- Slides (prem-msr-07; scope cortex:slides) -------------------------------
+
+    def slides_build(self, slides: List[dict], *, theme: str = "",
+                     title: str = "", timeout: Optional[int] = None
+                     ) -> Optional[dict]:
+        """Render finished slide content as a themed ICDEV .pptx.
+
+        Deterministic — you supply the content, ICDEV supplies the theme. No
+        LLM runs. Success shape: {"pptx_base64", "filename", "content_type",
+        "theme", "slide_count"}; decode ``pptx_base64`` to get the file bytes.
+
+        Slide dicts are filtered server-side to content-only keys, so any
+        ``image_path`` you set is dropped rather than honoured.
+        """
+        payload: Dict[str, Any] = {"slides": slides}
+        if theme:
+            payload["theme"] = theme
+        if title:
+            payload["title"] = title
+        return self._post("slides", payload, timeout)
+
     # -- RICOAS intake bridge (prem-ricoas-02; scope cortex:intake) --------------
 
     def intake_create(self, verbatim_ask: str, *, customer_name: str,
