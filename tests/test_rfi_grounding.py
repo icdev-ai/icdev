@@ -40,13 +40,13 @@ _PARSED = {
 }
 
 _PROFILE = {
-    "entity_name": "Peraton Inc.",
+    "entity_name": "Example Defense Corp",
     "sam_uei": "ABC123DEF456",
     "cage_code": "1XYZ9",
     "primary_naics": "541512",
     "address": "123 Mission Dr",
     "contact_phone": "703-555-0100",
-    "contact_email": "bd@peraton.com",
+    "contact_email": "bd@example.com",
     "contact_name": "Jane Smith",
 }
 
@@ -78,7 +78,7 @@ class TestSubstitution:
     def test_substitutes_identity_facts(self):
         text = "Company [COMPANY_NAME], UEI [UEI_NUMBER], CAGE [CAGE_CODE], NAICS [NAICS]."
         out, subs = substitute_profile_facts(text, _PROFILE, _PARSED)
-        assert "Peraton Inc." in out
+        assert "Example Defense Corp" in out
         assert "ABC123DEF456" in out
         assert "1XYZ9" in out
         assert "541512" in out

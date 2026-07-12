@@ -1,7 +1,7 @@
 # CUI // SP-CTI
 """Deterministic stub fixtures for the IRIS DataBridge connector.
 
-IRIS (Peraton's AI decision-support platform) has no published API yet; the
+IRIS (a third-party AI decision-support platform) has no published API yet; the
 connector ships in stub mode returning these fixtures so consumers (compass
 staffing/writing pillars, dashboard feeds) can build and test against stable
 shapes today. When the real API lands, only the connector's ``_endpoints``

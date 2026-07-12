@@ -82,30 +82,31 @@ _MOCK_RFI = {
 
 # ── _load_profile ─────────────────────────────────────────────────────────────
 
-def test_load_profile_peraton_exists():
-    profile = _load_profile("peraton")
-    assert profile is not None
-    assert "entity_name" in profile
+def test_every_shipped_profile_carries_the_required_keys():
+    """Company-agnostic by design.
 
+    ICDEV is open source and ships NO employer's identity, so the contract worth
+    testing is the SHAPE of a profile, not the name of any one company. Pinning a
+    test to a specific entity_name is what made this suite fail the moment that
+    company was (correctly) removed from the repo.
+    """
+    import yaml
 
-def test_load_profile_peraton_entity_name():
-    profile = _load_profile("peraton")
-    assert "Peraton" in profile["entity_name"]
+    path = Path(__file__).resolve().parents[1] / "args" / "govcon_company_profiles.yaml"
+    profiles = (yaml.safe_load(path.read_text(encoding="utf-8")) or {})["profiles"]
+    assert profiles, "the registry must ship at least the own_company template"
 
-
-def test_load_profile_peraton_has_contact():
-    profile = _load_profile("peraton")
-    assert "contact_name" in profile or "contact_email" in profile
-
-
-def test_load_profile_peraton_has_clearances():
-    profile = _load_profile("peraton")
-    assert len(profile.get("clearances", [])) > 0
+    for name, profile in profiles.items():
+        assert profile.get("entity_name"), f"{name}: entity_name is required"
+        assert profile.get("contact_name") or profile.get("contact_email"), \
+            f"{name}: a contact is required"
+        assert profile.get("clearances"), f"{name}: clearances are required"
 
 
 def test_load_profile_own_company_exists():
     profile = _load_profile("own_company")
     assert profile is not None
+    assert "entity_name" in profile
 
 
 def test_load_profile_nonexistent_raises():
@@ -254,7 +255,7 @@ def test_generate_creates_markdown(tmp_path):
         mock_export.return_value = {"status": "ok"}
         result = generate_response(
             rfi=_MOCK_RFI,
-            profile_name="peraton",
+            profile_name="own_company",
             output_dir=str(tmp_path),
             submission_date="2026-08-10",
         )
@@ -270,7 +271,7 @@ def test_generate_action_required_markers(tmp_path):
         mock_export.return_value = {"status": "ok"}
         result = generate_response(
             rfi=_MOCK_RFI,
-            profile_name="peraton",
+            profile_name="own_company",
             output_dir=str(tmp_path),
             submission_date="2026-08-10",
         )
@@ -282,7 +283,7 @@ def test_generate_writes_markdown_file(tmp_path):
     from tools.govcon.rfi_response_generator import generate_response
     result = generate_response(
         rfi=_MOCK_RFI,
-        profile_name="peraton",
+        profile_name="own_company",
         output_dir=str(tmp_path),
         submission_date="2026-08-10",
         export_docx=False,
@@ -296,7 +297,7 @@ def test_generate_writes_capability_scores(tmp_path):
     from tools.govcon.rfi_response_generator import generate_response
     result = generate_response(
         rfi=_MOCK_RFI,
-        profile_name="peraton",
+        profile_name="own_company",
         output_dir=str(tmp_path),
         submission_date="2026-08-10",
         export_docx=False,

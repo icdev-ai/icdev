@@ -1,9 +1,5 @@
 """E2E lifecycle test for the RFI Response Workbench canvas."""
-import json
 import os
-import sys
-import time
-import pathlib
 import tempfile
 
 import pytest
@@ -136,7 +132,7 @@ def test_writeguard(session_id):
     sid = sections[0]["id"]
     requests.post(
         f"{BASE}/api/rfi/{session_id}/sections/{sid}/save",
-        json={"content": "Peraton provides cutting-edge AI orchestration capabilities aligned with NSA mission requirements."},
+        json={"content": "Our team provides cutting-edge AI orchestration capabilities aligned with NSA mission requirements."},
         timeout=5,
     )
     r = requests.post(f"{BASE}/api/rfi/{session_id}/sections/{sid}/writeguard", timeout=15)

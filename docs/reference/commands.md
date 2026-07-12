@@ -2368,7 +2368,7 @@ python -c "from tools.cortex.client import CortexClient; c = CortexClient('http:
 # --- DataBridge feeds (IRIS stub, ctx-expose-05) ---
 #   GET  /api/databridge/v1/iris/staffing_alignment     (scope databridge:iris:read)
 #   POST /api/databridge/v1/iris/performance_reviews    (scope databridge:iris:write)
-# Stub rows carry metadata.stub=true until Peraton publishes the IRIS API
+# Stub rows carry metadata.stub=true until the vendor publishes the IRIS API
 # (flip with IRIS_STUB_MODE=false + IRIS_BASE_URL + IRIS_API_KEY).
 ```
 

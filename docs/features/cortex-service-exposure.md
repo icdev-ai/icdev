@@ -8,7 +8,7 @@
 ICDEV's Cortex unified AI layer is now consumable as a **shared service** by external
 standalone applications (compass at `:8010`, idea_lab at `:8000`, future premium child
 apps) over the existing `/cortex/api/v1/*` REST surface, with dedicated scoped
-credentials, plus a DataBridge feeds surface with an IRIS (Peraton AI platform)
+credentials, plus a DataBridge feeds surface with an IRIS (third-party AI platform)
 connector stub.
 
 Built on top of what the expose epic already had on main: the MCP `cortex_*` family

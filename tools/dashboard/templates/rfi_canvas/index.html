@@ -41,7 +41,7 @@
           <label style="display:block;color:#b8d0e8;font-size:12px;font-weight:600;margin-bottom:6px;">Company Profile</label>
           <select name="profile" id="profile-select" style="width:100%;background:#050d1f;color:#b8d0e8;border:1px solid #1a3560;border-radius:5px;padding:8px 10px;font-size:13px;">
             {% for p in profiles %}
-            <option value="{{ p }}" {% if p == 'peraton' %}selected{% endif %}>{{ p|replace('_',' ')|title }}</option>
+            <option value="{{ p }}" {% if p == 'own_company' %}selected{% endif %}>{{ p|replace('_',' ')|title }}</option>
             {% endfor %}
           </select>
           <div style="color:#5a6e8c;font-size:11px;margin-top:4px;">Defines all Part 1 administrative data</div>

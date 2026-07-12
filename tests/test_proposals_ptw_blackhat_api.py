@@ -299,7 +299,7 @@ class TestBlackhatCrud:
         with app.test_client() as client:
             create_resp = client.post(
                 "/api/proposals/opportunities/opp-1/ptw/blackhat",
-                json={"competitor_name": "Peraton"},
+                json={"competitor_name": "Acme Federal"},
             )
             bh_id = create_resp.get_json()["id"]
 
@@ -317,7 +317,7 @@ class TestBlackhatCrud:
         with app.test_client() as client:
             create_resp = client.post(
                 "/api/proposals/opportunities/opp-1/ptw/blackhat",
-                json={"competitor_name": "Peraton"},
+                json={"competitor_name": "Acme Federal"},
             )
             bh_id = create_resp.get_json()["id"]
             resp = client.put(f"/api/proposals/blackhat/{bh_id}", json={})

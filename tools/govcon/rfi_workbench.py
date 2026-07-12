@@ -1257,7 +1257,7 @@ def list_profiles():
             data = yaml.safe_load(f)
         return list(data.get("profiles", {}).keys())
     except Exception:
-        return ["own_company", "peraton"]
+        return ["own_company"]
 
 
 # ── Requirements layer ────────────────────────────────────────────────────────
