@@ -769,6 +769,20 @@ class PRWatcher:
                             reason=f"shares source file(s) with open PR(s): {detail}",
                             resume_cycle=cycle,
                         ))
+                        # Lessons-Learned (kph): a sibling source-file race is a
+                        # systemic pipeline signal — record it so recurrence +
+                        # remediation fire (classified as SIBLING_FILE_CONFLICT).
+                        # A "wait"/"warn" action never reaches the task-failure
+                        # lesson hook, so emit it explicitly here.
+                        try:
+                            from tools.workflow.lesson_learned import (
+                                analyze_task, write_lesson,
+                            )
+                            write_lesson(analyze_task(
+                                task["id"], outcome="sibling_file_conflict"))
+                        except Exception as _ll_exc:  # noqa: BLE001
+                            logger.debug(
+                                "pr_watcher: sibling lesson hook failed: %s", _ll_exc)
                         if self.config.get("hold_on_sibling_conflict", False):
                             action = WatcherAction(
                                 task_id=task["id"], pr_url=pr_url,

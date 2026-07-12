@@ -128,6 +128,22 @@ def test_sibling_conflict_holds_when_configured():
     assert not merge_calls                     # merge was NOT invoked
 
 
+def test_sibling_conflict_emits_lesson(monkeypatch):
+    # The sibling guard must record a SIBLING_FILE_CONFLICT lesson (recurrence).
+    calls = {}
+    import tools.workflow.lesson_learned as ll
+
+    monkeypatch.setattr(ll, "analyze_task",
+                        lambda tid, outcome=None: calls.setdefault("outcome", outcome) or ("lesson", tid))
+    monkeypatch.setattr(ll, "write_lesson", lambda lesson: calls.setdefault("written", lesson))
+
+    merge_calls = []
+    w = _build_watcher(hold=False, merge_calls=merge_calls)
+    w.poll_once()
+    assert calls.get("outcome") == "sibling_file_conflict"
+    assert "written" in calls
+
+
 def test_no_conflict_when_files_differ():
     merge_calls = []
     w = _build_watcher(hold=True, merge_calls=merge_calls, shared_file="tools/cortex/blueprint.py")
