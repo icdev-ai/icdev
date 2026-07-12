@@ -172,3 +172,26 @@ analyst:
   # When the deterministic NLQ->SQL path returns nothing, fall back to the
   # cortex_analyst LLM routing chain.
   nlq_fallback_enabled: true
+
+cache:
+  # In-process LRU + TTL response cache over the governed facades. OFF by
+  # default — enable knowingly.
+  #
+  # Security model: the cache key folds tenant_id + classification + domain +
+  # air_gap, so a cached result can NEVER be served across any of those
+  # boundaries; only the FINAL governed (post-redaction) result is stored, so a
+  # hit never bypasses egress governance. Every hit still writes a cortex_audit
+  # row (cache_hit=true, zero incremental cost) so the NIST-AU trail and
+  # /cortex/metrics stay complete.
+  enabled: false
+  max_entries: 512
+  # Which governed operations may be cached. complete = free-form drafting (best
+  # hit rate at temperature 0). search = retrieval fan-out (corpus drifts -> keep
+  # TTL short). ask = LIVE analyst NL->SQL answers over changing DB state -> very
+  # short TTL, and the riskiest to cache; drop it from this list to disable.
+  operations: [cortex.complete, cortex.search, cortex.ask]
+  ttl_seconds:
+    default: 300
+    cortex.complete: 900
+    cortex.search: 120
+    cortex.ask: 30

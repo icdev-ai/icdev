@@ -80,6 +80,19 @@ CORTEX_CONFIG_DEFAULTS: Dict = {
     "analyst": {
         "nlq_fallback_enabled": True,
     },
+    "cache": {
+        # Off by default — matches shipped args/cortex_config.yaml. See there for
+        # the security model (key folds tenant/classification/domain/air_gap).
+        "enabled": False,
+        "max_entries": 512,
+        "operations": ["cortex.complete", "cortex.search", "cortex.ask"],
+        "ttl_seconds": {
+            "default": 300,
+            "cortex.complete": 900,
+            "cortex.search": 120,
+            "cortex.ask": 30,
+        },
+    },
 }
 
 # mtime-keyed cache: str(path) -> (mtime, merged config)

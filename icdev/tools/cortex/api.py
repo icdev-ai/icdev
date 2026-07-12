@@ -188,6 +188,26 @@ def _governed_facade(
             text = str(bound.arguments.get(text_param) or "")
             sources = bound.arguments.get(sources_param) if sources_param else None
 
+            # Response cache (opt-in). Serve a prior GOVERNED result for an
+            # identical request. The key folds tenant/classification/domain/
+            # air_gap so a hit never crosses those boundaries; a hit is still
+            # audited (NIST-AU/metrics). Never applies to govern (return_report).
+            cache_key = None
+            if not return_report:
+                try:
+                    from . import cache as _rc
+                    if _rc.is_enabled() and _rc.cacheable(operation):
+                        extra = {k: v for k, v in bound.arguments.items()
+                                 if k not in (text_param, "ctx")}
+                        cache_key = _rc.make_key(operation, text, ctx, extra)
+                        hit = _rc.get_by_key(cache_key)
+                        if hit is not None:
+                            _rc.audit_hit(operation, ctx)
+                            return hit
+                except Exception as _cexc:  # noqa: BLE001 — cache must never break a call
+                    logger.debug("cortex cache read skipped: %s", _cexc)
+                    cache_key = None
+
             def _operation(governed_text: str):
                 bound.arguments[text_param] = governed_text
                 return func(*bound.args, **bound.kwargs)
@@ -204,6 +224,13 @@ def _governed_facade(
                 return report
             if not attach:
                 _stash_outer_report(result, report)
+            # Store only successful, non-blocked governed results.
+            if cache_key is not None and not report.blocked:
+                try:
+                    from . import cache as _rc
+                    _rc.put_by_key(cache_key, result, operation)
+                except Exception as _cexc:  # noqa: BLE001
+                    logger.debug("cortex cache write skipped: %s", _cexc)
             return result
 
         wrapper.__cortex_governed__ = True
