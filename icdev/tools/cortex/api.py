@@ -308,6 +308,24 @@ def _apply_domain_persona(context: CortexContext, system_prompt: str) -> str:
         return system_prompt
 
 
+def _sanitize_history(history) -> list:
+    """Coerce a caller-supplied history into a clean list of chat turns.
+
+    Keeps only well-formed {role, content} dicts with a known role; the current
+    user turn is NOT part of history (it is the governed ``content`` appended
+    after). A malformed history degrades to empty rather than raising.
+    """
+    out: list = []
+    for m in history or []:
+        if not isinstance(m, dict):
+            continue
+        role = str(m.get("role", "")).strip().lower()
+        if role not in ("user", "assistant", "system"):
+            continue
+        out.append({"role": role, "content": str(m.get("content", "") or "")})
+    return out
+
+
 def _build_request(
     content: str,
     ctx: Union[CortexContext, dict, None],
@@ -316,13 +334,24 @@ def _build_request(
     max_tokens: Optional[int] = None,
     temperature: Optional[float] = None,
     output_schema: Optional[Dict] = None,
+    history: Optional[List[dict]] = None,
+    model: Optional[str] = None,
 ):
-    """Build an LLMRequest with the CortexContext threaded into it."""
+    """Build an LLMRequest with the CortexContext threaded into it.
+
+    ``history`` (prior conversation turns) is prepended so multi-turn callers
+    (chat) keep their context; the governed ``content`` is always the final
+    user turn, so input screening/redaction still applies to the new input while
+    prior — already-governed — turns pass through. ``model`` pins a specific
+    model (chat's per-session override) when the caller needs it.
+    """
     from tools.llm.provider import LLMRequest
 
     context = _coerce_context(ctx)
+    messages = _sanitize_history(history)
+    messages.append({"role": "user", "content": content})
     request = LLMRequest(
-        messages=[{"role": "user", "content": content}],
+        messages=messages,
         system_prompt=system_prompt,
         tenant_id=context.tenant_id,
         classification=context.classification or "CUI",
@@ -337,6 +366,8 @@ def _build_request(
         request.temperature = float(temperature)
     if output_schema is not None:
         request.output_schema = output_schema
+    if model and hasattr(request, "model"):
+        request.model = model
     # Trusted first-party content skips the router-level injection scan too, so
     # the behaviour matches the pre-facade raw router.invoke(skip_injection_scan=
     # True) call sites exactly. The governance pipeline already skipped its own
@@ -362,18 +393,32 @@ def _invoke(function: str, request, context: CortexContext):
     return router.invoke(function, request)
 
 
+def _num(value, cast, default=0):
+    """Coerce a provider accounting field to a number, defaulting on garbage.
+
+    A provider (or a test double) that returns a non-numeric cost/latency/token
+    field must not crash the facade — accounting is best-effort telemetry.
+    """
+    try:
+        return cast(value)
+    except (TypeError, ValueError):
+        return cast(default)
+
+
 def _result_from_response(response, *, text: Optional[str] = None, elapsed_ms: int = 0) -> CortexResult:
     """Map an LLMResponse's accounting fields into a CortexResult."""
+    provider = getattr(response, "provider", "") or ""
+    model = getattr(response, "model_id", "") or ""
     return CortexResult(
-        text=text if text is not None else (response.content or ""),
+        text=text if text is not None else (getattr(response, "content", "") or ""),
         citations=[],
         governance=GovernanceReport(),
-        provider=response.provider or "",
-        model=response.model_id or "",
-        cost=float(response.cost_usd or 0.0),
-        latency_ms=int(response.duration_ms or elapsed_ms),
-        input_tokens=int(getattr(response, "input_tokens", 0) or 0),
-        output_tokens=int(getattr(response, "output_tokens", 0) or 0),
+        provider=provider if isinstance(provider, str) else "",
+        model=model if isinstance(model, str) else "",
+        cost=_num(getattr(response, "cost_usd", 0.0) or 0.0, float),
+        latency_ms=_num(getattr(response, "duration_ms", 0) or elapsed_ms, int),
+        input_tokens=_num(getattr(response, "input_tokens", 0) or 0, int),
+        output_tokens=_num(getattr(response, "output_tokens", 0) or 0, int),
         grounded=False,
     )
 
@@ -444,14 +489,21 @@ def complete(
     system_prompt: str = "",
     max_tokens: Optional[int] = None,
     temperature: Optional[float] = None,
+    history: Optional[List[dict]] = None,
+    model: Optional[str] = None,
 ) -> CortexResult:
     """Free-form completion via the config-routed LLM chain.
 
     Args:
-        prompt: User prompt text.
+        prompt: The current user turn. This is what the governance pipeline
+            screens/redacts; it is always the final message sent.
         function: Logical routing function name (args/llm_config.yaml key).
         ctx: CortexContext (or dict) whose tenant_id/classification are
             threaded into the LLMRequest for RLS and redaction policy.
+        history: Prior conversation turns ([{role, content}, ...]) for
+            multi-turn callers (chat). Prepended before ``prompt``; already
+            governed in their own turns, so they pass through as context.
+        model: Optional model pin (chat's per-session override).
 
     Returns:
         CortexResult with provider/model/cost/latency_ms populated from the
@@ -469,6 +521,8 @@ def complete(
         system_prompt=system_prompt,
         max_tokens=max_tokens,
         temperature=temperature,
+        history=history,
+        model=model,
     )
     started = time.perf_counter()
     response = _invoke(function, request, context)
