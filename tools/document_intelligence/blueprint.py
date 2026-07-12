@@ -1825,27 +1825,25 @@ def _llm_synthesize(message: str, results: list) -> str | None:
         f"Evidence:\n{evidence}\n\n"
         f"Question: {message}"
     )
+    # Adoption wave 2: route DIC chat synthesis through the GOVERNED cortex.complete
+    # instead of a raw router.invoke. The raw path set skip_injection_scan=True on a
+    # prompt containing the user's `message` — Cortex's gateway pre-check screens it,
+    # and adds egress redaction, provenance, and an append-only audit row to this
+    # user-facing document-QA surface. No-LLM / errors fall through to None (the
+    # route degrades to the grounded RAG+KG evidence without synthesis).
     try:
-        for ns in ("icdev.tools.llm.router", "tools.llm.router"):
-            try:
-                import importlib
-                mod = importlib.import_module(ns)
-                LLMRequest = importlib.import_module(
-                    ns.replace("router", "provider")
-                ).LLMRequest
-                router = mod.LLMRouter()
-                if router.is_no_llm_mode():
-                    return None
-                req = LLMRequest(
-                    messages=[{"role": "user", "content": prompt}],
-                    max_tokens=1024,
-                    skip_injection_scan=True,
-                )
-                resp = router.invoke("question_answering", req)
-                if resp and getattr(resp, "content", None):
-                    return resp.content.strip() or None
-            except ImportError:
-                continue
+        from tools.cortex import api as cortex_api
+        from tools.cortex.schemas import CortexContext
+
+        cx = cortex_api.complete(
+            prompt,
+            function="question_answering",
+            ctx=CortexContext(
+                classification="CUI", domain="document", agent_id="dic-chat"
+            ),
+            max_tokens=1024,
+        )
+        return (cx.text or "").strip() or None
     except Exception as exc:
         logger.warning("dic: chat LLM error: %s", exc)
     return None
