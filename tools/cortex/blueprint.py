@@ -126,6 +126,30 @@ def index():
     )
 
 
+# ── Observability panel (read-only over the cortex_audit trail) ──────────────────
+
+def _metrics_window() -> int:
+    try:
+        return max(1, min(int(request.args.get("hours", 24)), 24 * 30))
+    except (TypeError, ValueError):
+        return 24
+
+
+@cortex_bp.route("/metrics")
+def metrics_page():
+    """GET /cortex/metrics — governance/usage/spend observability panel."""
+    from tools.cortex.metrics import summarize
+    stats = summarize(window_hours=_metrics_window())
+    return render_template("cortex/metrics.html", stats=stats)
+
+
+@cortex_bp.route("/api/metrics", methods=["GET"])
+def api_metrics():
+    """GET /cortex/api/metrics — JSON governance/usage/spend metrics."""
+    from tools.cortex.metrics import summarize
+    return jsonify(summarize(window_hours=_metrics_window()))
+
+
 # ── API Routes ──────────────────────────────────────────────────────────────────
 
 def _cortex_context(domain: str):

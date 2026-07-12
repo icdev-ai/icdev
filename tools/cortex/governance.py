@@ -286,26 +286,37 @@ class GovernancePipeline:
         ctx: CortexContext,
         blocked_gate: str = "",
         provenance_id: str = "",
+        result=None,
     ) -> None:
         try:
-            _gate_record_audit(
-                {
-                    "record_id": f"cgov-{uuid.uuid4().hex[:16]}",
-                    "operation": self.operation,
-                    "agent_id": self.agent_id,
-                    "session_id": getattr(ctx, "session_id", "") or "",
-                    "tenant_id": ctx.tenant_id,
-                    "user_id": ctx.user_id,
-                    "classification": ctx.classification,
-                    "blocked": report.blocked,
-                    "blocked_gate": blocked_gate,
-                    "blocked_reason": report.blocked_reason,
-                    "gates_run": list(report.gates_run),
-                    "outcomes": dict(report.outcomes),
-                    "redactions_applied": report.redactions_applied,
-                    "provenance_id": provenance_id,
-                }
-            )
+            payload = {
+                "record_id": f"cgov-{uuid.uuid4().hex[:16]}",
+                "operation": self.operation,
+                "agent_id": self.agent_id,
+                "session_id": getattr(ctx, "session_id", "") or "",
+                "tenant_id": ctx.tenant_id,
+                "user_id": ctx.user_id,
+                "classification": ctx.classification,
+                "domain": getattr(ctx, "domain", "") or "",
+                "blocked": report.blocked,
+                "blocked_gate": blocked_gate,
+                "blocked_reason": report.blocked_reason,
+                "gates_run": list(report.gates_run),
+                "outcomes": dict(report.outcomes),
+                "redactions_applied": report.redactions_applied,
+                "provenance_id": provenance_id,
+            }
+            # Accounting for observability. cost/latency/provider/model live on
+            # the CortexResult, not on cortex_audit columns — carry them in the
+            # free-form gates_json blob so /cortex/metrics can aggregate spend
+            # without a schema migration. This is INSERT-only; the append-only
+            # audit invariant is untouched.
+            if isinstance(result, CortexResult):
+                payload["cost_usd"] = float(getattr(result, "cost", 0.0) or 0.0)
+                payload["latency_ms"] = int(getattr(result, "latency_ms", 0) or 0)
+                payload["provider"] = getattr(result, "provider", "") or ""
+                payload["model"] = getattr(result, "model", "") or ""
+            _gate_record_audit(payload)
         except Exception as exc:  # audit stub must never mask the real outcome
             logger.error("cortex governance audit record failed: %s", exc)
 
@@ -520,7 +531,7 @@ class GovernancePipeline:
         except Exception as exc:
             logger.warning("cortex governance provenance record failed: %s", exc)
             self._record(report, GATE_PROVENANCE, OUTCOME_WARN, str(exc))
-        self._audit(report, ctx, provenance_id=registry_id or "")
+        self._audit(report, ctx, provenance_id=registry_id or "", result=result)
 
         if attach and is_cortex_result:
             result.governance = report
