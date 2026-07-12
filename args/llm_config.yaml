@@ -701,20 +701,24 @@ routing:
     chain: [gemma3-local, llava-local, qwen3-local]
     effort: high
 
+  # Playwright/e2e EXECUTION routes to Kimi cloud (user directive 2026-07-12):
+  # Claude plans and writes tests; Kimi drives the run/fix/verify loops.
+  # kimi-k2.6:cloud is vision-capable (screenshot checks); qwen3-local stays
+  # as the air-gap fallback tier.
   e2e_testing:
-    chain: [qwen3-local]
+    chain: [kimi-cloud, qwen3-local]
     effort: low
 
   playwright_execution:
-    chain: [qwen3-local]
+    chain: [kimi-cloud, qwen3-local]
     effort: low
 
   browser_automation:
-    chain: [qwen3-local]
+    chain: [kimi-cloud, qwen3-local]
     effort: low
 
   ui_verification:
-    chain: [qwen3-local]
+    chain: [kimi-cloud, qwen3-local]
     effort: low
 
   diagram_extraction:
