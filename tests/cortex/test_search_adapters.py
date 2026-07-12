@@ -457,3 +457,53 @@ def test_adapters_importable_via_canonical_namespace():
     )
 
     assert set(BACKEND_ADAPTERS) == {"rag", "graph", "dic", "kb"}
+
+
+# ---------------------------------------------------------------------------
+# Shared fan-out pool (no per-call executor leak)
+# ---------------------------------------------------------------------------
+def test_search_executor_is_shared_and_not_shutdown_per_call(monkeypatch):
+    ex1 = search_service._get_search_executor()
+    ex2 = search_service._get_search_executor()
+    assert ex1 is ex2, "the search pool must be a single process-wide instance"
+
+    def _fast(query, top_k=5, ctx=None):
+        return [CortexSearchResult(backend="rag", content="x", score=0.9)]
+
+    monkeypatch.setitem(search_service.BACKEND_ADAPTERS, "rag", _fast)
+    _, ran, timed_out = search_service._run_backends(
+        "q", 5, None, ["rag"], {"timeouts": {"default": 5.0}}
+    )
+    assert ran == ["rag"]
+    assert not timed_out
+    # A single call must NOT tear the shared pool down (the old per-call
+    # executor.shutdown() is gone).
+    assert search_service._get_search_executor() is ex1
+    assert ex1._shutdown is False
+
+
+def test_backend_timeout_returns_partial_without_tearing_down_pool(monkeypatch):
+    import time as _time
+
+    ex = search_service._get_search_executor()
+
+    def _fast(query, top_k=5, ctx=None):
+        return [CortexSearchResult(backend="rag", content="fast", score=0.9)]
+
+    def _slow(query, top_k=5, ctx=None):
+        _time.sleep(2.0)  # exceeds the graph timeout below
+        return [CortexSearchResult(backend="graph", content="slow", score=0.8)]
+
+    monkeypatch.setitem(search_service.BACKEND_ADAPTERS, "rag", _fast)
+    monkeypatch.setitem(search_service.BACKEND_ADAPTERS, "graph", _slow)
+
+    results, ran, timed_out = search_service._run_backends(
+        "q", 5, None, ["rag", "graph"],
+        {"timeouts": {"default": 10.0, "graph": 0.2}},
+    )
+    # Partial results: the fast backend is returned, the slow one is abandoned.
+    assert "graph" in timed_out
+    assert {r.backend for r in results} == {"rag"}
+    # The shared pool is untouched — same instance, still alive for reuse.
+    assert search_service._get_search_executor() is ex
+    assert ex._shutdown is False
