@@ -150,6 +150,26 @@ def api_metrics():
     return jsonify(summarize(window_hours=_metrics_window()))
 
 
+@cortex_bp.route("/api/metrics/tile", methods=["GET"])
+def api_metrics_tile():
+    """GET /cortex/api/metrics/tile — compact governance summary for the home
+    monitor card. Governance-first (calls / block rate / cost); cache hits are a
+    secondary field. Distinct from the LLM prompt-cache card (token economics)."""
+    from tools.cortex.metrics import summarize
+    stats = summarize(window_hours=_metrics_window())
+    s = stats["summary"]
+    return jsonify({
+        "available": stats["available"],
+        "window_hours": stats["window_hours"],
+        "calls": s["calls"],
+        "blocked": s["blocked"],
+        "block_rate_pct": s["block_rate_pct"],
+        "redactions": s["redactions"],
+        "cost_usd": s["cost_usd"],
+        "cache_hits": s["cache_hits"],
+    })
+
+
 # ── API Routes ──────────────────────────────────────────────────────────────────
 
 def _cortex_context(domain: str):
