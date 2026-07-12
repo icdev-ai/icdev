@@ -1,0 +1,180 @@
+# CUI // SP-CTI
+"""Tests for the opt-in Cortex response cache (tools/cortex/cache.py).
+
+Focus on the security-load-bearing behaviors: the key folds the full
+tenant/classification/domain/air_gap boundary (a hit never crosses it), a hit is
+still audited, and a blocked result is never cached.
+"""
+from __future__ import annotations
+
+from types import SimpleNamespace
+
+import pytest
+
+from tools.cortex import api
+from tools.cortex import cache as rc
+from tools.cortex import governance as gov
+from tools.cortex.schemas import CortexContext
+
+
+@pytest.fixture(autouse=True)
+def _isolate(monkeypatch):
+    rc.reset()
+    # Governance sinks -> in-memory (no DB audit/provenance, no heavy gateway).
+    monkeypatch.setattr(gov, "_gate_record_audit", lambda p: None)
+    monkeypatch.setattr(gov, "_gate_register_provenance", lambda t, c, o, r: "scr")
+    monkeypatch.setattr(gov, "_gate_check_text",
+                        lambda t: {"allowed": True, "warnings": [], "blocked_reason": None})
+    monkeypatch.setattr(gov, "_gate_redact_input", lambda t, c: (t, 0))
+    monkeypatch.setattr(gov, "_gate_redact_output", lambda t: (t, []))
+    yield
+    rc.reset()
+
+
+def _enable(monkeypatch, **over):
+    cfg = {
+        "enabled": True, "max_entries": 8,
+        "operations": ["cortex.complete", "cortex.search", "cortex.ask"],
+        "ttl_seconds": {"default": 300, "cortex.complete": 900},
+    }
+    cfg.update(over)
+    monkeypatch.setattr(rc, "_cache_cfg", lambda: cfg)
+    rc.reset()
+
+
+def _count_invoke(monkeypatch, text="answer"):
+    calls = {"n": 0}
+
+    def _fake(function, request, context):
+        calls["n"] += 1
+        return SimpleNamespace(content=text, provider="p", model_id="m",
+                               cost_usd=0.0, duration_ms=1)
+
+    monkeypatch.setattr(api, "_invoke", _fake)
+    return calls
+
+
+# --------------------------------------------------------------------------- #
+# make_key — the security boundary
+# --------------------------------------------------------------------------- #
+def test_key_folds_full_boundary():
+    base = CortexContext(tenant_id="t-a", classification="CUI", domain="proposal")
+    k = rc.make_key("cortex.complete", "hi", base, {})
+    # Identical inputs -> identical key.
+    assert k == rc.make_key("cortex.complete", "hi", base, {})
+    # Each boundary dimension changes the key.
+    assert k != rc.make_key("cortex.complete", "hi", CortexContext(tenant_id="t-b", classification="CUI", domain="proposal"), {})
+    assert k != rc.make_key("cortex.complete", "hi", CortexContext(tenant_id="t-a", classification="SECRET", domain="proposal"), {})
+    assert k != rc.make_key("cortex.complete", "hi", CortexContext(tenant_id="t-a", classification="CUI", domain="network"), {})
+    assert k != rc.make_key("cortex.complete", "hi", CortexContext(tenant_id="t-a", classification="CUI", domain="proposal", air_gap=True), {})
+    # Different prompt or extra args -> different key.
+    assert k != rc.make_key("cortex.complete", "bye", base, {})
+    assert k != rc.make_key("cortex.complete", "hi", base, {"temperature": 0.9})
+    # user_id intentionally does NOT partition (same tenant+classification share).
+    assert k == rc.make_key("cortex.complete", "hi",
+                            CortexContext(tenant_id="t-a", classification="CUI", domain="proposal", user_id="u9"), {})
+
+
+# --------------------------------------------------------------------------- #
+# _TTLCache unit
+# --------------------------------------------------------------------------- #
+def test_ttlcache_expiry_and_lru(monkeypatch):
+    import tools.cortex.cache as cmod
+    clock = {"t": 1000.0}
+    monkeypatch.setattr(cmod.time, "monotonic", lambda: clock["t"])
+    c = cmod._TTLCache(max_entries=2)
+    c.put("a", 1, ttl=10)
+    assert c.get("a") == 1
+    clock["t"] = 1011.0  # past ttl
+    assert c.get("a") is None
+    # LRU eviction at capacity 2.
+    clock["t"] = 2000.0
+    c.put("x", 1, ttl=100); c.put("y", 2, ttl=100)
+    c.get("x")  # touch x -> y is now LRU
+    c.put("z", 3, ttl=100)  # evicts y
+    assert c.get("y") is None
+    assert c.get("x") == 1 and c.get("z") == 3
+
+
+# --------------------------------------------------------------------------- #
+# Facade integration
+# --------------------------------------------------------------------------- #
+def test_disabled_by_default_no_caching(monkeypatch):
+    monkeypatch.setattr(rc, "_cache_cfg", lambda: {"enabled": False})
+    calls = _count_invoke(monkeypatch)
+    ctx = CortexContext(tenant_id="t-a")
+    api.complete("same prompt", ctx=ctx)
+    api.complete("same prompt", ctx=ctx)
+    assert calls["n"] == 2  # no cache -> both ran
+
+
+def test_enabled_serves_identical_call_from_cache(monkeypatch):
+    _enable(monkeypatch)
+    calls = _count_invoke(monkeypatch)
+    ctx = CortexContext(tenant_id="t-a", domain="proposal")
+    r1 = api.complete("draft it", ctx=ctx, system_prompt="terse")
+    r2 = api.complete("draft it", ctx=ctx, system_prompt="terse")
+    assert calls["n"] == 1  # second served from cache
+    assert r1.text == r2.text
+
+
+def test_cache_isolated_across_tenants(monkeypatch):
+    _enable(monkeypatch)
+    calls = _count_invoke(monkeypatch)
+    api.complete("secret question", ctx=CortexContext(tenant_id="t-a"))
+    api.complete("secret question", ctx=CortexContext(tenant_id="t-b"))
+    assert calls["n"] == 2  # different tenant -> never shared
+
+
+def test_cache_isolated_across_classification_and_domain(monkeypatch):
+    _enable(monkeypatch)
+    calls = _count_invoke(monkeypatch)
+    api.complete("q", ctx=CortexContext(tenant_id="t", classification="CUI"))
+    api.complete("q", ctx=CortexContext(tenant_id="t", classification="SECRET"))
+    api.complete("q", ctx=CortexContext(tenant_id="t", classification="CUI", domain="network"))
+    assert calls["n"] == 3
+
+
+def test_different_system_prompt_not_shared(monkeypatch):
+    _enable(monkeypatch)
+    calls = _count_invoke(monkeypatch)
+    ctx = CortexContext(tenant_id="t-a")
+    api.complete("q", ctx=ctx, system_prompt="style A")
+    api.complete("q", ctx=ctx, system_prompt="style B")
+    assert calls["n"] == 2
+
+
+def test_cache_hit_is_audited(monkeypatch):
+    _enable(monkeypatch)
+    _count_invoke(monkeypatch)
+    audits = []
+    import importlib
+    # db/__init__.py re-exports the init_db FUNCTION under the same dotted name,
+    # so import the module explicitly to patch record_audit on it.
+    initdb = importlib.import_module("tools.cortex.db.init_db")
+    monkeypatch.setattr(initdb, "record_audit", lambda payload, conn=None: audits.append(payload) or "id")
+    ctx = CortexContext(tenant_id="t-a")
+    api.complete("q", ctx=ctx)      # miss -> stores
+    api.complete("q", ctx=ctx)      # hit -> audited
+    assert any(a.get("cache_hit") for a in audits), "cache hit must write an audit row"
+    hit = next(a for a in audits if a.get("cache_hit"))
+    assert hit["cost_usd"] == 0.0   # a hit incurs no new spend
+    assert hit["tenant_id"] == "t-a"
+
+
+def test_blocked_result_not_cached(monkeypatch):
+    _enable(monkeypatch)
+    calls = _count_invoke(monkeypatch)
+    # Gateway denies -> pre_check blocks -> complete raises, nothing cached.
+    monkeypatch.setattr(gov, "_gate_check_text",
+                        lambda t: {"allowed": False, "warnings": [], "blocked_reason": "injection"})
+    from tools.cortex.api import CortexQueryBlocked
+    from tools.cortex.governance import GovernanceBlockedError
+    ctx = CortexContext(tenant_id="t-a")
+    with pytest.raises((GovernanceBlockedError, CortexQueryBlocked)):
+        api.complete("bad", ctx=ctx)
+    # Restore gateway; the same prompt must now actually run (was not cached).
+    monkeypatch.setattr(gov, "_gate_check_text",
+                        lambda t: {"allowed": True, "warnings": [], "blocked_reason": None})
+    api.complete("bad", ctx=ctx)
+    assert calls["n"] == 1  # only the post-unblock call ran
