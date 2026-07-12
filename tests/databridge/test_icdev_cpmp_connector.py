@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 import uuid
 
 import pytest
@@ -138,6 +139,61 @@ def test_write_deliverable_rejects_government_side_status(connector, cpmp_db):
 
 def test_contracts_table_not_writable(connector):
     resp = connector.write(ConnectorRequest(table_name="contracts"), {"x": 1})
+    assert resp.status == "error"
+
+
+# -- mod recommendations (prem-cpmp-05) --------------------------------------
+
+def _mod(connector, contract_id, **overrides):
+    payload = {"contract_id": contract_id, "type": "scope",
+               "description": "Add 200h of integration support (customer-signed)",
+               "value_delta": 42000.0,
+               "provenance": {"decision_id": "dec-1", "schedule_impact_days": 12}}
+    payload.update(overrides)
+    return connector.write(
+        ConnectorRequest(table_name="mod_recommendations", sync_direction="write"),
+        payload)
+
+
+def test_write_mod_recommendation_lands_as_requested(connector, cpmp_db):
+    resp = _mod(connector, cpmp_db["contract_id"])
+    assert resp.status == "ok"
+    # The bridge proposes; contracts staff dispose. Never self-approved.
+    assert resp.data["status"] == "requested"
+    assert resp.data["mod_number"] == 1
+
+    conn = get_connection(db_path=str(cpmp_db["db"]))
+    row = conn.execute(
+        "SELECT type, description, value_delta, status, requested_by, metadata "
+        "FROM cpmp_contract_mods WHERE id = %s", (resp.data["id"],)).fetchone()
+    assert row["status"] == "requested"
+    assert row["type"] == "scope"
+    assert row["value_delta"] == 42000.0
+    assert row["requested_by"] == "compass"
+    # Provenance survives so a reviewer can trace the ask to the signature.
+    assert json.loads(row["metadata"])["decision_id"] == "dec-1"
+
+
+def test_mod_numbers_are_sequential_per_contract(connector, cpmp_db):
+    first = _mod(connector, cpmp_db["contract_id"])
+    second = _mod(connector, cpmp_db["contract_id"], description="Second ask")
+    assert first.data["mod_number"] == 1
+    assert second.data["mod_number"] == 2
+
+
+def test_write_mod_rejects_type_outside_the_check_constraint(connector, cpmp_db):
+    resp = _mod(connector, cpmp_db["contract_id"], type="recommended")
+    assert resp.status == "error"
+    assert "type must be one of" in resp.errors[0]
+
+
+def test_write_mod_requires_a_description(connector, cpmp_db):
+    resp = _mod(connector, cpmp_db["contract_id"], description="   ")
+    assert resp.status == "error"
+
+
+def test_write_mod_unknown_contract(connector):
+    resp = _mod(connector, "nope")
     assert resp.status == "error"
 
 
