@@ -33,12 +33,9 @@ import os
 import uuid
 from typing import Optional
 
-try:
-    from tools.logging.icdev_logger import get_logger
-    logger = get_logger("icdev.cortex.db")
-except Exception:  # noqa: BLE001 — logging must never break persistence
-    import logging
-    logger = logging.getLogger("icdev.cortex.db")
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.cortex.db")
 
 # Set once per process after the cortex tables are confirmed to exist, so the
 # audit/session writes self-heal on a fresh PostgreSQL bootstrapped from
