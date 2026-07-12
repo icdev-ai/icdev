@@ -69,7 +69,9 @@ def _isolated(monkeypatch, audit_log):
     monkeypatch.setattr(
         _nlq,
         "generate_sql_via_bedrock",
-        lambda query, schema: pytest.fail("NLQ generation should not run in this test"),
+        lambda query, schema, exclude_model_ids=None: pytest.fail(
+            "NLQ generation should not run in this test"
+        ),
     )
     # ctx-expose-03: the NLQ fallback now executes through the analyst's own
     # RLS-context-threading seam (_execute_nlq_readonly), NOT the dashboard's
@@ -93,7 +95,10 @@ def _isolated(monkeypatch, audit_log):
 
 
 def _enable_nlq(monkeypatch, sql: str, results: dict = _NLQ_RESULTS):
-    monkeypatch.setattr(_nlq, "generate_sql_via_bedrock", lambda query, schema: sql)
+    monkeypatch.setattr(
+        _nlq, "generate_sql_via_bedrock",
+        lambda query, schema, exclude_model_ids=None: sql,
+    )
     monkeypatch.setattr(
         "tools.cortex.analyst._execute_nlq_readonly", lambda s, ctx: dict(results)
     )
@@ -142,7 +147,10 @@ def test_no_matching_collection_falls_back_to_nlq(monkeypatch):
 
 
 def test_fallback_untranslatable_question_raises(monkeypatch):
-    monkeypatch.setattr(_nlq, "generate_sql_via_bedrock", lambda query, schema: None)
+    monkeypatch.setattr(
+        _nlq, "generate_sql_via_bedrock",
+        lambda query, schema, exclude_model_ids=None: None,
+    )
     with pytest.raises(CortexAnalystError) as exc_info:
         ask("count the frobnicators", conn=StubConn())
     err = exc_info.value
@@ -294,6 +302,49 @@ def test_nlq_success_is_audited(monkeypatch, audit_log):
     ask("show all satellites", mode="nlq")
     assert audit_log[-1][2] == "success"
     assert audit_log[-1][1] == "SELECT id, name FROM satellites"
+
+
+# ---------------------------------------------------------------------------
+# Air-gap: the NL->SQL generation call must honor per-call air-gap exclusions
+# the same way cortex.api._invoke does for every other Cortex LLM call.
+# ---------------------------------------------------------------------------
+def test_nlq_generation_receives_airgap_exclusions(monkeypatch):
+    seen = {}
+
+    def _capture(query, schema, exclude_model_ids=None):
+        seen["exclude_model_ids"] = exclude_model_ids
+        return "SELECT id, name FROM satellites"
+
+    monkeypatch.setattr(_nlq, "generate_sql_via_bedrock", _capture)
+    monkeypatch.setattr(
+        "tools.cortex.analyst._execute_nlq_readonly", lambda s, ctx: dict(_NLQ_RESULTS)
+    )
+    # Force airgap_exclusions to return a sentinel regardless of config so the
+    # test pins the wiring, not the air-gap detection logic.
+    monkeypatch.setattr(
+        "tools.cortex.config.airgap_exclusions", lambda ctx=None, config_path=None: ["cloud-model-x"]
+    )
+    result = ask("show all satellites", mode="nlq", ctx=CortexContext(air_gap=True))
+    assert result.provider == "nlq"
+    assert seen["exclude_model_ids"] == ["cloud-model-x"]
+
+
+def test_nlq_generation_no_exclusions_when_not_airgapped(monkeypatch):
+    seen = {}
+
+    def _capture(query, schema, exclude_model_ids=None):
+        seen["exclude_model_ids"] = exclude_model_ids
+        return "SELECT id, name FROM satellites"
+
+    monkeypatch.setattr(_nlq, "generate_sql_via_bedrock", _capture)
+    monkeypatch.setattr(
+        "tools.cortex.analyst._execute_nlq_readonly", lambda s, ctx: dict(_NLQ_RESULTS)
+    )
+    monkeypatch.setattr(
+        "tools.cortex.config.airgap_exclusions", lambda ctx=None, config_path=None: None
+    )
+    ask("show all satellites", mode="nlq")
+    assert seen["exclude_model_ids"] is None
 
 
 def test_blocked_error_exposed_from_package_and_api():

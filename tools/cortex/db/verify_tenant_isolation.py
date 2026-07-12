@@ -265,7 +265,7 @@ def _check_analyst_nlq() -> dict:
     register_collection(_PROBE_TABLE, lambda conn: [])
     saved_gen = _nlq.generate_sql_via_bedrock
     saved_schema = _nlq.extract_schema
-    _nlq.generate_sql_via_bedrock = lambda question, schema=None: probe_sql
+    _nlq.generate_sql_via_bedrock = lambda question, schema=None, exclude_model_ids=None: probe_sql
     _nlq.extract_schema = lambda: {}
     try:
         res_a = ask(
