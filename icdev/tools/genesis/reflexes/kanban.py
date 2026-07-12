@@ -2815,7 +2815,11 @@ def _detect_orphan_done_tasks() -> list[dict]:
                 "       p.status AS parent_status "
                 "FROM kanban_tasks t "
                 "JOIN kanban_tasks p ON p.id = t.depends_on_task_id "
-                "WHERE t.status = 'done' AND p.status NOT IN ('done', 'decomposed')"
+                "WHERE t.status = 'done' AND p.status NOT IN ('done', 'decomposed') "
+                # A manual gate never completes — that is the whole point of it.
+                # Its done dependents are finished work, not orphans.
+                "  AND p.id NOT LIKE '%%-gate-00' "
+                "  AND COALESCE(p.title, '') NOT LIKE '%%MANUAL-MODE GATE%%'"
             ).fetchall()
             # Junction dep orphans: done task with at least one unfinished junction parent
             junction_rows = conn.execute(
@@ -2824,7 +2828,9 @@ def _detect_orphan_done_tasks() -> list[dict]:
                 "FROM kanban_tasks t "
                 "JOIN kanban_task_deps d ON d.task_id = t.id "
                 "JOIN kanban_tasks p ON p.id = d.depends_on_id "
-                "WHERE t.status = 'done' AND p.status NOT IN ('done', 'decomposed')"
+                "WHERE t.status = 'done' AND p.status NOT IN ('done', 'decomposed') "
+                "  AND p.id NOT LIKE '%%-gate-00' "
+                "  AND COALESCE(p.title, '') NOT LIKE '%%MANUAL-MODE GATE%%'"
             ).fetchall()
         finally:
             conn.close()
@@ -6560,6 +6566,11 @@ def _decompose_triage_task(task: dict) -> bool:
             return False
 
         child_specs = []
+        # The parent's own dependency — inherited by the first child so a gated
+        # parent cannot be decomposed into an ungated chain.
+        parent_dep = task.get("depends_on_task_id")
+
+        prev_child: str | None = None
         for i, sub in enumerate(subtasks[:7]):
             child_id = f"{task_id}-d{i + 1:02d}"
             child_specs.append({
@@ -6569,9 +6580,12 @@ def _decompose_triage_task(task: dict) -> bool:
                 "task_type": sub.get("task_type", "build"),
                 "priority": sub.get("priority", "medium"),
                 "status": "backlog",
-                "depends_on_task_id": None,
+                # Chain sequentially; the FIRST child inherits the PARENT's dep so
+                # decomposing a gated task cannot produce an ungated chain.
+                "depends_on_task_id": prev_child or parent_dep,
                 "dispatch_source": f"triage:{task_id}",
             })
+            prev_child = child_id
         create_tasks(child_specs)
         logger.info("Triage decompose: created %d child tasks for %s", len(child_specs), task_id)
 
@@ -7978,6 +7992,10 @@ def _decompose_one_task(task: dict, ai_narrative: bool = False) -> dict:
         )
 
         inserted = []
+        # The parent's own dependency — inherited by the first child below, so a
+        # gated parent cannot be decomposed into an ungated chain.
+        parent_dep = task.get("depends_on_task_id")
+
         for i, sub in enumerate(subtasks[:5], start=1):
             sub_title = str(sub.get("title") or f"{title} — part {i}")[:120]
             sub_desc = str(sub.get("description") or "")
@@ -7993,9 +8011,13 @@ def _decompose_one_task(task: dict, ai_narrative: bool = False) -> dict:
             # Truncate if too long for any DB column limit
             child_id = child_id[:64]
 
-            # depends_on_task_id: chain children sequentially so they
-            # run in order (each child depends on the previous)
-            dep = inserted[-1] if inserted else None
+            # depends_on_task_id: chain children sequentially so they run in
+            # order (each depends on the previous). The FIRST child inherits the
+            # PARENT's dependency — otherwise decomposing a gated task produces a
+            # child with no dep at all, and the whole chain walks straight around
+            # the gate that was holding it (observed: prem-bid-01 -> -d1 dispatched
+            # despite prem-gate-00).
+            dep = inserted[-1] if inserted else parent_dep
 
             conn.execute(
                 "INSERT OR IGNORE INTO kanban_tasks "
