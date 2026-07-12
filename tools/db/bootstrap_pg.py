@@ -35,24 +35,55 @@ if str(BASE_DIR) not in sys.path:
 SCHEMA_FILE = BASE_DIR / "tools" / "db" / "schema" / "pg_consolidated.sql"
 
 
-def _raw_pg_conn():
+def _raw_pg_conn(retries: int = 10, backoff: float = 1.5):
     """Raw psycopg2 connection — NOT the StorageConnection wrapper, so the
-    already-PostgreSQL dump is executed verbatim without SQL translation."""
+    already-PostgreSQL dump is executed verbatim without SQL translation.
+
+    Connects with a bounded retry/backoff loop. In CI, PostgreSQL runs in a
+    freshly-launched container: ``pg_isready`` can report ready moments before
+    the backend truly accepts connections, and a shared-memory spike during
+    heavy schema/index work can briefly bounce the backend. A single-shot
+    connect turns any of those transient blips into a hard job failure, so we
+    retry with capped exponential backoff (and a ``connect_timeout`` so a wedged
+    server fails fast instead of hanging) before giving up.
+    """
+    import time
+
     import psycopg2
 
     url = os.environ.get("ICDEV_DATABASE_URL")
-    if url:
-        return psycopg2.connect(url)
-    host = os.environ.get("ICDEV_PG_HOST", "127.0.0.1")
-    if host == "localhost":
-        host = "127.0.0.1"
-    return psycopg2.connect(
-        host=host,
-        port=int(os.environ.get("ICDEV_PG_PORT", "5432")),
-        user=os.environ.get("ICDEV_PG_USER", "icdev"),
-        password=os.environ.get("ICDEV_PG_PASSWORD", ""),
-        dbname=os.environ.get("ICDEV_PG_DATABASE", "icdev"),
-    )
+
+    def _connect():
+        if url:
+            return psycopg2.connect(url, connect_timeout=10)
+        host = os.environ.get("ICDEV_PG_HOST", "127.0.0.1")
+        if host == "localhost":
+            host = "127.0.0.1"
+        return psycopg2.connect(
+            host=host,
+            port=int(os.environ.get("ICDEV_PG_PORT", "5432")),
+            user=os.environ.get("ICDEV_PG_USER", "icdev"),
+            password=os.environ.get("ICDEV_PG_PASSWORD", ""),
+            dbname=os.environ.get("ICDEV_PG_DATABASE", "icdev"),
+            connect_timeout=10,
+        )
+
+    last_exc = None
+    for attempt in range(1, retries + 1):
+        try:
+            return _connect()
+        except psycopg2.OperationalError as exc:
+            last_exc = exc
+            if attempt >= retries:
+                break
+            wait = min(backoff ** attempt, 15.0)
+            print(
+                f"[bootstrap_pg] PG connect attempt {attempt}/{retries} failed: "
+                f"{exc}; retrying in {wait:.1f}s",
+                file=sys.stderr,
+            )
+            time.sleep(wait)
+    raise last_exc
 
 
 def _strip_psql_meta(sql: str) -> str:

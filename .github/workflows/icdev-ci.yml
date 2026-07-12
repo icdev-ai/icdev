@@ -126,19 +126,39 @@ jobs:
             echo "::warning::docker pull pgvector/pgvector:pg16 failed (attempt $attempt/5); retrying in $((attempt * 10))s"
             sleep $((attempt * 10))
           done
+          # --shm-size=1g: pgvector index builds and the single-statement
+          # consolidated-schema load exhaust the default 64MB /dev/shm and crash
+          # the backend ("server terminated abnormally"). Give it real shared mem.
+          # --health-*: let Docker track readiness in parallel with the poll below.
           docker run -d --name pg-test \
             -e POSTGRES_USER=icdev \
             -e POSTGRES_PASSWORD=icdev_ci \
             -e POSTGRES_DB=icdev \
             -p 5432:5432 \
+            --shm-size=1g \
+            --health-cmd="pg_isready -U icdev -d icdev" \
+            --health-interval=2s \
+            --health-timeout=5s \
+            --health-retries=20 \
             pgvector/pgvector:pg16
-          for i in $(seq 1 30); do
-            if docker exec pg-test pg_isready -U icdev; then
-              echo "PostgreSQL is ready"
+          # pg_isready can report "ready" before the backend actually accepts
+          # queries, so gate on a real SELECT 1 too and hard-fail (with logs) if
+          # the server never stabilizes — a silent fall-through hides real crashes.
+          ready=""
+          for i in $(seq 1 45); do
+            if docker exec pg-test pg_isready -U icdev -d icdev >/dev/null 2>&1 \
+               && docker exec pg-test psql -U icdev -d icdev -c 'SELECT 1' >/dev/null 2>&1; then
+              echo "PostgreSQL is ready (attempt $i)"
+              ready=1
               break
             fi
             sleep 1
           done
+          if [ -z "$ready" ]; then
+            echo "::error::PostgreSQL did not become ready after 45s"
+            docker logs pg-test || true
+            exit 1
+          fi
       - name: Initialize database (consolidated PG schema snapshot)
         run: python tools/db/bootstrap_pg.py
       - name: Run PostgreSQL pytest tier
@@ -286,19 +306,39 @@ jobs:
             echo "::warning::docker pull pgvector/pgvector:pg16 failed (attempt $attempt/5); retrying in $((attempt * 10))s"
             sleep $((attempt * 10))
           done
+          # --shm-size=1g: pgvector index builds and the single-statement
+          # consolidated-schema load exhaust the default 64MB /dev/shm and crash
+          # the backend ("server terminated abnormally"). Give it real shared mem.
+          # --health-*: let Docker track readiness in parallel with the poll below.
           docker run -d --name pg-e2e \
             -e POSTGRES_USER=icdev \
             -e POSTGRES_PASSWORD=icdev_ci \
             -e POSTGRES_DB=icdev \
             -p 5432:5432 \
+            --shm-size=1g \
+            --health-cmd="pg_isready -U icdev -d icdev" \
+            --health-interval=2s \
+            --health-timeout=5s \
+            --health-retries=20 \
             pgvector/pgvector:pg16
-          for i in $(seq 1 30); do
-            if docker exec pg-e2e pg_isready -U icdev; then
-              echo "PostgreSQL is ready"
+          # pg_isready can report "ready" before the backend actually accepts
+          # queries, so gate on a real SELECT 1 too and hard-fail (with logs) if
+          # the server never stabilizes — a silent fall-through hides real crashes.
+          ready=""
+          for i in $(seq 1 45); do
+            if docker exec pg-e2e pg_isready -U icdev -d icdev >/dev/null 2>&1 \
+               && docker exec pg-e2e psql -U icdev -d icdev -c 'SELECT 1' >/dev/null 2>&1; then
+              echo "PostgreSQL is ready (attempt $i)"
+              ready=1
               break
             fi
             sleep 1
           done
+          if [ -z "$ready" ]; then
+            echo "::error::PostgreSQL did not become ready after 45s"
+            docker logs pg-e2e || true
+            exit 1
+          fi
       - name: Initialize database (consolidated PG schema snapshot)
         # The 212-migration chain is not cleanly replayable on a fresh PG DB;
         # load the authoritative consolidated schema and mark migrations applied.
