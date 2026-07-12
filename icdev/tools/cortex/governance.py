@@ -445,17 +445,46 @@ class GovernancePipeline:
         else:
             self._record(report, GATE_CONTENT_GROUNDING, OUTCOME_SKIP, "non-retrieval call")
 
-        # 6. Output redaction — never skipped.
+        # 6. Output redaction — never skipped, and applied to the CALLER-VISIBLE
+        #    content of EVERY result shape. Egress PII/CUI masking is not optional
+        #    and must NOT depend on `attach` (which only controls whether the
+        #    governance report is attached, gate 482): the retrieval facades
+        #    (search=list, ask=CortexResult) wrap attach=False, yet they surface
+        #    retrieved corpus content that must be masked before it leaves.
         try:
-            masked_text, hits = _gate_redact_output(text)
+            hits: list = []
+            if is_cortex_result:
+                masked_text, hits = _gate_redact_output(text)
+                if masked_text != text:
+                    text = masked_text
+                    result.text = masked_text
+            elif isinstance(result, list):
+                # search: mask each hit's content in place; rebuild `text` from the
+                # masked parts so the provenance hash (below) covers masked content.
+                masked_parts: list = []
+                for _item in result:
+                    _content = getattr(_item, "content", None)
+                    if isinstance(_content, str) and _content:
+                        _masked, _h = _gate_redact_output(_content)
+                        if _masked != _content:
+                            try:
+                                _item.content = _masked
+                            except Exception:  # noqa: BLE001 — immutable item; skip
+                                pass
+                        hits.extend(_h)
+                        masked_parts.append(_masked)
+                if masked_parts:
+                    text = "\n".join(masked_parts)
+            elif isinstance(result, str):
+                masked_text, hits = _gate_redact_output(text)
+                if masked_text != text:
+                    text = masked_text
+                    result = masked_text
+            else:
+                masked_text, hits = _gate_redact_output(text)
+                if masked_text != text:
+                    text = masked_text
             report.redactions_applied += len(hits)
-            if masked_text != text:
-                text = masked_text
-                if attach:
-                    if is_cortex_result:
-                        result.text = masked_text
-                    elif isinstance(result, str):
-                        result = masked_text
             self._record(
                 report, GATE_OUTPUT_REDACTION,
                 OUTCOME_WARN if hits else OUTCOME_PASS,
