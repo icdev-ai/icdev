@@ -25,9 +25,12 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install ruff
-      - name: Ruff auto-fix
-        working-directory: ${{ github.workspace }}
-        run: python -m ruff check tools/ tests/ --select E,F,W --ignore E402,E501,E701,E702,E721,E722,E731,E741,F404 --fix
+      # NO --fix. An auto-fix step here rewrites the files IN THE RUNNER, so the
+      # lint below then passes against a tree nobody committed: the gate goes
+      # green while the debt stays in the repo forever. That is how 10 dead
+      # imports survived indefinitely. Lint the tree as it actually is; if this
+      # fails, run `ruff check tools/ tests/ --select E,F,W --ignore E402,E501,
+      # E701,E702,E721,E722,E731,E741,F404 --fix` locally and COMMIT the result.
       - name: Ruff lint
         working-directory: ${{ github.workspace }}
         run: python -m ruff check tools/ tests/ --select E,F,W --ignore E402,E501,E701,E702,E721,E722,E731,E741,F404
