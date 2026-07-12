@@ -15,6 +15,12 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+# tools/trading/ is gitignored (FathomDesk trading modules ship outside the
+# committed tree — see .gitignore), so provider/fixture_provider/quality are
+# absent on fresh checkouts and in CI. Skip this module cleanly rather than
+# hard-erroring collection of the whole `pytest tests/` run.
+pytest.importorskip("tools.trading.data.provider")
+
 # ---------------------------------------------------------------------------
 # Provider + quality modules under test
 # ---------------------------------------------------------------------------
