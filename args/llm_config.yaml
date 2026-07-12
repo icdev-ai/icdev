@@ -574,6 +574,20 @@ task_categories:
     description: "Tool use, multi-step planning, function calling"
 
 # -----------------------------------------------------------------------
+# Chain Groups — central provider knobs (YAML anchors)
+# -----------------------------------------------------------------------
+# Edit the ONE line here and every routing function referencing the alias
+# follows. yaml.safe_load resolves anchors at parse time — no router changes.
+#
+# test_execution (user directive 2026-07-12): Kimi cloud drives all
+# TEST-EXECUTION loops — Playwright/e2e runs, verify-repair, conformance
+# judging, CI failure triage during PR/merge. Claude remains for planning
+# and WRITING tests (test_translation / formal_verification unchanged).
+# qwen3-local stays as the air-gap fallback tier.
+chain_groups:
+  test_execution: &test_execution_chain [kimi-cloud, qwen3-local]
+
+# -----------------------------------------------------------------------
 # Function -> Model Routing
 # -----------------------------------------------------------------------
 # Maps each ICDEV™ function to a model with fallback chain.
@@ -701,24 +715,22 @@ routing:
     chain: [gemma3-local, llava-local, qwen3-local]
     effort: high
 
-  # Playwright/e2e EXECUTION routes to Kimi cloud (user directive 2026-07-12):
-  # Claude plans and writes tests; Kimi drives the run/fix/verify loops.
-  # kimi-k2.6:cloud is vision-capable (screenshot checks); qwen3-local stays
-  # as the air-gap fallback tier.
+  # Playwright/e2e EXECUTION — central knob: chain_groups.test_execution.
+  # kimi-k2.6:cloud is vision-capable (screenshot checks).
   e2e_testing:
-    chain: [kimi-cloud, qwen3-local]
+    chain: *test_execution_chain
     effort: low
 
   playwright_execution:
-    chain: [kimi-cloud, qwen3-local]
+    chain: *test_execution_chain
     effort: low
 
   browser_automation:
-    chain: [kimi-cloud, qwen3-local]
+    chain: *test_execution_chain
     effort: low
 
   ui_verification:
-    chain: [kimi-cloud, qwen3-local]
+    chain: *test_execution_chain
     effort: low
 
   diagram_extraction:
@@ -812,8 +824,10 @@ routing:
   # Compiler-in-the-Loop Verification Repair (LeanStral-adapted, D-VL-1)
   # LeanStral excels at code verification and repair — use when available,
   # fall back to general-purpose models. Air-gapped: leanstral-local via vLLM.
+  # Test-execution tier (chain_groups.test_execution): repair iterations of
+  # the verify-until-green loop run on Kimi, not Claude.
   verify_loop_repair:
-    chain: [qwen3-local, leanstral, leanstral-local, claude-sonnet, gemini-2.5-pro, gpt-4o, codestral-local]
+    chain: *test_execution_chain
     effort: high
 
   # Formal Verification / Property-Based Testing (D-VL-6)
@@ -828,10 +842,11 @@ routing:
     effort: high
 
   # Governed Delivery Pipeline — Conformance Review gate (Phase 2). Judges
-  # whether a task's implementation conforms to its acceptance criteria. Local
-  # (qwen3) first for air-gap; small cloud judges as fallback.
+  # whether a task's implementation conforms to its acceptance criteria.
+  # Test-execution tier (chain_groups.test_execution): Kimi judges during
+  # PR/merge; qwen3-local remains the air-gap fallback.
   conformance_review:
-    chain: [qwen3-local, claude-haiku, claude-sonnet, gpt-4o-mini, llama-local]
+    chain: *test_execution_chain
     effort: low
 
   # GovCon Proposal Functions — LOCAL ONLY (Phase 70: Redaction & Data Protection)
@@ -881,12 +896,14 @@ routing:
   # Failure triage — Claude for diagnose (thinking/reasoning),
   # Ollama for patch (building/code-gen). Explicit two-tier split per
   # the "Claude thinks, Ollama builds" convention.
+  # Test-execution tier (chain_groups.test_execution): CI/test failure
+  # triage during PR/merge runs on Kimi.
   failure_triage_diagnose:
-    chain: [qwen3-local, claude-sonnet, claude-opus, gpt-4o, gemini-2.5-pro]
+    chain: *test_execution_chain
     effort: high
 
   failure_triage_patch:
-    chain: [qwen3-local, codestral-local, llama-local, claude-sonnet]
+    chain: *test_execution_chain
     effort: medium
 
   chat_response:
