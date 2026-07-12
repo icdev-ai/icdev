@@ -1,9 +1,5 @@
 """E2E lifecycle test for the RFI Response Workbench canvas."""
-import json
 import os
-import sys
-import time
-import pathlib
 import tempfile
 
 import pytest
