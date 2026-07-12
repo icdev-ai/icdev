@@ -78,6 +78,14 @@ CORTEX_CLASSIFY_FUNCTION = "cortex_classify"
 CORTEX_EXTRACT_FUNCTION = "cortex_extract"
 CORTEX_SEARCH_REWRITE_FUNCTION = "cortex_search_rewrite"
 CORTEX_ANALYST_FUNCTION = "cortex_analyst"
+CORTEX_REASON_FUNCTION = "cortex_complete"  # reasoning reuses complete's routing
+
+# cortex.reason modes -> LLMRouter multi-step orchestration methods.
+_REASON_MODES = {
+    "cot": "invoke_chain_of_thought",
+    "debate": "invoke_chain_of_debate",
+    "council": "invoke_council",
+}
 
 # provider/model markers for the deterministic classify() degradation path
 _FALLBACK_PROVIDER = "deterministic"
@@ -123,6 +131,7 @@ CORTEX_FACADES = (
     "ask",
     "govern",
     "agent",
+    "reason",
 )
 
 # Key under which the outer pipeline report is stashed on results whose native
@@ -465,6 +474,55 @@ def complete(
     response = _invoke(function, request, context)
     elapsed_ms = int((time.perf_counter() - started) * 1000)
     return _result_from_response(response, elapsed_ms=elapsed_ms)
+
+
+@_governed_facade("cortex.reason", text_param="prompt", retrieval=False)
+def reason(
+    prompt: str,
+    mode: str = "cot",
+    function: str = CORTEX_REASON_FUNCTION,
+    ctx: Union[CortexContext, dict, None] = None,
+    *,
+    system_prompt: str = "",
+    max_tokens: Optional[int] = None,
+    temperature: Optional[float] = None,
+) -> CortexResult:
+    """Multi-step reasoning via the router's chain orchestration, governed.
+
+    ``mode`` selects the strategy:
+      - ``"cot"``     — Chain of Thought (single model, step-by-step).
+      - ``"debate"``  — Chain of Debate (proposer/critic rounds).
+      - ``"council"`` — LLM Council (fixed-perspective advisors + chairman
+                         synthesis).
+
+    Same TRUST chain as ``complete`` (input screen/redaction, output redaction,
+    provenance, audit) with the reasoning happening inside the wrapped op; the
+    domain-lens persona is applied. Unlike ``_invoke``, the orchestration
+    methods take no ``exclude_model_ids``, so per-call air-gap relies on the
+    global ICDEV_AIRGAP config; ``context.air_gap`` is still recorded for audit.
+    Router errors propagate. ``result.metadata['reason_mode']`` records the mode.
+    """
+    method_name = _REASON_MODES.get((mode or "cot").strip().lower())
+    if method_name is None:
+        raise ValueError(
+            f"unknown reason mode {mode!r}; expected one of {sorted(_REASON_MODES)}"
+        )
+    context = _coerce_context(ctx)
+    system_prompt = _apply_domain_persona(context, system_prompt)
+    request = _build_request(
+        prompt,
+        context,
+        system_prompt=system_prompt,
+        max_tokens=max_tokens,
+        temperature=temperature,
+    )
+    started = time.perf_counter()
+    router = _get_router()
+    response = getattr(router, method_name)(function, request)
+    elapsed_ms = int((time.perf_counter() - started) * 1000)
+    result = _result_from_response(response, elapsed_ms=elapsed_ms)
+    result.metadata["reason_mode"] = (mode or "cot").strip().lower()
+    return result
 
 
 @_governed_facade("cortex.classify", text_param="text", retrieval=False)

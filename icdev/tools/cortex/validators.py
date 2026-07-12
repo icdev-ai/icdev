@@ -153,6 +153,34 @@ def validate_complete(data: Any) -> dict:
     return out
 
 
+_REASON_MODES = ("cot", "debate", "council")
+
+
+def validate_reason(data: Any) -> dict:
+    data = _require_dict(data)
+    out: dict = {
+        "prompt": _req_str(data, "prompt"),
+        "system_prompt": _opt_str(data, "system_prompt", ""),
+        "mode": _opt_str(data, "mode", "cot").strip().lower() or "cot",
+    }
+    if out["mode"] not in _REASON_MODES:
+        raise CortexValidationError(
+            f"'mode' must be one of {list(_REASON_MODES)}"
+        )
+    if data.get("max_tokens") is not None:
+        out["max_tokens"] = _opt_int(data, "max_tokens", 1, 1, _MAX_TOKENS_MAX)
+    if data.get("temperature") is not None:
+        temp = data.get("temperature")
+        if isinstance(temp, bool) or not isinstance(temp, (int, float)):
+            raise CortexValidationError("'temperature' must be a number")
+        if not (_TEMPERATURE_MIN <= temp <= _TEMPERATURE_MAX):
+            raise CortexValidationError(
+                f"'temperature' must be between {_TEMPERATURE_MIN} and {_TEMPERATURE_MAX}"
+            )
+        out["temperature"] = float(temp)
+    return out
+
+
 def validate_classify(data: Any) -> dict:
     data = _require_dict(data)
     return {

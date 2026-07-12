@@ -191,6 +191,30 @@ def test_complete_is_governed(monkeypatch, patch_pipeline):
     assert patch_pipeline.captured[0]["retrieval"] is False
 
 
+def test_reason_is_governed(monkeypatch, patch_pipeline):
+    captured = {}
+
+    def _fake_reason(prompt, ctx=None, **kw):
+        captured.update(kw)
+        return CortexResult(text=f"{kw.get('mode')} answer")
+
+    monkeypatch.setattr(bp, "reason", _fake_reason)
+    client = make_client()
+    resp = client.post("/cortex/api/v1/reason",
+                       json={"prompt": "design a cache", "mode": "council"})
+    assert resp.status_code == 200
+    assert resp.get_json()["text"] == "council answer"
+    assert captured["mode"] == "council"
+    assert patch_pipeline.captured[0]["operation"] == "cortex.reason"
+
+
+def test_reason_rejects_bad_mode(monkeypatch, patch_pipeline):
+    monkeypatch.setattr(bp, "reason", lambda prompt, ctx=None, **kw: CortexResult(text="x"))
+    client = make_client()
+    resp = client.post("/cortex/api/v1/reason", json={"prompt": "q", "mode": "telepathy"})
+    assert resp.status_code == 400  # validation error envelope
+
+
 def test_classify_is_governed(monkeypatch, patch_pipeline):
     monkeypatch.setattr(bp, "classify", lambda text, labels, ctx=None: CortexResult(text=labels[0]))
     client = make_client()

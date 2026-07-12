@@ -20,6 +20,7 @@ from .api import (
     extract,
     govern,
     load_cortex_config,
+    reason,
     resolve_cortex_config_path,
     search,
 )
@@ -90,6 +91,7 @@ __all__ = [
     "govern",
     "governed",
     "load_cortex_config",
+    "reason",
     "resolve_cortex_config_path",
     "search",
 ]

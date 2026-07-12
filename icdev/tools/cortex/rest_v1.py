@@ -33,7 +33,7 @@ from .analyst import CortexAnalystError, CortexQueryBlocked
 # gateway screen, redaction, grounding, provenance, append-only audit). Importing
 # ask/search from .analyst/.search_service would reach the RAW ungoverned impls,
 # so the REST /api/v1/search + /ask endpoints would bypass governance entirely.
-from .api import ask, classify, complete, extract, search
+from .api import ask, classify, complete, extract, reason, search
 from .governance import GovernanceBlockedError, GovernancePipeline
 from .schemas import CortexContext, CortexResult
 
@@ -238,6 +238,27 @@ def api_v1_complete(data):
 
 
 @_cortex_api
+def api_v1_reason(data):
+    """Multi-step reasoning (cot | debate | council) via the config-routed
+    chain orchestration (governed)."""
+    params = validators.validate_reason(data)
+    ctx = _server_context(validators.domain_of(data))
+    kwargs = {"system_prompt": params["system_prompt"], "mode": params["mode"]}
+    if "max_tokens" in params:
+        kwargs["max_tokens"] = params["max_tokens"]
+    if "temperature" in params:
+        kwargs["temperature"] = params["temperature"]
+    result = _governed(
+        "cortex.reason",
+        params["prompt"],
+        lambda governed_prompt: reason(governed_prompt, ctx=ctx, **kwargs),
+        ctx,
+        retrieval=False,
+    )
+    return result.to_dict()
+
+
+@_cortex_api
 def api_v1_classify(data):
     """Single-label classification with deterministic air-gap fallback (governed)."""
     params = validators.validate_classify(data)
@@ -328,6 +349,7 @@ def register_rest_v1(cortex_bp) -> None:
         ("search", api_v1_search),
         ("ask", api_v1_ask),
         ("complete", api_v1_complete),
+        ("reason", api_v1_reason),
         ("classify", api_v1_classify),
         ("extract", api_v1_extract),
         ("govern", api_v1_govern),
