@@ -97,6 +97,7 @@ CREATE TABLE IF NOT EXISTS kanban_tasks (
     task_type             TEXT DEFAULT 'build',
     priority              TEXT DEFAULT 'high',
     status                TEXT DEFAULT 'backlog',
+    project_id            TEXT DEFAULT 'default',
     scheduled_at          TEXT,
     created_at            TEXT DEFAULT CURRENT_TIMESTAMP,
     updated_at            TEXT DEFAULT CURRENT_TIMESTAMP,

@@ -42,6 +42,7 @@ import subprocess
 import sys
 import time
 from dataclasses import asdict, dataclass, field
+import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -127,6 +128,49 @@ def _parse_pr_url(text: Optional[str]) -> Optional[str]:
     return match.group(0) if match else None
 
 
+
+def _set_task_status(get_conn, task_id: str, status: str, reason: str = "") -> bool:
+    """Write the task's status. The watcher is the ONLY component that knows when
+    a PR actually merged, so it is the right owner of the pr_opened -> done edge.
+
+    Previously it recorded 'done' in the audit trail and never touched
+    kanban_tasks — the board could not tell an open PR from a finished one.
+    Never raises: a status-write failure must not stall the watch loop.
+    """
+    try:
+        conn = get_conn()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("pr_watcher: no DB connection to set %s -> %s: %s",
+                       task_id, status, exc)
+        return False
+    try:
+        conn.execute(
+            "UPDATE kanban_tasks SET status = %s, updated_at = %s WHERE id = %s",
+            (status, datetime.now(timezone.utc).isoformat(), task_id),
+        )
+        try:
+            conn.execute(
+                "INSERT INTO kanban_status_transitions "
+                "(id, task_id, from_status, to_status, actor, reason, recorded_at) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                ("kst-" + uuid.uuid4().hex[:12], task_id, "pr_opened", status,
+                 "pr_watcher", reason[:200],
+                 datetime.now(timezone.utc).isoformat()),
+            )
+        except Exception:  # noqa: BLE001 — audit row is best-effort
+            pass
+        conn.commit()
+        logger.info("pr_watcher: %s -> %s (%s)", task_id, status, reason)
+        return True
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("pr_watcher: failed to set %s -> %s: %s", task_id, status, exc)
+        return False
+    finally:
+        try:
+            conn.close()
+        except Exception:  # noqa: BLE001
+            pass
+
 def _enforced_done_ok(get_connection, task_id: str) -> Tuple[bool, str]:
     """Enforced done-gate for auto-merge (Governed Delivery Pipeline).
 
@@ -188,7 +232,12 @@ def list_pr_tasks(
             rows = conn.execute(
                 "SELECT id, title, description, status, executor_url "
                 "FROM kanban_tasks WHERE status IN "
-                "('in_progress', 'scheduled')"
+                # 'pr_opened' is the state a task sits in from the moment its PR
+                # is opened until it merges — it is THE state this watcher exists
+                # to service. Omitting it meant the watcher lost sight of a task
+                # the instant it had a PR.
+                "('in_progress', 'scheduled', 'pr_opened', "
+                " 'ci_failed', 'merge_conflict', 'changes_requested')"
             ).fetchall()
     finally:
         try:
@@ -702,6 +751,19 @@ class PRWatcher:
                         action=action_label, reason=reason,
                         resume_cycle=cycle,
                     )
+                    # THE MERGE IS THE COMPLETION. Only this watcher knows the PR
+                    # actually landed, so only it can close the loop. Until now it
+                    # recorded 'done' in the audit trail and left kanban_tasks
+                    # untouched, so the board could not tell an open PR from a
+                    # finished one. CI-green-but-not-merged stays in pr_opened.
+                    if merged and task.get("status") in (
+                        "pr_opened", "in_progress", "ci_failed",
+                        "merge_conflict", "changes_requested",
+                    ):
+                        _set_task_status(
+                            get_conn, task["id"], "done",
+                            reason=f"PR merged: {pr_url}",
+                        )
                 else:
                     # Enforced done-gate (Governed Delivery Pipeline): under
                     # KANBAN_PIPELINE_ENFORCE, hold the merge until the task's
