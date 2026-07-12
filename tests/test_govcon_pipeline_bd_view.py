@@ -12,7 +12,6 @@ tests/test_crm_heat.py and tests/test_sam_scanner_forecast.py.
 """
 from pathlib import Path
 
-import pytest
 
 _TEMPLATES_DIR = Path(__file__).parent.parent / "tools" / "dashboard" / "templates"
 

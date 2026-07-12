@@ -5,7 +5,6 @@ on SQLite), so we inject a fake connection factory that simulates advisory-lock
 semantics with a shared in-memory set. This covers the slot-iteration, hold,
 release, timeout, and fail-open logic without a DB.
 """
-import pytest
 
 from tools.llm import pg_lease
 
