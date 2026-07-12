@@ -340,31 +340,44 @@ class GovernancePipeline:
         report = GovernanceReport()
 
         # 1. Gateway pre-invoke check — a block ALWAYS fails closed.
-        try:
-            pre = _gate_check_text(prompt)
-        except Exception as exc:
-            pre = None
-            self._degrade(report, ctx, GATE_PRE_CHECK, exc)
-        if pre is not None:
-            if not pre.get("allowed", True):
-                self._block(
-                    report, ctx, GATE_PRE_CHECK,
-                    pre.get("blocked_reason") or "blocked by LLM gateway pre-check",
+        #    SKIPPED for trusted first-party content (ctx.trusted_content): the
+        #    injection screen exists to defend against untrusted user input, and
+        #    trusted callers (e.g. docgen ingesting a document already inside the
+        #    tenant boundary) mirror the router's skip_injection_scan contract.
+        #    The skip is recorded so it stays observable in the audit report.
+        if ctx.trusted_content:
+            self._record(report, GATE_PRE_CHECK, OUTCOME_SKIP, "trusted content")
+        else:
+            try:
+                pre = _gate_check_text(prompt)
+            except Exception as exc:
+                pre = None
+                self._degrade(report, ctx, GATE_PRE_CHECK, exc)
+            if pre is not None:
+                if not pre.get("allowed", True):
+                    self._block(
+                        report, ctx, GATE_PRE_CHECK,
+                        pre.get("blocked_reason") or "blocked by LLM gateway pre-check",
+                    )
+                self._record(
+                    report, GATE_PRE_CHECK,
+                    OUTCOME_WARN if pre.get("warnings") else OUTCOME_PASS,
+                    "; ".join(pre.get("warnings") or []),
                 )
-            self._record(
-                report, GATE_PRE_CHECK,
-                OUTCOME_WARN if pre.get("warnings") else OUTCOME_PASS,
-                "; ".join(pre.get("warnings") or []),
-            )
 
-        # 2. Input redaction — never skipped.
+        # 2. Input redaction — skipped ONLY for trusted content (same rationale
+        #    as gate 1). Output redaction below is NOT affected: egress is always
+        #    screened regardless of trust.
         governed_prompt = prompt
-        try:
-            governed_prompt, masked = _gate_redact_input(prompt, ctx.classification)
-            report.redactions_applied += masked
-            self._record(report, GATE_INPUT_REDACTION, OUTCOME_PASS)
-        except Exception as exc:
-            self._degrade(report, ctx, GATE_INPUT_REDACTION, exc)
+        if ctx.trusted_content:
+            self._record(report, GATE_INPUT_REDACTION, OUTCOME_SKIP, "trusted content")
+        else:
+            try:
+                governed_prompt, masked = _gate_redact_input(prompt, ctx.classification)
+                report.redactions_applied += masked
+                self._record(report, GATE_INPUT_REDACTION, OUTCOME_PASS)
+            except Exception as exc:
+                self._degrade(report, ctx, GATE_INPUT_REDACTION, exc)
 
         # 3. The wrapped operation. Errors are recorded then re-raised —
         #    the pipeline governs, it does not swallow provider failures.

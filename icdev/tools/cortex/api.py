@@ -282,6 +282,13 @@ def _build_request(
         request.temperature = float(temperature)
     if output_schema is not None:
         request.output_schema = output_schema
+    # Trusted first-party content skips the router-level injection scan too, so
+    # the behaviour matches the pre-facade raw router.invoke(skip_injection_scan=
+    # True) call sites exactly. The governance pipeline already skipped its own
+    # pre-check/redaction gates for this context; this keeps the provider call
+    # consistent. Set defensively (older LLMRequest builds may lack the field).
+    if getattr(context, "trusted_content", False) and hasattr(request, "skip_injection_scan"):
+        request.skip_injection_scan = True
     return request
 
 

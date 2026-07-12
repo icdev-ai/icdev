@@ -189,6 +189,14 @@ class CortexContext:
     agent_id: str = ""
     air_gap: bool = False
     fail_closed: bool = False
+    # Trusted first-party content (e.g. a document already inside the tenant
+    # boundary that docgen ingests). When True, the input injection screen and
+    # input redaction gates are SKIPPED — mirroring the router's long-standing
+    # ``LLMRequest.skip_injection_scan=True`` contract for trusted pipeline
+    # calls. Output redaction, provenance, and the append-only audit row are
+    # STILL applied: trust affects the *input* screen only, never egress or the
+    # NIST-AU record. Default False — callers must opt in explicitly.
+    trusted_content: bool = False
 
     def to_dict(self) -> dict:
         return asdict(self)
