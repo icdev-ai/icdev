@@ -9,6 +9,8 @@ with a provenance header — keep it importable with ZERO icdev dependencies
 Server surfaces this client speaks to (one ICDEV host):
 
     POST {host}/cortex/api/v1/{search,ask,complete,classify,extract,govern}
+    POST {host}/cortex/api/v1/intake/{session,turn}       (RICOAS intake bridge)
+    GET  {host}/cortex/api/v1/intake/session/<id>
     GET  {host}/cortex/api/v1/health                      (unauthenticated)
     GET/POST {host}/api/databridge/v1/<connector>/<table> (IRIS feeds)
 
@@ -181,6 +183,54 @@ class CortexClient:
         if operation:
             payload["operation"] = operation
         return self._post("govern", self._with_domain(payload, domain), timeout)
+
+    # -- RICOAS intake bridge (prem-ricoas-02; scope cortex:intake) --------------
+
+    def intake_create(self, verbatim_ask: str, *, customer_name: str,
+                      customer_org: str = "", goal: str = "build",
+                      role: str = "developer", impact_level: str = "IL4",
+                      origin: str = "", extra_context: Optional[dict] = None,
+                      timeout: Optional[int] = None) -> Optional[dict]:
+        """Create a real RICOAS intake session seeded with the verbatim ask.
+
+        The verbatim_ask is persisted untouched (provenance) and processed as
+        the first customer turn. Success shape: {"session_id", "welcome_message",
+        "turn": {...}, "continue_url"} — continue_url is where a Task Lead
+        resumes this SAME session in the full RICOAS UI.
+        """
+        payload: Dict[str, Any] = {
+            "verbatim_ask": verbatim_ask,
+            "customer_name": customer_name,
+        }
+        if customer_org:
+            payload["customer_org"] = customer_org
+        if goal:
+            payload["goal"] = goal
+        if role:
+            payload["role"] = role
+        if impact_level:
+            payload["impact_level"] = impact_level
+        if origin:
+            payload["origin"] = origin
+        if extra_context:
+            payload["extra_context"] = extra_context
+        return self._post("intake/session", payload, timeout or self.ask_timeout)
+
+    def intake_turn(self, session_id: str, message: str, *,
+                    timeout: Optional[int] = None) -> Optional[dict]:
+        """Process one customer message turn. Success shape:
+        {"session_id", "turn": {"analyst_response", "extracted_requirements",
+        "readiness_update", "total_requirements", ...}, "continue_url"}."""
+        payload = {"session_id": session_id, "message": message}
+        return self._post("intake/turn", payload, timeout or self.ask_timeout)
+
+    def intake_session(self, session_id: str, *,
+                       timeout: Optional[int] = None) -> Optional[dict]:
+        """Session status + conversation. Success shape:
+        {"session": {...}, "messages": [...], "continue_url"}."""
+        return self._request(
+            "GET", f"{_CORTEX_PREFIX}/intake/session/{session_id}", None, timeout
+        )
 
     # -- health / availability -------------------------------------------------
 

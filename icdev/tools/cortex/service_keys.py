@@ -50,10 +50,14 @@ API_KEY_PREFIX = "icdev_ctx_"
 REST_OPERATIONS = ("search", "ask", "complete", "classify", "extract", "govern")
 
 # Scope vocabulary. cortex:<operation> per facade; databridge:<connector>:<rw>
-# for the feeds surface (tools/dashboard/api/databridge_feeds.py).
+# for the feeds surface (tools/dashboard/api/databridge_feeds.py);
+# cortex:intake covers the whole RICOAS intake bridge
+# (tools/cortex/rest_intake.py, prem-ricoas-02) — granted explicitly, never
+# by default, because intake writes sessions/requirements into the platform.
 CORTEX_SCOPES = tuple(f"cortex:{op}" for op in REST_OPERATIONS)
+INTAKE_SCOPES = ("cortex:intake",)
 DATABRIDGE_SCOPES = ("databridge:iris:read", "databridge:iris:write")
-ALL_SCOPES = CORTEX_SCOPES + DATABRIDGE_SCOPES
+ALL_SCOPES = CORTEX_SCOPES + INTAKE_SCOPES + DATABRIDGE_SCOPES
 
 # Default scopes for a newly created key: the six REST operations (the
 # spend-heavier feeds/write scopes are granted explicitly).
