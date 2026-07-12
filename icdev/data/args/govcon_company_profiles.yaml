@@ -2,48 +2,17 @@
 # Usage: --profile <name> in rfi_response_generator.py
 # All Part 1 administrative data is driven from this file.
 # Technical content, capabilities, and insights are profile-independent.
+#
+# NO REAL COMPANY IDENTITY SHIPS IN THIS REPO. ICDEV is open source, and a
+# concrete employer's entity data, addresses, boilerplate and differentiators
+# are exactly the things a competitor should not get for free by cloning it.
+#
+# `own_company` below is the TEMPLATE — fill it in for your organisation, or add
+# further profiles alongside it. Keep any populated profile OUT of version
+# control (a local override or a private fork); it is business-sensitive, not
+# framework code.
 
 profiles:
-
-  peraton:
-    entity_name: "Peraton Inc."
-    address: "12975 Worldgate Drive, Herndon, VA 20170"
-    cage_code: "[VERIFY ON SAM.GOV]"
-    sam_uei: "[VERIFY ON SAM.GOV]"
-    contact_name: "[NAME]"
-    contact_title: "[TITLE]"
-    contact_email: "[EMAIL]@peraton.com"
-    contact_phone: "[PHONE]"
-    business_size: "Large Business"
-    primary_naics: "541512"
-    socioeconomic_status: []  # no 8(a), HUBZone, SDVOSB, WOSB
-    ndc_status: "Traditional Defense Contractor"
-    ndc_note: >
-      Peraton is a traditional defense contractor per 10 U.S.C. 3014.
-      Teaming and cost-share strategy described in Part 4.3 of each response.
-    foci_status: "No FOCI"
-    foci_note: >
-      Peraton Inc. is privately held by Veritas Capital, a U.S.-based private equity firm
-      headquartered in New York, NY. No foreign ownership, control, or influence (FOCI).
-    clearances:
-      - level: "TS/SCI"
-        note: "TS/SCI with CI polygraph; SCIF-capable facilities available"
-    ip_posture:
-      prior_ip: "Government Purpose Rights (GPR)"
-      developed_under_contract: "Unlimited Rights"
-      government_data: "Government owns all data and derivative models"
-    boilerplate_cover: >
-      Peraton Inc. is pleased to respond to NSA RFI-{rfi_number}.
-      Peraton brings deep experience delivering mission-critical AI/ML systems
-      to the Intelligence Community, supported by TS/SCI cleared personnel and
-      SCIF-capable facilities.
-    capability_statements:
-      - "15+ years delivering mission-critical AI/ML systems to the Intelligence Community"
-      - "TS/SCI cleared workforce with SCIF-capable facilities at multiple sites"
-      - "CMMC Level 2 certified; NIST SP 800-171 compliant supply chain"
-      - "Proven delivery of production AI systems at DIA, NSA, and SOCOM"
-    solution_name: "Peraton AI/ML Orchestration Platform"
-    technical_differentiators: []
 
   own_company:
     entity_name: "[YOUR COMPANY NAME]"

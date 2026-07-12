@@ -119,7 +119,7 @@ _SAMPLE_MD = """\
 
 # Part 1: Administrative
 
-**Entity Name:** Peraton, Inc.
+**Entity Name:** Example Defense Corp
 
 ## 1.1 Business Size
 

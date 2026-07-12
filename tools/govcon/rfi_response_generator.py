@@ -13,7 +13,7 @@ The technical sections (Part 2.4, 2.7, Appendix) are generated using CoT;
 Part 5 (Industry Insights) uses CoD. Parts 1, 3, 4 use template-based direct drafting.
 
 Usage:
-    python tools/govcon/rfi_response_generator.py --input <rfi.pdf> --profile peraton --output-dir <dir> --json
+    python tools/govcon/rfi_response_generator.py --input <rfi.pdf> --profile own_company --output-dir <dir> --json
     python tools/govcon/rfi_response_generator.py --input <rfi.pdf> --output-dir .tmp/ --json
     python tools/govcon/rfi_response_generator.py --parsed <parsed.json> --profile own_company --output-dir .tmp/ --json
 """

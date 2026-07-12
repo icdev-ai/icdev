@@ -1,6 +1,10 @@
 # CUI // SP-CTI
 """
-Curated deck: Peraton Innovation Lab — Executive Investment Brief.
+Curated deck: Innovation Lab — Executive Investment Brief.
+
+The company name is NOT hardcoded: it is resolved from the `own_company` profile
+in args/govcon_company_profiles.yaml (ICDEV is open source — no employer identity
+ships in the repo). Slide copy carries a `{company}` token, substituted at build.
 
 Generates a 12-slide, narrative/strategic deck inside the ICDEV Slides canvas.
 Sources differentiators and quantified outcomes from:
@@ -30,7 +34,7 @@ logger = get_logger(__name__)
 ROOT = Path(__file__).resolve().parents[3]
 EXCEL_PATH = ROOT / "ICDEV_Capabilities_Challenges_Solutions.xlsx"
 
-DECK_TITLE = "Peraton Innovation Lab: Infrastructure for the Next Generation of Government Technology"
+DECK_TITLE = "{company} Innovation Lab: Infrastructure for the Next Generation of Government Technology"
 THEME = "midnight_executive"
 DECK_TYPE = "executive_overview"
 
@@ -192,6 +196,39 @@ def parse_excel(path: Path) -> ExcelHighlights:
 
 # ── Deck content ──────────────────────────────────────────────────────────────
 
+def company_name() -> str:
+    """The company this deck is for, from the `own_company` GovCon profile.
+
+    ICDEV is open source: no employer's identity is hardcoded anywhere in it. An
+    unfilled profile yields a neutral placeholder rather than a wrong name — a
+    deck that says "Our Company" is obviously a template; one that says the wrong
+    company is a mistake you hand to an executive.
+    """
+    try:
+        import yaml
+
+        path = ROOT / "args" / "govcon_company_profiles.yaml"
+        profiles = (yaml.safe_load(path.read_text(encoding="utf-8")) or {}).get("profiles", {})
+        name = (profiles.get("own_company", {}) or {}).get("entity_name", "").strip()
+    except Exception:  # noqa: BLE001 — a missing profile must never break the build
+        name = ""
+    # The shipped template literally reads "[YOUR COMPANY NAME]".
+    if not name or name.startswith("["):
+        return "Our Company"
+    return name
+
+
+def _resolve(value, company: str):
+    """Substitute the {company} token through nested slide structures."""
+    if isinstance(value, str):
+        return value.replace("{company}", company)
+    if isinstance(value, list):
+        return [_resolve(v, company) for v in value]
+    if isinstance(value, dict):
+        return {k: _resolve(v, company) for k, v in value.items()}
+    return value
+
+
 def build_slides(highlights: ExcelHighlights) -> list[dict]:
     ch = highlights.challenges
     cap = highlights.capabilities
@@ -218,11 +255,12 @@ def build_slides(highlights: ExcelHighlights) -> list[dict]:
     first_challenge = ch[0] if ch else _fallback_highlights().challenges[0]
     second_challenge = ch[1] if len(ch) > 1 else _fallback_highlights().challenges[1]
 
-    return [
+    company = company_name()
+    return _resolve([
         {
             "position": 1,
             "slide_type": "title",
-            "title": "Peraton Innovation Lab",
+            "title": "{company} Innovation Lab",
             "bullets": [
                 "Infrastructure → Application/AI/Agentic Development → Hosting",
                 "Not another lab. A revenue-generating, talent-magnet, thought-leadership engine.",
@@ -260,7 +298,7 @@ def build_slides(highlights: ExcelHighlights) -> list[dict]:
             ],
             "speaker_notes": (
                 "The market window is the urgency. Customers are asking 'show me, don't tell me' in RFPs. "
-                "If Peraton does not have a live environment where AI, digital twin, and interoperability can be demonstrated, "
+                "If {company} does not have a live environment where AI, digital twin, and interoperability can be demonstrated, "
                 "we will be relegated to responding to other people's innovation in proposals."
             ),
         },
@@ -270,7 +308,7 @@ def build_slides(highlights: ExcelHighlights) -> list[dict]:
             "title": "So What? — Four Executive Outcomes",
             "bullets": [
                 "Opportunity pipeline: accelerate RFI/RFP response and reshape future pursuits with live proof points.",
-                "Recruitment pipeline: become the 'I want to work for Peraton because they...' destination for top AI/ML and systems engineers.",
+                "Recruitment pipeline: become the 'I want to work for {company} because they...' destination for top AI/ML and systems engineers.",
                 "Customer stickiness: move from vendor to co-innovation partner through hosted POCs and digital twins.",
                 "Thought leadership: demonstrate SOTA capabilities to customers, employees, partners, and future hires — not as slides, as working systems.",
             ],
@@ -282,7 +320,7 @@ def build_slides(highlights: ExcelHighlights) -> list[dict]:
         {
             "position": 5,
             "slide_type": "content",
-            "title": "Why Peraton? — Our Differentiators",
+            "title": "Why {company}? — Our Differentiators",
             "bullets": [
                 f"Compliance-as-generator, not compliance-as-tax: {first_challenge['outcome']}.",
                 f"Risk simulation before commitment: {second_challenge['outcome']}.",
@@ -291,7 +329,7 @@ def build_slides(highlights: ExcelHighlights) -> list[dict]:
                 f"One integrated stack: {cap[0]['name'] if cap else 'FORGE'} separates AI reasoning from deterministic execution so missions stay reliable.",
             ],
             "speaker_notes": (
-                "This is the answer to 'why not another lab?' Peraton already has the compliance, security, and systems-integration DNA. "
+                "This is the answer to 'why not another lab?' {company} already has the compliance, security, and systems-integration DNA. "
                 "The differentiators are not the hardware — they are the ability to generate ATO evidence, simulate risk, operate in classified environments, "
                 "and do it on one deterministic platform instead of 12 disconnected tools."
             ),
@@ -322,7 +360,7 @@ def build_slides(highlights: ExcelHighlights) -> list[dict]:
                 "Outcome: deployable, governed agents — not experimental notebooks.",
             ],
             "speaker_notes": (
-                "The AI factory use case answers the RFP evaluator who asks 'can Peraton actually build and secure an agentic system?' "
+                "The AI factory use case answers the RFP evaluator who asks 'can {company} actually build and secure an agentic system?' "
                 "ANVIL and the Agentic AI Design Canvas are the proof. They turn AI from a prototype into a product."
             ),
         },
@@ -346,14 +384,14 @@ def build_slides(highlights: ExcelHighlights) -> list[dict]:
             "slide_type": "content",
             "title": "Use Case 3 — Partner & Vendor Showcase Hosting",
             "bullets": [
-                "Host partners and vendors who want to demonstrate SOTA products with Peraton customers.",
+                "Host partners and vendors who want to demonstrate SOTA products with {company} customers.",
                 "Provide digital-twin customer environments so partners can build POCs against realistic, representative topologies.",
                 "Generate co-branded thought leadership, capture RFI/RFP intel, and identify resale/OEM opportunities.",
                 "Outcome: revenue from hosting fees, partner-funded capability expansion, and a continuous pipeline of shaped opportunities.",
             ],
             "speaker_notes": (
                 "Hosting is the business model layer. Partners pay to access our environment and our customer relationships. "
-                "Customers see live solutions. Peraton captures the intellectual property of how those solutions map to mission problems. "
+                "Customers see live solutions. {company} captures the intellectual property of how those solutions map to mission problems. "
                 "This is how the lab pays for itself."
             ),
         },
@@ -373,7 +411,7 @@ def build_slides(highlights: ExcelHighlights) -> list[dict]:
                 f"Assumptions: ${roi_assumptions['active_pipeline_m']}M active pipeline, {roi_assumptions['win_rate_lift_pct']}% win-rate lift, "
                 f"{roi_assumptions['reshaped_opps_per_year']} reshaped RFPs at ${roi_assumptions['avg_rfp_size_m']}M each, "
                 f"{roi_assumptions['retained_top_talent']} retained/attracted hires, and {roi_assumptions['partner_hosts']} hosted partners. "
-                "Replace each assumption with Peraton-specific data before the final readout."
+                "Replace each assumption with {company}-specific data before the final readout."
             ),
         },
         {
@@ -399,14 +437,14 @@ def build_slides(highlights: ExcelHighlights) -> list[dict]:
             "bullets": [
                 "Approve Phase 1 investment in infrastructure + AI/ML/Agentic factory.",
                 "Authorize pilot hosting agreements with 2–3 strategic partners.",
-                "Position Peraton as the thought-leading, co-innovation partner for DoD/IC transformation.",
+                "Position {company} as the thought-leading, co-innovation partner for DoD/IC transformation.",
             ],
             "speaker_notes": (
                 "Close with the decision. The deck is not asking for a lab. It is asking for a capability that produces pipeline, people, "
-                "and perception. Every month of delay is a month competitors spend answering 'show me' while Peraton is still telling."
+                "and perception. Every month of delay is a month competitors spend answering 'show me' while {company} is still telling."
             ),
         },
-    ]
+    ], company)
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -415,6 +453,7 @@ def main() -> None:
     init_db()
     highlights = parse_excel(EXCEL_PATH)
     slides = build_slides(highlights)
+    deck_title = DECK_TITLE.replace("{company}", company_name())
 
     conn = get_connection()
     try:
@@ -424,7 +463,7 @@ def main() -> None:
         cur.execute(
             "INSERT INTO slides_decks (title, deck_type, theme, status, source_types, slide_count) "
             "VALUES (%s, %s, %s, 'pending', %s, 0) RETURNING deck_id",
-            (DECK_TITLE, DECK_TYPE, THEME, json.dumps(["curated", "excel_capabilities"])),
+            (deck_title, DECK_TYPE, THEME, json.dumps(["curated", "excel_capabilities"])),
         )
         row = cur.fetchone()
         deck_id = row["deck_id"] if isinstance(row, dict) else row[0]
@@ -457,7 +496,7 @@ def main() -> None:
             }
             for s in slides
         ]
-        pptx_path = build(slide_dicts, theme=THEME, title=DECK_TITLE)
+        pptx_path = build(slide_dicts, theme=THEME, title=deck_title)
 
         # Finalize deck record
         cur.execute(
@@ -469,7 +508,7 @@ def main() -> None:
         print(f"DECK_ID={deck_id}")
         print(f"PPTX_PATH={pptx_path}")
         print(f"SLIDE_COUNT={len(slide_dicts)}")
-        print(f"TITLE={DECK_TITLE}")
+        print(f"TITLE={deck_title}")
     finally:
         conn.close()
 

@@ -1,9 +1,8 @@
 # CUI // SP-CTI
-"""IRIS DataBridge Connector — Peraton IRIS AI platform (ctx-expose-05).
+"""IRIS DataBridge Connector — the vendor IRIS AI platform (ctx-expose-05).
 
-IRIS (peraton.com/capabilities/cyber/iris) is Peraton's AI-enabled
-decision-support platform. Planned integration surfaces (from the compass
-premium requirements):
+IRIS is a third-party AI-enabled decision-support platform. Planned integration
+surfaces (from the compass premium requirements):
 
     staffing_alignment   (read)        staff-to-LCAT alignment feed
     performance_reviews  (read+write)  review packets / workflow status
@@ -15,7 +14,7 @@ IRIS has NO published API yet. The connector therefore defaults to
 (``fixtures/iris_fixtures.py``, ``ConnectorResponse.metadata.stub=True``) so
 downstream consumers can build against stable shapes today. Going live is a
 config flip — ``{"stub_mode": False, "base_url": ..., "api_key": ...}`` —
-plus real ``_endpoints`` paths; no consumer changes. When Peraton publishes
+plus real ``_endpoints`` paths; no consumer changes. When the vendor publishes
 an OpenAPI spec, the Connector Forge (tools/databridge/forge/) can generate
 a replacement validated against the same shapes.
 
@@ -45,11 +44,11 @@ _WRITABLE_TABLES = frozenset({"performance_reviews"})
 
 @register_connector
 class IRISConnector(SaaSBaseConnector):
-    """Peraton IRIS connector — stub mode by default until an API exists."""
+    """IRIS connector — stub mode by default until a vendor API exists."""
 
     _connector_name = "iris"
     _default_base_url = ""  # unpublished; must be configured when live
-    # Placeholder paths — replace when Peraton publishes the API.
+    # Placeholder paths — replace when the vendor publishes the API.
     _endpoints = {
         "staffing_alignment": "/api/staffing/alignment",
         "performance_reviews": "/api/performance/reviews",

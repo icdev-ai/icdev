@@ -320,7 +320,7 @@ PALETTE_BOLD_NEON = {
 }
 
 # Investment pitch — dark navy + gold primary + teal/cyan secondary + purple tertiary
-# Matches the Peraton-style pitch aesthetic with multi-accent AI tech color system
+# Defense-primes pitch aesthetic with a multi-accent AI tech color system
 PALETTE_INVESTMENT_DECK = {
     "bg":      (0x0A, 0x16, 0x28),   # #0A1628 deep navy
     "accent":  (0xD4, 0xA0, 0x17),   # #D4A017 gold (primary)
