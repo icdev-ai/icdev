@@ -38,6 +38,58 @@ from tools.logging.icdev_logger import get_logger
 
 logger = get_logger(__name__)
 
+# The turn-based schema chat_memory actually reads/writes (turn_id + grounded
+# subject + citations). NOTE: migration 191 created dic_chat_memory with an
+# unrelated message-log schema (memory_id/role/content) that NO code consumes —
+# so every record_turn INSERT silently failed (returns None) and DIC chat memory
+# was dead. This DDL is the source of truth; _ensure_table self-heals it on a DB
+# that lacks the table (fresh test/prod), and migration 264 reconciles DBs that
+# ran 191. Kept in sync with tools/db/migrations/264_dic_chat_memory_turn_schema.sql.
+_TURN_TABLE_DDL = """
+CREATE TABLE IF NOT EXISTS dic_chat_memory (
+    turn_id         TEXT PRIMARY KEY,
+    session_id      TEXT NOT NULL,
+    collection_id   TEXT NOT NULL DEFAULT '',
+    turn_index      INTEGER NOT NULL DEFAULT 0,
+    query           TEXT NOT NULL DEFAULT '',
+    answer          TEXT NOT NULL DEFAULT '',
+    subject         TEXT NOT NULL DEFAULT '',
+    subject_doc_id  TEXT NOT NULL DEFAULT '',
+    entities_json   TEXT NOT NULL DEFAULT '[]',
+    doc_ids_json    TEXT NOT NULL DEFAULT '[]',
+    citations_json  TEXT NOT NULL DEFAULT '[]',
+    mode            TEXT NOT NULL DEFAULT 'grounded',
+    created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    tenant_id       TEXT NOT NULL DEFAULT 'default',
+    classification  TEXT NOT NULL DEFAULT 'CUI'
+)
+"""
+
+_schema_ensured = False
+
+
+def _ensure_table(conn) -> None:
+    """Idempotently create the turn-based dic_chat_memory table, once per process.
+
+    Best-effort: a failure here does not mask the caller's own error. Uses
+    CREATE ... IF NOT EXISTS, so on a DB that already has the correct table this
+    is a no-op; the stale 191 message-log table is reconciled by migration 264.
+    """
+    global _schema_ensured
+    if _schema_ensured:
+        return
+    try:
+        conn.execute(_TURN_TABLE_DDL)
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_dic_chat_memory_session "
+            "ON dic_chat_memory (session_id, tenant_id)"
+        )
+        if hasattr(conn, "commit"):
+            conn.commit()
+        _schema_ensured = True
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("dic chat_memory _ensure_table best-effort failed: %s", exc)
+
 # Referring tokens that signal a turn depends on a prior subject. Matched as
 # whole words so "item" / "their_field" never trip "it" / "their".
 _FOLLOWUP_PRONOUNS = frozenset({
@@ -211,6 +263,7 @@ def record_turn(
         conn = get_connection()
         try:
             cur = conn.cursor()
+            _ensure_table(conn)
             cur.execute(
                 "SELECT COUNT(*) FROM dic_chat_memory WHERE session_id = ? AND tenant_id = ?",
                 (session_id, tenant_id),
@@ -257,6 +310,7 @@ def recall_last_turn(session_id: str, tenant_id: str = "default") -> ChatTurn | 
         conn = get_connection()
         try:
             cur = conn.cursor()
+            _ensure_table(conn)
             cur.execute(
                 """
                 SELECT turn_id, session_id, collection_id, turn_index, query, answer,
