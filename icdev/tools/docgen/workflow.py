@@ -341,19 +341,24 @@ def stage0_ingest_document(session_id: str, doc_text: str) -> dict:
         return _FALLBACK.copy()
 
     try:
-        from tools.llm import get_router
-        from tools.llm.provider import LLMRequest
+        # Route through the GOVERNED cortex.complete facade (provenance + audit +
+        # output redaction + budget attribution) instead of a raw router.invoke.
+        # docgen ingests trusted first-party document text, so trusted_content=True
+        # preserves the original skip_injection_scan=True behaviour — the input
+        # injection screen / input redaction are skipped, egress is still governed.
+        from tools.cortex import api as cortex_api
+        from tools.cortex.schemas import CortexContext
 
         prompt = _STAGE0_EXTRACT_PROMPT.format(text=doc_text[:4000])
-        router = get_router()
-        req = LLMRequest(
-            messages=[{"role": "user", "content": prompt}],
+        cx = cortex_api.complete(
+            prompt,
+            function="stage0_doc_extract",
+            ctx=CortexContext(domain="document", agent_id="docgen",
+                              trusted_content=True),
             max_tokens=1024,
             temperature=0.0,
-            skip_injection_scan=True,
         )
-        resp = router.invoke("stage0_doc_extract", req)
-        raw = (resp.content or "").strip()
+        raw = (cx.text or "").strip()
 
         import re as _re
         raw = _re.sub(r"```(?:json)?\s*|\s*```", "", raw).strip()
@@ -630,8 +635,11 @@ def detect_semantic_conflicts(doc_text: str) -> list[dict]:
 
     _llm_available = True
     try:
-        from tools.llm import get_router as _get_router
-        from tools.llm.provider import LLMRequest as _LLMRequest
+        # Governed facade (see stage0_ingest_document): trusted first-party
+        # section text, so trusted_content=True keeps the old skip_injection_scan
+        # semantics while adding provenance/audit/egress governance.
+        from tools.cortex import api as _cortex_api
+        from tools.cortex.schemas import CortexContext as _CortexContext
     except ImportError:
         _llm_available = False
 
@@ -642,21 +650,21 @@ def detect_semantic_conflicts(doc_text: str) -> list[dict]:
 
             if _llm_available:
                 try:
-                    router = _get_router()
                     prompt = (
                         "Do the following two document sections contradict each other? "
                         "Return JSON only: {\"contradicts\": true/false, \"description\": \"...\"}.\n\n"
                         f"Section A (first 600 chars):\n{sec_a[:600]}\n\n"
                         f"Section B (first 600 chars):\n{sec_b[:600]}"
                     )
-                    req = _LLMRequest(
-                        messages=[{"role": "user", "content": prompt}],
+                    cx = _cortex_api.complete(
+                        prompt,
+                        function="detect_semantic_conflicts",
+                        ctx=_CortexContext(domain="document", agent_id="docgen",
+                                           trusted_content=True),
                         max_tokens=128,
                         temperature=0.0,
-                        skip_injection_scan=True,
                     )
-                    resp = router.invoke("detect_semantic_conflicts", req)
-                    raw = (resp.content or "").strip()
+                    raw = (cx.text or "").strip()
                     raw = _re.sub(r"```(?:json)?\s*|\s*```", "", raw).strip()
                     import json as _json
                     data = _json.loads(raw)
@@ -855,20 +863,23 @@ def suggest_classification(text_sample: str) -> dict:
         return _CLS_FALLBACK.copy()
 
     try:
-        from tools.llm import get_router
-        from tools.llm.provider import LLMRequest
+        # Governed facade (see stage0_ingest_document): trusted first-party
+        # document excerpt, so trusted_content=True keeps skip_injection_scan
+        # semantics while adding provenance/audit/egress governance.
+        from tools.cortex import api as cortex_api
+        from tools.cortex.schemas import CortexContext
         import json as _json
 
         prompt = _CLS_SUGGEST_PROMPT.format(text=text_sample[:3000])
-        router = get_router()
-        req = LLMRequest(
-            messages=[{"role": "user", "content": prompt}],
+        cx = cortex_api.complete(
+            prompt,
+            function="classification_suggest",
+            ctx=CortexContext(domain="document", agent_id="docgen",
+                              trusted_content=True),
             max_tokens=128,
             temperature=0.0,
-            skip_injection_scan=True,
         )
-        resp = router.invoke("classification_suggest", req)
-        raw = (resp.content or "").strip()
+        raw = (cx.text or "").strip()
 
         # Strip code fences if present
         import re as _re
