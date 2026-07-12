@@ -53,6 +53,7 @@ from typing import Callable, Optional
 
 from tools.logging.icdev_logger import get_logger
 
+from .config import resolve_fail_closed
 from .schemas import CortexContext, CortexResult, GovernanceReport
 
 logger = get_logger(__name__)
@@ -263,7 +264,7 @@ class GovernancePipeline:
         self, report: GovernanceReport, ctx: CortexContext, gate: str, exc: Exception
     ) -> None:
         """Gate error: warn and continue (fail-open) or block on fail_closed."""
-        if ctx.fail_closed:
+        if resolve_fail_closed(ctx):
             self._block(report, ctx, gate, f"{gate} unavailable: {exc}")
         logger.warning("cortex governance gate %s degraded (fail-open): %s", gate, exc)
         self._record(report, gate, OUTCOME_WARN, str(exc))
@@ -412,7 +413,7 @@ class GovernancePipeline:
                     if citation_report.get("hallucinated_citations"):
                         grounded = False
                         detail = f"hallucinated citations: {citation_report['hallucinated_citations']}"
-                        if ctx.fail_closed:
+                        if resolve_fail_closed(ctx):
                             self._block(report, ctx, GATE_CITATION_GROUNDING, detail)
                         self._record(report, GATE_CITATION_GROUNDING, OUTCOME_FAIL, detail)
                     elif not citation_report.get("cited_count"):
@@ -445,7 +446,7 @@ class GovernancePipeline:
                 if issues:
                     grounded = False
                     detail = "; ".join(issues)
-                    if ctx.fail_closed:
+                    if resolve_fail_closed(ctx):
                         self._block(report, ctx, GATE_CONTENT_GROUNDING, detail)
                     self._record(report, GATE_CONTENT_GROUNDING, OUTCOME_WARN, detail)
                 else:

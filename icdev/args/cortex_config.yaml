@@ -88,13 +88,25 @@ search:
         explicitly.
 
 governance:
-  # Fail-closed grounding for CUI+ content: when the TRUST pipeline cannot
-  # validate citations against evidence, block instead of passing through
-  # (mirrors redaction.fail_closed in args/llm_config.yaml).
-  fail_closed: true
+  # Platform-wide fail-closed default for Cortex calls that DON'T set an explicit
+  # CortexContext.fail_closed (i.e. ctx.fail_closed is None). Resolved by
+  # config.resolve_fail_closed(); an explicit True/False from a caller always
+  # wins over this. When effective-True: a gate ERROR (redaction/provenance
+  # unavailable) or a grounding "fail" on a RETRIEVAL answer blocks instead of
+  # degrading. Injection always blocks regardless. A plain generative complete()
+  # (retrieval=False) is NEVER blocked merely for being ungrounded — it skips the
+  # grounding gates entirely (see skip_grounding_for_plain_complete below).
+  #
+  # Shipped as false to preserve the platform's actual behavior to date: this key
+  # was previously DEAD (never read), so the runtime has always been fail-open.
+  # Flip to true to enforce platform-wide fail-closed — a deliberate policy
+  # change with blast radius across every Cortex adopter, so enable knowingly.
+  fail_closed: false
 
   # complete() is free-form drafting with no evidence set — skip the
-  # grounding pass for plain completions instead of failing it closed.
+  # grounding pass for plain completions instead of failing it closed. (The
+  # pipeline already realizes this structurally: non-retrieval calls skip the
+  # grounding gates.)
   skip_grounding_for_plain_complete: true
 
 analyst:

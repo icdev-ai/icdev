@@ -188,7 +188,14 @@ class CortexContext:
     # per-tenant key so Cortex calls are never billed to an empty/unkeyed bucket.
     agent_id: str = ""
     air_gap: bool = False
-    fail_closed: bool = False
+    # Tri-state fail-closed posture. None (the default) means "use the platform
+    # policy" — governance.fail_closed in args/cortex_config.yaml — resolved via
+    # config.resolve_fail_closed(). An explicit True/False from the caller always
+    # wins. When effective-True, a gate ERROR or a grounding "fail" blocks the
+    # response instead of degrading; injection blocks always, regardless. Note
+    # this never blocks a *generative* (retrieval=False) call for merely being
+    # ungrounded — those calls skip the grounding gates entirely.
+    fail_closed: Optional[bool] = None
     # Trusted first-party content (e.g. a document already inside the tenant
     # boundary that docgen ingests). When True, the input injection screen and
     # input redaction gates are SKIPPED — mirroring the router's long-standing

@@ -273,18 +273,57 @@ def test_load_cortex_config_env_override(tmp_path, monkeypatch):
 def test_load_cortex_config_defaults_when_file_missing(tmp_path):
     config = load_cortex_config(config_path=tmp_path / "nope.yaml", refresh=True)
     assert config["search"]["rrf_k"] == 60
-    assert config["governance"]["fail_closed"] is True
+    # Fallback preserves the platform's actual (fail-open) behavior.
+    assert config["governance"]["fail_closed"] is False
     assert config["analyst"]["nlq_fallback_enabled"] is True
 
 
 def test_load_cortex_config_deep_merges_over_defaults(tmp_path):
     path = tmp_path / "cortex_config.yaml"
-    path.write_text(yaml.safe_dump({"governance": {"fail_closed": False}}), encoding="utf-8")
+    path.write_text(yaml.safe_dump({"governance": {"fail_closed": True}}), encoding="utf-8")
     config = load_cortex_config(config_path=path, refresh=True)
-    assert config["governance"]["fail_closed"] is False
+    assert config["governance"]["fail_closed"] is True
     # Sibling default keys survive a partial override.
     assert config["governance"]["skip_grounding_for_plain_complete"] is True
     assert config["search"]["strategy_weights"]["rag"] == 1.0
+
+
+# ---------------------------------------------------------------------------
+# resolve_fail_closed(): explicit ctx wins; None falls back to config policy
+# ---------------------------------------------------------------------------
+def test_resolve_fail_closed_explicit_wins_over_config(tmp_path):
+    from tools.cortex.config import resolve_fail_closed
+
+    # A config that says fail-closed must NOT override an explicit False.
+    path = tmp_path / "cortex_config.yaml"
+    path.write_text(yaml.safe_dump({"governance": {"fail_closed": True}}), encoding="utf-8")
+    assert resolve_fail_closed(CortexContext(fail_closed=False), config_path=path) is False
+    assert resolve_fail_closed(CortexContext(fail_closed=True), config_path=path) is True
+
+
+def test_resolve_fail_closed_none_uses_config_true(tmp_path):
+    from tools.cortex.config import resolve_fail_closed
+
+    path = tmp_path / "cortex_config.yaml"
+    path.write_text(yaml.safe_dump({"governance": {"fail_closed": True}}), encoding="utf-8")
+    # Unset ctx (fail_closed=None, the default) resolves to the config policy.
+    assert resolve_fail_closed(CortexContext(), config_path=path) is True
+    assert resolve_fail_closed(None, config_path=path) is True
+
+
+def test_resolve_fail_closed_none_uses_config_false(tmp_path):
+    from tools.cortex.config import resolve_fail_closed
+
+    path = tmp_path / "cortex_config.yaml"
+    path.write_text(yaml.safe_dump({"governance": {"fail_closed": False}}), encoding="utf-8")
+    assert resolve_fail_closed(CortexContext(), config_path=path) is False
+
+
+def test_resolve_fail_closed_default_is_fail_open(tmp_path):
+    from tools.cortex.config import resolve_fail_closed
+
+    # Missing file -> defaults -> fail-open (matches shipped behavior).
+    assert resolve_fail_closed(CortexContext(), config_path=tmp_path / "nope.yaml") is False
 
 
 def test_repo_cortex_config_has_required_blocks():
@@ -299,6 +338,8 @@ def test_repo_cortex_config_has_required_blocks():
     assert 0.0 < search["crag_threshold"] < 1.0
     assert "default" in search["timeouts"]
     governance = config["governance"]
-    assert governance["fail_closed"] is True
+    # Shipped fail-open (the key is now live via resolve_fail_closed but ships
+    # false to preserve the platform's actual behavior — operators opt in).
+    assert governance["fail_closed"] is False
     assert governance["skip_grounding_for_plain_complete"] is True
     assert config["analyst"]["nlq_fallback_enabled"] is True

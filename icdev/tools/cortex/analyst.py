@@ -78,6 +78,7 @@ from tools.quality.citation_grounding import (
     validate_citations,
 )
 
+from .config import resolve_fail_closed
 from .schemas import Citation, CortexContext, CortexResult, GovernanceReport
 
 logger = get_logger(__name__)
@@ -244,7 +245,7 @@ def _screen_question(
 
         verdict = check_text(question).get("pre_invoke") or {}
     except Exception as exc:  # noqa: BLE001
-        if ctx.fail_closed:
+        if resolve_fail_closed(ctx):
             _refuse(
                 question,
                 None,
@@ -478,14 +479,14 @@ def _apply_security_context(conn: Any, ctx: CortexContext) -> None:
     setter = getattr(conn, "set_security_context", None)
     if setter is None:
         msg = "connection cannot carry a security context (query would be unscoped)"
-        if ctx.fail_closed:
+        if resolve_fail_closed(ctx):
             raise CortexAnalystError(f"failed to apply security context: {msg}")
         logger.warning("cortex.analyst: security context not applied: %s", msg)
         return
     try:
         setter(_build_security_context(ctx))
     except Exception as exc:  # noqa: BLE001
-        if ctx.fail_closed:
+        if resolve_fail_closed(ctx):
             raise CortexAnalystError(
                 f"failed to apply security context: {exc}"
             ) from exc
