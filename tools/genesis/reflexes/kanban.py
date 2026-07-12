@@ -1677,6 +1677,13 @@ def _cleanup_worktree(task_id: str):
         logger.warning("Branch cleanup failed for %s: %s", task_id, exc)
 
 
+def _pr_flow_enabled() -> bool:
+    """True when the runner opens a PR instead of merging straight to main."""
+    import os as _os
+
+    return _os.environ.get("ICDEV_KANBAN_PR_FLOW", "").lower() in ("1", "true", "yes")
+
+
 def _check_worktree_commits(task_id: str) -> bool:
     """Check if the worktree branch has new commits vs the parent branch."""
     import subprocess as _sp
@@ -7321,18 +7328,35 @@ def _check_completed():
                         _dispatch_times.pop(task_id, None)
                         continue
 
-                    try:
-                        _move_task(task_id, "done",
-                                   actor="scheduler",
-                                   reason=f"verified: {reason[:80]}")
-                    except Exception as _mt_exc:
-                        # Loud fail: task stays in_progress; next cycle's
-                        # orphan detection / stale-dispatch sweep will pick
-                        # it up. Logging beats silent pass.
-                        logger.error(
-                            "_move_task(done) failed for %s after verified=True: %s",
-                            task_id, _mt_exc,
-                        )
+                    # In PR flow the work is NOT done until the PR MERGES. The
+                    # PR is opened further down (_cleanup_worktree), so marking
+                    # the task done HERE claims completion before the PR even
+                    # exists — which is exactly what produced the
+                    # REFUSED_done_unmerged transitions, and why the "Awaiting
+                    # Merge" column never held a single task. Defer: the cleanup
+                    # block below moves it to pr_opened once the PR is real, and
+                    # pr_watcher moves it to done when the PR actually merges.
+                    #
+                    # A verified task with NO commits (a research/answer task)
+                    # opens no PR and is genuinely done right now.
+                    _will_open_pr = (
+                        _pr_flow_enabled()
+                        and task_id in _worktrees
+                        and _check_worktree_commits(task_id)
+                    )
+                    if not _will_open_pr:
+                        try:
+                            _move_task(task_id, "done",
+                                       actor="scheduler",
+                                       reason=f"verified: {reason[:80]}")
+                        except Exception as _mt_exc:
+                            # Loud fail: task stays in_progress; next cycle's
+                            # orphan detection / stale-dispatch sweep will pick
+                            # it up. Logging beats silent pass.
+                            logger.error(
+                                "_move_task(done) failed for %s after verified=True: %s",
+                                task_id, _mt_exc,
+                            )
                     _clear_retry_count(task_id)
                     _clear_resume_at(task_id)
                     _clear_timeout_count(task_id)
@@ -7446,6 +7470,24 @@ def _check_completed():
                         print(f"  Kanban: worktree kanban/{task_id} has new commits (review before merging)")
                     _cleanup_worktree(task_id)
                     del _worktrees[task_id]
+
+                    # _cleanup_worktree pushed the branch and opened the PR.
+                    # Reflect that on the board: the task is awaiting merge, not
+                    # done. pr_watcher takes it from here.
+                    if _pr_flow_enabled() and has_commits:
+                        if _has_open_pr(task_id):
+                            _move_task(
+                                task_id, "pr_opened", actor="scheduler",
+                                reason="PR opened — awaiting CI + merge",
+                            )
+                        else:
+                            # The branch has commits but no PR exists: the work is
+                            # real and must not be silently marked done. Send it
+                            # back so the failure is visible.
+                            _move_task(
+                                task_id, "backlog", actor="scheduler",
+                                reason="PR flow: branch pushed but the PR could not be opened",
+                            )
                 elif not verified and task_id in _worktrees:
                     # Preserve worktree for debugging/retry
                     print(f"  Kanban: preserving worktree for unverified task {task_id}")
@@ -8083,6 +8125,25 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     if tier != _current_exec_tier:
         logger.info("Executor tier changed to %s", tier)
         _current_exec_tier = tier
+
+    # 0. Promote dep-satisfied backlog tasks to SCHEDULED.
+    #
+    # tools/kanban/promote_backlog_to_scheduled.py existed but NOTHING ever called
+    # it, so the "Scheduled" column had never held a task in the board's lifetime —
+    # backlog went straight to in_progress and the board could not distinguish
+    # "queued, still blocked" from "ready, waiting for a slot".
+    #
+    # This is a VISIBILITY change, not a dispatch change: _get_due_tasks already
+    # picks up backlog AND scheduled under the same dependency clause, so exactly
+    # the same tasks run. They are now simply visible as ready first.
+    try:
+        from tools.kanban.promote_backlog_to_scheduled import promote as _promote
+
+        _promoted = _promote()
+        if _promoted:
+            print(f"  Kanban: promoted {len(_promoted)} backlog task(s) to scheduled")
+    except Exception as _promo_exc:  # noqa: BLE001 — never block the cycle
+        logger.warning("backlog->scheduled promotion failed: %s", _promo_exc)
 
     # 0a. Orphan-done sweep — roll back any done task whose parent isn't done.
     # Defense-in-depth against manual SQL / spurious automation that marked
