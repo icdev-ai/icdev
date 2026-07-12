@@ -674,29 +674,32 @@ def _call_llm(prompt, section_title, item_number, role_key: str = "rfi_writer", 
         logger.warning("Skipping LLM call — role '%s' is auto-blocked", role_key)
         return _template_fallback(section_title, item_number, prompt)
     try:
-        from tools.llm.router import LLMRequest
-        router = _get_router()
-        req = LLMRequest(
-            messages=[{
-                "role": "user",
-                "content": (
-                    f"You are an expert GovCon proposal writer for a defense/IC contractor. "
-                    f"Write the '{section_title}' (Item {item_number}) section of an RFI response. "
-                    f"Be specific, professional, and avoid vague claims. Use concrete numbers and built capabilities. "
-                    f"Format as clean markdown with bold headers and tables where appropriate. "
-                    f"UNCLASSIFIED content only. Keep to ≤400 words unless the section requires detail.\n\n"
-                    f"{prompt}"
-                ),
-            }],
+        from tools.cortex import api as cortex_api
+        from tools.cortex.schemas import CortexContext
+
+        content = (
+            f"You are an expert GovCon proposal writer for a defense/IC contractor. "
+            f"Write the '{section_title}' (Item {item_number}) section of an RFI response. "
+            f"Be specific, professional, and avoid vague claims. Use concrete numbers and built capabilities. "
+            f"Format as clean markdown with bold headers and tables where appropriate. "
+            f"UNCLASSIFIED content only. Keep to ≤400 words unless the section requires detail.\n\n"
+            f"{prompt}"
+        )
+        # Adoption wave 2: route RFI drafting through the GOVERNED cortex.complete.
+        # RFI responses are CUI compliance artifacts — this adds egress redaction,
+        # provenance, an append-only audit row, and per-tenant budget attribution
+        # the raw router.invoke never applied. The llm_function routing is preserved,
+        # and a governance block / any failure degrades to _template_fallback.
+        cx = cortex_api.complete(
+            content,
+            function=llm_function,
+            ctx=CortexContext(
+                classification="CUI", domain="proposal", agent_id=f"rfi:{role_key}"
+            ),
             max_tokens=900,
         )
-        response = router.invoke(llm_function, req)
         _track_llm_success(role_key)
-        if hasattr(response, "content"):
-            return response.content
-        if isinstance(response, dict):
-            return response.get("content", response.get("text", str(response)))
-        return str(response)
+        return cx.text or _template_fallback(section_title, item_number, prompt)
     except Exception as exc:
         _track_llm_failure(role_key)
         logger.warning("LLM generation failed for section %s: %s — using fallback", item_number, exc)
