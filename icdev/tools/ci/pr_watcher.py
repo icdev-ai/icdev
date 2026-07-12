@@ -221,6 +221,32 @@ def list_pr_tasks(
 # ────────────────────────────────────────────────────────────────────────────
 
 
+# Coordination / union-merged files that MANY task branches legitimately co-edit
+# (manifest shards, append-only-table registry, nav/registry configs, conftest
+# schema). Two PRs touching these is normal, not a collision — exclude them from
+# the sibling-conflict check so it only fires on genuine same-source-file races
+# (e.g. two branches each creating a different tools/cortex/blueprint.py). See the
+# merge-conflict-hotspots prevention notes.
+_ADDITIVE_PATH_MARKERS = (
+    "tools/manifest/",
+    "tools/manifest.md",
+    ".claude/hooks/pre_tool_use.py",
+    "tools/dashboard/templates/base.html",
+    ".claude/commands/start.md",
+    "args/component_registry.yaml",
+    "args/projects.yaml",
+    "args/genesis_config.yaml",
+    "tests/conftest.py",
+    "docs/reference/commands.md",
+)
+
+
+def _is_additive_path(path: str) -> bool:
+    """True when `path` is a union-merged coordination file (not a collision risk)."""
+    p = (path or "").replace("\\", "/")
+    return any(marker in p for marker in _ADDITIVE_PATH_MARKERS)
+
+
 _GH_JSON_FIELDS = (
     "state,statusCheckRollup,reviews,mergeable,"
     "headRefName,baseRefName,updatedAt,number,url"
@@ -411,6 +437,7 @@ class PRWatcher:
         fetch_logs=None,
         auto_merge_runner=None,
         default_branch_resolver=None,
+        pr_list_runner=None,
         dry_run: bool = False,
     ):
         self.config = config or load_config()
@@ -421,6 +448,7 @@ class PRWatcher:
         self._fetch_state = fetch_state or fetch_pr_state
         self._fetch_logs = fetch_logs or fetch_ci_logs
         self._auto_merge_runner = auto_merge_runner or subprocess.run
+        self._pr_list_runner = pr_list_runner or subprocess.run
         self._default_branch_resolver = (
             default_branch_resolver or repo_default_branch
         )
@@ -455,6 +483,54 @@ class PRWatcher:
         except Exception as exc:
             logger.warning("pr_watcher: queue_message import failed: %s", exc)
             return False
+
+    def _open_pr_files(self) -> Dict[str, set]:
+        """Map every open PR's url -> set of changed file paths (single gh call).
+
+        Best-effort: returns {} if gh is unavailable / errors, so the sibling
+        check degrades to a no-op rather than blocking the watcher.
+        """
+        try:
+            proc = self._pr_list_runner(
+                ["gh", "pr", "list", "--state", "open", "--json", "url,files",
+                 "--limit", "200"],
+                capture_output=True, text=True, encoding="utf-8",
+                errors="replace", timeout=60,
+            )
+            if getattr(proc, "returncode", 1) != 0:
+                return {}
+            data = json.loads(proc.stdout or "[]")
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("pr_watcher: open-PR file listing failed: %s", exc)
+            return {}
+        out: Dict[str, set] = {}
+        for pr in data:
+            url = pr.get("url")
+            if not url:
+                continue
+            out[url] = {f.get("path", "") for f in (pr.get("files") or []) if f.get("path")}
+        return out
+
+    def _sibling_conflicts(self, candidate_url: str, file_map: Dict[str, set]) -> Dict[str, set]:
+        """Return {other_pr_url: shared_integrity_files} for OPEN PRs that touch a
+        non-additive file the candidate PR also touches.
+
+        Additive/coordination files (manifest shards, APPEND_ONLY_TABLES,
+        component_registry, etc. — see _ADDITIVE_PATH_MARKERS) are union-merged and
+        excluded, so only genuine same-source-file collisions (two branches editing
+        the same blueprint.py / module / migration) are flagged.
+        """
+        cand = {f for f in file_map.get(candidate_url, set()) if not _is_additive_path(f)}
+        if not cand:
+            return {}
+        conflicts: Dict[str, set] = {}
+        for url, files in file_map.items():
+            if url == candidate_url:
+                continue
+            shared = cand & {f for f in files if not _is_additive_path(f)}
+            if shared:
+                conflicts[url] = shared
+        return conflicts
 
     def _default_branch(self) -> str:
         if self._default_branch_cache is None:
@@ -576,6 +652,14 @@ class PRWatcher:
         require_approval = bool(
             self.config.get("auto_merge_require_approval", True)
         )
+        # Sibling-file-conflict map (kph): fetch every open PR's changed files ONCE
+        # per cycle so the DONE path can flag a merge candidate that races another
+        # open PR on the same source file (the "two different blueprint.py" class).
+        sibling_map = (
+            self._open_pr_files()
+            if self.config.get("sibling_conflict_check", True)
+            else {}
+        )
 
         for task in tasks:
             report.tasks_checked += 1
@@ -662,6 +746,39 @@ class PRWatcher:
                         report.actions.append(action)
                         self._audit(action)
                         continue
+                    # Sibling-file-conflict guard (kph): another open PR edits the
+                    # same source file(s) — merging both races on one path (the
+                    # "two different blueprint.py" collision that stranded Cortex).
+                    # Union-merged coordination files are excluded. Warn + audit
+                    # always; HOLD (serialize the merge) only when
+                    # hold_on_sibling_conflict is set, so a legitimate shared edit
+                    # is not blocked by default.
+                    sib = self._sibling_conflicts(pr_url, sibling_map) if sibling_map else {}
+                    if sib:
+                        detail = "; ".join(
+                            f"{u} [{', '.join(sorted(fs))}]" for u, fs in sib.items()
+                        )
+                        logger.warning(
+                            "pr_watcher: %s shares source file(s) with %d open PR(s): %s",
+                            pr_url, len(sib), detail,
+                        )
+                        self._audit(WatcherAction(
+                            task_id=task["id"], pr_url=pr_url,
+                            classification="done",
+                            action="sibling_conflict_warn",
+                            reason=f"shares source file(s) with open PR(s): {detail}",
+                            resume_cycle=cycle,
+                        ))
+                        if self.config.get("hold_on_sibling_conflict", False):
+                            action = WatcherAction(
+                                task_id=task["id"], pr_url=pr_url,
+                                classification="done", action="wait",
+                                reason=f"held: sibling file conflict with {len(sib)} open PR(s)",
+                                resume_cycle=cycle,
+                            )
+                            report.actions.append(action)
+                            self._audit(action)
+                            continue
                     approved_ok = (
                         not require_approval
                         or ec.is_approved_and_passing(state)

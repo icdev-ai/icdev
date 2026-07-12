@@ -13,3 +13,10 @@ auto_merge_require_approval: false
 
 # Truncate CI log excerpts before injecting as resume context
 ci_log_max_chars: 4000
+
+# Sibling-file-conflict guard (kph): before auto-merging a PR, fetch every open
+# PR's changed files and flag when the candidate races another open PR on the same
+# SOURCE file (union-merged coordination files are excluded). Warn + audit always;
+# set hold_on_sibling_conflict to also serialize the merge (wait) instead of racing.
+sibling_conflict_check: true
+hold_on_sibling_conflict: false
