@@ -2,7 +2,7 @@
 """ICDEV /cpmp DataBridge connector — the contract bridge (prem-cpmp-01).
 
 Read-mostly local-DB connector giving external delivery tools (compass) a
-scoped window into the contract portfolio, plus two narrow write paths that
+scoped window into the contract portfolio, plus three narrow write paths that
 close the delivery loop:
 
   READ  contracts            id/number/title/type, total/funded/ceiling value,
@@ -12,6 +12,13 @@ close the delivery loop:
   READ  deliverables         CDRLs — due/submitted/status
   WRITE evm_periods          PV/EV/AC per period (CPI/SPI derived here)
   WRITE deliverable_status   submission status transition on a deliverable
+  WRITE mod_recommendations  PMO-negotiated scope change → a 'requested'
+                             contract mod for contracts staff to action
+
+A mod recommendation lands as a normal ``cpmp_contract_mods`` row at status
+'requested' — the existing lifecycle already models exactly this (requested →
+in_review → approved/rejected → executed), so the bridge adds no new status and
+takes no approval authority. Compass proposes; contracts staff dispose.
 
 Access control: the feeds surface requires ``databridge:icdev_cpmp:read`` /
 ``:write`` scopes, and every READ row is classification-filtered against the
@@ -42,7 +49,10 @@ from tools.logging.icdev_logger import get_logger
 logger = get_logger("databridge.icdev_cpmp")
 
 _READ_TABLES = ("contracts", "clins", "milestones", "deliverables")
-_WRITE_TABLES = ("evm_periods", "deliverable_status")
+_WRITE_TABLES = ("evm_periods", "deliverable_status", "mod_recommendations")
+
+# cpmp_contract_mods.type CHECK — the bridge must never invent a value outside it.
+_MOD_TYPES = ("admin", "funding", "scope", "pop")
 _DEFAULT_LIMIT = 200
 
 _CONTRACT_COLUMNS = (
@@ -213,6 +223,8 @@ class ICDEVCpmpConnector(DataConnector):
         try:
             if table == "evm_periods":
                 result = self._write_evm_period(data)
+            elif table == "mod_recommendations":
+                result = self._write_mod_recommendation(data)
             else:
                 result = self._write_deliverable_status(data)
             return ConnectorResponse(
@@ -280,6 +292,62 @@ class ICDEVCpmpConnector(DataConnector):
         finally:
             conn.close()
         return {"id": deliverable_id, "status": status}
+
+    def _write_mod_recommendation(self, data: dict) -> dict:
+        """PMO-negotiated scope change → a 'requested' contract mod.
+
+        Lands at status 'requested' (never 'approved'): the bridge proposes,
+        contracts staff dispose. ``provenance`` — the decision id, requirement,
+        ROM and schedule impact behind the ask — is preserved in ``metadata``
+        so a reviewer can trace the number back to the customer's signature.
+        """
+        contract_id = str(data["contract_id"])
+        description = str(data["description"]).strip()
+        if not description:
+            raise ValueError("description is required — a mod with no ask is noise")
+
+        mod_type = str(data.get("type") or "scope")
+        if mod_type not in _MOD_TYPES:
+            raise ValueError(f"type must be one of {_MOD_TYPES}")
+
+        value_delta = float(data.get("value_delta") or 0.0)
+        provenance = data.get("provenance") or {}
+        if not isinstance(provenance, dict):
+            raise ValueError("provenance must be an object")
+
+        row_id = str(uuid.uuid4())
+        conn = get_connection()
+        try:
+            exists = conn.execute(
+                "SELECT id FROM cpmp_contracts WHERE id = %s", (contract_id,)
+            ).fetchone()
+            if exists is None:
+                raise ValueError(f"contract {contract_id} not found")
+
+            # mod_number is NOT NULL and per-contract sequential.
+            row = conn.execute(
+                "SELECT COALESCE(MAX(mod_number), 0) AS n FROM cpmp_contract_mods "
+                "WHERE contract_id = %s", (contract_id,)
+            ).fetchone()
+            mod_number = int(dict(row)["n"]) + 1
+
+            conn.execute(
+                "INSERT INTO cpmp_contract_mods (id, contract_id, mod_number, type, "
+                " description, value_delta, status, requested_by, requested_at, "
+                " effective_date, metadata, created_at, updated_at) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                (row_id, contract_id, mod_number, mod_type, description, value_delta,
+                 "requested", str(data.get("requested_by") or "compass"), _now(),
+                 data.get("effective_date"), json.dumps(provenance), _now(), _now()),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        logger.info("cpmp mod recommendation %s (contract %s, mod %s) from %s",
+                    row_id, contract_id, mod_number, data.get("requested_by"))
+        return {"id": row_id, "contract_id": contract_id, "mod_number": mod_number,
+                "type": mod_type, "status": "requested", "value_delta": value_delta}
 
     def list_tables(self) -> List[str]:
         return list(_READ_TABLES) + list(_WRITE_TABLES)
