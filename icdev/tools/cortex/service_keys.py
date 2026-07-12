@@ -59,10 +59,15 @@ REST_OPERATIONS = ("search", "ask", "complete", "classify", "extract", "govern",
 # by default, because intake writes sessions/requirements into the platform.
 CORTEX_SCOPES = tuple(f"cortex:{op}" for op in REST_OPERATIONS)
 INTAKE_SCOPES = ("cortex:intake",)
+# Same rule, same reason (prem-recomp-05): win_themes WRITES to the proposal
+# theme registry, and those themes are injected into the /proposals + /rfi
+# drafting prompts. A key that can search must not silently also be able to put
+# words in a proposal's mouth, so this is never in the default grant.
+WIN_THEME_SCOPES = ("cortex:win_themes",)
 DATABRIDGE_SCOPES = ("databridge:iris:read", "databridge:iris:write",
                      "databridge:icdev_demand:read",
                      "databridge:icdev_cpmp:read", "databridge:icdev_cpmp:write")
-ALL_SCOPES = CORTEX_SCOPES + INTAKE_SCOPES + DATABRIDGE_SCOPES
+ALL_SCOPES = CORTEX_SCOPES + INTAKE_SCOPES + WIN_THEME_SCOPES + DATABRIDGE_SCOPES
 
 # Default scopes for a newly created key: the six REST operations (the
 # spend-heavier feeds/write scopes are granted explicitly).

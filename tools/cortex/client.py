@@ -205,6 +205,25 @@ class CortexClient:
             payload["title"] = title
         return self._post("slides", payload, timeout)
 
+    # -- Win themes (prem-recomp-05; scope cortex:win_themes) --------------------
+
+    def push_win_themes(self, opportunity_id: str, themes: List[dict], *,
+                        timeout: Optional[int] = None) -> Optional[dict]:
+        """Register CITED win themes against a proposal opportunity.
+
+        Themes land in pg_win_themes, which the /proposals + /rfi drafting
+        prompts read — so a theme pushed here actually shapes the draft.
+
+        Every theme MUST carry evidence: ``{"statement", "evidence", ...}`` where
+        evidence is rendered text or a list of {"claim", "source"} citations.
+        Uncited themes are REFUSED server-side (returned in ``refused``), never
+        stored, because an unproven claim in a generative prompt is exactly what
+        the TRUST rules exist to prevent.
+        """
+        payload: Dict[str, Any] = {"opportunity_id": opportunity_id,
+                                   "themes": themes}
+        return self._post("win_themes", payload, timeout)
+
     # -- RICOAS intake bridge (prem-ricoas-02; scope cortex:intake) --------------
 
     def intake_create(self, verbatim_ask: str, *, customer_name: str,
