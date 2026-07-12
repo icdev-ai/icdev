@@ -10,6 +10,10 @@ close the delivery loop:
   READ  clins                funding per CLIN
   READ  milestones           baseline/forecast/actual + status
   READ  deliverables         CDRLs — due/submitted/status
+  READ  cpars_assessments    the customer's own report card, per rating area
+  READ  negative_events      findings + corrective-action state (the actionable
+                             half: an open CAP is a thing a recompete campaign
+                             can actually close before the RFP drops)
   WRITE evm_periods          PV/EV/AC per period (CPI/SPI derived here)
   WRITE deliverable_status   submission status transition on a deliverable
   WRITE mod_recommendations  PMO-negotiated scope change → a 'requested'
@@ -48,7 +52,8 @@ from tools.logging.icdev_logger import get_logger
 
 logger = get_logger("databridge.icdev_cpmp")
 
-_READ_TABLES = ("contracts", "clins", "milestones", "deliverables")
+_READ_TABLES = ("contracts", "clins", "milestones", "deliverables",
+                "cpars_assessments", "negative_events")
 _WRITE_TABLES = ("evm_periods", "deliverable_status", "mod_recommendations")
 
 # cpmp_contract_mods.type CHECK — the bridge must never invent a value outside it.
@@ -196,6 +201,27 @@ class ICDEVCpmpConnector(DataConnector):
                 " actual_date, status, classification, '[]' AS compartments "
                 "FROM cpmp_milestones WHERE (%s IS NULL OR contract_id = %s) "
                 "ORDER BY baseline_date LIMIT %s",
+                (contract_id, contract_id, limit)).fetchall()
+        elif table == "cpars_assessments":
+            # The customer's own report card — what a recompete is graded on.
+            rows = conn.execute(
+                "SELECT id, contract_id, period_start, period_end, quality_rating, "
+                " schedule_rating, cost_rating, management_rating, "
+                " small_business_rating, overall_rating, overall_score, "
+                " classification, '[]' AS compartments "
+                "FROM cpmp_cpars_assessments WHERE (%s IS NULL OR contract_id = %s) "
+                "ORDER BY period_end DESC LIMIT %s",
+                (contract_id, contract_id, limit)).fetchall()
+        elif table == "negative_events":
+            # Corrective-action state is the actionable half: an open CAP is a
+            # concrete thing a recompete campaign can close before the RFP.
+            rows = conn.execute(
+                "SELECT id, contract_id, event_type, severity, description, "
+                " corrective_action, corrective_action_status, "
+                " corrective_action_due, cpars_impact, "
+                " classification, '[]' AS compartments "
+                "FROM cpmp_negative_events WHERE (%s IS NULL OR contract_id = %s) "
+                "ORDER BY severity DESC LIMIT %s",
                 (contract_id, contract_id, limit)).fetchall()
         else:  # deliverables
             rows = conn.execute(

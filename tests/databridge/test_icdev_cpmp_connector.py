@@ -48,6 +48,20 @@ def cpmp_db(icdev_db, monkeypatch):
         " deliverable_type, frequency, due_date, status, classification) "
         "VALUES (%s, %s, 'A001', 'Monthly Status Report', 'cdrl', 'monthly', "
         " '2026-08-10', 'in_progress', 'CUI')", (deliverable_id, contract_id))
+    conn.execute(
+        "INSERT INTO cpmp_cpars_assessments (id, contract_id, period_start, "
+        " period_end, quality_rating, schedule_rating, cost_rating, "
+        " management_rating, overall_rating, overall_score, classification) "
+        "VALUES (%s, %s, '2025-01-01', '2025-12-31', 'Exceptional', "
+        " 'Satisfactory', 'Very Good', 'Very Good', 'Very Good', 4.1, 'CUI')",
+        (str(uuid.uuid4()), contract_id))
+    conn.execute(
+        "INSERT INTO cpmp_negative_events (id, contract_id, event_type, severity, "
+        " description, corrective_action, corrective_action_status, cpars_impact, "
+        " classification) "
+        "VALUES (%s, %s, 'late_delivery', 'high', 'CDRL A002 delivered 9 days late', "
+        " 'Added a pre-submission review gate', 'open', 'schedule', 'CUI')",
+        (str(uuid.uuid4()), contract_id))
     conn.commit()
     return {"db": icdev_db, "contract_id": contract_id,
             "deliverable_id": deliverable_id}
@@ -203,3 +217,38 @@ def test_feeds_allowlist_and_scopes():
     keys = importlib.import_module("tools.cortex.service_keys")
     assert "databridge:icdev_cpmp:read" in keys.ALL_SCOPES
     assert "databridge:icdev_cpmp:write" in keys.ALL_SCOPES
+
+
+# -- CPARS + negative events (prem-recomp-03) --------------------------------
+
+def test_read_cpars_assessments(connector, cpmp_db):
+    resp = connector.read(ConnectorRequest(
+        table_name="cpars_assessments",
+        filters={"contract_id": cpmp_db["contract_id"],
+                 "_caller_classification": "CUI"}))
+    assert resp.row_count == 1
+    row = resp.data[0]
+    assert row["overall_rating"] == "Very Good"
+    # Per-area ratings are the point: a campaign targets the weak area, not the
+    # rolled-up score.
+    assert row["quality_rating"] == "Exceptional"
+    assert row["schedule_rating"] == "Satisfactory"
+
+
+def test_read_negative_events_carry_corrective_action_state(connector, cpmp_db):
+    resp = connector.read(ConnectorRequest(
+        table_name="negative_events",
+        filters={"contract_id": cpmp_db["contract_id"],
+                 "_caller_classification": "CUI"}))
+    assert resp.row_count == 1
+    row = resp.data[0]
+    assert row["corrective_action_status"] == "open"
+    assert row["cpars_impact"] == "schedule"
+
+
+def test_cpars_is_read_only(connector, cpmp_db):
+    resp = connector.write(
+        ConnectorRequest(table_name="cpars_assessments", sync_direction="write"),
+        {"contract_id": cpmp_db["contract_id"], "overall_rating": "Exceptional"})
+    # The customer grades us; we do not grade ourselves.
+    assert resp.status == "error"
