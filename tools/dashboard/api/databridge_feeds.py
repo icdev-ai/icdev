@@ -39,7 +39,7 @@ _PREFIX = "/api/databridge/v1"
 
 # Externally exposable connectors only. Everything else in the registry is
 # internal-only regardless of the caller's scopes.
-_CONNECTOR_ALLOWLIST = frozenset({"iris"})
+_CONNECTOR_ALLOWLIST = frozenset({"iris", "icdev_demand"})
 
 # Cached connected instances, keyed by connector name.
 _instances: Dict[str, Any] = {}
@@ -63,6 +63,8 @@ def _get_instance(name: str) -> Optional[Any]:
     # Import for registration side effect, then resolve through the registry.
     if name == "iris":
         import tools.databridge.connectors.iris_connector  # noqa: F401
+    elif name == "icdev_demand":
+        import tools.databridge.connectors.icdev_demand_connector  # noqa: F401
 
     from tools.databridge.registry import get_connector_instance
 
