@@ -314,6 +314,8 @@ def record_audit(payload: dict, conn=None) -> str:
                         "domain": payload.get("domain") or "",
                         "cost_usd": float(payload.get("cost_usd") or 0.0),
                         "latency_ms": int(payload.get("latency_ms") or 0),
+                        "input_tokens": int(payload.get("input_tokens") or 0),
+                        "output_tokens": int(payload.get("output_tokens") or 0),
                         "provider": payload.get("provider") or "",
                         "model": payload.get("model") or "",
                         "cache_hit": bool(payload.get("cache_hit")),

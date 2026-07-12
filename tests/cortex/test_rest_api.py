@@ -174,7 +174,8 @@ def test_ask_returns_cortex_result(monkeypatch):
     assert resp.status_code == 200
     body = resp.get_json()
     assert set(body) == {"text", "citations", "governance", "provider", "model",
-                         "cost", "latency_ms", "grounded", "data", "metadata"}
+                         "cost", "latency_ms", "input_tokens", "output_tokens",
+                         "grounded", "data", "metadata"}
     assert body["text"] == "answer"
 
 

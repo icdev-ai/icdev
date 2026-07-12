@@ -30,7 +30,8 @@ def test_aggregate_handles_tuple_and_dict_rows():
     tuple_rows = [
         ("cortex.complete", "t-a", "CUI", "pass", 0,
          json.dumps({"cost_usd": 0.01, "latency_ms": 100, "redactions_applied": 1,
-                     "domain": "proposal"})),
+                     "domain": "proposal", "input_tokens": 100, "output_tokens": 40,
+                     "model": "kimi"})),
         ("cortex.complete", "t-a", "CUI", "blocked", 1,
          json.dumps({"cost_usd": 0.0, "latency_ms": 0, "domain": "proposal"})),
         ("cortex.search", "t-b", "CUI", "warn", 0,
@@ -39,7 +40,9 @@ def test_aggregate_handles_tuple_and_dict_rows():
     dict_rows = [
         {"function": "cortex.ask", "tenant_id": "t-a", "classification": "CUI",
          "outcome": "pass", "blocked": False,
-         "gates_json": json.dumps({"cost_usd": 0.005, "latency_ms": 50})},
+         "gates_json": json.dumps({"cost_usd": 0.005, "latency_ms": 50,
+                                   "input_tokens": 20, "output_tokens": 10,
+                                   "model": "kimi"})},
     ]
     out = metrics._aggregate(tuple_rows + dict_rows, 24)
     s = out["summary"]
@@ -50,6 +53,13 @@ def test_aggregate_handles_tuple_and_dict_rows():
     assert s["redactions"] == 1
     assert s["cache_hits"] == 1
     assert abs(s["cost_usd"] - 0.035) < 1e-9
+    # Tokens summed end-to-end.
+    assert s["input_tokens"] == 120 and s["output_tokens"] == 50
+    assert s["total_tokens"] == 170
+    # Per-model rollup: two kimi calls carried tokens.
+    by_model = {m["model"]: m for m in out["by_model"]}
+    assert by_model["kimi"]["total_tokens"] == 170
+    assert by_model["kimi"]["calls"] == 2
     # avg latency over rows with latency > 0: (100 + 300 + 50) / 3
     assert s["avg_latency_ms"] == pytest.approx((100 + 300 + 50) / 3, abs=0.1)
     by_fn = {f["function"]: f for f in out["by_function"]}
@@ -77,6 +87,7 @@ def test_summarize_reads_accounting_written_by_record_audit(cortex_db):
         "operation": "cortex.complete", "tenant_id": "t-a", "classification": "CUI",
         "domain": "network", "outcomes": {"operation": "pass"}, "blocked": False,
         "cost_usd": 0.0123, "latency_ms": 250, "provider": "ollama", "model": "x",
+        "input_tokens": 300, "output_tokens": 120,
     })
     record_audit({
         "operation": "cortex.complete", "tenant_id": "t-a", "classification": "CUI",
@@ -87,6 +98,7 @@ def test_summarize_reads_accounting_written_by_record_audit(cortex_db):
     assert out["summary"]["calls"] == 2
     assert out["summary"]["blocked"] == 1
     assert abs(out["summary"]["cost_usd"] - 0.0123) < 1e-6
+    assert out["summary"]["total_tokens"] == 420  # 300 in + 120 out
     fns = {f["function"]: f for f in out["by_function"]}
     assert fns["cortex.complete"]["calls"] == 2
     domains = {d["domain"]: d["calls"] for d in out["by_domain"]}
