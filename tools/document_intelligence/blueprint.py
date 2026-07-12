@@ -1872,19 +1872,48 @@ def api_chat():
     collection_id = data.get("collection_id")
     tenant_id, _cls = _security_context()
 
+    # Conversational memory (chat_memory): when enabled, resolve a bare follow-up
+    # ("and its retention period?") by prepending the prior turn's GROUNDED subject,
+    # so the existing grounded retrieval resolves it. Off => fully stateless.
+    from tools.document_intelligence import chat_memory as _cm
+    session_id = (data.get("session_id") or "").strip()
+    mem_on = _cm.memory_enabled(data)
+    resolved_subject = ""
+    search_message = message
+    if mem_on and session_id:
+        try:
+            _res = _cm.resolve_followup(session_id, message, tenant_id=tenant_id)
+            if _res.is_followup:
+                search_message = _res.resolved_query
+                resolved_subject = _res.subject
+        except Exception as _mexc:  # noqa: BLE001
+            logger.debug("dic chat memory resolve failed: %s", _mexc)
+
+    def _mem(payload: dict, answer: str = "", record_results=None) -> dict:
+        """Attach memory fields to a response payload and best-effort record the turn."""
+        payload["memory"] = mem_on
+        payload["resolved_subject"] = resolved_subject
+        if mem_on and session_id and record_results:
+            try:
+                _cm.record_turn(session_id, message, answer, record_results,
+                                tenant_id=tenant_id, collection_id=collection_id or "")
+            except Exception as _rexc:  # noqa: BLE001
+                logger.debug("dic chat memory record failed: %s", _rexc)
+        return payload
+
     try:
         from tools.document_intelligence.search_engine import DICSearchEngine
         engine = DICSearchEngine(tenant_id=tenant_id)
-        results = engine.search(message, collection_id=collection_id, top_k=8)
+        results = engine.search(search_message, collection_id=collection_id, top_k=8)
 
         if not results:
-            return jsonify({
+            return jsonify(_mem({
                 "answer": "No relevant documents found in this collection. Upload documents first.",
                 "sources": [],
                 "citations": [],
                 "abstained": True,
                 "mode": "grounded",
-            })
+            }))
 
         citations = [r.citation.to_dict() for r in results[:5]]
         # Use a lexical match score that works in air-gap mode; raw vector/BM25
@@ -1901,13 +1930,13 @@ def api_chat():
         # ── Path 1: High-confidence direct lookup — NO LLM ──────────────────
         if best_result and top_match_score >= 0.7 and not _needs_synthesis(message):
             grounded = _compile_grounded_answer([best_result], message)
-            return jsonify({
+            return jsonify(_mem({
                 "answer": grounded["answer"],
                 "sources": grounded["sources"],
                 "citations": citations,
                 "abstained": False,
                 "mode": "grounded",
-            })
+            }, answer=grounded["answer"], record_results=scored_results))
 
         # ── Path 2: Grounded answer from top chunks — NO LLM ────────────────
         grounded = _compile_grounded_answer(scored_results, message)
@@ -1935,13 +1964,13 @@ def api_chat():
                     answer = llm_answer
                     mode = "ai_assisted"
 
-        return jsonify({
+        return jsonify(_mem({
             "answer": answer,
             "sources": sources,
             "citations": citations,
             "abstained": abstained,
             "mode": mode,
-        })
+        }, answer=answer, record_results=scored_results))
     except Exception as exc:
         logger.warning("dic: chat error: %s", exc)
         return jsonify({"answer": f"Error: {exc}", "sources": [], "citations": [], "abstained": True, "mode": "grounded"}), 500
