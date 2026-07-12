@@ -128,6 +128,65 @@ def _peak_norm(raw_scores: list) -> float:
     return peak if peak > 1.0 else 1.0
 
 
+_DEFAULT_RRF_K = 60
+
+
+def _fusion_ident(r) -> str:
+    """Backend-agnostic identity so the SAME source retrieved by two backends
+    fuses into one entry. Prefer the citation source_id; fall back to content."""
+    src = getattr(getattr(r, "citation", None), "source_id", "") or ""
+    return str(src) if src else (getattr(r, "content", "") or "")
+
+
+def _rrf_fuse(results: list, k: int = _DEFAULT_RRF_K) -> list:
+    """Fuse multi-backend results by Reciprocal Rank Fusion.
+
+    Per-backend raw scores are not comparable across backends (each backend
+    peak-normalizes its own set), so a plain score-sort over the concatenated
+    list is biased toward whichever backend emits larger numbers. RRF instead
+    ranks each backend's list independently and scores each item by
+    ``sum(1 / (k + rank))`` over the backends that returned it — rank-based, so
+    scale-free, and it rewards items surfaced by multiple backends.
+
+    The item's raw ``.score`` is left untouched (CRAG + callers still read it);
+    the fused score is recorded in ``raw_scores['rrf']`` and the list is ordered
+    by it. Deterministic: ties break by raw score then identity.
+    """
+    if not results:
+        return []
+    by_backend: dict = {}
+    for r in results:
+        by_backend.setdefault(getattr(r, "backend", "") or "", []).append(r)
+
+    fused: dict = {}  # ident -> {"result": best_repr, "rrf": float}
+    for _backend, items in by_backend.items():
+        ranked = sorted(items, key=lambda r: getattr(r, "score", 0.0) or 0.0, reverse=True)
+        for rank, r in enumerate(ranked, start=1):
+            ident = _fusion_ident(r)
+            contrib = 1.0 / (k + rank)
+            cur = fused.get(ident)
+            if cur is None:
+                fused[ident] = {"result": r, "rrf": contrib}
+            else:
+                cur["rrf"] += contrib
+                # Keep the higher raw-score representative for display.
+                if (getattr(r, "score", 0.0) or 0.0) > (getattr(cur["result"], "score", 0.0) or 0.0):
+                    cur["result"] = r
+
+    ordered = []
+    for entry in fused.values():
+        r = entry["result"]
+        rrf = round(entry["rrf"], 8)
+        try:
+            r.raw_scores = dict(getattr(r, "raw_scores", None) or {})
+            r.raw_scores["rrf"] = rrf
+        except Exception:  # noqa: BLE001 — immutable/edge result; ordering still works
+            pass
+        ordered.append((rrf, getattr(r, "score", 0.0) or 0.0, _fusion_ident(r), r))
+    ordered.sort(key=lambda t: (t[0], t[1], t[2]), reverse=True)
+    return [t[3] for t in ordered]
+
+
 # ---------------------------------------------------------------------------
 # Backend adapters
 # ---------------------------------------------------------------------------
@@ -394,8 +453,7 @@ def search_all(
             logger.warning("Cortex search: unknown backend %r skipped", name)
             continue
         merged.extend(adapter(query, top_k=top_k, ctx=ctx))
-    merged.sort(key=lambda r: r.score, reverse=True)
-    return merged
+    return _rrf_fuse(merged)
 
 
 # ---------------------------------------------------------------------------
@@ -629,7 +687,7 @@ def _run_backends(
                 name,
                 budget,
             )
-    merged.sort(key=lambda r: r.score, reverse=True)
+    merged = _rrf_fuse(merged, k=int(search_cfg.get("rrf_k") or _DEFAULT_RRF_K))
     return merged, valid, timed_out
 
 
@@ -764,15 +822,15 @@ def _merge_corrective(
     original: list[CortexSearchResult],
     corrective: list[CortexSearchResult],
 ) -> list[CortexSearchResult]:
-    """Fuse both passes: dedupe by (backend, source_id), best score wins."""
+    """Fuse both passes: dedupe by (backend, source_id), best raw score wins,
+    then re-rank the survivors by RRF so an item found in both passes (and by
+    multiple backends) rises."""
     best: dict = {}
     for r in original + corrective:
         key = (r.backend, r.citation.source_id, r.content)
         if key not in best or r.score > best[key].score:
             best[key] = r
-    merged = list(best.values())
-    merged.sort(key=lambda r: r.score, reverse=True)
-    return merged
+    return _rrf_fuse(list(best.values()))
 
 
 def _corrective_pass(
@@ -797,7 +855,10 @@ def _corrective_pass(
     threshold = float(search_cfg.get("crag_threshold") or 0.0)
     if threshold <= 0.0:
         return results
-    top_score = results[0].score if results else 0.0
+    # Best raw confidence across the fused set. results[0] is now the top-RRF
+    # item, not necessarily the max-raw-score one, so take the max explicitly to
+    # keep the CRAG trigger keyed on our best backend confidence.
+    top_score = max((r.score for r in results), default=0.0)
     if top_score >= threshold:
         return results
 

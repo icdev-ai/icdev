@@ -423,8 +423,11 @@ def test_search_all_merges_and_sorts(monkeypatch):
     results = search_service.search_all("q", top_k=5)
 
     assert {r.backend for r in results} == {"rag", "graph", "dic", "kb"}
-    scores = [r.score for r in results]
-    assert scores == sorted(scores, reverse=True)
+    # RRF fusion: results are ordered by the fused rrf score (not raw per-backend
+    # score, which isn't cross-backend comparable). Every result carries an rrf.
+    rrf = [(r.raw_scores or {}).get("rrf", 0.0) for r in results]
+    assert rrf == sorted(rrf, reverse=True)
+    assert all((r.raw_scores or {}).get("rrf") for r in results)
 
 
 def test_search_all_survives_one_backend_failure(monkeypatch):
@@ -507,3 +510,45 @@ def test_backend_timeout_returns_partial_without_tearing_down_pool(monkeypatch):
     # The shared pool is untouched — same instance, still alive for reuse.
     assert search_service._get_search_executor() is ex
     assert ex._shutdown is False
+
+
+# ---------------------------------------------------------------------------
+# RRF fusion
+# ---------------------------------------------------------------------------
+def _r(backend, score, sid):
+    from tools.cortex.schemas import Citation
+    return CortexSearchResult(content=f"{sid}", score=score, backend=backend,
+                              citation=Citation(source_id=sid))
+
+
+def test_rrf_rewards_multi_backend_agreement():
+    # doc "shared" is found by rag (rank 2) AND graph (rank 1); a rag-only "solo"
+    # is rank 1 in rag with a higher raw score. RRF should still lift "shared"
+    # because two backends agree on it.
+    rows = [
+        _r("rag", 0.95, "solo"),
+        _r("rag", 0.40, "shared"),
+        _r("graph", 0.90, "shared"),
+    ]
+    fused = search_service._rrf_fuse(rows, k=60)
+    ids = [r.citation.source_id for r in fused]
+    assert ids[0] == "shared"  # agreement beats a single high raw score
+    # 'shared' fused once (dedup across backends), so 2 results total.
+    assert len(fused) == 2
+    top = fused[0]
+    # rrf = 1/(60+2) [rag rank2] + 1/(60+1) [graph rank1] (rounded to 8 places)
+    assert abs(top.raw_scores["rrf"] - (1/62 + 1/61)) < 1e-6
+
+
+def test_rrf_preserves_raw_score_and_is_deterministic():
+    rows = [_r("rag", 0.3, "a"), _r("rag", 0.9, "b"), _r("kb", 0.5, "c")]
+    fused = search_service._rrf_fuse(rows, k=60)
+    # Raw .score untouched (CRAG/callers rely on it).
+    assert {r.citation.source_id: r.score for r in fused} == {"a": 0.3, "b": 0.9, "c": 0.5}
+    # Deterministic across runs.
+    again = search_service._rrf_fuse(list(rows), k=60)
+    assert [r.citation.source_id for r in fused] == [r.citation.source_id for r in again]
+
+
+def test_rrf_empty_is_empty():
+    assert search_service._rrf_fuse([]) == []
