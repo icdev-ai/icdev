@@ -1745,6 +1745,20 @@ def _phase_complete(prefix: str, phase: str) -> tuple[bool, list[str]]:
     return len(unfinished) == 0, unfinished
 
 
+def _is_manual_gate(task_id: str, title: str | None) -> bool:
+    """Return True for manual-mode gate tasks (e.g. prem-gate-00).
+
+    A gate task exists solely to block its dependents from auto-dispatch
+    while implementation happens manually (often in a private repo the
+    runner cannot reach). It is held in_progress indefinitely and must
+    never be dispatched, reaped, or startup-recovered — only a human (or
+    an interactive session acting on the user's behalf) moves it.
+    Convention: id ends with '-gate-00' or title carries the
+    'MANUAL-MODE GATE' marker (see feedback-project-card-for-all-initiatives).
+    """
+    return str(task_id or "").endswith("-gate-00") or "MANUAL-MODE GATE" in (title or "")
+
+
 def _get_due_tasks() -> list:
     """Find tasks ready for execution:
     1. Scheduled tasks whose scheduled_at has passed (always promoted)
@@ -1805,7 +1819,10 @@ def _get_due_tasks() -> list:
             "  ELSE 3 END, "
             "kt.created_at ASC"
         ).fetchall()
-        result = [dict(r) for r in scheduled]
+        result = [
+            dict(r) for r in scheduled
+            if not _is_manual_gate(dict(r).get("id"), dict(r).get("title"))
+        ]
 
         # Phase-exit validation (2026-04-15 V&V Batch 2): for phased task IDs
         # like ``efa-E3-*``, refuse to dispatch phase N+1 tasks until phase N
@@ -1880,7 +1897,10 @@ def _get_due_tasks() -> list:
             "LIMIT %s",
             ("QUARANTINED by self_debug%", slots),
         ).fetchall()
-        result.extend(dict(r) for r in backlog)
+        result.extend(
+            d for d in (dict(r) for r in backlog)
+            if not _is_manual_gate(d.get("id"), d.get("title"))
+        )
 
         # Decompose batch tasks into individual children before returning
         # (guard-3). Batch cards have 96-100% phantom completion rate, so
@@ -6672,6 +6692,12 @@ def _reap_stale_in_progress() -> None:
             d = dict(r)
             tid = d["id"]
 
+            # Manual-mode gates are held in_progress indefinitely by design —
+            # reaping one to backlog gets it re-dispatched, which its whole
+            # existence is meant to prevent.
+            if _is_manual_gate(tid, d.get("title")):
+                continue
+
             # Fetch updated_at separately to get the real timestamp
             ts_row = conn.execute(
                 "SELECT updated_at FROM kanban_tasks WHERE id = %s", (tid,)
@@ -6828,6 +6854,8 @@ def _startup_recover_stale_in_progress() -> None:
                 continue  # live process from this session — skip
             if rd.get("executor_type") == "github_actions":
                 continue  # external executor — GitHub Actions runs independently
+            if _is_manual_gate(tid, rd.get("title")):
+                continue  # manual-mode gate — held in_progress by design
             conn.execute(
                 "UPDATE kanban_tasks SET status='backlog', "
                 "last_failure_reason=%s, updated_at=%s WHERE id=%s",
