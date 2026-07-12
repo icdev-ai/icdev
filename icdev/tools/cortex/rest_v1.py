@@ -388,6 +388,93 @@ def api_v1_slides(data):
     }
 
 
+@_cortex_api
+def api_v1_win_themes(data):
+    """Register cited win themes against an opportunity (prem-recomp-05).
+
+    This is the intake for themes an external capture tool (compass) has PLANNED
+    and PROVEN. Registered themes land in ``pg_win_themes``, which
+    ``capture_strategy.resolve_strategy`` merges into the strategy block that
+    ``response_drafter`` injects into the /proposals + /rfi drafting prompts — so
+    a theme pushed here actually shapes the draft rather than merely being graded
+    after the fact.
+
+    EVERY THEME MUST CARRY EVIDENCE. An uncited theme is refused, not stored with
+    an empty evidence field: these themes are injected into a generative prompt,
+    and an unproven claim that reaches a proposal is exactly the failure mode the
+    TRUST rules exist to prevent. The sender is expected to have proven them
+    (compass flags unproven themes rather than pushing them); this is the
+    server-side half of that contract, because "the client checked" is not a
+    security property.
+    """
+    from tools.govcon.win_theme_manager import THEME_TYPES, register_theme
+
+    if not isinstance(data, dict):
+        raise validators.CortexValidationError("body must be a JSON object")
+
+    opportunity_id = str(data.get("opportunity_id") or "").strip()
+    if not opportunity_id:
+        raise validators.CortexValidationError("opportunity_id is required")
+
+    themes = data.get("themes")
+    if not isinstance(themes, list) or not themes:
+        raise validators.CortexValidationError("themes must be a non-empty list")
+
+    registered, refused = [], []
+    for index, theme in enumerate(themes):
+        if not isinstance(theme, dict):
+            raise validators.CortexValidationError(f"theme {index} must be an object")
+
+        statement = str(theme.get("statement") or "").strip()
+        if not statement:
+            raise validators.CortexValidationError(
+                f"theme {index} has no statement")
+
+        theme_type = str(theme.get("theme_type") or "win_theme")
+        if theme_type not in THEME_TYPES:
+            raise validators.CortexValidationError(
+                f"theme_type must be one of {THEME_TYPES}")
+
+        # Citations arrive as either rendered text or structured rows; both must
+        # amount to at least one real source.
+        evidence = theme.get("evidence")
+        if isinstance(evidence, list):
+            evidence = "; ".join(
+                f"{c.get('claim', '')} [{c.get('source', '')}]".strip()
+                for c in evidence if isinstance(c, dict) and c.get("claim")
+            )
+        evidence = str(evidence or "").strip()
+
+        if not evidence:
+            refused.append({
+                "statement": statement,
+                "reason": ("no supporting evidence — an uncited theme would be "
+                           "injected into a drafting prompt as an unproven claim"),
+            })
+            continue
+
+        result = register_theme(
+            opportunity_id,
+            theme_type,
+            statement,
+            supporting_evidence=evidence,
+            target_eval_factor=theme.get("target_eval_factor") or None,
+            priority=int(theme.get("priority") or 1),
+        )
+        registered.append({"theme_id": result.get("theme_id"),
+                           "statement": statement, "theme_type": theme_type})
+
+    logger.info("win-theme intake: %d registered, %d refused for opportunity %s",
+                len(registered), len(refused), opportunity_id)
+    return {
+        "opportunity_id": opportunity_id,
+        "registered": registered,
+        "refused": refused,
+        "registered_count": len(registered),
+        "refused_count": len(refused),
+    }
+
+
 def api_v1_health():
     """Liveness probe — config + air-gap posture, no LLM call, no auth.
 
@@ -405,7 +492,7 @@ def api_v1_health():
             "airgap": bool(airgap_active(None)),
             "operations": [
                 "search", "ask", "complete", "classify", "extract", "govern",
-                "intake", "slides",
+                "intake", "slides", "win_themes",
             ],
         })
     except Exception as exc:  # noqa: BLE001
@@ -428,6 +515,7 @@ def register_rest_v1(cortex_bp) -> None:
         ("extract", api_v1_extract),
         ("govern", api_v1_govern),
         ("slides", api_v1_slides),
+        ("win_themes", api_v1_win_themes),
     ):
         cortex_bp.add_url_rule(
             f"{_API_V1}/{name}", f"api_v1_{name}", view, methods=["POST"]
