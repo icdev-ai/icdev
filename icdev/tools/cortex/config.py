@@ -71,7 +71,10 @@ CORTEX_CONFIG_DEFAULTS: Dict = {
         "timeouts": {"default": 10.0},
     },
     "governance": {
-        "fail_closed": True,
+        # Fallback matches the shipped args/cortex_config.yaml: fail-open by
+        # default (preserves the platform's actual behavior; operators opt into
+        # fail-closed by setting governance.fail_closed: true).
+        "fail_closed": False,
         "skip_grounding_for_plain_complete": True,
     },
     "analyst": {
@@ -136,6 +139,22 @@ def load_cortex_config(config_path=None, refresh: bool = False) -> Dict:
     config = _deep_merge(CORTEX_CONFIG_DEFAULTS, _load_yaml(path))
     _config_cache[key] = (mtime, config)
     return config
+
+
+def resolve_fail_closed(ctx=None, config_path=None) -> bool:
+    """Effective fail-closed posture for a Cortex call.
+
+    An explicit ``ctx.fail_closed`` (True or False) always wins. When it is
+    None — the default, meaning "use the platform policy" — fall back to
+    ``governance.fail_closed`` in ``args/cortex_config.yaml``. This is what
+    makes that config key live: previously the pipeline read only the raw
+    (always-defaulted-False) ``ctx.fail_closed`` and the config was dead.
+    """
+    explicit = getattr(ctx, "fail_closed", None)
+    if explicit is not None:
+        return bool(explicit)
+    cfg = load_cortex_config(config_path)
+    return bool((cfg.get("governance") or {}).get("fail_closed", False))
 
 
 # ---------------------------------------------------------------------------

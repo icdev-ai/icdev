@@ -193,6 +193,44 @@ def test_input_redaction_error_blocks_when_fail_closed(calls, monkeypatch):
     assert exc_info.value.gate == GATE_INPUT_REDACTION
 
 
+def test_unset_ctx_follows_config_policy(calls, monkeypatch):
+    # ctx.fail_closed is None (unset) -> the pipeline consults the platform
+    # policy via resolve_fail_closed. Config-true makes a gate ERROR block;
+    # config-false makes it degrade. Pin the wiring by faking the resolver.
+    def boom(text, cls):
+        raise RuntimeError("anonymizer unavailable")
+
+    monkeypatch.setattr(governance, "_gate_redact_input", boom)
+
+    # Policy = fail-closed -> an unset ctx now blocks on the gate error.
+    monkeypatch.setattr(governance, "resolve_fail_closed", lambda ctx: True)
+    with pytest.raises(GovernanceBlockedError) as exc_info:
+        GovernancePipeline().wrap(lambda p: "ok", CortexContext(), prompt="raw", retrieval=False)
+    assert exc_info.value.gate == GATE_INPUT_REDACTION
+
+    # Policy = fail-open -> the same unset ctx degrades (warn) instead.
+    monkeypatch.setattr(governance, "resolve_fail_closed", lambda ctx: False)
+    _, report = GovernancePipeline().wrap(
+        lambda p: "ok", CortexContext(), prompt="raw", retrieval=False
+    )
+    assert report.outcomes[GATE_INPUT_REDACTION] == OUTCOME_WARN
+    assert not report.blocked
+
+
+def test_generative_call_not_blocked_for_being_ungrounded_even_fail_closed(calls, monkeypatch):
+    # The nuance: fail-closed must NOT block a plain generative complete() just
+    # for being ungrounded. Non-retrieval calls skip the grounding gates, so
+    # even under a fail-closed policy an uncited completion passes.
+    monkeypatch.setattr(governance, "resolve_fail_closed", lambda ctx: True)
+    result, report = GovernancePipeline().wrap(
+        lambda p: CortexResult(text="A confident answer with no citations."),
+        CortexContext(), prompt="q", retrieval=False,
+    )
+    assert not report.blocked
+    assert report.outcomes[GATE_CITATION_GROUNDING] == OUTCOME_SKIP
+    assert report.outcomes[GATE_CONTENT_GROUNDING] == OUTCOME_SKIP
+
+
 # ---------------------------------------------------------------------------
 # trusted_content: skip the two INPUT gates (pre-check + input redaction) only.
 # Mirrors the router's skip_injection_scan contract for trusted first-party

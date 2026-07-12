@@ -156,7 +156,9 @@ def test_context_rls_ready_defaults():
     assert ctx.tenant_id == ""
     assert ctx.classification == "CUI"
     assert ctx.air_gap is False
-    assert ctx.fail_closed is False
+    # Tri-state: None means "defer to platform policy" (resolve_fail_closed),
+    # distinct from an explicit False. Not a plain bool anymore.
+    assert ctx.fail_closed is None
 
 
 def test_context_round_trip():
