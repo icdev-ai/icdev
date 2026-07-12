@@ -499,6 +499,17 @@ reflexes:
       threshold: 0
       operator: gte
 
+  kanban_stranded_reflex:
+    enabled: true
+    risk_tier: green
+    schedule: "every 24h"
+    interval_seconds: 86400
+    description: "Reconcile done/validating kanban tasks vs origin/main; file [STRANDED] suggested cards for branches with unmerged commits (built-but-never-merged)"
+    success_metric:
+      name: stranded_tasks_found
+      threshold: 0
+      operator: gte
+
   critical_task_watchdog_reflex:
     enabled: true
     risk_tier: green
