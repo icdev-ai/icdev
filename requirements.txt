@@ -133,3 +133,6 @@ cachetools>=5.3              # TTLCache for vault_resolver 5-min secret cache
 # Operator installs on connected deployments; air-gap skips (/api/billing/tier
 # direct-set path still works for operator-mode tier assignment).
 # stripe>=11.0
+
+# cortex.extract JSON-Schema conformance validation (analysis item 4)
+jsonschema>=4.0

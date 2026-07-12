@@ -347,6 +347,27 @@ def _parse_json_payload(content: str) -> Optional[Any]:
         return None
 
 
+def _validate_against_schema(payload: Any, schema: Optional[Dict]) -> tuple:
+    """Best-effort JSON-Schema conformance check for cortex.extract.
+
+    Returns (ok, error_message). If jsonschema is unavailable or no schema was
+    supplied, returns (True, "") — validation is a check, never a hard dependency.
+    """
+    if not schema:
+        return True, ""
+    try:
+        import jsonschema  # noqa: PLC0415 — optional dependency
+    except Exception:  # noqa: BLE001
+        return True, ""
+    try:
+        jsonschema.validate(instance=payload, schema=schema)
+        return True, ""
+    except jsonschema.ValidationError as exc:
+        return False, (str(exc).splitlines()[0] if str(exc) else "schema mismatch")[:200]
+    except Exception as exc:  # noqa: BLE001 — malformed schema, etc.
+        return False, f"schema validation error: {exc}"[:200]
+
+
 # ---------------------------------------------------------------------------
 # Facade functions
 # ---------------------------------------------------------------------------
@@ -474,7 +495,24 @@ def extract(
     if payload is None:
         payload = _parse_json_payload(response.content)
     text_out = json.dumps(payload, ensure_ascii=False) if payload is not None else (response.content or "")
-    return _result_from_response(response, text=text_out, elapsed_ms=elapsed_ms)
+    result = _result_from_response(response, text=text_out, elapsed_ms=elapsed_ms)
+
+    # Validate conformance to the caller's JSON schema. DEGRADE-not-refuse (TRUST):
+    # a non-conforming / unparseable payload sets schema_valid=False + grounded=False
+    # + a schema_error note, rather than raising — the caller still gets the
+    # best-effort output but is told, in-band, that it did not conform.
+    result.metadata = dict(result.metadata or {})
+    if payload is None:
+        result.metadata["schema_valid"] = False
+        result.metadata["schema_error"] = "no JSON object could be parsed from the completion"
+        result.grounded = False
+    else:
+        ok, err = _validate_against_schema(payload, schema)
+        result.metadata["schema_valid"] = ok
+        if not ok:
+            result.metadata["schema_error"] = err
+            result.grounded = False
+    return result
 
 
 # ---------------------------------------------------------------------------
