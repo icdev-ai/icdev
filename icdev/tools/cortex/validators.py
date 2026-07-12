@@ -200,6 +200,53 @@ def validate_extract(data: Any) -> dict:
     }
 
 
+# RICOAS intake bridge (prem-ricoas-02). Impact levels mirror the dashboard
+# intake wizard; classification is NEVER read here (server-side, key-clamped).
+INTAKE_IMPACT_LEVELS = ("IL2", "IL4", "IL5", "IL6")
+_INTAKE_TEXT_MAX = 20000
+
+
+def _bounded_text(data: dict, key: str) -> str:
+    value = _req_str(data, key)
+    if len(value) > _INTAKE_TEXT_MAX:
+        raise CortexValidationError(
+            f"{key!r} must be at most {_INTAKE_TEXT_MAX} characters"
+        )
+    return value
+
+
+def validate_intake_session(data: Any) -> dict:
+    data = _require_dict(data)
+    impact_level = (_opt_str(data, "impact_level", "IL4") or "IL4").upper()
+    if impact_level not in INTAKE_IMPACT_LEVELS:
+        raise CortexValidationError(
+            f"impact_level must be one of {INTAKE_IMPACT_LEVELS}"
+        )
+    extra_context = data.get("extra_context")
+    if extra_context is None:
+        extra_context = {}
+    if not isinstance(extra_context, dict):
+        raise CortexValidationError("'extra_context' must be a JSON object")
+    return {
+        "verbatim_ask": _bounded_text(data, "verbatim_ask"),
+        "customer_name": _req_str(data, "customer_name"),
+        "customer_org": _opt_str(data, "customer_org"),
+        "goal": _opt_str(data, "goal", "build") or "build",
+        "role": _opt_str(data, "role", "developer") or "developer",
+        "impact_level": impact_level,
+        "origin": _opt_str(data, "origin"),
+        "extra_context": extra_context,
+    }
+
+
+def validate_intake_turn(data: Any) -> dict:
+    data = _require_dict(data)
+    return {
+        "session_id": _req_str(data, "session_id"),
+        "message": _bounded_text(data, "message"),
+    }
+
+
 def validate_govern(data: Any) -> dict:
     data = _require_dict(data)
     context_sources = data.get("context_sources")

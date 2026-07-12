@@ -332,7 +332,10 @@ def api_v1_health():
             "ok": True,
             "status": "healthy",
             "airgap": bool(airgap_active(None)),
-            "operations": ["search", "ask", "complete", "classify", "extract", "govern"],
+            "operations": [
+                "search", "ask", "complete", "classify", "extract", "govern",
+                "intake",
+            ],
         })
     except Exception as exc:  # noqa: BLE001
         return jsonify({"ok": False, "status": "unhealthy", "error": str(exc)[:300]}), 503
