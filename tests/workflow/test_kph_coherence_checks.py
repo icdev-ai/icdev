@@ -1,0 +1,151 @@
+# CUI // SP-CTI
+"""Unit tests for the kanban-pipeline-hardening coherence checks (kph-B/C/D).
+
+Each check follows the full-repo=WARN / changed-files=FAIL invariant. The tests
+monkeypatch coherence_checker.PROJECT_ROOT to a temp tree so they are hermetic
+(no dependence on the real repo's debt).
+"""
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from tools.workflow import coherence_checker as cc
+
+
+@pytest.fixture()
+def repo(tmp_path, monkeypatch):
+    """A throwaway PROJECT_ROOT the checks scan."""
+    monkeypatch.setattr(cc, "PROJECT_ROOT", tmp_path)
+    return tmp_path
+
+
+def _write(p: Path, text: str) -> Path:
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(text, encoding="utf-8")
+    return p
+
+
+# ---------------------------------------------------------------------------
+# check_test_db_isolation (kph-B)
+# ---------------------------------------------------------------------------
+class TestTestDbIsolation:
+    def test_factory_hijack_to_raw_sqlite_fails(self, repo):
+        f = _write(
+            repo / "tests" / "test_bad_factory.py",
+            "import sqlite3\n"
+            "def _fake(db_path=None):\n"
+            "    return sqlite3.connect(db_path)\n"
+            "def test_x(monkeypatch):\n"
+            "    import tools.dashboard.api.admin as m\n"
+            "    monkeypatch.setattr(m, 'get_connection', _fake)\n",
+        )
+        r = cc.check_test_db_isolation([f])
+        assert r.status == "fail", r.message
+        assert any("get_connection" in v or "connection factory" in v for v in r.extra)
+
+    def test_raw_conn_passed_with_pct_s_fails(self, repo):
+        f = _write(
+            repo / "tests" / "test_bad_conn.py",
+            "import sqlite3\n"
+            "def test_x():\n"
+            "    conn = sqlite3.connect(':memory:')\n"
+            "    from tools.trading.db import get_signals\n"
+            "    get_signals(conn=conn)  # runtime uses '%s'\n"
+            "    _ = 'SELECT * FROM t WHERE a=%s'\n",
+        )
+        r = cc.check_test_db_isolation([f])
+        assert r.status == "fail", r.message
+
+    def test_raw_sqlite_only_qmark_is_clean(self, repo):
+        # conftest-style seed: raw sqlite3 but only ? placeholders, no factory patch.
+        f = _write(
+            repo / "tests" / "test_ok_seed.py",
+            "import sqlite3\n"
+            "def test_x():\n"
+            "    conn = sqlite3.connect(':memory:')\n"
+            "    conn.execute('INSERT INTO t (id) VALUES (?)', ('a',))\n",
+        )
+        r = cc.check_test_db_isolation([f])
+        assert r.status == "pass", r.message
+
+    def test_full_repo_is_warn_not_fail(self, repo):
+        _write(
+            repo / "tests" / "test_bad_factory.py",
+            "import sqlite3\n"
+            "def _fake(db_path=None):\n    return sqlite3.connect(db_path)\n"
+            "def test_x(monkeypatch):\n"
+            "    import m\n    monkeypatch.setattr(m, '_get_db', _fake)\n",
+        )
+        r = cc.check_test_db_isolation(None)
+        assert r.status == "warn", r.message
+
+
+# ---------------------------------------------------------------------------
+# check_migration_numbering (kph-C)
+# ---------------------------------------------------------------------------
+class TestMigrationNumbering:
+    def _seed(self, repo: Path):
+        mig = repo / "tools" / "db" / "migrations"
+        mig.mkdir(parents=True, exist_ok=True)
+        (mig / "260_a.sql").write_text("-- a\n", encoding="utf-8")
+        (mig / "261_b.sql").write_text("-- b\n", encoding="utf-8")
+        return mig
+
+    def test_new_collision_fails(self, repo):
+        mig = self._seed(repo)
+        dup = mig / "261_c.sql"  # collides with 261_b
+        dup.write_text("-- c\n", encoding="utf-8")
+        r = cc.check_migration_numbering([dup])
+        assert r.status == "fail", r.message
+        assert "262" in r.message  # suggests next free
+
+    def test_fresh_number_passes(self, repo):
+        mig = self._seed(repo)
+        fresh = mig / "262_c.sql"
+        fresh.write_text("-- c\n", encoding="utf-8")
+        r = cc.check_migration_numbering([fresh])
+        assert r.status == "pass", r.message
+
+    def test_existing_dups_full_repo_warn(self, repo):
+        mig = self._seed(repo)
+        (mig / "261_c.sql").write_text("-- c\n", encoding="utf-8")
+        r = cc.check_migration_numbering(None)
+        assert r.status == "warn", r.message
+
+    def test_dir_based_migrations_counted(self, repo):
+        mig = self._seed(repo)
+        (mig / "262_thing").mkdir()
+        dup_dir = mig / "262_other"  # collides with 262_thing (both dir-based)
+        dup_dir.mkdir()
+        r = cc.check_migration_numbering([dup_dir])
+        assert r.status == "fail", r.message
+
+
+# ---------------------------------------------------------------------------
+# check_icdev_mirror_parity (kph-D)
+# ---------------------------------------------------------------------------
+class TestIcdevMirrorParity:
+    def test_missing_twin_fails(self, repo):
+        f = _write(repo / "tools" / "cortex" / "widget.py", "x = 1\n")
+        r = cc.check_icdev_mirror_parity([f])
+        assert r.status == "fail", r.message
+        assert any("widget.py" in m for m in r.missing)
+
+    def test_present_twin_passes(self, repo):
+        f = _write(repo / "tools" / "cortex" / "widget.py", "x = 1\n")
+        _write(repo / "icdev" / "tools" / "cortex" / "widget.py", "x = 1\n")
+        r = cc.check_icdev_mirror_parity([f])
+        assert r.status == "pass", r.message
+
+    def test_non_mirrored_root_ignored(self, repo):
+        # tools/random is not a mirrored root -> not flagged.
+        f = _write(repo / "tools" / "random" / "thing.py", "x = 1\n")
+        r = cc.check_icdev_mirror_parity([f])
+        assert r.status == "pass", r.message
+
+    def test_full_repo_drift_warn(self, repo):
+        _write(repo / "tools" / "cortex" / "widget.py", "x = 1\n")  # no twin
+        r = cc.check_icdev_mirror_parity(None)
+        assert r.status == "warn", r.message
