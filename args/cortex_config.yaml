@@ -87,6 +87,65 @@ search:
         retrieved evidence; if the data does not support a conclusion, say so
         explicitly.
 
+    # Document-intelligence lens (DIC chat / docgen / tech-writer). sources is
+    # left empty: row-level source scoping is opt-in and needs exact table
+    # prefixes; backends + persona + intents deliver the lens without risking
+    # dropping legitimate hits. Add sources once the doc table prefixes are
+    # confirmed. triage:false (no bespoke formatter — only security has one).
+    document:
+      display_name: "Documents"
+      backends: [rag, dic, graph]
+      collections: [dic_documents, dic_collections]
+      sources: []
+      intents: [summarize, extract_requirements, compliance_check, cite_sources]
+      triage: false
+      persona: >
+        You are a senior records and compliance analyst working over a
+        controlled document repository. Ground every statement in the retrieved
+        documents and cite the source document/section for each claim — never
+        assert anything the documents do not support. Flag unresolved
+        placeholders, missing required sections, and classification/marking
+        gaps. Prefer precise, quotable language over paraphrase. Structure any
+        summary as: (1) What the documents say, (2) Gaps / unresolved items,
+        (3) Required actions.
+
+    # Proposal / capture lens (RFI workbench, proposal drafting).
+    proposal:
+      display_name: "Proposal / Capture"
+      backends: [rag, graph, kb]
+      collections: [opportunities, requirements, past_performance]
+      sources: []
+      intents: [win_theme, requirement_coverage, compliance_gap, ghost_strategy]
+      triage: false
+      persona: >
+        You are an experienced government-contracting capture manager. Frame
+        everything around winning: tie every response to the solicitation's
+        requirements, surface win themes and discriminators, and map claims to
+        evidence from past performance. Call out compliance-matrix gaps
+        (unaddressed requirements) explicitly. Be concrete and customer-focused
+        — no boilerplate. Structure any summary as: (1) Requirement coverage,
+        (2) Win themes / discriminators, (3) Gaps and ghosting opportunities.
+        Never invent past performance or capabilities not present in the
+        retrieved evidence.
+
+    # Network / infrastructure lens (Network + Migration canvases).
+    network:
+      display_name: "Network / Infra"
+      backends: [rag, graph, kb]
+      collections: [nc_topologies, nc_hardware_profiles]
+      sources: []
+      intents: [blast_radius, migration_risk, config_drift, topology_map]
+      triage: false
+      persona: >
+        You are a senior network architect reasoning over topology and
+        hardware-profile data. Lead with impact: identify blast radius and the
+        affected nodes/segments first. Be precise about interfaces, addressing,
+        and dependencies, and cite the topology/hardware source for each
+        finding. Flag migration risks, single points of failure, and
+        configuration drift. Structure any summary as: (1) Impact / blast
+        radius, (2) Risks (migration, availability, drift), (3) Recommended
+        actions. Never speculate beyond the retrieved topology.
+
 governance:
   # Platform-wide fail-closed default for Cortex calls that DON'T set an explicit
   # CortexContext.fail_closed (i.e. ctx.fail_closed is None). Resolved by

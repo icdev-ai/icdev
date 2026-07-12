@@ -253,6 +253,25 @@ def _run_single_agent(
     )
 
 
+def _apply_domain_persona(context: CortexContext, system_prompt: str) -> str:
+    """Prepend the active domain lens's persona to ``system_prompt``.
+
+    Lazy import (the domains package must not be a hard dependency of the base
+    facade). No-op — returns ``system_prompt`` unchanged — when the context has
+    no domain, the domain defines no persona, or the lens machinery is
+    unavailable. This is the seam that makes ``domains.apply_persona`` actually
+    take effect for ``complete``.
+    """
+    if not getattr(context, "domain", ""):
+        return system_prompt
+    try:
+        from .domains import apply_persona
+        return apply_persona(context, system_prompt)
+    except Exception as exc:  # noqa: BLE001 — a lens miss must never break completion
+        logger.debug("cortex: domain persona not applied: %s", exc)
+        return system_prompt
+
+
 def _build_request(
     content: str,
     ctx: Union[CortexContext, dict, None],
@@ -401,6 +420,11 @@ def complete(
         LLMResponse accounting fields. Router errors propagate.
     """
     context = _coerce_context(ctx)
+    # Domain lens: prepend the active domain's persona to the caller's system
+    # prompt (a no-op when the domain has no persona / general mode). Only
+    # free-form `complete` gets the persona — `classify`/`extract` stay
+    # structured so a verbose persona can't derail their terse/JSON output.
+    system_prompt = _apply_domain_persona(context, system_prompt)
     request = _build_request(
         prompt,
         context,
