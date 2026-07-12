@@ -11,12 +11,28 @@ _REPO_ROOT = Path(__file__).parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-# Force SQLite backend for tests (override .env PostgreSQL setting — same as main conftest)
-os.environ["ICDEV_STORAGE_BACKEND"] = "sqlite"
-os.environ["NOCC_STORAGE_BACKEND"] = "sqlite"
-os.environ["PMC_STORAGE_BACKEND"] = "sqlite"
-os.environ["CCC_STORAGE_BACKEND"] = "sqlite"
-os.environ["DSOC_STORAGE_BACKEND"] = "sqlite"
+# Force SQLite backend for tests (override .env PostgreSQL setting — same as main
+# conftest) UNLESS the opt-in ICDEV_PYTEST_PG flag is set. The dedicated CI
+# "test-pg" tier (.github/workflows/icdev-ci.yml) sets ICDEV_PYTEST_PG=1 +
+# ICDEV_STORAGE_BACKEND=postgresql and runs a CURATED allowlist
+# (tests/pg_tier_allowlist.txt) against a live PostgreSQL service so PG-native
+# `%s` / portability bugs fail LOUDLY — on SQLite they are silently masked by
+# translate_sql. Default (flag absent) preserves the SQLite-forced behaviour for
+# the whole normal suite.
+_PYTEST_PG = os.environ.get("ICDEV_PYTEST_PG", "").lower() in ("1", "true", "yes")
+if _PYTEST_PG:
+    os.environ.setdefault("ICDEV_STORAGE_BACKEND", "postgresql")
+    # FAIL-CLOSED: without this, get_connection() silently falls back to SQLite
+    # when PG is unreachable — the PG tier would go green while testing NOTHING on
+    # PG (the exact false-confidence trap this tier exists to prevent). No-fallback
+    # makes an unreachable/misconfigured PG raise loudly.
+    os.environ["ICDEV_PG_NO_FALLBACK"] = "1"
+else:
+    os.environ["ICDEV_STORAGE_BACKEND"] = "sqlite"
+    os.environ["NOCC_STORAGE_BACKEND"] = "sqlite"
+    os.environ["PMC_STORAGE_BACKEND"] = "sqlite"
+    os.environ["CCC_STORAGE_BACKEND"] = "sqlite"
+    os.environ["DSOC_STORAGE_BACKEND"] = "sqlite"
 
 
 MINIMAL_ICDEV_SCHEMA = """
