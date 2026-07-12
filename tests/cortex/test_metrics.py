@@ -101,3 +101,30 @@ def test_summarize_degrades_when_table_missing(tmp_path, monkeypatch):
     out = metrics.summarize(window_hours=24)
     assert out["available"] is False
     assert out["summary"]["calls"] == 0
+
+
+# --------------------------------------------------------------------------- #
+# Home monitor card tile endpoint
+# --------------------------------------------------------------------------- #
+def test_metrics_tile_route_shape(cortex_db):
+    from flask import Flask
+
+    from tools.cortex.blueprint import cortex_bp
+    from tools.cortex.db.init_db import record_audit
+
+    record_audit({"operation": "cortex.complete", "tenant_id": "t-a",
+                  "blocked": False, "cost_usd": 0.01, "latency_ms": 10,
+                  "outcomes": {"operation": "pass"}})
+
+    app = Flask(__name__)
+    app.register_blueprint(cortex_bp)
+    app.config["TESTING"] = True
+    resp = app.test_client().get("/cortex/api/metrics/tile")
+    assert resp.status_code == 200
+    d = resp.get_json()
+    # Governance-first fields the home card reads.
+    for key in ("available", "calls", "blocked", "block_rate_pct",
+                "redactions", "cost_usd", "cache_hits", "window_hours"):
+        assert key in d
+    assert d["available"] is True
+    assert d["calls"] == 1

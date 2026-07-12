@@ -728,12 +728,21 @@ document.addEventListener('DOMContentLoaded', function() {
             Loading…
         </div>
     </div>
-    <!-- Cache Savings tile -->
+    <!-- LLM Prompt Cache tile (provider prompt/context-cache token economics) -->
     <div class="card" style="padding: 20px;">
-        <div class="card-label">Cache Savings
-            <span class="help-icon" title="LLM response and context cache hit rate, token savings, cost avoided">?</span>
+        <div class="card-label">LLM Prompt Cache
+            <span class="help-icon" title="Provider prompt/context-cache economics from llm_response_cache: hit rate, tokens read from cache, cost avoided. Distinct from the Cortex facade response cache.">?</span>
         </div>
         <div id="tile-cache" style="min-height: 140px; font-size: 13px; color: var(--text-dim);">
+            Loading…
+        </div>
+    </div>
+    <!-- Cortex Governance tile (governed AI facade: usage, block rate, spend) -->
+    <div class="card" style="padding: 20px;">
+        <div class="card-label">Cortex Governance
+            <span class="help-icon" title="Governed AI facade over the last 24h (from cortex_audit): calls, block rate, redactions, spend, and facade cache hits. Not the LLM prompt cache.">?</span>
+        </div>
+        <div id="tile-cortex" style="min-height: 140px; font-size: 13px; color: var(--text-dim);">
             Loading…
         </div>
     </div>
@@ -926,6 +935,40 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     document.addEventListener('DOMContentLoaded', renderCacheTile);
     window.renderCacheTile = renderCacheTile;
+})();
+
+// Cortex Governance tile renderer (governed AI facade — usage/block/spend)
+(function () {
+    function renderCortexTile() {
+        fetch('/cortex/api/metrics/tile').then(function (r) {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.json();
+        }).then(function (d) {
+            var el = document.getElementById('tile-cortex');
+            if (!el) return;
+            if (!d.available || (d.calls || 0) === 0) {
+                el.innerHTML = '<div style="color:var(--text-dim);font-size:12px;">No governed Cortex calls in the last '
+                    + (d.window_hours || 24) + 'h yet.</div>'
+                    + '<div style="margin-top:8px;"><a href="/cortex/metrics" class="btn" style="font-size:11px;padding:3px 10px;">Open metrics</a></div>';
+                return;
+            }
+            // Governance-first: block rate is the headline health signal.
+            var blockColor = (d.block_rate_pct <= 1) ? '#22c55e' : (d.block_rate_pct <= 10) ? '#f59e0b' : '#ef4444';
+            el.innerHTML = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px;">'
+                + '<div><div style="font-size:20px;font-weight:700;color:var(--text-primary);">' + (d.calls || 0).toLocaleString() + '</div><div style="font-size:10px;color:var(--text-dim);">Calls (24h)</div></div>'
+                + '<div><div style="font-size:20px;font-weight:700;color:' + blockColor + ';">' + (d.block_rate_pct || 0).toFixed(1) + '%</div><div style="font-size:10px;color:var(--text-dim);">Block Rate</div></div>'
+                + '<div><div style="font-size:16px;font-weight:600;color:#f59e0b;">$' + (d.cost_usd || 0).toFixed(4) + '</div><div style="font-size:10px;color:var(--text-dim);">Spend (USD)</div></div>'
+                + '<div><div style="font-size:16px;font-weight:600;color:var(--accent-blue-light);">' + (d.redactions || 0).toLocaleString() + '</div><div style="font-size:10px;color:var(--text-dim);">Redactions</div></div>'
+                + '</div>'
+                + '<div style="font-size:10px;color:var(--text-dim);margin-bottom:6px;">' + (d.blocked || 0) + ' blocked &middot; ' + (d.cache_hits || 0) + ' facade cache hits</div>'
+                + '<div style="margin-top:4px;"><a href="/cortex/metrics" class="btn" style="font-size:11px;padding:3px 10px;">View metrics</a></div>';
+        }).catch(function () {
+            var el = document.getElementById('tile-cortex');
+            if (el) el.innerHTML = '<div style="color:var(--text-dim);">Cortex metrics unavailable</div>';
+        });
+    }
+    document.addEventListener('DOMContentLoaded', renderCortexTile);
+    window.renderCortexTile = renderCortexTile;
 })();
 </script>
 
