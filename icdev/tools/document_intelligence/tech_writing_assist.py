@@ -351,15 +351,37 @@ def research_and_draft(
                 logger.warning("CoD draft failed for %s (%s) — falling back to single-shot", tt, exc)
         if not result.draft_content:
             try:
-                router = LLMRouter()
-                req = LLMRequest(
-                    messages=[{"role": "user", "content": user_msg}],
+                # Cortex adoption pilot (analysis item 1): route the tech-writer
+                # draft through the GOVERNED cortex.complete facade instead of a
+                # raw router.invoke. A compliance drafting surface should get the
+                # TRUST chain — input/output PII/CUI redaction, provenance, an
+                # append-only audit row, and per-tenant budget attribution — none
+                # of which the direct router.invoke applied. The "tech_writing_draft"
+                # routing function + system prompt are preserved.
+                from tools.cortex import api as cortex_api
+                from tools.cortex.schemas import CortexContext
+
+                cx = cortex_api.complete(
+                    user_msg,
+                    function="tech_writing_draft",
+                    ctx=CortexContext(
+                        tenant_id=tenant_id or "default",
+                        classification=classification or "CUI",
+                        domain="document",
+                        agent_id="dic-tech-writer",
+                    ),
                     system_prompt=system_prompt,
                     max_tokens=2048,
                     temperature=0.4,
                 )
-                response = router.invoke("tech_writing_draft", req)
-                result.draft_content = (response.content or "").strip()
+                result.draft_content = (cx.text or "").strip()
+                # Surface the governance value the raw path never gave: note any
+                # egress spans Cortex masked so the WriteGuard sidebar can show it.
+                _masked = getattr(getattr(cx, "governance", None), "redactions_applied", 0)
+                if _masked:
+                    result.warnings.append(
+                        f"Cortex governance masked {_masked} sensitive span(s) in the draft."
+                    )
             except Exception as exc:
                 result.error = f"LLM draft failed: {exc}"
                 logger.warning("LLM draft failed: %s", exc)

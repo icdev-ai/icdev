@@ -129,6 +129,15 @@ def test_cod_failure_falls_back_to_single_shot(monkeypatch):
         twa, "_cod_draft",
         lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("cod down")),
     )
+    # The single-shot fallback now routes through cortex.complete (adoption pilot);
+    # bridge it to the fake router so no real LLM is called.
+    import tools.cortex.api as _cx
+    from tools.cortex.schemas import CortexResult as _CR
+    monkeypatch.setattr(
+        _cx, "complete",
+        lambda prompt, function="", ctx=None, system_prompt="", **kw:
+            _CR(text=_Router().invoke(function, _Req()).content),
+    )
 
     result = twa.research_and_draft("segmentation strategy", "Design", template_type="ARCH_NETWORK")
     assert result.draft_content == "single-shot draft"
@@ -179,6 +188,14 @@ def test_non_arch_template_skips_cod(monkeypatch):
     monkeypatch.setattr(
         twa, "_cod_draft",
         lambda *a, **kw: (_ for _ in ()).throw(AssertionError("CoD must not run for SOP")),
+    )
+    # Single-shot now routes through cortex.complete; bridge to the fake router.
+    import tools.cortex.api as _cx
+    from tools.cortex.schemas import CortexResult as _CR
+    monkeypatch.setattr(
+        _cx, "complete",
+        lambda prompt, function="", ctx=None, system_prompt="", **kw:
+            _CR(text=_Router().invoke(function, _Req()).content),
     )
 
     result = twa.research_and_draft("backup procedure", "Steps", template_type="SOP")
