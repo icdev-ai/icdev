@@ -134,7 +134,7 @@ function renderTaskKanban(tasks) {
     if (!board) return;
     _clearKvIntervals();
 
-    var columns = { suggested: [], backlog: [], scheduled: [], triage: [], in_progress: [], pr_opened: [], blocked: [], done: [] };
+    var columns = { suggested: [], backlog: [], scheduled: [], in_progress: [], pr_opened: [], blocked: [], done: [] };
     tasks.forEach(function(t) {
         var s = t.status || 'backlog';
         // 'decomposed' and 'needs_decomposition' are internal scheduler states —
@@ -149,14 +149,13 @@ function renderTaskKanban(tasks) {
         // they fell into Backlog, misleadingly reading as fresh queued work.
         if (s === 'ci_failed' || s === 'merge_conflict' || s === 'changes_requested'
             || s === 'failed' || s === 'token_exhausted' || s === 'validating') s = 'blocked';
-        if (s === 'triage' && !columns['triage']) s = 'backlog';
         if (columns[s]) columns[s].push(t); else columns.backlog.push(t);
     });
 
     var priorityColors = { critical: '#ef4444', high: '#f97316', medium: '#3b82f6', low: '#6b7280' };
     var typeIcons = { build: '\u{1F528}', run: '\u25B6', fix: '\u{1F41B}', research: '\u{1F50D}', deploy: '\u{1F680}', test: '\u2705', chore: '\u{1F9F9}' };
-    var nextStatus = { suggested: 'backlog', backlog: 'scheduled', scheduled: 'triage', triage: 'in_progress', in_progress: 'done' };
-    var prevStatus = { backlog: 'suggested', scheduled: 'backlog', triage: 'scheduled', in_progress: 'triage', done: 'in_progress' };
+    var nextStatus = { suggested: 'backlog', backlog: 'scheduled', scheduled: 'in_progress', in_progress: 'done' };
+    var prevStatus = { backlog: 'suggested', scheduled: 'backlog', in_progress: 'scheduled', done: 'in_progress' };
     var executorLabels = {
         claude_cli:     { icon: '\uD83E\uDD16', label: 'Claude',     color: '#7c3aed' },
         ollama_local:   { icon: '\uD83D\uDCBB', label: 'Local',      color: '#0891b2' },
