@@ -360,6 +360,9 @@ CREATE TABLE IF NOT EXISTS cpmp_contracts (
     updated_at TEXT DEFAULT (datetime('now')),
     created_by TEXT,
     classification TEXT DEFAULT 'CUI',
+    compartments TEXT NOT NULL DEFAULT '[]',
+    pop_base_end TEXT,
+    option_years INTEGER DEFAULT 0,
     tenant_id TEXT
 );
 CREATE TABLE IF NOT EXISTS cpmp_clins (

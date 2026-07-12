@@ -53,7 +53,8 @@ REST_OPERATIONS = ("search", "ask", "complete", "classify", "extract", "govern")
 # for the feeds surface (tools/dashboard/api/databridge_feeds.py).
 CORTEX_SCOPES = tuple(f"cortex:{op}" for op in REST_OPERATIONS)
 DATABRIDGE_SCOPES = ("databridge:iris:read", "databridge:iris:write",
-                     "databridge:icdev_demand:read")
+                     "databridge:icdev_demand:read",
+                     "databridge:icdev_cpmp:read", "databridge:icdev_cpmp:write")
 ALL_SCOPES = CORTEX_SCOPES + DATABRIDGE_SCOPES
 
 # Default scopes for a newly created key: the six REST operations (the
