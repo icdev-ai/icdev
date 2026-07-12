@@ -39,7 +39,7 @@ _PREFIX = "/api/databridge/v1"
 
 # Externally exposable connectors only. Everything else in the registry is
 # internal-only regardless of the caller's scopes.
-_CONNECTOR_ALLOWLIST = frozenset({"iris", "icdev_demand"})
+_CONNECTOR_ALLOWLIST = frozenset({"iris", "icdev_demand", "icdev_cpmp"})
 
 # Cached connected instances, keyed by connector name.
 _instances: Dict[str, Any] = {}
@@ -65,6 +65,8 @@ def _get_instance(name: str) -> Optional[Any]:
         import tools.databridge.connectors.iris_connector  # noqa: F401
     elif name == "icdev_demand":
         import tools.databridge.connectors.icdev_demand_connector  # noqa: F401
+    elif name == "icdev_cpmp":
+        import tools.databridge.connectors.icdev_cpmp_connector  # noqa: F401
 
     from tools.databridge.registry import get_connector_instance
 
@@ -134,6 +136,10 @@ def feed_read(connector: str, table: str):
 
     limit = request.args.get("limit", type=int)
     filters = {k: v for k, v in request.args.items() if k != "limit"}
+    if connector == "icdev_cpmp":
+        # Bell-LaPadula read-down inside the connector: rows above the service
+        # key's ceiling never leave the platform.
+        filters["_caller_classification"] = g.cortex_binding["ctx"].classification
     resp = instance.read(ConnectorRequest(table_name=table, limit=limit, filters=filters))
     return _respond(resp)
 
