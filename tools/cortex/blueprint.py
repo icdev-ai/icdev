@@ -477,3 +477,11 @@ def api_iqe_query():
 from .rest_v1 import register_rest_v1  # noqa: E402
 
 register_rest_v1(cortex_bp)
+
+# ---- RICOAS intake bridge (prem-ricoas-02) ----
+# PMO-facing external apps (compass Requirements Portal) create/continue REAL
+# RICOAS intake sessions over /cortex/api/v1/intake/* — same blueprint, same
+# auth path, scope cortex:intake.
+from .rest_intake import register_rest_intake  # noqa: E402
+
+register_rest_intake(cortex_bp)
