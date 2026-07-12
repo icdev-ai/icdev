@@ -206,11 +206,39 @@ def _file_suggested_cards(findings: Dict) -> List[str]:
         return []
 
 
+def _record_lessons(findings: Dict) -> int:
+    """Record an UNMERGED_STRANDED lesson per stranded/orphan task (best-effort).
+
+    Feeds the Lessons-Learned engine so persistent stranding builds a recurrence
+    score and escalates to remediation — complementary to the suggested cards,
+    which are the direct surface. De-dup + remediation gating live in the lessons
+    engine (write_lesson / maybe_create_remediation_card).
+    """
+    ids = [f["id"] for f in findings.get("stranded", [])] + \
+          [f["id"] for f in findings.get("orphan_validating", [])]
+    if not ids:
+        return 0
+    n = 0
+    try:
+        from tools.workflow.lesson_learned import analyze_task, write_lesson
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("stranded_audit: lessons engine unavailable (%s)", exc)
+        return 0
+    for tid in ids:
+        try:
+            write_lesson(analyze_task(tid, outcome="unmerged_stranded"))
+            n += 1
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("stranded_audit: lesson for %s failed (%s)", tid, exc)
+    return n
+
+
 def run(config: dict, state: object) -> dict:
     """Genesis reflex entry point."""
     try:
         findings = audit_stranded_tasks()
         created = _file_suggested_cards(findings)
+        _record_lessons(findings)
         try:
             _REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
             _REPORT_PATH.write_text(json.dumps({**findings, "cards_filed": created}, indent=2),

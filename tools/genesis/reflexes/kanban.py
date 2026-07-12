@@ -2622,6 +2622,14 @@ def _move_task(task_id: str, new_status: str, actor: str = "scheduler",
                     actor=actor,
                     reason=f"guard: kanban/{task_id} has commits not on origin/{_default_branch()}",
                 )
+                # Lessons-Learned (kph): a stranded/unmerged done attempt is a
+                # SYSTEMIC pipeline signal — record it so recurrence detection +
+                # remediation cards fire (classified as UNMERGED_STRANDED).
+                try:
+                    from tools.workflow.lesson_learned import analyze_task, write_lesson
+                    write_lesson(analyze_task(task_id, outcome="refused_done_unmerged"))
+                except Exception as _ll_exc:  # noqa: BLE001
+                    logger.warning("lesson_learned hook failed: %s", _ll_exc)
                 return
 
         now = _utcnow_iso()
