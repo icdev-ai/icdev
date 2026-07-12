@@ -33,6 +33,21 @@ import os
 import uuid
 from typing import Optional
 
+try:
+    from tools.logging.icdev_logger import get_logger
+    logger = get_logger("icdev.cortex.db")
+except Exception:  # noqa: BLE001 — logging must never break persistence
+    import logging
+    logger = logging.getLogger("icdev.cortex.db")
+
+# Set once per process after the cortex tables are confirmed to exist, so the
+# audit/session writes self-heal on a fresh PostgreSQL bootstrapped from
+# pg_consolidated.sql (which predates the cortex migrations 262/263). Without
+# this, the first governed call's record_audit INSERT hits a missing table, the
+# error is swallowed by governance._gate_record_audit, and the NIST-AU audit row
+# is silently lost.
+_SCHEMA_ENSURED = False
+
 # Overall audit outcomes, most-to-least severe. Single-sourced here so the
 # migration CHECK constraint and the derivation in ``_derive_outcome`` agree.
 AUDIT_OUTCOMES = ("blocked", "fail", "warn", "pass")
@@ -181,6 +196,25 @@ def init_db(conn=None) -> None:
 # --------------------------------------------------------------------------- #
 # Write helpers — RLS-aware, %s placeholders, INSERT-only for the audit table.
 # --------------------------------------------------------------------------- #
+def _ensure_schema(conn) -> None:
+    """Idempotently create the cortex tables once per process before a write.
+
+    Guards against silent audit loss on a fresh PostgreSQL that was bootstrapped
+    from pg_consolidated.sql (no cortex tables) and never ran migration 262/263.
+    init_db() is CREATE ... IF NOT EXISTS, so the steady-state cost is one no-op
+    DDL pass on the first write; thereafter the module flag short-circuits it.
+    Best-effort: a failure here does not mask the subsequent insert's own error.
+    """
+    global _SCHEMA_ENSURED
+    if _SCHEMA_ENSURED:
+        return
+    try:
+        init_db(conn)
+        _SCHEMA_ENSURED = True
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("cortex _ensure_schema best-effort init failed: %s", exc)
+
+
 def _derive_outcome(payload: dict) -> str:
     """Collapse a governance report into one overall audit outcome.
 
@@ -215,6 +249,7 @@ def ensure_session(ctx, conn=None) -> Optional[str]:
         from tools.db.storage import get_connection
         conn = get_connection()
     try:
+        _ensure_schema(conn)
         conn.execute(
             "INSERT OR IGNORE INTO cortex_sessions "
             "(id, tenant_id, classification, user_id, domain, air_gap, status) "
@@ -256,6 +291,7 @@ def record_audit(payload: dict, conn=None) -> str:
         from tools.db.storage import get_connection
         conn = get_connection()
     try:
+        _ensure_schema(conn)
         conn.execute(
             "INSERT INTO cortex_audit "
             "(id, session_id, tenant_id, classification, function, agent_id, "
