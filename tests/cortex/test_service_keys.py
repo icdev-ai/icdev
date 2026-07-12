@@ -144,3 +144,43 @@ def test_trusted_content_force_cleared(keys_db):
 
 def test_resolve_context_invalid_key(keys_db):
     assert service_keys.resolve_context("icdev_ctx_bogus", {}) is None
+
+
+# -- grant (prem-msr-07) -----------------------------------------------------
+
+def test_grant_scopes_widens_an_existing_key(keys_db):
+    """A key's scopes are frozen at creation, so a newly-added scope would 403
+    forever on every key issued before it. Grant widens in place."""
+    created = _create(scopes=["cortex:search"])
+
+    result = service_keys.grant_scopes(created["key_id"], ["cortex:slides"])
+
+    assert result["added"] == ["cortex:slides"]
+    assert set(result["scopes"]) == {"cortex:search", "cortex:slides"}
+
+    binding = service_keys.verify_key(created["raw_key"])
+    assert "cortex:slides" in binding["scopes"]
+
+
+def test_grant_is_additive_and_idempotent(keys_db):
+    created = _create(scopes=["cortex:search"])
+    service_keys.grant_scopes(created["key_id"], ["cortex:slides"])
+
+    again = service_keys.grant_scopes(created["key_id"], ["cortex:slides"])
+
+    assert again["added"] == []
+    # The original scope is never dropped.
+    assert set(again["scopes"]) == {"cortex:search", "cortex:slides"}
+
+
+def test_grant_rejects_an_unknown_scope(keys_db):
+    created = _create(scopes=["cortex:search"])
+    with pytest.raises(ValueError, match="unknown scopes"):
+        service_keys.grant_scopes(created["key_id"], ["cortex:root"])
+
+
+def test_grant_on_a_revoked_key_fails(keys_db):
+    created = _create(scopes=["cortex:search"])
+    service_keys.revoke_key(created["key_id"])
+    with pytest.raises(ValueError, match="no active service key"):
+        service_keys.grant_scopes(created["key_id"], ["cortex:slides"])
