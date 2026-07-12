@@ -467,9 +467,20 @@ def _build_security_context(ctx: CortexContext) -> Any:
 
 
 def _apply_security_context(conn: Any, ctx: CortexContext) -> None:
-    """Thread tenant/classification from the CortexContext into the connection."""
+    """Thread tenant/classification from the CortexContext into the connection.
+
+    A connection with no ``set_security_context`` cannot carry the tenant /
+    classification RLS predicate, so the query would run UNSCOPED — read-down
+    and tenant isolation silently lost. Treat that exactly like a failed apply:
+    warn by default, and refuse (raise) when ``ctx.fail_closed``. Never silently
+    fall through to an unscoped connection.
+    """
     setter = getattr(conn, "set_security_context", None)
     if setter is None:
+        msg = "connection cannot carry a security context (query would be unscoped)"
+        if ctx.fail_closed:
+            raise CortexAnalystError(f"failed to apply security context: {msg}")
+        logger.warning("cortex.analyst: security context not applied: %s", msg)
         return
     try:
         setter(_build_security_context(ctx))
