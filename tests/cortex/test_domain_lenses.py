@@ -31,17 +31,17 @@ def _stub_governance_sinks(monkeypatch):
     monkeypatch.setattr(_gov, "_gate_redact_output", lambda text: (text, []))
 
 
-@pytest.mark.parametrize("domain,needle", [
-    ("document", "records and compliance analyst"),
-    ("proposal", "capture manager"),
-    ("network", "network architect"),
+@pytest.mark.parametrize("domain,needle,has_triage", [
+    ("document", "records and compliance analyst", True),
+    ("proposal", "capture manager", True),
+    ("network", "network architect", False),  # no bespoke formatter yet
 ])
-def test_new_profiles_load_with_persona(domain, needle):
+def test_new_profiles_load_with_persona(domain, needle, has_triage):
     profile = load_domain_profile(domain)
     assert profile is not None
     assert needle in profile.persona
     assert profile.backends  # non-empty backend scope
-    assert profile.triage is False  # only security has a bespoke formatter
+    assert profile.triage is has_triage
 
 
 def test_apply_persona_prepends_and_preserves_base():

@@ -98,7 +98,7 @@ search:
       collections: [dic_documents, dic_collections]
       sources: []
       intents: [summarize, extract_requirements, compliance_check, cite_sources]
-      triage: false
+      triage: true
       persona: >
         You are a senior records and compliance analyst working over a
         controlled document repository. Ground every statement in the retrieved
@@ -116,7 +116,7 @@ search:
       collections: [opportunities, requirements, past_performance]
       sources: []
       intents: [win_theme, requirement_coverage, compliance_gap, ghost_strategy]
-      triage: false
+      triage: true
       persona: >
         You are an experienced government-contracting capture manager. Frame
         everything around winning: tie every response to the solicitation's

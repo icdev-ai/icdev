@@ -32,7 +32,9 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import List, Optional, Tuple
 
-from . import security
+from . import document, proposal, security
+from .document import DOCUMENT_DOMAIN
+from .proposal import PROPOSAL_DOMAIN
 from .security import (  # noqa: F401 - re-exports
     SECURITY_DOMAIN,
     security_intents,
@@ -50,6 +52,8 @@ _DOMAIN_DEFAULTS = {
 # search results with no triage synthesis.
 _TRIAGE_FORMATTERS = {
     SECURITY_DOMAIN: security.triage_summary,
+    PROPOSAL_DOMAIN: proposal.triage_summary,
+    DOCUMENT_DOMAIN: document.triage_summary,
 }
 
 
