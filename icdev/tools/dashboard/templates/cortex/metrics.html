@@ -35,6 +35,7 @@
   {{ card('Cache hits', s.cache_hits) }}
   {{ card('Cost (USD)', '$%.4f'|format(s.cost_usd)) }}
   {{ card('Avg latency', s.avg_latency_ms ~ ' ms') }}
+  {{ card('Tokens', '{:,}'.format(s.total_tokens), '{:,} in / {:,} out'.format(s.input_tokens, s.output_tokens)) }}
 </div>
 
 <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;">
@@ -87,6 +88,20 @@
         <tr style="border-top:1px solid #14294a;"><td style="padding:4px 6px;">{{ t.tenant_id }}</td><td style="padding:4px 6px;text-align:right;">{{ t.calls }}</td><td style="padding:4px 6px;text-align:right;">{{ t.blocked }}</td></tr>
       {% else %}
         <tr><td colspan="3" style="padding:8px 6px;color:#5a6b8a;">no data</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:8px;padding:16px;">
+    <h3 style="color:#b8d0e8;font-size:13px;margin:0 0 10px;">By model</h3>
+    <table style="width:100%;border-collapse:collapse;font-size:12px;color:#c8d6ea;">
+      <thead><tr style="color:#7a8cb0;text-align:left;"><th style="padding:4px 6px;">Model</th><th style="padding:4px 6px;text-align:right;">Calls</th><th style="padding:4px 6px;text-align:right;">Tokens</th><th style="padding:4px 6px;text-align:right;">Cost</th></tr></thead>
+      <tbody>
+      {% for m in stats.by_model %}
+        <tr style="border-top:1px solid #14294a;"><td style="padding:4px 6px;">{{ m.model }}</td><td style="padding:4px 6px;text-align:right;">{{ m.calls }}</td><td style="padding:4px 6px;text-align:right;">{{ '{:,}'.format(m.total_tokens) }}</td><td style="padding:4px 6px;text-align:right;">${{ '%.4f'|format(m.cost_usd) }}</td></tr>
+      {% else %}
+        <tr><td colspan="4" style="padding:8px 6px;color:#5a6b8a;">no data</td></tr>
       {% endfor %}
       </tbody>
     </table>

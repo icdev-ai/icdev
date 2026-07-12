@@ -363,6 +363,8 @@ def _result_from_response(response, *, text: Optional[str] = None, elapsed_ms: i
         model=response.model_id or "",
         cost=float(response.cost_usd or 0.0),
         latency_ms=int(response.duration_ms or elapsed_ms),
+        input_tokens=int(getattr(response, "input_tokens", 0) or 0),
+        output_tokens=int(getattr(response, "output_tokens", 0) or 0),
         grounded=False,
     )
 

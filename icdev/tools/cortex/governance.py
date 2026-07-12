@@ -316,6 +316,8 @@ class GovernancePipeline:
                 payload["latency_ms"] = int(getattr(result, "latency_ms", 0) or 0)
                 payload["provider"] = getattr(result, "provider", "") or ""
                 payload["model"] = getattr(result, "model", "") or ""
+                payload["input_tokens"] = int(getattr(result, "input_tokens", 0) or 0)
+                payload["output_tokens"] = int(getattr(result, "output_tokens", 0) or 0)
             _gate_record_audit(payload)
         except Exception as exc:  # audit stub must never mask the real outcome
             logger.error("cortex governance audit record failed: %s", exc)

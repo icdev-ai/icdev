@@ -37,11 +37,13 @@ def _empty(window_hours: int) -> dict:
             "calls": 0, "blocked": 0, "block_rate_pct": 0.0,
             "redactions": 0, "cache_hits": 0,
             "cost_usd": 0.0, "avg_latency_ms": 0.0,
+            "input_tokens": 0, "output_tokens": 0, "total_tokens": 0,
         },
         "by_function": [],
         "by_outcome": {},
         "by_domain": [],
         "by_tenant": [],
+        "by_model": [],
     }
 
 
@@ -103,6 +105,7 @@ def _aggregate(rows, window_hours: int) -> dict:
     by_outcome: dict = {}
     by_domain: dict = {}
     by_tenant: dict = {}
+    by_model: dict = {}
     total_latency = 0.0
     latency_n = 0
 
@@ -124,12 +127,17 @@ def _aggregate(rows, window_hours: int) -> dict:
         redactions = int(gj.get("redactions_applied") or 0)
         domain = gj.get("domain") or "(none)"
         cache_hit = bool(gj.get("cache_hit"))
+        in_tok = int(gj.get("input_tokens") or 0)
+        out_tok = int(gj.get("output_tokens") or 0)
+        model = gj.get("model") or "(unknown)"
 
         summ["calls"] += 1
         if blocked:
             summ["blocked"] += 1
         summ["redactions"] += redactions
         summ["cost_usd"] += cost
+        summ["input_tokens"] += in_tok
+        summ["output_tokens"] += out_tok
         if cache_hit:
             summ["cache_hits"] += 1
         if latency > 0:
@@ -137,11 +145,13 @@ def _aggregate(rows, window_hours: int) -> dict:
             latency_n += 1
 
         fn = by_function.setdefault(
-            function, {"function": function, "calls": 0, "blocked": 0, "cost_usd": 0.0}
+            function, {"function": function, "calls": 0, "blocked": 0,
+                       "cost_usd": 0.0, "total_tokens": 0}
         )
         fn["calls"] += 1
         fn["blocked"] += 1 if blocked else 0
         fn["cost_usd"] += cost
+        fn["total_tokens"] += in_tok + out_tok
 
         by_outcome[outcome] = by_outcome.get(outcome, 0) + 1
         d = by_domain.setdefault(domain, {"domain": domain, "calls": 0})
@@ -149,17 +159,29 @@ def _aggregate(rows, window_hours: int) -> dict:
         t = by_tenant.setdefault(tenant, {"tenant_id": tenant, "calls": 0, "blocked": 0})
         t["calls"] += 1
         t["blocked"] += 1 if blocked else 0
+        # Per-model rollup (only rows that actually recorded a model — i.e. real
+        # LLM calls; cache hits / blocked-early rows carry "(unknown)").
+        m = by_model.setdefault(
+            model, {"model": model, "calls": 0, "cost_usd": 0.0, "total_tokens": 0}
+        )
+        m["calls"] += 1
+        m["cost_usd"] += cost
+        m["total_tokens"] += in_tok + out_tok
 
     summ["cost_usd"] = round(summ["cost_usd"], 6)
+    summ["total_tokens"] = summ["input_tokens"] + summ["output_tokens"]
     summ["avg_latency_ms"] = round(total_latency / latency_n, 1) if latency_n else 0.0
     summ["block_rate_pct"] = (
         round(100.0 * summ["blocked"] / summ["calls"], 1) if summ["calls"] else 0.0
     )
     for fn in by_function.values():
         fn["cost_usd"] = round(fn["cost_usd"], 6)
+    for m in by_model.values():
+        m["cost_usd"] = round(m["cost_usd"], 6)
 
     out["by_function"] = sorted(by_function.values(), key=lambda r: r["calls"], reverse=True)
     out["by_outcome"] = by_outcome
     out["by_domain"] = sorted(by_domain.values(), key=lambda r: r["calls"], reverse=True)
     out["by_tenant"] = sorted(by_tenant.values(), key=lambda r: r["calls"], reverse=True)
+    out["by_model"] = sorted(by_model.values(), key=lambda r: r["total_tokens"], reverse=True)
     return out

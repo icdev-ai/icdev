@@ -138,6 +138,8 @@ class CortexResult:
     model: str = ""
     cost: float = 0.0  # USD
     latency_ms: int = 0
+    input_tokens: int = 0  # prompt tokens (from LLMResponse accounting)
+    output_tokens: int = 0  # completion tokens
     grounded: bool = False
     data: dict = field(default_factory=dict)
     metadata: dict = field(default_factory=dict)
@@ -151,6 +153,8 @@ class CortexResult:
             "model": self.model,
             "cost": self.cost,
             "latency_ms": self.latency_ms,
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
             "grounded": self.grounded,
             "data": self.data,
             "metadata": self.metadata,
