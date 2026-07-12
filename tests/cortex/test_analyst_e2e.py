@@ -93,7 +93,7 @@ def _isolated(monkeypatch, audit_log):
     monkeypatch.setattr(
         _nlq,
         "generate_sql_via_bedrock",
-        lambda query, schema: pytest.fail("NLQ generation must not run in this test"),
+        lambda query, schema, exclude_model_ids=None: pytest.fail("NLQ generation must not run in this test"),
     )
     # ctx-expose-03: the NLQ fallback now executes through the analyst's own
     # RLS-context-threading seam (_execute_nlq_readonly), NOT the dashboard's
@@ -117,7 +117,7 @@ def _isolated(monkeypatch, audit_log):
 
 
 def _enable_nlq(monkeypatch, sql: str, results: dict = _NLQ_RESULTS):
-    monkeypatch.setattr(_nlq, "generate_sql_via_bedrock", lambda query, schema: sql)
+    monkeypatch.setattr(_nlq, "generate_sql_via_bedrock", lambda query, schema, exclude_model_ids=None: sql)
     monkeypatch.setattr(
         "tools.cortex.analyst._execute_nlq_readonly", lambda s, ctx: dict(results)
     )
@@ -306,7 +306,7 @@ def test_prompt_injection_question_rejected_via_gateway(monkeypatch, audit_log):
 def test_off_allowlist_table_rejected(monkeypatch, audit_log):
     # Execution stub pytest.fails — only generation is enabled here.
     monkeypatch.setattr(
-        _nlq, "generate_sql_via_bedrock", lambda q, s: "SELECT * FROM users"
+        _nlq, "generate_sql_via_bedrock", lambda q, s, exclude_model_ids=None: "SELECT * FROM users"
     )
     with pytest.raises(CortexQueryBlocked) as exc_info:
         ask("dump users table please", mode="nlq")
@@ -322,7 +322,7 @@ def test_multi_statement_sql_rejected(monkeypatch, audit_log):
     monkeypatch.setattr(
         _nlq,
         "generate_sql_via_bedrock",
-        lambda q, s: "SELECT * FROM satellites; DROP TABLE satellites",
+        lambda q, s, exclude_model_ids=None: "SELECT * FROM satellites; DROP TABLE satellites",
     )
     with pytest.raises(CortexQueryBlocked) as exc_info:
         ask("show satellites the fancy way", mode="nlq")
@@ -332,7 +332,7 @@ def test_multi_statement_sql_rejected(monkeypatch, audit_log):
 
 def test_non_select_sql_rejected(monkeypatch, audit_log):
     monkeypatch.setattr(
-        _nlq, "generate_sql_via_bedrock", lambda q, s: "DELETE FROM satellites"
+        _nlq, "generate_sql_via_bedrock", lambda q, s, exclude_model_ids=None: "DELETE FROM satellites"
     )
     with pytest.raises(CortexQueryBlocked) as exc_info:
         ask("clean up old satellites", mode="nlq")

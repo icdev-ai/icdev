@@ -92,8 +92,15 @@ def validate_sql(sql: str) -> tuple:
     return True, None
 
 
-def generate_sql_via_bedrock(query: str, schema: dict) -> Optional[str]:
-    """Generate SQL from natural language using Amazon Bedrock."""
+def generate_sql_via_bedrock(query: str, schema: dict, exclude_model_ids=None) -> Optional[str]:
+    """Generate SQL from natural language via the vendor-agnostic LLM router.
+
+    (Legacy name: this no longer calls Amazon Bedrock directly — routing is
+    governed by ``args/llm_config.yaml``.) ``exclude_model_ids`` is forwarded to
+    ``LLMRouter.invoke`` so an air-gapped caller (e.g. Cortex Analyst with
+    ``context.air_gap``) can force local-only resolution for this call, matching
+    ``cortex.api._invoke``. Dashboard callers pass nothing and are unaffected.
+    """
     try:
         # Load few-shot examples
         examples_path = BASE_DIR / "context" / "dashboard" / "nlq_examples.json"
@@ -138,14 +145,17 @@ SQL:"""
         from tools.llm.provider import LLMRequest
 
         router = get_router()
-        llm_resp = router.invoke(
-            "nlq_sql",
-            LLMRequest(
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=500,
-                temperature=0.0,
-            ),
+        _req = LLMRequest(
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=500,
+            temperature=0.0,
         )
+        # Forward air-gap exclusions when provided (omit the kwarg otherwise so
+        # plain dashboard calls stay signature-compatible — mirrors _invoke).
+        if exclude_model_ids:
+            llm_resp = router.invoke("nlq_sql", _req, exclude_model_ids=exclude_model_ids)
+        else:
+            llm_resp = router.invoke("nlq_sql", _req)
         sql = llm_resp.content.strip()
 
         # Clean up: remove markdown code blocks if present

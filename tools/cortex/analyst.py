@@ -698,7 +698,13 @@ def _ask_nlq(
         logger.warning("cortex.analyst: NLQ schema extraction failed: %s", exc)
         schema = {}
 
-    sql = (_nlq.generate_sql_via_bedrock(question, schema) or "").strip()
+    # Honor per-call air-gap (context.air_gap / ICDEV_AIRGAP) for the NL->SQL
+    # generation step too, exactly like cortex.api._invoke does for every other
+    # Cortex LLM call — otherwise this sub-path could resolve to a cloud model
+    # even when the caller demanded local-only.
+    from tools.cortex.config import airgap_exclusions
+    _excl = airgap_exclusions(ctx)
+    sql = (_nlq.generate_sql_via_bedrock(question, schema, exclude_model_ids=_excl) or "").strip()
     if not sql:
         _record(governance, _GATE_NLQ_TRANSLATION, "fail")
         raise CortexAnalystError(

@@ -194,7 +194,7 @@ def test_nlq_path_labels_llm_summary(monkeypatch):
 
     monkeypatch.setattr(_nlq, "extract_schema", lambda db_path=None: {})
     monkeypatch.setattr(
-        _nlq, "generate_sql_via_bedrock", lambda q, s: "SELECT id, name FROM satellites"
+        _nlq, "generate_sql_via_bedrock", lambda q, s, exclude_model_ids=None: "SELECT id, name FROM satellites"
     )
     # ctx-expose-03: stub the analyst's RLS-context-threading execution seam.
     monkeypatch.setattr(
@@ -223,7 +223,7 @@ def test_nlq_raw_rows_grounded_by_construction(monkeypatch):
 
     monkeypatch.setattr(_nlq, "extract_schema", lambda db_path=None: {})
     monkeypatch.setattr(
-        _nlq, "generate_sql_via_bedrock", lambda q, s: "SELECT id, name FROM satellites"
+        _nlq, "generate_sql_via_bedrock", lambda q, s, exclude_model_ids=None: "SELECT id, name FROM satellites"
     )
     # ctx-expose-03: stub the analyst's RLS-context-threading execution seam.
     monkeypatch.setattr(
