@@ -27,11 +27,13 @@
 </div>
 
 <div class="kanban-board" id="kanban-board">
+    {# 'blocked' is a DERIVED bucket: task_pipeline.js folds ci_failed /
+       merge_conflict / changes_requested / failed / token_exhausted /
+       validating into it. It is not a storable status — never a move target. #}
     {% set columns = [
         ("suggested", "Suggested"),
         ("backlog", "Backlog"),
         ("scheduled", "Scheduled"),
-        ("triage", "Triage"),
         ("in_progress", "In Progress"),
         ("pr_opened", "Awaiting Merge"),
         ("blocked", "Blocked"),
@@ -112,7 +114,6 @@
                         <option value="suggested">Suggested</option>
                         <option value="backlog">Backlog</option>
                         <option value="scheduled">Scheduled</option>
-                        <option value="triage">Triage</option>
                         <option value="in_progress">In Progress</option>
                         <option value="done">Done</option>
                     </select>
