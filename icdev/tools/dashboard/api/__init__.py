@@ -371,6 +371,16 @@ def register_api_blueprints(app: "Flask") -> None:  # noqa: C901
     except Exception as exc:
         logger.warning("ace_api_bp skipped: %s", exc)
 
+    # DataBridge feeds — /api/databridge/v1/<connector>/<table> (ctx-expose-05).
+    # Cortex service-key (icdev_ctx_) auth is resolved by the central dashboard
+    # auth hook; the blueprint enforces connector allowlist + scopes.
+    try:
+        from tools.dashboard.api.databridge_feeds import databridge_feeds_bp
+        _mount_inline(databridge_feeds_bp)   # inline routes: /api/databridge/v1/*
+        logger.info("databridge_feeds_bp registered at /api/databridge/v1/")
+    except Exception as exc:
+        logger.warning("databridge_feeds_bp skipped: %s", exc)
+
     # AISG blueprint is registered by the canvas loop in create_app() (_CANVAS_DEFS).
     # Registering it here too caused Flask 3.x "already registered for this blueprint"
     # errors — same object re-registered on the same Flask app with a different url_prefix.

@@ -2036,6 +2036,26 @@ CREATE TABLE IF NOT EXISTS cortex_audit (
 CREATE INDEX IF NOT EXISTS idx_cortex_audit_session ON cortex_audit(session_id);
 CREATE INDEX IF NOT EXISTS idx_cortex_audit_tenant ON cortex_audit(tenant_id);
 
+-- Cortex service keys (migration 265) — external-caller auth for the Cortex
+-- REST/MCP surface. No classification column on purpose (verified pre-RLS).
+CREATE TABLE IF NOT EXISTS cortex_service_keys (
+    id                       TEXT PRIMARY KEY,
+    label                    TEXT NOT NULL,
+    key_hash                 TEXT NOT NULL UNIQUE,
+    key_prefix               TEXT,
+    tenant_id                TEXT NOT NULL DEFAULT 'default',
+    classification_ceiling   TEXT NOT NULL DEFAULT 'CUI',
+    scopes                   TEXT,
+    status                   TEXT NOT NULL DEFAULT 'active',
+    created_by               TEXT,
+    created_at               TEXT DEFAULT CURRENT_TIMESTAMP,
+    last_used_at             TEXT,
+    revoked_at               TEXT,
+    revoked_by               TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_cortex_service_keys_tenant ON cortex_service_keys(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_cortex_service_keys_status ON cortex_service_keys(status);
+
 -- Cortex canvas (chat) tables — distinct from the governance cortex_sessions/cortex_audit.
 CREATE TABLE IF NOT EXISTS cortex_chat_sessions (
     session_id      TEXT PRIMARY KEY,

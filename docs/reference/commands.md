@@ -2352,6 +2352,24 @@ python tools/mcp/cortex_server.py
 #   POST /cortex/api/v1/extract  {"text": "...", "schema": {"type": "object"}}
 #   POST /cortex/api/v1/govern   {"text": "...", "retrieval": false}
 # Governed ops return 403 + serialized GovernanceReport on a TRUST block; 400 on validation; 422 unanswerable.
+#   GET  /cortex/api/v1/health   (unauthenticated liveness — status only)
+
+# --- Service keys (service_keys.py: external-caller auth, ctx-expose-02) ---
+# Issue a scoped, tenant-bound icdev_ctx_ key for an external consumer (raw key shown ONCE)
+python -m tools.cortex.service_keys create --label compass --tenant compass --scopes cortex:search,cortex:ask,cortex:complete,cortex:govern --ceiling CUI --json
+python -m tools.cortex.service_keys list --json
+python -m tools.cortex.service_keys revoke --key-id <id> --json
+# External callers send the key as `Authorization: Bearer icdev_ctx_...` on
+# /cortex/api/v1/* and /api/databridge/v1/* ONLY; tenant/classification bind server-side.
+
+# --- Client SDK (client.py — vendored into compass/idea_lab, ctx-expose-06) ---
+python -c "from tools.cortex.client import CortexClient; c = CortexClient('http://localhost:5050', 'icdev_ctx_...'); print(c.is_available())"
+
+# --- DataBridge feeds (IRIS stub, ctx-expose-05) ---
+#   GET  /api/databridge/v1/iris/staffing_alignment     (scope databridge:iris:read)
+#   POST /api/databridge/v1/iris/performance_reviews    (scope databridge:iris:write)
+# Stub rows carry metadata.stub=true until Peraton publishes the IRIS API
+# (flip with IRIS_STUB_MODE=false + IRIS_BASE_URL + IRIS_API_KEY).
 ```
 
 Related MCP tools (RAG taxonomy shared by the analyst/search routers): `query_classify`

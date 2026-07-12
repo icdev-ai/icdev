@@ -88,6 +88,27 @@ def _authenticated() -> bool:
     return bool(getattr(g, "current_user", None))
 
 
+def _scope_denied(operation: str):
+    """Enforce per-operation scopes for Cortex service-key callers.
+
+    Session-authenticated dashboard users carry no ``g.cortex_binding`` and
+    pass through unchanged. External icdev_ctx_ callers (compass, idea_lab —
+    bound by tools/dashboard/auth.py) must hold ``cortex:<operation>`` from
+    their key row. Returns an error response tuple or None.
+    """
+    binding = getattr(g, "cortex_binding", None)
+    if binding is None:
+        return None
+    scope = f"cortex:{operation}"
+    if scope in (binding.get("scopes") or []):
+        return None
+    return jsonify({
+        "error": f"service key lacks required scope '{scope}'",
+        "code": "forbidden",
+        "label": binding.get("label", ""),
+    }), 403
+
+
 # ---------------------------------------------------------------------------
 # Endpoint decorator — auth + JSON parse + uniform error mapping
 # ---------------------------------------------------------------------------
@@ -102,10 +123,15 @@ def _cortex_api(func: Callable) -> Callable:
       * anything else                -> 500
     """
 
+    operation = func.__name__.replace("api_v1_", "")
+
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         if not _authenticated():
             return jsonify({"error": "authentication required"}), 401
+        denied = _scope_denied(operation)
+        if denied is not None:
+            return denied
         try:
             data = request.get_json(silent=True)
         except Exception:
@@ -270,6 +296,27 @@ def api_v1_govern(data):
     }
 
 
+def api_v1_health():
+    """Liveness probe — config + air-gap posture, no LLM call, no auth.
+
+    Registered in PUBLIC_ENDPOINTS (tools/dashboard/auth.py) so external
+    consumers' ``is_available()`` probes work without a session or key.
+    Status only — never returns data.
+    """
+    try:
+        from .config import airgap_active, load_cortex_config
+
+        load_cortex_config()
+        return jsonify({
+            "ok": True,
+            "status": "healthy",
+            "airgap": bool(airgap_active(None)),
+            "operations": ["search", "ask", "complete", "classify", "extract", "govern"],
+        })
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"ok": False, "status": "unhealthy", "error": str(exc)[:300]}), 503
+
+
 def register_rest_v1(cortex_bp) -> None:
     """Attach the ``/cortex/api/v1/*`` endpoints to the shared canvas blueprint.
 
@@ -288,3 +335,6 @@ def register_rest_v1(cortex_bp) -> None:
         cortex_bp.add_url_rule(
             f"{_API_V1}/{name}", f"api_v1_{name}", view, methods=["POST"]
         )
+    cortex_bp.add_url_rule(
+        f"{_API_V1}/health", "api_v1_health", api_v1_health, methods=["GET"]
+    )
