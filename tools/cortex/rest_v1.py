@@ -28,11 +28,14 @@ from flask import g, jsonify, request
 from tools.logging.icdev_logger import get_logger
 
 from . import validators
-from .analyst import CortexAnalystError, CortexQueryBlocked, ask
-from .api import classify, complete, extract
+from .analyst import CortexAnalystError, CortexQueryBlocked
+# Import ALL facades from .api — these are the GOVERNED wrappers (TRUST pipeline:
+# gateway screen, redaction, grounding, provenance, append-only audit). Importing
+# ask/search from .analyst/.search_service would reach the RAW ungoverned impls,
+# so the REST /api/v1/search + /ask endpoints would bypass governance entirely.
+from .api import ask, classify, complete, extract, search
 from .governance import GovernanceBlockedError, GovernancePipeline
 from .schemas import CortexContext, CortexResult
-from .search_service import search
 
 logger = get_logger("icdev.cortex.rest_v1")
 

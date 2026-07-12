@@ -183,6 +183,10 @@ class CortexContext:
     classification: str = "CUI"
     domain: str = ""
     session_id: str = ""  # links audit rows to a persisted cortex_sessions row
+    # Budget/rate-limit attribution key for the LLM router (check_budget /
+    # rate_gate key off LLMRequest.agent_id). Empty -> _build_request derives a
+    # per-tenant key so Cortex calls are never billed to an empty/unkeyed bucket.
+    agent_id: str = ""
     air_gap: bool = False
     fail_closed: bool = False
 

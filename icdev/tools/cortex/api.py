@@ -271,6 +271,10 @@ def _build_request(
         system_prompt=system_prompt,
         tenant_id=context.tenant_id,
         classification=context.classification or "CUI",
+        # Attribute every Cortex LLM call to a budget/rate key so the router's
+        # check_budget()/rate_gate bind (an empty agent_id keys to no budget row).
+        agent_id=(context.agent_id
+                  or f"cortex:{context.tenant_id or 'default'}"),
     )
     if max_tokens is not None:
         request.max_tokens = int(max_tokens)
