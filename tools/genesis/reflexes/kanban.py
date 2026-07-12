@@ -4419,6 +4419,38 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
     task_id = task["id"]
     title = task.get("title", "Untitled")
 
+    # ── Repo-aware guard: external-repo tasks ─────────────────────────────────
+    # External-repo tasks (e.g. prem-* compass / idea_lab work, per
+    # args/kanban_external_repos.yaml) must NEVER be built inside ICDev — their
+    # deliverables land in ANOTHER repo, so ICDev's phantom-completion +
+    # merge-to-origin/main gates always fail them and they churn (burning tokens
+    # re-doing work their own repo session already ships). Park such tasks
+    # inertly (validating) so the ICDev scheduler stops re-dispatching them.
+    # ICDev tasks resolve to the default (is_external False) and are byte-
+    # unchanged. Full orchestration (ICDev building INTO the external repo) is a
+    # separate follow-on — see repo_registry docstring.
+    try:
+        from tools.kanban.repo_registry import resolve_task_repo
+        _repo_target = resolve_task_repo(task_id)
+    except Exception as _rt_exc:  # noqa: BLE001 — never let resolution break dispatch
+        logger.debug("repo resolve failed for %s (defaulting to ICDev): %s", task_id, _rt_exc)
+        _repo_target = None
+    if _repo_target is not None and _repo_target.is_external:
+        logger.warning(
+            "kanban: %s is an external-repo task (%r) — not dispatchable via "
+            "ICDev; parking. It is built + validated in its own repo.",
+            task_id, _repo_target.name,
+        )
+        try:
+            _move_task(
+                task_id, "validating", actor="repo-aware-guard",
+                reason=(f"external repo {_repo_target.name!r}: not built via ICDev "
+                        "kanban (own-repo pipeline); parked to stop re-dispatch"),
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        return
+
     # ── Respawn guard 1: recent success ───────────────────────────────────────
     # Don't re-dispatch a task that completed successfully within the last 30 min.
     # Catches stale DB reads where the executor loops and picks up an already-done task.
