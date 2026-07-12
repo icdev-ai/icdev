@@ -144,6 +144,59 @@ def test_execute_nlq_readonly_skips_pragma_on_postgres(monkeypatch):
     assert not any(s.startswith("PRAGMA") for s in stub.executed)
 
 
+class _NoSecCtxConn:
+    """A connection that CANNOT carry a security context (no setter)."""
+
+    _backend = "sqlite"
+
+    def __init__(self, rows=None):
+        self._rows = rows or []
+        self.closed = False
+
+    def execute(self, sql, params=None):
+        return _StubCursor(self._rows)
+
+    def close(self):
+        self.closed = True
+
+
+def test_apply_security_context_raises_when_unscopable_and_fail_closed():
+    from tools.cortex.analyst import CortexAnalystError, _apply_security_context
+    from tools.cortex.schemas import CortexContext
+
+    # A connection that can't carry the RLS context must NOT silently run
+    # unscoped when the caller demanded fail-closed.
+    with pytest.raises(CortexAnalystError, match="security context"):
+        _apply_security_context(_NoSecCtxConn(), CortexContext(tenant_id="t-a", fail_closed=True))
+
+
+def test_apply_security_context_warns_but_continues_when_unscopable_default(monkeypatch):
+    from tools.cortex import analyst
+    from tools.cortex.schemas import CortexContext
+
+    # Default (fail-open) posture: warn, don't crash — but the warning makes the
+    # unscoped query observable instead of silently swallowed. Capture on the
+    # module logger directly (icdev_logger does not propagate to caplog's root).
+    warnings = []
+    monkeypatch.setattr(
+        analyst.logger, "warning",
+        lambda msg, *args, **kw: warnings.append(msg % args if args else msg),
+    )
+    analyst._apply_security_context(_NoSecCtxConn(), CortexContext(tenant_id="t-a"))
+    assert any("security context not applied" in w for w in warnings)
+
+
+def test_apply_security_context_applies_when_supported():
+    from tools.cortex.analyst import _apply_security_context
+    from tools.cortex.schemas import CortexContext
+
+    stub = _StubConn([])
+    _apply_security_context(stub, CortexContext(tenant_id="t-b", classification="SECRET"))
+    assert stub.security_context is not None
+    assert stub.security_context.tenant_id == "t-b"
+    assert stub.security_context.classification == "SECRET"
+
+
 def test_build_security_context_maps_fields_and_blanks_tenant():
     from tools.cortex.analyst import _build_security_context
     from tools.cortex.schemas import CortexContext
