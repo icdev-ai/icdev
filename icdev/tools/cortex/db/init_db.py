@@ -309,6 +309,14 @@ def record_audit(payload: dict, conn=None) -> str:
                         "redactions_applied": payload.get("redactions_applied", 0),
                         "blocked_gate": payload.get("blocked_gate") or "",
                         "blocked_reason": payload.get("blocked_reason") or "",
+                        # Accounting for /cortex/metrics observability (no dedicated
+                        # audit columns for these — see GovernancePipeline._audit).
+                        "domain": payload.get("domain") or "",
+                        "cost_usd": float(payload.get("cost_usd") or 0.0),
+                        "latency_ms": int(payload.get("latency_ms") or 0),
+                        "provider": payload.get("provider") or "",
+                        "model": payload.get("model") or "",
+                        "cache_hit": bool(payload.get("cache_hit")),
                     },
                     default=str,
                 ),

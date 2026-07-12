@@ -1,0 +1,165 @@
+# CUI // SP-CTI
+"""Cortex observability — read-only aggregation over the ``cortex_audit`` trail.
+
+The append-only ``cortex_audit`` table records one row per governed Cortex call
+(``GovernancePipeline._audit``). This module rolls those rows up into usage /
+governance / spend metrics for the ``/cortex/metrics`` panel — calls, outcome
+and block breakdown, redactions, cache hits, and cost/latency.
+
+Design notes:
+- ``cortex_audit`` has no cost/tokens/latency COLUMNS; those live in the
+  free-form ``gates_json`` blob (written by ``record_audit``), so all
+  JSON-derived aggregation is done in Python after ``json.loads`` — never via
+  SQLite-dialect ``json_extract`` in runtime SQL (PG-portability rule).
+- Rows written before the accounting enrichment simply carry cost/latency 0,
+  so the numbers fill in going forward rather than back-populating.
+- Purely read-only: no writes, no schema changes, no hot-path cost.
+
+NIST 800-53: AU-6 (audit review/analysis/reporting), AU-12.
+"""
+from __future__ import annotations
+
+import json
+from datetime import datetime, timedelta, timezone
+
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger(__name__)
+
+_DEFAULT_WINDOW_HOURS = 24
+
+
+def _empty(window_hours: int) -> dict:
+    return {
+        "available": False,
+        "window_hours": window_hours,
+        "summary": {
+            "calls": 0, "blocked": 0, "block_rate_pct": 0.0,
+            "redactions": 0, "cache_hits": 0,
+            "cost_usd": 0.0, "avg_latency_ms": 0.0,
+        },
+        "by_function": [],
+        "by_outcome": {},
+        "by_domain": [],
+        "by_tenant": [],
+    }
+
+
+def _cutoff(window_hours: int) -> str:
+    """UTC cutoff string in a format both PG (timestamp) and SQLite (TEXT from
+    CURRENT_TIMESTAMP, 'YYYY-MM-DD HH:MM:SS') compare correctly against."""
+    dt = datetime.now(timezone.utc) - timedelta(hours=window_hours)
+    return dt.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def summarize(window_hours: int = _DEFAULT_WINDOW_HOURS, conn=None) -> dict:
+    """Aggregate ``cortex_audit`` over the trailing ``window_hours``.
+
+    Returns a nested dict: ``summary`` totals plus ``by_function`` /
+    ``by_outcome`` / ``by_domain`` / ``by_tenant`` breakdowns. Degrades to an
+    ``available: False`` skeleton if the table is missing (fresh DB) or the read
+    fails — the panel must render, never 500.
+    """
+    window_hours = max(1, int(window_hours or _DEFAULT_WINDOW_HOURS))
+    own_conn = conn is None
+    if own_conn:
+        from tools.db.storage import get_connection
+        conn = get_connection()
+    try:
+        cursor = conn.execute(
+            "SELECT function, tenant_id, classification, outcome, blocked, "
+            "gates_json FROM cortex_audit WHERE created_at >= %s",
+            (_cutoff(window_hours),),
+        )
+        rows = cursor.fetchall()
+    except Exception as exc:  # noqa: BLE001 — table may not exist yet
+        logger.debug("cortex metrics: cortex_audit read failed: %s", exc)
+        return _empty(window_hours)
+    finally:
+        if own_conn:
+            try:
+                conn.close()
+            except Exception:  # noqa: BLE001, S110
+                pass
+
+    return _aggregate(rows, window_hours)
+
+
+def _row_get(row, key: str, idx: int):
+    """Read a column from a dict-like (RealDictRow) or tuple row."""
+    if isinstance(row, dict):
+        return row.get(key)
+    try:
+        return row[idx]
+    except (IndexError, KeyError, TypeError):
+        return None
+
+
+def _aggregate(rows, window_hours: int) -> dict:
+    out = _empty(window_hours)
+    out["available"] = True
+    summ = out["summary"]
+    by_function: dict = {}
+    by_outcome: dict = {}
+    by_domain: dict = {}
+    by_tenant: dict = {}
+    total_latency = 0.0
+    latency_n = 0
+
+    for row in rows:
+        function = _row_get(row, "function", 0) or "cortex"
+        tenant = _row_get(row, "tenant_id", 1) or "default"
+        outcome = _row_get(row, "outcome", 3) or "pass"
+        blocked = _row_get(row, "blocked", 4)
+        blocked = bool(blocked) and blocked not in (0, "0", "f", "false", "False")
+        gates_raw = _row_get(row, "gates_json", 5)
+        gj = {}
+        if gates_raw:
+            try:
+                gj = json.loads(gates_raw) if isinstance(gates_raw, str) else dict(gates_raw)
+            except (ValueError, TypeError):
+                gj = {}
+        cost = float(gj.get("cost_usd") or 0.0)
+        latency = float(gj.get("latency_ms") or 0.0)
+        redactions = int(gj.get("redactions_applied") or 0)
+        domain = gj.get("domain") or "(none)"
+        cache_hit = bool(gj.get("cache_hit"))
+
+        summ["calls"] += 1
+        if blocked:
+            summ["blocked"] += 1
+        summ["redactions"] += redactions
+        summ["cost_usd"] += cost
+        if cache_hit:
+            summ["cache_hits"] += 1
+        if latency > 0:
+            total_latency += latency
+            latency_n += 1
+
+        fn = by_function.setdefault(
+            function, {"function": function, "calls": 0, "blocked": 0, "cost_usd": 0.0}
+        )
+        fn["calls"] += 1
+        fn["blocked"] += 1 if blocked else 0
+        fn["cost_usd"] += cost
+
+        by_outcome[outcome] = by_outcome.get(outcome, 0) + 1
+        d = by_domain.setdefault(domain, {"domain": domain, "calls": 0})
+        d["calls"] += 1
+        t = by_tenant.setdefault(tenant, {"tenant_id": tenant, "calls": 0, "blocked": 0})
+        t["calls"] += 1
+        t["blocked"] += 1 if blocked else 0
+
+    summ["cost_usd"] = round(summ["cost_usd"], 6)
+    summ["avg_latency_ms"] = round(total_latency / latency_n, 1) if latency_n else 0.0
+    summ["block_rate_pct"] = (
+        round(100.0 * summ["blocked"] / summ["calls"], 1) if summ["calls"] else 0.0
+    )
+    for fn in by_function.values():
+        fn["cost_usd"] = round(fn["cost_usd"], 6)
+
+    out["by_function"] = sorted(by_function.values(), key=lambda r: r["calls"], reverse=True)
+    out["by_outcome"] = by_outcome
+    out["by_domain"] = sorted(by_domain.values(), key=lambda r: r["calls"], reverse=True)
+    out["by_tenant"] = sorted(by_tenant.values(), key=lambda r: r["calls"], reverse=True)
+    return out
