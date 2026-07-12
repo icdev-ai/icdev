@@ -4708,6 +4708,369 @@ def check_canvas_rls_bypass() -> "CoherenceCheck":
 
 
 # ---------------------------------------------------------------------------
+# Check: test DB isolation — raw sqlite3 + %s bypasses translate_sql (kph-B)
+# ---------------------------------------------------------------------------
+_DB_FACTORY_NAMES = {"get_connection", "_get_db", "get_conn", "get_canvas_connection"}
+
+
+def _is_sqlite_connect(call: ast.AST) -> bool:
+    """True when `call` is a `sqlite3.connect(...)` expression."""
+    return (
+        isinstance(call, ast.Call)
+        and isinstance(call.func, ast.Attribute)
+        and call.func.attr == "connect"
+        and isinstance(call.func.value, ast.Name)
+        and call.func.value.id == "sqlite3"
+    )
+
+
+def check_test_db_isolation(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
+    """Flag tests that hand runtime code a RAW sqlite3 connection while %s SQL is reachable.
+
+    Production DB is PostgreSQL (`%s` placeholders); tests/conftest.py forces
+    ICDEV_STORAGE_BACKEND=sqlite and StorageConnection.translate_sql rewrites
+    %s -> ?. A test that monkeypatches the connection factory
+    (get_connection/_get_db/...) to return a bare `sqlite3.connect(...)`, or
+    passes such a raw connection as `conn=` into runtime code, DEFEATS the
+    translation: the %s query raises `near "%": syntax error` and is usually
+    swallowed to None (a silent green test). This bit test_admin_creation_anomaly,
+    tests/trading, and docmod (PRs #207/#209). Every existing sqlite guard
+    (sqlite3_connect_linter, pg_portability_linter, pre_tool_use) exempts tests/,
+    so nothing else catches it.
+
+    FAIL on changed-file scope (gates new violations pre-merge); WARN on full-repo
+    (legacy tests exist). Fix: wrap in StorageConnection(conn, "sqlite") or consume
+    conftest's icdev_db fixture + ICDEV_DB_PATH redirect.
+    """
+    tests_dir = PROJECT_ROOT / "tests"
+    if changed_files:
+        candidates = [
+            p for p in changed_files
+            if p.suffix == ".py" and "tests" in p.as_posix().split("/") and p.exists()
+        ]
+    else:
+        candidates = list(tests_dir.rglob("*.py")) if tests_dir.exists() else []
+
+    violations: List[str] = []
+    scanned = 0
+    for py_path in candidates:
+        try:
+            source = py_path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if "sqlite3.connect" not in source:
+            continue  # no raw connection -> not this pattern
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            continue
+        scanned += 1
+        try:
+            rel = py_path.relative_to(PROJECT_ROOT).as_posix()
+        except ValueError:
+            rel = str(py_path)
+
+        has_pct_s = "%s" in source
+
+        # Trigger 1: the file patches a DB connection factory (setattr / mock.patch /
+        # patch.object naming get_connection/_get_db/...) — the smoking gun. Any
+        # runtime %s query then hits an untranslated raw sqlite3 connection.
+        flagged = False
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            patch_call = isinstance(node.func, ast.Attribute) and node.func.attr in ("setattr", "patch", "object")
+            patch_call = patch_call or (isinstance(node.func, ast.Name) and node.func.id == "patch")
+            if not patch_call:
+                continue
+            str_args = [a.value for a in node.args if isinstance(a, ast.Constant) and isinstance(a.value, str)]
+            if any(s.split(".")[-1] in _DB_FACTORY_NAMES for s in str_args):
+                violations.append(
+                    f"{rel}:{getattr(node, 'lineno', 0)}: monkeypatches a DB connection factory "
+                    f"to a raw sqlite3 connection — bypasses translate_sql, so %s SQL raises. "
+                    f"Wrap in StorageConnection(conn, 'sqlite')."
+                )
+                flagged = True
+                break
+        if flagged:
+            continue
+
+        # Trigger 2: a raw-sqlite-bound name passed as conn=<name> into a call while
+        # %s SQL literals are present in the file.
+        if has_pct_s:
+            raw_names: Set[str] = set()
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Assign) and _is_sqlite_connect(node.value):
+                    for tgt in node.targets:
+                        if isinstance(tgt, ast.Name):
+                            raw_names.add(tgt.id)
+            if raw_names:
+                for node in ast.walk(tree):
+                    if not isinstance(node, ast.Call):
+                        continue
+                    for kw in node.keywords:
+                        if kw.arg == "conn" and isinstance(kw.value, ast.Name) and kw.value.id in raw_names:
+                            violations.append(
+                                f"{rel}:{getattr(node, 'lineno', 0)}: passes a raw sqlite3 connection "
+                                f"as conn= into a call while %s SQL is present — bypasses translate_sql. "
+                                f"Wrap in StorageConnection(conn, 'sqlite')."
+                            )
+                            break
+
+    if violations:
+        tier = "fail" if changed_files else "warn"
+        return CoherenceCheck(
+            check_id="test_db_isolation",
+            check_name="Test DB Isolation (raw sqlite3 + %s)",
+            status=tier,
+            expected=["Tests reach runtime DB code through StorageConnection (translate_sql), not raw sqlite3"],
+            actual=[f"{len(violations)} violation(s) across {scanned} test file(s)"],
+            missing=[],
+            extra=violations,
+            message=(
+                f"{len(violations)} test(s) hand runtime code a raw sqlite3 connection where %s SQL is "
+                f"reachable — the query will raise 'near \"%\": syntax error' and likely be swallowed to None."
+            ),
+        )
+    return CoherenceCheck(
+        check_id="test_db_isolation",
+        check_name="Test DB Isolation (raw sqlite3 + %s)",
+        status="pass",
+        expected=["Tests reach runtime DB code through StorageConnection (translate_sql), not raw sqlite3"],
+        actual=[f"{scanned} raw-sqlite3 test file(s) scanned; none defeat translate_sql"],
+        missing=[],
+        extra=[],
+        message="No test hands runtime %s code a raw sqlite3 connection.",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Check: migration-number collisions (kph-C)
+# ---------------------------------------------------------------------------
+def _migration_prefixes() -> Dict[str, List[str]]:
+    """Map numeric prefix -> list of migration names (flat NNN_*.sql + dir NNN_*/)."""
+    mig_dir = PROJECT_ROOT / "tools" / "db" / "migrations"
+    out: Dict[str, List[str]] = {}
+    if not mig_dir.exists():
+        return out
+    for entry in mig_dir.iterdir():
+        m = re.match(r"^(\d+)_", entry.name)
+        if not m:
+            continue
+        out.setdefault(m.group(1), []).append(entry.name)
+    return out
+
+
+def check_migration_numbering(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
+    """Flag a NEW migration whose numeric prefix collides with an existing one.
+
+    Migration numbers are allocated by naive local-max (migration_runner.create_migration),
+    so two sibling task branches off the same main compute the SAME next number — govern-03
+    shipped 259_* while main already had 260/261. Runtime tolerates duplicates (INSERT OR
+    IGNORE) but they silently drop or reorder DDL. There is no collision detector today.
+
+    FAIL when a CHANGED migration prefix is shared by another migration (new collision);
+    WARN full-repo listing existing duplicate prefixes as debt. Message names the next free
+    number.
+    """
+    prefixes = _migration_prefixes()
+    dups = {p: names for p, names in prefixes.items() if len(names) > 1}
+    next_free = (max((int(p) for p in prefixes), default=0) + 1) if prefixes else 1
+
+    if changed_files:
+        changed_migs = [
+            p for p in changed_files
+            if "tools/db/migrations/" in p.as_posix() and re.match(r"^\d+_", p.name)
+        ]
+        new_collisions: List[str] = []
+        for p in changed_migs:
+            m = re.match(r"^(\d+)_", p.name)
+            if not m:
+                continue
+            pref = m.group(1)
+            others = [n for n in prefixes.get(pref, []) if n != p.name]
+            if others:
+                new_collisions.append(
+                    f"{p.as_posix()}: migration number {pref} already used by {', '.join(others)} "
+                    f"— renumber to {next_free:03d} (next free)"
+                )
+        if new_collisions:
+            return CoherenceCheck(
+                check_id="migration_numbering",
+                check_name="Migration Number Collision",
+                status="fail",
+                expected=["Each new migration takes a unique, unused number prefix"],
+                actual=[f"{len(new_collisions)} colliding changed migration(s)"],
+                missing=[],
+                extra=new_collisions,
+                message=f"{len(new_collisions)} changed migration(s) reuse an existing number; next free is {next_free:03d}.",
+            )
+        return CoherenceCheck(
+            check_id="migration_numbering",
+            check_name="Migration Number Collision",
+            status="pass",
+            expected=["Each new migration takes a unique, unused number prefix"],
+            actual=[f"{len(changed_migs)} changed migration(s) checked; no new collisions"],
+            missing=[],
+            extra=[],
+            message="No changed migration reuses an existing number.",
+        )
+
+    # Full-repo: WARN on existing duplicate prefixes (grandfathered debt).
+    if dups:
+        listed = [f"{p}: {', '.join(sorted(names))}" for p, names in sorted(dups.items())]
+        return CoherenceCheck(
+            check_id="migration_numbering",
+            check_name="Migration Number Collision",
+            status="warn",
+            expected=["No duplicate migration number prefixes"],
+            actual=[f"{len(dups)} duplicate prefix(es) in tools/db/migrations/"],
+            missing=[],
+            extra=listed,
+            message=f"{len(dups)} existing duplicate migration prefix(es) (debt); next free is {next_free:03d}.",
+        )
+    return CoherenceCheck(
+        check_id="migration_numbering",
+        check_name="Migration Number Collision",
+        status="pass",
+        expected=["No duplicate migration number prefixes"],
+        actual=[f"{len(prefixes)} distinct migration numbers; next free {next_free:03d}"],
+        missing=[],
+        extra=[],
+        message="No duplicate migration numbers.",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Check: icdev/ mirror parity (kph-D)
+# ---------------------------------------------------------------------------
+# Roots whose tools/ modules MUST have an icdev/tools/ twin. Extend via
+# args/mirror_parity.yaml (key: mirrored_roots) without editing code.
+_DEFAULT_MIRROR_ROOTS = (
+    "tools/cortex",
+    "tools/quality",
+    "tools/iqe/adapters",
+    "tools/mcp/cortex_server.py",
+)
+
+
+def _mirror_roots() -> Tuple[str, ...]:
+    cfg = PROJECT_ROOT / "args" / "mirror_parity.yaml"
+    if cfg.exists():
+        try:
+            import yaml  # lazy — yaml isn't a top-level import here
+            data = yaml.safe_load(cfg.read_text(encoding="utf-8")) or {}
+            roots = data.get("mirrored_roots")
+            if isinstance(roots, list) and roots:
+                return tuple(str(r) for r in roots)
+        except Exception:
+            pass
+    return _DEFAULT_MIRROR_ROOTS
+
+
+def _twin_missing(rel_posix: str) -> Optional[str]:
+    """Given a tools/... path, return the expected icdev twin path if it's missing, else None."""
+    if not rel_posix.startswith("tools/"):
+        return None
+    twin_rel = "icdev/" + rel_posix
+    if (PROJECT_ROOT / twin_rel).exists():
+        return None
+    return twin_rel
+
+
+def check_icdev_mirror_parity(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
+    """Flag a tools/<mirrored-root>/*.py change whose icdev/tools/ twin is missing.
+
+    Cortex/quality/iqe modules must be mirrored to icdev/tools/* so generated child
+    apps inherit them and the canonical/legacy namespaces stay in sync. This was
+    hand-reconciled every Cortex PR; a forgotten non-template module was never caught
+    (only 2 hardcoded files + dashboard templates are guarded today).
+
+    FAIL when a CHANGED tools/<root>/*.py lacks its icdev twin (or vice versa);
+    WARN full-repo listing existing drift.
+    """
+    roots = _mirror_roots()
+
+    def _under_roots(rel: str) -> bool:
+        return any(rel == r or rel.startswith(r.rstrip("/") + "/") or rel == r for r in roots)
+
+    missing: List[str] = []
+    if changed_files:
+        for p in changed_files:
+            if p.suffix != ".py":
+                continue
+            rel = p.as_posix()
+            # normalize to repo-relative
+            if "/tools/" in rel:
+                rel = "tools/" + rel.split("/tools/", 1)[1]
+            if rel.startswith("icdev/tools/"):
+                # a changed icdev file must have its tools/ origin
+                origin = rel[len("icdev/"):]
+                if _under_roots(origin) and not (PROJECT_ROOT / origin).exists():
+                    missing.append(f"{rel}: canonical twin {origin} missing")
+                continue
+            if not _under_roots(rel):
+                continue
+            twin = _twin_missing(rel)
+            if twin:
+                missing.append(f"{rel}: icdev twin {twin} missing — mirror the change")
+        if missing:
+            return CoherenceCheck(
+                check_id="icdev_mirror_parity",
+                check_name="icdev/ Mirror Parity",
+                status="fail",
+                expected=["Every tools/<mirrored-root> module has an icdev/tools/ twin"],
+                actual=[f"{len(missing)} changed module(s) missing a mirror"],
+                missing=missing,
+                extra=[],
+                message=f"{len(missing)} changed tools/ module(s) not mirrored to icdev/ (roots: {', '.join(roots)}).",
+            )
+        return CoherenceCheck(
+            check_id="icdev_mirror_parity",
+            check_name="icdev/ Mirror Parity",
+            status="pass",
+            expected=["Every tools/<mirrored-root> module has an icdev/tools/ twin"],
+            actual=["changed mirrored modules all have twins"],
+            missing=[],
+            extra=[],
+            message="All changed mirrored modules have their icdev/ twin.",
+        )
+
+    # Full-repo: WARN on existing drift.
+    for root in roots:
+        base = PROJECT_ROOT / root
+        py_files = [base] if base.suffix == ".py" and base.exists() else (
+            list(base.rglob("*.py")) if base.is_dir() else []
+        )
+        for f in py_files:
+            rel = f.relative_to(PROJECT_ROOT).as_posix()
+            twin = _twin_missing(rel)
+            if twin:
+                missing.append(f"{rel} -> {twin} (missing)")
+    if missing:
+        return CoherenceCheck(
+            check_id="icdev_mirror_parity",
+            check_name="icdev/ Mirror Parity",
+            status="warn",
+            expected=["Every tools/<mirrored-root> module has an icdev/tools/ twin"],
+            actual=[f"{len(missing)} module(s) missing a mirror (debt)"],
+            missing=missing,
+            extra=[],
+            message=f"{len(missing)} mirrored-root module(s) lack an icdev/ twin (roots: {', '.join(roots)}).",
+        )
+    return CoherenceCheck(
+        check_id="icdev_mirror_parity",
+        check_name="icdev/ Mirror Parity",
+        status="pass",
+        expected=["Every tools/<mirrored-root> module has an icdev/tools/ twin"],
+        actual=[f"roots checked: {', '.join(roots)}"],
+        missing=[],
+        extra=[],
+        message="All mirrored-root modules have their icdev/ twin.",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Check Registry & Orchestrator
 # ---------------------------------------------------------------------------
 
@@ -4749,6 +5112,9 @@ CHECK_REGISTRY = {
     "nav_sync": check_nav_sync,
     "iqe_map_sync": check_iqe_map_sync,
     "profile_sync": check_profile_sync,
+    "test_db_isolation": check_test_db_isolation,
+    "migration_numbering": check_migration_numbering,
+    "icdev_mirror_parity": check_icdev_mirror_parity,
 }
 
 
