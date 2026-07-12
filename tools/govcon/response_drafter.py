@@ -255,10 +255,12 @@ def _try_llm_draft(
     Sanitizer runs as defense-in-depth even for local routing.
     """
     try:
-        from tools.llm.router import LLMRouter
-        from tools.llm.provider import LLMRequest
-
-        router = LLMRouter()
+        # Cortex adoption: proposal drafting routes through the GOVERNED
+        # cortex.complete facade (see the LLM call below), matching the sibling
+        # RFI workbench — provenance + audit + egress redaction + budget
+        # attribution + the proposal domain lens instead of a raw router.invoke.
+        from tools.cortex import api as cortex_api
+        from tools.cortex.schemas import CortexContext
 
         # Build prompt for qwen3 worker
         cap_descriptions = "\n".join(f"- {c['capability_name']}: {c.get('evidence', '')}" for c in capabilities[:3])
@@ -348,13 +350,19 @@ def _try_llm_draft(
                 )
             # Redaction module not installed — proceed unsanitized (fail-open)
 
-        request = LLMRequest(
-            messages=[{"role": "user", "content": prompt}],
+        # Governed facade: the "proposal_drafting" routing function (local-only
+        # per llm_config.yaml) is preserved; domain="proposal" applies the
+        # capture-manager lens persona. On failure, fall through to the template
+        # draft (the except below), exactly as before.
+        cx = cortex_api.complete(
+            prompt,
+            function="proposal_drafting",
+            ctx=CortexContext(
+                classification="CUI", domain="proposal", agent_id="proposal-drafter"
+            ),
         )
-        response = router.invoke("proposal_drafting", request)
-
-        if response and response.content:
-            return response.content, "two_tier_llm"
+        if cx and cx.text:
+            return cx.text, "two_tier_llm"
 
     except Exception as exc:
         print(f"Warning: LLM draft failed: {exc}", file=sys.stderr)
