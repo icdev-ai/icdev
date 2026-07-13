@@ -1752,18 +1752,7 @@ def _phase_complete(prefix: str, phase: str) -> tuple[bool, list[str]]:
     return len(unfinished) == 0, unfinished
 
 
-def _is_manual_gate(task_id: str, title: str | None) -> bool:
-    """Return True for manual-mode gate tasks (e.g. prem-gate-00).
-
-    A gate task exists solely to block its dependents from auto-dispatch
-    while implementation happens manually (often in a private repo the
-    runner cannot reach). It is held in_progress indefinitely and must
-    never be dispatched, reaped, or startup-recovered — only a human (or
-    an interactive session acting on the user's behalf) moves it.
-    Convention: id ends with '-gate-00' or title carries the
-    'MANUAL-MODE GATE' marker (see feedback-project-card-for-all-initiatives).
-    """
-    return str(task_id or "").endswith("-gate-00") or "MANUAL-MODE GATE" in (title or "")
+from tools.kanban.gates import is_manual_gate as _is_manual_gate  # noqa: F401
 
 
 def _get_due_tasks() -> list:

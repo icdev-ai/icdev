@@ -191,10 +191,17 @@ function renderTaskKanban(tasks) {
         var cardsHtmlArr = items.map(function(t) {
             var icon = typeIcons[t.task_type] || '';
             var pColor = priorityColors[t.priority] || '#6b7280';
+            // Gates get an amber rail instead of a priority rail — a gate has no
+            // priority, it is a brake.
+            if (t.is_manual_gate) pColor = '#f59e0b';
             var isSuggested = status === 'suggested';
+            // A manual-mode gate is a sentinel, not work. Moving it right marks it
+            // done, which RELEASES every dependent for auto-dispatch — so it gets no
+            // arrows. (The API refuses the move too; this just removes the trap.)
+            var isGate = !!t.is_manual_gate;
             var arrows = '';
-            if (!isSuggested && prevStatus[status]) arrows += '<button class="kanban-move-btn" onclick="event.stopPropagation(); moveTask(\'' + t.id + '\',\'' + prevStatus[status] + '\')" title="Move left">◀</button>';
-            if (!isSuggested && nextStatus[status]) arrows += '<button class="kanban-move-btn" onclick="event.stopPropagation(); moveTask(\'' + t.id + '\',\'' + nextStatus[status] + '\')" title="Move right">▶</button>';
+            if (!isSuggested && !isGate && prevStatus[status]) arrows += '<button class="kanban-move-btn" onclick="event.stopPropagation(); moveTask(\'' + t.id + '\',\'' + prevStatus[status] + '\')" title="Move left">◀</button>';
+            if (!isSuggested && !isGate && nextStatus[status]) arrows += '<button class="kanban-move-btn" onclick="event.stopPropagation(); moveTask(\'' + t.id + '\',\'' + nextStatus[status] + '\')" title="Move right">▶</button>';
 
             var schedLine = t.scheduled_at ? '<div style="font-size:11px; color:var(--text-dim); margin-top:4px;">📅 ' + _formatSchedule(t.scheduled_at) + '</div>' : '';
 
@@ -275,7 +282,24 @@ function renderTaskKanban(tasks) {
             var reaperBar = '';
             var tifLine = '';
             var lastKilledLine = '';
-            if (status === 'in_progress') {
+            if (isGate) {
+                // Gates sit in_progress forever BY DESIGN. Rendering them with a live
+                // "Running 81m" counter and a reaper progress bar made a sentinel look
+                // like a hung task — the single most confusing thing on this board.
+                // Say what it actually is instead: nothing is running, and here is what
+                // it is holding back.
+                var holding = t.gate_holding || 0;
+                tifLine = '<div style="font-size:11px;color:var(--text-dim);margin-top:4px;">'
+                    + 'Not running — held open by design</div>';
+                attemptBadge = '<span class="badge" style="background:#f59e0b20;color:#f59e0b;font-size:10px;" '
+                    + 'title="Manual-mode gate: a sentinel that blocks its dependents from auto-dispatch. '
+                    + 'It is never dispatched, reaped or auto-completed.">🔒 MANUAL GATE</span>';
+                if (holding > 0) {
+                    tifLine += '<div style="font-size:11px;color:#f59e0b;margin-top:2px;" '
+                        + 'title="These tasks stay in Backlog until the gate is released">'
+                        + 'Holding ' + holding + ' task' + (holding !== 1 ? 's' : '') + ' in Backlog</div>';
+                }
+            } else if (status === 'in_progress') {
                 var ac = t.attempt_count || 0;
                 if (ac > 1) {
                     var abColor = ac >= 4 ? '#ef4444' : '#f59e0b';
@@ -339,9 +363,14 @@ function renderTaskKanban(tasks) {
             if (isSuggested) {
                 bottomRow = inlineActions;
             } else {
+                // No delete on a gate: removing the sentinel does not release its
+                // dependents, it STRANDS them (a task whose parent row is missing can
+                // never satisfy its dependency). The API refuses this too.
+                var delBtn = isGate ? ''
+                    : '<button class="kanban-move-btn" onclick="event.stopPropagation(); deleteTask(\'' + t.id + '\')" title="Delete" style="color:#ef4444;">✕</button>';
                 bottomRow = '<div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px;">'
                     + '<div style="display:flex; gap:4px;">' + arrows + msgBtn + '</div>'
-                    + '<button class="kanban-move-btn" onclick="event.stopPropagation(); deleteTask(\'' + t.id + '\')" title="Delete" style="color:#ef4444;">✕</button>'
+                    + delBtn
                     + '</div>';
             }
 

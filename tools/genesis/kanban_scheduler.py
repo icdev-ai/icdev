@@ -51,14 +51,7 @@ logger = get_logger(__name__)
 
 
 
-def _is_manual_gate(task_id: str, title: str | None) -> bool:
-    """Manual-mode gate (e.g. prem-gate-00) — held in_progress by design.
-
-    Mirrors tools/genesis/reflexes/kanban.py::_is_manual_gate. A gate must never be
-    dispatched, reaped, promoted, or startup-recovered: it is not stuck work, it is
-    the brake.
-    """
-    return str(task_id or "").endswith("-gate-00") or "MANUAL-MODE GATE" in (title or "")
+from tools.kanban.gates import is_manual_gate as _is_manual_gate  # noqa: F401
 
 def main():
     parser = argparse.ArgumentParser(description="Kanban Scheduler")
