@@ -29,3 +29,7 @@ prefixes:
   prem-recomp: compass
   prem-ricoas: compass
   prem-ideal: idea_lab
+  # Dispatch-proof stream (ked-vfy-01). Carries the deliberately trivial compass
+  # task used to exercise dispatch end to end; kept off the product prefixes so a
+  # probe run can never be mistaken for cpmp/msr/ricoas product work.
+  prem-vfy: compass

@@ -622,6 +622,16 @@ create_tasks([{
 
 # Adversarial verify (invoked automatically when adversarial_enabled=True on a looping task)
 # _run_adversarial_verify(task_id) in tools/kanban/task_factory.py — not a standalone CLI
+
+# Compass dispatch probe — seeds the one trivial compass task that proves repo-aware
+# dispatch end to end (prem-vfy-01). Definition: args/kanban_seed_compass_dispatch.yaml;
+# routing: `prem-vfy` prefix in args/kanban_external_repos.yaml.
+python -m tools.kanban.seed_compass_dispatch_probe --dry-run --json   # Validate routing, write nothing
+python -m tools.kanban.seed_compass_dispatch_probe --json             # Seed onto the board
+# Refuses to seed if the id's prefix does not resolve to the repo the YAML claims
+# (an unregistered prefix defaults to ICDev — that would build a compass task in ICDev).
+# The external repo root must be set where the scheduler runs, else dispatch SKIPs it:
+#   $env:ICDEV_KANBAN_REPO_COMPASS = "C:/path/to/compass"
 ```
 
 ---
