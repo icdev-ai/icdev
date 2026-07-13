@@ -582,6 +582,54 @@ def api_v1_staffing_matrix(data):
     }
 
 
+@_cortex_api
+def api_v1_cost_volume(data):
+    """Price a bid from its LCAT allocations (prem-bid-02).
+
+    ``rate_benchmarker.generate_cost_volume()`` already existed and already wrote
+    pg_cost_volumes — but it had ZERO callers outside its own CLI main(). It was not
+    missing code, it was DEAD code. And it was dead for a reason: its audit write
+    INSERTed into a column called ``timestamp`` that does not exist on audit_trail, with
+    no try/except, so it raised on every path. It could not run. This gives it its first
+    real caller, and a working one.
+
+    UNRATED LABOUR CATEGORIES ARE SURFACED, NEVER GUESSED. The old code priced an LCAT
+    with no rate at ``rate = 85.0  # default if no rate set`` — a made-up number on a
+    bid, silently loaded through the wrap rates and the price-to-win band until the
+    total looked exactly like a real one. Now the volume is refused unless every
+    allocation carries a rate; the unrated ones come back with enough detail to go and
+    fetch them.
+
+    ``allow_unrated: true`` prices only the rated lines and marks the volume ``partial``
+    — for the estimating path that genuinely wants a partial answer. ``partial`` is not
+    ``ok``, and nothing downstream may treat it as such.
+
+    Scope: ``cortex:cost_volume`` — NOT in the default grant. A key that can search must
+    not silently also be able to put a PRICE on a proposal.
+    """
+    from tools.govcon.rate_benchmarker import generate_cost_volume
+
+    if not isinstance(data, dict):
+        raise validators.CortexValidationError("body must be a JSON object")
+
+    opportunity_id = str(data.get("opportunity_id") or "").strip()
+    if not opportunity_id:
+        raise validators.CortexValidationError("opportunity_id is required")
+
+    contract_type = str(data.get("contract_type") or "ffp").strip().lower()
+    allow_unrated = bool(data.get("allow_unrated"))
+
+    result = generate_cost_volume(
+        opportunity_id, contract_type, allow_unrated=allow_unrated
+    )
+
+    logger.info(
+        "cost-volume: opportunity=%s status=%s unrated=%d",
+        opportunity_id, result.get("status"), result.get("unrated_count", 0),
+    )
+    return result
+
+
 def api_v1_health():
     """Liveness probe — config + air-gap posture, no LLM call, no auth.
 
@@ -599,7 +647,7 @@ def api_v1_health():
             "airgap": bool(airgap_active(None)),
             "operations": [
                 "search", "ask", "complete", "classify", "extract", "govern",
-                "intake", "slides", "win_themes", "staffing_matrix",
+                "intake", "slides", "win_themes", "staffing_matrix", "cost_volume",
             ],
         })
     except Exception as exc:  # noqa: BLE001
@@ -624,6 +672,7 @@ def register_rest_v1(cortex_bp) -> None:
         ("slides", api_v1_slides),
         ("win_themes", api_v1_win_themes),
         ("staffing_matrix", api_v1_staffing_matrix),
+        ("cost_volume", api_v1_cost_volume),
     ):
         cortex_bp.add_url_rule(
             f"{_API_V1}/{name}", f"api_v1_{name}", view, methods=["POST"]

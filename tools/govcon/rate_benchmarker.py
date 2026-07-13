@@ -26,6 +26,7 @@ Usage:
 
 import argparse
 import json
+import logging
 import sys
 import uuid
 from datetime import datetime, timezone
@@ -38,6 +39,8 @@ if str(_ROOT) not in sys.path:
 from tools.db.storage import get_connection  # noqa: E402
 
 # Default indirect rates (DCAA-typical for mid-tier GovCon)
+logger = logging.getLogger(__name__)
+
 DEFAULT_RATES = {
     "fringe_pct": 0.32,
     "overhead_pct": 0.45,
@@ -59,20 +62,36 @@ def _get_db():
 
 
 def _audit(conn, event_type, action, details, opportunity_id=None):
-    conn.execute(
-        "INSERT INTO audit_trail (id, timestamp, event_type, actor, action, details, project_id, session_id) "
-        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
-        (
-            _gen_id("aud"),
-            _now(),
-            event_type,
-            "rate_benchmarker",
-            action,
-            json.dumps(details) if isinstance(details, dict) else str(details),
-            opportunity_id,
-            None,
-        ),
-    )
+    """Append an audit row (NIST AU-2).
+
+    prem-bid-02: this used to INSERT into a column called ``timestamp``. There is no
+    such column on audit_trail — it is ``created_at`` — and there was no try/except
+    around it, so this raised. Every path through here raised.
+
+    That is almost certainly WHY generate_cost_volume had no callers: it was not merely
+    dead code, it was code that could not run. Verified against live PostgreSQL:
+    `column "timestamp" of relation "audit_trail" does not exist`.
+
+    Best-effort now, like every other _audit in tools/govcon: the caller's actual work
+    must not fail because the audit table is unavailable.
+    """
+    try:
+        conn.execute(
+            "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, "
+            "project_id, session_id) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+            (
+                _gen_id("aud"),
+                _now(),
+                event_type,
+                "rate_benchmarker",
+                action,
+                json.dumps(details) if isinstance(details, dict) else str(details),
+                opportunity_id,
+                None,
+            ),
+        )
+    except Exception as exc:
+        logger.warning("audit write failed for %s: %s", event_type, exc)
 
 
 def _ensure_tables(conn):
@@ -268,19 +287,46 @@ def ptw_analysis(opportunity_id):
     }
 
 
-def generate_cost_volume(opportunity_id, contract_type="ffp"):
-    """Assemble cost volume from LCAT allocations and wrap rates."""
+def generate_cost_volume(opportunity_id, contract_type="ffp", *, allow_unrated=False):
+    """Assemble cost volume from LCAT allocations and wrap rates.
+
+    prem-bid-01/02. Two things were wrong here, and they compounded.
+
+    **It guessed the price.** An LCAT with no rate was silently priced at
+    ``rate = 85.0  # default if no rate set``. That is a made-up number on a bid. It
+    does not fail, it does not warn — it produces a total that looks exactly like a
+    real one, and the wrap rates and the price-to-win band are all computed on top of
+    it. compass holds the actual merged supplier rate cards; guessing was never
+    necessary, only easier.
+
+    **And then it hid the guess.** ``line_items`` was computed, returned in the
+    response dict, and never stored. Only the TOTALS went into pg_cost_volumes. So the
+    $85 could not be found afterwards even if you went looking: the price could not be
+    audited line by line.
+
+    Now an unrated LCAT is SURFACED, never defaulted. The volume is not priced unless
+    every allocation carries a rate; the unrated ones come back in ``unrated`` with
+    enough detail to go and fetch them. ``allow_unrated=True`` exists for the estimating
+    path that genuinely wants a partial answer — it prices only the rated lines, reports
+    the rest, and marks the volume ``partial`` so nothing downstream can mistake it for
+    a complete price.
+
+    Priced line items are persisted back onto pg_lcat_allocations (hourly_rate,
+    annual_cost, basis_of_estimate) — columns that already existed and were never
+    filled in.
+    """
     conn = _get_db()
     _ensure_tables(conn)
 
     # Get LCAT allocations
     allocs = conn.execute(
-        "SELECT labor_category, bls_soc_code, fte_count, hourly_rate FROM pg_lcat_allocations WHERE cost_volume_id = %s",
+        "SELECT id, labor_category, bls_soc_code, fte_count, hourly_rate "
+        "FROM pg_lcat_allocations WHERE cost_volume_id = %s",
         (opportunity_id,),
     ).fetchall()
-    conn.close()
 
     if not allocs:
+        conn.close()
         return {
             "status": "ok",
             "opportunity_id": opportunity_id,
@@ -289,18 +335,37 @@ def generate_cost_volume(opportunity_id, contract_type="ffp"):
 
     # Calculate costs per LCAT
     line_items = []
+    unrated = []
     total_direct = 0
     for a in allocs:
-        lc = a["labor_category"] if isinstance(a, dict) else a[0]
-        fte = a["fte_count"] if isinstance(a, dict) else a[2]
-        rate = a["hourly_rate"] if isinstance(a, dict) else a[3]
+        d = dict(a) if not isinstance(a, (list, tuple)) else None
+        alloc_id = d["id"] if d else a[0]
+        lc = d["labor_category"] if d else a[1]
+        fte = d["fte_count"] if d else a[3]
+        rate = d["hourly_rate"] if d else a[4]
+
         if not rate:
-            rate = 85.0  # default if no rate set
+            # NEVER guess. A made-up rate on a bid is a silently wrong price — it looks
+            # exactly like a real one all the way through the wrap rates and the PTW
+            # band. Surface it so someone can go and get the real number.
+            unrated.append({
+                "allocation_id": alloc_id,
+                "labor_category": lc,
+                "fte": fte,
+                "reason": (
+                    f"no hourly rate for LCAT '{lc}'. Load the supplier rate card "
+                    f"(compass tools/dataops/rate_card_merger) or set the rate on the "
+                    f"allocation. This line is NOT priced — it is not guessed either."
+                ),
+            })
+            continue
+
         annual_hours = (fte or 0) * 2080
         annual_cost = annual_hours * rate
         total_direct += annual_cost
         line_items.append(
             {
+                "allocation_id": alloc_id,
                 "labor_category": lc,
                 "fte": fte,
                 "hourly_rate": rate,
@@ -309,9 +374,48 @@ def generate_cost_volume(opportunity_id, contract_type="ffp"):
             }
         )
 
+    if unrated and not allow_unrated:
+        conn.close()
+        return {
+            "status": "unpriced",
+            "opportunity_id": opportunity_id,
+            "unrated": unrated,
+            "unrated_count": len(unrated),
+            "priced_count": len(line_items),
+            "message": (
+                f"{len(unrated)} labor category/categories have no rate. Refusing to "
+                f"price the volume: a defaulted rate is a wrong price that looks like a "
+                f"right one. Pass allow_unrated=True for a partial estimate."
+            ),
+        }
+
     # Apply wrap rates
     wrap = calculate_wrap_rates(total_direct)
     total_loaded = wrap["total_loaded_rate"]
+
+    # Persist the PRICED line items. They used to be computed, returned in the response
+    # dict, and thrown away — only the totals were stored. So the price could not be
+    # audited line by line: you could see a number, but not which LCAT at which rate
+    # produced it (and, before this, not which of them had been silently defaulted to
+    # $85). hourly_rate / annual_cost / basis_of_estimate are columns pg_lcat_allocations
+    # has always had and nothing ever filled in.
+    for item in line_items:
+        try:
+            conn.execute(
+                "UPDATE pg_lcat_allocations SET hourly_rate = %s, annual_cost = %s, "
+                "basis_of_estimate = %s WHERE id = %s",
+                (
+                    item["hourly_rate"],
+                    item["annual_cost"],
+                    f"{item['fte']} FTE x 2080 hrs x ${item['hourly_rate']}/hr "
+                    f"(rate from allocation; NOT defaulted)",
+                    item["allocation_id"],
+                ),
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("could not persist line item %s: %s", item["allocation_id"], exc)
+    conn.commit()
+    conn.close()
 
     # Store cost volume
     conn2 = _get_db()
@@ -354,11 +458,16 @@ def generate_cost_volume(opportunity_id, contract_type="ffp"):
     conn2.close()
 
     return {
-        "status": "ok",
+        # "partial" is not "ok". A volume priced with some lines missing must never be
+        # mistaken downstream for a complete price — that is how a hole in a bid gets
+        # to the customer.
+        "status": "partial" if unrated else "ok",
         "cost_volume_id": cv_id,
         "opportunity_id": opportunity_id,
         "contract_type": contract_type,
         "line_items": line_items,
+        "unrated": unrated,
+        "unrated_count": len(unrated),
         "direct_labor_total": round(total_direct, 2),
         "wrap_rates": wrap,
         "total_evaluated_price": round(total_loaded, 2),

@@ -146,6 +146,54 @@ CREATE TABLE IF NOT EXISTS proposal_section_drafts (
     tenant_id      TEXT DEFAULT 'default',
     classification TEXT DEFAULT 'CUI'
 );
+CREATE TABLE IF NOT EXISTS proposal_opportunities (
+    id                   TEXT PRIMARY KEY,
+    solicitation_number  TEXT,
+    title                TEXT,
+    agency               TEXT,
+    naics_code           TEXT,
+    status               TEXT DEFAULT 'open',
+    created_at           TEXT,
+    updated_at           TEXT,
+    tenant_id            TEXT DEFAULT 'default',
+    classification       TEXT DEFAULT 'CUI'
+);
+CREATE TABLE IF NOT EXISTS pg_cost_volumes (
+    id                    TEXT PRIMARY KEY,
+    opportunity_id        TEXT NOT NULL,
+    contract_type         TEXT,
+    pricing_strategy      TEXT,
+    total_evaluated_price REAL,
+    direct_labor_cost     REAL,
+    fringe_rate           REAL,
+    overhead_rate         REAL,
+    g_and_a_rate          REAL,
+    fee_rate              REAL,
+    subcontractor_cost    REAL,
+    odc_cost              REAL,
+    ptw_estimate_low      REAL,
+    ptw_estimate_high     REAL,
+    calc_benchmark_median REAL,
+    status                TEXT,
+    created_at            TEXT,
+    updated_at            TEXT,
+    tenant_id             TEXT DEFAULT 'default',
+    classification        TEXT DEFAULT 'CUI'
+);
+CREATE TABLE IF NOT EXISTS pg_lcat_allocations (
+    id                TEXT PRIMARY KEY,
+    cost_volume_id    TEXT NOT NULL,
+    task_description  TEXT NOT NULL,
+    labor_category    TEXT NOT NULL,
+    bls_soc_code      TEXT,
+    fte_count         REAL,
+    hourly_rate       REAL,
+    annual_cost       REAL,
+    basis_of_estimate TEXT,
+    created_at        TEXT,
+    tenant_id         TEXT DEFAULT 'default',
+    classification    TEXT DEFAULT 'CUI'
+);
 CREATE TABLE IF NOT EXISTS proposal_key_personnel (
     id                    TEXT PRIMARY KEY,
     opportunity_id        TEXT NOT NULL,

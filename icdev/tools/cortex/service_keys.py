@@ -69,11 +69,15 @@ WIN_THEME_SCOPES = ("cortex:win_themes",)
 # silently also be able to STAFF a bid — to put a named human against a labour
 # category the customer will price and evaluate. Never in the default grant.
 STAFFING_SCOPES = ("cortex:staffing_matrix",)
+# Same rule again (prem-bid-02): cost_volume PRICES A BID. It writes pg_cost_volumes and
+# the priced line items that a won bid then carries into /cpmp as the delivery baseline.
+# A key that can search must not silently also be able to put a PRICE on a proposal.
+PRICING_SCOPES = ("cortex:cost_volume",)
 DATABRIDGE_SCOPES = ("databridge:iris:read", "databridge:iris:write",
                      "databridge:icdev_demand:read",
                      "databridge:icdev_cpmp:read", "databridge:icdev_cpmp:write")
 ALL_SCOPES = (CORTEX_SCOPES + INTAKE_SCOPES + WIN_THEME_SCOPES + STAFFING_SCOPES
-              + DATABRIDGE_SCOPES)
+              + PRICING_SCOPES + DATABRIDGE_SCOPES)
 
 # Default scopes for a newly created key: the six REST operations (the
 # spend-heavier feeds/write scopes are granted explicitly).

@@ -251,6 +251,29 @@ class CortexClient:
                                    "people": people}
         return self._post("staffing_matrix", payload, timeout)
 
+    # -- Cost volume (prem-bid-02; scope cortex:cost_volume) ---------------------
+
+    def price_cost_volume(self, opportunity_id: str, *, contract_type: str = "ffp",
+                          allow_unrated: bool = False,
+                          timeout: Optional[int] = None) -> Optional[dict]:
+        """Price a bid from its LCAT allocations. Unrated LCATs are SURFACED, not guessed.
+
+        Returns ``status: "unpriced"`` and an ``unrated[]`` list when any labour category
+        has no rate — the volume is NOT priced, because a defaulted rate is a wrong price
+        that looks exactly like a right one all the way through the wrap rates and the
+        price-to-win band.
+
+        ``allow_unrated=True`` prices the rated lines only and returns ``status:
+        "partial"``. Partial is not ok: do not treat it as a complete price.
+        """
+        payload: Dict[str, Any] = {
+            "opportunity_id": opportunity_id,
+            "contract_type": contract_type,
+        }
+        if allow_unrated:
+            payload["allow_unrated"] = True
+        return self._post("cost_volume", payload, timeout)
+
     # -- RICOAS intake bridge (prem-ricoas-02; scope cortex:intake) --------------
 
     def intake_create(self, verbatim_ask: str, *, customer_name: str,
