@@ -11978,3 +11978,30 @@ projects:
   - key: xcut
     title: Cross-Cutting — coherence gate, guardrail, table registration
     priority: medium
+- key: kanban-external-dispatch
+  name: Kanban External-Repo Dispatch
+  description: 'Make ICDev''s kanban runner able to BUILD INTO external repos (compass,
+    idea_lab) instead of parking their tasks. Today every git/gh call in the dispatcher
+    is cwd=BASE_DIR, so an external task can only be skipped — which is why the entire
+    Premium Suite was driven by hand.'
+  task_prefix: ked-
+  default_open: true
+  briefs:
+  - 'reg: Registry truthfulness — register every prem-* stream in kanban_external_repos.yaml
+    and configure the repo roots, so an external task can never be built inside the ICDev
+    tree (ked-reg-01..02)'
+  - 'core: Repo-aware dispatch — thread the resolved RepoTarget through worktree creation,
+    the executor cwd, the done-gate and the PR flow, so ICDev builds INTO compass/idea_lab
+    (ked-core-01..04)'
+  - 'vfy: Prove it — dispatch one real compass task end to end and verify a PR actually
+    landed in compass, rather than asserting that it would have (ked-vfy-01)'
+  epics:
+  - key: reg
+    title: Registry truthfulness — no external stream silently builds inside ICDev
+    priority: high
+  - key: core
+    title: Repo-aware dispatch — build, gate and PR in the task's own repo
+    priority: high
+  - key: vfy
+    title: Prove it on a real task
+    priority: high
