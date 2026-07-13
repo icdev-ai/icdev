@@ -295,6 +295,22 @@ class CortexClient:
         }
         return self._post("cost_volume", payload, timeout)
 
+    def transition_won_opportunity(self, opportunity_id: str, *,
+                                   created_by: str = "compass",
+                                   timeout: Optional[int] = None) -> Optional[dict]:
+        """A won bid becomes a PROPOSED delivery baseline in /cpmp (prem-bid-04).
+
+        Returns the contract id, the total_value carried over from the priced volume, and
+        `needs_attention` — what contracts staff must still supply. The contract lands as
+        'draft': a won bid does not self-approve itself into an active contract.
+
+        Scope `cortex:award`, separate from `cortex:cost_volume` on purpose: pricing a bid
+        and declaring it won are different powers.
+        """
+        payload: Dict[str, Any] = {"opportunity_id": opportunity_id,
+                                   "created_by": created_by}
+        return self._post("award", payload, timeout)
+
     # -- Dashboard export (prem-rpt-02; scope cortex:dashboard) ------------------
 
     def export_dashboard(self, title: str, tiles: List[dict], *,
