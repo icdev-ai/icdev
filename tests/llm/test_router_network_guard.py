@@ -31,9 +31,15 @@ def _clean(monkeypatch):
 
 
 class _Stub:
-    """Carries only ``_config`` but borrows the router's choke-point methods."""
+    """Carries only ``_config`` but borrows the router's choke-point methods.
+
+    ``_enforce_routing_policy`` is borrowed too, not stubbed out: it is part of the
+    choke point now, and a double that quietly skipped it would let this suite pass
+    while the real chokepoint was broken.
+    """
 
     _apply_network_guard = LLMRouter._apply_network_guard
+    _enforce_routing_policy = LLMRouter._enforce_routing_policy
     _provider_invoke = LLMRouter._provider_invoke
     _provider_invoke_streaming = LLMRouter._provider_invoke_streaming
 

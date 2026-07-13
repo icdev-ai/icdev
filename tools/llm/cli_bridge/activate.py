@@ -186,6 +186,25 @@ def _is_local_only_provider(provider_name: str, providers: dict) -> bool:
     return spec.get("type") == "ollama" and not spec.get("api_key_env")
 
 
+def is_local_only_model(model_name: str, models: dict, providers: dict) -> bool:
+    """True when `model_name` runs on a provider that never leaves the machine.
+
+    This is THE definition of "local" for the CUI egress boundary. Everything that
+    needs to know whether a model is local calls this: the CLI-bridge chain guard
+    below, the router's ``force_local`` enforcement, and the routing policy
+    resolver. Two divergent definitions of "local" is precisely how CUI leaks —
+    the router used to carry its own inline ``provider == "ollama"`` check that
+    silently treated an UNRESOLVABLE model as local.
+
+    An unknown model is NOT local: we cannot prove where it sends bytes, so we
+    fail closed.
+    """
+    spec = models.get(model_name)
+    if not spec:
+        return False
+    return _is_local_only_provider(spec.get("provider", ""), providers)
+
+
 def is_local_only_chain(chain, models: dict, providers: dict) -> bool:
     """True when every model in `chain` runs on a local-only provider.
 
@@ -193,16 +212,13 @@ def is_local_only_chain(chain, models: dict, providers: dict) -> bool:
     proposal and RFI functions declare `chain: [qwen3-local, llama-local]` under a
     "LOCAL ONLY — never send raw proposal content to cloud LLMs" comment, because
     the content is CUI.
+
+    An EMPTY chain is not local — `all([])` is True, and answering "yes, local" for
+    a chain with nothing in it would skip redaction on a vacuous guarantee.
     """
     if not chain:
         return False
-    for model_name in chain:
-        spec = models.get(model_name)
-        if not spec:
-            return False
-        if not _is_local_only_provider(spec.get("provider", ""), providers):
-            return False
-    return True
+    return all(is_local_only_model(m, models, providers) for m in chain)
 
 
 def prepend_cli_to_chains(config: dict, model_name: str = CLI_MODEL_NAME) -> dict:

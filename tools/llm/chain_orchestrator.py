@@ -239,7 +239,7 @@ class ChainOrchestrator:
                 ) from exc
         else:
             # Legacy: direct model name — single attempt, no fallback chain
-            response = self.router._invoke_model_direct(model_name, request)
+            response = self.router._invoke_model_direct(model_name, request, function=function)
             if response is None:
                 raise RuntimeError(
                     f"Model '{model_name}' returned None for '{function}'. "
