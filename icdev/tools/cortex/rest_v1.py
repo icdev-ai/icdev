@@ -634,6 +634,41 @@ def api_v1_cost_volume(data):
     if not opportunity_id:
         raise validators.CortexValidationError("opportunity_id is required")
 
+    # prem-bid-04 — WHO OWNS THE PRICE.
+    #
+    # ICDEV can compute a volume, but it prices from pg_lcat_allocations, whose
+    # hourly_rate is frequently NULL: ICDEV does not hold the supplier rate cards.
+    # compass does — it merges ~80 supplier files and knows what an LCAT actually costs
+    # from a given vendor on a given date. So compass is the PRICING AUTHORITY, and
+    # ICDEV computing its own number would give us two prices for one bid. That is worse
+    # than having none: somebody then has to decide which is real, and they will decide
+    # it late.
+    #
+    # A `priced` body means "here is the price, recorded by the party that owns it".
+    # Accepting is not believing — the volume is reconciled against its own line items
+    # and refused if it declares itself partial. See cost_volume_intake.
+    priced = data.get("priced")
+    if priced is not None:
+        from tools.govcon.cost_volume_intake import PRICING_SOURCES, accept_cost_volume
+
+        source = str(data.get("priced_by") or "compass")
+        if source not in PRICING_SOURCES:
+            raise validators.CortexValidationError(
+                f"priced_by must be one of {list(PRICING_SOURCES)}")
+
+        binding = getattr(g, "cortex_binding", None) or {}
+        result = accept_cost_volume(
+            opportunity_id=opportunity_id,
+            priced=priced,
+            source=source,
+            # From the KEY, never the body.
+            tenant_id=str(binding.get("tenant_id") or "default"),
+            classification=str(binding.get("classification_ceiling") or "CUI"),
+        )
+        logger.info("cost-volume INTAKE: opportunity=%s status=%s source=%s",
+                    opportunity_id, result.get("status"), source)
+        return result
+
     contract_type = str(data.get("contract_type") or "ffp").strip().lower()
     allow_unrated = bool(data.get("allow_unrated"))
 
@@ -718,6 +753,47 @@ def api_v1_dashboard(data):
     return result
 
 
+@_cortex_api
+def api_v1_award(data):
+    """A won bid becomes a PROPOSED delivery baseline in /cpmp (prem-bid-04).
+
+    This is the crossing where a bid stops being a bid. It creates a cpmp_contracts row
+    carrying the price we actually bid, with CLINs generated from the priced allocations —
+    the thing that used to come out worth $0.00 while reporting "status: ok" (prem-bid-03).
+
+    The baseline lands as a PROPOSAL: the contract row is 'draft' and the response names
+    what contracts staff still have to supply (period of performance, chiefly, because
+    proposal_opportunities carries none and inventing dates would be the same failure as
+    the $85 default rate). A won bid does not get to self-approve itself into an active
+    contract.
+
+    Scope: ``cortex:award`` — NOT in the default grant, and deliberately separate from
+    ``cortex:cost_volume``. A key that can PRICE a bid must not silently also be able to
+    declare it WON and open a contract against it.
+    """
+    from tools.govcon.portfolio_manager import transition_from_opportunity
+
+    if not isinstance(data, dict):
+        raise validators.CortexValidationError("body must be a JSON object")
+
+    opportunity_id = str(data.get("opportunity_id") or "").strip()
+    if not opportunity_id:
+        raise validators.CortexValidationError("opportunity_id is required")
+
+    result = transition_from_opportunity(
+        opportunity_id, created_by=str(data.get("created_by") or "compass")
+    )
+
+    if result.get("status") == "error":
+        # Not a 500. "The opportunity is not marked won" is a legitimate answer to a
+        # legitimate question, and the caller needs the reason, not a stack trace.
+        raise validators.CortexValidationError(result.get("message") or "cannot transition")
+
+    logger.info("award: opportunity=%s contract=%s value=%s",
+                opportunity_id, result.get("contract_id"), result.get("total_value"))
+    return result
+
+
 def api_v1_health():
     """Liveness probe — config + air-gap posture, no LLM call, no auth.
 
@@ -736,7 +812,7 @@ def api_v1_health():
             "operations": [
                 "search", "ask", "complete", "classify", "extract", "govern",
                 "intake", "slides", "win_themes", "staffing_matrix", "cost_volume",
-                "dashboard",
+                "dashboard", "award",
             ],
         })
     except Exception as exc:  # noqa: BLE001
@@ -763,6 +839,7 @@ def register_rest_v1(cortex_bp) -> None:
         ("staffing_matrix", api_v1_staffing_matrix),
         ("cost_volume", api_v1_cost_volume),
         ("dashboard", api_v1_dashboard),
+        ("award", api_v1_award),
     ):
         cortex_bp.add_url_rule(
             f"{_API_V1}/{name}", f"api_v1_{name}", view, methods=["POST"]

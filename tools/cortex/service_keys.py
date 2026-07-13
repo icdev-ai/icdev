@@ -78,11 +78,16 @@ PRICING_SCOPES = ("cortex:cost_volume",)
 # can search must not silently also be able to render our data into a document and walk
 # out with it.
 DASHBOARD_SCOPES = ("cortex:dashboard",)
+# prem-bid-04: award TRANSITIONS A WON BID INTO A DELIVERY CONTRACT — it creates a
+# cpmp_contracts row with real money and CLINs against it. A key that can price a bid
+# must not silently also be able to declare it won and open a contract.
+AWARD_SCOPES = ("cortex:award",)
 DATABRIDGE_SCOPES = ("databridge:iris:read", "databridge:iris:write",
                      "databridge:icdev_demand:read",
                      "databridge:icdev_cpmp:read", "databridge:icdev_cpmp:write")
 ALL_SCOPES = (CORTEX_SCOPES + INTAKE_SCOPES + WIN_THEME_SCOPES + STAFFING_SCOPES
-              + PRICING_SCOPES + DASHBOARD_SCOPES + DATABRIDGE_SCOPES)
+              + PRICING_SCOPES + DASHBOARD_SCOPES + AWARD_SCOPES
+              + DATABRIDGE_SCOPES)
 
 # Default scopes for a newly created key: the six REST operations (the
 # spend-heavier feeds/write scopes are granted explicitly).

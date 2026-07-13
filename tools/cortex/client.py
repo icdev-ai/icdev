@@ -274,6 +274,43 @@ class CortexClient:
             payload["allow_unrated"] = True
         return self._post("cost_volume", payload, timeout)
 
+    def push_priced_cost_volume(self, opportunity_id: str, priced: dict, *,
+                                priced_by: str = "compass",
+                                timeout: Optional[int] = None) -> Optional[dict]:
+        """Record a cost volume priced ELSEWHERE (prem-bid-04).
+
+        compass is the pricing authority: it merges the supplier rate cards and knows
+        what an LCAT actually costs. ICDEV computing its own number would give two prices
+        for one bid — worse than none, because somebody then has to decide which is real
+        and they will decide it late.
+
+        Accepting is not believing. The server reconciles the volume against its own line
+        items and REFUSES one that declares itself partial or unpriced — a price with a
+        hole in it must never reach the customer wearing the shape of a total.
+        """
+        payload: Dict[str, Any] = {
+            "opportunity_id": opportunity_id,
+            "priced": priced,
+            "priced_by": priced_by,
+        }
+        return self._post("cost_volume", payload, timeout)
+
+    def transition_won_opportunity(self, opportunity_id: str, *,
+                                   created_by: str = "compass",
+                                   timeout: Optional[int] = None) -> Optional[dict]:
+        """A won bid becomes a PROPOSED delivery baseline in /cpmp (prem-bid-04).
+
+        Returns the contract id, the total_value carried over from the priced volume, and
+        `needs_attention` — what contracts staff must still supply. The contract lands as
+        'draft': a won bid does not self-approve itself into an active contract.
+
+        Scope `cortex:award`, separate from `cortex:cost_volume` on purpose: pricing a bid
+        and declaring it won are different powers.
+        """
+        payload: Dict[str, Any] = {"opportunity_id": opportunity_id,
+                                   "created_by": created_by}
+        return self._post("award", payload, timeout)
+
     # -- Dashboard export (prem-rpt-02; scope cortex:dashboard) ------------------
 
     def export_dashboard(self, title: str, tiles: List[dict], *,
