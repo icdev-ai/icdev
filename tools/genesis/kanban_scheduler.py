@@ -50,6 +50,16 @@ logging.basicConfig(
 logger = get_logger(__name__)
 
 
+
+def _is_manual_gate(task_id: str, title: str | None) -> bool:
+    """Manual-mode gate (e.g. prem-gate-00) — held in_progress by design.
+
+    Mirrors tools/genesis/reflexes/kanban.py::_is_manual_gate. A gate must never be
+    dispatched, reaped, promoted, or startup-recovered: it is not stuck work, it is
+    the brake.
+    """
+    return str(task_id or "").endswith("-gate-00") or "MANUAL-MODE GATE" in (title or "")
+
 def main():
     parser = argparse.ArgumentParser(description="Kanban Scheduler")
     parser.add_argument(
@@ -150,7 +160,17 @@ def main():
             ).fetchall()
             if stuck:
                 now_iso = datetime.now(timezone.utc).isoformat()
-                stuck_ids = [(dict(r)["id"], dict(r).get("title")) for r in stuck]
+                # A MANUAL-MODE GATE (prem-gate-00 et al.) is held in_progress
+                # FOREVER by design — it is not an "interrupted task", it is the
+                # thing stopping its dependents from auto-dispatching. Resetting it
+                # to backlog on every scheduler restart released the work it was
+                # holding. The reflex's own startup recovery already exempts gates
+                # (PR #241); this SECOND, independent recovery in the scheduler
+                # entrypoint did not, so the gate died on every restart anyway.
+                stuck_ids = [
+                    (dict(r)["id"], dict(r).get("title")) for r in stuck
+                    if not _is_manual_gate(dict(r)["id"], dict(r).get("title"))
+                ]
                 # Individual UPDATE per interrupted task -- no failure penalty.
                 # One query per ID avoids dynamic IN-clause string construction.
                 for tid, _ in stuck_ids:

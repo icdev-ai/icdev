@@ -126,3 +126,44 @@ class TestDecompositionInheritsTheGate:
         # The rest chain off their predecessor, so the whole chain stays gated.
         for previous, child in zip(children, children[1:]):
             assert child["depends_on_task_id"] == previous["id"]
+
+
+class TestSchedulerEntrypointStartupRecovery:
+    """The scheduler entrypoint has its OWN startup recovery, separate from the
+    reflex's. PR #241 exempted the reflex's; this one was missed, so the gate was
+    reset to backlog on EVERY scheduler restart regardless."""
+
+    def test_the_predicate_matches_the_reflex(self):
+        import importlib
+
+        sched = importlib.import_module("tools.genesis.kanban_scheduler")
+
+        assert sched._is_manual_gate("prem-gate-00", None) is True
+        assert sched._is_manual_gate("x", "MANUAL-MODE GATE - hold") is True
+        assert sched._is_manual_gate("prem-bid-01", "Ordinary task") is False
+
+    def test_startup_recovery_filters_gates_before_the_update(self):
+        import inspect
+        import importlib
+
+        sched = importlib.import_module("tools.genesis.kanban_scheduler")
+        src = inspect.getsource(sched.main)
+
+        # The gate must be filtered OUT of stuck_ids, before any UPDATE runs.
+        assert "if not _is_manual_gate(dict(r)[\"id\"], dict(r).get(\"title\"))" in src, (
+            "the scheduler's startup recovery resets every in_progress task to backlog "
+            "— including the manual gate, which is held in_progress BY DESIGN"
+        )
+
+    def test_startup_recovery_does_not_return_early(self):
+        """This block lives inside main(). An early `return` would exit the scheduler
+        process immediately after startup recovery."""
+        import inspect
+        import importlib
+
+        sched = importlib.import_module("tools.genesis.kanban_scheduler")
+        src = inspect.getsource(sched.main)
+        recovery = src.split("Startup recovery", 1)[1].split("logger.info", 1)[0]
+        assert "return" not in recovery, (
+            "an early return inside main()'s startup recovery would kill the scheduler"
+        )
