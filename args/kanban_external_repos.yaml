@@ -43,3 +43,9 @@ prefixes:
   # is already merged; the stream is registered to idea_lab because that is where
   # any remaining work in it lands.
   prem-p0: idea_lab
+  # ked-vfy-01: dispatch-proof stream. Carries the deliberately trivial compass
+  # task defined in args/kanban_seed_compass_dispatch.yaml, used to exercise
+  # dispatch end to end against a real external repo. Registered separately from
+  # the product prefixes so a probe run can never be mistaken for cpmp/msr/ricoas
+  # product work — and so the seed task cannot fall through to the ICDev default.
+  prem-vfy: compass
