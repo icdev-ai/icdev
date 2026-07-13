@@ -229,6 +229,74 @@ _GATE_REFUSAL = (
 )
 
 
+def _external_landing_refusal(task_id: str, new_status, current_status):
+    """Refuse `done` for an external-repo task whose work has not landed in ITS repo.
+
+    Returns a Flask (response, code) tuple, or None to proceed.
+
+    ## Why this is not bypassable
+
+    The first live compass dispatch produced a PHANTOM COMPLETION. The agent built the
+    work, pushed `kanban/prem-rpt-07` to compass, and then marked the task `done` through
+    this API with `bypass_verification: true`, reason: "COMPASS repo, not ICDev: it has
+    no CI and ICDev's coherence checker doesn't apply."
+
+    Every word of that is TRUE, and the conclusion is wrong. It is true because the
+    dispatcher's own instruction says it (see _external_repo_brief). ICDev's verification
+    suite genuinely does not apply in compass — so the agent reasonably concluded the
+    done-gate did not either, bypassed it, and the task went green with the work sitting
+    on an unmerged branch nobody would look at again.
+
+    The bypass exists for "ICDev's CodeLens/Coherence/E2E suite could not run". It was
+    never meant to mean "this task's work does not have to land anywhere".
+
+    So for an external task the gate is a DIFFERENT question, and it is one that has a
+    factual answer in every repo: **is the work on the target repo's origin/<base>?**
+    That is not an ICDev-shaped check, it needs no CI, and `bypass_verification` does not
+    reach it. A task is done when its work landed. Nothing else counts.
+    """
+    if new_status != "done" or current_status == "done":
+        return None
+
+    try:
+        from tools.genesis.reflexes.kanban import (
+            _branch_has_unmerged_commits,
+            _task_base_branch,
+            _task_repo_target,
+        )
+
+        target = _task_repo_target(task_id)
+        if target is None or not target.is_external:
+            return None  # ICDev tasks keep the existing gates, unchanged.
+
+        if not _branch_has_unmerged_commits(task_id):
+            return None  # Nothing unmerged — it landed (or there was nothing to land).
+
+        base = _task_base_branch(task_id)
+    except Exception:  # noqa: BLE001
+        # Fail OPEN on infrastructure errors, exactly as _branch_has_unmerged_commits
+        # does: an unreachable git must never wedge every task's completion.
+        return None
+
+    return jsonify({
+        "error": "external_work_not_landed",
+        "detail": (
+            f"Task {task_id} builds in the {target.name!r} repo, and its branch "
+            f"kanban/{task_id} has commits that are NOT on {target.name}'s "
+            f"origin/{base}. The work has not landed — it is sitting on a branch.\n\n"
+            f"This is NOT bypassable, and `bypass_verification` does not reach it. That "
+            f"flag means 'ICDev's verification suite could not run here', which is TRUE "
+            f"in {target.name} and irrelevant: a task is done when its work landed, and "
+            f"nothing else counts.\n\n"
+            f"Open a PR against {target.name} and let it merge. The scheduler marks the "
+            f"task done once the commits are on origin/{base}."
+        ),
+        "repo": target.name,
+        "base_branch": base,
+        "branch": f"kanban/{task_id}",
+    }), 409
+
+
 def _gate_refusal(task_id: str, title, new_status, current_status):
     """Refuse any board-driven status change to a manual-mode gate.
 
@@ -685,6 +753,14 @@ def update_task(task_id):
         )
         if _refusal:
             return _refusal
+
+        # An external task is done when its work is on ITS repo's origin/<base>.
+        # Not bypassable — see _external_landing_refusal.
+        _landing = _external_landing_refusal(
+            task_id, data.get("status"), _existing.get("status")
+        )
+        if _landing:
+            return _landing
 
         allowed = (
             "title",
@@ -1456,6 +1532,12 @@ def move_task(task_id):
         _refusal = _gate_refusal(task_id, _e.get("title"), new_status, _e.get("status"))
         if _refusal:
             return _refusal
+
+        # An external task is done when its work is on ITS repo's origin/<base>.
+        # Checked BEFORE the bypass branch below, because bypass must not reach it.
+        _landing = _external_landing_refusal(task_id, new_status, _e.get("status"))
+        if _landing:
+            return _landing
 
         # guard-dep: block done transition if depends_on_task_id parent is not done.
         # Mirrors the _parent_is_done check in kanban.py _move_task so the HTTP

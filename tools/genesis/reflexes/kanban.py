@@ -3670,6 +3670,15 @@ def _external_repo_brief(task_id: str) -> str:
         f"nothing about this repo.\n\n"
         f"If the full suite has pre-existing failures, say so explicitly and compare "
         f"against `origin/{target.base_branch}` rather than assuming they are yours.\n\n"
+        f"### Do NOT mark this task done, and do NOT bypass the verification gate\n\n"
+        f"Open a PR against {target.name} and stop there. The scheduler marks the task "
+        f"done once the commits are actually on {target.name}'s `origin/"
+        f"{target.base_branch}` — that is the only thing that counts as done.\n\n"
+        f"`bypass_verification` means 'ICDev's CodeLens/Coherence/E2E suite could not "
+        f"run here'. That is TRUE in {target.name} and it is IRRELEVANT: it has never "
+        f"meant 'this work does not have to land anywhere'. Marking the task done with "
+        f"your work sitting on an unmerged branch is a phantom completion — the board "
+        f"goes green and nobody ever looks at the branch again. The API will refuse it.\n\n"
     )
 
 

@@ -39,6 +39,65 @@ PROMPT_DIR = BASE_DIR / ".tmp" / "kanban"
 WORKTREE_BASE = BASE_DIR / ".tmp" / "worktrees"
 
 
+# ---------------------------------------------------------------------------
+# Repo-aware dispatch (ked-core-01)
+#
+# Every git/gh call below used to run with cwd=BASE_DIR. For an ICDev task that
+# is right. For an EXTERNAL-repo task (compass / idea_lab, per
+# args/kanban_external_repos.yaml) it is wrong in the most expensive way: the
+# done-gate asks ICDEV whether COMPASS's work landed, the answer is always no,
+# and the task churns forever. That is why _dispatch_task simply PARKED every
+# external task — and why the entire Premium Suite had to be driven by hand.
+#
+# These three helpers resolve, per task, WHICH repo it builds in. A task that
+# matches no prefix — or any failure to resolve at all — returns the ICDev
+# default, so an absent/empty registry is a complete no-op and every existing
+# task behaves byte-identically.
+# ---------------------------------------------------------------------------
+def _task_repo_target(task_id: str):
+    """The RepoTarget for a task, or None if resolution failed (-> ICDev)."""
+    try:
+        from tools.kanban.repo_registry import resolve_task_repo
+
+        return resolve_task_repo(task_id)
+    except Exception as exc:  # noqa: BLE001 — resolution must never break dispatch
+        logger.debug("repo resolve failed for %s (defaulting to ICDev): %s", task_id, exc)
+        return None
+
+
+def _task_repo_root(task_id: str) -> Path:
+    """The on-disk repo root a task builds in. BASE_DIR (ICDev) unless external."""
+    target = _task_repo_target(task_id)
+    if target is not None and target.is_external and target.root is not None:
+        return Path(target.root)
+    return BASE_DIR
+
+
+def _task_base_branch(task_id: str) -> str:
+    """The branch a task builds off, in ITS repo. compass's main is not ICDev's."""
+    target = _task_repo_target(task_id)
+    if target is not None and target.is_external and target.root is not None:
+        return target.base_branch or "main"
+    return _default_branch()
+
+
+def _task_worktree_path(task_id: str) -> Path:
+    """Where the task's worktree lives.
+
+    ICDev tasks keep the historical location (.tmp/worktrees/<id>). An EXTERNAL
+    task's worktree goes in the system temp dir — never inside either repo. A
+    compass worktree nested under ICDev's tree would show up in ICDev's git
+    status and in every tree-scoped gate that walks the checkout, which is the
+    same confusion of repos this whole change exists to remove.
+    """
+    target = _task_repo_target(task_id)
+    if target is not None and target.is_external and target.root is not None:
+        import tempfile
+
+        return Path(tempfile.gettempdir()) / "icdev-kanban" / target.name / task_id
+    return WORKTREE_BASE / task_id
+
+
 def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -812,11 +871,20 @@ def _create_worktree(task_id: str) -> Optional[str]:
     Returns the worktree path on success, None on failure.
     Falls back to BASE_DIR if git worktree is unavailable.
     """
+    # Repo-aware (ked-core-01/03): an EXTERNAL task's git/gh state lives in ITS repo,
+    # not ICDev's. Asking ICDev whether compass's work landed always answers 'no'.
+    _repo_root = _task_repo_root(task_id)
+    _base_branch = _task_base_branch(task_id)
     import subprocess as _sp
 
-    WORKTREE_BASE.mkdir(parents=True, exist_ok=True)
     branch_name = f"kanban/{task_id}"
-    worktree_path = WORKTREE_BASE / task_id
+    worktree_path = _task_worktree_path(task_id)
+    # Make the PARENT of the resolved path, not WORKTREE_BASE. An external task's
+    # worktree lives under the system temp dir, and mkdir'ing ICDev's .tmp/worktrees
+    # left that parent missing — so `git worktree add` created the BRANCH and then
+    # failed on the directory, and the task was parked as "worktree creation failed".
+    # Caught by the first real compass dispatch; the unit tests never made a worktree.
+    worktree_path.parent.mkdir(parents=True, exist_ok=True)
 
     if worktree_path.exists():
         # Validate it's a real git worktree, not an orphan empty dir left over
@@ -824,16 +892,16 @@ def _create_worktree(task_id: str) -> Optional[str]:
         # an empty cwd and coherence checks to fail (no tools/manifest.md).
         listed = _sp.run(
             ["git", "worktree", "list", "--porcelain"],
-            cwd=str(BASE_DIR), capture_output=True, text=True, timeout=10,
+            cwd=str(_repo_root), capture_output=True, text=True, timeout=10,
         )
         if str(worktree_path).replace("\\", "/") in listed.stdout.replace("\\", "/"):
             return str(worktree_path)
         logger.warning("Orphan worktree dir at %s — removing and recreating", worktree_path)
         import shutil
         shutil.rmtree(worktree_path, ignore_errors=True)
-        _sp.run(["git", "worktree", "prune"], cwd=str(BASE_DIR),
+        _sp.run(["git", "worktree", "prune"], cwd=str(_repo_root),
                 capture_output=True, text=True, timeout=10)
-        _sp.run(["git", "branch", "-D", branch_name], cwd=str(BASE_DIR),
+        _sp.run(["git", "branch", "-D", branch_name], cwd=str(_repo_root),
                 capture_output=True, text=True, timeout=10)
     else:
         # worktree_path doesn't exist but branch may still exist from a prior
@@ -844,23 +912,23 @@ def _create_worktree(task_id: str) -> Optional[str]:
         # subsequent dispatch into BASE_DIR — causing the coherence loop.
         _stale = _sp.run(
             ["git", "rev-parse", "--verify", branch_name],
-            cwd=str(BASE_DIR), capture_output=True, text=True, timeout=10,
+            cwd=str(_repo_root), capture_output=True, text=True, timeout=10,
         )
         if _stale.returncode == 0:
             logger.warning(
                 "Stale branch %s found without worktree dir — pruning before recreate",
                 branch_name,
             )
-            _sp.run(["git", "worktree", "prune"], cwd=str(BASE_DIR),
+            _sp.run(["git", "worktree", "prune"], cwd=str(_repo_root),
                     capture_output=True, text=True, timeout=10)
-            _del = _sp.run(["git", "branch", "-D", branch_name], cwd=str(BASE_DIR),
+            _del = _sp.run(["git", "branch", "-D", branch_name], cwd=str(_repo_root),
                     capture_output=True, text=True, timeout=10)
             if _del.returncode != 0:
                 # On Windows a branch checked out in a (now-pruned) worktree may
                 # resist `git branch -D`. Force-delete via the low-level ref path.
                 _sp.run(
                     ["git", "update-ref", "-d", f"refs/heads/{branch_name}"],
-                    cwd=str(BASE_DIR), capture_output=True, text=True, timeout=10,
+                    cwd=str(_repo_root), capture_output=True, text=True, timeout=10,
                 )
                 logger.info("Stale branch %s deleted via update-ref fallback", branch_name)
 
@@ -873,19 +941,19 @@ def _create_worktree(task_id: str) -> Optional[str]:
     # of dependency order. Dependency ordering itself is enforced by the
     # parent-done guard in _move_task, so no extra gate is needed here.
     base_check = _sp.run(
-        ["git", "rev-parse", "--verify", f"origin/{_default_branch()}"],
-        cwd=str(BASE_DIR), capture_output=True, text=True, timeout=5,
+        ["git", "rev-parse", "--verify", f"origin/{_base_branch}"],
+        cwd=str(_repo_root), capture_output=True, text=True, timeout=5,
     )
     if base_check.returncode == 0:
-        base = f"origin/{_default_branch()}"
+        base = f"origin/{_base_branch}"
     else:
-        base = _default_branch()
+        base = _base_branch
 
     try:
         # Create a new branch from the chosen base for this task
         result = _sp.run(
             ["git", "worktree", "add", "-b", branch_name, str(worktree_path), base],
-            cwd=str(BASE_DIR),
+            cwd=str(_repo_root),
             capture_output=True,
             text=True,
             timeout=30,
@@ -899,7 +967,7 @@ def _create_worktree(task_id: str) -> Optional[str]:
             # the next dispatch starts clean rather than hitting the orphan path.
             import shutil as _shutil
             _shutil.rmtree(worktree_path, ignore_errors=True)
-            _sp.run(["git", "worktree", "prune"], cwd=str(BASE_DIR),
+            _sp.run(["git", "worktree", "prune"], cwd=str(_repo_root),
                     capture_output=True, text=True, timeout=10)
             return None
         # Verify the worktree was actually registered: git populates a .git
@@ -912,14 +980,26 @@ def _create_worktree(task_id: str) -> Optional[str]:
             )
             import shutil as _shutil
             _shutil.rmtree(worktree_path, ignore_errors=True)
-            _sp.run(["git", "worktree", "prune"], cwd=str(BASE_DIR),
+            _sp.run(["git", "worktree", "prune"], cwd=str(_repo_root),
                     capture_output=True, text=True, timeout=10)
             return None
         # Verify structural completeness: tools/manifest.md must exist in the
         # worktree. A partial Windows checkout (rmtree file-lock failures) can
         # leave an empty dir with only .git; coherence then fails on every
         # dispatch with "no tools/manifest.md", looping until self_debug fires.
-        if not (worktree_path / "tools" / "manifest.md").exists():
+        #
+        # ICDEV-ONLY. tools/manifest.md is an ICDev artefact — compass and idea_lab do
+        # not have one and never will. Applying it to them tore down a perfectly good
+        # worktree and returned None, which the caller reported as "worktree creation
+        # failed" and parked the task. That is exactly how the first live compass
+        # dispatch failed, and it is the same mistake in miniature as the whole bug this
+        # change fixes: judging another repo against ICDev's shape.
+        #
+        # For an external repo the honest structural check is the one above — git wrote a
+        # .git file, so the worktree is registered. We do not know what that repo's tree
+        # is supposed to look like, and we must not pretend to.
+        _icdev_worktree = _repo_root == BASE_DIR
+        if _icdev_worktree and not (worktree_path / "tools" / "manifest.md").exists():
             logger.warning(
                 "Worktree dir created for %s but tools/manifest.md is missing "
                 "(partial checkout) — cleaning up so next dispatch rebuilds clean",
@@ -927,7 +1007,7 @@ def _create_worktree(task_id: str) -> Optional[str]:
             )
             import shutil as _shutil
             _shutil.rmtree(worktree_path, ignore_errors=True)
-            _sp.run(["git", "worktree", "prune"], cwd=str(BASE_DIR),
+            _sp.run(["git", "worktree", "prune"], cwd=str(_repo_root),
                     capture_output=True, text=True, timeout=10)
             return None
         logger.info("Created worktree for %s at %s", task_id, worktree_path)
@@ -987,16 +1067,20 @@ def _merge_worktree_to_main(task_id: str) -> bool:
     False on unrecoverable conflict.  On failure the branch is PRESERVED
     (not deleted) so the user can merge manually.
     """
+    # Repo-aware (ked-core-01/03): an EXTERNAL task's git/gh state lives in ITS repo,
+    # not ICDev's. Asking ICDev whether compass's work landed always answers 'no'.
+    _repo_root = _task_repo_root(task_id)
+    _base_branch = _task_base_branch(task_id)
     import subprocess as _sp
 
     branch_name = f"kanban/{task_id}"
-    default_branch = _default_branch()
+    default_branch = _base_branch
 
     # 1) Is there anything to merge?
     try:
         result = _sp.run(
             ["git", "log", f"{default_branch}..{branch_name}", "--oneline"],
-            cwd=str(BASE_DIR),
+            cwd=str(_repo_root),
             capture_output=True,
             text=True,
             timeout=10,
@@ -1011,7 +1095,7 @@ def _merge_worktree_to_main(task_id: str) -> bool:
     #    Using a commit hash avoids the "branch already used by worktree" error.
     main_commit_proc = _sp.run(
         ["git", "rev-parse", default_branch],
-        cwd=str(BASE_DIR), capture_output=True, text=True, timeout=5,
+        cwd=str(_repo_root), capture_output=True, text=True, timeout=5,
     )
     if main_commit_proc.returncode != 0:
         logger.warning("Could not resolve %s for merge of %s", default_branch, task_id)
@@ -1019,21 +1103,21 @@ def _merge_worktree_to_main(task_id: str) -> bool:
     main_commit = main_commit_proc.stdout.strip()
 
     # 3) Create a detached worktree for the merge
-    merge_wt = WORKTREE_BASE / f".merge-{task_id}"
+    merge_wt = _task_worktree_path(task_id).parent / f".merge-{task_id}"
     try:
         if merge_wt.exists():
             _sp.run(
                 ["git", "worktree", "remove", str(merge_wt), "--force"],
-                cwd=str(BASE_DIR), capture_output=True, text=True, timeout=30,
+                cwd=str(_repo_root), capture_output=True, text=True, timeout=30,
             )
             _sp.run(
                 ["git", "worktree", "prune"],
-                cwd=str(BASE_DIR), capture_output=True, text=True, timeout=10,
+                cwd=str(_repo_root), capture_output=True, text=True, timeout=10,
             )
 
         add = _sp.run(
             ["git", "worktree", "add", str(merge_wt), main_commit],
-            cwd=str(BASE_DIR), capture_output=True, text=True, timeout=30,
+            cwd=str(_repo_root), capture_output=True, text=True, timeout=30,
         )
         if add.returncode != 0:
             logger.warning(
@@ -1123,14 +1207,14 @@ def _merge_worktree_to_main(task_id: str) -> bool:
             if merge_wt.exists():
                 _sp.run(
                     ["git", "worktree", "remove", str(merge_wt), "--force"],
-                    cwd=str(BASE_DIR), capture_output=True, text=True, timeout=30,
+                    cwd=str(_repo_root), capture_output=True, text=True, timeout=30,
                 )
         except Exception as exc:
             logger.debug("Temp merge worktree cleanup failed for %s: %s", task_id, exc)
         try:
             _sp.run(
                 ["git", "branch", "-D", f"temp-merge-{task_id}"],
-                cwd=str(BASE_DIR), capture_output=True, text=True, timeout=10,
+                cwd=str(_repo_root), capture_output=True, text=True, timeout=10,
             )
         except Exception:
             pass
@@ -1153,14 +1237,18 @@ def _branch_has_unmerged_commits(task_id: str) -> bool:
     an unreachable git must never wedge every task's completion. Only a positive
     "branch exists AND has commits not on origin" signal blocks the transition.
     """
+    # Repo-aware (ked-core-01/03): an EXTERNAL task's git/gh state lives in ITS repo,
+    # not ICDev's. Asking ICDev whether compass's work landed always answers 'no'.
+    _repo_root = _task_repo_root(task_id)
+    _base_branch = _task_base_branch(task_id)
     import subprocess as _sp
     branch_name = f"kanban/{task_id}"
-    default_branch = _default_branch()
+    default_branch = _base_branch
     try:
         # Does the branch exist locally? If not, nothing to verify (fail-open).
         exists = _sp.run(
             ["git", "rev-parse", "--verify", "--quiet", branch_name],
-            cwd=str(BASE_DIR), capture_output=True, text=True, timeout=10,
+            cwd=str(_repo_root), capture_output=True, text=True, timeout=10,
         )
         if exists.returncode != 0:
             return False
@@ -1169,13 +1257,13 @@ def _branch_has_unmerged_commits(task_id: str) -> bool:
         try:
             _sp.run(
                 ["git", "fetch", "origin", default_branch, "--quiet"],
-                cwd=str(BASE_DIR), capture_output=True, text=True, timeout=15,
+                cwd=str(_repo_root), capture_output=True, text=True, timeout=15,
             )
         except Exception:
             pass
         log = _sp.run(
             ["git", "log", f"origin/{default_branch}..{branch_name}", "--oneline"],
-            cwd=str(BASE_DIR), capture_output=True, text=True, timeout=10,
+            cwd=str(_repo_root), capture_output=True, text=True, timeout=10,
         )
         if log.returncode != 0:
             return False  # compare errored — fail-open
@@ -1497,15 +1585,19 @@ def _push_branch_and_open_pr(task_id: str, commit_summary: str) -> str | None:
     auto-merges when green, so the kanban board shows a real PR URL in
     executor_url just like Claude CLI does.
     """
+    # Repo-aware (ked-core-01/03): an EXTERNAL task's git/gh state lives in ITS repo,
+    # not ICDev's. Asking ICDev whether compass's work landed always answers 'no'.
+    _repo_root = _task_repo_root(task_id)
+    _base_branch = _task_base_branch(task_id)
     import subprocess as _sp
 
     branch_name = f"kanban/{task_id}"
-    default_branch = _default_branch()
+    default_branch = _base_branch
 
     # Nothing to push?
     check = _sp.run(
         ["git", "log", f"{default_branch}..{branch_name}", "--oneline"],
-        cwd=str(BASE_DIR), capture_output=True, text=True, timeout=10,
+        cwd=str(_repo_root), capture_output=True, text=True, timeout=10,
     )
     if check.returncode != 0 or not check.stdout.strip():
         logger.info("PR flow: no commits to push for %s — skipping PR", task_id)
@@ -1514,7 +1606,7 @@ def _push_branch_and_open_pr(task_id: str, commit_summary: str) -> str | None:
     # Push branch (--force-with-lease is safe: only overwrites if nobody else pushed)
     push = _sp.run(
         ["git", "push", "origin", branch_name, "--force-with-lease"],
-        cwd=str(BASE_DIR), capture_output=True, text=True, timeout=60,
+        cwd=str(_repo_root), capture_output=True, text=True, timeout=60,
     )
     if push.returncode != 0:
         logger.warning("PR flow: branch push failed for %s: %s", task_id, push.stderr.strip())
@@ -1544,7 +1636,7 @@ def _push_branch_and_open_pr(task_id: str, commit_summary: str) -> str | None:
          "--body", pr_body,
          "--head", branch_name,
          "--base", default_branch],
-        cwd=str(BASE_DIR), capture_output=True, text=True, timeout=60,
+        cwd=str(_repo_root), capture_output=True, text=True, timeout=60,
     )
     if create.returncode != 0:
         logger.warning("PR flow: gh pr create failed for %s: %s", task_id, create.stderr.strip())
@@ -1568,11 +1660,15 @@ def _cleanup_worktree(task_id: str):
     the worktree. If merge fails, the branch is preserved for manual
     review and the worktree is still cleaned up (disk hygiene).
     """
+    # Repo-aware (ked-core-01/03): an EXTERNAL task's git/gh state lives in ITS repo,
+    # not ICDev's. Asking ICDev whether compass's work landed always answers 'no'.
+    _repo_root = _task_repo_root(task_id)
+    _base_branch = _task_base_branch(task_id)
     import subprocess as _sp
     import os as _os
 
     branch_name = f"kanban/{task_id}"
-    worktree_path = WORKTREE_BASE / task_id
+    worktree_path = _task_worktree_path(task_id)
 
     # Detach the worktree FIRST so the branch ref isn't held while we
     # rebase. Commits remain safe on refs/heads/kanban/<task_id> after
@@ -1583,7 +1679,7 @@ def _cleanup_worktree(task_id: str):
         if worktree_path.exists():
             _sp.run(
                 ["git", "worktree", "remove", str(worktree_path), "--force"],
-                cwd=str(BASE_DIR),
+                cwd=str(_repo_root),
                 capture_output=True,
                 text=True,
                 timeout=30,
@@ -1599,8 +1695,8 @@ def _cleanup_worktree(task_id: str):
     try:
         import subprocess as _sp2
         _log = _sp2.run(
-            ["git", "log", "--oneline", f"{_default_branch()}..kanban/{task_id}"],
-            cwd=str(BASE_DIR), capture_output=True, text=True, timeout=10,
+            ["git", "log", "--oneline", f"{_base_branch}..kanban/{task_id}"],
+            cwd=str(_repo_root), capture_output=True, text=True, timeout=10,
         )
         _commit_summary = _log.stdout.strip()[:1000] if _log.returncode == 0 else ""
     except Exception:
@@ -1662,7 +1758,7 @@ def _cleanup_worktree(task_id: str):
             # Direct-merge: clean up local branch after successful push to main.
             _sp.run(
                 ["git", "branch", "-D", branch_name],
-                cwd=str(BASE_DIR),
+                cwd=str(_repo_root),
                 capture_output=True,
                 text=True,
                 timeout=10,
@@ -1686,13 +1782,17 @@ def _pr_flow_enabled() -> bool:
 
 def _check_worktree_commits(task_id: str) -> bool:
     """Check if the worktree branch has new commits vs the parent branch."""
+    # Repo-aware (ked-core-01/03): an EXTERNAL task's git/gh state lives in ITS repo,
+    # not ICDev's. Asking ICDev whether compass's work landed always answers 'no'.
+    _repo_root = _task_repo_root(task_id)
+    _base_branch = _task_base_branch(task_id)
     import subprocess as _sp
 
     branch_name = f"kanban/{task_id}"
     try:
         result = _sp.run(
             ["git", "log", "HEAD.." + branch_name, "--oneline"],
-            cwd=str(BASE_DIR),
+            cwd=str(_repo_root),
             capture_output=True,
             text=True,
             timeout=10,
@@ -3539,6 +3639,49 @@ def _get_parent_handoff(task_id: str) -> Optional[str]:
             conn.close()
 
 
+def _external_repo_brief(task_id: str) -> str:
+    """Tell an external-repo agent which repo it is in and which gates apply.
+
+    Returns "" for an ICDev task, so the ICDev instruction is byte-unchanged.
+
+    This matters because ICDev's gates are the WRONG gates in compass: compass and
+    idea_lab have no CI, so there is no green check to wait for, and ICDev's
+    coherence checker walks an ICDev-shaped tree that does not exist there. An agent
+    that ran them would fail on rules that do not apply to the repo it is standing in.
+    """
+    target = _task_repo_target(task_id)
+    if target is None or not target.is_external or target.root is None:
+        return ""
+
+    return (
+        f"## You are working in the {target.name.upper()} repository, not ICDev\n\n"
+        f"Repo root: `{target.root}`  ·  base branch: `{target.base_branch}`\n"
+        f"You are already in an isolated worktree of that repo. Everything you do — "
+        f"edits, commits, the branch, the PR — belongs to {target.name}. Do NOT edit, "
+        f"commit to, or reason about the ICDev checkout.\n\n"
+        f"### The gate here is NOT ICDev's\n\n"
+        f"{target.name} has **no CI**, so there is no green check to wait for. The "
+        f"accepted gate is a LOCAL full-suite run, compared against a clean baseline so "
+        f"you can tell your failures from pre-existing ones:\n\n"
+        f"    python -m pytest -q\n"
+        f"    python -m ruff check .\n\n"
+        f"Do NOT run ICDev's coherence checker, companion sync, or route verifier — they "
+        f"walk an ICDev-shaped tree that does not exist here, and failing them tells you "
+        f"nothing about this repo.\n\n"
+        f"If the full suite has pre-existing failures, say so explicitly and compare "
+        f"against `origin/{target.base_branch}` rather than assuming they are yours.\n\n"
+        f"### Do NOT mark this task done, and do NOT bypass the verification gate\n\n"
+        f"Open a PR against {target.name} and stop there. The scheduler marks the task "
+        f"done once the commits are actually on {target.name}'s `origin/"
+        f"{target.base_branch}` — that is the only thing that counts as done.\n\n"
+        f"`bypass_verification` means 'ICDev's CodeLens/Coherence/E2E suite could not "
+        f"run here'. That is TRUE in {target.name} and it is IRRELEVANT: it has never "
+        f"meant 'this work does not have to land anywhere'. Marking the task done with "
+        f"your work sitting on an unmerged branch is a phantom completion — the board "
+        f"goes green and nobody ever looks at the branch again. The API will refuse it.\n\n"
+    )
+
+
 def _build_instruction(task_id: str, title: str, prompt_text: str, prompt_path: str) -> str:
     """Compose the full instruction text used by both executors.
 
@@ -3548,8 +3691,9 @@ def _build_instruction(task_id: str, title: str, prompt_text: str, prompt_path: 
     """
     coaching = _get_retry_coaching(task_id)
     parent_context = _get_parent_handoff(task_id) or ""
+    external = _external_repo_brief(task_id)
     return (
-        f"{coaching}{parent_context}{prompt_text}\n\n"
+        f"{coaching}{parent_context}{external}{prompt_text}\n\n"
         f"When complete:\n"
         f"1. (Optional) Submit handoff: POST http://localhost:5050/api/kanban/"
         f'tasks/{task_id}/handoff with {{"summary": "...", "metadata": {{...}}}}\n'
@@ -4441,33 +4585,33 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
     task_id = task["id"]
     title = task.get("title", "Untitled")
 
-    # ── Repo-aware guard: external-repo tasks ─────────────────────────────────
-    # External-repo tasks (e.g. prem-* compass / idea_lab work, per
-    # args/kanban_external_repos.yaml) must NEVER be built inside ICDev — their
-    # deliverables land in ANOTHER repo, so ICDev's phantom-completion +
-    # merge-to-origin/main gates always fail them and they churn (burning tokens
-    # re-doing work their own repo session already ships). Park such tasks
-    # inertly (validating) so the ICDev scheduler stops re-dispatching them.
+    # ── Repo-aware dispatch: external-repo tasks ──────────────────────────────
+    # An external-repo task (prem-* compass / idea_lab work, per
+    # args/kanban_external_repos.yaml) must NEVER be built inside ICDev — its
+    # deliverables land in ANOTHER repo, so ICDev's phantom-completion and
+    # merge-to-origin/main gates always fail it and it churns.
+    #
+    # This USED TO park every external task unconditionally, which is why no
+    # prem-* task ever auto-dispatched and the whole Premium Suite was driven by
+    # hand. Now we park ONLY the ones we cannot build: an external task whose
+    # repo root is not configured (root_env unset). Everything else is built
+    # IN ITS OWN REPO — worktree, gates, PR and done-gate all pointed there by
+    # _task_repo_root / _task_base_branch.
+    #
     # ICDev tasks resolve to the default (is_external False) and are byte-
-    # unchanged. Full orchestration (ICDev building INTO the external repo) is a
-    # separate follow-on — see repo_registry docstring.
-    try:
-        from tools.kanban.repo_registry import resolve_task_repo
-        _repo_target = resolve_task_repo(task_id)
-    except Exception as _rt_exc:  # noqa: BLE001 — never let resolution break dispatch
-        logger.debug("repo resolve failed for %s (defaulting to ICDev): %s", task_id, _rt_exc)
-        _repo_target = None
-    if _repo_target is not None and _repo_target.is_external:
+    # unchanged; an absent registry is a total no-op.
+    _repo_target = _task_repo_target(task_id)
+    if _repo_target is not None and _repo_target.is_external and not _repo_target.dispatchable:
         logger.warning(
-            "kanban: %s is an external-repo task (%r) — not dispatchable via "
-            "ICDev; parking. It is built + validated in its own repo.",
-            task_id, _repo_target.name,
+            "kanban: %s is an external-repo task (%r) whose root is not configured "
+            "(%s unset) — parking. It is NEVER built inside ICDev.",
+            task_id, _repo_target.name, f"root_env for {_repo_target.name}",
         )
         try:
             _move_task(
                 task_id, "validating", actor="repo-aware-guard",
-                reason=(f"external repo {_repo_target.name!r}: not built via ICDev "
-                        "kanban (own-repo pipeline); parked to stop re-dispatch"),
+                reason=(f"external repo {_repo_target.name!r}: repo root not configured; "
+                        "parked rather than built inside ICDev"),
             )
         except Exception:  # noqa: BLE001
             pass
@@ -4529,8 +4673,28 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
 
     prompt_text = Path(prompt_path).read_text(encoding="utf-8")
 
-    # Create isolated worktree for this task
+    # Create isolated worktree for this task (in ITS repo — see _task_repo_root)
     worktree_path = _create_worktree(task_id)
+    _is_external = _repo_target is not None and _repo_target.is_external
+
+    if not worktree_path and _is_external:
+        # The BASE_DIR fallback below is the whole hazard this change exists to
+        # remove: it would build compass work inside the ICDev checkout. For an
+        # external task there is NO fallback — fail the dispatch instead.
+        logger.error(
+            "kanban: worktree creation failed for external task %s (%r) — NOT falling "
+            "back to the ICDev tree. Parking.", task_id, _repo_target.name,
+        )
+        try:
+            _move_task(
+                task_id, "validating", actor="repo-aware-guard",
+                reason=(f"external repo {_repo_target.name!r}: worktree creation failed; "
+                        "refusing to build it inside ICDev"),
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        return
+
     work_dir = worktree_path if worktree_path else str(BASE_DIR)
     if worktree_path:
         _worktrees[task_id] = worktree_path
@@ -4547,9 +4711,11 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
     try:
         import subprocess as _sp
         head_proc = _sp.run(
-            ["git", "rev-parse", _default_branch()],
+            # The baseline for verification must come from the task's OWN repo:
+            # ICDev's main head says nothing about whether compass advanced.
+            ["git", "rev-parse", _task_base_branch(task_id)],
             capture_output=True, text=True, encoding="utf-8", errors="replace",
-            cwd=str(BASE_DIR), timeout=10,
+            cwd=str(_task_repo_root(task_id)), timeout=10,
         )
         if head_proc.returncode == 0:
             _dispatch_main_heads[task_id] = head_proc.stdout.strip()
@@ -6655,13 +6821,17 @@ def _has_open_pr(task_id: str) -> bool:
     Uses the gh CLI; returns False on any error so dispatch proceeds normally
     when gh is unavailable (air-gap environments).
     """
+    # Repo-aware (ked-core-01/03): an EXTERNAL task's git/gh state lives in ITS repo,
+    # not ICDev's. Asking ICDev whether compass's work landed always answers 'no'.
+    _repo_root = _task_repo_root(task_id)
+    _base_branch = _task_base_branch(task_id)
     branch_name = f"kanban/{task_id}"
     try:
         import subprocess as _sp
         import json as _json
         result = _sp.run(
             ["gh", "pr", "list", "--head", branch_name, "--state", "open", "--json", "number"],
-            capture_output=True, text=True, timeout=10, cwd=str(BASE_DIR),
+            capture_output=True, text=True, timeout=10, cwd=str(_repo_root),
         )
         if result.returncode == 0 and result.stdout.strip():
             prs = _json.loads(result.stdout)
