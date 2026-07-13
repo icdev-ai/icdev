@@ -32,16 +32,7 @@ def _utcnow_iso() -> str:
 
 
 
-def _is_manual_gate(task_id: str, title: str | None) -> bool:
-    """A manual-mode gate (e.g. prem-gate-00) is held in_progress FOREVER by design:
-    it exists only to block its dependents from auto-dispatch while a human implements
-    them. It must never be promoted, dispatched, reaped or startup-recovered.
-
-    Mirrors tools/genesis/reflexes/kanban.py::_is_manual_gate. Duplicated rather than
-    imported because this module is a standalone CLI that must not drag in the whole
-    reflex (and its LLM/router imports) just to read one predicate.
-    """
-    return str(task_id or "").endswith("-gate-00") or "MANUAL-MODE GATE" in (title or "")
+from tools.kanban.gates import is_manual_gate as _is_manual_gate  # noqa: F401
 
 def _deps_satisfied(task_id: str, conn) -> bool:
     """Check if ALL dependencies (scalar + junction) are done/decomposed."""

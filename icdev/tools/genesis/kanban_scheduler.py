@@ -50,6 +50,9 @@ logging.basicConfig(
 logger = get_logger(__name__)
 
 
+
+from tools.kanban.gates import is_manual_gate as _is_manual_gate  # noqa: F401
+
 def main():
     parser = argparse.ArgumentParser(description="Kanban Scheduler")
     parser.add_argument(
@@ -150,7 +153,17 @@ def main():
             ).fetchall()
             if stuck:
                 now_iso = datetime.now(timezone.utc).isoformat()
-                stuck_ids = [(dict(r)["id"], dict(r).get("title")) for r in stuck]
+                # A MANUAL-MODE GATE (prem-gate-00 et al.) is held in_progress
+                # FOREVER by design — it is not an "interrupted task", it is the
+                # thing stopping its dependents from auto-dispatching. Resetting it
+                # to backlog on every scheduler restart released the work it was
+                # holding. The reflex's own startup recovery already exempts gates
+                # (PR #241); this SECOND, independent recovery in the scheduler
+                # entrypoint did not, so the gate died on every restart anyway.
+                stuck_ids = [
+                    (dict(r)["id"], dict(r).get("title")) for r in stuck
+                    if not _is_manual_gate(dict(r)["id"], dict(r).get("title"))
+                ]
                 # Individual UPDATE per interrupted task -- no failure penalty.
                 # One query per ID avoids dynamic IN-clause string construction.
                 for tid, _ in stuck_ids:

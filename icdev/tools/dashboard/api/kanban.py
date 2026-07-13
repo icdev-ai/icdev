@@ -14,6 +14,7 @@ from flask import Blueprint, jsonify, request
 from tools.awareness.value_scorer import annotate_tasks_with_value
 from tools.db.storage import get_connection, sql_placeholder
 from tools.dashboard.sse_manager import sse_manager
+from tools.kanban.gates import is_manual_gate
 
 try:
     from tools.kanban.des_audit_logger import DESAuditLogger as _DESAuditLogger
@@ -221,6 +222,33 @@ def _annotate_task_tags(conn, tasks: list) -> None:
         pass  # table may not exist on older DBs — degrade gracefully
 
 
+_GATE_REFUSAL = (
+    "This task is a manual-mode gate: a sentinel held in_progress by design so its "
+    "dependents never auto-dispatch. Changing its status releases them. Use "
+    "`python -m tools.kanban.cli --set-status {} done` if you really mean to release it."
+)
+
+
+def _gate_refusal(task_id: str, title, new_status, current_status):
+    """Refuse any board-driven status change to a manual-mode gate.
+
+    Returns a Flask (response, code) tuple to return, or None to proceed.
+
+    A gate has MORE THAN ONE DOOR: /move, PATCH /tasks/<id>, and /tasks/bulk-move
+    can all write `status`. Guarding only /move is what let a PATCH complete
+    prem-gate-00 on 2026-07-12 and promote all 28 gated tasks (3 reached dispatch)
+    before it was caught. Every writer calls this.
+    """
+    if new_status is None or new_status == current_status:
+        return None
+    if not is_manual_gate(task_id, title):
+        return None
+    return jsonify({
+        "error": "Manual-mode gate status cannot be changed from the board",
+        "detail": _GATE_REFUSAL.format(task_id),
+    }), 409
+
+
 @kanban_api.route("/tasks", methods=["GET"])
 def list_tasks():
     """Return all kanban tasks, optionally filtered by status.
@@ -364,6 +392,22 @@ def list_tasks():
             # code that reads oracle_lens as the "group-by" key.
             if t["oracle_rule"] and t["oracle_rule"] != "internal_awareness":
                 t["oracle_lens"] = t["oracle_rule"]
+
+        # Manual-mode gates are SENTINELS, not work. They sit in_progress forever by
+        # design, so the board rendered them with a live "Running 81m" timer and a
+        # reaper progress bar — indistinguishable from a hung task. Flag them so the
+        # UI can say what they actually are, and count what each one is holding back.
+        _gate_ids = {
+            t["id"] for t in tasks if is_manual_gate(t.get("id"), t.get("title"))
+        }
+        _holding: dict[str, int] = {gid: 0 for gid in _gate_ids}
+        for t in tasks:
+            dep = t.get("depends_on_task_id")
+            if dep in _holding and t.get("status") != "done":
+                _holding[dep] += 1
+        for t in tasks:
+            t["is_manual_gate"] = t["id"] in _gate_ids
+            t["gate_holding"] = _holding.get(t["id"], 0)
 
         # Annotate every row with oracle_value + oracle_dup_count. The
         # scorer is safe on non-Oracle tasks (null confidence → value
@@ -635,6 +679,13 @@ def update_task(task_id):
         if not existing:
             return jsonify({"error": "Task not found"}), 404
 
+        _existing = dict(existing)
+        _refusal = _gate_refusal(
+            task_id, _existing.get("title"), data.get("status"), _existing.get("status")
+        )
+        if _refusal:
+            return _refusal
+
         allowed = (
             "title",
             "description",
@@ -729,9 +780,23 @@ def delete_task(task_id):
     """Delete a kanban task."""
     conn = get_connection()
     try:
-        existing = conn.execute("SELECT id FROM kanban_tasks WHERE id = %s", (task_id,)).fetchone()
+        existing = conn.execute(
+            "SELECT id, title FROM kanban_tasks WHERE id = %s", (task_id,)
+        ).fetchone()
         if not existing:
             return jsonify({"error": "Task not found"}), 404
+        # Deleting a gate does not release its dependents (_deps_satisfied fails
+        # closed on a missing parent) — it STRANDS them: they can never be promoted
+        # again, by anything. That is quieter than a release but just as wrong.
+        if is_manual_gate(task_id, dict(existing).get("title")):
+            return jsonify({
+                "error": "Manual-mode gate cannot be deleted from the board",
+                "detail": (
+                    "Deleting this sentinel would permanently strand its dependents: "
+                    "a task whose parent row is missing never satisfies its dependency "
+                    "and can never be promoted again."
+                ),
+            }), 409
         conn.execute("DELETE FROM kanban_tasks WHERE id = %s", (task_id,))
         conn.commit()
         try:
@@ -1151,8 +1216,10 @@ def bulk_move_tasks():
     try:
         # Gather source_prediction_id for dismiss path before we
         # UPDATE so we can mark the predictions in the same transaction.
+        # title is selected so the manual-gate guard below can match on the title
+        # marker, not just the id suffix.
         rows = conn.execute(
-            "SELECT id, status, source_prediction_id FROM kanban_tasks "
+            "SELECT id, title, status, source_prediction_id FROM kanban_tasks "
             f"WHERE id IN ({','.join([ph] * len(task_ids))})",  # nosec B608 -- placeholders only
             tuple(task_ids),
         ).fetchall()
@@ -1162,6 +1229,11 @@ def bulk_move_tasks():
             existing = by_id.get(tid)
             if not existing:
                 failed.append({"id": tid, "error": "not found"})
+                continue
+            # A gate swept up in a bulk move is still a released gate. Skip it and
+            # report it, rather than failing the whole batch.
+            if is_manual_gate(tid, existing.get("title")) and new_status != existing.get("status"):
+                failed.append({"id": tid, "error": "manual-mode gate — refused"})
                 continue
             try:
                 sql = f"UPDATE kanban_tasks SET status = {ph}, updated_at = {ph}"
@@ -1379,6 +1451,11 @@ def move_task(task_id):
         existing = conn.execute("SELECT status, title FROM kanban_tasks WHERE id = %s", (task_id,)).fetchone()
         if not existing:
             return jsonify({"error": "Task not found"}), 404
+
+        _e = dict(existing)
+        _refusal = _gate_refusal(task_id, _e.get("title"), new_status, _e.get("status"))
+        if _refusal:
+            return _refusal
 
         # guard-dep: block done transition if depends_on_task_id parent is not done.
         # Mirrors the _parent_is_done check in kanban.py _move_task so the HTTP
