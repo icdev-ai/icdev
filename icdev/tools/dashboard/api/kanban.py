@@ -1389,7 +1389,11 @@ def move_task(task_id):
                 "SELECT depends_on_task_id FROM kanban_tasks WHERE id = %s",
                 (task_id,),
             ).fetchone()
-            parent_id = (dep_row or {}).get("depends_on_task_id")
+            # dict() first: on PostgreSQL a row is a RealDictRow (which has .get),
+            # but on the SQLite fallback it is a sqlite3.Row, which does not.
+            # Calling .get() straight on the row is an AttributeError on one
+            # backend and fine on the other.
+            parent_id = dict(dep_row or {}).get("depends_on_task_id")
             parent_status = None
             if parent_id:
                 parent_row = conn.execute(
