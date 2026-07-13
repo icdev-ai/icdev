@@ -96,6 +96,8 @@ CREATE TABLE IF NOT EXISTS {_TABLE} (
         CHECK (evidence_json <> '' AND evidence_json <> '[]'),
     source                TEXT
         CHECK (source IS NULL OR source IN ({_sql_in_list(PERSON_SOURCES)})),
+    key_person            INTEGER NOT NULL DEFAULT 0,
+    gaps_json             TEXT NOT NULL DEFAULT '[]',
     tenant_id             TEXT NOT NULL DEFAULT 'default',
     classification        TEXT NOT NULL DEFAULT 'CUI',
     created_at            TIMESTAMP,
@@ -158,6 +160,8 @@ def register_person(
     qualification_verdict: str,
     evidence: Any,
     source: str = "compass",
+    key_person: bool = False,
+    gaps: Any = None,
     tenant_id: str = "default",
     classification: str = "CUI",
     conn=None,
@@ -171,6 +175,11 @@ def register_person(
     Refusing is the feature. A person proposed for a labour category with no evidence
     behind the claim is an assertion that will not survive a debrief, and storing it
     with an empty evidence field just moves the problem downstream into the proposal.
+
+    ``gaps`` travel WITH a ``gap`` verdict, deliberately. A person with a gap can still
+    be the right person to bid — but the bid side has to see the gap when they make
+    that call and price the risk, not discover it at the debrief. A verdict of "gap"
+    with the gaps thrown away is barely better than no verdict at all.
     """
     opportunity_id = (opportunity_id or "").strip()
     person_ref = (person_ref or "").strip()
@@ -218,6 +227,8 @@ def register_person(
     try:
         now = _now()
         evidence_json = json.dumps(rows, ensure_ascii=False)
+        gaps_json = json.dumps(list(gaps or []), ensure_ascii=False)
+        key_flag = 1 if key_person else 0
         existing = conn.execute(
             f"SELECT id FROM {_TABLE} WHERE opportunity_id = %s AND person_ref = %s",  # nosec B608
             (opportunity_id, person_ref),
@@ -228,19 +239,21 @@ def register_person(
             conn.execute(
                 f"UPDATE {_TABLE} SET name = %s, proposed_lcat = %s, "  # nosec B608
                 "qualification_verdict = %s, evidence_json = %s, source = %s, "
-                "updated_at = %s WHERE id = %s",
-                (name, proposed_lcat, verdict, evidence_json, source, now, row_id),
+                "key_person = %s, gaps_json = %s, updated_at = %s WHERE id = %s",
+                (name, proposed_lcat, verdict, evidence_json, source,
+                 key_flag, gaps_json, now, row_id),
             )
             action = "reregistered"
         else:
             row_id = str(uuid.uuid4())
             conn.execute(
                 f"INSERT INTO {_TABLE} (id, opportunity_id, person_ref, name, proposed_lcat, "  # nosec B608
-                "qualification_verdict, evidence_json, source, tenant_id, classification, "
-                "created_at, updated_at) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                "qualification_verdict, evidence_json, source, key_person, gaps_json, "
+                "tenant_id, classification, created_at, updated_at) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (row_id, opportunity_id, person_ref, name, proposed_lcat, verdict,
-                 evidence_json, source, tenant_id, classification, now, now),
+                 evidence_json, source, key_flag, gaps_json, tenant_id, classification,
+                 now, now),
             )
             action = "registered"
 
@@ -272,7 +285,8 @@ def list_key_personnel(opportunity_id: str, conn=None) -> List[Dict[str, Any]]:
     try:
         rows = conn.execute(
             f"SELECT id, opportunity_id, person_ref, name, proposed_lcat, "  # nosec B608
-            f"qualification_verdict, evidence_json, source, created_at, updated_at "
+            f"qualification_verdict, evidence_json, source, key_person, gaps_json, "
+            f"created_at, updated_at "
             f"FROM {_TABLE} WHERE opportunity_id = %s ORDER BY name",
             (opportunity_id,),
         ).fetchall()
@@ -283,6 +297,11 @@ def list_key_personnel(opportunity_id: str, conn=None) -> List[Dict[str, Any]]:
                 d["evidence"] = json.loads(d.pop("evidence_json") or "[]")
             except Exception:
                 d["evidence"] = []
+            try:
+                d["gaps"] = json.loads(d.pop("gaps_json", None) or "[]")
+            except Exception:
+                d["gaps"] = []
+            d["key_person"] = bool(d.get("key_person"))
             out.append(d)
         return out
     finally:

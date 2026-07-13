@@ -22942,6 +22942,8 @@ CREATE TABLE IF NOT EXISTS public.proposal_key_personnel (
     qualification_verdict text NOT NULL,
     evidence_json text NOT NULL,
     source text,
+    key_person integer DEFAULT 0 NOT NULL,
+    gaps_json text DEFAULT '[]'::text NOT NULL,
     tenant_id text DEFAULT 'default'::text NOT NULL,
     classification text DEFAULT 'CUI'::text NOT NULL,
     created_at timestamp without time zone,

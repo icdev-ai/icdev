@@ -9456,6 +9456,8 @@ CREATE TABLE IF NOT EXISTS proposal_key_personnel (
     qualification_verdict TEXT NOT NULL CHECK(qualification_verdict IN ('qualified', 'gap', 'exceeds')),
     evidence_json         TEXT NOT NULL CHECK(evidence_json <> '' AND evidence_json <> '[]'),
     source                TEXT CHECK(source IS NULL OR source IN ('compass', 'manual', 'resume_match', 'scraped')),
+    key_person            INTEGER NOT NULL DEFAULT 0,
+    gaps_json             TEXT NOT NULL DEFAULT '[]',
     tenant_id             TEXT NOT NULL DEFAULT 'default',
     classification        TEXT NOT NULL DEFAULT 'CUI',
     created_at            TIMESTAMP,

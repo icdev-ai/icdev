@@ -538,6 +538,11 @@ def api_v1_staffing_matrix(data):
             qualification_verdict=str(person.get("qualification_verdict") or "").strip(),
             evidence=person.get("evidence"),
             source=source,
+            key_person=bool(person.get("key_person")),
+            # The unmet criteria travel WITH a 'gap' verdict. A gap person can still be
+            # the right bid — but the bid side must SEE the gap when they decide that
+            # and price the risk, not discover it at the debrief.
+            gaps=person.get("gaps") or [],
             # The KEY is authoritative for tenant + classification. A request body can
             # never widen its own binding — same rule as every other Cortex intake.
             tenant_id=tenant_id,
@@ -552,6 +557,8 @@ def api_v1_staffing_matrix(data):
                 "proposed_lcat": person.get("proposed_lcat"),
                 "qualification_verdict": person.get("qualification_verdict"),
                 "evidence_count": result.get("evidence_count"),
+                "key_person": bool(person.get("key_person")),
+                "gap_count": len(person.get("gaps") or []),
                 "action": result.get("action"),
             })
         else:

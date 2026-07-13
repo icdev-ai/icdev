@@ -46,12 +46,51 @@ MIGRATION_NAME = "proposal_key_personnel"
 DESCRIPTION = "Add proposal_key_personnel (bid-side person->LCAT registry, evidence required)"
 
 
+def _existing_columns(conn, table: str) -> set:
+    try:
+        rows = conn.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name = %s",
+            (table,),
+        ).fetchall()
+        if rows:
+            return {dict(r)["column_name"] for r in rows}
+    except Exception:
+        pass
+    try:  # SQLite fallback
+        return {r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+    except Exception:
+        return set()
+
+
 def up(conn) -> dict:
     from tools.govcon.key_personnel import table_ddl
 
     actions = []
     conn.execute(table_ddl())
     actions.append("created proposal_key_personnel (or already present)")
+
+    # The table may pre-date these two columns — it was created out-of-band on the
+    # live database before they existed (see the module docstring), and CREATE TABLE
+    # IF NOT EXISTS will NOT add a column to a table that is already there. Backfill
+    # conditionally so both a fresh install and the existing live table converge.
+    #
+    # gaps travel WITH a 'gap' verdict on purpose: a person with a gap can still be the
+    # right person to bid, but the bid side must see the gap when they price the risk
+    # rather than discover it at the debrief.
+    existing = _existing_columns(conn, "proposal_key_personnel")
+    for col, ddl in (
+        ("key_person",
+         "ALTER TABLE proposal_key_personnel ADD COLUMN key_person INTEGER NOT NULL DEFAULT 0"),
+        ("gaps_json",
+         "ALTER TABLE proposal_key_personnel ADD COLUMN gaps_json TEXT NOT NULL DEFAULT '[]'"),
+    ):
+        if col in existing:
+            continue
+        try:
+            conn.execute(ddl)
+            actions.append(f"added column {col}")
+        except Exception as exc:  # pragma: no cover - raced with another writer
+            actions.append(f"column {col} not added ({exc})")
 
     for idx_sql in (
         "CREATE INDEX IF NOT EXISTS idx_pkp_opportunity "

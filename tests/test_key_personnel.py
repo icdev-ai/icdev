@@ -246,3 +246,37 @@ def test_scraped_names_are_marked_as_scraped_not_passed_off_as_evidenced(conn):
         assert person["source"] == "scraped"
         assert person["evidence"] == []
         assert person["qualification_verdict"] == ""
+
+
+# ---------------------------------------------------------------------------
+# Gaps travel WITH the verdict
+# ---------------------------------------------------------------------------
+
+
+def test_a_gap_verdict_carries_its_gaps(conn):
+    """A person with a gap can still be the right person to bid — but the bid side has
+    to SEE the gap when they make that call and price the risk, not discover it at the
+    debrief. A verdict of "gap" with the gaps thrown away is barely better than no
+    verdict at all."""
+    gaps = [{"kind": "clearance", "item": "TS/SCI required, holds Secret"},
+            {"kind": "experience", "item": "8 yrs required, has 6"}]
+    register_person(
+        opportunity_id="opp-1", person_ref="p-gap", name="Ada Kwan",
+        proposed_lcat="Senior Systems Engineer", qualification_verdict="gap",
+        evidence=EVIDENCE, gaps=gaps, key_person=True, conn=conn,
+    )
+    person = list_key_personnel("opp-1", conn=conn)[0]
+    assert person["qualification_verdict"] == "gap"
+    assert person["key_person"] is True
+    assert [g["kind"] for g in person["gaps"]] == ["clearance", "experience"]
+
+
+def test_gaps_default_to_empty_and_key_person_to_false(conn):
+    register_person(
+        opportunity_id="opp-1", person_ref="p-1", name="Dana Reeves",
+        proposed_lcat="SSE", qualification_verdict="qualified",
+        evidence=EVIDENCE, conn=conn,
+    )
+    person = list_key_personnel("opp-1", conn=conn)[0]
+    assert person["gaps"] == []
+    assert person["key_person"] is False
