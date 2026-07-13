@@ -60,6 +60,23 @@
             <option value="github_actions,ollama_local">&#9881;&#65039; GitHub Actions &#8594; Ollama (air-gap)</option>
             <option value="ollama_local">&#129433; Ollama Local only</option>
         </select>
+        {# Build model: which model the RUNNER builds with. Live — no restart.
+           Choosing a model the Claude CLI cannot serve drops claude_cli from the
+           executor chain, so the choice actually takes effect. #}
+        <select id="kanban-build-model" onchange="setBuildModel(this.value)"
+                title="Model the kanban runner builds with. Non-Claude models route to the LLM executor."
+                style="font-size:12px; padding:4px 8px; background:var(--bg-code,#0d1b30); color:var(--text-primary); border:1px solid var(--border); border-radius:4px; cursor:pointer;">
+            <option value="">&#129518; Model: default (config routing)</option>
+        </select>
+        {# Manual Build: promote + track as normal, but DO NOT auto-dispatch.
+           Not the same as Pause Scheduler — pausing freezes the whole cycle and a
+           hand-build becomes invisible to the board. This keeps the board as the
+           record, so an interrupted build can be picked up where it stopped. #}
+        <label id="manualBuildLabel" title="Promote and track tasks as normal, but do not auto-dispatch — you build from the CLI. Progress still shows on the project cards, so an interrupted build resumes where it stopped."
+               style="display:inline-flex; align-items:center; gap:6px; font-size:13px; padding:6px 10px; border:1px solid var(--border); border-radius:4px; cursor:pointer; user-select:none;">
+            <input type="checkbox" id="manualBuildToggle" onchange="setManualBuild(this.checked)" style="cursor:pointer;">
+            <span>&#128104;&#8205;&#128187; Manual Build</span>
+        </label>
         <button class="btn" id="schedToggleBtn" onclick="toggleKanbanScheduler()" title="Pause/resume the kanban scheduler" style="padding:6px 12px; font-size:13px;">&#x23f8; Pause Scheduler</button>
         <button class="btn" id="refresh-btn" onclick="refreshDashboard()" title="Refresh now" style="padding:6px 12px; font-size:13px;">&#x21bb; Refresh</button>
         <button class="btn btn-primary" onclick="openAddTaskModal()">+ Add Task</button>
@@ -528,6 +545,97 @@ window.setNotifyChannel = function(channelId) {
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({ channel: channelId })
     }).catch(function() {});
+};
+
+// ── Manual Build ──────────────────────────────────────────────────────────────
+// Checked: the scheduler still PROMOTES backlog tasks and the board still tracks
+// progress — it simply does not dispatch an agent. You build from the CLI, and the
+// project card is still the record, so an interrupted build resumes where it stopped.
+// Unchecked (the default): automatic build, exactly as before.
+function _buildFlash(msg) {
+    var el = document.getElementById('auto-refresh-countdown');
+    if (!el) return;
+    var old = el.textContent;
+    el.textContent = msg;
+    setTimeout(function() { el.textContent = old; }, 2500);
+}
+
+function _paintManualBuild(manual) {
+    var cb = document.getElementById('manualBuildToggle');
+    var label = document.getElementById('manualBuildLabel');
+    if (cb) cb.checked = !!manual;
+    if (label) {
+        label.style.borderColor = manual ? '#f59e0b' : 'var(--border)';
+        label.style.color = manual ? '#f59e0b' : '';
+    }
+}
+
+window.setManualBuild = function(checked) {
+    fetch('/api/kanban/build-mode', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({manual: !!checked}),
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        _paintManualBuild(data.manual);
+        _buildFlash(data.manual
+            ? 'Manual Build ON — tasks promote and track, but you build them'
+            : 'Manual Build OFF — automatic build resumed');
+    })
+    .catch(function() { _buildFlash('Manual Build toggle failed'); });
+};
+
+window.loadBuildMode = function() {
+    fetch('/api/kanban/build-mode')
+        .then(function(r) { return r.json(); })
+        .then(function(data) { _paintManualBuild(data.manual); })
+        .catch(function() {});
+};
+
+// ── Build model ───────────────────────────────────────────────────────────────
+window.setBuildModel = function(value) {
+    fetch('/api/kanban/build-model', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({model: value || null}),
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (data.error) { alert('Model selection failed: ' + data.error); return; }
+        if (!data.model) { _buildFlash('Model: back to config routing'); return; }
+        var r = data.resolved || {};
+        // Say it plainly: a non-Claude model means the Claude CLI is out of the chain
+        // for this build. That is the choice taking effect, not a side effect.
+        _buildFlash(r.cli_capable
+            ? ('Model: ' + data.model + ' (Claude CLI)')
+            : ('Model: ' + data.model + ' — Claude CLI dropped, using LLM executor'));
+    })
+    .catch(function() { _buildFlash('Model selection failed'); });
+};
+
+window.loadBuildModel = function() {
+    fetch('/api/kanban/build-model')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            var sel = document.getElementById('kanban-build-model');
+            if (!sel) return;
+            var current = data.model || '';
+            (data.available || []).forEach(function(m) {
+                var o = document.createElement('option');
+                o.value = m.name;
+                o.textContent = (m.cli_capable ? '\u{1F9E0} ' : '\u{1F5A5}️ ')
+                    + m.name + ' (' + m.provider + ')';
+                sel.appendChild(o);
+            });
+            // A stale override (model renamed out of llm_config) shows as default rather
+            // than as a selection that would fail at dispatch.
+            sel.value = data.stale ? '' : current;
+            if (data.stale) {
+                _buildFlash('Selected model is no longer in llm_config — using default');
+            }
+        })
+        .catch(function() {});
 };
 
 window.setExecutorChain = function(value) {
@@ -1079,6 +1187,14 @@ function refreshRemediationHistory() {
 })();
 
 document.addEventListener('DOMContentLoaded', function() { refreshRemediationHistory(); });
+
+// Both switches are cross-process state (a sentinel file the scheduler reads), not
+// browser state — so paint them from the server on every load. A checkbox that shows
+// "off" while the scheduler is in Manual Build is worse than no checkbox.
+document.addEventListener('DOMContentLoaded', function() {
+    if (window.loadBuildMode) window.loadBuildMode();
+    if (window.loadBuildModel) window.loadBuildModel();
+});
 </script>
 
 <!-- Recent Activity & Findings (collapsed by default) -->

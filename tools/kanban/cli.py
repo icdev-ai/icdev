@@ -330,6 +330,63 @@ def cmd_resume_runner(json_out: bool) -> int:
     return 0 if released else 1
 
 
+def cmd_build_mode(mode: str, json_out: bool) -> int:
+    """Manual Build — promote and track as normal, but do not auto-dispatch."""
+    from tools.kanban.build_mode import set_manual, status as bm_status
+
+    if mode == "status":
+        st = bm_status()
+    else:
+        st = set_manual(mode == "manual", actor="cli")
+
+    if json_out:
+        print(json.dumps(st, indent=2))
+    elif st.get("manual"):
+        print("  MANUAL BUILD — tasks still promote to scheduled and the board still "
+              "tracks them; the runner will NOT dispatch. You build them.")
+        print("  Pick up work with:  python -m tools.kanban.cli --list --status scheduled")
+    else:
+        print("  AUTOMATIC BUILD (default) — the runner dispatches tasks itself.")
+    return 0
+
+
+def cmd_build_model(model: str, json_out: bool) -> int:
+    """Select the model the runner builds with."""
+    from tools.kanban.model_override import available, set_model, status as m_status
+
+    if model == "list":
+        models = available()
+        if json_out:
+            print(json.dumps(models, indent=2))
+        else:
+            current = (m_status().get("model")) or "(default)"
+            print(f"  current: {current}")
+            for m in models:
+                served = "claude-cli" if m["cli_capable"] else "llm-executor"
+                print(f'  {m["name"]:<24} {m["provider"]:<14} -> {served}')
+        return 0
+
+    try:
+        st = set_model(None if model == "default" else model, actor="cli")
+    except ValueError as exc:
+        print(f"  ERROR: {exc}")
+        return 1
+
+    if json_out:
+        print(json.dumps(st, indent=2))
+    elif not st.get("model"):
+        print("  Model: default (config-driven routing)")
+    else:
+        r = st.get("resolved") or {}
+        if r.get("cli_capable"):
+            print(f'  Model: {st["model"]} — dispatched via the Claude CLI (--model {r.get("model_id")})')
+        else:
+            print(f'  Model: {st["model"]} ({r.get("provider")}) — the Claude CLI cannot '
+                  f'serve it, so claude_cli is dropped from the executor chain and the '
+                  f'LLM executor builds with it.')
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Kanban task manager — always routes through get_connection() (PG in prod).",
@@ -370,6 +427,13 @@ def main():
                         help="Pause the autonomous kanban runner for this session")
     parser.add_argument("--resume-runner", action="store_true",
                         help="Resume the autonomous kanban runner")
+    parser.add_argument("--build-mode", choices=["manual", "auto", "status"],
+                        help="Manual Build: promote+track as normal but do NOT "
+                             "auto-dispatch (you build from the CLI). 'auto' restores "
+                             "the default automatic build.")
+    parser.add_argument("--build-model", metavar="MODEL",
+                        help="Model the runner builds with (name from llm_config.yaml). "
+                             "Pass 'default' to clear, 'list' to see the options.")
 
     args = parser.parse_args()
 
@@ -379,6 +443,10 @@ def main():
     elif args.release:
         sys.exit(cmd_release(args.release, args.json_out))
 
+    elif args.build_mode:
+        sys.exit(cmd_build_mode(args.build_mode, args.json_out))
+    elif args.build_model:
+        sys.exit(cmd_build_model(args.build_model, args.json_out))
     elif args.pause_runner:
         sys.exit(cmd_pause_runner(args.json_out))
 
