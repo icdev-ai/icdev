@@ -16,6 +16,7 @@ Guarantees under test:
 """
 from __future__ import annotations
 
+import importlib
 import subprocess
 import sys
 import uuid
@@ -173,6 +174,20 @@ def test_unmerged_check_compares_against_the_external_base_branch(
 
     kb._branch_has_unmerged_commits("ext-thing-01")
 
+    compared = [arg for argv, _ in calls if "log" in argv for arg in argv if ".." in arg]
+    assert compared == ["origin/trunk..kanban/ext-thing-01"]
+
+
+def test_canonical_mirror_done_gate_is_also_repo_aware(external_repo, monkeypatch):
+    """``icdev.tools.*`` is the canonical namespace — its copy drifted stale and kept
+    running the done-gate in BASE_DIR. Anything importing it got the churn bug back."""
+    canonical = importlib.import_module("icdev.tools.genesis.reflexes.kanban")
+    calls = _record_git_calls(monkeypatch, log_out="c1 work landed in compass\n")
+
+    assert canonical._branch_has_unmerged_commits("ext-thing-01") is True
+
+    cwds = {cwd for _, cwd in calls}
+    assert cwds == {str(external_repo)}, f"git ran outside the external repo: {cwds}"
     compared = [arg for argv, _ in calls if "log" in argv for arg in argv if ".." in arg]
     assert compared == ["origin/trunk..kanban/ext-thing-01"]
 
