@@ -92,6 +92,95 @@ class LLMUnavailableError(RuntimeError):
         self.no_llm_mode = no_llm_mode
 
 
+def _resolve_redaction_fail_closed(llm_redaction_cfg: dict) -> bool:
+    """Resolve ``redaction.fail_closed`` from the file that actually documents it.
+
+    THE BUG THIS FIXES (prem-p0-03): the router read this flag from
+    ``self._config`` — i.e. ``args/llm_config.yaml`` — whose ``redaction:`` block
+    has no ``fail_closed`` key at all. The flag is documented, commented, and set
+    in ``args/redaction_config.yaml``, right next to ``mask_at_ingestion``, which
+    IS read from there (by the RAG ingestion manager).
+
+    So ``fail_closed`` resolved to False unconditionally, ``RedactionUnavailableError``
+    could never fire, and an operator who set ``fail_closed: true`` in the file that
+    documents it got NO protection and no warning. A security control that silently
+    does nothing is worse than one that is absent: it is believed in.
+
+    Precedence: an explicit key in llm_config.yaml wins (so a deployment can pin it
+    next to the routing it belongs to), otherwise the canonical redaction_config.yaml.
+    """
+    if "fail_closed" in (llm_redaction_cfg or {}):
+        return bool(llm_redaction_cfg["fail_closed"])
+    try:
+        import yaml  # noqa: PLC0415
+
+        path = Path(__file__).resolve().parents[2] / "args" / "redaction_config.yaml"
+        with open(path, encoding="utf-8") as fh:
+            return bool((yaml.safe_load(fh) or {}).get("fail_closed", False))
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.debug("could not read redaction_config.yaml fail_closed: %s", exc)
+        return False
+
+
+def _chain_is_local_only(chain, models: dict, providers: dict) -> bool:
+    """Fail-closed wrapper around the ONE locality definition.
+
+    If the locality check cannot even be imported we cannot PROVE the chain stays
+    on this machine, so we answer False (not local). Answering True would skip
+    redaction on a guarantee we never verified.
+
+    Takes config model NAMES (``qwen3-local``), not provider-side model ids
+    (``qwen3:latest``) — see _provider_is_local_only for the reason that matters.
+    """
+    try:
+        from tools.llm.cli_bridge.activate import is_local_only_chain
+    except Exception:  # pragma: no cover - defensive
+        return False
+    return is_local_only_chain(chain, models or {}, providers or {})
+
+
+def _provider_is_local_only(provider_name: str, providers: dict) -> bool:
+    """Fail-closed: does *provider_name* never leave the machine?
+
+    Used at the provider call, where we hold a ``model_cfg`` (which names its
+    provider) but only the provider-side ``model_id``. Deciding locality from the
+    id would silently always be False — the models map is keyed by config name.
+    """
+    try:
+        from tools.llm.cli_bridge.activate import _is_local_only_provider
+    except Exception:  # pragma: no cover - defensive
+        return False
+    return _is_local_only_provider(provider_name or "", providers or {})
+
+
+class ForceLocalViolation(RuntimeError):
+    """Raised when CUI would egress to a non-local provider.
+
+    The fail-closed rung of the CUI egress guarantee. Raised when the routing
+    policy resolved to LOCAL — because the install is air-gapped, because the
+    content is classified (declared or derived), or because the function is
+    declared ``force_local`` — and the model about to be invoked does not run on
+    a local-only provider.
+
+    Refusing is the correct behavior. Falling through to cloud is the bug this
+    exception exists to prevent.
+
+    Attributes:
+        function: ICDEV™ function whose egress was blocked (may be "" for
+            content-only paths such as ChainOrchestrator's ``_invoke_model_direct``).
+        chain: the chain under consideration, when known.
+        model: the specific model that would have egressed.
+        rule: which policy rung fired (see tools/llm/routing_policy.py).
+    """
+
+    def __init__(self, message: str, *, function: str = "", chain=None, model: str = "", rule: str = ""):
+        super().__init__(message)
+        self.function = function
+        self.chain = list(chain or [])
+        self.model = model
+        self.rule = rule
+
+
 class RedactionUnavailableError(RuntimeError):
     """Raised (only when ``redaction.fail_closed`` is enabled) when the PII/CUI
     sanitizer that MUST run before an LLM call is missing or errors — so raw
@@ -738,6 +827,15 @@ class LLMRouter:
         route = routing.get(function, routing.get("default", {}))
         return route.get("effort", "medium")
 
+    def is_force_local(self, function: str) -> bool:
+        """True if *function* is declared ``force_local`` in args/llm_config.yaml.
+
+        Public so callers can honour the declaration without re-parsing the config.
+        """
+        from tools.llm.routing_policy import is_force_local as _ifl
+
+        return _ifl(function, self._config)
+
     def _get_chain_for_function(self, function: str) -> list:
         """Get the model chain for a function.
 
@@ -745,6 +843,18 @@ class LLMRouter:
         toggle takes effect at invoke time even though the base config was
         rewritten once at construction. A ``False`` override strips the
         ``claude-cli`` model from the chain so invocation bypasses the bridge.
+
+        Then filters to local models for a ``force_local`` function. This runs
+        AFTER the bridge override deliberately: a ``True`` override PREPENDS
+        ``claude-cli`` — a cloud egress path — to whatever chain it is handed, so a
+        chain that is local-only in YAML can still be fronted by the bridge at
+        invoke time. The old per-function pins never closed that.
+
+        This filtering is DEFENCE IN DEPTH, not the guarantee. The guarantee is
+        _enforce_routing_policy at the provider call, which also covers the paths
+        that never consult a chain at all (two_tier) or rewrite it afterwards (RL
+        re-ranking). Filtering here means a force_local call PREFERS its local
+        model rather than refusing each cloud model in turn.
         """
         routing = self._config.get("routing", {})
         route = routing.get(function, routing.get("default", {}))
@@ -752,10 +862,48 @@ class LLMRouter:
         try:
             from tools.llm.cli_bridge.activate import apply_cli_bridge_override
 
-            return apply_cli_bridge_override(chain)
+            chain = apply_cli_bridge_override(chain)
         except Exception as exc:  # pragma: no cover - defensive
             logger.debug("CLI bridge override skipped: %s", exc)
-            return list(chain)
+            chain = list(chain)
+
+        if not (route or {}).get("force_local", False):
+            return chain
+
+        try:
+            from tools.llm.cli_bridge.activate import is_local_only_model
+        except ImportError as exc:  # pragma: no cover - defensive
+            # Cannot prove locality => cannot permit the call. Refuse, don't guess.
+            raise ForceLocalViolation(
+                f"Function '{function}' is force_local but the locality check is "
+                f"unavailable ({exc}); refusing to route CUI without proof it stays local.",
+                function=function,
+                chain=chain,
+                rule="force_local",
+            ) from exc
+
+        models = self._config.get("models", {})
+        providers = self._config.get("providers", {})
+        local_chain = [m for m in chain if is_local_only_model(m, models, providers)]
+
+        dropped = [m for m in chain if m not in local_chain]
+        if dropped:
+            # Not debug: a cloud model reaching a CUI function is a security event.
+            logger.warning(
+                "force_local[%s]: dropped non-local model(s) %s — CUI must not egress",
+                function, dropped,
+            )
+
+        if not local_chain:
+            raise ForceLocalViolation(
+                f"Function '{function}' is force_local (handles raw CUI) but no local "
+                f"provider remains in its chain {list(chain)!r}. Refusing to route to "
+                f"cloud. Start Ollama, or fix the chain in args/llm_config.yaml.",
+                function=function,
+                chain=chain,
+                rule="force_local",
+            )
+        return local_chain
 
     def _log_telemetry(
         self,
@@ -899,7 +1047,7 @@ class LLMRouter:
         """
         # D-RDT-4: Config toggle — skip redaction if explicitly disabled
         rdcfg = self._config.get("redaction", {})
-        fail_closed = bool(rdcfg.get("fail_closed", False))
+        fail_closed = _resolve_redaction_fail_closed(rdcfg)
         if not rdcfg.get("enabled", True):
             return None
 
@@ -923,10 +1071,21 @@ class LLMRouter:
             return None
 
         try:
-            # Check if routing is local-only for this function
+            # Check if routing is local-only for this function.
+            #
+            # This used to be an inline `provider == "ollama"` check with an
+            # `if self._get_model_config(m)` filter — a SECOND definition of
+            # "local", and a fail-OPEN one: a model with no config was silently
+            # dropped from the generator rather than counted as non-local, so a
+            # chain of only-unresolvable models produced an EMPTY generator,
+            # `all([])` returned True, and the sanitizer skipped redaction
+            # entirely — sending raw CUI to a model we cannot even resolve.
+            #
+            # Use the one definition (cli_bridge.activate), which fails closed on
+            # an unknown model and on an empty chain.
             chain = self._get_chain_for_function(function)
-            is_local = all(
-                self._get_model_config(m).get("provider") == "ollama" for m in chain if self._get_model_config(m)
+            is_local = _chain_is_local_only(
+                chain, self._config.get("models", {}), self._config.get("providers", {})
             )
 
             # Extract text from messages
@@ -1043,10 +1202,18 @@ class LLMRouter:
     # Two-tier routing helpers (D-TT1: qwen3 worker → Claude planner)
     # -------------------------------------------------------------------
 
-    def _invoke_model_direct(self, model_name: str, request: LLMRequest) -> Optional[LLMResponse]:
+    def _invoke_model_direct(
+        self, model_name: str, request: LLMRequest, function: str = ""
+    ) -> Optional[LLMResponse]:
         """Invoke a specific named model without chain fallback.
 
         Returns None on any error so callers can fall through to chain.
+
+        ``function`` is threaded through so the routing policy can apply the
+        ``force_local`` rung here too. This is the two-tier AND ChainOrchestrator
+        (CoT/CoD) path: it carries real content, and before this it carried no
+        function name at all, so a force_local function's content could arrive
+        here anonymous.
         """
         model_cfg = self._get_model_config(model_name)
         if not model_cfg:
@@ -1059,7 +1226,13 @@ class LLMRouter:
             return None
         model_id = model_cfg.get("model_id", "")
         try:
-            return self._provider_invoke(provider, request, model_id, model_cfg)
+            return self._provider_invoke(provider, request, model_id, model_cfg, function=function)
+        except (ForceLocalViolation, RedactionUnavailableError):
+            # NEVER swallow an egress refusal into a None. The `return None` below
+            # means "this model failed, try the next one" — turning a policy
+            # refusal into a fallback would walk the chain looking for a model
+            # that IS allowed to leak, which is the exact opposite of the intent.
+            raise
         except Exception as exc:
             logger.warning("Two-tier: direct invoke failed for %s/%s: %s", model_name, model_id, exc)
             return None
@@ -1708,6 +1881,10 @@ class LLMRouter:
         # Cross-grader: track how many entries are excluded so we can raise correctly.
         _excluded_count = 0
         _chain_total = len(chain)
+        # First routing-policy refusal seen while walking the chain. Kept so an
+        # exhausted chain reports "content cannot egress" rather than a bogus
+        # "all providers failed".
+        _policy_refusal = None
 
         for model_name in chain:
             model_cfg = self._get_model_config(model_name)
@@ -1748,7 +1925,7 @@ class LLMRouter:
                 # Stamp route-level config onto request so providers can read flags like disable_thinking
                 route_cfg = self._config.get("routing", {}).get(function, {})
                 request._route_config = route_cfg
-                response = self._provider_invoke(provider, request, model_id, model_cfg)
+                response = self._provider_invoke(provider, request, model_id, model_cfg, function=function)
                 _latency = int((time.time() - _start) * 1000)
 
                 if span:
@@ -1818,6 +1995,21 @@ class LLMRouter:
                 self._get_rl_router().record_outcome(function, model_name, success=True, latency_ms=_latency)
 
                 return response
+            except ForceLocalViolation as exc:
+                # A policy refusal is NOT a provider failure. Keep walking the chain
+                # so a LOCAL model further down can serve the call — that is the
+                # graceful path, and it is why chain filtering alone is not the
+                # guarantee. But remember the refusal: if the chain runs out, the
+                # operator must be told "content cannot egress", not the misleading
+                # "all providers failed".
+                logger.warning(
+                    "routing_policy: skipping %s (%s) for %s — %s",
+                    provider_name, model_id, function, exc,
+                )
+                _policy_refusal = _policy_refusal or exc
+                # Deliberately NOT marked unavailable and NOT penalised in RL: the
+                # model is fine, it is simply not allowed to see THIS content.
+                continue
             except Exception as exc:
                 logger.warning(
                     "Provider %s (%s) failed for %s: %s — trying next in chain",
@@ -1843,6 +2035,13 @@ class LLMRouter:
                 # RL: record failure so this model's Q-value decreases
                 self._get_rl_router().record_outcome(function, model_name, success=False)
                 continue
+
+        # The chain is exhausted. If ANY entry was refused by the routing policy,
+        # that is the real story — the content was not allowed to leave and no local
+        # model was available to serve it. Report THAT, not "all providers failed",
+        # which would send an operator hunting for a network fault that isn't there.
+        if _policy_refusal is not None:
+            raise _policy_refusal
 
         # If every chain entry was excluded, raise CrossGraderViolation instead of
         # LLMUnavailableError so callers can distinguish the two failure modes.
@@ -1876,7 +2075,52 @@ class LLMRouter:
         except Exception as exc:  # never let proxy plumbing crash an LLM call
             logger.debug("network guard (proxy) skipped: %s", exc)
 
-    def _provider_invoke(self, provider, request, model_id, model_cfg):
+    def _enforce_routing_policy(self, function, request, model_id, model_cfg=None) -> None:
+        """Refuse the call if policy says LOCAL and this model is not local.
+
+        THE egress guarantee (prem-p0-01). It lives here, at the provider call,
+        rather than in chain selection, because chain selection is not the last
+        word: ``two_tier`` routing is applied BEFORE the chain is resolved, RL
+        re-ranking rewrites the chain afterwards, and the CLI-bridge invoke-time
+        override PREPENDS a cloud model to it. Every one of those paths still
+        funnels through here.
+
+        Filtering the chain (``_get_chain_for_function``) is defence in depth — it
+        makes us *prefer* a local model. This is what makes cloud egress
+        impossible.
+
+        Locality is decided from ``model_cfg``'s PROVIDER, not from ``model_id``.
+        They are different namespaces and conflating them is a live bug: ``model_id``
+        is the provider-side id (``qwen3:latest``) while the models map is keyed by
+        the config NAME (``qwen3-local``). Looking up the id finds nothing, and
+        "unknown model" fails closed — so a perfectly good LOCAL model gets refused
+        and the call dies. Fails safe, but still broken.
+        """
+        from tools.llm.routing_policy import resolve as _resolve_policy
+
+        decision = _resolve_policy(function, request, self._config)
+        if not decision.local_only:
+            return
+
+        provider_name = (model_cfg or {}).get("provider", "")
+        if _provider_is_local_only(provider_name, self._config.get("providers", {})):
+            return
+
+        # Not debug. A cloud model reaching classified content is a security event.
+        logger.warning(
+            "routing_policy[%s]: REFUSED model '%s' — %s",
+            function or "<no function>", model_id, decision.reason,
+        )
+        raise ForceLocalViolation(
+            f"Refusing to send content to non-local model '{model_id}': {decision.reason} "
+            f"(rule: {decision.rule}). Start a local provider (Ollama), or correct the "
+            f"chain in args/llm_config.yaml.",
+            function=function or "",
+            model=model_id,
+            rule=decision.rule,
+        )
+
+    def _provider_invoke(self, provider, request, model_id, model_cfg, function: str = ""):
         """Single choke point for every non-streaming provider call.
 
         ALL text and vision generation funnels through here (vision requests
@@ -1884,7 +2128,10 @@ class LLMRouter:
         mode: rotating-proxy application + the rate-limit gate (serialize to
         ``max_parallel`` + randomized inter-call pause). Both are no-ops unless
         configured, so default behavior is unchanged.
+
+        Enforces the routing policy before anything leaves the process.
         """
+        self._enforce_routing_policy(function, request, model_id, model_cfg)
         self._apply_network_guard(provider)
         mp, pmin, pmax = resolve_rate_limit(self._config)
         lease_backend, lease_name, lease_timeout = resolve_lease_config(self._config)
@@ -1894,13 +2141,18 @@ class LLMRouter:
         ):
             return provider.invoke(request, model_id, model_cfg)
 
-    def _provider_invoke_streaming(self, provider, request, model_id, model_cfg):
+    def _provider_invoke_streaming(self, provider, request, model_id, model_cfg, function: str = ""):
         """Streaming counterpart of :meth:`_provider_invoke`.
 
         Holds the rate-limit slot across the whole stream (releasing, with the
         inter-call pause, once the generator is exhausted) so a streamed call
         still counts as one in-flight LLM call.
+
+        Enforces the routing policy too. Streaming is a SEPARATE chokepoint from
+        _provider_invoke — guarding only the non-streaming one would leave a
+        fully-open cloud egress path for exactly the same content.
         """
+        self._enforce_routing_policy(function, request, model_id, model_cfg)
         self._apply_network_guard(provider)
         mp, pmin, pmax = resolve_rate_limit(self._config)
         if mp <= 0:
@@ -2274,6 +2526,10 @@ class LLMRouter:
 
         chain = self._get_chain_for_function(function)
         last_error = None
+        # See the non-streaming chain walk: a routing-policy refusal is remembered
+        # so an exhausted chain reports "content cannot egress" rather than a
+        # misleading "all streaming providers failed".
+        _policy_refusal = None
 
         for model_name in chain:
             model_cfg = self._get_model_config(model_name)
@@ -2285,7 +2541,18 @@ class LLMRouter:
                 continue
             model_id = model_cfg.get("model_id", "")
             try:
-                return self._provider_invoke_streaming(provider, request, model_id, model_cfg)
+                return self._provider_invoke_streaming(provider, request, model_id, model_cfg, function=function)
+            except ForceLocalViolation as exc:
+                # Same contract as the non-streaming chain walk: a policy refusal is
+                # not a provider failure. Skip this model so a LOCAL one further down
+                # can serve the stream, but remember it — an exhausted chain must
+                # report "content cannot egress", not "all streaming providers failed".
+                logger.warning(
+                    "routing_policy: skipping streaming %s (%s) for %s — %s",
+                    provider_name, model_id, function, exc,
+                )
+                _policy_refusal = _policy_refusal or exc
+                continue
             except Exception as exc:
                 logger.warning(
                     "Streaming provider %s (%s) failed for %s: %s — trying next",
@@ -2297,6 +2564,11 @@ class LLMRouter:
                 last_error = exc
                 self._availability_cache[model_name] = False
                 continue
+
+        # A policy refusal is the real story — report it, not "all providers failed",
+        # which would send an operator hunting for a network fault that isn't there.
+        if _policy_refusal is not None:
+            raise _policy_refusal
 
         raise LLMUnavailableError(
             "All streaming providers in chain {} failed for function '{}'. Last error: {}".format(
@@ -2577,7 +2849,7 @@ class LLMRouter:
             model_id = model_cfg.get("model_id", "")
             try:
                 _start = time.time()
-                response = self._provider_invoke(provider, request, model_id, model_cfg)
+                response = self._provider_invoke(provider, request, model_id, model_cfg, function=function)
                 _latency = int((time.time() - _start) * 1000)
                 try:
                     self._get_rl_router().record_outcome(role_key, model_name, success=True, latency_ms=_latency)

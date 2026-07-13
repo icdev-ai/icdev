@@ -574,6 +574,20 @@ task_categories:
     description: "Tool use, multi-step planning, function calling"
 
 # -----------------------------------------------------------------------
+# Chain Groups — central provider knobs (YAML anchors)
+# -----------------------------------------------------------------------
+# Edit the ONE line here and every routing function referencing the alias
+# follows. yaml.safe_load resolves anchors at parse time — no router changes.
+#
+# test_execution (user directive 2026-07-12): Kimi cloud drives all
+# TEST-EXECUTION loops — Playwright/e2e runs, verify-repair, conformance
+# judging, CI failure triage during PR/merge. Claude remains for planning
+# and WRITING tests (test_translation / formal_verification unchanged).
+# qwen3-local stays as the air-gap fallback tier.
+chain_groups:
+  test_execution: &test_execution_chain [kimi-cloud, qwen3-local]
+
+# -----------------------------------------------------------------------
 # Function -> Model Routing
 # -----------------------------------------------------------------------
 # Maps each ICDEV™ function to a model with fallback chain.
@@ -701,20 +715,22 @@ routing:
     chain: [gemma3-local, llava-local, qwen3-local]
     effort: high
 
+  # Playwright/e2e EXECUTION — central knob: chain_groups.test_execution.
+  # kimi-k2.6:cloud is vision-capable (screenshot checks).
   e2e_testing:
-    chain: [qwen3-local]
+    chain: *test_execution_chain
     effort: low
 
   playwright_execution:
-    chain: [qwen3-local]
+    chain: *test_execution_chain
     effort: low
 
   browser_automation:
-    chain: [qwen3-local]
+    chain: *test_execution_chain
     effort: low
 
   ui_verification:
-    chain: [qwen3-local]
+    chain: *test_execution_chain
     effort: low
 
   diagram_extraction:
@@ -808,8 +824,10 @@ routing:
   # Compiler-in-the-Loop Verification Repair (LeanStral-adapted, D-VL-1)
   # LeanStral excels at code verification and repair — use when available,
   # fall back to general-purpose models. Air-gapped: leanstral-local via vLLM.
+  # Test-execution tier (chain_groups.test_execution): repair iterations of
+  # the verify-until-green loop run on Kimi, not Claude.
   verify_loop_repair:
-    chain: [qwen3-local, leanstral, leanstral-local, claude-sonnet, gemini-2.5-pro, gpt-4o, codestral-local]
+    chain: *test_execution_chain
     effort: high
 
   # Formal Verification / Property-Based Testing (D-VL-6)
@@ -824,20 +842,52 @@ routing:
     effort: high
 
   # Governed Delivery Pipeline — Conformance Review gate (Phase 2). Judges
-  # whether a task's implementation conforms to its acceptance criteria. Local
-  # (qwen3) first for air-gap; small cloud judges as fallback.
+  # whether a task's implementation conforms to its acceptance criteria.
+  # Test-execution tier (chain_groups.test_execution): Kimi judges during
+  # PR/merge; qwen3-local remains the air-gap fallback.
   conformance_review:
-    chain: [qwen3-local, claude-haiku, claude-sonnet, gpt-4o-mini, llama-local]
+    chain: *test_execution_chain
     effort: low
 
   # GovCon Proposal Functions — LOCAL ONLY (Phase 70: Redaction & Data Protection)
   # Proposal content contains CUI program names, past performance, pricing.
-  # Route to Ollama only — never send raw proposal content to cloud LLMs.
   # WriteGuard rewrite (wg_rewrite) stays on Claude (rewrites style, not content).
+  #
+  # prem-p0-02. These used to be protected by the `chain:` list ALONE, under a
+  # comment that said "never send raw proposal content to cloud LLMs". A chain is
+  # a hand-maintained list of model names, and it protected nothing:
+  #
+  #   1. Nothing enforced it. Add a cloud model to the list, or rename a local one,
+  #      and CUI egresses in silence.
+  #   2. The chain was not the last word. `two_tier` routing is applied BEFORE the
+  #      chain is resolved, RL re-ranking rewrites it afterwards, and the CLI-bridge
+  #      invoke-time override PREPENDS `claude-cli` — a cloud path — to whatever
+  #      chain it is handed. A chain that reads local-only here could still be
+  #      fronted by a cloud model at request time.
+  #   3. It only covered what someone remembered to pin. See requirement_extraction
+  #      below, which sat in this very block routing to kimi-cloud FIRST.
+  #
+  # `force_local: true` is a DECLARED INTENT that the router ENFORCES at the
+  # provider call itself (tools/llm/routing_policy.py + router._enforce_routing_policy):
+  # if the model about to be invoked is not on a local-only provider, the call is
+  # REFUSED. The chain stays local-first so that even an enforcement bug cannot
+  # leak — defence in depth, not a single flag.
   proposal_drafting:
     chain: [qwen3-local, llama-local]
     effort: medium
+    force_local: true
 
+  # NOT force_local — and this needs justifying, because it sits in the "never send
+  # proposal content to cloud" block and routes to kimi-cloud FIRST. That is exactly
+  # the hole a pin list cannot close, and it is why the policy is content-based.
+  #
+  # Requirement extraction reads the SOLICITATION (RFP/RFI), which is a published
+  # government document, not our proposal prose. So cloud is legitimate here. But we
+  # no longer take that on trust: the content itself is now checked at egress — if
+  # it carries a declared classification, or COMPILES to one via the aggregation
+  # guard (mosaic effect), it routes local anyway; otherwise it is masked by the
+  # sanitizer before it leaves, and with redaction.fail_closed a sanitizer that
+  # cannot run REFUSES the call rather than sending raw text.
   requirement_extraction:
     chain: [kimi-cloud, qwen3-local]
     effort: medium
@@ -845,44 +895,56 @@ routing:
   bid_scoring:
     chain: [qwen3-local, llama-local]
     effort: low
+    force_local: true
 
   color_review:
     chain: [qwen3-local, llama-local]
     effort: medium
+    force_local: true
 
   # Per-role RFI routing — Hermes-Agent pattern 1: each role gets its own
   # model chain + effort tier. LOCAL ONLY (CUI content — never cloud LLMs).
   # effort=low for Writer (quantity/speed), medium for Editor (repair pass),
   # high for Reviewer/Researcher/Compliance (evaluation & gate functions).
+  # All five are force_local: they draft and review OUR response prose, which is
+  # raw CUI and cannot be usefully masked (mask the program names and there is
+  # nothing left to write about).
   rfi_writer_drafting:
     chain: [qwen3-local, llama-local]
     effort: low
+    force_local: true
 
   rfi_editor_drafting:
     chain: [qwen3-local, llama-local]
     effort: medium
+    force_local: true
 
   rfi_reviewer_review:
     chain: [qwen3-local, llama-local]
     effort: high
+    force_local: true
 
   rfi_researcher_knowledge:
     chain: [qwen3-local, llama-local]
     effort: high
+    force_local: true
 
   rfi_compliance_assessment:
     chain: [qwen3-local, llama-local]
     effort: high
+    force_local: true
 
   # Failure triage — Claude for diagnose (thinking/reasoning),
   # Ollama for patch (building/code-gen). Explicit two-tier split per
   # the "Claude thinks, Ollama builds" convention.
+  # Test-execution tier (chain_groups.test_execution): CI/test failure
+  # triage during PR/merge runs on Kimi.
   failure_triage_diagnose:
-    chain: [qwen3-local, claude-sonnet, claude-opus, gpt-4o, gemini-2.5-pro]
+    chain: *test_execution_chain
     effort: high
 
   failure_triage_patch:
-    chain: [qwen3-local, codestral-local, llama-local, claude-sonnet]
+    chain: *test_execution_chain
     effort: medium
 
   chat_response:
@@ -1231,6 +1293,35 @@ settings:
 # Set enabled: false to fall back to normal chain-based routing.
 # ── PII Redaction (D-RDT-1 through D-RDT-4, Phase 72 Hermes adaptation) ────
 # Pre-LLM redaction + post-LLM de-anonymization for CUI/PII protection.
+# ---------------------------------------------------------------------------
+# Routing policy (prem-p0-01) — the CONTENT decides whether a call may leave.
+#
+# Enforced at the provider call itself (router._enforce_routing_policy), NOT at
+# chain selection: two_tier routing runs before the chain is resolved, RL
+# re-ranking rewrites it after, and the CLI bridge can prepend a cloud model to
+# it. Chain filtering is defence in depth; this is the guarantee.
+#
+# Rungs, in strict precedence (tools/llm/routing_policy.py):
+#   1. airgap                  — air-gapped install routes local, always
+#   2. force_local             — function declared force_local: true (above)
+#   3. declared_classification — LLMRequest.classification at/above threshold
+#   4. derived_classification  — content COMPILES to a classification via the SCG
+#                                aggregation rules (mosaic effect). The subtle one:
+#                                no single field is classified, their co-occurrence is.
+#   5. default                 — cloud permitted; content is masked at egress, and
+#                                redaction.fail_closed REFUSES the call if the
+#                                sanitizer cannot run.
+#
+# Why local_threshold is SECRET and not CUI: LLMRequest.classification DEFAULTS to
+# "CUI" (tools/llm/provider.py), so a CUI threshold would force every call in the
+# platform to local. That default is a marking convention, not an assertion about
+# the content. CUI is protected by rung 2 (raw, unmaskable content never leaves)
+# and by mandatory masking + fail_closed on everything else.
+routing_policy:
+  enabled: true
+  local_threshold: SECRET
+  aggregation_guard: true
+
 redaction:
   enabled: true                    # Master toggle for pre-invoke PII redaction
   enforce_at_il4_plus: true        # Auto-enable at IL4+ even if global toggle is off
