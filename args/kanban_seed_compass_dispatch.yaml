@@ -1,0 +1,40 @@
+# CUI // SP-CTI
+# Dispatch-proof seed — the one real compass task behind ked-vfy-01
+# ("Prove it: dispatch one real compass task end to end").
+#
+# Consumed by tools/kanban/seed_compass_dispatch_probe.py. This file is the
+# task definition; the ROUTING that actually sends it to compass lives in
+# args/kanban_external_repos.yaml (prefix `prem-vfy` -> compass). Both must
+# agree — the seeder cross-checks them and refuses to seed if they drift,
+# because an unregistered prefix resolves to ICDev by default and would build
+# a "compass" task inside ICDev's own tree.
+#
+# The work itself is deliberately trivial and low-blast-radius: the point is to
+# observe dispatch -> branch -> CI -> PR -> merge in compass (ked-vfy-01 d2-d5),
+# not to land meaningful product change through an unproven pipeline.
+
+task:
+  id: prem-vfy-01
+  title: Add CI status badge to compass README
+  task_type: build
+  target_repo: icdev-ai/compass
+  complexity: low
+  priority: medium
+  status: backlog
+  description: |
+    Add a CI status badge to the top of the compass repository's README.md,
+    directly under the project title, pointing at the repo's GitHub Actions
+    workflow on the default branch (main).
+
+    Scope is intentionally one line of markdown — this task exists to prove the
+    repo-aware kanban dispatch path works end to end against a real external
+    repo. Do not bundle other README edits, formatting passes, or fixes.
+
+    Definition of done:
+      - README.md on a `kanban/prem-vfy-01` branch in icdev-ai/compass carries
+        the badge and renders correctly.
+      - compass CI is green on that branch.
+      - A PR is open against compass `main` and merges cleanly.
+
+    If the badge already exists, fix its target/branch if wrong; otherwise close
+    this task as a no-op rather than inventing adjacent work.
