@@ -49,6 +49,24 @@ _SLIDE_KEYS = (
 )
 _MAX_SLIDES = 60
 
+# Dashboard-spec allowlist for the /dashboard surface (prem-rpt-02). CONTENT ONLY.
+#
+# Same discipline as _SLIDE_KEYS above, and for the same reason: on a REMOTE surface,
+# any path-bearing key that a renderer honours is an arbitrary-file-read primitive — the
+# caller names a file, we render it into a document, and hand the document back.
+#
+# No spec class carries such a key TODAY. That is not the point. The allowlist is what
+# stops the field somebody adds next year from silently becoming one — a blocklist is a
+# list of the holes you already know about. Keys mirror the dataclasses in
+# tools/viz/spec.py; a new content field must be added here consciously.
+_SPEC_KEYS = {
+    "chart": ("kind", "title", "chart_type", "categories", "series", "unit", "max_value"),
+    "table": ("kind", "title", "headers", "rows"),
+    "kpis": ("kind", "title", "tiles"),
+    "diagram": ("kind", "title", "nodes", "edges", "layout"),
+}
+_MAX_TILES = 40
+
 
 # ---------------------------------------------------------------------------
 # Identity — derived server-side, never from the client body
@@ -630,6 +648,76 @@ def api_v1_cost_volume(data):
     return result
 
 
+@_cortex_api
+def api_v1_dashboard(data):
+    """Build and EXPORT a customer-facing dashboard (prem-rpt-02).
+
+    Body: ``{title, tiles: [{spec: {...}}], format: "html"|"pptx"|"pdf",
+    classification?, theme?}``. Returns the same envelope the canvas export returns —
+    HTML inline, PPTX/PDF base64.
+
+    SECURITY — the /slides ``image_path`` hole is the precedent, and it is the reason
+    this endpoint rebuilds every spec from a CONTENT-ONLY ALLOWLIST rather than passing
+    the caller's dict through. A viz spec is a nested structure that renderers walk; on
+    a REMOTE surface, any path-bearing key a renderer honours is an arbitrary-file-read
+    primitive — the caller names a file, we render it into a document, and we hand the
+    document back to them. An allowlist, never a blocklist: a blocklist is a list of the
+    holes you already know about.
+
+    ``classification`` is taken from the KEY's ceiling, not the body. An export leaves
+    the platform by design, so the marking travels with it — and a caller must not be
+    able to talk its own export down to UNCLASSIFIED.
+
+    Scope: ``cortex:dashboard`` — NOT in the default grant.
+    """
+    from tools.bi_dashboard.export import export_dashboard, supported_formats
+
+    if not isinstance(data, dict):
+        raise validators.CortexValidationError("body must be a JSON object")
+
+    tiles = data.get("tiles")
+    if not isinstance(tiles, list) or not tiles:
+        raise validators.CortexValidationError("tiles must be a non-empty list")
+    if len(tiles) > _MAX_TILES:
+        raise validators.CortexValidationError(
+            f"too many tiles ({len(tiles)}); max is {_MAX_TILES}")
+
+    fmt = str(data.get("format") or "html").strip().lower()
+    if fmt not in supported_formats():
+        raise validators.CortexValidationError(
+            f"format must be one of {supported_formats()}, got {fmt!r}")
+
+    clean_tiles = []
+    for index, tile in enumerate(tiles):
+        if not isinstance(tile, dict):
+            raise validators.CortexValidationError(f"tile {index} must be an object")
+        spec = tile.get("spec")
+        if not isinstance(spec, dict):
+            raise validators.CortexValidationError(f"tile {index} has no spec object")
+        kind = str(spec.get("kind") or "")
+        if kind not in _SPEC_KEYS:
+            raise validators.CortexValidationError(
+                f"tile {index}: unsupported spec kind {kind!r} "
+                f"(allowed: {', '.join(sorted(_SPEC_KEYS))})")
+        # ALLOWLIST — never a blocklist. Path-bearing keys never reach a renderer.
+        clean_tiles.append({
+            "spec": {k: spec[k] for k in _SPEC_KEYS[kind] if k in spec}
+        })
+
+    binding = getattr(g, "cortex_binding", None) or {}
+    dashboard = {
+        "title": str(data.get("title") or "Dashboard"),
+        # From the KEY, not the body. A caller cannot mark its own export down.
+        "classification": str(binding.get("classification_ceiling") or "CUI"),
+        "tiles": clean_tiles,
+    }
+
+    result = export_dashboard(dashboard, fmt)
+    logger.info("dashboard export: format=%s tiles=%d", fmt, len(clean_tiles))
+    result["tile_count"] = len(clean_tiles)
+    return result
+
+
 def api_v1_health():
     """Liveness probe — config + air-gap posture, no LLM call, no auth.
 
@@ -648,6 +736,7 @@ def api_v1_health():
             "operations": [
                 "search", "ask", "complete", "classify", "extract", "govern",
                 "intake", "slides", "win_themes", "staffing_matrix", "cost_volume",
+                "dashboard",
             ],
         })
     except Exception as exc:  # noqa: BLE001
@@ -673,6 +762,7 @@ def register_rest_v1(cortex_bp) -> None:
         ("win_themes", api_v1_win_themes),
         ("staffing_matrix", api_v1_staffing_matrix),
         ("cost_volume", api_v1_cost_volume),
+        ("dashboard", api_v1_dashboard),
     ):
         cortex_bp.add_url_rule(
             f"{_API_V1}/{name}", f"api_v1_{name}", view, methods=["POST"]
