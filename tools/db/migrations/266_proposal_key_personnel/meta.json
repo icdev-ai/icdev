@@ -1,0 +1,10 @@
+{
+  "id": "266",
+  "name": "proposal_key_personnel",
+  "description": "Add proposal_key_personnel — the bid-side people->LCAT table. pg_lcat_allocations is task->LCAT->FTE (never names a human) and pma_personnel is post-award (keyed on contract_id), so program_bridge was regex-scraping names out of proposal_section_drafts prose. Append-only; RLS/tenant columns from the start.",
+  "created_at": "2026-07-12",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true,
+  "requires_downtime": false
+}

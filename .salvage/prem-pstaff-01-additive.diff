@@ -1,0 +1,99 @@
+diff --git a/tests/conftest.py b/tests/conftest.py
+index 35eb8d50b..98606ce44 100644
+--- a/tests/conftest.py
++++ b/tests/conftest.py
+@@ -97,7 +97,6 @@ CREATE TABLE IF NOT EXISTS kanban_tasks (
+     task_type             TEXT DEFAULT 'build',
+     priority              TEXT DEFAULT 'high',
+     status                TEXT DEFAULT 'backlog',
+-    project_id            TEXT DEFAULT 'default',
+     scheduled_at          TEXT,
+     created_at            TEXT DEFAULT CURRENT_TIMESTAMP,
+     updated_at            TEXT DEFAULT CURRENT_TIMESTAMP,
+@@ -111,8 +110,6 @@ CREATE TABLE IF NOT EXISTS kanban_tasks (
+     last_failure_reason   TEXT,
+     last_failure_at       TEXT,
+     dispatch_source       TEXT DEFAULT 'unknown',
+-    trace_id              TEXT,
+-    span_id               TEXT,
+     hitl_stage            TEXT,
+     start_date            TEXT,
+     target_date           TEXT,
+@@ -166,7 +163,6 @@ CREATE TABLE IF NOT EXISTS kanban_verifications (
+     review_passed         INTEGER,
+     review_findings       TEXT,
+     pytest_ran            INTEGER DEFAULT 0,
+-    dispatch_source       TEXT DEFAULT 'unknown',
+     created_at            TEXT DEFAULT CURRENT_TIMESTAMP
+ );
+ CREATE TABLE IF NOT EXISTS kanban_status_transitions (
+@@ -2105,6 +2101,29 @@ CREATE TABLE IF NOT EXISTS cortex_search_history (
+     tenant_id       TEXT DEFAULT 'default',
+     created_at      TEXT DEFAULT (datetime('now'))
+ );
++-- Bid-side key personnel (prem-pstaff-01). Append-only; CHECK values mirror the
++-- constants in tools/govcon/key_personnel.py (migration 266).
++CREATE TABLE IF NOT EXISTS proposal_key_personnel (
++    id                      TEXT PRIMARY KEY,
++    opportunity_id          TEXT NOT NULL,
++    person_ref              TEXT NOT NULL,
++    name                    TEXT NOT NULL,
++    proposed_lcat           TEXT,
++    qualification_verdict   TEXT DEFAULT 'unverified'
++        CHECK(qualification_verdict IN ('unverified', 'qualified', 'gap', 'not_qualified')),
++    evidence_json           TEXT DEFAULT '[]',
++    source                  TEXT NOT NULL DEFAULT 'manual'
++        CHECK(source IN ('manual', 'resume', 'llm_extraction', 'draft_scrape', 'import', 'compass')),
++    status                  TEXT NOT NULL DEFAULT 'proposed'
++        CHECK(status IN ('proposed', 'withdrawn')),
++    notes                   TEXT,
++    created_at              TEXT NOT NULL,
++    created_by              TEXT,
++    classification          TEXT DEFAULT 'CUI',
++    tenant_id               TEXT
++);
++CREATE INDEX IF NOT EXISTS idx_pkp_opp ON proposal_key_personnel(opportunity_id);
++CREATE INDEX IF NOT EXISTS idx_pkp_ref ON proposal_key_personnel(opportunity_id, person_ref);
+ """
+ 
+ 
+diff --git a/tools/db/init_icdev_db.py b/tools/db/init_icdev_db.py
+index 618de410a..7f8533ebc 100644
+--- a/tools/db/init_icdev_db.py
++++ b/tools/db/init_icdev_db.py
+@@ -5874,6 +5874,35 @@ CREATE INDEX IF NOT EXISTS idx_draft_section ON proposal_section_drafts(section_
+ CREATE INDEX IF NOT EXISTS idx_draft_opp ON proposal_section_drafts(opportunity_id);
+ CREATE INDEX IF NOT EXISTS idx_draft_status ON proposal_section_drafts(status);
+ 
++-- Bid-side key personnel: who we are proposing, at which LCAT, and whether they
++-- clear the solicitation's qualification bar. pg_lcat_allocations is task->LCAT->FTE
++-- (never names a human) and pma_personnel is post-award (keyed on contract_id), so
++-- without this the bid side had no people table and program_bridge scraped names out
++-- of draft prose. Append-only: verdict changes and withdrawals append a new revision.
++-- CHECK values mirror QUALIFICATION_VERDICTS / PERSON_SOURCES / PERSON_STATUSES in
++-- tools/govcon/key_personnel.py, which is the source of truth (migration 266).
++CREATE TABLE IF NOT EXISTS proposal_key_personnel (
++    id TEXT PRIMARY KEY,
++    opportunity_id TEXT NOT NULL,
++    person_ref TEXT NOT NULL,
++    name TEXT NOT NULL,
++    proposed_lcat TEXT,
++    qualification_verdict TEXT DEFAULT 'unverified'
++        CHECK(qualification_verdict IN ('unverified', 'qualified', 'gap', 'not_qualified')),
++    evidence_json TEXT DEFAULT '[]',
++    source TEXT NOT NULL DEFAULT 'manual'
++        CHECK(source IN ('manual', 'resume', 'llm_extraction', 'draft_scrape', 'import', 'compass')),
++    status TEXT NOT NULL DEFAULT 'proposed'
++        CHECK(status IN ('proposed', 'withdrawn')),
++    notes TEXT,
++    created_at TEXT NOT NULL,
++    created_by TEXT,
++    classification TEXT DEFAULT 'CUI',
++    tenant_id TEXT
++);
++CREATE INDEX IF NOT EXISTS idx_pkp_opp ON proposal_key_personnel(opportunity_id);
++CREATE INDEX IF NOT EXISTS idx_pkp_ref ON proposal_key_personnel(opportunity_id, person_ref);
++
+ -- Reusable proposal content blocks (allows UPDATE for refinement, D368)
+ CREATE TABLE IF NOT EXISTS proposal_knowledge_base (
+     id TEXT PRIMARY KEY,

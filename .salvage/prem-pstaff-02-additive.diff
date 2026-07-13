@@ -1,0 +1,243 @@
+diff --git a/tests/conftest.py b/tests/conftest.py
+index 35eb8d50b..d9666e1be 100644
+--- a/tests/conftest.py
++++ b/tests/conftest.py
+@@ -97,7 +97,6 @@ CREATE TABLE IF NOT EXISTS kanban_tasks (
+     task_type             TEXT DEFAULT 'build',
+     priority              TEXT DEFAULT 'high',
+     status                TEXT DEFAULT 'backlog',
+-    project_id            TEXT DEFAULT 'default',
+     scheduled_at          TEXT,
+     created_at            TEXT DEFAULT CURRENT_TIMESTAMP,
+     updated_at            TEXT DEFAULT CURRENT_TIMESTAMP,
+@@ -111,8 +110,6 @@ CREATE TABLE IF NOT EXISTS kanban_tasks (
+     last_failure_reason   TEXT,
+     last_failure_at       TEXT,
+     dispatch_source       TEXT DEFAULT 'unknown',
+-    trace_id              TEXT,
+-    span_id               TEXT,
+     hitl_stage            TEXT,
+     start_date            TEXT,
+     target_date           TEXT,
+@@ -166,7 +163,6 @@ CREATE TABLE IF NOT EXISTS kanban_verifications (
+     review_passed         INTEGER,
+     review_findings       TEXT,
+     pytest_ran            INTEGER DEFAULT 0,
+-    dispatch_source       TEXT DEFAULT 'unknown',
+     created_at            TEXT DEFAULT CURRENT_TIMESTAMP
+ );
+ CREATE TABLE IF NOT EXISTS kanban_status_transitions (
+@@ -2105,6 +2101,28 @@ CREATE TABLE IF NOT EXISTS cortex_search_history (
+     tenant_id       TEXT DEFAULT 'default',
+     created_at      TEXT DEFAULT (datetime('now'))
+ );
++-- Bid-side person -> LCAT registry (migration 266). The evidence CHECK is the
++-- last line of the refuse-the-unevidenced rule the intake enforces.
++CREATE TABLE IF NOT EXISTS proposal_key_personnel (
++    id                     TEXT PRIMARY KEY,
++    opportunity_id         TEXT NOT NULL,
++    person_ref             TEXT NOT NULL,
++    name                   TEXT NOT NULL,
++    proposed_lcat          TEXT NOT NULL,
++    qualification_verdict  TEXT NOT NULL DEFAULT 'qualified',
++    evidence_json          TEXT NOT NULL,
++    source                 TEXT,
++    tenant_id              TEXT NOT NULL DEFAULT 'default',
++    classification         TEXT NOT NULL DEFAULT 'CUI',
++    created_at             TEXT DEFAULT (datetime('now')),
++    updated_at             TEXT DEFAULT (datetime('now')),
++    CONSTRAINT proposal_key_personnel_verdict_check
++        CHECK (qualification_verdict IN ('qualified', 'gap', 'exceeds')),
++    CONSTRAINT proposal_key_personnel_evidence_check
++        CHECK (evidence_json <> '' AND evidence_json <> '[]'),
++    CONSTRAINT proposal_key_personnel_person_unique
++        UNIQUE (opportunity_id, person_ref)
++);
+ """
+ 
+ 
+diff --git a/tools/cortex/client.py b/tools/cortex/client.py
+index e8e0b4cdf..34b161081 100644
+--- a/tools/cortex/client.py
++++ b/tools/cortex/client.py
+@@ -224,6 +224,31 @@ class CortexClient:
+                                    "themes": themes}
+         return self._post("win_themes", payload, timeout)
+ 
++    # -- Staffing matrix (prem-pstaff-02; scope cortex:staffing) -----------------
++
++    def push_staffing_matrix(self, opportunity_id: str, assignments: List[dict], *,
++                             timeout: Optional[int] = None) -> Optional[dict]:
++        """Register an EVIDENCED person -> LCAT staffing matrix for a bid.
++
++        Assignments land in proposal_key_personnel, which the program bridge's
++        staffing plan reads — so a person pushed here appears as a real mapping
++        (name, LCAT, qualification verdict, evidence) rather than a name scraped
++        out of draft prose.
++
++        Each assignment is ``{"name", "proposed_lcat", "evidence", ...}`` plus the
++        optional ``person_ref`` (stable id; re-pushing updates in place),
++        ``qualification_verdict`` (qualified | gap | exceeds), and ``source``.
++        Evidence is rendered text or a list of {"claim", "source"} citations.
++
++        A person mapped to an LCAT with NO qualifying evidence is REFUSED
++        server-side (returned in ``refused``), never stored with an empty
++        evidence field — an unevidenced mapping is an assertion nobody can defend
++        at debrief. Refusing one person does not block the evidenced ones.
++        """
++        payload: Dict[str, Any] = {"opportunity_id": opportunity_id,
++                                   "assignments": assignments}
++        return self._post("staffing_matrix", payload, timeout)
++
+     # -- RICOAS intake bridge (prem-ricoas-02; scope cortex:intake) --------------
+ 
+     def intake_create(self, verbatim_ask: str, *, customer_name: str,
+diff --git a/tools/cortex/rest_v1.py b/tools/cortex/rest_v1.py
+index 3c0ecf0a8..1b2cc75f6 100644
+--- a/tools/cortex/rest_v1.py
++++ b/tools/cortex/rest_v1.py
+@@ -120,7 +120,7 @@ def _scope_denied(operation: str):
+ # ---------------------------------------------------------------------------
+ # Endpoint decorator — auth + JSON parse + uniform error mapping
+ # ---------------------------------------------------------------------------
+-def _cortex_api(func: Callable) -> Callable:
++def _cortex_api(func: Callable | None = None, *, scope: str | None = None) -> Callable:
+     """Wrap a Cortex endpoint with auth, body parsing, and error mapping.
+ 
+     The wrapped function receives the parsed JSON body dict and returns a
+@@ -129,9 +129,17 @@ def _cortex_api(func: Callable) -> Callable:
+       * governance / analyst block   -> 403 (+ serialized GovernanceReport)
+       * analyst-unanswerable         -> 422
+       * anything else                -> 500
++
++    ``scope`` overrides the operation name used for the service-key check, which
++    otherwise defaults to the function name minus ``api_v1_`` (and equals the
++    route). /staffing_matrix is the one endpoint that sets it: the scope governs
++    the staffing CAPABILITY (cortex:staffing), not one URL, so a later
++    /staffing_* route joins the same grant instead of quietly inventing a new one.
+     """
++    if func is None:
++        return functools.partial(_cortex_api, scope=scope)
+ 
+-    operation = func.__name__.replace("api_v1_", "")
++    operation = scope or func.__name__.replace("api_v1_", "")
+ 
+     @functools.wraps(func)
+     def wrapper(*args, **kwargs):
+@@ -475,6 +483,99 @@ def api_v1_win_themes(data):
+     }
+ 
+ 
++@_cortex_api(scope="staffing")
++def api_v1_staffing_matrix(data):
++    """Register an EVIDENCED proposal staffing matrix (prem-pstaff-02).
++
++    Intake for the person -> proposed-LCAT mapping an external capture tool
++    (compass) has already built and QUALIFIED. Accepted rows land in
++    ``proposal_key_personnel``, which ``program_bridge._gather_key_personnel``
++    reads — so a pushed person appears in the staffing plan as a real mapping
++    (name, LCAT, verdict, evidence) instead of a name regex-scraped out of draft
++    prose, which is what the bid side had before.
++
++    EVERY MAPPING MUST CARRY QUALIFYING EVIDENCE. A person mapped to an LCAT with
++    no evidence is REFUSED, not stored with an empty evidence field. This is the
++    same defect class as an uncited win theme: the mapping is what the proposal
++    asserts to the government about who will do the work, so an unevidenced one
++    is an assertion nobody can defend at debrief. Compass sends only evidenced
++    mappings; this is the server-side half of that contract, because "the client
++    checked" is not a security property. Refusing one person does not block the
++    evidenced ones — a 200 with a non-empty ``refused`` list is the normal,
++    honest outcome, and the caller is told exactly who did not make it.
++    """
++    from tools.govcon.key_personnel import VERDICTS, register_person
++
++    if not isinstance(data, dict):
++        raise validators.CortexValidationError("body must be a JSON object")
++
++    opportunity_id = str(data.get("opportunity_id") or "").strip()
++    if not opportunity_id:
++        raise validators.CortexValidationError("opportunity_id is required")
++
++    assignments = data.get("assignments")
++    if not isinstance(assignments, list) or not assignments:
++        raise validators.CortexValidationError("assignments must be a non-empty list")
++
++    ctx = _server_context(validators.domain_of(data))
++    registered, refused = [], []
++
++    for index, assignment in enumerate(assignments):
++        if not isinstance(assignment, dict):
++            raise validators.CortexValidationError(
++                f"assignment {index} must be an object")
++
++        # A row with no person or no LCAT is not a mapping at all — that is a
++        # malformed request (400), not a person we are declining to trust.
++        name = str(assignment.get("name") or "").strip()
++        if not name:
++            raise validators.CortexValidationError(f"assignment {index} has no name")
++        proposed_lcat = str(assignment.get("proposed_lcat") or "").strip()
++        if not proposed_lcat:
++            raise validators.CortexValidationError(
++                f"assignment {index} ({name}) has no proposed_lcat")
++
++        verdict = str(assignment.get("qualification_verdict") or "qualified")
++        if verdict not in VERDICTS:
++            raise validators.CortexValidationError(
++                f"qualification_verdict must be one of {VERDICTS}")
++
++        result = register_person(
++            opportunity_id,
++            name,
++            proposed_lcat,
++            assignment.get("evidence"),
++            person_ref=assignment.get("person_ref") or None,
++            qualification_verdict=verdict,
++            source=assignment.get("source") or None,
++            tenant_id=ctx.tenant_id,
++            classification=ctx.classification,
++        )
++        if result.get("status") == "refused":
++            refused.append({"name": name, "proposed_lcat": proposed_lcat,
++                            "reason": result["reason"]})
++            continue
++        if result.get("status") != "ok":
++            raise validators.CortexValidationError(
++                f"assignment {index} ({name}): {result.get('message', 'rejected')}")
++        registered.append({
++            "person_id": result["person_id"], "person_ref": result["person_ref"],
++            "name": name, "proposed_lcat": proposed_lcat,
++            "qualification_verdict": verdict,
++            "evidence_count": result["evidence_count"],
++        })
++
++    logger.info("staffing-matrix intake: %d registered, %d refused for opportunity %s",
++                len(registered), len(refused), opportunity_id)
++    return {
++        "opportunity_id": opportunity_id,
++        "registered": registered,
++        "refused": refused,
++        "registered_count": len(registered),
++        "refused_count": len(refused),
++    }
++
++
+ def api_v1_health():
+     """Liveness probe — config + air-gap posture, no LLM call, no auth.
+ 
+@@ -492,7 +593,7 @@ def api_v1_health():
+             "airgap": bool(airgap_active(None)),
+             "operations": [
+                 "search", "ask", "complete", "classify", "extract", "govern",
+-                "intake", "slides", "win_themes",
++                "intake", "slides", "win_themes", "staffing_matrix",
+             ],
+         })
+     except Exception as exc:  # noqa: BLE001
+@@ -516,6 +617,7 @@ def register_rest_v1(cortex_bp) -> None:
+         ("govern", api_v1_govern),
+         ("slides", api_v1_slides),
+         ("win_themes", api_v1_win_themes),
++        ("staffing_matrix", api_v1_staffing_matrix),
+     ):
+         cortex_bp.add_url_rule(
+             f"{_API_V1}/{name}", f"api_v1_{name}", view, methods=["POST"]

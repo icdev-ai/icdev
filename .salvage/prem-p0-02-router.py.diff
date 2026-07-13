@@ -1,0 +1,127 @@
+diff --git a/tools/llm/router.py b/tools/llm/router.py
+index 56e577216..de81b4765 100644
+--- a/tools/llm/router.py
++++ b/tools/llm/router.py
+@@ -58,6 +58,22 @@ except ImportError:  # packaged-only install
+ DEFAULT_CONFIG_PATH = resolve_llm_config_path()
+ 
+ 
++class ForceLocalViolation(RuntimeError):
++    """Raised when a ``force_local: true`` function has no local model left to run on.
++
++    This is the fail-closed rung of the CUI egress guarantee (prem-p0-02). A
++    function marked ``force_local`` in ``args/llm_config.yaml`` handles raw
++    CUI (proposal prose, pricing, past performance). If every model in its
++    chain resolves to a cloud provider, the correct behavior is to REFUSE the
++    call — never to quietly fall through to cloud.
++    """
++
++    def __init__(self, message: str, *, function: str = "", chain=None):
++        super().__init__(message)
++        self.function = function
++        self.chain = list(chain or [])
++
++
+ class CrossGraderViolation(RuntimeError):
+     """Raised when no provider is available that isn't excluded by cross-grader constraint.
+ 
+@@ -738,6 +754,16 @@ class LLMRouter:
+         route = routing.get(function, routing.get("default", {}))
+         return route.get("effort", "medium")
+ 
++    def is_force_local(self, function: str) -> bool:
++        """True if *function* is declared ``force_local`` in ``args/llm_config.yaml``.
++
++        Public so the content-policy resolver (prem-p0-01) can honor it as the
++        top rung without re-parsing the config.
++        """
++        routing = self._config.get("routing", {})
++        route = routing.get(function, routing.get("default", {})) or {}
++        return bool(route.get("force_local", False))
++
+     def _get_chain_for_function(self, function: str) -> list:
+         """Get the model chain for a function.
+ 
+@@ -745,6 +771,16 @@ class LLMRouter:
+         toggle takes effect at invoke time even though the base config was
+         rewritten once at construction. A ``False`` override strips the
+         ``claude-cli`` model from the chain so invocation bypasses the bridge.
++
++        Then enforces ``force_local`` (prem-p0-02). This runs AFTER the bridge
++        override on purpose: a ``True`` override PREPENDS ``claude-cli`` (a cloud
++        egress path) to whatever chain it is given, so a chain that merely *looks*
++        local-only in YAML can be fronted by the bridge at invoke time. The old
++        per-function pins never closed that hole. Filtering here does.
++
++        ``force_local`` is the TOP rung of the routing policy: it overrides the
++        content-based resolver (prem-p0-01), which decides every other function.
++        Fails closed — raises rather than falling through to cloud.
+         """
+         routing = self._config.get("routing", {})
+         route = routing.get(function, routing.get("default", {}))
+@@ -752,10 +788,51 @@ class LLMRouter:
+         try:
+             from tools.llm.cli_bridge.activate import apply_cli_bridge_override
+ 
+-            return apply_cli_bridge_override(chain)
++            chain = apply_cli_bridge_override(chain)
+         except Exception as exc:  # pragma: no cover - defensive
+             logger.debug("CLI bridge override skipped: %s", exc)
+-            return list(chain)
++            chain = list(chain)
++
++        if not (route or {}).get("force_local", False):
++            return chain
++
++        # Reuse the ONE definition of "local" (cli_bridge.activate). It keys off the
++        # provider's `api_key_env`, because `ollama` and `ollama_cloud` share
++        # `type: ollama` and only the cloud endpoint carries a key. An unknown model
++        # is not local. If we cannot import the check, we cannot prove locality —
++        # so we refuse rather than guess.
++        try:
++            from tools.llm.cli_bridge.activate import is_local_only_model
++        except ImportError as exc:  # pragma: no cover - defensive
++            raise ForceLocalViolation(
++                f"Function '{function}' is force_local but the locality check is "
++                f"unavailable ({exc}); refusing to route CUI without proof it stays local.",
++                function=function,
++                chain=chain,
++            ) from exc
++
++        models = self._config.get("models", {})
++        providers = self._config.get("providers", {})
++        local_chain = [m for m in chain if is_local_only_model(m, models, providers)]
++
++        dropped = [m for m in chain if m not in local_chain]
++        if dropped:
++            # Not debug: a cloud model reaching a CUI function is a security event.
++            logger.warning(
++                "force_local[%s]: refused non-local model(s) %s — CUI must not egress",
++                function,
++                dropped,
++            )
++
++        if not local_chain:
++            raise ForceLocalViolation(
++                f"Function '{function}' is force_local (handles raw CUI) but no local "
++                f"provider remains in its chain {list(chain)!r}. Refusing to route to "
++                f"cloud. Start Ollama, or fix the chain in args/llm_config.yaml.",
++                function=function,
++                chain=chain,
++            )
++        return local_chain
+ 
+     def _log_telemetry(
+         self,
+@@ -956,7 +1033,10 @@ class LLMRouter:
+ 
+             return sanitizer.session_id
+ 
+-        except RedactionUnavailableError:
++        except (RedactionUnavailableError, ForceLocalViolation):
++            # ForceLocalViolation is itself a fail-closed egress refusal — let it
++            # through rather than reporting it as a redaction failure (and rather
++            # than letting the fail-open branch below swallow it).
+             raise
+         except Exception as exc:
+             # Sanitization errored mid-flight. Fail-closed blocks egress;
