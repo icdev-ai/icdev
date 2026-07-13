@@ -54,6 +54,22 @@ WORKTREE_BASE = BASE_DIR / ".tmp" / "worktrees"
 # default, so an absent/empty registry is a complete no-op and every existing
 # task behaves byte-identically.
 # ---------------------------------------------------------------------------
+def _manual_build() -> bool:
+    """True when Manual Build is on: promote and track, but do not dispatch.
+
+    Never raises, and fails to AUTOMATIC on any error. An unreadable flag file must
+    not silently stop every build on the board — "nothing happened and nobody noticed"
+    is the failure mode worth engineering against here.
+    """
+    try:
+        from tools.kanban.build_mode import is_manual
+
+        return is_manual()
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("build-mode check failed (defaulting to automatic): %s", exc)
+        return False
+
+
 def _task_repo_target(task_id: str):
     """The RepoTarget for a task, or None if resolution failed (-> ICDev)."""
     try:
@@ -3416,12 +3432,44 @@ _degraded_executors_probed_at: Dict[str, datetime] = {}
 _DEGRADATION_PROBE_INTERVAL = timedelta(minutes=5)  # Default if no reset hint parsed
 
 
+def _selected_model() -> Optional[dict]:
+    """The model the operator picked for the runner, resolved. None => config routing.
+
+    Never raises: an unreadable override degrades to the default rather than stopping
+    every build.
+    """
+    try:
+        from tools.kanban.model_override import spec
+
+        return spec()
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("model-override check failed (using config routing): %s", exc)
+        return None
+
+
 def _build_effective_executor_chain(original_chain: list) -> list:
     """Return executor chain with degraded executors moved to the end (or removed).
 
     If all executors are degraded, returns the original chain anyway so the
     scheduler can attempt them as a last resort.
+
+    MODEL OVERRIDE: if the operator selected a model the Claude Code CLI cannot serve
+    (Kimi, Ollama, GPT...), claude_cli is REMOVED from the chain. Leaving it in would
+    mean the runner keeps building with Claude while the dropdown says otherwise — a
+    control that looks like it worked and did nothing, which is worse than no control.
+    Selecting a model means building with it.
     """
+    model = _selected_model()
+    if model and not model.get("cli_capable"):
+        dropped = [t for t in original_chain if t == "claude_cli"]
+        if dropped:
+            logger.info(
+                "kanban: model %r (provider %s) cannot be served by the Claude CLI — "
+                "dropping claude_cli from the executor chain for this dispatch.",
+                model["name"], model.get("provider"),
+            )
+        original_chain = [t for t in original_chain if t != "claude_cli"]
+
     degraded = [tier for tier in original_chain if tier in _degraded_executors]
     active = [tier for tier in original_chain if tier not in _degraded_executors]
 
@@ -3739,15 +3787,27 @@ def _dispatch_via_claude_cli(task: dict, prompt_path: str, instruction: str,
         _instr_tmp.close()
         _stdin_fh = open(_instr_tmp.name, "r", encoding="utf-8", errors="replace")
 
+        # Model override: a Claude model selected in the dashboard is passed straight
+        # through to the CLI. A NON-Claude selection never reaches here at all — it
+        # removes claude_cli from the executor chain (_build_effective_executor_chain),
+        # because the CLI cannot serve it and quietly ignoring the choice would make the
+        # dropdown a lie.
+        _cli_args = [
+            claude_cli,
+            "--dangerously-skip-permissions",
+            "--max-turns",
+            "50",
+            "--output-format",
+            "text",
+        ]
+        _model = _selected_model()
+        if _model and _model.get("cli_capable") and _model.get("model_id"):
+            _cli_args += ["--model", str(_model["model_id"])]
+            logger.info("kanban: dispatching %s on model %s (%s)",
+                        task_id, _model["name"], _model["model_id"])
+
         proc = subprocess.Popen(
-            [
-                claude_cli,
-                "--dangerously-skip-permissions",
-                "--max-turns",
-                "50",
-                "--output-format",
-                "text",
-            ],
+            _cli_args,
             cwd=work_dir,
             stdin=_stdin_fh,
             stdout=log_fh,
@@ -3957,6 +4017,14 @@ def _dispatch_via_llm_router(task: dict, prompt_path: str, instruction: str,
                     agent_id="kanban-executor",
                     project_id="dashboard-kanban",
                 )
+                # Model override: the operator picked a model, so build with THAT — not
+                # with whatever llm_config routes 'code_generation' to. This is the path
+                # a Kimi/Ollama/GPT selection takes (claude_cli having been dropped from
+                # the chain), and it is the whole point of the selector: when Claude is
+                # exhausted, the runner keeps going on something else.
+                _mo = _selected_model()
+                if _mo:
+                    request.model = _mo["name"]
                 response = router.invoke("code_generation", request)
 
                 fh.write(response.content or "")
@@ -4584,6 +4652,26 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
     """
     task_id = task["id"]
     title = task.get("title", "Untitled")
+
+    # ── Manual Build: the board keeps working; the runner does not build ──────
+    # This is the single choke point where an executor is spawned — the normal
+    # path, the token-exhausted retry, and every recovery re-dispatch all come
+    # through here. Guarding it here rather than at each call site is what makes
+    # "no automatic build" actually true rather than mostly true.
+    #
+    # The task is left at `scheduled`, NOT moved to in_progress: callers only
+    # advance it when the subprocess is confirmed running (`task_id in _running`),
+    # so a no-op dispatch leaves it visible in the Scheduled column, which is
+    # exactly where a CLI session should find it and pick it up.
+    #
+    # Promotion, project cards, and the rest of the cycle are untouched — that is
+    # the whole difference between this and Pause Scheduler.
+    if _manual_build():
+        logger.info(
+            "kanban: Manual Build is ON — not dispatching %s (%s). It stays SCHEDULED "
+            "for a CLI session to pick up.", task_id, title[:50],
+        )
+        return
 
     # ── Repo-aware dispatch: external-repo tasks ──────────────────────────────
     # An external-repo task (prem-* compass / idea_lab work, per
@@ -6933,6 +7021,25 @@ def _reap_stale_in_progress() -> None:
                 continue
 
             age_seconds = (now - updated_at).total_seconds()
+
+            # Manual Build: do not reap a task a HUMAN is building.
+            #
+            # From the outside, a CLI session two hours into a task is indistinguishable
+            # from a scheduler subprocess that died an hour ago: no live PID in _running,
+            # no log output. The reaper would reset it to backlog, incrementing
+            # failure_count — silently destroying the record of where the build had got
+            # to, which is the one thing Manual Build exists to preserve.
+            #
+            # So while Manual Build is on, a task whose in_progress transition was
+            # recorded by a NON-scheduler actor is left alone, for as long as it takes.
+            # A genuinely dead scheduler subprocess is still reaped: it was dispatched by
+            # the scheduler, so it does not match, and it really is dead.
+            if _manual_build() and not _task_dispatched_by_scheduler(tid, conn):
+                logger.debug(
+                    "stale-reaper: skipping %s — Manual Build is on and this task is "
+                    "manually dispatched (age %.0f min)", tid, age_seconds / 60,
+                )
+                continue
 
             # Hard ceiling: any task in_progress for >24 h is force-reaped even
             # if it appears to have a live subprocess. A genuine 24 h run does

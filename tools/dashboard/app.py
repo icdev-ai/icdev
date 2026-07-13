@@ -1919,6 +1919,54 @@ def create_app(testing: bool = False) -> Flask:
         body = flask_request.get_json(silent=True) or {}
         return jsonify(_sched_resume(actor=body.get("actor", "dashboard")))
 
+    @app.route("/api/kanban/build-mode", methods=["GET", "POST"])
+    def kanban_build_mode():
+        """Manual Build: promote and track as normal, but do not auto-dispatch.
+
+        NOT the same as Pause Scheduler. Pausing freezes the whole cycle — nothing
+        promotes, nothing is tracked, and a build you then do by hand is invisible to the
+        board. Manual Build stops only the dispatch: backlog still promotes to scheduled,
+        project cards still show progress, and a CLI session does the building. So when a
+        manual build is interrupted, the board still says exactly where it got to.
+        """
+        from tools.kanban.build_mode import set_manual, status as _bm_status  # noqa: PLC0415
+
+        if flask_request.method == "GET":
+            return jsonify(_bm_status())
+
+        body = flask_request.get_json(silent=True) or {}
+        manual = bool(body.get("manual"))
+        return jsonify(set_manual(
+            manual,
+            actor=body.get("actor", "dashboard"),
+            reason=body.get("reason", ""),
+        ))
+
+    @app.route("/api/kanban/build-model", methods=["GET", "POST"])
+    def kanban_build_model():
+        """Which model the runner builds with. Live — no scheduler restart.
+
+        POST {"model": null} clears back to config-driven routing.
+
+        Selecting a model the Claude CLI cannot serve (Kimi, Ollama, GPT...) removes
+        claude_cli from the executor chain, so the choice actually takes effect rather
+        than being silently ignored while Claude keeps building.
+        """
+        from tools.kanban.model_override import (  # noqa: PLC0415
+            available as _models_available,
+            set_model as _set_model,
+            status as _model_status,
+        )
+
+        if flask_request.method == "GET":
+            return jsonify({**_model_status(), "available": _models_available()})
+
+        body = flask_request.get_json(silent=True) or {}
+        try:
+            return jsonify(_set_model(body.get("model"), actor=body.get("actor", "dashboard")))
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+
     @app.route("/api/kanban/recent-events")
     def api_kanban_recent_events():
         """GET /api/kanban/recent-events — Last 24h kanban task events from notifications.
