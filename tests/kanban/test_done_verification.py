@@ -118,6 +118,76 @@ def test_branch_has_unmerged_commits_fail_open_on_exception(monkeypatch):
     assert kb._branch_has_unmerged_commits("t-1") is False
 
 
+# ── 3b. Repo-aware done-gate: git runs in the TASK's repo, not BASE_DIR ───────
+#
+# ked-core-03: the done-gate must ask the EXTERNAL repo whether the work landed.
+# Run against ICDev (BASE_DIR) it always answers "no unmerged commits" for a
+# compass task — the branch does not exist there — so the gate silently passes
+# on evidence it never actually looked at. These two tests pin the cwd of every
+# git invocation, driving the REAL registry chain (yaml + root env var) rather
+# than stubbing _task_repo_root, so a regression in resolution is caught too.
+
+@pytest.fixture
+def _external_registry(tmp_path, monkeypatch):
+    """Point the repo registry at a throwaway external repo for `ext-` tasks."""
+    repo_root = tmp_path / "compass-repo"
+    repo_root.mkdir()
+    config = tmp_path / "external_repos.yaml"
+    config.write_text(
+        "repos:\n"
+        "  compass:\n"
+        "    base_branch: develop\n"
+        "    root_env: ICDEV_TEST_REPO_COMPASS\n"
+        "prefixes:\n"
+        "  ext-: compass\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ICDEV_KANBAN_REPOS_CONFIG", str(config))
+    monkeypatch.setenv("ICDEV_TEST_REPO_COMPASS", str(repo_root))
+    return repo_root
+
+
+def _capture_git_cwds(monkeypatch):
+    """Record the cwd of every subprocess.run call; report branch as unmerged."""
+    seen: list[str] = []
+
+    def fake_run(cmd, *a, **k):
+        seen.append(k.get("cwd"))
+        argv = cmd if isinstance(cmd, list) else [cmd]
+        if "log" in argv:
+            return _Fake(returncode=0, stdout="c1 work\n")
+        return _Fake(returncode=0)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    return seen
+
+
+def test_branch_has_unmerged_commits_runs_git_in_external_repo(
+    _external_registry, monkeypatch
+):
+    seen = _capture_git_cwds(monkeypatch)
+
+    assert kb._branch_has_unmerged_commits("ext-1") is True
+
+    # Every git call landed in the external repo — none in ICDev's BASE_DIR.
+    assert seen, "no git commands were executed"
+    assert all(Path(cwd) == _external_registry for cwd in seen), seen
+    assert all(Path(cwd) != Path(kb.BASE_DIR) for cwd in seen), seen
+
+
+def test_branch_has_unmerged_commits_icdev_task_still_uses_base_dir(
+    _external_registry, monkeypatch
+):
+    """A task matching no external prefix must keep building in ICDev."""
+    seen = _capture_git_cwds(monkeypatch)
+    monkeypatch.setattr(kb, "_default_branch", lambda: "main")
+
+    assert kb._branch_has_unmerged_commits("icdev-task-1") is True
+
+    assert seen, "no git commands were executed"
+    assert all(Path(cwd) == Path(kb.BASE_DIR) for cwd in seen), seen
+
+
 # ── 4. Merge-verify done-gate in _move_task ──────────────────────────────────
 
 @pytest.fixture
