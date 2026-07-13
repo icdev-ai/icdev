@@ -248,3 +248,32 @@ def test_period_of_performance_is_flagged_not_invented(db):
         (out["contract_id"],),
     ).fetchone())
     assert row["pop_start"] is None and row["pop_end"] is None
+
+
+def test_a_ZERO_rate_is_real_data_not_a_missing_one(db):
+    """`if not rate` is falsy for 0.0.
+
+    The original bug replaced a legitimate $0.00 line — customer-furnished or
+    government-furnished labour, a no-charge resource — with the $85 default. The one
+    case where the data was RIGHT is the case it corrupted.
+
+    My first fix inherited the same truthiness test and would have flagged a valid
+    zero-rate line as UNRATED, blocking a price that was perfectly correct. Missing and
+    zero are different things. (Caught by compass's tools/pricing/boe.py spec, which
+    called this out explicitly.)
+    """
+    from tools.govcon.rate_benchmarker import generate_cost_volume
+
+    _alloc(db, "opp-1", "Senior Systems Engineer", 2.0, 150.0)
+    _alloc(db, "opp-1", "Gov-Furnished Support", 1.0, 0.0)   # a REAL zero rate
+
+    out = generate_cost_volume("opp-1")
+
+    assert out["status"] == "ok"          # not "unpriced" — nothing is missing
+    assert out["unrated_count"] == 0
+    assert len(out["line_items"]) == 2
+
+    zero_line = [li for li in out["line_items"]
+                 if li["labor_category"] == "Gov-Furnished Support"][0]
+    assert zero_line["hourly_rate"] == 0.0
+    assert zero_line["annual_cost"] == 0.0     # priced at $0, NOT at $85
