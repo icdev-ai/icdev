@@ -2,13 +2,12 @@
 # Dispatch-proof seed — the one real compass task behind ked-vfy-01
 # ("Prove it: dispatch one real compass task end to end").
 #
-# This file is the TASK DEFINITION. The ROUTING that actually sends it to
-# compass lives in args/kanban_external_repos.yaml, which maps the id prefix
-# `prem-vfy` -> compass. Both must agree: repo_registry.resolve_task_repo()
-# falls back to the ICDev default for any prefix missing from that registry, so
-# a seed task whose prefix is unregistered would be built inside ICDev's own
-# tree — the exact churn this stream exists to eliminate. The test asserts the
-# two files agree, so they cannot drift apart silently.
+# Consumed by tools/kanban/seed_compass_dispatch_probe.py. This file is the
+# task definition; the ROUTING that actually sends it to compass lives in
+# args/kanban_external_repos.yaml (prefix `prem-vfy` -> compass). Both must
+# agree — the seeder cross-checks them and refuses to seed if they drift,
+# because an unregistered prefix resolves to ICDev by default and would build
+# a "compass" task inside ICDev's own tree.
 #
 # The work itself is deliberately trivial and low-blast-radius: the point is to
 # observe dispatch -> branch -> CI -> PR -> merge in compass (ked-vfy-01 d2-d5),
