@@ -9435,6 +9435,36 @@ CREATE TABLE IF NOT EXISTS pg_win_themes (
 );
 CREATE INDEX IF NOT EXISTS idx_pg_wintheme_opp ON pg_win_themes(opportunity_id);
 
+-- prem-pstaff-01: the bid side's person -> LCAT registry. pg_lcat_allocations is
+-- task->LCAT->FTE and never names a human; pma_personnel is post-award (contract_id).
+-- Before this, the Key Personnel volume was built by regex-scraping capitalised
+-- bigrams out of proposal prose (program_bridge._gather_key_personnel).
+--
+-- The CHECKs here MUST match tools/govcon/key_personnel.py's QUALIFICATION_VERDICTS
+-- and PERSON_SOURCES. They are restated rather than derived because this file is the
+-- literal SQLite bootstrap; tests/test_key_personnel.py asserts they agree, so a
+-- change to the Python constants that is not mirrored here fails the suite.
+--
+-- The evidence CHECK is the refuse-the-unevidenced rule in the schema: an unevidenced
+-- person->LCAT mapping reaches the customer as an assertion nobody can defend.
+CREATE TABLE IF NOT EXISTS proposal_key_personnel (
+    id                    TEXT PRIMARY KEY,
+    opportunity_id        TEXT NOT NULL,
+    person_ref            TEXT NOT NULL,
+    name                  TEXT NOT NULL,
+    proposed_lcat         TEXT NOT NULL,
+    qualification_verdict TEXT NOT NULL CHECK(qualification_verdict IN ('qualified', 'gap', 'exceeds')),
+    evidence_json         TEXT NOT NULL CHECK(evidence_json <> '' AND evidence_json <> '[]'),
+    source                TEXT CHECK(source IS NULL OR source IN ('compass', 'manual', 'resume_match', 'scraped')),
+    tenant_id             TEXT NOT NULL DEFAULT 'default',
+    classification        TEXT NOT NULL DEFAULT 'CUI',
+    created_at            TIMESTAMP,
+    updated_at            TIMESTAMP,
+    UNIQUE (opportunity_id, person_ref)
+);
+CREATE INDEX IF NOT EXISTS idx_pkp_opportunity ON proposal_key_personnel(opportunity_id);
+CREATE INDEX IF NOT EXISTS idx_pkp_verdict ON proposal_key_personnel(qualification_verdict);
+
 CREATE TABLE IF NOT EXISTS pg_theme_tracking (
     id                      TEXT PRIMARY KEY,
     theme_id                TEXT NOT NULL,

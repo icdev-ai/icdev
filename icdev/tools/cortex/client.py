@@ -224,6 +224,33 @@ class CortexClient:
                                    "themes": themes}
         return self._post("win_themes", payload, timeout)
 
+    # -- Staffing matrix (prem-pstaff-02; scope cortex:staffing_matrix) -----------
+
+    def push_staffing_matrix(self, opportunity_id: str, people: List[dict], *,
+                             timeout: Optional[int] = None) -> Optional[dict]:
+        """Register EVIDENCED person -> LCAT mappings against a proposal opportunity.
+
+        People land in ``proposal_key_personnel``, which is the bid side's first and
+        only person->LCAT table. Before it, the Key Personnel volume was built by
+        regex-scraping capitalised bigrams out of proposal prose — a pattern that
+        matches "Program Manager" as readily as it matches a person.
+
+        Each person is ``{"person_ref", "name", "proposed_lcat",
+        "qualification_verdict", "evidence"}`` where the verdict is one of
+        qualified / gap / exceeds (compass's tools/staffing/qualification.py) and
+        evidence is rendered text or a list of ``{"claim", "source"}`` rows drawn
+        from the resume.
+
+        An UNEVIDENCED mapping is REFUSED server-side (returned in ``refused``), never
+        stored: a person proposed for a labour category with nothing behind the claim
+        reaches the customer as an assertion nobody can defend at debrief. Refusals do
+        not fail the batch — 29 evidenced people still land if the 30th has a thin
+        resume.
+        """
+        payload: Dict[str, Any] = {"opportunity_id": opportunity_id,
+                                   "people": people}
+        return self._post("staffing_matrix", payload, timeout)
+
     # -- RICOAS intake bridge (prem-ricoas-02; scope cortex:intake) --------------
 
     def intake_create(self, verbatim_ask: str, *, customer_name: str,
