@@ -139,3 +139,75 @@ def test_the_client_has_a_pricing_method():
     from tools.cortex.client import CortexClient
 
     assert hasattr(CortexClient, "price_cost_volume")
+
+
+# ---------------------------------------------------------------------------
+# prem-bid-04 — accepting a price compass owns
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def accepted(monkeypatch):
+    calls = []
+
+    def _fake(**kw):
+        calls.append(kw)
+        return {"status": "accepted", "cost_volume_id": "cv-1",
+                "opportunity_id": kw["opportunity_id"],
+                "total_evaluated_price": 299376.0, "priced_by": kw["source"],
+                "line_item_count": 2}
+
+    mod = importlib.import_module("tools.govcon.cost_volume_intake")
+    monkeypatch.setattr(mod, "accept_cost_volume", _fake)
+    return calls
+
+
+def test_a_pushed_price_is_ACCEPTED_not_recomputed(accepted, priced):
+    """compass owns the price. ICDEV computing its own number would give two prices for
+    one bid — worse than none, because somebody must then decide which is real."""
+    client = make_client(binding=_binding([SCOPE]))
+    resp = client.post("/cortex/api/v1/cost_volume", json={
+        "opportunity_id": "opp-1",
+        "priced": {"status": "ok", "total_price": 299376.0},
+        "priced_by": "compass",
+    })
+
+    assert resp.status_code == 200
+    assert resp.get_json()["status"] == "accepted"
+    assert accepted[0]["source"] == "compass"
+    # And ICDEV's own pricing path was NOT run.
+    assert priced == []
+
+
+def test_the_key_is_authoritative_for_tenant_on_an_accepted_price(accepted):
+    client = make_client(binding=_binding([SCOPE]))
+    client.post("/cortex/api/v1/cost_volume", json={
+        "opportunity_id": "opp-1",
+        "priced": {"status": "ok", "total_price": 1.0},
+        "tenant_id": "acme",           # hostile
+    })
+    assert accepted[0]["tenant_id"] == "compass"
+
+
+def test_an_unknown_pricing_source_is_rejected(accepted):
+    client = make_client(binding=_binding([SCOPE]))
+    resp = client.post("/cortex/api/v1/cost_volume", json={
+        "opportunity_id": "opp-1",
+        "priced": {"status": "ok", "total_price": 1.0},
+        "priced_by": "whoever",
+    })
+    assert resp.status_code == 400
+    assert accepted == []
+
+
+def test_no_priced_body_still_COMPUTES_the_volume(priced):
+    """The internal path survives — for opportunities compass never touched."""
+    client = make_client(binding=_binding([SCOPE]))
+    client.post("/cortex/api/v1/cost_volume", json={"opportunity_id": "opp-1"})
+    assert priced and priced[0]["opportunity_id"] == "opp-1"
+
+
+def test_the_client_has_a_push_method():
+    from tools.cortex.client import CortexClient
+
+    assert hasattr(CortexClient, "push_priced_cost_volume")

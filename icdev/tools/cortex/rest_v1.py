@@ -634,6 +634,41 @@ def api_v1_cost_volume(data):
     if not opportunity_id:
         raise validators.CortexValidationError("opportunity_id is required")
 
+    # prem-bid-04 — WHO OWNS THE PRICE.
+    #
+    # ICDEV can compute a volume, but it prices from pg_lcat_allocations, whose
+    # hourly_rate is frequently NULL: ICDEV does not hold the supplier rate cards.
+    # compass does — it merges ~80 supplier files and knows what an LCAT actually costs
+    # from a given vendor on a given date. So compass is the PRICING AUTHORITY, and
+    # ICDEV computing its own number would give us two prices for one bid. That is worse
+    # than having none: somebody then has to decide which is real, and they will decide
+    # it late.
+    #
+    # A `priced` body means "here is the price, recorded by the party that owns it".
+    # Accepting is not believing — the volume is reconciled against its own line items
+    # and refused if it declares itself partial. See cost_volume_intake.
+    priced = data.get("priced")
+    if priced is not None:
+        from tools.govcon.cost_volume_intake import PRICING_SOURCES, accept_cost_volume
+
+        source = str(data.get("priced_by") or "compass")
+        if source not in PRICING_SOURCES:
+            raise validators.CortexValidationError(
+                f"priced_by must be one of {list(PRICING_SOURCES)}")
+
+        binding = getattr(g, "cortex_binding", None) or {}
+        result = accept_cost_volume(
+            opportunity_id=opportunity_id,
+            priced=priced,
+            source=source,
+            # From the KEY, never the body.
+            tenant_id=str(binding.get("tenant_id") or "default"),
+            classification=str(binding.get("classification_ceiling") or "CUI"),
+        )
+        logger.info("cost-volume INTAKE: opportunity=%s status=%s source=%s",
+                    opportunity_id, result.get("status"), source)
+        return result
+
     contract_type = str(data.get("contract_type") or "ffp").strip().lower()
     allow_unrated = bool(data.get("allow_unrated"))
 
