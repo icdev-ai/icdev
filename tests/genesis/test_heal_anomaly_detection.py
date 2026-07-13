@@ -118,7 +118,11 @@ class TestGetHealingPatterns:
             _get_healing_patterns(min_confidence=0.85)
         call_args = conn.execute.call_args
         sql, params = call_args[0]
-        assert "?" in sql
+        # PostgreSQL is the primary backend, so runtime SQL is authored with %s
+        # placeholders (per CLAUDE.md); tools.db.storage translates them to ? on
+        # the SQLite init fallback. This asserted "?" -- the pre-PG-primary
+        # contract -- so it failed against correct production SQL.
+        assert "%s" in sql
         assert params == (0.85,)
 
     def test_default_min_confidence_is_0_7(self):

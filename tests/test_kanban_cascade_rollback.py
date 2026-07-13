@@ -27,6 +27,9 @@ import sqlite3
 import pytest
 
 
+
+from tools.db.storage import get_connection as _real_get_connection
+
 _SCHEMA = """
 CREATE TABLE kanban_tasks (
     id                    TEXT PRIMARY KEY,
@@ -82,9 +85,12 @@ def kanban_db(tmp_path, monkeypatch):
     conn.close()
 
     def _fake_conn(*_a, **_kw):
-        c = sqlite3.connect(str(db_path))
-        c.row_factory = sqlite3.Row
-        return c
+        # Go through tools.db.storage, NOT raw sqlite3. Runtime SQL is authored for
+        # PostgreSQL (%s placeholders, per CLAUDE.md) and the storage wrapper translates
+        # them to SQLite's ?. A raw sqlite3 connection makes every %s a syntax error.
+        # _real_get_connection is bound at import time, so patching storage's attribute
+        # below cannot recurse back into this.
+        return _real_get_connection(db_path=str(db_path))
 
     import importlib
     _storage = importlib.import_module("tools.db.storage")

@@ -170,6 +170,16 @@ _KANBAN_TASKS_EXTRA_COLUMNS = [
     ("max_runtime_seconds", "ALTER TABLE kanban_tasks ADD COLUMN max_runtime_seconds  INTEGER"),
     ("acceptance_criteria", "ALTER TABLE kanban_tasks ADD COLUMN acceptance_criteria  TEXT"),
     ("triage_prompt",       "ALTER TABLE kanban_tasks ADD COLUMN triage_prompt        TEXT"),
+    # Trace linkage. PostgreSQL got these via migration; the init fallback never
+    # did, so _decompose_batch_tasks (which INSERTs trace_id/span_id) failed on
+    # every child and silently decomposed batches into zero children.
+    ("trace_id",            "ALTER TABLE kanban_tasks ADD COLUMN trace_id             TEXT"),
+    ("span_id",             "ALTER TABLE kanban_tasks ADD COLUMN span_id              TEXT"),
+]
+
+# Same conditional-ALTER contract as _KANBAN_TASKS_EXTRA_COLUMNS.
+_KANBAN_VERIFICATIONS_EXTRA_COLUMNS = [
+    ("dispatch_source", "ALTER TABLE kanban_verifications ADD COLUMN dispatch_source TEXT DEFAULT 'unknown'"),
 ]
 
 _KANBAN_TASK_SUBSCRIPTIONS_DDL = """
@@ -256,6 +266,14 @@ def init_kanban_tables(conn=None) -> dict:
         existing_exec = _existing_columns(conn, "kanban_executions")
         for col_name, alter in _KANBAN_EXECUTIONS_EXTRA_COLUMNS:
             if col_name in existing_exec:
+                continue
+            try:
+                conn.execute(alter)
+            except Exception:
+                pass
+        existing_verif = _existing_columns(conn, "kanban_verifications")
+        for col_name, alter in _KANBAN_VERIFICATIONS_EXTRA_COLUMNS:
+            if col_name in existing_verif:
                 continue
             try:
                 conn.execute(alter)

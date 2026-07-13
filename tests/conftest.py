@@ -111,6 +111,8 @@ CREATE TABLE IF NOT EXISTS kanban_tasks (
     last_failure_reason   TEXT,
     last_failure_at       TEXT,
     dispatch_source       TEXT DEFAULT 'unknown',
+    trace_id              TEXT,
+    span_id               TEXT,
     hitl_stage            TEXT,
     start_date            TEXT,
     target_date           TEXT,
@@ -164,6 +166,7 @@ CREATE TABLE IF NOT EXISTS kanban_verifications (
     review_passed         INTEGER,
     review_findings       TEXT,
     pytest_ran            INTEGER DEFAULT 0,
+    dispatch_source       TEXT DEFAULT 'unknown',
     created_at            TEXT DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS kanban_status_transitions (

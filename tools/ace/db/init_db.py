@@ -163,6 +163,27 @@ CREATE TABLE IF NOT EXISTS ace_sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_ace_sessions_instance ON ace_sessions(instance_id);
 CREATE INDEX IF NOT EXISTS idx_ace_sessions_token ON ace_sessions(resume_token);
+
+-- Skill promotion queue (tools/ace/skill_promoter.py + the ace_skill_promoter
+-- reflex). The table existed in the live PostgreSQL database but had no DDL
+-- anywhere in the repo -- no migration, no init -- so a fresh install had no way
+-- to create it and every promoter write failed. Shape mirrors live PG.
+CREATE TABLE IF NOT EXISTS ace_skill_candidates (
+    id                TEXT PRIMARY KEY,
+    role_id           TEXT NOT NULL,
+    source_role       TEXT NOT NULL DEFAULT '',
+    instance_id       TEXT NOT NULL DEFAULT '',
+    candidate_yaml    TEXT NOT NULL DEFAULT '',
+    trust_tier        TEXT NOT NULL DEFAULT 'yellow',
+    status            TEXT NOT NULL DEFAULT 'pending',
+    sipa_verdict      TEXT,
+    sipa_score        REAL,
+    rejection_reason  TEXT,
+    created_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    resolved_at       TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_ace_skill_cand_status ON ace_skill_candidates(status);
+CREATE INDEX IF NOT EXISTS idx_ace_skill_cand_role ON ace_skill_candidates(role_id);
 """
 
 # ---------------------------------------------------------------------------
