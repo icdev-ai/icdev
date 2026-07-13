@@ -1,0 +1,49 @@
+# CUI // SP-CTI
+#
+# Seed definition for the ked-vfy-01 proof: dispatch ONE real, small, genuinely
+# useful task into the compass repo and verify a PR actually lands there.
+#
+# This file is the task registry entry. It is not inert documentation —
+# tools/kanban/seed_from_yaml.py loads it and seeds the task onto the board via
+# tools.kanban.task_factory.create_tasks (never a raw INSERT).
+#
+# Where the task BUILDS is not decided by `target_repo` below. The dispatcher
+# resolves the on-disk repo root from the task-id PREFIX through
+# args/kanban_external_repos.yaml (tools/kanban/repo_registry.py):
+#
+#     prem-vdis  ->  compass  ->  $ICDEV_KANBAN_REPO_COMPASS
+#
+# `target_repo` records the GitHub repo that prefix must resolve to, so the two
+# can never silently disagree; tests/kanban/test_task_seed_registry.py asserts
+# the id prefix really resolves to compass and is external (never ICDev).
+
+version: 1
+target_repo: icdev-ai/compass
+repo_key: compass          # must match a key under `repos:` in args/kanban_external_repos.yaml
+
+tasks:
+  - id: prem-vdis-01
+    title: Add a README.md to the compass repo root
+    task_type: build
+    complexity: low
+    priority: medium
+    status: backlog
+    description: |
+      compass has no README.md at its repo root — only AGENTS.md and CLAUDE.md,
+      which are AI-agent instructions, not a human entry point. Anyone landing on
+      github.com/icdev-ai/compass sees no description of what the project is.
+
+      Add a concise README.md at the repo root covering:
+        - what compass is (one paragraph)
+        - the stack (FastAPI backend + React/TS frontend, per the repo layout)
+        - how to run the backend and the frontend locally
+        - where the docs live (docs/premium-roadmap.md)
+
+      Keep it short and accurate — describe only what is actually in the repo; do
+      not invent features, badges for CI that does not exist, or install steps you
+      have not verified. Documentation only: do not modify code, config or tests.
+
+      Scope is deliberately small and additive. This task exists to prove that
+      ICDev's kanban scheduler can dispatch an external task INTO compass — build
+      in a compass worktree, run compass's own gate, and open a PR against
+      icdev-ai/compass — rather than building it inside the ICDev tree.

@@ -43,3 +43,8 @@ prefixes:
   # is already merged; the stream is registered to idea_lab because that is where
   # any remaining work in it lands.
   prem-p0: idea_lab
+  # ked-vfy-01: the external-dispatch proof stream. Its seed lives in
+  # tasks/compass/verify_dispatch.yml; it MUST resolve to compass, because the
+  # whole point of the task is to prove ICDev builds it in compass and opens a PR
+  # there rather than building it inside the ICDev tree.
+  prem-vdis: compass
