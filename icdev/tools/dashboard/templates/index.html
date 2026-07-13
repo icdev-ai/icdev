@@ -583,7 +583,10 @@ window.setManualBuild = function(checked) {
             ? 'Manual Build ON — tasks promote and track, but you build them'
             : 'Manual Build OFF — automatic build resumed');
     })
-    .catch(function() { _buildFlash('Manual Build toggle failed'); });
+    .catch(function() {
+        _buildFlash('Manual Build toggle failed — reverting to the scheduler's actual mode');
+        if (window.loadBuildMode) window.loadBuildMode();
+    });
 };
 
 window.loadBuildMode = function() {
@@ -602,7 +605,16 @@ window.setBuildModel = function(value) {
     })
     .then(function(r) { return r.json(); })
     .then(function(data) {
-        if (data.error) { alert('Model selection failed: ' + data.error); return; }
+        // Repaint from the SERVER's answer, never from what we optimistically sent. A
+        // dropdown showing a model the runner is not using is the exact failure these
+        // switches exist to prevent — a control that lies about its own state.
+        var sel = document.getElementById('kanban-build-model');
+        if (sel) sel.value = data.model || '';
+        if (data.error) {
+            alert('Model selection failed: ' + data.error);
+            if (window.loadBuildModel) window.loadBuildModel();
+            return;
+        }
         if (!data.model) { _buildFlash('Model: back to config routing'); return; }
         var r = data.resolved || {};
         // Say it plainly: a non-Claude model means the Claude CLI is out of the chain
@@ -611,7 +623,12 @@ window.setBuildModel = function(value) {
             ? ('Model: ' + data.model + ' (Claude CLI)')
             : ('Model: ' + data.model + ' — Claude CLI dropped, using LLM executor'));
     })
-    .catch(function() { _buildFlash('Model selection failed'); });
+    .catch(function() {
+        // The POST never landed, so the runner's model is whatever it was. Resync the
+        // control to the server rather than leaving it showing a choice that did nothing.
+        _buildFlash('Model selection failed — reverting to the runner's actual model');
+        if (window.loadBuildModel) window.loadBuildModel();
+    });
 };
 
 window.loadBuildModel = function() {
@@ -621,6 +638,8 @@ window.loadBuildModel = function() {
             var sel = document.getElementById('kanban-build-model');
             if (!sel) return;
             var current = data.model || '';
+            // Rebuild from scratch: a resync must not append a second copy of every model.
+            while (sel.options.length > 1) sel.remove(1);
             (data.available || []).forEach(function(m) {
                 var o = document.createElement('option');
                 o.value = m.name;
