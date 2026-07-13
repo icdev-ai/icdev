@@ -274,6 +274,23 @@ class CortexClient:
             payload["allow_unrated"] = True
         return self._post("cost_volume", payload, timeout)
 
+    # -- Dashboard export (prem-rpt-02; scope cortex:dashboard) ------------------
+
+    def export_dashboard(self, title: str, tiles: List[dict], *,
+                         fmt: str = "html",
+                         timeout: Optional[int] = None) -> Optional[dict]:
+        """Render tiles into a customer-facing report: html, pptx or pdf.
+
+        Each tile is ``{"spec": {...}}``. The server rebuilds every spec from a
+        CONTENT-ONLY allowlist — path-bearing keys never reach a renderer, because on a
+        remote surface those are an arbitrary-file-read primitive.
+
+        The export carries the KEY's classification banner, not one you choose: an
+        export leaves the platform by design, so the marking travels with it.
+        """
+        payload: Dict[str, Any] = {"title": title, "tiles": tiles, "format": fmt}
+        return self._post("dashboard", payload, timeout)
+
     # -- RICOAS intake bridge (prem-ricoas-02; scope cortex:intake) --------------
 
     def intake_create(self, verbatim_ask: str, *, customer_name: str,

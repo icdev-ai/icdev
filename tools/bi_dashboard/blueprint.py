@@ -210,6 +210,30 @@ def create_bi_dashboard_blueprint() -> Blueprint | None:
 
         return jsonify({"error": f"export format {fmt!r} not supported for kind {spec.kind!r}"}), 400
 
+    @bp.route("/api/dashboards/<dashboard_id>/export/<fmt>", methods=["POST"])
+    @_login_required
+    def api_export_dashboard(dashboard_id, fmt):
+        """Export a WHOLE dashboard (prem-rpt-01).
+
+        The chart-level export above is per-spec and only ever handled ``kind ==
+        "chart"``. Asking for the dashboard — the thing a customer actually reads — got
+        a 400. You could build the report and never send it.
+        """
+        from tools.bi_dashboard.dashboard_store import get_dashboard
+        from tools.bi_dashboard.export import export_dashboard, supported_formats
+
+        dashboard = get_dashboard(dashboard_id)
+        if not dashboard:
+            return jsonify({"error": f"no dashboard {dashboard_id}"}), 404
+
+        try:
+            return jsonify(export_dashboard(dashboard, fmt))
+        except ValueError as exc:
+            return jsonify({
+                "error": str(exc),
+                "supported": supported_formats(),
+            }), 400
+
     # ══════════════════════════════════════════════════════════════════════
     # API — IQE natural-language query widget
     # ══════════════════════════════════════════════════════════════════════

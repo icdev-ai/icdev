@@ -73,11 +73,16 @@ STAFFING_SCOPES = ("cortex:staffing_matrix",)
 # the priced line items that a won bid then carries into /cpmp as the delivery baseline.
 # A key that can search must not silently also be able to put a PRICE on a proposal.
 PRICING_SCOPES = ("cortex:cost_volume",)
+# Same rule again (prem-rpt-02): dashboard builds and EXPORTS a customer-facing report.
+# The export leaves the platform by design — that is what an export IS — so a key that
+# can search must not silently also be able to render our data into a document and walk
+# out with it.
+DASHBOARD_SCOPES = ("cortex:dashboard",)
 DATABRIDGE_SCOPES = ("databridge:iris:read", "databridge:iris:write",
                      "databridge:icdev_demand:read",
                      "databridge:icdev_cpmp:read", "databridge:icdev_cpmp:write")
 ALL_SCOPES = (CORTEX_SCOPES + INTAKE_SCOPES + WIN_THEME_SCOPES + STAFFING_SCOPES
-              + PRICING_SCOPES + DATABRIDGE_SCOPES)
+              + PRICING_SCOPES + DASHBOARD_SCOPES + DATABRIDGE_SCOPES)
 
 # Default scopes for a newly created key: the six REST operations (the
 # spend-heavier feeds/write scopes are granted explicitly).
