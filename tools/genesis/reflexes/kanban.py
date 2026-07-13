@@ -806,6 +806,47 @@ def _default_branch() -> str:
     return "main"
 
 
+def _task_repo_root(task_id: str) -> Optional[str]:
+    """Return the on-disk root of the repo this task's work lives in.
+
+    Every git/gh call ABOUT a task must run with this as its cwd. Running them
+    in BASE_DIR asks ICDev whether an external repo's work landed — the answer
+    is always no, which is exactly the churn repo_registry exists to stop. gh
+    infers the repo from the cwd's remote, so a correct cwd also fixes
+    ``gh pr list`` / ``gh pr create`` for free.
+
+    Returns None for an external task whose root env var is unset: callers must
+    NOT fall back to BASE_DIR (that reintroduces the wrong-repo answer) — they
+    fail-open (skip the check) or fail-closed (refuse the merge) as appropriate.
+    ICDev tasks — the default — resolve to BASE_DIR and are byte-unchanged.
+    """
+    try:
+        from tools.kanban.repo_registry import resolve_task_repo
+        target = resolve_task_repo(task_id)
+    except Exception as exc:  # noqa: BLE001 — resolution must never break the pipeline
+        logger.debug("repo resolve failed for %s (defaulting to ICDev): %s", task_id, exc)
+        return str(BASE_DIR)
+    if not target.is_external:
+        return str(BASE_DIR)
+    return str(target.root) if target.root is not None else None
+
+
+def _task_base_branch(task_id: str) -> str:
+    """Return the branch this task's work must land on, in ITS OWN repo.
+
+    A task is done when its commits are on the TARGET repo's origin/<base>,
+    never ICDev's. ICDev tasks fall through to the cached ``_default_branch()``.
+    """
+    try:
+        from tools.kanban.repo_registry import resolve_task_repo
+        target = resolve_task_repo(task_id)
+        if target.is_external:
+            return target.base_branch or "main"
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("base-branch resolve failed for %s: %s", task_id, exc)
+    return _default_branch()
+
+
 def _create_worktree(task_id: str) -> Optional[str]:
     """Create an isolated git worktree for a kanban task.
 
@@ -986,17 +1027,28 @@ def _merge_worktree_to_main(task_id: str) -> bool:
     Returns True if merge succeeded (or branch had no commits to merge),
     False on unrecoverable conflict.  On failure the branch is PRESERVED
     (not deleted) so the user can merge manually.
+
+    Repo-aware: every git call runs in the TASK'S repo, and the work is merged
+    onto THAT repo's base branch. An external task whose repo root is not
+    configured is fail-closed (False) — never merged into ICDev by accident.
     """
     import subprocess as _sp
 
     branch_name = f"kanban/{task_id}"
-    default_branch = _default_branch()
+    repo_root = _task_repo_root(task_id)
+    if repo_root is None:
+        logger.warning(
+            "Merge refused for %s: external repo root not configured — "
+            "refusing to merge external work into ICDev", task_id,
+        )
+        return False
+    default_branch = _task_base_branch(task_id)
 
     # 1) Is there anything to merge?
     try:
         result = _sp.run(
             ["git", "log", f"{default_branch}..{branch_name}", "--oneline"],
-            cwd=str(BASE_DIR),
+            cwd=repo_root,
             capture_output=True,
             text=True,
             timeout=10,
@@ -1011,7 +1063,7 @@ def _merge_worktree_to_main(task_id: str) -> bool:
     #    Using a commit hash avoids the "branch already used by worktree" error.
     main_commit_proc = _sp.run(
         ["git", "rev-parse", default_branch],
-        cwd=str(BASE_DIR), capture_output=True, text=True, timeout=5,
+        cwd=repo_root, capture_output=True, text=True, timeout=5,
     )
     if main_commit_proc.returncode != 0:
         logger.warning("Could not resolve %s for merge of %s", default_branch, task_id)
@@ -1024,16 +1076,16 @@ def _merge_worktree_to_main(task_id: str) -> bool:
         if merge_wt.exists():
             _sp.run(
                 ["git", "worktree", "remove", str(merge_wt), "--force"],
-                cwd=str(BASE_DIR), capture_output=True, text=True, timeout=30,
+                cwd=repo_root, capture_output=True, text=True, timeout=30,
             )
             _sp.run(
                 ["git", "worktree", "prune"],
-                cwd=str(BASE_DIR), capture_output=True, text=True, timeout=10,
+                cwd=repo_root, capture_output=True, text=True, timeout=10,
             )
 
         add = _sp.run(
             ["git", "worktree", "add", str(merge_wt), main_commit],
-            cwd=str(BASE_DIR), capture_output=True, text=True, timeout=30,
+            cwd=repo_root, capture_output=True, text=True, timeout=30,
         )
         if add.returncode != 0:
             logger.warning(
@@ -1070,7 +1122,7 @@ def _merge_worktree_to_main(task_id: str) -> bool:
             # FAIL-CLOSED: only report success if the push actually reached
             # origin. A swallowed push failure here is what let tasks reach
             # 'done' while origin/main never received the commit.
-            return _push_main(cwd=str(merge_wt))
+            return _push_main(cwd=str(merge_wt), default_branch=default_branch)
 
         # 6) FF failed — rebase branch onto default_branch inside detached worktree
         logger.info(
@@ -1106,7 +1158,7 @@ def _merge_worktree_to_main(task_id: str) -> bool:
                 "Merged kanban/%s to %s (rebase + fast-forward)", task_id, default_branch
             )
             # FAIL-CLOSED: success is contingent on the push reaching origin.
-            return _push_main(cwd=str(merge_wt))
+            return _push_main(cwd=str(merge_wt), default_branch=default_branch)
 
         logger.warning(
             "Post-rebase FF merge still failed for %s: %s — branch preserved",
@@ -1123,14 +1175,14 @@ def _merge_worktree_to_main(task_id: str) -> bool:
             if merge_wt.exists():
                 _sp.run(
                     ["git", "worktree", "remove", str(merge_wt), "--force"],
-                    cwd=str(BASE_DIR), capture_output=True, text=True, timeout=30,
+                    cwd=repo_root, capture_output=True, text=True, timeout=30,
                 )
         except Exception as exc:
             logger.debug("Temp merge worktree cleanup failed for %s: %s", task_id, exc)
         try:
             _sp.run(
                 ["git", "branch", "-D", f"temp-merge-{task_id}"],
-                cwd=str(BASE_DIR), capture_output=True, text=True, timeout=10,
+                cwd=repo_root, capture_output=True, text=True, timeout=10,
             )
         except Exception:
             pass
@@ -1138,10 +1190,12 @@ def _merge_worktree_to_main(task_id: str) -> bool:
 
 def _branch_has_unmerged_commits(task_id: str) -> bool:
     """Return True IFF branch ``kanban/<task_id>`` exists locally AND has commits
-    that are not yet on ``origin/<default_branch>``.
+    that are not yet on ``origin/<base_branch>`` IN THE TASK'S OWN REPO.
 
     This is the merge-verification primitive behind the done-gate: a task is only
-    allowed to reach 'done' when its work has actually landed on origin/main.
+    allowed to reach 'done' when its work has actually landed on the TARGET
+    repo's origin/<base> — never ICDev's. Asking ICDev whether COMPASS's work
+    landed always answers "no", which is the churn repo_registry exists to stop.
 
     PROVIDER-AGNOSTIC: this checks git/origin state, NOT the worker's self-report.
     The dispatch model may be Claude, Kimi/Moonshot, or Ollama and can swap on
@@ -1149,18 +1203,28 @@ def _branch_has_unmerged_commits(task_id: str) -> bool:
     authoritative done-gate lives here and not in the worker's output parsing.
 
     FAIL-OPEN on infrastructure errors: if the branch does not exist, git is
-    unavailable, or the compare errors, return False (do NOT block completion) —
-    an unreachable git must never wedge every task's completion. Only a positive
-    "branch exists AND has commits not on origin" signal blocks the transition.
+    unavailable, the target repo root is unconfigured, or the compare errors,
+    return False (do NOT block completion) — an unreachable git must never wedge
+    every task's completion. Only a positive "branch exists AND has commits not
+    on origin" signal blocks the transition.
     """
     import subprocess as _sp
     branch_name = f"kanban/{task_id}"
-    default_branch = _default_branch()
+    repo_root = _task_repo_root(task_id)
+    if repo_root is None:
+        # External task, root unconfigured. Falling back to BASE_DIR would ask
+        # ICDev about another repo's branch — the wrong-repo answer. Fail open.
+        logger.debug(
+            "_branch_has_unmerged_commits(%s): external repo root unconfigured "
+            "— skipping gate (fail-open)", task_id,
+        )
+        return False
+    default_branch = _task_base_branch(task_id)
     try:
         # Does the branch exist locally? If not, nothing to verify (fail-open).
         exists = _sp.run(
             ["git", "rev-parse", "--verify", "--quiet", branch_name],
-            cwd=str(BASE_DIR), capture_output=True, text=True, timeout=10,
+            cwd=repo_root, capture_output=True, text=True, timeout=10,
         )
         if exists.returncode != 0:
             return False
@@ -1169,13 +1233,13 @@ def _branch_has_unmerged_commits(task_id: str) -> bool:
         try:
             _sp.run(
                 ["git", "fetch", "origin", default_branch, "--quiet"],
-                cwd=str(BASE_DIR), capture_output=True, text=True, timeout=15,
+                cwd=repo_root, capture_output=True, text=True, timeout=15,
             )
         except Exception:
             pass
         log = _sp.run(
             ["git", "log", f"origin/{default_branch}..{branch_name}", "--oneline"],
-            cwd=str(BASE_DIR), capture_output=True, text=True, timeout=10,
+            cwd=repo_root, capture_output=True, text=True, timeout=10,
         )
         if log.returncode != 0:
             return False  # compare errored — fail-open
@@ -1185,8 +1249,12 @@ def _branch_has_unmerged_commits(task_id: str) -> bool:
         return False
 
 
-def _push_main(cwd: str) -> bool:
+def _push_main(cwd: str, default_branch: str | None = None) -> bool:
     """Push the merged commit to origin/{default_branch}.
+
+    ``default_branch`` is the base branch of the repo ``cwd`` lives in — callers
+    handling an external task MUST pass that repo's base (``_task_base_branch``),
+    not ICDev's. Omitted, it falls back to ICDev's default branch.
 
     Uses ``HEAD:{branch}`` so the push works from any detached/temp branch
     inside a temporary worktree — the local branch name does not matter.
@@ -1201,7 +1269,7 @@ def _push_main(cwd: str) -> bool:
     origin/main never received the commit — the exact done-but-not-on-main bug.
     """
     import subprocess as _sp
-    default_branch = _default_branch()
+    default_branch = default_branch or _default_branch()
     try:
         push = _sp.run(
             ["git", "push", "origin", f"HEAD:{default_branch}"],
@@ -1301,10 +1369,13 @@ def _capture_diff_stats(task_id: str) -> dict:
 
     branch = f"kanban/{task_id}"
     default = {"files_changed": 0, "lines_added": 0, "lines_removed": 0}
+    repo_root = _task_repo_root(task_id)
+    if repo_root is None:
+        return default
     try:
         result = _sp.run(
-            ["git", "diff", "--stat", f"{_default_branch()}..{branch}"],
-            cwd=str(BASE_DIR),
+            ["git", "diff", "--stat", f"{_task_base_branch(task_id)}..{branch}"],
+            cwd=repo_root,
             capture_output=True,
             text=True,
             timeout=15,
@@ -1449,15 +1520,26 @@ def _ensure_pr_base(pr_ref: str, task_id: str) -> str | None:
     the task agent opened itself with an explicit wrong --base.
 
     Returns the PR URL if one exists for ``pr_ref``, else None.
+
+    Repo-aware: gh infers the repo from the cwd's remote, so running in the
+    task's own repo root resolves the PR in the repo the work actually landed
+    in — and retargets it to THAT repo's base branch.
     """
     import json as _json
     import subprocess as _sp
 
-    default_branch = _default_branch()
+    repo_root = _task_repo_root(task_id)
+    if repo_root is None:
+        logger.warning(
+            "PR flow: external repo root not configured for %s — cannot verify PR base",
+            task_id,
+        )
+        return None
+    default_branch = _task_base_branch(task_id)
     try:
         view = _sp.run(
             ["gh", "pr", "view", pr_ref, "--json", "baseRefName,url"],
-            cwd=str(BASE_DIR), capture_output=True, text=True, timeout=30,
+            cwd=repo_root, capture_output=True, text=True, timeout=30,
         )
         if view.returncode != 0:
             logger.warning(
@@ -1476,7 +1558,7 @@ def _ensure_pr_base(pr_ref: str, task_id: str) -> str | None:
         )
         edit = _sp.run(
             ["gh", "pr", "edit", pr_ref, "--base", default_branch],
-            cwd=str(BASE_DIR), capture_output=True, text=True, timeout=30,
+            cwd=repo_root, capture_output=True, text=True, timeout=30,
         )
         if edit.returncode != 0:
             logger.warning(
@@ -1496,16 +1578,25 @@ def _push_branch_and_open_pr(task_id: str, commit_summary: str) -> str | None:
     The branch is NOT merged here — pr_watcher.py (OPT-70) polls CI and
     auto-merges when green, so the kanban board shows a real PR URL in
     executor_url just like Claude CLI does.
+
+    Repo-aware: push and PR both target the TASK'S repo. gh infers the repo from
+    the cwd's remote, so the correct cwd is all ``gh pr create`` needs.
     """
     import subprocess as _sp
 
     branch_name = f"kanban/{task_id}"
-    default_branch = _default_branch()
+    repo_root = _task_repo_root(task_id)
+    if repo_root is None:
+        logger.warning(
+            "PR flow: external repo root not configured for %s — no PR opened", task_id,
+        )
+        return None
+    default_branch = _task_base_branch(task_id)
 
     # Nothing to push?
     check = _sp.run(
         ["git", "log", f"{default_branch}..{branch_name}", "--oneline"],
-        cwd=str(BASE_DIR), capture_output=True, text=True, timeout=10,
+        cwd=repo_root, capture_output=True, text=True, timeout=10,
     )
     if check.returncode != 0 or not check.stdout.strip():
         logger.info("PR flow: no commits to push for %s — skipping PR", task_id)
@@ -1514,7 +1605,7 @@ def _push_branch_and_open_pr(task_id: str, commit_summary: str) -> str | None:
     # Push branch (--force-with-lease is safe: only overwrites if nobody else pushed)
     push = _sp.run(
         ["git", "push", "origin", branch_name, "--force-with-lease"],
-        cwd=str(BASE_DIR), capture_output=True, text=True, timeout=60,
+        cwd=repo_root, capture_output=True, text=True, timeout=60,
     )
     if push.returncode != 0:
         logger.warning("PR flow: branch push failed for %s: %s", task_id, push.stderr.strip())
@@ -1544,7 +1635,7 @@ def _push_branch_and_open_pr(task_id: str, commit_summary: str) -> str | None:
          "--body", pr_body,
          "--head", branch_name,
          "--base", default_branch],
-        cwd=str(BASE_DIR), capture_output=True, text=True, timeout=60,
+        cwd=repo_root, capture_output=True, text=True, timeout=60,
     )
     if create.returncode != 0:
         logger.warning("PR flow: gh pr create failed for %s: %s", task_id, create.stderr.strip())
@@ -1567,12 +1658,19 @@ def _cleanup_worktree(task_id: str):
     """Merge the kanban task branch to main (fast-forward) then remove
     the worktree. If merge fails, the branch is preserved for manual
     review and the worktree is still cleaned up (disk hygiene).
+
+    Every git call runs in the task's own repo (``_task_repo_root``): an
+    external task's branch lives in ITS repo, so ICDev's git knows nothing
+    about it. An unconfigured external root degrades to BASE_DIR only for the
+    local worktree removal (disk hygiene, harmless) — the merge/PR path
+    resolves the root itself and refuses.
     """
     import subprocess as _sp
     import os as _os
 
     branch_name = f"kanban/{task_id}"
     worktree_path = WORKTREE_BASE / task_id
+    repo_root = _task_repo_root(task_id) or str(BASE_DIR)
 
     # Detach the worktree FIRST so the branch ref isn't held while we
     # rebase. Commits remain safe on refs/heads/kanban/<task_id> after
@@ -1583,7 +1681,7 @@ def _cleanup_worktree(task_id: str):
         if worktree_path.exists():
             _sp.run(
                 ["git", "worktree", "remove", str(worktree_path), "--force"],
-                cwd=str(BASE_DIR),
+                cwd=repo_root,
                 capture_output=True,
                 text=True,
                 timeout=30,
@@ -1599,8 +1697,8 @@ def _cleanup_worktree(task_id: str):
     try:
         import subprocess as _sp2
         _log = _sp2.run(
-            ["git", "log", "--oneline", f"{_default_branch()}..kanban/{task_id}"],
-            cwd=str(BASE_DIR), capture_output=True, text=True, timeout=10,
+            ["git", "log", "--oneline", f"{_task_base_branch(task_id)}..kanban/{task_id}"],
+            cwd=repo_root, capture_output=True, text=True, timeout=10,
         )
         _commit_summary = _log.stdout.strip()[:1000] if _log.returncode == 0 else ""
     except Exception:
@@ -1662,7 +1760,7 @@ def _cleanup_worktree(task_id: str):
             # Direct-merge: clean up local branch after successful push to main.
             _sp.run(
                 ["git", "branch", "-D", branch_name],
-                cwd=str(BASE_DIR),
+                cwd=repo_root,
                 capture_output=True,
                 text=True,
                 timeout=10,
@@ -2627,16 +2725,17 @@ def _move_task(task_id: str, new_status: str, actor: str = "scheduler",
             "KANBAN_REQUIRE_MERGE_FOR_DONE", "1"
         ).lower() in ("1", "true", "yes"):
             if _branch_has_unmerged_commits(task_id):
+                _base = _task_base_branch(task_id)
                 logger.warning(
                     "_move_task: REFUSED done for %s — branch kanban/%s has "
                     "commits not on origin/%s (unmerged)",
-                    task_id, task_id, _default_branch(),
+                    task_id, task_id, _base,
                 )
                 conn.close()
                 _record_status_transition(
                     task_id, prior_status, "REFUSED_done_unmerged",
                     actor=actor,
-                    reason=f"guard: kanban/{task_id} has commits not on origin/{_default_branch()}",
+                    reason=f"guard: kanban/{task_id} has commits not on origin/{_base}",
                 )
                 # Lessons-Learned (kph): a stranded/unmerged done attempt is a
                 # SYSTEMIC pipeline signal — record it so recurrence detection +
@@ -6652,16 +6751,24 @@ def _reclaim_zombie_tasks() -> None:
 def _has_open_pr(task_id: str) -> bool:
     """Respawn guard: return True if an open PR already exists for kanban/<task_id>.
 
-    Uses the gh CLI; returns False on any error so dispatch proceeds normally
-    when gh is unavailable (air-gap environments).
+    Repo-aware: gh reads the repo from the cwd's remote, so this must run in the
+    TASK'S repo. Run in BASE_DIR it asks ICDev whether an external task has a PR
+    — always "no", so the guard never fires and the task is re-dispatched on top
+    of work its own repo already has open.
+
+    Uses the gh CLI; returns False on any error (or an unconfigured external
+    root) so dispatch proceeds normally when gh is unavailable (air-gap).
     """
     branch_name = f"kanban/{task_id}"
+    repo_root = _task_repo_root(task_id)
+    if repo_root is None:
+        return False
     try:
         import subprocess as _sp
         import json as _json
         result = _sp.run(
             ["gh", "pr", "list", "--head", branch_name, "--state", "open", "--json", "number"],
-            capture_output=True, text=True, timeout=10, cwd=str(BASE_DIR),
+            capture_output=True, text=True, timeout=10, cwd=repo_root,
         )
         if result.returncode == 0 and result.stdout.strip():
             prs = _json.loads(result.stdout)
