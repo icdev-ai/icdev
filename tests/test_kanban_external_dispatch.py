@@ -133,6 +133,61 @@ def test_a_failed_external_worktree_does_NOT_fall_back_to_the_icdev_tree(
 
 
 # ---------------------------------------------------------------------------
+# A REAL worktree in a REAL external repo
+# ---------------------------------------------------------------------------
+def test_creating_a_worktree_in_a_real_external_repo_actually_works(tmp_path, monkeypatch):
+    """The bug the first live compass dispatch found, and these tests did not.
+
+    _create_worktree() ran `WORKTREE_BASE.mkdir(...)` — ICDev's .tmp/worktrees — no matter
+    which repo the task belonged to. For an external task the worktree path is under the
+    system temp dir, so its PARENT was never created: `git worktree add` created the
+    BRANCH and then failed on the missing directory, and the task was parked with
+    "worktree creation failed".
+
+    Every unit test above passed, because none of them ever made a worktree. This one
+    builds a real git repo and a real worktree, which is the only way that class of bug
+    surfaces.
+    """
+    import subprocess
+
+    root = tmp_path / "realrepo"
+    root.mkdir()
+    run = lambda *a: subprocess.run(a, cwd=str(root), capture_output=True, text=True)  # noqa: E731
+    run("git", "init", "-q", "-b", "main")
+    run("git", "config", "user.email", "t@example.com")
+    run("git", "config", "user.name", "t")
+    (root / "README.md").write_text("hello", encoding="utf-8")
+    run("git", "add", "-A")
+    run("git", "commit", "-qm", "init")
+
+    cfg = tmp_path / "repos.yaml"
+    cfg.write_text(yaml.safe_dump({
+        "repos": {"realrepo": {"base_branch": "main", "root_env": "TEST_REAL_ROOT"}},
+        "prefixes": {"real-": "realrepo"},
+    }), encoding="utf-8")
+    monkeypatch.setenv("ICDEV_KANBAN_REPOS_CONFIG", str(cfg))
+    monkeypatch.setenv("TEST_REAL_ROOT", str(root))
+
+    # The worktree parent must not exist yet — that is the whole point.
+    wt = kanban._task_worktree_path("real-thing-01")
+    assert not wt.parent.exists() or not wt.exists()
+
+    created = kanban._create_worktree("real-thing-01")
+
+    assert created is not None, "worktree creation must succeed for a real external repo"
+    assert Path(created).exists()
+    assert (Path(created) / "README.md").exists(), "it is a checkout of the EXTERNAL repo"
+
+    # And the branch lives in that repo, not ICDev.
+    branches = subprocess.run(["git", "branch", "--list", "kanban/real-thing-01"],
+                              cwd=str(root), capture_output=True, text=True).stdout
+    assert "kanban/real-thing-01" in branches
+
+    subprocess.run(["git", "worktree", "remove", str(created), "--force"],
+                   cwd=str(root), capture_output=True, text=True)
+
+
+# ---------------------------------------------------------------------------
 # The registry must stay in step with the board
 # ---------------------------------------------------------------------------
 def test_every_prem_stream_is_registered():
