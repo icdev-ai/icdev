@@ -877,9 +877,14 @@ def _create_worktree(task_id: str) -> Optional[str]:
     _base_branch = _task_base_branch(task_id)
     import subprocess as _sp
 
-    WORKTREE_BASE.mkdir(parents=True, exist_ok=True)
     branch_name = f"kanban/{task_id}"
     worktree_path = _task_worktree_path(task_id)
+    # Make the PARENT of the resolved path, not WORKTREE_BASE. An external task's
+    # worktree lives under the system temp dir, and mkdir'ing ICDev's .tmp/worktrees
+    # left that parent missing — so `git worktree add` created the BRANCH and then
+    # failed on the directory, and the task was parked as "worktree creation failed".
+    # Caught by the first real compass dispatch; the unit tests never made a worktree.
+    worktree_path.parent.mkdir(parents=True, exist_ok=True)
 
     if worktree_path.exists():
         # Validate it's a real git worktree, not an orphan empty dir left over
@@ -982,7 +987,19 @@ def _create_worktree(task_id: str) -> Optional[str]:
         # worktree. A partial Windows checkout (rmtree file-lock failures) can
         # leave an empty dir with only .git; coherence then fails on every
         # dispatch with "no tools/manifest.md", looping until self_debug fires.
-        if not (worktree_path / "tools" / "manifest.md").exists():
+        #
+        # ICDEV-ONLY. tools/manifest.md is an ICDev artefact — compass and idea_lab do
+        # not have one and never will. Applying it to them tore down a perfectly good
+        # worktree and returned None, which the caller reported as "worktree creation
+        # failed" and parked the task. That is exactly how the first live compass
+        # dispatch failed, and it is the same mistake in miniature as the whole bug this
+        # change fixes: judging another repo against ICDev's shape.
+        #
+        # For an external repo the honest structural check is the one above — git wrote a
+        # .git file, so the worktree is registered. We do not know what that repo's tree
+        # is supposed to look like, and we must not pretend to.
+        _icdev_worktree = _repo_root == BASE_DIR
+        if _icdev_worktree and not (worktree_path / "tools" / "manifest.md").exists():
             logger.warning(
                 "Worktree dir created for %s but tools/manifest.md is missing "
                 "(partial checkout) — cleaning up so next dispatch rebuilds clean",
