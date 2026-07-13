@@ -1136,6 +1136,27 @@ def _merge_worktree_to_main(task_id: str) -> bool:
             pass
 
 
+def _task_repo_root(task_id: str) -> Path:
+    """Return the git repo root that ``task_id`` builds in.
+
+    External-repo tasks (``args/kanban_external_repos.yaml``, e.g. ``prem-*``
+    compass / idea_lab work) live in ANOTHER checkout, so the git primitives
+    below (branch/PR/merge checks) must run against that repo's root, not
+    ICDev's. Everything else — an unregistered id, an internal ICDev task, an
+    external task whose ``root_env`` is unset, or any resolution error —
+    returns ``BASE_DIR``, which is exactly today's behaviour for those tasks.
+    """
+    try:
+        from tools.kanban.repo_registry import resolve_task_repo
+        target = resolve_task_repo(task_id)
+    except Exception as exc:  # noqa: BLE001 — resolution must never break the gate
+        logger.debug("_task_repo_root(%s) resolve failed (using BASE_DIR): %s", task_id, exc)
+        return BASE_DIR
+    if target.is_external and target.root is not None:
+        return target.root
+    return BASE_DIR
+
+
 def _branch_has_unmerged_commits(task_id: str) -> bool:
     """Return True IFF branch ``kanban/<task_id>`` exists locally AND has commits
     that are not yet on ``origin/<default_branch>``.
