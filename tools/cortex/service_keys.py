@@ -64,10 +64,16 @@ INTAKE_SCOPES = ("cortex:intake",)
 # drafting prompts. A key that can search must not silently also be able to put
 # words in a proposal's mouth, so this is never in the default grant.
 WIN_THEME_SCOPES = ("cortex:win_themes",)
+# Same rule, same reason (prem-pstaff-02): staffing_matrix WRITES the person -> LCAT
+# mappings that become a bid's Key Personnel volume. A key that can search must not
+# silently also be able to STAFF a bid — to put a named human against a labour
+# category the customer will price and evaluate. Never in the default grant.
+STAFFING_SCOPES = ("cortex:staffing_matrix",)
 DATABRIDGE_SCOPES = ("databridge:iris:read", "databridge:iris:write",
                      "databridge:icdev_demand:read",
                      "databridge:icdev_cpmp:read", "databridge:icdev_cpmp:write")
-ALL_SCOPES = CORTEX_SCOPES + INTAKE_SCOPES + WIN_THEME_SCOPES + DATABRIDGE_SCOPES
+ALL_SCOPES = (CORTEX_SCOPES + INTAKE_SCOPES + WIN_THEME_SCOPES + STAFFING_SCOPES
+              + DATABRIDGE_SCOPES)
 
 # Default scopes for a newly created key: the six REST operations (the
 # spend-heavier feeds/write scopes are granted explicitly).

@@ -22932,6 +22932,31 @@ CREATE TABLE public.pg_win_loss_records (
 -- Name: pg_win_themes; Type: TABLE; Schema: public; Owner: -
 --
 
+-- prem-pstaff-01: bid-side person -> LCAT registry. Evidence is mandatory (CHECK).
+CREATE TABLE IF NOT EXISTS public.proposal_key_personnel (
+    id text NOT NULL,
+    opportunity_id text NOT NULL,
+    person_ref text NOT NULL,
+    name text NOT NULL,
+    proposed_lcat text NOT NULL,
+    qualification_verdict text NOT NULL,
+    evidence_json text NOT NULL,
+    source text,
+    key_person integer DEFAULT 0 NOT NULL,
+    gaps_json text DEFAULT '[]'::text NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    created_at timestamp without time zone,
+    updated_at timestamp without time zone,
+    CONSTRAINT proposal_key_personnel_pkey PRIMARY KEY (id),
+    CONSTRAINT proposal_key_personnel_opp_person_key UNIQUE (opportunity_id, person_ref),
+    CONSTRAINT proposal_key_personnel_verdict_check CHECK ((qualification_verdict = ANY (ARRAY['qualified'::text, 'gap'::text, 'exceeds'::text]))),
+    CONSTRAINT proposal_key_personnel_source_check CHECK ((source IS NULL OR (source = ANY (ARRAY['compass'::text, 'manual'::text, 'resume_match'::text, 'scraped'::text])))),
+    CONSTRAINT proposal_key_personnel_evidence_check CHECK (((evidence_json <> ''::text) AND (evidence_json <> '[]'::text)))
+);
+CREATE INDEX IF NOT EXISTS idx_pkp_opportunity ON public.proposal_key_personnel(opportunity_id);
+CREATE INDEX IF NOT EXISTS idx_pkp_verdict ON public.proposal_key_personnel(qualification_verdict);
+
 CREATE TABLE public.pg_win_themes (
     id text NOT NULL,
     opportunity_id text NOT NULL,

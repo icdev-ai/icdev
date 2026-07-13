@@ -475,6 +475,113 @@ def api_v1_win_themes(data):
     }
 
 
+@_cortex_api
+def api_v1_staffing_matrix(data):
+    """Register EVIDENCED person -> LCAT mappings against an opportunity (prem-pstaff-02).
+
+    The bid side had no people table at all. ``pg_lcat_allocations`` is task -> LCAT ->
+    FTE and never names a human; ``pma_personnel`` is post-award, keyed on contract_id.
+    So ``program_bridge._gather_key_personnel`` regex-scraped capitalised bigrams out of
+    proposal prose — a pattern that matches "Program Manager" and "Technical Approach"
+    as readily as it matches a person — and fed them into the Key Personnel volume.
+
+    EVERY MAPPING MUST CARRY EVIDENCE. A person proposed for a labour category with
+    nothing behind the claim is refused, not stored with an empty evidence field. It is
+    the same defect class as an uncited win theme: it reaches the customer as an
+    assertion nobody can defend when they ask "why is she a Senior Systems Engineer?".
+
+    A refusal is NOT an error. Per-person refusals come back in ``refused[]`` with a 200,
+    so a compass push of 30 people is not lost because one of them has a thin resume.
+    Only STRUCTURAL problems (no opportunity_id, no people, a person that is not an
+    object) are 400s.
+
+    Scope: ``cortex:staffing_matrix`` — deliberately NOT in the default grant. A key
+    that can search must not silently also be able to staff a bid.
+    """
+    from tools.govcon.key_personnel import (
+        PERSON_SOURCES,
+        QUALIFICATION_VERDICTS,
+        register_person,
+    )
+
+    if not isinstance(data, dict):
+        raise validators.CortexValidationError("body must be a JSON object")
+
+    opportunity_id = str(data.get("opportunity_id") or "").strip()
+    if not opportunity_id:
+        raise validators.CortexValidationError("opportunity_id is required")
+
+    people = data.get("people")
+    if not isinstance(people, list) or not people:
+        raise validators.CortexValidationError("people must be a non-empty list")
+
+    binding = getattr(g, "cortex_binding", None) or {}
+    tenant_id = str(binding.get("tenant_id") or "default")
+    classification = str(binding.get("classification_ceiling") or "CUI")
+
+    registered, refused = [], []
+    for index, person in enumerate(people):
+        if not isinstance(person, dict):
+            raise validators.CortexValidationError(f"person {index} must be an object")
+
+        source = str(person.get("source") or "compass")
+        if source not in PERSON_SOURCES:
+            raise validators.CortexValidationError(
+                f"person {index}: source must be one of {list(PERSON_SOURCES)}"
+            )
+
+        result = register_person(
+            opportunity_id=opportunity_id,
+            person_ref=str(person.get("person_ref") or "").strip(),
+            name=str(person.get("name") or "").strip(),
+            proposed_lcat=str(person.get("proposed_lcat") or "").strip(),
+            qualification_verdict=str(person.get("qualification_verdict") or "").strip(),
+            evidence=person.get("evidence"),
+            source=source,
+            key_person=bool(person.get("key_person")),
+            # The unmet criteria travel WITH a 'gap' verdict. A gap person can still be
+            # the right bid — but the bid side must SEE the gap when they decide that
+            # and price the risk, not discover it at the debrief.
+            gaps=person.get("gaps") or [],
+            # The KEY is authoritative for tenant + classification. A request body can
+            # never widen its own binding — same rule as every other Cortex intake.
+            tenant_id=tenant_id,
+            classification=classification,
+        )
+
+        if result.get("status") == "registered":
+            registered.append({
+                "id": result.get("id"),
+                "person_ref": person.get("person_ref"),
+                "name": person.get("name"),
+                "proposed_lcat": person.get("proposed_lcat"),
+                "qualification_verdict": person.get("qualification_verdict"),
+                "evidence_count": result.get("evidence_count"),
+                "key_person": bool(person.get("key_person")),
+                "gap_count": len(person.get("gaps") or []),
+                "action": result.get("action"),
+            })
+        else:
+            refused.append({
+                "person_ref": person.get("person_ref"),
+                "name": person.get("name"),
+                "reason": result.get("reason"),
+            })
+
+    logger.info(
+        "staffing-matrix intake: %d registered, %d refused for opportunity %s",
+        len(registered), len(refused), opportunity_id,
+    )
+    return {
+        "opportunity_id": opportunity_id,
+        "registered": registered,
+        "refused": refused,
+        "registered_count": len(registered),
+        "refused_count": len(refused),
+        "verdicts": list(QUALIFICATION_VERDICTS),
+    }
+
+
 def api_v1_health():
     """Liveness probe — config + air-gap posture, no LLM call, no auth.
 
@@ -492,7 +599,7 @@ def api_v1_health():
             "airgap": bool(airgap_active(None)),
             "operations": [
                 "search", "ask", "complete", "classify", "extract", "govern",
-                "intake", "slides", "win_themes",
+                "intake", "slides", "win_themes", "staffing_matrix",
             ],
         })
     except Exception as exc:  # noqa: BLE001
@@ -516,6 +623,7 @@ def register_rest_v1(cortex_bp) -> None:
         ("govern", api_v1_govern),
         ("slides", api_v1_slides),
         ("win_themes", api_v1_win_themes),
+        ("staffing_matrix", api_v1_staffing_matrix),
     ):
         cortex_bp.add_url_rule(
             f"{_API_V1}/{name}", f"api_v1_{name}", view, methods=["POST"]

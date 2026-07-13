@@ -139,6 +139,30 @@ CREATE TABLE IF NOT EXISTS kanban_executions (
     error       TEXT,
     created_at  TEXT DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS proposal_section_drafts (
+    id             TEXT PRIMARY KEY,
+    opportunity_id TEXT,
+    draft_content  TEXT,
+    tenant_id      TEXT DEFAULT 'default',
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE TABLE IF NOT EXISTS proposal_key_personnel (
+    id                    TEXT PRIMARY KEY,
+    opportunity_id        TEXT NOT NULL,
+    person_ref            TEXT NOT NULL,
+    name                  TEXT NOT NULL,
+    proposed_lcat         TEXT NOT NULL,
+    qualification_verdict TEXT NOT NULL CHECK(qualification_verdict IN ('qualified', 'gap', 'exceeds')),
+    evidence_json         TEXT NOT NULL CHECK(evidence_json <> '' AND evidence_json <> '[]'),
+    source                TEXT CHECK(source IS NULL OR source IN ('compass', 'manual', 'resume_match', 'scraped')),
+    key_person            INTEGER NOT NULL DEFAULT 0,
+    gaps_json             TEXT NOT NULL DEFAULT '[]',
+    tenant_id             TEXT NOT NULL DEFAULT 'default',
+    classification        TEXT NOT NULL DEFAULT 'CUI',
+    created_at            TIMESTAMP,
+    updated_at            TIMESTAMP,
+    UNIQUE (opportunity_id, person_ref)
+);
 CREATE TABLE IF NOT EXISTS kanban_verifications (
     id                    TEXT PRIMARY KEY,
     task_id               TEXT NOT NULL,
