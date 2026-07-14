@@ -146,3 +146,49 @@ def test_an_in_progress_task_is_never_swept(repo, monkeypatch):
 
     assert kanban._sweep_old_worktrees(max_age_days=1) == []
     assert "live-01" in _worktrees(git), "a live agent's worktree must survive"
+
+
+# ---------------------------------------------------------------------------
+# The same bug, one layer down: prune also refuses to touch a LOCKED entry
+# ---------------------------------------------------------------------------
+def test_a_locked_entry_whose_directory_is_GONE_is_still_pruned(repo):
+    """Unreachable by every cleanup path we had.
+
+    `git worktree prune` skips a locked entry, and the sweeper only walks directories
+    that exist — so an entry that is BOTH locked AND whose directory has been deleted
+    stays in `git worktree list` forever. 26 of them were still being reported after a
+    sweep that had genuinely removed everything it could reach.
+
+    Unlocking is unambiguously safe here: the working tree is gone. There is nothing left
+    to protect and nothing that can be lost.
+    """
+    import shutil
+
+    root, git = repo
+    wt = root / ".tmp" / "worktrees" / "dead-01"
+    git("worktree", "add", "-q", "--detach", str(wt), "HEAD")
+    git("worktree", "lock", str(wt))
+    shutil.rmtree(wt)                     # the directory is gone; the entry is not
+
+    assert "dead-01" in _worktrees(git)
+    git("worktree", "prune")
+    assert "dead-01" in _worktrees(git), "prune alone cannot clear a locked dead entry"
+
+    assert kanban._unlock_dead_entries() >= 1
+    git("worktree", "prune")
+
+    assert "dead-01" not in _worktrees(git)
+
+
+def test_a_LIVE_locked_worktree_keeps_its_lock(repo):
+    """We unlock dead POINTERS, never a directory that still exists — that lock may be a
+    live agent's claim on its worktree."""
+    root, git = repo
+    wt = root / ".tmp" / "worktrees" / "alive-01"
+    git("worktree", "add", "-q", "--detach", str(wt), "HEAD")
+    git("worktree", "lock", str(wt))
+
+    kanban._unlock_dead_entries()
+
+    assert "locked" in _worktrees(git), "a live worktree must keep its lock"
+    assert wt.exists()

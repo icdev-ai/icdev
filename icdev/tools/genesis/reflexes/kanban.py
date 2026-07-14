@@ -1391,12 +1391,63 @@ def _sweep_old_worktrees(max_age_days: int = _WORKTREE_STALE_AGE_DAYS) -> list[s
     # Drop registry entries whose directory is already gone. Without this, `git worktree
     # list` keeps reporting worktrees that do not exist.
     try:
+        _unlock_dead_entries()
         _sp.run(["git", "worktree", "prune"], cwd=str(BASE_DIR),
                 capture_output=True, text=True, timeout=30)
     except Exception:  # noqa: BLE001
         pass
 
     return removed
+
+
+def _unlock_dead_entries() -> int:
+    """Unlock registry entries whose DIRECTORY NO LONGER EXISTS, so prune can drop them.
+
+    The same bug as _remove_worktree, one layer down: ``git worktree prune`` also refuses
+    to touch a LOCKED entry. So an entry that is both locked and whose directory has been
+    deleted is unreachable by every cleanup path we have — prune skips it because it is
+    locked, and remove never sees it because the sweeper only walks directories that
+    exist. It stays in `git worktree list` forever.
+
+    That is how 26 of them were still being reported after a sweep that had genuinely
+    removed everything it could reach.
+
+    Unlocking is unambiguously safe here: the working tree is GONE. There is nothing left
+    to protect and nothing that can be lost — we are removing a stale pointer to a
+    directory that no longer exists.
+
+    Returns the number of dead entries unlocked.
+    """
+    import subprocess as _sp
+    from pathlib import Path as _Path
+
+    listing = _sp.run(
+        ["git", "worktree", "list", "--porcelain"],
+        cwd=str(BASE_DIR), capture_output=True, text=True, timeout=30,
+    )
+    if listing.returncode != 0:
+        return 0
+
+    unlocked = 0
+    for block in listing.stdout.split("\n\n"):
+        if "locked" not in block:
+            continue
+        line = next((ln for ln in block.splitlines()
+                     if ln.startswith("worktree ")), "")
+        path = line[len("worktree "):].strip()
+        if not path or _Path(path).exists():
+            continue  # a live directory keeps its lock — we only touch dead pointers
+        result = _sp.run(["git", "worktree", "unlock", path],
+                         cwd=str(BASE_DIR), capture_output=True, text=True, timeout=30)
+        if result.returncode == 0:
+            unlocked += 1
+
+    if unlocked:
+        logger.info(
+            "Sweep: unlocked %d dead worktree entries (directory gone) so prune can "
+            "drop them", unlocked,
+        )
+    return unlocked
 
 
 def _remove_worktree(path) -> bool:
