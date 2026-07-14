@@ -87,6 +87,14 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "hook_events",
         # Cortex canvas governance/facade audit (ctx-canvas-01)
         "cortex_audit",
+        # BOM Evidence Engine (migration 267).
+        # bom_match_decisions holds a human's reconciliation verdicts, keyed on a
+        # pair of line hashes. Clusters are a projection recomputed OVER these on
+        # every run — the decisions are the ONLY durable record of what a person
+        # actually approved. Edit one and you have silently rewritten a judgement
+        # the customer's budget was signed off against.
+        "bom_match_decisions",
+        "bom_audit",
         # Phase-E V&V hardening (migration 025) — append-only status transition log
         "kanban_status_transitions",
         # FathomDesk auto-trading (append-only NIST AU)
