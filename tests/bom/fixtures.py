@@ -24,7 +24,7 @@ import zipfile
 from pathlib import Path
 
 
-def _inject_cached_values(path: Path, values: dict[str, float]) -> None:
+def _inject_cached_values(path: Path, values: dict[str, dict[str, float]]) -> None:
     """Give formula cells the value Excel would have cached.
 
     openpyxl never RUNS a formula, so a workbook it writes has ``<f>`` and no
@@ -40,11 +40,22 @@ def _inject_cached_values(path: Path, values: dict[str, float]) -> None:
     with zipfile.ZipFile(path) as src:
         items = [(i, src.read(i.filename)) for i in src.infolist()]
 
+    # Keyed by SHEET, then by cell. Keying on the cell ref alone writes the same
+    # cached value into every sheet that happens to use that address — B4 exists
+    # on all of them — and a fixture that quietly lies produces tests that pass
+    # against behaviour the engine does not have.
+    order = [n for n in (i.filename for i, _ in items)
+             if n.startswith("xl/worksheets/sheet") and n.endswith(".xml")]
+    order.sort(key=lambda n: int(re.search(r"sheet(\d+)\.xml", n).group(1)))
+    sheet_names = list(values)
+
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as dst:
         for info, blob in items:
-            if info.filename.startswith("xl/worksheets/sheet"):
+            if info.filename in order:
+                idx = order.index(info.filename)
+                name = sheet_names[idx] if idx < len(sheet_names) else None
                 text = blob.decode("utf-8")
-                for ref, val in values.items():
+                for ref, val in (values.get(name) or {}).items():
                     # openpyxl emits an EMPTY <v></v> after the formula, so the
                     # cell already has the slot — it is just never filled, because
                     # nothing ever evaluated the formula.
@@ -89,7 +100,7 @@ def workbook_with_a_zeroed_line(path: Path, *, cached: bool = True) -> Path:
     wb.save(path)
 
     if cached:
-        _inject_cached_values(path, {"D2": 200, "D3": 0, "D4": 200})
+        _inject_cached_values(path, {"BOM": {"D2": 200, "D3": 0, "D4": 200}})
     return path
 
 
@@ -122,6 +133,88 @@ def workbook_with_a_deleted_sheet(path: Path) -> Path:
             dst.writestr(item, blob)
 
     tmp.unlink()
+    return path
+
+
+def workbook_with_a_double_count(path: Path) -> Path:
+    """The same licence, on two sheets, reaching the grand total twice.
+
+    This is the distinction the whole formula graph exists for. The item appears
+    on Networking and again on Simulation. A human even wrote "shared with the
+    Networking sheet" next to the second occurrence — they KNEW. And both sheet
+    subtotals still include it, so the money lands in the total twice.
+
+    Note what makes it a bug: not that the item appears twice (a cross-reference
+    is legitimate), but that two DIFFERENT subtotals consume it and both flow into
+    the total. Had they fed the same subtotal, it would simply be a quantity of
+    two, and nothing here would be wrong.
+    """
+    import openpyxl
+
+    wb = openpyxl.Workbook()
+
+    net = wb.active
+    net.title = "Networking"
+    net.append(["Item", "Cost", "Notes"])
+    net.append(["Switch", 5000, ""])
+    net.append(["Simulation Licence", 10000, ""])
+    net["B4"] = "=SUM(B2:B3)"          # Networking subtotal = 15000
+
+    sim = wb.create_sheet("Simulation")
+    sim.append(["Item", "Cost", "Notes"])
+    sim.append(["Test Harness", 2000, ""])
+    sim.append(["Simulation Licence", 10000, "shared with Networking sheet"])
+    sim["B4"] = "=SUM(B2:B3)"          # Simulation subtotal = 12000
+
+    total = wb.create_sheet("Summary")
+    total.append(["Sheet", "Subtotal"])
+    total.append(["Networking", None])
+    total["B2"] = "=Networking!B4"
+    total.append(["Simulation", None])
+    total["B3"] = "=Simulation!B4"
+    total.append(["TOTAL", None])
+    total["B4"] = "=SUM(B2:B3)"        # 27000 — of which 10000 is counted twice
+
+    wb.save(path)
+    _inject_cached_values(path, {
+        "Networking": {"B4": 15000},
+        "Simulation": {"B4": 12000},
+        "Summary": {"B2": 15000, "B3": 12000, "B4": 27000},
+    })
+    return path
+
+
+def workbook_with_a_hardcoded_rollup(path: Path) -> Path:
+    """A summary block where one 'subtotal' is a number somebody typed.
+
+    Its neighbours are live formulas. This one is a literal. Edit the sheets it
+    claims to total and it will not move — and nothing on screen distinguishes it
+    from the cells above and below.
+    """
+    import openpyxl
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Summary"
+    ws.append(["Category", "Amount"])
+    ws.append(["Compute", None])
+    ws.append(["Networking", None])
+    ws.append(["Storage", None])
+    ws.append(["Security", None])
+    ws.append(["TOTAL", None])
+
+    ws["B2"] = "=SUM(Detail!B2:B3)"
+    ws["B3"] = "=SUM(Detail!B4:B5)"
+    ws["B4"] = 192000                    # <- typed in. Will never update.
+    ws["B5"] = "=SUM(Detail!B6:B7)"
+    ws["B6"] = "=SUM(B2:B5)"
+
+    detail = wb.create_sheet("Detail")
+    detail.append(["Item", "Cost"])
+    for i in range(6):
+        detail.append([f"Item {i}", 1000 * (i + 1)])
+
+    wb.save(path)
     return path
 
 
