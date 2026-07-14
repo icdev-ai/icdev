@@ -584,7 +584,7 @@ window.setManualBuild = function(checked) {
             : 'Manual Build OFF — automatic build resumed');
     })
     .catch(function() {
-        _buildFlash('Manual Build toggle failed — reverting to the scheduler's actual mode');
+        _buildFlash('Manual Build toggle failed — reverting to the actual scheduler mode');
         if (window.loadBuildMode) window.loadBuildMode();
     });
 };
@@ -626,7 +626,7 @@ window.setBuildModel = function(value) {
     .catch(function() {
         // The POST never landed, so the runner's model is whatever it was. Resync the
         // control to the server rather than leaving it showing a choice that did nothing.
-        _buildFlash('Model selection failed — reverting to the runner's actual model');
+        _buildFlash('Model selection failed — reverting to the model the runner is using');
         if (window.loadBuildModel) window.loadBuildModel();
     });
 };
