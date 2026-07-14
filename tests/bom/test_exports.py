@@ -141,6 +141,67 @@ class TestTheDeck:
         assert tables >= 2
         assert notes >= len(prs.slides) - 1
 
+    def test_the_tables_can_actually_be_READ(self, scenario):
+        """The bug this exists for: every table rendered black-on-black.
+
+        python-pptx creates tables with "Medium Style 2 - Accent 1", whose own
+        text colours are applied at the RUN level and beat anything set on the
+        paragraph. So the builder painted a dark fill, asked for white text, and
+        PowerPoint drew the table style's dark text on top. Every table came out
+        an empty box.
+
+        Nothing about that is visible from Python. The text is in the XML,
+        python-pptx reads it back happily, and a test asserting "the table has
+        three rows and the right values" PASSES. It did pass. The deck went to the
+        customer and the tables were blank.
+
+        So this test does not ask whether the text is THERE. It asks whether a
+        human could see it — contrast, at the run level, against the fill actually
+        painted underneath.
+        """
+        ds, lines, findings, sources = scenario
+        p = pivot(ds, rows="manufacturer", cols="price_basis")
+        slides, _ = build_deck(ds, findings, sources, pivot=p, project="Lab")
+        prs = Presentation(render(slides, theme="investment_deck", title="Lab"))
+
+        def luminance(rgb: str) -> float:
+            def chan(c: float) -> float:
+                c /= 255
+                return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+
+            r, g, b = (int(str(rgb)[i:i + 2], 16) for i in (0, 2, 4))
+            return 0.2126 * chan(r) + 0.7152 * chan(g) + 0.0722 * chan(b)
+
+        def contrast(fg: str, bg: str) -> float:
+            a, b = luminance(fg), luminance(bg)
+            return (max(a, b) + 0.05) / (min(a, b) + 0.05)
+
+        checked = 0
+        for slide in prs.slides:
+            for shape in slide.shapes:
+                if not getattr(shape, "has_table", False):
+                    continue
+                for row in shape.table.rows:
+                    for cell in row.cells:
+                        if not cell.text.strip():
+                            continue
+                        runs = cell.text_frame.paragraphs[0].runs
+                        assert runs, f"no run on {cell.text!r} — colour cannot be set"
+
+                        fg = runs[0].font.color.rgb
+                        assert fg is not None, (
+                            f"{cell.text!r} has no RUN-level colour; the table "
+                            f"style will supply one and it will be the wrong one"
+                        )
+                        ratio = contrast(str(fg), str(cell.fill.fore_color.rgb))
+                        assert ratio >= 4.5, (
+                            f"{cell.text!r} renders at {ratio:.1f}:1 — invisible. "
+                            f"WCAG AA needs 4.5:1."
+                        )
+                        checked += 1
+
+        assert checked > 6, "no table cells were actually checked"
+
     def test_the_last_slide_is_an_explicit_outro(self, scenario):
         """The builder renders the LAST slide as an outro whatever type it claims to
         be. Without an explicit one it quietly eats a real slide — "Who said so" was
