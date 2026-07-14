@@ -301,7 +301,7 @@ def drawio_with_tabs(path: Path) -> Path:
     verify — which is a question for a human, not a conclusion for a tool.
     """
     workers = "".join(
-        f'<mxCell id="w{i}" value="NODE-X — Worker #{i}" style="rounded=0;" '
+        f'<mxCell id="w{i}" value="NX-100 — Worker #{i}" style="rounded=0;" '
         f'vertex="1" parent="1"/>'
         for i in range(1, 13)
     )
