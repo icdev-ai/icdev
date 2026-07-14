@@ -73,6 +73,37 @@ def looks_like_part_number(text: str) -> bool:
     return bool(_PART_LIKE.match((text or "").strip()))
 
 
+# The tokens that make two otherwise-identical descriptions describe different
+# things: a length, a port count, a capacity, a model number.
+_DISCRIMINATOR = re.compile(
+    r"\b(\d+(?:\.\d+)?)\s*(m|cm|mm|ft|in|u|g|gb|tb|gbe|ge|w|kw|va|kva|port|ports|"
+    r"pack|node|nodes|seat|seats|core|cores|user|users|year|yr|month|mo)\b",
+    re.IGNORECASE,
+)
+# A bare model number inside a description: "Catalyst 9300", "DL380 Gen12".
+_MODEL_IN_TEXT = re.compile(r"\b(\d{3,5})(?:[-\s]?[a-z]{1,3}\d*)?\b", re.IGNORECASE)
+
+
+def discriminators(text: str) -> frozenset[str]:
+    """What makes this description different from a nearly identical one.
+
+    In a bill of materials the measurement IS the product. "Fibre 3m" and "fibre
+    10m" are ninety percent the same string and are two cables a buyer needs both
+    of; a similarity score reads the difference as noise, because it is one token
+    out of eight, when it is the only token that matters.
+    """
+    out: set[str] = set()
+    for value, unit in _DISCRIMINATOR.findall(text or ""):
+        out.add(f"{float(value):g}{unit.lower()}")
+    for model in _MODEL_IN_TEXT.findall(text or ""):
+        # Years are not model numbers. Neither are quantities already captured
+        # above.
+        if 1900 <= int(model) <= 2100:
+            continue
+        out.add(f"m{model}")
+    return frozenset(out)
+
+
 def trigrams(text: str) -> set[str]:
     s = normalize_part(text)
     if len(s) < 3:
@@ -164,7 +195,18 @@ def score(
     than a number.
     """
     # ── B1: the part numbers agree exactly ───────────────────────────────────
-    pa, pb = normalize_part(a_part), normalize_part(b_part)
+    #
+    # But only if they ARE part numbers. A BOM routinely fills that column with a
+    # placeholder — "Generic", "Various", "TBD", "Misc" — meaning "no specific part
+    # was chosen". Comparing those as if they were SKUs merges every accessory in
+    # the document into one cluster with total confidence, and the resulting
+    # "identical part number" reason reads exactly like a correct answer.
+    #
+    # A real part number contains a digit. That single requirement is what stands
+    # between an exact-match rule and nine unrelated items agreeing they are the
+    # same thing.
+    pa = normalize_part(a_part) if looks_like_part_number(a_part) else ""
+    pb = normalize_part(b_part) if looks_like_part_number(b_part) else ""
     if pa and pb and pa == pb:
         return Match(1.0, "exact_part", f"identical part number ({a_part})")
 
@@ -176,6 +218,26 @@ def score(
 
     # ── B2: the same SKU, written differently ────────────────────────────────
     if pa and pb:
+        # A digit SUBSTITUTION is a different product; a TRUNCATION is the same one
+        # written shorter.
+        #
+        # "C9300-24T" and "C9200-24T" are the same length and differ in one
+        # character — they are two different switches, and no similarity score
+        # should be allowed to say otherwise. Whereas "MPU2-2032DAC-400" and
+        # "MPU2032DAC" have different lengths because one is the other with the
+        # suffix dropped, which is what happens when two people copy a SKU off two
+        # different quotes.
+        #
+        # Length is a crude discriminator and it is the right one here: a model
+        # number that has been shortened loses characters; a model number that
+        # names a different model swaps them.
+        if len(pa) == len(pb):
+            return Match(
+                0.0, "trigram",
+                f"different part numbers of the same shape ({a_part} / {b_part}) — "
+                f"a substituted digit is a different model, not a different spelling",
+            )
+
         tri = trigram_similarity(a_part, b_part)
         if tri >= 0.45 and mfr_ok:
             return Match(
@@ -185,10 +247,64 @@ def score(
                 + ("" if not a_mfr else f" and the manufacturer agrees ({a_mfr})"),
             )
 
+        # BOTH lines name a specific part, and the parts do not match. That is a
+        # DISQUALIFIER, and it must not fall through to the description rungs.
+        #
+        # Two rows can be described almost identically — "Cisco 93180YC-FXP" and
+        # "Cisco 9348GC-FXP", "OM4 fibre 3m" and "OM4 fibre 10m" — while naming
+        # different products. The description is a summary and it is allowed to be
+        # vague. The part number is a commitment. When both sides made that
+        # commitment and they disagree, the commitment wins.
+        if a_function and b_function and a_function == b_function:
+            return Match(
+                0.5, "function",
+                f"different products ({a_part} / {b_part}) doing the same job — "
+                f"a choice, not a duplicate",
+            )
+        return Match(
+            0.0, "trigram",
+            f"different part numbers ({a_part} / {b_part}): whatever the "
+            f"descriptions say, these are not the same item",
+        )
+
     # ── B3: descriptions agree ───────────────────────────────────────────────
+    #
+    # Before believing two descriptions, check the thing that DISTINGUISHES them.
+    #
+    # "OM4 fibre 3m" and "OM4 fibre 10m" are ninety percent the same string and
+    # are two different cables. "Catalyst 9300-24T" and "Catalyst 9200-24T" are two
+    # different switches. "Patch cable 3ft" and "patch cable 10ft" are two line
+    # items a buyer needs both of.
+    #
+    # In a bill of materials the measurement IS the product. A similarity score
+    # reads that difference as noise — it is one token out of eight — when it is
+    # in fact the only token that matters. Merging them prices two purchases as
+    # one, and the shortfall does not appear until somebody is standing in a data
+    # centre holding a cable that does not reach.
+    da, db = discriminators(a_desc), discriminators(b_desc)
+    if da and db and da != db:
+        return Match(
+            0.0, "trigram",
+            f"the descriptions differ where it counts ({'/'.join(sorted(da))} vs "
+            f"{'/'.join(sorted(db))}) — in a bill of materials the measurement is "
+            f"the product",
+        )
+
     tok = token_similarity(a_desc, b_desc)
     seq = sequence_similarity(a_desc, b_desc)
-    desc = max(tok, seq * 0.9)
+
+    # Character similarity is discounted hard on SHORT descriptions, where it lies.
+    #
+    # "PDU (Rack-Mount)" and "UPS (Rack-Mount)" share nine of twelve characters, so
+    # the sequence matcher calls them 0.83 alike — and they are a power distribution
+    # unit and an uninterruptible power supply, which are not remotely the same
+    # purchase. On a short string the shared characters are the packaging; the three
+    # that differ are the entire product.
+    #
+    # Long descriptions are the opposite: there, character overlap is real evidence,
+    # because there is enough of it to be more than a coincidence.
+    span = min(len(a_desc or ""), len(b_desc or ""))
+    desc = max(tok, seq * (0.9 if span >= 25 else 0.7))
     if desc >= 0.55:
         return Match(
             min(0.88, desc), "trigram",

@@ -58,7 +58,13 @@ _DISCOUNT = re.compile(r"^=\s*\$?[A-Z]{1,3}\$?\d+\s*\*\s*(0?\.\d+)\s*$", re.IGNO
 # A total row is not a line item. Summing it back in double-counts everything
 # above it.
 _TOTAL_ROW = re.compile(
-    r"^\s*(?:sub\s*)?total\b|^\s*grand\s+total\b|\btotal\s*$", re.IGNORECASE
+    # "Subtotal" has NO word boundary before "total" — b-t is inside a word — so
+    # `\btotal\b` can never see it. A row labelled "2.2 Test Bench — Subtotal"
+    # sailed straight through into the line items, where its money was counted a
+    # second time. The bug hides in plain sight because the row LOOKS like a
+    # heading rather than a total.
+    r"\bsub[\s-]?total\b|\bgrand\s+total\b|\btotal\s*$|^\s*total\b",
+    re.IGNORECASE,
 )
 
 
