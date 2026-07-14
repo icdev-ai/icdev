@@ -1379,18 +1379,78 @@ def _sweep_old_worktrees(max_age_days: int = _WORKTREE_STALE_AGE_DAYS) -> list[s
         if age_sec < threshold_sec:
             continue
         try:
-            _sp.run(
-                ["git", "worktree", "remove", str(sub), "--force"],
-                cwd=str(BASE_DIR), capture_output=True, text=True, timeout=30,
-            )
-            logger.info(
-                "Sweep: removed stale worktree %s (age %.1f days, task not in_progress)",
-                sub, age_sec / 86400,
-            )
-            removed.append(task_id)
+            if _remove_worktree(sub):
+                logger.info(
+                    "Sweep: removed stale worktree %s (age %.1f days, task not "
+                    "in_progress)", sub, age_sec / 86400,
+                )
+                removed.append(task_id)
         except Exception as exc:
             logger.warning("Sweep: could not remove %s: %s", sub, exc)
+
+    # Drop registry entries whose directory is already gone. Without this, `git worktree
+    # list` keeps reporting worktrees that do not exist.
+    try:
+        _sp.run(["git", "worktree", "prune"], cwd=str(BASE_DIR),
+                capture_output=True, text=True, timeout=30)
+    except Exception:  # noqa: BLE001
+        pass
+
     return removed
+
+
+def _remove_worktree(path) -> bool:
+    """Actually remove a worktree. Returns True only if it is really gone.
+
+    ## The sweeper was reporting removals it had not performed
+
+    It ran ``git worktree remove <path> --force`` and never looked at the return code.
+    ``subprocess.run`` does not raise on a non-zero exit, so the ``except`` clause below
+    it never fired — and git REFUSES to remove a locked worktree even with --force:
+
+        fatal: cannot remove a locked working tree;
+        use 'remove -f -f' to override or unlock first          (rc=128)
+
+    So every cycle the sweeper logged "Sweep: removed stale worktree ..." and counted it,
+    for a worktree that was still there. It had been reporting success for months while
+    97 locked worktrees accumulated in .tmp/worktrees, and the log said the cleanup was
+    working the whole time.
+
+    A cleanup routine that cannot fail is one that cannot clean up.
+
+    ## Unlocking is safe HERE, and only here
+
+    The caller has already established that this worktree's task is NOT in_progress and
+    that the directory has not been touched for _WORKTREE_STALE_AGE_DAYS. A lock on a
+    worktree in that state is a leftover from a run that ended days ago, not a live
+    agent's claim. We do not unlock anything else.
+    """
+    import subprocess as _sp
+
+    result = _sp.run(
+        ["git", "worktree", "remove", str(path), "--force"],
+        cwd=str(BASE_DIR), capture_output=True, text=True, timeout=30,
+    )
+    if result.returncode == 0:
+        return True
+
+    if "locked" in (result.stderr or "").lower():
+        _sp.run(["git", "worktree", "unlock", str(path)],
+                cwd=str(BASE_DIR), capture_output=True, text=True, timeout=30)
+        result = _sp.run(
+            ["git", "worktree", "remove", str(path), "--force"],
+            cwd=str(BASE_DIR), capture_output=True, text=True, timeout=30,
+        )
+        if result.returncode == 0:
+            logger.info("Sweep: unlocked stale worktree %s before removing it", path)
+            return True
+
+    # Say what happened. The previous code's silence here is the whole bug.
+    logger.warning(
+        "Sweep: git refused to remove %s (rc=%d): %s",
+        path, result.returncode, (result.stderr or "").strip()[:200],
+    )
+    return False
 
 
 def _capture_diff_stats(task_id: str) -> dict:
