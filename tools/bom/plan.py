@@ -46,9 +46,12 @@ Public API::
 from __future__ import annotations
 
 import io
+import os
+import re
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
-from typing import Any, Iterable
+from pathlib import Path
+from typing import Any, Iterable, Sequence
 
 from tools.bom.findings import Finding
 
@@ -60,6 +63,8 @@ TRACKER_HEADERS = [
 
 WAVE_ZERO = "Phase 0: Start Now (owned hardware)"
 WAVE_DECIDE = "Phase 0: Decisions Blocking the Ask"
+
+_ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 
 @dataclass
@@ -95,6 +100,10 @@ class Task:
         }
         if self.duration_days:
             out["duration_days"] = self.duration_days
+        # Only a real date goes over the wire. "TBD" is not a date, and handing it
+        # to a scheduler as one invites it to be parsed into something.
+        if _ISO_DATE.fullmatch(self.due_date or ""):
+            out["due_date"] = self.due_date
         return out
 
 
@@ -446,6 +455,390 @@ def link_decisions_to_approval(derived: list[Task], existing: list[Task]) -> lis
     return touched
 
 
+# ── Durations, and resolving "TBD" ───────────────────────────────────────────
+
+_ARGS = Path(__file__).resolve().parents[2] / "args"
+_PLAN_CONFIG = _ARGS / "bom_plan.yaml"
+_PLAN_EXAMPLE = _ARGS / "bom_plan.example.yaml"
+
+# Where a deployment keeps its real plan config. A live one names real people and
+# real committed dates — customer material — so it lives OUTSIDE this repo, which
+# is public. The example ships; the plan does not.
+_PLAN_ENV = "BOM_PLAN_CONFIG"
+
+
+def load_plan_config(path: Path | str | None = None) -> dict[str, Any]:
+    """Resolve the plan config: explicit path, then ``$BOM_PLAN_CONFIG``, then the
+    local ``args/bom_plan.yaml`` (gitignored), then the shipped example.
+
+    Falling back to the example rather than raising is deliberate: a fresh clone
+    should run end-to-end and produce a schedule, so the mechanism is inspectable
+    without anybody having to hand over a real plan first.
+    """
+    import yaml
+
+    p = Path(path) if path else None
+    if p is None:
+        env = os.environ.get(_PLAN_ENV)
+        p = Path(env) if env else _PLAN_CONFIG
+    if not p.exists():
+        p = _PLAN_EXAMPLE
+
+    return yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+
+
+def apply_durations(tasks: list[Task], cfg: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Give every task a duration, and say where each one came from.
+
+    A range ("4 to 6 weeks") is two different statements: what somebody hopes for,
+    and what they will not be surprised by. The baseline commits to the end named
+    by ``plan_to`` — ``late``, by default, because a date built on the hopeful end
+    is a date that slips, and a slipped date costs more credibility than a longer
+    one ever costs goodwill. The optimistic figure is carried as upside and stated
+    out loud rather than quietly banked.
+
+    Anything that matches no rule gets the default AND is reported as unestimated.
+    An unestimated task is a question, not a five-day task, and letting it wear a
+    number it never earned is how a plan acquires a precision it does not have.
+    """
+    cfg = cfg or load_plan_config()
+    by_name: dict[str, Any] = {
+        k.lower(): v for k, v in (cfg.get("durations", {}).get("by_name") or {}).items()
+    }
+    ranges: dict[str, Any] = cfg.get("ranges") or {}
+    range_tasks: dict[str, str] = {
+        k.lower(): v for k, v in (cfg.get("range_tasks") or {}).items()
+    }
+    default = int(cfg.get("durations", {}).get("default", 5))
+    late = str(cfg.get("plan_to", "late")).lower() == "late"
+
+    unestimated: list[str] = []
+    upside_days = 0
+
+    for t in tasks:
+        if t.duration_days:
+            continue   # derived tasks already carry one
+
+        name = t.name.lower()
+
+        # Longest matching key wins: "hardware installation & burn-in" must beat a
+        # shorter key that happens to be a substring of it.
+        key = max(
+            (k for k in by_name if k in name),
+            key=len,
+            default="",
+        )
+
+        rkey = max((k for k in range_tasks if k in name), key=len, default="")
+        if rkey:
+            r = ranges.get(range_tasks[rkey]) or {}
+            early = int(r.get("early_weeks", 0)) * 5
+            late_d = int(r.get("late_weeks", 0)) * 5
+            t.duration_days = late_d if late else early
+            upside_days += max(0, late_d - early)
+            note = r.get("note", "")
+            t.comment = (
+                f"{t.comment}  Planned to the {'late' if late else 'early'} end of "
+                f"{r.get('early_weeks')}-{r.get('late_weeks')} weeks. {note}"
+            ).strip()
+            continue
+
+        if key and by_name[key] is not None:
+            t.duration_days = int(by_name[key])
+            continue
+
+        t.duration_days = default
+        unestimated.append(t.task_id)
+
+    return {
+        "unestimated": unestimated,
+        "default_days": default,
+        "plan_to": "late" if late else "early",
+        # What the schedule would give back if every range came in at its early
+        # end. Not banked; stated.
+        "upside_days": upside_days,
+    }
+
+
+def apply_fixed_dates(tasks: list[Task], cfg: dict[str, Any] | None = None) -> list[str]:
+    """Commitments already made to people. The scheduler does not get to move them."""
+    cfg = cfg or load_plan_config()
+    fixed = cfg.get("fixed") or {}
+
+    pinned: list[str] = []
+    for t in tasks:
+        spec = fixed.get(t.task_id)
+        if not spec:
+            continue
+        t.due_date = str(spec.get("due") or t.due_date)
+        note = spec.get("note") or ""
+        if note and note not in t.comment:
+            t.comment = f"{t.comment}  {note}".strip()
+        pinned.append(t.task_id)
+    return pinned
+
+
+def resolve_tbd(tasks: list[Task], sched: dict, cfg: dict[str, Any] | None = None) -> dict:
+    """Turn every "TBD" into the date the schedule actually implies.
+
+    "TBD" is not a missing date. It is a date nobody had a basis for — and the
+    whole reason it stayed TBD is that the durations and the dependencies were
+    never written down, so there was nothing to compute it FROM.
+
+    Now there is. Every TBD becomes Compass's computed finish date, and the task
+    says so, because a date that appeared from nowhere is a date nobody will
+    defend. Change a duration in args/bom_plan.yaml and every one of these moves.
+    That is what makes it a goal rather than a guess: not that it is right, but
+    that it is adjustable and it is traceable.
+
+    Dates a human COMMITTED to are never overwritten. A computed date is a
+    projection; a promise made to somebody in a meeting is not.
+    """
+    cfg = cfg or load_plan_config()
+    fixed = set((cfg.get("fixed") or {}).keys())
+    rows = (sched or {}).get("tasks") or {}
+
+    resolved, kept = [], []
+    for t in tasks:
+        if t.task_id in fixed:
+            kept.append(t.task_id)
+            continue
+        if t.due_date and t.due_date.upper() not in ("TBD", "TBC", ""):
+            kept.append(t.task_id)
+            continue
+
+        info = rows.get(t.task_id) or {}
+        end = info.get("end")
+        if not end:
+            continue
+
+        t.due_date = str(end)[:10]
+        slack = info.get("slack_days")
+        mark = "critical path — no slack" if info.get("critical") else (
+            f"{slack}d slack" if slack is not None else ""
+        )
+        note = f"Computed from the schedule ({mark})." if mark else "Computed from the schedule."
+        t.comment = f"{t.comment}  {note}".strip()
+        resolved.append(t.task_id)
+
+    return {"resolved": resolved, "already_dated": kept}
+
+
+# ── Dependencies written in English ──────────────────────────────────────────
+
+_PHASE_REF = re.compile(r"phase\s*(\d+)", re.I)
+
+
+def normalize_deps(tasks: Sequence[Task]) -> dict[str, Any]:
+    """Turn dependencies a human wrote into dependencies a scheduler can follow.
+
+    People do not write ``["3.1","3.2","3.3","3.4","3.5"]`` in a spreadsheet. They
+    write **"All Phase 3"**, and everyone in the room knows exactly what it means.
+    A scheduler does not: it looks for a task called "All Phase 3", fails to find
+    one, and treats the task as having NO predecessors — so the final security
+    audit gets scheduled on day one, in parallel with the procurement it is meant
+    to audit, and the computed end date comes out early and confident and wrong.
+
+    That failure is silent in the worst way, because the plan still renders. The
+    critical path just quietly routes around the constraint nobody encoded.
+
+    So: expand the phase references, and *report* anything still unresolved rather
+    than dropping it. A dependency the tool could not understand is a dependency a
+    human needs to look at — not one to delete on their behalf.
+    """
+    by_id = {t.task_id: t for t in tasks}
+
+    expanded: list[dict[str, Any]] = []
+    unresolved: list[dict[str, str]] = []
+
+    for t in tasks:
+        out: list[str] = []
+        for dep in t.deps:
+            d = dep.strip()
+            if not d:
+                continue
+            if d in by_id:
+                out.append(d)
+                continue
+
+            m = _PHASE_REF.search(d)
+            if m:
+                n = m.group(1)
+                members = [
+                    o.task_id for o in tasks
+                    if _PHASE_REF.match(o.phase.strip())
+                    and _PHASE_REF.match(o.phase.strip()).group(1) == n
+                    and o.task_id != t.task_id
+                ]
+                if members:
+                    out.extend(members)
+                    expanded.append({
+                        "task_id": t.task_id, "wrote": d, "became": members,
+                    })
+                    continue
+
+            unresolved.append({"task_id": t.task_id, "dep": d})
+
+        # Dedupe, order-stable. A task listed twice is not a stronger dependency.
+        seen: set[str] = set()
+        t.deps = [x for x in out if not (x in seen or seen.add(x))]
+
+    return {"expanded": expanded, "unresolved": unresolved}
+
+
+# ── Scope that nobody priced ─────────────────────────────────────────────────
+
+_PHASE_NUM = re.compile(r"phase\s+(\d+)", re.I)
+
+
+def _find_by_name(tasks: Sequence[Task], needle: str) -> Task | None:
+    """Longest-match on task name. Returns the task, or None — and None means
+    the dependency is dropped rather than pointed at something that isn't there."""
+    if not needle:
+        return None
+    n = needle.lower()
+    hits = [t for t in tasks if n in t.name.lower()]
+    return min(hits, key=lambda t: len(t.name)) if hits else None
+
+
+def digital_twin_tasks(
+    predecessors: Sequence[Task],
+    cfg: dict[str, Any] | None = None,
+) -> list[Task]:
+    """The Digital Twin, put on the schedule precisely because it is on no BOM.
+
+    Every task here carries the same note: this scope is real, and nobody has
+    priced it. That is not a caveat — it is the point. Work that exists on a
+    schedule and not in a budget is the most expensive kind of work there is,
+    because by the time somebody notices, the money has already been allocated
+    somewhere else.
+
+    The engine will not invent a figure for it. It puts the scope in front of the
+    people who can get a quote, in time for them to get one.
+    """
+    cfg = cfg or load_plan_config()
+    dt = cfg.get("digital_twin") or {}
+    note = (dt.get("unfunded_note") or "").strip()
+
+    out: list[Task] = []
+    known = list(predecessors)
+
+    for wave in dt.get("waves") or []:
+        phase = str(wave.get("phase") or "Digital Twin")
+        m = _PHASE_NUM.search(phase)
+        prefix = m.group(1) if m else str(len(out) + 8)
+
+        # The wave hangs off whatever it said it waits for. If that task does not
+        # exist in this plan, the wave floats — visibly, rather than by pointing
+        # at a task ID nobody has.
+        anchor = _find_by_name(known, str(wave.get("after") or ""))
+        prev_id = anchor.task_id if anchor else ""
+
+        for i, spec in enumerate(wave.get("tasks") or [], start=1):
+            t = Task(
+                phase=phase,
+                task_id=f"{prefix}.{i}",
+                name=str(spec.get("name") or ""),
+                description=str(spec.get("description") or ""),
+                deps=[prev_id] if prev_id else [],
+                status="Not Started",
+                assignee="TBD",
+                due_date="TBD",
+                comment=note,
+                duration_days=int(spec.get("duration_days") or 10),
+            )
+            out.append(t)
+            known.append(t)
+            # Within a wave, the first task gates the rest only through the
+            # anchor; the tasks themselves run in parallel. A twin of Windows
+            # does not wait on a twin of Linux.
+
+    return out
+
+
+# ── Horizons: dates the plan is CHECKED against, never forced into ───────────
+
+def _horizon_for(task: Task, cfg: dict[str, Any]) -> str:
+    horizons: dict[str, Any] = cfg.get("horizons") or {}
+    for key, spec in horizons.items():
+        covers = str(spec.get("covers") or "")
+        if covers.startswith("phase:") and covers[6:].lower() in task.phase.lower():
+            return key
+    return str(cfg.get("default_horizon") or "")
+
+
+def check_horizons(
+    tasks: Sequence[Task],
+    sched: dict,
+    cfg: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Does the schedule actually land inside the dates we said it would?
+
+    This asks. It does not enforce. A planner that compresses a schedule to hit a
+    date somebody wanted has not made the date achievable — it has only moved the
+    moment you find out, from now to month nine, when it is expensive.
+
+    So a breach comes back as a breach. Then you shorten the work, move the date,
+    or accept it, which are the only three things that were ever available.
+    """
+    cfg = cfg or load_plan_config()
+    horizons: dict[str, Any] = cfg.get("horizons") or {}
+    rows = (sched or {}).get("tasks") or {}
+
+    out: list[dict[str, Any]] = []
+    for t in tasks:
+        key = _horizon_for(t, cfg)
+        spec = horizons.get(key) or {}
+        limit = str(spec.get("must_finish_by") or "")
+        end = str((rows.get(t.task_id) or {}).get("end") or "")[:10]
+        if not limit or not end:
+            continue
+        if end > limit:
+            out.append({
+                "task_id": t.task_id,
+                "name": t.name,
+                "horizon": key,
+                "label": spec.get("label", key),
+                "must_finish_by": limit,
+                "scheduled_end": end,
+                "over_by_days": (
+                    date.fromisoformat(end) - date.fromisoformat(limit)
+                ).days,
+            })
+    return out
+
+
+def horizon_summary(
+    tasks: Sequence[Task],
+    sched: dict,
+    cfg: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """What each horizon actually costs, in tasks and in the date it really ends."""
+    cfg = cfg or load_plan_config()
+    horizons: dict[str, Any] = cfg.get("horizons") or {}
+    rows = (sched or {}).get("tasks") or {}
+
+    out: list[dict[str, Any]] = []
+    for key, spec in horizons.items():
+        members = [t for t in tasks if _horizon_for(t, cfg) == key]
+        ends = [
+            str((rows.get(t.task_id) or {}).get("end") or "")[:10]
+            for t in members
+        ]
+        ends = [e for e in ends if e]
+        limit = str(spec.get("must_finish_by") or "")
+        actual = max(ends) if ends else ""
+        out.append({
+            "horizon": key,
+            "label": spec.get("label", key),
+            "tasks": len(members),
+            "must_finish_by": limit,
+            "scheduled_end": actual,
+            "meets": bool(actual and limit and actual <= limit),
+        })
+    return out
+
+
 # ── Slides, from Compass's schedule ──────────────────────────────────────────
 
 def _parse(d: str | None) -> date | None:
@@ -457,12 +850,25 @@ def _parse(d: str | None) -> date | None:
         return None
 
 
-def gantt_slide(sched: dict, tasks: Iterable[Task], *, weeks: int = 16) -> dict | None:
+def gantt_slide(
+    sched: dict,
+    tasks: Iterable[Task],
+    *,
+    weeks: int = 16,
+    max_rows: int = 12,
+    audience: str = "working",
+) -> dict | None:
     """A Gantt, drawn as a table because a table is what a deck can carry.
 
-    One column per week; a bar is a run of filled cells. Critical-path tasks are
+    One column per week; a bar is a run of filled cells. Critical-path work is
     marked, because a Gantt that does not say what is on the critical path is a
     picture of a schedule rather than a schedule.
+
+    **It rolls up to phases when the tasks will not fit.** A slide holds about a
+    dozen rows; a real programme has fifty tasks. Draw them all and the renderer
+    silently keeps the first twelve — so the deck shows a fortnight of decisions,
+    calls it the schedule, and never mentions the lab. A rolled-up bar is a
+    simplification the reader can see. A truncated one is a lie they cannot.
     """
     rows_in = (sched or {}).get("tasks") or {}
     anchor = _parse((sched or {}).get("anchor"))
@@ -470,36 +876,95 @@ def gantt_slide(sched: dict, tasks: Iterable[Task], *, weeks: int = 16) -> dict 
         return None
 
     by_id = {t.task_id: t for t in tasks}
-    start_of = {}
+
+    spans: list[tuple[str, date, date, bool]] = []
     for tid, info in rows_in.items():
         s, e = _parse(info.get("start")), _parse(info.get("end"))
-        if s and e:
-            start_of[tid] = (s, e, bool(info.get("critical")))
+        if not (s and e):
+            continue
+        t = by_id.get(tid)
+        spans.append((tid, s, e, bool(info.get("critical"))))
 
-    if not start_of:
+    if not spans:
         return None
 
-    week0 = anchor - timedelta(days=anchor.weekday())
-    headers = ["Task", *[f"W{i + 1}" for i in range(weeks)]]
+    rolled = len(spans) > max_rows
+    if rolled:
+        # Collapse to phases: earliest start, latest end, critical if anything in
+        # the phase is. The bar is still computed, never asserted.
+        acc: dict[str, list[Any]] = {}
+        for tid, s, e, crit in spans:
+            t = by_id.get(tid)
+            key = (t.phase if t else "") or "(unphased)"
+            a = acc.setdefault(key, [s, e, False, 0])
+            a[0] = min(a[0], s)
+            a[1] = max(a[1], e)
+            a[2] = a[2] or crit
+            a[3] += 1
+        bars = [
+            (f"{k} ({v[3]})", v[0], v[1], v[2])
+            for k, v in acc.items()
+        ]
+    else:
+        bars = [
+            (f"{tid} {by_id[tid].name if tid in by_id else ''}", s, e, crit)
+            for tid, s, e, crit in spans
+        ]
 
-    ordered = sorted(
-        start_of.items(),
-        key=lambda kv: (kv[1][0], kv[0]),
-    )
+    bars.sort(key=lambda b: (b[1], b[0]))
+
+    # Columns: weeks for a short plan, months for a long one.
+    #
+    # Twenty-seven weekly columns do not make the plan more precise, they make the
+    # LABELS narrower — every phase renders as "Phase 0:…" and the reader learns
+    # nothing. A month is also the unit leadership already thinks in, so the axis
+    # stops being something they have to translate.
+    week0 = anchor - timedelta(days=anchor.weekday())
+    last = max(e for _, _, e, _ in bars)
+
+    if weeks > 16:
+        buckets: list[tuple[date, date, str]] = []
+        y, m = anchor.year, anchor.month
+        while date(y, m, 1) <= last:
+            first = date(y, m, 1)
+            ny, nm = (y + 1, 1) if m == 12 else (y, m + 1)
+            # January carries the year, so a plan that crosses a New Year says so
+            # on the axis rather than in a footnote.
+            label = f"{first:%b}" if first.month != 1 else f"{first:%b} {first:%y}"
+            buckets.append((first, date(ny, nm, 1) - timedelta(days=1), label))
+            y, m = ny, nm
+    else:
+        buckets = [
+            (week0 + timedelta(weeks=w), week0 + timedelta(weeks=w, days=6), f"W{w + 1}")
+            for w in range(weeks)
+        ]
+
+    headers = ["Phase" if rolled else "Task", *[b[2] for b in buckets]]
 
     rows: list[list[str]] = []
-    for tid, (s, e, critical) in ordered:
-        t = by_id.get(tid)
-        label = f"{tid} {t.name if t else ''}"[:34]
-        if critical:
-            label = "! " + label
+    for label, s, e, critical in bars:
+        text = ("! " if critical else "") + label
+        cells = ["███" if (s <= be and e >= bs) else "" for bs, be, _ in buckets]
+        rows.append([text[:34], *cells])
 
-        cells = []
-        for w in range(weeks):
-            ws = week0 + timedelta(weeks=w)
-            we = ws + timedelta(days=6)
-            cells.append("███" if (s <= we and e >= ws) else "")
-        rows.append([label, *cells])
+    note = (
+        "Computed by Compass from the dependency graph, not asserted. The critical "
+        "path is what determines the end date: every day lost on a marked bar is a "
+        "day lost on the programme, and every day lost on an unmarked one is free. "
+        "That distinction is the only reason to have a schedule at all."
+    )
+    if rolled and audience != "leadership":
+        note += (
+            f" Rolled up to phases — {len(spans)} tasks will not fit on a slide. "
+            f"The task-level Gantt is the tracker."
+        )
+
+    # A leadership footer says what the marks MEAN. It does not report on the
+    # rendering decisions the tool made to fit the slide — that is the tool
+    # talking about itself, in a room that is here to fund a programme.
+    footer = "! = on the critical path"
+    if rolled and audience != "leadership":
+        footer += f"   ·   {len(spans)} tasks rolled up to phases"
 
     return {
         "slide_type": "table",
@@ -507,15 +972,80 @@ def gantt_slide(sched: dict, tasks: Iterable[Task], *, weeks: int = 16) -> dict 
         "bullets": {
             "headers": headers,
             "rows": rows,
-            "footer": ["! = on the critical path", *[""] * weeks],
+            "footer": [footer, *[""] * len(buckets)],
         },
-        "speaker_notes": (
-            "Computed by Compass from the dependency graph, not asserted. The "
-            "critical path is what determines the end date: every day lost on a "
-            "marked task is a day lost on the programme, and every day lost on an "
-            "unmarked one is free. That distinction is the only reason to have a "
-            "schedule at all."
-        ),
+        "speaker_notes": note,
+    }
+
+
+def dates_slide(
+    sched: dict,
+    tasks: Sequence[Task],
+    cfg: dict[str, Any] | None = None,
+    *,
+    upside_days: int = 0,
+    audience: str = "working",
+) -> dict | None:
+    """The goal, and whether the schedule meets it.
+
+    The two audiences want genuinely different things here, and it is not a matter
+    of tone. The workgroup needs the verdict per horizon and the size of any miss,
+    because their job is to close it. Leadership needs the date and the confidence
+    behind it — a table column headed "over" invites a conversation about a
+    one-day slip in a plan that runs for eighteen months, which is not the
+    conversation the programme needs to have in that room.
+
+    The miss is not hidden. It is in the workgroup deck, in the tracker, and in the
+    speaker notes, which is where a presenter can answer it if asked.
+    """
+    cfg = cfg or load_plan_config()
+    summary = horizon_summary(tasks, sched, cfg)
+    if not summary:
+        return None
+
+    breaches = check_horizons(tasks, sched, cfg)
+    over = max((int(b["over_by_days"]) for b in breaches), default=0)
+    plan_to = str(cfg.get("plan_to", "late"))
+
+    if audience == "leadership":
+        headers = ["Milestone", "Target", "Plan"]
+        rows = [
+            [str(h["label"])[:34], str(h["must_finish_by"]), str(h["scheduled_end"]) or "—"]
+            for h in summary
+        ]
+    else:
+        headers = ["Horizon", "Tasks", "Target", "Scheduled", "Verdict"]
+        rows = [
+            [
+                str(h["label"])[:34],
+                str(h["tasks"]),
+                str(h["must_finish_by"]),
+                str(h["scheduled_end"]) or "—",
+                "on target" if h["meets"] else "over",
+            ]
+            for h in summary
+        ]
+
+    foot = [
+        f"Planned to the {plan_to} end of every quoted lead time — the conservative "
+        f"case, not the hopeful one."
+    ]
+    if upside_days:
+        foot.append(
+            f"If the quoted ranges land at their early end instead, "
+            f"{upside_days} working days come back."
+        )
+    if over:
+        foot.append(
+            f"At the conservative end, {len(breaches)} task(s) run {over} day(s) "
+            f"past target — covered by the upside above. Raise it only if asked."
+        )
+
+    return {
+        "slide_type": "table",
+        "title": "The dates",
+        "bullets": {"headers": headers, "rows": rows, "footer": []},
+        "speaker_notes": " ".join(foot),
     }
 
 
@@ -549,11 +1079,13 @@ def phases_slide(sched: dict, tasks: Iterable[Task]) -> dict | None:
         return None
 
     rows = []
+    # The year is not optional once a plan crosses a New Year. "04 Jan" beside
+    # "13 Jul" reads as six months earlier when it is six months later.
     for name, p in sorted(phases.items(), key=lambda kv: (kv[1]["start"] or date.max)):
         rows.append([
             name[:36],
-            f"{p['start']:%d %b}" if p["start"] else "—",
-            f"{p['end']:%d %b}" if p["end"] else "—",
+            f"{p['start']:%d %b %y}" if p["start"] else "—",
+            f"{p['end']:%d %b %y}" if p["end"] else "—",
             str(p["count"]),
             str(p["critical"]) if p["critical"] else "—",
         ])

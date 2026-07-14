@@ -23,6 +23,7 @@ Compass being present, running, or even installed.
 """
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -48,9 +49,15 @@ def _load_config() -> dict[str, Any]:
 
 
 def _compass_url(cfg: dict[str, Any]) -> str | None:
+    """Where Compass lives. ``COMPASS_URL`` wins over the config file.
+
+    An address is deployment, not behaviour, and a developer running a second
+    instance on another port should not have to edit a tracked YAML file to reach
+    it — that is how a local experiment ends up committed.
+    """
     if not cfg.get("enabled", False):
         return None
-    url = (cfg.get("compass_url") or "").strip()
+    url = (os.environ.get("COMPASS_URL") or cfg.get("compass_url") or "").strip()
     return url.rstrip("/") or None
 
 
@@ -171,8 +178,14 @@ def _ascii_safe(name: str) -> str:
 
 
 def create_project(name: str, description: str = "",
-                   funded_value: float | None = None) -> dict | None:
-    """Open a project in Compass's scheduler. Returns {id, name} or None."""
+                   funded_value: float | None = None,
+                   start_date: str | None = None) -> dict | None:
+    """Open a project in Compass's scheduler. Returns {id, name} or None.
+
+    ``start_date`` anchors the schedule. Pass it. Without one, Compass anchors on
+    the day the project was created — so the same plan, built tomorrow, produces
+    a different set of dates, and nothing in the output says why.
+    """
     body: dict[str, Any] = {
         "name": _ascii_safe(name),
         # The description is never put in a header, so it keeps its typography.
@@ -180,6 +193,8 @@ def create_project(name: str, description: str = "",
     }
     if funded_value is not None:
         body["funded_value"] = funded_value
+    if start_date:
+        body["start_date"] = start_date
     return _sched_request("POST", "/projects", json=body)
 
 

@@ -41,9 +41,30 @@ from tools.bom import constants as C
 from tools.bom.findings import Finding
 from tools.bom.pivot import Dataset, Pivot
 
-# Audience, not decoration. The same evidence, in two registers: a technical
-# reader wants the cell reference; an executive wants the number and the risk.
-AUDIENCES = ("leadership", "technical")
+# Audience, and it is not decoration — it is which QUESTION the deck answers.
+#
+#   working      — "what did we find, and can we trust it?"  The workgroup's deck.
+#                  Findings, provenance, competing claims, the cell references.
+#   leadership   — "what are we asking for, and what do we get?"  Nothing about how
+#                  the number was arrived at. A room of executives is not being
+#                  asked to audit the reconciliation; they are being asked to fund
+#                  an outcome, and showing them the working reads as either
+#                  hedging or as an invitation to relitigate it.
+#
+# The engineering rigour does not disappear from the leadership deck. It is what
+# makes the leadership deck ALLOWED TO EXIST — see the refusal in build_deck().
+AUDIENCES = ("leadership", "working")
+
+
+class NotReadyForLeadership(RuntimeError):
+    """A leadership deck was asked for while the evidence still disagrees.
+
+    This is the one place the tool refuses rather than degrades. A polished deck
+    is a deck that states a number with confidence, and there is no honest way to
+    do that over four documents that price the same project differently. The fix
+    is not a caveat in six-point type; it is a human nominating a source of record
+    — which takes minutes, because the reconciliation is already done.
+    """
 
 
 @dataclass
@@ -135,14 +156,29 @@ def _money(v: float | None) -> str:
 
 # ── The slides ───────────────────────────────────────────────────────────────
 
-def _title_slide(snap: Snapshot, project: str) -> dict:
+def _title_slide(snap: Snapshot, project: str, *, audience: str = "leadership") -> dict:
+    if audience == "leadership":
+        # What we want and what it buys. How we got here is the speaker's job, and
+        # only if asked — a title slide that opens with methodology has spent the
+        # room's attention before the ask arrives.
+        bullets = [_money(snap.committed_total) + " — investment request"]
+        if snap.owned_value:
+            bullets.append(
+                f"{_money(snap.owned_value)} of capability already owned, working "
+                f"from day one"
+            )
+        if snap.open_count:
+            bullets.append(f"{snap.open_count} items still being priced")
+    else:
+        bullets = [
+            "Reconciled from every document we were given",
+            f"Snapshot {snap.sha} — these figures are frozen",
+        ]
+
     return {
         "slide_type": "title",
         "title": project,
-        "bullets": [
-            "Reconciled from every document we were given",
-            f"Snapshot {snap.sha} — these figures are frozen",
-        ],
+        "bullets": bullets,
         "speaker_notes": (
             "Every number in this deck traces to a cell in a source document. "
             "Nothing here was estimated by the tool that produced it."
@@ -311,38 +347,69 @@ def build_deck(
     owned_note: str = "",
     audience: str = "leadership",
 ) -> tuple[list[dict], Snapshot]:
-    """The slide specs, and the frozen figures they were rendered from."""
+    """The slide specs, and the frozen figures they were rendered from.
+
+    ``audience`` decides which question the deck answers — see AUDIENCES. It is
+    the difference between a pack that shows its working and a pack that states a
+    conclusion, and mixing them produces a deck that does neither job.
+    """
     if audience not in AUDIENCES:
         raise ValueError(f"unknown audience: {audience}")
 
     snap = freeze(dataset, findings, owned_value=owned_value, owned_note=owned_note)
     sources = sources or {}
 
-    slides: list[dict | None] = [
-        _title_slide(snap, project),
-        _the_ask(snap),
-        _what_you_own(snap),
-        _findings_slide(snap),
-        _where_it_goes(snap, pivot),
-        _who_said_so(sources),
-    ]
+    if audience == "leadership" and not snap.is_a_total:
+        raise NotReadyForLeadership(
+            f"{len(snap.competing_claims)} sources still price this project "
+            f"differently, so there is no number to present. Nominate a source of "
+            f"record for each area of scope, then build the leadership deck. "
+            f"(The working deck presents this honestly and is what the workgroup "
+            f"should be looking at first.)"
+        )
 
-    if audience == "technical":
-        # The same evidence, a different register. A technical reader wants the
-        # cell reference; they are going to check.
-        slides.append({
-            "slide_type": "content",
-            "title": "How to check this",
-            "bullets": [
-                "Every figure traces to a document, a sheet and a cell — see the "
-                "workbook.",
-                "Findings marked 'deterministic' are arithmetic; nothing inferred "
-                "them.",
-                "Anything still disputed contributes zero here and is listed in full.",
-                f"Snapshot {snap.sha} — quote it and these numbers can be reproduced "
-                f"exactly.",
-            ],
-        })
+    if audience == "leadership":
+        # What we are asking for, what it buys, and when. Nothing about how the
+        # figure was arrived at: the room is being asked to fund an outcome, not to
+        # audit a reconciliation, and showing them the working reads as hedging.
+        #
+        # The findings and the provenance are not hidden — they are the WORKING
+        # deck, and they are the reason this deck is allowed to state a number at
+        # all. Leadership gets the conclusion because somebody did the work.
+        slides: list[dict | None] = [
+            _title_slide(snap, project, audience=audience),
+            _the_ask(snap),
+            _what_you_own(snap),
+            _where_it_goes(snap, pivot),
+        ]
+    else:
+        slides = [
+            _title_slide(snap, project, audience=audience),
+            _the_ask(snap),
+            _what_you_own(snap),
+            _findings_slide(snap),
+            _where_it_goes(snap, pivot),
+            _who_said_so(sources),
+            {
+                "slide_type": "content",
+                "title": "How to check this",
+                "bullets": [
+                    "Every figure traces to a document, a sheet and a cell — see "
+                    "the workbook.",
+                    "Findings marked 'deterministic' are arithmetic; nothing "
+                    "inferred them.",
+                    "Anything still disputed contributes zero here and is listed "
+                    "in full.",
+                    f"Snapshot {snap.sha} — quote it and these numbers can be "
+                    f"reproduced exactly.",
+                ],
+                "speaker_notes": (
+                    "Invite the check. A workgroup that cannot reproduce a number "
+                    "will not defend it in front of anyone else, and a figure "
+                    "nobody will defend is a figure that gets cut."
+                ),
+            },
+        ]
 
     out = [s for s in slides if s is not None]
 

@@ -11,7 +11,7 @@ import openpyxl
 import pytest
 from pptx import Presentation
 
-from tools.bom.deck import build_deck, freeze, render
+from tools.bom.deck import NotReadyForLeadership, build_deck, freeze, render
 from tools.bom.export_xlsx import export
 from tools.bom.findings import Evidence, Finding
 from tools.bom.lines import ExtractedLine
@@ -128,7 +128,8 @@ class TestTheDeck:
         as the words "No table data.\""""
         ds, lines, findings, sources = scenario
         p = pivot(ds, rows="manufacturer", cols="price_basis")
-        slides, _snap = build_deck(ds, findings, sources, pivot=p, project="Lab")
+        slides, _snap = build_deck(ds, findings, sources, pivot=p, project="Lab",
+                                   audience="working")
 
         prs = Presentation(render(slides, theme="investment_deck", title="Lab"))
         tables = sum(
@@ -161,7 +162,8 @@ class TestTheDeck:
         """
         ds, lines, findings, sources = scenario
         p = pivot(ds, rows="manufacturer", cols="price_basis")
-        slides, _ = build_deck(ds, findings, sources, pivot=p, project="Lab")
+        slides, _ = build_deck(ds, findings, sources, pivot=p, project="Lab",
+                                   audience="working")
         prs = Presentation(render(slides, theme="investment_deck", title="Lab"))
 
         def luminance(rgb: str) -> float:
@@ -207,20 +209,99 @@ class TestTheDeck:
         be. Without an explicit one it quietly eats a real slide — "Who said so" was
         being turned into a thank-you card, and nothing said so."""
         ds, _lines, findings, sources = scenario
-        slides, _ = build_deck(ds, findings, sources, project="Lab")
+        slides, _ = build_deck(ds, findings, sources, project="Lab", audience="working")
         assert slides[-1]["slide_type"] == "outro"
 
     def test_every_slide_cites_the_snapshot(self, scenario):
         ds, _lines, findings, sources = scenario
-        slides, snap = build_deck(ds, findings, sources, project="Lab")
+        slides, snap = build_deck(ds, findings, sources, project="Lab", audience="working")
         for s in slides:
             assert any(snap.sha in c["title"] for c in s["citations"])
 
     def test_an_unknown_theme_is_refused(self, scenario):
         ds, _lines, findings, sources = scenario
-        slides, _ = build_deck(ds, findings, sources, project="Lab")
+        slides, _ = build_deck(ds, findings, sources, project="Lab", audience="working")
         with pytest.raises(ValueError, match="unknown theme"):
             render(slides, theme="hot_pink")
+
+
+class TestTheTwoAudiencesAnswerDifferentQuestions:
+    """Leadership is being asked to fund an outcome. The workgroup is being asked to
+    close the gaps. A deck that shows the working to an executive reads as hedging,
+    and a deck that hides it from the workgroup is useless to them."""
+
+    def _scenario(self):
+        ds = Dataset(rows=[_row("switch", 36000)], claim_sources={"bom.xlsx"})
+        f = Finding(finding_type="hardcoded_rollup", kind="defect", severity="high",
+                    title="A typed-in total", impact_usd=1000,
+                    evidence=[Evidence("bom.xlsx", "Summary", "C15", "")])
+        return ds, [f]
+
+    def test_the_working_deck_shows_what_we_found(self):
+        ds, findings = self._scenario()
+        slides, _ = build_deck(ds, findings, {}, project="Lab", audience="working")
+        titles = [s["title"] for s in slides]
+        assert any("found" in t.lower() for t in titles), titles
+
+    def test_the_leadership_deck_does_NOT(self):
+        """It is not that the findings are unimportant. It is that they are the
+        reason this deck is allowed to state a number, not the deck's content."""
+        ds, findings = self._scenario()
+        slides, _ = build_deck(ds, findings, {}, project="Lab", audience="leadership")
+        titles = [s["title"].lower() for s in slides]
+        assert not any("found" in t for t in titles), titles
+        assert not any("said so" in t for t in titles), titles
+        assert not any("check this" in t for t in titles), titles
+
+    def test_the_leadership_title_slide_leads_with_the_ask(self):
+        ds, findings = self._scenario()
+        slides, _ = build_deck(ds, findings, {}, project="Lab", audience="leadership")
+        assert "$36,000" in slides[0]["bullets"][0]
+
+    def test_an_unknown_audience_is_refused(self):
+        ds, findings = self._scenario()
+        with pytest.raises(ValueError, match="unknown audience"):
+            build_deck(ds, findings, {}, project="Lab", audience="the board")
+
+
+class TestALeadershipDeckCannotBePolishedPastNoNumber:
+    """The one place the tool refuses rather than degrades.
+
+    A polished deck states a number with confidence. There is no honest way to do
+    that over four documents that price the same project differently — and a caveat
+    in six-point type is not a fix, it is a disclaimer on a lie. The fix is a human
+    nominating a source of record, which takes minutes because the reconciliation is
+    already done.
+    """
+
+    def _competing(self):
+        return Dataset(
+            rows=[_row("switch", 36000)],
+            claim_sources={"bom_a.xlsx", "bom_b.xlsx"},
+        )
+
+    def test_it_refuses(self):
+        with pytest.raises(NotReadyForLeadership, match="2 sources"):
+            build_deck(self._competing(), [], {}, project="Lab",
+                       audience="leadership")
+
+    def test_the_refusal_says_what_to_do_about_it(self):
+        with pytest.raises(NotReadyForLeadership, match="source of record"):
+            build_deck(self._competing(), [], {}, project="Lab",
+                       audience="leadership")
+
+    def test_the_working_deck_still_builds_and_states_it_honestly(self):
+        """Refusing the leadership deck must not block the workgroup — they are the
+        ones who can resolve it."""
+        slides, _ = build_deck(self._competing(), [], {}, project="Lab",
+                               audience="working")
+        assert any("not yet a number" in s["title"] for s in slides)
+
+    def test_one_source_of_record_unblocks_the_leadership_deck(self):
+        ds = Dataset(rows=[_row("switch", 36000)], claim_sources={"bom_a.xlsx"})
+        slides, snap = build_deck(ds, [], {}, project="Lab", audience="leadership")
+        assert snap.is_a_total
+        assert slides
 
 
 class TestTheDeckRefusesToPrintATotalItDoesNotHave:
@@ -231,7 +312,7 @@ class TestTheDeckRefusesToPrintATotalItDoesNotHave:
             rows=[_row("a", 21000)],
             claim_sources={"bom_one.xlsx", "bom_two.xlsx"},
         )
-        slides, snap = build_deck(ds, [], {}, project="Lab")
+        slides, snap = build_deck(ds, [], {}, project="Lab", audience="working")
 
         assert snap.is_a_total is False
         ask = slides[1]
@@ -242,7 +323,7 @@ class TestTheDeckRefusesToPrintATotalItDoesNotHave:
 
     def test_a_settled_dataset_states_the_figure(self):
         ds = Dataset(rows=[_row("a", 21000)], claim_sources={"bom.xlsx"})
-        slides, snap = build_deck(ds, [], {}, project="Lab")
+        slides, snap = build_deck(ds, [], {}, project="Lab", audience="working")
         assert snap.is_a_total is True
         assert slides[1]["title"] == "The ask"
         assert any("21,000" in b for b in slides[1]["bullets"])
@@ -265,5 +346,5 @@ class TestWhatYouAlreadyOwn:
 
     def test_it_is_omitted_when_there_is_nothing_to_say(self):
         ds = Dataset(rows=[_row("a", 21000)], claim_sources={"bom.xlsx"})
-        slides, _ = build_deck(ds, [], {}, project="Lab")
+        slides, _ = build_deck(ds, [], {}, project="Lab", audience="working")
         assert "What we already own" not in [s["title"] for s in slides]

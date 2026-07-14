@@ -217,3 +217,7 @@ frontend/.next/
 frontend/out/
 frontend/node_modules/
 .logs/
+
+# Live BOM plan config — names real people, real committed dates, a real task
+# list. ICDEV is public. Ship args/bom_plan.example.yaml; keep the real one out.
+args/bom_plan.yaml

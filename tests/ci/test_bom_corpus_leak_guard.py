@@ -33,7 +33,25 @@ REPO = Path(__file__).resolve().parents[2]
 
 # Directories the engine and its tests live in. Scanning the whole repo would
 # drown in false positives from unrelated fixtures.
-SCANNED = ("tools/bom", "tests/bom", "tools/kanban/seed_bom_concord.py")
+#
+# `args/` is here because the guard did NOT cover it and should have. A plan config
+# is the most customer-specific file the engine has — real people, real committed
+# dates, a real task list — and it looked like innocuous YAML right up until it was
+# a disclosure. The live config is gitignored and lives with the corpus; only the
+# synthetic example ships.
+SCANNED = (
+    "tools/bom",
+    "tools/slides/brand_deck.py",
+    "tests/bom",
+    "tools/kanban/seed_bom_concord.py",
+    "args/bom_plan.example.yaml",
+    "args/bom_credibility.yaml",
+    "args/bom_columns.yaml",
+    "args/bom_xlsx_layout.yaml",
+)
+
+# Config that must never be tracked, because a real one is customer material.
+UNTRACKED = ("args/bom_plan.yaml",)
 
 # Patterns that indicate customer evidence rather than engineering. Deliberately
 # specific: a guard that cries wolf gets switched off, and then it protects
@@ -56,13 +74,21 @@ _FORBIDDEN_TERMS = (
 )
 
 
+_SUFFIXES = (".py", ".yaml", ".yml", ".md")
+
+
 def _iter_files():
     for target in SCANNED:
         p = REPO / target
         if p.is_file():
             yield p
         elif p.is_dir():
-            yield from (f for f in p.rglob("*.py") if "__pycache__" not in f.parts)
+            yield from (
+                f for f in p.rglob("*")
+                if f.is_file()
+                and f.suffix in _SUFFIXES
+                and "__pycache__" not in f.parts
+            )
 
 
 class TestNoCorpusInTheOpenSourceRepo:
@@ -90,6 +116,32 @@ class TestNoCorpusInTheOpenSourceRepo:
             "Customer identifiers must not appear in the public repo:\n  "
             + "\n  ".join(offenders)
         )
+
+    def test_the_live_plan_config_is_not_tracked(self):
+        """A plan config names real people, real committed dates, a real task list.
+
+        The mistake this catches: writing that file into `args/` because that is
+        where config lives, and it looks like innocuous YAML in a diff. The engine
+        loads it from `$BOM_PLAN_CONFIG` or a gitignored local path; only the
+        synthetic example ships.
+        """
+        try:
+            out = subprocess.run(
+                ["git", "ls-files", "--", *UNTRACKED],
+                cwd=REPO, capture_output=True, text=True, timeout=30, check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):  # pragma: no cover
+            pytest.skip("git unavailable")
+
+        tracked = [line for line in out.stdout.splitlines() if line.strip()]
+        assert not tracked, (
+            f"these must never be committed to a public repo: {tracked}. "
+            f"Move the file out of the tree and point $BOM_PLAN_CONFIG at it; "
+            f"args/bom_plan.example.yaml is what ships."
+        )
+
+    def test_the_example_config_exists_so_a_fresh_clone_runs(self):
+        assert (REPO / "args" / "bom_plan.example.yaml").exists()
 
     def test_fixtures_are_built_not_committed(self):
         """No customer documents checked in under the BOM tests.
