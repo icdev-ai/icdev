@@ -29,7 +29,7 @@
 
 - [What's New](#whats-new-in-1237--icdev-cortex-unified-governed-ai-facade--kanban-governed-delivery-pipeline)
 - [What ICDEV™ Builds](#what-icdev-builds)
-- [10 Design Canvases](#10-design-canvases)
+- [13 Design Canvases](#13-design-canvases)
 - [Quick Start](#quick-start)
 - [FORGE Framework](#how-it-actually-works)
 - [Ask Any Canvas](#ask-any-canvas)
@@ -152,7 +152,7 @@ The **TRUST** initiative makes everything ICDEV™ generates cite its sources wi
 
 
 
-ICDEV™ is an AI-powered meta-builder that generates complete, autonomous applications — each with its own agent architecture, compliance automation, testing pipeline, and CI/CD integration. Describe what you need in plain English. Get an ATO-ready system with 42 compliance framework mappings, 15 coordinating AI agents, and every artifact you need for Authority to Operate.
+ICDEV™ is an AI-powered meta-builder that generates complete, autonomous applications — each with its own agent architecture, compliance automation, testing pipeline, and CI/CD integration. Describe what you need in plain English. Get an ATO-ready system with 42 compliance framework mappings, 16 coordinating AI agents, and every artifact you need for Authority to Operate.
 
 These aren't templates. They're living systems that can build their own features.
 
@@ -285,9 +285,9 @@ python tools/builder/child_app_generator.py --blueprint blueprint.json \
 
 ---
 
-## 10 Design Canvases
+## 13 Design Canvases
 
-ICDEV™ ships 10 interactive design canvases — each a standalone visual builder with its own database, knowledge graph, natural-language `/ask` endpoint, IQE query interface, and compliance baseline. Drag and drop. Import from real topologies, configs, or SBOMs. Query in plain English.
+ICDEV™ ships 13 interactive design canvases — each a standalone visual builder with its own database and compliance baseline. Ten of them add a knowledge graph, a natural-language `/ask` endpoint, and an IQE query interface. Drag and drop. Import from real topologies, configs, or SBOMs. Query in plain English.
 
 | # | Canvas | Route | Purpose |
 |---|--------|-------|---------|
@@ -299,10 +299,13 @@ ICDEV™ ships 10 interactive design canvases — each a standalone visual build
 | **6** | **ODC** — Observability Design | `/observability` | Detection coverage mapping, Sigma rules, MITRE ATT&CK detection, 14 source types |
 | **7** | **IDC** — Infrastructure Design | `/infra` | IaC resource design, 6 CSP support, 17 service categories, 13 compliance checks |
 | **8** | **AADC** — Agentic AI Design | `/agentic-ai/` | 7 solution packs, 40+ node types, risk register, ATLAS scenarios, quick-start wizard |
-| **9** | **QDC** — Quality Design | `/qdc` | Code quality gates, test coverage visualization, smell detection, maintainability scoring |
-| **10** | **MDC** — Migration Design | `/migration` | 7R assessment, legacy migration tracking, strangler fig mapping, ATO compliance bridge |
+| **9** | **QDC** — Quality Design | `/quality` | Code quality gates, test coverage visualization, smell detection, maintainability scoring |
+| **10** | **MDC** — Migration Design | `/migration-canvas` | 7R assessment, legacy migration tracking, strangler fig mapping, ATO compliance bridge |
+| **11** | **BI Studio** — Analytics | `/bi_dashboard` | Natural-language 2D/3D chart canvas — AI drafts analyst/executive dashboards from real project data (ECharts-gl) |
+| **12** | **AIMC** — AI/ML Design | `/ai-ml` | AI/ML model design canvas and model catalog — deployment and readiness checks |
+| **13** | **OHC** — Operations Hub | `/ops` | Unified LLMOps / MLOps / AIOps hub — model registry, SLOs, incidents, runbooks, topology |
 
-Every canvas answers natural-language questions grounded in actual design data — see [Ask Any Canvas](#ask-any-canvas).
+Ten of these canvases answer natural-language questions grounded in actual design data — see [Ask Any Canvas](#ask-any-canvas).
 
 ---
 
@@ -499,7 +502,7 @@ graph TD
 
 ## Ask Any Canvas
 
-Every one of ICDEV™'s ten design canvases answers natural-language questions over its own knowledge graph. No chatbot wrapper — the answers are grounded in actual design data (nodes, edges, relationships) that users dragged onto the canvas or imported from real topologies, pipelines, and SBOMs.
+Ten of ICDEV™'s thirteen design canvases answer natural-language questions over their own knowledge graph. No chatbot wrapper — the answers are grounded in actual design data (nodes, edges, relationships) that users dragged onto the canvas or imported from real topologies, pipelines, and SBOMs.
 
 | Canvas | Route | KG scope | Example queries |
 |---|---|---|---|
@@ -688,13 +691,14 @@ python tools/installer/installer.py --profile healthcare --compliance hipaa,hitr
 
 ---
 
-## Multi-Agent Architecture (15 Agents)
+## Multi-Agent Architecture (16 Agents)
 
 | Tier | Agents | Role |
 |------|--------|------|
 | **Core** | Orchestrator, Architect | Task routing, system design |
 | **Domain** | Builder, Compliance, Security, Infrastructure, MBSE, Modernization, Requirements Analyst, Supply Chain, Simulation, DevSecOps/ZTA, Gateway | Specialized domain work |
 | **Support** | Knowledge, Monitor | Self-healing, observability |
+| **Application** | ACE Co-Worker Engine | Dynamic agentic co-worker teams (delegation, creator-verifier, HITL) |
 
 Agents communicate via A2A protocol (JSON-RPC 2.0 over mutual TLS). Each publishes an Agent Card at `/.well-known/agent.json`. Workflows use DAG-based parallel execution with domain authority vetoes.
 
@@ -780,11 +784,12 @@ graph TD
     IDE["Claude Code / AI IDE\n39 slash commands · 250+ MCP tools"]
     GW["Unified MCP Gateway\n250+ tools · lazy-loaded"]
 
-    subgraph Agents["15 Agents"]
+    subgraph Agents["16 Agents"]
         CORE["Core\nOrchestrator · Architect"]
         DOM1["Domain\nBuilder · Compliance · Security · Infrastructure"]
         DOM2["Domain\nMBSE · Modernize · Req. Analyst · Supply Chain · Simulation · DevSecOps/ZTA · Gateway"]
         SUP["Support\nKnowledge · Monitor"]
+        APP["Application\nACE Co-Worker Engine"]
     end
 
     FF["FORGE Framework\nGoals · Tools · Args · Context · Hard Prompts"]
@@ -928,7 +933,7 @@ python tools/dashboard/app.py
 
 ```bash
 kubectl apply -f k8s/
-# Includes: namespace, network policies (default deny), 15 agent deployments,
+# Includes: namespace, network policies (default deny), 16 agent deployments,
 # dashboard, API gateway, HPA auto-scaling, pod disruption budgets
 ```
 
