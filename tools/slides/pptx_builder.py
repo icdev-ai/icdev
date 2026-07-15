@@ -35,6 +35,48 @@ def _rgb(palette: dict, key: str) -> RGBColor:
     return RGBColor(r, g, b)
 
 
+def _opt(palette: dict, key: str, fallback: str) -> RGBColor:
+    """A colour that a theme MAY define, falling back to one it must.
+
+    This is what lets a light theme coexist with the dark ones without a flag on
+    every call site: a dark theme never sets "card" or "band_text", so it inherits
+    the old behaviour; a light theme sets them and gets white cards and a white
+    band title. No theme has to know the others exist.
+    """
+    return _rgb(palette, key if key in palette else fallback)
+
+
+def _card_fill(palette: dict) -> RGBColor:
+    # Dark themes fill cards with "dark"; a light theme fills them white via "card".
+    return _opt(palette, "card", "dark")
+
+
+def _band_text(palette: dict) -> RGBColor:
+    # Title colour ON the navy header band. Blue-on-navy is unreadable, so a light
+    # theme overrides to white; dark themes keep the accent they always used.
+    return _opt(palette, "band_text", "accent")
+
+
+def _on_card_text(palette: dict) -> RGBColor:
+    """Body colour that is legible on the card fill, whichever way it goes.
+
+    A white card needs dark text; a navy card needs light text. Decide from the
+    card's own luminance rather than from a per-theme flag, so a new theme cannot
+    forget to set it and ship black-on-black.
+    """
+    r, g, b = palette.get("card", palette["dark"])
+    luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b
+    return _rgb(palette, "text") if luminance < 140 else _rgb(palette, "dark")
+
+
+def _rotation(palette: dict) -> list[RGBColor]:
+    """The per-card accent cycle. A theme without one just reuses its accent."""
+    rot = palette.get("rotation")
+    if not rot:
+        return [_rgb(palette, "accent")]
+    return [RGBColor(*c) for c in rot]
+
+
 # ── Primitives (identical to generate_exec_deck.py) ──────────────────────────
 
 def _new_prs() -> Presentation:
@@ -122,15 +164,21 @@ def _notes(slide, text: str) -> None:
     tf.text = text
 
 
-def _card(slide, l, t, w, h, heading: str, body: str, palette: dict) -> None:
-    dark = _rgb(palette, "dark")
-    accent = _rgb(palette, "accent")
+def _card(slide, l, t, w, h, heading: str, body: str, palette: dict,
+          accent: RGBColor | None = None) -> None:
+    accent = accent or _rgb(palette, "accent")
     subtext = _rgb(palette, "subtext")
-    _rect(slide, l, t, w, h, dark, accent)
-    pad = Inches(0.12)
-    _box(slide, l + pad, t + pad, w - pad * 2, Inches(0.38),
-         heading, size=12, bold=True, color=accent)
-    _box(slide, l + pad, t + Inches(0.42), w - pad * 2, h - Inches(0.54),
+    border = _opt(palette, "border", "accent")
+    body_c = _on_card_text(palette)
+    # White card with a hairline border and a coloured LEFT accent bar — the
+    # reference deck's signature. On a dark theme the fill is "dark" and the effect
+    # is a subtly bordered panel; same code, both worlds.
+    _rect(slide, l, t, w, h, _card_fill(palette), border)
+    _rect(slide, l, t, Inches(0.08), h, accent)          # left accent bar
+    pad = Inches(0.18)
+    _box(slide, l + pad, t + Inches(0.10), w - pad * 2, Inches(0.38),
+         heading, size=13, bold=True, color=body_c)
+    _box(slide, l + pad, t + Inches(0.50), w - pad * 2, h - Inches(0.62),
          body, size=10, color=subtext, wrap=True)
 
 
@@ -138,24 +186,36 @@ def _card(slide, l, t, w, h, heading: str, body: str, palette: dict) -> None:
 
 def _build_title_slide(prs: Presentation, slide_data: dict, n: int, palette: dict) -> None:
     s = _blank(prs)
-    _bg(s, _rgb(palette, "bg"))
     accent = _rgb(palette, "accent")
-    text_c = _rgb(palette, "text")
-    subtext = _rgb(palette, "subtext")
 
-    # Top + bottom accent bars
+    # A cover wants a deep field behind a bright title. Dark themes already have
+    # that in "bg"; a light theme's "bg" is white, which makes a flat cover — so a
+    # light theme covers in its navy "dark" instead and sets the title white. Both
+    # are decided from luminance, not a flag, so a new theme cannot get it wrong.
+    br, bgc, bb = palette["bg"]
+    is_light = (0.2126 * br + 0.7152 * bgc + 0.0722 * bb) >= 140
+    cover_bg = _rgb(palette, "dark") if is_light else _rgb(palette, "bg")
+    title_c = _band_text(palette) if is_light else accent
+    text_c = _band_text(palette) if is_light else _rgb(palette, "text")
+    subtext = _opt(palette, "subtext", "subtext")
+
+    _bg(s, cover_bg)
+
+    # Top + bottom accent bars. The bottom uses the last rotation colour (amber in
+    # the corporate theme) for the reference's two-tone rule; falls back to accent.
+    rot = _rotation(palette)
     _rect(s, 0, 0, W, Inches(0.1), accent)
-    _rect(s, 0, H - Inches(0.1), W, Inches(0.1), accent)
+    _rect(s, 0, H - Inches(0.1), W, Inches(0.1), rot[-1])
 
     title = slide_data.get("title", "ICDEV™")
     _box(s, LM, Inches(1.0), CW, Inches(2.0),
-         title, size=44, bold=True, color=accent, align=PP_ALIGN.CENTER)
+         title, size=44, bold=True, color=title_c, align=PP_ALIGN.CENTER)
     _rect(s, Inches(3.8), Inches(3.2), Inches(5.73), Inches(0.03), accent)
 
     subtitle = slide_data.get("speaker_notes", "")[:120]
+    tagline = slide_data.get("subtitle") or "ICDEV™  ·  A System That Builds Systems"
     _box(s, LM, Inches(3.35), CW, Inches(0.5),
-         "ICDEV™  ·  A System That Builds Systems", size=14,
-         color=text_c, align=PP_ALIGN.CENTER)
+         tagline, size=14, color=text_c, align=PP_ALIGN.CENTER)
     if subtitle:
         _box(s, LM, Inches(3.9), CW, Inches(0.4),
              subtitle[:100], size=12, color=subtext, align=PP_ALIGN.CENTER, italic=True)
@@ -172,11 +232,12 @@ def _build_content_slide(
     # Left accent stripe
     _rect(s, 0, 0, Inches(0.12), H, accent)
 
-    # Title bar
+    # Title bar — full-width navy band, title in the theme's band colour (white on
+    # a light theme, accent on the dark themes).
     _rect(s, Inches(0.12), 0, W - Inches(0.12), Inches(0.72), dark)
     title = slide_data.get("title", "")[:80]
     _box(s, Inches(0.24), Inches(0.12), CW, Inches(0.55),
-         title, size=22, bold=True, color=accent)
+         title, size=22, bold=True, color=_band_text(palette))
 
     # Accent underline
     _accent_bar(s, palette, top=Inches(0.72), h=Inches(0.04))
@@ -268,7 +329,7 @@ def _build_mermaid_slide(prs: Presentation, slide_data: dict, n: int, palette: d
     _rect(s, Inches(0.12), 0, W - Inches(0.12), Inches(0.72), dark)
     title = slide_data.get("title", "")[:80]
     _box(s, Inches(0.24), Inches(0.12), CW, Inches(0.55),
-         title, size=22, bold=True, color=accent)
+         title, size=22, bold=True, color=_band_text(palette))
     _accent_bar(s, palette, top=Inches(0.72), h=Inches(0.04))
 
     mermaid_code = slide_data.get("mermaid_code") or ""
@@ -307,7 +368,7 @@ def _build_svg_slide(prs: Presentation, slide_data: dict, n: int, palette: dict)
     _rect(s, Inches(0.12), 0, W - Inches(0.12), Inches(0.72), dark)
     title = slide_data.get("title", "")[:80]
     _box(s, Inches(0.24), Inches(0.12), CW, Inches(0.55),
-         title, size=22, bold=True, color=accent)
+         title, size=22, bold=True, color=_band_text(palette))
     _accent_bar(s, palette, top=Inches(0.72), h=Inches(0.04))
 
     svg_code = slide_data.get("svg_code") or ""
@@ -341,7 +402,7 @@ def _build_three_placeholder_slide(prs: Presentation, slide_data: dict, n: int, 
     _rect(s, Inches(0.12), 0, W - Inches(0.12), Inches(0.72), dark)
     title = slide_data.get("title", "")[:80]
     _box(s, Inches(0.24), Inches(0.12), CW, Inches(0.55),
-         title, size=22, bold=True, color=accent)
+         title, size=22, bold=True, color=_band_text(palette))
     _accent_bar(s, palette, top=Inches(0.72), h=Inches(0.04))
 
     cfg = slide_data.get("three_scene_config") or {}
@@ -374,7 +435,7 @@ def _build_excalidraw_placeholder_slide(prs: Presentation, slide_data: dict, n: 
     _rect(s, Inches(0.12), 0, W - Inches(0.12), Inches(0.72), dark)
     title = slide_data.get("title", "")[:80]
     _box(s, Inches(0.24), Inches(0.12), CW, Inches(0.55),
-         title, size=22, bold=True, color=accent)
+         title, size=22, bold=True, color=_band_text(palette))
     _accent_bar(s, palette, top=Inches(0.72), h=Inches(0.04))
 
     _rect(s, LM, Inches(1.1), CW, Inches(4.2), dark)
@@ -401,13 +462,13 @@ def _build_card_grid_slide(prs: Presentation, slide_data: dict, n: int, palette:
     accent = _rgb(palette, "accent")
     dark = _rgb(palette, "dark")
     subtext = _rgb(palette, "subtext")
-    teal = _rgb(palette.get("teal") and palette or {"teal": (0x00, 0xB4, 0xD8)}, "teal") if "teal" in palette else accent
+    rotation = _rotation(palette)
 
     _rect(s, 0, 0, Inches(0.12), H, accent)
     _rect(s, Inches(0.12), 0, W - Inches(0.12), Inches(0.72), dark)
     title = slide_data.get("title", "")[:80]
     _box(s, Inches(0.24), Inches(0.12), CW, Inches(0.55),
-         title, size=22, bold=True, color=accent)
+         title, size=22, bold=True, color=_band_text(palette))
     _accent_bar(s, palette, top=Inches(0.72), h=Inches(0.04))
 
     bullets = slide_data.get("bullets", [])
@@ -437,20 +498,24 @@ def _build_card_grid_slide(prs: Presentation, slide_data: dict, n: int, palette:
         cl = LM + col * (card_w + Inches(0.12))
         ct = start_y + row * (card_h + Inches(0.08))
 
+        # An explicit per-card colour wins; otherwise cycle the theme's rotation so
+        # adjacent cards differ (blue → purple → green → amber) instead of every
+        # card wearing the same accent.
         card_accent_hex = card.get("accent_color", "")
         if card_accent_hex and card_accent_hex.startswith("#") and len(card_accent_hex) >= 7:
             try:
-                cr = int(card_accent_hex[1:3], 16)
-                cg = int(card_accent_hex[3:5], 16)
-                cb_ = int(card_accent_hex[5:7], 16)
-                ca = RGBColor(cr, cg, cb_)
+                ca = RGBColor(int(card_accent_hex[1:3], 16),
+                              int(card_accent_hex[3:5], 16),
+                              int(card_accent_hex[5:7], 16))
             except Exception:
-                ca = teal
+                ca = rotation[ci % len(rotation)]
         else:
-            ca = teal
+            ca = rotation[ci % len(rotation)]
 
-        _rect(s, cl, ct, card_w, card_h, dark)
-        _rect(s, cl, ct, card_w, Inches(0.05), ca)  # top accent bar
+        border = _opt(palette, "border", "accent")
+        title_c = _on_card_text(palette)
+        _rect(s, cl, ct, card_w, card_h, _card_fill(palette), border)
+        _rect(s, cl, ct, card_w, Inches(0.06), ca)  # top accent bar
 
         label = str(card.get("label", ""))[:10]
         title_text = str(card.get("title", ""))[:50]
@@ -458,19 +523,19 @@ def _build_card_grid_slide(prs: Presentation, slide_data: dict, n: int, palette:
         meta_text = str(card.get("meta", ""))[:60]
 
         if label:
-            _box(s, cl + pad, ct + Inches(0.07), card_w - pad * 2, Inches(0.28),
+            _box(s, cl + pad, ct + Inches(0.10), card_w - pad * 2, Inches(0.28),
                  label, size=11, bold=True, color=ca)
-        body_top = ct + Inches(0.07 + (0.28 if label else 0))
+        body_top = ct + Inches(0.10 + (0.28 if label else 0))
         if title_text:
             _box(s, cl + pad, body_top, card_w - pad * 2, Inches(0.28),
-                 title_text, size=9, bold=True, color=_rgb(palette, "text"))
-            body_top += Inches(0.28)
+                 title_text, size=11, bold=True, color=title_c)
+            body_top += Inches(0.30)
         if body_text:
-            _box(s, cl + pad, body_top, card_w - pad * 2, card_h - (body_top - ct) - Inches(0.25),
-                 body_text, size=8, color=subtext, wrap=True)
+            _box(s, cl + pad, body_top, card_w - pad * 2, card_h - (body_top - ct) - Inches(0.28),
+                 body_text, size=10, color=subtext, wrap=True)
         if meta_text:
-            _box(s, cl + pad, ct + card_h - Inches(0.22), card_w - pad * 2, Inches(0.2),
-                 meta_text, size=7, color=ca, wrap=False)
+            _box(s, cl + pad, ct + card_h - Inches(0.24), card_w - pad * 2, Inches(0.2),
+                 meta_text, size=9, bold=True, color=ca, wrap=False)
 
     _footer(s, n, palette)
     notes_text = slide_data.get("speaker_notes", "")
@@ -491,7 +556,7 @@ def _build_table_slide(prs: Presentation, slide_data: dict, n: int, palette: dic
     _rect(s, Inches(0.12), 0, W - Inches(0.12), Inches(0.72), dark)
     title = slide_data.get("title", "")[:80]
     _box(s, Inches(0.24), Inches(0.12), CW, Inches(0.55),
-         title, size=22, bold=True, color=accent)
+         title, size=22, bold=True, color=_band_text(palette))
     _accent_bar(s, palette, top=Inches(0.72), h=Inches(0.04))
 
     tbl_data = slide_data.get("bullets") or {}
