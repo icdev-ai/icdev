@@ -677,6 +677,35 @@ def _build_card_grid_slide(prs: Presentation, slide_data: dict, n: int, palette:
         _notes(s, notes_text)
 
 
+def _table_fit(n_body_rows: int, has_hf: int, avail_h) -> tuple[int, int]:
+    """Choose a font size that lets the rows FIT, and how many body rows fit at it.
+
+    A native PowerPoint table grows each row to fit its wrapped text — so a fixed
+    row height is only a minimum, and enough rows push the table straight off the
+    bottom of the slide, where the last rows and the footer are simply gone. That
+    is the "cutoff" nobody put there on purpose.
+
+    So instead of a fixed height, pick the largest font at which every row fits,
+    and if even the smallest font cannot hold them all, say how many were dropped
+    rather than letting them fall off the edge.
+    """
+    avail = avail_h / 914400.0   # EMU → inches
+    for pt in (12, 11, 10, 9, 8):
+        # A body cell may wrap to ~2 lines; header/footer to 1. Row height ≈ two
+        # lines of this font plus the tight cell margins we set below.
+        body_row_in = (pt * 1.28 * 2) / 72.0 + 0.10
+        hf_row_in = (pt * 1.28) / 72.0 + 0.10
+        max_body = int((avail - has_hf * hf_row_in) / body_row_in)
+        if max_body >= n_body_rows:
+            return pt, n_body_rows
+    # Smallest font, capped — caller appends a "+N more" note.
+    pt = 8
+    body_row_in = (pt * 1.28 * 2) / 72.0 + 0.10
+    hf_row_in = (pt * 1.28) / 72.0 + 0.10
+    max_body = max(1, int((avail - has_hf * hf_row_in) / body_row_in))
+    return pt, max_body
+
+
 def _build_table_slide(prs: Presentation, slide_data: dict, n: int, palette: dict) -> None:
     """Render a data table using python-pptx's native table shape."""
     s = _blank(prs)
@@ -685,12 +714,13 @@ def _build_table_slide(prs: Presentation, slide_data: dict, n: int, palette: dic
     dark = _rgb(palette, "dark")
     subtext = _rgb(palette, "subtext")
     text_c = _rgb(palette, "text")
+    band_c = _band_text(palette)          # readable on the navy band AND the cells
 
     _rect(s, 0, 0, Inches(0.12), H, accent)
     _rect(s, Inches(0.12), 0, W - Inches(0.12), Inches(0.72), dark)
     title = slide_data.get("title", "")[:80]
     _box(s, Inches(0.24), Inches(0.12), CW, Inches(0.55),
-         title, size=22, bold=True, color=_band_text(palette))
+         title, size=22, bold=True, color=band_c)
     _accent_bar(s, palette, top=Inches(0.72), h=Inches(0.04))
 
     tbl_data = slide_data.get("bullets") or {}
@@ -702,35 +732,59 @@ def _build_table_slide(prs: Presentation, slide_data: dict, n: int, palette: dic
             tbl_data = {}
 
     headers = tbl_data.get("headers", []) if isinstance(tbl_data, dict) else []
-    rows = tbl_data.get("rows", []) if isinstance(tbl_data, dict) else []
+    rows = list(tbl_data.get("rows", []) if isinstance(tbl_data, dict) else [])
     footer = tbl_data.get("footer", []) if isinstance(tbl_data, dict) else []
 
-    all_rows = ([headers] if headers else []) + rows + ([footer] if footer else [])
-    if not all_rows:
+    if not (headers or rows or footer):
         _box(s, LM, Inches(1.5), CW, Inches(1.0), "No table data.", size=14, color=subtext)
         _footer(s, n, palette)
         return
 
-    num_rows = len(all_rows)
-    num_cols = max(len(r) for r in all_rows) if all_rows else 1
-    row_h = min(Inches(0.5), (H - Inches(2.0)) / num_rows)
+    top = Inches(0.95)
+    avail_h = H - top - Inches(0.5)       # leave room for the page footer
+    has_hf = (1 if headers else 0) + (1 if footer else 0)
+    font_pt, max_body = _table_fit(len(rows), has_hf, avail_h)
 
-    tbl_shape = s.shapes.add_table(num_rows, num_cols, LM, Inches(0.9), CW, row_h * num_rows)
+    # Cap rows to what fits, and SAY what was cut instead of clipping it off-slide.
+    dropped = 0
+    if len(rows) > max_body:
+        dropped = len(rows) - max_body
+        rows = rows[:max_body]
+
+    all_rows = ([headers] if headers else []) + rows + ([footer] if footer else [])
+    num_rows = len(all_rows)
+    num_cols = max(len(r) for r in all_rows)
+
+    tbl_shape = s.shapes.add_table(num_rows, num_cols, LM, top, CW, avail_h)
     tbl = tbl_shape.table
+    tbl.first_row = bool(headers)         # let the table style bar the header row
 
     for ri, row_data in enumerate(all_rows):
         is_header = ri == 0 and bool(headers)
         is_footer = ri == len(all_rows) - 1 and bool(footer)
+        band = is_header or is_footer
         for ci in range(num_cols):
             cell = tbl.cell(ri, ci)
-            val = str(row_data[ci]) if ci < len(row_data) else ""
-            cell.text = val
+            cell.text = str(row_data[ci]) if ci < len(row_data) else ""
+            # Tight margins + explicit wrap: less forced wrapping, shorter rows,
+            # and no horizontal clipping of a long cell.
+            cell.margin_left = Inches(0.08)
+            cell.margin_right = Inches(0.08)
+            cell.margin_top = Inches(0.03)
+            cell.margin_bottom = Inches(0.03)
             tf = cell.text_frame
-            tf.paragraphs[0].font.size = Pt(11 if (is_header or is_footer) else 12)
-            tf.paragraphs[0].font.bold = is_header or is_footer
-            tf.paragraphs[0].font.color.rgb = accent if (is_header or is_footer) else text_c
+            tf.word_wrap = True
+            para = tf.paragraphs[0]
+            para.font.size = Pt(font_pt - 1 if band else font_pt)
+            para.font.bold = band
+            para.font.color.rgb = band_c if band else text_c
             cell.fill.solid()
-            cell.fill.fore_color.rgb = dark if (is_header or is_footer) else _rgb(palette, "bg")
+            cell.fill.fore_color.rgb = dark if band else _rgb(palette, "bg")
+
+    if dropped:
+        _box(s, LM, H - Inches(0.5), CW, Inches(0.22),
+             f"+ {dropped} more row(s) — full table in the workbook",
+             size=9, italic=True, color=subtext)
 
     _footer(s, n, palette)
     notes_text = slide_data.get("speaker_notes", "")

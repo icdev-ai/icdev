@@ -21,6 +21,11 @@ from tools.slides import pptx_builder as B
 from tools.slides.constants import THEME_PALETTES
 
 
+def _hex(s: str):
+    """'RRGGBB' → (r, g, b)."""
+    return (int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16))
+
+
 def _lum(rgb) -> float:
     return 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]
 
@@ -238,3 +243,86 @@ class TestRoadmap:
 
         prs = Presentation(B.build(self._deck(3), theme="midnight_executive", title="T"))
         assert len(self._ovals(prs.slides[1])) == 3
+
+
+class TestTablesDoNotClip:
+    """A native PowerPoint table grows rows to fit their text, so enough rows push
+    the table off the bottom of the slide — the last rows and the footer simply
+    gone. These lock the fit: readable headers, wrapping on, the table inside the
+    slide, and any overflow DECLARED rather than dropped off the edge."""
+
+    def _deck(self, nrows, cols=5):
+        rows = [
+            [f"Line item {i} with a fairly long descriptive name that wraps"]
+            + [f"c{c}v{i}" for c in range(cols - 1)]
+            for i in range(1, nrows + 1)
+        ]
+        return [
+            {"slide_type": "title", "title": "D"},
+            {"slide_type": "table", "title": f"{nrows} rows",
+             "bullets": {"headers": [f"Col {c}" for c in range(cols)],
+                         "rows": rows,
+                         "footer": ["Total"] + ["—"] * (cols - 1)}},
+            {"slide_type": "outro", "title": "E"},
+        ]
+
+    def _table(self, prs):
+        return next(sh for sh in prs.slides[1].shapes if sh.has_table)
+
+    def test_the_header_is_readable_not_blue_on_navy(self):
+        """The bug: header text was the blue accent on the navy header fill — a
+        few percent of contrast. It must be the band colour (white on a light
+        theme)."""
+        from pptx import Presentation
+
+        prs = Presentation(B.build(self._deck(5), theme="corporate_status", title="T"))
+        tbl = self._table(prs).table
+        p = THEME_PALETTES["corporate_status"]
+        hdr = str(tbl.cell(0, 0).text_frame.paragraphs[0].font.color.rgb)
+        fill = str(tbl.cell(0, 0).fill.fore_color.rgb)
+        assert hdr == str(B._band_text(p))
+        assert _contrast(_hex(hdr), _hex(fill)) >= 4.5
+
+    def test_cells_wrap_instead_of_clipping(self):
+        from pptx import Presentation
+
+        prs = Presentation(B.build(self._deck(5), theme="corporate_status", title="T"))
+        tbl = self._table(prs).table
+        assert tbl.cell(1, 0).text_frame.word_wrap is True
+
+    def test_a_big_table_stays_inside_the_slide(self):
+        from pptx import Presentation
+
+        for nrows in (5, 12, 30):
+            prs = Presentation(B.build(self._deck(nrows), theme="corporate_status",
+                                       title="T"))
+            shp = self._table(prs)
+            assert shp.top + shp.height <= B.H, f"{nrows} rows overflow the slide"
+
+    def test_the_font_shrinks_as_rows_grow(self):
+        from pptx import Presentation
+
+        def body_pt(nrows):
+            prs = Presentation(B.build(self._deck(nrows), theme="corporate_status",
+                                       title="T"))
+            return self._table(prs).table.cell(1, 0).text_frame.paragraphs[0].font.size.pt
+
+        assert body_pt(5) > body_pt(20)
+
+    def test_overflow_is_declared_not_silently_dropped(self):
+        from pptx import Presentation
+
+        prs = Presentation(B.build(self._deck(40), theme="corporate_status", title="T"))
+        slide = prs.slides[1]
+        note = [sh for sh in slide.shapes
+                if sh.has_text_frame and "more row" in sh.text_frame.text]
+        assert note, "capped rows must be announced, not silently cut off-slide"
+
+    def test_the_footer_row_always_survives(self):
+        """A total that falls off the bottom is worse than no total. Even when body
+        rows are capped, the footer must still be in the table."""
+        from pptx import Presentation
+
+        prs = Presentation(B.build(self._deck(40), theme="corporate_status", title="T"))
+        tbl = self._table(prs).table
+        assert tbl.cell(len(tbl.rows) - 1, 0).text_frame.text == "Total"
