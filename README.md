@@ -6,7 +6,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License">
   <img src="https://img.shields.io/badge/python-3.9%2B-brightgreen" alt="Python 3.9+">
-  <img src="https://img.shields.io/badge/version-1.2.36-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-1.2.37-blue" alt="Version">
   <a href="https://pypi.org/project/icdev/"><img src="https://img.shields.io/pypi/v/icdev?color=informational&label=PyPI" alt="PyPI Version"></a>
   <a href="https://pypi.org/project/icdev/"><img src="https://img.shields.io/pypi/dm/icdev?label=PyPI%20downloads" alt="PyPI Downloads"></a>
   <img src="https://img.shields.io/badge/compliance%20frameworks-42-orange" alt="Compliance Frameworks">
@@ -27,7 +27,7 @@
 
 ## Table of Contents
 
-- [What's New](#whats-new-in-1236--security-fix-abac-need-to-know--canvases-discoverable-after-pip-install)
+- [What's New](#whats-new-in-1237--icdev-cortex-unified-governed-ai-facade--kanban-governed-delivery-pipeline)
 - [What ICDEV™ Builds](#what-icdev-builds)
 - [10 Design Canvases](#10-design-canvases)
 - [Quick Start](#quick-start)
@@ -45,6 +45,17 @@
 - [Testing](#testing)
 - [Project Structure](#project-structure)
 - [License](#license)
+
+---
+
+## What's New in 1.2.37 — ICDEV Cortex: Unified Governed AI Facade & Kanban Governed Delivery Pipeline
+
+- **ICDEV Cortex — one governed entrypoint for all AI.** A new facade — `cortex.complete() / reason() / search() / extract() / classify() / govern()` — sits over the LLM router, RAG, KG, DIC, and IQE. Every call is policy-routed, token-accounted end-to-end (result → audit → metrics), and can fail closed on a governance violation (`governance.fail_closed` is now live, not dead config). Cross-backend search merges results with Reciprocal Rank Fusion; an opt-in in-process response cache (LRU + TTL) is audited and tenant-safe. Governed Chain-of-Thought / debate / council reasoning is exposed over REST, and a governance-first home monitor card surfaces usage and spend over `cortex_audit`.
+- **Cortex external exposure — scoped service keys + DataBridge connectors.** External services can consume Cortex through scoped service keys and a client SDK. New DataBridge connectors expose `icdev_cpmp` (contract/delivery bridge, including `cpars_assessments` + `negative_events` and a `mod_recommendations` write path) and `icdev_demand` (RFI demand signals) to workforce tools; a RICOAS intake bridge lands at `/cortex/api/v1/intake/*`, and a won bid can propose the `/cpmp` delivery baseline via the award endpoint.
+- **Policy-routed LLM — the content decides whether a call may leave the host.** Pillar-0 egress policy classifies request content and keeps CUI / local-only chains on-host while allowing cloud models for releasable content. Playwright / e2e execution chains are centralized on the configured test-execution provider.
+- **Kanban Governed Delivery Pipeline — repo-aware dispatch + gate integrity.** External-repo (`prem-*`) tasks now build **into** their target repo instead of churning against ICDEV's tree-scoped gates; a task is *done* only when its work **landed** on that repo's `origin/main`, and bypass can't skip the gate. Manual-mode gate tasks are exempt from the reaper, startup recovery, and the backlog→scheduled promoter — closing the four paths that previously released (then erased) gated work. The worktree sweeper no longer reports removals it never performed, the two never-populated board columns are wired, a Manual Build checkbox + build-model selector were added, and 76 failing kanban tests were repaired alongside 3 real schema/production bugs.
+- **GovCon PTW — real prices, real people, cited win themes.** A bid-side LCAT→person registry, auditable pricing that a win carries into `/cpmp` (a zero rate is treated as real data, not missing), win-theme intake that actually shapes the draft, and a PTW-posture Council consult; `specialist_consult` now fails closed. A whole BI dashboard can finally be exported.
+- **Housekeeping.** Employer identity removed from the repo (no company name in ICDEV); a dashboard fix where an unescaped apostrophe had killed every function on the home page; the CI lint gate no longer auto-`--fix`es away lint debt.
 
 ---
 

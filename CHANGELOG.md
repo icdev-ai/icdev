@@ -6,6 +6,27 @@ All notable changes to ICDEV™ are documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.37] - 2026-07-15
+
+### Added
+- **ICDEV Cortex — unified governed AI facade.** `cortex.complete() / reason() / search() / extract() / classify() / govern()` over the LLM router, RAG, KG, DIC, and IQE. Policy-routed with end-to-end token accounting (result → audit → metrics), governed CoT / debate / council reasoning over REST, Reciprocal Rank Fusion for cross-backend search merge, an opt-in audited LRU+TTL response cache (tenant-safe), and a governance-first home monitor card over `cortex_audit`. `governance.fail_closed` is now live config.
+- **Cortex external exposure** — scoped service keys + client SDK, DataBridge connectors for `icdev_cpmp` (contract/delivery bridge with `cpars_assessments` + `negative_events`, `mod_recommendations` write path) and `icdev_demand` (RFI demand signals), a RICOAS intake bridge at `/cortex/api/v1/intake/*`, and an award endpoint where a won bid proposes the `/cpmp` delivery baseline.
+- **Policy-routed LLM (Pillar 0)** — request content is classified to decide egress: CUI / local-only chains stay on-host, releasable content may use cloud models. Playwright / e2e execution chains centralized on the configured test-execution provider (`chain_groups`).
+- **Kanban** — repo-aware external dispatch (build into the target repo instead of parking `prem-*` tasks), a Manual Build checkbox + build-model selector, and the two previously-unwired board columns.
+- **GovCon PTW** — bid-side LCAT→person registry, auditable pricing carried into `/cpmp`, cited win-theme intake, PTW-posture Council consult, and whole-dashboard BI export.
+
+### Fixed
+- **Kanban manual-gate integrity** — manual-mode gate tasks are now exempt from the reaper, scheduler startup recovery, dispatch, and the backlog→scheduled promoter, closing four paths that could release (and then erase) gated work.
+- **External done-gate** — an external task is done only when its work landed on that repo's `origin/main`; the repo-aware git check runs in the task's own repo and bypass cannot skip it. External worktrees no longer die on ICDev-shaped structural checks.
+- **Worktree sweeper** — stopped reporting removals it never performed; prune can now clear a locked worktree entry.
+- **Dashboard** — an unescaped apostrophe on the home page had killed every JS function on `/`.
+- **`specialist_consult` fails closed**; a zero rate is treated as real data, not a missing one.
+- **Tests** — 76 failing kanban tests repaired alongside 3 real production/schema bugs.
+
+### Changed
+- **Employer identity removed from the repo** — no company name in ICDEV.
+- **CI lint gate** no longer runs `--fix` (stops the gate hiding lint debt); dead imports removed.
+
 ## [1.2.36] - 2026-07-09
 
 ### Security
