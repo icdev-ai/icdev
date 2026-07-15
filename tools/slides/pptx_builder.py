@@ -77,6 +77,36 @@ def _rotation(palette: dict) -> list[RGBColor]:
     return [RGBColor(*c) for c in rot]
 
 
+def _is_light(palette: dict) -> bool:
+    r, g, b = palette["bg"]
+    return (0.2126 * r + 0.7152 * g + 0.0722 * b) >= 140
+
+
+def _tint(color: RGBColor, amount: float = 0.85) -> RGBColor:
+    """Mix a colour toward white — the pale phase-box fills in the reference deck.
+
+    Computed, not per-theme: a light tint of whatever accent a phase carries, so a
+    theme that adds a fifth rotation colour gets a matching box for free.
+    """
+    return RGBColor(
+        round(color[0] + (255 - color[0]) * amount),
+        round(color[1] + (255 - color[1]) * amount),
+        round(color[2] + (255 - color[2]) * amount),
+    )
+
+
+def _shade(color: RGBColor, amount: float = 0.35) -> RGBColor:
+    """Mix a colour toward black. A rotation accent as a pale box fill is bright —
+    green in particular clears barely 2.8:1 as small text on its own tint — so the
+    date LABEL on the box is a darkened version of the accent, legible by
+    construction rather than by luck."""
+    return RGBColor(
+        round(color[0] * (1 - amount)),
+        round(color[1] * (1 - amount)),
+        round(color[2] * (1 - amount)),
+    )
+
+
 # ── Primitives (identical to generate_exec_deck.py) ──────────────────────────
 
 def _new_prs() -> Presentation:
@@ -455,6 +485,110 @@ def _build_excalidraw_placeholder_slide(prs: Presentation, slide_data: dict, n: 
         _notes(s, notes_text)
 
 
+def _build_roadmap_slide(prs: Presentation, slide_data: dict, n: int, palette: dict) -> None:
+    """A phased timeline: a horizontal spine, numbered circles, and phase boxes
+    that alternate above and below the line.
+
+    This is the reference deck's milestone slide. Each phase takes the next colour
+    in the rotation, so the circles and boxes march blue → purple → green → amber;
+    the boxes are a pale tint of that colour on a light theme, or the card fill on
+    a dark one, so the same layout reads on either.
+
+    slide_data["phases"] = [{"label","title","body","date"}], up to 5.
+    """
+    s = _blank(prs)
+    _bg(s, _rgb(palette, "bg"))
+    accent = _rgb(palette, "accent")
+    dark = _rgb(palette, "dark")
+    subtext = _rgb(palette, "subtext")
+    rotation = _rotation(palette)
+    light = _is_light(palette)
+
+    _rect(s, 0, 0, Inches(0.12), H, accent)
+    _rect(s, Inches(0.12), 0, W - Inches(0.12), Inches(0.72), dark)
+    _box(s, Inches(0.24), Inches(0.12), CW, Inches(0.55),
+         slide_data.get("title", "")[:80], size=22, bold=True, color=_band_text(palette))
+    _accent_bar(s, palette, top=Inches(0.72), h=Inches(0.04))
+
+    phases = [p for p in (slide_data.get("phases") or []) if isinstance(p, dict)][:5]
+    if not phases:
+        _box(s, LM, Inches(1.5), CW, Inches(2.0),
+             "No phases — pass slide_data['phases'] = [{label,title,body,date}].",
+             size=14, color=subtext)
+        _footer(s, n, palette)
+        return
+
+    # The spine, centred vertically in the body area.
+    line_y = Inches(4.0)
+    line_h = Inches(0.06)
+    spine = _rgb(palette, "dark") if light else _rgb(palette, "subtext")
+    _rect(s, LM, line_y, CW, line_h, spine)
+    # Arrowhead at the right end.
+    _rect(s, W - LM, line_y - Inches(0.09), Inches(0.18), Inches(0.24), spine)
+
+    seg = CW / len(phases)
+    circle_d = Inches(0.5)
+    box_w = min(Inches(2.9), seg - Inches(0.25))
+    box_h = Inches(1.55)
+    gap = Inches(0.55)   # circle-to-box vertical gap
+
+    for i, ph in enumerate(phases):
+        color = rotation[i % len(rotation)]
+        cx = LM + seg * i + seg / 2
+        circle_l = cx - circle_d / 2
+        circle_t = line_y + line_h / 2 - circle_d / 2
+
+        above = (i % 2 == 0)   # alternate: 1 above, 2 below, 3 above ...
+
+        # Connector stub between the circle and its box.
+        stub_x = cx - Inches(0.01)
+        if above:
+            box_t = circle_t - gap - box_h
+            _rect(s, stub_x, box_t + box_h, Inches(0.02), gap, color)
+        else:
+            box_t = circle_t + circle_d + gap
+            _rect(s, stub_x, circle_t + circle_d, Inches(0.02), gap, color)
+
+        # The phase box: tinted fill on a light theme, card fill on a dark one.
+        box_l = cx - box_w / 2
+        fill = _tint(color, 0.86) if light else _card_fill(palette)
+        _rect(s, box_l, box_t, box_w, box_h, fill, color, lw=Pt(1.5))
+        pad = Inches(0.14)
+        title_c = _rgb(palette, "dark") if light else _on_card_text(palette)
+        _box(s, box_l + pad, box_t + Inches(0.10), box_w - pad * 2, Inches(0.35),
+             str(ph.get("title", ""))[:40], size=13, bold=True, color=title_c)
+        _box(s, box_l + pad, box_t + Inches(0.48), box_w - pad * 2, Inches(0.62),
+             str(ph.get("body", ""))[:90], size=10, color=subtext, wrap=True)
+        date = str(ph.get("date", ""))[:28]
+        if date:
+            # Darken the accent for the label on a light (tinted) box; on a dark
+            # theme the bright accent already reads against the dark card fill.
+            date_c = _shade(color) if light else color
+            _box(s, box_l + pad, box_t + box_h - Inches(0.30), box_w - pad * 2,
+                 Inches(0.26), date, size=10, bold=True, color=date_c)
+
+        # The numbered circle sits ON TOP of the spine, drawn last so it wins.
+        circ = s.shapes.add_shape(9, circle_l, circle_t, circle_d, circle_d)  # 9 = oval
+        circ.fill.solid()
+        circ.fill.fore_color.rgb = color
+        circ.line.color.rgb = _rgb(palette, "bg")
+        circ.line.width = Pt(2.5)
+        ctf = circ.text_frame
+        ctf.word_wrap = False
+        cp = ctf.paragraphs[0]
+        cp.alignment = PP_ALIGN.CENTER
+        crun = cp.add_run()
+        crun.text = str(ph.get("label", i + 1)).replace("Phase", "").strip() or str(i + 1)
+        crun.font.size = Pt(16)
+        crun.font.bold = True
+        crun.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+
+    _footer(s, n, palette)
+    notes_text = slide_data.get("speaker_notes", "")
+    if notes_text:
+        _notes(s, notes_text)
+
+
 def _build_card_grid_slide(prs: Presentation, slide_data: dict, n: int, palette: dict) -> None:
     """3-column card grid (investment overview / capability comparison)."""
     s = _blank(prs)
@@ -661,6 +795,8 @@ def build(
             _build_excalidraw_placeholder_slide(prs, slide_data, n, palette)
         elif slide_type == "card_grid":
             _build_card_grid_slide(prs, slide_data, n, palette)
+        elif slide_type == "roadmap":
+            _build_roadmap_slide(prs, slide_data, n, palette)
         elif slide_type == "table":
             _build_table_slide(prs, slide_data, n, palette)
         else:

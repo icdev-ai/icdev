@@ -147,3 +147,94 @@ class TestItRendersEndToEnd:
                 pass
         # At least the four rotation colours appear among the thin stripes.
         assert len(fills) >= 4
+
+
+class TestRoadmap:
+    """The phased timeline — numbered circles on a spine, boxes alternating above
+    and below. It must not be slide 0 or the last slide, or the builder's title/
+    outro override at those positions runs instead (true for every slide type)."""
+
+    def _deck(self, n=4):
+        return [
+            {"slide_type": "title", "title": "Deck"},
+            {"slide_type": "roadmap", "title": "Roadmap",
+             "phases": [
+                 {"label": f"Phase {i}", "title": f"Phase {i}",
+                  "body": "what happens here", "date": f"Est. M{i}"}
+                 for i in range(1, n + 1)
+             ]},
+            {"slide_type": "outro", "title": "End"},
+        ]
+
+    def _ovals(self, slide):
+        from pptx.enum.shapes import MSO_SHAPE_TYPE
+        out = []
+        for sh in slide.shapes:
+            try:
+                if sh.shape_type == MSO_SHAPE_TYPE.AUTO_SHAPE and sh.auto_shape_type == 9:
+                    out.append(sh)
+            except Exception:
+                pass
+        return out
+
+    def test_one_numbered_circle_per_phase(self):
+        from pptx import Presentation
+
+        prs = Presentation(B.build(self._deck(4), theme="corporate_status", title="T"))
+        road = prs.slides[1]
+        ovals = self._ovals(road)
+        assert len(ovals) == 4
+        assert {o.text_frame.text for o in ovals} == {"1", "2", "3", "4"}
+
+    def test_phases_alternate_above_and_below_the_spine(self):
+        """Boxes on one side only would overlap and be unreadable. Odd-indexed
+        phases sit on the opposite side from even ones."""
+        from pptx import Presentation
+
+        prs = Presentation(B.build(self._deck(4), theme="corporate_status", title="T"))
+        road = prs.slides[1]
+        ovals = sorted(self._ovals(road), key=lambda o: o.left)
+        line_y = ovals[0].top
+        # Find each phase box (tall rounded rects) and bucket by side of the line.
+        tops = sorted({sh.top for sh in road.shapes
+                       if sh.height > B.Inches(1.0) and sh.width > B.Inches(1.5)})
+        assert any(t < line_y for t in tops), "no box above the line"
+        assert any(t > line_y for t in tops), "no box below the line"
+
+    def test_circles_cycle_the_rotation_on_the_light_theme(self):
+        from pptx import Presentation
+
+        prs = Presentation(B.build(self._deck(4), theme="corporate_status", title="T"))
+        colors = {str(o.fill.fore_color.rgb) for o in self._ovals(prs.slides[1])}
+        assert len(colors) == 4   # blue / purple / green / amber, all distinct
+
+    def test_the_date_line_is_legible_on_its_box(self):
+        """The green accent as small text on its own pale tint is only 2.8:1 — so
+        the builder DARKENS the accent for the label. Assert the colour it actually
+        uses clears the 3:1 bar for large/bold text, for every rotation colour."""
+        p = THEME_PALETTES["corporate_status"]
+        for color in B._rotation(p):
+            tint = B._tint(color, 0.86)
+            date_c = B._shade(color)          # what the builder draws on a light box
+            assert _contrast(date_c, tint) >= 3.0, str(color)
+
+    def test_no_phases_is_a_message_not_a_crash(self):
+        from pptx import Presentation
+
+        deck = [{"slide_type": "title", "title": "D"},
+                {"slide_type": "roadmap", "title": "Empty", "phases": []},
+                {"slide_type": "outro", "title": "E"}]
+        prs = Presentation(B.build(deck, theme="corporate_status", title="T"))
+        assert len(prs.slides) == 3
+
+    def test_it_caps_at_five_phases(self):
+        from pptx import Presentation
+
+        prs = Presentation(B.build(self._deck(8), theme="corporate_status", title="T"))
+        assert len(self._ovals(prs.slides[1])) == 5
+
+    def test_it_renders_on_a_dark_theme_too(self):
+        from pptx import Presentation
+
+        prs = Presentation(B.build(self._deck(3), theme="midnight_executive", title="T"))
+        assert len(self._ovals(prs.slides[1])) == 3
