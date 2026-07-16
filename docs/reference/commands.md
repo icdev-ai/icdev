@@ -99,6 +99,16 @@ icdev profile apply <name> --dry-run  # Preview overrides
 icdev scaffold canvas <key> --display-name "Name" [--flavor <flavor>] [--template <dir>] [--out <dir>]   # Generate a new canvas
 icdev scaffold child-app <key> --display-name "Name" --flavor <flavor> [--canvases k1,k2] [--out <dir>]  # Generate a child app (minimal, compliance, ai-lab, govcon)
 
+# Document-currency packs (docmod) — let any domain own its own coverage.
+# Writes IN PLACE (packs are discovered by location under args/docmod/) and never
+# overwrites an existing file.
+icdev scaffold docmod-pack <key> --display-name "Name"                        # rulebook flavor: YAML only, NO Python
+icdev scaffold docmod-pack <key> --display-name "Name" --entity-type standard --finding-type deprecated_tech
+icdev scaffold docmod-pack <key> --display-name "Name" --flavor catalog --evidence-table <table>  # table-driven; generates a Python stub
+icdev scaffold docmod-pack <key> --display-name "Name" --dry-run --json       # preview
+# Then: write rules in args/docmod/rulebook_<key>.yaml, set enabled: true in
+# args/docmod/packs/<key>.yaml — the next docmod sweep auto-discovers it.
+
 # Validation
 python tools/workflow/coherence_checker.py --all --gate      # Registry/profile/completeness coherence gate
 python tools/builder/forge_validator.py --gate               # FORGE gate for child apps

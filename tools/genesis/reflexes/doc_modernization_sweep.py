@@ -90,6 +90,17 @@ class DocModernizationSweepReflex:
             logger.warning("docmod sweep: card bridge failed: %s", exc)
             result["cards"] = {"error": str(exc)}
 
+        # 6. DocDrift — findings become compliance drift: impact scoring, HITL
+        # regen queue, NIST re-map, SSP fragments. Separate sink from the card
+        # bridge above (work tracking vs compliance); both read the same findings.
+        # Isolated so a DocDrift failure never costs us the scan or the cards.
+        try:
+            from tools.doc_modernization.drift_bridge import emit_drift
+            result["drift"] = emit_drift()
+        except Exception as exc:
+            logger.warning("docmod sweep: drift bridge failed: %s", exc)
+            result["drift"] = {"error": str(exc)}
+
         findings_new = int((scan or {}).get("findings_new", 0) or 0)
         return {"success": True, "metric_value": findings_new, "details": result}
 

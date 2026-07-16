@@ -339,10 +339,16 @@ def _set_queue_state(item_id: str, state: str, *, fragment_id: str | None = None
 def handle_drift(event: dict, ctx: Any = None) -> dict[str, Any]:
     """Reflex / subscription handler for a canvas drift event.
 
-    Wire this to ``subscribe('dic', 'ndc.topology.drift_detected', handle_drift)``
-    once the DIC event bus is live. ``event`` is expected to carry at least a
-    ``source`` and ``severity``; ``document_id`` and ``control_ids`` are
-    optional and drive enqueue + control re-map respectively.
+    Called directly by producers (the docmod drift bridge, the IDC feed, the CLI).
+    ``event`` is expected to carry at least a ``source`` and ``severity``;
+    ``document_id`` and ``control_ids`` are optional and drive enqueue + control
+    re-map respectively.
+
+    ``dedup_key`` is optional but REQUIRED for any producer on a schedule: without
+    it the event id hashes ``detected_at``, so every sweep re-inserts the same
+    unchanged drift. Pass a stable content key (the docmod bridge uses the
+    finding_id, which is stable per finding and changes when the finding is
+    superseded).
 
     End-to-end: record event -> enqueue impacted doc -> re-map affected NIST
     controls. SSP-fragment drafting is a separate, explicitly-invoked step
@@ -354,9 +360,10 @@ def handle_drift(event: dict, ctx: Any = None) -> dict[str, Any]:
     severity = event.get("severity", "medium")
     tenant_id = event.get("tenant_id")
     classification = event.get("classification")
+    dedup_key = event.get("dedup_key")
 
     event_id = record_drift_event(
-        source, entity, severity, payload=event,
+        source, entity, severity, payload=event, dedup_key=dedup_key,
         tenant_id=tenant_id, classification=classification,
     )
 
@@ -368,6 +375,7 @@ def handle_drift(event: dict, ctx: Any = None) -> dict[str, Any]:
             enqueue_regen(
                 document_id, event_id=event_id, drift_source=source,
                 drift_entity=entity, severity=severity,
+                dedup_key=f"{dedup_key}|{document_id}" if dedup_key else None,
                 tenant_id=tenant_id, classification=classification,
             )
         )
@@ -712,14 +720,47 @@ def _review_fragment(fragment_id: str, status: str, reviewed_by: str | None) -> 
         changed = cur.rowcount
         # Advance the linked queue item.
         cur.execute(
-            "SELECT regen_item_id FROM dic_ssp_fragments WHERE fragment_id = %s",
+            "SELECT control_id, document_id, regen_item_id FROM dic_ssp_fragments "
+            "WHERE fragment_id = %s",
             (fragment_id,),
         )
         row = cur.fetchone()
     finally:
         conn.close()
+
+    # Audit the human decision. dic_ssp_fragments is a mutable workflow table —
+    # it holds only the CURRENT status, so an approval leaves no evidence of who
+    # decided what, when. These fragments become SSP content, so that record is
+    # the cATO audit trail. audit_trail is append-only (enforced in
+    # .claude/hooks/pre_tool_use.py) and hash-chained by audit_logger.
+    #
+    # Fail-closed (raise_on_error=True): an approval that cannot be audited must
+    # not silently stand. NIST AU-5 — an unrecorded authorisation decision is an
+    # audit finding, so failing the approval is the safer outcome. Machine-driven
+    # transitions stay best-effort; only human decisions gate on the audit write.
+    rd = dict(row) if row is not None and hasattr(row, "keys") else {}
+    if changed:
+        from tools.audit.audit_logger import log_event
+
+        log_event(
+            event_type="dic.ssp_fragment.review",
+            actor=reviewed_by or "unknown",
+            action=f"ssp_fragment.{status}",
+            details={
+                "fragment_id": fragment_id,
+                "status": status,
+                "control_id": rd.get("control_id"),
+                "document_id": rd.get("document_id"),
+                "regen_item_id": rd.get("regen_item_id"),
+            },
+            classification="CUI",
+            raise_on_error=True,
+        )
+
     if row:
-        item_id = row["regen_item_id"] if hasattr(row, "keys") else row[0]
+        # NB: the SELECT above fetches three columns for the audit record, so the
+        # positional fallback must index regen_item_id explicitly (not row[0]).
+        item_id = rd.get("regen_item_id") if rd else row[2]
         if item_id:
             queue_state = "drafted" if status == "needs_revision" else status
             _set_queue_state(item_id, queue_state)

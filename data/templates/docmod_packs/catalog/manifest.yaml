@@ -1,0 +1,43 @@
+# CUI // SP-CTI
+# Catalog docmod pack — for a domain whose truth lives in a TABLE (an inventory,
+# a controls catalog, an EOL feed) rather than a list of rules. Generates a
+# Python stub because evaluate() must query that table; the rulebook flavor is
+# YAML-only and should be preferred when rules suffice.
+name: catalog
+kind: docmod_pack
+description: Catalog/table-driven document currency pack for a new domain (Python stub + YAML).
+variables:
+  key:
+    type: string
+    required: true
+    description: Pack id / domain key (e.g. "safety_controls").
+  display_name:
+    type: string
+    required: true
+    description: Human-facing pack name.
+  class_name:
+    type: string
+    required: true
+    description: Python class name (e.g. SafetyControlsPack).
+  entity_type:
+    type: string
+    default: "term"
+    description: KG entity type the pack extracts.
+  evidence_table:
+    type: string
+    required: true
+    description: Table holding this domain's deterministic truth (e.g. sc_controls).
+
+files:
+  - src: pack.py.j2
+    dest: "tools/doc_modernization/packs/{{ key }}.py"
+  - src: pack.yaml.j2
+    dest: "args/docmod/packs/{{ key }}.yaml"
+
+validators:
+  - type: file_exists
+    path: "tools/doc_modernization/packs/{{ key }}.py"
+  - type: python_syntax
+    path: "tools/doc_modernization/packs/{{ key }}.py"
+  - type: file_exists
+    path: "args/docmod/packs/{{ key }}.yaml"

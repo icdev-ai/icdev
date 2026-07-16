@@ -113,7 +113,106 @@ def _build_parser() -> argparse.ArgumentParser:
     core.add_argument("--no-register", action="store_true", help="Skip auto-registration in component_registry.yaml")
     core.add_argument("--json", action="store_true", help="Emit JSON result")
 
+    # docmod pack — a document-currency pack for a new domain. Unlike the other
+    # targets this writes IN PLACE by default (its output is 1-2 config files
+    # that must live in args/docmod/ to be discovered) and never overwrites.
+    pack = sub.add_parser("docmod-pack", help="Scaffold a docmod document-currency pack for a new domain")
+    pack.add_argument("key", help="Pack id / domain key (e.g. safety_standards)")
+    pack.add_argument("--display-name", default=None, help="Human-facing pack name (default: derived from key)")
+    pack.add_argument(
+        "--flavor", default="rulebook",
+        help="rulebook = YAML only, no Python (default) | catalog = table-driven, generates a Python stub",
+    )
+    pack.add_argument("--entity-type", default="term", help="KG entity type the pack extracts (default: term)")
+    pack.add_argument("--finding-type", default="deprecated_tech",
+                      help="Default finding_type; must be in constants.FINDING_TYPES (rulebook flavor)")
+    pack.add_argument("--evidence-table", default=None, help="Table holding the domain's truth (catalog flavor)")
+    pack.add_argument("--template", default=None, help="Template directory path (overrides --flavor)")
+    pack.add_argument("--out", default=None, help="Output root (default: the repo root — writes in place)")
+    pack.add_argument("--vars", nargs="*", default=[], help="Extra variable overrides as key=value")
+    pack.add_argument("--dry-run", action="store_true", help="Preview what would be generated without writing files")
+    pack.add_argument("--json", action="store_true", help="Emit JSON result")
+
     return parser
+
+
+def _scaffold_docmod_pack(args) -> int:
+    """Generate a docmod pack. Separate from main()'s canvas flow — a pack has
+    no env flag, url_prefix or component_registry entry."""
+    key = args.key
+    display_name = args.display_name or key.replace("_", " ").replace("-", " ").title()
+
+    template_dir = (
+        BASE_DIR / args.template if args.template
+        else BASE_DIR / "data" / "templates" / "docmod_packs" / args.flavor
+    )
+    if not template_dir.exists():
+        print(f"Template not found: {template_dir}", file=sys.stderr)
+        return 2
+
+    variables: dict[str, str] = {
+        "key": key,
+        "display_name": display_name,
+        "entity_type": args.entity_type,
+        "finding_type": args.finding_type,
+        # Only the catalog flavor declares these; harmless extras for rulebook.
+        "class_name": "".join(p.title() for p in key.replace("-", "_").split("_")) + "Pack",
+        "evidence_table": args.evidence_table or "",
+    }
+    for raw in args.vars:
+        if "=" not in raw:
+            print(f"Invalid --vars entry (expected key=value): {raw}", file=sys.stderr)
+            return 2
+        k, v = raw.split("=", 1)
+        variables[k.strip()] = v.strip()
+
+    if args.flavor == "catalog" and not variables["evidence_table"]:
+        print(
+            "--evidence-table is required for the catalog flavor "
+            "(the table holding this domain's deterministic truth).",
+            file=sys.stderr,
+        )
+        return 2
+
+    # In place by default: a pack is discovered by its location under
+    # args/docmod/, so a staging dir would just mean a manual copy.
+    out_dir = Path(args.out).resolve() if args.out else BASE_DIR
+
+    # skip_existing so re-running never clobbers a rulebook someone has written.
+    # The other scaffold targets omit this and silently overwrite; don't inherit
+    # that here, where the output lands directly in the repo.
+    result = render_tree(
+        template_dir, out_dir, variables,
+        skip_existing=True, dry_run=getattr(args, "dry_run", False),
+    )
+
+    payload = {
+        "target": "docmod-pack",
+        "pack_id": key,
+        "flavor": args.flavor,
+        "out_dir": str(out_dir),
+        **result,
+    }
+    if getattr(args, "json", False):
+        print(json.dumps(payload, indent=2, default=str))
+    else:
+        ok = result.get("success")
+        print(f"{'Generated' if ok else 'FAILED'} docmod pack '{key}' ({args.flavor}) -> {out_dir}")
+        for f in result.get("files", []) or []:
+            print(f"  {f}")
+        if result.get("skipped"):
+            print("  skipped (already exist):")
+            for f in result["skipped"]:
+                print(f"    {f}")
+        if ok and not getattr(args, "dry_run", False):
+            print("\nNext:")
+            if args.flavor == "rulebook":
+                print(f"  1. write rules in args/docmod/rulebook_{key}.yaml")
+            else:
+                print(f"  1. implement evaluate() in tools/doc_modernization/packs/{key}.py")
+            print(f"  2. set enabled: true in args/docmod/packs/{key}.yaml")
+            print("  3. the next docmod sweep picks it up (pack_loader auto-discovers)")
+    return 0 if result.get("success") else 1
 
 
 def _derive_env_flag(key: str, explicit: str | None) -> str:
@@ -240,6 +339,11 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.target == "list-templates":
         return _list_templates(emit_json=getattr(args, "json", False))
+
+    # Handled before the canvas flow below: a docmod pack has no env flag,
+    # url_prefix or component_registry entry, so none of that applies.
+    if args.target == "docmod-pack":
+        return _scaffold_docmod_pack(args)
 
     _kind_to_dir = {"canvas": "canvases", "child-app": "child_apps", "core": "core_extensions"}
     if args.flavor:

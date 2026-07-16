@@ -15,6 +15,7 @@ FINDING_TYPES: list[str] = [
     "superseded_standard",   # NIST rev / RFC / STIG replaced by a successor
     "defacto_divergence",    # deployment reality disagrees with curated catalog
     "catalog_gap",           # heavily deployed item missing from curated catalog
+    "unreflected_change",    # an approved change document supersedes this doc's claims
     "unverifiable_evidence", # document has no evidence anchors — currency uncheckable
 ]
 
@@ -63,6 +64,7 @@ KG_ENTITY_TYPES: list[str] = [
     "software_product",
     "protocol",
     "crypto_algorithm",
+    "system_reference",      # a system/CI a document makes claims about
     "evidence_anchor",       # a citation link, not a thing named in the prose
 ]
 
