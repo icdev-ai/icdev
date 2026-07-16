@@ -1,0 +1,39 @@
+# CUI // SP-CTI
+# Change-control pack — approved change documents (CR / ERB / ARB) are evidence
+# that a document describing the same system has gone stale.
+#
+# Feed it by ingesting your change records into the collection named below:
+#   python -m tools.document_intelligence.inbox --collection change-records --watch
+#
+# With no such collection the pack is inert: it reports "unknown" and raises no
+# finding, rather than implying documents were checked and found current.
+
+pack_id: change_control
+label: Change Control
+enabled: true
+evaluator: tools.doc_modernization.packs.change_control.ChangeControlPack
+entity_types: [system_reference]
+
+# DIC collections holding approved change records. Matched against
+# dic_collections.name (a literal collection_id also works).
+change_collections:
+  - change-records
+
+extraction:
+  # System / CI references the document makes claims about. The default targets
+  # the common uppercase-hyphenated hostname/CI convention (CORE-RTR-01,
+  # EDGE-MX304-02, SOP-NET-042). TUNE THIS to your naming convention — too broad
+  # a pattern produces noisy entities, too narrow and real references are missed.
+  patterns:
+    - '\b[A-Z][A-Z0-9]{1,7}(?:-[A-Z0-9]{1,8}){1,3}\b'
+
+# Cap on change documents cited per finding.
+max_evidence_docs: 5
+severity: high
+
+# NIST controls this domain implicates, passed to the DocDrift bridge for
+# control re-mapping. DECLARED, never inferred from finding text.
+#   CM-3 Configuration Change Control · CM-4 Impact Analyses
+nist_controls: [CM-3, CM-4]
+
+evidence_sources: [dic_documents, dic_chunk_links, rag_chunks, dic_versions]
