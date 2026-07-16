@@ -154,6 +154,10 @@ def test_stepper_and_nav_markup():
     )
     assert "needs-my-review" in tw
     assert "freshness_state" in tw
-    assert "DocGen Wizard →" in tw
+    # The invariant is the outbound link to the DocGen wizard; the label was
+    # reworded ("DocGen Wizard" -> "Rebuild from sources") because the old text
+    # gave no clue what DocGen is for.
+    assert "/docgen/new" in tw
+    assert "Rebuild from sources (DocGen) →" in tw
     assert "Standards Catalog →" in tw
     assert "'%%.0f'|format" not in tw and "'%%.0f'|format" not in idx

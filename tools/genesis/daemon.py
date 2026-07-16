@@ -118,6 +118,7 @@ REFLEX_NAMES = [
     "pma_credential_monitor",
     "pma_int_gap_monitor",
     "skill_security_monitor",
+    "ndc_topology_drift",  # ndc→ACOIC: topology config drift vs nc_versions baseline
     "dic_integration",     # dsyn-reflex-02: DIC Canvas Synergy — 15-min cadence
     "dic_review_cadence",  # dsyn-suggest-02: nightly collection review overdue check
     "dic_digest",          # dic-syn-gn: weekly digest of new docs + freshness alerts

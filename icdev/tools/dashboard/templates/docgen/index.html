@@ -392,10 +392,16 @@ function clearTemplate() {
   document.getElementById('ns-tpl-badge').style.display = 'none';
 }
 
-// docmod-regen-01: prefill + auto-open the modal for regenerate-in-docgen
+// docmod-regen-01: prefill + auto-open the modal for regenerate-in-docgen.
+// Also auto-opens on a plain /new visit (open_wizard), which is the advertised
+// "DocGen Wizard" entry point.
 (function() {
   var sd = {{ (source_doc | tojson) if source_doc is defined and source_doc else 'null' }};
-  if (!sd || !sd.doc_id) return;
+  var openWizard = {{ 'true' if open_wizard is defined and open_wizard else 'false' }};
+  if (!sd || !sd.doc_id) {
+    if (openWizard) document.getElementById('new-session-modal').style.display = 'flex';
+    return;
+  }
   var titleEl = document.getElementById('ns-title');
   if (titleEl && !titleEl.value) titleEl.value = sd.title || '';
   var dtEl = document.getElementById('ns-doctype');

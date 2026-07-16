@@ -967,6 +967,22 @@ reflexes:
       threshold: 0
       operator: gte          # 0 emitted = nothing novel passed the gates (healthy); >0 = net-new capability seeded
 
+  # ── NDC Topology Drift → ACOIC (producer for the DIC compliance path) ───────
+
+  ndc_topology_drift:
+    timeout_seconds: 180     # config generation + diff across all topologies
+    enabled: true
+    risk_tier: green         # read-only against NDC; writes only ACOIC drift rows
+    schedule: "every 4h"
+    interval_seconds: 14400  # matches CADENCE_HOURS = 4 in the reflex module
+    cooldown_minutes: 60
+    description: "NDC topology config drift -> ACOIC: diff each topology's generated device configs against its saved nc_versions baseline, record dic_drift_events, enqueue impacted DIC documents for HITL regeneration, and publish ndc.topology.drift_detected (target_canvas=dic) for the editorial suggestion path."
+    dry_run: false           # when true, detects and reports drift without writing
+    success_metric:
+      name: drift_events_recorded
+      threshold: 0
+      operator: gte          # 0 = no drift or no baselines saved (healthy); >0 = real drift recorded
+
   # ── DIC Integration (Canvas Synergy — dsyn-reflex-02) ────────────────────────
 
   dic_integration:

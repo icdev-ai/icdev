@@ -118,6 +118,49 @@ _PAGES = [
     {"name": "Tech Writer", "icon": "✍️", "href": "/document-intelligence/techwriter", "desc": "Author arch docs, SOPs, runbooks, and standard guides with inline WriteGuard and AI research.", "ready": True, "task": "dic-techwriter-01"},
 ]
 
+# Workflow grouping for the canvas index. 14 undifferentiated sibling tiles give
+# no clue what to do first; these order them by the sequence a user actually
+# follows. Presentation only — no tile is removed, and _PAGES stays the flat
+# source of truth for other consumers.
+_PAGE_GROUPS: list[tuple[str, str, list[str]]] = [
+    ("1 · Ingest & organize",
+     "Get documents in and shape them into collections.",
+     ["Collections", "Notebook", "Handoff"]),
+    ("2 · Explore & search",
+     "Ask questions of what you already have — grounded, with citations.",
+     ["Search & Chat", "Explorer", "Analytics"]),
+    ("3 · Author & generate",
+     "Write new documents, or rebuild existing ones.",
+     ["Tech Writer", "AI-Assist", "Templates", "Snippets"]),
+    ("4 · Govern & review",
+     "Approve AI output, track staleness, keep compliance in sync.",
+     ["HITL Review", "Freshness", "ACOIC"]),
+    ("5 · Advanced",
+     "Specialist workflows.",
+     ["Air-Gap Fine-Tuning"]),
+]
+
+
+def _grouped_pages() -> list[dict]:
+    """Partition _PAGES into the workflow groups above.
+
+    Any tile missing from _PAGE_GROUPS is appended to a trailing group rather
+    than silently dropped — a typo must never make a feature vanish from the UI.
+    """
+    by_name = {p["name"]: p for p in _PAGES}
+    groups: list[dict] = []
+    claimed: set[str] = set()
+    for label, desc, names in _PAGE_GROUPS:
+        pages = [by_name[n] for n in names if n in by_name]
+        claimed.update(p["name"] for p in pages)
+        if pages:
+            groups.append({"label": label, "desc": desc, "pages": pages})
+    leftover = [p for p in _PAGES if p["name"] not in claimed]
+    if leftover:
+        groups.append({"label": "More", "desc": "", "pages": leftover})
+    return groups
+
+
 _LOCAL_PROVIDERS = ["ollama", "llamacpp", "huggingface-local"]
 
 # ── Init ──────────────────────────────────────────────────────────────────────
@@ -299,7 +342,11 @@ def _forbid(role: str, msg: str = "Insufficient permissions") -> tuple:
 
 @dic_bp.route("/")
 def index():
-    return render_template("document_intelligence/index.html", pages=_PAGES)
+    return render_template(
+        "document_intelligence/index.html",
+        pages=_PAGES,
+        page_groups=_grouped_pages(),
+    )
 
 
 @dic_bp.route("/collections")
@@ -517,6 +564,37 @@ def generate():
     )
 
 
+def _acoic_topologies() -> list[dict]:
+    """Topologies + whether each has a saved baseline, for the ACOIC controls.
+
+    ACOIC can only detect drift against a baseline, so the picker must show
+    which topologies are actually ready. Degrades to [] when the NDC database
+    is unreachable — a disabled control beats a 500.
+    """
+    try:
+        from tools.network.db.init_db import get_connection as ndc_conn
+        conn = ndc_conn()
+        try:
+            rows = conn.execute(
+                "SELECT t.id, t.name, "
+                "  (SELECT COUNT(*) FROM nc_versions v WHERE v.topology_id = t.id) AS versions "
+                "FROM topologies t ORDER BY t.name LIMIT 100"
+            ).fetchall()
+        finally:
+            conn.close()
+        return [
+            {
+                "id": d["id"],
+                "name": d["name"],
+                "has_baseline": bool(d.get("versions") or 0),
+            }
+            for d in (dict(r) for r in rows)
+        ]
+    except Exception as exc:
+        logger.warning("dic: acoic topology list unavailable: %s", exc)
+        return []
+
+
 @dic_bp.route("/acoic")
 def acoic():
     conn = _conn()
@@ -526,7 +604,36 @@ def acoic():
         ssp_fragments = _safe_rows(conn, "SELECT control_id, document_id, status FROM dic_ssp_fragments ORDER BY created_at DESC LIMIT 50")
     finally:
         conn.close()
-    return render_template("document_intelligence/acoic.html", drift_events=drift_events, regen_queue=regen_queue, ssp_fragments=ssp_fragments)
+    topologies = _acoic_topologies()
+    return render_template(
+        "document_intelligence/acoic.html",
+        drift_events=drift_events,
+        regen_queue=regen_queue,
+        ssp_fragments=ssp_fragments,
+        topologies=topologies,
+        baselines_saved=sum(1 for t in topologies if t["has_baseline"]),
+    )
+
+
+@dic_bp.route("/api/acoic/drift-check", methods=["POST"])
+def api_acoic_drift_check():
+    """Run the real NDC->ACOIC drift check on demand.
+
+    Same code path as the ndc_topology_drift reflex — this is not a demo or
+    seed button. It records nothing unless genuine drift is found, and reports
+    baselines_missing when a topology has no saved version to diff against.
+    """
+    data = request.get_json(silent=True) or {}
+    try:
+        from tools.genesis.reflexes.ndc_topology_drift import run as _drift_run
+        result = _drift_run({
+            "dry_run": bool(data.get("dry_run", False)),
+            "topology_ids": [t for t in (data.get("topology_ids") or []) if t],
+        })
+    except Exception as exc:
+        logger.warning("dic: acoic drift-check failed: %s", exc)
+        return jsonify({"error": str(exc)}), 500
+    return jsonify(result)
 
 
 @dic_bp.route("/finetune")

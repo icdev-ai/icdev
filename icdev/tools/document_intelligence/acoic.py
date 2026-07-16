@@ -12,8 +12,17 @@ ACOIC is the bridge that turns a *canvas drift event* into *compliance work*:
 This module owns the **dic-acoic-02** scope: the RICOAS / NIST 800-53 bridge and
 SSP-fragment generation. It also carries the minimal **dic-acoic-01** base
 (drift-event recording + impact scoring + regen queue) so the bridge is
-runnable end-to-end; the richer event subscription (``ndc.topology.drift_detected``)
-plugs into :func:`handle_drift` when the DIC event bus lands.
+runnable end-to-end.
+
+**How drift actually arrives here.** The producer is the ``ndc_topology_drift``
+Genesis reflex (``tools/genesis/reflexes/ndc_topology_drift.py``), which diffs a
+topology's generated device configs against its saved ``nc_versions`` baseline
+and calls :func:`tools.network.drift_detector.emit_drift_events` ->
+:func:`record_drift_event` / :func:`enqueue_regen`. Do **not** wire this via
+``event_bus.subscribe('dic', ...)``: ``_LISTENERS`` is a process-local registry,
+and the reflex runs in the genesis daemon while DIC runs in Flask, so an
+in-process subscriber would never fire. :func:`handle_drift` remains the sink for
+direct/programmatic callers (e.g. the IDC feed and the ACOIC CLI).
 
 Design principles (mirrors :mod:`tools.document_intelligence.verifier`):
 
@@ -201,16 +210,29 @@ def record_drift_event(
     severity: str = "medium",
     *,
     payload: dict | None = None,
+    dedup_key: str | None = None,
     tenant_id: str | None = None,
     classification: str | None = None,
 ) -> str:
     """Persist a canvas drift event. Returns the event_id.
 
-    This is the sink for the ``ndc.topology.drift_detected`` subscription and
-    the IDC drift feed (wired in :func:`handle_drift`).
+    This is the sink for the ``ndc.topology.drift_detected`` feed (wired in
+    :func:`handle_drift` and called directly by the ``ndc_topology_drift``
+    reflex via :func:`tools.network.drift_detector.emit_drift_events`).
+
+    Args:
+        dedup_key: Stable content key for cross-run idempotency. Without it the
+            event_id hashes ``detected_at``, so a scheduled producer re-reporting
+            the SAME unchanged drift inserts a new row every run. Callers on a
+            cadence MUST pass a content-derived key (e.g. topology|device|
+            category|baseline_hash|current_hash). Omitted => legacy behavior.
     """
     detected_at = _now()
-    event_id = _hid("dic_drift", source, entity or "", detected_at)
+    event_id = (
+        _hid("dic_drift", dedup_key)
+        if dedup_key
+        else _hid("dic_drift", source, entity or "", detected_at)
+    )
     conn = get_connection()
     try:
         _ensure_schema(conn)
@@ -239,19 +261,35 @@ def enqueue_regen(
     drift_source: str | None = None,
     drift_entity: str | None = None,
     severity: str = "medium",
+    dedup_key: str | None = None,
     tenant_id: str | None = None,
     classification: str | None = None,
 ) -> dict[str, Any]:
-    """Enqueue an impacted document for HITL regeneration."""
+    """Enqueue an impacted document for HITL regeneration.
+
+    Args:
+        dedup_key: Stable content key for cross-run idempotency (see
+            :func:`record_drift_event`). When set, an existing row is left
+            untouched rather than replaced — re-running the producer must never
+            reset a queue item a human already moved to drafted/approved.
+            Omitted => legacy replace-on-conflict behavior.
+    """
     impact_level, impact_score = _score_impact(severity)
     queued_at = _now()
-    item_id = _hid("dic_regen", document_id, event_id or "", queued_at)
+    item_id = (
+        _hid("dic_regen", dedup_key)
+        if dedup_key
+        else _hid("dic_regen", document_id, event_id or "", queued_at)
+    )
+    # OR IGNORE preserves human-advanced state; OR REPLACE would stomp it back
+    # to 'queued'. storage.translate_sql maps both to the PG ON CONFLICT form.
+    verb = "INSERT OR IGNORE" if dedup_key else "INSERT OR REPLACE"
     conn = get_connection()
     try:
         _ensure_schema(conn)
         conn.cursor().execute(
-            """
-            INSERT OR REPLACE INTO dic_acoic_regen_queue
+            f"""
+            {verb} INTO dic_acoic_regen_queue
                 (item_id, document_id, event_id, drift_source, drift_entity,
                  impact_level, impact_score, state, queued_at, updated_at,
                  tenant_id, classification)
@@ -742,10 +780,15 @@ def _rows(sql: str, args: tuple = ()) -> list[dict[str, Any]]:
         conn.close()
 
 
+# These three carried bare `?` placeholders while the rest of this module uses
+# %s. They did not crash on PostgreSQL — translate_sql rewrote them — but that
+# made a runtime read path depend on the translator, which is an init-time
+# SQLite fallback and explicitly not load-bearing, and it logged a
+# "bare ? placeholder detected" warning on every call. Authored for PG directly.
 def list_drift_events(limit: int = 50) -> list[dict[str, Any]]:
     return _rows(
         "SELECT source, entity, severity, detected_at FROM dic_drift_events "
-        "ORDER BY detected_at DESC LIMIT ?",
+        "ORDER BY detected_at DESC LIMIT %s",
         (limit,),
     )
 
@@ -753,7 +796,7 @@ def list_drift_events(limit: int = 50) -> list[dict[str, Any]]:
 def list_regen_queue(limit: int = 50) -> list[dict[str, Any]]:
     return _rows(
         "SELECT item_id, document_id, impact_level, state, queued_at "
-        "FROM dic_acoic_regen_queue ORDER BY impact_score DESC, queued_at DESC LIMIT ?",
+        "FROM dic_acoic_regen_queue ORDER BY impact_score DESC, queued_at DESC LIMIT %s",
         (limit,),
     )
 
@@ -761,7 +804,7 @@ def list_regen_queue(limit: int = 50) -> list[dict[str, Any]]:
 def list_ssp_fragments(limit: int = 50) -> list[dict[str, Any]]:
     return _rows(
         "SELECT fragment_id, control_id, document_id, status, verified, ai_labeled "
-        "FROM dic_ssp_fragments ORDER BY created_at DESC LIMIT ?",
+        "FROM dic_ssp_fragments ORDER BY created_at DESC LIMIT %s",
         (limit,),
     )
 
