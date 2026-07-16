@@ -782,8 +782,8 @@ components:
       href: /document-intelligence/review
     - label: AI-Assist
       href: /document-intelligence/generate
-    - label: ACOIC
-      href: /document-intelligence/acoic
+    - label: DocDrift
+      href: /document-intelligence/docdrift
     - label: Freshness
       href: /document-intelligence/freshness
     - label: Explorer

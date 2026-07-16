@@ -1,7 +1,22 @@
 #!/usr/bin/env python3
-"""ACOIC — Autonomous Compliance-Of-Impact Coupler (DIC flagship).
+"""DocDrift — is this document still true? (DIC flagship).
 
 [TEMPLATE: CUI // SP-CTI]
+
+**Naming.** This was ACOIC ("Autonomous Compliance-Of-Impact Coupler") while it
+only understood network-infrastructure drift. It is now fed by every docmod pack
+— network, crypto, software, policy, approved-change records and cited evidence —
+so the user-facing name is **DocDrift** and the page lives at
+``/document-intelligence/docdrift`` (``/acoic`` 301-redirects).
+
+The module file and the tables (``dic_drift_events``, ``dic_acoic_regen_queue``,
+``dic_ssp_fragments``) deliberately keep the old name. Renaming them buys nothing
+a user can see and costs a real migration plus an import churn across
+drift_detector, ndc_topology_drift, drift_bridge and the DIC blueprint — and
+``_ensure_schema`` uses CREATE TABLE IF NOT EXISTS, so a missed call site would
+silently recreate the old table alongside the new one and split the data rather
+than fail loudly. If you are here because "acoic" looked stale: it is, and that
+is on purpose.
 
 ACOIC is the bridge that turns a *canvas drift event* into *compliance work*:
 

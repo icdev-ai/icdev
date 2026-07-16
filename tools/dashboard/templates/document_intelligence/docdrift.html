@@ -1,12 +1,12 @@
 {% extends "base.html" %}
-{% block title %}ACOIC — Document Intelligence — ICDEV™{% endblock %}
+{% block title %}DocDrift — Document Intelligence — ICDEV™{% endblock %}
 {% block content %}
 <div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;margin-bottom:12px;">CUI // SP-CTI</div>
 
 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
   <div>
-    <h2 style="margin:0;color:#eaeaea;font-size:20px;">🛰️ ACOIC — Drift → Document Impact → Regen → NIST Re-map</h2>
-    <p style="color:#7a8cb0;font-size:12px;margin:4px 0 0;">Flagship bridge: canvas drift events score document impact, enqueue grounded regeneration (HITL), and re-map affected NIST 800-53 controls.</p>
+    <h2 style="margin:0;color:#eaeaea;font-size:20px;">🛰️ DocDrift — Is this document still true?</h2>
+    <p style="color:#7a8cb0;font-size:12px;margin:4px 0 0;">Drift → document impact → grounded regeneration (HITL) → NIST 800-53 re-map. Fed by every docmod pack: network, crypto, software, policy, approved changes, and cited evidence.</p>
   </div>
   <div style="display:flex;gap:8px;">
     <a href="/document-intelligence/techwriter" style="background:#0f3460;color:#7ab3f0;padding:8px 16px;border-radius:5px;text-decoration:none;font-size:13px;">Tech Writer →</a>
@@ -14,12 +14,13 @@
   </div>
 </div>
 
-<!-- How this page gets data — ACOIC is a sink, not an upload surface -->
+<!-- How this page gets data — DocDrift is a sink, not an upload surface -->
 <div style="background:#0d1b2e;border:1px solid #1a3560;border-left:3px solid #7ab3f0;border-radius:8px;padding:14px 16px;margin-bottom:18px;">
   <div style="color:#9bb8d8;font-size:13px;font-weight:600;margin-bottom:6px;">How this page gets data</div>
   <p style="color:#7a8cb0;font-size:12px;margin:0 0 8px;line-height:1.55;">
-    <strong style="color:#9bb8d8;">There is nothing to upload here.</strong> ACOIC is fed automatically: it watches your
-    network topologies for configuration drift and tells you which documents and NIST 800-53 controls that drift made wrong.
+    <strong style="color:#9bb8d8;">There is nothing to upload here.</strong> DocDrift is fed automatically: docmod packs
+    check your documents against reality — network topologies, EOL catalogs, crypto rules, approved change records and the
+    evidence each document cites — and tell you which documents and NIST 800-53 controls that drift made wrong.
     To upload a document use <a href="/document-intelligence/" style="color:#7ab3f0;">Document Intelligence</a>;
     to write one use <a href="/document-intelligence/techwriter" style="color:#7ab3f0;">Tech Writer</a>;
     to rebuild one from multiple sources use <a href="/docgen/new" style="color:#7ab3f0;">DocGen</a>.
@@ -40,23 +41,23 @@
 <!-- dic-drift-trigger: run the REAL detector on demand (not a seeder) -->
 <div style="background:#0b1726;border:1px solid #1a3560;border-radius:8px;padding:12px 14px;margin-bottom:22px;">
   <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
-    <label for="acoic-topo" style="color:#9bb8d8;font-size:12px;">Topology</label>
-    <select id="acoic-topo" style="background:#0d1b2e;color:#cfe3f7;border:1px solid #1a3560;border-radius:5px;padding:6px 10px;font-size:12px;min-width:280px;">
+    <label for="docdrift-topo" style="color:#9bb8d8;font-size:12px;">Topology</label>
+    <select id="docdrift-topo" style="background:#0d1b2e;color:#cfe3f7;border:1px solid #1a3560;border-radius:5px;padding:6px 10px;font-size:12px;min-width:280px;">
       {% for t in topologies %}
       <option value="{{ t.id }}">{{ t.name }}{% if not t.has_baseline %} — no baseline{% endif %}</option>
       {% else %}
       <option value="">No topologies found</option>
       {% endfor %}
     </select>
-    <button id="acoic-save-baseline" {% if not topologies %}disabled{% endif %}
+    <button id="docdrift-save-baseline" {% if not topologies %}disabled{% endif %}
       style="background:#0f3460;color:#7ab3f0;border:1px solid #1a3560;border-radius:5px;padding:7px 14px;font-size:12px;cursor:pointer;">
       Save as baseline
     </button>
-    <button id="acoic-run-drift" {% if not topologies %}disabled{% endif %}
+    <button id="docdrift-run-drift" {% if not topologies %}disabled{% endif %}
       style="background:#123a5e;color:#9bd0ff;border:1px solid #1f4d7a;border-radius:5px;padding:7px 14px;font-size:12px;cursor:pointer;">
       Run drift check now
     </button>
-    <span id="acoic-status" style="color:#7a8cb0;font-size:12px;"></span>
+    <span id="docdrift-status" style="color:#7a8cb0;font-size:12px;"></span>
   </div>
 </div>
 
@@ -150,7 +151,7 @@
 
 {% set iqe_canvas = "dic" %}
 {% set iqe_api_route = "/document-intelligence/api/iqe-query" %}
-{% set iqe_title = "IQE Query — ACOIC" %}
+{% set iqe_title = "IQE Query — DocDrift" %}
 {% set iqe_examples = [
   {"label": "Critical drift", "query": "foreach d in dic.drift_events where d.severity == \"critical\" select d.source, d.entity, d.detected_at"},
   {"label": "Open regen", "query": "foreach r in dic.regen_queue where r.state == \"queued\" select r.document_id, r.impact_level"}
@@ -162,10 +163,10 @@
 // Network Canvas version API; "Run drift check" calls the same reflex the
 // daemon runs on its 4h cadence. Neither fabricates data.
 (function () {
-  var sel = document.getElementById('acoic-topo');
-  var statusEl = document.getElementById('acoic-status');
-  var saveBtn = document.getElementById('acoic-save-baseline');
-  var runBtn = document.getElementById('acoic-run-drift');
+  var sel = document.getElementById('docdrift-topo');
+  var statusEl = document.getElementById('docdrift-status');
+  var saveBtn = document.getElementById('docdrift-save-baseline');
+  var runBtn = document.getElementById('docdrift-run-drift');
   if (!sel || !saveBtn || !runBtn) return;
 
   function say(msg, color) {
@@ -180,7 +181,7 @@
     fetch('/network/api/versions/' + encodeURIComponent(tid), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ label: 'baseline', phase: 'as-is', notes: 'ACOIC drift baseline' })
+      body: JSON.stringify({ label: 'baseline', phase: 'as-is', notes: 'DocDrift drift baseline' })
     })
       .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
       .then(function (res) {
@@ -194,7 +195,7 @@
   runBtn.addEventListener('click', function () {
     var tid = sel.value;
     say('Running drift check…');
-    fetch('/document-intelligence/api/acoic/drift-check', {
+    fetch('/document-intelligence/api/docdrift/drift-check', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ topology_ids: tid ? [tid] : [] })

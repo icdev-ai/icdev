@@ -7,7 +7,7 @@ Routes:
   GET  /document-intelligence/search        grounded search + document chat
   GET  /document-intelligence/review        HITL review queue (fragments + versions)
   GET  /document-intelligence/generate      AI-assisted document generation
-  GET  /document-intelligence/acoic         ACOIC drift→regen→NIST page
+  GET  /document-intelligence/docdrift      DocDrift drift→regen→NIST page (was /acoic)
   GET  /document-intelligence/finetune      air-gap fine-tuning page
   GET  /document-intelligence/snippets      reusable snippets page
   GET  /document-intelligence/templates     use-case templates page
@@ -50,7 +50,16 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from flask import Blueprint, Response, jsonify, render_template, request, stream_with_context
+from flask import (
+    Blueprint,
+    Response,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    stream_with_context,
+    url_for,
+)
 
 from tools.logging.icdev_logger import get_logger
 
@@ -78,7 +87,10 @@ dic_bp = Blueprint(
 # ── Static seed data ──────────────────────────────────────────────────────────
 
 _TEMPLATES = [
-    {"id": "acoic", "name": "ACOIC", "description": "Infra-drift → impacted-doc regeneration → RICOAS NIST bridge.", "flagship": True, "category": "compliance", "kind": "automation"},
+    # id stays "acoic": it is a data key behind /api/templates/<id>/instantiate,
+    # exercised by features/dic_document_intelligence.feature and e2e_full.py.
+    # Renaming it would break those contracts for a string nobody sees.
+    {"id": "acoic", "name": "DocDrift", "description": "Drift → impacted-doc regeneration → RICOAS NIST bridge.", "flagship": True, "category": "compliance", "kind": "automation"},
     {"id": "freshness-audit", "name": "Document Freshness Audit", "description": "Scan a collection for stale documents and generate a remediation report.", "flagship": False, "category": "quality", "kind": "audit"},
     {"id": "airgap-ingest", "name": "Air-Gap Ingest Pipeline", "description": "Ingest documents from a local directory with zero cloud calls.", "flagship": False, "category": "ingest", "kind": "pipeline"},
     {"id": "hitl-review", "name": "HITL Review Queue", "description": "Surface AI-generated drafts for human review before publishing.", "flagship": False, "category": "governance", "kind": "workflow"},
@@ -97,7 +109,7 @@ _SNIPPETS = [
     {"id": "dic-citation-badge", "name": "Citation Badge", "description": "Inline citation chip linking a claim to its source document, chunk ID, and page.", "category": "search", "tags": ["citation", "grounded", "no-llm"]},
     {"id": "dic-freshness-indicator", "name": "Freshness Indicator", "description": "Color-coded badge (fresh / aging / stale) derived from document TTL.", "category": "quality", "tags": ["freshness", "ttl", "badge"]},
     {"id": "dic-ai-label", "name": "AI-Label Chip", "description": "Displays the HITL/AI classification label and confidence score on a document card.", "category": "governance", "tags": ["hitl", "label", "confidence"]},
-    {"id": "dic-drift-trigger", "name": "Drift Trigger Button", "description": "Manual button to fire a drift event on a document or collection for ACOIC pipeline testing.", "category": "acoic", "tags": ["drift", "acoic", "debug"]},
+    {"id": "dic-drift-trigger", "name": "Drift Trigger Button", "description": "Manual button to run the real drift check on demand from the DocDrift page.", "category": "docdrift", "tags": ["drift", "docdrift", "debug"]},
     {"id": "dic-rag-search-bar", "name": "Grounded Search Bar", "description": "No-LLM keyword+vector search input that returns cited chunks.", "category": "search", "tags": ["rag", "no-llm", "citations"]},
 ]
 
@@ -107,10 +119,10 @@ _PAGES = [
     {"name": "Analytics", "icon": "📊", "href": "/document-intelligence/analytics", "desc": "Entity frequency, co-occurrence, pattern detection, anomaly detection, and scenario runner.", "ready": True, "task": "dic-analytics-01"},
     {"name": "HITL Review", "icon": "👁️", "href": "/document-intelligence/review", "desc": "Human-in-the-loop oversight for AI-generated drafts and SSP fragments.", "ready": True, "task": "dic-collab-01"},
     {"name": "AI-Assist", "icon": "✨", "href": "/document-intelligence/generate", "desc": "Generate CoD-verified document drafts from your collections.", "ready": True, "task": "dic-generate-01"},
-    {"name": "ACOIC", "icon": "🛰️", "href": "/document-intelligence/acoic", "desc": "Flagship bridge: drift → document impact → regen → NIST re-map.", "ready": True, "task": "dic-acoic-01"},
+    {"name": "DocDrift", "icon": "🛰️", "href": "/document-intelligence/docdrift", "desc": "Is this document still true? Drift → impact → regen → NIST re-map.", "ready": True, "task": "dic-acoic-01"},
     {"name": "Air-Gap Fine-Tuning", "icon": "🧪", "href": "/document-intelligence/finetune", "desc": "Train a local model on a collection's chunks/KG (GPU optional).", "ready": True, "task": "dic-finetune-01"},
     {"name": "Snippets", "icon": "🧩", "href": "/document-intelligence/snippets", "desc": "Reusable UI building blocks for document workflows.", "ready": True, "task": "dic-snippets-01"},
-    {"name": "Templates", "icon": "📐", "href": "/document-intelligence/templates", "desc": "Pre-built document workflows. ACOIC is the flagship.", "ready": True, "task": "dic-templates-01"},
+    {"name": "Templates", "icon": "📐", "href": "/document-intelligence/templates", "desc": "Pre-built document workflows. DocDrift is the flagship.", "ready": True, "task": "dic-templates-01"},
     {"name": "Freshness", "icon": "🌡️", "href": "/document-intelligence/freshness", "desc": "Corpus staleness heatmap and remediation queue.", "ready": True, "task": "dic-freshness-01"},
     {"name": "Explorer", "icon": "🔎", "href": "/document-intelligence/explorer", "desc": "KG buried-bodies explorer — orphans, tribal knowledge, contradictions.", "ready": True, "task": "dic-explore-01"},
     {"name": "Handoff", "icon": "🤝", "href": "/document-intelligence/handoff", "desc": "Knowledge handoff — capture retiring SME knowledge into a living collection.", "ready": True, "task": "dic-handoff-01"},
@@ -134,7 +146,7 @@ _PAGE_GROUPS: list[tuple[str, str, list[str]]] = [
      ["Tech Writer", "AI-Assist", "Templates", "Snippets"]),
     ("4 · Govern & review",
      "Approve AI output, track staleness, keep compliance in sync.",
-     ["HITL Review", "Freshness", "ACOIC"]),
+     ["HITL Review", "Freshness", "DocDrift"]),
     ("5 · Advanced",
      "Specialist workflows.",
      ["Air-Gap Fine-Tuning"]),
@@ -543,7 +555,7 @@ def review():
 
 # Template defaults for query prefill when arriving from /templates.
 _TEMPLATE_DEFAULTS = {
-    "acoic": "ACOIC drift → impacted document regeneration → NIST 800-53 re-map",
+    "acoic": "DocDrift — drift → impacted document regeneration → NIST 800-53 re-map",
     "freshness-audit": "Document freshness audit — identify stale documents and remediation plan",
     "airgap-ingest": "Air-gap ingest pipeline — ingest local documents with zero cloud calls",
     "hitl-review": "HITL review queue — surface AI-generated drafts for human review",
@@ -564,12 +576,12 @@ def generate():
     )
 
 
-def _acoic_topologies() -> list[dict]:
-    """Topologies + whether each has a saved baseline, for the ACOIC controls.
+def _docdrift_topologies() -> list[dict]:
+    """Topologies + whether each has a saved baseline, for the DocDrift controls.
 
-    ACOIC can only detect drift against a baseline, so the picker must show
-    which topologies are actually ready. Degrades to [] when the NDC database
-    is unreachable — a disabled control beats a 500.
+    Network drift can only be detected against a baseline, so the picker must
+    show which topologies are actually ready. Degrades to [] when the NDC
+    database is unreachable — a disabled control beats a 500.
     """
     try:
         from tools.network.db.init_db import get_connection as ndc_conn
@@ -591,12 +603,12 @@ def _acoic_topologies() -> list[dict]:
             for d in (dict(r) for r in rows)
         ]
     except Exception as exc:
-        logger.warning("dic: acoic topology list unavailable: %s", exc)
+        logger.warning("dic: docdrift topology list unavailable: %s", exc)
         return []
 
 
-@dic_bp.route("/acoic")
-def acoic():
+@dic_bp.route("/docdrift")
+def docdrift():
     conn = _conn()
     try:
         drift_events = _safe_rows(conn, "SELECT source, entity, severity, detected_at FROM dic_drift_events ORDER BY detected_at DESC LIMIT 50")
@@ -604,9 +616,9 @@ def acoic():
         ssp_fragments = _safe_rows(conn, "SELECT control_id, document_id, status FROM dic_ssp_fragments ORDER BY created_at DESC LIMIT 50")
     finally:
         conn.close()
-    topologies = _acoic_topologies()
+    topologies = _docdrift_topologies()
     return render_template(
-        "document_intelligence/acoic.html",
+        "document_intelligence/docdrift.html",
         drift_events=drift_events,
         regen_queue=regen_queue,
         ssp_fragments=ssp_fragments,
@@ -615,9 +627,20 @@ def acoic():
     )
 
 
-@dic_bp.route("/api/acoic/drift-check", methods=["POST"])
-def api_acoic_drift_check():
-    """Run the real NDC->ACOIC drift check on demand.
+@dic_bp.route("/acoic")
+def acoic_legacy_redirect():
+    """The page was called ACOIC until it stopped being network-only.
+
+    Kept as a permanent redirect rather than deleted: the old path is in
+    bookmarks, kanban card descriptions (dic-acoic-01/02) and docs, and a 404
+    would read as "the feature is gone" rather than "it was renamed".
+    """
+    return redirect(url_for("dic.docdrift"), code=301)
+
+
+@dic_bp.route("/api/docdrift/drift-check", methods=["POST"])
+def api_docdrift_drift_check():
+    """Run the real NDC->DocDrift drift check on demand.
 
     Same code path as the ndc_topology_drift reflex — this is not a demo or
     seed button. It records nothing unless genuine drift is found, and reports
@@ -631,7 +654,7 @@ def api_acoic_drift_check():
             "topology_ids": [t for t in (data.get("topology_ids") or []) if t],
         })
     except Exception as exc:
-        logger.warning("dic: acoic drift-check failed: %s", exc)
+        logger.warning("dic: docdrift drift-check failed: %s", exc)
         return jsonify({"error": str(exc)}), 500
     return jsonify(result)
 

@@ -65,7 +65,9 @@ CLI: `python -m tools.document_intelligence.acoic {drift|map|fragment|approve|re
 
 > SSP drafting abstains rather than hallucinate when no grounded evidence is
 > retrieved for a control — correct behavior until documents are ingested.
-> The `/document-intelligence/acoic` route is wired by the DIC blueprint
+> The `/document-intelligence/docdrift` route is wired by the DIC blueprint
+> (`/acoic` 301-redirects; the module and tables keep the legacy name on purpose —
+> see the acoic.py docstring)
 > (dic-ui-02); `acoic.get_acoic_page_context()` is the data source.
 
 ## Search
