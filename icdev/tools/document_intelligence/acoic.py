@@ -712,14 +712,47 @@ def _review_fragment(fragment_id: str, status: str, reviewed_by: str | None) -> 
         changed = cur.rowcount
         # Advance the linked queue item.
         cur.execute(
-            "SELECT regen_item_id FROM dic_ssp_fragments WHERE fragment_id = %s",
+            "SELECT control_id, document_id, regen_item_id FROM dic_ssp_fragments "
+            "WHERE fragment_id = %s",
             (fragment_id,),
         )
         row = cur.fetchone()
     finally:
         conn.close()
+
+    # Audit the human decision. dic_ssp_fragments is a mutable workflow table —
+    # it holds only the CURRENT status, so an approval leaves no evidence of who
+    # decided what, when. These fragments become SSP content, so that record is
+    # the cATO audit trail. audit_trail is append-only (enforced in
+    # .claude/hooks/pre_tool_use.py) and hash-chained by audit_logger.
+    #
+    # Fail-closed (raise_on_error=True): an approval that cannot be audited must
+    # not silently stand. NIST AU-5 — an unrecorded authorisation decision is an
+    # audit finding, so failing the approval is the safer outcome. Machine-driven
+    # transitions stay best-effort; only human decisions gate on the audit write.
+    rd = dict(row) if row is not None and hasattr(row, "keys") else {}
+    if changed:
+        from tools.audit.audit_logger import log_event
+
+        log_event(
+            event_type="dic.ssp_fragment.review",
+            actor=reviewed_by or "unknown",
+            action=f"ssp_fragment.{status}",
+            details={
+                "fragment_id": fragment_id,
+                "status": status,
+                "control_id": rd.get("control_id"),
+                "document_id": rd.get("document_id"),
+                "regen_item_id": rd.get("regen_item_id"),
+            },
+            classification="CUI",
+            raise_on_error=True,
+        )
+
     if row:
-        item_id = row["regen_item_id"] if hasattr(row, "keys") else row[0]
+        # NB: the SELECT above fetches three columns for the audit record, so the
+        # positional fallback must index regen_item_id explicitly (not row[0]).
+        item_id = rd.get("regen_item_id") if rd else row[2]
         if item_id:
             queue_state = "drafted" if status == "needs_revision" else status
             _set_queue_state(item_id, queue_state)
