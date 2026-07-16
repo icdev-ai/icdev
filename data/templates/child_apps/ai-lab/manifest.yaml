@@ -73,6 +73,17 @@ files:
   - src: ../minimal/args/ontology/app_config.yaml.j2
     dest: "args/ontology/app_config.yaml"
 
+# Anti-hallucination grounding — copied VERBATIM from the parent repo, never
+# templated: these are live TRUST modules and a .j2 fork would silently drift
+# from the originals. child_app_generator.py:245 carries tools/quality in its
+# DIRECTORY_TREE for the same reason ("trust-cite-05: always-on"); template
+# generated child apps must inherit them too, or they ship with no citation
+# validation and fail the FORGE gate (FORGE-03c).
+copy:
+  - src: tools/quality/content_grounding.py
+    dest: tools/quality/content_grounding.py
+  - src: tools/quality/citation_grounding.py
+    dest: tools/quality/citation_grounding.py
 validators:
   - type: file_exists
     path: "{{ module_package | replace('.', '/') }}/blueprint.py"
@@ -84,3 +95,7 @@ validators:
     path: "CLAUDE.md"
   - type: file_exists
     path: "args/llm_config.yaml"
+  - type: file_exists
+    path: "tools/quality/content_grounding.py"
+  - type: file_exists
+    path: "tools/quality/citation_grounding.py"
