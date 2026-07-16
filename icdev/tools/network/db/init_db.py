@@ -2357,6 +2357,42 @@ CREATE TABLE IF NOT EXISTS nc_supply_chain_risk (
 CREATE INDEX IF NOT EXISTS idx_nc_supply_chain_risk_vendor ON nc_supply_chain_risk(vendor, assessed_at DESC);
 CREATE INDEX IF NOT EXISTS idx_nc_supply_chain_risk_score  ON nc_supply_chain_risk(risk_score DESC);
 CREATE INDEX IF NOT EXISTS idx_nc_supply_chain_risk_kev    ON nc_supply_chain_risk(kev_count DESC);
+
+-- ── Config Review Assistant ─────────────────────────────────────────────────
+-- These two tables were read by tools/iqe/adapters/ndc.py and by the
+-- /network/config-review page, and referenced by migration 211's comments, but
+-- had no DDL anywhere: only the test fixture created them. init_db therefore
+-- never made them, so the feature could not persist a review.
+--
+-- config_text_hash, not config_text: a device configuration is sensitive and
+-- the review only needs to detect that the same config was submitted again.
+CREATE TABLE IF NOT EXISTS nc_config_reviews (
+    id                TEXT PRIMARY KEY,
+    title             TEXT,
+    vendor            TEXT,
+    role_key          TEXT,
+    answers_json      TEXT DEFAULT '{}',
+    config_text_hash  TEXT,
+    status            TEXT DEFAULT 'pending',
+    result_json       TEXT DEFAULT '{}',
+    created_at        TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at        TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_nc_config_reviews_created ON nc_config_reviews(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS nc_config_review_findings (
+    id                    TEXT PRIMARY KEY,
+    review_id             TEXT REFERENCES nc_config_reviews(id) ON DELETE CASCADE,
+    category              TEXT,
+    severity              TEXT,
+    title                 TEXT,
+    detail                TEXT,
+    remediation           TEXT,
+    sample_config_snippet TEXT,
+    references_json       TEXT DEFAULT '[]',
+    created_at            TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_nc_config_review_findings_review ON nc_config_review_findings(review_id);
 """
 
 # ── Template seeds ────────────────────────────────────────────────────────────

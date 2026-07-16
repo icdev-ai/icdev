@@ -14797,8 +14797,330 @@ Planning rules:
     @bp.route("/config-review")
     def nc_config_review():
         """Configuration Review Assistant — upload and AI-review device configs."""
-        from tools.network.constants import CONFIG_REVIEW_ROLES
-        return render_template("network/config_review.html", roles=CONFIG_REVIEW_ROLES)
+        # questions_by_role is NOT optional: the template does
+        # `{{ questions_by_role | tojson }}`, and a Jinja Undefined is not JSON
+        # serializable — omitting it raised TypeError and 500'd the whole page,
+        # not just the question list. selectRole() also indexes it immediately.
+        from tools.network.constants import CONFIG_REVIEW_QUESTIONS, CONFIG_REVIEW_ROLES
+        return render_template(
+            "network/config_review.html",
+            roles=CONFIG_REVIEW_ROLES,
+            questions_by_role=CONFIG_REVIEW_QUESTIONS,
+        )
+
+    # ── Config Review API ─────────────────────────────────────────────────
+    # tools/network/config_review.py has carried the whole engine (roles,
+    # questions, guided prompts, LLM prompt build, response parsing, exports)
+    # and config_review.html has called these endpoints — but they were never
+    # wired, so every button on the page 404'd. This is the missing layer.
+
+    # Categories in a parsed review result whose entries are findings. Everything
+    # else in the result (explanation, sample_template, topology_graph, vendor…)
+    # is review-level, not a finding.
+    _REVIEW_FINDING_CATEGORIES = ("security_compliance", "optimization", "remediation")
+
+    _NC_IQE_COLLECTIONS = [
+        "network.config_reviews",
+        "network.config_review_findings",
+        "network.nodes",
+        "network.edges",
+        "network.topologies",
+    ]
+
+    def _safe_json(raw, default):
+        """Parse a JSON column without letting one bad row 500 the endpoint."""
+        if isinstance(raw, (dict, list)):
+            return raw
+        try:
+            return json.loads(raw) if raw else default
+        except (TypeError, ValueError):
+            return default
+
+    def _flatten_review_findings(result: dict) -> list[dict]:
+        """Flatten the category-keyed review result into finding rows.
+
+        Severity defaults to 'info' for categories that don't carry one
+        (optimization/remediation are advisory), and 'recommendation' is folded
+        into remediation so every row has the same shape as the security ones.
+        """
+        out: list[dict] = []
+        for category in _REVIEW_FINDING_CATEGORIES:
+            for item in (result or {}).get(category) or []:
+                if not isinstance(item, dict):
+                    continue
+                out.append({
+                    "category": category,
+                    "severity": item.get("severity") or "info",
+                    "title": item.get("title") or "",
+                    "detail": item.get("detail") or "",
+                    "remediation": item.get("remediation") or item.get("recommendation") or "",
+                    "sample_config_snippet": item.get("sample_config_snippet") or "",
+                    "references": item.get("references") or [],
+                })
+        return out
+
+    def _load_config_review(review_id: str):
+        """(review, findings) for a persisted review, or (None, []) if absent."""
+        conn = get_connection()
+        _ph = sql_placeholder(conn)
+        try:
+            row = conn.execute(
+                f"SELECT * FROM nc_config_reviews WHERE id={_ph}", (review_id,)
+            ).fetchone()
+            if not row:
+                return None, []
+            review = _row_to_dict(row)
+            findings = [
+                _row_to_dict(r) for r in conn.execute(
+                    f"SELECT * FROM nc_config_review_findings WHERE review_id={_ph} "
+                    "ORDER BY created_at",
+                    (review_id,),
+                ).fetchall()
+            ]
+        finally:
+            conn.close()
+        # The exporters read `references` and treat findings as plain dicts.
+        for f in findings:
+            f["references"] = _safe_json(f.get("references_json"), [])
+        return review, findings
+
+    @bp.route("/api/config-review", methods=["POST"])
+    def nc_api_config_review_create():
+        """Start a review: detect vendor, return the role's questions + prompts."""
+        from tools.network.config_review import (
+            _detect_vendor,
+            _extract_hostname,
+            compute_config_hash,
+            generate_guided_prompts,
+            get_questions,
+            get_roles,
+        )
+
+        data = request.get_json(force=True, silent=True) or {}
+        config_text = (data.get("config_text") or "").strip()
+        role_key = (data.get("role") or "network_engineer").strip()
+
+        if not config_text:
+            return jsonify({"error": "config_text is required"}), 400
+        if role_key not in get_roles():
+            # 400 not 404: the request is malformed, not the resource missing.
+            return jsonify({"error": f"Unknown role: {role_key}"}), 400
+
+        vendor = _detect_vendor(config_text)
+        hostname = _extract_hostname(config_text, vendor)
+        review_id = str(_uuid.uuid4())
+        now = _now()
+
+        conn = get_connection()
+        try:
+            _ph = sql_placeholder(conn)
+            conn.execute(
+                "INSERT INTO nc_config_reviews (id, title, vendor, role_key, answers_json, "
+                f"config_text_hash, status, result_json, created_at, updated_at) "
+                f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
+                (
+                    review_id, hostname or f"Config review {now[:10]}", vendor, role_key,
+                    json.dumps({}), compute_config_hash(config_text), "pending",
+                    json.dumps({}), now, now,
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        _audit("CREATE", "config_review", review_id, f"{vendor} / {role_key}")
+        return jsonify({
+            "id": review_id,
+            "vendor": vendor,
+            "hostname": hostname,
+            "role": role_key,
+            "questions": get_questions(role_key),
+            "prompts": generate_guided_prompts(role_key, vendor, hostname),
+        })
+
+    @bp.route("/api/config-review/<review_id>/analyze", methods=["POST"])
+    def nc_api_config_review_analyze(review_id):
+        """Run the review. The config text is NOT persisted, so the caller
+        re-supplies it; only its hash is stored (see the init_db comment)."""
+        from tools.network.config_review import (
+            build_llm_prompt,
+            parse_review_response,
+        )
+
+        data = request.get_json(force=True, silent=True) or {}
+        answers = data.get("answers") or {}
+        prompt_title = data.get("prompt_title") or ""
+        config_text = data.get("config_text") or ""
+
+        conn = get_connection()
+        _ph = sql_placeholder(conn)
+        try:
+            row = conn.execute(
+                f"SELECT id, vendor, role_key, title FROM nc_config_reviews WHERE id={_ph}",
+                (review_id,),
+            ).fetchone()
+            if not row:
+                conn.close()
+                return jsonify({"error": "Review not found"}), 404
+            review = _row_to_dict(row)
+        except Exception as exc:
+            conn.close()
+            return jsonify({"error": str(exc)}), 500
+
+        vendor = review.get("vendor") or "unknown"
+        prompt = build_llm_prompt(
+            review.get("role_key") or "network_engineer",
+            config_text, vendor, answers,
+            hostname=review.get("title") or "",
+            selected_prompt_title=prompt_title,
+        )
+
+        raw = ""
+        try:
+            from tools.llm.router import LLMRouter
+
+            resp = LLMRouter().invoke("config_review", prompt)
+            raw = getattr(resp, "content", "") or ""
+        except Exception as exc:
+            # parse_review_response has a deterministic fallback, so an LLM
+            # outage degrades to a usable review instead of a 500.
+            logger.warning("config review: LLM unavailable (%s) — using fallback", exc)
+
+        result = parse_review_response(raw, vendor)
+        findings = _flatten_review_findings(result)
+        now = _now()
+
+        try:
+            conn.execute(
+                f"UPDATE nc_config_reviews SET status={_ph}, result_json={_ph}, "
+                f"answers_json={_ph}, updated_at={_ph} WHERE id={_ph}",
+                ("complete", json.dumps(result), json.dumps(answers), now, review_id),
+            )
+            conn.execute(
+                f"DELETE FROM nc_config_review_findings WHERE review_id={_ph}", (review_id,)
+            )
+            for f in findings:
+                conn.execute(
+                    "INSERT INTO nc_config_review_findings (id, review_id, category, severity, "
+                    f"title, detail, remediation, sample_config_snippet, references_json, created_at) "
+                    f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
+                    (
+                        str(_uuid.uuid4()), review_id, f.get("category", ""),
+                        f.get("severity", ""), f.get("title", ""), f.get("detail", ""),
+                        f.get("remediation", ""), f.get("sample_config_snippet", ""),
+                        json.dumps(f.get("references", [])), now,
+                    ),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+
+        _audit("ANALYZE", "config_review", review_id, f"{len(findings)} finding(s)")
+        return jsonify({"id": review_id, "status": "complete", "result": result,
+                        "findings": findings})
+
+    @bp.route("/api/config-review/<review_id>", methods=["GET"])
+    def nc_api_config_review_get(review_id):
+        """Persisted review + its findings."""
+        conn = get_connection()
+        _ph = sql_placeholder(conn)
+        try:
+            row = conn.execute(
+                f"SELECT * FROM nc_config_reviews WHERE id={_ph}", (review_id,)
+            ).fetchone()
+            if not row:
+                return jsonify({"error": "Review not found"}), 404
+            review = _row_to_dict(row)
+            review["result"] = _safe_json(review.get("result_json"), {})
+            review["answers"] = _safe_json(review.get("answers_json"), {})
+            findings = [
+                _row_to_dict(r) for r in conn.execute(
+                    f"SELECT * FROM nc_config_review_findings WHERE review_id={_ph} "
+                    "ORDER BY created_at",
+                    (review_id,),
+                ).fetchall()
+            ]
+        finally:
+            conn.close()
+        return jsonify({"review": review, "findings": findings})
+
+    @bp.route("/api/config-review/<review_id>/progress", methods=["GET"])
+    def nc_api_config_review_progress(review_id):
+        """Poll target for the page's progress bar during analyze."""
+        conn = get_connection()
+        _ph = sql_placeholder(conn)
+        try:
+            row = conn.execute(
+                f"SELECT status, updated_at FROM nc_config_reviews WHERE id={_ph}",
+                (review_id,),
+            ).fetchone()
+        finally:
+            conn.close()
+        if not row:
+            return jsonify({"error": "Review not found"}), 404
+        d = _row_to_dict(row)
+        return jsonify({"id": review_id, "status": d.get("status"),
+                        "updated_at": d.get("updated_at")})
+
+    @bp.route("/api/config-review/<review_id>/export-config", methods=["POST"])
+    def nc_api_config_review_export_config(review_id):
+        """Starter config built from the findings' remediation snippets."""
+        from tools.network.config_review import generate_export_config
+
+        review, findings = _load_config_review(review_id)
+        if review is None:
+            return jsonify({"error": "Review not found"}), 404
+        config = generate_export_config(review.get("vendor") or "unknown", findings)
+        return jsonify({"id": review_id, "config": config})
+
+    @bp.route("/api/config-review/<review_id>/export-topology", methods=["POST"])
+    def nc_api_config_review_export_topology(review_id):
+        """Topology graph synthesized from the findings."""
+        from tools.network.config_review import generate_export_topology
+
+        review, findings = _load_config_review(review_id)
+        if review is None:
+            return jsonify({"error": "Review not found"}), 404
+        graph = generate_export_topology(findings, review.get("vendor") or "unknown")
+        return jsonify({"id": review_id, "graph": graph})
+
+    @bp.route("/api/iqe-query", methods=["POST"])
+    def nc_api_iqe_query():
+        """Natural-language IQE over the Network Canvas collections."""
+        import importlib
+
+        data = request.get_json(force=True, silent=True) or {}
+        question = (data.get("question") or "").strip()
+        execute = data.get("execute", True)
+        if not question:
+            return jsonify({"error": "question is required"}), 400
+
+        try:
+            importlib.import_module("tools.iqe.adapters.ndc")
+        except Exception:
+            pass
+
+        try:
+            from tools.iqe.nl_to_iqe import nl_to_iqe
+
+            out = nl_to_iqe(question, collections=_NC_IQE_COLLECTIONS)
+            # nl_to_iqe returns {iqe, explanation}; tolerate a bare string too.
+            if isinstance(out, dict):
+                iqe_str, explanation = out.get("iqe", ""), out.get("explanation", "")
+            else:
+                iqe_str, explanation = str(out), ""
+
+            results: list = []
+            if execute and iqe_str:
+                from tools.iqe.executor import execute_query
+                from tools.iqe.parser import parse as _parse
+
+                results = execute_query(_parse(iqe_str))
+            return jsonify({"iqe": iqe_str, "explanation": explanation,
+                            "results": results, "row_count": len(results)})
+        except Exception as exc:
+            logger.warning("nc iqe-query failed: %s", exc)
+            return jsonify({"error": str(exc)}), 500
 
     # ── Diagram Analysis ──────────────────────────────────────────────────
     @bp.route("/diagram-analysis")
