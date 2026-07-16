@@ -15,6 +15,7 @@ FINDING_TYPES: list[str] = [
     "superseded_standard",   # NIST rev / RFC / STIG replaced by a successor
     "defacto_divergence",    # deployment reality disagrees with curated catalog
     "catalog_gap",           # heavily deployed item missing from curated catalog
+    "unverifiable_evidence", # document has no evidence anchors — currency uncheckable
 ]
 
 # Currency verdict for an extracted entity. Mirrors the CHECK constraint in
@@ -62,6 +63,7 @@ KG_ENTITY_TYPES: list[str] = [
     "software_product",
     "protocol",
     "crypto_algorithm",
+    "evidence_anchor",       # a citation link, not a thing named in the prose
 ]
 
 # Tables that must never be UPDATEd/DELETEd (registered in
