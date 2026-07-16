@@ -780,10 +780,15 @@ def _rows(sql: str, args: tuple = ()) -> list[dict[str, Any]]:
         conn.close()
 
 
+# These three carried bare `?` placeholders while the rest of this module uses
+# %s. They did not crash on PostgreSQL — translate_sql rewrote them — but that
+# made a runtime read path depend on the translator, which is an init-time
+# SQLite fallback and explicitly not load-bearing, and it logged a
+# "bare ? placeholder detected" warning on every call. Authored for PG directly.
 def list_drift_events(limit: int = 50) -> list[dict[str, Any]]:
     return _rows(
         "SELECT source, entity, severity, detected_at FROM dic_drift_events "
-        "ORDER BY detected_at DESC LIMIT ?",
+        "ORDER BY detected_at DESC LIMIT %s",
         (limit,),
     )
 
@@ -791,7 +796,7 @@ def list_drift_events(limit: int = 50) -> list[dict[str, Any]]:
 def list_regen_queue(limit: int = 50) -> list[dict[str, Any]]:
     return _rows(
         "SELECT item_id, document_id, impact_level, state, queued_at "
-        "FROM dic_acoic_regen_queue ORDER BY impact_score DESC, queued_at DESC LIMIT ?",
+        "FROM dic_acoic_regen_queue ORDER BY impact_score DESC, queued_at DESC LIMIT %s",
         (limit,),
     )
 
@@ -799,7 +804,7 @@ def list_regen_queue(limit: int = 50) -> list[dict[str, Any]]:
 def list_ssp_fragments(limit: int = 50) -> list[dict[str, Any]]:
     return _rows(
         "SELECT fragment_id, control_id, document_id, status, verified, ai_labeled "
-        "FROM dic_ssp_fragments ORDER BY created_at DESC LIMIT ?",
+        "FROM dic_ssp_fragments ORDER BY created_at DESC LIMIT %s",
         (limit,),
     )
 

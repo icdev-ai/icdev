@@ -128,6 +128,33 @@ class TestDriftReflexRegistered:
 
 # ── Drift producer honesty ───────────────────────────────────────────────────
 
+class TestDicIntegrationDispatch:
+    """The sibling reflex had the same fn(config, trust) mismatch."""
+
+    def test_run_signature_accepts_trust_positionally(self):
+        import inspect
+
+        from tools.genesis.reflexes import dic_integration as mod
+
+        params = list(inspect.signature(mod.run).parameters)
+        assert params[:2] == ["ctx", "trust"], (
+            "the daemon calls fn(config, trust); a positional `conn` here silently "
+            "turns every cycle into a swallowed error reporting events_found: 0"
+        )
+        assert inspect.signature(mod.run).parameters["conn"].kind is inspect.Parameter.KEYWORD_ONLY
+
+    def test_run_does_not_treat_trust_as_a_db_handle(self):
+        """A TrustKernel in position 2 must not be used as a connection."""
+        from tools.genesis.reflexes.dic_integration import run
+
+        class _Trust:  # no .execute / .cursor
+            name = "trust-kernel"
+
+        result = run({"dry_run": True}, _Trust())
+        assert result["status"] == "ok"
+        assert not result["errors"]
+
+
 class TestDriftProducer:
     def test_configs_are_keyed_by_device_not_filename(self):
         from tools.genesis.reflexes.ndc_topology_drift import _configs_by_device
@@ -197,6 +224,22 @@ class TestDedupKey:
         a = acoic.record_drift_event("network.acl_change", "fw-02", "low")
         b = acoic.record_drift_event("network.acl_change", "fw-02", "low")
         assert isinstance(a, str) and isinstance(b, str)
+
+    def test_acoic_list_fns_author_pg_placeholders_directly(self):
+        """Runtime reads must not lean on translate_sql to rewrite `?`.
+
+        These worked on PG (the translator rewrote them) but logged a
+        "bare ? placeholder detected" warning per call and made a runtime path
+        depend on an init-time SQLite fallback.
+        """
+        import inspect
+
+        from tools.document_intelligence import acoic
+
+        for fn in (acoic.list_drift_events, acoic.list_regen_queue, acoic.list_ssp_fragments):
+            src = inspect.getsource(fn)
+            assert "LIMIT ?" not in src, f"{fn.__name__} still uses a bare ? placeholder"
+            assert "LIMIT %s" in src
 
     def test_requeue_does_not_reset_human_advanced_state(self, acoic_conn_factory):
         """OR REPLACE would stomp an approved item back to 'queued'."""
