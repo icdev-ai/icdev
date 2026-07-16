@@ -16,6 +16,7 @@ FINDING_TYPES: list[str] = [
     "defacto_divergence",    # deployment reality disagrees with curated catalog
     "catalog_gap",           # heavily deployed item missing from curated catalog
     "unreflected_change",    # an approved change document supersedes this doc's claims
+    "unverifiable_evidence", # document has no evidence anchors — currency uncheckable
 ]
 
 # Currency verdict for an extracted entity. Mirrors the CHECK constraint in
@@ -64,6 +65,7 @@ KG_ENTITY_TYPES: list[str] = [
     "protocol",
     "crypto_algorithm",
     "system_reference",      # a system/CI a document makes claims about
+    "evidence_anchor",       # a citation link, not a thing named in the prose
 ]
 
 # Tables that must never be UPDATEd/DELETEd (registered in

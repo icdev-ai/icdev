@@ -51,7 +51,11 @@ _cache: dict[str, dict] = {}
 
 
 def load_rulebook(path: Path) -> list[dict]:
-    """Rules with compiled patterns, hot-reloaded on mtime change.
+    """Rules with compiled patterns, hot-reloaded when the file changes.
+
+    Cache key is (mtime, size), not mtime alone: mtime resolution is coarse on
+    some filesystems, so two edits landing in the same tick would serve stale
+    rules — and a stale rulebook silently changes what the pack reports.
 
     A bad regex is logged and skipped, never fatal: one malformed rule must not
     take down every other domain's sweep.
@@ -62,9 +66,10 @@ def load_rulebook(path: Path) -> list[dict]:
         logger.warning("docmod rulebook: %s does not exist — pack yields no rules", path)
         return []
     key = str(path)
-    mtime = path.stat().st_mtime
+    st = path.stat()
+    stamp = (st.st_mtime, st.st_size)
     hit = _cache.get(key)
-    if hit and hit["mtime"] == mtime:
+    if hit and hit["stamp"] == stamp:
         return hit["rules"]
 
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
@@ -74,7 +79,7 @@ def load_rulebook(path: Path) -> list[dict]:
             rules.append({**r, "compiled": re.compile(r["pattern"])})
         except (KeyError, TypeError, re.error) as exc:
             logger.warning("docmod rulebook %s: bad rule %s: %s", path.name, (r or {}).get("id"), exc)
-    _cache[key] = {"mtime": mtime, "rules": rules}
+    _cache[key] = {"stamp": stamp, "rules": rules}
     return rules
 
 

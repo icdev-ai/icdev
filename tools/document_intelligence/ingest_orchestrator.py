@@ -203,6 +203,12 @@ _SCHEMA = [
         chunk_index     INTEGER NOT NULL,
         page            INTEGER,
         section         TEXT,
+        -- The cited chunk's content hash AT LINK TIME. This is the evidence
+        -- baseline: if rag_chunks.content_hash later differs, the source this
+        -- document was built from has changed underneath it (see
+        -- packs/evidence_currency.py). Without it there is no baseline and
+        -- evidence drift is undetectable. Migration 267 adds it to existing DBs.
+        chunk_hash      TEXT,
         created_at      TEXT NOT NULL,
         tenant_id       TEXT,
         classification  TEXT
@@ -1809,16 +1815,23 @@ def ingest_file(
             page = md.get("page")
             section = md.get("section") or md.get("heading")
             link_id = f"{version_id}_link_{i}"
+            # Capture the cited chunk's hash AT LINK TIME — the evidence baseline
+            # this document was built from. A later divergence from
+            # rag_chunks.content_hash means the source changed underneath the
+            # document (packs/evidence_currency.py). content_hash is
+            # collection-scoped above, matching the resolved rag_chunks row.
+            chunk_hash = getattr(chunk, "content_hash", None)
             cur.execute(
                 """
                 INSERT OR REPLACE INTO dic_chunk_links
                     (link_id, doc_id, version_id, rag_chunk_id, collection_id,
-                     chunk_index, page, section, created_at, tenant_id, classification)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                     chunk_index, page, section, chunk_hash, created_at,
+                     tenant_id, classification)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     link_id, doc_id, version_id, rag_chunk_id, collection_id,
-                    chunk_index, page, section, now, tid, cls,
+                    chunk_index, page, section, chunk_hash, now, tid, cls,
                 ),
             )
         conn.commit()

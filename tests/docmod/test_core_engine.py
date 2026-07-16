@@ -168,7 +168,7 @@ def test_load_packs_loads_all_enabled_packs():
     packs = load_packs(force=True)
     assert set(packs) == {
         "crypto_protocols", "network_hardware", "software", "policy_refs",
-        "change_control",
+        "change_control", "evidence_currency",
     }
 
 
