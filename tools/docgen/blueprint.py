@@ -45,17 +45,17 @@ docgen_bp = Blueprint(
 
 # ─── Page routes ─────────────────────────────────────────────────────────────
 
-@docgen_bp.route("/")
-def index():
+def _sessions_with_freshness(limit: int = 20) -> list:
+    """List sessions annotated with freshness_stale for the UI badge.
+
+    Shared by ``/`` and ``/new`` so both render the same session list.
+    Only checks published sessions with a stored source hash (avoids DB churn
+    for drafts).
+    """
     from tools.docgen import session_manager as sm
-    from tools.docgen.domain_profiles import list_profiles
     from tools.docgen.workflow import check_freshness
 
-    sessions = sm.list_sessions(limit=20)
-    profiles = list_profiles()
-
-    # Annotate sessions with freshness_stale for UI badge.
-    # Only checks published sessions with a stored source hash (avoids DB churn for drafts).
+    sessions = sm.list_sessions(limit=limit)
     for s in sessions:
         if s.get("last_source_hash") and s.get("status") in ("published", "reviewing"):
             uploads = sm.list_uploads(s["id"])
@@ -64,6 +64,15 @@ def index():
             s["freshness_stale"] = fresh["stale"]
         else:
             s["freshness_stale"] = False
+    return sessions
+
+
+@docgen_bp.route("/")
+def index():
+    from tools.docgen.domain_profiles import list_profiles
+
+    sessions = _sessions_with_freshness()
+    profiles = list_profiles()
 
     return render_template(
         "docgen/index.html",
@@ -118,11 +127,18 @@ def new_session_page():
     return render_template(
         "docgen/index.html",
         session=None,
-        sessions=[],
+        # Show the real session list — /new is the same page with the wizard
+        # open, not an empty board. Previously hardcoded [], which made the
+        # page claim "No regeneration sessions yet" even when sessions existed.
+        sessions=_sessions_with_freshness(),
         profiles=profiles,
         preselect_domain=domain,
         from_topo=from_topo,
         source_doc=source_doc,
+        # Auto-open the wizard: /new is advertised as the "DocGen Wizard"
+        # entry point, so arriving here must show the form, not hide it
+        # behind a button.
+        open_wizard=True,
         page_title="New Doc Regeneration",
     )
 
