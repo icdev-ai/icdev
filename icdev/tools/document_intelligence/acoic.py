@@ -339,10 +339,16 @@ def _set_queue_state(item_id: str, state: str, *, fragment_id: str | None = None
 def handle_drift(event: dict, ctx: Any = None) -> dict[str, Any]:
     """Reflex / subscription handler for a canvas drift event.
 
-    Wire this to ``subscribe('dic', 'ndc.topology.drift_detected', handle_drift)``
-    once the DIC event bus is live. ``event`` is expected to carry at least a
-    ``source`` and ``severity``; ``document_id`` and ``control_ids`` are
-    optional and drive enqueue + control re-map respectively.
+    Called directly by producers (the docmod drift bridge, the IDC feed, the CLI).
+    ``event`` is expected to carry at least a ``source`` and ``severity``;
+    ``document_id`` and ``control_ids`` are optional and drive enqueue + control
+    re-map respectively.
+
+    ``dedup_key`` is optional but REQUIRED for any producer on a schedule: without
+    it the event id hashes ``detected_at``, so every sweep re-inserts the same
+    unchanged drift. Pass a stable content key (the docmod bridge uses the
+    finding_id, which is stable per finding and changes when the finding is
+    superseded).
 
     End-to-end: record event -> enqueue impacted doc -> re-map affected NIST
     controls. SSP-fragment drafting is a separate, explicitly-invoked step
@@ -354,9 +360,10 @@ def handle_drift(event: dict, ctx: Any = None) -> dict[str, Any]:
     severity = event.get("severity", "medium")
     tenant_id = event.get("tenant_id")
     classification = event.get("classification")
+    dedup_key = event.get("dedup_key")
 
     event_id = record_drift_event(
-        source, entity, severity, payload=event,
+        source, entity, severity, payload=event, dedup_key=dedup_key,
         tenant_id=tenant_id, classification=classification,
     )
 
@@ -368,6 +375,7 @@ def handle_drift(event: dict, ctx: Any = None) -> dict[str, Any]:
             enqueue_regen(
                 document_id, event_id=event_id, drift_source=source,
                 drift_entity=entity, severity=severity,
+                dedup_key=f"{dedup_key}|{document_id}" if dedup_key else None,
                 tenant_id=tenant_id, classification=classification,
             )
         )
