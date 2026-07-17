@@ -12,14 +12,32 @@ are the ones the system chose to show. Random sampling is the only thing that
 forces a look at what nothing else will ever surface.
 
 **Why it samples below the gate too.** Every oracle_prediction on the live system
-is >= 0.7, because promotion_threshold filters before the row is written (173 at
-1.0, 163 at 0.9, 43 at 0.8, 41 at 0.7 — nothing lower). Measuring only what
-passed the gate can confirm the gate but can never test it: you would learn the
-precision of what was let through and nothing about what was thrown away. A
-threshold is a claim about BOTH sides.
+is >= 0.7, and it is worth being precise about why, because the obvious
+explanation is wrong. The promotion gate does NOT truncate the table: the write
+in gap_detector._write_gap_prediction is unconditional, and the confidence filter
+lives at READ time in suggested_card_writer._load_pending_predictions. Rejections
+would be persisted.
 
-**Why stratified.** A flat random draw returns mostly 1.0 rows (173 of 420) and
-starves the bands that need estimating. Each band is its own question.
+The real reason there is nothing below 0.7 is that no enabled rule ever claims
+less. `confidence` is not computed per prediction — it is a per-rule constant
+copied out of awareness_config.yaml (`float(rule_config["confidence"])`). Every
+enabled rule is hand-assigned 0.70..0.95; the one rule below the gate
+(stale_code, 0.50) is `enabled: false`. Hence 423 predictions carry exactly 7
+distinct confidence values.
+
+So sampling below the gate costs nothing and stays honest: if a sub-threshold
+rule is ever enabled, its rows are already in the table and this reflex will find
+them. Today it draws zero there, and that zero is the finding.
+
+**Why stratified.** A flat random draw is dominated by whichever rule fired most
+(165 of 423 rows are tool_not_in_manifest alone) and starves the rest.
+
+**Read the bands as rules, not as confidence levels.** Because confidence is a
+per-rule constant, a band is mostly a single rule wearing a number: the 0.7 band
+is 41/41 route_no_e2e, the 0.9 band is 54/55 broken_test_reference. "The 0.9 band
+is right a third of the time" is therefore a claim about one RULE, not about
+high confidence in general. `decision` records the prediction_type so the
+per-rule cut is recoverable — that is the cut that can actually be acted on.
 
 This reflex writes measurement rows only. It never promotes, resolves, or
 modifies the thing it samples — an audit that changes its subject is not an

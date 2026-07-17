@@ -8,8 +8,14 @@ look.
 
 Measured on the live corpus before this existed: oracle_predictions joined to
 kanban_verifications gave claimed 1.0 -> observed 0.89 and claimed 0.9 ->
-observed 0.33, off 19 and 3 labels. Nobody had run that join, and no band below
-0.7 exists to compare against because the gate filters before the row is written.
+observed 0.33, off 19 and 3 labels. Nobody had run that join.
+
+No band below 0.7 exists to compare against — but NOT because the gate truncates
+the table (the write is unconditional; the filter is at read time). It is because
+`confidence` is a per-rule constant from awareness_config.yaml and every enabled
+rule is hand-assigned 0.70..0.95. 423 live predictions carry 7 distinct values.
+That makes a band mostly a single rule wearing a number, which is what
+test_a_band_is_mostly_one_rule pins down.
 """
 
 import importlib
@@ -74,10 +80,10 @@ class TestStratification:
         assert sum(1 for d in drawn if d["band"] == 0.9) == 1
 
     def test_samples_below_the_gate(self):
-        """The point: every live oracle_prediction is >=0.7 because the gate
-        filters first. Measuring only what passed can confirm the threshold but
-        never test it — you learn the precision of what got through and nothing
-        about what was thrown away."""
+        """Every live oracle_prediction is >=0.7 — because no enabled rule claims
+        less, not because the gate truncates the table. If a sub-threshold rule is
+        ever enabled (stale_code, 0.50, is merely `enabled: false`), its rows are
+        already written and must be auditable the moment they appear."""
         cands = [_cand(1, 0.55), _cand(2, 0.65)] + [_cand(3 + i, 0.9) for i in range(5)]
         drawn = cs.draw_sample(cands, set(), BANDS, per_band=2, width=0.1,
                                rng=random.Random(1))
@@ -88,6 +94,44 @@ class TestStratification:
         drawn = cs.draw_sample([_cand(1, 0.1)], set(), BANDS, per_band=3, width=0.1,
                                rng=random.Random(1))
         assert drawn == []
+
+
+class TestABandIsMostlyOneRule:
+    """The thing that makes 'calibration by band' misleading here.
+
+    `confidence` is never computed per prediction. gap_detector writes
+    `float(rule_config["confidence"])` — a constant copied out of
+    awareness_config.yaml. So the number identifies the RULE, not this
+    prediction's likelihood of being right, and 423 live predictions carry 7
+    distinct values:
+
+        0.95  tool_not_in_manifest   165      0.85  orphan_db_table   82
+        0.90  broken_test_reference   54      0.70  route_no_e2e      41
+
+    Read that way, "the 0.9 band is right a third of the time" is a claim about
+    broken_test_reference (54 of the 55 rows in that band) and not about high
+    confidence at all. The per-rule cut is the one a human can act on, so the
+    rule must survive into the recorded row.
+    """
+
+    def test_every_enabled_rule_claims_at_least_the_gate(self):
+        """Not a style check — this is *why* the sub-threshold bands are empty.
+        If it ever fails, the sampler starts drawing there and the explanation in
+        the module docstring is out of date."""
+        cfg = yaml.safe_load((REPO_ROOT / "args" / "awareness_config.yaml").read_text(encoding="utf-8"))
+        gate = float(cfg["oracle"]["promotion_threshold"])
+        rules = cfg["gaps"]
+        below = {k: v["confidence"] for k, v in rules.items()
+                 if v.get("enabled") and float(v.get("confidence", 1.0)) < gate}
+        assert below == {}, f"an enabled rule now claims less than the gate: {below}"
+
+    def test_the_rule_survives_into_the_recorded_row(self):
+        """decision carries prediction_type, so calibration can be cut per rule
+        rather than per band. Lose it and every band collapses into an average
+        over rules that have nothing to do with each other."""
+        drawn = cs.draw_sample([_cand(1, 0.9)], set(), BANDS, per_band=1, width=0.1,
+                               rng=random.Random(1))
+        assert drawn[0]["prediction_type"] == "risk"
 
 
 class TestNeverRedraws:
