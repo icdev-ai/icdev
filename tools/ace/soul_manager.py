@@ -10,6 +10,7 @@ so the module is safe to import before the dashboard has finished startup.
 """
 from __future__ import annotations
 
+import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,6 +22,19 @@ logger = get_logger(__name__)
 
 # Maximum facts retained per role before old entries are pruned.
 MAX_MEMORY_FACTS = 1000
+
+
+def _roles_dir() -> Path:
+    """ACE roles base directory.
+
+    Honors ``ICDEV_ACE_ROLES_DIR`` so tests can redirect any on-disk persona
+    artifact (SOUL.md, etc.) into a tmp dir instead of accumulating debris in
+    the committed tree. Defaults to the package-local ``roles/`` directory.
+    """
+    override = os.environ.get("ICDEV_ACE_ROLES_DIR")
+    if override:
+        return Path(override)
+    return Path(__file__).resolve().parent / "roles"
 
 # Patterns that are too routine to be worth a warning fact.
 _TRIVIAL_PATTERNS: frozenset[str] = frozenset({"success_first_try"})
@@ -51,7 +65,7 @@ def _ensure_tables(conn) -> None:
 
 def _soul_path(role: str) -> Path:
     """Resolve the role's SOUL.md identity file inside the ACE roles directory."""
-    return Path(__file__).resolve().parent / "roles" / role / "SOUL.md"
+    return _roles_dir() / role / "SOUL.md"
 
 
 def _prune_old_facts(conn, role: str) -> None:
