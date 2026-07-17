@@ -39,6 +39,11 @@ from tools.knowledge_graph.text_network import (
     _extract_entities,
     _extract_relationships,
 )
+from tools.knowledge_graph.llm_relationship_extractor import (
+    extract_graph_llm as _llm_graph,
+    extract_relationships_llm as _llm_relationships,
+    is_valid_relationship as _valid_relationship,
+)
 
 # ---------------------------------------------------------------------------
 # Config
@@ -433,10 +438,30 @@ def _ingest_chunk(conn, chunk: dict, use_llm: bool) -> dict:
     if existing_ids:
         _delete_stale_nodes(conn, [str(nid) for nid in existing_ids])
 
-    # Entity extraction — passthrough: content always read from rag_chunks.content
+    # Entity + relationship extraction — passthrough: content from rag_chunks.content
+    rel_evidence: dict[tuple[str, str, str], str] = {}
     if use_llm:
         entities = _extract_entities(content)
-        relationships = _extract_relationships(content, entities)
+        if len(entities) >= 2:
+            # Regex found entities (compliance-flavoured chunks) — infer edges
+            # among them with the LLM, falling back to the verb-map heuristic.
+            llm_rels = _llm_relationships(content, entities)
+            if llm_rels:
+                relationships = [(s, t, r) for (s, t, r, _ev) in llm_rels]
+                rel_evidence = {(s, t, r): ev for (s, t, r, ev) in llm_rels}
+            else:
+                relationships = _extract_relationships(content, entities)
+        else:
+            # Regex found ~nothing — 87% of the live corpus. Extract the whole
+            # graph (entities + relationships) with the LLM so prose/transcript
+            # chunks contribute nodes at all, not just compliance IDs.
+            llm_entities, llm_rels = _llm_graph(content)
+            if llm_entities:
+                entities = llm_entities
+                relationships = [(s, t, r) for (s, t, r, _ev) in llm_rels]
+                rel_evidence = {(s, t, r): ev for (s, t, r, ev) in llm_rels}
+            else:
+                relationships = []
     else:
         entities = _extract_no_llm(content)
         relationships = []
@@ -486,12 +511,22 @@ def _ingest_chunk(conn, chunk: dict, use_llm: bool) -> dict:
         tgt_id = label_to_id.get(tgt_label)
         if not src_id or not tgt_id:
             continue
+        # Guard: keep garbage out of kg_edges.relationship. Every polluted value
+        # seen live ("KG context", "batch 15min", "train/infer") contains a
+        # space/digit/slash and fails this; real types (co_occurs_with, IMPLEMENTS)
+        # pass. Applies to the heuristic path too, at the single write point.
+        if not _valid_relationship(rel_type):
+            continue
+        edge_props = "{}"
+        ev = rel_evidence.get((src_label, tgt_label, rel_type))
+        if ev:
+            edge_props = json.dumps({"evidence": ev, "source": "llm_kg_extractor"})
         edge_id = _kg_id()
         conn.execute(
             f"INSERT INTO kg_edges "  # nosec B608 — only ph placeholders; all values bound
             f"(id, graph_id, source_id, target_id, relationship, weight, properties, created_at) "
             f"VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})",
-            (edge_id, graph_id, src_id, tgt_id, rel_type, 1.0, "{}", now),
+            (edge_id, graph_id, src_id, tgt_id, rel_type, 1.0, edge_props, now),
         )
         edges_written += 1
 
