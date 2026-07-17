@@ -12005,3 +12005,41 @@ projects:
   - key: vfy
     title: Prove it on a real task
     priority: high
+- key: pgrt
+  name: PG-Primary Runtime Migration
+  description: 'Migrate SQLite-authored runtime modules to PostgreSQL-primary; SQLite retained only as a guarded fallback. Audit-driven and manual-gated. See docs/migration/pg-primary-runtime-audit.md.'
+  task_prefix: pgrt-
+  default_open: true
+  briefs:
+  - 'gate: manual gate held in_progress — PG migrations are false-positive heavy and need per-file verification (pgrt-gate-00)'
+  epics:
+  - key: gate
+    title: Manual gate
+    priority: high
+  - key: json
+    title: JSON fallbacks already compliant (PR 328)
+    priority: medium
+  - key: ndc
+    title: NDC cluster to PG-primary
+    priority: high
+  - key: mon
+    title: Monitor dashboard iqe Class-A
+    priority: high
+  - key: sdc
+    title: SDC network Class-A
+    priority: high
+  - key: verify-fp
+    title: Confirm false-positives keep SQLite
+    priority: medium
+  - key: govlift
+    title: govlift fallback-only verify
+    priority: high
+  - key: mem
+    title: memory fallback-only verify
+    priority: high
+  - key: strat
+    title: strategos trading conflict-mesh verify
+    priority: high
+  - key: sweep
+    title: PRAGMA sqlite_master cleanup sweep
+    priority: medium
