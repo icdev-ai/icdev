@@ -2177,6 +2177,17 @@ CREATE TABLE IF NOT EXISTS cortex_search_history (
     tenant_id       TEXT DEFAULT 'default',
     created_at      TEXT DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS ace_step_audit_log (
+    id          TEXT    PRIMARY KEY,
+    step_id     TEXT    NOT NULL,
+    tool        TEXT    NOT NULL,
+    trust_tier  TEXT    NOT NULL,
+    success     INTEGER NOT NULL,
+    skipped     INTEGER NOT NULL DEFAULT 0,
+    error       TEXT,
+    duration_ms REAL,
+    created_at  TEXT    NOT NULL
+);
 """
 
 

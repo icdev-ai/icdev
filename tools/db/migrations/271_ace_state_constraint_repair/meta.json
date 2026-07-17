@@ -1,0 +1,11 @@
+{
+  "id": "271_ace_state_constraint_repair",
+  "name": "ace_state_constraint_repair",
+  "description": "Repair drifted ace_instances_state_check / ace_coworkers_state_check to match the Python state constants (INSTANCE_STATES / COWORKER_STATES) so state transitions stop raising CheckViolation, and finalize zombie instances (non-terminal >24h) to 'failed'. PostgreSQL only; idempotent.",
+  "created": "2026-07-17",
+  "author": "icdev-builder",
+  "targets": ["icdev.db"],
+  "reversible": false,
+  "requires_downtime": false,
+  "adrs": []
+}

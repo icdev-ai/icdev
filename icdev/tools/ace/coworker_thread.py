@@ -932,7 +932,7 @@ class CoWorkerThread(threading.Thread):
             finally:
                 conn.close()
         except Exception as db_exc:
-            logger.debug("_set_state(%s) failed: %s", state, db_exc)
+            logger.warning("_set_state(%s) failed: %s", state, db_exc)
 
     def _set_assigned_step(self, step_id: str) -> None:
         """Update ace_coworkers.assigned_step (best-effort)."""
@@ -948,8 +948,8 @@ class CoWorkerThread(threading.Thread):
                 conn.commit()
             finally:
                 conn.close()
-        except Exception:
-            pass
+        except Exception as step_exc:
+            logger.warning("_set_assigned_step(%s) failed: %s", step_id, step_exc)
 
     def _audit(self, action: str, detail: str = "") -> None:
         """Append one row to ace_audit_log (best-effort, never crashes)."""
@@ -970,7 +970,7 @@ class CoWorkerThread(threading.Thread):
             finally:
                 conn.close()
         except Exception as _exc:
-            logger.debug("ace audit write failed for %s/%s: %s", self.instance_id, action, _exc)
+            logger.warning("ace audit write failed for %s/%s: %s", self.instance_id, action, _exc)
 
     # ------------------------------------------------------------------
     # Chat feedback loop — write completion summary back to originating chat context
