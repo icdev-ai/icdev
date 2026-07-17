@@ -45,6 +45,7 @@ REGISTRY: List[ReflexEntry] = [
     ReflexEntry("canvas_indexer",    CORE,      3.0,  "Re-index canvas components into awareness graph"),
     ReflexEntry("self_monitor",      CORE,      0.5,  "Project internal health snapshots into operator alerts + failure_log (/monitoring)"),
     ReflexEntry("integrity_monitor", CORE,      6.0,  "SIPA self-assessment of ICDEV tools/ — open a card per NEW unauthorized capability vs baseline"),
+    ReflexEntry("harness",           CORE,      6.0,  "Eval-harness metrics/degradation sweep — check_gates() → degradation cards; co-learning ECHO artifacts when ICDEV_HARNESS_COLEARN enabled"),
 
     # ── STRATEGOS ─────────────────────────────────────────────────────────────
     ReflexEntry("strategos.osint_harvester", STRATEGOS, 4.0,
