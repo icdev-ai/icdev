@@ -1884,18 +1884,20 @@ def _is_global_query(query: str) -> bool:
     return any(kw in q for kw in _GLOBAL_QUERY_KEYWORDS)
 
 
-def _community_context(message: str, tenant_id: str, limit: int = 5) -> list[str]:
+def _community_context(message: str, tenant_id: str, limit: int = 5, collection_id: str | None = None) -> list[str]:
     """GraphRAG community summaries relevant to a global/thematic question.
 
-    Returns the summary texts (whole-corpus themes) or [] if the engine/table is
-    empty or unavailable — always graceful, never blocks the grounded answer.
+    Scoped to the active collection when one is given, so "the main themes" means
+    the collection the user is in. Returns summary texts (whole-corpus themes) or
+    [] if the engine/table is empty or unavailable — always graceful, never
+    blocks the grounded answer.
     """
     try:
         from tools.knowledge_graph.community_engine import search_communities
 
         conn = _conn()
         try:
-            rows = search_communities(conn, message, tenant_id=tenant_id, limit=limit)
+            rows = search_communities(conn, message, tenant_id=tenant_id, limit=limit, collection_id=collection_id)
         finally:
             conn.close()
         return [r["summary_text"] for r in rows if r.get("summary_text")]
@@ -2119,7 +2121,7 @@ def api_chat():
         if _needs_synthesis(message):
             # Global/thematic questions get the GraphRAG community summaries fed in
             # — the corpus-level answer no single chunk contains.
-            community_summaries = _community_context(message, tenant_id) if _is_global_query(message) else []
+            community_summaries = _community_context(message, tenant_id, collection_id=collection_id) if _is_global_query(message) else []
             llm_answer = _llm_synthesize(message, scored_results, community_summaries=community_summaries)
             if llm_answer:
                 # Verify LLM answer against evidence before returning. Community
