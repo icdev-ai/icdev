@@ -935,6 +935,22 @@ reflexes:
       threshold: 0
       operator: gte         # 0 new capabilities = clean; >0 surfaces real drift (always succeeds)
 
+  # ── Harness (eval-harness metrics/degradation sweep + co-learning) ──────────
+
+  harness:
+    timeout_seconds: 300     # check_gates + 30d metric windows + optional LLM co-learning/meta passes
+    enabled: true
+    risk_tier: green
+    schedule: "every 6h"
+    interval_seconds: 21600  # 6 hours — evaluation gates change slowly
+    cooldown_minutes: 120
+    description: "Eval-harness metrics/degradation sweep — check_gates() over 30-day windows opens a Kanban degradation card per metric below threshold (deduped); when ICDEV_HARNESS_COLEARN is enabled, runs NOVA ECHO batch reflexion + heuristic co-learning + daily meta-harness review to propose amendments"
+    dry_run: false           # when true, computes gates without creating cards / proposals
+    success_metric:
+      name: harness_degradation_cards
+      threshold: 0
+      operator: gte          # 0 new cards = all gates healthy; >0 surfaces real degradation (always succeeds)
+
   # ── Skill Security Monitor (SkillSpector scan of ICDEV skills) ────────────────
 
   skill_security_monitor:

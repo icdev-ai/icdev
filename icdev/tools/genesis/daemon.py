@@ -112,6 +112,7 @@ REFLEX_NAMES = [
     "slides",
     "aidp_monitor",
     "integrity_monitor",
+    "harness",             # hcx-rt-01: 6h eval-harness metrics/degradation sweep + co-learning when ICDEV_HARNESS_COLEARN
     "foundry_cycle",
     "ace_team_monitor",
     "ace_skill_promoter",
