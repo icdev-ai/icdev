@@ -43,32 +43,61 @@ logger = get_logger("icdev.dashboard.findings")
 # at the end of each request (or register it once for app shutdown).
 # check_same_thread=False is safe here because we never write to these DBs.
 # ---------------------------------------------------------------------------
-_conn_cache: dict[str, sqlite3.Connection] = {}
+_conn_cache: dict[str, Any] = {}
 
 
-def _get_canvas_conn(path: Path) -> sqlite3.Connection | None:
-    """Return a cached SQLite connection for *path*, creating one if needed.
+def _get_canvas_conn(path: Path):
+    """Return a cached read connection for a canvas's findings tables.
 
-    Returns None if the file does not exist (canvas not yet initialised).
-    Reconnects automatically if the cached connection has been closed.
+    PG-primary: on PostgreSQL the per-canvas assessment tables (``sc_assessments``,
+    ``idc_assessments``, …) live in the SHARED icdev database, so we hand back a
+    single RLS-disabled ``StorageConnection`` to it and let the table name select
+    the canvas — the per-canvas ``.db`` filename is irrelevant. On SQLite (backup)
+    each canvas is a separate ``.db`` sidecar opened by *path*; the raw connection
+    is wrapped in ``StorageConnection`` so the read queries' ``%s`` placeholders
+    translate to ``?``.
+
+    Returns None only in SQLite mode when the canvas ``.db`` does not exist yet.
+    Reconnects automatically if a cached connection has gone stale.
     """
-    key = str(path)
-    conn = _conn_cache.get(key)
-    if conn is not None:
-        # Verify the connection is still alive with a lightweight probe.
+    from tools.db.storage import (
+        StorageConnection,
+        get_canvas_connection,
+        resolve_canvas_backend,
+    )
+
+    def _alive(conn) -> bool:
         try:
             conn.execute("SELECT 1")
+            return True
+        except Exception:
+            return False
+
+    if resolve_canvas_backend() == "postgresql":
+        # All canvas tables share one PG database; one connection serves them all.
+        key = "__pg_shared__"
+        conn = _conn_cache.get(key)
+        if conn is not None and _alive(conn):
             return conn
-        except sqlite3.Error:
-            # Connection is stale — fall through to re-open.
-            _conn_cache.pop(key, None)
+        _conn_cache.pop(key, None)
+        # RLS-disabled: canvas tables lack tenant_id/classification columns.
+        conn = get_canvas_connection()
+        _conn_cache[key] = conn
+        return conn
+
+    # SQLite fallback: per-canvas .db sidecar file.
+    key = str(path)
+    conn = _conn_cache.get(key)
+    if conn is not None and _alive(conn):
+        return conn
+    _conn_cache.pop(key, None)
     if not path.exists():
         return None
     try:
-        # Canvas DBs are per-canvas SQLite files — bypass the storage
-        # abstraction which may route to PostgreSQL (incompatible dialect).
-        conn = sqlite3.connect(str(path))
-        conn.row_factory = sqlite3.Row
+        raw = sqlite3.connect(str(path))  # pg-ok: per-canvas SQLite sidecar (SQLite-mode fallback)
+        raw.row_factory = sqlite3.Row
+        # Wrap so the read queries' %s placeholders translate to ? on SQLite.
+        conn = StorageConnection(raw, "sqlite")
         _conn_cache[key] = conn
         return conn
     except sqlite3.Error as exc:
