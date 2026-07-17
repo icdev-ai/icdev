@@ -66,7 +66,7 @@ def _open_connection(conn_params: dict):
     # SQLite (default)
     import sqlite3
     path = conn_params.get("path") or conn_params.get("database") or ":memory:"
-    conn = sqlite3.connect(str(path), timeout=10)
+    conn = sqlite3.connect(str(path), timeout=10)  # pg-ok: profiles user-provided SQLite data sources, not ICDEV storage
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA query_only=ON")
     return conn, "sqlite"
