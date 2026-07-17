@@ -72,11 +72,21 @@ CREATE TABLE IF NOT EXISTS kg_ontology (
 
 @pytest.fixture
 def kg_db():
-    """Create an in-memory SQLite DB with KG schema."""
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
-    conn.executescript(KG_SCHEMA)
-    return conn
+    """Create an in-memory SQLite DB with KG schema, wrapped like production.
+
+    Returns the same ``StorageConnection`` wrapper that production ``_get_db()``
+    returns, so runtime psycopg2-native ``%s`` placeholders are translated to
+    ``?`` for the SQLite backend. A raw ``sqlite3`` connection rejects the KG
+    modules' ``%s`` SQL with "near \"%\": syntax error", which previously made
+    these tests pass or fail by accident depending on which placeholder style a
+    given query happened to use.
+    """
+    from tools.db.storage import StorageConnection
+
+    raw = sqlite3.connect(":memory:")
+    raw.row_factory = sqlite3.Row
+    raw.executescript(KG_SCHEMA)
+    return StorageConnection(raw, "sqlite")
 
 
 def _populate_graph(conn, graph_id="kg-test001", project_id="test-proj"):
@@ -647,8 +657,13 @@ class TestGraphHopReRankSimulatedDBMove:
 
         from tools.knowledge_graph.graph_rag import expand_bm25_top_k
 
-        # Real in-memory DB so the graph-scope query succeeds
-        real_conn = sqlite3.connect(":memory:")
+        # Real in-memory DB wrapped like production, so the graph-scope query
+        # (SELECT ... WHERE id = %s) translates %s -> ? and succeeds; the
+        # simulated move must fire on the *edge* query, not on a placeholder
+        # syntax error in the scope query.
+        from tools.db.storage import StorageConnection
+
+        real_conn = StorageConnection(sqlite3.connect(":memory:"), "sqlite")
         real_conn.row_factory = sqlite3.Row
         real_conn.executescript(KG_SCHEMA)
         real_conn.execute(
@@ -671,10 +686,20 @@ class TestGraphHopReRankSimulatedDBMove:
             def close(self):
                 real_conn.close()
 
-        with patch("tools.knowledge_graph.graph_rag._get_db", return_value=_DBMovedWrapper()):
-            with patch("tools.knowledge_graph.graph_rag._ensure_tables"):
-                with caplog.at_level(logging.ERROR, logger="icdev.knowledge_graph.graph_rag"):
-                    result = expand_bm25_top_k(["n1", "n2"], graph_id="g1")
+        # icdev_logger deliberately sets propagate=False on its loggers (avoids
+        # double-logging in production), so caplog — whose handler lives on the
+        # root logger — cannot see the module's error record. Force propagation
+        # for the duration so the "backlog signal" log is observable, then restore.
+        kg_logger = logging.getLogger("icdev.knowledge_graph.graph_rag")
+        _prev_propagate = kg_logger.propagate
+        kg_logger.propagate = True
+        try:
+            with patch("tools.knowledge_graph.graph_rag._get_db", return_value=_DBMovedWrapper()):
+                with patch("tools.knowledge_graph.graph_rag._ensure_tables"):
+                    with caplog.at_level(logging.ERROR, logger="icdev.knowledge_graph.graph_rag"):
+                        result = expand_bm25_top_k(["n1", "n2"], graph_id="g1")
+        finally:
+            kg_logger.propagate = _prev_propagate
 
         # Fallback: structured error dict returned instead of raising to caller
         assert result["status"] == "error"
