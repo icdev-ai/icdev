@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import sqlite3
 import sys
 from pathlib import Path
 
@@ -27,10 +26,12 @@ _DEFAULTS = {
 }
 
 
-def _canvas_conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(str(_CANVAS_DB))
-    conn.row_factory = sqlite3.Row
-    return conn
+def _canvas_conn():
+    # PG-primary via the Security Canvas helper (SC_STORAGE_BACKEND); SQLite is a
+    # guarded fallback. Returns a StorageConnection so %s placeholders translate.
+    from tools.security_canvas.db.init_db import get_connection
+
+    return get_connection()
 
 
 def compute_roi(design_id: str, hourly_rate: float = 150.0) -> dict:
