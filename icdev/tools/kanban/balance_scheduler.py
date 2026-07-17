@@ -41,25 +41,25 @@ def _utcnow_iso() -> str:
 def _deps_satisfied(task_id: str, conn) -> bool:
     """Return True only when ALL scalar + junction deps are done/decomposed."""
     row = conn.execute(
-        "SELECT depends_on_task_id FROM kanban_tasks WHERE id = ?", (task_id,)
+        "SELECT depends_on_task_id FROM kanban_tasks WHERE id = %s", (task_id,)
     ).fetchone()
     if row:
         scalar_dep = dict(row).get("depends_on_task_id")
         if scalar_dep:
             dep_row = conn.execute(
-                "SELECT status FROM kanban_tasks WHERE id = ?", (scalar_dep,)
+                "SELECT status FROM kanban_tasks WHERE id = %s", (scalar_dep,)
             ).fetchone()
             if not dep_row or dict(dep_row)["status"] not in ("done", "decomposed"):
                 return False
 
     jdeps = conn.execute(
-        "SELECT depends_on_id FROM kanban_task_deps WHERE task_id = ?",
+        "SELECT depends_on_id FROM kanban_task_deps WHERE task_id = %s",
         (task_id,),
     ).fetchall()
     for r in jdeps:
         dep_id = dict(r)["depends_on_id"]
         dep_row = conn.execute(
-            "SELECT status FROM kanban_tasks WHERE id = ?", (dep_id,)
+            "SELECT status FROM kanban_tasks WHERE id = %s", (dep_id,)
         ).fetchone()
         if not dep_row or dict(dep_row)["status"] not in ("done", "decomposed"):
             return False
@@ -134,7 +134,7 @@ def balance(
                     if not dry_run:
                         conn.execute(
                             "UPDATE kanban_tasks SET status = 'backlog', "
-                            "scheduled_at = NULL, updated_at = ? WHERE id = ?",
+                            "scheduled_at = NULL, updated_at = %s WHERE id = %s",
                             (now_iso, tid),
                         )
                     result["demoted"].append({
@@ -208,8 +208,8 @@ def balance(
 
             if not dry_run:
                 conn.execute(
-                    "UPDATE kanban_tasks SET status = 'scheduled', scheduled_at = ?, "
-                    "updated_at = ? WHERE id = ? AND status = 'backlog'",
+                    "UPDATE kanban_tasks SET status = 'scheduled', scheduled_at = %s, "
+                    "updated_at = %s WHERE id = %s AND status = 'backlog'",
                     (now_iso, now_iso, t["id"]),
                 )
             promoted.append({

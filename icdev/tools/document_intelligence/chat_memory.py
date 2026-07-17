@@ -265,7 +265,7 @@ def record_turn(
             cur = conn.cursor()
             _ensure_table(conn)
             cur.execute(
-                "SELECT COUNT(*) FROM dic_chat_memory WHERE session_id = ? AND tenant_id = ?",
+                "SELECT COUNT(*) FROM dic_chat_memory WHERE session_id = %s AND tenant_id = %s",
                 (session_id, tenant_id),
             )
             row = cur.fetchone()
@@ -277,7 +277,7 @@ def record_turn(
                     (turn_id, session_id, collection_id, turn_index, query, answer,
                      subject, subject_doc_id, entities_json, doc_ids_json,
                      citations_json, mode, created_at, tenant_id, classification)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     turn_id, session_id, collection_id or "", turn_index, query or "",
@@ -317,7 +317,7 @@ def recall_last_turn(session_id: str, tenant_id: str = "default") -> ChatTurn | 
                        subject, subject_doc_id, entities_json, doc_ids_json,
                        citations_json, mode
                 FROM dic_chat_memory
-                WHERE session_id = ? AND tenant_id = ?
+                WHERE session_id = %s AND tenant_id = %s
                 ORDER BY turn_index DESC
                 LIMIT 1
                 """,

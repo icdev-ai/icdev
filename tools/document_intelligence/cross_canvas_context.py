@@ -173,7 +173,7 @@ def _neighbors(conn, node_ids: list[str], limit: int = 3) -> dict[str, list[str]
         rows = conn.execute(
             "SELECT e.source_id, e.relationship, n.label "
             "FROM kg_edges e JOIN kg_nodes n ON n.id = e.target_id "
-            f"WHERE e.source_id IN ({placeholders}) LIMIT ?",
+            f"WHERE e.source_id IN ({placeholders}) LIMIT %s",
             tuple(node_ids) + (limit * len(node_ids),),
         ).fetchall()
         for src, rel, tgt_label in rows:
