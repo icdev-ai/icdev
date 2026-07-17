@@ -127,18 +127,33 @@ CREATE TABLE IF NOT EXISTS sdc_workflow_step_runs (
 @pytest.fixture
 def canvas_conn(tmp_path, monkeypatch):
     """Temporary security_canvas.db with full schema for SDC demo tests."""
+    from tools.db.storage import StorageConnection
+
     db_path = tmp_path / "security_canvas.db"
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
-    conn.executescript(_CANVAS_DDL)
-    conn.commit()
+    raw = sqlite3.connect(str(db_path))
+    raw.row_factory = sqlite3.Row
+    raw.executescript(_CANVAS_DDL)
+    raw.commit()
 
-    # Patch canvas DB path used by demo_runner and roi_calculator
-    monkeypatch.setattr("tools.sdc.demo_runner._CANVAS_DB", db_path)
-    monkeypatch.setattr("tools.sdc.roi_calculator._CANVAS_DB", db_path)
+    # roi_calculator / isso_gate now obtain their connection from the Security
+    # Canvas helper (they author PG-native %s). Point that helper at this temp DB
+    # and return a StorageConnection so %s translates to ? on SQLite; hand out a
+    # fresh connection per call so a callee's .close() doesn't poison the fixture.
+    def _sc_conn():
+        c = sqlite3.connect(str(db_path))
+        c.row_factory = sqlite3.Row
+        return StorageConnection(c, "sqlite")
 
-    yield conn
-    conn.close()
+    # Patch the module attribute directly (string form resolves through the
+    # icdev.tools shim and fails). roi_calculator/isso_gate import get_connection
+    # from this module at call time, so they pick up the patched function.
+    from tools.security_canvas.db import init_db as _sc_init
+
+    monkeypatch.setattr(_sc_init, "get_connection", _sc_conn)
+
+    # Tests execute %s SQL directly on the yielded conn — wrap it too.
+    yield StorageConnection(raw, "sqlite")
+    raw.close()
 
 
 def _seed_all(conn) -> None:

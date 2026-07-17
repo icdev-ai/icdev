@@ -31,10 +31,12 @@ _CONTENT_FIELDS = {
 }
 
 
-def _get_conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
-    return conn
+def _get_conn():
+    # PG-primary via the Network Canvas helper (NC_STORAGE_BACKEND); SQLite is a
+    # guarded fallback. Returns a StorageConnection so %s placeholders translate.
+    from tools.network.db.init_db import get_connection
+
+    return get_connection()
 
 
 def _now() -> str:

@@ -8,7 +8,6 @@ for json.dumps() and Jinja2 template rendering.
 
 from __future__ import annotations
 
-import sqlite3
 import urllib.parse
 from pathlib import Path
 from typing import Any
@@ -17,10 +16,12 @@ _ICDEV_ROOT = Path(__file__).resolve().parents[2]
 _DB_PATH = _ICDEV_ROOT / "data" / "network_canvas.db"
 
 
-def _get_conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(str(_DB_PATH))
-    conn.row_factory = sqlite3.Row
-    return conn
+def _get_conn():
+    # PG-primary via the Network Canvas helper (NC_STORAGE_BACKEND); SQLite is a
+    # guarded fallback. Returns a StorageConnection so %s placeholders translate.
+    from tools.network.db.init_db import get_connection
+
+    return get_connection()
 
 
 # ── Connectivity Matrix ───────────────────────────────────────────────────────

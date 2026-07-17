@@ -49,7 +49,12 @@ def get_connection():
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
-    return conn
+    try:
+        from tools.db.storage import StorageConnection
+
+        return StorageConnection(conn, "sqlite")  # so NC-style %s placeholders translate
+    except ImportError:
+        return conn
 
 
 SCHEMA = """

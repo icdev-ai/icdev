@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import sqlite3
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,10 +20,12 @@ _ROOT = Path(__file__).resolve().parents[2]
 _CANVAS_DB = _ROOT / "data" / "security_canvas.db"
 
 
-def _canvas_conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(str(_CANVAS_DB))
-    conn.row_factory = sqlite3.Row
-    return conn
+def _canvas_conn():
+    # PG-primary via the Security Canvas helper (SC_STORAGE_BACKEND); SQLite is a
+    # guarded fallback. Returns a StorageConnection so %s placeholders translate.
+    from tools.security_canvas.db.init_db import get_connection
+
+    return get_connection()
 
 
 def approve_demo(
