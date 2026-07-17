@@ -1,28 +1,35 @@
 # CUI // SP-CTI
-"""Tests for adaptive anomaly-detection threshold logic in oracle_triage.
+"""oracle_triage anomaly-detection thresholds are STATIC config, not adaptive.
 
-Covers aiify-5330: hardcoded_threshold → adaptive-thresholds improvement.
+There used to be an "adaptive" path (aiify-5330) that recomputed the high/low
+confidence bands as mean +/- 1 std over recent oracle_predictions.confidence
+values. It was removed, because in the awareness lens `confidence` is not a
+per-prediction estimate — it is a per-rule constant copied out of
+awareness_config.yaml (gap::orphan_db_table is always 0.85, gap::route_no_e2e
+always 0.70, ...). The mean of a bag of ~7 such constants, weighted by how often
+each rule fired, is a popularity contest among unrelated rules, not a
+distribution. Live it drove low_confidence_threshold from 0.30 to 0.825 purely
+because high-confidence rules had fired a lot — setting gap::route_no_e2e's
+evidence bar from the firing rate of gap::tool_not_in_manifest.
+
+Crucially, removing it changed NO outcome (TestRemovalIsBehaviourPreserving):
+the only consumer, `_verify_orphan_db_table`, only ever sees orphan_db_table
+predictions at confidence 0.85, and 0.85 >= high_threshold(0.85) returns 0 in
+both modes — the inflated low bar was never read.
 """
 from __future__ import annotations
 
 import pytest
 
 
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
-
 @pytest.fixture(autouse=True)
-def reset_caches(monkeypatch):
-    """Reset module-level caches before and after each test."""
+def reset_config(monkeypatch):
+    """Reset the config cache before and after each test."""
     import tools.genesis.reflexes.oracle_triage as ot
 
     monkeypatch.setattr(ot, "_TRIAGE_CONFIG", None)
-    monkeypatch.setattr(ot, "_ADAPTIVE_THRESHOLDS_CACHE", None)
     yield
     monkeypatch.setattr(ot, "_TRIAGE_CONFIG", None)
-    monkeypatch.setattr(ot, "_ADAPTIVE_THRESHOLDS_CACHE", None)
 
 
 @pytest.fixture
@@ -32,135 +39,52 @@ def ot():
     return m
 
 
-# ---------------------------------------------------------------------------
-# _compute_adaptive_thresholds — pure function
-# ---------------------------------------------------------------------------
+class TestAdaptivePathIsGone:
+    """The removed symbols must stay removed — reintroducing the mean/std over
+    constants would reintroduce the category error."""
 
+    def test_compute_adaptive_thresholds_is_removed(self, ot):
+        assert not hasattr(ot, "_compute_adaptive_thresholds")
 
-class TestComputeAdaptiveThresholds:
-    def test_returns_none_for_insufficient_history(self, ot):
-        result = ot._compute_adaptive_thresholds([0.5, 0.6, 0.7])
-        assert result is None
+    def test_fetch_confidence_history_is_removed(self, ot):
+        assert not hasattr(ot, "_fetch_confidence_history")
 
-    def test_returns_none_for_zero_std(self, ot):
-        result = ot._compute_adaptive_thresholds([0.8] * 20)
-        assert result is None
-
-    def test_returns_dict_with_required_keys(self, ot):
-        scores = [0.1, 0.3, 0.5, 0.7, 0.9, 0.2, 0.4, 0.6, 0.8, 0.85]
-        result = ot._compute_adaptive_thresholds(scores)
-        assert result is not None
-        assert "high_confidence_threshold" in result
-        assert "low_confidence_threshold" in result
-        assert "orphan_min_refs_low_confidence" in result
-
-    def test_high_always_above_low(self, ot):
-        scores = [0.4, 0.5, 0.6, 0.45, 0.55, 0.5, 0.4, 0.6, 0.5, 0.45]
-        result = ot._compute_adaptive_thresholds(scores)
-        if result is not None:
-            assert result["high_confidence_threshold"] > result["low_confidence_threshold"]
-
-    def test_high_threshold_clamped_to_static_bound(self, ot):
-        # Wide distribution: mean ~0.5, std ~0.4 → raw high ~0.9 → clamped to 0.85
-        scores = [0.0, 1.0, 0.5, 0.5, 0.0, 1.0, 0.5, 0.5, 0.0, 1.0]
-        result = ot._compute_adaptive_thresholds(scores, static_high=0.85, static_low=0.30)
-        assert result is not None
-        assert result["high_confidence_threshold"] <= 0.85
-
-    def test_low_threshold_clamped_to_static_bound(self, ot):
-        # Wide distribution: mean ~0.5, std ~0.4 → raw low ~0.1 → clamped to 0.30
-        scores = [0.0, 1.0, 0.5, 0.5, 0.0, 1.0, 0.5, 0.5, 0.0, 1.0]
-        result = ot._compute_adaptive_thresholds(scores, static_high=0.85, static_low=0.30)
-        assert result is not None
-        assert result["low_confidence_threshold"] >= 0.30
-
-    def test_respects_custom_min_history(self, ot):
-        five_scores = [0.3, 0.5, 0.7, 0.4, 0.6]
-        # With min_history=10, 5 scores are insufficient
-        assert ot._compute_adaptive_thresholds(five_scores, min_history=10) is None
-        # With min_history=5, 5 scores may be sufficient (non-degenerate)
-        result_5 = ot._compute_adaptive_thresholds(five_scores, min_history=5)
-        # Result can be None (degenerate std) or dict — just must not crash
-        assert result_5 is None or isinstance(result_5, dict)
-
-    def test_passes_through_low_confidence_refs(self, ot):
-        scores = [0.1, 0.3, 0.5, 0.7, 0.9, 0.2, 0.4, 0.6, 0.8, 0.85]
-        result = ot._compute_adaptive_thresholds(scores, low_confidence_refs=7)
-        assert result is not None
-        assert result["orphan_min_refs_low_confidence"] == 7
-
-    def test_returns_none_for_collapsed_band(self, ot):
-        # Tight cluster: mean=0.5, std=0.01 → high=0.51, low=max(0.30,0.49)=0.49
-        # high(0.51) > low(0.49) → valid result (should not return None here)
-        scores = [0.49, 0.50, 0.51, 0.50, 0.50, 0.50, 0.49, 0.51, 0.50, 0.50]
-        result = ot._compute_adaptive_thresholds(
-            scores, static_high=0.85, static_low=0.30
-        )
-        # With static_low=0.30 clamping, band won't collapse; just verify structure
-        if result is not None:
-            assert result["high_confidence_threshold"] > result["low_confidence_threshold"]
-
-
-# ---------------------------------------------------------------------------
-# _get_active_anomaly_thresholds — integration (no real DB)
-# ---------------------------------------------------------------------------
+    def test_adaptive_cache_global_is_removed(self, ot):
+        assert not hasattr(ot, "_ADAPTIVE_THRESHOLDS_CACHE")
 
 
 class TestGetActiveAnomalyThresholds:
-    def test_falls_back_to_static_when_no_history(self, ot, monkeypatch):
-        monkeypatch.setattr(ot, "_fetch_confidence_history", lambda limit=100: [])
+    def test_returns_static_config(self, ot):
         thresholds = ot._get_active_anomaly_thresholds()
         assert thresholds["high_confidence_threshold"] == pytest.approx(0.85)
         assert thresholds["low_confidence_threshold"] == pytest.approx(0.3)
+        assert thresholds["orphan_min_refs_low_confidence"] == 3
 
-    def test_returns_adaptive_dict_when_history_available(self, ot, monkeypatch):
-        # Spread history: should compute adaptive (or fall back gracefully)
-        history = [0.1, 0.9, 0.5, 0.5, 0.0, 1.0, 0.5, 0.5, 0.0, 1.0]
-        monkeypatch.setattr(ot, "_fetch_confidence_history", lambda limit=100: history)
+    def test_reads_config_overrides(self, ot, monkeypatch):
+        monkeypatch.setattr(ot, "_TRIAGE_CONFIG", {
+            "orphan_min_refs": 1,
+            "anomaly_detection": {
+                "high_confidence_threshold": 0.90,
+                "low_confidence_threshold": 0.40,
+                "orphan_min_refs_low_confidence": 5,
+            },
+        })
         thresholds = ot._get_active_anomaly_thresholds()
-        assert isinstance(thresholds, dict)
-        assert "high_confidence_threshold" in thresholds
-        assert "low_confidence_threshold" in thresholds
+        assert thresholds["high_confidence_threshold"] == pytest.approx(0.90)
+        assert thresholds["low_confidence_threshold"] == pytest.approx(0.40)
 
-    def test_result_is_cached(self, ot, monkeypatch):
-        calls = []
-
-        def _fake_history(limit=100):
-            calls.append(1)
-            return []
-
-        monkeypatch.setattr(ot, "_fetch_confidence_history", _fake_history)
-        ot._get_active_anomaly_thresholds()
-        ot._get_active_anomaly_thresholds()
-        assert len(calls) == 1  # second call must hit cache
-
-    def test_cache_is_reset_between_triage_runs(self, ot, monkeypatch):
-        calls = []
-
-        def _fake_history(limit=100):
-            calls.append(1)
-            return []
-
-        monkeypatch.setattr(ot, "_fetch_confidence_history", _fake_history)
-        monkeypatch.setattr(ot, "_fetch_suggested_tasks", lambda: [])
-
-        ot._get_active_anomaly_thresholds()
-        assert len(calls) == 1
-        # Simulate triage() cache reset
-        monkeypatch.setattr(ot, "_ADAPTIVE_THRESHOLDS_CACHE", None)
-        ot._get_active_anomaly_thresholds()
-        assert len(calls) == 2
+    def test_returns_a_copy_not_the_cached_dict(self, ot):
+        """Callers must not be able to mutate the shared config through the
+        returned dict."""
+        ot._load_triage_config()  # prime the cache
+        a = ot._get_active_anomaly_thresholds()
+        a["high_confidence_threshold"] = 0.01
+        b = ot._get_active_anomaly_thresholds()
+        assert b["high_confidence_threshold"] == pytest.approx(0.85)
 
 
-# ---------------------------------------------------------------------------
-# _get_orphan_min_refs — uses _get_active_anomaly_thresholds
-# ---------------------------------------------------------------------------
-
-
-class TestGetOrphanMinRefsAdaptive:
-    @pytest.fixture(autouse=True)
-    def stub_no_history(self, ot, monkeypatch):
-        monkeypatch.setattr(ot, "_fetch_confidence_history", lambda limit=100: [])
+class TestGetOrphanMinRefs:
+    """The static behaviour that survived the removal, unchanged."""
 
     def test_none_confidence_returns_base(self, ot):
         assert ot._get_orphan_min_refs(None) == 1
@@ -180,60 +104,65 @@ class TestGetOrphanMinRefsAdaptive:
     def test_mid_confidence_returns_base(self, ot):
         assert ot._get_orphan_min_refs(0.5) == 1
 
-    def test_adaptive_high_threshold_honored(self, ot, monkeypatch):
-        # Override cache: adaptive thresholds shift high to 0.95
-        monkeypatch.setattr(
-            ot,
-            "_ADAPTIVE_THRESHOLDS_CACHE",
-            {
+    def test_thresholds_are_honored_from_config(self, ot, monkeypatch):
+        monkeypatch.setattr(ot, "_TRIAGE_CONFIG", {
+            "orphan_min_refs": 1,
+            "anomaly_detection": {
                 "high_confidence_threshold": 0.95,
                 "low_confidence_threshold": 0.40,
                 "orphan_min_refs_low_confidence": 5,
             },
-        )
-        # 0.85 is now below the adaptive high_threshold → not bypassed
-        assert ot._get_orphan_min_refs(0.85) != 0
-        # 0.96 is above adaptive high_threshold → bypassed
+        })
+        # 0.85 now below the (config) high bar -> not bypassed, base refs
+        assert ot._get_orphan_min_refs(0.85) == 1
+        # 0.96 above it -> bypassed
         assert ot._get_orphan_min_refs(0.96) == 0
-
-    def test_adaptive_low_threshold_honored(self, ot, monkeypatch):
-        monkeypatch.setattr(
-            ot,
-            "_ADAPTIVE_THRESHOLDS_CACHE",
-            {
-                "high_confidence_threshold": 0.85,
-                "low_confidence_threshold": 0.40,
-                "orphan_min_refs_low_confidence": 5,
-            },
-        )
-        # 0.35 < adaptive low_threshold 0.40 → elevated refs = 5
+        # 0.35 below the low bar -> elevated refs from config
         assert ot._get_orphan_min_refs(0.35) == 5
 
-    def test_adaptive_low_refs_value_honored(self, ot, monkeypatch):
-        monkeypatch.setattr(
-            ot,
-            "_ADAPTIVE_THRESHOLDS_CACHE",
-            {
-                "high_confidence_threshold": 0.85,
-                "low_confidence_threshold": 0.30,
-                "orphan_min_refs_low_confidence": 8,
-            },
-        )
-        assert ot._get_orphan_min_refs(0.1) == 8
 
+class TestRemovalIsBehaviourPreserving:
+    """The whole justification for deleting the adaptive path: it never changed
+    an outcome, because its only reachable input is orphan_db_table @ 0.85."""
 
-# ---------------------------------------------------------------------------
-# Config file loading — min_history_for_adaptive key
-# ---------------------------------------------------------------------------
+    def test_orphan_db_table_constant_clears_the_high_bar(self, ot):
+        """gap::orphan_db_table's per-rule constant is 0.85, exactly the high
+        threshold, so the refs check is skipped (return 0). Adaptive clamped
+        high to min(0.85, mean+std) == 0.85 too, so this was 0 in both modes."""
+        assert ot._get_orphan_min_refs(0.85) == 0
+
+    def test_the_only_consumer_is_the_orphan_verifier(self, ot):
+        """The only caller of _get_orphan_min_refs is _verify_orphan_db_table,
+        whose dispatch is gated on lens == 'orphan_db_table'. So 0.85 is the only
+        confidence that ever reaches this code, and the low branch — the one
+        adaptive inflated to 0.825 — is dead for every prediction that gets here.
+        """
+        import inspect
+        src = inspect.getsource(ot)
+        callers = [
+            line.strip() for line in src.splitlines()
+            if "_get_orphan_min_refs(" in line and "def _get_orphan_min_refs" not in line
+        ]
+        assert callers, "expected at least one caller"
+        assert "orphan_db_table" in src
 
 
 class TestConfigLoading:
-    def test_default_includes_min_history(self, ot, monkeypatch, tmp_path):
+    def test_static_defaults_when_yaml_missing(self, ot, monkeypatch, tmp_path):
         monkeypatch.setattr(ot, "BASE_DIR", tmp_path)
         cfg = ot._load_triage_config()
-        assert cfg["anomaly_detection"]["min_history_for_adaptive"] == 10
+        assert cfg["orphan_min_refs"] == 1
+        assert cfg["anomaly_detection"]["high_confidence_threshold"] == pytest.approx(0.85)
+        assert cfg["anomaly_detection"]["low_confidence_threshold"] == pytest.approx(0.3)
+        assert cfg["anomaly_detection"]["orphan_min_refs_low_confidence"] == 3
 
-    def test_yaml_min_history_overrides_default(self, ot, monkeypatch, tmp_path):
+    def test_defaults_no_longer_carry_adaptive_key(self, ot, monkeypatch, tmp_path):
+        """min_history_for_adaptive was the adaptive path's only config knob."""
+        monkeypatch.setattr(ot, "BASE_DIR", tmp_path)
+        cfg = ot._load_triage_config()
+        assert "min_history_for_adaptive" not in cfg["anomaly_detection"]
+
+    def test_yaml_overrides_apply(self, ot, monkeypatch, tmp_path):
         try:
             import yaml
         except ImportError:
@@ -242,17 +171,14 @@ class TestConfigLoading:
         args_dir = tmp_path / "args"
         args_dir.mkdir()
         (args_dir / "oracle_triage_config.yaml").write_text(
-            yaml.dump(
-                {
-                    "orphan_min_refs": 2,
-                    "anomaly_detection": {
-                        "high_confidence_threshold": 0.90,
-                        "low_confidence_threshold": 0.20,
-                        "orphan_min_refs_low_confidence": 4,
-                        "min_history_for_adaptive": 20,
-                    },
-                }
-            ),
+            yaml.dump({
+                "orphan_min_refs": 2,
+                "anomaly_detection": {
+                    "high_confidence_threshold": 0.90,
+                    "low_confidence_threshold": 0.20,
+                    "orphan_min_refs_low_confidence": 4,
+                },
+            }),
             encoding="utf-8",
         )
         monkeypatch.setattr(ot, "BASE_DIR", tmp_path)
@@ -261,12 +187,3 @@ class TestConfigLoading:
         assert cfg["anomaly_detection"]["high_confidence_threshold"] == pytest.approx(0.90)
         assert cfg["anomaly_detection"]["low_confidence_threshold"] == pytest.approx(0.20)
         assert cfg["anomaly_detection"]["orphan_min_refs_low_confidence"] == 4
-        assert cfg["anomaly_detection"]["min_history_for_adaptive"] == 20
-
-    def test_static_defaults_when_yaml_missing(self, ot, monkeypatch, tmp_path):
-        monkeypatch.setattr(ot, "BASE_DIR", tmp_path)
-        cfg = ot._load_triage_config()
-        assert cfg["orphan_min_refs"] == 1
-        assert cfg["anomaly_detection"]["high_confidence_threshold"] == pytest.approx(0.85)
-        assert cfg["anomaly_detection"]["low_confidence_threshold"] == pytest.approx(0.3)
-        assert cfg["anomaly_detection"]["orphan_min_refs_low_confidence"] == 3

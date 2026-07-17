@@ -19,6 +19,17 @@ from tools.db.storage import get_connection  # noqa: E402
 
 oracle_api = Blueprint("oracle_api", __name__)
 
+# Display threshold for the "high-confidence pending" home-widget tile. This is a
+# DISPLAY notion — "how many notably confident predictions are still queued" —
+# and is deliberately NOT the promotion gate (awareness_config.yaml
+# promotion_threshold: 0.7). The two answer different questions: the gate decides
+# what becomes a task; this tile highlights the strongest queued signals. They
+# were previously the same magic number in two places with no link between them,
+# which invited "fixing" one to match the other. Named and separated so that
+# choice is explicit. (Confidence in the awareness lens is a per-rule constant,
+# so this counts rules at/above 0.85, not a calibrated probability.)
+_HIGH_CONF_DISPLAY_THRESHOLD = 0.85
+
 
 # ---------------------------------------------------------------------------
 # Predictions
@@ -70,7 +81,8 @@ def oracle_summary():
 
             r = conn.execute(
                 "SELECT COUNT(*) AS n FROM oracle_predictions "
-                "WHERE confidence >= 0.85 AND (outcome IS NULL OR outcome = 'pending')"
+                "WHERE confidence >= %s AND (outcome IS NULL OR outcome = 'pending')",
+                (_HIGH_CONF_DISPLAY_THRESHOLD,),
             ).fetchone()
             out["high_conf_pending"] = int((r.get("n", 0) if r else 0) or 0)
 

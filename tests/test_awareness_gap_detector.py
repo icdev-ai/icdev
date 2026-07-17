@@ -795,3 +795,105 @@ class TestPredictionId:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+# ---------------------------------------------------------------------------
+# Prediction write / refresh — the tombstone fix
+# ---------------------------------------------------------------------------
+
+
+class _FakeCursor:
+    def __init__(self, row):
+        self._row = row
+
+    def fetchone(self):
+        return self._row
+
+
+class _FakeConn:
+    """Records execute() calls and simulates one existing prediction row.
+
+    Confidence/severity are per-rule constants; the row keyed by (rule, subject)
+    must track config changes while it is still open, and must never be rewritten
+    once promoted or dismissed.
+    """
+
+    def __init__(self, existing=None):
+        self.existing = existing  # dict with outcome/confidence/severity, or None
+        self.selects = 0
+        self.updates = []
+        self.inserts = []
+        self.commits = 0
+
+    def execute(self, sql, params=None):
+        s = " ".join(sql.split())
+        if s.startswith("SELECT outcome, confidence, severity"):
+            self.selects += 1
+            return _FakeCursor(dict(self.existing) if self.existing else None)
+        if s.startswith("UPDATE oracle_predictions"):
+            self.updates.append({"sql": s, "params": params})
+            return _FakeCursor(None)
+        if s.startswith("INSERT INTO oracle_predictions"):
+            self.inserts.append({"sql": s, "params": params})
+            return _FakeCursor(None)
+        return _FakeCursor(None)
+
+    def commit(self):
+        self.commits += 1
+
+    def rollback(self):
+        pass
+
+
+_RULE_CFG = {"confidence": 0.90, "severity": "medium", "description": "desc"}
+
+
+def _finding_for():
+    return gd._finding("broken_test_reference", "some_subject", {"k": "v"})
+
+
+class TestPredictionRefresh:
+    def test_absent_row_inserts(self):
+        conn = _FakeConn(existing=None)
+        pid = gd._write_gap_prediction(conn, _finding_for(), _RULE_CFG)
+        assert pid is not None
+        assert len(conn.inserts) == 1 and len(conn.updates) == 0
+        # confidence written is the rule constant
+        assert 0.90 in conn.inserts[0]["params"]
+
+    def test_open_row_same_confidence_is_noop(self):
+        conn = _FakeConn(existing={"outcome": "pending", "confidence": 0.90, "severity": "medium"})
+        gd._write_gap_prediction(conn, _finding_for(), _RULE_CFG)
+        assert conn.inserts == [] and conn.updates == []
+
+    def test_open_row_stale_confidence_is_refreshed(self):
+        """The tombstone: a subject first seen at 0.50 must not stay pinned there
+        after the rule's constant is raised to 0.90."""
+        conn = _FakeConn(existing={"outcome": "pending", "confidence": 0.50, "severity": "low"})
+        gd._write_gap_prediction(conn, _finding_for(), _RULE_CFG)
+        assert conn.inserts == []
+        assert len(conn.updates) == 1
+        assert 0.90 in conn.updates[0]["params"]
+        assert "medium" in conn.updates[0]["params"]
+
+    def test_refresh_does_not_reset_created_at(self):
+        conn = _FakeConn(existing={"outcome": "pending", "confidence": 0.50, "severity": "medium"})
+        gd._write_gap_prediction(conn, _finding_for(), _RULE_CFG)
+        assert "created_at" not in conn.updates[0]["sql"]
+
+    def test_promoted_row_is_never_rewritten(self):
+        """A kanban card already exists — rewriting is the churn the guard stops."""
+        conn = _FakeConn(existing={"outcome": "promoted:task-abc", "confidence": 0.50, "severity": "low"})
+        gd._write_gap_prediction(conn, _finding_for(), _RULE_CFG)
+        assert conn.inserts == [] and conn.updates == []
+
+    def test_dismissed_row_is_never_rewritten(self):
+        """The operator ruled; respect the signal even though the constant differs."""
+        conn = _FakeConn(existing={"outcome": "dismissed", "confidence": 0.50, "severity": "low"})
+        gd._write_gap_prediction(conn, _finding_for(), _RULE_CFG)
+        assert conn.inserts == [] and conn.updates == []
+
+    def test_empty_outcome_counts_as_open(self):
+        conn = _FakeConn(existing={"outcome": "", "confidence": 0.50, "severity": "medium"})
+        gd._write_gap_prediction(conn, _finding_for(), _RULE_CFG)
+        assert len(conn.updates) == 1
