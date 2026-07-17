@@ -55,6 +55,8 @@
 - [SharePoint Integration (Phase E / P4.1)](manifest/sharepoint.md)
 - [Agent Execution Framework (Phase 39)](manifest/agent-execution-framework.md)
 - [LLM Provider Abstraction (Vendor-Agnostic)](manifest/llm-provider-abstraction.md)
+- [ICDEV Cortex (Unified AI Facade)](manifest/cortex.md)
+- [BI Dashboard Canvas](manifest/bi-dashboard.md)
 - [Bedrock Client (Opus 4.6 Multi-Agent — Phase A)](manifest/bedrock-client.md)
 - [Multi-Agent Orchestration (Opus 4.6 Multi-Agent — Phase B)](manifest/multi-agent-orchestration.md)
 - [Agent Collaboration (Opus 4.6 Multi-Agent — Phase C)](manifest/agent-collaboration.md)
@@ -1155,3 +1157,41 @@
 | Render Png | tools\viz\render_png.py | Auto-registered: viz/render_png.py | --json | JSON |
 | Render Pptx | tools\viz\render_pptx.py | Auto-registered: viz/render_pptx.py | --json | JSON |
 | Story Builder | tools\viz\story_builder.py | Auto-registered: viz/story_builder.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Agent Coordination | tools\ace\agent_coordination.py | Auto-registered: ace/agent_coordination.py | --json | JSON |
+| Chat Trigger | tools\ace\chat_trigger.py | Auto-registered: ace/chat_trigger.py | --json | JSON |
+| Llm Step | tools\ace\llm_step.py | Auto-registered: ace/llm_step.py | --json | JSON |
+| Markov Sequencer | tools\ace\markov_sequencer.py | Auto-registered: ace/markov_sequencer.py | --json | JSON |
+| Message Bus | tools\ace\message_bus.py | Auto-registered: ace/message_bus.py | --json | JSON |
+| Step Executor | tools\ace\step_executor.py | Auto-registered: ace/step_executor.py | --json | JSON |
+| Team Assembler | tools\ace\team_assembler.py | Auto-registered: ace/team_assembler.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Specialist Consult | tools\govcon\specialist_consult.py | Auto-registered: govcon/specialist_consult.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Intent Router | tools\cortex\intent_router.py | Auto-registered: cortex/intent_router.py | --json | JSON |
+| Modernization Routes | tools\document_intelligence\modernization_routes.py | Auto-registered: document_intelligence/modernization_routes.py | --json | JSON |
+| Card Bridge | tools\doc_modernization\card_bridge.py | Auto-registered: doc_modernization/card_bridge.py | --json | JSON |
+| Redline Drafter | tools\doc_modernization\redline_drafter.py | Auto-registered: doc_modernization/redline_drafter.py | --json | JSON |
+| Regen Orchestrator | tools\doc_modernization\regen_orchestrator.py | Auto-registered: doc_modernization/regen_orchestrator.py | --json | JSON |
+| Rubric Build Tools | tools\genesis\rubric_build_tools.py | Auto-registered: genesis/rubric_build_tools.py | --json | JSON |
+| Cross Process Lease | tools\llm\cross_process_lease.py | Auto-registered: llm/cross_process_lease.py | --json | JSON |
+| Pg Lease | tools\llm\pg_lease.py | Auto-registered: llm/pg_lease.py | --json | JSON |
+| Proxy Resolver | tools\llm\proxy_resolver.py | Auto-registered: llm/proxy_resolver.py | --json | JSON |
+| Rate Gate | tools\llm\rate_gate.py | Auto-registered: llm/rate_gate.py | --json | JSON |
+| Conformance Reviewer | tools\testing\conformance_reviewer.py | Auto-registered: testing/conformance_reviewer.py | --json | JSON |
+| Pg Pytest Tier | tools\testing\pg_pytest_tier.py | Auto-registered: testing/pg_pytest_tier.py | --json | JSON |
+| Pipeline Grader | tools\workflow\pipeline_grader.py | Auto-registered: workflow/pipeline_grader.py | --json | JSON |
+| Standards Catalog | tools\iqe\adapters\standards_catalog.py | Auto-registered: adapters/standards_catalog.py | --json | JSON |
+| Doc Modernization Sweep | tools\genesis\reflexes\doc_modernization_sweep.py | Auto-registered: reflexes/doc_modernization_sweep.py | --json | JSON |
