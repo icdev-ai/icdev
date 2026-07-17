@@ -61,6 +61,7 @@ from flask import (
     url_for,
 )
 
+from tools.document_intelligence.collection_registry import ensure_collection
 from tools.logging.icdev_logger import get_logger
 
 logger = get_logger(__name__)
@@ -953,16 +954,18 @@ def api_import_from_docgen():
         collection_id = (session or {}).get("dic_collection_id") or (
             f"docgen-import-{session_id[:8]}" if session_id else str(_uuid.uuid4())[:8]
         )
-        try:
-            conn.execute(
-                """INSERT INTO dic_collections
-                   (collection_id, name, tenant_id, classification, created_at)
-                   VALUES (%s,%s,%s,%s,%s)
-                   ON CONFLICT (collection_id) DO NOTHING""",
-                (collection_id, f"Docgen Import — {title[:60]}", tenant_id, classification, now),
-            )
-        except Exception:
-            pass  # collection already exists or ON CONFLICT not supported
+        # This was the only get-or-create in the codebase; it is now the shared
+        # helper so every ingestion path gets the same guarantee. The `except:
+        # pass` it replaces was itself a latent PostgreSQL bug — a failed
+        # statement poisons the transaction, so a swallowed error here would
+        # resurface as an unrelated "transaction is aborted" on the INSERT below.
+        ensure_collection(
+            conn,
+            collection_id,
+            name=f"Docgen Import — {title[:60]}",
+            tenant_id=tenant_id,
+            classification=classification,
+        )
 
         final_doc_text = (session or {}).get("final_doc_text") or ""
         ai_content = bool(final_doc_text.strip())
@@ -2877,6 +2880,9 @@ def api_template_instantiate(template_id):
     conn = _conn()
     try:
         cur = conn.cursor()
+        # collection_id defaults to "default" above — a collection that has never
+        # had a row. Without this the instantiated document is invisible.
+        ensure_collection(conn, collection_id, tenant_id=tenant_id, classification=classification)
         cur.execute(
             """
             INSERT OR REPLACE INTO dic_documents

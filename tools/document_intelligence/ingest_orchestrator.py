@@ -48,6 +48,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from tools.db.storage import get_connection
+from tools.document_intelligence.collection_registry import ensure_collection
 from tools.logging.icdev_logger import get_logger
 from tools.rag.chunker import chunk_content
 
@@ -159,6 +160,22 @@ def _try_provider_package(path: Path, ext: str) -> Extraction | None:
 # --------------------------------------------------------------------------- #
 
 _SCHEMA = [
+    # Declared here because ingest_file WRITES this table (via ensure_collection):
+    # a document whose collection has no row is invisible in the Collections UI,
+    # which enumerates dic_collections rather than dic_documents. Mirrors the
+    # SQLite branch of tools/document_intelligence/db/init_db.py.
+    """
+    CREATE TABLE IF NOT EXISTS dic_collections (
+        collection_id   TEXT PRIMARY KEY,
+        name            TEXT NOT NULL,
+        description     TEXT DEFAULT '',
+        owner_id        TEXT DEFAULT '',
+        retention_days  INTEGER DEFAULT 90,
+        classification  TEXT DEFAULT 'CUI',
+        tenant_id       TEXT DEFAULT 'default',
+        created_at      TEXT DEFAULT (datetime('now'))
+    )
+    """,
     """
     CREATE TABLE IF NOT EXISTS dic_documents (
         doc_id          TEXT PRIMARY KEY,
@@ -1769,6 +1786,12 @@ def ingest_file(
         now = _now()
         version_id = f"{doc_id}_v1"
         cur = conn.cursor()
+
+        # The container must exist before the document, or the document is
+        # ingested successfully and then is unreachable in the Collections UI —
+        # which enumerates dic_collections, not dic_documents. Same transaction,
+        # so the pair lands together.
+        ensure_collection(conn, collection_id, tenant_id=tid, classification=cls)
 
         cur.execute(
             """

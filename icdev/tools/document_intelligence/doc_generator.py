@@ -25,6 +25,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
+from tools.document_intelligence.collection_registry import ensure_collection
 from tools.logging.icdev_logger import get_logger
 
 logger = get_logger(__name__)
@@ -706,12 +707,17 @@ def generate_document(
                     (target_doc_id,),
                 ).fetchone()
                 version_no = int((dict(row).get("vmax") if row else 0) or 0) + 1
+            # An empty collection_id guaranteed an invisible document: the
+            # Collections UI enumerates dic_collections, so "" has no container.
+            # Fall back to "default" like every other ingest path, then register it.
+            collection_id = (collection_id or "").strip() or "default"
+            ensure_collection(conn, collection_id, tenant_id=tenant_id, classification=classification)
             conn.execute(
                 "INSERT OR IGNORE INTO dic_documents "
                 "(doc_id, collection_id, source_id, filename, content_type, provider, title, "
                 "byte_size, content_sha256, page_count, created_at, tenant_id, classification) "
                 "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
-                (doc_id, collection_id or "", doc_id, "ai_generated.md", "text/markdown",
+                (doc_id, collection_id, doc_id, "ai_generated.md", "text/markdown",
                  "ai_generator", title, len(full_text), sha, 1, _now_utc(), tenant_id, classification),
             )
             conn.execute(
