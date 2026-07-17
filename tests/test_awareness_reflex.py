@@ -23,6 +23,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from tools.db.storage import translate_sql  # noqa: E402
+
 # ---------------------------------------------------------------------------
 # Lightweight in-memory DB fixture
 # ---------------------------------------------------------------------------
@@ -42,12 +44,39 @@ CREATE TABLE IF NOT EXISTS awareness_run_log (
 """
 
 
-def _make_mem_conn() -> sqlite3.Connection:
+class _TranslatingConn:
+    """In-memory sqlite that translates PG placeholders like the real thing.
+
+    The reflex writes canonical PostgreSQL SQL (``VALUES (%s, %s, ...)``) and
+    relies on ``get_connection()`` returning a StorageConnection that rewrites
+    ``%s`` -> ``?`` for the sqlite backend (tools.db.storage.translate_sql). A
+    bare sqlite3 connection does NOT translate, so every reflex write raised
+    ``near "%": syntax error``, the reflex swallowed it, and these tests saw zero
+    rows — a test-harness gap, not a product bug. Wrapping the connection the same
+    way the storage layer does makes the fixture faithful to production.
+    """
+
+    def __init__(self, raw: sqlite3.Connection) -> None:
+        self._raw = raw
+
+    def execute(self, sql, params=None):
+        translated = translate_sql(sql, "sqlite")
+        return self._raw.execute(translated, params or [])
+
+    def executemany(self, sql, params_list):
+        return self._raw.executemany(translate_sql(sql, "sqlite"), params_list)
+
+    def __getattr__(self, name):
+        # commit/rollback/close/cursor/row_factory pass through to the raw conn.
+        return getattr(self._raw, name)
+
+
+def _make_mem_conn() -> "_TranslatingConn":
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
     conn.execute(_RUN_LOG_DDL)
     conn.commit()
-    return conn
+    return _TranslatingConn(conn)
 
 
 # ---------------------------------------------------------------------------
