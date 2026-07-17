@@ -8,8 +8,6 @@ Routes:
   GET  /document-intelligence/review        HITL review queue (fragments + versions)
   GET  /document-intelligence/generate      AI-assisted document generation
   GET  /document-intelligence/docdrift      DocDrift drift→regen→NIST page (was /acoic)
-  GET  /document-intelligence/finetune      air-gap fine-tuning page
-  GET  /document-intelligence/snippets      reusable snippets page
   GET  /document-intelligence/templates     use-case templates page
 
   POST /document-intelligence/api/ingest                         multi-modal upload
@@ -106,14 +104,6 @@ _TEMPLATES = [
     {"id": "ARCH_SYSTEM", "name": "System Architecture", "description": "End-to-end system boundary, stakeholders, interfaces, and quality attributes.", "flagship": False, "category": "techwriter", "kind": "architecture"},
 ]
 
-_SNIPPETS = [
-    {"id": "dic-citation-badge", "name": "Citation Badge", "description": "Inline citation chip linking a claim to its source document, chunk ID, and page.", "category": "search", "tags": ["citation", "grounded", "no-llm"]},
-    {"id": "dic-freshness-indicator", "name": "Freshness Indicator", "description": "Color-coded badge (fresh / aging / stale) derived from document TTL.", "category": "quality", "tags": ["freshness", "ttl", "badge"]},
-    {"id": "dic-ai-label", "name": "AI-Label Chip", "description": "Displays the HITL/AI classification label and confidence score on a document card.", "category": "governance", "tags": ["hitl", "label", "confidence"]},
-    {"id": "dic-drift-trigger", "name": "Drift Trigger Button", "description": "Manual button to run the real drift check on demand from the DocDrift page.", "category": "docdrift", "tags": ["drift", "docdrift", "debug"]},
-    {"id": "dic-rag-search-bar", "name": "Grounded Search Bar", "description": "No-LLM keyword+vector search input that returns cited chunks.", "category": "search", "tags": ["rag", "no-llm", "citations"]},
-]
-
 _PAGES = [
     {"name": "Collections", "icon": "🗂️", "href": "/document-intelligence/collections", "desc": "Organize documents into collections and manage team access.", "ready": True, "task": "dic-collab-01"},
     {"name": "Search & Chat", "icon": "🔍", "href": "/document-intelligence/search", "desc": "Grounded no-LLM search with mandatory citations · Conversational AI.", "ready": True, "task": "dic-search-01"},
@@ -121,8 +111,6 @@ _PAGES = [
     {"name": "HITL Review", "icon": "👁️", "href": "/document-intelligence/review", "desc": "Human-in-the-loop oversight for AI-generated drafts and SSP fragments.", "ready": True, "task": "dic-collab-01"},
     {"name": "AI-Assist", "icon": "✨", "href": "/document-intelligence/generate", "desc": "Generate CoD-verified document drafts from your collections.", "ready": True, "task": "dic-generate-01"},
     {"name": "DocDrift", "icon": "🛰️", "href": "/document-intelligence/docdrift", "desc": "Is this document still true? Drift → impact → regen → NIST re-map.", "ready": True, "task": "dic-acoic-01"},
-    {"name": "Air-Gap Fine-Tuning", "icon": "🧪", "href": "/document-intelligence/finetune", "desc": "Train a local model on a collection's chunks/KG (GPU optional).", "ready": True, "task": "dic-finetune-01"},
-    {"name": "Snippets", "icon": "🧩", "href": "/document-intelligence/snippets", "desc": "Reusable UI building blocks for document workflows.", "ready": True, "task": "dic-snippets-01"},
     {"name": "Templates", "icon": "📐", "href": "/document-intelligence/templates", "desc": "Pre-built document workflows. DocDrift is the flagship.", "ready": True, "task": "dic-templates-01"},
     {"name": "Freshness", "icon": "🌡️", "href": "/document-intelligence/freshness", "desc": "Corpus staleness heatmap and remediation queue.", "ready": True, "task": "dic-freshness-01"},
     {"name": "Explorer", "icon": "🔎", "href": "/document-intelligence/explorer", "desc": "KG buried-bodies explorer — orphans, tribal knowledge, contradictions.", "ready": True, "task": "dic-explore-01"},
@@ -144,13 +132,10 @@ _PAGE_GROUPS: list[tuple[str, str, list[str]]] = [
      ["Search & Chat", "Explorer", "Analytics"]),
     ("3 · Author & generate",
      "Write new documents, or rebuild existing ones.",
-     ["Tech Writer", "AI-Assist", "Templates", "Snippets"]),
+     ["Tech Writer", "AI-Assist", "Templates"]),
     ("4 · Govern & review",
      "Approve AI output, track staleness, keep compliance in sync.",
      ["HITL Review", "Freshness", "DocDrift"]),
-    ("5 · Advanced",
-     "Specialist workflows.",
-     ["Air-Gap Fine-Tuning"]),
 ]
 
 
@@ -174,7 +159,6 @@ def _grouped_pages() -> list[dict]:
     return groups
 
 
-_LOCAL_PROVIDERS = ["ollama", "llamacpp", "huggingface-local"]
 
 # ── Init ──────────────────────────────────────────────────────────────────────
 
@@ -658,16 +642,6 @@ def api_docdrift_drift_check():
         logger.warning("dic: docdrift drift-check failed: %s", exc)
         return jsonify({"error": str(exc)}), 500
     return jsonify(result)
-
-
-@dic_bp.route("/finetune")
-def finetune():
-    return render_template("document_intelligence/finetune.html", local_providers=_LOCAL_PROVIDERS)
-
-
-@dic_bp.route("/snippets")
-def snippets():
-    return render_template("document_intelligence/snippets.html", snippets=_SNIPPETS)
 
 
 @dic_bp.route("/templates")
