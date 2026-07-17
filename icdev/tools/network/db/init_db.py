@@ -48,12 +48,18 @@ def get_connection():
             return conn
         except ImportError:
             pass  # Fall through to SQLite
-    # SQLite (default)
+    # SQLite fallback (backup / air-gap). Wrap in StorageConnection so NC callers'
+    # PG-native %s placeholders translate to ? on the SQLite path too.
     import sqlite3 as _sqlite3
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = _sqlite3.connect(str(DB_PATH))
     conn.row_factory = _sqlite3.Row
-    return conn
+    try:
+        from tools.db.storage import StorageConnection
+
+        return StorageConnection(conn, "sqlite")
+    except ImportError:
+        return conn
 
 
 SCHEMA = """
