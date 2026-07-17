@@ -4041,6 +4041,10 @@ def _dispatch_via_rubric_loop(task: dict, prompt_path: str, instruction: str,
                 llm_function="code_generation",
                 max_iterations=12,
                 stop_event=stop_event,
+                # Continuous Harness: key the recorded codegen decision on the
+                # kanban task id so record_outcome() (fired on the task's status
+                # transition) attaches to a real decision row.
+                harness_task_id=task_id,
             )
 
             ar = result.result
@@ -4118,6 +4122,7 @@ def _dispatch_via_llm_router(task: dict, prompt_path: str, instruction: str,
             )
             messages: list = [{"role": "user", "content": instruction}]
 
+            _dispatch_completed = False
             for iteration in range(1, MAX_ITERATIONS + 1):
                 fh.write(f"\n[iteration {iteration}/{MAX_ITERATIONS}]\n")
                 request = LLMRequest(
@@ -4160,6 +4165,7 @@ def _dispatch_via_llm_router(task: dict, prompt_path: str, instruction: str,
                     queued = []
 
                 if not queued:
+                    _dispatch_completed = True
                     break
 
                 fh.write(
@@ -4181,6 +4187,26 @@ def _dispatch_via_llm_router(task: dict, prompt_path: str, instruction: str,
                     f"\n[OPT-62] hit MAX_ITERATIONS={MAX_ITERATIONS} "
                     f"with pending messages — stopping\n"
                 )
+
+            # Continuous Harness feed — the text-only LLMRouter executor does not
+            # go through run_agent_loop, so record the codegen decision directly
+            # here at dispatch completion. This lets the kanban reflex's later
+            # record_outcome() attach an outcome regardless of which executor ran.
+            try:
+                from tools.genesis.harness.eval_harness import record_decision
+                record_decision(
+                    task_id=task_id,
+                    reflex="codegen",
+                    decision="done" if _dispatch_completed else "error_max_turns",
+                    confidence=0.6 if _dispatch_completed else 0.3,
+                    metadata={
+                        "executor": "llm_router",
+                        "llm_function": "code_generation",
+                        "completed": _dispatch_completed,
+                    },
+                )
+            except Exception as _hd_exc:
+                logger.debug("harness record_decision skipped for %s: %s", task_id, _hd_exc)
 
     handle = _LLMTaskHandle(task_id=task_id, log_path=task_log)
     handle.start(_runner)
