@@ -1118,6 +1118,12 @@ routing:
     chain: [kimi-cloud, qwen3-local, claude-sonnet, gpt-4o, llama-local]
     effort: low
 
+  # GraphRAG community summarisation (community_engine). Writes a theme summary
+  # for one KG community from its entities + relationships.
+  kg_community_summary:
+    chain: [kimi-cloud, qwen3-local, claude-sonnet, gpt-4o, llama-local]
+    effort: low
+
   harness_anomaly_detection:
     chain: [claude-haiku, qwen3-local, gpt-4o-mini, llama-local]
     effort: low
