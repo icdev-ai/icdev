@@ -1674,7 +1674,7 @@ def _get_chat_models() -> tuple[list[dict], str]:
 def _aggregate_chat_sources(conn, tenant_id: str, context_id: str) -> list[dict]:
     """Aggregate chat-upload RAG chunks by source_id.
 
-    Parses JSON metadata in Python so no SQLite-only json_extract() appears
+    Parses JSON metadata in Python so no SQLite-only JSON SQL function appears
     in the SQL — making the query run on PostgreSQL without modification.
     Mirrors the logic of the original GROUP-BY json_extract query.
     """
@@ -6298,8 +6298,8 @@ def create_app(testing: bool = False) -> Flask:
             else:
                 row = conn.execute(
                     "SELECT "
-                    "SUM(CASE WHEN json_extract(properties, '$.enabled') = 'false' THEN 1 ELSE 0 END) AS dis, "
-                    "SUM(CASE WHEN json_extract(properties, '$.enabled') != 'false' THEN 1 ELSE 0 END) AS en "
+                    "SUM(CASE WHEN json_extract(properties, '$.enabled') = 'false' THEN 1 ELSE 0 END) AS dis, "  # pg-ok: SQLite fallback; is_pg branch above uses (properties::jsonb)->>
+                    "SUM(CASE WHEN json_extract(properties, '$.enabled') != 'false' THEN 1 ELSE 0 END) AS en "  # pg-ok: SQLite fallback; is_pg branch above uses (properties::jsonb)->>
                     "FROM kg_nodes WHERE graph_id = %s",
                     (_COMPONENTS_MAP_GRAPH_ID,),
                 ).fetchone() or {}
