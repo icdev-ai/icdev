@@ -291,18 +291,50 @@ def _store_summary(
     )
 
 
+def _graph_tags_for_collection(conn, collection_id: str) -> set[str]:
+    """The community_id graph tags belonging to a collection's document graph.
+
+    A collection's chunks resolve to one KG graph; community_id embeds
+    _graph_tag(graph_id). Resolve the graph(s) via the node->chunk join
+    (source_chunk_id is populated on ~all bridge nodes) so search can scope to
+    the collection the user is actually in, rather than every theme in the tenant.
+    """
+    if not collection_id:
+        return set()
+    try:
+        rows = conn.execute(
+            "SELECT DISTINCT n.graph_id FROM kg_nodes n "
+            "JOIN rag_chunks ch ON ch.id = n.source_chunk_id "
+            "WHERE ch.project_id = %s",
+            (collection_id,),
+        ).fetchall()
+    except Exception:  # noqa: BLE001 — scoping is best-effort; fall back to tenant-wide
+        return set()
+    return {
+        _graph_tag(dict(r)["graph_id"] if hasattr(r, "keys") else r[0])
+        for r in rows
+    }
+
+
 def search_communities(
     conn,
     query: str,
     *,
     tenant_id: str = "default",
     limit: int = 5,
+    collection_id: str | None = None,
 ) -> list[dict]:
     """Return community summaries most relevant to *query* for global Q&A.
 
     Token-overlap ranking over summary_text + citations. Deliberately simple and
     deterministic: community summaries are few (one per theme), so exhaustive
     scoring is cheap and needs no embedding index.
+
+    When ``collection_id`` is given, results are scoped to that collection's
+    graph — a user asking "the main themes" inside a collection means THAT
+    collection, not every document in the tenant. If the collection resolves to
+    no graph (nothing ingested there yet), it degrades to tenant-wide rather than
+    returning nothing.
     """
     q_tokens = _tokens(query)
     rows = [
@@ -314,6 +346,11 @@ def search_communities(
             (tenant_id,),
         )
     ]
+    tags = _graph_tags_for_collection(conn, collection_id) if collection_id else set()
+    if tags:
+        scoped = [r for r in rows if any(r["community_id"].startswith(f"comm-{t}-") for t in tags)]
+        if scoped:  # keep tenant-wide only when the collection has no communities yet
+            rows = scoped
     scored = []
     for row in rows:
         blob = (row.get("summary_text") or "") + " " + (row.get("citations_list") or "")
