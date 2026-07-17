@@ -21,20 +21,47 @@ def _conn():
     return get_connection()
 
 
-def _dic_graph_ids(conn) -> list[str]:
-    """Return kg_graph ids that belong to DIC-ingested documents only.
+# Resolve DIC graphs through the columns that actually exist.
+#
+# This previously joined kg_graphs.source_doc_id — a column kg_graphs does not
+# have. The query raised on every call, a bare `except: return []` swallowed it,
+# and the caller reported the empty list to the user as "No DIC documents
+# ingested yet. Upload documents to see analytics." So a schema error was
+# rendered as "you have no data" on a corpus of 53 documents.
+#
+# The real chain is already populated on every ingested chunk:
+#   kg_nodes.source_chunk_id -> rag_chunks.id
+#   rag_chunks.source_id     -> dic_documents.doc_id   (ingest_orchestrator sets
+#                                                       source_id = doc_id)
+# Joining dic_documents still excludes ICDEV's own system graphs (self-awareness,
+# canvas designs), which was the point of the original filter.
+_DIC_GRAPH_IDS_SQL = """
+    SELECT DISTINCT n.graph_id
+    FROM kg_nodes n
+    JOIN rag_chunks c    ON c.id = n.source_chunk_id
+    JOIN dic_documents d ON d.doc_id = c.source_id
+    WHERE n.source_chunk_id IS NOT NULL
+"""
 
-    Filters by source_doc_id IN dic_documents so ICDEV system KG graphs
-    (compliance, canvas topology, etc.) are excluded.
+
+def _dic_graph_ids(conn) -> list[str]:
+    """Return kg_graph ids holding entities extracted from DIC documents.
+
+    Excludes ICDEV's own system graphs (self-awareness, canvas designs).
+
+    A failure here is logged, never silently converted into "no documents":
+    callers treat an empty list as an empty corpus, so swallowing an error makes
+    a broken query indistinguishable from a genuinely empty one — which is
+    exactly how this went unnoticed.
     """
     try:
-        cur = conn.execute(
-            "SELECT g.id FROM kg_graphs g "
-            "INNER JOIN dic_documents d ON d.doc_id = g.source_doc_id "
-            "WHERE g.source_doc_id IS NOT NULL"
-        )
+        cur = conn.execute(_DIC_GRAPH_IDS_SQL)
         return [row[0] for row in cur.fetchall()]
-    except Exception:
+    except Exception as exc:
+        logger.warning(
+            "dic.analytics: cannot resolve DIC graph ids (%s) — analytics will "
+            "report an empty corpus, which may be wrong", exc
+        )
         return []
 
 
