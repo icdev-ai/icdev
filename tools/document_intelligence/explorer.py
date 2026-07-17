@@ -56,8 +56,8 @@ def _find_orphans(tenant_id: str, limit: int) -> list[ExplorerFinding]:
             "SELECT d.doc_id, d.title, d.collection_id, d.classification "
             "FROM dic_documents d "
             "LEFT JOIN dic_chunk_links c ON c.doc_id = d.doc_id "
-            "WHERE d.tenant_id = ? AND c.doc_id IS NULL "
-            "ORDER BY d.created_at DESC LIMIT ?",
+            "WHERE d.tenant_id = %s AND c.doc_id IS NULL "
+            "ORDER BY d.created_at DESC LIMIT %s",
             (tenant_id, limit),
         )
         for r in rows:
@@ -79,8 +79,8 @@ def _find_orphans(tenant_id: str, limit: int) -> list[ExplorerFinding]:
             "SELECT d.doc_id, d.title, d.collection_id, d.classification "
             "FROM dic_documents d "
             "LEFT JOIN dic_versions v ON v.doc_id = d.doc_id "
-            "WHERE d.tenant_id = ? AND v.doc_id IS NULL "
-            "ORDER BY d.created_at DESC LIMIT ?",
+            "WHERE d.tenant_id = %s AND v.doc_id IS NULL "
+            "ORDER BY d.created_at DESC LIMIT %s",
             (tenant_id, limit),
         )
         for r in rows:
@@ -110,15 +110,15 @@ def _find_single_owner(tenant_id: str, limit: int) -> list[ExplorerFinding]:
         rows = _safe_rows(
             conn,
             "SELECT collection_id, COUNT(*) as cnt FROM dic_team_access "
-            "WHERE tenant_id = ? GROUP BY collection_id HAVING COUNT(*) = 1 "
-            "LIMIT ?",
+            "WHERE tenant_id = %s GROUP BY collection_id HAVING COUNT(*) = 1 "
+            "LIMIT %s",
             (tenant_id, limit),
         )
         for r in rows:
             cid = r["collection_id"]
             member_rows = _safe_rows(
                 conn,
-                "SELECT user_id, role FROM dic_team_access WHERE collection_id = ? AND tenant_id = ? LIMIT 1",
+                "SELECT user_id, role FROM dic_team_access WHERE collection_id = %s AND tenant_id = %s LIMIT 1",
                 (cid, tenant_id),
             )
             user_id = member_rows[0]["user_id"] if member_rows else "unknown"
@@ -152,7 +152,7 @@ def _find_undocumented_deps(tenant_id: str, limit: int) -> list[ExplorerFinding]
             "FROM kg_nodes n "
             "LEFT JOIN dic_documents d ON d.doc_id = n.source_doc_id "
             "WHERE n.source_doc_id IS NOT NULL AND d.doc_id IS NULL "
-            "ORDER BY n.centrality DESC LIMIT ?",
+            "ORDER BY n.centrality DESC LIMIT %s",
             (limit,),
         )
         for r in rows:
@@ -183,8 +183,8 @@ def _find_contradictions(tenant_id: str, limit: int) -> list[ExplorerFinding]:
         # We want titles with MULTIPLE distinct hashes.
         titles = _safe_rows(
             conn,
-            "SELECT title FROM dic_documents WHERE tenant_id = ? AND title != '' "
-            "GROUP BY title HAVING COUNT(DISTINCT content_sha256) > 1 LIMIT ?",
+            "SELECT title FROM dic_documents WHERE tenant_id = %s AND title != '' "
+            "GROUP BY title HAVING COUNT(DISTINCT content_sha256) > 1 LIMIT %s",
             (tenant_id, limit),
         )
         for t in titles:
@@ -192,7 +192,7 @@ def _find_contradictions(tenant_id: str, limit: int) -> list[ExplorerFinding]:
             docs = _safe_rows(
                 conn,
                 "SELECT doc_id, content_sha256, collection_id, classification FROM dic_documents "
-                "WHERE tenant_id = ? AND title = ? ORDER BY created_at DESC LIMIT 5",
+                "WHERE tenant_id = %s AND title = %s ORDER BY created_at DESC LIMIT 5",
                 (tenant_id, title),
             )
             hashes = [d["content_sha256"] for d in docs]
@@ -226,11 +226,11 @@ def _find_superseded(tenant_id: str, limit: int) -> list[ExplorerFinding]:
             "MAX(CASE WHEN v.status = 'approved' THEN v.version_no END) as approved_ver, "
             "MAX(CASE WHEN v.status != 'approved' THEN v.version_no END) as draft_ver "
             "FROM dic_documents d JOIN dic_versions v ON v.doc_id = d.doc_id "
-            "WHERE d.tenant_id = ? "
+            "WHERE d.tenant_id = %s "
             "GROUP BY d.doc_id, d.title, d.collection_id, d.classification "
             "HAVING MAX(CASE WHEN v.status != 'approved' THEN v.version_no END) > "
             "       MAX(CASE WHEN v.status = 'approved' THEN v.version_no END) "
-            "LIMIT ?",
+            "LIMIT %s",
             (tenant_id, limit),
         )
         for r in rows:
