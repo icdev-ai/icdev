@@ -29,6 +29,7 @@ from pathlib import Path
 from tools.logging.icdev_logger import get_logger
 import uuid
 from datetime import datetime, timedelta, timezone
+from collections.abc import Callable
 from typing import Any
 
 LOG = get_logger(__name__)
@@ -481,6 +482,98 @@ def _wilson_interval(hits: int, n: int, z: float = 1.96) -> tuple[float, float]:
     return (max(0.0, centre - margin), min(1.0, centre + margin))
 
 
+def calibration_by_key(
+    rows: list,
+    key_of: "Callable[[dict], Any]",
+    success_outcomes: "frozenset[str] | set[str] | None" = None,
+) -> list[dict[str, Any]]:
+    """Observed accuracy vs claimed confidence, grouped by an arbitrary key.
+
+    Shared by calibration_by_band and calibration_by_rule. The grouping key is
+    the only thing that differs between them, and the rules they must agree on —
+    that a NULL or ``bypassed`` outcome is tracked but never scored, that a group
+    under MIN_CALIBRATION_SAMPLES renders as unmeasured — are exactly the ones
+    that must not drift apart. Two copies of this loop disagreeing is not a
+    hypothetical: _compute_ece already shipped that bug, filtering outcomes in
+    one caller and not the other, so the same rows scored differently depending
+    on who asked.
+
+    Each group carries its own ``claimed`` values rather than assuming one, so a
+    caller can see when a group's claim is not a single number.
+    """
+    success = frozenset(success_outcomes) if success_outcomes else SUCCESS_OUTCOMES
+    groups: dict[Any, dict[str, Any]] = {}
+
+    for r in rows:
+        if r["confidence"] is None:
+            continue
+        key = key_of(r)
+        g = groups.setdefault(key, {"labelled": 0, "hits": 0, "non_evidence": 0,
+                                    "claimed_values": set()})
+        g["claimed_values"].add(round(float(r["confidence"]), 4))
+
+        outcome = r["actual_outcome"]
+        if outcome is None or str(outcome).strip().lower() in NON_EVIDENCE_OUTCOMES:
+            # Tracked, never scored. "Nobody checked" is not a verdict — counting
+            # it as a miss manufactures miscalibration out of missing data.
+            g["non_evidence"] += 1
+            continue
+        g["labelled"] += 1
+        if str(outcome).strip().lower() in success:
+            g["hits"] += 1
+
+    out: list[dict[str, Any]] = []
+    for key in sorted(groups, key=str, reverse=True):
+        g = groups[key]
+        n = g["labelled"]
+        claimed_values = sorted(g["claimed_values"])
+        # Mean over the rows' own claims. For a rule this is normally a single
+        # constant; more than one means the rule's confidence was edited and old
+        # rows kept the old value.
+        claimed = round(sum(claimed_values) / len(claimed_values), 4) if claimed_values else None
+        observed = (g["hits"] / n) if n else None
+        lo, hi = _wilson_interval(g["hits"], n) if n else (None, None)
+        out.append({
+            "key": key,
+            "claimed": claimed,
+            "claimed_values": claimed_values,
+            "labelled": n,
+            "hits": g["hits"],
+            "misses": n - g["hits"],
+            "non_evidence": g["non_evidence"],
+            "measured": n >= MIN_CALIBRATION_SAMPLES,
+            "observed_accuracy": round(observed, 4) if observed is not None else None,
+            "ci_low": round(lo, 4) if lo is not None else None,
+            "ci_high": round(hi, 4) if hi is not None else None,
+            # Signed gap: positive means the system claimed more than it delivered.
+            "gap": round(claimed - observed, 4) if observed is not None and claimed is not None else None,
+        })
+    return out
+
+
+def calibration_by_rule(
+    rows: list,
+    success_outcomes: "frozenset[str] | set[str] | None" = None,
+    rule_field: str = "decision",
+) -> list[dict[str, Any]]:
+    """Observed accuracy per RULE — the cut that can actually be acted on.
+
+    Confidence in this system is not computed per prediction; it is a per-rule
+    constant copied out of awareness_config.yaml, so a band is mostly a single
+    rule wearing a number. Grouping by band therefore averages over rules that
+    have nothing to do with each other, and on the live corpus it actively
+    misleads: the 0.9 band reads "20 labels, observed 0.90" but is 19 rows of
+    tool_not_in_manifest plus 1 row of route_not_listed. The band's number is
+    tool_not_in_manifest's number with a rounding error attached.
+
+    A rule that is wrong is a fixable thing. A band is an arbitrary set union.
+    """
+    out = calibration_by_key(rows, lambda r: r.get(rule_field), success_outcomes)
+    for g in out:
+        g["rule"] = g["key"]
+    return out
+
+
 def calibration_by_band(
     rows: list,
     success_outcomes: "frozenset[str] | set[str] | None" = None,
@@ -489,57 +582,23 @@ def calibration_by_band(
     """Observed accuracy vs claimed confidence, per band, with intervals.
 
     This is the report the ECE number cannot give you: a single ECE says "the
-    numbers are off by 0.15" without saying *which* band lies. On the live
-    corpus the 1.0 band ran ~0.89 while the 0.9 band ran ~0.33 — the aggregate
-    hides that confidence was non-monotonic, which is the finding that matters.
+    numbers are off by 0.15" without saying *which* band lies.
 
-    Each band reports ``measured: False`` rather than a number when it has fewer
-    than MIN_CALIBRATION_SAMPLES labels. A point estimate off 3 samples is noise
-    wearing a decimal point, and the whole purpose here is to stop reporting
-    unearned certainty — it would be self-defeating to do it in the report about
-    unearned certainty.
+    Prefer calibration_by_rule where a rule is available. A band is only a real
+    unit of analysis when confidence is a per-prediction estimate; where it is a
+    per-rule constant (the awareness lens), a band is a set union of unrelated
+    rules and its accuracy is an average nobody can act on.
     """
-    success = frozenset(success_outcomes) if success_outcomes else SUCCESS_OUTCOMES
-    bands: dict[float, dict[str, int]] = {}
-
-    for r in rows:
-        if r["confidence"] is None:
-            continue
-        conf = float(r["confidence"])
-        band = _band_of(conf, bin_width)
-        b = bands.setdefault(band, {"labelled": 0, "hits": 0, "non_evidence": 0})
-
-        outcome = r["actual_outcome"]
-        if outcome is None or str(outcome).strip().lower() in NON_EVIDENCE_OUTCOMES:
-            # Tracked, never scored. "Nobody checked" is not a verdict — counting
-            # it as a miss manufactures miscalibration out of missing data.
-            b["non_evidence"] += 1
-            continue
-        b["labelled"] += 1
-        if str(outcome).strip().lower() in success:
-            b["hits"] += 1
-
-    out: list[dict[str, Any]] = []
-    for band in sorted(bands, reverse=True):
-        b = bands[band]
-        n = b["labelled"]
-        measured = n >= MIN_CALIBRATION_SAMPLES
-        observed = (b["hits"] / n) if n else None
-        lo, hi = _wilson_interval(b["hits"], n) if n else (None, None)
-        out.append({
-            "band": band,
-            "claimed": band,
-            "labelled": n,
-            "hits": b["hits"],
-            "misses": n - b["hits"],
-            "non_evidence": b["non_evidence"],
-            "measured": measured,
-            "observed_accuracy": round(observed, 4) if observed is not None else None,
-            "ci_low": round(lo, 4) if lo is not None else None,
-            "ci_high": round(hi, 4) if hi is not None else None,
-            # Signed gap: positive means the system claimed more than it delivered.
-            "gap": round(band - observed, 4) if observed is not None else None,
-        })
+    out = calibration_by_key(
+        rows, lambda r: _band_of(float(r["confidence"]), bin_width), success_outcomes
+    )
+    for g in out:
+        g["band"] = g["key"]
+        # A band's claim is the band, not the mean of the claims inside it.
+        g["claimed"] = g["key"]
+        obs = g["observed_accuracy"]
+        g["gap"] = round(g["key"] - obs, 4) if obs is not None else None
+    out.sort(key=lambda g: g["band"], reverse=True)
     return out
 
 
