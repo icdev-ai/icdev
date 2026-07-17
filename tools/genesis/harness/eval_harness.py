@@ -22,6 +22,7 @@ Usage (from any reflex):
 from __future__ import annotations
 
 import json
+import math
 import statistics
 from pathlib import Path
 
@@ -415,6 +416,114 @@ def compute_metrics(reflex: str, window_days: int = 30) -> dict[str, Any]:
     }
 
 
+# The two reflexes the gate has always covered. Kept as the default so behaviour
+# is unchanged when nothing is configured.
+_DEFAULT_GATED_REFLEXES = ("oracle_triage", "heal")
+
+
+def _gated_reflexes(cfg: dict | None = None) -> tuple[str, ...]:
+    """Which reflexes check_gates() evaluates.
+
+    This was a literal `for reflex in ("oracle_triage", "heal")`. Everything else
+    that gates on confidence — citation grounding, docmod findings, the AADC
+    proceed/escalate gate, the awareness promotion priors — was unmeasurable not
+    by decision but because a tuple in one loop never mentioned it. The
+    calibration engine existed; its reach was two names long.
+
+    Config: harness.gated_reflexes in args/genesis_config.yaml. A surface only
+    yields metrics once it writes to harness_eval, so listing one costs nothing
+    until it has data.
+    """
+    cfg = cfg if cfg is not None else _load_harness_config()
+    configured = (cfg or {}).get("gated_reflexes")
+    if not configured:
+        return _DEFAULT_GATED_REFLEXES
+    if isinstance(configured, str):
+        configured = [configured]
+    names = tuple(str(r).strip() for r in configured if str(r).strip())
+    return names or _DEFAULT_GATED_REFLEXES
+
+
+def _wilson_interval(hits: int, n: int, z: float = 1.96) -> tuple[float, float]:
+    """95% Wilson score interval for a binomial proportion.
+
+    Wilson rather than the normal approximation because n here is small and the
+    proportions sit near 0 and 1, where the normal interval famously runs past
+    [0,1] and reports nonsense like "accuracy 1.0 ± 0.3". Wilson stays inside the
+    unit interval and does not collapse to zero width at p=0 or p=1 — exactly the
+    cases this report hits most.
+    """
+    if n <= 0:
+        return (0.0, 1.0)
+    p = hits / n
+    denom = 1 + z * z / n
+    centre = (p + z * z / (2 * n)) / denom
+    margin = (z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n))) / denom
+    return (max(0.0, centre - margin), min(1.0, centre + margin))
+
+
+def calibration_by_band(
+    rows: list,
+    success_outcomes: "frozenset[str] | set[str] | None" = None,
+    bin_width: float = 0.1,
+) -> list[dict[str, Any]]:
+    """Observed accuracy vs claimed confidence, per band, with intervals.
+
+    This is the report the ECE number cannot give you: a single ECE says "the
+    numbers are off by 0.15" without saying *which* band lies. On the live
+    corpus the 1.0 band ran ~0.89 while the 0.9 band ran ~0.33 — the aggregate
+    hides that confidence was non-monotonic, which is the finding that matters.
+
+    Each band reports ``measured: False`` rather than a number when it has fewer
+    than MIN_CALIBRATION_SAMPLES labels. A point estimate off 3 samples is noise
+    wearing a decimal point, and the whole purpose here is to stop reporting
+    unearned certainty — it would be self-defeating to do it in the report about
+    unearned certainty.
+    """
+    success = frozenset(success_outcomes) if success_outcomes else SUCCESS_OUTCOMES
+    bands: dict[float, dict[str, int]] = {}
+
+    for r in rows:
+        if r["confidence"] is None:
+            continue
+        conf = float(r["confidence"])
+        band = round(math.floor(conf / bin_width) * bin_width, 2)
+        b = bands.setdefault(band, {"labelled": 0, "hits": 0, "non_evidence": 0})
+
+        outcome = r["actual_outcome"]
+        if outcome is None or str(outcome).strip().lower() in NON_EVIDENCE_OUTCOMES:
+            # Tracked, never scored. "Nobody checked" is not a verdict — counting
+            # it as a miss manufactures miscalibration out of missing data.
+            b["non_evidence"] += 1
+            continue
+        b["labelled"] += 1
+        if str(outcome).strip().lower() in success:
+            b["hits"] += 1
+
+    out: list[dict[str, Any]] = []
+    for band in sorted(bands, reverse=True):
+        b = bands[band]
+        n = b["labelled"]
+        measured = n >= MIN_CALIBRATION_SAMPLES
+        observed = (b["hits"] / n) if n else None
+        lo, hi = _wilson_interval(b["hits"], n) if n else (None, None)
+        out.append({
+            "band": band,
+            "claimed": band,
+            "labelled": n,
+            "hits": b["hits"],
+            "misses": n - b["hits"],
+            "non_evidence": b["non_evidence"],
+            "measured": measured,
+            "observed_accuracy": round(observed, 4) if observed is not None else None,
+            "ci_low": round(lo, 4) if lo is not None else None,
+            "ci_high": round(hi, 4) if hi is not None else None,
+            # Signed gap: positive means the system claimed more than it delivered.
+            "gap": round(band - observed, 4) if observed is not None else None,
+        })
+    return out
+
+
 def check_gates() -> list[dict[str, Any]]:
     """Run all threshold checks across oracle_triage and heal reflexes.
 
@@ -431,7 +540,7 @@ def check_gates() -> list[dict[str, Any]]:
     cfg = _load_harness_config()
     min_decisions = int(cfg.get("gates", {}).get("min_decisions", _DEFAULT_GATES["min_decisions"]))
 
-    for reflex in ("oracle_triage", "heal"):
+    for reflex in _gated_reflexes(cfg):
         m = compute_metrics(reflex)
         if "error" in m or m.get("total_decisions", 0) < min_decisions:
             continue
@@ -509,20 +618,68 @@ def check_gates() -> list[dict[str, Any]]:
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-def _compute_ece(rows: list) -> float | None:
-    """Expected Calibration Error over 10 confidence decile bins."""
-    if len(rows) < 5:
+# Outcome vocabularies differ per surface. The harness reflexes call a decision
+# correct when it "resolved"; a docmod finding is correct when a human "accepted"
+# it; a sampled oracle prediction is correct when its task "passed". Hardcoding
+# one vocabulary made every other surface score 0% accurate — not because it was
+# wrong, but because its label was spelled differently.
+SUCCESS_OUTCOMES: frozenset[str] = frozenset({"resolved"})
+
+# Outcomes that are NOT evidence either way. "bypassed" means verification was
+# skipped; "unknown"/"pending" mean nobody has judged yet. Counting these as
+# failures is how you manufacture miscalibration out of missing data.
+NON_EVIDENCE_OUTCOMES: frozenset[str] = frozenset({"bypassed", "unknown", "pending", ""})
+
+# Below this many labelled rows a calibration number is noise wearing a decimal
+# point. _compute_ece has always honoured it; the reports must too.
+MIN_CALIBRATION_SAMPLES = 5
+
+
+def _compute_ece(rows: list, success_outcomes: "frozenset[str] | set[str] | None" = None) -> float | None:
+    """Expected Calibration Error over 10 confidence decile bins.
+
+    Args:
+        rows: mappings with ``confidence`` and ``actual_outcome``.
+        success_outcomes: outcome values meaning "the prediction was right".
+            Defaults to SUCCESS_OUTCOMES ("resolved") — the harness vocabulary.
+
+    Returns None when fewer than MIN_CALIBRATION_SAMPLES usable rows remain.
+
+    Two things this refuses to do, both of which it used to do:
+
+    * **Invent a confidence.** It read ``float(r["confidence"]) if not None else
+      0.5`` — a row with no confidence became a fabricated 0.5 *inside a
+      calibration measurement*. A function whose only job is to check whether the
+      numbers are honest must not make its own numbers up. Such rows are dropped.
+
+    * **Score "unknown" as "wrong."** ``outcome = r["actual_outcome"] ==
+      "resolved"`` turned a NULL outcome into False — a prediction nobody has
+      judged yet counted as a failed one, inflating ECE. compute_metrics()
+      happened to pre-filter for this; _snapshot_metrics() did not, so the same
+      function reported different calibration depending on which caller reached
+      it. Unlabelled and non-evidence rows are dropped here instead, so neither
+      caller can get it wrong.
+    """
+    success = frozenset(success_outcomes) if success_outcomes else SUCCESS_OUTCOMES
+
+    usable = [
+        r for r in rows
+        if r["confidence"] is not None
+        and r["actual_outcome"] is not None
+        and str(r["actual_outcome"]).strip().lower() not in NON_EVIDENCE_OUTCOMES
+    ]
+    if len(usable) < MIN_CALIBRATION_SAMPLES:
         return None
 
     bins: dict[int, list] = {i: [] for i in range(10)}
-    for r in rows:
-        conf = float(r["confidence"]) if r["confidence"] is not None else 0.5
-        outcome = r["actual_outcome"] == "resolved"
+    for r in usable:
+        conf = float(r["confidence"])
+        outcome = str(r["actual_outcome"]).strip().lower() in success
         bin_idx = min(int(conf * 10), 9)
         bins[bin_idx].append((conf, outcome))
 
     ece = 0.0
-    n = len(rows)
+    n = len(usable)
     for items in bins.values():
         if not items:
             continue
