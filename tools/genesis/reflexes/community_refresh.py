@@ -51,6 +51,17 @@ class CommunityRefreshReflex:
                 result["graphs_available"] = graphs
                 return {"success": True, "metric_value": float(graphs), "details": result}
 
+            # Resolve co-referent entities first — the per-chunk extractor mints a
+            # separate node per mention, so collapsing (label,type) duplicates
+            # sharpens the graph the communities are then built on.
+            try:
+                from tools.knowledge_graph.entity_resolution import resolve_dic_entities
+
+                res_stats = resolve_dic_entities()
+                result["entities_merged"] = res_stats.get("nodes_merged", 0)
+            except Exception as exc:  # noqa: BLE001 — resolution is best-effort
+                logger.debug("community refresh: entity resolution skipped: %s", exc)
+
             stats = build_communities(conn)
             result.update(stats)
             logger.info(
