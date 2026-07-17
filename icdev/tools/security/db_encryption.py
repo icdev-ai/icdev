@@ -182,13 +182,13 @@ class EncryptedSqliteConnection:
                         "but ICDEV_DB_ENCRYPTION_KEY is not set"
                     )
                 logger.warning("DB encryption key not configured — opening unencrypted SQLite")
-                self._conn = sqlite3.connect(str(self._db_path), **self._sqlite_kwargs)
+                self._conn = sqlite3.connect(str(self._db_path), **self._sqlite_kwargs)  # pg-ok: SQLCipher-style encrypted SQLite wrapper (infra)
                 self._conn.row_factory = sqlite3.Row
                 return self._conn
 
             # Encrypted path
             self._temp_path = self._decrypt_to_temp()
-            self._conn = sqlite3.connect(str(self._temp_path), **self._sqlite_kwargs)
+            self._conn = sqlite3.connect(str(self._temp_path), **self._sqlite_kwargs)  # pg-ok: SQLCipher decrypt-to-temp SQLite (infra)
             self._conn.row_factory = sqlite3.Row
             return self._conn
 
@@ -223,7 +223,7 @@ def open_encrypted_db(db_path: str, **kwargs) -> sqlite3.Connection:
         if enforce:
             raise RuntimeError("DB encryption enforced but key not configured")
         logger.warning("DB encryption key not configured — falling back to plain SQLite")
-        conn = sqlite3.connect(db_path, **kwargs)
+        conn = sqlite3.connect(db_path, **kwargs)  # pg-ok: SQLCipher-style encrypted SQLite wrapper (infra)
         conn.row_factory = sqlite3.Row
         return conn
 

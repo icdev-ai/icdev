@@ -60,3 +60,40 @@ Already backend-aware; confirm SQLite path is *only* a guarded fallback, fix str
 ## Rough sizing
 - PG1: 1 PR (~S). PG2: ~16 tasks / 3–4 PRs (M). PG3: ~5 cluster tasks / 3 PRs (M–L). PG4: 1–2 sweep PRs (S–M).
 - Total ≈ 22–25 kanban tasks under a `pgrt-` prefix (PG Runtime).
+
+---
+
+## Classification Results (2026-07-17) — all 61 remaining high-severity runtime files
+
+Fanned out over the 61 files (raw `sqlite3.connect` / `sqlite_master`). Outcome: the
+codebase is far more PG-compliant than the raw counts implied.
+
+- **CLASS_B — already PG-primary, guarded SQLite fallback (~40, COMPLIANT):** all
+  `govlift/*` (×10), `memory/*` (×5), `strategos/*` importers (×7), `trading/news/db`,
+  `conflict_mesh/*` (×2), `data_canvas/{anomaly_detector,freshness_guardian,mcp_scanner}`,
+  `compat/db_utils`, `audit/audit_logger`, `agent/dispatcher_mode`,
+  `canvas_compliance/compliance`, `databridge/connection_manager`,
+  `ndc/{agentic_netops,gns3_traffic_engine}`, `network/{blueprint,ip_address_space}`,
+  `sharepoint/ingest`, `migration_canvas/network_migration`,
+  `migration_intelligence/opportunity_scanner`, `modernization/migration_code_generator`,
+  `knowledge_graph/canvas_indexer`, `infra_canvas/snapshot_writer`,
+  `compliance/evidence_chain`. Raw `sqlite3.connect` appears only in `except ImportError`
+  init-fallbacks, `if DB_PATH` test hooks, or cross-canvas SQLite-sidecar reads. Their
+  primary path is `get_connection`/`get_canvas_connection`. **No migration needed.**
+- **FP — legitimate/permanent SQLite (~17, keep):** `data_canvas/data_profiler`
+  (profiles user SQLite), `security/db_encryption` (SQLCipher infra) — both annotated
+  `# pg-ok` here. Plus demo/synthetic/smoke/schedule/test harnesses:
+  `ndc/{demo_runner,dod_lab_demo_runner,dod_lab_synthetic_data,synthetic_network_generator}`,
+  `testing/{route_smoke,api_contract_tester,dep_health,flaky_tracker,visual_regression}`,
+  `scripts/schedule_*`, `showcase/ai_canvas_demo_runner`, `iqe/adapters/sdc_demo`,
+  `workflow/coherence_checker` (its "connects" are regex string literals).
+- **CLASS_A — genuine gap (1):** `dashboard/findings_aggregator.py` reads 7 per-canvas
+  `.db` files directly and returns empty on PostgreSQL (canvas tables live in the shared
+  PG DB). Needs per-canvas `get_canvas_connection()` routing — tracked as `pgrt-findagg-01`.
+
+Also confirmed: `translate_sql` already rewrites `sqlite_master`→`information_schema`
+(rule #14), so `sqlite_master` findings are not real breakage.
+
+**Remaining work:** (1) `pgrt-findagg-01` — migrate findings_aggregator. (2) `pgrt-sweep-01`
+— refresh `tools/lint/pg_portability_baseline.json` to accept the verified CLASS_B/FP
+findings so the audit reflects the compliant state.
