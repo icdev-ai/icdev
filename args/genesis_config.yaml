@@ -1026,6 +1026,40 @@ reflexes:
       threshold: 0
       operator: gte
 
+  # ── Confidence Sampler (audit what the system was already sure about) ───────
+  # TRUST gates on confidence, and confidence is a self-report. Items above the
+  # gate flow through automatically and nobody re-reads them, so errors in the
+  # trusted band are not rare — they are structurally unobservable. This draws an
+  # unbiased sample so a human is forced to look at what nothing else surfaces.
+  #
+  # Writes measurement rows only (harness_eval, outcome NULL until judged). It
+  # never promotes, resolves or modifies the item it samples: an audit that
+  # changes its subject is not an audit.
+  confidence_sampler:
+    timeout_seconds: 120
+    enabled: true
+    risk_tier: green         # read-only against the sampled surface
+    schedule: "daily 04:00"
+    interval_seconds: 86400
+    cooldown_minutes: 720
+    description: "Confidence sampler: stratified random audit sample of scored decisions, recorded as pending harness_eval rows for human verdict. Measures whether confidence predicts correctness."
+    dry_run: false
+    surface: "oracle_triage"
+    # Bands include values BELOW the 0.7 promotion gate on purpose. Every live
+    # oracle_prediction is >=0.7 because the gate filters before the row is
+    # written — measuring only what passed can confirm the gate but never test
+    # it. A threshold is a claim about both sides of itself.
+    bands: [0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+    band_width: 0.1
+    # Per band, not total: a flat draw returns mostly 1.0 rows (173 of 420 live)
+    # and starves the bands that need estimating. Small by default — reviewer
+    # time is the scarce resource, not database rows.
+    per_band: 3
+    success_metric:
+      name: confidence_samples_drawn
+      threshold: 0
+      operator: gte
+
   # ── DIC Inbox Sweep (the drop folder finally gets someone watching it) ───────
   # tools/document_intelligence/inbox.py was built for teams who pull documents
   # out of SharePoint with a browser session and had nowhere to put them. It
