@@ -1,0 +1,7 @@
+# Test/e2e persona debris — never commit auto-generated ephemeral personas.
+# NOVA soul/e2e tests use unique role ids (nova-test-soul-*, nova-e2e-*).
+# A prior disk-writing record_learning + the auto-commit hook swept ~94 of
+# these into the tree (task hcx-ace-04). Current soul_manager is DB-only, but
+# this backstop stops any reintroduced writer from re-committing them.
+nova-test-soul-*/
+nova-e2e-*/
