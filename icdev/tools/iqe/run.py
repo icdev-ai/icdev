@@ -59,7 +59,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"parse error: {e}", file=sys.stderr)
         return 1
 
-    conn = sqlite3.connect(":memory:")
+    conn = sqlite3.connect(":memory:")  # pg-ok: in-memory query sandbox, not ICDEV storage
     try:
         rows = execute_query(ast, conn)
     except sqlite3.OperationalError:

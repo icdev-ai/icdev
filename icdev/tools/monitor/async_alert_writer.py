@@ -91,16 +91,16 @@ class AsyncDBWriter:
             conn.close()
 
     def _open_conn(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(
+        conn = sqlite3.connect(  # pg-ok: SQLite-WAL async alert buffer (local), not ICDEV storage
             self._db_path,
             timeout=30,
             check_same_thread=False,
         )
         # WAL mode: writers don't block readers; concurrent writers serialise
         # at the WAL level without full DB lock.
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA synchronous=NORMAL")
-        conn.execute("PRAGMA cache_size=-4096")   # 4 MB page cache
+        conn.execute("PRAGMA journal_mode=WAL")  # pg-ok: SQLite-only local buffer
+        conn.execute("PRAGMA synchronous=NORMAL")  # pg-ok: SQLite-only local buffer
+        conn.execute("PRAGMA cache_size=-4096")   # 4 MB page cache  # pg-ok: SQLite-only local buffer
         return conn
 
     def _drain_loop(self) -> None:
