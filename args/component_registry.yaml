@@ -768,32 +768,50 @@ components:
   nav:
     section: Canvases
     label: Document Intelligence
+    # Ordered by the four jobs a user actually does, matching _PAGE_GROUPS in
+    # tools/document_intelligence/blueprint.py: get documents in, ask questions
+    # of them, author from them, then govern what comes out. The sidebar was a
+    # flat list in a different order from the index tiles, so the two navs
+    # disagreed on both membership and sequence — the index already grouped its
+    # tiles ("14 undifferentiated sibling tiles give no clue what to do first")
+    # while the sidebar ignored that entirely.
+    #
+    # base.html renders links flat, so the grouping is expressed as order rather
+    # than headings — no template change, and the registry stays the single
+    # source of truth per the CLAUDE.md registry rule.
     links:
     - label: DIC Overview
       href: /document-intelligence/
       style: color:#7ab3f0;
+    # 1 · Ingest & organize
     - label: Collections
       href: /document-intelligence/collections
-    - label: Search & Chat
-      href: /document-intelligence/search
-    - label: Analytics
-      href: /document-intelligence/analytics
-    - label: HITL Review
-      href: /document-intelligence/review
-    - label: AI-Assist
-      href: /document-intelligence/generate
-    - label: DocDrift
-      href: /document-intelligence/docdrift
-    - label: Freshness
-      href: /document-intelligence/freshness
-    - label: Explorer
-      href: /document-intelligence/explorer
-    - label: Handoff
-      href: /document-intelligence/handoff
     - label: 📓 Notebook
       href: /document-intelligence/notebook
+    - label: Handoff
+      href: /document-intelligence/handoff
+    # 2 · Explore & search
+    - label: Search & Chat
+      href: /document-intelligence/search
+    - label: Explorer
+      href: /document-intelligence/explorer
+    - label: Analytics
+      href: /document-intelligence/analytics
+    # 3 · Author & generate
     - label: ✍️ Tech Writer
       href: /document-intelligence/techwriter
+    - label: AI-Assist
+      href: /document-intelligence/generate
+    # Templates had a tile but no sidebar entry — reachable from the index only.
+    - label: Templates
+      href: /document-intelligence/templates
+    # 4 · Govern & review
+    - label: HITL Review
+      href: /document-intelligence/review
+    - label: Freshness
+      href: /document-intelligence/freshness
+    - label: DocDrift
+      href: /document-intelligence/docdrift
   iqe:
     adapter_module: tools.iqe.adapters.dic
     collections:
