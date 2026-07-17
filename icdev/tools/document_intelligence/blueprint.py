@@ -1867,6 +1867,43 @@ def _needs_synthesis(query: str) -> bool:
     return any(kw in q for kw in _SYNTHESIS_KEYWORDS)
 
 
+# Global/thematic questions are about the corpus AS A WHOLE ("what are the main
+# themes", "what topics do these documents cover"). No single chunk answers them
+# — the answer lives in the KG's community structure. These queries get the
+# GraphRAG community summaries fed into synthesis alongside the retrieved chunks.
+_GLOBAL_QUERY_KEYWORDS = frozenset([
+    "main theme", "main topic", "key theme", "key topic", "overall", "overarching",
+    "across all", "across the", "these documents", "this collection", "the corpus",
+    "main points", "high level", "high-level", "big picture", "recurring",
+    "what topics", "what themes", "common themes", "overview of",
+])
+
+
+def _is_global_query(query: str) -> bool:
+    q = query.lower()
+    return any(kw in q for kw in _GLOBAL_QUERY_KEYWORDS)
+
+
+def _community_context(message: str, tenant_id: str, limit: int = 5) -> list[str]:
+    """GraphRAG community summaries relevant to a global/thematic question.
+
+    Returns the summary texts (whole-corpus themes) or [] if the engine/table is
+    empty or unavailable — always graceful, never blocks the grounded answer.
+    """
+    try:
+        from tools.knowledge_graph.community_engine import search_communities
+
+        conn = _conn()
+        try:
+            rows = search_communities(conn, message, tenant_id=tenant_id, limit=limit)
+        finally:
+            conn.close()
+        return [r["summary_text"] for r in rows if r.get("summary_text")]
+    except Exception as exc:  # noqa: BLE001 — GraphRAG augmentation is best-effort
+        logger.debug("dic: community context unavailable: %s", exc)
+        return []
+
+
 def _build_sources(results: list) -> list[dict]:
     """Build a numbered, human-readable source list for chat citations.
 
@@ -1916,12 +1953,17 @@ def _compile_grounded_answer(results: list, query: str) -> dict:
     return {"answer": answer, "sources": sources}
 
 
-def _llm_synthesize(message: str, results: list) -> str | None:
+def _llm_synthesize(
+    message: str, results: list, community_summaries: list[str] | None = None
+) -> str | None:
     """Call LLM only when synthesis is warranted. Returns None on failure.
 
     Uses LLMRouter.invoke() with a system prompt instructing the model to answer
     only from the provided evidence — grounded, no hallucination. Cites sources
     with [N] markers that match the sources list returned by api_chat.
+
+    For global/thematic questions, ``community_summaries`` carries the GraphRAG
+    whole-corpus themes so the model can answer a question no single chunk covers.
     """
     evidence_results = results[:5]
     sources = _build_sources(evidence_results)
@@ -1935,12 +1977,21 @@ def _llm_synthesize(message: str, results: list) -> str | None:
             f"(p.{r.page or '?'})\n{passage}"
         )
     evidence = "\n\n".join(evidence_lines)
+    graph_overview = ""
+    if community_summaries:
+        overview_lines = "\n".join(f"- {s}" for s in community_summaries[:5])
+        graph_overview = (
+            "\n\nKnowledge-graph thematic overview (themes spanning the whole "
+            "corpus, derived from the document graph — use these for high-level or "
+            "thematic questions the individual passages above do not cover):\n"
+            f"{overview_lines}"
+        )
     prompt = (
         "You are a document assistant. Answer ONLY using the provided evidence — "
         "do not add information beyond what is cited. "
         "Cite supporting facts with [N] markers that match the evidence numbers. "
         "If the evidence is insufficient, say so explicitly.\n\n"
-        f"Evidence:\n{evidence}\n\n"
+        f"Evidence:\n{evidence}{graph_overview}\n\n"
         f"Question: {message}"
     )
     # Adoption wave 2: route DIC chat synthesis through the GOVERNED cortex.complete
@@ -2066,21 +2117,25 @@ def api_chat():
         abstained = False
 
         if _needs_synthesis(message):
-            llm_answer = _llm_synthesize(message, scored_results)
+            # Global/thematic questions get the GraphRAG community summaries fed in
+            # — the corpus-level answer no single chunk contains.
+            community_summaries = _community_context(message, tenant_id) if _is_global_query(message) else []
+            llm_answer = _llm_synthesize(message, scored_results, community_summaries=community_summaries)
             if llm_answer:
-                # Verify LLM answer against evidence before returning.
+                # Verify LLM answer against evidence before returning. Community
+                # summaries are part of the evidence for global questions.
                 try:
                     from tools.document_intelligence.verifier import verify
-                    vr = verify(llm_answer, [r.content for r in scored_results])
+                    vr = verify(llm_answer, [r.content for r in scored_results] + community_summaries)
                     if vr.abstained:
                         abstained = True
                         answer = grounded["answer"]  # fall back to grounded
                     else:
                         answer = vr.verified_text or llm_answer
-                        mode = "ai_assisted"
+                        mode = "graphrag" if community_summaries else "ai_assisted"
                 except Exception:
                     answer = llm_answer
-                    mode = "ai_assisted"
+                    mode = "graphrag" if community_summaries else "ai_assisted"
 
         return jsonify(_mem({
             "answer": answer,
