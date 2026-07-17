@@ -66,7 +66,7 @@ import uuid as _uuid
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from tools.logging.icdev_logger import get_logger
+from icdev.tools.logging.icdev_logger import get_logger
 
 logger = get_logger("icdev.llm.agent_loop")
 
@@ -289,7 +289,7 @@ def _retrieve_memory_context(user_prompt: str, top_k: int, tier: str) -> str:
     if not user_prompt or top_k <= 0:
         return ""
     try:
-        from tools.memory.hybrid_search import search as _mem_search
+        from icdev.tools.memory.hybrid_search import search as _mem_search
         results = _mem_search(user_prompt, limit=top_k, tier=tier or "episodic|semantic")
         if not results:
             return ""
@@ -611,7 +611,7 @@ def run_agent_loop(
         AgentLoopUnsupported: resolved provider cannot do native tool use.
     """
     # Lazy import to avoid import cycles at module load.
-    from tools.llm.provider import LLMRequest
+    from icdev.tools.llm.provider import LLMRequest
 
     _check_tool_support(router, llm_function)
 
@@ -1143,7 +1143,7 @@ def run_agent_loop(
                     f"Return ONLY a valid JSON object matching: {schema_hint}"
                 )
                 messages.append({"role": "user", "content": correction})
-                from tools.llm.provider import LLMRequest  # already imported above
+                from icdev.tools.llm.provider import LLMRequest  # already imported above
                 req = LLMRequest(
                     system_prompt=system_prompt,
                     messages=messages,
@@ -1474,7 +1474,7 @@ def _grade_against_rubric(
     Not itself an agent loop — one plain, tool-free ``router.invoke`` call with
     a JSON-only system prompt, validated against :data:`_RUBRIC_OUTPUT_SCHEMA`.
     """
-    from tools.llm.provider import LLMRequest
+    from icdev.tools.llm.provider import LLMRequest
 
     grader_user_prompt = (
         f"## Rubric\n{rubric}\n\n## Agent's final response\n{final_content or '(empty response)'}"
