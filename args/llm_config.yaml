@@ -1111,6 +1111,13 @@ routing:
     chain: [claude-haiku, qwen3-local, gpt-4o-mini, llama-local]
     effort: low
 
+  # KG entity + relationship extraction from chunk text (rag_to_kg_ingester).
+  # Extracts entities and infers edges among them; structured JSON output. Chain
+  # leads with kimi-cloud (the configured primary) so it actually runs.
+  kg_relationship_extraction:
+    chain: [kimi-cloud, qwen3-local, claude-sonnet, gpt-4o, llama-local]
+    effort: low
+
   harness_anomaly_detection:
     chain: [claude-haiku, qwen3-local, gpt-4o-mini, llama-local]
     effort: low
