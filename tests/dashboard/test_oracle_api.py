@@ -130,3 +130,35 @@ def test_parse_since_invalid_falls_back():
     result = mod._parse_since("not a date")
     delta = datetime.now(timezone.utc) - result
     assert 29 <= delta.days <= 31
+
+
+# --------------------------------------------------------------------------
+# high-confidence display threshold — named + distinct from the promotion gate
+# --------------------------------------------------------------------------
+import inspect  # noqa: E402
+
+
+def test_high_conf_display_threshold_is_named_constant():
+    assert mod._HIGH_CONF_DISPLAY_THRESHOLD == 0.85
+
+
+def test_summary_query_uses_the_constant_not_a_literal():
+    """Guards against re-hardcoding 0.85 into the SQL and re-decoupling it."""
+    src = inspect.getsource(mod.oracle_summary)
+    assert "_HIGH_CONF_DISPLAY_THRESHOLD" in src
+    assert "confidence >= 0.85" not in src, "threshold must be parameterized, not inlined"
+
+
+def test_display_threshold_is_deliberately_not_the_promotion_gate():
+    """The tile answers 'strongest queued signals', the gate answers 'what
+    becomes a task'. They are different questions; pinning that they differ keeps
+    a future edit from collapsing one into the other."""
+    import yaml
+
+    aw = yaml.safe_load(
+        (BASE_DIR / "args" / "awareness_config.yaml").read_text(encoding="utf-8")
+    )
+    promotion_gate = float(aw["oracle"]["promotion_threshold"])
+    assert promotion_gate == 0.7
+    assert mod._HIGH_CONF_DISPLAY_THRESHOLD > promotion_gate, \
+        "display threshold is meant to be stricter than the promotion gate"
