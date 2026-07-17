@@ -10,6 +10,9 @@ Usage:
 """
 from __future__ import annotations
 
+import re
+from typing import Any
+
 # ---------------------------------------------------------------------------
 # State constants — SQL CHECK constraints are derived from these; never hardcode
 # ---------------------------------------------------------------------------
@@ -187,18 +190,105 @@ CREATE INDEX IF NOT EXISTS idx_ace_skill_cand_role ON ace_skill_candidates(role_
 """
 
 # ---------------------------------------------------------------------------
+# Constraint repair (PostgreSQL only)
+# ---------------------------------------------------------------------------
+
+# state CHECK constraints keyed by table -> (constraint_name, allowed states).
+# CREATE TABLE IF NOT EXISTS never repairs a constraint on a pre-existing table,
+# so a live PostgreSQL database whose ace_instances_state_check /
+# ace_coworkers_state_check drifted away from these Python constants keeps
+# raising CheckViolation on every state transition (silently swallowed at the
+# call site). repair_state_constraints() re-derives the constraint from the
+# constants and rewrites it in place when it has drifted.
+_STATE_CONSTRAINTS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    ("ace_instances", "ace_instances_state_check", INSTANCE_STATES),
+    ("ace_coworkers", "ace_coworkers_state_check", COWORKER_STATES),
+)
+
+# Matches every single-quoted token inside a CHECK(... IN (...)) definition.
+_QUOTED_RE = re.compile(r"'([^']*)'")
+
+
+def repair_state_constraints(conn: Any) -> dict[str, str]:
+    """Rewrite drifted ``state`` CHECK constraints from the Python constants.
+
+    PostgreSQL only. On SQLite this is a no-op (the test harness recreates the
+    tables from :data:`SCHEMA`, so the constraint is always fresh there).
+
+    For each managed constraint we read ``pg_get_constraintdef`` and compare the
+    set of allowed values it encodes against the set derived from the module
+    constant. If they differ (or the constraint is missing) we DROP and re-ADD
+    it inside a single transaction so the table is never left unconstrained.
+
+    Returns a ``{table: action}`` map where action is ``"ok"`` (already
+    matched), ``"repaired"``, ``"added"``, or ``"skipped:<reason>"``. Idempotent:
+    a second call after a repair reports ``"ok"`` for every constraint.
+    """
+    from icdev.tools.db.storage import is_pg
+
+    results: dict[str, str] = {}
+    if not is_pg(conn):
+        for table, _cname, _states in _STATE_CONSTRAINTS:
+            results[table] = "skipped:sqlite"
+        return results
+
+    for table, cname, states in _STATE_CONSTRAINTS:
+        expected = set(states)
+        try:
+            row = conn.execute(
+                "SELECT pg_get_constraintdef(c.oid) "
+                "FROM pg_constraint c JOIN pg_class t ON t.oid = c.conrelid "
+                "WHERE t.relname = %s AND c.conname = %s",
+                (table, cname),
+            ).fetchone()
+        except Exception as exc:  # information_schema / pg_catalog unavailable
+            results[table] = f"skipped:{type(exc).__name__}"
+            continue
+
+        current = set(_QUOTED_RE.findall(row[0])) if row else None
+        if current == expected:
+            results[table] = "ok"
+            continue
+
+        joined = ", ".join(f"'{v}'" for v in states)
+        try:
+            if row is not None:
+                conn.execute(f"ALTER TABLE {table} DROP CONSTRAINT {cname}")
+            conn.execute(
+                f"ALTER TABLE {table} ADD CONSTRAINT {cname} "
+                f"CHECK (state IN ({joined}))"
+            )
+            conn.commit()
+            results[table] = "repaired" if row is not None else "added"
+        except Exception as exc:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            results[table] = f"skipped:{type(exc).__name__}"
+
+    return results
+
+
+# ---------------------------------------------------------------------------
 # Init
 # ---------------------------------------------------------------------------
 
 
 def init() -> None:
-    """Create all ACE canvas tables (idempotent)."""
+    """Create all ACE canvas tables (idempotent) and repair drifted constraints."""
     from icdev.tools.db.storage import get_canvas_connection
 
     conn = get_canvas_connection("ICDEV_ACE_DB_URL")
     try:
         conn.executescript(SCHEMA)
         conn.commit()
+        # Repair state CHECK constraints that CREATE TABLE IF NOT EXISTS can't
+        # fix on a pre-existing (live PG) table. No-op on SQLite.
+        try:
+            repair_state_constraints(conn)
+        except Exception:
+            pass  # constraint repair is best-effort; never block init
     finally:
         conn.close()
 
