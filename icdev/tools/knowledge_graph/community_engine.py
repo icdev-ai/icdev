@@ -362,6 +362,62 @@ def search_communities(
     return [row for _score, row in scored[:limit]]
 
 
+def themes_by_collection(conn, tenant_id: str = "default") -> list[dict]:
+    """Community summaries grouped by the collection they came from — for browsing.
+
+    community_id embeds a graph tag, not a collection name, so this resolves each
+    collection to its graph tag(s) forward (via the node->chunk join) and buckets
+    the summaries under it. The live project_id is inconsistent — sometimes the
+    collection_id, sometimes the collection name — so both are tried and unioned.
+    Any summary whose graph does not resolve to a collection is surfaced under
+    '(unmatched)' rather than dropped, so the view never silently hides a theme.
+    """
+    rows = [
+        (dict(r) if hasattr(r, "keys") else {"community_id": r[0], "summary_text": r[1], "citations_list": r[2]})
+        for r in conn.execute(
+            "SELECT community_id, summary_text, citations_list "
+            "FROM dic_community_summaries WHERE tenant_id = %s ORDER BY community_id",
+            (tenant_id,),
+        )
+    ]
+    from collections import defaultdict
+
+    by_tag: dict[str, list[dict]] = defaultdict(list)
+    for r in rows:
+        parts = (r.get("community_id") or "").split("-")
+        if len(parts) >= 2:
+            try:
+                cites = json.loads(r.get("citations_list") or "[]")
+            except (json.JSONDecodeError, TypeError):
+                cites = []
+            by_tag[parts[1]].append({"summary": r.get("summary_text") or "", "entities": cites[:8]})
+
+    colls = [
+        (dict(r) if hasattr(r, "keys") else {"collection_id": r[0], "name": r[1]})
+        for r in conn.execute(
+            "SELECT collection_id, name FROM dic_collections WHERE tenant_id = %s ORDER BY name",
+            (tenant_id,),
+        )
+    ]
+
+    out: list[dict] = []
+    used: set[str] = set()
+    for coll in colls:
+        tags = _graph_tags_for_collection(conn, coll["collection_id"]) | _graph_tags_for_collection(conn, coll.get("name") or "")
+        themes: list[dict] = []
+        for t in tags:
+            themes.extend(by_tag.get(t, []))
+            used.add(t)
+        if themes:
+            out.append({"collection": coll.get("name") or coll["collection_id"], "themes": themes})
+
+    orphan = [th for tag, ths in by_tag.items() if tag not in used for th in ths]
+    if orphan:
+        out.append({"collection": "(unmatched)", "themes": orphan})
+    out.sort(key=lambda c: (c["collection"] == "(unmatched)", -len(c["themes"])))
+    return out
+
+
 def _utcnow() -> str:
     from datetime import datetime, timezone
 

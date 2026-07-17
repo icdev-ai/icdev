@@ -1062,7 +1062,20 @@ def explorer():
     except Exception as exc:
         logger.warning("dic: explorer error: %s", exc)
         findings = []
-    return render_template("document_intelligence/explorer.html", findings=findings)
+    # GraphRAG themes: the community summaries, grouped by collection, for browsing
+    # the thematic structure of the corpus alongside the buried-bodies findings.
+    themes = []
+    try:
+        from tools.knowledge_graph.community_engine import themes_by_collection
+
+        conn = _conn()
+        try:
+            themes = themes_by_collection(conn, tenant_id=tenant_id)
+        finally:
+            conn.close()
+    except Exception as exc:  # noqa: BLE001 — themes are best-effort; findings still render
+        logger.debug("dic: explorer themes unavailable: %s", exc)
+    return render_template("document_intelligence/explorer.html", findings=findings, themes=themes)
 
 
 @dic_bp.route("/handoff")
