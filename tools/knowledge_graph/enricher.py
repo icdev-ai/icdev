@@ -78,10 +78,11 @@ DEFAULT_CONFIG = {
 
 
 def _get_db():
-    from tools.db.storage import get_connection
+    from tools.db.storage import get_connection, is_pg
 
     conn = get_connection()
-    conn.execute("PRAGMA journal_mode=WAL")
+    if not is_pg(conn):
+        conn.execute("PRAGMA journal_mode=WAL")  # pg-ok: SQLite init-fallback only, guarded by is_pg
     return conn
 
 
@@ -299,11 +300,17 @@ def compute_embeddings(
             if close_conn:
                 conn.close()
             return {"status": "error", "error": "No embedding provider available"}
-    except ImportError:
+    except Exception as exc:
+        # get_embedding_provider() raises LLMUnavailableError (not None) when no
+        # embedding provider is configured/reachable; degrade gracefully rather
+        # than crash. Callers fall back to keyword/BM25 retrieval.
         if close_conn:
             conn.close()
-        return {"status": "error", "error": "LLM module not available"}
+        return {"status": "error", "error": f"Embedding provider unavailable: {exc}"}
 
+    from tools.db.storage import is_pg
+
+    pg = is_pg(conn)
     embedded_count = 0
     errors = 0
 
@@ -316,10 +323,20 @@ def compute_embeddings(
                 embedding = provider.embed(text)
                 if embedding and isinstance(embedding, list):
                     blob = _float_list_to_blob(embedding)
-                    conn.execute(
-                        "UPDATE kg_nodes SET embedding = %s WHERE id = %s",
-                        (blob, node["id"]),
-                    )
+                    if pg:
+                        # PG: also populate the pgvector column so graph_rag can
+                        # rank with in-DB <=> instead of streaming every BLOB.
+                        vec_str = "[" + ",".join(f"{v:.6f}" for v in embedding) + "]"
+                        conn.execute(
+                            "UPDATE kg_nodes SET embedding = %s, embedding_vec = %s::vector "
+                            "WHERE id = %s",
+                            (blob, vec_str, node["id"]),
+                        )
+                    else:
+                        conn.execute(
+                            "UPDATE kg_nodes SET embedding = %s WHERE id = %s",
+                            (blob, node["id"]),
+                        )
                     embedded_count += 1
             except Exception as exc:
                 logger.debug("Embedding failed for %s: %s", node["label"], exc)

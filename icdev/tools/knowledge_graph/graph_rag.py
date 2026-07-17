@@ -31,8 +31,6 @@ import math
 import struct
 import tempfile
 import time
-import urllib.request
-import urllib.error
 from tools.db.storage import get_connection, is_pg
 from datetime import datetime, timezone
 from pathlib import Path
@@ -785,39 +783,107 @@ def _cosine_similarity(a: bytes, b: bytes) -> float:
 
 
 def _embed_query(query: str) -> Optional[List[float]]:
-    """Get embedding for a query string via Ollama nomic-embed-text.
+    """Embed a query string via the configured embedding provider.
 
-    Uses the same model as enricher.py for consistent vector space.
-    Falls back to None on any failure (Ollama down, model not loaded, etc.).
+    Uses ``get_embedding_provider()`` — the same abstraction the enricher uses —
+    so query and node vectors share one vector space regardless of environment
+    (OpenAI-compatible, Gemini, Ollama, ...); it never hardcodes a provider. In
+    no-embedding environments the provider raises ``LLMUnavailableError`` (or the
+    call otherwise fails), so we return ``None`` and retrieval degrades to
+    BM25/keyword + ontology instead of erroring.
 
     Args:
         query: Text to embed.
 
     Returns:
-        List of floats (768 dimensions for nomic-embed-text), or None.
+        List of floats (provider-dependent dimensionality), or None.
     """
     try:
-        payload = json.dumps(
-            {
-                "model": "nomic-embed-text",
-                "input": query,
-            }
-        ).encode("utf-8")
-        req = urllib.request.Request(
-            "http://localhost:11434/api/embed",
-            data=payload,
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310 -- URL scheme validated; internal/configured endpoints only
-            body = json.loads(resp.read().decode("utf-8"))
-        embeddings = body.get("embeddings")
-        if embeddings and len(embeddings) > 0 and len(embeddings[0]) > 0:
-            return embeddings[0]
+        from tools.llm import get_embedding_provider
+
+        provider = get_embedding_provider()
+        if provider is None:
+            return None
+        embedding = provider.embed(query)
+        if embedding and isinstance(embedding, list):
+            return embedding
         return None
-    except (urllib.error.URLError, urllib.error.HTTPError, OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
+    except Exception as exc:  # LLMUnavailableError / ImportError / network / etc.
         logger.debug("Query embedding unavailable: %s", exc)
         return None
+
+
+def _embedding_to_pg_vector(embedding: List[float]) -> str:
+    """Serialize a float list to a pgvector literal ``'[x,y,...]'``."""
+    return "[" + ",".join(f"{v:.6f}" for v in embedding) + "]"
+
+
+def _semantic_candidates(
+    conn: Any,
+    graph_ids: List[str],
+    placeholders: str,
+    query_embedding: Optional[List[float]],
+    query_embedding_blob: Optional[bytes],
+    limit: int,
+) -> List[tuple]:
+    """Return the top-``limit`` nodes by embedding similarity to the query.
+
+    PostgreSQL: cosine distance is computed **in the database** via pgvector's
+    ``<=>`` operator against ``kg_nodes.embedding_vec``; only ``limit`` rows plus
+    their similarity leave the DB, instead of streaming every embedding BLOB to
+    Python and looping cosine there. A ``vector_dims`` guard drops rows whose
+    stored vector dimensionality differs from the query's, so a provider /
+    dimension change never errors the query (those rows are simply skipped).
+
+    SQLite (tests / init-fallback): pgvector is unavailable, so fall back to the
+    packed-float32 ``embedding`` BLOBs and score with Python cosine.
+
+    Returns ``(similarity, node_dict)`` tuples, highest first; the node dicts
+    never carry a raw embedding column.
+    """
+    if is_pg(conn) and query_embedding:
+        vec_str = _embedding_to_pg_vector(query_embedding)
+        query_dim = len(query_embedding)
+        sql = f"""
+            SELECT id, graph_id, label, entity_type, properties,
+                   centrality, created_at,
+                   1 - (embedding_vec <=> %s::vector) AS _sim
+            FROM kg_nodes
+            WHERE graph_id IN ({placeholders})
+              AND embedding_vec IS NOT NULL
+              AND vector_dims(embedding_vec) = %s
+            ORDER BY embedding_vec <=> %s::vector
+            LIMIT %s
+        """  # nosec B608 -- table/column names are internal constants, not user input
+        params = [vec_str] + list(graph_ids) + [query_dim, vec_str, limit]
+        rows = conn.execute(sql, params).fetchall()
+        out: List[tuple] = []
+        for r in rows:
+            d = dict(r)
+            sim = float(d.pop("_sim", 0.0) or 0.0)
+            out.append((sim, d))
+        return out
+
+    # SQLite / no-pgvector fallback: Python cosine over packed-float32 BLOBs.
+    if query_embedding_blob is None:
+        return []
+    emb_sql = f"""
+        SELECT id, graph_id, label, entity_type, properties,
+               centrality, created_at, embedding
+        FROM kg_nodes
+        WHERE graph_id IN ({placeholders})
+          AND embedding IS NOT NULL
+    """  # nosec B608 -- table/column names are internal constants, not user input
+    emb_rows = conn.execute(emb_sql, list(graph_ids)).fetchall()
+    sim_scored: List[tuple] = []
+    for row in emb_rows:
+        d = dict(row)
+        blob = d.pop("embedding", None)
+        if blob is None:
+            continue
+        sim_scored.append((_cosine_similarity(query_embedding_blob, bytes(blob)), d))
+    sim_scored.sort(key=lambda x: x[0], reverse=True)
+    return sim_scored[:limit]
 
 
 # ---------------------------------------------------------------------------
@@ -1331,36 +1397,23 @@ def retrieve(
             rows = conn.execute(sql, list(graph_ids) + [top_k * 3]).fetchall()
             matched_nodes = [dict(r) for r in rows]
 
-        # Semantic search: augment keyword results with embedding similarity
-        if query_embedding_blob is not None:
+        # Semantic search: augment keyword results with embedding similarity.
+        # On PG this runs pgvector <=> in-database (only the top rows return);
+        # on SQLite it falls back to Python cosine over BLOBs. See
+        # _semantic_candidates.
+        if query_embedding is not None:
             semantic_search_used = True
             matched_id_set_kw = {n["id"] for n in matched_nodes}
-
-            # Fetch all nodes with embeddings from target graphs
-            emb_sql = f"""
-                SELECT id, graph_id, label, entity_type, properties,
-                       centrality, created_at, embedding
-                FROM kg_nodes
-                WHERE graph_id IN ({placeholders})
-                  AND embedding IS NOT NULL
-            """  # nosec B608 -- table/column names are internal constants, not user input
-            emb_rows = conn.execute(emb_sql, list(graph_ids)).fetchall()
-
-            # Score each node by cosine similarity to query
-            sim_scored: List[tuple] = []
-            for row in emb_rows:
-                row_dict = dict(row)
-                emb_blob = row_dict.pop("embedding", None)
-                if emb_blob is None:
-                    continue
-                sim = _cosine_similarity(query_embedding_blob, emb_blob)
-                sim_scored.append((sim, row_dict))
-
-            # Sort by similarity descending, take top_k * 3
-            sim_scored.sort(key=lambda x: x[0], reverse=True)
             sem_limit = top_k * 3
 
-            for sim, node_dict in sim_scored[:sem_limit]:
+            for sim, node_dict in _semantic_candidates(
+                conn,
+                graph_ids,
+                placeholders,
+                query_embedding,
+                query_embedding_blob,
+                sem_limit,
+            ):
                 node_dict["_embedding_sim"] = sim
                 if node_dict["id"] not in matched_id_set_kw:
                     matched_nodes.append(node_dict)
