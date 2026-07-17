@@ -1026,6 +1026,35 @@ reflexes:
       threshold: 0
       operator: gte
 
+  # ── DIC Inbox Sweep (the drop folder finally gets someone watching it) ───────
+  # tools/document_intelligence/inbox.py was built for teams who pull documents
+  # out of SharePoint with a browser session and had nowhere to put them. It
+  # works and is tested, but had no caller anywhere in the repo — no reflex, no
+  # daemon, no route. This is its launcher.
+  #
+  # Minutes, not hours: a drop folder, not a nightly sweep. A CR approved this
+  # morning should not wait until 03:30 to become evidence.
+  #
+  # These keys reach the reflex as its `context` — the daemon passes this config
+  # dict straight to module.run().
+  dic_inbox_sweep:
+    timeout_seconds: 600     # a drop can be many files; each is a full ingest
+    enabled: true
+    risk_tier: green         # ingests operator-provided files into one collection
+    schedule: "every 5m"
+    interval_seconds: 300
+    cooldown_minutes: 0      # a drop folder should not sit waiting on a cooldown
+    description: "DIC Inbox Sweep: ingest anything new in the DIC drop folder (data/dic_inbox) into its collection with RAG chunks + KG bridge. Content-hash dedup, so a re-downloaded file is skipped but a revised one re-ingests. Acquisition-agnostic — it does not scrape or authenticate; files arrive by whatever means the operator already uses."
+    dry_run: false           # when true, reports what would ingest and writes nothing
+    watch_dir: ""            # empty -> inbox default (data/dic_inbox)
+    collection_id: "change-records"
+    recursive: false
+    move_processed: false    # true -> move ingested files to <watch_dir>/processed
+    success_metric:
+      name: dic_inbox_files_ingested
+      threshold: 0
+      operator: gte
+
   # ── Oracle Triage (auto-triage suggested kanban cards after each awareness cycle)
 
   oracle_triage:
