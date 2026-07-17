@@ -67,9 +67,13 @@ logger = get_logger(__name__)
 # ── In-memory SSE job queues ──────────────────────────────────────────────────
 # Maps job_id → queue.Queue[dict | None]  (None = sentinel / stream closed)
 _JOB_QUEUES: dict[str, _queue.Queue] = {}
-# Maps job_id → {status, doc_id, chunks, errors} — in-memory result cache so the
-# result endpoint works even when the dic_ingest_jobs DB INSERT fails (e.g. wrong
-# SQL parameter style on PostgreSQL).
+# Maps job_id → {status, doc_id, chunks, errors} — in-memory result cache backing
+# the SSE result endpoint.
+#
+# This used to say the cache existed "even when the dic_ingest_jobs DB INSERT
+# fails (e.g. wrong SQL parameter style on PostgreSQL)". That INSERT uses %s now;
+# the bug was fixed and the comment outlived it, advertising a workaround for a
+# failure that can no longer happen.
 _JOB_RESULTS: dict[str, dict] = {}
 _JOB_LOCK = threading.Lock()
 
@@ -351,7 +355,7 @@ def collections():
     tenant_id, _ = _security_context()
     conn = _conn()
     try:
-        cols = _safe_rows(conn, "SELECT * FROM dic_collections WHERE tenant_id = ? ORDER BY created_at DESC LIMIT 100", (tenant_id,))
+        cols = _safe_rows(conn, "SELECT * FROM dic_collections WHERE tenant_id = %s ORDER BY created_at DESC LIMIT 100", (tenant_id,))
         for c in cols:
             try:
                 doc_count_row = conn.execute(
@@ -384,12 +388,12 @@ def search():
 def doc_detail(doc_id: str):
     conn = _conn()
     try:
-        doc = _safe_rows(conn, "SELECT * FROM dic_documents WHERE doc_id = ? LIMIT 1", (doc_id,))
+        doc = _safe_rows(conn, "SELECT * FROM dic_documents WHERE doc_id = %s LIMIT 1", (doc_id,))
         doc = doc[0] if doc else {}
         versions = _safe_rows(
             conn,
             "SELECT version_id, version_no, origin, status, assigned_to, created_at, created_by "
-            "FROM dic_versions WHERE doc_id = ? ORDER BY version_no DESC",
+            "FROM dic_versions WHERE doc_id = %s ORDER BY version_no DESC",
             (doc_id,),
         )
         # Load sections for the latest pending or latest version
@@ -405,7 +409,7 @@ def doc_detail(doc_id: str):
             sections = _safe_rows(
                 conn,
                 "SELECT section_id, heading, content, citations_json, status, origin, assigned_to "
-                "FROM dic_sections WHERE version_id = ? ORDER BY section_id",
+                "FROM dic_sections WHERE version_id = %s ORDER BY section_id",
                 (active_version_id,),
             )
             for s in sections:
@@ -417,7 +421,7 @@ def doc_detail(doc_id: str):
         collection_id = doc.get("collection_id") or "default"
         team = _safe_rows(
             conn,
-            "SELECT user_id, role FROM dic_team_access WHERE collection_id = ? ORDER BY role DESC, user_id",
+            "SELECT user_id, role FROM dic_team_access WHERE collection_id = %s ORDER BY role DESC, user_id",
             (collection_id,),
         )
     finally:
@@ -482,7 +486,7 @@ def review():
             if cid not in team_map:
                 team_map[cid] = _safe_rows(
                     conn,
-                    "SELECT user_id, role FROM dic_team_access WHERE collection_id = ? ORDER BY role DESC, user_id",
+                    "SELECT user_id, role FROM dic_team_access WHERE collection_id = %s ORDER BY role DESC, user_id",
                     (cid,),
                 )
         for pd in pending_docs:
@@ -490,7 +494,7 @@ def review():
             if cid not in team_map:
                 team_map[cid] = _safe_rows(
                     conn,
-                    "SELECT user_id, role FROM dic_team_access WHERE collection_id = ? ORDER BY role DESC, user_id",
+                    "SELECT user_id, role FROM dic_team_access WHERE collection_id = %s ORDER BY role DESC, user_id",
                     (cid,),
                 )
         # Load latest review note per item.
@@ -1064,7 +1068,7 @@ def handoff():
             conn,
             "SELECT session_id, departing_owner_id, successor_owner_id, dest_collection_id, title, status, "
             "agenda_count, answered_count, generated_count, orphan_count, created_at "
-            "FROM dic_handoff_sessions WHERE tenant_id = ? ORDER BY created_at DESC LIMIT 50",
+            "FROM dic_handoff_sessions WHERE tenant_id = %s ORDER BY created_at DESC LIMIT 50",
             (tenant_id,),
         )
     except Exception as exc:
@@ -1229,7 +1233,7 @@ def api_ingest_stream(job_id: str):
         # Job may have already completed — check DB.
         conn = _conn()
         try:
-            row = _safe_rows(conn, "SELECT status, stage_detail, chunks_total, doc_id FROM dic_ingest_jobs WHERE job_id=?", (job_id,))
+            row = _safe_rows(conn, "SELECT status, stage_detail, chunks_total, doc_id FROM dic_ingest_jobs WHERE job_id=%s", (job_id,))
         finally:
             conn.close()
         if row:
@@ -1282,7 +1286,7 @@ def api_ingest_result(job_id: str):
     # DB fallback (previous server instances).
     conn = _conn()
     try:
-        rows = _safe_rows(conn, "SELECT * FROM dic_ingest_jobs WHERE job_id=?", (job_id,))
+        rows = _safe_rows(conn, "SELECT * FROM dic_ingest_jobs WHERE job_id=%s", (job_id,))
     finally:
         conn.close()
     if not rows:
@@ -1324,7 +1328,7 @@ def api_kg_explore():
             f"{alias}.source_chunk_id IN ("
             f"SELECT l.rag_chunk_id FROM dic_chunk_links l "
             f"JOIN dic_documents d ON d.doc_id = l.doc_id "
-            f"WHERE d.collection_id = ?)"
+            f"WHERE d.collection_id = %s)"
         )
         return sql, [collection_id]
 
@@ -1376,17 +1380,17 @@ def api_kg_explore():
                 params.append(entity_type)
             if clauses:
                 sql += " WHERE " + " AND ".join(clauses)
-            sql += " ORDER BY COALESCE(n.centrality, 0) DESC LIMIT ?"
+            sql += " ORDER BY COALESCE(n.centrality, 0) DESC LIMIT %s"
             params.append(limit)
             rows = _safe_rows(conn, sql, tuple(params))
             if not rows and query_text and collection_id:
                 chunk_ids = _chunk_ids_for_query(query_text, collection_id)[:50]
                 if chunk_ids:
-                    ph = ",".join("?" * len(chunk_ids))
+                    ph = ",".join("%s" * len(chunk_ids))
                     fallback_sql = (
                         "SELECT n.id, n.label, n.entity_type, n.centrality, n.source_chunk_id "
                         f"FROM kg_nodes n WHERE n.source_chunk_id IN ({ph}) "
-                        "ORDER BY COALESCE(n.centrality, 0) DESC LIMIT ?"
+                        "ORDER BY COALESCE(n.centrality, 0) DESC LIMIT %s"
                     )
                     rows = _safe_rows(
                         conn,
@@ -1412,9 +1416,9 @@ def api_kg_explore():
                 "FROM kg_edges e "
                 "JOIN kg_nodes src ON src.id = e.source_id "
                 "JOIN kg_nodes tgt ON tgt.id = e.target_id "
-                "WHERE (LOWER(src.label) LIKE LOWER(?) OR LOWER(tgt.label) LIKE LOWER(?)) "
+                "WHERE (LOWER(src.label) LIKE LOWER(%s) OR LOWER(tgt.label) LIKE LOWER(%s)) "
                 + collection_clause +
-                "ORDER BY e.weight DESC LIMIT ?",
+                "ORDER BY e.weight DESC LIMIT %s",
                 tuple(params),
             )
             return jsonify({"relationships": rows, "count": len(rows)})
@@ -1435,22 +1439,22 @@ def api_kg_explore():
                 clauses.append(
                     "n.source_chunk_id IN ("
                     "SELECT l.rag_chunk_id FROM dic_chunk_links l "
-                    "WHERE l.doc_id = ?)"
+                    "WHERE l.doc_id = %s)"
                 )
                 node_params.append(doc_id)
             if clauses:
                 node_sql += " WHERE " + " AND ".join(clauses)
-            node_sql += " ORDER BY COALESCE(n.centrality, 0) DESC LIMIT ?"
+            node_sql += " ORDER BY COALESCE(n.centrality, 0) DESC LIMIT %s"
             node_params.append(limit)
             nodes = _safe_rows(conn, node_sql, tuple(node_params))
             if not nodes and graph_query and collection_id and not doc_id:
                 chunk_ids = _chunk_ids_for_query(graph_query, collection_id)[:50]
                 if chunk_ids:
-                    ph = ",".join("?" * len(chunk_ids))
+                    ph = ",".join("%s" * len(chunk_ids))
                     fallback_sql = (
                         "SELECT n.id, n.label, n.entity_type, n.centrality "
                         f"FROM kg_nodes n WHERE n.source_chunk_id IN ({ph}) "
-                        "ORDER BY COALESCE(n.centrality, 0) DESC LIMIT ?"
+                        "ORDER BY COALESCE(n.centrality, 0) DESC LIMIT %s"
                     )
                     nodes = _safe_rows(
                         conn,
@@ -1460,13 +1464,13 @@ def api_kg_explore():
             node_ids = [n["id"] for n in nodes]
             if not node_ids:
                 return jsonify({"nodes": [], "edges": [], "count": 0})
-            ph = ",".join("?" * len(node_ids))
+            ph = ",".join("%s" * len(node_ids))
             edges = _safe_rows(
                 conn,
                 f"SELECT e.source_id, e.target_id, e.relationship, e.weight "
                 f"FROM kg_edges e "
                 f"WHERE e.source_id IN ({ph}) AND e.target_id IN ({ph}) "
-                f"ORDER BY e.weight DESC LIMIT ?",
+                f"ORDER BY e.weight DESC LIMIT %s",
                 tuple(node_ids + node_ids + [min(limit, 80)]),
             )
             return jsonify({"nodes": nodes, "edges": edges, "count": len(nodes)})
@@ -1483,7 +1487,7 @@ def api_kg_explore():
             node_rows = _safe_rows(
                 conn,
                 "SELECT id, label, entity_type FROM kg_nodes "
-                "WHERE LOWER(label) LIKE LOWER(?)" + collection_clause + " LIMIT 1",
+                "WHERE LOWER(label) LIKE LOWER(%s)" + collection_clause + " LIMIT 1",
                 tuple(node_params),
             )
             if not node_rows:
@@ -1501,9 +1505,9 @@ def api_kg_explore():
                 "SELECT DISTINCT n.label, n.entity_type, e.relationship, e.weight "
                 "FROM kg_edges e "
                 "JOIN kg_nodes n ON (n.id = e.target_id OR n.id = e.source_id) "
-                "WHERE (e.source_id = ? OR e.target_id = ?) AND n.id != ? "
+                "WHERE (e.source_id = %s OR e.target_id = %s) AND n.id != %s "
                 + collection_clause +
-                "ORDER BY e.weight DESC LIMIT ?",
+                "ORDER BY e.weight DESC LIMIT %s",
                 tuple(neighbor_params),
             )
             return jsonify({
@@ -2091,7 +2095,7 @@ def api_collections_list():
     tenant_id, _ = _security_context()
     conn = _conn()
     try:
-        rows = _safe_rows(conn, "SELECT * FROM dic_collections WHERE tenant_id = ? ORDER BY created_at DESC", (tenant_id,))
+        rows = _safe_rows(conn, "SELECT * FROM dic_collections WHERE tenant_id = %s ORDER BY created_at DESC", (tenant_id,))
         return jsonify({"collections": rows})
     finally:
         conn.close()
@@ -2127,7 +2131,7 @@ def api_collections_create():
 def api_team_list(collection_id):
     conn = _conn()
     try:
-        members = _safe_rows(conn, "SELECT user_id, role, granted_by, created_at FROM dic_team_access WHERE collection_id = ? ORDER BY created_at DESC", (collection_id,))
+        members = _safe_rows(conn, "SELECT user_id, role, granted_by, created_at FROM dic_team_access WHERE collection_id = %s ORDER BY created_at DESC", (collection_id,))
         return jsonify({"members": members})
     finally:
         conn.close()
@@ -2169,7 +2173,7 @@ def api_collection_documents(collection_id):
             conn,
             "SELECT doc_id, collection_id, filename, title, content_type, provider, "
             "page_count, content_sha256, created_at, classification "
-            "FROM dic_documents WHERE collection_id = ? AND tenant_id = ? ORDER BY created_at DESC",
+            "FROM dic_documents WHERE collection_id = %s AND tenant_id = %s ORDER BY created_at DESC",
             (collection_id, tenant_id),
         )
         # Augment with latest version status and chunk count
@@ -2219,7 +2223,7 @@ def api_document_versions(doc_id):
             conn,
             "SELECT version_id, version_no, origin, status, assigned_to, "
             "created_at, created_by, content_sha256 "
-            "FROM dic_versions WHERE doc_id = ? ORDER BY version_no DESC",
+            "FROM dic_versions WHERE doc_id = %s ORDER BY version_no DESC",
             (doc_id,),
         )
         return jsonify({"doc_id": doc_id, "versions": versions})
@@ -2527,7 +2531,7 @@ def api_section_annotations_list(section_id: str):
         _ensure_dic_annotations(conn)
         status_filter = request.args.get("status")
         category_filter = request.args.get("category")
-        sql = "SELECT * FROM dic_section_annotations WHERE section_id = ?"
+        sql = "SELECT * FROM dic_section_annotations WHERE section_id = %s"
         params: list = [section_id]
         if status_filter:
             sql += " AND status = ?"
@@ -2986,7 +2990,7 @@ def api_version_sections(version_id):
         rows = _safe_rows(
             conn,
             "SELECT section_id, heading, content, citations_json, status, origin "
-            "FROM dic_sections WHERE version_id = ? ORDER BY section_id",
+            "FROM dic_sections WHERE version_id = %s ORDER BY section_id",
             (version_id,),
         )
         for r in rows:
@@ -3034,7 +3038,7 @@ def api_version_style_check(version_id: str):
     try:
         rows = _safe_rows(
             conn,
-            "SELECT heading, content FROM dic_sections WHERE version_id = ? ORDER BY section_id",
+            "SELECT heading, content FROM dic_sections WHERE version_id = %s ORDER BY section_id",
             (version_id,),
         )
         result = check_sections([dict(r) for r in rows])
@@ -3076,7 +3080,7 @@ def api_version_diff(version_a: str, version_b: str):
         def _get_sections(vid):
             rows = _safe_rows(
                 conn,
-                "SELECT heading, content FROM dic_sections WHERE version_id = ? ORDER BY section_id",
+                "SELECT heading, content FROM dic_sections WHERE version_id = %s ORDER BY section_id",
                 (vid,),
             )
             return {(r.get("heading") or "").strip(): (r.get("content") or "") for r in rows}
@@ -3749,13 +3753,13 @@ def notebook(collection_id: str = "default"):
             conn,
             "SELECT doc_id AS id, title, filename, provider AS source_type, created_at "
             "FROM dic_documents "
-            "WHERE collection_id = ? AND tenant_id = ? ORDER BY created_at DESC LIMIT 50",
+            "WHERE collection_id = %s AND tenant_id = %s ORDER BY created_at DESC LIMIT 50",
             (collection_id, tenant_id),
         )
         outputs = _safe_rows(
             conn,
             "SELECT id, output_type, provider, status, created_at FROM dic_generated_outputs "
-            "WHERE collection_id = ? AND tenant_id = ? ORDER BY created_at DESC LIMIT 20",
+            "WHERE collection_id = %s AND tenant_id = %s ORDER BY created_at DESC LIMIT 20",
             (collection_id, tenant_id),
         )
     finally:
@@ -4096,7 +4100,7 @@ def api_outputs_list():
         rows = _safe_rows(
             conn,
             "SELECT id, output_type, provider, status, created_at FROM dic_generated_outputs "
-            "WHERE collection_id = ? AND tenant_id = ? ORDER BY created_at DESC LIMIT 50",
+            "WHERE collection_id = %s AND tenant_id = %s ORDER BY created_at DESC LIMIT 50",
             (collection_id, tenant_id),
         )
     finally:
