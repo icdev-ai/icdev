@@ -1423,8 +1423,23 @@ audit:
 # Thresholds moved from hardcoded Python constants to config so the
 # anomaly_detection layer can adapt them without code changes.
 harness:
+  # Which reflexes check_gates() evaluates. This was a literal
+  # `for reflex in ("oracle_triage", "heal")` in eval_harness.py, so everything
+  # else that gates on confidence — citation grounding, docmod findings, the AADC
+  # proceed/escalate gate, the awareness promotion priors — went unmeasured, not
+  # by decision but because a tuple in one loop never named it.
+  #
+  # A surface only produces metrics once it writes to harness_eval, so listing
+  # one costs nothing until it has data. An empty list falls back to the default
+  # pair rather than silently gating nothing.
+  gated_reflexes:
+    - oracle_triage
+    - heal
   gates:
     precision_min: 0.80       # oracle_triage/heal: alert when precision < this
+    # Calibration: alert when ECE > this. NOTE this number has never been
+    # validated against outcomes — like every 0.7/0.15 threshold in the repo it
+    # traces to a sign-off, not a measurement. It is a starting point, not a fact.
     ece_max: 0.15             # calibration: alert when ECE > this
     false_heal_max: 0.20      # heal: alert when false-heal rate > this
     heal_success_min: 0.60    # heal: alert when heal success rate < this
