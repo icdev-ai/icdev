@@ -28,13 +28,12 @@ import argparse
 import hashlib
 import json
 import math
-import sqlite3
 import struct
 import tempfile
 import time
 import urllib.request
 import urllib.error
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection, is_pg
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -435,15 +434,26 @@ def _ontology_shortest_distance(
 # ---------------------------------------------------------------------------
 
 
-def _get_db() -> sqlite3.Connection:
+def _get_db() -> Any:
     """Get a connection to icdev.db."""
     conn = get_connection()
-    conn.execute("PRAGMA journal_mode=WAL")
+    if not is_pg(conn):
+        conn.execute("PRAGMA journal_mode=WAL")  # pg-ok: SQLite init-fallback only, guarded by is_pg
     return conn
 
 
-def _ensure_tables(conn: sqlite3.Connection) -> None:
-    """Ensure kg tables exist (idempotent)."""
+def _ensure_tables(conn: Any) -> None:
+    """Ensure kg tables exist (idempotent).
+
+    PG-primary: on PostgreSQL these tables are owned by the consolidated
+    schema / migrations (pg_consolidated.sql), which carry columns this
+    bootstrap omits (classification, embedding_vec, source_chunk_id,
+    ontology_id). Re-creating them at runtime would drift from the real
+    schema, so this is a no-op on PG. SQLite (tests / init-fallback)
+    still needs the bootstrap.
+    """
+    if is_pg(conn):
+        return
     conn.execute("""
         CREATE TABLE IF NOT EXISTS kg_graphs (
             id TEXT PRIMARY KEY,
@@ -531,7 +541,7 @@ def _query_hash(query: str) -> str:
 
 
 def _load_ontology_relations(
-    conn: sqlite3.Connection,
+    conn: Any,
     graph_ids: List[str],
     fallback: bool = True,
 ) -> Dict[str, List[Dict[str, Any]]]:
@@ -552,7 +562,7 @@ def _load_ontology_relations(
     relations: Dict[str, List[Dict[str, Any]]] = {}
 
     if graph_ids:
-        placeholders = ",".join("?" for _ in graph_ids)
+        placeholders = ",".join("%s" for _ in graph_ids)
         try:
             rows = conn.execute(
                 f"SELECT subject_type, predicate, object_type, path_distance FROM kg_ontology WHERE graph_id IN ({placeholders})",  # nosec B608 -- table/column names are internal constants, not user input
@@ -1145,7 +1155,7 @@ def _compress_context(context: str, query: str) -> str:
 
 
 def _log_retrieval(
-    conn: sqlite3.Connection,
+    conn: Any,
     graph_id: str,
     query: str,
     profile: str,
@@ -1282,7 +1292,7 @@ def retrieve(
         # Step 2: Search nodes by keyword matching
         # Build LIKE clauses for each query term
         matched_nodes: List[Dict[str, Any]] = []
-        placeholders = ",".join("?" for _ in graph_ids)
+        placeholders = ",".join("%s" for _ in graph_ids)
 
         if query_terms:
             # Search label and properties for query terms
@@ -1293,7 +1303,7 @@ def retrieve(
                 # like "firewall" hit nodes whose label is abbreviated
                 # (NYC-FWLL-01) but whose entity_type is 'network_firewall'.
                 like_clauses.append(
-                    "(LOWER(label) LIKE ? OR LOWER(properties) LIKE ? OR LOWER(entity_type) LIKE ?)"
+                    "(LOWER(label) LIKE %s OR LOWER(properties) LIKE %s OR LOWER(entity_type) LIKE %s)"
                 )
                 like_params.extend([f"%{term}%", f"%{term}%", f"%{term}%"])
 
@@ -1316,7 +1326,7 @@ def retrieve(
                 FROM kg_nodes
                 WHERE graph_id IN ({placeholders})
                 ORDER BY centrality DESC
-                LIMIT ?
+                LIMIT %s
             """  # nosec B608 -- table/column names are internal constants, not user input
             rows = conn.execute(sql, list(graph_ids) + [top_k * 3]).fetchall()
             matched_nodes = [dict(r) for r in rows]
@@ -1406,15 +1416,15 @@ def retrieve(
             if related_types:
                 new_types = related_types - query_entity_types
                 if new_types:
-                    graph_ph = ",".join("?" for _ in graph_ids)
-                    type_ph = ",".join("?" for _ in new_types)
+                    graph_ph = ",".join("%s" for _ in graph_ids)
+                    type_ph = ",".join("%s" for _ in new_types)
                     type_sql = f"""
                         SELECT id, graph_id, label, entity_type, properties,
                                centrality, created_at
                         FROM kg_nodes
                         WHERE graph_id IN ({graph_ph})
                           AND LOWER(entity_type) IN ({type_ph})
-                        LIMIT ?
+                        LIMIT %s
                     """  # nosec B608 -- table/column names are internal constants, not user input
                     type_params = list(graph_ids) + list(new_types) + [top_k * 3]
                     type_rows = conn.execute(type_sql, type_params).fetchall()
@@ -1427,7 +1437,7 @@ def retrieve(
 
         # Step 3: Expand to 1-hop neighborhood
         matched_ids = [n["id"] for n in matched_nodes]
-        id_placeholders = ",".join("?" for _ in matched_ids)
+        id_placeholders = ",".join("%s" for _ in matched_ids)
 
         # Get edges connected to matched nodes
         edge_sql = f"""
@@ -1455,7 +1465,7 @@ def retrieve(
 
         # Fetch neighbor nodes
         if neighbor_ids:
-            nbr_placeholders = ",".join("?" for _ in neighbor_ids)
+            nbr_placeholders = ",".join("%s" for _ in neighbor_ids)
             nbr_sql = f"""
                 SELECT id, graph_id, label, entity_type, properties,
                        centrality, created_at
@@ -1643,8 +1653,8 @@ def expand_bm25_top_k(
         hit_set = set(hit_ids)
 
         if scope_ids:
-            scope_ph = ",".join("?" for _ in scope_ids)
-            id_ph = ",".join("?" for _ in hit_ids)
+            scope_ph = ",".join("%s" for _ in scope_ids)
+            id_ph = ",".join("%s" for _ in hit_ids)
             edge_rows = conn.execute(
                 f"""
                 SELECT source_id, target_id
