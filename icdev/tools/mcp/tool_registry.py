@@ -6514,7 +6514,7 @@ TOOL_REGISTRY = {
         },
     },
     # ============================================================
-    # ANVIL CO-WORKER ENGINE (ACE) — 2 tools
+    # ANVIL CO-WORKER ENGINE (ACE) — 3 tools
     # ============================================================
     "ace_launch": {
         "category": "ace",
@@ -6815,8 +6815,8 @@ TOOL_REGISTRY = {
     # ============================================================
     "nova_analyze_patterns": {
         "category": "nova",
-        "module": "tools.nova.skill_generator",
-        "handler": "analyze_patterns",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_nova_analyze_patterns",
         "description": (
             "Scan session history for repeated command patterns that suggest a missing "
             "ICDEV™ skill. Returns list of {pattern, count, category, example} dicts "
@@ -6832,8 +6832,8 @@ TOOL_REGISTRY = {
     },
     "nova_generate_skill": {
         "category": "nova",
-        "module": "tools.nova.skill_generator",
-        "handler": "generate_skill_spec",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_nova_generate_skill",
         "description": (
             "Generate an ICDEV™ skill specification markdown for a given command pattern. "
             "Uses scanner-tier LLM when available; falls back to structured template. "
@@ -6852,8 +6852,8 @@ TOOL_REGISTRY = {
     },
     "nova_list_skill_queue": {
         "category": "nova",
-        "module": "tools.nova.skill_generator",
-        "handler": "list_queued",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_nova_list_skill_queue",
         "description": (
             "List pending auto-generated skill specs in agent_improvement_artifacts "
             "awaiting Continuous Harness SELA evaluation (adapt-hermes-04)."

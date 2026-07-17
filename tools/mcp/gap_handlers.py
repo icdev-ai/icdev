@@ -2451,6 +2451,62 @@ def handle_nova_trust_summary(args: dict) -> dict:
         return {"error": str(exc)}
 
 
+# ── NOVA Skill Generator (adapt-hermes-04) ──────────────────────────────────
+# These adapt the (args: dict) MCP calling convention to the keyword-argument
+# signatures of tools.nova.skill_generator. The registry cannot point directly
+# at those functions because the gateway invokes handlers as handler(args_dict),
+# which would pass the whole dict as the first positional (`limit` / `pattern`).
+
+
+def handle_nova_analyze_patterns(args: dict) -> dict:
+    """Scan session history for repeated command patterns suggesting a skill gap."""
+    try:
+        limit = int(args.get("limit", 50))
+        min_count = int(args.get("min_count", 2))
+        from tools.nova.skill_generator import analyze_patterns
+        patterns = analyze_patterns(limit=limit, min_count=min_count)
+        return {"patterns": patterns, "total": len(patterns)}
+    except ImportError as exc:
+        logger.warning("handle_nova_analyze_patterns import: %s", exc)
+        return {"error": "NOVA skill generator not available", "details": str(exc), "status": "pending"}
+    except Exception as exc:
+        logger.warning("handle_nova_analyze_patterns: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_nova_generate_skill(args: dict) -> dict:
+    """Generate an ICDEV skill spec for a command pattern; queue for SELA harness."""
+    try:
+        pattern = (args.get("pattern") or "").strip()
+        if not pattern:
+            return {"error": "pattern required"}
+        category = (args.get("category") or "general").strip() or "general"
+        dry_run = bool(args.get("dry_run", False))
+        from tools.nova.skill_generator import generate_skill_spec
+        return generate_skill_spec(pattern, category=category, dry_run=dry_run)
+    except ImportError as exc:
+        logger.warning("handle_nova_generate_skill import: %s", exc)
+        return {"error": "NOVA skill generator not available", "details": str(exc), "status": "pending"}
+    except Exception as exc:
+        logger.warning("handle_nova_generate_skill: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_nova_list_skill_queue(args: dict) -> dict:
+    """List pending auto-generated skill specs awaiting SELA harness evaluation."""
+    try:
+        limit = int(args.get("limit", 20))
+        from tools.nova.skill_generator import list_queued
+        rows = list_queued(limit=limit)
+        return {"queued": rows, "total": len(rows)}
+    except ImportError as exc:
+        logger.warning("handle_nova_list_skill_queue import: %s", exc)
+        return {"error": "NOVA skill generator not available", "details": str(exc), "status": "pending"}
+    except Exception as exc:
+        logger.warning("handle_nova_list_skill_queue: %s", exc)
+        return {"error": str(exc)}
+
+
 def handle_ace_persona_query(args: dict) -> dict:
     """One-shot, persona-informed answer from a single ACE role -- NOT the
     async multi-role ACE team launch. See tools.ace.persona_query for the
