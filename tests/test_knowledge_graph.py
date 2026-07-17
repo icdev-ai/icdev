@@ -370,6 +370,68 @@ class TestGraphRAGRetrieve:
                 assert result.get("status") in ("ok", "error")
 
 
+class TestGraphRAGEmbeddingProvider:
+    """Tier B: query embeddings go through get_embedding_provider() (never a
+    hardcoded Ollama endpoint) and degrade to keyword-only when unavailable."""
+
+    def test_embedding_to_pg_vector_format(self):
+        from tools.knowledge_graph.graph_rag import _embedding_to_pg_vector
+
+        assert _embedding_to_pg_vector([0.1, -0.2, 0.333333]) == "[0.100000,-0.200000,0.333333]"
+        assert _embedding_to_pg_vector([]) == "[]"
+
+    def test_embed_query_uses_configured_provider(self):
+        """_embed_query returns the configured provider's vector — no hardcoded model."""
+        from unittest.mock import MagicMock
+
+        import tools.knowledge_graph.graph_rag as gr
+
+        provider = MagicMock()
+        provider.embed.return_value = [0.1, 0.2, 0.3]
+        with patch("tools.llm.get_embedding_provider", return_value=provider):
+            assert gr._embed_query("zero trust") == [0.1, 0.2, 0.3]
+        provider.embed.assert_called_once_with("zero trust")
+
+    def test_embed_query_degrades_when_provider_unavailable(self):
+        """No embedding provider (raises LLMUnavailableError) → None, not a crash."""
+        import tools.knowledge_graph.graph_rag as gr
+
+        def _raise():
+            raise RuntimeError("ICDEV_NO_LLM — embedding provider disabled")
+
+        with patch("tools.llm.get_embedding_provider", side_effect=_raise):
+            assert gr._embed_query("anything") is None
+
+    def test_semantic_candidates_sqlite_python_cosine(self, kg_db):
+        """On SQLite _semantic_candidates ranks via Python cosine over the BLOBs."""
+        import struct
+
+        from tools.knowledge_graph.graph_rag import _semantic_candidates
+
+        kg_db.execute("INSERT INTO kg_graphs (id, project_id, name) VALUES ('g1','p1','G')")
+        near = struct.pack("3f", 1.0, 0.0, 0.0)
+        far = struct.pack("3f", 0.0, 1.0, 0.0)
+        kg_db.execute(
+            "INSERT INTO kg_nodes (id, graph_id, label, entity_type, embedding) "
+            "VALUES ('n_near','g1','Near','t', %s)",
+            (near,),
+        )
+        kg_db.execute(
+            "INSERT INTO kg_nodes (id, graph_id, label, entity_type, embedding) "
+            "VALUES ('n_far','g1','Far','t', %s)",
+            (far,),
+        )
+        kg_db.commit()
+
+        q_vec = [1.0, 0.0, 0.0]
+        q_blob = struct.pack("3f", *q_vec)
+        out = _semantic_candidates(kg_db, ["g1"], "%s", q_vec, q_blob, 10)
+
+        assert [d["id"] for _, d in out][0] == "n_near"  # aligned vector ranks first
+        assert out[0][0] > out[-1][0]
+        assert all("embedding" not in d for _, d in out)  # raw column stripped
+
+
 class TestGraphRAGOntologyAwareness:
     """Test ontology hierarchy traversal and distance-based scoring (D-ONTO-1)."""
 
