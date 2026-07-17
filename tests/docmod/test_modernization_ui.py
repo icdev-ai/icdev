@@ -192,6 +192,70 @@ def test_batch_ingest_requires_files_and_streams(client, db, monkeypatch):
     assert any(e.get("of") == 2 for e in events)
 
 
+def _run_batch(client, monkeypatch, form_extra=None):
+    """POST a 1-file batch and return the kwargs the route handed ingest_batch."""
+    import time
+
+    import tools.document_intelligence.ingest_orchestrator as orch
+    from tools.document_intelligence.blueprint import _JOB_QUEUES
+
+    captured = {}
+
+    def fake_batch(files, collection_id, progress_cb=None, **kw):
+        captured.update(kw)
+        progress_cb(1, 1, [])
+        return type("R", (), {"succeeded": 1, "failed": 0})()
+
+    monkeypatch.setattr(orch, "ingest_batch", fake_batch)
+    data = {"collection_id": "legacy", "files": [(io.BytesIO(b"doc one"), "a.txt")]}
+    data.update(form_extra or {})
+    resp = client.post("/document-intelligence/api/ingest/batch", data=data,
+                       content_type="multipart/form-data")
+    assert resp.status_code == 202, resp.get_json()
+
+    # The route ingests on a background thread; draining the job queue until the
+    # terminal event is how the other batch test synchronises.
+    q = _JOB_QUEUES.get(resp.get_json()["job_id"])
+    deadline = time.time() + 5
+    while time.time() < deadline:
+        try:
+            if json.loads(q.get(timeout=1)).get("done"):
+                break
+        except Exception:
+            break
+    return captured
+
+
+def test_batch_ingest_embeds_and_bridges_kg_by_default(client, db, monkeypatch):
+    """Regression: the bulk front door silently produced unusable documents.
+
+    ingest_batch defaults every enrichment off — correct for a primitive the
+    caller drives deliberately. But this route passed neither embed nor
+    bridge_kg, so 'ingest my documents' returned 202, reported success, and left
+    documents with no embeddings (invisible to vector search) and no KG entities
+    (invisible to /explorer and /analytics). Nothing failed; they just did not
+    work. Before the fix both assertions below are False.
+    """
+    kw = _run_batch(client, monkeypatch)
+    assert kw.get("embed") is True, "bulk-ingested documents must be searchable"
+    assert kw.get("bridge_kg") is True, "bulk-ingested documents must reach the KG"
+
+
+def test_batch_ingest_enrichment_is_opt_out_not_silent(client, db, monkeypatch):
+    """The cheap path stays reachable — but only when the caller asks for it."""
+    kw = _run_batch(client, monkeypatch, {"embed": "false", "bridge_kg": "0"})
+    assert kw.get("embed") is False
+    assert kw.get("bridge_kg") is False
+
+
+def test_batch_ingest_leaves_per_file_llm_enrichment_off(client, db, monkeypatch):
+    """summarize/metadata/correspondence are genuinely expensive per document,
+    and their absence does not stop a document being found. They stay off."""
+    kw = _run_batch(client, monkeypatch)
+    for expensive in ("summarize", "extract_metadata", "extract_correspondence"):
+        assert kw.get(expensive) in (None, False)
+
+
 def test_daemon_guard_and_templates():
     app_py = (REPO_ROOT / "tools" / "dashboard" / "app.py").read_text(encoding="utf-8")
     assert "ICDEV_DIC_FRESHNESS_SCAN_HOURS" in app_py

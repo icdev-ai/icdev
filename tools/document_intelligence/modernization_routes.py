@@ -347,15 +347,42 @@ def api_modernization_resolve(finding_id: str):
 
 # ── docmod-ux-02: bulk legacy-document onboarding ────────────────────────────
 
+def _form_bool(name: str, default: bool) -> bool:
+    """Read an optional multipart boolean, defaulting when absent or blank."""
+    raw = (request.form.get(name) or "").strip().lower()
+    if not raw:
+        return default
+    return raw in ("1", "true", "yes", "on")
+
+
 @dic_bp.route("/api/ingest/batch", methods=["POST"])
 def api_ingest_batch():
     """Multi-file ingest for hundreds of legacy docs — wraps the existing
     (previously unexposed) ingest_orchestrator.ingest_batch with the same
-    _JOB_QUEUES/SSE progress pattern as single-file ingest."""
+    _JOB_QUEUES/SSE progress pattern as single-file ingest.
+
+    ``embed`` and ``bridge_kg`` default ON here, unlike ``ingest_batch`` itself.
+    That function defaults every enrichment off, which is right for a low-level
+    primitive a caller drives deliberately — but this route is the front door for
+    "ingest my documents", and it passed neither, so bulk uploads silently
+    produced documents with no embeddings (invisible to vector search) and no KG
+    entities (invisible to /explorer and /analytics). Nothing reported a failure;
+    the documents simply did not work. That is how the live corpus ended up with
+    559 chunks but only ~26 document-derived KG nodes.
+
+    The cheap defaults stay available — pass ``embed=false`` / ``bridge_kg=false``
+    to opt out — but opting out of a working document is now an explicit choice
+    the caller makes, not a silent one the route makes for them. The remaining
+    per-file LLM enrichments (summarize, metadata, correspondence) stay off by
+    default: those are genuinely expensive per document and, unlike these two,
+    their absence does not stop the document from being found.
+    """
     files = request.files.getlist("files")
     if not files:
         return jsonify({"error": "no files provided (multipart field 'files')"}), 400
     collection_id = (request.form.get("collection_id") or "default").strip()
+    embed = _form_bool("embed", True)
+    bridge_kg = _form_bool("bridge_kg", True)
     tenant_id, classification = _security_context()
 
     staging = Path(tempfile.gettempdir()) / f"dic-batch-{uuid.uuid4().hex[:8]}"
@@ -384,6 +411,7 @@ def api_ingest_batch():
             result = ingest_batch(
                 [str(p) for p in saved], collection_id,
                 tenant_id=tenant_id, classification=classification,
+                embed=embed, bridge_kg=bridge_kg,
                 progress_cb=progress_cb,
             )
             q.put(json.dumps({"done": True,
