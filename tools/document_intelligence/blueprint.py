@@ -759,6 +759,12 @@ def api_techwriter_research():
             "is_airgap": result.is_airgap,
             "warnings": result.warnings,
             "error": result.error,
+            # TRUST: the draft's [source: N] tags resolve against this register,
+            # and citation_report says whether they actually do. Returned in full
+            # (not truncated like rag_chunks) — a citation the caller cannot
+            # resolve is not a citation.
+            "sources": result.sources,
+            "citation_report": result.citation_report,
         })
     except Exception as exc:
         logger.warning("dic: techwriter/research error: %s", exc)
