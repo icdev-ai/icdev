@@ -141,6 +141,37 @@ class TestGateScopeIsConfigurable:
         assert eh._gated_reflexes({"gated_reflexes": [" "]}) == ("oracle_triage", "heal")
 
 
+class TestBandBoundariesAreExact:
+    """Float division misfiles the band that matters most.
+
+    `math.floor(0.7 / 0.1)` is 6, not 7 — 0.7/0.1 is 6.999999999999999 in binary
+    floating point. 41 live oracle predictions sit at exactly 0.7, the promotion
+    gate. Filed a band low, the gate's own band renders empty while the band
+    beneath it inherits its rows: a calibration report that misfiles the very
+    threshold it exists to evaluate.
+    """
+
+    @pytest.mark.parametrize("conf,expected", [
+        (0.7, 0.7),   # the gate — floor(0.7/0.1) == 6 without integer math
+        (0.3, 0.3),   # floor(0.3/0.1) == 2
+        (0.9, 0.9),
+        (1.0, 1.0),
+        (0.0, 0.0),
+        (0.733, 0.7),  # a real live value
+        (0.699, 0.6),  # just below the gate stays below it
+    ])
+    def test_band_of(self, conf, expected):
+        assert eh._band_of(conf, 0.1) == pytest.approx(expected)
+
+    def test_the_gate_value_lands_in_the_gate_band(self):
+        rows = [_row(0.7, "resolved") for _ in range(6)]
+        bands = eh.calibration_by_band(rows)
+        assert [b["band"] for b in bands] == [0.7], "0.7 must not be filed as 0.6"
+
+    def test_zero_width_does_not_divide_by_zero(self):
+        assert eh._band_of(0.7, 0.0) == 0.0
+
+
 class TestWilsonInterval:
     def test_stays_inside_the_unit_interval_at_the_extremes(self):
         """Where the normal approximation reports nonsense like 1.0 +/- 0.3."""

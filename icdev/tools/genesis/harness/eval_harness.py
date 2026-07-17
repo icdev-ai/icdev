@@ -444,6 +444,25 @@ def _gated_reflexes(cfg: dict | None = None) -> tuple[str, ...]:
     return names or _DEFAULT_GATED_REFLEXES
 
 
+def _band_of(confidence: float, width: float) -> float:
+    """Which band a confidence falls in — via integer math, deliberately.
+
+    The obvious `math.floor(conf / width) * width` is wrong at exactly the values
+    that matter: 0.7 / 0.1 is 6.999999999999999 in binary floating point, so
+    floor() returns 6 and a 0.7 lands in the 0.6 band. 41 live oracle predictions
+    sit at exactly 0.7 — the promotion gate — and every one would be filed a band
+    low, leaving the gate's own band looking empty while the band beneath it
+    inherited its rows. A calibration report that misfiles the threshold it exists
+    to evaluate is worse than none. Scaling to integers makes the boundary exact.
+    """
+    scale = 1000
+    c = int(round(float(confidence) * scale))
+    w = int(round(float(width) * scale))
+    if w <= 0:
+        return 0.0
+    return round((c // w) * w / scale, 4)
+
+
 def _wilson_interval(hits: int, n: int, z: float = 1.96) -> tuple[float, float]:
     """95% Wilson score interval for a binomial proportion.
 
@@ -487,7 +506,7 @@ def calibration_by_band(
         if r["confidence"] is None:
             continue
         conf = float(r["confidence"])
-        band = round(math.floor(conf / bin_width) * bin_width, 2)
+        band = _band_of(conf, bin_width)
         b = bands.setdefault(band, {"labelled": 0, "hits": 0, "non_evidence": 0})
 
         outcome = r["actual_outcome"]
