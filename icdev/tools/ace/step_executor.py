@@ -108,7 +108,7 @@ def _emit_audit(
             """
             INSERT INTO ace_audit_log
                 (id, step_id, tool, trust_tier, success, skipped, error, duration_ms, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 row_id,

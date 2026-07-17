@@ -37,6 +37,26 @@ def test_unrelated_document_pulls_no_cross_canvas_context():
 
 
 # ---- gather (deterministic KG path) --------------------------------------- #
+class _TranslatingConn:
+    """In-memory sqlite that rewrites %s -> ? like the storage layer.
+
+    gather()/_neighbors run canonical PostgreSQL (%s) and in production get a
+    StorageConnection that translates for sqlite (tools.db.storage.translate_sql).
+    A bare sqlite3 connection does not, so %s raised and the relationship context
+    was silently dropped. Wrapping the fixture makes it behave like production.
+    """
+
+    def __init__(self, raw):
+        self._raw = raw
+
+    def execute(self, sql, params=None):
+        from tools.db.storage import translate_sql
+        return self._raw.execute(translate_sql(sql, "sqlite"), params or [])
+
+    def __getattr__(self, name):
+        return getattr(self._raw, name)
+
+
 def _kg_db():
     conn = sqlite3.connect(":memory:")
     conn.execute("CREATE TABLE kg_graphs (id TEXT PRIMARY KEY, project_id TEXT, name TEXT)")
@@ -59,7 +79,7 @@ def _kg_db():
     )
     conn.execute("INSERT INTO kg_edges VALUES ('e1','g_ndc','n1','n2','enforces')")
     conn.commit()
-    return conn
+    return _TranslatingConn(conn)
 
 
 def test_gather_returns_ndc_kg_evidence():

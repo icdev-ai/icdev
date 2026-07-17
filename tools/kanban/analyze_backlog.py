@@ -40,7 +40,7 @@ def _phase_complete(prefix: str, phase: str, conn) -> tuple[bool, list[str]]:
     """Check if ALL tasks in prior phase are done/decomposed."""
     pattern = f"{prefix}-{phase}-%"
     rows = conn.execute(
-        "SELECT id, status FROM kanban_tasks WHERE id LIKE ?",
+        "SELECT id, status FROM kanban_tasks WHERE id LIKE %s",
         (pattern,),
     ).fetchall()
     if not rows:
@@ -61,14 +61,14 @@ def _deps_satisfied(task_id: str, conn) -> tuple[bool, list[str]]:
 
     # Scalar dep
     row = conn.execute(
-        "SELECT depends_on_task_id FROM kanban_tasks WHERE id = ?",
+        "SELECT depends_on_task_id FROM kanban_tasks WHERE id = %s",
         (task_id,),
     ).fetchone()
     if row:
         scalar_dep = dict(row).get("depends_on_task_id")
         if scalar_dep:
             dep_row = conn.execute(
-                "SELECT status FROM kanban_tasks WHERE id = ?", (scalar_dep,)
+                "SELECT status FROM kanban_tasks WHERE id = %s", (scalar_dep,)
             ).fetchone()
             if not dep_row:
                 blocking.append(f"{scalar_dep} (missing)")
@@ -77,13 +77,13 @@ def _deps_satisfied(task_id: str, conn) -> tuple[bool, list[str]]:
 
     # Junction deps
     jdeps = conn.execute(
-        "SELECT depends_on_id FROM kanban_task_deps WHERE task_id = ?",
+        "SELECT depends_on_id FROM kanban_task_deps WHERE task_id = %s",
         (task_id,),
     ).fetchall()
     for r in jdeps:
         dep_id = dict(r)["depends_on_id"]
         dep_row = conn.execute(
-            "SELECT status FROM kanban_tasks WHERE id = ?", (dep_id,)
+            "SELECT status FROM kanban_tasks WHERE id = %s", (dep_id,)
         ).fetchone()
         if not dep_row:
             blocking.append(f"{dep_id} (missing)")
@@ -204,7 +204,7 @@ def analyze_backlog() -> None:
                 if t.get("depends_on_task_id"):
                     dep_str = f" -> after {t['depends_on_task_id']}"
                 jdeps = conn.execute(
-                    "SELECT depends_on_id FROM kanban_task_deps WHERE task_id = ?",
+                    "SELECT depends_on_id FROM kanban_task_deps WHERE task_id = %s",
                     (t["id"],),
                 ).fetchall()
                 if jdeps:
