@@ -1060,6 +1060,27 @@ reflexes:
       threshold: 0
       operator: gte
 
+  # ── DIC GraphRAG Community Refresh ──────────────────────────────────────────
+  # The community engine clusters the DIC knowledge graph and summarises each
+  # theme (dic_community_summaries), which chat consults for global/thematic
+  # questions ("what are the main themes across these documents"). As documents
+  # are ingested the graph changes and the summaries drift stale; this rebuilds
+  # them on a cadence. build_communities is idempotent (content-stable ids,
+  # prefix-delete before rewrite), so a refresh replaces rather than accumulates.
+  community_refresh:
+    timeout_seconds: 600     # LLM-summarises each community across all DIC graphs
+    enabled: true
+    risk_tier: green         # rewrites derived summaries only; idempotent
+    schedule: "daily 03:45"
+    interval_seconds: 86400
+    cooldown_minutes: 720
+    description: "DIC GraphRAG community refresh: re-cluster the DIC knowledge graph and re-summarise each theme into dic_community_summaries, so global/thematic chat answers stay current as documents change."
+    dry_run: false
+    success_metric:
+      name: dic_communities_refreshed
+      threshold: 0
+      operator: gte
+
   # ── DIC Inbox Sweep (the drop folder finally gets someone watching it) ───────
   # tools/document_intelligence/inbox.py was built for teams who pull documents
   # out of SharePoint with a browser session and had nowhere to put them. It

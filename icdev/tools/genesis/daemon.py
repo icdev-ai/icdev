@@ -124,6 +124,7 @@ REFLEX_NAMES = [
     "dic_digest",          # dic-syn-gn: weekly digest of new docs + freshness alerts
     "doc_modernization_sweep",  # docmod-ops-01: nightly EOL/defacto refresh + doc scan + redlines + cards
     "confidence_sampler",  # trust-cal-01: random audit of what the system was already sure about
+    "community_refresh",  # dic-graphrag-03: keep DIC GraphRAG community summaries fresh
     "dic_inbox_sweep",     # dic-inbox-02: 5-min sweep of the DIC drop folder (data/dic_inbox)
     "reflexion_loop",      # nova-echo: weekly batch Reflexion pass → improvement artifacts
     "evolution",           # nova-sela: weekly GEPA-style skill text mutation + promotion
