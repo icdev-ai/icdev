@@ -482,16 +482,6 @@ def review():
             "FROM dic_versions v LEFT JOIN dic_documents d ON d.doc_id = v.doc_id "
             "WHERE v.status IN ('pending_review', 'needs_revision') ORDER BY v.created_at DESC LIMIT 50",
         )
-        # Gather team members per collection for assignment dropdowns.
-        team_map: dict[str, list[dict]] = {}
-        for v in pending_versions:
-            cid = v.get("collection_id") or "default"
-            if cid not in team_map:
-                team_map[cid] = _safe_rows(
-                    conn,
-                    "SELECT user_id, role FROM dic_team_access WHERE collection_id = ? ORDER BY role DESC, user_id",
-                    (cid,),
-                )
         # Documents with pending sections (for the Documents tab).
         pending_docs = _safe_rows(
             conn,
@@ -610,13 +600,24 @@ def _docdrift_topologies() -> list[dict]:
 
 @dic_bp.route("/docdrift")
 def docdrift():
-    conn = _conn()
-    try:
-        drift_events = _safe_rows(conn, "SELECT source, entity, severity, detected_at FROM dic_drift_events ORDER BY detected_at DESC LIMIT 50")
-        regen_queue = _safe_rows(conn, "SELECT document_id, impact_level, state, queued_at FROM dic_acoic_regen_queue ORDER BY queued_at DESC LIMIT 50")
-        ssp_fragments = _safe_rows(conn, "SELECT control_id, document_id, status FROM dic_ssp_fragments ORDER BY created_at DESC LIMIT 50")
-    finally:
-        conn.close()
+    # acoic owns these three tables, and acoic.get_acoic_page_context() exists to
+    # bundle exactly the three lists this template renders — its docstring even
+    # spells out this call. The route re-queried them inline anyway, so the
+    # column list lived in two places and could drift from the module that owns
+    # the schema.
+    #
+    # The helper is also strictly safer: its _rows() calls _ensure_schema first,
+    # so a fresh database renders instead of relying on _safe_rows swallowing
+    # "no such table" into an empty list — the failure mode that had /analytics
+    # telling operators they had no documents. It returns supersets of what the
+    # inline queries selected (regen adds item_id; fragments add fragment_id,
+    # verified, ai_labeled), so the template gains fields and loses none.
+    from tools.document_intelligence import acoic
+
+    page = acoic.get_acoic_page_context()
+    drift_events = page["drift_events"]
+    regen_queue = page["regen_queue"]
+    ssp_fragments = page["ssp_fragments"]
     topologies = _docdrift_topologies()
     return render_template(
         "document_intelligence/docdrift.html",
