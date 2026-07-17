@@ -250,6 +250,18 @@ CREATE TABLE IF NOT EXISTS kanban_status_transitions (
     reason       TEXT,
     recorded_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
+-- Continuous Harness eval table (mirrors tools/db/schema/pg_consolidated.sql).
+CREATE TABLE IF NOT EXISTS harness_eval (
+    id             TEXT PRIMARY KEY,
+    task_id        TEXT NOT NULL DEFAULT '',
+    reflex         TEXT NOT NULL,
+    decision       TEXT NOT NULL,
+    confidence     REAL,
+    metadata_json  TEXT DEFAULT '{}',
+    actual_outcome TEXT,
+    resolved_at    TEXT,
+    created_at     TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     tenant_id TEXT NOT NULL,
