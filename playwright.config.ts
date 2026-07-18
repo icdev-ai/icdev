@@ -69,6 +69,10 @@ export default defineConfig({
       ICDEV_MISSION_CANVAS_ENABLED: 'true',
       ICDEV_AUTH_BYPASS: 'true',
       ICDEV_OPS_HUB_ENABLED: 'true',
+      // NOC Operations Canvas — required by tests/e2e/noc_canvas.spec.ts (cnr-ops-02).
+      // Registry default_enabled is false; without this the noc_canvas blueprint
+      // never registers and every /noc route 404s / redirects.
+      ICDEV_NOCC_ENABLED: 'true',
       ICDEV_MIGRATION_CANVAS_ENABLED: 'true',
       ICDEV_INNOVATION_ENABLED: 'true',
     },
