@@ -4,6 +4,7 @@
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
+import json
 from datetime import datetime, timezone
 from typing import Any
 
@@ -15,6 +16,26 @@ log = get_logger(__name__)
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _team_unscored_count(conn, team_id: int) -> int:
+    """Count a team's responses the LLM judge left UNSCORED (fail-loud marker in
+    judge_rationale_json). Parsed in Python — never json_extract in SQL — so the
+    leaderboard can render unscored responses distinctly instead of as fake 0/50.
+    """
+    rows = conn.execute(
+        "SELECT judge_rationale_json FROM ttx_scores WHERE team_id = %s",
+        (team_id,),
+    ).fetchall()
+    n = 0
+    for r in rows:
+        raw = (r["judge_rationale_json"] if hasattr(r, "keys") else r[0]) or "{}"
+        try:
+            if json.loads(raw).get("unscored"):
+                n += 1
+        except Exception:
+            pass
+    return n
 
 
 def compute_leaderboard(session_id: int) -> list[dict[str, Any]]:
@@ -76,6 +97,7 @@ def compute_leaderboard(session_id: int) -> list[dict[str, Any]]:
             "receipt_pts": agg["receipt_pts"] if agg else 0,
             "judge_pts": agg["judge_pts"] if agg else 0,
             "time_bonus_pts": agg["time_bonus_pts"] if agg else 0,
+            "unscored_count": _team_unscored_count(conn, team_id),
         }
         rows.append(row)
 
@@ -96,7 +118,12 @@ def get_leaderboard(session_id: int) -> list[dict[str, Any]]:
         (session_id,),
     ).fetchall()
     if rows:
-        return [dict(r) for r in rows]
+        out = []
+        for r in rows:
+            d = dict(r)
+            d["unscored_count"] = _team_unscored_count(conn, d["team_id"])
+            out.append(d)
+        return out
     return compute_leaderboard(session_id)
 
 

@@ -1,47 +1,49 @@
+# CUI // SP-CTI
 name: Agentic AI Design Review — OMB + Safety Assessment
-description: Review agentic AI design for OMB M-24-10 compliance, safety scoring, HITL requirements, and ATO artifact generation.
+description: >
+  Review an agentic AI design for OMB M-25-21 compliance, safety/rights impact,
+  HITL coverage, and NIST AI RMF / OWASP LLM posture. Graph-driven: every
+  verdict is derived from the design graph via agentic_engine.assess_design.
 category: ai
 tags: [agentic-ai, omb, safety, hitl, aadc]
 author: builtin
+# penta-aadc-02: previously this template pointed at five tools that do not
+# exist in the tree (tools/ai_augmentation/aac_engine.py, safety_scorer.py,
+# hitl_validator.py, ato_artifact_generator.py, tools/compliance/
+# omb_compliance_checker.py), so its "verdict" was dead/undefined. It now
+# consumes the real graph-driven AADC assessment via governance_scanner and
+# compliance_checker (both thin adapters over assess_design). --project-id is
+# the AADC design id, injected by tools/studio/workflow_runner.py.
 steps:
-  - id: design_load
-    name: Load Agentic AI Design
-    tool: tools/ai_augmentation/aac_engine.py
+  - id: governance_scan
+    name: Governance & Safety Scan
+    tool: tools/aadc/governance_scanner.py
     node_type: tool
     required: true
-    timeout: 120
-  - id: omb_check
-    name: OMB M-24-10 Compliance Check
-    tool: tools/compliance/omb_compliance_checker.py
+    timeout: 300
+    depends_on: []
+    description: >
+      Derive the AI Risk Score, autonomy level, safety/rights impact, and HITL
+      findings from the design graph (assess_design). No default posture;
+      reports assessment-unavailable if the design cannot be loaded.
+  - id: compliance_check
+    name: OMB / NIST AI RMF Compliance Check
+    tool: tools/aadc/compliance_checker.py
     node_type: tool
     required: true
-    timeout: 180
-    depends_on: [design_load]
-  - id: safety_score
-    name: Safety & Rights Impact Scoring
-    tool: tools/ai_augmentation/safety_scorer.py
-    node_type: tool
-    required: true
-    timeout: 180
-    depends_on: [design_load]
-  - id: hitl_validate
-    name: HITL Requirement Validation
-    tool: tools/ai_augmentation/hitl_validator.py
-    node_type: tool
-    required: true
-    timeout: 120
-    depends_on: [design_load]
+    timeout: 300
+    depends_on: [governance_scan]
+    description: >
+      Compute the PASS/FAIL compliance gate (OMB M-25-21, NIST AI RMF, OWASP
+      LLM) from the design assessment findings. No default checklist; gate fails
+      on any blocking-severity finding (CRITICAL/CAT1/HIGH).
   - id: ai_review
     name: AI Safety Officer Review
     tool: ""
     node_type: human
     role: isso
     required: true
-    depends_on: [omb_check, safety_score, hitl_validate]
-  - id: ato_artifact
-    name: ATO Artifact Generation
-    tool: tools/ai_augmentation/ato_artifact_generator.py
-    node_type: tool
-    required: false
-    timeout: 180
-    depends_on: [ai_review]
+    depends_on: [governance_scan, compliance_check]
+    description: >
+      Human (ISSO) reviews the graph-driven governance and compliance findings
+      before the design proceeds. Approve/reject via the workflow Details modal.
