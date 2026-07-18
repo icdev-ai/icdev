@@ -3,16 +3,101 @@
 from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
-from tools.db.storage import get_connection
+from tools.db.storage import get_canvas_connection
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+# ── Real-state helpers ────────────────────────────────────────────────────────
+
+_CLASS_RANK = {"UNCLASSIFIED": 0, "CUI": 1, "SECRET": 2, "TOP SECRET": 3}
+
+
+def _class_rank(label: str | None) -> int:
+    """Rank a classification label; unknown/empty → 0 (UNCLASSIFIED)."""
+    if not label:
+        return 0
+    ul = label.upper()
+    for k in ("TOP SECRET", "SECRET", "CUI", "UNCLASSIFIED"):
+        if k in ul:
+            return _CLASS_RANK[k]
+    return 0
+
+
+def _col_of(change: dict) -> str:
+    """The source column a change targets (old_name for renames, else column)."""
+    return change.get("old_name") or change.get("column") or ""
+
+
+def _tbl_of(change: dict) -> str:
+    return change.get("table") or ""
+
+
+def _load_lineage_records(design_id: str) -> list[dict]:
+    """Read ``dd_lineage`` rows for a design as records for the lineage engine.
+
+    Never raises — returns ``[]`` when the table is absent or the query fails so
+    callers degrade to honest zeros rather than fabricated impact.
+    """
+    try:
+        conn = get_canvas_connection()
+        rows = conn.execute(
+            "SELECT id, source_node_id, target_node_id, lineage_type, column_name, "
+            "transform_desc, classification FROM dd_lineage WHERE design_id=%s",
+            (design_id,),
+        ).fetchall()
+    except Exception:
+        return []
+    records: list[dict] = []
+    for r in rows:
+        records.append(
+            {
+                "id": r[0],
+                "source_node_id": r[1],
+                "target_node_id": r[2],
+                "lineage_type": r[3],
+                "column_name": r[4],
+                "transform_desc": r[5],
+                "classification": r[6],
+            }
+        )
+    return records
+
+
+def _load_classifications(design_id: str) -> tuple[str | None, dict[str, str]]:
+    """Return (design_classification, {node_id: classification}) from real state.
+
+    Missing rows yield ``None`` / an empty map — the boundary check is skipped
+    for anything not actually stored, never fabricated.
+    """
+    design_class: str | None = None
+    node_class: dict[str, str] = {}
+    try:
+        conn = get_canvas_connection()
+        row = conn.execute(
+            "SELECT classification FROM data_designs WHERE id=%s", (design_id,)
+        ).fetchone()
+        if row:
+            design_class = row[0]
+    except Exception:
+        pass
+    try:
+        conn = get_canvas_connection()
+        rows = conn.execute(
+            "SELECT id, classification FROM data_nodes WHERE design_id=%s", (design_id,)
+        ).fetchall()
+        for r in rows:
+            node_class[r[0]] = r[1]
+    except Exception:
+        pass
+    return design_class, node_class
+
+
 def take_snapshot(design_id: str, label: str | None = None, classification: str = "CUI") -> dict:
     """Freeze table schema graph and lineage edges into data_twin_snapshots."""
-    conn = get_connection()
+    conn = get_canvas_connection()
     snap_id = str(uuid.uuid4())
     taken_at = _now()
     label = label or f"snap-{taken_at[:10]}"
@@ -42,47 +127,173 @@ def take_snapshot(design_id: str, label: str | None = None, classification: str 
 
 def simulate_delta(design_id: str, schema_changes: list, classification: str = "CUI",
                    baseline_snap_id: str | None = None) -> dict:
-    """Analyze downstream impact of proposed schema changes."""
+    """Analyze downstream impact of proposed schema changes against real lineage.
+
+    Loads the design's ``dd_lineage`` column-level edges and, for every
+    removed / renamed / type-changed column, walks the lineage DAG
+    (``compute_downstream_impact``) to enumerate the *real* downstream consumers.
+
+    Computed from actual state — not the input list:
+      * ``impacted_table_count`` — distinct downstream entities reached via edges.
+      * ``orphan_count`` — impacted downstream (entity, column) nodes left with
+        **no upstream provenance** once the removed/renamed source columns are
+        dropped from the lineage set (``compute_upstream_provenance`` on the
+        filtered records).
+      * ``coverage_score`` — real signal: fraction of impacted downstream nodes
+        that retain upstream after the change (1.0 when nothing breaks; 0.0 when
+        breaking changes exist but the design has no lineage to reason over).
+
+    Never raises. When no lineage edges exist, returns honest zeros plus a
+    ``note`` rather than inventing impact.
+    """
+    from tools.data_canvas.lineage import (
+        compute_downstream_impact,
+        compute_upstream_provenance,
+    )
+
     sim_id = str(uuid.uuid4())
     added = [c for c in schema_changes if c.get("change") == "add_column"]
     removed = [c for c in schema_changes if c.get("change") in ("remove_column", "drop_column")]
     renamed = [c for c in schema_changes if c.get("change") == "rename_column"]
     type_changes = [c for c in schema_changes if c.get("change") == "change_type"]
-
     breaking = removed + renamed + type_changes
-    verdict = "pass" if not breaking else ("warn" if len(breaking) <= 2 else "fail")
-    coverage_score = max(0.4, 1.0 - len(breaking) * 0.1)
 
-    downstream_impacts = [
-        {"severity": "high" if c.get("change") in ("remove_column", "drop_column") else "medium",
-         "id": f"{c.get('table','?')}.{c.get('old_name') or c.get('column','?')}",
-         "title": f"{c.get('change','?')} on {c.get('table','?')}",
-         "recommendation": "Update all downstream consumers before applying this change"}
-        for c in breaking
+    lineage_records = _load_lineage_records(design_id)
+    note = None
+    if not lineage_records:
+        note = ("No lineage edges recorded for this design — downstream impact is "
+                "structural only (orphan/impact counts are honest zeros).")
+
+    # Edges that disappear after the change: those sourced from a removed/renamed column.
+    removed_keys = {(_tbl_of(c), _col_of(c)) for c in (removed + renamed)}
+    filtered = [
+        r for r in lineage_records
+        if (r["source_node_id"], r["column_name"]) not in removed_keys
     ]
-    return {
+
+    impacted_nodes: dict[tuple[str, str], dict] = {}
+    impacted_tables: set[str] = set()
+    downstream_impacts: list[dict] = []
+
+    for c in breaking:
+        tbl, col = _tbl_of(c), _col_of(c)
+        if not tbl or not col:
+            continue
+        impact = compute_downstream_impact(tbl, col, lineage_records)
+        for n in impact["impacted_nodes"]:
+            key = (n["entity_id"], n["column_name"])
+            impacted_nodes[key] = n
+            impacted_tables.add(n["entity_id"])
+        consumers = impact["total_impacted"]
+        is_removal = c.get("change") in ("remove_column", "drop_column", "rename_column")
+        downstream_impacts.append({
+            "severity": "high" if (is_removal and consumers) else
+                        ("high" if c.get("change") in ("remove_column", "drop_column") else "medium"),
+            "id": f"{tbl}.{col}",
+            "title": f"{c.get('change','?')} on {tbl}.{col} affects "
+                     f"{consumers} downstream column(s)",
+            "consumer_count": consumers,
+            "consumers": [f"{n['entity_id']}::{n['column_name']}"
+                          for n in impact["impacted_nodes"][:20]],
+            "recommendation": "Update all downstream consumers before applying this change",
+        })
+
+    # Orphans: impacted downstream nodes with no upstream provenance after removal.
+    orphaned: list[str] = []
+    for (ent, col) in impacted_nodes:
+        prov = compute_upstream_provenance(ent, col, filtered)
+        if prov["total_provenance"] == 0:
+            orphaned.append(f"{ent}::{col}")
+    orphan_count = len(orphaned)
+
+    total_impacted = len(impacted_nodes)
+    if total_impacted:
+        coverage_score = round(1.0 - orphan_count / total_impacted, 3)
+    elif breaking and not lineage_records:
+        coverage_score = 0.0
+    else:
+        coverage_score = 1.0
+
+    verdict = "pass" if not breaking else ("warn" if len(breaking) <= 2 else "fail")
+
+    result = {
         "simulation_id": sim_id, "design_id": design_id, "verdict": verdict,
-        "coverage_score": round(coverage_score, 3), "orphan_count": 0,
-        "impacted_table_count": len({c.get("table") for c in breaking}),
+        "coverage_score": coverage_score, "orphan_count": orphan_count,
+        "orphaned_nodes": orphaned,
+        "impacted_table_count": len(impacted_tables),
         "schema_drift": {"added": len(added), "removed": len(removed),
                          "renamed": len(renamed), "type_changes": len(type_changes)},
         "downstream_impacts": downstream_impacts,
     }
+    if note:
+        result["note"] = note
+    return result
 
 
 def quality_gate(design_id: str, schema_changes: list, baseline_snap_id: str | None = None) -> dict:
-    """Evaluate null constraints, referential integrity, and CUI boundary rules."""
-    violations = []
+    """Evaluate schema changes against the design's real stored state.
+
+    Runs three checks; every reported violation is grounded in stored data:
+      1. **Null-safety** (structural) — a NOT NULL column added without a DEFAULT
+         breaks a backward-compatible migration on an existing table.
+      2. **Referential integrity** (lineage-backed) — a removed/renamed column
+         that has *real* downstream consumers in ``dd_lineage``
+         (``compute_downstream_impact`` returns > 0). Columns with no recorded
+         consumers are NOT flagged.
+      3. **Classification boundary** (CUI) — a change targeting a table whose
+         stored classification (``data_nodes``) dominates the design's
+         classification (``data_designs``).
+
+    Never raises. When the design/nodes/lineage rows are absent the corresponding
+    check is skipped rather than fabricated — no overclaiming.
+    """
+    from tools.data_canvas.lineage import compute_downstream_impact
+
+    violations: list[dict] = []
+    lineage_records = _load_lineage_records(design_id)
+    design_class, node_class = _load_classifications(design_id)
+
     for c in schema_changes:
-        if c.get("change") == "add_column" and not c.get("nullable", True) and not c.get("default"):
-            violations.append({"severity": "high", "id": c.get("column", "?"),
-                               "title": f"NOT NULL column '{c.get('column')}' without DEFAULT on existing table",
-                               "recommendation": "Add a DEFAULT value or make nullable for backward-compatible migration"})
-        if c.get("change") in ("remove_column", "drop_column"):
-            violations.append({"severity": "medium", "id": c.get("column") or c.get("old_name", "?"),
-                               "title": "Column removal may break referential integrity",
-                               "recommendation": "Verify no foreign keys or views reference this column"})
-    return {"violations": violations, "gate": "fail" if violations else "pass"}
+        change = c.get("change")
+        tbl = _tbl_of(c)
+
+        # 1. Null-safety (structural).
+        if change == "add_column" and not c.get("nullable", True) and not c.get("default"):
+            violations.append({
+                "severity": "high", "type": "null_safety", "id": c.get("column", "?"),
+                "title": f"NOT NULL column '{c.get('column')}' without DEFAULT on existing table",
+                "recommendation": "Add a DEFAULT value or make nullable for backward-compatible migration",
+            })
+
+        # 2. Referential integrity — only when real downstream consumers exist.
+        if change in ("remove_column", "drop_column", "rename_column"):
+            src_col = _col_of(c)
+            impact = compute_downstream_impact(tbl, src_col, lineage_records)
+            n = impact["total_impacted"]
+            if n:
+                violations.append({
+                    "severity": "high", "type": "referential_integrity",
+                    "id": f"{tbl}.{src_col}",
+                    "title": f"{n} downstream consumer(s) reference '{tbl}.{src_col}' in recorded lineage",
+                    "recommendation": "Repoint or remove downstream lineage edges before applying this change",
+                    "consumers": [f"{x['entity_id']}::{x['column_name']}"
+                                  for x in impact["impacted_nodes"][:20]],
+                })
+
+        # 3. Classification boundary — table classification dominates the design's.
+        tcls = node_class.get(tbl)
+        if tcls and design_class and _class_rank(tcls) > _class_rank(design_class):
+            violations.append({
+                "severity": "high", "type": "classification_boundary", "id": tbl,
+                "title": f"Change touches '{tbl}' ({tcls}) which exceeds design classification ({design_class})",
+                "recommendation": "Re-mark the design or route this change through the higher enclave",
+            })
+
+    return {
+        "violations": violations,
+        "gate": "fail" if violations else "pass",
+        "checks": ["null_safety", "referential_integrity", "classification_boundary"],
+    }
 
 
 def simulate_dm_change(
