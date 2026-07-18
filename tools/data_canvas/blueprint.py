@@ -150,6 +150,26 @@ def create_data_canvas_blueprint():
 
         return decorated
 
+    def _json_api_errors(f):
+        """Wrap a JSON API route so DB/runtime errors return JSON 500.
+
+        Without this, an uncaught exception inside a handler yields Flask's
+        HTML 500 page — which breaks JSON clients. Applied to read/DB routes
+        that lack their own try/except.
+        """
+        @wraps(f)
+        def decorated(*args, **kwargs):
+            try:
+                return f(*args, **kwargs)
+            except Exception as exc:
+                logger.warning(
+                    "data_canvas API %s failed: %s",
+                    getattr(f, "__name__", "?"), exc, exc_info=True,
+                )
+                return jsonify({"error": str(exc)}), 500
+
+        return decorated
+
     # ══════════════════════════════════════════════════════════════════════
     # PAGE ROUTES
     # ══════════════════════════════════════════════════════════════════════
@@ -381,16 +401,16 @@ def create_data_canvas_blueprint():
             from tools.security_canvas.agent import on_ddc_design_saved
 
             on_ddc_design_saved(design_id)
-        except Exception:
-            pass
+        except Exception as _exc:
+            logger.warning("post-save reflex on_ddc_design_saved failed: %s", _exc, exc_info=True)
 
         # Incremental KG update: re-extract only if graph_json changed
         try:
             from tools.canvas.kg_builder import rebuild_canvas_kg
 
             rebuild_canvas_kg("ddc", design_id)
-        except Exception:
-            pass
+        except Exception as _exc:
+            logger.warning("canvas KG rebuild failed: %s", _exc, exc_info=True)
         # Blockchain provenance
         try:
             from tools.canvas.provenance import register_canvas_provenance
@@ -400,8 +420,8 @@ def create_data_canvas_blueprint():
                 graph_json=data.get("graph_json", {}),
                 project_id=data.get("project_id", ""),
             )
-        except Exception:
-            pass
+        except Exception as _exc:
+            logger.warning("canvas provenance registration failed: %s", _exc, exc_info=True)
 
         return jsonify({"updated": True})
 
@@ -501,8 +521,8 @@ def create_data_canvas_blueprint():
 
             pii_scan = _scan_graph(graph_data)
             result["findings"].extend(pii_scan.get("compliance_findings", []))
-        except Exception:
-            pass
+        except Exception as _exc:
+            logger.warning("PII graph scan failed: %s", _exc, exc_info=True)
 
         # Persist assessment
         assess_id = str(_uuid.uuid4())
@@ -538,8 +558,8 @@ def create_data_canvas_blueprint():
                 assessment_data=result,
                 project_id="",
             )
-        except Exception:
-            pass
+        except Exception as _exc:
+            logger.warning("assessment provenance registration failed: %s", _exc, exc_info=True)
 
         return jsonify(
             {
@@ -612,15 +632,18 @@ def create_data_canvas_blueprint():
     # ══════════════════════════════════════════════════════════════════════
 
     @bp.route("/api/objects")
+    @dc_login_required
     def dc_api_objects():
         """Return data object palette for the canvas frontend."""
         return jsonify(DATA_OBJECTS)
 
     @bp.route("/api/classification-levels")
+    @dc_login_required
     def dc_api_classification_levels():
         return jsonify(DATA_CLASSIFICATION_LEVELS)
 
     @bp.route("/api/rules")
+    @dc_login_required
     def dc_api_rules():
         return jsonify(DATA_COMPLIANCE_RULES)
 
@@ -630,6 +653,7 @@ def create_data_canvas_blueprint():
 
     @bp.route("/api/designs/<design_id>/lineage", methods=["GET"])
     @dc_login_required
+    @_json_api_errors
     def dc_api_lineage_list(design_id):
         """List all lineage edges for a data design."""
         conn = get_connection()
@@ -644,6 +668,7 @@ def create_data_canvas_blueprint():
 
     @bp.route("/api/designs/<design_id>/lineage", methods=["POST"])
     @dc_login_required
+    @_json_api_errors
     def dc_api_lineage_create(design_id):
         """Add a column-level lineage edge to a data design."""
         data = request.get_json(force=True, silent=True) or {}
@@ -677,6 +702,7 @@ def create_data_canvas_blueprint():
 
     @bp.route("/api/designs/<design_id>/lineage/<edge_id>", methods=["DELETE"])
     @dc_login_required
+    @_json_api_errors
     def dc_api_lineage_delete(design_id, edge_id):
         """Delete a lineage edge."""
         conn = get_connection()
@@ -713,6 +739,7 @@ def create_data_canvas_blueprint():
 
     @bp.route("/api/lineage/<dataset_id>", methods=["GET"])
     @dc_login_required
+    @_json_api_errors
     def dc_api_lineage_pii(dataset_id):
         """Return lineage graph for a design with per-node PII markers.
 
@@ -869,6 +896,7 @@ def create_data_canvas_blueprint():
 
     @bp.route("/api/versions/<design_id>", methods=["GET"])
     @dc_login_required
+    @_json_api_errors
     def dc_api_list_versions(design_id):
         """List all version snapshots for a data design."""
         conn = get_connection()
@@ -896,7 +924,8 @@ def create_data_canvas_blueprint():
         raw = row_to_dict(row)["graph_json"]
         try:
             current_graph = json.loads(raw) if isinstance(raw, str) else raw
-        except Exception:
+        except Exception as _exc:
+            logger.warning("version graph_json parse failed: %s", _exc, exc_info=True)
             current_graph = {}
         ver_num = conn.execute(
             "SELECT COALESCE(MAX(version_number), 0) + 1 FROM dd_versions WHERE design_id=?",
@@ -912,8 +941,8 @@ def create_data_canvas_blueprint():
                 try:
                     prev_graph = json.loads(prev[0]) if isinstance(prev[0], str) else prev[0]
                     change_summary = _dc_diff_graph(prev_graph, current_graph)
-                except Exception:
-                    pass
+                except Exception as _exc:
+                    logger.warning("version diff summary failed: %s", _exc, exc_info=True)
         ver_id = str(_uuid.uuid4())
         now = now_isoformat()
         conn.execute(
@@ -983,7 +1012,8 @@ def create_data_canvas_blueprint():
         try:
             graph_a = json.loads(ver_a[0]) if isinstance(ver_a[0], str) else ver_a[0]
             graph_b = json.loads(ver_b[0]) if isinstance(ver_b[0], str) else ver_b[0]
-        except Exception:
+        except Exception as _exc:
+            logger.warning("compare-versions graph parse failed: %s", _exc, exc_info=True)
             return jsonify({"error": "Failed to parse graph data"}), 500
         summary = _dc_diff_graph(graph_a, graph_b)
         return jsonify(
@@ -1324,7 +1354,8 @@ def create_data_canvas_blueprint():
             if row:
                 try:
                     existing = json.loads(row["graph_json"]) if isinstance(row["graph_json"], str) else row["graph_json"]
-                except Exception:
+                except Exception as _exc:
+                    logger.warning("existing graph_json parse failed: %s", _exc, exc_info=True)
                     existing = {"nodes": [], "edges": [], "boundaries": []}
                 # Merge: add introspected nodes/edges that aren't already present
                 existing_node_ids = {n["id"] for n in existing.get("nodes", [])}
@@ -1463,7 +1494,8 @@ def create_data_canvas_blueprint():
         try:
             import json as _json
             runbook["steps"] = _json.loads(runbook.get("steps_json") or "[]")
-        except Exception:
+        except Exception as _exc:
+            logger.warning("runbook steps_json parse failed: %s", _exc, exc_info=True)
             runbook["steps"] = []
         execs = [
             row_to_dict(r)
@@ -1554,7 +1586,8 @@ def create_data_canvas_blueprint():
         rb = row_to_dict(row)
         try:
             rb["steps"] = json.loads(rb.get("steps_json") or "[]")
-        except Exception:
+        except Exception as _exc:
+            logger.warning("runbook steps_json parse failed: %s", _exc, exc_info=True)
             rb["steps"] = []
         return jsonify(rb)
 
@@ -1695,11 +1728,13 @@ def create_data_canvas_blueprint():
         sop = row_to_dict(sop_row)
         try:
             sop["steps"] = _json.loads(sop.get("steps_json") or "[]")
-        except Exception:
+        except Exception as _exc:
+            logger.warning("SOP steps_json parse failed: %s", _exc, exc_info=True)
             sop["steps"] = []
         try:
             sop["references"] = _json.loads(sop.get("references_json") or "[]")
-        except Exception:
+        except Exception as _exc:
+            logger.warning("SOP references_json parse failed: %s", _exc, exc_info=True)
             sop["references"] = []
         approvals = [
             row_to_dict(r)
@@ -1798,11 +1833,13 @@ def create_data_canvas_blueprint():
         sop = row_to_dict(row)
         try:
             sop["steps"] = _json.loads(sop.get("steps_json") or "[]")
-        except Exception:
+        except Exception as _exc:
+            logger.warning("SOP steps_json parse failed: %s", _exc, exc_info=True)
             sop["steps"] = []
         try:
             sop["references"] = _json.loads(sop.get("references_json") or "[]")
-        except Exception:
+        except Exception as _exc:
+            logger.warning("SOP references_json parse failed: %s", _exc, exc_info=True)
             sop["references"] = []
         return jsonify(sop)
 
@@ -2122,7 +2159,8 @@ def create_data_canvas_blueprint():
                 "SELECT * FROM data_twin_snapshots WHERE design_id=? ORDER BY created_at DESC LIMIT 20",
                 (design_id,),
             ).fetchall()
-        except Exception:
+        except Exception as _exc:
+            logger.warning("twin snapshots query failed: %s", _exc, exc_info=True)
             snapshots = []
         return render_template(
             "data_canvas/twin.html",
@@ -2168,7 +2206,8 @@ def create_data_canvas_blueprint():
             return jsonify({"error": "Design not found"}), 404
         try:
             graph = json.loads(row["graph_json"] or "{}")
-        except Exception:
+        except Exception as _exc:
+            logger.warning("twin graph_json parse failed: %s", _exc, exc_info=True)
             graph = {}
         return jsonify({"graph_json": graph}), 200
 
@@ -2427,7 +2466,8 @@ def create_data_canvas_blueprint():
                     "ORDER BY fa.created_at DESC LIMIT 50"
                 ).fetchall()
             ]
-        except Exception:
+        except Exception as _exc:
+            logger.warning("freshness alerts query failed: %s", _exc, exc_info=True)
             freshness_alerts = []
         conn.close()
         from tools.data_canvas.quality_engine import quality_score
@@ -2657,7 +2697,8 @@ def create_data_canvas_blueprint():
         r = row_to_dict(row)
         try:
             r["rules"] = json.loads(r.get("rules_json") or "[]")
-        except Exception:
+        except Exception as _exc:
+            logger.warning("policy rules_json parse failed: %s", _exc, exc_info=True)
             r["rules"] = []
         return jsonify(r)
 
@@ -2953,6 +2994,7 @@ def create_data_canvas_blueprint():
 
     @bp.route("/api/domains", methods=["GET"])
     @dc_login_required
+    @_json_api_errors
     def dm_api_list_domains():
         conn = get_connection()
         rows = conn.execute(
@@ -3008,8 +3050,8 @@ def create_data_canvas_blueprint():
                 "INSERT INTO dm_audit (domain_id, product_id, user, action, detail) VALUES (?, ?, ?, ?, ?)",
                 (domain_id, "", session.get("user_id", "system"), "domain.create", name),
             )
-        except Exception:
-            pass
+        except Exception as _exc:
+            logger.warning("domain-create audit log failed: %s", _exc, exc_info=True)
         conn.commit()
         conn.close()
         result = {c: base_row.get(c, "") for c in cols}
@@ -3043,8 +3085,8 @@ def create_data_canvas_blueprint():
             policy_count = conn.execute(
                 "SELECT COUNT(*) FROM dm_opa_policies WHERE domain_id=?", (domain_id,)
             ).fetchone()[0]
-        except Exception:
-            pass
+        except Exception as _exc:
+            logger.warning("domain OPA policy count query failed: %s", _exc, exc_info=True)
         conn.close()
         maturity_level = domain.get("maturity_level", 0) or 0
         domain["maturity_label"] = next(
@@ -3087,6 +3129,7 @@ def create_data_canvas_blueprint():
 
     @bp.route("/api/dm/domains", methods=["GET"])
     @dc_login_required
+    @_json_api_errors
     def dc_api_dm_domains_list():
         from tools.data_canvas.data_mesh.domain_manager import list_domains as _list_domains
         return jsonify(_list_domains())
@@ -3301,7 +3344,8 @@ def create_data_canvas_blueprint():
             complete = conn.execute(
                 "SELECT COUNT(*) FROM dd_mapping_sessions WHERE status='complete'"
             ).fetchone()[0]
-        except Exception:
+        except Exception as _exc:
+            logger.warning("mapping sessions stats query failed: %s", _exc, exc_info=True)
             sessions, total, pending, complete = [], 0, 0, 0
         finally:
             conn.close()
@@ -3359,7 +3403,8 @@ def create_data_canvas_blueprint():
             try:
                 src_fields = _json.loads(sess.get("source_schema_json") or "[]")
                 tgt_fields = _json.loads(sess.get("target_schema_json") or "[]")
-            except Exception:
+            except Exception as _exc:
+                logger.warning("mapping schema_json parse failed: %s", _exc, exc_info=True)
                 src_fields, tgt_fields = [], []
         finally:
             conn.close()
@@ -3465,7 +3510,8 @@ def create_data_canvas_blueprint():
             try:
                 src_fields = _json.loads(row[0] or "[]")
                 tgt_fields = _json.loads(row[1] or "[]")
-            except Exception:
+            except Exception as _exc:
+                logger.warning("mapping schema_json parse failed: %s", _exc, exc_info=True)
                 return jsonify({"error": "Schema not yet ingested"}), 422
             if not src_fields or not tgt_fields:
                 return jsonify({"error": "Ingest source and target schemas first"}), 422
@@ -3760,9 +3806,9 @@ def create_data_canvas_blueprint():
         from tools.db.storage import get_connection as _get_main_conn
 
         out = {
-            "active_agents": 17, "decisions": 0, "rag_chunks": 0,
-            "kg_entities": 0, "kg_edges": 0, "accuracy": 94.2,
-            "hallucination": 1.8, "throughput": 3200,
+            "active_agents": 0, "decisions": 0, "rag_chunks": 0,
+            "kg_entities": 0, "kg_edges": 0, "accuracy": None,
+            "hallucination": None, "throughput": None, "degraded": False,
         }
         try:
             conn = _get_main_conn()
@@ -3818,7 +3864,17 @@ def create_data_canvas_blueprint():
             finally:
                 conn.close()
         except Exception as e:
-            logger.warning("pipeline status query error: %s", e)
+            # Fail visibly: surface a degraded status rather than fabricating
+            # healthy demo metrics (which would mask a real DB failure).
+            logger.error(
+                "pipeline status query failed; returning degraded status: %s",
+                e, exc_info=True,
+            )
+            out["degraded"] = True
+            out["error"] = str(e)
+            out["accuracy"] = None
+            out["hallucination"] = None
+            out["throughput"] = None
 
         return jsonify(out)
 
@@ -3854,7 +3910,8 @@ def create_data_canvas_blueprint():
             if isinstance(dt_val, str):
                 try:
                     dt_val = datetime.datetime.fromisoformat(dt_val.replace("Z",""))
-                except Exception:
+                except Exception as _exc:
+                    logger.warning("pipeline feed timestamp parse failed: %s", _exc, exc_info=True)
                     return dt_val[:5] if len(dt_val) >= 5 else dt_val
             return dt_val.strftime("%H:%M")
 
