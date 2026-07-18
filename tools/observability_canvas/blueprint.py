@@ -423,9 +423,14 @@ def create_observability_blueprint():
         finally:
             conn.close()
         _audit("CREATE", design_id, name)
-        # Hook: refresh ODC KG so /ask reflects the new design immediately
-        from tools.knowledge_graph.canvas_ask import reindex_canvas_on_save
-        reindex_canvas_on_save("odc")
+        # Hook: refresh ODC KG so /ask reflects the new design immediately.
+        # Guarded — the design is already committed above, so a failure in the
+        # post-commit reindex hook must NOT turn a successful create into a 500.
+        try:
+            from tools.knowledge_graph.canvas_ask import reindex_canvas_on_save
+            reindex_canvas_on_save("odc")
+        except Exception:
+            pass
         return jsonify({"id": design_id, "name": name}), 201
 
     @bp.route("/api/designs", methods=["GET"])
@@ -465,7 +470,7 @@ def create_observability_blueprint():
         logger.info("Updating observability design: %s", design_id)
         conn = get_connection()
         try:
-            conn.execute(
+            cur = conn.execute(
                 "UPDATE observability_designs SET name=%s, description=%s, "
                 "graph_json=%s, classification=%s, updated_at=%s WHERE id=%s",
                 (
@@ -477,9 +482,14 @@ def create_observability_blueprint():
                     design_id,
                 ),
             )
+            rowcount = cur.rowcount
             conn.commit()
         finally:
             conn.close()
+        # Unknown design id → 404 (correct contract). No post-commit hooks fire
+        # for a design that does not exist.
+        if rowcount == 0:
+            return jsonify({"error": "Not found"}), 404
         _audit("UPDATE", design_id, data.get("name", ""))
         try:
             from tools.canvas.event_bus import publish as _eb_publish
@@ -532,10 +542,15 @@ def create_observability_blueprint():
         try:
             conn.execute("DELETE FROM od_assessments WHERE design_id=%s", (design_id,))
             conn.execute("DELETE FROM od_versions WHERE design_id=%s", (design_id,))
-            conn.execute("DELETE FROM observability_designs WHERE id=%s", (design_id,))
+            cur = conn.execute("DELETE FROM observability_designs WHERE id=%s", (design_id,))
+            rowcount = cur.rowcount
             conn.commit()
         finally:
             conn.close()
+        # Unknown design id → 404 (correct contract). The child-table deletes
+        # above are idempotent no-ops when the design never existed.
+        if rowcount == 0:
+            return jsonify({"error": "Not found"}), 404
         _audit("DELETE", design_id, "")
         return jsonify({"deleted": True})
 
@@ -1925,29 +1940,38 @@ def create_observability_blueprint():
         """Run observability governance framework check."""
         import uuid as _uuid_mod
         conn = get_connection()
-        row = conn.execute("SELECT graph_json FROM observability_designs WHERE id=%s", (design_id,)).fetchone()
-        if not row:
-            conn.close()
-            return jsonify({"error": "Not found"}), 404
         try:
-            graph_data = json.loads(row["graph_json"]) if isinstance(row["graph_json"], str) else row["graph_json"]
-        except (json.JSONDecodeError, TypeError):
+            row = conn.execute(
+                "SELECT graph_json FROM observability_designs WHERE id=%s", (design_id,)
+            ).fetchone()
+            if not row:
+                return jsonify({"error": "Not found"}), 404
+            try:
+                graph_data = json.loads(row["graph_json"]) if isinstance(row["graph_json"], str) else row["graph_json"]
+            except (json.JSONDecodeError, TypeError):
+                return jsonify({"error": "Invalid graph data"}), 400
+
+            result = _compute_odc_governance(graph_data)
+
+            assess_id = str(_uuid_mod.uuid4())
+            conn.execute(
+                "INSERT INTO od_assessments (id, design_id, assessment_type, findings_json, score, grade, created_at) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s)",
+                (assess_id, design_id, "governance",
+                 json.dumps([{"title": c["title"], "severity": c["severity"], "status": c["status"]}
+                             for c in result["checks"]]),
+                 result["score"], result["grade"], _now()),
+            )
+            conn.commit()
+        except Exception:
+            # A raise in _compute_odc_governance or the INSERT must not leak the
+            # connection (finally below) and must return a clean JSON error
+            # rather than an unhandled 500 HTML page.
+            logger.exception("ODC governance computation failed for %s", design_id)
+            return jsonify({"error": "Governance computation failed"}), 500
+        finally:
+            # Always release the connection on every exit path.
             conn.close()
-            return jsonify({"error": "Invalid graph data"}), 400
-
-        result = _compute_odc_governance(graph_data)
-
-        assess_id = str(_uuid_mod.uuid4())
-        conn.execute(
-            "INSERT INTO od_assessments (id, design_id, assessment_type, findings_json, score, grade, created_at) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s)",
-            (assess_id, design_id, "governance",
-             json.dumps([{"title": c["title"], "severity": c["severity"], "status": c["status"]}
-                         for c in result["checks"]]),
-             result["score"], result["grade"], _now()),
-        )
-        conn.commit()
-        conn.close()
         return jsonify(result)
 
     return bp
