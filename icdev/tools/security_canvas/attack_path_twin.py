@@ -17,7 +17,10 @@ No Flask, no LLM — pure deterministic functions.
 from __future__ import annotations
 
 import heapq
+import logging
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 # ── MITRE ATT&CK TTP assignment rules ────────────────────────────────────────
 # Each rule: (condition_fn, ttp_id, ttp_name, tactic, confidence_penalty)
@@ -536,7 +539,14 @@ def _safe_eval_predicate(predicate: str, path: dict) -> bool:
     if pred in _ALLOWED_PRED_FIELDS:
         return bool(_resolve_field(pred, path))
 
-    return True  # unknown predicate → include all (fail-open)
+    # Unknown/unrecognized predicate → fail-closed (exclude the path). In a
+    # security attack-graph, silently widening results to include every path
+    # would hide real exposure behind a malformed filter.
+    logger.warning(
+        "attack_path_twin: unrecognized predicate %r — excluding path (fail-closed)",
+        pred,
+    )
+    return False
 
 
 def _resolve_field(field: str, path: dict) -> Any:
