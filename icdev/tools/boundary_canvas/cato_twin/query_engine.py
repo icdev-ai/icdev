@@ -33,7 +33,7 @@ Security model (bdr-sec-1):
     ``ValueError`` instead of being silently dropped (which previously widened
     result sets by ignoring the filter).
   * Snapshot/violation/run reads are scoped to a single ``project_id`` when the
-    caller supplies one (parameterised ``project_id = ?``), preventing
+    caller supplies one (parameterised ``project_id = %s``), preventing
     cross-project data bleed when a project context exists.
 
 Execution model:
@@ -153,13 +153,13 @@ _COND_PATTERNS = [
      lambda m, fm: (f"{_resolve_field(m.group(1), fm)} IS NOT NULL", [])),
     # ctrl.status != 'satisfied'
     (re.compile(r"(\w+\.\w+)\s+(!=|==|<>|<=|>=|<|>)\s+'([^']*)'", re.I),
-     lambda m, fm: (f"{_resolve_field(m.group(1), fm)} {_op(m.group(2))} ?", [m.group(3)])),
+     lambda m, fm: (f"{_resolve_field(m.group(1), fm)} {_op(m.group(2))} %s", [m.group(3)])),
     # ctrl.score < 0.5
     (re.compile(r"(\w+\.\w+)\s+(!=|==|<>|<=|>=|<|>)\s+(-?\d+\.?\d*)", re.I),
-     lambda m, fm: (f"{_resolve_field(m.group(1), fm)} {_op(m.group(2))} ?", [float(m.group(3))])),
+     lambda m, fm: (f"{_resolve_field(m.group(1), fm)} {_op(m.group(2))} %s", [float(m.group(3))])),
     # ctrl.control_id starts_with 'AC'
     (re.compile(r"(\w+\.\w+)\s+starts_with\s+'([^']*)'", re.I),
-     lambda m, fm: (f"{_resolve_field(m.group(1), fm)} LIKE ?", [m.group(2) + "%"])),
+     lambda m, fm: (f"{_resolve_field(m.group(1), fm)} LIKE %s", [m.group(2) + "%"])),
 ]
 
 
@@ -228,7 +228,7 @@ def _latest_snapshot_cte(framework: str) -> str:
         WITH latest_run AS (
             SELECT project_id, MAX(started_at) AS max_started
             FROM compliance_twin_runs
-            WHERE framework = ?
+            WHERE framework = %s
             GROUP BY project_id
         ),
         latest_snap AS (
@@ -236,7 +236,7 @@ def _latest_snapshot_cte(framework: str) -> str:
             FROM compliance_twin_snapshots s
             JOIN latest_run lr
               ON s.project_id = lr.project_id
-             AND s.framework = ?
+             AND s.framework = %s
             JOIN compliance_twin_runs r
               ON r.snapshot_id = s.snapshot_id
              AND r.started_at = lr.max_started
@@ -313,7 +313,7 @@ def _query_controls(conn, framework: str, pred_str, proj_str: str,
 
     conditions: List[str] = []
     if project_id is not None:
-        conditions.append("project_id = ?")
+        conditions.append("project_id = %s")
         base_params.append(project_id)
     if where_sql:
         conditions.append(where_sql)
@@ -338,7 +338,7 @@ def _query_violations(conn, framework: str, pred_str, proj_str: str,
         FROM compliance_twin_violations v
         JOIN (
             SELECT snapshot_id FROM compliance_twin_runs
-            WHERE framework = ?
+            WHERE framework = %s
             ORDER BY started_at DESC LIMIT 1
         ) r ON v.snapshot_id = r.snapshot_id
     """  # nosec B608
@@ -346,7 +346,7 @@ def _query_violations(conn, framework: str, pred_str, proj_str: str,
 
     conditions: List[str] = []
     if project_id is not None:
-        conditions.append("v.project_id = ?")
+        conditions.append("v.project_id = %s")
         base_params.append(project_id)
     if where_sql:
         # where_sql columns are already ``v.``-qualified via _VIOLATION_FIELDS.
@@ -366,10 +366,10 @@ def _query_runs(conn, framework: str, pred_str, proj_str: str,
     proj = "*" if cols == ["*"] else ", ".join(cols)
 
     # nosec B608 — `proj` columns come from the _RUNS_FIELDS whitelist.
-    sql = f"SELECT {proj} FROM compliance_twin_runs WHERE framework = ?"  # nosec B608
+    sql = f"SELECT {proj} FROM compliance_twin_runs WHERE framework = %s"  # nosec B608
     base_params: List[Any] = [framework]
     if project_id is not None:
-        sql += " AND project_id = ?"
+        sql += " AND project_id = %s"
         base_params.append(project_id)
     if where_sql:
         sql += f" AND {where_sql}"

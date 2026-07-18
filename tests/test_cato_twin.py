@@ -9,7 +9,12 @@ TDD suite covering:
   - poam_auto_generator.py — POA&M from twin violations
   - cato_twin Genesis reflex (6h cadence)
 
-All tests use in-memory SQLite so they do not touch data/icdev.db.
+All tests use in-memory SQLite (wrapped in the shared translating
+StorageConnection) so they do not touch data/icdev.db. The wrapper is
+mandatory: the modules under test issue PG-native ``%s`` placeholders, and a
+RAW ``sqlite3.Connection`` bypasses the ``%s`` → ``?`` translator (raising
+sqlite3.ProgrammingError). This mirrors the connection pattern used by
+tests/test_bdc_query_engine_hardening.py and tests/test_bdc_poam_generator_fk.py.
 """
 
 import sqlite3
@@ -116,14 +121,23 @@ CREATE TABLE IF NOT EXISTS compliance_twin_runs (
 
 @pytest.fixture
 def mem_db():
-    """Return an in-memory sqlite3 connection with the cATO twin schema."""
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
-    conn.executescript(MINIMAL_DDL)
-    conn.execute("INSERT INTO projects (id, name) VALUES ('proj-001', 'Test Project')")
-    conn.commit()
+    """Return a translating StorageConnection over in-memory SQLite.
+
+    The raw sqlite3 connection is set up (schema + seed project) directly, then
+    wrapped in ``StorageConnection(raw, "sqlite")`` so that the PG-native ``%s``
+    placeholders issued by snapshot_writer / query_engine / poam_auto_generator
+    are translated to SQLite ``?`` exactly as they are in production.
+    """
+    from tools.db.storage import StorageConnection
+
+    raw = sqlite3.connect(":memory:")
+    raw.row_factory = sqlite3.Row
+    raw.executescript(MINIMAL_DDL)
+    raw.execute("INSERT INTO projects (id, name) VALUES ('proj-001', 'Test Project')")
+    raw.commit()
+    conn = StorageConnection(raw, "sqlite")
     yield conn
-    conn.close()
+    raw.close()
 
 
 # ---------------------------------------------------------------------------
