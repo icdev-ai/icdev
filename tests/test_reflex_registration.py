@@ -79,7 +79,6 @@ EXEMPT: dict[str, str] = {
     "aadc_reflex": "seed-referenced only (tools/kanban/seed_aadc_enhancement.py); AADC canvas reflex not wired into daemon; unverified — inherited exemption",
     "aimc_orphan_refs": "seed-referenced only (tools/kanban/seed_aadc_aimc_appmigration.py); not wired into daemon; unverified — inherited exemption",
     "cyber_feed_refresh": "seed-referenced only (tools/db/seeds/seed_sg_cyber_ext.py); not wired into daemon; unverified — inherited exemption",
-    "freshness_guardian": "seed-referenced only (tools/kanban/seed_ddx_extensions.py); not wired into daemon; unverified — inherited exemption",
     "sim_training_export": "referenced only by a DB migration seed (130_genesis_audit_log); not wired into daemon; unverified — inherited exemption",
     # --- No dispatcher/import references found; self-labeled canvas reflexes that appear unwired ---
     # (out of scope for shx-safe-04 — the guard now prevents further silent additions)
@@ -88,7 +87,6 @@ EXEMPT: dict[str, str] = {
     "govchain_anchor": "no references found; GovChain Merkle-anchor reflex appears unwired; unverified — inherited exemption",
     "idc_cloud_drift": "no references found; IDC canvas reflex appears unwired; unverified — inherited exemption",
     "mdc_cutover_countdown": "no references found; MDC canvas reflex appears unwired; unverified — inherited exemption",
-    "pdc_pipeline_stale": "no references found; PDC canvas reflex appears unwired; unverified — inherited exemption",
     "qdc_gate_breach": "no references found; QDC canvas reflex appears unwired; unverified — inherited exemption",
 }
 
