@@ -53,6 +53,13 @@ def load_scenario(slug: str) -> dict[str, Any]:
                 with rp.open(encoding="utf-8") as fh:
                     scoring["rubric"] = yaml.safe_load(fh)
 
+        # Normalize legacy dict-of-dicts rubric dimensions to the canonical
+        # dimensions-LIST format ([{id, weight, prompt, ...}]) so ai_scorer can
+        # consume every pack uniformly. This is the SINGLE conversion point —
+        # ai_scorer.judge_response only validates shape, it does not convert.
+        if isinstance(scoring.get("rubric"), dict):
+            normalize_rubric_dimensions(scoring["rubric"])
+
     # Resolve persona templates inline
     for role in scenario.get("roles", []):
         if "persona_template" in role:
@@ -64,6 +71,37 @@ def load_scenario(slug: str) -> dict[str, Any]:
 
     _validate(scenario)
     return scenario
+
+
+def normalize_rubric_dimensions(rubric: dict) -> dict:
+    """Convert a legacy dict-of-dicts rubric to the canonical dimensions-LIST
+    format, in place.
+
+    Legacy shape (forge_ascent / hunt_the_fleet / meridian era)::
+
+        dimensions:
+          bug_identification: {weight: 0.25, prompt: "..."}
+          fix_correctness:    {weight: 0.40, prompt: "..."}
+
+    Canonical shape consumed by ``tools/ttx/ai_scorer``::
+
+        dimensions:
+          - {id: bug_identification, weight: 0.25, prompt: "..."}
+          - {id: fix_correctness,    weight: 0.40, prompt: "..."}
+
+    The mapping key becomes the dimension ``id`` and every other key (weight,
+    prompt, max_pts, ...) is preserved verbatim. No-op when ``dimensions`` is
+    already a list or is absent, so it is safe to call unconditionally.
+    """
+    if not isinstance(rubric, dict):
+        return rubric
+    dims = rubric.get("dimensions")
+    if isinstance(dims, dict):
+        rubric["dimensions"] = [
+            {**(spec if isinstance(spec, dict) else {"value": spec}), "id": dim_id}
+            for dim_id, spec in dims.items()
+        ]
+    return rubric
 
 
 def list_scenario_slugs() -> list[str]:

@@ -79,14 +79,23 @@ def judge_response(
         log.warning("LLM judge unavailable (%s) — response left unscored", exc)
         return _unscored("LLM judge unavailable — response left unscored")
 
-    dims = rubric.get("dimensions", [])
-    if not dims:
-        return _unscored("No rubric defined for inject — response left unscored")
+    dims = rubric.get("dimensions", []) if isinstance(rubric, dict) else []
+    # FAIL LOUD on a malformed rubric shape rather than crashing. The canonical
+    # dimensions-LIST format is produced once at load time by
+    # scenario_loader.normalize_rubric_dimensions; a legacy dict-of-dicts rubric
+    # (or any other malformed shape) reaching here means the loader was bypassed,
+    # so we mark the response unscored instead of raising AttributeError on
+    # ``str.get`` (which previously 500'd POST /api/gameday/response for the
+    # forge_ascent / hunt_the_fleet / meridian packs).
+    if not isinstance(dims, list) or not dims:
+        return _unscored("No usable rubric dimensions for inject — response left unscored")
+    if not all(isinstance(d, dict) and "id" in d and "weight" in d for d in dims):
+        return _unscored("Rubric dimensions malformed (not id/weight dicts) — response left unscored")
     if sum(d.get("weight", 0) for d in dims) == 0:
         return _unscored("Rubric dimensions have zero total weight — response left unscored")
 
     dim_block = "\n".join(
-        f"- {d['id']} (weight {d['weight']}): {d['prompt']}" for d in dims
+        f"- {d['id']} (weight {d['weight']}): {d.get('prompt', '')}" for d in dims
     )
     system_prompt = (
         "You are an objective tabletop exercise judge. Score the team response "
