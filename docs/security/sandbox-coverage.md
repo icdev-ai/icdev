@@ -329,6 +329,22 @@ recommend whether to enable reasoned codegen.
 - **Revisit if:** the wrapper ever directly executes, compiles, or `subprocess`-runs the
   code it generates → re-decide as **sandboxed**.
 
+### Gap 17 — PDC pipeline ingress (`tools/pipeline/`)
+
+**Modules:** `tools/pipeline/blueprint.py` (design-graph save/export/deploy/validate routes, collab push/poll, SOP CRUD), `tools/pipeline/export.py`, `tools/pipeline/deploy_generator.py`, `tools/pipeline/iac_validator.py`, `tools/pipeline/sops.py`
+
+**Ingress path:** An authenticated PDC operator submits (a) a pipeline **design graph JSON** (`{nodes, edges}`) that is rendered into IaC (GitLab CI / GitHub Actions / Jenkinsfile / Tekton / Terraform-style bundles) and a downloadable zip, (b) **SOP bodies** (title, steps, NIST controls) persisted to `pdc_sops`, and (c) **collaboration payloads** (op_type + data) pushed to `pc_collab_sessions`. All content is stored verbatim in the pipeline-canvas DB (SQLite/PG TEXT/JSON columns) and re-rendered into templated text or the browser.
+
+- **Decision:** **trusted-first-party / data-only** (render-side escaping + write-boundary JSON validation)
+- **Rationale:** The design graph, SOP body, and collab payload are **data, never code** — no module in `tools/pipeline/` calls `exec()`, `eval()`, `os.system`, or `subprocess` on ingress content. IaC renderers (`export.py`, `deploy_generator.py`) build strings from allowlisted node types via fixed templates; unknown node types are dropped, not evaluated. Graph JSON is parsed with `json.loads`/`parse_graph_json` behind a write boundary that rejects malformed input (`422 corrupt graph`). The pipeline-canvas connection runs with RLS disabled by design (canvas tables lack tenant_id/classification), so writes are scoped to the per-canvas DB, not the shared icdev DB. LLM-assisted IaC *review* (`tools/devops/iac_review.py`) now runs the router prompt-injection scan on the uploaded IaC (pdx-hyg-01 removed its `skip_injection_scan`).
+- **Guardrails:**
+  - Graph JSON validated at the write boundary (`parse_graph_json` → `422` on corrupt input); node types filtered to an allowlist before rendering.
+  - Rendered IaC / SOP / collab content is emitted through Jinja2 auto-escaping in templates and as JSON via `jsonify` on API routes — never interpolated unescaped into HTML.
+  - Export download filenames are sanitized to `[a-z0-9._-]` (pdx-hyg-01) to block Content-Disposition header injection / path traversal.
+  - No `exec()`/`eval()`/`subprocess` on ingress content anywhere in `tools/pipeline/`.
+  - All routes are behind `pc_login_required` / `pc_role_required`; collab identity is server-derived, never body-supplied.
+- **Revisit if:** any pipeline content is ever passed to a shell command, compiled/executed, or rendered outside Jinja2 auto-escape → re-decide as **sandboxed**.
+
 ### Bypass — non-LLM code generators (template/scaffold emitters)
 
 These paths were assessed as reasoned-codegen wiring targets and found to contain **no LLM

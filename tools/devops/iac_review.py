@@ -109,11 +109,15 @@ def _call_llm(prompt: str) -> str:
         from tools.llm.provider import LLMRequest
 
         router = LLMRouter()
+        # pdx-hyg-01: the IaC content is USER-UPLOADED, so do NOT skip the router's
+        # prompt-injection scan. On a high-confidence detection the router raises
+        # (its "block" convention); that surfaces via the except below as an empty
+        # response, which _parse_response turns into a safe _fallback review rather
+        # than forwarding attacker-controlled content to the model.
         req = LLMRequest(
             messages=[{"role": "user", "content": prompt}],
             max_tokens=2500,
             temperature=0.1,
-            skip_injection_scan=True,
         )
         resp = router.invoke("idr_iac_review", req)
         return getattr(resp, "content", "") or ""
