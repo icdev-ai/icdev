@@ -234,6 +234,17 @@ reflexes:
       threshold: 0
       operator: gte  # Informational — 0 violations is healthy, >0 triggers POAM
 
+  sdc_control_expiry:
+    enabled: true
+    risk_tier: green
+    schedule: "every 4h"
+    interval: 14400  # seconds (4 h)
+    description: "SDC security control-expiry sweep: flag sc_controls whose review_date is inside an IQR-derived anomaly window (or past); optional Claude Haiku severity triage"
+    success_metric:
+      name: expiring_controls
+      threshold: 0
+      operator: gte  # Informational — 0 expiring is healthy, >0 publishes sdc.control.expiring events
+
   ingest:
     timeout_seconds: 90   # network fetch — cut hangs fast so the loop proceeds
     enabled: true

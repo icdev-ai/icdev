@@ -119,6 +119,8 @@ REFLEX_NAMES = [
     "pma_credential_monitor",
     "pma_int_gap_monitor",
     "skill_security_monitor",
+    "sdc_control_expiry",  # shx-safe-04: SDC security control-expiry sweep (4h) — IQR anomaly threshold
+    "cato_monitor",        # shx-safe-04: cATO continuous compliance monitoring (6h) — compliance/* IQE + POAM
     "ndc_topology_drift",  # ndc→ACOIC: topology config drift vs nc_versions baseline
     "dic_integration",     # dsyn-reflex-02: DIC Canvas Synergy — 15-min cadence
     "dic_review_cadence",  # dsyn-suggest-02: nightly collection review overdue check
