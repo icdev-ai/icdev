@@ -67,8 +67,9 @@ import random
 import uuid
 from datetime import datetime, timezone
 
-from flask import Blueprint, flash, jsonify, make_response, redirect, render_template, request, Response, url_for
+from flask import Blueprint, flash, g, jsonify, make_response, redirect, render_template, request, Response, url_for
 
+from tools.dashboard.auth import require_role
 from tools.db.storage import get_connection, is_pg
 from tools.intelligence.brief_generator import BRIEF_TYPES, BriefGenerator
 from tools.intelligence.pir_manager import (
@@ -185,11 +186,46 @@ _api = Blueprint("strategos_api", __name__)  # API routes  (prefix: /api/strateg
 
 
 # ---------------------------------------------------------------------------
+# RBAC (nav-sec-05)
+# ---------------------------------------------------------------------------
+
+# Approval / resolution / workflow-advance / authoritative-deletion class of
+# state-changing routes (HITL decisions, OPORD approve+delete, F3EAD
+# advance/set-phase/delete, brief approval, CCIR trigger resolution) must be
+# restricted to approver-class roles — a lowest-privilege ``developer`` (whose
+# own product may be under review) must not be able to approve, resolve,
+# advance, or delete authoritative operational state. Mirrors the
+# ``_WF_APPROVAL_ROLES`` convention established for the HITL governance gates
+# in tools/workflow_hitl/blueprint.py (nav-sec-04). Every role listed here also
+# appears in ``VALID_DASHBOARD_ROLES`` in tools/dashboard/auth.py.
+_STRATEGOS_APPROVAL_ROLES = ("admin", "pm", "isso", "co", "cor", "reviewer")
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _actor_id() -> str:
+    """Resolved approver/actor identity for audit fields (nav-sec-05).
+
+    Always sourced from the authenticated session user (``g.current_user``),
+    never from a spoofable request-body field. Falls back to ``"unknown"`` only
+    if no user is on the request context (which the ``@require_role`` gate
+    already prevents for the routes that call this).
+    """
+    user = getattr(g, "current_user", None)
+    if isinstance(user, dict):
+        return str(user.get("id") or user.get("email") or "unknown")
+    if user is not None:
+        try:
+            return str(user["id"])
+        except Exception:
+            return "unknown"
+    return "unknown"
 
 
 def _safe_fetch(sql: str, params=(), default=None):
@@ -508,6 +544,7 @@ def strategos_hitl():
 
 
 @_bp.route("/hitl/action/<int:action_id>", methods=["POST"])
+@require_role(*_STRATEGOS_APPROVAL_ROLES)
 def strategos_hitl_action(action_id: int):
     decision = (request.form.get("decision") or "").strip().upper()
     if decision not in ("APPROVE", "REJECT"):
@@ -1572,9 +1609,11 @@ def api_briefs_create():
 
 
 @_api.route("/briefs/<brief_id>/approve", methods=["PATCH"])
+@require_role(*_STRATEGOS_APPROVAL_ROLES)
 def api_briefs_approve(brief_id: str):
     data = request.get_json(silent=True) or {}
-    reviewed_by = data.get("reviewed_by", "analyst").strip()
+    # nav-sec-05: reviewer identity is the authenticated user, never the body.
+    reviewed_by = _actor_id()
     annotations = data.get("annotations", "").strip()
     conn = get_connection()
     try:
@@ -1806,17 +1845,20 @@ def api_signals_brief():
 
 
 @_api.route("/hitl/<item_id>/resolve", methods=["POST"])
+@require_role(*_STRATEGOS_APPROVAL_ROLES)
 def api_hitl_resolve(item_id: str):
     data = request.get_json(silent=True) or {}
     decision = data.get("decision", "").strip()
     if not decision:
         return jsonify({"error": "decision required"}), 400
+    # nav-sec-05: resolver identity is the authenticated user, never the body.
+    resolved_by = _actor_id()
     conn = get_connection()
     try:
         result = conn.execute(
             "UPDATE sg_hitl_items SET status='resolved', decision=?, "
-            "resolved_at=?, resolved_by='analyst' WHERE id=? AND status='pending'",
-            (decision, _now(), item_id),
+            "resolved_at=?, resolved_by=? WHERE id=? AND status='pending'",
+            (decision, _now(), resolved_by, item_id),
         )
         conn.commit()
         if result.rowcount == 0:
@@ -1831,18 +1873,21 @@ def api_hitl_resolve(item_id: str):
 
 
 @_api.route("/hitl/bulk", methods=["POST"])
+@require_role(*_STRATEGOS_APPROVAL_ROLES)
 def api_hitl_bulk():
     """Resolve all pending HITL items with a single decision."""
     data = request.get_json(silent=True) or {}
     decision = data.get("decision", "").strip()
     if not decision:
         return jsonify({"error": "decision required"}), 400
+    # nav-sec-05: resolver identity is the authenticated user, never the body.
+    resolved_by = _actor_id()
     conn = get_connection()
     try:
         result = conn.execute(
             "UPDATE sg_hitl_items SET status='resolved', decision=?, "
-            "resolved_at=?, resolved_by='analyst' WHERE status='pending'",
-            (decision, _now()),
+            "resolved_at=?, resolved_by=? WHERE status='pending'",
+            (decision, _now(), resolved_by),
         )
         conn.commit()
         return jsonify({"status": "ok", "decision": decision, "updated": result.rowcount})
@@ -1855,6 +1900,7 @@ def api_hitl_bulk():
 
 
 @_api.route("/hitl/delete", methods=["POST"])
+@require_role(*_STRATEGOS_APPROVAL_ROLES)
 def api_hitl_delete():
     """Delete all pending HITL items."""
     conn = get_connection()
@@ -2789,6 +2835,7 @@ def api_ccir_triggers():
 
 
 @_api.route("/ccir/triggers/<event_id>/resolve", methods=["POST"])
+@require_role(*_STRATEGOS_APPROVAL_ROLES)
 def api_ccir_trigger_resolve(event_id: str):
     try:
         from tools.strategos.ccir_trigger import resolve_trigger_event  # noqa: PLC0415
@@ -2889,11 +2936,12 @@ def api_opord_synthesize_all(opord_id: str):
 
 
 @_api.route("/opord/<opord_id>/approve", methods=["POST"])
+@require_role(*_STRATEGOS_APPROVAL_ROLES)
 def api_opord_approve(opord_id: str):
     try:
         from tools.strategos.opord import approve_opord  # noqa: PLC0415
-        data = request.get_json(force=True, silent=True) or {}
-        ok = approve_opord(opord_id, approved_by=data.get("approved_by", "commander"))
+        # nav-sec-05: approver identity is the authenticated user, never the body.
+        ok = approve_opord(opord_id, approved_by=_actor_id())
         resp = make_response(jsonify({"status": "approved" if ok else "error"}))
         resp.headers["X-Classification"] = "CUI"
         return resp
@@ -2902,6 +2950,7 @@ def api_opord_approve(opord_id: str):
 
 
 @_api.route("/opord/<opord_id>", methods=["DELETE"])
+@require_role(*_STRATEGOS_APPROVAL_ROLES)
 def api_opord_delete(opord_id: str):
     try:
         from tools.strategos.opord import delete_opord  # noqa: PLC0415
@@ -3330,13 +3379,15 @@ def api_f3ead_create():
 
 
 @_api.route("/f3ead/targets/<target_id>/advance", methods=["POST"])
+@require_role(*_STRATEGOS_APPROVAL_ROLES)
 def api_f3ead_advance(target_id: str):
     try:
         from tools.strategos.f3ead import advance_phase  # noqa: PLC0415
         data = request.get_json(force=True, silent=True) or {}
         result = advance_phase(
             target_id=target_id,
-            actor=data.get("actor", "analyst"),
+            # nav-sec-05: actor identity is the authenticated user, never the body.
+            actor=_actor_id(),
             notes=data.get("notes", ""),
         )
         resp = make_response(jsonify(result))
@@ -3347,6 +3398,7 @@ def api_f3ead_advance(target_id: str):
 
 
 @_api.route("/f3ead/targets/<target_id>/phase", methods=["PATCH"])
+@require_role(*_STRATEGOS_APPROVAL_ROLES)
 def api_f3ead_set_phase(target_id: str):
     try:
         from tools.strategos.f3ead import set_phase  # noqa: PLC0415
@@ -3354,7 +3406,8 @@ def api_f3ead_set_phase(target_id: str):
         result = set_phase(
             target_id=target_id,
             phase=data.get("phase", "find"),
-            actor=data.get("actor", "analyst"),
+            # nav-sec-05: actor identity is the authenticated user, never the body.
+            actor=_actor_id(),
             notes=data.get("notes", ""),
         )
         resp = make_response(jsonify(result))
@@ -3365,6 +3418,7 @@ def api_f3ead_set_phase(target_id: str):
 
 
 @_api.route("/f3ead/targets/<target_id>", methods=["DELETE"])
+@require_role(*_STRATEGOS_APPROVAL_ROLES)
 def api_f3ead_delete(target_id: str):
     try:
         from tools.strategos.f3ead import delete_target  # noqa: PLC0415
