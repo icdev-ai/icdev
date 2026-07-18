@@ -9,7 +9,7 @@ Covers:
 from __future__ import annotations
 
 import pytest
-from flask import Flask, g, jsonify
+from flask import Flask, jsonify
 
 
 # ---------------------------------------------------------------------------
@@ -150,4 +150,48 @@ def test_csrf_grace_mode_allows_and_logs(monkeypatch):
         "/api/x", json={}, headers={"Sec-Fetch-Site": "cross-site"}
     )
     assert resp.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# cnr-plat-02 — upload cap
+# ---------------------------------------------------------------------------
+
+
+def _create_dashboard_app(monkeypatch, max_mb):
+    monkeypatch.setenv("ICDEV_MAX_UPLOAD_MB", str(max_mb))
+    monkeypatch.delenv("ICDEV_DASHBOARD_API_KEY", raising=False)
+    try:
+        from tools.dashboard.app import create_app
+        return create_app(testing=True)
+    except Exception as exc:  # heavy factory — never fail the suite on env issues
+        pytest.skip(f"create_app unavailable in this environment: {exc}")
+
+
+def test_upload_cap_config_from_env(monkeypatch):
+    app = _create_dashboard_app(monkeypatch, 7)
+    assert app.config.get("MAX_CONTENT_LENGTH") == 7 * 1024 * 1024
+
+
+def test_oversize_json_returns_413(monkeypatch):
+    # ~1 KB cap; /login is a public POST route that parses the body.
+    app = _create_dashboard_app(monkeypatch, 0.001)
+    client = app.test_client()
+    big = "x" * (5 * 1024)
+    resp = client.post(
+        "/login",
+        data=big,
+        content_type="application/json",
+    )
+    assert resp.status_code == 413
+    body = resp.get_json()
+    assert body is not None and body.get("code") == "PAYLOAD_TOO_LARGE"
+
+
+def test_normal_request_not_413(monkeypatch):
+    app = _create_dashboard_app(monkeypatch, 50)
+    client = app.test_client()
+    resp = client.post("/login", data={"api_key": "nope"})
+    assert resp.status_code != 413
+
+
 

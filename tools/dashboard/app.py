@@ -1778,6 +1778,18 @@ def create_app(testing: bool = False) -> Flask:
     app.jinja_env.auto_reload = True
     app.config["EXCALIDRAW_HOST"] = os.environ.get("EXCALIDRAW_HOST", "")
 
+    # cnr-plat-02: global upload size cap. Flask rejects any request body larger
+    # than MAX_CONTENT_LENGTH with 413 before it is buffered into memory. Tunable
+    # via ICDEV_MAX_UPLOAD_MB (default 50 MB). Tighter per-route caps (docgen,
+    # workflow_canvas) already validate content_length and stay authoritative for
+    # their routes; this is the platform-wide backstop.
+    try:
+        _max_upload_mb = float(os.environ.get("ICDEV_MAX_UPLOAD_MB", "50"))
+    except (TypeError, ValueError):
+        _max_upload_mb = 50.0
+    if _max_upload_mb > 0:
+        app.config["MAX_CONTENT_LENGTH"] = int(_max_upload_mb * 1024 * 1024)
+
     # Release cached canvas DB connections after each request (OPT-06).
     @app.teardown_appcontext
     def _teardown_canvas_connections(exc):  # noqa: ANN001
@@ -8413,6 +8425,30 @@ def create_app(testing: bool = False) -> Flask:
     @app.errorhandler(404)
     def not_found(e):
         return render_template("404.html", message="Page not found"), 404
+
+    @app.errorhandler(413)
+    def payload_too_large(e):
+        # cnr-plat-02: graceful JSON 413 when a request body exceeds
+        # MAX_CONTENT_LENGTH (or a per-route cap that aborts 413).
+        _limit = app.config.get("MAX_CONTENT_LENGTH")
+        _limit_mb = round(_limit / (1024 * 1024), 1) if _limit else None
+        if flask_request.is_json or flask_request.path.startswith("/api/"):
+            return jsonify({
+                "error": "Payload too large",
+                "code": "PAYLOAD_TOO_LARGE",
+                "max_upload_mb": _limit_mb,
+                "message": (
+                    f"Upload exceeds the maximum allowed size ({_limit_mb} MB)."
+                    if _limit_mb else "Upload exceeds the maximum allowed size."
+                ),
+            }), 413
+        return render_template(
+            "404.html",
+            message=(
+                f"Upload exceeds the maximum allowed size ({_limit_mb} MB)."
+                if _limit_mb else "Upload exceeds the maximum allowed size."
+            ),
+        ), 413
 
     @app.errorhandler(500)
     def internal_error(e):
