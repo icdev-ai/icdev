@@ -469,8 +469,10 @@ def api_step_design_assess():
         return jsonify({"error": "not configured"}), 400
     from .verifier import verify_step
     from .gamification import award_step_xp, check_step_achievements, check_mission_achievements, award_mission_xp
-    from .db import complete_step, complete_mission, user_progress_summary, record_skill_usage, unlock_skill
-    from .learning_track import advance_learning_track
+    # record_skill_usage + advance_learning_track live in .integrations (already
+    # imported at module top), NOT in .db / a .learning_track module — importing
+    # them here 500s the whole route on every real submission (penta-aca-07 fix).
+    from .db import complete_step, complete_mission, user_progress_summary, unlock_skill
 
     data = request.get_json(silent=True) or {}
     step_id = data.get("step_id")
