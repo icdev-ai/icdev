@@ -89,6 +89,54 @@ def build_page_canvas(root: Path, name: str, *, complete: bool = True, mirror: b
         _write(root / "context" / "iqe" / "queries" / name / "seed.yaml", "queries: []\n")
 
 
+# Split-blueprint assembler (cvx-net-01 pattern): a thin file whose
+# create_*_blueprint() delegates to register_<group>_routes(bp) helpers imported
+# from a sibling routes/ subpackage. It carries NO @route decorator itself.
+SPLIT_ASSEMBLER_PY = (
+    "from flask import Blueprint\n"
+    "from tools.{name}.routes.pages import register_pages_routes\n\n\n"
+    "def create_{name}_blueprint():\n"
+    "    bp = Blueprint('{name}', __name__)\n"
+    "    register_pages_routes(bp)\n"
+    "    return bp\n"
+)
+
+# Route-group module living under routes/ — this is where the @route lives.
+SPLIT_ROUTE_MODULE_PY = (
+    "from flask import render_template\n\n\n"
+    "def register_pages_routes(bp):\n"
+    "    @bp.route('/{name}')\n"
+    "    def {name}_page():\n"
+    "        return render_template('{name}/page.html')\n"
+)
+
+# Route-group module with NO @route anywhere — genuine failure case.
+SPLIT_ROUTE_MODULE_NO_ROUTE_PY = (
+    "def register_pages_routes(bp):\n"
+    "    # forgot to declare any routes here\n"
+    "    return None\n"
+)
+
+
+def build_split_blueprint_canvas(
+    root: Path, name: str, *, route_in_routes: bool = True, mirror: bool = True
+) -> None:
+    """Build a complete page.html canvas whose blueprint is a SPLIT assembler.
+
+    The blueprint.py file references ``register_*_routes`` / imports from a
+    sibling ``routes/`` subpackage and carries no ``@route`` decorator itself.
+    When ``route_in_routes`` is True the routes/ module declares an ``@bp.route``
+    (gate should pass); when False no module declares any route (gate should
+    fail with "blueprint has no @route decorator").
+    """
+    build_page_canvas(root, name, complete=True, mirror=mirror)
+    # Overwrite the classic single-file blueprint with a thin split assembler.
+    _write(root / "tools" / name / "blueprint.py", SPLIT_ASSEMBLER_PY.format(name=name))
+    _write(root / "tools" / name / "routes" / "__init__.py", "")
+    route_body = SPLIT_ROUTE_MODULE_PY if route_in_routes else SPLIT_ROUTE_MODULE_NO_ROUTE_PY
+    _write(root / "tools" / name / "routes" / "pages.py", route_body.format(name=name))
+
+
 def build_template_only_canvas(root: Path, name: str, template_names, *, mirror: bool = True) -> None:
     """Build a canvas with arbitrary template names and NO page.html.
 
@@ -300,6 +348,95 @@ class TestHardenedCompleteness:
 
         assert result.status == "pass"
         assert result.missing == []
+
+
+class TestSplitBlueprintDetection:
+    """Regression for cvx-net-03: the completeness gate must recognize SPLIT
+    blueprints. After the network blueprint split (PR #397) the module file is a
+    thin assembler that calls register_<group>_routes(bp); the @route decorators
+    live under routes/*.py. The gate previously asserted the module file itself
+    contained @route and falsely reported network "has no @route"."""
+
+    def test_split_blueprint_with_route_in_routes_passes(self, tmp_path, monkeypatch):
+        """(a) Assembler + routes/ dir with an @route → passes."""
+        root = make_root(tmp_path)
+        build_split_blueprint_canvas(root, "netlike", route_in_routes=True, mirror=True)
+        write_base_html(root, ["netlike"])
+
+        result = run_check(root, monkeypatch)
+
+        assert result.status == "pass", result.missing
+        assert result.missing == []
+
+    def test_split_blueprint_without_any_route_fails(self, tmp_path, monkeypatch):
+        """(b) Assembler + routes/ dir with NO @route anywhere → still fails.
+
+        The check stays genuine: delegating to routes/ that declare no route is
+        indistinguishable from a truly routeless blueprint."""
+        root = make_root(tmp_path)
+        build_split_blueprint_canvas(root, "netlike", route_in_routes=False, mirror=True)
+        write_base_html(root, ["netlike"])
+
+        result = run_check(root, monkeypatch)
+
+        assert result.status == "fail"
+        missing = [_norm(m) for m in result.missing]
+        assert any("no @route decorator" in m for m in missing), missing
+
+    def test_classic_single_file_blueprint_still_passes(self, tmp_path, monkeypatch):
+        """(c) Classic single-file blueprint with an inline @route → still passes
+        (no regression from the split-aware helper)."""
+        root = make_root(tmp_path)
+        build_page_canvas(root, "classic", complete=True, mirror=True)
+        write_base_html(root, ["classic"])
+
+        result = run_check(root, monkeypatch)
+
+        assert result.status == "pass", result.missing
+        assert result.missing == []
+
+
+class TestBlueprintHasRouteHelper:
+    """Direct unit tests for the _blueprint_has_route helper shared by both
+    detection sites (check_new_page_completeness + check_canvas_completeness)."""
+
+    def test_inline_route_detected(self, tmp_path):
+        from tools.workflow import coherence_checker as cc
+
+        bp = tmp_path / "tools" / "c" / "blueprint.py"
+        _write(bp, BLUEPRINT_PY)
+        assert cc._blueprint_has_route(bp) is True
+
+    def test_split_route_in_routes_detected(self, tmp_path):
+        from tools.workflow import coherence_checker as cc
+
+        bp = tmp_path / "tools" / "c" / "blueprint.py"
+        _write(bp, SPLIT_ASSEMBLER_PY.format(name="c"))
+        _write(tmp_path / "tools" / "c" / "routes" / "__init__.py", "")
+        _write(
+            tmp_path / "tools" / "c" / "routes" / "pages.py",
+            SPLIT_ROUTE_MODULE_PY.format(name="c"),
+        )
+        assert cc._blueprint_has_route(bp) is True
+
+    def test_split_without_route_is_false(self, tmp_path):
+        from tools.workflow import coherence_checker as cc
+
+        bp = tmp_path / "tools" / "c" / "blueprint.py"
+        _write(bp, SPLIT_ASSEMBLER_PY.format(name="c"))
+        _write(tmp_path / "tools" / "c" / "routes" / "__init__.py", "")
+        _write(
+            tmp_path / "tools" / "c" / "routes" / "pages.py",
+            SPLIT_ROUTE_MODULE_NO_ROUTE_PY.format(name="c"),
+        )
+        assert cc._blueprint_has_route(bp) is False
+
+    def test_routeless_no_routes_dir_is_false(self, tmp_path):
+        from tools.workflow import coherence_checker as cc
+
+        bp = tmp_path / "tools" / "c" / "blueprint.py"
+        _write(bp, "def create_c_blueprint():\n    return None\n")
+        assert cc._blueprint_has_route(bp) is False
 
 
 class TestRegistryNavKindAgnostic:
