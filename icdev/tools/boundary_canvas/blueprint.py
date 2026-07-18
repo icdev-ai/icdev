@@ -2050,4 +2050,144 @@ def create_boundary_blueprint():
         conn.close()
         return jsonify(result)
 
+    # ====================================================================
+    # API ROUTES — RICOAS 4-tier Boundary Impact (ATO)  [bdr-feat-3]
+    # Surfaces tools/requirements/boundary_analyzer.py (GREEN/YELLOW/
+    # ORANGE/RED tiers + RED-alternative COAs) in the /boundary UI.
+    # The engine reads MAIN-DB tables (ato_system_registry,
+    # intake_requirements, boundary_impact_assessments); call it in-process.
+    # A boundary design links to a project via an optional ?project_id=
+    # (falling back to the design_id, matching the cATO readiness route).
+    # ====================================================================
+
+    def _impact_req_label(raw_text: str, refined_text: str) -> str:
+        """Build a short, human-friendly requirement label for the picker."""
+        text = (refined_text or "").strip() or (raw_text or "").strip()
+        text = " ".join(text.split())
+        return text[:120] + ("…" if len(text) > 120 else "")
+
+    @bp.route("/api/impact/context", methods=["GET"])
+    @bdc_login_required
+    def bdc_api_impact_context():
+        """Return registered ATO systems + intake requirements for the design's
+        linked project, so the Boundary Impact panel can populate its pickers.
+
+        Never 500s: a missing project, missing tables, or empty registry all
+        yield a clean empty-state payload.
+        """
+        from tools.requirements import boundary_analyzer
+
+        design_id = request.args.get("design_id", "")
+        project_id = request.args.get("project_id") or design_id
+
+        systems: list = []
+        requirements: list = []
+        try:
+            sys_result = boundary_analyzer.list_systems(project_id)
+            systems = sys_result.get("systems", [])
+        except Exception as exc:  # noqa: BLE001 — empty-state, never a 500
+            logger.warning("impact/context list_systems failed for %s: %s", project_id, exc)
+
+        try:
+            from tools.db.storage import get_connection as _mgc
+
+            conn = _mgc(db_path=str(boundary_analyzer.DB_PATH))
+            rows = conn.execute(
+                "SELECT id, raw_text, refined_text, requirement_type "
+                "FROM intake_requirements WHERE project_id=%s ORDER BY created_at",
+                (project_id,),
+            ).fetchall()
+            conn.close()
+            for r in rows:
+                d = dict(r)
+                requirements.append(
+                    {
+                        "id": d.get("id"),
+                        "label": _impact_req_label(d.get("raw_text", ""), d.get("refined_text", "")),
+                        "requirement_type": d.get("requirement_type"),
+                    }
+                )
+        except Exception as exc:  # noqa: BLE001 — empty-state, never a 500
+            logger.warning("impact/context requirements read failed for %s: %s", project_id, exc)
+
+        empty = not systems
+        message = (
+            "No ATO system registered for this project — register via intake." if empty else ""
+        )
+        return jsonify(
+            {
+                "design_id": design_id,
+                "project_id": project_id,
+                "systems": systems,
+                "requirements": requirements,
+                "empty": empty,
+                "message": message,
+            }
+        )
+
+    @bp.route("/api/impact/assess", methods=["POST"])
+    @bdc_login_required
+    def bdc_api_impact_assess():
+        """Assess a requirement against an ATO system boundary → 4-tier result."""
+        from tools.requirements import boundary_analyzer
+
+        data = request.get_json(silent=True) or {}
+        system_id = (data.get("system_id") or "").strip()
+        requirement_id = (data.get("requirement_id") or "").strip()
+        if not system_id or not requirement_id:
+            return jsonify({"error": "system_id and requirement_id are required"}), 400
+
+        project_id = data.get("project_id")
+        try:
+            if not project_id:
+                sys_info = boundary_analyzer.get_system(system_id)
+                project_id = (sys_info.get("system", {}) or {}).get("project_id")
+            result = boundary_analyzer.assess_boundary_impact(project_id, system_id, requirement_id)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("impact/assess failed: %s", exc)
+            return jsonify({"error": str(exc)}), 500
+
+        result["project_id"] = project_id
+        _audit(
+            request.args.get("design_id", ""),
+            "IMPACT_ASSESS",
+            f"sys={system_id} req={requirement_id} tier={result.get('impact_tier')}",
+        )
+        return jsonify(result)
+
+    @bp.route("/api/impact/alternatives", methods=["POST"])
+    @bdc_login_required
+    def bdc_api_impact_alternatives():
+        """Generate RED-tier alternative COAs for a boundary impact assessment."""
+        from tools.requirements import boundary_analyzer
+
+        data = request.get_json(silent=True) or {}
+        assessment_id = (data.get("assessment_id") or "").strip()
+        if not assessment_id:
+            return jsonify({"error": "assessment_id is required"}), 400
+
+        project_id = data.get("project_id")
+        try:
+            if not project_id:
+                from tools.db.storage import get_connection as _mgc
+
+                conn = _mgc(db_path=str(boundary_analyzer.DB_PATH))
+                row = conn.execute(
+                    "SELECT project_id FROM boundary_impact_assessments WHERE id=%s",
+                    (assessment_id,),
+                ).fetchone()
+                conn.close()
+                if row:
+                    project_id = dict(row).get("project_id")
+            result = boundary_analyzer.generate_alternatives(project_id, assessment_id)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("impact/alternatives failed: %s", exc)
+            return jsonify({"error": str(exc)}), 500
+
+        return jsonify(result)
+
     return bp
