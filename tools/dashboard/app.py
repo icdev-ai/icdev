@@ -2428,10 +2428,22 @@ def create_app(testing: bool = False) -> Flask:
         def canvas_kg_page():
             return render_template("canvas_kg.html")
 
-    # ---- Unified Canvas Compliance Dashboard ----
+    # ---- Unified Canvas Compliance Dashboard (Canvas Posture) ----
     @app.route("/canvas-compliance")
     def canvas_compliance_page():
-        """Unified compliance posture across all 7 design canvases."""
+        """Unified compliance posture across the design canvases (Canvas Posture).
+
+        Distinct from Canvas Health (/health/canvases), which reports
+        file-existence QA rather than runtime compliance posture.
+        """
+        # cnr-cc-01(b): explicit, lightweight login gate (defense-in-depth).
+        # This standalone @app.route is not a registry canvas blueprint, so it
+        # never picks up guard_component_access; assert an authenticated user
+        # rather than relying solely on the global before_request hook.
+        if not getattr(g, "current_user", None):
+            if flask_request.is_json or flask_request.path.startswith("/api/"):
+                return jsonify({"error": "Authentication required"}), 401
+            return redirect(url_for("login_page"))
         try:
             from tools.canvas_compliance.compliance import get_all_cards
             cards = get_all_cards()

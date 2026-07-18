@@ -24,7 +24,7 @@ from typing import Any
 
 import sqlite3
 
-from tools.db.storage import get_connection
+from tools.db.storage import get_canvas_connection
 from tools.canvas_compliance.constants import (
     NDC_POAM_YELLOW, NDC_POAM_RED,
     SDC_AGE_YELLOW, SDC_AGE_RED, SDC_PATHS_RED,
@@ -45,19 +45,27 @@ _ICDEV_DB = _DATA / "icdev.db"
 def _open(path: Path) -> Any | None:
     """Open a DB connection.
 
-    For icdev.db: use get_connection() (respects ICDEV_STORAGE_BACKEND / PostgreSQL).
-    For canvas-specific SQLite files: open directly via sqlite3 so they are not
-    misrouted to the PostgreSQL backend.
+    For icdev.db: use get_canvas_connection() (cnr-cc-01). The global ICDEV
+    tables read here — poam_items, cato_evidence, threat_models,
+    cf_provision_log — carry classification/tenant_id RLS columns. This
+    aggregate runs on a *context-less* route (no ``g.tenant_id``), so a normal
+    get_connection() would attach the global RLS predicate and, under
+    PostgreSQL, filter every row out (or error). PostgreSQL also has no SQLite
+    ``.db`` file, so the old ``path.exists()`` gate left the icdev-backed cards
+    permanently ``available=False``. get_canvas_connection() disables RLS and,
+    on PG, reads the shared icdev database — the correct whole-platform posture
+    read. For canvas-specific SQLite files, open directly via sqlite3 so they
+    are not misrouted to the PostgreSQL backend.
     """
-    if not path.exists():
-        return None
     if path.name == "icdev.db":
         try:
-            return get_connection(str(path))
+            return get_canvas_connection()
         except Exception as exc:
             logger.warning("canvas_compliance: cannot open %s: %s", path.name, exc)
             return None
     # Canvas-specific SQLite files — always open directly.
+    if not path.exists():
+        return None
     try:
         conn = sqlite3.connect(str(path), check_same_thread=False)
         conn.row_factory = sqlite3.Row
