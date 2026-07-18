@@ -2817,6 +2817,25 @@ CREATE TABLE IF NOT EXISTS shap_attributions (
     classification  TEXT DEFAULT 'CUI',
     analyzed_at     TEXT DEFAULT CURRENT_TIMESTAMP
 );
+-- AIMC (AI/ML Canvas) — model inventory + deployment-readiness check state.
+-- Tenant-less canvas tables (classification, no tenant_id); read via
+-- get_canvas_connection (RLS disabled). Mirrors tools/aimc/db/init_db.py.
+CREATE TABLE IF NOT EXISTS aimc_models (
+    id              TEXT PRIMARY KEY,
+    project_id      TEXT NOT NULL,
+    metric_key      TEXT NOT NULL,
+    metric_value    TEXT NOT NULL,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    classification  TEXT NOT NULL DEFAULT 'CUI'
+);
+CREATE TABLE IF NOT EXISTS aimc_deployment (
+    id              TEXT PRIMARY KEY,
+    project_id      TEXT NOT NULL,
+    check_key       TEXT NOT NULL,
+    check_value     TEXT NOT NULL,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    classification  TEXT NOT NULL DEFAULT 'CUI'
+);
 """
 
 
