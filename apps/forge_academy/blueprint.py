@@ -98,6 +98,24 @@ def _level_ctx(fa_user: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Legacy redirect — the registry historically declared url_prefix /forge-academy
+# while every route is hardcoded to /academy, so the derived nav link 404'd.
+# The registry now points at /academy; these 301s preserve any stale bookmarks
+# to /forge-academy. (penta-aca-01)
+# ---------------------------------------------------------------------------
+
+@bp.route("/forge-academy")
+@bp.route("/forge-academy/")
+def _legacy_prefix_root():
+    return redirect("/academy", code=301)
+
+
+@bp.route("/forge-academy/<path:rest>")
+def _legacy_prefix_path(rest):
+    return redirect("/academy/" + rest, code=301)
+
+
+# ---------------------------------------------------------------------------
 # Page routes
 # ---------------------------------------------------------------------------
 
