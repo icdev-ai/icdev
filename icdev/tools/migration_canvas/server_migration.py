@@ -1157,16 +1157,25 @@ def sync_cloud_catalog(providers: list[str] | None = None, force: bool = False) 
 
     try:
         now = _now()
+        # Positional %s placeholders (PG-native).  Named :name binds are NOT
+        # portable: translate_sql only rewrites ?→%s, and StorageCursor.execute
+        # wraps a dict param into a 1-tuple, so a psycopg2 %(name)s / SQLite
+        # :name mapping never reaches the driver.  Column order below MUST match
+        # _UPSERT_COLS so the ordered param tuple lines up.
+        _UPSERT_COLS = (
+            "provider", "instance_type", "family", "vcpus", "ram_gb",
+            "local_storage_gb", "storage_type", "network_gbps",
+            "premium_disk_opt", "cost_tier", "govcloud", "il_support",
+            "use_case_tags", "eol_status", "compliance_certs",
+            "last_refreshed_at",
+        )
         upsert_sql = (
             "INSERT OR REPLACE INTO mc_cloud_instances "
             "(provider, instance_type, family, vcpus, ram_gb, local_storage_gb, "
             "storage_type, network_gbps, premium_disk_opt, cost_tier, govcloud, "
             "il_support, use_case_tags, eol_status, compliance_certs, "
             "source, last_refreshed_at) "
-            "VALUES (:provider,:instance_type,:family,:vcpus,:ram_gb,:local_storage_gb,"
-            ":storage_type,:network_gbps,:premium_disk_opt,:cost_tier,:govcloud,"
-            ":il_support,:use_case_tags,:eol_status,:compliance_certs,"
-            "'api',:last_refreshed_at)"
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'api',%s)"
         )
         for prov in active:
             if prov not in fetchers:
@@ -1178,7 +1187,7 @@ def sync_cloud_catalog(providers: list[str] | None = None, force: bool = False) 
                     row.setdefault("compliance_certs", "{}")
                     row.setdefault("local_storage_gb", 0)
                     row["last_refreshed_at"] = now
-                    conn.execute(upsert_sql, row)
+                    conn.execute(upsert_sql, tuple(row.get(c) for c in _UPSERT_COLS))
                 total_upserted += len(rows)
                 if rows:
                     synced.append(prov)
