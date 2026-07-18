@@ -231,7 +231,7 @@ def receive(agent_id: str, unread_only: bool = True, message_type: str = None, l
     """
     conn = _get_db(db_path)
     try:
-        query = "SELECT * FROM agent_mailbox WHERE to_agent_id = ?"
+        query = "SELECT * FROM agent_mailbox WHERE to_agent_id = %s"
         params: list = [agent_id]
 
         if unread_only:
@@ -240,10 +240,10 @@ def receive(agent_id: str, unread_only: bool = True, message_type: str = None, l
         if message_type:
             if message_type not in VALID_MESSAGE_TYPES:
                 raise ValueError(f"Invalid message_type filter: {message_type}")
-            query += " AND message_type = ?"
+            query += " AND message_type = %s"
             params.append(message_type)
 
-        query += " ORDER BY priority DESC, created_at DESC LIMIT ?"
+        query += " ORDER BY priority DESC, created_at DESC LIMIT %s"
         params.append(limit)
 
         rows = conn.execute(query, params).fetchall()
