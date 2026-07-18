@@ -719,8 +719,9 @@ def api_send_to_kanban():
     # [source: …] grounding against the scan evidence) must not seed tasks —
     # mirrors the placeholder_guard / citation_guard pattern. Single-phase → 403;
     # for 'all' the defective phase is skipped below. An explicit force override
-    # (force / force_send) bypasses, audited.
-    force_override = bool(data.get("force") or data.get("force_send"))
+    # (force / force_send) bypasses, audited. ``force_override`` was already read
+    # once for the HITL gate above — both gates honor the same single flag (the
+    # duplicate re-read left by the #524+#540 auto-merge is removed).
     citation_defect_phases = _boosted_prd_citation_defects(roadmap_id)
     if (not force_override and phase_id != "all"
             and phase_id in citation_defect_phases):
