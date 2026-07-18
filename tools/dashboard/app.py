@@ -11410,8 +11410,6 @@ def create_app(testing: bool = False) -> Flask:
                                 status=503, mimetype="text/plain")
             data = _gen_latest(_prom_registry)
             return Response(data, status=200, mimetype=_PROM_CT)
-
-        _wire_metrics(app)
     except Exception as _prom_exc:
         app.logger.debug("Prometheus metrics init skipped: %s", _prom_exc)
 

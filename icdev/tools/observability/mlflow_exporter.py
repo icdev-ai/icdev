@@ -29,6 +29,16 @@ logger = get_logger("icdev.observability.mlflow_exporter")
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
+# High-watermark state. otel_spans is append-only (D283) and carries no
+# "exported" column, so we track export progress out-of-band in a tiny
+# singleton-row table keyed by source. On each pass we only read spans whose
+# start_time is strictly greater than the persisted watermark, then advance
+# the watermark to the batch max. This makes export_pending idempotent —
+# without it, every call re-created MLflow runs for the same spans (unbounded
+# duplicates).
+_STATE_TABLE = "mlflow_export_state"
+_STATE_KEY = "otel_spans"
+
 # Backend-appropriate DB error tuple. Reads route through get_connection,
 # which targets PostgreSQL by default; PG raises psycopg2.Error subclasses
 # that sqlite3.Error does not cover.
@@ -118,6 +128,16 @@ class MLflowExporter:
                 logger.error("Failed to export trace %s: %s", trace_id, e)
                 errors += len(trace_spans)
 
+        # Advance the watermark past the whole batch we just processed so the
+        # next pass never re-reads these spans (prevents duplicate MLflow runs).
+        # start_time is a lexicographically-sortable ISO-8601 TEXT column.
+        batch_max = max(
+            (s.get("start_time") for s in spans if s.get("start_time")),
+            default=None,
+        )
+        if batch_max is not None:
+            self._set_watermark(batch_max)
+
         return {
             "status": "ok",
             "exported": exported,
@@ -125,17 +145,79 @@ class MLflowExporter:
             "traces": len(traces),
         }
 
-    def _read_unexported_spans(self, limit: int) -> List[Dict]:
-        """Read spans that haven't been exported yet."""
+    def _ensure_state_table(self, conn) -> None:
+        """Create the singleton watermark table if absent (idempotent DDL)."""
+        conn.execute(
+            f"""CREATE TABLE IF NOT EXISTS {_STATE_TABLE} (
+                    id TEXT PRIMARY KEY,
+                    last_start_time TEXT,
+                    updated_at TEXT
+                )"""
+        )
+        conn.commit()
+
+    def _get_watermark(self) -> Optional[str]:
+        """Return the last exported span start_time, or None if never exported."""
         try:
             conn = get_connection(db_path=str(self._db_path))
-            # Note: we track export via a simple approach — spans older than last export
-            rows = conn.execute(
-                """SELECT * FROM otel_spans
-                   ORDER BY start_time ASC
-                   LIMIT %s""",
-                (limit,),
-            ).fetchall()
+            self._ensure_state_table(conn)
+            row = conn.execute(
+                f"SELECT last_start_time FROM {_STATE_TABLE} WHERE id = %s",  # nosec B608 -- _STATE_TABLE is an internal constant
+                (_STATE_KEY,),
+            ).fetchone()
+            conn.close()
+            if not row:
+                return None
+            try:
+                return row["last_start_time"]
+            except (TypeError, KeyError, IndexError):
+                return row[0]
+        except _DB_ERRORS as e:
+            logger.error("Failed to read export watermark: %s", e)
+            return None
+
+    def _set_watermark(self, watermark: str) -> None:
+        """Persist the high-watermark (replace the single state row)."""
+        from datetime import datetime, timezone
+
+        now = datetime.now(timezone.utc).isoformat()
+        try:
+            conn = get_connection(db_path=str(self._db_path))
+            self._ensure_state_table(conn)
+            conn.execute(
+                f"DELETE FROM {_STATE_TABLE} WHERE id = %s",  # nosec B608 -- _STATE_TABLE is an internal constant
+                (_STATE_KEY,),
+            )
+            conn.execute(
+                f"""INSERT INTO {_STATE_TABLE} (id, last_start_time, updated_at)
+                    VALUES (%s, %s, %s)""",  # nosec B608 -- _STATE_TABLE is an internal constant
+                (_STATE_KEY, watermark, now),
+            )
+            conn.commit()
+            conn.close()
+        except _DB_ERRORS as e:
+            logger.error("Failed to persist export watermark: %s", e)
+
+    def _read_unexported_spans(self, limit: int) -> List[Dict]:
+        """Read spans newer than the persisted high-watermark."""
+        watermark = self._get_watermark()
+        try:
+            conn = get_connection(db_path=str(self._db_path))
+            if watermark is None:
+                rows = conn.execute(
+                    """SELECT * FROM otel_spans
+                       ORDER BY start_time ASC
+                       LIMIT %s""",
+                    (limit,),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """SELECT * FROM otel_spans
+                       WHERE start_time > %s
+                       ORDER BY start_time ASC
+                       LIMIT %s""",
+                    (watermark, limit),
+                ).fetchall()
             conn.close()
             return [dict(row) for row in rows]
         except _DB_ERRORS as e:
