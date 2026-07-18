@@ -64,6 +64,14 @@ def _selenium_glob() -> str:
     return str(PROJECT_ROOT / "tests" / "e2e_selenium" / "test_*.py")
 
 
+def _selenium_script_glob() -> str:
+    # Standalone selenium e2e scripts live at the tests/ root as e2e_*.py with a
+    # main() entry + exit-code contract. They are NOT pytest-collectable — their
+    # test_* functions take positional args (driver, results), so pytest would
+    # raise fixture errors — hence they are executed directly via `python <file>`.
+    return str(PROJECT_ROOT / "tests" / "e2e_*.py")
+
+
 def _native_glob() -> str:
     return str(PROJECT_ROOT / "tests" / "e2e" / "*.spec.ts")
 
@@ -80,8 +88,18 @@ def discover_mcp_tests() -> List[str]:
     return sorted(glob.glob(_mcp_glob()))
 
 
+def discover_selenium_scripts() -> List[str]:
+    """Standalone tests/e2e_*.py selenium scripts (main()-driven, run as scripts)."""
+    return sorted(glob.glob(_selenium_script_glob()))
+
+
 def discover_selenium_tests() -> List[str]:
-    return sorted(glob.glob(_selenium_glob()))
+    # Inventory both the pytest-style selenium suite under tests/e2e_selenium/ and
+    # the standalone tests/e2e_*.py scripts so `--driver selenium --discover` lists
+    # every selenium e2e test (e.g. e2e_odc_lifecycle, e2e_observability_mitre).
+    return sorted(
+        set(glob.glob(_selenium_glob())) | set(glob.glob(_selenium_script_glob()))
+    )
 
 
 def discover_e2e_tests(mode: str = "auto") -> List[str]:
@@ -714,6 +732,77 @@ def _parse_pytest_output(
     return results
 
 
+def _is_selenium_script(test_file: str) -> bool:
+    """True for a standalone tests/e2e_*.py selenium script (main()-driven).
+
+    These are executed directly via ``python <file>`` rather than pytest, because
+    their ``test_*`` functions take positional args (driver, results) and are not
+    pytest fixtures — pytest collection would raise fixture errors.
+    """
+    p = Path(test_file)
+    return (
+        p.suffix == ".py"
+        and p.name.startswith("e2e_")
+        and p.parent.name == "tests"
+    )
+
+
+def run_selenium_script(
+    run_id: str,
+    logger: logging.Logger,
+    script: str,
+) -> List[E2ETestResult]:
+    """Run a standalone selenium e2e script (tests/e2e_*.py) via ``python <file>``.
+
+    The script's ``main()`` returns 0 on pass / non-zero on failure. Requires a
+    live dashboard + a browser driver; the caller gates on ``check_selenium_driver``.
+    """
+    name = os.path.basename(script).replace(".py", "")
+    logger.info("e2e_runner: running selenium script %s", name)
+    cmd = [sys.executable, script]
+
+    env = os.environ.copy()
+    root_str = str(PROJECT_ROOT)
+    existing = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = root_str if not existing else root_str + os.pathsep + existing
+
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=_SELENIUM_TIMEOUT_SECONDS,
+            cwd=str(PROJECT_ROOT),
+            env=env,
+        )
+    except subprocess.TimeoutExpired:
+        msg = f"selenium script timed out after {_SELENIUM_TIMEOUT_SECONDS} seconds"
+        logger.error("e2e_runner: %s", msg)
+        return [E2ETestResult(
+            test_name=name, status="failed", test_path=script, error=msg,
+        )]
+    except FileNotFoundError:
+        msg = f"Python interpreter not found: {sys.executable}"
+        logger.error("e2e_runner: %s", msg)
+        return [E2ETestResult(
+            test_name=name, status="failed", test_path=script, error=msg,
+        )]
+
+    logger.info("e2e_runner: %s exit code %s", name, proc.returncode)
+    status = "passed" if proc.returncode == 0 else "failed"
+    error = None
+    if status == "failed":
+        error = (
+            f"script exited {proc.returncode}: "
+            f"{((proc.stderr or proc.stdout) or '')[:500]}"
+        )
+    return [E2ETestResult(
+        test_name=name, status=status, test_path=script, error=error,
+    )]
+
+
 def run_selenium(
     run_id: str,
     logger: logging.Logger,
@@ -723,7 +812,14 @@ def run_selenium(
 
     Caller must check ``check_selenium_driver()`` first and handle the
     absent-driver case; this function assumes the driver is present.
+
+    A standalone ``tests/e2e_*.py`` script passed as ``test_file`` is dispatched to
+    ``run_selenium_script`` (executed directly), since such scripts are main()-driven
+    and not pytest-collectable.
     """
+    if test_file and _is_selenium_script(test_file):
+        return run_selenium_script(run_id, logger, test_file)
+
     logger.info("e2e_runner: running tests via Selenium (pytest)")
     target = test_file or str(PROJECT_ROOT / "tests" / "e2e_selenium")
     cmd = [sys.executable, "-m", "pytest", target, "-v", "--tb=short", "-q"]
