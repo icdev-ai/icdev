@@ -1309,18 +1309,31 @@ Process Document:
 
     @bp.route("/api/regen-jobs/<job_id>/download/<filename>")
     def api_regen_download(job_id: str, filename: str):
-        """Download a regenerated artifact file."""
-        import os
+        """Download a regenerated artifact file.
+
+        Path-traversal hardened: the requested filename is resolved under the
+        job's artifact_dir and the resolved path is asserted to stay within it.
+        Flask's <filename> converter permits backslashes and absolute paths, so
+        without this check a request like '..%5C..%5C<secret>' (Windows) or an
+        absolute path would escape artifact_dir. Any violation → 404.
+        """
         from flask import send_file
         from tools.workflow_canvas.doc_regenerator import get_job_status
         job = get_job_status(job_id)
         if not job or job.get("status") != "done":
             return jsonify({"error": "job not ready"}), 404
         artifact_dir = job.get("artifact_dir", "")
-        file_path = os.path.join(artifact_dir, filename)
-        if not os.path.isfile(file_path):
+        if not artifact_dir:
             return jsonify({"error": "file not found"}), 404
-        return send_file(file_path, as_attachment=True, download_name=filename)
+        base = Path(artifact_dir).resolve()
+        candidate = (base / filename).resolve()
+        # Containment check: candidate must be base itself or live under base.
+        if candidate != base and base not in candidate.parents:
+            logger.warning("wfc: rejected traversal download filename=%r job=%s", filename, job_id)
+            return jsonify({"error": "file not found"}), 404
+        if not candidate.is_file():
+            return jsonify({"error": "file not found"}), 404
+        return send_file(str(candidate), as_attachment=True, download_name=candidate.name)
 
     # ── Process Chain CRUD ────────────────────────────────────────────────────
 
