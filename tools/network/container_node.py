@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from tools.db.storage import get_connection
+from tools.network.db.init_db import get_connection
 from tools.network.constants import (
     CONTAINER_IMAGE_WHITELIST,
     CONTAINER_PROPERTIES_SCHEMA,
@@ -27,11 +27,6 @@ from tools.network.constants import (
 )
 
 logger = get_logger("icdev.network.container_node")
-
-# Resolve NDC DB path consistently with the rest of the network module.
-_NETWORK_DIR = Path(__file__).resolve().parent
-_ICDEV_ROOT = _NETWORK_DIR.parent.parent
-_DEFAULT_DB = _ICDEV_ROOT / "data" / "network_canvas.db"
 
 
 def _utcnow() -> str:
@@ -114,10 +109,25 @@ def validate_container_node(properties: Dict[str, Any]) -> Dict[str, Any]:
     return {"valid": not errors, "errors": errors, "warnings": warnings}
 
 
-def _connect(db_path: Optional[str] = None) -> sqlite3.Connection:
-    path = Path(db_path) if db_path else _DEFAULT_DB
+def _sqlite_connection(db_path: str):
+    """StorageConnection-wrapped SQLite DB at an explicit path (test override)."""
+    path = Path(db_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = get_connection(str(path))
+    conn = sqlite3.connect(str(path))
+    conn.row_factory = sqlite3.Row
+    try:
+        from tools.db.storage import StorageConnection
+
+        return StorageConnection(conn, "sqlite")
+    except ImportError:
+        return conn
+
+
+def _connect(db_path: Optional[str] = None):
+    # Default routes through the canvas get_connection() (honours
+    # NC_STORAGE_BACKEND — PostgreSQL by default); an explicit db_path
+    # override routes to the SQLite branch for tests.
+    conn = _sqlite_connection(db_path) if db_path else get_connection()
     # Ensure a minimal table exists for container nodes (idempotent).
     conn.execute(
         """
