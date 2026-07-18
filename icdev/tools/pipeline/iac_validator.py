@@ -442,17 +442,38 @@ def _check_encryption_policy(tf_files):
 
 
 def _check_no_secrets(files):
-    """Check for hardcoded secrets in generated files."""
+    """Check for hardcoded secrets in generated files.
+
+    Covers both HCL-style (`key = "value"`) and YAML-style (`key: value`) inline
+    secrets. YAML-style values that reference a K8s Secret / vault / template var
+    (``existingSecret``, ``${...}``, ``{{ ... }}``) are intentionally NOT flagged.
+    Any finding is a hard failure so validate_bundle's gate blocks the bundle.
+    """
     import re
 
     secret_patterns = [
-        (r'(?i)(password|secret|api_key|access_key)\s*=\s*"[^"]{8,}"', "Possible hardcoded secret"),
+        # HCL-style: key = "literal"
+        (r'(?i)(password|secret|api_key|access_key)\s*=\s*"[^"]{8,}"', "Possible hardcoded secret (HCL)"),
+        # YAML-style: key: literal-value (skip empty / block / template / env-var / quoted-ref values)
+        (
+            r"(?im)^[ \t]*(?:admin_?password|password|admin_?pass|secret_?key|api_?key|access_?key|auth_?token|token)"
+            r"[ \t]*:[ \t]*(?![ \t]*$)(?![|>&*])(?!\{\{)(?!\$\{)[\"']?[^\s\"'#{$][^\n\"'#]*",
+            "Possible hardcoded secret (YAML)",
+        ),
         (r"AKIA[0-9A-Z]{16}", "AWS access key"),
         (r"(?i)BEGIN\s+(RSA|DSA|EC|OPENSSH)\s+PRIVATE\s+KEY", "Private key"),
     ]
+    # Default / weak passwords are always a hard failure regardless of style.
+    weak_password_patterns = [
+        (
+            r"(?i)(?:admin_?password|password)[ \t]*[:=][ \t]*[\"']?"
+            r"(?:changeme|change_me|password|passw0rd|admin|admin123|123456|default|secret|root|test)\b",
+            "Default/weak password",
+        ),
+    ]
     issues = []
     for f in files:
-        for pattern, desc in secret_patterns:
+        for pattern, desc in secret_patterns + weak_password_patterns:
             if re.search(pattern, f["content"]):
                 issues.append(f"{f['path']}: {desc}")
 
@@ -504,14 +525,17 @@ def _check_helm_security(helm_file):
     path = helm_file["path"]
     issues = []
 
-    if "adminPassword: changeme" in content or "password: changeme" in content:
+    # A default/weak password shipping in a bundle is a hard failure, not a warning.
+    weak_pw = "adminPassword: changeme" in content or "password: changeme" in content
+    if weak_pw:
         issues.append("Default password 'changeme' — MUST be changed before deploy")
     if "runAsRoot: true" in content or "privileged: true" in content:
         issues.append("Container running as root or privileged — security risk")
 
     if issues:
+        severity = "fail" if weak_pw else "warn"
         return ValidationResult(
-            3, "helm_security", "warn", f"{len(issues)} security concern(s)", path, issues,
+            3, "helm_security", severity, f"{len(issues)} security concern(s)", path, issues,
             fix_hint="Replace default passwords with Kubernetes Secrets or a vault-based solution. Ensure containers do not run as root.",
             fix_snippet="# Use a K8s Secret ref instead of plaintext:\nadminPassword:\n  existingSecret: my-admin-secret\n  existingSecretKey: password\n\n# Disable privileged:\nsecurityContext:\n  runAsNonRoot: true\n  runAsUser: 1000",
             fix_action="fix_helm_security",
