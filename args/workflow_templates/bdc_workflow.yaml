@@ -1,120 +1,39 @@
 # CUI // SP-CTI
 # BDC Workflow — Boundary Design Canvas
-# Full 12-step pipeline: boundary scan → ISA check → IaC → security gate → validate → apply → verify
+#
+# NOTE (bdr-sec-5): The former 12-step pipeline invoked the orphaned
+# tools/bdc/ package (boundary_scanner.py / isa_checker.py / iac_generator.py),
+# which read the canvas boundary_designs table through the wrong DB connection
+# and silently fell back to fabricated data. That package was RETIRED.
+# The Boundary Design Canvas engine (tools/boundary_canvas/boundary_engine.py)
+# is a library with no CLI entry point, and there is no live BDC IaC generator,
+# so the scan/IaC/downstream-executor chain was removed rather than repointed to
+# stub commands. This template now references only real, invocable commands.
 
-description: "BDC: boundary/cross-domain scan, ISA compliance check, IaC generation, security gate, Terraform/Ansible validate, migration report, apply approval, Terraform apply, AWS verification, post-deploy validation"
+description: "BDC: Interconnection Security Agreement (ISA) expiry check with ISSO approval gate"
 category: deploy
 canvas: bdc
 
 steps:
-  # ── Canvas-specific steps (BDC only) ─────────────────────────────────────
   - id: step_1
-    name: Boundary Scan
-    tool: tools/bdc/boundary_scanner.py
+    name: ISA Expiry Check
+    tool: tools/boundary_canvas/isa_expiry.py
     node_type: tool
     required: true
     timeout: 300
     depends_on: []
-    description: Scan cross-domain boundaries, trust zones, and data flows.
+    description: >
+      Check Interconnection Security Agreement expiry windows for the boundary
+      canvas, publish canvas events for ISAs nearing expiry, and notify owners.
 
   - id: step_2
-    name: ISA Check
-    tool: tools/bdc/isa_checker.py
-    node_type: tool
-    required: true
-    timeout: 300
-    depends_on: [step_1]
-    description: Validate Interconnection Security Agreements and boundary protection controls.
-
-  - id: step_3
-    name: Generate IaC
-    tool: tools/bdc/iac_generator.py
-    node_type: tool
-    required: true
-    timeout: 600
-    depends_on: [step_2]
-    description: >
-      Generate Terraform (.tf), Ansible playbook (.yml), inventory (.ini),
-      validation script (.py), and checklist (.md) for boundary infrastructure.
-      Output: data/studio_artifacts/bdc/ — consumed by all downstream steps.
-
-  - id: step_4
     name: Security Approval
     node_type: human
     required: true
     role: approver
     timeout: 86400
     tool: ""
-    depends_on: [step_3]
+    depends_on: [step_1]
     description: >
-      ISSO reviews boundary IaC before provisioning begins.
+      ISSO reviews ISA expiry findings before any remediation is scheduled.
       Telegram: /approve <step_run_id> or /reject <step_run_id> [reason].
-
-  # ── Shared executor steps (canvas-agnostic) ───────────────────────────────
-  - id: step_5
-    name: Terraform Plan
-    tool: tools/studio/executors/terraform_plan.py
-    node_type: tool
-    required: true
-    timeout: 300
-    depends_on: [step_4]
-
-  - id: step_6
-    name: Ansible Execute
-    tool: tools/studio/executors/ansible_executor.py
-    node_type: tool
-    required: true
-    timeout: 300
-    depends_on: [step_4]
-
-  - id: step_7
-    name: Validation Run
-    tool: tools/studio/executors/validation_runner.py
-    node_type: tool
-    required: true
-    timeout: 120
-    depends_on: [step_4]
-
-  - id: step_8
-    name: Migration Report
-    tool: tools/studio/executors/migration_reporter.py
-    node_type: tool
-    required: true
-    timeout: 60
-    depends_on: [step_5, step_6, step_7]
-
-  - id: step_9
-    name: Apply Approval
-    node_type: human
-    required: true
-    role: infrastructure_approver
-    timeout: 86400
-    tool: ""
-    depends_on: [step_5, step_6, step_7]
-    description: >
-      Human gate before applying boundary infrastructure to AWS.
-      Telegram: /approve <step_run_id> or /reject <step_run_id> [reason].
-
-  - id: step_10
-    name: Terraform Apply
-    tool: tools/studio/executors/terraform_apply.py
-    node_type: tool
-    required: true
-    timeout: 900
-    depends_on: [step_9]
-
-  - id: step_11
-    name: AWS Config Execute
-    tool: tools/studio/executors/aws_config_executor.py
-    node_type: tool
-    required: false
-    timeout: 600
-    depends_on: [step_10]
-
-  - id: step_12
-    name: Post-deploy Validation
-    tool: tools/studio/executors/validation_runner.py
-    node_type: tool
-    required: false
-    timeout: 300
-    depends_on: [step_10]
