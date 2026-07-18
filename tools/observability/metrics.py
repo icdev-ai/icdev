@@ -93,9 +93,24 @@ def _normalize_path(path: str) -> str:
 
 
 def wire_flask_metrics(app) -> None:
-    """Attach before/after_request hooks that record HTTP metrics."""
+    """Attach before/after_request hooks that record HTTP metrics.
+
+    Idempotent: registering the hooks more than once on the same app would
+    double-count requests (each request would inc the counter and observe the
+    latency histogram twice), corrupting SLO math. A sentinel flag stored on
+    ``app.extensions`` guards against repeat wiring.
+    """
     if not _PROMETHEUS_AVAILABLE:
         return
+
+    # Idempotence guard — never register the hooks twice on one app.
+    extensions = getattr(app, "extensions", None)
+    if extensions is None:
+        extensions = {}
+        app.extensions = extensions
+    if extensions.get("icdev_metrics_wired"):
+        return
+    extensions["icdev_metrics_wired"] = True
 
     @app.before_request
     def _start_timer():
