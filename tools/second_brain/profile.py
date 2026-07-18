@@ -314,6 +314,8 @@ Be specific, warm, and professional. Do not use bullet points."""
 
     summary = ""
     try:
+        from tools.second_brain.redaction_util import redact_for_llm
+        prompt = redact_for_llm(prompt)  # cnr-me-02: mask PII before egress
         from tools.llm.router import LLMRouter
         router = LLMRouter()
         result = router.invoke("summarization", {"prompt": prompt, "max_tokens": 300})

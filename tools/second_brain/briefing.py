@@ -11,6 +11,7 @@ from tools.db.storage import get_canvas_connection, sql_placeholder
 from tools.logging.icdev_logger import get_logger
 from tools.second_brain.constants import BRIEFING_ENV_FLAG
 from tools.second_brain.profile import build_world_model_context, get_challenges, get_objectives
+from tools.second_brain.redaction_util import redact_for_llm
 
 logger = get_logger(__name__)
 _ENV_FLAG = BRIEFING_ENV_FLAG
@@ -135,6 +136,7 @@ def _build_content(
             f"Key challenges: {'; '.join(top_chals) or 'not yet defined'}. "
             f"Date: {briefing_date}. Be warm, professional, specific."
         )
+        prompt = redact_for_llm(prompt)  # cnr-me-02: mask PII before egress
         from tools.llm.router import LLMRouter
         result = LLMRouter().invoke("summarization", {"prompt": prompt, "max_tokens": 120})
         llm_text = (result or {}).get("content") or (result or {}).get("text") or ""
@@ -157,6 +159,7 @@ def _build_content(
                 f"Write a 1-sentence prep note for {name} attending '{ev.get('title')}' "
                 f"with {attendee_names or 'no external attendees'}. Be concise."
             )
+            prep_prompt = redact_for_llm(prep_prompt)  # cnr-me-02: mask PII before egress
             from tools.llm.router import LLMRouter
             r = LLMRouter().invoke("summarization", {"prompt": prep_prompt, "max_tokens": 60})
             prep = (r or {}).get("content") or (r or {}).get("text") or ""

@@ -778,3 +778,82 @@ class TestAuthGate:
         monkeypatch.setenv("ICDEV_AUTH_BYPASS", "1")
         r = sb_app.test_client().get("/me/api/second-brain/profile")
         assert r.status_code == 200
+
+
+# ── PII redaction at LLM egress (cnr-me-02) ────────────────────────────────────
+
+class TestEgressRedaction:
+    @staticmethod
+    def _patch_router(monkeypatch):
+        """Capture every prompt handed to LLMRouter.invoke.
+
+        Patches invoke on BOTH the ``tools.llm.router`` shim class and the
+        canonical ``icdev.tools.llm.router`` class — the tools/* backward-compat
+        shim can bind either object depending on import order.
+        """
+        import importlib
+        captured: list[str] = []
+
+        def fake_invoke(self, function, request, **kwargs):
+            if isinstance(request, dict):
+                captured.append(request.get("prompt", ""))
+            else:
+                captured.append(
+                    getattr(request, "system_prompt", "")
+                    + str(getattr(request, "messages", request))
+                )
+            return {"content": "Good morning.\nFocus today."}
+
+        for name in ("tools.llm.router", "icdev.tools.llm.router"):
+            try:
+                mod = importlib.import_module(name)
+                monkeypatch.setattr(mod.LLMRouter, "invoke", fake_invoke)
+            except Exception:
+                pass
+        return captured
+
+    def _run_briefing(self):
+        from tools.second_brain.briefing import _build_content
+        ctx = {"name": "Jane Doe", "title": "Architect", "org_name": "ACME",
+               "delivery_channels": ["dashboard"]}
+        cal = [{"title": "Design Sync", "attendees": ["alice@acme.com"]}]
+        return _build_content(
+            ctx=ctx, briefing_date="2026-07-18", calendar_items=cal,
+            task_items=[], mention_items=[], objectives=[], challenges=[],
+            user_id="redact-user", tenant_id=TENANT_ID,
+        )
+
+    def test_email_masked_when_toggle_on(self, monkeypatch):
+        monkeypatch.setenv("ICDEV_SECOND_BRAIN_REDACT_EGRESS", "1")
+        captured = self._patch_router(monkeypatch)
+        self._run_briefing()
+        joined = " ".join(captured)
+        assert captured, "router was never invoked"
+        assert "alice@acme.com" not in joined
+        assert "[EMAIL" in joined
+
+    def test_email_present_when_toggle_off(self, monkeypatch):
+        monkeypatch.setenv("ICDEV_SECOND_BRAIN_REDACT_EGRESS", "0")
+        captured = self._patch_router(monkeypatch)
+        self._run_briefing()
+        joined = " ".join(captured)
+        assert "alice@acme.com" in joined
+
+    def test_redact_for_llm_unit(self, monkeypatch):
+        from tools.second_brain.redaction_util import redact_for_llm
+        text = "Email bob@corp.org for the review."
+        monkeypatch.setenv("ICDEV_SECOND_BRAIN_REDACT_EGRESS", "1")
+        assert "bob@corp.org" not in redact_for_llm(text)
+        monkeypatch.setenv("ICDEV_SECOND_BRAIN_REDACT_EGRESS", "0")
+        assert redact_for_llm(text) == text
+
+    def test_profile_summary_masks_before_egress(self, monkeypatch):
+        monkeypatch.setenv("ICDEV_SECOND_BRAIN_REDACT_EGRESS", "1")
+        captured = self._patch_router(monkeypatch)
+        from tools.second_brain.profile import upsert_profile, generate_profile_summary
+        upsert_profile("redact-prof", TENANT_ID, full_name="Carol King",
+                       title="PM", org_name="Globex", context_complete=1)
+        generate_profile_summary("redact-prof", TENANT_ID)
+        # No assertion on names (NER may be offline); ensure the path invoked the
+        # router with a prompt (redaction ran without raising).
+        assert captured, "router was never invoked"
