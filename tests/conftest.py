@@ -1040,6 +1040,17 @@ CREATE TABLE IF NOT EXISTS zig_maturity_scores (
     assessment_run_at TEXT DEFAULT CURRENT_TIMESTAMP,
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS zig_targets (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    description     TEXT,
+    system_type     TEXT DEFAULT 'general',
+    classification  TEXT DEFAULT 'CUI',
+    status          TEXT DEFAULT 'active',
+    pillar_focus    TEXT DEFAULT '',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
 CREATE TABLE IF NOT EXISTS slides_decks (
     deck_id              INTEGER PRIMARY KEY AUTOINCREMENT,
     title                TEXT NOT NULL,
