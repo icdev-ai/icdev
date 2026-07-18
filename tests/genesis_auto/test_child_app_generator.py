@@ -448,3 +448,164 @@ def test_dashboard_stub_passes_forge12(tmp_path):
     assert forge12[0].status == "pass", (
         f"FORGE-12 failed on generated stub: {forge12[0].message}"
     )
+
+
+# ---------------------------------------------------------------------------
+# cvx-gen-04: TRUST re-inheritance refresh
+# ---------------------------------------------------------------------------
+
+
+def _make_fake_parent(root: Path) -> Path:
+    """Build a minimal fake parent repo with a CURRENT content_grounding.py
+    (has ground_content) plus a PARENT_ONLY dir (tools/saas) that must never
+    be re-inherited."""
+    quality = root / "tools" / "quality"
+    quality.mkdir(parents=True, exist_ok=True)
+    (quality / "content_grounding.py").write_text(
+        "def ground_content(text, evidence):\n"
+        "    '''semantic grounding upgrade (trust-cite-05)'''\n"
+        "    return {'grounded': True}\n",
+        encoding="utf-8",
+    )
+    (quality / "citation_grounding.py").write_text(
+        "def parse_citations(text):\n    return []\n", encoding="utf-8"
+    )
+    workflow = root / "tools" / "workflow"
+    workflow.mkdir(parents=True, exist_ok=True)
+    (workflow / "coherence_checker.py").write_text(
+        "def check_all():\n    return True\n", encoding="utf-8"
+    )
+    # PARENT_ONLY_DIRS invariant: tools/saas must NOT be copied.
+    saas = root / "tools" / "saas"
+    saas.mkdir(parents=True, exist_ok=True)
+    (saas / "billing.py").write_text("SECRET = 'parent-only'\n", encoding="utf-8")
+    return root
+
+
+def _make_stale_child(root: Path) -> Path:
+    """Child app whose content_grounding.py is STALE (no ground_content)."""
+    quality = root / "tools" / "quality"
+    quality.mkdir(parents=True, exist_ok=True)
+    (quality / "content_grounding.py").write_text(
+        "def old_grounding(text):\n    '''pre-upgrade snapshot'''\n    return None\n",
+        encoding="utf-8",
+    )
+    return root
+
+
+def test_refresh_trust_function_exists():
+    """refresh_trust_modules must exist and be callable."""
+    try:
+        from tools.builder.child_app_generator import refresh_trust_modules
+    except ImportError:
+        pytest.skip("Module not importable")
+    assert callable(refresh_trust_modules)
+
+
+def test_refresh_trust_dry_run_reports_stale_update(tmp_path):
+    """Dry-run reports the stale content_grounding.py as 'would update' and
+    writes nothing to the child."""
+    try:
+        from tools.builder.child_app_generator import refresh_trust_modules
+    except ImportError:
+        pytest.skip("Module not importable")
+
+    parent = _make_fake_parent(tmp_path / "parent")
+    child = _make_stale_child(tmp_path / "child")
+
+    result = refresh_trust_modules(
+        child, icdev_root=parent, dirs=["tools/quality", "tools/workflow"], dry_run=True
+    )
+    assert result["status"] == "success"
+    assert result["dry_run"] is True
+    assert result["applied"] is False
+    assert "tools/quality/content_grounding.py" in result["updated"]
+    # workflow + citation_grounding are absent in child -> reported as added.
+    assert "tools/quality/citation_grounding.py" in result["added"]
+    assert "tools/workflow/coherence_checker.py" in result["added"]
+    assert result["would_change"] >= 3
+
+    # Nothing written: child still lacks ground_content.
+    stale = (child / "tools" / "quality" / "content_grounding.py").read_text(encoding="utf-8")
+    assert "ground_content" not in stale
+    assert not (child / "tools" / "workflow" / "coherence_checker.py").exists()
+
+
+def test_refresh_trust_apply_updates_stale_and_reinherits(tmp_path):
+    """--apply (dry_run=False) writes the current API into the child."""
+    try:
+        from tools.builder.child_app_generator import refresh_trust_modules
+    except ImportError:
+        pytest.skip("Module not importable")
+
+    parent = _make_fake_parent(tmp_path / "parent")
+    child = _make_stale_child(tmp_path / "child")
+
+    result = refresh_trust_modules(
+        child, icdev_root=parent, dirs=["tools/quality", "tools/workflow"], dry_run=False
+    )
+    assert result["status"] == "success"
+    assert result["applied"] is True
+
+    # Re-check: current API is now present in the child.
+    refreshed = (child / "tools" / "quality" / "content_grounding.py").read_text(encoding="utf-8")
+    assert "ground_content" in refreshed
+    assert (child / "tools" / "workflow" / "coherence_checker.py").exists()
+
+    # Idempotency: a second dry-run reports no changes.
+    again = refresh_trust_modules(
+        child, icdev_root=parent, dirs=["tools/quality", "tools/workflow"], dry_run=True
+    )
+    assert again["would_change"] == 0
+
+
+def test_refresh_trust_never_copies_parent_only_dirs(tmp_path):
+    """PARENT_ONLY_DIRS (e.g. tools/saas) must never be re-inherited, even if
+    explicitly requested."""
+    try:
+        from tools.builder.child_app_generator import refresh_trust_modules
+    except ImportError:
+        pytest.skip("Module not importable")
+
+    parent = _make_fake_parent(tmp_path / "parent")
+    child = tmp_path / "child"
+    child.mkdir()
+
+    # Default dirs -> saas not in scope at all.
+    default = refresh_trust_modules(child, icdev_root=parent, dry_run=False)
+    assert not any("tools/saas" in f for f in default["added"] + default["updated"])
+    assert not (child / "tools" / "saas").exists()
+
+    # Even when explicitly asked, the parent-only guard skips it.
+    forced = refresh_trust_modules(
+        child, icdev_root=parent, dirs=["tools/saas"], dry_run=False
+    )
+    assert not (child / "tools" / "saas" / "billing.py").exists()
+    assert any(s["dir"] == "tools/saas" and s["reason"] == "parent_only" for s in forced["skipped"])
+
+
+def test_refresh_trust_dirs_are_always_on_and_not_parent_only():
+    """Every TRUST_REFRESH_DIRS entry must be always-on (in DIRECTORY_TREE) and
+    never a PARENT_ONLY_DIR."""
+    try:
+        from tools.builder.child_app_generator import (
+            TRUST_REFRESH_DIRS,
+            DIRECTORY_TREE,
+            PARENT_ONLY_DIRS,
+        )
+    except ImportError:
+        pytest.skip("Module not importable")
+
+    for d in TRUST_REFRESH_DIRS:
+        assert d in DIRECTORY_TREE, f"{d} not always-on"
+        assert d not in PARENT_ONLY_DIRS, f"{d} is parent-only"
+
+
+def test_refresh_trust_missing_app_dir_errors(tmp_path):
+    """A non-existent child dir returns an error status, not a crash."""
+    try:
+        from tools.builder.child_app_generator import refresh_trust_modules
+    except ImportError:
+        pytest.skip("Module not importable")
+    result = refresh_trust_modules(tmp_path / "does-not-exist", icdev_root=tmp_path, dry_run=True)
+    assert result["status"] == "error"
