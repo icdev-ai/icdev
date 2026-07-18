@@ -1832,7 +1832,18 @@ def create_boundary_blueprint():
         snap_id = request.args.get("snapshot_id")
         artifact_type = request.args.get("artifact_type", "ssp")
         from tools.boundary_canvas.twin import export_oscal
+        # The generator reads project state from the ICDEV main DB keyed by the
+        # design's id (project_id). A design whose id has no matching projects row
+        # yields an {"status": "error", ...} payload — surfaced as HTTP 400 so the
+        # twin UI renders a clear error state instead of a phantom artifact.
         result = export_oscal(design_id, snap_id, artifact_type)
+        if result.get("status") == "error":
+            logger.warning(
+                "OSCAL export failed for design %s (type=%s): %s",
+                design_id, artifact_type, result.get("error"),
+            )
+            return jsonify(result), 400
+        _audit(design_id, "twin_oscal_export", f"type={artifact_type} valid={result.get('valid')}")
         return jsonify(result), 200
 
     @bp.route("/api/cato/readiness/<design_id>", methods=["GET"])

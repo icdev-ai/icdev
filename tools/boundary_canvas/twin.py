@@ -358,12 +358,28 @@ def crosswalk_drift(project_id: str, fw_src: str, fw_tgt: str) -> dict:
 
 
 def export_oscal(project_id: str, snapshot_id: str | None, artifact_type: str = "ssp") -> dict:
-    """Generate OSCAL artifact path from snapshot (delegates to oscal_generator if available)."""
+    """Generate a real OSCAL artifact for *project_id* and return path + validity.
+
+    Delegates to ``oscal_cato_exporter.export_oscal_artifact`` (which itself is a
+    thin wrapper over ``tools/compliance/oscal_generator.py``). The generator reads
+    project/control/finding state from the ICDEV main DB keyed by ``project_id``;
+    ``snapshot_id`` is carried through for UI reference only.
+
+    Honesty conventions (bdr-sec-4): a missing exporter module (ImportError) or a
+    generation failure is LOGGED, never silently swallowed, and surfaced as an
+    ``{"status": "error", ...}`` payload with ``path=None`` so callers can tell a
+    real artifact from a failure. On success returns ``status="ok"`` with the
+    artifact ``path`` and ``valid`` flag.
+    """
     try:
-        from tools.boundary_canvas.oscal_cato_exporter import export_artifact
-        path = export_artifact(snapshot_id=snapshot_id, artifact_type=artifact_type,
-                               output_dir=f"data/oscal/{project_id}", fmt="json")
-        return {"artifact_type": artifact_type, "path": path, "snapshot_id": snapshot_id}
-    except Exception as e:
-        return {"artifact_type": artifact_type, "snapshot_id": snapshot_id,
-                "path": None, "note": str(e)}
+        from tools.boundary_canvas.oscal_cato_exporter import export_oscal_artifact
+    except ImportError as exc:
+        logger.error("export_oscal: exporter module unavailable for %s: %s", project_id, exc)
+        return {"status": "error", "artifact_type": artifact_type, "snapshot_id": snapshot_id,
+                "path": None, "valid": False, "error": f"OSCAL exporter unavailable: {exc}"}
+
+    result = export_oscal_artifact(project_id, artifact_type=artifact_type)
+    # Carry the snapshot reference through for the UI; export_oscal_artifact already
+    # returns status/path/valid/error and logs any generation failure internally.
+    result["snapshot_id"] = snapshot_id
+    return result
