@@ -393,3 +393,58 @@ def test_child_app_generator_step_13_production_audit_signature():
         assert "blueprint" in params, f'Missing parameter "blueprint" in {params}'
     except ImportError:
         pytest.skip("Module not importable")
+
+
+# --- Dashboard stub: banned raw-sqlite3 pattern (cvx-gen-03 / FORGE-12) ---
+
+
+def _generate_stub_app(tmp_path):
+    """Generate a dashboard stub into tmp_path and return the emitted source."""
+    from tools.builder.child_app_generator import _generate_dashboard_stub
+
+    blueprint = {
+        "app_name": "acme-child",
+        "classification": "CUI",
+        "agents": [],
+        "capabilities": {"compliance": True, "document_intelligence": True},
+        "demo_mode": False,
+    }
+    assert _generate_dashboard_stub(tmp_path, blueprint) is True
+    app_py = tmp_path / "tools" / "dashboard" / "app.py"
+    assert app_py.is_file(), "dashboard stub app.py was not written"
+    return app_py.read_text(encoding="utf-8")
+
+
+def test_dashboard_stub_has_no_raw_sqlite3(tmp_path):
+    """cvx-gen-03: the emitted dashboard stub must not use raw sqlite3.
+
+    PostgreSQL is the primary backend; a raw ``sqlite3.connect()`` bypasses
+    ``get_connection()``/RLS. FORGE-12 (added by cvx-gen-01) FAILs on this
+    pattern, so the generator must never emit it.
+    """
+    try:
+        source = _generate_stub_app(tmp_path)
+    except ImportError:
+        pytest.skip("Module not importable")
+
+    assert "import sqlite3" not in source, "stub still emits 'import sqlite3'"
+    assert "sqlite3.connect" not in source, "stub still emits a raw sqlite3.connect()"
+    # The stub is a placeholder with no DB access, but it must point developers
+    # at the correct abstraction when they add data-backed routes.
+    assert "get_connection" in source, "stub should reference get_connection() guidance"
+
+
+def test_dashboard_stub_passes_forge12(tmp_path):
+    """The generated stub must PASS FORGE-12 in forge_validator."""
+    try:
+        _generate_stub_app(tmp_path)
+        from tools.builder.forge_validator import _check_db_patterns
+    except ImportError:
+        pytest.skip("Module not importable")
+
+    checks = _check_db_patterns(tmp_path)
+    forge12 = [c for c in checks if c.check_id == "FORGE-12"]
+    assert forge12, "FORGE-12 check did not run"
+    assert forge12[0].status == "pass", (
+        f"FORGE-12 failed on generated stub: {forge12[0].message}"
+    )
