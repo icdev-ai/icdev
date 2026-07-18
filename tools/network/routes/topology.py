@@ -1354,6 +1354,57 @@ def register_topology_routes(bp):
             }
         )
 
+    @bp.route("/api/export/pptx/<topo_id>", methods=["GET"])
+    @nc_login_required
+    def nc_api_export_pptx(topo_id):
+        """Export topology as a PowerPoint deck via the tools/viz presentation layer.
+
+        Slides: (1) title + classification, (2) native topology diagram,
+        (3) native device-inventory table. 404 when the topology is missing,
+        501 (clean JSON) when python-pptx is unavailable, 500 (clean JSON) on
+        any other failure — never a stack trace.
+        """
+        import re as _re
+
+        # Verify the topology exists and resolve a filename (mirrors sibling
+        # export routes); 404 before doing any render work.
+        conn = get_connection()
+        _ph = sql_placeholder(conn)
+        row = conn.execute(f"SELECT * FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
+        conn.close()
+        if not row:
+            return jsonify({"error": "Not found"}), 404
+        topo = _row_to_dict(row)
+        safe_name = _re.sub(r"[^a-zA-Z0-9_-]", "_", topo.get("name") or topo_id) or "topology"
+
+        try:
+            from tools.network.pptx_export import PptxDependencyError, export_topology_pptx
+        except Exception as exc:  # pragma: no cover - defensive import guard
+            return jsonify({"error": "PPTX export unavailable", "detail": str(exc)}), 501
+
+        try:
+            pptx_bytes = export_topology_pptx(topo_id)
+        except PptxDependencyError as exc:
+            return (
+                jsonify({"error": "PPTX export requires python-pptx", "detail": str(exc)}),
+                501,
+            )
+        except Exception as exc:
+            logger.exception("PPTX export failed for topology %s", topo_id)
+            return jsonify({"error": "PPTX export failed", "detail": str(exc)}), 500
+
+        if pptx_bytes is None:
+            return jsonify({"error": "Not found"}), 404
+
+        from flask import Response
+
+        _audit("EXPORT", "topology", topo_id, "pptx")
+        return Response(
+            pptx_bytes,
+            mimetype="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            headers={"Content-Disposition": f"attachment; filename={safe_name}.pptx"},
+        )
+
     @bp.route("/api/export/<topo_id>/csv", methods=["POST"])
     @nc_login_required
     def nc_api_export_csv(topo_id):
