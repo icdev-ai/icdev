@@ -202,10 +202,10 @@ def db_status_for(state: KanbanState) -> str:
 def _ensure_kanban_cot_enabled() -> None:
     """Defensively add cot_enabled column to kanban_tasks if missing."""
     try:
-        from tools.db.storage import get_connection
+        from tools.db.storage import get_connection, column_exists
         conn = get_connection()
-        cols = conn.execute("PRAGMA table_info(kanban_tasks)").fetchall()
-        if not any(c[1] == "cot_enabled" for c in cols):
+        # Backend-aware column probe — works on PG + SQLite without translate_sql.
+        if not column_exists(conn, "kanban_tasks", "cot_enabled"):
             conn.execute(
                 "ALTER TABLE kanban_tasks ADD COLUMN cot_enabled INTEGER NOT NULL DEFAULT 0"
             )

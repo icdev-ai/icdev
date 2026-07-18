@@ -225,6 +225,12 @@ def test_no_update_or_delete_issued(tmp_path):
         def close(self):
             return self._real.close()
 
+        def __getattr__(self, name):
+            # Delegate everything else (e.g. ``_conn`` / ``_backend`` / ``cursor``)
+            # to the wrapped StorageConnection so the backend-aware table_exists()
+            # probe can introspect through the same connection.
+            return getattr(self._real, name)
+
     # Wrap the STORAGE connection, not a raw sqlite3 one -- the recorder must sit
     # in front of the same translating wrapper production uses, or the %s
     # placeholders never translate and nothing is ever executed to record.

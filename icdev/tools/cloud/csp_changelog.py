@@ -28,7 +28,7 @@ import json
 import os
 import sqlite3
 import sys
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection, table_exists
 from tools.common.helpers import now_iso
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -150,8 +150,8 @@ def _get_db(db_path: Optional[Path] = None) -> sqlite3.Connection:
 def fetch_signals(db_path: Path, days: int = 30, csp: Optional[str] = None) -> List[Dict]:
     """Fetch CSP monitor signals from database."""
     conn = _get_db(db_path)
-    cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='innovation_signals'")
-    if not cursor.fetchone():
+    # Backend-aware, translation-independent table probe (works on PG + SQLite).
+    if not table_exists(conn, "innovation_signals"):
         conn.close()
         return []
 
