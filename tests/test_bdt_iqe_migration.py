@@ -1,23 +1,26 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Security-hardening tests for the BDC cATO Twin IQE query engine (bdr-sec-1).
+"""bdt-iqe-1: the cATO Twin IQE surface migrated onto the maintained IQE
+executor/adapters (``tools/iqe/adapters/compliance.py``), retiring the Phase-1
+regex engine (``tools/boundary_canvas/cato_twin/query_engine.py``).
 
-Covers the three defects closed by task bdr-sec-1:
+These tests re-assert — on the NEW layer — the three safety properties the
+retired regex engine's hardening suite (tests/test_bdc_query_engine_hardening.py,
+bdr-sec-1) guaranteed, plus reflex seed-query compatibility:
 
-  1. SQL injection — projection/predicate FIELD tokens must resolve through a
-     strict whitelist; any unmapped token raises ValueError (no raw
-     interpolation).
-  2. Fail-open predicates — an unknown WHERE predicate must fail CLOSED
-     (ValueError), not be silently dropped.
-  3. Cross-project reads — snapshot/violation reads must honour a project_id
-     scope so a per-project context never bleeds another project's data.
+  1. Fail-closed fields — an unknown/injection-shaped projection or predicate
+     FIELD token raises (never a silently widened result set). The IQE executor
+     is lenient (unmapped attr → None), so ``run_query`` enforces a per-collection
+     whitelist that raises ValueError instead.
+  2. Fail-closed syntax — an unknown operator / smuggled sub-SELECT fails at
+     parse time (IQESyntaxError), not silently dropped.
+  3. Cross-project scoping — snapshot/violation reads honour a ``project_id``
+     scope (parameterised at the adapter SQL layer) so a per-project context
+     never bleeds another project's data. Proven with a two-project fixture.
 
-Plus a compatibility check that every IQE query string the live Genesis reflex
-(`tools/genesis/reflexes/cato_twin.py`) issues still parses and executes.
-
-Tests route through ``tools.db.storage.get_connection`` against a dedicated
-temp SQLite file so the production placeholder-translation path is exercised
-(the same path the reflex uses at runtime).
+Tests route through ``tools.db.storage.get_connection`` against a dedicated temp
+SQLite file so the production ``%s`` → ``?`` translation path (the same one the
+reflex uses) is exercised.
 """
 
 import sys
@@ -28,8 +31,9 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from tools.boundary_canvas.cato_twin.query_engine import run_query  # noqa: E402
 from tools.db.storage import get_connection  # noqa: E402
+from tools.iqe.adapters.compliance import run_query  # noqa: E402
+from tools.iqe.parser import IQESyntaxError  # noqa: E402
 
 _FRAMEWORK = "FedRAMP Moderate"
 
@@ -82,17 +86,16 @@ CREATE TABLE IF NOT EXISTS compliance_twin_runs (
 
 
 def _seed_two_projects(conn):
-    """Seed a two-project fixture (proj-A, proj-B) for one framework.
+    """Two-project fixture (proj-A, proj-B) for one framework.
 
     proj-A latest snapshot: AC-2 not_satisfied (no evidence), AC-3 satisfied.
     proj-B latest snapshot: SC-7 not_satisfied (no evidence).
     proj-A also carries an open violation on AC-2, and proj-A's run is the most
-    recent for the framework (later started_at) so the violations query resolves
-    to proj-A's snapshot.
+    recent for the framework so the violations query resolves to proj-A's
+    snapshot.
     """
     conn.executescript(_DDL)
 
-    # Runs — proj-A is the most recent for the framework.
     conn.execute(
         "INSERT INTO compliance_twin_runs "
         "(snapshot_id, framework, project_id, started_at) VALUES (%s, %s, %s, %s)",
@@ -104,7 +107,6 @@ def _seed_two_projects(conn):
         ("snap-B", _FRAMEWORK, "proj-B", "2026-01-01T00:00:00"),
     )
 
-    # Snapshots.
     snap_rows = [
         ("snap-A", "proj-A", "AC-2", "not_satisfied", None, 0.0),
         ("snap-A", "proj-A", "AC-3", "satisfied", "ev-1", 1.0),
@@ -119,7 +121,6 @@ def _seed_two_projects(conn):
             (snap_id, pid, _FRAMEWORK, cid, status, ev, score),
         )
 
-    # Violation on proj-A's (latest) snapshot.
     conn.execute(
         "INSERT INTO compliance_twin_violations "
         "(snapshot_id, project_id, framework, control_id, violation_type, severity) "
@@ -133,48 +134,53 @@ def _seed_two_projects(conn):
 def db(tmp_path, monkeypatch):
     """Translating StorageConnection backed by a dedicated temp SQLite file."""
     monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
-    db_path = tmp_path / "bdc_query_engine_hardening.db"
+    db_path = tmp_path / "bdt_iqe_migration.db"
     conn = get_connection(str(db_path))
     _seed_two_projects(conn)
     yield conn
     conn.close()
 
 
+def _q(where: str, select: str, framework: str = _FRAMEWORK) -> str:
+    return (
+        f'foreach ctrl in compliance.twin_snapshots("{framework}") '
+        f"{where} select {select}"
+    )
+
+
 # ---------------------------------------------------------------------------
-# 1. SQL injection — strict projection whitelist
+# 1. Fail-closed FIELD whitelist (no silent widening)
 # ---------------------------------------------------------------------------
 
-class TestProjectionWhitelist:
-    def test_injection_shaped_projection_token_raises(self, db):
-        # A classic injection payload smuggled into the projection list.
-        malicious = (
-            "foreach ctrl in framework('FedRAMP Moderate').controls "
-            "select ctrl.control_id, (SELECT evidence_ref FROM compliance_twin_snapshots)"
-        )
-        with pytest.raises(ValueError):
-            run_query(malicious, conn=db)
-
+class TestFailClosedFields:
     def test_unmapped_projection_token_raises(self, db):
         with pytest.raises(ValueError):
+            run_query(_q("", "ctrl.control_id, ctrl.not_a_real_field"), conn=db)
+
+    def test_unmapped_predicate_field_raises(self, db):
+        with pytest.raises(ValueError):
             run_query(
-                "foreach ctrl in framework('FedRAMP Moderate').controls "
-                "select ctrl.control_id, ctrl.not_a_real_field",
+                _q('where ctrl.bogus_field == "x"', "ctrl.control_id"),
+                conn=db,
+            )
+
+    def test_unknown_collection_raises(self, db):
+        with pytest.raises(ValueError):
+            run_query(
+                'foreach x in compliance.not_a_collection("FedRAMP Moderate") '
+                "select x.control_id",
                 conn=db,
             )
 
     def test_star_projection_still_allowed(self, db):
-        rows = run_query(
-            "foreach ctrl in framework('FedRAMP Moderate').controls select *",
-            conn=db,
-        )
+        rows = run_query(_q("", "*"), conn=db)
         assert isinstance(rows, list)
         assert len(rows) >= 1
 
     def test_valid_projection_returns_only_whitelisted_columns(self, db):
         rows = run_query(
-            "foreach ctrl in framework('FedRAMP Moderate').controls "
-            "where ctrl.status != 'satisfied' "
-            "select ctrl.control_id, ctrl.implementation_status",
+            _q('where ctrl.status != "satisfied"',
+               "ctrl.control_id, ctrl.implementation_status"),
             conn=db,
         )
         assert rows
@@ -183,40 +189,37 @@ class TestProjectionWhitelist:
 
 
 # ---------------------------------------------------------------------------
-# 2. Fail-closed predicates
+# 2. Fail-closed SYNTAX (unknown operator / smuggled sub-SELECT)
 # ---------------------------------------------------------------------------
 
-class TestFailClosedPredicates:
-    def test_unknown_predicate_raises(self, db):
-        # `matches` is not a supported operator — must fail closed, not be dropped.
-        with pytest.raises(ValueError):
+class TestFailClosedSyntax:
+    def test_unknown_operator_raises(self, db):
+        # `matches` is not an IQE operator — parse fails closed, never dropped.
+        with pytest.raises(IQESyntaxError):
             run_query(
-                "foreach ctrl in framework('FedRAMP Moderate').controls "
-                "where ctrl.control_id matches 'AC.*' "
-                "select ctrl.control_id",
+                _q('where ctrl.control_id matches "AC.*"', "ctrl.control_id"),
                 conn=db,
             )
 
-    def test_unknown_predicate_field_raises(self, db):
-        with pytest.raises(ValueError):
-            run_query(
-                "foreach ctrl in framework('FedRAMP Moderate').controls "
-                "where ctrl.bogus_field == 'x' "
-                "select ctrl.control_id",
-                conn=db,
-            )
+    def test_injection_shaped_projection_raises(self, db):
+        # A smuggled sub-SELECT is not a valid projection token — parse fails.
+        malicious = _q(
+            "",
+            'ctrl.control_id, (SELECT evidence_ref FROM compliance_twin_snapshots)',
+        )
+        with pytest.raises((ValueError, IQESyntaxError)):
+            run_query(malicious, conn=db)
 
     def test_injection_in_predicate_literal_is_parameterized(self, db):
-        # A value containing SQL is bound as a parameter, so it matches nothing
-        # and cannot execute — the tables remain intact.
+        # A value containing SQL is bound as a parameter (adapter SQL) and then
+        # matched in Python — it matches nothing and cannot execute.
         rows = run_query(
-            "foreach ctrl in framework('FedRAMP Moderate').controls "
-            "where ctrl.control_id == 'AC-2; DROP TABLE compliance_twin_runs' "
-            "select ctrl.control_id",
+            _q('where ctrl.control_id == "AC-2; DROP TABLE compliance_twin_runs"',
+               "ctrl.control_id"),
             conn=db,
+            project_id="proj-A",
         )
         assert rows == []
-        # Tables still present / unharmed.
         remaining = db.execute(
             "SELECT COUNT(*) AS c FROM compliance_twin_snapshots"
         ).fetchone()
@@ -230,21 +233,18 @@ class TestFailClosedPredicates:
 class TestProjectScoping:
     def test_controls_unscoped_spans_all_projects(self, db):
         rows = run_query(
-            "foreach ctrl in framework('FedRAMP Moderate').controls "
-            "where ctrl.status != 'satisfied' "
-            "select ctrl.control_id, ctrl.project_id",
+            _q('where ctrl.status != "satisfied"',
+               "ctrl.control_id, ctrl.project_id"),
             conn=db,
         )
         ids = {r["control_id"] for r in rows}
-        # Without a project scope both projects' unsatisfied controls appear.
         assert "AC-2" in ids  # proj-A
         assert "SC-7" in ids  # proj-B
 
     def test_controls_scoped_to_single_project(self, db):
         rows = run_query(
-            "foreach ctrl in framework('FedRAMP Moderate').controls "
-            "where ctrl.status != 'satisfied' "
-            "select ctrl.control_id, ctrl.project_id",
+            _q('where ctrl.status != "satisfied"',
+               "ctrl.control_id, ctrl.project_id"),
             conn=db,
             project_id="proj-A",
         )
@@ -254,9 +254,7 @@ class TestProjectScoping:
 
     def test_controls_scoped_excludes_other_project(self, db):
         rows = run_query(
-            "foreach ctrl in framework('FedRAMP Moderate').controls "
-            "where ctrl.status != 'satisfied' "
-            "select ctrl.control_id",
+            _q('where ctrl.status != "satisfied"', "ctrl.control_id"),
             conn=db,
             project_id="proj-B",
         )
@@ -265,16 +263,16 @@ class TestProjectScoping:
 
     def test_violations_scoped_by_project(self, db):
         got = run_query(
-            "foreach v in framework('FedRAMP Moderate').violations "
-            "select viol.control_id, viol.project_id",
+            'foreach v in compliance.twin_violations("FedRAMP Moderate") '
+            "select v.control_id, v.project_id",
             conn=db,
             project_id="proj-A",
         )
         assert [r["control_id"] for r in got] == ["AC-2"]
 
         none = run_query(
-            "foreach v in framework('FedRAMP Moderate').violations "
-            "select viol.control_id",
+            'foreach v in compliance.twin_violations("FedRAMP Moderate") '
+            "select v.control_id",
             conn=db,
             project_id="proj-B",
         )
@@ -282,17 +280,55 @@ class TestProjectScoping:
 
 
 # ---------------------------------------------------------------------------
-# 4. Reflex compatibility — every live seed query still parses & executes
+# 4. Data-driven behaviour (null check, score threshold, unknown framework)
+# ---------------------------------------------------------------------------
+
+class TestQuerySemantics:
+    def test_null_evidence_check(self, db):
+        rows = run_query(
+            _q("where ctrl.evidence_ref == null", "ctrl.control_id"),
+            conn=db,
+        )
+        ids = {r["control_id"] for r in rows}
+        assert "AC-2" in ids  # no evidence
+        assert "AC-3" not in ids  # has ev-1
+
+    def test_score_threshold(self, db):
+        rows = run_query(
+            _q("where ctrl.score < 0.50", "ctrl.control_id, ctrl.score"),
+            conn=db,
+        )
+        ids = {r["control_id"] for r in rows}
+        assert "AC-2" in ids  # score 0.0
+        assert "AC-3" not in ids  # score 1.0
+
+    def test_unknown_framework_returns_empty(self, db):
+        rows = run_query(
+            _q('where ctrl.status != "satisfied"', "ctrl.control_id",
+               framework="UnknownFramework"),
+            conn=db,
+        )
+        assert rows == []
+
+    def test_runs_collection(self, db):
+        rows = run_query(
+            'foreach r in compliance.twin_runs("FedRAMP Moderate") '
+            "select r.snapshot_id, r.project_id",
+            conn=db,
+        )
+        assert {r["snapshot_id"] for r in rows} == {"snap-A", "snap-B"}
+
+
+# ---------------------------------------------------------------------------
+# 5. Reflex seed-query compatibility — every live seed query parses & executes
 # ---------------------------------------------------------------------------
 
 class TestReflexSeedQueryCompatibility:
     def test_all_reflex_seed_queries_execute(self, db):
         from tools.genesis.reflexes.cato_twin import _build_seed_queries
 
-        # Exercise a couple of thresholds the reflex may compute at runtime.
         for threshold in (0.5, 0.3, 0.8):
             for query in _build_seed_queries(threshold):
-                # Must not raise: every token/predicate is in the whitelist.
                 results = run_query(query, conn=db, project_id="proj-A")
                 assert isinstance(results, list)
 
@@ -301,6 +337,9 @@ class TestReflexSeedQueryCompatibility:
 
         queries = _build_seed_queries()
         # First Moderate seed query: unsatisfied controls.
-        unsatisfied = queries[0]
-        rows = run_query(unsatisfied, conn=db, project_id="proj-A")
+        rows = run_query(queries[0], conn=db, project_id="proj-A")
         assert any(r["control_id"] == "AC-2" for r in rows)
+
+
+if __name__ == "__main__":
+    raise SystemExit(pytest.main([__file__, "-v"]))

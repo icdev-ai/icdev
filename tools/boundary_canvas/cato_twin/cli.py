@@ -15,8 +15,8 @@ Examples:
       --controls-json /path/to/controls.json
 
   python tools/boundary_canvas/cato_twin/cli.py query \
-      "foreach ctrl in framework('FedRAMP Moderate').controls \
-       where ctrl.status != 'satisfied' select ctrl.control_id"
+      'foreach ctrl in compliance.twin_snapshots("FedRAMP Moderate") \
+       where ctrl.status != "satisfied" select ctrl.control_id'
 
   python tools/boundary_canvas/cato_twin/cli.py poam \
       --snapshot-id snap-<uuid> --project-id proj-001
@@ -54,7 +54,7 @@ def _cmd_snapshot(args):
 
 
 def _cmd_query(args):
-    from tools.boundary_canvas.cato_twin.query_engine import run_query
+    from tools.iqe.adapters.compliance import run_query
     results = run_query(args.query_string)
     if args.json:
         print(json.dumps(results, default=str))
