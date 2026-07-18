@@ -297,7 +297,7 @@
           <td style="font-family:monospace;font-size:10px;">{{ r.table_name or '—' }}{% if r.column_name %}.{{ r.column_name }}{% endif %}</td>
           <td><span class="badge badge-{{ r.check_type or 'completeness' }}">{{ r.check_type or '—' }}</span></td>
           <td class="{{ 'pass' if r.passed else 'fail' }}">{{ '✓ PASS' if r.passed else '✗ FAIL' }}</td>
-          <td>{{ '%.1f'|format(r.actual_value or 0) }}</td>
+          <td>{{ (r.actual_value or 0)|round(1) }}</td>
           <td>{{ r.threshold }}</td>
           <td style="color:#7a8cb0;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ r.detail }}">{{ r.detail }}</td>
           <td style="color:#5a6e8c;white-space:nowrap;">{{ r.created_at[:16] if r.created_at else '—' }}</td>

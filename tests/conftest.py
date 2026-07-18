@@ -418,6 +418,26 @@ CREATE TABLE IF NOT EXISTS canvas_ai_decisions (
     classification  TEXT NOT NULL DEFAULT 'CUI',
     created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
+CREATE TABLE IF NOT EXISTS canvas_kg_nodes (
+    id            TEXT PRIMARY KEY,
+    canvas        TEXT NOT NULL,
+    design_id     TEXT NOT NULL,
+    node_id       TEXT NOT NULL,
+    node_type     TEXT,
+    label         TEXT,
+    metadata_json TEXT,
+    updated_at    TEXT
+);
+CREATE TABLE IF NOT EXISTS canvas_kg_edges (
+    id            TEXT PRIMARY KEY,
+    canvas        TEXT NOT NULL,
+    design_id     TEXT NOT NULL,
+    source_id     TEXT NOT NULL,
+    target_id     TEXT NOT NULL,
+    edge_type     TEXT,
+    metadata_json TEXT,
+    updated_at    TEXT
+);
 CREATE TABLE IF NOT EXISTS cpmp_contracts (
     id TEXT PRIMARY KEY,
     contract_number TEXT NOT NULL DEFAULT '',
@@ -979,6 +999,439 @@ CREATE TABLE IF NOT EXISTS dd_mapping_transforms (
     classification  TEXT NOT NULL DEFAULT 'CUI',
     tenant_id       TEXT NOT NULL DEFAULT 'default',
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ── Data Canvas: core designs, nodes, edges, snapshots ────────────────────────
+CREATE TABLE IF NOT EXISTS data_designs (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    description     TEXT,
+    graph_json      TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[],"boundaries":[]}',
+    template_id     TEXT,
+    classification  TEXT DEFAULT 'CUI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS dd_templates (
+    id            TEXT PRIMARY KEY,
+    name          TEXT NOT NULL,
+    category      TEXT,
+    description   TEXT,
+    graph_json    TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[],"boundaries":[]}',
+    tags          TEXT DEFAULT '[]'
+);
+CREATE TABLE IF NOT EXISTS dd_snippets (
+    id          TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    category    TEXT,
+    description TEXT,
+    graph_json  TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[],"boundaries":[]}',
+    tags        TEXT DEFAULT '[]'
+);
+CREATE TABLE IF NOT EXISTS dd_assessments (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT,
+    assessment_type TEXT NOT NULL,
+    findings_json   TEXT DEFAULT '[]',
+    score           REAL DEFAULT 0,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS dd_audit (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    design_id       TEXT,
+    user            TEXT,
+    action          TEXT NOT NULL,
+    detail          TEXT,
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS dd_versions (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT,
+    version_number  INTEGER NOT NULL,
+    graph_json      TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[],"boundaries":[]}',
+    change_summary  TEXT DEFAULT '',
+    user_id         TEXT DEFAULT '',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS dd_collab_sessions (
+    id          TEXT PRIMARY KEY,
+    design_id   TEXT NOT NULL,
+    user_id     TEXT NOT NULL,
+    user_name   TEXT NOT NULL DEFAULT '',
+    color       TEXT NOT NULL DEFAULT '#3498db',
+    joined_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_seen   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    is_active   INTEGER NOT NULL DEFAULT 1
+);
+CREATE TABLE IF NOT EXISTS dd_lineage (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT NOT NULL,
+    source_node_id  TEXT NOT NULL,
+    target_node_id  TEXT NOT NULL,
+    lineage_type    TEXT DEFAULT 'flow',
+    column_name     TEXT DEFAULT '',
+    transform_desc  TEXT DEFAULT '',
+    classification  TEXT DEFAULT 'CUI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS data_nodes (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT NOT NULL,
+    node_type       TEXT NOT NULL DEFAULT 'table',
+    label           TEXT DEFAULT '',
+    x               REAL DEFAULT 0,
+    y               REAL DEFAULT 0,
+    classification  TEXT DEFAULT 'CUI',
+    properties_json TEXT DEFAULT '{}',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS data_edges (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT NOT NULL,
+    source_node_id  TEXT NOT NULL,
+    target_node_id  TEXT NOT NULL,
+    edge_type       TEXT DEFAULT '',
+    label           TEXT DEFAULT '',
+    classification  TEXT DEFAULT 'CUI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS data_twin_snapshots (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT NOT NULL,
+    label           TEXT DEFAULT '',
+    table_count     INTEGER DEFAULT 0,
+    edge_count      INTEGER DEFAULT 0,
+    classification  TEXT DEFAULT 'CUI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ── Data Canvas: runbooks & SOPs ──────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS ddc_runbooks (
+    id                  TEXT PRIMARY KEY,
+    title               TEXT NOT NULL,
+    category            TEXT DEFAULT 'general',
+    severity            TEXT DEFAULT 'medium',
+    description         TEXT DEFAULT '',
+    trigger_condition   TEXT DEFAULT '',
+    steps_json          TEXT DEFAULT '[]',
+    classification      TEXT DEFAULT 'CUI // SP-CTI',
+    status              TEXT DEFAULT 'active',
+    linked_design_id    TEXT,
+    created_at          TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS ddc_runbook_executions (
+    id              TEXT PRIMARY KEY,
+    runbook_id      TEXT,
+    triggered_by    TEXT DEFAULT '',
+    status          TEXT DEFAULT 'in_progress',
+    notes           TEXT DEFAULT '',
+    started_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    completed_at    TEXT DEFAULT NULL
+);
+CREATE TABLE IF NOT EXISTS ddc_sops (
+    id                  TEXT PRIMARY KEY,
+    title               TEXT NOT NULL,
+    category            TEXT DEFAULT 'general',
+    description         TEXT DEFAULT '',
+    purpose             TEXT DEFAULT '',
+    scope               TEXT DEFAULT '',
+    steps_json          TEXT DEFAULT '[]',
+    references_json     TEXT DEFAULT '[]',
+    version             TEXT DEFAULT '1.0',
+    status              TEXT DEFAULT 'draft',
+    classification      TEXT DEFAULT 'CUI // SP-CTI',
+    linked_design_id    TEXT,
+    owner               TEXT DEFAULT '',
+    reviewer            TEXT DEFAULT '',
+    approver            TEXT DEFAULT '',
+    created_at          TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS ddc_sop_approvals (
+    id          TEXT PRIMARY KEY,
+    sop_id      TEXT,
+    reviewer    TEXT NOT NULL,
+    action      TEXT NOT NULL,
+    comment     TEXT DEFAULT '',
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ── Data Canvas: explore / query / quality ────────────────────────────────────
+CREATE TABLE IF NOT EXISTS dd_explore_sessions (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT,
+    user            TEXT DEFAULT '',
+    db_conn_json    TEXT DEFAULT '{}',
+    status          TEXT DEFAULT 'completed',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS dd_explore_profiles (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT,
+    session_id      TEXT,
+    db_conn_json    TEXT DEFAULT '{}',
+    profile_json    TEXT DEFAULT '{}',
+    table_count     INTEGER DEFAULT 0,
+    anomaly_json    TEXT,
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS dd_anomaly_runs (
+    id              TEXT PRIMARY KEY,
+    profile_id      TEXT,
+    findings_json   TEXT,
+    overall_risk    TEXT,
+    classification  TEXT,
+    created_at      TEXT
+);
+CREATE TABLE IF NOT EXISTS dd_query_history (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT,
+    user            TEXT DEFAULT '',
+    sql_text        TEXT NOT NULL,
+    db_conn_json    TEXT DEFAULT '{}',
+    row_count       INTEGER DEFAULT 0,
+    exec_ms         INTEGER DEFAULT 0,
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS dd_quality_rules (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT,
+    name            TEXT NOT NULL,
+    table_name      TEXT NOT NULL,
+    column_name     TEXT DEFAULT '',
+    check_type      TEXT NOT NULL,
+    threshold       REAL DEFAULT 90.0,
+    params_json     TEXT DEFAULT '{}',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    enabled         INTEGER DEFAULT 1,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS dd_quality_runs (
+    id              TEXT PRIMARY KEY,
+    rule_id         TEXT,
+    db_conn_json    TEXT DEFAULT '{}',
+    passed          INTEGER DEFAULT 0,
+    actual_value    REAL DEFAULT 0.0,
+    threshold       REAL DEFAULT 0.0,
+    detail          TEXT DEFAULT '',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS dd_freshness_alerts (
+    id              TEXT PRIMARY KEY,
+    rule_id         TEXT NOT NULL,
+    design_id       TEXT,
+    db_conn_json    TEXT,
+    last_checked    TEXT,
+    passed          INTEGER,
+    actual_max_value TEXT,
+    cutoff_value    TEXT,
+    detail          TEXT,
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT
+);
+
+-- ── Data Mesh foundation ──────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS dm_domains (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    description     TEXT DEFAULT '',
+    owner           TEXT DEFAULT '',
+    steward         TEXT DEFAULT '',
+    bounded_context TEXT DEFAULT '',
+    maturity_level  INTEGER DEFAULT 0,
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    status          TEXT DEFAULT 'active',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS dm_data_products (
+    id              TEXT PRIMARY KEY,
+    domain_id       TEXT,
+    name            TEXT NOT NULL,
+    description     TEXT DEFAULT '',
+    owner           TEXT DEFAULT '',
+    version         TEXT DEFAULT '1.0.0',
+    availability_sla REAL DEFAULT 99.9,
+    latency_sla_ms  INTEGER DEFAULT 500,
+    status          TEXT DEFAULT 'active',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS dm_contracts (
+    id              TEXT PRIMARY KEY,
+    product_id      TEXT,
+    title           TEXT NOT NULL,
+    version         TEXT DEFAULT '1.0.0',
+    schema_json     TEXT DEFAULT '{}',
+    sla_json        TEXT DEFAULT '{}',
+    quality_rules_json TEXT DEFAULT '[]',
+    status          TEXT DEFAULT 'draft',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS dm_input_ports (
+    id              TEXT PRIMARY KEY,
+    product_id      TEXT,
+    name            TEXT NOT NULL,
+    port_type       TEXT DEFAULT 'cdc',
+    schema_json     TEXT DEFAULT '{}',
+    source_system   TEXT DEFAULT '',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS dm_output_ports (
+    id              TEXT PRIMARY KEY,
+    product_id      TEXT,
+    name            TEXT NOT NULL,
+    port_type       TEXT DEFAULT 'api',
+    schema_json     TEXT DEFAULT '{}',
+    endpoint        TEXT DEFAULT '',
+    sla_json        TEXT DEFAULT '{}',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS dm_ports (
+    id              TEXT PRIMARY KEY,
+    product_id      TEXT,
+    name            TEXT NOT NULL,
+    port_type       TEXT NOT NULL DEFAULT 'input',
+    transport_type  TEXT DEFAULT 'api',
+    schema_json     TEXT DEFAULT '{}',
+    endpoint        TEXT DEFAULT '',
+    source_system   TEXT DEFAULT '',
+    sla_json        TEXT DEFAULT '{}',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS dm_domain_maturity (
+    id              TEXT PRIMARY KEY,
+    domain_id       TEXT,
+    maturity_level  INTEGER NOT NULL DEFAULT 0,
+    scores_json     TEXT DEFAULT '{}',
+    assessed_by     TEXT DEFAULT '',
+    notes           TEXT DEFAULT '',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS dm_governance_policies (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    policy_type     TEXT DEFAULT 'opa',
+    rules_json      TEXT DEFAULT '[]',
+    applies_to      TEXT DEFAULT 'all',
+    status          TEXT DEFAULT 'active',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS dm_catalog_entries (
+    id              TEXT PRIMARY KEY,
+    product_id      TEXT,
+    catalog_name    TEXT NOT NULL,
+    tags_json       TEXT DEFAULT '[]',
+    metadata_json   TEXT DEFAULT '{}',
+    lineage_json    TEXT DEFAULT '{}',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS dm_audit (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    domain_id       TEXT,
+    product_id      TEXT,
+    user            TEXT DEFAULT '',
+    action          TEXT NOT NULL,
+    detail          TEXT DEFAULT '',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS dm_opa_policies (
+    id              TEXT PRIMARY KEY,
+    domain_id       TEXT,
+    name            TEXT NOT NULL,
+    rego_text       TEXT DEFAULT '',
+    policy_path     TEXT DEFAULT 'datamesh/allow',
+    enabled         INTEGER DEFAULT 1,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS dm_policy_audit_log (
+    id              TEXT PRIMARY KEY,
+    policy_id       TEXT,
+    user            TEXT DEFAULT 'system',
+    resource        TEXT DEFAULT '{}',
+    decision        INTEGER DEFAULT 0,
+    reason          TEXT DEFAULT '',
+    method          TEXT DEFAULT 'local',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS dm_csp_sync_log (
+    id              TEXT PRIMARY KEY,
+    provider        TEXT NOT NULL,
+    domain_id       TEXT DEFAULT '',
+    product_id      TEXT DEFAULT '',
+    operation       TEXT NOT NULL,
+    status          TEXT NOT NULL,
+    synced_count    INTEGER DEFAULT 0,
+    error_detail    TEXT DEFAULT '',
+    created_at      TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS dm_product_slas (
+    id              TEXT PRIMARY KEY,
+    product_id      TEXT,
+    sla_type        TEXT NOT NULL,
+    target_value    REAL NOT NULL,
+    unit            TEXT DEFAULT '',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS dm_product_subscriptions (
+    id              TEXT PRIMARY KEY,
+    product_id      TEXT,
+    subscriber_team TEXT NOT NULL,
+    purpose         TEXT DEFAULT '',
+    approved        INTEGER DEFAULT 0,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS dm_data_contracts (
+    id              TEXT PRIMARY KEY,
+    domain_id       TEXT DEFAULT '',
+    product_id      TEXT DEFAULT '',
+    name            TEXT NOT NULL,
+    contract_yaml   TEXT DEFAULT '',
+    version         TEXT DEFAULT '1.0.0',
+    status          TEXT DEFAULT 'draft',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS dm_contract_test_runs (
+    id              TEXT PRIMARY KEY,
+    contract_id     TEXT,
+    passed          INTEGER DEFAULT 0,
+    error_count     INTEGER DEFAULT 0,
+    warnings        INTEGER DEFAULT 0,
+    result_json     TEXT DEFAULT '{}',
+    method          TEXT DEFAULT 'internal',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ── Data Canvas: PII scanner ──────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS dd_pii_scans (
+    scan_id         TEXT PRIMARY KEY,
+    design_id       TEXT NOT NULL DEFAULT '',
+    overall_risk    TEXT NOT NULL DEFAULT 'none',
+    findings_json   TEXT NOT NULL DEFAULT '[]',
+    scanned_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS zig_pillars (
@@ -2257,6 +2710,36 @@ CREATE TABLE IF NOT EXISTS shap_attributions (
     project_id TEXT,
     classification TEXT DEFAULT 'CUI',
     analyzed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+-- Observability Design Canvas (ODC) — twin snapshot round-trip + projections.
+CREATE TABLE IF NOT EXISTS observability_designs (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    description     TEXT,
+    graph_json      TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[]}',
+    template_id     TEXT,
+    classification  TEXT DEFAULT 'CUI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS od_assessments (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT,
+    assessment_type TEXT NOT NULL,
+    findings_json   TEXT DEFAULT '[]',
+    score           REAL DEFAULT 0,
+    grade           TEXT DEFAULT 'F',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS odc_twin_snapshots (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT NOT NULL,
+    label           TEXT NOT NULL DEFAULT '',
+    service_count   INTEGER NOT NULL DEFAULT 0,
+    coverage_score  REAL NOT NULL DEFAULT 0.0,
+    coverage_basis  TEXT NOT NULL DEFAULT 'no_assessment',
+    payload_json    TEXT NOT NULL DEFAULT '{}',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
 """
 

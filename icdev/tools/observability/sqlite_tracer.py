@@ -22,12 +22,13 @@ Usage:
         span.set_attribute("result", "ok")
 """
 
+import atexit
 import contextvars
 import json
 import sqlite3
 import threading
 import uuid
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection, is_pg
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -38,6 +39,26 @@ logger = get_logger("icdev.observability.sqlite_tracer")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DEFAULT_DB_PATH = BASE_DIR / "data" / "icdev.db"
+
+# Backend-appropriate DB error tuple. Reads/writes route through
+# tools.db.storage.get_connection, which targets PostgreSQL by default;
+# PG raises psycopg2.Error subclasses that sqlite3.Error does not cover.
+try:  # pragma: no cover - import guard
+    import psycopg2
+
+    _DB_ERRORS: tuple = (sqlite3.Error, psycopg2.Error)
+except ImportError:  # sqlite-only install
+    _DB_ERRORS = (sqlite3.Error,)
+
+
+def _db_file_missing(db_path: Path) -> bool:
+    """Whether the SQLite file gate should short-circuit I/O.
+
+    Only meaningful when the effective backend is SQLite. Under the
+    PG-primary runtime, reads/writes go through get_connection (PostgreSQL)
+    and the .db path is ignored, so the file-existence gate must NOT apply.
+    """
+    return not is_pg() and not db_path.exists()
 
 # Active span tracking via contextvars
 _active_span_var: contextvars.ContextVar[Optional["SQLiteSpan"]] = contextvars.ContextVar(
@@ -143,8 +164,14 @@ class SQLiteSpan(Span):
         delta = self._end_time - self._start_time
         self._duration_ms = int(delta.total_seconds() * 1000)
 
-        # Restore previous active span
-        _active_span_var.set(None)
+        # Restore previous active span using the token saved at span start,
+        # so ending a nested span re-exposes its parent (not None). Resetting
+        # to None here would orphan subsequent sibling spans into new root
+        # traces. Guarded against a token from a different context.
+        try:
+            _active_span_var.reset(self._context_token)
+        except (ValueError, LookupError):
+            _active_span_var.set(None)
 
         # Persist to SQLite
         if self._tracer:
@@ -192,6 +219,9 @@ class SQLiteTracer(Tracer):
         self._write_lock = threading.Lock()
         self._buffer: List[SQLiteSpan] = []
         self._buffer_size = 10  # Flush after N spans
+        # Drain any buffered-but-unflushed spans at process exit. Without this,
+        # up to buffer_size-1 spans are silently lost when the process ends.
+        atexit.register(self._atexit_flush)
 
     def start_span(
         self,
@@ -239,20 +269,32 @@ class SQLiteTracer(Tracer):
 
     def _record_span(self, span: SQLiteSpan) -> None:
         """Record a completed span to the buffer, flush if needed."""
-        self._buffer.append(span)
-        if len(self._buffer) >= self._buffer_size:
+        # Append and the threshold check happen under the lock so a concurrent
+        # append cannot race the check-then-flush and double-flush.
+        with self._write_lock:
+            self._buffer.append(span)
+            should_flush = len(self._buffer) >= self._buffer_size
+        if should_flush:
             self.flush()
 
-    def flush(self) -> None:
-        """Write buffered spans to SQLite (thread-safe)."""
-        if not self._buffer:
-            return
+    def _atexit_flush(self) -> None:
+        """Flush at interpreter exit; safe if the DB is already torn down."""
+        try:
+            self.flush()
+        except Exception:  # noqa: BLE001 - never raise from an atexit handler
+            pass
 
+    def flush(self) -> None:
+        """Write buffered spans to SQLite/PostgreSQL (thread-safe)."""
+        # Atomically swap the buffer under the lock. Two concurrent flushes
+        # cannot both drain the same spans: the second sees an empty buffer.
         with self._write_lock:
+            if not self._buffer:
+                return
             spans_to_write = list(self._buffer)
             self._buffer.clear()
 
-        if not self._db_path.exists():
+        if _db_file_missing(self._db_path):
             logger.warning("Database not found at %s — spans discarded", self._db_path)
             return
 
@@ -286,12 +328,12 @@ class SQLiteTracer(Tracer):
                             self._classification,
                         ),
                     )
-                except sqlite3.Error as e:
+                except _DB_ERRORS as e:
                     logger.error("Failed to write span %s: %s", span.span_id, e)
             conn.commit()
             conn.close()
-        except sqlite3.Error as e:
-            logger.error("SQLite error flushing spans: %s", e)
+        except _DB_ERRORS as e:
+            logger.error("Database error flushing spans: %s", e)
 
     def query_spans(
         self,
@@ -311,7 +353,7 @@ class SQLiteTracer(Tracer):
         Returns:
             List of span dictionaries.
         """
-        if not self._db_path.exists():
+        if _db_file_missing(self._db_path):
             return []
 
         conditions = []
@@ -358,6 +400,6 @@ class SQLiteTracer(Tracer):
                 }
                 for row in rows
             ]
-        except sqlite3.Error as e:
+        except _DB_ERRORS as e:
             logger.error("Query error: %s", e)
             return []

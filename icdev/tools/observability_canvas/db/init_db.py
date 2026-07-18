@@ -30,8 +30,14 @@ def get_connection():
         conn.close()
         row["column_name"] — dict-like row access
 
-    For PostgreSQL, uses ICDEV's StorageConnection wrapper which
-    auto-translates SQLite SQL to PostgreSQL (? -> %s, PRAGMA -> no-op, etc.)
+    For both backends the returned connection auto-translates placeholders:
+    PostgreSQL uses ICDEV's StorageConnection (? -> %s, PRAGMA -> no-op); the
+    SQLite fallback is ALSO wrapped in StorageConnection (backend="sqlite") so
+    that the %s placeholders used throughout this canvas's runtime and seed SQL
+    are translated to ?. A raw sqlite3 connection does NOT understand %s and
+    raises sqlite3.OperationalError ("near \"%\": syntax error") — that broke
+    the template/SOP/runbook seed path and every runbooks.py/sops.py query on
+    a fresh SQLite worktree.
     """
     if _OC_BACKEND == "postgresql":
         try:
@@ -41,12 +47,19 @@ def get_connection():
             return get_canvas_connection("OC_STORAGE_BACKEND")
         except ImportError:
             pass
-    # SQLite (default) — per-canvas DB, distinct from icdev.db
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
-    return conn
+    # SQLite (default) — per-canvas DB, distinct from icdev.db.
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    raw = sqlite3.connect(str(DB_PATH))
+    raw.row_factory = sqlite3.Row
+    raw.execute("PRAGMA journal_mode=WAL")
+    raw.execute("PRAGMA foreign_keys=ON")
+    # Route through the translating StorageConnection wrapper so %s -> ? works
+    # everywhere on this path (seed inserts + runbooks/sops runtime queries).
+    try:
+        from tools.db.storage import StorageConnection
+        return StorageConnection(raw, "sqlite")
+    except ImportError:
+        return raw
 
 
 # ── Schema ────────────────────────────────────────────────────────────────────
@@ -260,6 +273,19 @@ CREATE TABLE IF NOT EXISTS odc_mitre_techniques (
 
 CREATE INDEX IF NOT EXISTS idx_odc_mt_technique ON odc_mitre_techniques(technique_id);
 CREATE INDEX IF NOT EXISTS idx_odc_mt_tactic    ON odc_mitre_techniques(tactic);
+
+CREATE TABLE IF NOT EXISTS odc_twin_snapshots (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT NOT NULL,
+    label           TEXT NOT NULL DEFAULT '',
+    service_count   INTEGER NOT NULL DEFAULT 0,
+    coverage_score  REAL NOT NULL DEFAULT 0.0,
+    coverage_basis  TEXT NOT NULL DEFAULT 'no_assessment',
+    payload_json    TEXT NOT NULL DEFAULT '{}',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_odc_twin_snap_design ON odc_twin_snapshots(design_id);
 """
 
 # ── Template seeds ────────────────────────────────────────────────────────────

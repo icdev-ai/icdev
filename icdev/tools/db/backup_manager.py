@@ -317,6 +317,8 @@ class BackupManager:
         # Verify integrity of restored database
         conn = sqlite3.connect(str(db_path))
         try:
+            # pg-portability: sqlite-only path — raw sqlite3 connection to a .db
+            # backup file; PG backups use pg_dump, which has no integrity_check.
             cursor = conn.execute("PRAGMA integrity_check")
             result = cursor.fetchone()
             integrity_ok = result is not None and result[0] == "ok"
@@ -419,6 +421,8 @@ class BackupManager:
         if backup_path.name.endswith(".db.bak"):
             try:
                 conn = sqlite3.connect(str(backup_path))
+                # pg-portability: sqlite-only path — validates a .db.bak SQLite
+                # backup file via a raw sqlite3 connection; never runs on PG.
                 cursor = conn.execute("PRAGMA integrity_check")
                 row = cursor.fetchone()
                 result["integrity_valid"] = row is not None and row[0] == "ok"

@@ -22,7 +22,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection, table_exists
 
 govchain_provenance_api = Blueprint(
     "govchain_provenance_api", __name__, url_prefix="/api/govchain-provenance"
@@ -38,25 +38,8 @@ def _get_db():
 
 
 def _table_exists(conn, table_name):
-    try:
-        row = conn.execute(
-            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=%s",
-            (table_name,),
-        ).fetchone()
-        return row[0] > 0
-    except Exception:
-        try:
-            conn.execute("ROLLBACK")
-        except Exception:
-            pass
-        try:
-            row = conn.execute(
-                "SELECT COUNT(*) FROM information_schema.tables WHERE table_name=%s",
-                (table_name,),
-            ).fetchone()
-            return row[0] > 0
-        except Exception:
-            return False
+    """Check if a table exists (works for both SQLite and PostgreSQL)."""
+    return table_exists(conn, table_name)
 
 
 @provenance_api.route("", methods=["GET"])

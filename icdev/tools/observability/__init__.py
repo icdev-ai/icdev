@@ -90,10 +90,33 @@ def enable_tracing(backend: str = "auto") -> Tracer:
     return tracer
 
 
+def enable_tracing_if_enabled(env_var: str = "ICDEV_TRACING_ENABLED"):
+    """Activate tracing at startup when the env toggle is on (obx-trc-01, D290).
+
+    Reads ``env_var`` (default ``ICDEV_TRACING_ENABLED``). Treats
+    ``"false"``/``"0"``/``"no"`` (case-insensitive, whitespace-trimmed) as OFF
+    and everything else — including an unset var — as ON (default). When ON,
+    calls :func:`enable_tracing` so :func:`get_tracer` delegates to a real
+    backend instead of staying a NullTracer.
+
+    Args:
+        env_var: Name of the environment toggle to consult.
+
+    Returns:
+        The configured Tracer when activated, or ``None`` when disabled.
+    """
+    import os
+
+    if os.environ.get(env_var, "true").strip().lower() in ("false", "0", "no"):
+        return None
+    return enable_tracing()
+
+
 __all__ = [
     "get_tracer",
     "configure_tracer",
     "enable_tracing",
+    "enable_tracing_if_enabled",
     "Tracer",
     "Span",
     "NullTracer",

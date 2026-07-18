@@ -407,6 +407,8 @@ def _main() -> None:
                 ).fetchall()
                 tables = [r[0] for r in rows]
             else:
+                # pg-portability: sqlite-only path — SQLite branch of an explicit
+                # is_pg(conn) guard (the PG branch above uses information_schema).
                 rows = conn.execute(
                     "SELECT name FROM sqlite_master"
                     " WHERE type='table' AND name LIKE 'ad_news%'"

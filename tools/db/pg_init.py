@@ -118,6 +118,8 @@ def migrate_data() -> dict:
     pg_cur = pg_conn.cursor()
 
     # Get all tables
+    # pg-portability: sqlite-only path — reads the table catalogue from the SQLite
+    # SOURCE (sqlite_conn) during the SQLite→PG copy; the destination is PG.
     tables = [
         row[0]
         for row in sqlite_conn.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").fetchall()
