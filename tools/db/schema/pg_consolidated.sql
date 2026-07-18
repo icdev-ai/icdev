@@ -62850,6 +62850,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_zig_comp_act ON public.zig_activity_comple
 CREATE TABLE IF NOT EXISTS public.zig_maturity_scores (
     id              SERIAL PRIMARY KEY,
     pillar_slug     TEXT NOT NULL,
+    target_id       TEXT NOT NULL DEFAULT 'icdev-self',
     score           REAL NOT NULL DEFAULT 0.0,
     maturity_level  TEXT,
     capability_count INTEGER DEFAULT 0,
@@ -62859,6 +62860,7 @@ CREATE TABLE IF NOT EXISTS public.zig_maturity_scores (
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_zig_score_pillar ON public.zig_maturity_scores(pillar_slug);
+CREATE INDEX IF NOT EXISTS idx_zig_score_target ON public.zig_maturity_scores(target_id);
 
 -- zig_targets: external ZIG assessment targets. Written/read by
 -- tools/security_canvas/blueprint.py + zig_portfolio.py; not created by
