@@ -357,7 +357,7 @@ components:
     template: tools/dashboard/templates/migration_canvas/canvas.html
     blueprint: true
     constants: tools/migration_canvas/constants.py
-    db_migration: tools/migration_canvas/db/migrations
+    db_migration: tools/migration_canvas/db/init_db.py
     iqe_adapter: true
     nav_link: true
     seed_queries: context/iqe/queries/migration/

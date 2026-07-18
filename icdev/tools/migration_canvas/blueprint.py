@@ -61,6 +61,22 @@ def create_migration_blueprint():
         logger.info("Migration Canvas disabled (ICDEV_MIGRATION_CANVAS_ENABLED=%s)", enabled)
         return None
 
+    # Security: warn loudly if authentication is being bypassed outside CI/E2E.
+    # ICDEV_AUTH_BYPASS short-circuits @mdc_login_required — safe only in
+    # automated test/CI runs, never in a production or shared deployment.
+    if os.environ.get("ICDEV_AUTH_BYPASS", "").lower() in ("1", "true", "yes"):
+        _ci = any(
+            os.environ.get(v)
+            for v in ("CI", "GITHUB_ACTIONS", "ICDEV_E2E", "PYTEST_CURRENT_TEST")
+        )
+        if not _ci:
+            logger.warning(
+                "SECURITY: ICDEV_AUTH_BYPASS is set but no CI/E2E marker "
+                "(CI / GITHUB_ACTIONS / ICDEV_E2E / PYTEST_CURRENT_TEST) was "
+                "detected — Migration Canvas authentication is DISABLED. "
+                "Unset ICDEV_AUTH_BYPASS outside automated test runs."
+            )
+
     try:
         from tools.migration_canvas.db.init_db import init_db
         init_db()
@@ -2811,6 +2827,7 @@ def create_migration_blueprint():
             return jsonify({"error": str(exc)}), 500
 
     @bp.route("/api/server-migration/guidance/<int:step>", methods=["GET"])
+    @mdc_login_required
     def mc_srv_api_guidance(step):
         from tools.migration_canvas.dossier_advisor import get_guidance_for_step
         migration_type = request.args.get("type")
