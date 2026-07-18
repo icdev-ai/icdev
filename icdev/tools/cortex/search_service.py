@@ -42,6 +42,7 @@ from pathlib import Path
 from typing import Optional
 
 from tools.logging.icdev_logger import get_logger
+from tools.rag.retriever_common import clamp_unit, run_rag_search
 
 from .schemas import CORTEX_BACKENDS, Citation, CortexContext, CortexSearchResult
 
@@ -105,11 +106,13 @@ def _backend(module: str):
 
 
 def _clamp(value) -> float:
-    """Coerce to float and clamp to [0, 1]; unparseable values become 0.0."""
-    try:
-        return min(1.0, max(0.0, float(value)))
-    except (TypeError, ValueError):
-        return 0.0
+    """Coerce to float and clamp to [0, 1]; unparseable values become 0.0.
+
+    Thin delegator to the shared ``clamp_unit`` (tools/rag/retriever_common.py)
+    so the unit-interval normalization has a single home; kept as ``_clamp`` so
+    the graph/dic/kb adapters' call sites stay unchanged.
+    """
+    return clamp_unit(value)
 
 
 def _peak_norm(raw_scores: list) -> float:
@@ -207,8 +210,9 @@ def search_rag(
     ctx = ctx or CortexContext()
     try:
         retriever_mod = _backend("rag.retriever")
-        retriever = retriever_mod.RAGRetriever(tenant_id=ctx.tenant_id)
-        native = retriever.search(query, top_k=top_k) or []
+        native = run_rag_search(
+            retriever_mod.RAGRetriever, query, tenant_id=ctx.tenant_id, top_k=top_k
+        )
         out = []
         for r in native:
             content = r.content or ""

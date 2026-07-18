@@ -4,7 +4,7 @@
 Import Cortex capabilities from here (or from ``tools.cortex`` directly);
 the per-capability modules (``analyst``, …) are implementation detail.
 
-First 3 of the 7 Cortex facade functions (ctx-core-02). Callers import one
+First 3 of the 8 Cortex facade functions (ctx-core-02). Callers import one
 namespace (``tools.cortex``) instead of wiring LLMRouter/LLMRequest per call
 site. Every function returns a :class:`CortexResult`.
 

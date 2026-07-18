@@ -25,6 +25,7 @@ Checks:
  15. canvas_placeholder_style — bare ? in execute() SQL for get_canvas_connection callers (use %s)
  16. runtime_placeholder_style — bare ? in execute() SQL in ANY runtime tools/ file (use %s; translate_sql is not a fix)
  17. ace_yaml_listen_topics   — role YAMLs must not mix task.assigned with reactive topics (deadlock risk)
+ 18. mirror_drift    — WARN when tools/<pkg> and icdev/tools/<pkg> diverge for hot packages (byte-compare; skips re-export shims)
 
 All checks: stdlib only (ast, re, pathlib), air-gap safe, zero deps.
 (openapi_parity imports Flask/dashboard at runtime; gracefully skips if unavailable.)
@@ -998,6 +999,49 @@ def _load_page_completeness_whitelist() -> Set[str]:
     return skip
 
 
+def _load_registry_module_dirs() -> Dict[str, Tuple[Path, Path]]:
+    """Map template-dir name → (blueprint_file, package_dir) from the registry.
+
+    The 8-component gate historically assumed a canvas's Python package sits at
+    `tools/<canvas>/blueprint.py`, deriving the path from the *template* directory
+    name. That is wrong whenever the package name differs from the template/URL
+    name — `logs` is served by `tools/logging/blueprint.py`, and `rfi_canvas` by
+    `tools/govcon/rfi_canvas_blueprint.py`. Both were reported as missing their
+    blueprint and backing module even though the pages work.
+
+    component_registry.yaml already declares the truth in `module:`, so resolve it
+    from there. Missing/malformed registry → empty map, and callers fall back to
+    the historical `tools/<canvas>/` guess (fail-safe: gate gets stricter, not looser).
+    """
+    try:
+        import yaml  # type: ignore
+    except ImportError:
+        return {}
+    registry_path = PROJECT_ROOT / "args" / "component_registry.yaml"
+    if not registry_path.exists():
+        return {}
+    try:
+        data = yaml.safe_load(registry_path.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return {}
+
+    resolved: Dict[str, Tuple[Path, Path]] = {}
+    for comp in data.get("components", []) or []:
+        module = comp.get("module")
+        if not module:
+            continue
+        template = (comp.get("completeness") or {}).get("template")
+        canvas = Path(template).parent.name if template else comp.get("key")
+        if not canvas:
+            continue
+        parts = str(module).split(".")
+        if len(parts) < 2:
+            continue
+        bp_file = PROJECT_ROOT.joinpath(*parts).with_suffix(".py")
+        resolved[canvas] = (bp_file, bp_file.parent)
+    return resolved
+
+
 def _load_registry_nav_dirs() -> Set[str]:
     """Return template-dir names of canvases with a registry-declared nav link.
 
@@ -1816,11 +1860,16 @@ def check_attribution_claims(changed_files: Optional[List[Path]] = None) -> Cohe
         for phrase in _ATTRIBUTION_PHRASES:
             # Match: <phrase> <ProjectName> where ProjectName starts uppercase
             # or looks like a URL/path/identifier.
+            #
+            # The phrase itself is case-insensitive ("Based on the" / "based on the"),
+            # but the project name must NOT be. A blanket re.IGNORECASE made the
+            # leading [A-Z] match lowercase words, so ordinary prose such as
+            # "Based on the requirements analysis" was reported as an unregistered
+            # upstream citation. Scope the flag to the phrase with (?i:...).
             pattern = re.compile(
-                rf"{re.escape(phrase)}\s+"
+                rf"(?i:{re.escape(phrase)})\s+"
                 rf"([A-Z][A-Za-z0-9_\-./]+(?:\s+[A-Za-z0-9][A-Za-z0-9_\-./]*)?"
-                rf"|[a-z][a-z0-9_\-]+[/.][A-Za-z0-9_\-./]+)",
-                re.IGNORECASE,
+                rf"|[a-z][a-z0-9_\-]+[/.][A-Za-z0-9_\-./]+)"
             )
             for match in pattern.finditer(text):
                 raw_project = match.group(1).strip().rstrip("'s").strip()
@@ -2878,6 +2927,12 @@ def check_security_context() -> CoherenceCheck:
             except OSError:
                 continue
             for lineno, line in enumerate(lines, 1):
+                # A comment that merely *describes* a bypass is not a bypass. Without
+                # this, prose explaining why a historical set_security_context(None)
+                # was removed is itself reported as an undocumented bypass — which is
+                # why tools/workflow had to be dir-exempted above.
+                if line.lstrip().startswith("#"):
+                    continue
                 if bypass_re.search(line) and not bypass_ok_re.search(line):
                     rel = py_file.relative_to(PROJECT_ROOT)
                     undocumented.append(f"{rel}:{lineno}")
@@ -2977,6 +3032,7 @@ def check_new_page_completeness() -> CoherenceCheck:
     iqe_queries_dir = PROJECT_ROOT / "context" / "iqe" / "queries"
     whitelist = _load_page_completeness_whitelist()
     registry_nav_dirs = _load_registry_nav_dirs()
+    registry_modules = _load_registry_module_dirs()
 
     violations: List[str] = []
     whitelisted_count = 0
@@ -2996,24 +3052,28 @@ def check_new_page_completeness() -> CoherenceCheck:
         if not mirror.exists():
             missing.append("icdev/ mirror missing")
 
-        # 2. Blueprint with @route
-        bp_file = PROJECT_ROOT / "tools" / canvas / "blueprint.py"
+        # 2. Blueprint with @route. Prefer the registry-declared module path over
+        #    guessing tools/<canvas>/ — the package name need not match the
+        #    template/URL name (logs -> tools/logging, rfi_canvas -> tools/govcon).
+        bp_file, canvas_dir = registry_modules.get(
+            canvas,
+            (PROJECT_ROOT / "tools" / canvas / "blueprint.py", PROJECT_ROOT / "tools" / canvas),
+        )
         if not bp_file.exists():
-            missing.append("tools/<canvas>/blueprint.py missing")
+            missing.append(f"{bp_file.name} missing (expected at {bp_file.parent.name}/)")
         elif not re.search(r"@\w+\.route\s*\(", _read_text(bp_file)):
-            missing.append("blueprint.py has no @route decorator")
+            missing.append("blueprint has no @route decorator")
 
-        # 3. Backing module (any .py other than __init__.py and blueprint.py)
-        canvas_dir = PROJECT_ROOT / "tools" / canvas
+        # 3. Backing module (any .py other than __init__.py and the blueprint itself)
         if canvas_dir.exists():
             py_modules = [
                 f for f in canvas_dir.glob("*.py")
-                if f.name not in ("__init__.py", "blueprint.py")
+                if f.name not in ("__init__.py", bp_file.name)
             ]
             if not py_modules:
-                missing.append("no backing module in tools/<canvas>/")
+                missing.append(f"no backing module in {canvas_dir.name}/")
         else:
-            missing.append(f"tools/{canvas}/ directory missing")
+            missing.append(f"{canvas_dir.relative_to(PROJECT_ROOT)} directory missing")
 
         # 4. Nav link to /<canvas>: either a literal href in base.html (legacy
         # canvases), or a registry-declared nav.section (modern canvases,
@@ -4195,7 +4255,10 @@ def check_canvas_completeness(changed_files: Optional[List[Path]] = None) -> Coh
             report = registry.validate_canvas_completeness(comp.key)
             if not report.passed:
                 for item in report.items:
-                    if not item.present:
+                    # `required` is False for components the registry never declared —
+                    # e.g. a canvas with no DB migration. Reporting those as missing
+                    # rendered the gate as "missing None" and buried the real gaps.
+                    if item.required and not item.present:
                         missing_issues.append(f"{comp.key}: {item.point} ({item.path or item.message})")
     except Exception as exc:
         return CoherenceCheck(
@@ -4930,7 +4993,7 @@ def check_icdev_mirror_parity(changed_files: Optional[List[Path]] = None) -> Coh
     roots = _mirror_roots()
 
     def _under_roots(rel: str) -> bool:
-        return any(rel == r or rel.startswith(r.rstrip("/") + "/") for r in roots)
+        return any(rel == r or rel.startswith(r.rstrip("/") + "/") or rel == r for r in roots)
 
     missing: List[str] = []
     if changed_files:
@@ -4938,9 +5001,11 @@ def check_icdev_mirror_parity(changed_files: Optional[List[Path]] = None) -> Coh
             if p.suffix != ".py":
                 continue
             rel = p.as_posix()
+            # normalize to repo-relative
             if "/tools/" in rel:
                 rel = "tools/" + rel.split("/tools/", 1)[1]
             if rel.startswith("icdev/tools/"):
+                # a changed icdev file must have its tools/ origin
                 origin = rel[len("icdev/"):]
                 if _under_roots(origin) and not (PROJECT_ROOT / origin).exists():
                     missing.append(f"{rel}: canonical twin {origin} missing")
@@ -5007,6 +5072,175 @@ def check_icdev_mirror_parity(changed_files: Optional[List[Path]] = None) -> Coh
 
 
 # ---------------------------------------------------------------------------
+# Check: mirror drift (hcx-ctx-04) — byte-compare hot mirrored packages
+# ---------------------------------------------------------------------------
+# Packages where tools/<pkg> and icdev/tools/<pkg> are BOTH live physical copies
+# and drift between them has repeatedly served stale code at runtime (e.g. a
+# 14KB-divergent tools/llm/agent_loop.py served pre-TRUST code to Cortex; ACE
+# agent_tools/eval_runner drift; historical kanban reflex drift). Unlike
+# icdev_mirror_parity (which flags MISSING twins), this compares CONTENT of
+# existing twins byte-for-byte. Extend via args/mirror_parity.yaml
+# (key: drift_packages) without editing code.
+_DEFAULT_MIRROR_DRIFT_PKGS = (
+    "llm",
+    "ace",
+    "cortex",
+    "genesis/harness",
+    "genesis/reflexes",
+    "quality",
+    "mcp",
+    "workflow",
+)
+
+# Relative subpaths (posix, under a package) to skip: caches and persona content.
+_MIRROR_DRIFT_EXCLUDE_DIRS = ("__pycache__", "roles")
+
+
+def _mirror_drift_packages() -> Tuple[str, ...]:
+    cfg = PROJECT_ROOT / "args" / "mirror_parity.yaml"
+    if cfg.exists():
+        try:
+            import yaml  # lazy — yaml isn't a top-level import here
+
+            data = yaml.safe_load(cfg.read_text(encoding="utf-8")) or {}
+            pkgs = data.get("drift_packages")
+            if isinstance(pkgs, list) and pkgs:
+                return tuple(str(p) for p in pkgs)
+        except Exception:
+            pass
+    return _DEFAULT_MIRROR_DRIFT_PKGS
+
+
+def _is_mirror_shim(path: Path) -> bool:
+    """True if a file is an INTENTIONAL re-export shim of its icdev twin.
+
+    Detected by content marker: the file re-exports from its ``icdev.tools.*``
+    twin (import-star or explicit re-export) and is short (<120 lines). The
+    canonical example is ``tools/llm/agent_loop.py`` — it must never be flagged
+    as drift. Physically-separate full copies are NOT shims and are compared.
+    """
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return False
+    if text.count("\n") >= 120:
+        return False
+    imports_twin = re.search(r"from\s+icdev\.tools[\w.]*\s+import\b", text) is not None
+    marks_reexport = "re-export" in text.lower()
+    return imports_twin and marks_reexport
+
+
+def _rel_under_excluded(rel_posix: str) -> bool:
+    parts = rel_posix.split("/")
+    return any(seg in _MIRROR_DRIFT_EXCLUDE_DIRS for seg in parts)
+
+
+def check_mirror_drift(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
+    """WARN on content/existence drift between tools/<pkg> and icdev/tools/<pkg>.
+
+    For each hot mirrored package, byte-compares every ``*.py`` file that exists
+    under both ``tools/<pkg>`` and ``icdev/tools/<pkg>``. Reports:
+      - exists-only-in-one-tree (tools/ only, or icdev/ only)
+      - content-differs (with a hint of which side has the newer mtime)
+
+    Excludes ``__pycache__``, ACE ``roles/`` persona content, and intentional
+    re-export shims (see ``_is_mirror_shim``). Report-only (WARN) — never fails
+    the gate; today's tree carries real drift and this surfaces it, it does not
+    block on it. Ignores ``changed_files`` (always full sweep of the hot pkgs).
+    """
+    pkgs = _mirror_drift_packages()
+    only_tools: List[str] = []
+    only_icdev: List[str] = []
+    differs: List[str] = []
+
+    for pkg in pkgs:
+        tools_base = PROJECT_ROOT / "tools" / pkg
+        icdev_base = PROJECT_ROOT / "icdev" / "tools" / pkg
+
+        # Collect relative *.py paths (posix) from each side.
+        def _collect(base: Path) -> Set[str]:
+            out: Set[str] = set()
+            if not base.is_dir():
+                return out
+            for f in base.rglob("*.py"):
+                rel = f.relative_to(base).as_posix()
+                if _rel_under_excluded(rel):
+                    continue
+                out.add(rel)
+            return out
+
+        tools_files = _collect(tools_base)
+        icdev_files = _collect(icdev_base)
+
+        for rel in sorted(tools_files - icdev_files):
+            tp = tools_base / rel
+            if _is_mirror_shim(tp):
+                continue
+            only_tools.append(f"tools/{pkg}/{rel}: no icdev twin")
+        for rel in sorted(icdev_files - tools_files):
+            ip = icdev_base / rel
+            if _is_mirror_shim(ip):
+                continue
+            only_icdev.append(f"icdev/tools/{pkg}/{rel}: no tools/ twin")
+
+        for rel in sorted(tools_files & icdev_files):
+            tp = tools_base / rel
+            ip = icdev_base / rel
+            # A shim on either side is an intentional divergence — skip.
+            if _is_mirror_shim(tp) or _is_mirror_shim(ip):
+                continue
+            try:
+                if tp.read_bytes() == ip.read_bytes():
+                    continue
+            except Exception:
+                continue
+            try:
+                t_m = tp.stat().st_mtime
+                i_m = ip.stat().st_mtime
+                if t_m > i_m:
+                    hint = "tools/ newer"
+                elif i_m > t_m:
+                    hint = "icdev/ newer"
+                else:
+                    hint = "same mtime"
+            except Exception:
+                hint = "mtime unknown"
+            differs.append(f"tools/{pkg}/{rel} != icdev/tools/{pkg}/{rel} ({hint})")
+
+    findings = only_tools + only_icdev + differs
+    total = len(findings)
+    if total == 0:
+        return CoherenceCheck(
+            check_id="mirror_drift",
+            check_name="Mirror Drift (hot packages)",
+            status="pass",
+            expected=["tools/<pkg> and icdev/tools/<pkg> byte-identical for hot packages"],
+            actual=[f"packages checked: {', '.join(pkgs)}"],
+            missing=[],
+            extra=[],
+            message=f"No mirror drift across hot packages ({', '.join(pkgs)}).",
+        )
+    return CoherenceCheck(
+        check_id="mirror_drift",
+        check_name="Mirror Drift (hot packages)",
+        status="warn",
+        expected=["tools/<pkg> and icdev/tools/<pkg> byte-identical for hot packages"],
+        actual=[
+            f"{len(differs)} content-differ, {len(only_tools)} tools/-only, "
+            f"{len(only_icdev)} icdev/-only"
+        ],
+        missing=findings,
+        extra=[],
+        message=(
+            f"{total} mirror-drift finding(s) across hot packages "
+            f"({len(differs)} content-differs, {len(only_tools)} tools/-only, "
+            f"{len(only_icdev)} icdev/-only). Report-only; reconcile the newer side "
+            f"into its twin (canonical is usually tools/)."
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Check Registry & Orchestrator
 # ---------------------------------------------------------------------------
 
@@ -5051,6 +5285,7 @@ CHECK_REGISTRY = {
     "test_db_isolation": check_test_db_isolation,
     "migration_numbering": check_migration_numbering,
     "icdev_mirror_parity": check_icdev_mirror_parity,
+    "mirror_drift": check_mirror_drift,
 }
 
 
@@ -5090,6 +5325,7 @@ _FIX_REGISTRY: Dict[str, str] = {
     "nav_sync": "skip",  # template changes require human review
     "iqe_map_sync": "skip",  # adapter wiring requires human review
     "profile_sync": "skip",  # profile YAML changes require human review
+    "mirror_drift": "skip",  # WARN-only; reconciling twins requires human judgment (which side is canonical)
 }
 
 

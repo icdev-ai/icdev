@@ -45,9 +45,9 @@ Categories:
     integrity (2)
     nova (9)
     pulse (1)
-    cortex (7)
+    cortex (8)
 
-Total: 443 tools, 6 resources
+Total: 444 tools, 6 resources
 """
 
 TOOL_REGISTRY = {
@@ -4914,7 +4914,6 @@ TOOL_REGISTRY = {
                 "top_k": {"type": "integer", "description": "Number of results to return (default 5)", "default": 5},
                 "source_type": {"type": "string", "description": "Filter by source type (optional)"},
                 "tenant_id": {"type": "string", "description": "Tenant ID for multi-tenant isolation"},
-                "child_id": {"type": "string", "description": "Child app ID for federated queries"},
             },
             "required": ["query"],
         },
@@ -6972,7 +6971,7 @@ TOOL_REGISTRY = {
         },
     },
     # ============================================================
-    # CORTEX — Unified AI Facade (ctx-expose-01, 7 tools)
+    # CORTEX — Unified AI Facade (ctx-expose-01, 8 tools)
     # ============================================================
     # Programmable MCP surface of the ICDEV Cortex pattern: one unified layer
     # over LLMRouter / RAG / KG / DIC / IQE / ACE with an enforced TRUST
@@ -7054,6 +7053,37 @@ TOOL_REGISTRY = {
             "type": "object",
             "properties": {
                 "prompt": {"type": "string", "description": "User prompt text"},
+                "system_prompt": {"type": "string", "description": "Optional system prompt"},
+                "max_tokens": {"type": "integer", "description": "Max output tokens (optional)"},
+                "temperature": {"type": "number", "description": "Sampling temperature (optional)"},
+                "tenant_id": {"type": "string", "description": "Tenant ID for multi-tenant RLS isolation"},
+                "classification": {"type": "string", "description": "Data classification (default CUI)"},
+                "domain": {"type": "string", "description": "Optional domain scope"},
+                "user_id": {"type": "string", "description": "Caller user ID (cost attribution / RLS)"},
+                "fail_closed": {"type": "boolean", "default": False},
+            },
+            "required": ["prompt"],
+        },
+    },
+    "cortex_reason": {
+        "category": "cortex",
+        "module": "tools.mcp.cortex_server",
+        "handler": "handle_cortex_reason",
+        "description": (
+            "Multi-step reasoning via the router's chain orchestration, governed end to end. "
+            "mode selects the strategy: 'cot' (chain of thought), 'debate' (proposer/critic rounds), "
+            "'council' (fixed-perspective advisors + chairman synthesis). Returns a CortexResult with "
+            "provider/model/cost/latency accounting, metadata.reason_mode, and the GovernanceReport."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "prompt": {"type": "string", "description": "Reasoning prompt text"},
+                "mode": {
+                    "type": "string",
+                    "description": "Reasoning strategy: cot | debate | council (default cot)",
+                    "default": "cot",
+                },
                 "system_prompt": {"type": "string", "description": "Optional system prompt"},
                 "max_tokens": {"type": "integer", "description": "Max output tokens (optional)"},
                 "temperature": {"type": "number", "description": "Sampling temperature (optional)"},

@@ -619,18 +619,21 @@ def test_controller_launch_returns_instance_id(ace_db, monkeypatch):
 
             return TeamManifest(slots=[RoleSlot("ai_developer", 1)])
 
-    class _FakeThread:
+    # A real threading.Thread so the controller's new dispatch contract works:
+    # per-role semaphore wraps .run(), threads are started directly, and the
+    # controller-level join loop calls .join(timeout=...) / .is_alive().  run()
+    # is a no-op so the "thread" completes immediately.
+    class _FakeThread(threading.Thread):
         def __init__(self, **kwargs):
-            pass
+            super().__init__(daemon=True)
+            self.spec = kwargs.get("spec")
+            self._stop_event = threading.Event()
 
-        def start(self):
-            pass
-
-        def join(self):
+        def run(self):
             pass
 
         def stop(self):
-            pass
+            self._stop_event.set()
 
     monkeypatch.setattr(
         "icdev.tools.ace.problem_classifier.ProblemClassifierLens", _FakeClassifier

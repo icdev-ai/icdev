@@ -7,8 +7,8 @@ platform: the LLM router, the four retrieval backends (RAG / GraphRAG / Document
 Intelligence / Keyword), IQE ask-your-data, and the multi-agent runtime — all
 behind one import surface, one TRUST governance chain, and one row-level-security
 model. It is the Snowflake-Intelligence / Palo-Alto-Cortex analogue for the
-ICDEV stack: callers ask for an *outcome* (search, ask, complete, classify,
-extract, govern, agent) and Cortex routes, grounds, redacts, audits, and returns
+ICDEV stack: callers ask for an *outcome* (search, ask, complete, reason,
+classify, extract, govern, agent) and Cortex routes, grounds, redacts, audits, and returns
 a typed result — without the caller wiring backends or re-implementing safety.
 
 This document is the capstone reference (ctx-expose-04) for the completed
@@ -24,9 +24,9 @@ citation grounding, the same redaction, the same audit row, on *every* path —
 in-process, REST, or MCP. Add a new consumer and it inherits the guarantees for
 free; there is no "unguarded" way to call an LLM through Cortex.
 
-## 2. The seven facades
+## 2. The eight facades
 
-All seven live in `tools/cortex/api.py` (mirrored to `icdev/tools/cortex/`) and
+All eight live in `tools/cortex/api.py` (mirrored to `icdev/tools/cortex/`) and
 are the *only* public entry points. Each runs through `GovernancePipeline` via
 the `_governed_facade` decorator — a public facade cannot be added without
 wrapping (enforced by `tests/cortex/test_api_governed.py`).
@@ -36,6 +36,7 @@ wrapping (enforced by `tests/cortex/test_api_governed.py`).
 | `search(query, top_k, strategy, ctx)` | Unified retrieval with agentic strategy routing + CRAG corrective loop across rag/graph/dic/kb | `list[CortexSearchResult]` |
 | `ask(question, mode, ctx)` | Ask-your-data — IQE primary, NL→SQL fallback, TRUST-labelled | `CortexResult` (rows + executed IQE/SQL + citations) |
 | `complete(prompt, ctx)` | Free-form completion via the config-routed LLM chain | `CortexResult` |
+| `reason(prompt, mode, ctx)` | Multi-step reasoning — `cot` / `debate` / `council` over the router's chain orchestration, governed | `CortexResult` (`metadata.reason_mode`) |
 | `classify(text, labels, ctx)` | Single-label classification, deterministic air-gap fallback | `CortexResult` |
 | `extract(text, schema, ctx)` | Structured extraction to a caller JSON schema | `CortexResult` |
 | `govern(text, sources, ctx)` | Run the TRUST chain standalone over already-produced text (incremental-adoption entry for non-Cortex tools) | `GovernanceReport` |
@@ -84,7 +85,7 @@ primitive, the IQE path, and the NLQ fallback is proved by
 
 ## 5. Exposure surfaces
 
-The same seven facades are reachable three ways — one governance chain behind all
+The same eight facades are reachable three ways — one governance chain behind all
 of them:
 
 ### 5.1 `/cortex` dashboard canvas
@@ -96,8 +97,8 @@ thin session reuse (`GET /cortex/api/session/<id>`), and IQE integration
 `tools/cortex/blueprint.py`.
 
 ### 5.2 REST API v1 — `/cortex/api/v1/*` (ctx-expose-02)
-`tools/cortex/rest_v1.py` folds six governed POST-JSON endpoints
-(`search`, `ask`, `complete`, `classify`, `extract`, `govern`) onto the **same**
+`tools/cortex/rest_v1.py` folds seven governed POST-JSON core-facade endpoints
+(`search`, `ask`, `complete`, `reason`, `classify`, `extract`, `govern`) onto the **same**
 canvas blueprint via `register_rest_v1(cortex_bp)` — one Blueprint, one
 `url_prefix`, one auth path. Requests are validated by
 `tools/cortex/validators.py`; identity is derived from `g.security_context`
@@ -106,9 +107,9 @@ only. Error envelopes are stable: 401 unauthenticated, 400 validation,
 500 otherwise. The `/v1/` prefix is an additive-only version contract.
 
 ### 5.3 MCP tool family — `cortex_*` (ctx-expose-01)
-`tools/mcp/cortex_server.py` exposes seven MCP tools registered under category
+`tools/mcp/cortex_server.py` exposes eight MCP tools registered under category
 `cortex` in `tools/mcp/tool_registry.py`: `cortex_search`, `cortex_ask`,
-`cortex_complete`, `cortex_classify`, `cortex_extract`, `cortex_govern`,
+`cortex_complete`, `cortex_reason`, `cortex_classify`, `cortex_extract`, `cortex_govern`,
 `cortex_agent_launch`. Handlers are thin calls into `tools/cortex`; the gateway
 `security_chain` (D284) wraps traffic, so there is no per-server auth to
 maintain. Run standalone over stdio with `python tools/mcp/cortex_server.py`.

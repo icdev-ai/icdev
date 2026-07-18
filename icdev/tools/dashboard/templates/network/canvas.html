@@ -2250,11 +2250,14 @@
   // ── AI Topology Reviewer ──────────────────────────────────────────────────
 
   const _AI_REVIEW_SEV_COLORS = {
-    HIGH: '#e74c3c', MEDIUM: '#f39c12', LOW: '#3498db', INFO: '#7f8c8d'
+    HIGH: '#e74c3c', MEDIUM: '#f39c12', LOW: '#3498db', INFO: '#7f8c8d',
+    // Fail-closed (ndc-gov-01): an evaluation error is a distinct amber state,
+    // visually separate from pass (green) and fail (red).
+    ERROR: '#e6a817'
   };
   const _AI_REVIEW_CAT_ICONS = {
     SPOF: '⚠', REDUNDANCY: '⛓', STIG: '🛡', ENCRYPTION: '🔒',
-    SEGMENTATION: '🔀', ROUTING: '🔁', SUGGESTION: '💡'
+    SEGMENTATION: '🔀', ROUTING: '🔁', SUGGESTION: '💡', ERROR: '⚠'
   };
   let _aiReviewFindings = [];
 
@@ -2328,11 +2331,23 @@
       const cnt = _aiReviewFindings.length;
       const high = _aiReviewFindings.filter(f => f.severity === 'HIGH').length;
       const med = _aiReviewFindings.filter(f => f.severity === 'MEDIUM').length;
-      statusEl.style.color = high > 0 ? '#e74c3c' : med > 0 ? '#f39c12' : '#2ecc71';
-      statusEl.textContent = cnt + ' finding' + (cnt !== 1 ? 's' : '') +
-        (high ? ' — ' + high + ' HIGH' : '') +
-        (med ? ' · ' + med + ' MEDIUM' : '') +
-        ' via ' + (data.provider || 'AI');
+      const errored = data.status === 'error' ||
+        _aiReviewFindings.some(f => f.severity === 'ERROR');
+      if (errored) {
+        // Fail-closed (ndc-gov-01): review could not complete — amber, and never
+        // rendered as a healthy result.
+        const errF = _aiReviewFindings.find(f => f.severity === 'ERROR');
+        statusEl.style.color = '#e6a817';
+        statusEl.textContent = '⚠ Review incomplete — ' +
+          (errF ? errF.title : 'evaluation error') +
+          ' (results are not a clean bill)';
+      } else {
+        statusEl.style.color = high > 0 ? '#e74c3c' : med > 0 ? '#f39c12' : '#2ecc71';
+        statusEl.textContent = cnt + ' finding' + (cnt !== 1 ? 's' : '') +
+          (high ? ' — ' + high + ' HIGH' : '') +
+          (med ? ' · ' + med + ' MEDIUM' : '') +
+          ' via ' + (data.provider || 'AI');
+      }
 
       // Summary
       if (data.summary) {

@@ -25,6 +25,7 @@ Checks:
  15. canvas_placeholder_style — bare ? in execute() SQL for get_canvas_connection callers (use %s)
  16. runtime_placeholder_style — bare ? in execute() SQL in ANY runtime tools/ file (use %s; translate_sql is not a fix)
  17. ace_yaml_listen_topics   — role YAMLs must not mix task.assigned with reactive topics (deadlock risk)
+ 18. mirror_drift    — WARN when tools/<pkg> and icdev/tools/<pkg> diverge for hot packages (byte-compare; skips re-export shims)
 
 All checks: stdlib only (ast, re, pathlib), air-gap safe, zero deps.
 (openapi_parity imports Flask/dashboard at runtime; gracefully skips if unavailable.)
@@ -5071,6 +5072,175 @@ def check_icdev_mirror_parity(changed_files: Optional[List[Path]] = None) -> Coh
 
 
 # ---------------------------------------------------------------------------
+# Check: mirror drift (hcx-ctx-04) — byte-compare hot mirrored packages
+# ---------------------------------------------------------------------------
+# Packages where tools/<pkg> and icdev/tools/<pkg> are BOTH live physical copies
+# and drift between them has repeatedly served stale code at runtime (e.g. a
+# 14KB-divergent tools/llm/agent_loop.py served pre-TRUST code to Cortex; ACE
+# agent_tools/eval_runner drift; historical kanban reflex drift). Unlike
+# icdev_mirror_parity (which flags MISSING twins), this compares CONTENT of
+# existing twins byte-for-byte. Extend via args/mirror_parity.yaml
+# (key: drift_packages) without editing code.
+_DEFAULT_MIRROR_DRIFT_PKGS = (
+    "llm",
+    "ace",
+    "cortex",
+    "genesis/harness",
+    "genesis/reflexes",
+    "quality",
+    "mcp",
+    "workflow",
+)
+
+# Relative subpaths (posix, under a package) to skip: caches and persona content.
+_MIRROR_DRIFT_EXCLUDE_DIRS = ("__pycache__", "roles")
+
+
+def _mirror_drift_packages() -> Tuple[str, ...]:
+    cfg = PROJECT_ROOT / "args" / "mirror_parity.yaml"
+    if cfg.exists():
+        try:
+            import yaml  # lazy — yaml isn't a top-level import here
+
+            data = yaml.safe_load(cfg.read_text(encoding="utf-8")) or {}
+            pkgs = data.get("drift_packages")
+            if isinstance(pkgs, list) and pkgs:
+                return tuple(str(p) for p in pkgs)
+        except Exception:
+            pass
+    return _DEFAULT_MIRROR_DRIFT_PKGS
+
+
+def _is_mirror_shim(path: Path) -> bool:
+    """True if a file is an INTENTIONAL re-export shim of its icdev twin.
+
+    Detected by content marker: the file re-exports from its ``icdev.tools.*``
+    twin (import-star or explicit re-export) and is short (<120 lines). The
+    canonical example is ``tools/llm/agent_loop.py`` — it must never be flagged
+    as drift. Physically-separate full copies are NOT shims and are compared.
+    """
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return False
+    if text.count("\n") >= 120:
+        return False
+    imports_twin = re.search(r"from\s+icdev\.tools[\w.]*\s+import\b", text) is not None
+    marks_reexport = "re-export" in text.lower()
+    return imports_twin and marks_reexport
+
+
+def _rel_under_excluded(rel_posix: str) -> bool:
+    parts = rel_posix.split("/")
+    return any(seg in _MIRROR_DRIFT_EXCLUDE_DIRS for seg in parts)
+
+
+def check_mirror_drift(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
+    """WARN on content/existence drift between tools/<pkg> and icdev/tools/<pkg>.
+
+    For each hot mirrored package, byte-compares every ``*.py`` file that exists
+    under both ``tools/<pkg>`` and ``icdev/tools/<pkg>``. Reports:
+      - exists-only-in-one-tree (tools/ only, or icdev/ only)
+      - content-differs (with a hint of which side has the newer mtime)
+
+    Excludes ``__pycache__``, ACE ``roles/`` persona content, and intentional
+    re-export shims (see ``_is_mirror_shim``). Report-only (WARN) — never fails
+    the gate; today's tree carries real drift and this surfaces it, it does not
+    block on it. Ignores ``changed_files`` (always full sweep of the hot pkgs).
+    """
+    pkgs = _mirror_drift_packages()
+    only_tools: List[str] = []
+    only_icdev: List[str] = []
+    differs: List[str] = []
+
+    for pkg in pkgs:
+        tools_base = PROJECT_ROOT / "tools" / pkg
+        icdev_base = PROJECT_ROOT / "icdev" / "tools" / pkg
+
+        # Collect relative *.py paths (posix) from each side.
+        def _collect(base: Path) -> Set[str]:
+            out: Set[str] = set()
+            if not base.is_dir():
+                return out
+            for f in base.rglob("*.py"):
+                rel = f.relative_to(base).as_posix()
+                if _rel_under_excluded(rel):
+                    continue
+                out.add(rel)
+            return out
+
+        tools_files = _collect(tools_base)
+        icdev_files = _collect(icdev_base)
+
+        for rel in sorted(tools_files - icdev_files):
+            tp = tools_base / rel
+            if _is_mirror_shim(tp):
+                continue
+            only_tools.append(f"tools/{pkg}/{rel}: no icdev twin")
+        for rel in sorted(icdev_files - tools_files):
+            ip = icdev_base / rel
+            if _is_mirror_shim(ip):
+                continue
+            only_icdev.append(f"icdev/tools/{pkg}/{rel}: no tools/ twin")
+
+        for rel in sorted(tools_files & icdev_files):
+            tp = tools_base / rel
+            ip = icdev_base / rel
+            # A shim on either side is an intentional divergence — skip.
+            if _is_mirror_shim(tp) or _is_mirror_shim(ip):
+                continue
+            try:
+                if tp.read_bytes() == ip.read_bytes():
+                    continue
+            except Exception:
+                continue
+            try:
+                t_m = tp.stat().st_mtime
+                i_m = ip.stat().st_mtime
+                if t_m > i_m:
+                    hint = "tools/ newer"
+                elif i_m > t_m:
+                    hint = "icdev/ newer"
+                else:
+                    hint = "same mtime"
+            except Exception:
+                hint = "mtime unknown"
+            differs.append(f"tools/{pkg}/{rel} != icdev/tools/{pkg}/{rel} ({hint})")
+
+    findings = only_tools + only_icdev + differs
+    total = len(findings)
+    if total == 0:
+        return CoherenceCheck(
+            check_id="mirror_drift",
+            check_name="Mirror Drift (hot packages)",
+            status="pass",
+            expected=["tools/<pkg> and icdev/tools/<pkg> byte-identical for hot packages"],
+            actual=[f"packages checked: {', '.join(pkgs)}"],
+            missing=[],
+            extra=[],
+            message=f"No mirror drift across hot packages ({', '.join(pkgs)}).",
+        )
+    return CoherenceCheck(
+        check_id="mirror_drift",
+        check_name="Mirror Drift (hot packages)",
+        status="warn",
+        expected=["tools/<pkg> and icdev/tools/<pkg> byte-identical for hot packages"],
+        actual=[
+            f"{len(differs)} content-differ, {len(only_tools)} tools/-only, "
+            f"{len(only_icdev)} icdev/-only"
+        ],
+        missing=findings,
+        extra=[],
+        message=(
+            f"{total} mirror-drift finding(s) across hot packages "
+            f"({len(differs)} content-differs, {len(only_tools)} tools/-only, "
+            f"{len(only_icdev)} icdev/-only). Report-only; reconcile the newer side "
+            f"into its twin (canonical is usually tools/)."
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Check Registry & Orchestrator
 # ---------------------------------------------------------------------------
 
@@ -5115,6 +5285,7 @@ CHECK_REGISTRY = {
     "test_db_isolation": check_test_db_isolation,
     "migration_numbering": check_migration_numbering,
     "icdev_mirror_parity": check_icdev_mirror_parity,
+    "mirror_drift": check_mirror_drift,
 }
 
 
@@ -5154,6 +5325,7 @@ _FIX_REGISTRY: Dict[str, str] = {
     "nav_sync": "skip",  # template changes require human review
     "iqe_map_sync": "skip",  # adapter wiring requires human review
     "profile_sync": "skip",  # profile YAML changes require human review
+    "mirror_drift": "skip",  # WARN-only; reconciling twins requires human judgment (which side is canonical)
 }
 
 

@@ -213,10 +213,10 @@ def register_analysis_routes(bp, get_conn=None, helpers=None):
 
         topo_name = row[0] if isinstance(row, (list, tuple)) else row["name"]
         gj_raw = row[1] if isinstance(row, (list, tuple)) else row["graph_json"]
-        try:
-            graph = json.loads(gj_raw or '{"nodes":[],"edges":[]}')
-        except Exception:
-            graph = {"nodes": [], "edges": []}
+        # Fail-closed (ndc-gov-01): a graph that cannot be parsed must surface
+        # as an explicit error, not silently degrade to an empty graph that
+        # the heuristics would then report as a clean/"healthy" topology.
+        graph, graph_error = _parse_topology_graph(gj_raw)
 
         nodes = graph.get("nodes") or []
         edges = graph.get("edges") or []
@@ -376,8 +376,22 @@ def register_analysis_routes(bp, get_conn=None, helpers=None):
                 [n["id"] for n in router_nodes],
             )
 
+        # ── ERROR: unparseable topology graph (fail-closed) ───────────────────
+        review_status = "ok"
+        if graph_error:
+            review_status = "error"
+            _add(
+                "ERROR", "ERROR",
+                "Topology graph could not be parsed",
+                "The stored topology graph is invalid and could not be analyzed, so "
+                "this review is incomplete and must not be read as a clean result. "
+                f"Parser reported: {graph_error}",
+                "Re-save the topology from the canvas to regenerate valid graph JSON, "
+                "then re-run the AI review.",
+            )
+
         # ── SUGGESTION: empty topology ────────────────────────────────────────
-        if not device_nodes:
+        if not device_nodes and not graph_error:
             _add(
                 "INFO", "SUGGESTION",
                 "Topology is empty",
@@ -445,6 +459,9 @@ def register_analysis_routes(bp, get_conn=None, helpers=None):
             "findings": findings,
             "summary": ai_summary,
             "provider": provider,
+            # Fail-closed status: "error" means the review could not complete
+            # (e.g. corrupt graph) and its findings are NOT a clean bill.
+            "status": review_status,
         })
 
     # ── Export ────────────────────────────────────────────────────────────────
@@ -493,14 +510,39 @@ def register_analysis_routes(bp, get_conn=None, helpers=None):
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+def _parse_topology_graph(gj_raw) -> tuple[dict, str | None]:
+    """Parse a topology graph_json blob under a fail-closed contract (ndc-gov-01).
+
+    On success returns (graph_dict, None). On any parse failure — or a payload
+    that is not a JSON object — returns (benign_empty_graph, error_summary)
+    where error_summary is a short string naming the exception. Callers must
+    treat a non-None error as a failed/incomplete analysis, NEVER as a clean
+    result. The empty fallback graph lets downstream code run without a second
+    guard, but the error string is what makes the failure visible.
+    """
+    try:
+        graph = json.loads(gj_raw or '{"nodes":[],"edges":[]}')
+    except Exception as exc:
+        logger.warning("ai_review: topology graph parse failed: %s", exc)
+        return {"nodes": [], "edges": []}, f"{type(exc).__name__}: {exc}"
+    if not isinstance(graph, dict):
+        logger.warning(
+            "ai_review: topology graph is %s, expected object", type(graph).__name__
+        )
+        return {"nodes": [], "edges": []}, (
+            f"graph JSON is {type(graph).__name__}, expected object"
+        )
+    return graph, None
+
+
 def _table_exists(db, table: str) -> bool:
-    r = db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=%s", (table,)).fetchone()
-    return r is not None
+    from tools.network.blueprint_helpers import table_exists
+    return table_exists(db, table)
 
 
 def _col_exists(db, table: str, col: str) -> bool:
-    cols = [r[1] for r in db.execute(f"PRAGMA table_info({table})").fetchall()]
-    return col in cols
+    from tools.network.blueprint_helpers import col_exists
+    return col_exists(db, table, col)
 
 
 def _quadrant(likelihood: int, impact: int) -> str:

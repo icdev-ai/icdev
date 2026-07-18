@@ -2,10 +2,7 @@
 
 import json
 import uuid
-from tools.db.storage import get_connection
-from pathlib import Path
-
-DB_PATH = Path(__file__).resolve().parents[2] / "data" / "network_canvas.db"
+from tools.network.db.init_db import get_connection
 
 
 def eid():
@@ -13,7 +10,7 @@ def eid():
 
 
 def main():
-    conn = get_connection(str(DB_PATH))
+    conn = get_connection()
 
     gj = json.loads(conn.execute("SELECT graph_json FROM nc_templates WHERE id=%s", ("tpl-aiml-fabric",)).fetchone()[0])
     nodes = gj["nodes"]

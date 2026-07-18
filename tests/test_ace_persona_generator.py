@@ -42,7 +42,7 @@ def test_get_or_generate_persona_requires_domain_description():
 
 def test_get_or_generate_persona_writes_soul_md_and_indexes_it():
     soul_text = "# Legal Tech Specialist — Identity & Values\n\n## Core Values\n- Ground advice in real case law."
-    with patch("tools.llm.router.LLMRouter", return_value=_fake_router("legal tech", soul_text)):
+    with patch("icdev.tools.llm.router.LLMRouter", return_value=_fake_router("legal tech", soul_text)):
         result = persona_generator.get_or_generate_persona("a contract review SaaS for law firms")
 
     assert result["status"] == "generated"
@@ -63,7 +63,7 @@ def test_get_or_generate_persona_writes_soul_md_and_indexes_it():
 
 def test_get_or_generate_persona_reuses_cached_persona_without_a_new_llm_call():
     soul_text = "# Legal Tech Specialist — Identity & Values\n\n## Core Values\n- Ground advice in real case law."
-    with patch("tools.llm.router.LLMRouter", return_value=_fake_router("legal tech", soul_text)):
+    with patch("icdev.tools.llm.router.LLMRouter", return_value=_fake_router("legal tech", soul_text)):
         first = persona_generator.get_or_generate_persona("a contract review SaaS for law firms")
         assert first["status"] == "generated"
 
@@ -73,7 +73,7 @@ def test_get_or_generate_persona_reuses_cached_persona_without_a_new_llm_call():
     # SOUL.md already exists, generation must not be invoked a second time.
     second_router = MagicMock()
     second_router.invoke.return_value = MagicMock(content="legal tech")
-    with patch("tools.llm.router.LLMRouter", return_value=second_router):
+    with patch("icdev.tools.llm.router.LLMRouter", return_value=second_router):
         second = persona_generator.get_or_generate_persona("legal tech contract tooling for small firms")
 
     # Only the normalization call happened (needed to compute the slug to
@@ -85,7 +85,7 @@ def test_get_or_generate_persona_reuses_cached_persona_without_a_new_llm_call():
 
 
 def test_normalize_domain_label_falls_back_to_raw_text_on_llm_failure():
-    with patch("tools.llm.router.LLMRouter", side_effect=RuntimeError("boom")):
+    with patch("icdev.tools.llm.router.LLMRouter", side_effect=RuntimeError("boom")):
         label = persona_generator._normalize_domain_label("some raw domain text")
     assert label == "some raw domain text"
 
@@ -93,7 +93,7 @@ def test_normalize_domain_label_falls_back_to_raw_text_on_llm_failure():
 def test_generate_soul_text_raises_on_empty_llm_response():
     router = MagicMock()
     router.invoke.return_value = MagicMock(content="")
-    with patch("tools.llm.router.LLMRouter", return_value=router):
+    with patch("icdev.tools.llm.router.LLMRouter", return_value=router):
         with pytest.raises(ValueError, match="empty SOUL.md"):
             persona_generator._generate_soul_text("legal tech", "a contract review SaaS")
 

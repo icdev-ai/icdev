@@ -379,6 +379,94 @@ def test_content_grounding_failure_blocks_when_fail_closed(calls):
 
 
 # ---------------------------------------------------------------------------
+# Gate 5 (ctx-01): SEMANTIC content grounding, not just a placeholder scan.
+# The gate delegates to content_grounding.ground_content when retrieval
+# context text is present; the report carries score + method; the warn/block
+# threshold is the SHARED citation_grounding band, not a local constant.
+# ---------------------------------------------------------------------------
+GROUNDED_ANSWER = (
+    "Account management controls are required for the system [source: 1]. "
+    "Accounts are disabled after 90 days of inactivity [source: 2]."
+)
+
+
+def test_gate5_uses_semantic_grounding_and_records_score(calls):
+    _, report = GovernancePipeline().wrap(
+        lambda p: CortexResult(text=GROUNDED_ANSWER), CortexContext(),
+        prompt="q", context_sources=SOURCES,
+    )
+    assert report.outcomes[GATE_CONTENT_GROUNDING] == OUTCOME_PASS
+    # score + method recorded on the report gate entry (observable, not implied)
+    cg = report.content_grounding
+    assert cg["method"] == "heuristic"
+    assert isinstance(cg["score"], float) and cg["score"] >= cg["floor"]
+    assert cg["ungrounded_claims"] == []
+
+
+def test_gate5_flags_semantically_ungrounded_answer(calls):
+    # Well-formed (no placeholders, cites a real source) but the CLAIM is not
+    # supported by the context — only semantic grounding can catch this.
+    text = "Zebras enjoy bouncing on trampolines during storms [source: 1]."
+    result, report = GovernancePipeline().wrap(
+        lambda p: CortexResult(text=text), CortexContext(),
+        prompt="q", context_sources=SOURCES,
+    )
+    assert report.outcomes[GATE_CONTENT_GROUNDING] == OUTCOME_WARN
+    assert result.grounded is False
+    cg = report.content_grounding
+    assert cg["method"] == "heuristic"
+    assert cg["score"] < cg["floor"]
+    assert cg["ungrounded_claims"]
+
+
+def test_gate5_floor_comes_from_shared_citation_bands(calls, monkeypatch):
+    # The gate's pass/warn floor is derived from citation_grounding.CONF_ABSTAIN,
+    # not a hardcoded governance constant. Prove the coupling by raising the
+    # shared band so a previously-passing answer now warns.
+    from tools.quality import citation_grounding
+
+    _, base = GovernancePipeline().wrap(
+        lambda p: CortexResult(text=GROUNDED_ANSWER), CortexContext(),
+        prompt="q", context_sources=SOURCES,
+    )
+    assert base.outcomes[GATE_CONTENT_GROUNDING] == OUTCOME_PASS
+    floor = base.content_grounding["floor"]
+    assert floor == citation_grounding.CONF_ABSTAIN
+
+    # Push the shared band above the answer's grounding score.
+    monkeypatch.setattr(citation_grounding, "CONF_ABSTAIN", base.content_grounding["score"] + 0.2)
+    _, tighter = GovernancePipeline().wrap(
+        lambda p: CortexResult(text=GROUNDED_ANSWER), CortexContext(),
+        prompt="q", context_sources=SOURCES,
+    )
+    assert tighter.content_grounding["floor"] == citation_grounding.CONF_ABSTAIN
+    assert tighter.outcomes[GATE_CONTENT_GROUNDING] == OUTCOME_WARN
+
+
+def test_gate5_falls_back_to_placeholder_scan_without_context_text(calls):
+    # context_sources carry ids but no text -> nothing to ground against; the
+    # gate falls back to the placeholder scan (method="placeholder") safely.
+    id_only_sources = ["1", "2"]
+    _, report = GovernancePipeline().wrap(
+        lambda p: CortexResult(text="Account controls exist [source: 1]."),
+        CortexContext(), prompt="q", context_sources=id_only_sources,
+    )
+    assert report.content_grounding["method"] == "placeholder"
+    assert report.content_grounding["score"] is None
+    assert report.outcomes[GATE_CONTENT_GROUNDING] == OUTCOME_PASS
+
+
+def test_gate5_semantic_failure_blocks_when_fail_closed(calls):
+    text = "Zebras enjoy bouncing on trampolines [source: 1]."
+    with pytest.raises(GovernanceBlockedError) as exc_info:
+        GovernancePipeline().wrap(
+            lambda p: text, CortexContext(fail_closed=True),
+            prompt="q", context_sources=SOURCES,
+        )
+    assert exc_info.value.gate == GATE_CONTENT_GROUNDING
+
+
+# ---------------------------------------------------------------------------
 # Gate 6: output redaction
 # ---------------------------------------------------------------------------
 def test_output_redaction_rewrites_str_and_cortex_result(calls, monkeypatch):

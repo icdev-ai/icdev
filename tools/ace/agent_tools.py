@@ -29,8 +29,14 @@ from __future__ import annotations
 import threading
 from typing import Any, Callable
 
-from icdev.tools.llm.agent_loop import DONE
+from icdev.tools.llm.agent_loop import DONE, AgentLoopUnsupported, run_agent_loop
 from tools.logging.icdev_logger import get_logger
+
+# Module-level LLMRouter reference so _spawn_agent can be monkeypatched in tests.
+try:
+    from tools.llm.router import LLMRouter
+except Exception:  # noqa: BLE001
+    LLMRouter = None  # type: ignore[assignment,misc]
 
 logger = get_logger("icdev.ace.agent_tools")
 
@@ -44,8 +50,10 @@ ToolHandler = Callable[[dict[str, Any], "threading.Event | None"], str]
 _SCHEMAS: dict[str, dict[str, Any]] = {
     "read_file": {
         "type": "function",
+        "is_read_only": True,
         "function": {
             "name": "read_file",
+            "is_read_only": True,
             "description": "Read a UTF-8 text file within the role's declared folder_access scopes. Returns the file contents.",
             "parameters": {
                 "type": "object",
@@ -107,8 +115,10 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
     },
     "list_files": {
         "type": "function",
+        "is_read_only": True,
         "function": {
             "name": "list_files",
+            "is_read_only": True,
             "description": "List files in a directory within the role's declared folder_access scopes. Returns one path per line.",
             "parameters": {
                 "type": "object",
@@ -116,6 +126,78 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
                     "path": {"type": "string", "description": "Directory path relative to the repository root."},
                 },
                 "required": ["path"],
+            },
+        },
+    },
+    "search_files": {
+        "type": "function",
+        "is_read_only": True,
+        "function": {
+            "name": "search_files",
+            "is_read_only": True,
+            "description": (
+                "Find files matching a glob pattern within the role's declared folder_access "
+                "scopes. Returns one matching path per line. Use '**/*.py' for recursive "
+                "search, '*.yaml' for a flat directory search. The 'path' argument sets the "
+                "search root (defaults to '.' — repo root). Runs in parallel with other "
+                "read-only tools."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "pattern": {
+                        "type": "string",
+                        "description": "Glob pattern, e.g. '**/*.py', '*.yaml', 'test_*.py'.",
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": (
+                            "Directory to search in (relative to repository root). "
+                            "Defaults to '.' (repo root)."
+                        ),
+                    },
+                    "max_results": {
+                        "type": "integer",
+                        "description": "Maximum number of paths to return (default 100, max 500).",
+                    },
+                },
+                "required": ["pattern"],
+            },
+        },
+    },
+    "grep_files": {
+        "type": "function",
+        "is_read_only": True,
+        "function": {
+            "name": "grep_files",
+            "is_read_only": True,
+            "description": (
+                "Search file contents for a text substring or regex pattern within the "
+                "role's declared folder_access scopes. Returns matches in "
+                "'filepath:line_num:content' format. Searches recursively when 'path' is a "
+                "directory; searches a single file when 'path' is a file. Runs in parallel "
+                "with other read-only tools."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "pattern": {
+                        "type": "string",
+                        "description": "Text substring or Python regex to search for.",
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": (
+                            "File or directory to search (relative to repository root). "
+                            "Defaults to '.' (repo root)."
+                        ),
+                    },
+                    "max_results": {
+                        "type": "integer",
+                        "description": "Maximum number of matching lines to return (default 50, max 200).",
+                    },
+                },
+                "required": ["pattern"],
             },
         },
     },
@@ -205,6 +287,58 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
                     },
                 },
                 "required": ["summary"],
+            },
+        },
+    },
+    "spawn_agent": {
+        "type": "function",
+        "function": {
+            "name": "spawn_agent",
+            "description": (
+                "Spawn a sub-agent to handle an isolated subtask. The sub-agent runs "
+                "its own agent loop with a scoped toolset and returns a summary. Only "
+                "the final answer is returned — the sub-agent's conversation history "
+                "does not accumulate in the parent's context. Use this to delegate "
+                "independent subtasks (e.g. 'read all files in dir X and summarise', "
+                "'run tool Y and return parsed output')."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task": {
+                        "type": "string",
+                        "description": "Full task description for the sub-agent.",
+                    },
+                    "role": {
+                        "type": "string",
+                        "description": (
+                            "Optional system prompt / persona for the sub-agent. "
+                            "Defaults to a generic helpful sub-agent role."
+                        ),
+                    },
+                    "tools": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": (
+                            "Tool names to give the sub-agent. Must be a subset of "
+                            "the parent's available tools (read_file, list_files, "
+                            "write_file, run_tool, done). Defaults to read-only tools."
+                        ),
+                    },
+                    "max_iterations": {
+                        "type": "integer",
+                        "description": "Max LLM turns for the sub-agent (default 6, max 20).",
+                    },
+                    "coordination_namespace": {
+                        "type": "string",
+                        "description": (
+                            "Optional coordination namespace for the spawned agent. "
+                            "Defaults to the parent's namespace. Set an explicit value "
+                            "to create an isolated or shared artifact space."
+                        ),
+                    },
+                },
+                "required": ["task"],
             },
         },
     },
@@ -347,16 +481,22 @@ class AgentToolRegistry:
             return self._patch_file
         if name == "list_files":
             return self._list_files
+        if name == "search_files":
+            return self._search_files
+        if name == "grep_files":
+            return self._grep_files
         if name == "run_tool":
             return self._run_tool
         if name == "done":
             return self._done
+        if name == "spawn_agent":
+            return self._spawn_agent
+        if name == "parallel_agents":
+            return self._parallel_agents
         if name == "post_result":
             return self._post_result
         if name == "read_result":
             return self._read_result
-        if name == "parallel_agents":
-            return self._parallel_agents
         return None
 
     # ------------------------------------------------------------------
@@ -447,6 +587,93 @@ class AgentToolRegistry:
         entries = sorted(p.name for p in resolved.iterdir())
         return "\n".join(entries) if entries else "(empty)"
 
+    def _search_files(self, inp: dict[str, Any], stop: threading.Event | None) -> str:
+        from icdev.tools.ace.file_access_broker import FileAccessBroker, ScopeViolationError
+
+        pattern = (inp.get("pattern") or "").strip()
+        if not pattern:
+            return "error: 'pattern' is required"
+        path = _path_arg(inp) or "."
+        max_results = min(int(inp.get("max_results") or 100), 500)
+
+        broker = FileAccessBroker(self._folder_access)
+        try:
+            resolved = broker._resolve(path, need_write=False)  # noqa: SLF001
+        except ScopeViolationError:
+            raise
+        if not resolved.is_dir():
+            return f"error: '{path}' is not a directory"
+
+        try:
+            matches = sorted(
+                str(p.relative_to(resolved))
+                for p in resolved.glob(pattern)
+                if p.is_file()
+            )
+        except Exception as exc:
+            return f"error: glob failed — {exc}"
+
+        truncated = len(matches) > max_results
+        matches = matches[:max_results]
+        out = "\n".join(matches) if matches else "(no matches)"
+        if truncated:
+            out += f"\n[truncated — showing first {max_results}; narrow the pattern or reduce max_results]"
+        elif matches:
+            out = f"Found {len(matches)} file(s):\n{out}"
+        return out
+
+    def _grep_files(self, inp: dict[str, Any], stop: threading.Event | None) -> str:
+        import re as _re
+        from icdev.tools.ace.file_access_broker import FileAccessBroker, ScopeViolationError
+
+        pattern = (inp.get("pattern") or "").strip()
+        if not pattern:
+            return "error: 'pattern' is required"
+        path = _path_arg(inp) or "."
+        max_results = min(int(inp.get("max_results") or 50), 200)
+
+        broker = FileAccessBroker(self._folder_access)
+        try:
+            resolved = broker._resolve(path, need_write=False)  # noqa: SLF001
+        except ScopeViolationError:
+            raise
+
+        # Compile pattern as regex; fall back to literal substring search on error.
+        try:
+            rx = _re.compile(pattern)
+        except _re.error:
+            rx = None
+
+        def _matches(line: str) -> bool:
+            return bool(rx.search(line)) if rx is not None else (pattern in line)
+
+        results: list[str] = []
+        search_files_iter = (
+            resolved.rglob("*") if resolved.is_dir() else [resolved]
+        )
+        for file_path in search_files_iter:
+            if stop is not None and stop.is_set():
+                results.append("[search interrupted — stop event fired]")
+                break
+            if not file_path.is_file():
+                continue
+            try:
+                text = file_path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            rel = str(file_path.relative_to(resolved)) if resolved.is_dir() else file_path.name
+            for line_num, line in enumerate(text.splitlines(), 1):
+                if _matches(line):
+                    results.append(f"{rel}:{line_num}:{line.strip()[:120]}")
+                    if len(results) >= max_results:
+                        results.append(
+                            f"[truncated — {max_results} matches reached; "
+                            "narrow the pattern or reduce max_results]"
+                        )
+                        return "\n".join(results)
+
+        return "\n".join(results) if results else "(no matches)"
+
     def _run_tool(self, inp: dict[str, Any], stop: threading.Event | None) -> str:
         from icdev.tools.ace.tool_runner import ToolRunner
 
@@ -478,37 +705,114 @@ class AgentToolRegistry:
         self.done_changed_files = list(changed)  # type: ignore[attr-defined]
         return DONE
 
-    def _post_result(self, inp: dict[str, Any], stop: threading.Event | None) -> str:
-        from icdev.tools.ace.agent_coordination import post_result as _post
+    def _spawn_agent(self, inp: dict[str, Any], stop: threading.Event | None) -> str:
+        """Spawn a child agent loop for an isolated subtask.
 
-        key = (inp.get("key") or "").strip()
-        if not key:
-            return "error: 'key' is required"
-        value = inp.get("value")
+        The child runs :func:`run_agent_loop` with a scoped toolset and the
+        same file-access and trust-tier constraints as the parent. Only the
+        child's ``final_content`` is returned to the parent — the full child
+        conversation history is discarded to keep the parent's context small.
+        """
+        task = (inp.get("task") or "").strip()
+        if not task:
+            return "spawn_agent error: 'task' is required."
+
+        role_prompt = (inp.get("role") or "").strip() or (
+            "You are a helpful sub-agent. Complete the task using the available "
+            "tools, then call done with a summary of what you accomplished."
+        )
+        sub_tool_names = list(inp.get("tools") or ["read_file", "list_files", "done"])
+        max_iter = min(int(inp.get("max_iterations") or 6), 20)
+
+        sub_tools, sub_handlers = self.build(sub_tool_names)
+        if not sub_tools:
+            return "spawn_agent error: no valid tools resolved for sub-agent."
+
+        # Allow explicit coordination_namespace override for the child.
+        # Without an override, the child uses self._coordination_namespace via
+        # the bound methods from self.build() — inheritance is automatic.
+        explicit_ns = (inp.get("coordination_namespace") or "").strip()
+        if explicit_ns and explicit_ns != self._coordination_namespace:
+            from icdev.tools.ace.agent_coordination import (
+                post_result as _post_fn,
+                _NOT_FOUND,
+            )
+            if "post_result" in sub_handlers:
+                def _patched_post(inp_, stop_, _ns=explicit_ns, _inst=self.instance_id):
+                    key = (inp_.get("key") or "").strip()
+                    if not key:
+                        return "error: 'key' is required"
+                    try:
+                        return _post_fn(_ns, key, inp_.get("value"), posted_by=_inst)
+                    except Exception as exc:
+                        return f"error posting result: {exc}"
+                sub_handlers["post_result"] = _patched_post
+            if "read_result" in sub_handlers:
+                def _patched_read(inp_, stop_, _ns=explicit_ns):
+                    key = (inp_.get("key") or "").strip()
+                    if not key:
+                        return "error: 'key' is required"
+                    try:
+                        import icdev.tools.ace.agent_coordination as _m
+                        val = _m.read_result(_ns, key)
+                    except Exception as exc:
+                        return f"error reading result: {exc}"
+                    if val is _NOT_FOUND:
+                        return f"(not found: key={key!r} in namespace={_ns!r})"
+                    import json as _json
+                    return _json.dumps(val, indent=2)
+                sub_handlers["read_result"] = _patched_read
+
         try:
-            return _post(self._coordination_namespace, key, value, posted_by=self.instance_id)
+            router = LLMRouter()
         except Exception as exc:
-            return f"error posting result: {exc}"
+            return f"spawn_agent error: could not create router — {exc}"
 
-    def _read_result(self, inp: dict[str, Any], stop: threading.Event | None) -> str:
-        import json as _json
-        from icdev.tools.ace.agent_coordination import read_result as _read, _NOT_FOUND
+        logger.info(
+            "agent_tools: spawning sub-agent for %s — task=%r tools=%s max_iter=%d",
+            self._coworker_id,
+            task[:120],
+            list(sub_handlers.keys()),
+            max_iter,
+        )
 
-        key = (inp.get("key") or "").strip()
-        if not key:
-            return "error: 'key' is required"
         try:
-            val = _read(self._coordination_namespace, key)
+            # Use the module-level run_agent_loop (patchable in tests).
+            child = run_agent_loop(
+                router,
+                system_prompt=role_prompt,
+                user_prompt=task,
+                tools=sub_tools,
+                tool_handlers=sub_handlers,
+                max_iterations=max_iter,
+                stop_event=stop,
+            )
+        except AgentLoopUnsupported as exc:
+            return f"spawn_agent error: provider does not support tool use — {exc}"
         except Exception as exc:
-            return f"error reading result: {exc}"
-        if val is _NOT_FOUND:
-            return f"(not found: key={key!r} in namespace={self._coordination_namespace!r})"
-        return _json.dumps(val, indent=2)
+            return f"spawn_agent error: {type(exc).__name__}: {exc}"
+
+        status = "done" if child.done else f"truncated ({child.result_subtype})"
+        header = (
+            f"[sub-agent: {status} | turns={child.turns} | "
+            f"tools_called={len(child.tool_call_log)} | "
+            f"session={child.session_id}]"
+        )
+        body = child.final_content or "(no output)"
+        logger.info(
+            "agent_tools: sub-agent completed for %s — %s",
+            self._coworker_id,
+            status,
+        )
+        return f"{header}\n{body}"
 
     def _parallel_agents(self, inp: dict[str, Any], stop: threading.Event | None) -> str:
-        """Fan out N sub-agent tasks concurrently using ThreadPoolExecutor."""
+        """Fan out N sub-agent tasks concurrently using ThreadPoolExecutor.
+
+        Results are posted to the coordination bus under each task's key
+        and returned as a merged summary string.
+        """
         import concurrent.futures as _cf
-        from icdev.tools.llm.agent_loop import run_agent_loop, AgentLoopUnsupported
 
         raw_tasks = inp.get("tasks") or []
         if not raw_tasks:
@@ -526,37 +830,13 @@ class AgentToolRegistry:
             if not task_text:
                 return {"key": key, "error": "task 'task' text is required"}
             try:
-                role_prompt = (task_spec.get("role") or "").strip() or (
-                    "You are a helpful sub-agent. Complete the task using the available "
-                    "tools, then call done with a summary of what you accomplished."
-                )
-                sub_tool_names = list(task_spec.get("tools") or ["read_file", "list_files", "done"])
-                max_iter = min(int(task_spec.get("max_iterations") or 6), 20)
-                sub_tools, sub_handlers = self.build(sub_tool_names)
-                if not sub_tools:
-                    return {"key": key, "error": "no valid tools resolved for sub-agent"}
-                try:
-                    from tools.llm.router import LLMRouter as _LLMRouter
-                    router = _LLMRouter()
-                except Exception as exc:
-                    return {"key": key, "error": f"could not create router: {exc}"}
-                try:
-                    child = run_agent_loop(
-                        router,
-                        system_prompt=role_prompt,
-                        user_prompt=task_text,
-                        tools=sub_tools,
-                        tool_handlers=sub_handlers,
-                        max_iterations=max_iter,
-                        stop_event=stop,
-                    )
-                except AgentLoopUnsupported as exc:
-                    return {"key": key, "error": f"provider does not support tool use: {exc}"}
-                status = "done" if child.done else f"truncated ({child.result_subtype})"
-                result_text = (
-                    f"[sub-agent: {status} | turns={child.turns} | session={child.session_id}]\n"
-                    + (child.final_content or "(no output)")
-                )
+                sub_inp = {
+                    "task": task_text,
+                    "role": task_spec.get("role") or "",
+                    "tools": task_spec.get("tools") or ["read_file", "list_files", "done"],
+                    "max_iterations": task_spec.get("max_iterations") or 6,
+                }
+                result_text = self._spawn_agent(sub_inp, stop)
                 try:
                     self._post_result({"key": key, "value": result_text}, stop)
                 except Exception:  # noqa: BLE001
@@ -593,3 +873,30 @@ class AgentToolRegistry:
                 lines.append(f"[{key}]:\n{preview}")
 
         return "\n\n".join(lines)
+
+    def _post_result(self, inp: dict[str, Any], stop: threading.Event | None) -> str:
+        from icdev.tools.ace.agent_coordination import post_result as _post
+
+        key = (inp.get("key") or "").strip()
+        if not key:
+            return "error: 'key' is required"
+        value = inp.get("value")
+        try:
+            return _post(self._coordination_namespace, key, value, posted_by=self.instance_id)
+        except Exception as exc:
+            return f"error posting result: {exc}"
+
+    def _read_result(self, inp: dict[str, Any], stop: threading.Event | None) -> str:
+        import json as _json
+        from icdev.tools.ace.agent_coordination import read_result as _read, _NOT_FOUND
+
+        key = (inp.get("key") or "").strip()
+        if not key:
+            return "error: 'key' is required"
+        try:
+            val = _read(self._coordination_namespace, key)
+        except Exception as exc:
+            return f"error reading result: {exc}"
+        if val is _NOT_FOUND:
+            return f"(not found: key={key!r} in namespace={self._coordination_namespace!r})"
+        return _json.dumps(val, indent=2)

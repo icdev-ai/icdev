@@ -104,6 +104,10 @@ class GovernanceReport:
     redactions_applied: int = 0
     blocked: bool = False
     blocked_reason: str = ""  # populated when blocked is True
+    # Semantic content-grounding detail for the content_grounding gate (ctx-01):
+    # {"score": float, "method": "heuristic"|"llm"|"no_context"|"placeholder",
+    #  "ungrounded_claims": [...], "floor": float}. Empty until that gate runs.
+    content_grounding: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return asdict(self)
