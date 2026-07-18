@@ -1426,6 +1426,18 @@ reflexes:
       threshold: 0
       operator: gte  # 0 = nothing to do (healthy), > 0 = drafts or tasks created
 
+  academy_oracle_reflex:
+    enabled: true
+    risk_tier: green
+    schedule: "every 6h"
+    interval_seconds: 21600   # 6h — Academy telemetry doesn't shift faster than this
+    cooldown_minutes: 360     # 6h minimum gap — match COOLDOWN_HOURS in the reflex
+    description: "Run the in-app 7-lens AcademyOracleRunner (learner-risk, content-quality, skill-gap, AADC-readiness, staleness, ACE-skill-gap, agent-readiness) and persist predictions + convergence to fa_oracle_predictions / fa_oracle_convergence_events. Replaces the dead forge_academy_oracle reflex, which queried the wrong (global) table and was never dispatched."
+    success_metric:
+      name: persisted
+      threshold: 0
+      operator: gte  # 0 = nothing new to persist (healthy), > 0 = fresh predictions
+
   wiki_lint:
     enabled: true
     risk_tier: green

@@ -31,6 +31,66 @@ def _model_by_id(model_id: str) -> dict | None:
     return None
 
 
+def _persist_graph_entities(conn, ph, design_id: str, graph: dict, classification: str) -> None:
+    """Materialize a design graph into the relational aiml_nodes / aiml_edges tables.
+
+    ``graph_json`` on aiml_designs remains the source of truth; these rows are a
+    derived projection kept in sync so that IQE adapters (aimc.nodes) and the
+    aimc_orphan_refs reflex operate on real user designs, not just demo seed data.
+
+    Delete-then-reinsert inside the caller's transaction. Best-effort per row on
+    id collisions (dedupe by id) so a malformed payload can never corrupt the
+    primary design save.
+    """
+    if not isinstance(graph, dict):
+        return
+    conn.execute(f"DELETE FROM aiml_nodes WHERE design_id={ph}", (design_id,))
+    conn.execute(f"DELETE FROM aiml_edges WHERE design_id={ph}", (design_id,))
+
+    seen_nodes: set[str] = set()
+    for node in graph.get("nodes", []) or []:
+        if not isinstance(node, dict):
+            continue
+        nid = str(node.get("id") or uuid.uuid4())
+        if nid in seen_nodes:
+            continue
+        seen_nodes.add(nid)
+        props = node.get("properties_json", node.get("properties", {}))
+        if not isinstance(props, str):
+            props = json.dumps(props or {})
+        conn.execute(
+            f"""INSERT INTO aiml_nodes
+               (id, design_id, node_type, label, x, y, width, height, classification, properties_json)
+               VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph})""",
+            (
+                nid, design_id, node.get("type", ""), node.get("label", "") or "",
+                float(node.get("x", 0) or 0), float(node.get("y", 0) or 0),
+                float(node.get("width", 160) or 160), float(node.get("height", 60) or 60),
+                node.get("classification") or classification,
+                props,
+            ),
+        )
+
+    seen_edges: set[str] = set()
+    for edge in graph.get("edges", []) or []:
+        if not isinstance(edge, dict):
+            continue
+        eid = str(edge.get("id") or uuid.uuid4())
+        if eid in seen_edges:
+            continue
+        seen_edges.add(eid)
+        conn.execute(
+            f"""INSERT INTO aiml_edges
+               (id, design_id, source_node_id, target_node_id, edge_type, label, classification)
+               VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph})""",
+            (
+                eid, design_id, str(edge.get("source", "")), str(edge.get("target", "")),
+                edge.get("type", "data-flow") or "data-flow", edge.get("label", "") or "",
+                edge.get("classification") or classification,
+            ),
+        )
+
+
 # ── Design CRUD ───────────────────────────────────────────────────────────────
 
 def create_design(
@@ -78,6 +138,7 @@ def create_design(
             f"INSERT INTO aiml_audit (design_id, action, detail) VALUES ({ph},{ph},{ph})",
             (design_id, "create", f"Design '{name}' created"),
         )
+        _persist_graph_entities(conn, ph, design_id, graph_json, classification)
         conn.commit()
     finally:
         conn.close()
@@ -154,6 +215,10 @@ def save_design(design_id: str, graph: dict, name: str | None = None,
         conn.execute(
             f"INSERT INTO aiml_audit (design_id, action, detail) VALUES ({ph},{ph},{ph})",
             (design_id, "save", f"Graph saved ({len(graph.get('nodes',[]))} nodes)"),
+        )
+        _persist_graph_entities(
+            conn, ph, design_id, graph,
+            classification if classification is not None else row["classification"],
         )
         conn.commit()
     finally:

@@ -79,6 +79,12 @@ aadc_bp = Blueprint(
 
 _INIT_DONE = False
 
+# Fail-loud init health. A failure in any init phase previously logged at
+# WARNING and then served routes against an uninitialized schema. We now log at
+# ERROR and record the failure here so it is surfaced by the health endpoint
+# (GET /agentic-ai/api/health) instead of silently degrading.
+_INIT_HEALTH: dict[str, object] = {"db": None, "hitl": None, "bus": None}
+
 
 def _ensure_init() -> None:
     global _INIT_DONE
@@ -87,17 +93,36 @@ def _ensure_init() -> None:
     try:
         from tools.agentic_ai_canvas.db.init_db import init_db
         init_db()
+        _INIT_HEALTH["db"] = "ok"
     except Exception as exc:
-        logger.warning("aadc: DB init error: %s", exc)
+        _INIT_HEALTH["db"] = f"error: {exc}"
+        logger.error("aadc: DB init error: %s", exc)
     try:
         workflow.seed_hitl_templates()
+        _INIT_HEALTH["hitl"] = "ok"
     except Exception as exc:
-        logger.warning("aadc: HITL seed error: %s", exc)
+        _INIT_HEALTH["hitl"] = f"error: {exc}"
+        logger.error("aadc: HITL seed error: %s", exc)
     try:
         bus_subscriber.register()
+        _INIT_HEALTH["bus"] = "ok"
     except Exception as exc:
-        logger.warning("aadc: bus register error: %s", exc)
+        _INIT_HEALTH["bus"] = f"error: {exc}"
+        logger.error("aadc: bus register error: %s", exc)
     _INIT_DONE = True
+
+
+@aadc_bp.route("/api/health", methods=["GET"])
+def aadc_health():
+    """Report blueprint init health (DB schema / HITL seed / bus register).
+
+    ``healthy`` is False if any init phase failed, so an uninitialized-schema
+    condition is observable rather than silently serving broken routes.
+    """
+    phases = dict(_INIT_HEALTH)
+    healthy = all(v == "ok" for v in phases.values())
+    status = 200 if healthy else 503
+    return jsonify({"initialized": _INIT_DONE, "healthy": healthy, "phases": phases}), status
 
 
 def _conn():
@@ -459,6 +484,10 @@ def save_design(design_id: str):
     finally:
         conn.close()
 
+    # Design changed — drop any memoized gate data so scorecard/deploy-gate
+    # recompute against the new graph on their next call.
+    _invalidate_gate_cache(design_id)
+
     # Publish event bus
     bus_subscriber.publish_design_saved(
         design_id, bool(result["safety_impacting"]),
@@ -513,6 +542,7 @@ def delete_design(design_id: str):
         conn.commit()
     finally:
         conn.close()
+    _invalidate_gate_cache(design_id)
     return jsonify({"status": "deleted"})
 
 
@@ -526,6 +556,8 @@ def delete_all_designs():
         conn.commit()
     finally:
         conn.close()
+    for did in ids:
+        _invalidate_gate_cache(did)
     return jsonify({"status": "deleted", "count": len(ids)})
 
 
@@ -2184,71 +2216,97 @@ def get_impact_api(design_id: str):
     return jsonify(result)
 
 
-@aadc_bp.route("/analytics", methods=["GET"])
-def analytics_page():
+def _compute_analytics_payload() -> dict:
+    """Load AADC analysis tables and return the computed analytics payload.
+
+    Shared by the analytics page and the analytics API, which previously
+    duplicated the same seven queries + compute_analytics call verbatim.
+    """
     conn = _conn()
-    designs = [dict(r) for r in conn.execute("SELECT * FROM aadc_designs ORDER BY created_at DESC").fetchall()]
-    assessments = [dict(r) for r in conn.execute("SELECT * FROM aadc_assessments").fetchall()]
-    risk_items = [dict(r) for r in conn.execute("SELECT * FROM aadc_risk_items").fetchall()]
-    pattern_reports = [dict(r) for r in conn.execute(
-        "SELECT design_id, dominant_pattern FROM aadc_pattern_reports"
-    ).fetchall()]
-    ato_reports = [dict(r) for r in conn.execute(
-        "SELECT design_id, ato_ready FROM aadc_ato_reports"
-    ).fetchall()]
-    red_team_reports = [dict(r) for r in conn.execute(
-        "SELECT design_id, overall_risk FROM aadc_red_team_reports"
-    ).fetchall()]
-    lint_reports = [dict(r) for r in conn.execute(
-        "SELECT design_id, lint_score FROM aadc_lint_reports"
-    ).fetchall()]
-    conn.close()
+    try:
+        designs = [dict(r) for r in conn.execute(
+            "SELECT * FROM aadc_designs ORDER BY created_at DESC"
+        ).fetchall()]
+        assessments = [dict(r) for r in conn.execute(
+            "SELECT * FROM aadc_assessments"
+        ).fetchall()]
+        risk_items = [dict(r) for r in conn.execute(
+            "SELECT * FROM aadc_risk_items"
+        ).fetchall()]
+        pattern_reports = [dict(r) for r in conn.execute(
+            "SELECT design_id, dominant_pattern FROM aadc_pattern_reports"
+        ).fetchall()]
+        ato_reports = [dict(r) for r in conn.execute(
+            "SELECT design_id, ato_ready FROM aadc_ato_reports"
+        ).fetchall()]
+        red_team_reports = [dict(r) for r in conn.execute(
+            "SELECT design_id, overall_risk FROM aadc_red_team_reports"
+        ).fetchall()]
+        lint_reports = [dict(r) for r in conn.execute(
+            "SELECT design_id, lint_score FROM aadc_lint_reports"
+        ).fetchall()]
+    finally:
+        conn.close()
 
     from tools.agentic_ai_canvas.analytics_engine import compute_analytics
-    data = compute_analytics(designs, assessments, pattern_reports, ato_reports,
+    return compute_analytics(designs, assessments, pattern_reports, ato_reports,
                              red_team_reports, lint_reports, risk_items)
+
+
+@aadc_bp.route("/analytics", methods=["GET"])
+def analytics_page():
+    data = _compute_analytics_payload()
     return render_template("agentic_ai_canvas/analytics.html", data=data)
 
 
 @aadc_bp.route("/api/analytics", methods=["GET"])
 def get_analytics_api():
-    conn = _conn()
-    designs = [dict(r) for r in conn.execute("SELECT * FROM aadc_designs").fetchall()]
-    assessments = [dict(r) for r in conn.execute("SELECT * FROM aadc_assessments").fetchall()]
-    risk_items = [dict(r) for r in conn.execute("SELECT * FROM aadc_risk_items").fetchall()]
-    pattern_reports = [dict(r) for r in conn.execute(
-        "SELECT design_id, dominant_pattern FROM aadc_pattern_reports"
-    ).fetchall()]
-    ato_reports = [dict(r) for r in conn.execute(
-        "SELECT design_id, ato_ready FROM aadc_ato_reports"
-    ).fetchall()]
-    red_team_reports = [dict(r) for r in conn.execute(
-        "SELECT design_id, overall_risk FROM aadc_red_team_reports"
-    ).fetchall()]
-    lint_reports = [dict(r) for r in conn.execute(
-        "SELECT design_id, lint_score FROM aadc_lint_reports"
-    ).fetchall()]
-    conn.close()
-
-    from tools.agentic_ai_canvas.analytics_engine import compute_analytics
-    data = compute_analytics(designs, assessments, pattern_reports, ato_reports,
-                             red_team_reports, lint_reports, risk_items)
-    return jsonify(data)
+    return jsonify(_compute_analytics_payload())
 
 
 # ---------------------------------------------------------------------------
 # PHASE 9 — Unified Scorecard, Deployment Gate & Findings Inbox
 # ---------------------------------------------------------------------------
 
+# Short-TTL in-process cache for the expensive gate-data fan-out. Each call to
+# _load_all_gate_data runs five analysis engines (ATO, regulatory, red-team,
+# lint, impact); the scorecard/deploy-gate/download routes call it back-to-back
+# per design. Cache the 8-tuple keyed by (design_id, design.updated_at) so a
+# design edit (which bumps updated_at) naturally misses, and evict explicitly on
+# save. TTL bounds staleness from mutations that don't touch updated_at.
+_GATE_DATA_CACHE: dict[tuple, tuple] = {}
+_GATE_DATA_CACHE_AT: dict[tuple, float] = {}
+_GATE_DATA_CACHE_TTL = 30.0
+
+
+def _invalidate_gate_cache(design_id: str) -> None:
+    """Drop any cached gate data for a design (call after a save)."""
+    for key in [k for k in _GATE_DATA_CACHE if k[0] == design_id]:
+        _GATE_DATA_CACHE.pop(key, None)
+        _GATE_DATA_CACHE_AT.pop(key, None)
+
+
 def _load_all_gate_data(conn, design_id: str) -> tuple:
-    """Load all analysis data needed for scorecard and deploy gate."""
+    """Load all analysis data needed for scorecard and deploy gate.
+
+    Results are memoized per (design_id, updated_at) for a short TTL so the
+    scorecard/deploy-gate/ATO routes don't re-run the five analysis engines on
+    every request.
+    """
     import json as _json
+    import time as _time
 
     row = conn.execute("SELECT * FROM aadc_designs WHERE id=%s", (design_id,)).fetchone()
     if not row:
         return None, None, None, None, None, None, None, None
 
     design = dict(row)
+    cache_key = (design_id, design.get("updated_at"))
+    now = _time.monotonic()
+    cached = _GATE_DATA_CACHE.get(cache_key)
+    if cached is not None and (now - _GATE_DATA_CACHE_AT.get(cache_key, 0.0)) < _GATE_DATA_CACHE_TTL:
+        return cached
+
     graph = _json.loads(design.get("graph_json") or '{"nodes":[],"edges":[]}')
     nodes = graph.get("nodes", [])
     edges = graph.get("edges", [])
@@ -2277,7 +2335,10 @@ def _load_all_gate_data(conn, design_id: str) -> tuple:
     lint_data = lint_design(nodes, edges, design)
     impact_data = analyze_impact(nodes, edges)
 
-    return design, assessment, risks, ato_data, reg_data, red_team_data, lint_data, impact_data
+    result = (design, assessment, risks, ato_data, reg_data, red_team_data, lint_data, impact_data)
+    _GATE_DATA_CACHE[cache_key] = result
+    _GATE_DATA_CACHE_AT[cache_key] = now
+    return result
 
 
 @aadc_bp.route("/scorecard/<design_id>", methods=["GET"])
@@ -2316,8 +2377,8 @@ def get_scorecard_api(design_id: str):
             (rep_id, design_id, sc["overall_score"], sc["health"], _json.dumps(sc)),
         )
         conn.commit()
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.error("aadc: scorecard snapshot insert failed for %s: %s", design_id, exc)
     conn.close()
     return jsonify(sc)
 
@@ -2359,8 +2420,8 @@ def get_deploy_gate_api(design_id: str):
              len(gate["blockers"]), len(gate["warnings"]), _json.dumps(gate)),
         )
         conn.commit()
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.error("aadc: deploy-gate snapshot insert failed for %s: %s", design_id, exc)
     conn.close()
     return jsonify(gate)
 
@@ -2740,7 +2801,7 @@ def aadc_api_list_assessments(design_id):
         rows = conn.execute(
             "SELECT id, design_id, score, nist_rmf_score, owasp_score, omb_compliant, "
             "autonomy_max, safety_impacting, rights_impacting, findings_json, atlas_threats, "
-            "hitl_paths, created_at FROM aadc_assessments "
+            "created_at FROM aadc_assessments "
             "WHERE design_id=%s ORDER BY created_at DESC LIMIT %s",
             (design_id, limit),
         ).fetchall()

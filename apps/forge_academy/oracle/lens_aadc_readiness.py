@@ -82,6 +82,14 @@ class LensAADCReadiness(BaseLens):
             "stale_designs": [dict(r) for r in stale_designs],
         }
 
+    def score(self, analysis: dict[str, Any]) -> list[OraclePrediction]:
+        """BaseLens phase 2 — this lens produces final predictions directly."""
+        return self.generate_predictions(analysis)
+
+    def propose(self, predictions: list[OraclePrediction]) -> list[OraclePrediction]:
+        """BaseLens phase 3 — recommendations already inline in each prediction."""
+        return predictions
+
     def generate_predictions(self, analysis: dict[str, Any]) -> list[OraclePrediction]:
         predictions: list[OraclePrediction] = []
 

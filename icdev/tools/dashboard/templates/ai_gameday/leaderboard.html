@@ -108,6 +108,9 @@ const SID={{ session.session_id }};
 let activeFilter='';
 let excludeCyber=false;
 
+// XSS guard: escape attacker-influenced team names before innerHTML interpolation.
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
 function setFilter(btn){
   const val=btn.dataset.filter;
   if(activeFilter===val){activeFilter='';btn.classList.remove('active');}
@@ -139,11 +142,12 @@ async function refreshLeaderboard(){
     <div class="lb-card rank-${row.rank<=3?row.rank:'other'}">
       <div class="rank-num ${row.rank>3?'other':''}">${rankMedals[row.rank]||row.rank}</div>
       <div>
-        <div class="team-name">${row.team_name}</div>
+        <div class="team-name">${esc(row.team_name)}</div>
         <div class="score-breakdown">
           <span>🤖 AI Receipts: <strong style="color:#58a6ff;">${row.receipt_pts}</strong></span>
           <span>📚 Judge: <strong style="color:#3fb950;">${row.judge_pts}</strong></span>
           <span>⚡ Speed: <strong style="color:#FF6B35;">${row.time_bonus_pts}</strong></span>
+          ${row.unscored_count>0?`<span title="LLM judge unavailable — these responses were left unscored, not given a default score" style="color:#f0883e;">⚠️ ${row.unscored_count} unscored</span>`:''}
         </div>
         <div class="score-bar-bg">
           <div class="score-bar-fill" style="width:${Math.min(Math.round(row.total_score/maxScore*100),100)}%;background:${colors[row.rank]||'linear-gradient(90deg,#4a90d9,#00D4FF)'};"></div>
