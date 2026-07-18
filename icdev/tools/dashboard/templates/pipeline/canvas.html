@@ -168,28 +168,31 @@ if (typeof TOOL_INFO !== 'undefined') {
       _updateZoomLabel();
     }
 
-    // Load templates for modal
-    fetch('/devops/api/templates')
-      .then(r => r.json())
+    // Load templates for modal (fetchJson surfaces HTTP/backend errors)
+    fetchJson('/devops/api/templates')
       .then(templates => {
         const grid = document.getElementById('pc-tpl-grid');
         if (!grid) return;
-        grid.innerHTML = templates.map(t => `
+        grid.innerHTML = (templates || []).map(t => `
           <div class="tpl-card" onclick="loadTemplate('${t.id}')">
             <h4>${t.name}</h4>
             <div class="tpl-cat">${t.category || ''}</div>
             <div class="tpl-desc">${t.description || ''}</div>
           </div>
         `).join('');
+      })
+      .catch(err => {
+        const grid = document.getElementById('pc-tpl-grid');
+        if (grid) grid.innerHTML = '<div style="padding:12px;color:#e74c3c;font-size:12px;">Failed to load templates: '
+          + escapeHtml(err && err.message ? err.message : 'unknown error') + '</div>';
       });
 
     // Load snippets for drawer
-    fetch('/devops/api/snippets')
-      .then(r => r.json())
+    fetchJson('/devops/api/snippets')
       .then(snippets => {
         const drawer = document.getElementById('pc-snippet-drawer');
         if (!drawer) return;
-        drawer.innerHTML = snippets.map(s => `
+        drawer.innerHTML = (snippets || []).map(s => `
           <div class="snippet-card" onclick="loadSnippet('${s.id}')">
             <h4>${s.name}</h4>
             <p>${s.description || ''}</p>
@@ -198,6 +201,11 @@ if (typeof TOOL_INFO !== 'undefined') {
             <span class="badge">SLSA ${s.slsa_level || 'L0'}</span>
           </div>
         `).join('');
+      })
+      .catch(err => {
+        const drawer = document.getElementById('pc-snippet-drawer');
+        if (drawer) drawer.innerHTML = '<div style="padding:12px;color:#e74c3c;font-size:12px;">Failed to load snippets: '
+          + escapeHtml(err && err.message ? err.message : 'unknown error') + '</div>';
       });
   });
 </script>

@@ -264,6 +264,7 @@
 {% endblock %}
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/pdc-escape.js') }}"></script>
+<script src="{{ url_for('static', filename='js/pdc-http.js') }}"></script>
 <script>
 const BASE = '/devops';
 let _rejectSopId = null;
@@ -343,8 +344,7 @@ function openCreateModal() {
 }
 
 function editSop(id) {
-  fetch(`${BASE}/api/sops/${id}`)
-    .then(r => r.json())
+  fetchJson(`${BASE}/api/sops/${id}`)
     .then(sop => {
       document.getElementById('formModalTitle').textContent = 'Edit SOP';
       document.getElementById('sopId').value = sop.id;
@@ -362,7 +362,8 @@ function editSop(id) {
       document.getElementById('stepsList').innerHTML = '';
       (sop.steps || []).forEach(s => addStep(s.description, s.responsible_party));
       document.getElementById('sopFormModal').classList.add('active');
-    });
+    })
+    .catch(err => pdcToast('Failed to load SOP for editing: ' + (err && err.message ? err.message : 'unknown error'), 'error'));
 }
 
 function saveSop(e) {
@@ -394,8 +395,7 @@ function saveSop(e) {
 
 /* ── View ─────────────────────────────────────────────────────────── */
 function viewSop(id) {
-  fetch(`${BASE}/api/sops/${id}`)
-    .then(r => r.json())
+  fetchJson(`${BASE}/api/sops/${id}`)
     .then(sop => {
       document.getElementById('viewTitle').textContent = sop.title;
       const statusColors = {draft:'#7f8c8d',pending_review:'#f39c12',approved:'#27ae60',rejected:'#e74c3c'};
@@ -431,7 +431,8 @@ function viewSop(id) {
         ${stepsHtml?`<div class="detail-section"><div class="detail-label">Procedure Steps (${(sop.steps||[]).length})</div><ul class="steps-detail">${stepsHtml}</ul></div>`:''}
       `;
       document.getElementById('sopViewModal').classList.add('active');
-    });
+    })
+    .catch(err => pdcToast('Failed to load SOP: ' + (err && err.message ? err.message : 'unknown error'), 'error'));
 }
 
 /* ── Workflow actions ─────────────────────────────────────────────── */
