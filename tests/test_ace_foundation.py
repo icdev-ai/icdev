@@ -193,3 +193,156 @@ def test_webhook_log_table_present_and_writable():
         conn.close()
 
     assert row == ("inst-1", 200, 1)
+
+
+# ---------------------------------------------------------------------------
+# 5. Controller dispatch — per-role trust parallelism (hcx-ace-06)
+# ---------------------------------------------------------------------------
+
+def test_controller_per_role_parallelism(monkeypatch):
+    """A mixed-trust team dispatches each role at its OWN max_parallel.
+
+    Builds a team of two roles — a trusted role (max_parallel=4) and a
+    supervised role (max_parallel=1) — with FAKE coworker threads whose run
+    bodies just sleep and record start/end timestamps.  Asserts:
+      * the trusted role's coworkers overlap in time (all run at once), and
+      * the supervised role's coworkers are serialized (non-overlapping), and
+      * the whole team completes.
+
+    This exercises the real ``ACEController._run`` dispatch path (per-role
+    BoundedSemaphores + direct thread start + controller-level join loop) with
+    every DB / LLM / event dependency stubbed out — NO live LLM.
+    """
+    import threading
+    import time
+    from types import SimpleNamespace
+
+    from icdev.tools.ace.controller import ACEController
+
+    TRUSTED = "autonomous_role"   # max_parallel = 4
+    SUPERVISED = "supervised_role"  # max_parallel = 1
+    SLEEP = 0.3
+
+    records: list[tuple[str, float, float]] = []
+    rec_lock = threading.Lock()
+
+    # Fake coworker thread: a real threading.Thread whose run() sleeps briefly
+    # and records its [start, end] wall-clock interval, keyed by role_id.
+    class _FakeCoWorker(threading.Thread):
+        def __init__(self, spec, instance_id, message_bus, trust_kernel, monitor_interval=None):
+            super().__init__(name=f"fake-cw-{spec.coworker_id}", daemon=True)
+            self.spec = spec
+            self.instance_id = instance_id
+            self._stop_event = threading.Event()
+
+        def stop(self):
+            self._stop_event.set()
+
+        def run(self):
+            start = time.monotonic()
+            time.sleep(SLEEP)
+            end = time.monotonic()
+            with rec_lock:
+                records.append((self.spec.role_id, start, end))
+
+    # Fake team: 3 coworkers of each role.
+    specs = (
+        [SimpleNamespace(role_id=TRUSTED, coworker_id=f"{TRUSTED}-{i}") for i in range(3)]
+        + [SimpleNamespace(role_id=SUPERVISED, coworker_id=f"{SUPERVISED}-{i}") for i in range(3)]
+    )
+
+    class _FakeTeam:
+        def __init__(self, specs):
+            self.specs = specs
+
+    class _FakeAssembler:
+        def __init__(self, *a, **k):
+            pass
+
+        def assemble(self, manifest, instance_id, context):
+            return _FakeTeam(specs)
+
+    def _fake_dispatch_config(role_id):
+        mp = 4 if role_id == TRUSTED else 1
+        return {
+            "max_parallel": mp,
+            "band": "autonomous" if mp == 4 else "supervised",
+            "trust_score": 0.9 if mp == 4 else 0.5,
+        }
+
+    class _FakeStub:
+        def __init__(self, *a, **k):
+            pass
+
+    def _boom(*a, **k):
+        raise RuntimeError("no DB in this unit test")
+
+    # Patch the SOURCE modules (_run uses local `from X import Y`).
+    import icdev.tools.ace.team_assembler as _ta_mod
+    import icdev.tools.ace.trust_calibrator as _tc_mod
+    import icdev.tools.ace.coworker_thread as _cw_mod
+    import icdev.tools.ace.message_bus as _mb_mod
+    import icdev.tools.daemon.base as _daemon_mod
+    import icdev.tools.db.storage as _storage_mod
+
+    monkeypatch.setattr(_ta_mod, "TeamAssembler", _FakeAssembler)
+    monkeypatch.setattr(_tc_mod, "get_dispatch_config", _fake_dispatch_config)
+    monkeypatch.setattr(_cw_mod, "CoWorkerThread", _FakeCoWorker)
+    monkeypatch.setattr(_mb_mod, "MessageBus", _FakeStub)
+    monkeypatch.setattr(_daemon_mod, "TrustKernelBase", _FakeStub)
+    monkeypatch.setattr(_storage_mod, "get_canvas_connection", _boom)
+
+    ctrl = ACEController()
+    # Stub every best-effort DB / event / wiki side effect to no-ops.
+    for name in (
+        "_set_instance_state",
+        "_finalize_instance",
+        "_emit_completion_event",
+        "_emit_sse",
+        "_emit_task_completed",
+        "_file_session_to_wiki",
+        "_record_trust_outcome",
+    ):
+        monkeypatch.setattr(ctrl, name, lambda *a, **k: None)
+    monkeypatch.setattr(ctrl, "_query_role_wiki", lambda *a, **k: "")
+
+    # Drive the real dispatch path synchronously.
+    ctrl._run(
+        instance_id="test-parallel-001",
+        problem_text="fake problem",
+        trigger_source="test",
+        trigger_ref="hcx-ace-06",
+        user_id="tester",
+        project_id="",
+        role_ids=[TRUSTED, SUPERVISED],
+    )
+
+    trusted = sorted(
+        [(s, e) for (r, s, e) in records if r == TRUSTED], key=lambda x: x[0]
+    )
+    supervised = sorted(
+        [(s, e) for (r, s, e) in records if r == SUPERVISED], key=lambda x: x[0]
+    )
+
+    # Whole team completed — every coworker ran exactly once.
+    assert len(trusted) == 3, "all trusted coworkers should complete"
+    assert len(supervised) == 3, "all supervised coworkers should complete"
+
+    # Trusted role (max_parallel=4 >= 3) — all three overlap: the latest start
+    # happens before the earliest end, so there is a moment all three run.
+    latest_start = max(s for s, _ in trusted)
+    earliest_end = min(e for _, e in trusted)
+    assert latest_start < earliest_end, (
+        f"trusted coworkers should overlap in time "
+        f"(latest_start={latest_start:.3f} !< earliest_end={earliest_end:.3f})"
+    )
+
+    # Supervised role (max_parallel=1) — coworkers are serialized: each starts
+    # only after the previous one has finished (allow small scheduling jitter).
+    for i in range(1, len(supervised)):
+        prev_end = supervised[i - 1][1]
+        this_start = supervised[i][0]
+        assert this_start >= prev_end - 0.05, (
+            f"supervised coworkers should be serialized "
+            f"(coworker {i} start={this_start:.3f} < prev end={prev_end:.3f})"
+        )
