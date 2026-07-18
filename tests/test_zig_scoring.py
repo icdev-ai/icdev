@@ -313,6 +313,41 @@ def test_score_all_pillars_returns_seven_with_metadata(conn):
             assert key in r
 
 
+def test_score_all_pillars_accepts_target_id_kwarg(conn):
+    """Regression (cnr-zig-01): /security/zig/portfolio calls
+    score_all_pillars(target_id='icdev-self'). The signature must accept the
+    kwarg — the old no-arg signature raised TypeError, which the page swallowed
+    (pillar_scores=[]) so the portfolio rendered all-zero on every visit. This
+    calls the REAL function (only get_connection is patched), so a signature
+    regression fails here instead of silently emptying the page."""
+    from tools.security_canvas.zig_pillar_scorer import score_all_pillars
+
+    with patch_conn(conn):
+        results = score_all_pillars(target_id="icdev-self")
+
+    assert len(results) == len(ZIG_PILLARS) == 7
+
+
+def test_score_pillar_completions_are_target_scoped(conn):
+    """cnr-zig-01/02: a completion recorded for one target must not inflate a
+    different target's pillar score."""
+    _add_cap(conn, "cap-A", "user", "not_started")
+    _add_act(conn, "a1", "cap-A")
+    _add_completion(conn, "a1", "complete", target="external-target")
+    conn.commit()
+
+    from tools.security_canvas.zig_pillar_scorer import score_pillar
+
+    with patch_conn(conn):
+        selfd = score_pillar("user", target_id="icdev-self")
+        externald = score_pillar("user", target_id="external-target")
+
+    # The lone completion belongs to external-target, not icdev-self.
+    assert selfd["complete_activities"] == 0
+    assert externald["complete_activities"] == 1
+    assert externald["score"] > selfd["score"]
+
+
 def test_aggregate_zig_score_weighted_average(conn):
     """Weighted aggregate over explicit pillar scores.
 
