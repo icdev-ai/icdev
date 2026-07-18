@@ -9,12 +9,35 @@ from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
 import json
+import os
 
-from tools.agentic_ai_canvas.constants import AADC_MODEL_COSTS
+from tools.agentic_ai_canvas.constants import (
+    AADC_DEFAULT_LLM_MODEL,
+    AADC_MODEL_COSTS,
+    AADC_MODEL_SWAPS,
+)
 
 log = get_logger(__name__)
 
 _DEFAULT_RUNS_PER_MONTH = 1000
+
+# Default per-call token volume for models resolved via the AIMC catalog, which
+# publishes a single blended $/1k rate rather than the AADC {input,output,
+# avg_in,avg_out} shape. Matches the AADC local-model averages.
+_DEFAULT_AVG_IN = 600
+_DEFAULT_AVG_OUT = 300
+
+# Canonical cost-entry schema returned by _cost_for_model and consumed by every
+# caller: {"input": $/1k in, "output": $/1k out, "avg_in": tokens, "avg_out": tokens}.
+
+
+def _default_llm_model() -> str:
+    """Resolve the default model slug for an unspecified LLM node.
+
+    Configurable via the AADC_DEFAULT_LLM_MODEL env var (LLM config belongs in
+    .env, not hard-coded here); falls back to the constants default.
+    """
+    return os.environ.get("AADC_DEFAULT_LLM_MODEL", AADC_DEFAULT_LLM_MODEL).lower().strip()
 
 
 def _resolve_model(node: dict) -> str | None:
@@ -32,27 +55,39 @@ def _resolve_model(node: dict) -> str | None:
         if "ollama" in ntype or "local" in ntype:
             model = "ollama-local"
         elif "llm" in ntype:
-            model = "gpt-4o"  # safe default for unspecified LLM
+            model = _default_llm_model()  # configurable default for unspecified LLM
     return model or None
 
 
 def _cost_for_model(model_id: str) -> dict:
-    """Return cost entry for a model.
+    """Return a cost entry for a model in the canonical schema.
+
+    Every branch returns {"input", "output", "avg_in", "avg_out"} so all
+    callers can read the same keys without a KeyError.
 
     Priority: (1) AADC local table, (2) AIMC FOUNDATION_MODELS catalog,
     (3) fuzzy prefix match, (4) gpt-4o-mini default.
     """
     if model_id in AADC_MODEL_COSTS:
         return AADC_MODEL_COSTS[model_id]
-    # Try AIMC catalog — uses cost_per_1k_tokens (split 50/50 in/out heuristic)
+    # Try AIMC catalog — it publishes a single blended cost_per_1k_tokens, which
+    # we normalize into the canonical schema (output approximated at 2x input).
     try:
         from tools.aiml_canvas.constants import FOUNDATION_MODELS as _AIMC_MODELS
-        aimc_model = next((m for m in _AIMC_MODELS if m["id"] == model_id), None)
-        if aimc_model and aimc_model.get("cost_per_1k_tokens", 0) >= 0:
+        aimc_model = next((m for m in _AIMC_MODELS if m.get("id") == model_id), None)
+        # Real presence check: the key must actually be provided (not defaulted)
+        # and be a non-negative number. `.get(k, 0) >= 0` was always true.
+        if aimc_model is not None and "cost_per_1k_tokens" in aimc_model:
             cost = aimc_model["cost_per_1k_tokens"]
-            return {"input_per_1k": cost, "output_per_1k": cost * 2}
-    except Exception:
-        pass
+            if isinstance(cost, (int, float)) and cost >= 0:
+                return {
+                    "input": float(cost),
+                    "output": float(cost) * 2,
+                    "avg_in": _DEFAULT_AVG_IN,
+                    "avg_out": _DEFAULT_AVG_OUT,
+                }
+    except Exception as exc:  # noqa: BLE001
+        log.debug("AIMC catalog lookup failed for %s: %s", model_id, exc)
     # Fuzzy match prefix against AADC table
     for key in AADC_MODEL_COSTS:
         if model_id.startswith(key) or key.startswith(model_id):
@@ -157,16 +192,15 @@ def _generate_hints(
 ) -> list[str]:
     hints: list[str] = []
 
-    # Hint: expensive model with a cheaper alternative
-    expensive_swaps = {
-        "claude-opus-4":  ("claude-sonnet-4",  0.003,  0.015),
-        "gpt-4o":         ("gpt-4o-mini",       0.00015, 0.0006),
-        "gemini-1.5-pro": ("gemini-1.5-flash",  0.000075, 0.0003),
-        "mistral-large":  ("llama-3.3-70b",     0.00059, 0.00079),
-    }
-    for model_id, (alt, alt_in, alt_out) in expensive_swaps.items():
+    # Hint: expensive model with a cheaper alternative. The swap mapping lives
+    # in constants (AADC_MODEL_SWAPS) and the alternative's prices are DERIVED
+    # from AADC_MODEL_COSTS so they never drift from the single pricing source.
+    for model_id, alt in AADC_MODEL_SWAPS.items():
         if model_id in breakdown:
             entry = _cost_for_model(model_id)
+            alt_entry = AADC_MODEL_COSTS[alt]
+            alt_in = alt_entry["input"]
+            alt_out = alt_entry["output"]
             current_cost = breakdown[model_id]["cost_per_run"] * len(breakdown[model_id]["node_ids"])
             avg_in = entry["avg_in"]
             avg_out = entry["avg_out"]

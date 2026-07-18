@@ -176,7 +176,7 @@ teams:
         specialty: "Policy interpretation, ethical AI guidance, DoD 5000.87 alignment"
         system_prompt: |
           You are Policy Advisor on Team Green. Advise on ethical AI use and policy alignment.
-          Verify all team outputs comply with: trusted AI tenets, DoD AI Ethics Principles, EO 14110.
+          Verify all team outputs comply with: trusted AI tenets, DoD AI Ethics Principles, OMB M-25-21 and OMB M-26-04.
           Output: {"compliant": true/false, "violations": [...], "recommendations": [...], "ethics_score": 0.0-1.0}
 
       - role: orchestrator

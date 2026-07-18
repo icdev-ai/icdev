@@ -1,0 +1,18 @@
+# CUI // SP-CTI
+id: inject-02-citation-spoofing
+title: 'Red Move: Citations That Point at Real-but-Wrong Passages'
+body_md: "## RED TEAM MOVE 2 — CITATION SPOOFING\n\n**Classification:** CUI // SP-CTI\n\nRed escalates:\
+  \ rather than inject instructions, they craft claims whose citations point at real,\nexisting passages\
+  \ that are topically adjacent but do not support the claim — designed to pass a\nshallow 'does the cited\
+  \ page exist?' check.\n\nThree contested claims:\n\n| # | Claim | Citation | Cited passage actually\
+  \ says |\n|---|-------|----------|-----------------------------|\n| 1 | \"Latency SLO met in Q2\" |\
+  \ `perf.pdf p.7` | Q1 latency, not Q2 |\n| 2 | \"Encryption at rest enabled\" | `arch.pdf p.3` | Encryption\
+  \ *in transit* |\n| 3 | \"No critical CVEs open\" | `scan.pdf p.9` | Lists 2 critical CVEs |\n\n###\
+  \ Blue Task\n1. **Verify** each claim against its cited passage using grounded search; mark supported\
+  \ /\n   spoofed.\n2. **Evidence** — For each spoof, quote the mismatch (cited-says vs claim).\n3. **Policy**\
+  \ — State why 'the page exists' is insufficient and what grounding threshold /\n   semantic check the\
+  \ gate must apply.\n\nVerified provenance receipts earn bonus points. Catching all 3 spoofs is full\
+  \ marks."
+context_note: All three are spoofed (Q1 vs Q2, in-transit vs at-rest, CVEs present vs 'none'). Full credit
+  requires catching all three with the specific cited-says-vs-claim mismatch and articulating why existence
+  checks fail — the gate needs semantic grounding above threshold, not page existence.

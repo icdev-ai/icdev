@@ -543,7 +543,7 @@ body { overflow: hidden; height: 100vh; }
 
 <script>
 // ── State ─────────────────────────────────────────────────────────────────
-var DESIGN_ID = '{{ design_id | safe }}';
+var DESIGN_ID = {{ design_id | tojson }};
 var IS_NEW    = {{ 'true' if new_design else 'false' }};
 var graph     = { nodes:[], edges:[], boundaries:[] };
 var selectedNodeId  = null;
@@ -556,7 +556,7 @@ var histStack = [], histIdx = -1;
 var _allTemplates = [], _allSnippets = [];
 
 {% if design %}
-try { var _d = {{ design_json | safe }}; graph = _d.graph || graph; } catch(e) {}
+try { var _d = {{ design | tojson }}; graph = _d.graph || graph; } catch(e) {}
 {% endif %}
 
 function resolveGraphOverlaps(nodes, defaultW, defaultH, padding) {
