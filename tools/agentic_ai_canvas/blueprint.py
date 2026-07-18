@@ -1366,7 +1366,7 @@ def update_risk(design_id: str, risk_id: str):
     updates = {f: data[f] for f in fields if f in data}
     if not updates:
         return jsonify({"ok": True})
-    set_clause = ", ".join(f"{f}=?" for f in updates)
+    set_clause = ", ".join(f"{f}=%s" for f in updates)
     conn = _conn()
     conn.execute(
         f"UPDATE aadc_risk_items SET {set_clause}, updated_at=%s WHERE id=%s AND design_id=%s",

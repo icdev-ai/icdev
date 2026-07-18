@@ -1392,10 +1392,10 @@ def api_kg_explore():
                 clauses.append(cc_sql)
                 params.extend(cc_params)
             if label:
-                clauses.append("LOWER(n.label) LIKE LOWER(?)")
+                clauses.append("LOWER(n.label) LIKE LOWER(%s)")
                 params.append(f"%{label}%")
             if entity_type:
-                clauses.append("n.entity_type = ?")
+                clauses.append("n.entity_type = %s")
                 params.append(entity_type)
             if clauses:
                 sql += " WHERE " + " AND ".join(clauses)
@@ -2610,10 +2610,10 @@ def api_section_annotations_list(section_id: str):
         sql = "SELECT * FROM dic_section_annotations WHERE section_id = %s"
         params: list = [section_id]
         if status_filter:
-            sql += " AND status = ?"
+            sql += " AND status = %s"
             params.append(status_filter)
         if category_filter:
-            sql += " AND category = ?"
+            sql += " AND category = %s"
             params.append(category_filter)
         sql += " ORDER BY created_at ASC"
         rows = _safe_rows(conn, sql, params)

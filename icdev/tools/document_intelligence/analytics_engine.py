@@ -1108,7 +1108,7 @@ def detect_view_anomalies(collection_id: str | None = None,
         # the ISO string comparison works identically on SQLite and PostgreSQL.
         from datetime import timedelta
         cutoff = (datetime.now(timezone.utc) - timedelta(days=window_days)).isoformat()
-        cid_view_filter = "AND collection_id = ?" if collection_id else ""
+        cid_view_filter = "AND collection_id = %s" if collection_id else ""
         view_params: tuple = (cutoff, collection_id) if collection_id else (cutoff,)
         view_rows = _safe(
             conn,
@@ -2823,7 +2823,7 @@ def detect_ingest_throughput_anomaly(
     conn = _conn()
     try:
         cutoff = datetime.now(timezone.utc) - timedelta(days=lookback_days)
-        cid_clause = "AND collection_id = ?" if collection_id else ""
+        cid_clause = "AND collection_id = %s" if collection_id else ""
         params: tuple = (cutoff.isoformat(), collection_id) if collection_id else (cutoff.isoformat(),)
         rows = _safe(
             conn,

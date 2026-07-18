@@ -57,7 +57,7 @@ def register_misc_routes(bp):
             phase_ids = [ph["id"] for ph in phases]
             sops_by_phase: dict = {ph["id"]: [] for ph in phases}
             if phase_ids:
-                placeholders = ",".join("?" * len(phase_ids))
+                placeholders = ",".join([_ph] * len(phase_ids))
                 doc_rows = conn.execute(
                     f"SELECT pd.phase_id, s.sop_id, s.title, s.category, s.csp "
                     f"FROM nc_phase_documents pd "
@@ -72,7 +72,7 @@ def register_misc_routes(bp):
 
             flows_by_phase: dict = {ph["id"]: [] for ph in phases}
             if topo_id and phase_ids:
-                placeholders = ",".join("?" * len(phase_ids))
+                placeholders = ",".join([_ph] * len(phase_ids))
                 flow_rows = conn.execute(
                     f"SELECT id, name, source_zone, destination_zone, classification, phase_id "
                     f"FROM nc_traffic_flows WHERE topology_id={_ph} AND phase_id IN ({placeholders})",
@@ -478,54 +478,54 @@ def register_misc_routes(bp):
         advisory = _q1(f"SELECT * FROM nc_advisories WHERE id = {_ph}", (advisory_id,))
 
         assessments = _q(
-            "SELECT * FROM nc_advisory_assessments WHERE advisory_id = ? ORDER BY created_at ASC",
+            f"SELECT * FROM nc_advisory_assessments WHERE advisory_id = {_ph} ORDER BY created_at ASC",
             (advisory_id,),
         )
 
         rem_actions = _q(
-            "SELECT * FROM nc_remediation_actions WHERE advisory_id = ? ORDER BY created_at ASC",
+            f"SELECT * FROM nc_remediation_actions WHERE advisory_id = {_ph} ORDER BY created_at ASC",
             (advisory_id,),
         )
 
         rem_status_log: list = []
         action_ids = [a.get("id") for a in rem_actions if a.get("id")]
         if action_ids:
-            ph = ",".join("?" * len(action_ids))
+            ph = ",".join([_ph] * len(action_ids))
             rem_status_log = _q(
                 f"SELECT * FROM nc_remediation_status_log WHERE action_id IN ({ph}) ORDER BY created_at ASC",
                 action_ids,
             )
 
         poam_items = _q(
-            "SELECT * FROM nc_poam_items WHERE advisory_id = ? ORDER BY created_at ASC",
+            f"SELECT * FROM nc_poam_items WHERE advisory_id = {_ph} ORDER BY created_at ASC",
             (advisory_id,),
         )
 
         poam_status_log: list = []
         poam_ids = [p.get("id") for p in poam_items if p.get("id")]
         if poam_ids:
-            ph = ",".join("?" * len(poam_ids))
+            ph = ",".join([_ph] * len(poam_ids))
             poam_status_log = _q(
                 f"SELECT * FROM nc_poam_status_log WHERE poam_id IN ({ph}) ORDER BY created_at ASC",
                 poam_ids,
             )
 
         exceptions = _q(
-            "SELECT * FROM nc_exceptions WHERE advisory_id = ? ORDER BY created_at ASC",
+            f"SELECT * FROM nc_exceptions WHERE advisory_id = {_ph} ORDER BY created_at ASC",
             (advisory_id,),
         )
 
         exception_approvals: list = []
         exc_ids = [e.get("id") for e in exceptions if e.get("id")]
         if exc_ids:
-            ph = ",".join("?" * len(exc_ids))
+            ph = ",".join([_ph] * len(exc_ids))
             exception_approvals = _q(
                 f"SELECT * FROM nc_exception_approvals WHERE exception_id IN ({ph}) ORDER BY created_at ASC",
                 exc_ids,
             )
 
         audit_log = _q(
-            "SELECT * FROM nc_nqe_audit_log WHERE advisory_id = ? ORDER BY created_at ASC",
+            f"SELECT * FROM nc_nqe_audit_log WHERE advisory_id = {_ph} ORDER BY created_at ASC",
             (advisory_id,),
         )
 
