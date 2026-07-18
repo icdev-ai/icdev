@@ -73,6 +73,10 @@ class RoleTemplate:
     mode: str = "steps"
     agent_tools: list[str] = field(default_factory=list)
     max_iterations: int = 12
+    # Real-time rubric gating (opt-in). When set to "pipeline" an agent-mode run
+    # is routed through run_agent_loop_with_rubric with the delivery-pipeline
+    # grader (build -> gates -> revise). Absent/empty/None = off (plain loop).
+    rubric: str = ""
 
     def __post_init__(self) -> None:
         # Expose listen_topics at top level for dispatcher hot-path
@@ -107,6 +111,7 @@ class RoleTemplate:
             mode=str(data.get("mode", "steps")),
             agent_tools=list(data.get("agent_tools") or []),
             max_iterations=int(data.get("max_iterations", 12)),
+            rubric=str(data.get("rubric") or ""),
         )
 
 
