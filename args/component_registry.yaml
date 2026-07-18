@@ -1102,12 +1102,19 @@ components:
   default_enabled: false
   module: apps.forge_academy.blueprint
   blueprint_attr: academy_bp
-  url_prefix: /forge-academy
+  # Routes are hardcoded to /academy in the blueprint (registered without a
+  # url_prefix), so the registry prefix and nav link must match /academy or the
+  # derived nav link 404s. A 301 redirect from the legacy /forge-academy paths
+  # lives in the blueprint for stale bookmarks. (penta-aca-01)
+  url_prefix: /academy
   min_il: IL2
   default_roles: []
   nav:
     section: Learn
     label: FORGE Academy
+    links:
+      - label: Dashboard
+        href: /academy
   completeness:
     blueprint: true
     backing_module: true
