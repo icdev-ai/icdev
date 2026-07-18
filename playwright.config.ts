@@ -68,6 +68,9 @@ export default defineConfig({
       ICDEV_CUI_BANNER_ENABLED: 'true',
       ICDEV_MISSION_CANVAS_ENABLED: 'true',
       ICDEV_AUTH_BYPASS: 'true',
+      // nav-sec-01: local E2E server opts into dev auto-login explicitly now
+      // that merely having ICDEV_DASHBOARD_API_KEY set no longer authenticates.
+      ICDEV_DASHBOARD_DEV_AUTOLOGIN: 'true',
       ICDEV_OPS_HUB_ENABLED: 'true',
       // NOC Operations Canvas — required by tests/e2e/noc_canvas.spec.ts (cnr-ops-02).
       // Registry default_enabled is false; without this the noc_canvas blueprint
