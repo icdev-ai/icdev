@@ -17,6 +17,7 @@ the appropriate stage with reviewer notes injected into the next generation.
 """
 from __future__ import annotations
 
+import os
 import pathlib
 import uuid
 from typing import Any
@@ -240,27 +241,56 @@ def _append_compliance_stamp(doc_text: str, classification: str) -> str:
 
 # ─── Item 8: Document freshness gate ────────────────────────────────────────
 
+# cnr-doc-04(e): cache of digest keyed by a (path, mtime_ns, size) signature so a
+# rendered session list doesn't re-read every upload file on every request. The
+# signature only changes when a file actually changes, so the digest VALUE is
+# preserved exactly (no re-baselining of existing stored hashes).
+_HASH_CACHE: dict[tuple, str] = {}
+_HASH_CACHE_MAX = 512
+
+
 def compute_source_hash(upload_paths: list[str]) -> str:
     """Return a stable SHA-256 hash of the content of all upload files.
 
     Files are sorted by path before hashing to ensure determinism.
     Returns a hex string, or empty string if no paths provided or all files missing.
+    Caches by (path, mtime, size) so unchanged files are not re-read on every call.
     """
     import hashlib
 
     if not upload_paths:
         return ""
 
+    ordered = sorted(upload_paths)
+    # Cheap stat-only signature (no byte reads) to short-circuit unchanged sources.
+    sig_parts: list[tuple] = []
+    stat_ok = True
+    for path in ordered:
+        try:
+            st = os.stat(path)
+            sig_parts.append((path, st.st_mtime_ns, st.st_size))
+        except OSError:
+            stat_ok = False
+            break
+    sig = tuple(sig_parts) if stat_ok and sig_parts else None
+    if sig is not None and sig in _HASH_CACHE:
+        return _HASH_CACHE[sig]
+
     h = hashlib.sha256()
     any_read = False
-    for path in sorted(upload_paths):
+    for path in ordered:
         p = pathlib.Path(path)
         try:
             h.update(p.read_bytes())
             any_read = True
         except (OSError, IOError):
             pass
-    return h.hexdigest() if any_read else ""
+    digest = h.hexdigest() if any_read else ""
+    if sig is not None and digest:
+        if len(_HASH_CACHE) >= _HASH_CACHE_MAX:
+            _HASH_CACHE.clear()
+        _HASH_CACHE[sig] = digest
+    return digest
 
 
 def record_source_hash(session_id: str, upload_paths: list[str]) -> str:
@@ -282,15 +312,25 @@ def record_source_hash(session_id: str, upload_paths: list[str]) -> str:
     return h
 
 
-def check_freshness(session_id: str, upload_paths: list[str]) -> dict:
+def check_freshness(
+    session_id: str,
+    upload_paths: list[str],
+    stored_hash: str | None = None,
+) -> dict:
     """Compare current upload hash against the stored last_source_hash.
 
     Returns {"stale": bool, "current_hash": str, "stored_hash": str}.
     stale=True means uploads have changed since the document was last generated.
     stale=False if no stored hash (new session) or hashes match.
+
+    cnr-doc-04(e): pass ``stored_hash`` (from a session row the caller already has)
+    to skip the per-session get_session() round-trip when rendering a session list.
     """
-    session = sm.get_session(session_id) or {}
-    stored = session.get("last_source_hash") or ""
+    if stored_hash is None:
+        session = sm.get_session(session_id) or {}
+        stored = session.get("last_source_hash") or ""
+    else:
+        stored = stored_hash or ""
     current = compute_source_hash(upload_paths)
     stale = bool(stored and current and stored != current)
     return {"stale": stale, "current_hash": current, "stored_hash": stored}
@@ -1331,12 +1371,28 @@ def _try_export_docx(session_id, text, title, out_dir, classification, artifacts
 
 def _try_export_pdf(session_id, text, title, out_dir, classification, artifacts):
     try:
+        import importlib.util
+
+        # cnr-doc-04(d): export_to_pdf silently writes an HTML file (document.pdf →
+        # document.html) when fpdf2 is missing — which would BOTH overwrite the real
+        # HTML artifact AND be mislabelled 'pdf'. Only attempt a genuine PDF when
+        # fpdf2 is present; the HTML artifact is already produced by _try_export_html.
+        if importlib.util.find_spec("fpdf") is None:
+            log.info("IDR PDF export skipped: fpdf2 not installed (HTML already exported)")
+            return
+
         from tools.network.pdf_export import export_to_pdf
 
         pdf_path = str(pathlib.Path(out_dir) / "document.pdf")
         export_to_pdf(content=text, output_path=pdf_path, title=title, classification=classification)
-        row = sm.add_artifact(session_id, "pdf", file_path=pdf_path)
-        artifacts.append(row)
+        if pathlib.Path(pdf_path).is_file():
+            row = sm.add_artifact(session_id, "pdf", file_path=pdf_path)
+            artifacts.append(row)
+        else:
+            log.warning(
+                "IDR PDF export produced no .pdf (fpdf2 fallback?) — not recording a 'pdf' artifact: session=%s",
+                session_id,
+            )
     except ImportError:
         log.debug("pdf_export not available — skipping PDF export")
     except Exception:

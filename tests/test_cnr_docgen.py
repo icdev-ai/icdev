@@ -46,6 +46,19 @@ def _sqlite_env(monkeypatch, tmp_path):
         dic_doc_id TEXT, extracted_from_doc_id TEXT, status TEXT DEFAULT 'pending',
         error_msg TEXT, tenant_id TEXT, uploaded_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
+    CREATE TABLE IF NOT EXISTS idr_analyses (
+        id TEXT PRIMARY KEY, session_id TEXT NOT NULL, upload_id TEXT NOT NULL,
+        analysis_type TEXT NOT NULL, result_ref_id TEXT NOT NULL, status TEXT DEFAULT 'done',
+        error_msg TEXT, tenant_id TEXT, result_json TEXT, confidence_score REAL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS idr_conflicts (
+        id TEXT PRIMARY KEY, session_id TEXT NOT NULL, node_label TEXT NOT NULL,
+        conflict_type TEXT NOT NULL, source_a TEXT NOT NULL, source_a_value TEXT,
+        source_b TEXT NOT NULL, source_b_value TEXT, resolved_by TEXT, resolution TEXT,
+        resolution_notes TEXT, resolved_at TEXT, tenant_id TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
     CREATE TABLE IF NOT EXISTS idr_artifacts (
         id TEXT PRIMARY KEY, session_id TEXT NOT NULL, dic_doc_id TEXT,
         dic_version_id TEXT, format TEXT NOT NULL, file_path TEXT, wg_result_id TEXT,
@@ -293,3 +306,63 @@ def test_sanitize_html_keeps_safe_formatting():
     from tools.docgen.workflow import _sanitize_html
     out = _sanitize_html("<h1>Title</h1><p>ok <strong>bold</strong></p>")
     assert "<h1>" in out and "<strong>" in out
+
+
+# ═══════════ cnr-doc-04: schema converge, landing, email, pdf label, perf ══════
+
+def test_add_upload_matches_schema_all_backends():
+    """add_upload uses only real idr_uploads columns (no upload_id/collection_id/filepath)."""
+    from tools.docgen.session_manager import create_session, add_upload, get_upload
+    s = create_session(title="U", domain="network")
+    up = add_upload(s["id"], filename="topo.png", upload_type="diagram",
+                    file_path="/x/topo.png", tenant_id="t1")
+    assert up["id"] and up["filename"] == "topo.png"
+    assert get_upload(up["id"])["upload_type"] == "diagram"
+
+
+def test_add_upload_accepts_email_type():
+    """'email' upload_type (workflow.py:553) is a valid type end-to-end."""
+    from tools.docgen.session_manager import create_session, add_upload
+    s = create_session(title="U", domain="network")
+    up = add_upload(s["id"], filename="msg.eml", upload_type="email", file_path="/x/msg.eml")
+    assert up["upload_type"] == "email"
+
+
+def test_sessions_with_freshness_degrades_when_tables_absent():
+    """cnr-doc-04(b): landing helper returns [] instead of raising when idr tables absent."""
+    from tools.docgen import blueprint as bp
+    with patch("tools.docgen.session_manager.list_sessions",
+               side_effect=Exception("no such table: idr_sessions")):
+        assert bp._sessions_with_freshness() == []
+
+
+def test_check_freshness_stored_hash_skips_get_session():
+    """cnr-doc-04(e): passing stored_hash avoids the per-session get_session round-trip."""
+    from tools.docgen.workflow import check_freshness
+    with patch("tools.docgen.session_manager.get_session",
+               side_effect=AssertionError("get_session must not be called")):
+        res = check_freshness("sess-x", [], stored_hash="abc123")
+    assert res["stored_hash"] == "abc123"
+
+
+def test_compute_source_hash_cache_and_change_detection(tmp_path):
+    from tools.docgen.workflow import compute_source_hash
+    f = tmp_path / "src.txt"
+    f.write_text("original", encoding="utf-8")
+    h1 = compute_source_hash([str(f)])
+    assert h1 and compute_source_hash([str(f)]) == h1  # cached / stable
+    import os as _os
+    import time as _time
+    _time.sleep(0.01)
+    f.write_text("changed content", encoding="utf-8")
+    _os.utime(str(f), None)
+    assert compute_source_hash([str(f)]) != h1  # stat signature changed -> re-hashed
+
+
+def test_try_export_pdf_no_fpdf_records_no_pdf_artifact(tmp_path):
+    """cnr-doc-04(d): when fpdf2 is absent, no (mislabelled) 'pdf' artifact is recorded."""
+    from tools.docgen.workflow import _try_export_pdf
+    artifacts = []
+    with patch("importlib.util.find_spec", return_value=None):
+        _try_export_pdf("sess-x", "body", "Title", str(tmp_path), "CUI", artifacts)
+    assert artifacts == []

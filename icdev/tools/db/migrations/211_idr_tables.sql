@@ -29,8 +29,10 @@ CREATE TABLE IF NOT EXISTS idr_uploads (
     id              TEXT PRIMARY KEY,
     session_id      TEXT NOT NULL REFERENCES idr_sessions(id),
     filename        TEXT NOT NULL,
+    -- upload_type CHECK derived from tools/docgen/constants.py::UPLOAD_TYPES
+    -- ('email' added cnr-doc-04; migration 217 also converges this on PG).
     upload_type     TEXT NOT NULL
-                        CHECK (upload_type IN ('diagram','doc','config','iac','supplement')),
+                        CHECK (upload_type IN ('diagram','doc','config','iac','supplement','email')),
     file_path       TEXT,
     file_hash       TEXT,
     dic_doc_id      TEXT,                    -- DIC dic_documents.id after ingestion

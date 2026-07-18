@@ -85,13 +85,23 @@ def _sessions_with_freshness(limit: int = 20) -> list:
     from tools.docgen import session_manager as sm
     from tools.docgen.workflow import check_freshness
 
-    sessions = sm.list_sessions(limit=limit)
+    # cnr-doc-04(b): the /docgen landing must not 500 when the idr_* tables are
+    # absent (e.g. a squash-bootstrapped PG DB where migration 211 was marked
+    # applied but never ran). Degrade to an empty board instead.
+    try:
+        sessions = sm.list_sessions(limit=limit)
+    except Exception as exc:
+        logger.warning("docgen: session list unavailable (tables not initialized?): %s", exc)
+        return []
     for s in sessions:
         if s.get("last_source_hash") and s.get("status") in ("published", "reviewing"):
-            uploads = sm.list_uploads(s["id"])
-            paths = [u["file_path"] for u in uploads if u.get("file_path")]
-            fresh = check_freshness(s["id"], paths)
-            s["freshness_stale"] = fresh["stale"]
+            try:
+                uploads = sm.list_uploads(s["id"])
+                paths = [u["file_path"] for u in uploads if u.get("file_path")]
+                fresh = check_freshness(s["id"], paths, stored_hash=s.get("last_source_hash"))
+                s["freshness_stale"] = fresh["stale"]
+            except Exception:
+                s["freshness_stale"] = False
         else:
             s["freshness_stale"] = False
     return sessions
