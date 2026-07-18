@@ -62,6 +62,22 @@ a claim, omit it rather than inventing it."""
 # Minimum evidence length to justify CoT (cheaper direct call below this)
 _COT_EVIDENCE_THRESHOLD = 500
 
+# Confidence bands — coupled to the shared TRUST bands rather than re-hardcoded.
+# citation_grounding is the single source of truth (>=0.7 include, 0.4-0.69 flag
+# + HITL, <0.4 abstain); that module's docstring already records that it
+# "Mirrors the DIC doc_generator thresholds. Kept here so every surface uses the
+# same bands." Importing the constants here closes the loop so DIC drafting and
+# the citation gate cannot silently drift apart when the bands are retuned. The
+# literal fallback keeps this module importable if quality/ is unavailable.
+try:
+    from tools.quality.citation_grounding import (
+        CONF_ABSTAIN as _CONF_ABSTAIN,
+        CONF_INCLUDE as _CONF_INCLUDE,
+    )
+except Exception:  # pragma: no cover — defensive; preserves historical values
+    _CONF_INCLUDE = 0.7
+    _CONF_ABSTAIN = 0.4
+
 
 def _dic_cot_enabled() -> bool:
     """Whether DIC drafting uses Chain-of-Thought / CoD compression.
@@ -630,12 +646,12 @@ def generate_document(
                 )
                 flagged_headings.append(heading)
                 raw_text = f"{raw_text}\n\n> {hitl_note}"
-            if confidence >= 0.7:
+            if confidence >= _CONF_INCLUDE:
                 pass  # include normally
-            elif confidence >= 0.4:
+            elif confidence >= _CONF_ABSTAIN:
                 low_confidence = True
                 hitl_note = (
-                    f"⚠ Confidence {confidence:.0%} — below 0.7 threshold; "
+                    f"⚠ Confidence {confidence:.0%} — below {_CONF_INCLUDE:.0%} threshold; "
                     f"verify against source documents before publishing."
                 )
                 if heading not in flagged_headings:
@@ -646,8 +662,8 @@ def generate_document(
                 abstained = True
                 confidence = confidence
                 logger.info(
-                    "doc_generator: section '%s' excluded — confidence %.2f < 0.4",
-                    heading, confidence,
+                    "doc_generator: section '%s' excluded — confidence %.2f < %.2f",
+                    heading, confidence, _CONF_ABSTAIN,
                 )
 
         # halluc-03: non-blocking confabulation assessment (fabricated-citation

@@ -103,6 +103,27 @@ def _candidates(conn, surface: str) -> list[dict]:
 
     Only oracle_predictions for now — it is the one surface with a real
     confidence spread AND a reachable verdict.
+
+    Tombstone filter: only rows whose outcome is still OPEN
+    (``NULL`` / ``''`` / ``'pending'``) are drawn. Closed rows are excluded
+    for two reasons, both of which keep the sampled statistics honest:
+
+      * ``dismissed*`` rows are tombstones — the operator already ruled the
+        prediction a false positive (or a retired rule left it behind). Re-
+        auditing a killed prediction and folding a fresh human verdict into
+        the calibration aggregate is exactly the "stale tombstone rows keep
+        influencing aggregate statistics" defect.
+      * ``promoted:*`` rows already have real ground truth via the
+        oracle_predictions→kanban_verifications join (the ORGANIC path in
+        calibration_report). Sampling them too would double-observe the same
+        prediction and let an unbiased sample leak into a biased one — the one
+        thing the sampled/organic split exists to prevent.
+
+    This mirrors suggested_card_writer._load_pending_predictions' own
+    definition of an open, still-promotable prediction, so the sampler and the
+    promoter agree on what "open" means. Below-gate rows are still drawn: they
+    are written unconditionally and stay ``pending`` (never promoted), so the
+    "samples below the gate too" property is preserved.
     """
     if surface != "oracle_triage":
         raise ValueError(f"unsupported sampling surface: {surface!r}")
@@ -111,6 +132,7 @@ def _candidates(conn, surface: str) -> list[dict]:
         SELECT id, confidence, prediction_type, prediction_text, lens_name
           FROM oracle_predictions
          WHERE confidence IS NOT NULL
+           AND (outcome IS NULL OR outcome = '' OR outcome = 'pending')
         """
     )
     out = []
