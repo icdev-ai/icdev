@@ -1,7 +1,9 @@
 # CUI // SP-CTI
 """ACE (Autonomous Collaborative Engine) — DB initializer.
 
-Creates 5 canvas tables.  Uses get_canvas_connection() — NOT get_connection() —
+Creates every ACE canvas table defined in SCHEMA (instances, coworkers, messages,
+artifacts, workflows, audit/step-audit logs, events, sessions, skill candidates,
+webhook log, ...).  Uses get_canvas_connection() — NOT get_connection() —
 because ace_* tables have no classification/tenant_id columns.
 
 Usage:
