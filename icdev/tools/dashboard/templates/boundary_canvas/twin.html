@@ -11,6 +11,32 @@
   <p>Continuous Authority to Operate digital twin. Snapshot compliance state, simulate policy deltas, and export OSCAL artifacts.</p>
 </div>
 
+<!-- cATO readiness score tile (bdr-feat-2) -->
+<div class="twin-panel" id="readinessTile"
+     style="display:flex;align-items:center;gap:18px;margin-bottom:16px;padding:14px 18px;">
+  <div style="display:flex;align-items:center;gap:12px;min-width:210px;">
+    <span id="readinessBandDot"
+          style="width:14px;height:14px;border-radius:50%;background:#5a6e8c;flex:0 0 auto;"
+          title="cATO readiness band"></span>
+    <div>
+      <div style="font-size:11px;color:#7a8cb0;letter-spacing:.5px;text-transform:uppercase;">cATO Readiness</div>
+      <div>
+        <span id="readinessScoreVal" style="font-size:28px;font-weight:700;color:#eaeaea;">—</span>
+        <span style="font-size:14px;color:#5a6e8c;">/ 100</span>
+        <span id="readinessBandLabel"
+              style="margin-left:8px;font-size:11px;font-weight:600;text-transform:uppercase;
+                     letter-spacing:.5px;padding:2px 8px;border-radius:10px;
+                     background:#1e3a6e;color:#7a8cb0;">unknown</span>
+      </div>
+    </div>
+  </div>
+  <div id="readinessComponents"
+       style="flex:1;display:flex;flex-wrap:wrap;gap:8px;font-size:11px;color:#7a8cb0;"
+       title="Weighted component breakdown">
+    <span style="color:#5a6e8c;">Loading component breakdown…</span>
+  </div>
+</div>
+
 <div class="twin-layout">
 
   <!-- LEFT: snapshot + delta input -->
@@ -178,6 +204,53 @@
 <script>
 const PROJECT_ID = "{{ project.id }}";
 let selectedSnapId = {% if snapshots %}"{{ snapshots[0].snapshot_id }}"{% else %}null{% endif %};
+
+const READINESS_BAND_COLORS = { green: '#2ecc71', amber: '#f39c12', red: '#e74c3c', unknown: '#5a6e8c' };
+const READINESS_COMPONENT_LABELS = {
+  control_coverage: 'Controls', poam: 'POA&M', isa_expiry: 'ISA Expiry', freshness: 'Freshness'
+};
+
+async function loadReadiness() {
+  const dot = document.getElementById('readinessBandDot');
+  const scoreVal = document.getElementById('readinessScoreVal');
+  const bandLabel = document.getElementById('readinessBandLabel');
+  const compEl = document.getElementById('readinessComponents');
+  try {
+    const r = await fetch(`/boundary/api/cato/readiness/${PROJECT_ID}`);
+    const data = await r.json();
+    const band = data.band || 'unknown';
+    const color = READINESS_BAND_COLORS[band] || READINESS_BAND_COLORS.unknown;
+    dot.style.background = color;
+    scoreVal.textContent = (data.score === null || data.score === undefined) ? '—' : data.score;
+    scoreVal.style.color = (data.score === null || data.score === undefined) ? '#5a6e8c' : color;
+    bandLabel.textContent = band;
+    bandLabel.style.background = (band === 'unknown') ? '#1e3a6e' : color;
+    bandLabel.style.color = (band === 'unknown') ? '#7a8cb0' : '#0a1628';
+
+    const comps = data.components || {};
+    const chips = Object.keys(READINESS_COMPONENT_LABELS).map(k => {
+      const detail = comps[k] || {};
+      const s = detail.score;
+      const shown = (s === null || s === undefined) ? 'n/a' : s;
+      const chipColor = (s === null || s === undefined) ? '#5a6e8c'
+        : (s >= 80 ? '#2ecc71' : (s >= 50 ? '#f39c12' : '#e74c3c'));
+      const bits = [];
+      if (detail.satisfied_controls !== undefined) bits.push(`${detail.satisfied_controls}/${detail.total_controls} satisfied`);
+      if (detail.open_poam_count !== undefined) bits.push(`${detail.open_poam_count} open`);
+      if (detail.total_isas !== undefined) bits.push(`${detail.expired} expired, ${detail.expiring_soon} soon`);
+      if (detail.age_days !== undefined) bits.push(`${detail.age_days}d old`);
+      if (detail.reason && (s === null || s === undefined)) bits.push(detail.reason);
+      const tip = bits.join(' · ');
+      return `<span title="${tip}" style="padding:3px 9px;border:1px solid #1e3a6e;border-radius:10px;`
+        + `background:#0a1628;"><strong style="color:${chipColor};">${shown}</strong> `
+        + `<span style="color:#7a8cb0;">${READINESS_COMPONENT_LABELS[k]}</span></span>`;
+    });
+    compEl.innerHTML = chips.join('');
+  } catch (e) {
+    compEl.innerHTML = '<span style="color:#e74c3c;">Readiness unavailable</span>';
+  }
+}
+document.addEventListener('DOMContentLoaded', loadReadiness);
 
 function selectSnap(el, snapId) {
   document.querySelectorAll('.snap-item').forEach(i => i.classList.remove('active'));

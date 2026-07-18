@@ -1781,6 +1781,31 @@ def create_boundary_blueprint():
         result = export_oscal(design_id, snap_id, artifact_type)
         return jsonify(result), 200
 
+    @bp.route("/api/cato/readiness/<design_id>", methods=["GET"])
+    @bdc_login_required
+    def bdc_api_cato_readiness(design_id):
+        """Compute the 0-100 cATO readiness composite for a design.
+
+        Degrades gracefully — missing tables/data yield score=None + band
+        'unknown' rather than a 500.
+        """
+        from tools.boundary_canvas.cato_readiness import compute_readiness
+        project_id = request.args.get("project_id") or design_id
+        try:
+            result = compute_readiness(design_id, project_id)
+        except Exception as exc:  # noqa: BLE001 — never surface a 500 to the tile
+            logger.warning("cATO readiness compute failed for %s: %s", design_id, exc)
+            result = {
+                "design_id": design_id,
+                "project_id": project_id,
+                "score": None,
+                "readiness_score": None,
+                "band": "unknown",
+                "components": {},
+                "error": str(exc),
+            }
+        return jsonify(result), 200
+
     @bp.route("/api/twin/<design_id>/current-topology", methods=["GET"])
     @bdc_login_required
     def bdc_api_twin_current_topology(design_id):
