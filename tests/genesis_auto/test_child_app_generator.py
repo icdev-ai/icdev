@@ -7,6 +7,7 @@ Tests validate importability, function signatures, return types,
 and basic invocation patterns.
 """
 
+import ast
 import sys
 from pathlib import Path
 
@@ -448,6 +449,82 @@ def test_dashboard_stub_passes_forge12(tmp_path):
     assert forge12[0].status == "pass", (
         f"FORGE-12 failed on generated stub: {forge12[0].message}"
     )
+
+
+# --- cvx-gen-05: emitted stubs must compile clean (latent NameError guard) ---
+
+
+def test_dashboard_stub_compiles_and_imports_os(tmp_path):
+    """cvx-gen-05: the emitted dashboard stub must compile as a whole and, since
+    its ``__main__`` block reads ``os.environ``, it must ``import os`` (else a
+    latent NameError when a generated child dashboard is run directly)."""
+    try:
+        source = _generate_stub_app(tmp_path)
+    except ImportError:
+        pytest.skip("Module not importable")
+
+    # Compiles clean as a whole module (no SyntaxError).
+    compile(source, "child_dashboard_app.py", "exec")
+
+    # The __main__ block uses os.environ -> os must be imported.
+    assert "os.environ" in source, "stub __main__ should read os.environ"
+    tree = ast.parse(source)
+    imported = {
+        alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Import)
+        for alias in node.names
+    }
+    assert "os" in imported, "dashboard stub uses os but never imports it"
+
+
+def test_mcp_stub_compiles_and_has_no_undefined_logger(tmp_path):
+    """cvx-gen-05: emitted MCP server stub must compile and not reference an
+    undefined ``get_logger`` (it imports ``logging`` and must call
+    ``logging.getLogger``)."""
+    try:
+        from tools.builder.child_app_generator import _generate_mcp_stubs
+    except ImportError:
+        pytest.skip("Module not importable")
+
+    mcp_dir = tmp_path / "mcp"
+    mcp_dir.mkdir(parents=True, exist_ok=True)
+    blueprint = {"app_name": "acme-child", "classification": "CUI"}
+    agents = [{"name": "builder", "port": 8445, "role": "builder"}]
+    assert _generate_mcp_stubs(mcp_dir, agents, "acme-child", blueprint) >= 1
+
+    stubs = list(mcp_dir.glob("*.py"))
+    assert stubs, "no MCP stub emitted"
+    for stub in stubs:
+        source = stub.read_text(encoding="utf-8")
+        compile(source, stub.name, "exec")
+        assert "get_logger(" not in source, f"{stub.name} references undefined get_logger"
+        assert "logging.getLogger(" in source, f"{stub.name} should use logging.getLogger"
+
+
+def test_a2a_callback_client_compiles_and_has_no_undefined_logger(tmp_path):
+    """cvx-gen-05: emitted A2A callback client must compile and use
+    ``logging.getLogger`` rather than an undefined ``get_logger``."""
+    try:
+        from tools.builder.child_app_generator import step_08_a2a_callback_client
+    except ImportError:
+        pytest.skip("Module not importable")
+
+    blueprint = {
+        "app_name": "acme-child",
+        "classification": "CUI",
+        "parent_callback": {
+            "enabled": True,
+            "url": "https://parent.example/a2a",
+            "auth": "mtls",
+        },
+    }
+    result = step_08_a2a_callback_client(tmp_path, blueprint)
+    client = Path(result["client_path"])
+    source = client.read_text(encoding="utf-8")
+    compile(source, client.name, "exec")
+    assert "get_logger(" not in source, "a2a client references undefined get_logger"
+    assert "logging.getLogger(" in source, "a2a client should use logging.getLogger"
 
 
 # ---------------------------------------------------------------------------
