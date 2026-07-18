@@ -1,0 +1,7 @@
+# Intent: Identify functions where caching avoided the most repeat LLM calls
+#         (the biggest cost-avoidance contributors).
+# Expected: rows from cache.stats where avoided_calls > 0.
+
+foreach f in cache.stats
+  where f.avoided_calls > 0
+  select f.function, f.avoided_calls, f.total_hits, f.hit_rate_pct
