@@ -65,6 +65,8 @@ from tools.workflow_canvas.constants import (
     INDUSTRY_CATEGORIES,
     DEFAULT_PRIMARY_COLOR,
     DEFAULT_SECONDARY_COLOR,
+    MAX_UPLOAD_BYTES,
+    MAX_EXTRACT_CHARS,
 )
 from tools.studio.form_builder import (
     FIELD_TYPES,
@@ -89,6 +91,22 @@ def _now_iso() -> str:
 
 def _new_id(prefix: str = "wfc") -> str:
     return f"{prefix}-{uuid.uuid4().hex[:12]}"
+
+
+def _stream_size(file_storage) -> int:
+    """Return the byte size of an uploaded Werkzeug FileStorage without reading
+    it into memory. Seeks to end, records position, then rewinds so the stream
+    is still fully readable by downstream extractors."""
+    try:
+        stream = file_storage.stream
+        pos = stream.tell()
+        stream.seek(0, 2)  # SEEK_END
+        size = stream.tell()
+        stream.seek(pos)
+        return int(size)
+    except Exception:
+        # If the stream is not seekable, fall back to content_length (may be 0).
+        return int(getattr(file_storage, "content_length", 0) or 0)
 
 
 def _cancel_prior_processify_tasks(workflow_name: str) -> int:
@@ -762,6 +780,12 @@ Form description: {text}"""
             ext = pathlib.Path(file.filename).suffix.lower()
             if ext not in {".pdf", ".docx", ".png", ".jpg", ".jpeg", ".txt"}:
                 return jsonify({"error": f"Unsupported format '{ext}'. Use: PDF, DOCX, PNG, JPG, or TXT."}), 400
+            # Reject oversize uploads before reading into memory (cnr-wfc-02).
+            upload_size = _stream_size(file)
+            if upload_size > MAX_UPLOAD_BYTES:
+                return jsonify({
+                    "error": f"File too large ({upload_size} bytes). Limit is {MAX_UPLOAD_BYTES} bytes."
+                }), 413
             source_name = pathlib.Path(file.filename).stem
             tmp_path = None
             try:
@@ -792,6 +816,11 @@ Form description: {text}"""
 
         if not text:
             return jsonify({"error": "Could not extract text. Try a clearer document or paste text directly."}), 422
+
+        # Cap extracted text kept in memory / passed downstream (cnr-wfc-02).
+        if len(text) > MAX_EXTRACT_CHARS:
+            logger.info("digitize: truncating extracted text %d -> %d chars", len(text), MAX_EXTRACT_CHARS)
+            text = text[:MAX_EXTRACT_CHARS]
 
         prompt = f"""You are a business process analyst. Analyze the following process document and convert it into a structured digital workflow.
 
@@ -839,21 +868,22 @@ Process Document:
 {text[:8000]}"""
 
         try:
-            from tools.llm.router import LLMRouter
-            from tools.llm.provider import LLMRequest
-            router = LLMRouter()
-            req = LLMRequest(
-                messages=[{"role": "user", "content": prompt}],
+            # Route through the governed Cortex facade (input injection screen,
+            # output redaction, provenance, budget). The uploaded document text
+            # is UNTRUSTED, so trusted_content stays False (the default) — the
+            # injection screen runs. This mirrors docgen's cortex_api.complete
+            # usage but without the trusted_content=True flag. (cnr-wfc-02)
+            from tools.cortex import api as cortex_api
+            from tools.cortex.schemas import CortexContext
+            cx = cortex_api.complete(
+                prompt,
+                function="process_digitization",
+                ctx=CortexContext(domain="workflow", agent_id="wfc-processify",
+                                  trusted_content=False),
                 max_tokens=4096,
                 temperature=0.2,
             )
-            result = router.invoke("process_digitization", req)
-            if hasattr(result, "content"):
-                raw = result.content or ""
-            elif isinstance(result, dict):
-                raw = result.get("content") or result.get("text") or result.get("response") or str(result)
-            else:
-                raw = str(result or "")
+            raw = (cx.text or "") if cx is not None else ""
 
             match = re.search(r'\{[\s\S]*\}', raw)
             if not match:
