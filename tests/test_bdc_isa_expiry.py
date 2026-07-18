@@ -22,32 +22,28 @@ if str(BASE_DIR) not in sys.path:
 
 
 # ---------------------------------------------------------------------------
-# Wrapper that prevents the production code from closing the fixture connection
+# Wrapper: translating StorageConnection that never closes the shared conn.
 # ---------------------------------------------------------------------------
+# isa_expiry.py issues PG-native ``%s`` placeholders (e.g. ``... <= %s``); a raw
+# sqlite3.Connection bypasses the ``%s`` -> ``?`` translator and raises
+# ``sqlite3.OperationalError: near "%"``. Wrapping the in-memory conn in
+# ``StorageConnection(raw, "sqlite")`` translates exactly as production does
+# (the pattern bdr-sec-3 used in tests/test_cato_twin.py). The one wrinkle here:
+# isa_expiry opens a FRESH get_connection() per call and closes it in a finally,
+# so a real close() would destroy the shared ``:memory:`` DB between calls — the
+# ``close()`` override keeps it alive for the duration of a check_isa_expiry() run.
 
-class _NoClose:
-    """Proxy that delegates everything to the real connection but ignores .close()."""
+from tools.db.storage import StorageConnection  # noqa: E402
+
+
+class _NoClose(StorageConnection):
+    """Translating StorageConnection over an in-memory sqlite conn; close() no-ops."""
 
     def __init__(self, conn: sqlite3.Connection):
-        self._c = conn
-
-    def execute(self, *a, **kw):
-        return self._c.execute(*a, **kw)
-
-    def executescript(self, *a, **kw):
-        return self._c.executescript(*a, **kw)
-
-    def commit(self):
-        return self._c.commit()
+        super().__init__(conn, "sqlite")
 
     def close(self):
-        pass  # intentionally a no-op
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *args):
-        pass
+        pass  # keep the shared :memory: connection alive across get_connection() calls
 
 
 # ---------------------------------------------------------------------------
@@ -193,6 +189,11 @@ def test_check_isa_expiry_no_notification_beyond_30_days(bdc_db, main_db):
     with (
         patch("tools.boundary_canvas.db.init_db.get_connection", side_effect=lambda: _NoClose(bdc_db)),
         patch("tools.db.storage.get_connection", side_effect=lambda **kw: _NoClose(main_db)),
+        # event_bus resolves get_connection from its own namespace — patch it too
+        # (as the sibling publishes-event test does) so publish() writes to the
+        # controlled main_db, not the real DB. Without this the event count is
+        # order-dependent when the suite runs after other test files.
+        patch("tools.canvas.event_bus.get_connection", side_effect=lambda **kw: _NoClose(main_db)),
         patch("tools.notifications.adapters.telegram.send", side_effect=fake_tg_send),
     ):
         import importlib

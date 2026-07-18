@@ -1269,10 +1269,17 @@ def create_boundary_blueprint():
             if not row:
                 return jsonify({"error": "Not found"}), 404
 
-            isas = conn.execute(
-                "SELECT interconnection_id, status, expiry_date FROM bd_isa_tracker WHERE design_id=%s",
-                (design_id,),
-            ).fetchall()
+            # Supply-chain cross-link inputs degrade gracefully: a partial/fresh
+            # canvas DB without bd_isa_tracker must not 500 the risk view — the
+            # edge-derived scores and supply_chain_risk still compute (bdr-vv-1).
+            try:
+                isas = conn.execute(
+                    "SELECT interconnection_id, status, expiry_date FROM bd_isa_tracker WHERE design_id=%s",
+                    (design_id,),
+                ).fetchall()
+            except Exception as exc:  # noqa: BLE001 — missing table -> no ISA overlay
+                logger.info("bd_isa_tracker unavailable for risk-score of %s: %s", design_id, exc)
+                isas = []
 
         try:
             graph = json.loads(row["graph_json"]) if isinstance(row["graph_json"], str) else row["graph_json"]
