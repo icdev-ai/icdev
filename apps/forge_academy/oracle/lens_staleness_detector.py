@@ -52,7 +52,7 @@ class LensStalenesssDetector(BaseLens):
             LEFT JOIN fa_mission_progress mp
               ON mp.mission_id = m.id
              AND mp.status = 'completed'
-             AND mp.updated_at >= ?
+             AND mp.completed_at >= ?
             WHERE m.created_at <= ?
               AND m.is_active = 1
               AND (m.status IS NULL OR m.status = 'active')

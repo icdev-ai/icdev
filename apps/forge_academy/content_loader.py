@@ -309,16 +309,11 @@ BUILTIN_MISSIONS = [
         "difficulty": "intermediate", "estimated_minutes": 25,
         "prereqs": ["m-analyst-03-report-gen"],
     },
-    {
-        "slug": "m-analyst-05-capstone",
-        "title": "Analyst Capstone",
-        "tagline": "Deploy a full intelligence cycle: collect → detect → report → predict.",
-        "tier": 2, "topic": "analyst", "role_filter": "analyst",
-        "mission_type": "guided",
-        "xp_reward": 500, "order_idx": 5,
-        "difficulty": "advanced", "estimated_minutes": 35,
-        "prereqs": ["m-analyst-04-predictive"],
-    },
+    # NOTE (penta-fix-02): the "m-analyst-05-capstone" entry that used to sit
+    # here was a duplicate slug — the complete, fully step-wired capstone (prereq
+    # m-analyst-04-report-generation, with a step definition in the registry)
+    # lives in the competitive-intel analyst track below. The ON CONFLICT(slug)
+    # upsert silently collapsed the two, so this stale copy is removed.
     # ── TIER 2: Leadership (V1 — 6-mission track) ───────────────────────────
     {
         "slug": "m-leadership-01-ai-roi",
@@ -1552,6 +1547,17 @@ BUILTIN_STEPS: dict[str, list] = {
 
 def seed_mission_catalog() -> None:
     """Upsert all builtin missions and seed their steps on first creation."""
+    # Fail loud on duplicate slugs: the ON CONFLICT(slug) upsert below would
+    # otherwise SILENTLY collapse two distinct mission definitions sharing a slug
+    # (the m-analyst-05-capstone bug fixed in penta-fix-02), quietly dropping one
+    # mission from the catalog. A duplicate is a content-authoring error.
+    _slugs = [m["slug"] for m in BUILTIN_MISSIONS]
+    _dupes = sorted({s for s in _slugs if _slugs.count(s) > 1})
+    if _dupes:
+        raise ValueError(
+            f"Duplicate mission slug(s) in BUILTIN_MISSIONS: {_dupes} — "
+            "each slug must be unique (ON CONFLICT(slug) upsert would collapse them)."
+        )
     try:
         from tools.db.storage import get_connection
         conn = get_connection()

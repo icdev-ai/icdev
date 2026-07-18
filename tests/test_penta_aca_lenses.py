@@ -9,16 +9,15 @@ test_penta_aca_oracle.py exercises the runner/reflex at the aggregate level (all
   * the runner is fault-tolerant — AcademyOracleRunner().run() returns a well-formed
     result and never propagates, EVEN THOUGH some lenses raise (see finding below).
 
-FINDING (reported in the PR, not fixed here — tests-only): three lenses issue SQL
-against columns that do not exist in the fa_* schema and therefore raise
-OperationalError, so the runner's per-lens guard silently drops them — meaning 3 of
-7 Academy Oracle lenses currently produce NO predictions:
-  * LensStalenesssDetector -> `mp.updated_at` (fa_mission_progress has started_at /
-    completed_at, no updated_at)
-  * ACESkillGapLens        -> `fp.mission_slug`
-  * AgentReadinessLens     -> `metadata_json`
-These are xfail'd below; if the SQL is corrected the lens returns a list and the
-test passes normally.
+FIXED (penta-fix-02): three lenses previously issued SQL against columns that do
+not exist in the fa_* schema and raised OperationalError, so the runner's per-lens
+guard silently dropped them — 3 of 7 Academy Oracle lenses produced NO predictions:
+  * LensStalenesssDetector -> `mp.updated_at`  → now `mp.completed_at`
+  * ACESkillGapLens        -> `fp.mission_slug` → now joins fa_missions on mission_id
+  * AgentReadinessLens     -> `metadata_json`   → now joins steps→missions, reads
+    fa_step_progress.submission
+The SQL is corrected, the runner now logs lens failures loudly, and every lens
+must return a list (no xfail carve-out).
 """
 
 from __future__ import annotations
@@ -36,15 +35,6 @@ def _seeded():
     content_loader.seed_mission_catalog()
 
 
-# Lenses with a KNOWN merged SQL-column drift that makes .run() raise. The runner
-# tolerates them; this maps lens class name -> the offending column, for xfail.
-_KNOWN_BROKEN_LENS = {
-    "LensStalenesssDetector": "SQL references mp.updated_at — absent from fa_mission_progress",
-    "ACESkillGapLens": "SQL references fp.mission_slug — absent from the queried table",
-    "AgentReadinessLens": "SQL references metadata_json — absent from the queried table",
-}
-
-
 def test_seven_distinct_lens_classes():
     names = [L.__name__ for L in _LENSES]
     assert len(names) == 7
@@ -59,15 +49,11 @@ def test_lens_implements_baselens_contract(LensClass):
 
 
 @pytest.mark.parametrize("LensClass", _LENSES, ids=[L.__name__ for L in _LENSES])
-def test_lens_run_returns_predictions_or_is_tolerated(LensClass):
+def test_lens_run_returns_predictions(LensClass):
+    # penta-fix-02: every lens (including the 3 previously column-drifted ones)
+    # must now run against the real schema and return a list — no xfail carve-out.
     lens = LensClass()
-    try:
-        preds = lens.run()
-    except Exception as exc:  # noqa: BLE001 - classify against known drift
-        name = LensClass.__name__
-        if name in _KNOWN_BROKEN_LENS:
-            pytest.xfail(f"{name}: {_KNOWN_BROKEN_LENS[name]} ({type(exc).__name__}: {exc})")
-        raise
+    preds = lens.run()
     assert isinstance(preds, list), f"{LensClass.__name__}.run() must return a list"
     for p in preds:
         assert isinstance(p, OraclePrediction)

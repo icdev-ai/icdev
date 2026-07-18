@@ -12,8 +12,6 @@ Two gaps not covered by test_penta_aca_missions1/2:
 
 from __future__ import annotations
 
-import pytest
-
 from apps.forge_academy import content_loader, db
 from apps.forge_academy.content_loader import BUILTIN_MISSIONS, BUILTIN_STEPS, CONTENT_ROOT
 
@@ -36,22 +34,13 @@ def _distinct_slug_count():
 # 1. Idempotent seeding
 # ---------------------------------------------------------------------------
 
-# Known pre-existing duplicate slug in BUILTIN_MISSIONS (merged before this task;
-# the ON CONFLICT(slug) upsert silently collapses the two entries). Reported in the
-# PR. Any OTHER duplicate is a hard failure (guards new batches, e.g. penta-aca-05).
-_KNOWN_DUP_SLUGS = {"m-analyst-05-capstone"}
-
-
 def test_builtin_mission_slugs_are_unique():
+    # penta-fix-02: the pre-existing m-analyst-05-capstone duplicate was removed
+    # and seed_mission_catalog now asserts uniqueness, so this is a hard invariant
+    # (no known-dup carve-out / xfail) for every current and future batch.
     slugs = [m["slug"] for m in BUILTIN_MISSIONS]
-    dupes = {s for s in slugs if slugs.count(s) > 1}
-    unexpected = dupes - _KNOWN_DUP_SLUGS
-    assert not unexpected, f"NEW duplicate mission slugs in BUILTIN_MISSIONS: {unexpected}"
-    if dupes:
-        pytest.xfail(
-            f"pre-existing duplicate mission slug(s) {dupes} in BUILTIN_MISSIONS "
-            "(merged before penta-aca-07; upsert collapses them). Reported in the PR."
-        )
+    dupes = sorted({s for s in slugs if slugs.count(s) > 1})
+    assert not dupes, f"duplicate mission slugs in BUILTIN_MISSIONS: {dupes}"
 
 
 def test_seed_is_idempotent():
