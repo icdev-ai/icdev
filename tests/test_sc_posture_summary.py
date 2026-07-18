@@ -2,12 +2,10 @@
 """Characterization test for GET /security/api/posture-summary — shx-hyg-02.
 
 This test pins the EXACT JSON contract of the posture-summary aggregation route
-(``sc_api_posture_summary`` in ``tools/security_canvas/blueprint.py``) before it
-is refactored into ``tools/security_canvas/posture.py``. It seeds a scratch
-security-canvas DB with designs and assessments spanning every aggregation block
-the route performs and snapshots the full response body (deep structure + values,
-not just keys). It must stay GREEN both before and after the behavior-preserving
-extraction.
+(``sc_api_posture_summary`` in ``tools/security_canvas/blueprint.py``, delegating
+to ``tools/security_canvas/posture.py``). It seeds a scratch security-canvas DB
+with designs and assessments spanning every aggregation block the route performs
+and snapshots the full response body (deep structure + values, not just keys).
 
 Aggregation blocks exercised:
   * per-design "latest assessment" (ORDER BY ran_at DESC LIMIT 1)
@@ -17,13 +15,17 @@ Aggregation blocks exercised:
   * pipeline-level assessments (design_id IS NULL, trigger_source='pdc_save')
     with dedup by source_entity_id and CAT1 roll-up into total_cat1
   * NDC-triggered design assessments (trigger_source='ndc_save') with dedup by
-    design_id (NOT rolled into total_cat1)
+    design_id
 
-Known-behavior note (INTENTIONALLY pinned, not a bug fix): the per-design query
-selects only ``risk_score, posture_grade, ran_at`` — NOT ``findings_json`` — so
-the per-design ``cat1_count`` access raises and is swallowed, leaving every
-design's ``cat1_count`` at 0 regardless of its findings. The refactor must
-preserve this exactly, so the snapshot asserts 0 there.
+CAT1 accounting (shx-hyg-09): the per-design "latest assessment" query selects
+``findings_json`` and counts real CAT1-severity findings via ``_count_cat1``, so
+each design reports its true ``cat1_count`` and those roll into
+``total_cat1_findings`` alongside pipeline CAT1s. NDC CAT1s are NOT added to the
+total a second time: NDC topologies are imported as ``security_designs`` rows and
+their ``ndc_save`` assessment is that design's latest, so their CAT1 findings are
+already counted by the per-design roll-up. The seeded NDC designs here use ids
+(``D-ndc-1``/``D-ndc-2``) that are NOT in ``security_designs``, so they exercise
+only the display-only ``ndc_assessments`` block and never touch the total.
 
 The fixture isolates a throwaway SQLite DB by patching ``init_db.get_connection``
 before the blueprint closure captures it — mirroring the sibling error tests.
@@ -170,7 +172,7 @@ def test_posture_summary_full_snapshot(monkeypatch, tmp_db):
                 "risk_score": 92.0,
                 "grade": "A",
                 "last_assessed": "2024-02-01T00:00:00",
-                "cat1_count": 0,  # pinned: findings_json not selected per-design
+                "cat1_count": 2,  # latest (Feb) assessment has [cat1, cat1]
             },
             {
                 "id": "d-bravo",
@@ -178,7 +180,7 @@ def test_posture_summary_full_snapshot(monkeypatch, tmp_db):
                 "risk_score": 75.0,
                 "grade": "C",
                 "last_assessed": "2024-01-15T00:00:00",
-                "cat1_count": 0,
+                "cat1_count": 0,  # empty findings
             },
             {
                 "id": "d-charlie",
@@ -186,7 +188,7 @@ def test_posture_summary_full_snapshot(monkeypatch, tmp_db):
                 "risk_score": None,
                 "grade": None,
                 "last_assessed": None,
-                "cat1_count": 0,
+                "cat1_count": 0,  # unassessed
             },
             {
                 "id": "d-delta",
@@ -194,11 +196,12 @@ def test_posture_summary_full_snapshot(monkeypatch, tmp_db):
                 "risk_score": 55.0,
                 "grade": "F",
                 "last_assessed": "2024-03-01T00:00:00",
-                "cat1_count": 0,
+                "cat1_count": 1,  # single assessment has [cat1]
             },
         ],
         "overall_posture": "moderate",  # 74 -> [60, 80)
-        "total_cat1_findings": 3,       # per-design 0 + pipe-2 (1) + pipe-1 (2)
+        # per-design: Alpha 2 + Delta 1 = 3; pipeline: pipe-2 (1) + pipe-1 (2) = 3
+        "total_cat1_findings": 6,
         "pipeline_assessments": [
             {"pipeline_id": "pipe-2", "cat1_count": 1, "last_assessed": "2024-05-03T00:00:00"},
             {"pipeline_id": "pipe-1", "cat1_count": 2, "last_assessed": "2024-05-02T00:00:00"},
