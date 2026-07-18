@@ -36,6 +36,12 @@ from tools.genesis.daemon import REFLEX_NAMES  # noqa: E402
 _SHX_SAFE_04_REGISTERED = ("sdc_control_expiry", "cato_monitor")
 
 # ---------------------------------------------------------------------------
+# The two BDC reflexes registered by bdr-ops-1 — asserted live below.
+# Previously EXEMPT (registered-but-undispatched); now wired into REFLEX_NAMES.
+# ---------------------------------------------------------------------------
+_BDR_OPS_1_REGISTERED = ("bdc_isa_expiry", "cato_twin")
+
+# ---------------------------------------------------------------------------
 # Modules deliberately NOT in the daemon's REFLEX_NAMES dispatch subset.
 # Each MUST carry a one-line reason.  A new reflex is expected to be REGISTERED,
 # not added here — add to EXEMPT only for genuinely non-daemon-scheduled modules.
@@ -57,8 +63,6 @@ EXEMPT: dict[str, str] = {
     "fathomdesk_openbb_refresh": "reflex_registry DOMAIN; FathomDesk domain reflex; outside daemon subset",
     "fathomdesk_fundamentals_sweep": "reflex_registry DOMAIN; FathomDesk domain reflex; outside daemon subset",
     "fathomdesk_pc_ratio": "FathomDesk put/call-ratio domain reflex; not in reflex_registry or daemon subset; unverified — inherited exemption",
-    "bdc_isa_expiry": "reflex_registry SUPPORT; BDC canvas reflex; outside daemon subset",
-    "cato_twin": "reflex_registry SUPPORT; cATO twin sync; outside daemon subset",
     "wf_feedback_aggregation": "reflex_registry SUPPORT; workflow-canvas HITL feedback aggregation; outside daemon subset",
     "wf_ext_poller": "reflex_registry SUPPORT; workflow external-step poller; outside daemon subset",
     "circuit_capacity_monitor": "reflex_registry DOMAIN; CCC network canvas reflex; outside daemon subset",
@@ -166,3 +170,61 @@ def test_registered_reflexes_are_importable_with_run():
     for name in _SHX_SAFE_04_REGISTERED:
         mod = importlib.import_module(f"tools.genesis.reflexes.{name}")
         assert callable(getattr(mod, "run", None)), f"'{name}' has no callable run()"
+
+
+# ---------------------------------------------------------------------------
+# bdr-ops-1: the three BDC reflexes must be dispatched, not dormant.
+# ---------------------------------------------------------------------------
+_BDR_OPS_1_ALL = _BDR_OPS_1_REGISTERED + ("cato_monitor",)
+
+
+def test_bdr_ops_1_reflexes_registered():
+    """bdc_isa_expiry, cato_twin, and cato_monitor must all be dispatched."""
+    reflex_dir = _REFLEX_DIR
+    for name in _BDR_OPS_1_ALL:
+        assert name in REFLEX_NAMES, f"'{name}' missing from REFLEX_NAMES (bdr-ops-1 regression)"
+        assert name not in EXEMPT, f"'{name}' must be dispatched, not exempt"
+        assert (reflex_dir / f"{name}.py").is_file(), f"module file for '{name}' missing"
+
+
+def test_bdr_ops_1_reflexes_importable_with_run():
+    """The three BDC reflexes must import and expose a callable run()."""
+    import importlib
+
+    for name in _BDR_OPS_1_ALL:
+        mod = importlib.import_module(f"tools.genesis.reflexes.{name}")
+        assert callable(getattr(mod, "run", None)), f"'{name}' has no callable run()"
+
+
+def test_bdr_ops_1_config_blocks_have_required_keys():
+    """genesis_config.yaml must carry schedule-bearing blocks for the BDC reflexes.
+
+    The daemon schedules a reflex ONLY when its config block has a parseable
+    ``schedule`` (tools/daemon/base.py). A registered name with no config block
+    is silently never scheduled — so assert the blocks parse with the keys the
+    daemon and this task require.
+    """
+    import yaml
+
+    cfg_path = Path(__file__).resolve().parents[1] / "args" / "genesis_config.yaml"
+    with open(cfg_path, "r", encoding="utf-8") as fh:
+        cfg = yaml.safe_load(fh)
+    reflexes = cfg.get("reflexes", {})
+
+    required = {"enabled", "risk_tier", "schedule", "description", "success_metric"}
+    expected_cadence = {
+        "bdc_isa_expiry": ("every 24h", True),
+        "cato_twin": ("every 6h", False),
+        "cato_monitor": ("every 6h", True),
+    }
+    for name, (schedule, enabled) in expected_cadence.items():
+        block = reflexes.get(name)
+        assert isinstance(block, dict), f"'{name}' has no config block in genesis_config.yaml"
+        missing = required - set(block)
+        assert not missing, f"'{name}' config block missing keys: {sorted(missing)}"
+        assert block["schedule"] == schedule, (
+            f"'{name}' schedule is {block['schedule']!r}, expected {schedule!r}"
+        )
+        assert block["enabled"] is enabled, (
+            f"'{name}' enabled is {block['enabled']!r}, expected {enabled!r}"
+        )
