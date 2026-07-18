@@ -21200,7 +21200,7 @@ CREATE TABLE public.noc_mops (
     classification text DEFAULT 'CUI'::text,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    CONSTRAINT noc_mops_generated_by_check CHECK ((generated_by = ANY (ARRAY['manual'::text, 'ai'::text])))
+    CONSTRAINT noc_mops_generated_by_check CHECK ((generated_by = ANY (ARRAY['manual'::text, 'ai'::text, 'ai_template'::text])))
 );
 
 

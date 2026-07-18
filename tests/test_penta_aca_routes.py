@@ -109,19 +109,9 @@ def _routes():
 _ROUTES = _routes()
 _ACCEPTABLE = {200, 301, 302, 303, 304, 400, 401, 403, 404, 409, 422, 503}
 
-# Endpoints with a KNOWN real 500 bug in merged code (penta-aca-07 findings).
-# The smoke xfails (not fails) these; if the underlying bug is fixed, the route
-# stops 500ing and the test passes normally (xpass → no error, forward-compatible).
-_KNOWN_BROKEN_500 = {
-    "forge_academy.api_step_design_assess": (
-        "MERGED BUG: api_step_design_assess calls verify_step('aadc_design_compliant', "
-        "user_id, data) but verify_step's signature is (user_id, step_type, data) — the "
-        "first two args are SWAPPED. It also reads result['evidence'].get('check_results') "
-        "though verifier.verify_step ALWAYS returns 'evidence' as a string, and never "
-        "returns 'check_results'. The route 500s on every call. Real fix needed (not "
-        "tests-only). Reported in the PR body."
-    ),
-}
+# penta-fix-02: api_step_design_assess no longer 500s (verify_step args un-swapped
+# + evidence-as-string handled), so the previous _KNOWN_BROKEN_500 xfail carve-out
+# is gone — every route is held to the hard "no 5xx" contract.
 
 
 @pytest.mark.parametrize(
@@ -136,8 +126,6 @@ def test_route_never_500(academy, method, url, endpoint):
     else:
         # POST/PUT etc: send an empty JSON body; input-validation 400s are fine.
         resp = client.open(url, method=method, json={})
-    if resp.status_code >= 500 and endpoint in _KNOWN_BROKEN_500:
-        pytest.xfail(_KNOWN_BROKEN_500[endpoint])
     assert resp.status_code < 500, (
         f"{method} {url} ({endpoint}) returned {resp.status_code} "
         f"(body: {resp.get_data(as_text=True)[:300]})"
@@ -186,6 +174,49 @@ def test_health_endpoint_ok(academy):
     assert body["initialized"] is True
     assert body["error"] is None
     assert body["mission_count"] > 0
+
+
+def test_design_assess_positive_pass(academy, monkeypatch):
+    """penta-fix-02: a crafted design-assess payload that verifies as passing
+    returns 200 with the route's response contract. Guards the two merged bugs:
+    the (user_id, step_type) arg order and evidence-as-string handling."""
+    import apps.forge_academy.blueprint as bp_mod
+    import apps.forge_academy.db as db_mod
+    import apps.forge_academy.gamification as gam_mod
+    import apps.forge_academy.verifier as verifier_mod
+
+    client, _ = academy
+
+    def _fake_verify(user_id, step_type, data):
+        # The route MUST pass (user_id, step_type, data) in that order.
+        assert step_type == "aadc_design_compliant", (user_id, step_type)
+        assert data["design_id"] == "design-123"
+        # evidence is a STRING (never a dict) — the contract the route must honor.
+        return {"passed": True, "score": 95, "evidence": "Design passes: 95/100",
+                "failed_checks": []}
+
+    monkeypatch.setattr(verifier_mod, "verify_step", _fake_verify)
+    monkeypatch.setattr(bp_mod, "_fa_user",
+                        lambda: {"id": 1, "role": "admin", "email": "a@test.local"})
+    monkeypatch.setattr(bp_mod, "_fa_email", lambda: "a@test.local")
+    monkeypatch.setattr(db_mod, "complete_step", lambda *a, **k: None)
+    monkeypatch.setattr(db_mod, "user_progress_summary", lambda *a, **k: {"steps_completed": 3})
+    monkeypatch.setattr(gam_mod, "award_step_xp", lambda *a, **k: {"xp": 100, "achievements": []})
+    monkeypatch.setattr(gam_mod, "check_step_achievements", lambda *a, **k: [])
+
+    resp = client.post("/api/academy/step/design-assess", json={
+        "step_id": 1,
+        "design_id": "design-123",
+        "required_checks": ["c1", "c2"],
+        "min_score": 70,
+    })
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    body = resp.get_json()
+    assert body["passed"] is True
+    assert body["score"] == 95
+    assert body["checks_passed"] == ["c1", "c2"]  # required_checks minus failed ([])
+    assert body["failed_checks"] == []
+    assert body["evidence"] == "Design passes: 95/100"
 
 
 def test_missions_listing_includes_batch2_when_present(academy):

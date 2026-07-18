@@ -17,11 +17,11 @@ Trees:
 
 Four modules under ``tools/ttx/scenarios/`` (``sim_cipher_forge``,
 ``sim_forge_ascent``, ``sim_hunt_the_fleet``, ``sim_meridian``) are *executable
-demo scripts* — they run a full DB-backed simulation at module top level with
-no ``if __name__ == "__main__"`` guard, so importing them executes the sim
-(DB writes, stdout teardown). Those are compile-checked (syntax) instead of
-imported, and the missing-guard smell is asserted as a documented xfail
-(follow-up: guard them so import-smoke can cover them like every other module).
+demo scripts*. penta-fix-01 wrapped their simulation body in ``main()`` behind an
+``if __name__ == "__main__"`` guard, so they no longer self-run on import. They
+are still compile-checked (syntax) rather than import-smoked to avoid pulling
+their heavy demo dependency graph into the smoke suite, and the presence of the
+guard is now asserted as a real (non-xfail) test.
 """
 
 from __future__ import annotations
@@ -92,15 +92,9 @@ def test_executable_script_compiles(mod):
 
 
 @pytest.mark.parametrize("mod", _SCRIPTS)
-@pytest.mark.xfail(
-    reason=(
-        "sim_* are executable demo scripts with no `if __name__ == \"__main__\"` "
-        "guard — importing runs a full DB-backed simulation (DB writes / stdout "
-        "teardown). Follow-up: add the guard so import-smoke can cover them like "
-        "every other module."
-    ),
-    strict=False,
-)
 def test_executable_script_has_main_guard(mod):
+    """penta-fix-01: the sim_* demo scripts now wrap their simulation in a
+    ``main()`` behind an ``if __name__ == "__main__"`` guard, so importing them
+    no longer runs a DB-backed sim. Previously an xfail (no guard)."""
     src = _mod_path(mod).read_text(encoding="utf-8")
     assert '__name__ == "__main__"' in src or "__name__=='__main__'" in src

@@ -3,10 +3,13 @@
 
 from __future__ import annotations
 
+import logging
 from collections import defaultdict
 from typing import Any
 
 from .base_lens import OraclePrediction
+
+_log = logging.getLogger(__name__)
 from .db import insert_convergence, insert_prediction, list_convergence_events, list_predictions
 from .lens_content_quality import LensContentQuality
 from .lens_learner_risk import LensLearnerRisk
@@ -44,7 +47,15 @@ class AcademyOracleRunner:
                 preds = LensClass().run()
                 all_predictions.extend(preds)
             except Exception:
-                pass
+                # Fail loud but keep sweeping: a broken lens (e.g. SQL column
+                # drift) must be visible in the logs, not silently dropped —
+                # that masking is how 3 of 7 lenses went dead unnoticed
+                # (penta-fix-02). The sweep still continues so one bad lens
+                # cannot 500 the on-demand route or the scheduled reflex.
+                _log.exception(
+                    "Academy Oracle lens %s failed — skipping this lens for the sweep",
+                    getattr(LensClass, "__name__", str(LensClass)),
+                )
 
         persisted = self._persist(all_predictions)
         convergence = self._detect_convergence(all_predictions)

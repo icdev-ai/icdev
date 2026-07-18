@@ -74,12 +74,10 @@ def _force_eligible(monkeypatch):
         db, "check_cert_eligibility",
         lambda user_id, cert_key: {"eligible": True, "gates": []},
     )
-    # No-op the XP award. issue_certificate INSERTs the cert then calls
-    # update_user_xp, which opens a SECOND connection to UPDATE fa_users while the
-    # INSERT transaction is still open — a self-deadlock under the SQLite test
-    # backend (fine on PG-primary via MVCC). The award is orthogonal to the cert
-    # lifecycle under test. (SQLite multi-connection-write finding — see PR.)
-    monkeypatch.setattr(db, "update_user_xp", lambda user_id, delta: {"xp": 0, "level": "recruit"})
+    # penta-fix-03: the real update_user_xp is now exercised. issue_certificate
+    # awards the XP bonus on the SAME connection/transaction as the cert INSERT
+    # (single commit), so it no longer self-deadlocks the SQLite backend and the
+    # no-op monkeypatch that used to hide the bug is gone.
 
 
 def _as_dict(cert):
@@ -100,6 +98,47 @@ def test_issue_verify_round_trip(_migrated, _force_eligible):
     assert verified["user_id"] == user["id"]
     # verify joins fa_users, so identity fields ride along
     assert "display_name" in verified and "role" in verified
+
+
+def test_issue_awards_xp_without_deadlock(_migrated, monkeypatch):
+    """penta-fix-03 regression: issue_certificate awards its XP bonus on the SAME
+    connection/transaction as the cert INSERT, so under the SQLite test backend it
+    completes (no 'database is locked' self-deadlock) AND the bonus lands. The real
+    update_user_xp is intentionally NOT monkeypatched here."""
+    import os
+
+    from tools.db.storage import get_connection
+
+    # This regression is only meaningful on the SQLite backend (conftest forces it).
+    assert os.environ.get("ICDEV_STORAGE_BACKEND", "sqlite") == "sqlite"
+
+    monkeypatch.setattr(
+        db, "check_cert_eligibility",
+        lambda user_id, cert_key: {"eligible": True, "gates": []},
+    )
+
+    # Unique email per run: the test DB persists across pytest invocations, and
+    # issue_certificate is idempotent — a pre-existing cert would short-circuit
+    # before the XP award and make the delta assertion flaky.
+    import uuid
+    user = _new_user(f"xp_award_{uuid.uuid4().hex[:8]}@test.local")
+    before = get_connection().execute(
+        "SELECT xp FROM fa_users WHERE id=?", (user["id"],)
+    ).fetchone()["xp"]
+
+    cert = _as_dict(db.issue_certificate(user["id"], "foundation"))  # would hang/error if deadlocked
+    assert cert["token"], "cert issued with a token"
+
+    after = get_connection().execute(
+        "SELECT xp FROM fa_users WHERE id=?", (user["id"],)
+    ).fetchone()["xp"]
+    # foundation cert grants a 1000 XP bonus (constants.CERT_TIERS).
+    bonus = CERT_BY_KEY["foundation"].get("xp_bonus", 0)
+    assert bonus > 0
+    assert after == before + bonus, f"XP bonus not awarded: {before} -> {after} (bonus {bonus})"
+
+    # Contract preserved: the issued token still verifies.
+    assert db.verify_certificate_token(cert["token"]) is not None
 
 
 def test_tampered_token_is_rejected(_migrated, _force_eligible):

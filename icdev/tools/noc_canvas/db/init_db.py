@@ -145,7 +145,7 @@ CREATE TABLE IF NOT EXISTS noc_mops (
     rfc_id         TEXT REFERENCES noc_rfcs(id),
     steps_json     JSONB NOT NULL DEFAULT '[]',
     generated_by   TEXT DEFAULT 'manual'
-                       CHECK(generated_by IN ('manual','ai')),
+                       CHECK(generated_by IN ('manual','ai','ai_template')),
     ai_prompt      TEXT DEFAULT '',
     classification TEXT DEFAULT 'CUI',
     created_at     TIMESTAMPTZ DEFAULT NOW(),
