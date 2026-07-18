@@ -22,131 +22,14 @@ from datetime import datetime, timezone
 logger = get_logger("icdev.observability_canvas.mitre_coverage_twin")
 
 # ── MITRE Technique Catalog ────────────────────────────────────────────────────
-# Curated high-priority techniques for DoD/Gov environments.
-# signal_sources: list of src-* types that CAN detect this technique
-# min_sources: how many signal_sources must be present for 'covered'
-MITRE_TECHNIQUE_CATALOG: dict[str, dict] = {
-    "T1059": {
-        "name": "Command and Scripting Interpreter",
-        "tactic": "execution",
-        "signal_sources": ["src-os-log", "src-endpoint", "src-container-log"],
-        "min_sources": 1,
-    },
-    "T1078": {
-        "name": "Valid Accounts",
-        "tactic": "initial_access",
-        "signal_sources": ["src-iam", "src-os-log"],
-        "min_sources": 1,
-    },
-    "T1071": {
-        "name": "Application Layer Protocol",
-        "tactic": "command_and_control",
-        "signal_sources": ["src-network-log", "src-app-log", "src-flow"],
-        "min_sources": 1,
-    },
-    "T1053": {
-        "name": "Scheduled Task/Job",
-        "tactic": "persistence",
-        "signal_sources": ["src-os-log", "src-endpoint"],
-        "min_sources": 1,
-    },
-    "T1021": {
-        "name": "Remote Services",
-        "tactic": "lateral_movement",
-        "signal_sources": ["src-network-log", "src-flow", "src-os-log"],
-        "min_sources": 1,
-    },
-    "T1055": {
-        "name": "Process Injection",
-        "tactic": "defense_evasion",
-        "signal_sources": ["src-endpoint", "src-os-log"],
-        "min_sources": 1,
-    },
-    "T1003": {
-        "name": "OS Credential Dumping",
-        "tactic": "credential_access",
-        "signal_sources": ["src-endpoint", "src-os-log"],
-        "min_sources": 1,
-    },
-    "T1110": {
-        "name": "Brute Force",
-        "tactic": "credential_access",
-        "signal_sources": ["src-iam", "src-os-log", "src-network-log"],
-        "min_sources": 1,
-    },
-    "T1486": {
-        "name": "Data Encrypted for Impact",
-        "tactic": "impact",
-        "signal_sources": ["src-endpoint", "src-os-log"],
-        "min_sources": 1,
-    },
-    "T1562": {
-        "name": "Impair Defenses",
-        "tactic": "defense_evasion",
-        "signal_sources": ["src-os-log", "src-endpoint", "src-cloud-log"],
-        "min_sources": 1,
-    },
-    "T1136": {
-        "name": "Create Account",
-        "tactic": "persistence",
-        "signal_sources": ["src-os-log", "src-iam"],
-        "min_sources": 1,
-    },
-    "T1078.004": {
-        "name": "Valid Accounts: Cloud Accounts",
-        "tactic": "privilege_escalation",
-        "signal_sources": ["src-cloud-log", "src-iam"],
-        "min_sources": 1,
-    },
-    "T1611": {
-        "name": "Escape to Host",
-        "tactic": "privilege_escalation",
-        "signal_sources": ["src-container-log", "src-os-log"],
-        "min_sources": 1,
-    },
-    "T1190": {
-        "name": "Exploit Public-Facing Application",
-        "tactic": "initial_access",
-        "signal_sources": ["src-app-log", "src-network-log", "src-waf"],
-        "min_sources": 1,
-    },
-    "T1505": {
-        "name": "Server Software Component",
-        "tactic": "persistence",
-        "signal_sources": ["src-app-log", "src-os-log"],
-        "min_sources": 1,
-    },
-    "T1048": {
-        "name": "Exfiltration Over Alternative Protocol",
-        "tactic": "exfiltration",
-        "signal_sources": ["src-network-log", "src-flow", "src-pcap"],
-        "min_sources": 1,
-    },
-    "T1074": {
-        "name": "Data Staged",
-        "tactic": "collection",
-        "signal_sources": ["src-endpoint", "src-os-log", "src-db-audit"],
-        "min_sources": 1,
-    },
-    "T1070": {
-        "name": "Indicator Removal",
-        "tactic": "defense_evasion",
-        "signal_sources": ["src-os-log", "src-endpoint"],
-        "min_sources": 1,
-    },
-    "T1204": {
-        "name": "User Execution",
-        "tactic": "execution",
-        "signal_sources": ["src-endpoint", "src-os-log", "src-app-log"],
-        "min_sources": 1,
-    },
-    "T1566": {
-        "name": "Phishing",
-        "tactic": "initial_access",
-        "signal_sources": ["src-app-log", "src-network-log", "src-iam"],
-        "min_sources": 1,
-    },
-}
+# Single source of truth lives in tools/observability_canvas/mitre_catalog.py.
+# MITRE_TECHNIQUE_CATALOG is the coverage-scoring view derived from it: the
+# subset of techniques carrying signal_sources, each with a scalar `tactic`
+# (primary tactic, coverage-twin underscore vocabulary), `signal_sources` and
+# `min_sources`. Kept as a public name so downstream consumers keep working.
+from tools.observability_canvas.mitre_catalog import build_coverage_catalog
+
+MITRE_TECHNIQUE_CATALOG: dict[str, dict] = build_coverage_catalog()
 
 
 # ── Coverage Scoring ──────────────────────────────────────────────────────────
