@@ -2826,6 +2826,261 @@ CREATE TABLE IF NOT EXISTS shap_attributions (
     classification  TEXT DEFAULT 'CUI',
     analyzed_at     TEXT DEFAULT CURRENT_TIMESTAMP
 );
+-- AI GameDay League (gd_ai_*) tables — mirrors tools/db/schema/pg_consolidated.sql
+CREATE TABLE IF NOT EXISTS gd_ai_tournaments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    scenario_pack TEXT NOT NULL DEFAULT 'cyber_adversarial',
+    status TEXT NOT NULL DEFAULT 'pending',
+    round_count INTEGER NOT NULL DEFAULT 5,
+    round_duration_minutes INTEGER NOT NULL DEFAULT 60,
+    current_round INTEGER NOT NULL DEFAULT 0,
+    config_json TEXT NOT NULL DEFAULT '{}',
+    started_at TEXT,
+    completed_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    game_key TEXT NOT NULL DEFAULT 'gameday',
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE TABLE IF NOT EXISTS gd_ai_teams (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tournament_id INTEGER NOT NULL,
+    team_key TEXT NOT NULL,
+    name TEXT NOT NULL,
+    domain TEXT NOT NULL,
+    color TEXT NOT NULL DEFAULT '#6c6c80',
+    total_score INTEGER NOT NULL DEFAULT 0,
+    rounds_won INTEGER NOT NULL DEFAULT 0,
+    artifacts_suggested INTEGER NOT NULL DEFAULT 0,
+    training_pairs_contributed INTEGER NOT NULL DEFAULT 0,
+    game_key TEXT NOT NULL DEFAULT 'gameday',
+    classification TEXT DEFAULT 'CUI',
+    UNIQUE (tournament_id, team_key)
+);
+CREATE TABLE IF NOT EXISTS gd_ai_rounds (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tournament_id INTEGER NOT NULL,
+    round_num INTEGER NOT NULL,
+    scenario_json TEXT NOT NULL DEFAULT '{}',
+    status TEXT NOT NULL DEFAULT 'pending',
+    started_at TEXT,
+    completed_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    game_key TEXT NOT NULL DEFAULT 'gameday',
+    classification TEXT DEFAULT 'CUI',
+    UNIQUE (tournament_id, round_num)
+);
+CREATE TABLE IF NOT EXISTS gd_ai_artifacts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    round_id INTEGER NOT NULL,
+    team_id INTEGER NOT NULL,
+    team_key TEXT NOT NULL,
+    member_role TEXT NOT NULL,
+    artifact_type TEXT NOT NULL,
+    content TEXT NOT NULL,
+    tokens_used INTEGER NOT NULL DEFAULT 0,
+    model_used TEXT NOT NULL DEFAULT '',
+    latency_ms INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    game_key TEXT NOT NULL DEFAULT 'gameday',
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE TABLE IF NOT EXISTS gd_ai_judge_evals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    round_id INTEGER NOT NULL,
+    team_id INTEGER NOT NULL,
+    team_key TEXT NOT NULL,
+    quality_score REAL NOT NULL DEFAULT 0.0,
+    innovation_score REAL NOT NULL DEFAULT 0.0,
+    ethics_score REAL NOT NULL DEFAULT 1.0,
+    adversarial_score REAL NOT NULL DEFAULT 0.0,
+    compliance_score REAL NOT NULL DEFAULT 1.0,
+    total_score INTEGER NOT NULL DEFAULT 0,
+    routed_to_suggested INTEGER NOT NULL DEFAULT 0,
+    training_pairs_extracted INTEGER NOT NULL DEFAULT 0,
+    ethics_blocked INTEGER NOT NULL DEFAULT 0,
+    judge_notes TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    game_key TEXT NOT NULL DEFAULT 'gameday',
+    classification TEXT DEFAULT 'CUI',
+    UNIQUE (round_id, team_id)
+);
+CREATE TABLE IF NOT EXISTS gd_ai_llmops_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tournament_id INTEGER NOT NULL,
+    round_id INTEGER,
+    team_key TEXT NOT NULL,
+    member_role TEXT NOT NULL,
+    model TEXT NOT NULL,
+    prompt_tokens INTEGER NOT NULL DEFAULT 0,
+    completion_tokens INTEGER NOT NULL DEFAULT 0,
+    latency_ms INTEGER NOT NULL DEFAULT 0,
+    error TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    game_key TEXT NOT NULL DEFAULT 'gameday',
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE TABLE IF NOT EXISTS gd_ai_training_pairs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    round_id INTEGER NOT NULL,
+    team_key TEXT NOT NULL,
+    member_role TEXT NOT NULL,
+    prompt TEXT NOT NULL,
+    completion TEXT NOT NULL,
+    quality_score REAL NOT NULL DEFAULT 0.0,
+    ft_dataset_id TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    game_key TEXT NOT NULL DEFAULT 'gameday',
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE TABLE IF NOT EXISTS gd_ai_leaderboard (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tournament_id INTEGER NOT NULL,
+    team_id INTEGER NOT NULL,
+    team_key TEXT NOT NULL,
+    rank INTEGER,
+    total_score INTEGER NOT NULL DEFAULT 0,
+    rounds_won INTEGER NOT NULL DEFAULT 0,
+    artifacts_suggested INTEGER NOT NULL DEFAULT 0,
+    training_pairs_contributed INTEGER NOT NULL DEFAULT 0,
+    avg_ethics_score REAL NOT NULL DEFAULT 1.0,
+    avg_innovation_score REAL NOT NULL DEFAULT 0.0,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    game_key TEXT NOT NULL DEFAULT 'gameday',
+    classification TEXT DEFAULT 'CUI',
+    UNIQUE (tournament_id, team_id)
+);
+-- AI GameDay (TTX) tables — canonical DDL mirrors apps/ai_gameday/db.py::_DDL
+CREATE TABLE IF NOT EXISTS ttx_sessions (
+    session_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    scenario_slug TEXT NOT NULL,
+    session_mode TEXT NOT NULL DEFAULT 'live',
+    state TEXT NOT NULL DEFAULT 'pending',
+    facilitator_name TEXT,
+    join_code TEXT NOT NULL UNIQUE,
+    duration_minutes INTEGER NOT NULL DEFAULT 120,
+    max_teams INTEGER NOT NULL DEFAULT 8,
+    started_at TEXT,
+    ended_at TEXT,
+    config_json TEXT DEFAULT '{}',
+    ontology_tags_json TEXT DEFAULT '{}',
+    tenant_id TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS ttx_teams (
+    team_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL REFERENCES ttx_sessions(session_id),
+    team_name TEXT NOT NULL,
+    join_code TEXT NOT NULL UNIQUE,
+    total_score INTEGER NOT NULL DEFAULT 0,
+    rank_pos INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS ttx_team_members (
+    member_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    team_id INTEGER NOT NULL REFERENCES ttx_teams(team_id),
+    player_name TEXT NOT NULL,
+    role_id TEXT NOT NULL,
+    persona_json TEXT DEFAULT '{}',
+    joined_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS ttx_injects (
+    inject_id TEXT PRIMARY KEY,
+    session_id INTEGER NOT NULL REFERENCES ttx_sessions(session_id),
+    slug TEXT NOT NULL,
+    title TEXT NOT NULL,
+    body_md TEXT,
+    at_minute INTEGER,
+    sequence_num INTEGER,
+    depends_on_slug TEXT,
+    state TEXT NOT NULL DEFAULT 'pending',
+    config_json TEXT DEFAULT '{}',
+    ontology_tags_json TEXT DEFAULT '{}',
+    dispatched_at TEXT,
+    closed_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS ttx_responses (
+    response_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    team_id INTEGER NOT NULL REFERENCES ttx_teams(team_id),
+    inject_id TEXT NOT NULL REFERENCES ttx_injects(inject_id),
+    response_text TEXT,
+    ai_receipts_json TEXT DEFAULT '[]',
+    submitted_at TEXT NOT NULL DEFAULT (datetime('now')),
+    time_taken_s REAL
+);
+CREATE TABLE IF NOT EXISTS ttx_scores (
+    score_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    response_id INTEGER NOT NULL REFERENCES ttx_responses(response_id),
+    team_id INTEGER NOT NULL REFERENCES ttx_teams(team_id),
+    inject_id TEXT NOT NULL REFERENCES ttx_injects(inject_id),
+    receipt_pts INTEGER NOT NULL DEFAULT 0,
+    receipt_count INTEGER NOT NULL DEFAULT 0,
+    judge_pts INTEGER NOT NULL DEFAULT 0,
+    time_bonus_pts INTEGER NOT NULL DEFAULT 0,
+    total_pts INTEGER NOT NULL DEFAULT 0,
+    judge_rationale_json TEXT DEFAULT '{}',
+    judged_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS ttx_api_log (
+    log_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL REFERENCES ttx_sessions(session_id),
+    team_id INTEGER NOT NULL REFERENCES ttx_teams(team_id),
+    tool_slug TEXT NOT NULL,
+    endpoint TEXT,
+    call_id TEXT NOT NULL UNIQUE,
+    result_hash TEXT,
+    called_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS ttx_leaderboard (
+    lb_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL REFERENCES ttx_sessions(session_id),
+    team_id INTEGER NOT NULL REFERENCES ttx_teams(team_id),
+    rank_pos INTEGER NOT NULL DEFAULT 0,
+    total_score INTEGER NOT NULL DEFAULT 0,
+    receipt_pts INTEGER NOT NULL DEFAULT 0,
+    judge_pts INTEGER NOT NULL DEFAULT 0,
+    time_bonus_pts INTEGER NOT NULL DEFAULT 0,
+    computed_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (session_id, team_id)
+);
+CREATE TABLE IF NOT EXISTS ttx_scenarios (
+    scenario_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    slug TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    yaml_content TEXT NOT NULL,
+    created_by TEXT,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS ttx_inject_templates (
+    template_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    inject_type TEXT NOT NULL DEFAULT 'custom',
+    body_md TEXT,
+    rubric_json TEXT DEFAULT '{}',
+    ai_tools_json TEXT DEFAULT '[]',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+-- AIMC (AI/ML Canvas) — model inventory + deployment-readiness check state.
+-- Tenant-less canvas tables (classification, no tenant_id); read via
+-- get_canvas_connection (RLS disabled). Mirrors tools/aimc/db/init_db.py.
+CREATE TABLE IF NOT EXISTS aimc_models (
+    id              TEXT PRIMARY KEY,
+    project_id      TEXT NOT NULL,
+    metric_key      TEXT NOT NULL,
+    metric_value    TEXT NOT NULL,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    classification  TEXT NOT NULL DEFAULT 'CUI'
+);
+CREATE TABLE IF NOT EXISTS aimc_deployment (
+    id              TEXT PRIMARY KEY,
+    project_id      TEXT NOT NULL,
+    check_key       TEXT NOT NULL,
+    check_value     TEXT NOT NULL,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    classification  TEXT NOT NULL DEFAULT 'CUI'
+);
 """
 
 

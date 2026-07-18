@@ -338,20 +338,37 @@ def _phase_label(score: float, thresholds: dict | None = None) -> str:
     return "Unclassified"
 
 
-def _promote_top_opportunities(
-    opp_rows: list[dict],
-    score_rows: list[dict],
-    scan_id: int,
-    roadmap_id: str,
-) -> int:
-    """Promote top 5 opportunities (by composite_score) to kanban_tasks.
+# Number of highest-scoring opportunities the "top" promoter takes, before the
+# phase promoter fills the remaining per-scan budget.
+_TOP_PROMOTE_N = 5
 
-    Uses the main ICDEV get_connection() for kanban_tasks and the AI-ify
-    get_connection() for aiify_audit_log. Skips tasks whose id already exists.
-    Returns the count of tasks actually inserted.
+_FALLBACK_PROMOTION_CONFIG = {
+    "auto_promote_cap": 10,
+    "auto_promote_status": "suggested",
+}
+
+
+def _load_promotion_config() -> dict:
+    """Load kanban_promotion settings from args/aiify_config.yaml with fallback.
+
+    Controls auto-promotion of scan opportunities to kanban_tasks:
+      * ``auto_promote_cap``    — hard cap on tasks auto-created per scan.
+      * ``auto_promote_status`` — kanban status for auto-created tasks; always a
+        non-dispatchable/quarantine status (defaults to 'suggested').
     """
-    from tools.db.storage import get_connection as _icdev_get_connection
+    merged = dict(_FALLBACK_PROMOTION_CONFIG)
+    try:
+        with open(_CONFIG_PATH, "r", encoding="utf-8") as fh:
+            cfg = yaml.safe_load(fh)
+        if isinstance(cfg, dict) and isinstance(cfg.get("kanban_promotion"), dict):
+            merged.update(cfg["kanban_promotion"])
+    except Exception:
+        pass
+    return merged
 
+
+def _rank_opportunities(opp_rows: list[dict], score_rows: list[dict]) -> list[dict]:
+    """Return opportunities enriched with scores, sorted by composite desc."""
     score_index: dict[int, dict] = {int(s["opportunity_id"]): s for s in score_rows}
     enriched: list[dict] = []
     for opp in opp_rows:
@@ -369,77 +386,24 @@ def _promote_top_opportunities(
             "feasibility_score": float(score.get("feasibility_score", 0.0)),
             "risk_score": float(score.get("risk_score", 0.0)),
         })
-
     enriched.sort(key=lambda x: x["composite_score"], reverse=True)
-    top5 = enriched[:5]
-    if not top5:
-        return 0
+    return enriched
 
-    thresholds = _load_anomaly_thresholds()
-    priority_high_min = thresholds.get(
-        "priority_high_min_score",
-        _FALLBACK_ANOMALY_THRESHOLDS["priority_high_min_score"],
-    )
-    promoted_opps: list[dict] = []
-    icdev_conn = _icdev_get_connection()
+
+def _write_promotion_audit(scan_id: int, roadmap_id: str, entries: list[dict]) -> None:
+    """Best-effort: one aiify_audit_log 'kanban_promoted' row per created task.
+
+    Batched into a single commit. Audit failure must never break promotion or the
+    scan pipeline, so the whole block is defensive.
+    """
+    if not entries:
+        return
     try:
-        for opp in top5:
-            opp_id = opp["opportunity_id"]
-            task_id = f"aiify-opp-{str(opp_id)[:8]}"
-
-            existing = _exec(
-                icdev_conn,
-                "SELECT id FROM kanban_tasks WHERE id = ?",
-                (task_id,),
-            ).fetchone()
-            if existing:
-                continue
-
-            priority = "high" if opp["composite_score"] >= priority_high_min else "medium"
-            title = (
-                f"[AI Opp] {opp['pattern_type']} in "
-                f"{opp['module_path']}:{opp['function_name']} "
-                f"-> {opp['ai_paradigm']}"
-            )
-            description = json.dumps(
-                {
-                    "opportunity_id": opp_id,
-                    "scan_id": scan_id,
-                    "roadmap_id": roadmap_id,
-                    "pattern_type": opp["pattern_type"],
-                    "module_path": opp["module_path"],
-                    "function_name": opp["function_name"],
-                    "ai_paradigm": opp["ai_paradigm"],
-                    "scores": {
-                        "composite": opp["composite_score"],
-                        "value": opp["value_score"],
-                        "feasibility": opp["feasibility_score"],
-                        "risk": opp["risk_score"],
-                    },
-                    "roadmap_phase": _phase_label(opp["composite_score"]),
-                    "model_recommendation": opp["il_recommended_model"],
-                },
-                indent=2,
-            )
-            _exec(
-                icdev_conn,
-                "INSERT INTO kanban_tasks "
-                "(id, title, description, task_type, priority, status, executor_type) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (task_id, title, description, "build", priority, "suggested", "claude_cli"),
-            )
-            icdev_conn.commit()
-            promoted_opps.append({**opp, "task_id": task_id})
-    finally:
-        icdev_conn.close()
-
-    if not promoted_opps:
-        return 0
-
-    # Write one audit entry per promoted task (separate AI-ify connection)
-    aiify_conn = get_connection()
+        aiify_conn = get_connection()
+    except Exception:
+        return
     try:
-        for opp in promoted_opps:
+        for e in entries:
             _exec(
                 aiify_conn,
                 "INSERT INTO aiify_audit_log (event_type, scan_id, actor, detail) VALUES (?, ?, ?, ?)",
@@ -448,18 +412,113 @@ def _promote_top_opportunities(
                     scan_id,
                     "system",
                     _dump({
-                        "task_id": opp["task_id"],
-                        "opportunity_id": opp["opportunity_id"],
-                        "composite_score": opp["composite_score"],
+                        "task_id": e.get("task_id"),
+                        "opportunity_id": e.get("opportunity_id"),
+                        "composite_score": e.get("composite_score"),
                         "roadmap_id": roadmap_id,
                     }),
                 ),
             )
         aiify_conn.commit()
+    except Exception:
+        try:
+            aiify_conn.rollback()
+        except Exception:
+            pass
     finally:
-        aiify_conn.close()
+        try:
+            aiify_conn.close()
+        except Exception:
+            pass
 
-    return len(promoted_opps)
+
+def _promote_top_opportunities(
+    opp_rows: list[dict],
+    score_rows: list[dict],
+    scan_id: int,
+    roadmap_id: str,
+) -> int:
+    """Promote the highest-scoring opportunities to kanban_tasks (capped).
+
+    Routes ALL task creation through tools.kanban.task_factory.create_tasks with a
+    per-opportunity idempotency_key (the single dedup choke point), never exceeds
+    ``auto_promote_cap`` (args/aiify_config.yaml), and lands tasks in the
+    configured non-dispatchable status ('suggested') pending HITL review.
+    Returns the count of tasks actually created.
+    """
+    from tools.kanban.task_factory import create_tasks
+
+    cfg = _load_promotion_config()
+    cap = int(cfg.get("auto_promote_cap", 10) or 0)
+    status = str(cfg.get("auto_promote_status", "suggested")) or "suggested"
+    if cap <= 0:
+        return 0
+
+    ranked = _rank_opportunities(opp_rows, score_rows)
+    top = ranked[: min(_TOP_PROMOTE_N, cap)]
+    if not top:
+        return 0
+
+    thresholds = _load_anomaly_thresholds()
+    priority_high_min = thresholds.get(
+        "priority_high_min_score",
+        _FALLBACK_ANOMALY_THRESHOLDS["priority_high_min_score"],
+    )
+
+    specs: list[dict] = []
+    audit: list[dict] = []
+    for opp in top:
+        opp_id = opp["opportunity_id"]
+        task_id = f"aiify-opp-{str(opp_id)[:8]}"
+        priority = "high" if opp["composite_score"] >= priority_high_min else "medium"
+        title = (
+            f"[AI Opp] {opp['pattern_type']} in "
+            f"{opp['module_path']}:{opp['function_name']} "
+            f"-> {opp['ai_paradigm']}"
+        )
+        description = json.dumps(
+            {
+                "opportunity_id": opp_id,
+                "scan_id": scan_id,
+                "roadmap_id": roadmap_id,
+                "pattern_type": opp["pattern_type"],
+                "module_path": opp["module_path"],
+                "function_name": opp["function_name"],
+                "ai_paradigm": opp["ai_paradigm"],
+                "scores": {
+                    "composite": opp["composite_score"],
+                    "value": opp["value_score"],
+                    "feasibility": opp["feasibility_score"],
+                    "risk": opp["risk_score"],
+                },
+                "roadmap_phase": _phase_label(opp["composite_score"]),
+                "model_recommendation": opp["il_recommended_model"],
+            },
+            indent=2,
+        )
+        specs.append({
+            "id": task_id,
+            "idempotency_key": f"aiify-opp-{opp_id}",
+            "title": title,
+            "description": description,
+            "task_type": "build",
+            "priority": priority,
+            "status": status,
+            "dispatch_source": "aiify_auto",
+        })
+        audit.append({
+            "task_id": task_id,
+            "opportunity_id": opp_id,
+            "composite_score": opp["composite_score"],
+        })
+
+    created = create_tasks(specs)
+    created_set = set(created)
+    _write_promotion_audit(
+        scan_id, roadmap_id,
+        [a for a in audit if a["task_id"] in created_set],
+    )
+    return len(created)
 
 
 def _promote_phase_opportunities(
@@ -468,12 +527,26 @@ def _promote_phase_opportunities(
     score_rows: list[dict],
     scan_id: int,
 ) -> int:
-    """Create [Phase] kanban tasks for every opportunity bucketed into P1/P2/P3.
+    """Create capped [Phase] kanban tasks for opportunities not already promoted.
 
-    One task per opportunity, labelled with its roadmap phase.  Tasks whose ID
-    already exists are skipped (idempotent).  Returns the count inserted.
+    Historically this created one task per opportunity across every phase with no
+    cap — the root cause of runaway kanban seeding. It now shares a single
+    per-scan budget with _promote_top_opportunities (total <= auto_promote_cap),
+    excludes the opportunities the top promoter already took, routes through
+    task_factory with a per-opportunity idempotency_key, and lands tasks in the
+    configured non-dispatchable status. Returns the count of tasks created.
     """
-    from tools.db.storage import get_connection as _icdev_get_connection
+    from tools.kanban.task_factory import create_tasks
+
+    cfg = _load_promotion_config()
+    cap = int(cfg.get("auto_promote_cap", 10) or 0)
+    status = str(cfg.get("auto_promote_status", "suggested")) or "suggested"
+    budget = cap - min(_TOP_PROMOTE_N, cap)
+    if budget <= 0:
+        return 0
+
+    ranked = _rank_opportunities(opp_rows, score_rows)
+    excluded = {o["opportunity_id"] for o in ranked[: min(_TOP_PROMOTE_N, cap)]}
 
     roadmap_id: str = roadmap.get("roadmap_id", "")
     # 'rm-8a699d41b6' → '8a699'
@@ -487,70 +560,80 @@ def _promote_phase_opportunities(
         "priority_high_min_score",
         _FALLBACK_ANOMALY_THRESHOLDS["priority_high_min_score"],
     )
-    inserted = 0
-    icdev_conn = _icdev_get_connection()
-    try:
-        for phase in roadmap.get("phases", []):
-            phase_label = phase.get("label", "")
-            for opp_item in phase.get("opportunities", []):
-                opp_id = int(opp_item.get("opportunity_id", 0))
-                task_id = f"aiify-rm-{short_id}-phase-{opp_id}"
 
-                existing = _exec(
-                    icdev_conn,
-                    "SELECT id FROM kanban_tasks WHERE id = ?",
-                    (task_id,),
-                ).fetchone()
-                if existing:
-                    continue
+    specs: list[dict] = []
+    audit: list[dict] = []
+    seen: set[int] = set()
+    for phase in roadmap.get("phases", []):
+        if len(seen) >= budget:
+            break
+        phase_label = phase.get("label", "")
+        for opp_item in phase.get("opportunities", []):
+            if len(seen) >= budget:
+                break
+            opp_id = int(opp_item.get("opportunity_id", 0))
+            if opp_id in excluded or opp_id in seen:
+                continue
+            seen.add(opp_id)
 
-                opp = opp_index.get(opp_id, opp_item)
-                score = score_index.get(opp_id, {})
+            opp = opp_index.get(opp_id, opp_item)
+            score = score_index.get(opp_id, {})
 
-                # Prefer opp_index (has computed paradigm/model); fall back to roadmap item
-                paradigm = opp.get("ai_paradigm") or opp_item.get("ai_paradigm", "")
-                model = opp.get("il_recommended_model") or opp_item.get("il_recommended_model", "")
-                pattern_type = opp.get("pattern_type") or opp_item.get("pattern_type", "")
-                module_path = opp.get("module_path") or opp_item.get("module_path", "")
-                function_name = (
-                    opp.get("function_name") or opp_item.get("function_name", "<unknown>")
-                )
-
-                title = f"[Phase] {pattern_type} in {module_path} -> {paradigm}"
-                description = json.dumps(
-                    {
-                        "opportunity_id": opp_id,
-                        "scan_id": scan_id,
-                        "roadmap_id": roadmap_id,
-                        "phase": phase_label,
-                        "pattern_type": pattern_type,
-                        "module_path": module_path,
-                        "function_name": function_name,
-                        "ai_paradigm": paradigm,
-                        "model_recommendation": model,
-                        "scores": {
-                            "composite": float(score.get("composite_score", 0.0)),
-                            "value": float(score.get("value_score", 0.0)),
-                            "feasibility": float(score.get("feasibility_score", 0.0)),
-                            "risk": float(score.get("risk_score", 0.0)),
-                        },
+            # Prefer opp_index (has computed paradigm/model); fall back to roadmap item
+            paradigm = opp.get("ai_paradigm") or opp_item.get("ai_paradigm", "")
+            model = opp.get("il_recommended_model") or opp_item.get("il_recommended_model", "")
+            pattern_type = opp.get("pattern_type") or opp_item.get("pattern_type", "")
+            module_path = opp.get("module_path") or opp_item.get("module_path", "")
+            function_name = (
+                opp.get("function_name") or opp_item.get("function_name", "<unknown>")
+            )
+            composite = float(score.get("composite_score", 0.0))
+            task_id = f"aiify-rm-{short_id}-phase-{opp_id}"
+            title = f"[Phase] {pattern_type} in {module_path} -> {paradigm}"
+            description = json.dumps(
+                {
+                    "opportunity_id": opp_id,
+                    "scan_id": scan_id,
+                    "roadmap_id": roadmap_id,
+                    "phase": phase_label,
+                    "pattern_type": pattern_type,
+                    "module_path": module_path,
+                    "function_name": function_name,
+                    "ai_paradigm": paradigm,
+                    "model_recommendation": model,
+                    "scores": {
+                        "composite": composite,
+                        "value": float(score.get("value_score", 0.0)),
+                        "feasibility": float(score.get("feasibility_score", 0.0)),
+                        "risk": float(score.get("risk_score", 0.0)),
                     },
-                    indent=2,
-                )
-                priority = "high" if float(score.get("composite_score", 0.0)) >= priority_high_min else "medium"
-                _exec(
-                    icdev_conn,
-                    "INSERT INTO kanban_tasks "
-                    "(id, title, description, task_type, priority, status, executor_type) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (task_id, title, description, "build", priority, "suggested", "claude_cli"),
-                )
-                icdev_conn.commit()
-                inserted += 1
-    finally:
-        icdev_conn.close()
+                },
+                indent=2,
+            )
+            priority = "high" if composite >= priority_high_min else "medium"
+            specs.append({
+                "id": task_id,
+                "idempotency_key": f"aiify-opp-{opp_id}",
+                "title": title,
+                "description": description,
+                "task_type": "build",
+                "priority": priority,
+                "status": status,
+                "dispatch_source": "aiify_auto",
+            })
+            audit.append({
+                "task_id": task_id,
+                "opportunity_id": opp_id,
+                "composite_score": composite,
+            })
 
-    return inserted
+    created = create_tasks(specs)
+    created_set = set(created)
+    _write_promotion_audit(
+        scan_id, roadmap_id,
+        [a for a in audit if a["task_id"] in created_set],
+    )
+    return len(created)
 
 
 def detect_score_anomalies(rows: list, thresholds: dict | None = None) -> list:

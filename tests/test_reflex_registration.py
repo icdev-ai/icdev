@@ -82,7 +82,9 @@ EXEMPT: dict[str, str] = {
     "sim_training_export": "referenced only by a DB migration seed (130_genesis_audit_log); not wired into daemon; unverified — inherited exemption",
     # --- No dispatcher/import references found; self-labeled canvas reflexes that appear unwired ---
     # (out of scope for shx-safe-04 — the guard now prevents further silent additions)
-    "forge_academy_oracle": "no dispatcher/import references found; appears unwired; unverified — inherited exemption (out of scope for shx-safe-04)",
+    # NOTE: forge_academy_oracle was deleted in penta-aca-06 (doubly dead: never in
+    # REFLEX_NAMES and queried the wrong table). Its replacement, academy_oracle_reflex,
+    # IS registered in REFLEX_NAMES, so it needs no exemption here.
     "gameday_orchestrator": "no references found; AI GameDay orchestrator appears unwired; unverified — inherited exemption",
     "govchain_anchor": "no references found; GovChain Merkle-anchor reflex appears unwired; unverified — inherited exemption",
     "idc_cloud_drift": "no references found; IDC canvas reflex appears unwired; unverified — inherited exemption",

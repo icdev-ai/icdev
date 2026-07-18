@@ -31443,6 +31443,7 @@ CREATE TABLE public.ttx_injects (
     depends_on_slug text,
     state text DEFAULT 'pending'::text NOT NULL,
     config_json text DEFAULT '{}'::text,
+    ontology_tags_json text DEFAULT '{}'::text,
     dispatched_at text,
     closed_at text,
     created_at text DEFAULT now() NOT NULL,
@@ -31663,6 +31664,7 @@ CREATE TABLE public.ttx_sessions (
     started_at text,
     ended_at text,
     config_json text DEFAULT '{}'::text,
+    ontology_tags_json text DEFAULT '{}'::text,
     created_at text DEFAULT now() NOT NULL,
     world_state_json text DEFAULT '{}'::text,
     name text DEFAULT ''::text,
@@ -63748,11 +63750,11 @@ CREATE INDEX IF NOT EXISTS idx_dd_migration_jobs_status ON public.dd_migration_j
 -- ICDEV ADDITIVE SECTION (post-dump, hand-maintained) — APPEND ONLY
 -- ============================================================================
 -- Intelligent Documentation Regeneration (IDR / DocGen) core schema — parity
--- with tools/db/migrations/211_idr_tables.sql + 212 + 214/217 + 257 + 275, and
--- 274_idr_publish_audit.sql. The IDR canvas routes to the SHARED icdev database,
+-- with tools/db/migrations/211_idr_tables.sql + 212 + 214/217 + 257 + 277, and
+-- 276_idr_publish_audit.sql. The IDR canvas routes to the SHARED icdev database,
 -- so these must exist in the consolidated baseline: the pg_dump body predates the
 -- canvas and contains NO idr_* tables, so a fresh PG bootstrap would otherwise
--- lack them entirely (migration 275 is marked-applied by bootstrap_pg and never
+-- lack them entirely (migration 277 is marked-applied by bootstrap_pg and never
 -- runs on a fresh install). (task cnr-doc-04)
 --
 -- PG-NATIVE dialect: applied RAW by tools/db/bootstrap_pg.py (no translate_sql)

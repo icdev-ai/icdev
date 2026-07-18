@@ -97,6 +97,7 @@ REFLEX_NAMES = [
     "fathomdesk_trap_scenarios",
     "migration_canvas",
     "academy_reflex",
+    "academy_oracle_reflex",  # penta-aca-06: 6h in-app 7-lens AcademyOracleRunner → fa_oracle_* (replaces dead forge_academy_oracle)
     "e2e_runner",
     "qa_agent_reflex",  # 6-hour QA coverage gap sweep + E2E sweep scheduling
     "coherence_to_kanban_reflex",  # diffs coherence violations → files kanban bug tasks
@@ -150,6 +151,7 @@ REFLEX_NAMES = [
     "weekly_retro_reflex",        # second-brain: Friday 18:00 UTC — weekly retrospective
     "pdc_pipeline_stale",  # pdx-ops-01: PDC pipeline staleness alert (6h) — IQR anomaly threshold; was implemented-but-undispatched
     "observability_retention",  # obx-trc-05: 24h archive-then-prune of otel_spans/prov_*/shap_attributions (append-only → cold twin)
+    "odc_coverage_refresh",  # obx-cov-02: 6h scheduled ODC MITRE coverage recompute + >15% drift detection → od_audit + suggested cards
 ]
 
 # Backward-compat aliases for module-level access used by other code
