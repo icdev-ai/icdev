@@ -46,11 +46,12 @@ Routes:
 from __future__ import annotations
 
 import json
+import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from flask import Blueprint, jsonify, render_template, request
+from flask import Blueprint, jsonify, redirect, render_template, request, session
 
 bp = Blueprint("migration_intel", __name__, url_prefix="")
 
@@ -60,6 +61,35 @@ _DB_PATH = str(BASE_DIR / "data" / "migration_intel.db")
 
 def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+# =========================================================================
+# AUTH (cnr-mi-02) — mirrors mdc_login_required in tools/migration_canvas
+# =========================================================================
+
+@bp.before_request
+def _mi_require_auth():
+    """Gate every migration-intel route behind an authenticated session.
+
+    cnr-mi-02: previously every route — including POST /api/migration-intel/run
+    and /scan, which execute full cross-canvas pipelines — was unauthenticated.
+    A blueprint-wide before_request hook (rather than a per-route decorator) is
+    used so no route can silently miss the gate. Mirrors the Migration Canvas
+    policy: JSON/API/mutating requests get 401, browser page requests redirect
+    to /login. ICDEV_AUTH_BYPASS opts out for E2E/CI, consistent with
+    tools/dashboard/auth.py. Returning None lets the request proceed.
+    """
+    if os.environ.get("ICDEV_AUTH_BYPASS", "").lower() in ("1", "true", "yes"):
+        return None
+    if session.get("user_id"):
+        return None
+    if (
+        request.is_json
+        or request.path.startswith("/api/migration-intel/")
+        or request.method in ("DELETE", "POST", "PUT", "PATCH")
+    ):
+        return jsonify({"error": "Authentication required"}), 401
+    return redirect("/login")
 
 
 def _get_conn():
