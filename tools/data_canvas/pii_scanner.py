@@ -267,13 +267,13 @@ def save_pii_scan(result: dict, design_id: str | None = None) -> str:
         try:
             conn.execute(
                 "INSERT INTO dd_pii_scans (scan_id, design_id, overall_risk, findings_json, scanned_at) "
-                "VALUES (%s, %s, %s, %s, %s)",
+                "VALUES (?, ?, ?, ?, ?)",
                 (run_id, design_id, result.get("overall_risk", "none"), payload, now),
             )
         except Exception:
             conn.execute(
                 "INSERT INTO dd_pii_scans (scan_id, design_id, overall_risk, findings_json, scanned_at) "
-                "VALUES (%s, %s, %s, %s, %s)",
+                "VALUES (?, ?, ?, ?, ?)",
                 (run_id, design_id, result.get("overall_risk", "none"), payload, now),
             )
         conn.commit()

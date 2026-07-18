@@ -162,7 +162,7 @@ def _write_log(provider: str, domain_ids: list, operation: str, ok: bool, synced
         conn = get_connection()
         conn.execute(
             "INSERT INTO dm_csp_sync_log (id, provider, domain_id, operation, status, synced_count, error_detail, created_at) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 str(uuid.uuid4())[:12],
                 provider,

@@ -100,7 +100,7 @@ def _audit(design_id, user, action, detail="", classification="CUI // SP-CTI"):
         conn = get_connection()
         conn.execute(
             "INSERT INTO dd_audit (design_id, user, action, detail, classification, created_at) "
-            "VALUES (%s, %s, %s, %s, %s, %s)",
+            "VALUES (?, ?, ?, ?, ?, ?)",
             (design_id, user, action, detail, classification, now_isoformat()),
         )
         conn.commit()
@@ -197,7 +197,7 @@ def create_data_canvas_blueprint():
         if template_id:
             conn = get_connection()
             tpl = conn.execute(
-                "SELECT name, graph_json FROM dd_templates WHERE id=%s",
+                "SELECT name, graph_json FROM dd_templates WHERE id=?",
                 (template_id,),
             ).fetchone()
             conn.close()
@@ -218,7 +218,7 @@ def create_data_canvas_blueprint():
     @dc_login_required
     def dc_edit_canvas(design_id):
         conn = get_connection()
-        row = conn.execute("SELECT * FROM data_designs WHERE id=%s", (design_id,)).fetchone()
+        row = conn.execute("SELECT * FROM data_designs WHERE id=?", (design_id,)).fetchone()
         conn.close()
         if not row:
             return redirect("/data/canvas/new")
@@ -269,7 +269,7 @@ def create_data_canvas_blueprint():
     def dc_remediation_page(design_id):
         """Remediation page — gap analysis with recommended fixes."""
         conn = get_connection()
-        row = conn.execute("SELECT id, name FROM data_designs WHERE id=%s", (design_id,)).fetchone()
+        row = conn.execute("SELECT id, name FROM data_designs WHERE id=?", (design_id,)).fetchone()
         conn.close()
         if not row:
             return redirect("/data/")
@@ -309,7 +309,7 @@ def create_data_canvas_blueprint():
         if template_id:
             conn = get_connection()
             ex = conn.execute(
-                "SELECT id, name FROM data_designs WHERE template_id=%s LIMIT 1", (template_id,)
+                "SELECT id, name FROM data_designs WHERE template_id=? LIMIT 1", (template_id,)
             ).fetchone()
             conn.close()
             if ex:
@@ -320,7 +320,7 @@ def create_data_canvas_blueprint():
         conn.execute(
             "INSERT INTO data_designs "
             "(id, name, description, graph_json, template_id, classification, created_at, updated_at) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+            "VALUES (?,?,?,?,?,?,?,?)",
             (
                 design_id,
                 name,
@@ -344,7 +344,7 @@ def create_data_canvas_blueprint():
     @dc_login_required
     def dc_api_get(design_id):
         conn = get_connection()
-        row = conn.execute("SELECT * FROM data_designs WHERE id=%s", (design_id,)).fetchone()
+        row = conn.execute("SELECT * FROM data_designs WHERE id=?", (design_id,)).fetchone()
         conn.close()
         if not row:
             return jsonify({"error": "Not found"}), 404
@@ -359,7 +359,7 @@ def create_data_canvas_blueprint():
         logger.info("Updating data design: %s", design_id)
         conn = get_connection()
         conn.execute(
-            "UPDATE data_designs SET name=%s, description=%s, graph_json=%s, classification=%s, updated_at=%s WHERE id=%s",
+            "UPDATE data_designs SET name=?, description=?, graph_json=?, classification=?, updated_at=? WHERE id=?",
             (
                 data.get("name", ""),
                 data.get("description", ""),
@@ -411,9 +411,9 @@ def create_data_canvas_blueprint():
         logger.info("Deleting data design: %s", design_id)
         conn = get_connection()
         # Cascade-delete child records before removing parent (foreign key constraint)
-        conn.execute("DELETE FROM dd_versions WHERE design_id=%s", (design_id,))
-        conn.execute("DELETE FROM dd_assessments WHERE design_id=%s", (design_id,))
-        conn.execute("DELETE FROM data_designs WHERE id=%s", (design_id,))
+        conn.execute("DELETE FROM dd_versions WHERE design_id=?", (design_id,))
+        conn.execute("DELETE FROM dd_assessments WHERE design_id=?", (design_id,))
+        conn.execute("DELETE FROM data_designs WHERE id=?", (design_id,))
         conn.commit()
         conn.close()
         _audit(design_id, session.get("user_id", "system"), "DELETE", "")
@@ -426,9 +426,9 @@ def create_data_canvas_blueprint():
         conn = get_connection()
         ids = [r[0] for r in conn.execute("SELECT id FROM data_designs").fetchall()]
         for did in ids:
-            conn.execute("DELETE FROM dd_versions WHERE design_id=%s", (did,))
-            conn.execute("DELETE FROM dd_assessments WHERE design_id=%s", (did,))
-            conn.execute("DELETE FROM data_designs WHERE id=%s", (did,))
+            conn.execute("DELETE FROM dd_versions WHERE design_id=?", (did,))
+            conn.execute("DELETE FROM dd_assessments WHERE design_id=?", (did,))
+            conn.execute("DELETE FROM data_designs WHERE id=?", (did,))
         conn.commit()
         conn.close()
         return jsonify({"deleted": len(ids)})
@@ -474,7 +474,7 @@ def create_data_canvas_blueprint():
         use_cot = data.get("use_cot", False)
         chain_mode = "cot" if use_cot else ""
         conn = get_connection()
-        row = conn.execute("SELECT graph_json FROM data_designs WHERE id=%s", (design_id,)).fetchone()
+        row = conn.execute("SELECT graph_json FROM data_designs WHERE id=?", (design_id,)).fetchone()
         if not row:
             conn.close()
             return jsonify({"error": "Not found"}), 404
@@ -508,7 +508,7 @@ def create_data_canvas_blueprint():
         assess_id = str(_uuid.uuid4())
         conn.execute(
             "INSERT INTO dd_assessments (id, design_id, assessment_type, findings_json, score, created_at) "
-            "VALUES (%s,%s,%s,%s,%s,%s)",
+            "VALUES (?,?,?,?,?,?)",
             (assess_id, design_id, "compliance", json.dumps(result["findings"]), result["risk_score"], now_isoformat()),
         )
         conn.commit()
@@ -560,7 +560,7 @@ def create_data_canvas_blueprint():
         conn = get_connection()
         rows = conn.execute(
             "SELECT id, assessment_type, score, created_at "
-            "FROM dd_assessments WHERE design_id=%s ORDER BY created_at DESC",
+            "FROM dd_assessments WHERE design_id=? ORDER BY created_at DESC",
             (design_id,),
         ).fetchall()
         conn.close()
@@ -572,7 +572,7 @@ def create_data_canvas_blueprint():
         """Run data governance framework check on a data design."""
         conn = get_connection()
         row = conn.execute(
-            "SELECT graph_json FROM data_designs WHERE id=%s", (design_id,)
+            "SELECT graph_json FROM data_designs WHERE id=?", (design_id,)
         ).fetchone()
         if not row:
             conn.close()
@@ -590,7 +590,7 @@ def create_data_canvas_blueprint():
         assess_id = str(_uuid.uuid4())
         conn.execute(
             "INSERT INTO dd_assessments (id, design_id, assessment_type, findings_json, score, created_at) "
-            "VALUES (%s,%s,%s,%s,%s,%s)",
+            "VALUES (?,?,?,?,?,?)",
             (
                 assess_id, design_id, "governance",
                 json.dumps([{"title": c["title"], "severity": c["severity"], "status": c["status"]}
@@ -636,7 +636,7 @@ def create_data_canvas_blueprint():
         rows = conn.execute(
             "SELECT id, source_node_id, target_node_id, lineage_type, "
             "column_name, transform_desc, classification, created_at "
-            "FROM dd_lineage WHERE design_id=%s ORDER BY created_at",
+            "FROM dd_lineage WHERE design_id=? ORDER BY created_at",
             (design_id,),
         ).fetchall()
         conn.close()
@@ -657,7 +657,7 @@ def create_data_canvas_blueprint():
             "INSERT INTO dd_lineage "
             "(id, design_id, source_node_id, target_node_id, lineage_type, "
             "column_name, transform_desc, classification, created_at) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            "VALUES (?,?,?,?,?,?,?,?,?)",
             (
                 edge_id,
                 design_id,
@@ -680,7 +680,7 @@ def create_data_canvas_blueprint():
     def dc_api_lineage_delete(design_id, edge_id):
         """Delete a lineage edge."""
         conn = get_connection()
-        conn.execute("DELETE FROM dd_lineage WHERE id=%s AND design_id=%s", (edge_id, design_id))
+        conn.execute("DELETE FROM dd_lineage WHERE id=? AND design_id=?", (edge_id, design_id))
         conn.commit()
         conn.close()
         return jsonify({"status": "deleted"})
@@ -729,7 +729,7 @@ def create_data_canvas_blueprint():
         _MARKER_COLOR = {"pii": "#e74c3c", "sensitive": "#f39c12", "clean": "#27ae60"}
         conn = get_connection()
         design_row = conn.execute(
-            "SELECT id, name, graph_json, classification FROM data_designs WHERE id=%s",
+            "SELECT id, name, graph_json, classification FROM data_designs WHERE id=?",
             (dataset_id,),
         ).fetchone()
         if not design_row:
@@ -740,13 +740,13 @@ def create_data_canvas_blueprint():
         edge_rows = conn.execute(
             "SELECT id, source_node_id, target_node_id, lineage_type, "
             "column_name, transform_desc, classification "
-            "FROM dd_lineage WHERE design_id=%s ORDER BY created_at",
+            "FROM dd_lineage WHERE design_id=? ORDER BY created_at",
             (dataset_id,),
         ).fetchall()
 
         # Fetch explicit data_nodes rows (may be empty for older designs)
         node_rows = conn.execute(
-            "SELECT id, label, node_type, classification FROM data_nodes WHERE design_id=%s",
+            "SELECT id, label, node_type, classification FROM data_nodes WHERE design_id=?",
             (dataset_id,),
         ).fetchall()
         conn.close()
@@ -823,7 +823,7 @@ def create_data_canvas_blueprint():
     def dc_api_pii_scan(design_id):
         """Run PII/PHI detection on the current graph nodes."""
         conn = get_connection()
-        row = conn.execute("SELECT graph_json FROM data_designs WHERE id=%s", (design_id,)).fetchone()
+        row = conn.execute("SELECT graph_json FROM data_designs WHERE id=?", (design_id,)).fetchone()
         conn.close()
         if not row:
             return jsonify({"error": "Not found"}), 404
@@ -874,7 +874,7 @@ def create_data_canvas_blueprint():
         conn = get_connection()
         rows = conn.execute(
             "SELECT id, version_number, change_summary, user_id, created_at "
-            "FROM dd_versions WHERE design_id=%s ORDER BY version_number DESC",
+            "FROM dd_versions WHERE design_id=? ORDER BY version_number DESC",
             (design_id,),
         ).fetchall()
         conn.close()
@@ -887,7 +887,7 @@ def create_data_canvas_blueprint():
         data = request.get_json(force=True, silent=True) or {}
         conn = get_connection()
         row = conn.execute(
-            "SELECT graph_json FROM data_designs WHERE id=%s",
+            "SELECT graph_json FROM data_designs WHERE id=?",
             (design_id,),
         ).fetchone()
         if not row:
@@ -899,13 +899,13 @@ def create_data_canvas_blueprint():
         except Exception:
             current_graph = {}
         ver_num = conn.execute(
-            "SELECT COALESCE(MAX(version_number), 0) + 1 FROM dd_versions WHERE design_id=%s",
+            "SELECT COALESCE(MAX(version_number), 0) + 1 FROM dd_versions WHERE design_id=?",
             (design_id,),
         ).fetchone()[0]
         change_summary = data.get("change_summary", "")
         if not change_summary:
             prev = conn.execute(
-                "SELECT graph_json FROM dd_versions WHERE design_id=%s ORDER BY version_number DESC LIMIT 1",
+                "SELECT graph_json FROM dd_versions WHERE design_id=? ORDER BY version_number DESC LIMIT 1",
                 (design_id,),
             ).fetchone()
             if prev:
@@ -918,7 +918,7 @@ def create_data_canvas_blueprint():
         now = now_isoformat()
         conn.execute(
             "INSERT INTO dd_versions (id, design_id, version_number, graph_json, change_summary, user_id, created_at) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s)",
+            "VALUES (?,?,?,?,?,?,?)",
             (
                 ver_id,
                 design_id,
@@ -942,7 +942,7 @@ def create_data_canvas_blueprint():
         """Restore a data design to a previous version snapshot."""
         conn = get_connection()
         ver = conn.execute(
-            "SELECT graph_json, version_number FROM dd_versions WHERE id=%s AND design_id=%s",
+            "SELECT graph_json, version_number FROM dd_versions WHERE id=? AND design_id=?",
             (version_id, design_id),
         ).fetchone()
         if not ver:
@@ -950,7 +950,7 @@ def create_data_canvas_blueprint():
             return jsonify({"error": "Version not found"}), 404
         now = now_isoformat()
         conn.execute(
-            "UPDATE data_designs SET graph_json=%s, updated_at=%s WHERE id=%s",
+            "UPDATE data_designs SET graph_json=?, updated_at=? WHERE id=?",
             (ver[0], now, design_id),
         )
         conn.commit()
@@ -970,11 +970,11 @@ def create_data_canvas_blueprint():
             return jsonify({"error": "version_a and version_b required"}), 400
         conn = get_connection()
         ver_a = conn.execute(
-            "SELECT graph_json, version_number FROM dd_versions WHERE id=%s AND design_id=%s",
+            "SELECT graph_json, version_number FROM dd_versions WHERE id=? AND design_id=?",
             (ver_a_id, design_id),
         ).fetchone()
         ver_b = conn.execute(
-            "SELECT graph_json, version_number FROM dd_versions WHERE id=%s AND design_id=%s",
+            "SELECT graph_json, version_number FROM dd_versions WHERE id=? AND design_id=?",
             (ver_b_id, design_id),
         ).fetchone()
         conn.close()
@@ -1002,7 +1002,7 @@ def create_data_canvas_blueprint():
 
         conn = get_connection()
         row = conn.execute(
-            "SELECT name, graph_json FROM data_designs WHERE id=%s",
+            "SELECT name, graph_json FROM data_designs WHERE id=?",
             (design_id,),
         ).fetchone()
         conn.close()
@@ -1024,7 +1024,7 @@ def create_data_canvas_blueprint():
 
     def _ddc_fetch(design_id):
         conn = get_connection()
-        row = conn.execute("SELECT name, graph_json FROM data_designs WHERE id=%s", (design_id,)).fetchone()
+        row = conn.execute("SELECT name, graph_json FROM data_designs WHERE id=?", (design_id,)).fetchone()
         conn.close()
         if not row:
             return None, None
@@ -1111,7 +1111,7 @@ def create_data_canvas_blueprint():
 
         conn = get_connection()
         row = conn.execute(
-            "SELECT name, graph_json, classification FROM data_designs WHERE id=%s",
+            "SELECT name, graph_json, classification FROM data_designs WHERE id=?",
             (design_id,),
         ).fetchone()
         conn.close()
@@ -1140,7 +1140,7 @@ def create_data_canvas_blueprint():
 
         conn = get_connection()
         row = conn.execute(
-            "SELECT name, graph_json, classification FROM data_designs WHERE id=%s",
+            "SELECT name, graph_json, classification FROM data_designs WHERE id=?",
             (design_id,),
         ).fetchone()
         conn.close()
@@ -1171,7 +1171,7 @@ def create_data_canvas_blueprint():
 
         conn = get_connection()
         row = conn.execute(
-            "SELECT name, graph_json, classification FROM data_designs WHERE id=%s",
+            "SELECT name, graph_json, classification FROM data_designs WHERE id=?",
             (design_id,),
         ).fetchone()
         conn.close()
@@ -1319,7 +1319,7 @@ def create_data_canvas_blueprint():
             # Merge into existing design
             conn = get_connection()
             row = conn.execute(
-                "SELECT graph_json FROM data_designs WHERE id=%s", (design_id_param,)
+                "SELECT graph_json FROM data_designs WHERE id=?", (design_id_param,)
             ).fetchone()
             if row:
                 try:
@@ -1335,7 +1335,7 @@ def create_data_canvas_blueprint():
                 existing["edges"] = existing.get("edges", []) + new_edges
                 merged_json = json.dumps(existing)
                 conn.execute(
-                    "UPDATE data_designs SET graph_json=%s, updated_at=%s WHERE id=%s",
+                    "UPDATE data_designs SET graph_json=?, updated_at=? WHERE id=?",
                     (merged_json, now_isoformat(), design_id_param),
                 )
                 conn.commit()
@@ -1355,7 +1355,7 @@ def create_data_canvas_blueprint():
             conn = get_connection()
             conn.execute(
                 "INSERT INTO data_designs (id, name, description, graph_json, classification, created_at, updated_at) "
-                "VALUES (%s,%s,%s,%s,%s,%s,%s)",
+                "VALUES (?,?,?,?,?,?,?)",
                 (
                     new_id,
                     design_name,
@@ -1455,7 +1455,7 @@ def create_data_canvas_blueprint():
     def dc_runbook_detail(runbook_id):
         """Runbook detail page — view steps and execution history."""
         conn = get_connection()
-        rb_row = conn.execute("SELECT * FROM ddc_runbooks WHERE id=%s", (runbook_id,)).fetchone()
+        rb_row = conn.execute("SELECT * FROM ddc_runbooks WHERE id=?", (runbook_id,)).fetchone()
         if not rb_row:
             conn.close()
             return redirect("/data/runbooks")
@@ -1469,7 +1469,7 @@ def create_data_canvas_blueprint():
             row_to_dict(r)
             for r in conn.execute(
                 "SELECT id, triggered_by, status, notes, started_at, completed_at "
-                "FROM ddc_runbook_executions WHERE runbook_id=%s ORDER BY started_at DESC LIMIT 20",
+                "FROM ddc_runbook_executions WHERE runbook_id=? ORDER BY started_at DESC LIMIT 20",
                 (runbook_id,),
             ).fetchall()
         ]
@@ -1489,16 +1489,16 @@ def create_data_canvas_blueprint():
         conn = get_connection()
         if category and severity:
             rows = conn.execute(
-                "SELECT * FROM ddc_runbooks WHERE category=%s AND severity=%s ORDER BY title",
+                "SELECT * FROM ddc_runbooks WHERE category=? AND severity=? ORDER BY title",
                 (category, severity),
             ).fetchall()
         elif category:
             rows = conn.execute(
-                "SELECT * FROM ddc_runbooks WHERE category=%s ORDER BY title", (category,)
+                "SELECT * FROM ddc_runbooks WHERE category=? ORDER BY title", (category,)
             ).fetchall()
         elif severity:
             rows = conn.execute(
-                "SELECT * FROM ddc_runbooks WHERE severity=%s ORDER BY title", (severity,)
+                "SELECT * FROM ddc_runbooks WHERE severity=? ORDER BY title", (severity,)
             ).fetchall()
         else:
             rows = conn.execute(
@@ -1521,7 +1521,7 @@ def create_data_canvas_blueprint():
             "INSERT INTO ddc_runbooks "
             "(id, title, category, severity, description, trigger_condition, steps_json, "
             "classification, status, linked_design_id, created_at, updated_at) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 rb_id,
                 title[:200],
@@ -1547,7 +1547,7 @@ def create_data_canvas_blueprint():
     def dc_api_runbooks_get(runbook_id):
         """Get a single runbook by ID."""
         conn = get_connection()
-        row = conn.execute("SELECT * FROM ddc_runbooks WHERE id=%s", (runbook_id,)).fetchone()
+        row = conn.execute("SELECT * FROM ddc_runbooks WHERE id=?", (runbook_id,)).fetchone()
         conn.close()
         if not row:
             return jsonify({"error": "Not found"}), 404
@@ -1564,14 +1564,14 @@ def create_data_canvas_blueprint():
         """Update an existing runbook."""
         data = request.get_json(force=True, silent=True) or {}
         conn = get_connection()
-        row = conn.execute("SELECT id FROM ddc_runbooks WHERE id=%s", (runbook_id,)).fetchone()
+        row = conn.execute("SELECT id FROM ddc_runbooks WHERE id=?", (runbook_id,)).fetchone()
         if not row:
             conn.close()
             return jsonify({"error": "Not found"}), 404
         conn.execute(
-            "UPDATE ddc_runbooks SET title=%s, category=%s, severity=%s, description=%s, "
-            "trigger_condition=%s, steps_json=%s, classification=%s, status=%s, "
-            "linked_design_id=%s, updated_at=%s WHERE id=%s",
+            "UPDATE ddc_runbooks SET title=?, category=?, severity=?, description=?, "
+            "trigger_condition=?, steps_json=?, classification=?, status=?, "
+            "linked_design_id=?, updated_at=? WHERE id=?",
             (
                 data.get("title", "")[:200],
                 data.get("category", "general")[:50],
@@ -1596,8 +1596,8 @@ def create_data_canvas_blueprint():
     def dc_api_runbooks_delete(runbook_id):
         """Delete a runbook and its execution history."""
         conn = get_connection()
-        conn.execute("DELETE FROM ddc_runbook_executions WHERE runbook_id=%s", (runbook_id,))
-        conn.execute("DELETE FROM ddc_runbooks WHERE id=%s", (runbook_id,))
+        conn.execute("DELETE FROM ddc_runbook_executions WHERE runbook_id=?", (runbook_id,))
+        conn.execute("DELETE FROM ddc_runbooks WHERE id=?", (runbook_id,))
         conn.commit()
         conn.close()
         _audit(runbook_id, session.get("user_id", "system"), "RUNBOOK_DELETE", "")
@@ -1608,7 +1608,7 @@ def create_data_canvas_blueprint():
     def dc_api_runbooks_execute(runbook_id):
         """Log the start of a runbook execution."""
         conn = get_connection()
-        rb_row = conn.execute("SELECT id, title FROM ddc_runbooks WHERE id=%s", (runbook_id,)).fetchone()
+        rb_row = conn.execute("SELECT id, title FROM ddc_runbooks WHERE id=?", (runbook_id,)).fetchone()
         if not rb_row:
             conn.close()
             return jsonify({"error": "Runbook not found"}), 404
@@ -1618,7 +1618,7 @@ def create_data_canvas_blueprint():
         conn.execute(
             "INSERT INTO ddc_runbook_executions "
             "(id, runbook_id, triggered_by, status, notes, started_at) "
-            "VALUES (%s,%s,%s,%s,%s,%s)",
+            "VALUES (?,?,?,?,?,?)",
             (exec_id, runbook_id, triggered_by, "in_progress", data.get("notes", ""), now_isoformat()),
         )
         conn.commit()
@@ -1636,8 +1636,8 @@ def create_data_canvas_blueprint():
             return jsonify({"error": "status must be completed, failed, or in_progress"}), 400
         conn = get_connection()
         conn.execute(
-            "UPDATE ddc_runbook_executions SET status=%s, notes=%s, completed_at=%s "
-            "WHERE id=%s AND runbook_id=%s",
+            "UPDATE ddc_runbook_executions SET status=?, notes=?, completed_at=? "
+            "WHERE id=? AND runbook_id=?",
             (
                 status,
                 data.get("notes", ""),
@@ -1657,7 +1657,7 @@ def create_data_canvas_blueprint():
         conn = get_connection()
         rows = conn.execute(
             "SELECT id, triggered_by, status, notes, started_at, completed_at "
-            "FROM ddc_runbook_executions WHERE runbook_id=%s ORDER BY started_at DESC",
+            "FROM ddc_runbook_executions WHERE runbook_id=? ORDER BY started_at DESC",
             (runbook_id,),
         ).fetchall()
         conn.close()
@@ -1687,7 +1687,7 @@ def create_data_canvas_blueprint():
     def dc_sop_detail(sop_id):
         """SOP detail page."""
         conn = get_connection()
-        sop_row = conn.execute("SELECT * FROM ddc_sops WHERE id=%s", (sop_id,)).fetchone()
+        sop_row = conn.execute("SELECT * FROM ddc_sops WHERE id=?", (sop_id,)).fetchone()
         if not sop_row:
             conn.close()
             return redirect("/data/sops")
@@ -1704,7 +1704,7 @@ def create_data_canvas_blueprint():
         approvals = [
             row_to_dict(r)
             for r in conn.execute(
-                "SELECT * FROM ddc_sop_approvals WHERE sop_id=%s ORDER BY created_at DESC",
+                "SELECT * FROM ddc_sop_approvals WHERE sop_id=? ORDER BY created_at DESC",
                 (sop_id,),
             ).fetchall()
         ]
@@ -1724,16 +1724,16 @@ def create_data_canvas_blueprint():
         conn = get_connection()
         if category and status:
             rows = conn.execute(
-                "SELECT * FROM ddc_sops WHERE category=%s AND status=%s ORDER BY title",
+                "SELECT * FROM ddc_sops WHERE category=? AND status=? ORDER BY title",
                 (category, status),
             ).fetchall()
         elif category:
             rows = conn.execute(
-                "SELECT * FROM ddc_sops WHERE category=%s ORDER BY title", (category,)
+                "SELECT * FROM ddc_sops WHERE category=? ORDER BY title", (category,)
             ).fetchall()
         elif status:
             rows = conn.execute(
-                "SELECT * FROM ddc_sops WHERE status=%s ORDER BY title", (status,)
+                "SELECT * FROM ddc_sops WHERE status=? ORDER BY title", (status,)
             ).fetchall()
         else:
             rows = conn.execute(
@@ -1759,7 +1759,7 @@ def create_data_canvas_blueprint():
             "(id, title, category, description, purpose, scope, steps_json, references_json, "
             "version, status, classification, linked_design_id, owner, reviewer, approver, "
             "created_at, updated_at) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 sop_id,
                 data["title"],
@@ -1791,7 +1791,7 @@ def create_data_canvas_blueprint():
         """Get a single SOP by ID."""
         import json as _json
         conn = get_connection()
-        row = conn.execute("SELECT * FROM ddc_sops WHERE id=%s", (sop_id,)).fetchone()
+        row = conn.execute("SELECT * FROM ddc_sops WHERE id=?", (sop_id,)).fetchone()
         conn.close()
         if not row:
             return jsonify({"error": "not found"}), 404
@@ -1813,17 +1813,17 @@ def create_data_canvas_blueprint():
         import json as _json
         data = request.get_json(force=True, silent=True) or {}
         conn = get_connection()
-        row = conn.execute("SELECT id FROM ddc_sops WHERE id=%s", (sop_id,)).fetchone()
+        row = conn.execute("SELECT id FROM ddc_sops WHERE id=?", (sop_id,)).fetchone()
         if not row:
             conn.close()
             return jsonify({"error": "not found"}), 404
         steps = data.get("steps")
         refs = data.get("references")
         conn.execute(
-            "UPDATE ddc_sops SET title=%s, category=%s, description=%s, purpose=%s, scope=%s, "
-            "steps_json=%s, references_json=%s, version=%s, classification=%s, owner=%s, "
-            "reviewer=%s, approver=%s, linked_design_id=%s, updated_at=%s "
-            "WHERE id=%s",
+            "UPDATE ddc_sops SET title=?, category=?, description=?, purpose=?, scope=?, "
+            "steps_json=?, references_json=?, version=?, classification=?, owner=?, "
+            "reviewer=?, approver=?, linked_design_id=?, updated_at=? "
+            "WHERE id=?",
             (
                 data.get("title", ""),
                 data.get("category", "general"),
@@ -1852,8 +1852,8 @@ def create_data_canvas_blueprint():
     def dc_api_sops_delete(sop_id):
         """Delete a SOP and its approval history."""
         conn = get_connection()
-        conn.execute("DELETE FROM ddc_sop_approvals WHERE sop_id=%s", (sop_id,))
-        conn.execute("DELETE FROM ddc_sops WHERE id=%s", (sop_id,))
+        conn.execute("DELETE FROM ddc_sop_approvals WHERE sop_id=?", (sop_id,))
+        conn.execute("DELETE FROM ddc_sops WHERE id=?", (sop_id,))
         conn.commit()
         conn.close()
         _audit(sop_id, session.get("user_id", "system"), "SOP_DELETE", "")
@@ -1864,7 +1864,7 @@ def create_data_canvas_blueprint():
     def dc_api_sops_submit(sop_id):
         """Submit a SOP for review (draft → pending_review)."""
         conn = get_connection()
-        row = conn.execute("SELECT id, status FROM ddc_sops WHERE id=%s", (sop_id,)).fetchone()
+        row = conn.execute("SELECT id, status FROM ddc_sops WHERE id=?", (sop_id,)).fetchone()
         if not row:
             conn.close()
             return jsonify({"error": "not found"}), 404
@@ -1872,12 +1872,12 @@ def create_data_canvas_blueprint():
         reviewer = data.get("reviewer") or session.get("user_id", "system")
         approval_id = str(_uuid.uuid4())
         conn.execute(
-            "UPDATE ddc_sops SET status='pending_review', updated_at=%s WHERE id=%s",
+            "UPDATE ddc_sops SET status='pending_review', updated_at=? WHERE id=?",
             (now_isoformat(), sop_id),
         )
         conn.execute(
             "INSERT INTO ddc_sop_approvals (id, sop_id, reviewer, action, comment, created_at) "
-            "VALUES (%s,%s,%s,%s,%s,%s)",
+            "VALUES (?,?,?,?,?,?)",
             (approval_id, sop_id, reviewer, "submitted", data.get("comment", ""), now_isoformat()),
         )
         conn.commit()
@@ -1894,7 +1894,7 @@ def create_data_canvas_blueprint():
         if action not in ("approved", "rejected"):
             return jsonify({"error": "action must be 'approved' or 'rejected'"}), 400
         conn = get_connection()
-        row = conn.execute("SELECT id FROM ddc_sops WHERE id=%s", (sop_id,)).fetchone()
+        row = conn.execute("SELECT id FROM ddc_sops WHERE id=?", (sop_id,)).fetchone()
         if not row:
             conn.close()
             return jsonify({"error": "not found"}), 404
@@ -1904,12 +1904,12 @@ def create_data_canvas_blueprint():
         approver = data.get("approver") or session.get("user_id", "system")
         approval_id = str(_uuid.uuid4())
         conn.execute(
-            "UPDATE ddc_sops SET status=%s, approver=%s, updated_at=%s WHERE id=%s",
+            "UPDATE ddc_sops SET status=?, approver=?, updated_at=? WHERE id=?",
             (new_status, approver, now_isoformat(), sop_id),
         )
         conn.execute(
             "INSERT INTO ddc_sop_approvals (id, sop_id, reviewer, action, comment, created_at) "
-            "VALUES (%s,%s,%s,%s,%s,%s)",
+            "VALUES (?,?,?,?,?,?)",
             (approval_id, sop_id, approver, action, data.get("comment", ""), now_isoformat()),
         )
         conn.commit()
@@ -1923,19 +1923,19 @@ def create_data_canvas_blueprint():
         """Retire a SOP (approved → retired)."""
         data = request.get_json(force=True, silent=True) or {}
         conn = get_connection()
-        row = conn.execute("SELECT id FROM ddc_sops WHERE id=%s", (sop_id,)).fetchone()
+        row = conn.execute("SELECT id FROM ddc_sops WHERE id=?", (sop_id,)).fetchone()
         if not row:
             conn.close()
             return jsonify({"error": "not found"}), 404
         reviewer = data.get("reviewer") or session.get("user_id", "system")
         approval_id = str(_uuid.uuid4())
         conn.execute(
-            "UPDATE ddc_sops SET status='retired', updated_at=%s WHERE id=%s",
+            "UPDATE ddc_sops SET status='retired', updated_at=? WHERE id=?",
             (now_isoformat(), sop_id),
         )
         conn.execute(
             "INSERT INTO ddc_sop_approvals (id, sop_id, reviewer, action, comment, created_at) "
-            "VALUES (%s,%s,%s,%s,%s,%s)",
+            "VALUES (?,?,?,?,?,?)",
             (approval_id, sop_id, reviewer, "retired", data.get("comment", ""), now_isoformat()),
         )
         conn.commit()
@@ -1949,7 +1949,7 @@ def create_data_canvas_blueprint():
         """Get approval history for a SOP."""
         conn = get_connection()
         rows = conn.execute(
-            "SELECT * FROM ddc_sop_approvals WHERE sop_id=%s ORDER BY created_at DESC",
+            "SELECT * FROM ddc_sop_approvals WHERE sop_id=? ORDER BY created_at DESC",
             (sop_id,),
         ).fetchall()
         conn.close()
@@ -2011,7 +2011,7 @@ def create_data_canvas_blueprint():
             lin_rows = conn.execute(
                 "SELECT id, design_id, source_node_id, target_node_id, lineage_type, "
                 "column_name, transform_desc, classification, created_at "
-                "FROM dd_lineage WHERE classification=%s ORDER BY created_at",
+                "FROM dd_lineage WHERE classification=? ORDER BY created_at",
                 (classification_filter,),
             ).fetchall()
         else:
@@ -2113,13 +2113,13 @@ def create_data_canvas_blueprint():
     @dc_login_required
     def dc_twin_page(design_id):
         conn = get_connection()
-        design = conn.execute("SELECT * FROM data_designs WHERE id=%s", (design_id,)).fetchone()
+        design = conn.execute("SELECT * FROM data_designs WHERE id=?", (design_id,)).fetchone()
         if not design:
             return render_template("404.html"), 404
         design = row_to_dict(design)
         try:
             snapshots = conn.execute(
-                "SELECT * FROM data_twin_snapshots WHERE design_id=%s ORDER BY created_at DESC LIMIT 20",
+                "SELECT * FROM data_twin_snapshots WHERE design_id=? ORDER BY created_at DESC LIMIT 20",
                 (design_id,),
             ).fetchall()
         except Exception:
@@ -2163,7 +2163,7 @@ def create_data_canvas_blueprint():
     @dc_login_required
     def dc_api_twin_current_topology(design_id):
         conn = get_connection()
-        row = conn.execute("SELECT graph_json FROM data_designs WHERE id=%s", (design_id,)).fetchone()
+        row = conn.execute("SELECT graph_json FROM data_designs WHERE id=?", (design_id,)).fetchone()
         if not row:
             return jsonify({"error": "Design not found"}), 404
         try:
@@ -2237,11 +2237,11 @@ def create_data_canvas_blueprint():
         sid = str(_uuid.uuid4())[:8]
         pid = str(_uuid.uuid4())[:8]
         conn.execute(
-            "INSERT INTO dd_explore_sessions (id, design_id, user, db_conn_json, classification, created_at) VALUES (%s, %s, %s, %s, %s, %s)",
+            "INSERT INTO dd_explore_sessions (id, design_id, user, db_conn_json, classification, created_at) VALUES (?, ?, ?, ?, ?, ?)",
             (sid, design_id, session.get("user_id", ""), json.dumps({k: v for k, v in conn_params.items() if k != "password"}), classification, now_isoformat()),
         )
         conn.execute(
-            "INSERT INTO dd_explore_profiles (id, design_id, session_id, db_conn_json, profile_json, table_count, classification, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+            "INSERT INTO dd_explore_profiles (id, design_id, session_id, db_conn_json, profile_json, table_count, classification, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (pid, design_id, sid, json.dumps({k: v for k, v in conn_params.items() if k != "password"}), json.dumps(result), result.get("table_count", 0), classification, now_isoformat()),
         )
         conn.commit()
@@ -2283,7 +2283,7 @@ def create_data_canvas_blueprint():
         conn = get_connection()
         if design_id:
             rows = conn.execute(
-                "SELECT id, design_id, table_count, classification, created_at FROM dd_explore_profiles WHERE design_id=%s ORDER BY created_at DESC LIMIT 50",
+                "SELECT id, design_id, table_count, classification, created_at FROM dd_explore_profiles WHERE design_id=? ORDER BY created_at DESC LIMIT 50",
                 (design_id,),
             ).fetchall()
         else:
@@ -2353,7 +2353,7 @@ def create_data_canvas_blueprint():
             # Persist failed query to history (row_count=0)
             conn = get_connection()
             conn.execute(
-                "INSERT INTO dd_query_history (id, design_id, user, sql_text, db_conn_json, row_count, exec_ms, classification, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                "INSERT INTO dd_query_history (id, design_id, user, sql_text, db_conn_json, row_count, exec_ms, classification, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (str(_uuid.uuid4())[:8], design_id, session.get("user_id", ""), sql_text[:2000], "{}", 0, result.get("exec_ms", 0), classification, now_isoformat()),
             )
             conn.commit()
@@ -2363,7 +2363,7 @@ def create_data_canvas_blueprint():
         # Persist to history
         conn = get_connection()
         conn.execute(
-            "INSERT INTO dd_query_history (id, design_id, user, sql_text, db_conn_json, row_count, exec_ms, classification, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            "INSERT INTO dd_query_history (id, design_id, user, sql_text, db_conn_json, row_count, exec_ms, classification, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (str(_uuid.uuid4())[:8], design_id, session.get("user_id", ""), sql_text[:2000], json.dumps({k: v for k, v in conn_params.items() if k != "password"}), result.get("row_count", 0), result.get("exec_ms", 0), classification, now_isoformat()),
         )
         conn.commit()
@@ -2378,7 +2378,7 @@ def create_data_canvas_blueprint():
         conn = get_connection()
         if design_id:
             rows = conn.execute(
-                "SELECT id, design_id, user, sql_text, row_count, exec_ms, classification, created_at FROM dd_query_history WHERE design_id=%s ORDER BY created_at DESC LIMIT 50",
+                "SELECT id, design_id, user, sql_text, row_count, exec_ms, classification, created_at FROM dd_query_history WHERE design_id=? ORDER BY created_at DESC LIMIT 50",
                 (design_id,),
             ).fetchall()
         else:
@@ -2447,7 +2447,7 @@ def create_data_canvas_blueprint():
         design_id = request.args.get("design_id")
         conn = get_connection()
         if design_id:
-            rows = conn.execute("SELECT * FROM dd_quality_rules WHERE design_id=%s ORDER BY created_at DESC", (design_id,)).fetchall()
+            rows = conn.execute("SELECT * FROM dd_quality_rules WHERE design_id=? ORDER BY created_at DESC", (design_id,)).fetchall()
         else:
             rows = conn.execute("SELECT * FROM dd_quality_rules ORDER BY created_at DESC LIMIT 200").fetchall()
         conn.close()
@@ -2466,7 +2466,7 @@ def create_data_canvas_blueprint():
         conn.execute(
             """INSERT INTO dd_quality_rules
                (id, design_id, name, table_name, column_name, check_type, threshold, params_json, classification, enabled, created_at, updated_at)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 1, %s, %s)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)""",
             (
                 rule_id,
                 data.get("design_id", ""),
@@ -2488,7 +2488,7 @@ def create_data_canvas_blueprint():
     @dc_login_required
     def dc_api_quality_rules_delete(rule_id):
         conn = get_connection()
-        conn.execute("DELETE FROM dd_quality_rules WHERE id=%s", (rule_id,))
+        conn.execute("DELETE FROM dd_quality_rules WHERE id=?", (rule_id,))
         conn.commit()
         conn.close()
         return jsonify({"status": "deleted"}), 200
@@ -2524,7 +2524,7 @@ def create_data_canvas_blueprint():
             rows = conn.execute(
                 "SELECT r.*, q.name AS rule_name, q.table_name, q.column_name, q.check_type "
                 "FROM dd_quality_runs r LEFT JOIN dd_quality_rules q ON q.id=r.rule_id "
-                "WHERE q.design_id=%s ORDER BY r.created_at DESC LIMIT 100",
+                "WHERE q.design_id=? ORDER BY r.created_at DESC LIMIT 100",
                 (design_id,),
             ).fetchall()
         else:
@@ -2649,7 +2649,7 @@ def create_data_canvas_blueprint():
     def dc_api_dm_policy_get(policy_id):
         conn = get_connection()
         row = conn.execute(
-            "SELECT * FROM dm_governance_policies WHERE id=%s", (policy_id,)
+            "SELECT * FROM dm_governance_policies WHERE id=?", (policy_id,)
         ).fetchone()
         conn.close()
         if not row:
@@ -2667,14 +2667,14 @@ def create_data_canvas_blueprint():
         data = request.get_json(force=True, silent=True) or {}
         conn = get_connection()
         row = conn.execute(
-            "SELECT id FROM dm_governance_policies WHERE id=%s", (policy_id,)
+            "SELECT id FROM dm_governance_policies WHERE id=?", (policy_id,)
         ).fetchone()
         if not row:
             conn.close()
             return jsonify({"error": "Not found"}), 404
         conn.execute(
-            "UPDATE dm_governance_policies SET name=%s, policy_type=%s, rules_json=%s, "
-            "applies_to=%s, status=%s, classification=%s, updated_at=%s WHERE id=%s",
+            "UPDATE dm_governance_policies SET name=?, policy_type=?, rules_json=?, "
+            "applies_to=?, status=?, classification=?, updated_at=? WHERE id=?",
             (
                 data.get("name", ""),
                 data.get("policy_type", "opa"),
@@ -2694,7 +2694,7 @@ def create_data_canvas_blueprint():
     @dc_login_required
     def dc_api_dm_policy_delete(policy_id):
         conn = get_connection()
-        conn.execute("DELETE FROM dm_governance_policies WHERE id=%s", (policy_id,))
+        conn.execute("DELETE FROM dm_governance_policies WHERE id=?", (policy_id,))
         conn.commit()
         conn.close()
         return jsonify({"deleted": True})
@@ -3005,7 +3005,7 @@ def create_data_canvas_blueprint():
         )
         try:
             conn.execute(
-                "INSERT INTO dm_audit (domain_id, product_id, user, action, detail) VALUES (%s, %s, %s, %s, %s)",
+                "INSERT INTO dm_audit (domain_id, product_id, user, action, detail) VALUES (?, ?, ?, ?, ?)",
                 (domain_id, "", session.get("user_id", "system"), "domain.create", name),
             )
         except Exception:
@@ -3024,24 +3024,24 @@ def create_data_canvas_blueprint():
     def dm_api_get_domain(domain_id):
         from tools.data_canvas.constants import DM_DOMAIN_MATURITY_LEVELS
         conn = get_connection()
-        row = conn.execute("SELECT * FROM dm_domains WHERE id=%s", (domain_id,)).fetchone()
+        row = conn.execute("SELECT * FROM dm_domains WHERE id=?", (domain_id,)).fetchone()
         if not row:
             conn.close()
             return jsonify({"error": "not found"}), 404
         domain = row_to_dict(row)
         product_count = conn.execute(
-            "SELECT COUNT(*) FROM dm_data_products WHERE domain_id=%s", (domain_id,)
+            "SELECT COUNT(*) FROM dm_data_products WHERE domain_id=?", (domain_id,)
         ).fetchone()[0]
         contract_count = conn.execute(
             "SELECT COUNT(*) FROM dm_contracts c "
             "JOIN dm_data_products p ON c.product_id=p.id "
-            "WHERE p.domain_id=%s",
+            "WHERE p.domain_id=?",
             (domain_id,),
         ).fetchone()[0]
         policy_count = 0
         try:
             policy_count = conn.execute(
-                "SELECT COUNT(*) FROM dm_opa_policies WHERE domain_id=%s", (domain_id,)
+                "SELECT COUNT(*) FROM dm_opa_policies WHERE domain_id=?", (domain_id,)
             ).fetchone()[0]
         except Exception:
             pass
@@ -3067,14 +3067,14 @@ def create_data_canvas_blueprint():
             with _gc() as _conn:
                 if record_id:
                     rows = _conn.execute(
-                        "SELECT * FROM canvas_ai_decisions WHERE canvas_type='ddc' AND record_id=%s "
-                        "ORDER BY created_at DESC LIMIT %s",
+                        "SELECT * FROM canvas_ai_decisions WHERE canvas_type='ddc' AND record_id=? "
+                        "ORDER BY created_at DESC LIMIT ?",
                         (record_id, limit),
                     ).fetchall()
                 else:
                     rows = _conn.execute(
                         "SELECT * FROM canvas_ai_decisions WHERE canvas_type='ddc' "
-                        "ORDER BY created_at DESC LIMIT %s",
+                        "ORDER BY created_at DESC LIMIT ?",
                         (limit,),
                     ).fetchall()
             return jsonify({"ok": True, "canvas": "ddc", "decisions": [dict(r) for r in rows]})
@@ -3337,7 +3337,7 @@ def create_data_canvas_blueprint():
         conn = get_connection()
         try:
             sess_row = conn.execute(
-                "SELECT * FROM dd_mapping_sessions WHERE id=%s", (session_id,)
+                "SELECT * FROM dd_mapping_sessions WHERE id=?", (session_id,)
             ).fetchone()
             if not sess_row:
                 return render_template("data_canvas/mapping.html",
@@ -3351,7 +3351,7 @@ def create_data_canvas_blueprint():
             field_mappings = [
                 row_to_dict(r)
                 for r in conn.execute(
-                    "SELECT * FROM dd_field_mappings WHERE session_id=%s ORDER BY confidence DESC",
+                    "SELECT * FROM dd_field_mappings WHERE session_id=? ORDER BY confidence DESC",
                     (session_id,),
                 ).fetchall()
             ]
@@ -3396,7 +3396,7 @@ def create_data_canvas_blueprint():
             conn.execute(
                 "INSERT INTO dd_mapping_sessions "
                 "(id, name, source_format, target_format, classification, tenant_id, created_by) "
-                "VALUES (%s,%s,%s,%s,%s,%s,%s)",
+                "VALUES (?,?,?,?,?,?,?)",
                 (sid, name, src_fmt, tgt_fmt, classification, tenant_id,
                  session.get("username", "")),
             )
@@ -3416,7 +3416,7 @@ def create_data_canvas_blueprint():
         conn = get_connection()
         try:
             row = conn.execute(
-                "SELECT source_format, target_format FROM dd_mapping_sessions WHERE id=%s",
+                "SELECT source_format, target_format FROM dd_mapping_sessions WHERE id=?",
                 (session_id,),
             ).fetchone()
             if not row:
@@ -3430,8 +3430,8 @@ def create_data_canvas_blueprint():
             src_fields = _parse(src_raw, src_fmt)
             tgt_fields = _parse(tgt_raw, tgt_fmt)
             conn.execute(
-                "UPDATE dd_mapping_sessions SET source_schema_json=%s, target_schema_json=%s, "
-                "status='ingested', updated_at=datetime('now') WHERE id=%s",
+                "UPDATE dd_mapping_sessions SET source_schema_json=?, target_schema_json=?, "
+                "status='ingested', updated_at=datetime('now') WHERE id=?",
                 (_json.dumps(src_fields), _json.dumps(tgt_fields), session_id),
             )
             conn.commit()
@@ -3457,7 +3457,7 @@ def create_data_canvas_blueprint():
         try:
             row = conn.execute(
                 "SELECT source_schema_json, target_schema_json, classification, tenant_id "
-                "FROM dd_mapping_sessions WHERE id=%s",
+                "FROM dd_mapping_sessions WHERE id=?",
                 (session_id,),
             ).fetchone()
             if not row:
@@ -3476,14 +3476,14 @@ def create_data_canvas_blueprint():
             # These survive re-suggest — we never overwrite an explicit human choice.
             decided_rows = conn.execute(
                 "SELECT source_field FROM dd_field_mappings "
-                "WHERE session_id=%s AND status IN ('confirmed','rejected')",
+                "WHERE session_id=? AND status IN ('confirmed','rejected')",
                 (session_id,),
             ).fetchall()
             decided_fields = {r[0] for r in decided_rows}
 
             # Delete stale pending/needs_review rows; keep confirmed/rejected
             conn.execute(
-                "DELETE FROM dd_field_mappings WHERE session_id=%s AND status IN ('pending','needs_review')",
+                "DELETE FROM dd_field_mappings WHERE session_id=? AND status IN ('pending','needs_review')",
                 (session_id,),
             )
 
@@ -3521,7 +3521,7 @@ def create_data_canvas_blueprint():
                     "(id, session_id, source_field, source_type, source_path, "
                     "target_field, target_type, target_path, confidence, match_method, "
                     "status, classification, tenant_id) "
-                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (fmap["id"], session_id,
                      fmap["source_field"], fmap["source_type"], fmap["source_path"],
                      fmap["target_field"], fmap["target_type"], fmap["target_path"],
@@ -3531,16 +3531,16 @@ def create_data_canvas_blueprint():
                 field_mappings.append(fmap)
             # Count all confirmed/rejected after insert (includes pre-existing human decisions)
             total_confirmed = conn.execute(
-                "SELECT COUNT(*) FROM dd_field_mappings WHERE session_id=%s AND status='confirmed'",
+                "SELECT COUNT(*) FROM dd_field_mappings WHERE session_id=? AND status='confirmed'",
                 (session_id,),
             ).fetchone()[0]
             total_fields = conn.execute(
-                "SELECT COUNT(*) FROM dd_field_mappings WHERE session_id=%s",
+                "SELECT COUNT(*) FROM dd_field_mappings WHERE session_id=?",
                 (session_id,),
             ).fetchone()[0]
             conn.execute(
                 "UPDATE dd_mapping_sessions SET status='suggested', "
-                "field_count=%s, confirmed_count=%s, updated_at=datetime('now') WHERE id=%s",
+                "field_count=?, confirmed_count=?, updated_at=datetime('now') WHERE id=?",
                 (total_fields, total_confirmed, session_id),
             )
             conn.commit()
@@ -3568,27 +3568,27 @@ def create_data_canvas_blueprint():
         conn = get_connection()
         try:
             row = conn.execute(
-                "SELECT id FROM dd_field_mappings WHERE id=%s AND session_id=%s",
+                "SELECT id FROM dd_field_mappings WHERE id=? AND session_id=?",
                 (field_id, session_id),
             ).fetchone()
             if not row:
                 return jsonify({"error": "Field mapping not found"}), 404
             conn.execute(
-                "UPDATE dd_field_mappings SET status=%s, transform_expr=%s, notes=%s, "
-                "updated_at=datetime('now') WHERE id=%s",
+                "UPDATE dd_field_mappings SET status=?, transform_expr=?, notes=?, "
+                "updated_at=datetime('now') WHERE id=?",
                 (new_status, transform_expr, notes, field_id),
             )
             confirmed = conn.execute(
-                "SELECT COUNT(*) FROM dd_field_mappings WHERE session_id=%s AND status='confirmed'",
+                "SELECT COUNT(*) FROM dd_field_mappings WHERE session_id=? AND status='confirmed'",
                 (session_id,),
             ).fetchone()[0]
             rejected = conn.execute(
-                "SELECT COUNT(*) FROM dd_field_mappings WHERE session_id=%s AND status='rejected'",
+                "SELECT COUNT(*) FROM dd_field_mappings WHERE session_id=? AND status='rejected'",
                 (session_id,),
             ).fetchone()[0]
             conn.execute(
-                "UPDATE dd_mapping_sessions SET confirmed_count=%s, rejected_count=%s, "
-                "updated_at=datetime('now') WHERE id=%s",
+                "UPDATE dd_mapping_sessions SET confirmed_count=?, rejected_count=?, "
+                "updated_at=datetime('now') WHERE id=?",
                 (confirmed, rejected, session_id),
             )
             conn.commit()
@@ -3613,7 +3613,7 @@ def create_data_canvas_blueprint():
         try:
             row = conn.execute(
                 "SELECT classification, tenant_id, confirmed_count "
-                "FROM dd_mapping_sessions WHERE id=%s",
+                "FROM dd_mapping_sessions WHERE id=?",
                 (session_id,),
             ).fetchone()
             if not row:
@@ -3624,7 +3624,7 @@ def create_data_canvas_blueprint():
             tenant_id = row[1] or "default"
             confirmed_rows = conn.execute(
                 "SELECT source_field, source_type, target_field, target_type, transform_expr "
-                "FROM dd_field_mappings WHERE session_id=%s AND status='confirmed'",
+                "FROM dd_field_mappings WHERE session_id=? AND status='confirmed'",
                 (session_id,),
             ).fetchall()
             pairs = [dict(zip(
@@ -3637,13 +3637,13 @@ def create_data_canvas_blueprint():
                 "INSERT INTO dd_mapping_transforms "
                 "(id, session_id, artifact_type, artifact_text, field_count, "
                 "generated_by, model_used, classification, tenant_id) "
-                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                "VALUES (?,?,?,?,?,?,?,?,?)",
                 (artifact_id, session_id, artifact_type, artifact_text, len(pairs),
                  "ai" if model_used != "template" else "template",
                  model_used, classification, tenant_id),
             )
             conn.execute(
-                "UPDATE dd_mapping_sessions SET status='complete', updated_at=datetime('now') WHERE id=%s",
+                "UPDATE dd_mapping_sessions SET status='complete', updated_at=datetime('now') WHERE id=?",
                 (session_id,),
             )
             conn.commit()
