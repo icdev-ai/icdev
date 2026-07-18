@@ -66,7 +66,7 @@ file. The proper fix is teaching the auditor/gate to resolve template-dir →
 ## iqe-exempt — utility/legacy, no query-worthy data model
 
 `admin`, `agents`, `autonomous_coder`, `events`, `forge_academy`, `il5`,
-`includes` (not a canvas — shared partials), `info_ops` (thin, no data model),
+`includes` (not a canvas — shared partials),
 `mfa`, `monitoring`, `orchestration`, `poam`, `projects`, `query` (the IQE UI
 itself), `safety_monitor`, `sre`, `system_graph`, `ai_gameday` (orphan template,
 superseded by `gameday`).
