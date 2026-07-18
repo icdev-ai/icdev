@@ -46,11 +46,12 @@ Routes:
 from __future__ import annotations
 
 import json
+import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from flask import Blueprint, jsonify, render_template, request
+from flask import Blueprint, jsonify, redirect, render_template, request, session
 
 bp = Blueprint("migration_intel", __name__, url_prefix="")
 
@@ -62,9 +63,40 @@ def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+# =========================================================================
+# AUTH (cnr-mi-02) — mirrors mdc_login_required in tools/migration_canvas
+# =========================================================================
+
+@bp.before_request
+def _mi_require_auth():
+    """Gate every migration-intel route behind an authenticated session.
+
+    cnr-mi-02: previously every route — including POST /api/migration-intel/run
+    and /scan, which execute full cross-canvas pipelines — was unauthenticated.
+    A blueprint-wide before_request hook (rather than a per-route decorator) is
+    used so no route can silently miss the gate. Mirrors the Migration Canvas
+    policy: JSON/API/mutating requests get 401, browser page requests redirect
+    to /login. ICDEV_AUTH_BYPASS opts out for E2E/CI, consistent with
+    tools/dashboard/auth.py. Returning None lets the request proceed.
+    """
+    if os.environ.get("ICDEV_AUTH_BYPASS", "").lower() in ("1", "true", "yes"):
+        return None
+    if session.get("user_id"):
+        return None
+    if (
+        request.is_json
+        or request.path.startswith("/api/migration-intel/")
+        or request.method in ("DELETE", "POST", "PUT", "PATCH")
+    ):
+        return jsonify({"error": "Authentication required"}), 401
+    return redirect("/login")
+
+
 def _get_conn():
-    from tools.migration_intelligence.db.init_db import get_connection, init_db
-    init_db(_DB_PATH)
+    # cnr-mi-01: schema is initialized once at blueprint registration, not on
+    # every request. Return a StorageConnection (RLS disabled) so %s placeholders
+    # translate correctly on both SQLite and PostgreSQL.
+    from tools.migration_intelligence.db.init_db import get_connection
     return get_connection(_DB_PATH)
 
 
@@ -332,9 +364,9 @@ def mi_api_wishlist_list():
     try:
         where, params = [], []
         if status:
-            where.append("status=?"); params.append(status)
+            where.append("status=%s"); params.append(status)
         if fy:
-            where.append("fiscal_year=?"); params.append(int(fy))
+            where.append("fiscal_year=%s"); params.append(int(fy))
         clause = ("WHERE " + " AND ".join(where)) if where else ""
         rows = conn.execute(
             f"SELECT * FROM mi_wishlist {clause} ORDER BY replacement_urgency DESC, fiscal_year ASC",
@@ -526,4 +558,11 @@ def mi_api_scans_list():
 
 
 def create_migration_intel_blueprint():
+    # cnr-mi-01: initialize the schema ONCE at registration instead of on every
+    # request (_get_conn previously ran a full executescript per call).
+    try:
+        from tools.migration_intelligence.db.init_db import init_db
+        init_db(_DB_PATH)
+    except Exception:  # noqa: BLE001 — never block dashboard startup on DB init
+        pass
     return bp

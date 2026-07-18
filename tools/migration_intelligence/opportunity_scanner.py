@@ -34,23 +34,31 @@ def _get_mi_conn(db_path: str | None = None):
 
 
 def _get_nc_conn():
-    """Read-only connection to network_canvas.db."""
-    import sqlite3
-    if not _NC_DB.exists():
+    """Cross-canvas read connection to the Network Canvas store.
+
+    cnr-mi-01: routed through the NC canvas connection helper (StorageConnection,
+    RLS disabled) instead of a raw sqlite3.connect, so %s placeholders translate
+    per backend and PG-primary reads hit the shared icdev db. Returns None if the
+    canvas store is unavailable.
+    """
+    try:
+        from tools.network.db.init_db import get_connection as _nc_get_connection
+        return _nc_get_connection()
+    except Exception:
         return None
-    conn = sqlite3.connect(str(_NC_DB), check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    return conn
 
 
 def _get_mc_conn():
-    """Read-only connection to migration_canvas.db."""
-    import sqlite3
-    if not _MC_DB.exists():
+    """Cross-canvas read connection to the Migration Canvas store.
+
+    cnr-mi-01: routed through the MC canvas connection helper (StorageConnection,
+    RLS disabled) instead of a raw sqlite3.connect. Returns None if unavailable.
+    """
+    try:
+        from tools.migration_canvas.db.init_db import get_connection as _mc_get_connection
+        return _mc_get_connection()
+    except Exception:
         return None
-    conn = sqlite3.connect(str(_MC_DB), check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    return conn
 
 
 def _get_ic_conn():
