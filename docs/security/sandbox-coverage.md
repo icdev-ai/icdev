@@ -556,17 +556,27 @@ scanner then runs against the *staged copy as data* — the target is read, hash
 - **Risk:** Parses user-supplied content from 5 external scan formats: CycloneDX SBOM (JSON),
   Bandit SAST output (JSON), security survey responses (JSON), Nmap scan results (XML),
   and OpenAPI specifications (YAML/JSON). All content arrives from an authenticated API
-  endpoint (`POST /security/api/zig/targets/<id>/ingest`).
+  endpoint (`POST /security/api/zig/targets/<id>/ingest`). As of shx-auth-01 the endpoint
+  is auth-guarded (`@sc_login_required`), so ingest requires an authenticated session.
 - **Decision:** **bypass-documented**
-- **Rationale:** All 5 parsers use safe stdlib decoders only — `json.loads()`,
-  `xml.etree.ElementTree.fromstring()`, `yaml.safe_load()`. No `eval()`, `exec()`,
-  `subprocess`, or filesystem writes occur. Parsed data flows only to `set_activity_status()`
-  via parameterized SQL inserts. XML parsing uses stdlib `ElementTree` (no DTD expansion,
-  no external entity resolution). YAML uses `safe_load` (no custom constructors). This
-  guarantee is enforced by `tests/test_zig_ingest_adapters.py` (31 unit tests, all
-  using a DB-stub that verifies no real SQL calls reach the DB).
+- **Rationale:** All 5 parsers use safe decoders only — `json.loads()`, `yaml.safe_load()`
+  (no custom constructors), and hardened XML parsing. No `eval()`, `exec()`, `subprocess`,
+  or filesystem writes occur. Parsed data flows only to `set_activity_status()` via
+  parameterized SQL inserts. **XML entity-expansion / XXE defense (shx-auth-03):** XML is
+  parsed through `zig_external_adapter._parse_xml_safe()`, which (1) rejects any payload
+  containing `<!DOCTYPE` or `<!ENTITY` (case-insensitive pre-parse guard) with a clear
+  `ValueError` before the parser runs, and (2) parses via `defusedxml.ElementTree.fromstring`
+  (already a project dependency; forbids entity expansion and external entity resolution).
+  This closes the billion-laughs entity-expansion DoS that the previous stdlib
+  `xml.etree.ElementTree` parser was vulnerable to. **Payload size cap (shx-auth-03):** the
+  route enforces `ZIG_INGEST_MAX_BYTES` (5 MiB) and returns HTTP 413 before any parsing,
+  bounding memory/CPU for every source type. These guarantees are enforced by
+  `tests/test_zig_ingest_adapters.py` (adapter-level XML defense + benign-parse tests, all
+  using a DB-stub that verifies no real SQL calls reach the DB) and
+  `tests/test_zig_ingest_route.py` (route-level oversized-payload → 413).
 - **Revisit if:** any ingest path adds `eval()`, subprocess execution of scan tools,
-  or resolves external references from within the uploaded content.
+  resolves external references from within the uploaded content, or switches XML parsing
+  away from `_parse_xml_safe()` / `defusedxml`.
 
 ### Gap 20 — NOVA SELA Skill Evolution (`tools/evolution/artifact_evolver.py`)
 - **Files:** `tools/evolution/artifact_evolver.py`, `tools/evolution/fitness.py`
