@@ -25,13 +25,32 @@ from tools.logging.icdev_logger import get_logger
 import hashlib
 import re
 import uuid
-from tools.db.storage import get_connection
+from tools.network.db.init_db import get_connection
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 logger = get_logger("icdev.network.config_parser")
 
-_ICDEV_ROOT = Path(__file__).resolve().parents[2]
+
+def _sqlite_connection(db_path: str):
+    """Open a StorageConnection-wrapped SQLite DB at an explicit path.
+
+    Used only when a caller (e.g. a test) passes an explicit ``db_path``
+    override; the default path routes through the canvas ``get_connection()``
+    which honours NC_STORAGE_BACKEND (PostgreSQL by default).
+    """
+    import sqlite3 as _sqlite3
+
+    path = Path(db_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    conn = _sqlite3.connect(str(path))
+    conn.row_factory = _sqlite3.Row
+    try:
+        from tools.db.storage import StorageConnection
+
+        return StorageConnection(conn, "sqlite")
+    except ImportError:
+        return conn
 
 
 # ---------------------------------------------------------------------------
@@ -441,12 +460,11 @@ def ingest_config(
     config_id = str(uuid.uuid4())[:12]
     config_hash = hashlib.sha256(raw_text.encode("utf-8")).hexdigest()
 
-    # Persist to ni_device_configs
-    if db_path is None:
-        db_path = str(_ICDEV_ROOT / "data" / "network_canvas.db")
-
+    # Persist to ni_device_configs. Default path routes through the canvas
+    # get_connection() (honours NC_STORAGE_BACKEND — PostgreSQL by default);
+    # an explicit db_path override routes to the SQLite branch for tests.
     try:
-        conn = get_connection(str(db_path))
+        conn = _sqlite_connection(db_path) if db_path else get_connection()
         conn.execute(
             "INSERT INTO ni_device_configs (id, device_id, config_type, "
             "config_text, config_hash, source, version) "

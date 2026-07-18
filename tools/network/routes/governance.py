@@ -262,8 +262,8 @@ def _current_user() -> str:
 
 
 def _table_exists(db, table: str) -> bool:
-    r = db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=%s", (table,)).fetchone()
-    return r is not None
+    from tools.network.blueprint_helpers import table_exists
+    return table_exists(db, table)
 
 
 def _evaluate_intent_rule(db, topo_id: str, rule: dict) -> tuple[str, dict]:
@@ -308,5 +308,5 @@ def _evaluate_intent_rule(db, topo_id: str, rule: dict) -> tuple[str, dict]:
 
 
 def _col_exists_inner(db, table: str, col: str) -> bool:
-    cols = [r[1] for r in db.execute(f"PRAGMA table_info({table})").fetchall()]
-    return col in cols
+    from tools.network.blueprint_helpers import col_exists
+    return col_exists(db, table, col)

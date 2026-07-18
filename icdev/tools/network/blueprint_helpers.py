@@ -16,6 +16,78 @@ def _row_to_dict(row):
     return dict(row) if hasattr(row, "keys") else {}
 
 
+# ── Backend-aware existence probes ─────────────────────────────────────────────
+# Runtime routes probe table/column existence repeatedly per request. The old
+# per-file `SELECT name FROM sqlite_master ...` was SQLite-dialect SQL that only
+# worked on PostgreSQL because the storage translate layer regex-rewrites
+# sqlite_master; that is fragile. These shared helpers branch explicitly on the
+# backend (PG → information_schema, SQLite → sqlite_master / PRAGMA) and cache
+# results process-wide because schema shape is stable within a process lifetime.
+_TABLE_EXISTS_CACHE: dict = {}
+_COL_EXISTS_CACHE: dict = {}
+
+
+def _conn_backend(conn) -> str:
+    """Return 'postgresql' or 'sqlite' for a connection, via the canonical is_pg."""
+    try:
+        from tools.db.storage import is_pg
+
+        return "postgresql" if is_pg(conn) else "sqlite"
+    except Exception:
+        # Fall back to the connection's own marker; default sqlite.
+        return "postgresql" if getattr(conn, "_backend", "sqlite") == "postgresql" else "sqlite"
+
+
+def table_exists(conn, name: str) -> bool:
+    """Backend-aware table existence check with a process-level cache.
+
+    Cached by (backend, table_name) — schema shape is stable within a process,
+    and these probes run repeatedly per request (see routes/analysis.py).
+    """
+    backend = _conn_backend(conn)
+    key = (backend, name)
+    if key in _TABLE_EXISTS_CACHE:
+        return _TABLE_EXISTS_CACHE[key]
+    if backend == "postgresql":
+        row = conn.execute(
+            "SELECT table_name FROM information_schema.tables "
+            "WHERE table_schema = 'public' AND table_name = %s",
+            (name,),
+        ).fetchone()
+    else:
+        row = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = %s",
+            (name,),
+        ).fetchone()
+    exists = row is not None
+    _TABLE_EXISTS_CACHE[key] = exists
+    return exists
+
+
+def col_exists(conn, table: str, col: str) -> bool:
+    """Backend-aware column existence check with a process-level cache.
+
+    Cached by (backend, table, col). PG uses information_schema.columns;
+    SQLite uses PRAGMA table_info.
+    """
+    backend = _conn_backend(conn)
+    key = (backend, table, col)
+    if key in _COL_EXISTS_CACHE:
+        return _COL_EXISTS_CACHE[key]
+    if backend == "postgresql":
+        row = conn.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_schema = 'public' AND table_name = %s AND column_name = %s",
+            (table, col),
+        ).fetchone()
+        exists = row is not None
+    else:
+        cols = [r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()]  # noqa: S608
+        exists = col in cols
+    _COL_EXISTS_CACHE[key] = exists
+    return exists
+
+
 def _normalize_sop_step(step: dict) -> dict:
     """Normalize any SOP step schema variant to a canonical dict.
 

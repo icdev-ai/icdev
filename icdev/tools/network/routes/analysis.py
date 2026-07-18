@@ -494,13 +494,13 @@ def register_analysis_routes(bp, get_conn=None, helpers=None):
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _table_exists(db, table: str) -> bool:
-    r = db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=%s", (table,)).fetchone()
-    return r is not None
+    from tools.network.blueprint_helpers import table_exists
+    return table_exists(db, table)
 
 
 def _col_exists(db, table: str, col: str) -> bool:
-    cols = [r[1] for r in db.execute(f"PRAGMA table_info({table})").fetchall()]
-    return col in cols
+    from tools.network.blueprint_helpers import col_exists
+    return col_exists(db, table, col)
 
 
 def _quadrant(likelihood: int, impact: int) -> str:
