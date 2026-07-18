@@ -91,7 +91,7 @@ module's docstring.
 | Iac Generator | tools/odc/iac_generator.py | ODC IaC Generator — ODC Workflow Step 3. | `--json` / (library) | JSON / objects |
 | Iac Generator | tools/ohc/iac_generator.py | Ops Hub IaC Generator — OHC Workflow Step 3. | `--json` / (library) | JSON / objects |
 | Blueprint | tools/ontology/blueprint.py | Ontology Explorer Flask blueprint. | `--json` / (library) | JSON / objects |
-| Iac Generator | tools/pdc/iac_generator.py | PDC IaC Generator — PDC Workflow Step 3. | `--json` / (library) | JSON / objects |
+| Studio Steps | tools/pipeline/studio_steps.py | PDC Studio workflow steps (scan/antipattern/iac) — reads live pipelines table, runs the live analysis engine, fails loud on missing design. Replaced the retired fabricated-result tools/pdc trio. | `--step <scan\|antipattern\|iac> --project-id <id> --json` | JSON w/ gate + artifacts |
 | Bus Subscriber | tools/pipeline/bus_subscriber.py | PDC Cross-Canvas Event Bus Subscriber. | `--json` / (library) | JSON / objects |
 | Sla Handler | tools/pipeline/sla_handler.py | pipeline module — sla handler. | `--json` / (library) | JSON / objects |
 | Enforce | tools/pki/enforce.py | mTLS Enforcement Middleware — reject inbound requests lacking a valid client certificate. | `--json` / (library) | JSON / objects |
