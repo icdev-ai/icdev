@@ -129,7 +129,7 @@ def create_boundary_blueprint():
                     (design_id, user_id, action, detail, now_isoformat()),
                 )
         except Exception:
-            pass
+            logger.warning("audit trail write failed for design %s", design_id, exc_info=True)
 
     def _row_to_dict(row):
         return dict(row) if row else {}
@@ -372,13 +372,13 @@ def create_boundary_blueprint():
             params = []
             for key in ("name", "description", "classification"):
                 if key in data:
-                    updates.append(f"{key}=?")
+                    updates.append(f"{key}=%s")
                     params.append(data[key])
             if "graph_json" in data:
-                updates.append("graph_json=?")
+                updates.append("graph_json=%s")
                 val = data["graph_json"]
                 params.append(json.dumps(val) if isinstance(val, (dict, list)) else val)
-            updates.append("updated_at=?")
+            updates.append("updated_at=%s")
             params.append(now)
             params.append(design_id)
             conn.execute(
@@ -396,7 +396,7 @@ def create_boundary_blueprint():
 
             on_bdc_design_saved(design_id)
         except Exception:
-            pass
+            logger.warning("security-canvas boundary validation hook failed for design %s", design_id, exc_info=True)
         try:
             from tools.canvas.event_bus import publish as _eb_publish
             _eb_publish("bdc", "bdc.design.saved", {
@@ -405,7 +405,7 @@ def create_boundary_blueprint():
                 "graph_changed": "graph_json" in data,
             }, target_canvas="odc")
         except Exception:
-            pass
+            logger.warning("event bus publish (bdc.design.saved) failed for design %s", design_id, exc_info=True)
 
         # Incremental KG update: re-extract only if graph_json changed
         try:
@@ -413,7 +413,7 @@ def create_boundary_blueprint():
 
             rebuild_canvas_kg("bdc", design_id)
         except Exception:
-            pass
+            logger.warning("canvas KG rebuild failed for design %s", design_id, exc_info=True)
         # Blockchain provenance
         try:
             from tools.canvas.provenance import register_canvas_provenance
@@ -424,7 +424,7 @@ def create_boundary_blueprint():
                 project_id=data.get("project_id", ""),
             )
         except Exception:
-            pass
+            logger.warning("blockchain provenance registration failed for design %s", design_id, exc_info=True)
 
         return jsonify({"id": design_id, "updated_at": now})
 
@@ -540,7 +540,7 @@ def create_boundary_blueprint():
                 project_id="",
             )
         except Exception:
-            pass
+            logger.warning("blockchain provenance registration (assessment) failed for design %s", design_id, exc_info=True)
         return jsonify(result)
 
     # ====================================================================
@@ -763,7 +763,7 @@ def create_boundary_blueprint():
                         prev_graph = json.loads(prev[0]) if isinstance(prev[0], str) else prev[0]
                         change_summary = _bdc_diff_graph(prev_graph, current_graph)
                     except Exception:
-                        pass
+                        logger.warning("graph diff change-summary computation failed for design %s", design_id, exc_info=True)
             ver_id = str(_uuid.uuid4())
             now = now_isoformat()
             conn.execute(
@@ -959,6 +959,57 @@ def create_boundary_blueprint():
 
         data = base64.b64encode(export_svg(name, graph, "BDC")).decode("ascii")
         return jsonify({"format": "svg", "filename": f"{name.replace(' ', '_')}.svg", "data": data})
+
+    @bp.route("/api/export/<design_id>/pptx", methods=["GET"])
+    @bdc_login_required
+    def bdc_api_export_pptx(design_id):
+        """Export boundary design as a PowerPoint (.pptx) deck.
+
+        Returns the raw file bytes (not base64) with an attachment filename.
+        Bundles a title slide, the boundary diagram (same geometry the SVG /
+        drawio exporters use), and a compliance/readiness table from the
+        latest bd_assessments row + cATO readiness — each degrading cleanly
+        when its data is absent.
+        """
+        from flask import Response
+
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM boundary_designs WHERE id=%s", (design_id,)
+            ).fetchone()
+            if not row:
+                return jsonify({"error": "Not found"}), 404
+            design = _row_to_dict(row)
+
+            assessment = None
+            try:
+                a_row = conn.execute(
+                    "SELECT * FROM bd_assessments WHERE design_id=%s "
+                    "ORDER BY created_at DESC LIMIT 1",
+                    (design_id,),
+                ).fetchone()
+                if a_row:
+                    assessment = _row_to_dict(a_row)
+            except Exception as exc:  # noqa: BLE001 — missing table -> no assessment slide data
+                logger.info("bd_assessments unavailable for %s: %s", design_id, exc)
+
+        readiness = None
+        try:
+            from tools.boundary_canvas.cato_readiness import compute_readiness
+
+            readiness = compute_readiness(design_id, design_id)
+        except Exception as exc:  # noqa: BLE001 — readiness slide degrades gracefully
+            logger.info("cATO readiness unavailable for %s: %s", design_id, exc)
+
+        from tools.boundary_canvas.export_pptx import design_to_pptx
+
+        pptx_bytes = design_to_pptx(design, assessment=assessment, readiness=readiness)
+        filename = f"{str(design.get('name') or 'design').replace(' ', '_')}.pptx"
+        return Response(
+            pptx_bytes,
+            mimetype="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
 
     # ── Collaboration (Task 18) ───────────────────────────────────────────────
     import uuid as _uuid_mod
@@ -1173,7 +1224,7 @@ def create_boundary_blueprint():
             query = (
                 "SELECT a.*, i.interconnection_id, i.expiry_date, i.owner "
                 "FROM bd_alerts a LEFT JOIN bd_isa_tracker i ON a.isa_id=i.id "
-                "WHERE a.design_id=?"
+                "WHERE a.design_id=%s"
             )
             params: list = [design_id]
             if unacked_only:
@@ -1218,10 +1269,17 @@ def create_boundary_blueprint():
             if not row:
                 return jsonify({"error": "Not found"}), 404
 
-            isas = conn.execute(
-                "SELECT interconnection_id, status, expiry_date FROM bd_isa_tracker WHERE design_id=%s",
-                (design_id,),
-            ).fetchall()
+            # Supply-chain cross-link inputs degrade gracefully: a partial/fresh
+            # canvas DB without bd_isa_tracker must not 500 the risk view — the
+            # edge-derived scores and supply_chain_risk still compute (bdr-vv-1).
+            try:
+                isas = conn.execute(
+                    "SELECT interconnection_id, status, expiry_date FROM bd_isa_tracker WHERE design_id=%s",
+                    (design_id,),
+                ).fetchall()
+            except Exception as exc:  # noqa: BLE001 — missing table -> no ISA overlay
+                logger.info("bd_isa_tracker unavailable for risk-score of %s: %s", design_id, exc)
+                isas = []
 
         try:
             graph = json.loads(row["graph_json"]) if isinstance(row["graph_json"], str) else row["graph_json"]
@@ -1731,6 +1789,9 @@ def create_boundary_blueprint():
         from tools.boundary_canvas.twin import take_snapshot
         data = request.get_json(silent=True) or {}
         snap = take_snapshot(design_id, framework_id=data.get("framework_id", "FedRAMP Moderate"))
+        if snap.get("status") == "error":
+            _audit(design_id, "twin_snapshot_failed", f"err={snap.get('error')}")
+            return jsonify(snap), 500
         _audit(design_id, "twin_snapshot", f"snap={snap.get('snapshot_id')}")
         return jsonify(snap), 201
 
@@ -1770,7 +1831,7 @@ def create_boundary_blueprint():
         fw_src = request.args.get("fw_src", "NIST 800-53")
         fw_tgt = request.args.get("fw_tgt", "CMMC Level 2")
         result = crosswalk_drift(design_id, fw_src, fw_tgt)
-        return jsonify(result), 200
+        return jsonify(result), (500 if result.get("status") == "error" else 200)
 
     @bp.route("/api/twin/<design_id>/oscal-export", methods=["GET"])
     @bdc_login_required
@@ -1778,7 +1839,43 @@ def create_boundary_blueprint():
         snap_id = request.args.get("snapshot_id")
         artifact_type = request.args.get("artifact_type", "ssp")
         from tools.boundary_canvas.twin import export_oscal
+        # The generator reads project state from the ICDEV main DB keyed by the
+        # design's id (project_id). A design whose id has no matching projects row
+        # yields an {"status": "error", ...} payload — surfaced as HTTP 400 so the
+        # twin UI renders a clear error state instead of a phantom artifact.
         result = export_oscal(design_id, snap_id, artifact_type)
+        if result.get("status") == "error":
+            logger.warning(
+                "OSCAL export failed for design %s (type=%s): %s",
+                design_id, artifact_type, result.get("error"),
+            )
+            return jsonify(result), 400
+        _audit(design_id, "twin_oscal_export", f"type={artifact_type} valid={result.get('valid')}")
+        return jsonify(result), 200
+
+    @bp.route("/api/cato/readiness/<design_id>", methods=["GET"])
+    @bdc_login_required
+    def bdc_api_cato_readiness(design_id):
+        """Compute the 0-100 cATO readiness composite for a design.
+
+        Degrades gracefully — missing tables/data yield score=None + band
+        'unknown' rather than a 500.
+        """
+        from tools.boundary_canvas.cato_readiness import compute_readiness
+        project_id = request.args.get("project_id") or design_id
+        try:
+            result = compute_readiness(design_id, project_id)
+        except Exception as exc:  # noqa: BLE001 — never surface a 500 to the tile
+            logger.warning("cATO readiness compute failed for %s: %s", design_id, exc)
+            result = {
+                "design_id": design_id,
+                "project_id": project_id,
+                "score": None,
+                "readiness_score": None,
+                "band": "unknown",
+                "components": {},
+                "error": str(exc),
+            }
         return jsonify(result), 200
 
     @bp.route("/api/twin/<design_id>/current-topology", methods=["GET"])
@@ -1972,6 +2069,146 @@ def create_boundary_blueprint():
         )
         conn.commit()
         conn.close()
+        return jsonify(result)
+
+    # ====================================================================
+    # API ROUTES — RICOAS 4-tier Boundary Impact (ATO)  [bdr-feat-3]
+    # Surfaces tools/requirements/boundary_analyzer.py (GREEN/YELLOW/
+    # ORANGE/RED tiers + RED-alternative COAs) in the /boundary UI.
+    # The engine reads MAIN-DB tables (ato_system_registry,
+    # intake_requirements, boundary_impact_assessments); call it in-process.
+    # A boundary design links to a project via an optional ?project_id=
+    # (falling back to the design_id, matching the cATO readiness route).
+    # ====================================================================
+
+    def _impact_req_label(raw_text: str, refined_text: str) -> str:
+        """Build a short, human-friendly requirement label for the picker."""
+        text = (refined_text or "").strip() or (raw_text or "").strip()
+        text = " ".join(text.split())
+        return text[:120] + ("…" if len(text) > 120 else "")
+
+    @bp.route("/api/impact/context", methods=["GET"])
+    @bdc_login_required
+    def bdc_api_impact_context():
+        """Return registered ATO systems + intake requirements for the design's
+        linked project, so the Boundary Impact panel can populate its pickers.
+
+        Never 500s: a missing project, missing tables, or empty registry all
+        yield a clean empty-state payload.
+        """
+        from tools.requirements import boundary_analyzer
+
+        design_id = request.args.get("design_id", "")
+        project_id = request.args.get("project_id") or design_id
+
+        systems: list = []
+        requirements: list = []
+        try:
+            sys_result = boundary_analyzer.list_systems(project_id)
+            systems = sys_result.get("systems", [])
+        except Exception as exc:  # noqa: BLE001 — empty-state, never a 500
+            logger.warning("impact/context list_systems failed for %s: %s", project_id, exc)
+
+        try:
+            from tools.db.storage import get_connection as _mgc
+
+            conn = _mgc(db_path=str(boundary_analyzer.DB_PATH))
+            rows = conn.execute(
+                "SELECT id, raw_text, refined_text, requirement_type "
+                "FROM intake_requirements WHERE project_id=%s ORDER BY created_at",
+                (project_id,),
+            ).fetchall()
+            conn.close()
+            for r in rows:
+                d = dict(r)
+                requirements.append(
+                    {
+                        "id": d.get("id"),
+                        "label": _impact_req_label(d.get("raw_text", ""), d.get("refined_text", "")),
+                        "requirement_type": d.get("requirement_type"),
+                    }
+                )
+        except Exception as exc:  # noqa: BLE001 — empty-state, never a 500
+            logger.warning("impact/context requirements read failed for %s: %s", project_id, exc)
+
+        empty = not systems
+        message = (
+            "No ATO system registered for this project — register via intake." if empty else ""
+        )
+        return jsonify(
+            {
+                "design_id": design_id,
+                "project_id": project_id,
+                "systems": systems,
+                "requirements": requirements,
+                "empty": empty,
+                "message": message,
+            }
+        )
+
+    @bp.route("/api/impact/assess", methods=["POST"])
+    @bdc_login_required
+    def bdc_api_impact_assess():
+        """Assess a requirement against an ATO system boundary → 4-tier result."""
+        from tools.requirements import boundary_analyzer
+
+        data = request.get_json(silent=True) or {}
+        system_id = (data.get("system_id") or "").strip()
+        requirement_id = (data.get("requirement_id") or "").strip()
+        if not system_id or not requirement_id:
+            return jsonify({"error": "system_id and requirement_id are required"}), 400
+
+        project_id = data.get("project_id")
+        try:
+            if not project_id:
+                sys_info = boundary_analyzer.get_system(system_id)
+                project_id = (sys_info.get("system", {}) or {}).get("project_id")
+            result = boundary_analyzer.assess_boundary_impact(project_id, system_id, requirement_id)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("impact/assess failed: %s", exc)
+            return jsonify({"error": str(exc)}), 500
+
+        result["project_id"] = project_id
+        _audit(
+            request.args.get("design_id", ""),
+            "IMPACT_ASSESS",
+            f"sys={system_id} req={requirement_id} tier={result.get('impact_tier')}",
+        )
+        return jsonify(result)
+
+    @bp.route("/api/impact/alternatives", methods=["POST"])
+    @bdc_login_required
+    def bdc_api_impact_alternatives():
+        """Generate RED-tier alternative COAs for a boundary impact assessment."""
+        from tools.requirements import boundary_analyzer
+
+        data = request.get_json(silent=True) or {}
+        assessment_id = (data.get("assessment_id") or "").strip()
+        if not assessment_id:
+            return jsonify({"error": "assessment_id is required"}), 400
+
+        project_id = data.get("project_id")
+        try:
+            if not project_id:
+                from tools.db.storage import get_connection as _mgc
+
+                conn = _mgc(db_path=str(boundary_analyzer.DB_PATH))
+                row = conn.execute(
+                    "SELECT project_id FROM boundary_impact_assessments WHERE id=%s",
+                    (assessment_id,),
+                ).fetchone()
+                conn.close()
+                if row:
+                    project_id = dict(row).get("project_id")
+            result = boundary_analyzer.generate_alternatives(project_id, assessment_id)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("impact/alternatives failed: %s", exc)
+            return jsonify({"error": str(exc)}), 500
+
         return jsonify(result)
 
     return bp

@@ -1197,12 +1197,13 @@ def scan_iac_directory(directory_path: str) -> dict:
 
 
 def llm_identify_threats(graph_data: dict) -> dict:
-    """Identify security threats using Ollama LLM with STRIDE framework.
+    """Identify security threats using the governed LLM with STRIDE framework.
 
     Builds a text description of the design from *graph_data*, sends it
-    to the local Ollama instance (qwen3:1.7b) for STRIDE analysis, and
-    returns structured threat results.  Falls back to deterministic
-    :func:`run_stride_analysis` if Ollama is unavailable.
+    through the Security Canvas LLM adapter (``tools.security_canvas.llm_adapter``,
+    which routes via ``LLMRouter`` under the ``security_canvas`` function) for
+    STRIDE analysis, and returns structured threat results.  Falls back to
+    deterministic :func:`run_stride_analysis` if the LLM is unavailable.
 
     Args:
         graph_data: Design graph dict with nodes, edges, boundaries.
@@ -1212,7 +1213,8 @@ def llm_identify_threats(graph_data: dict) -> dict:
         and optional error message.
     """
     import re
-    import urllib.request
+
+    from tools.security_canvas import llm_adapter
 
     # ── Build text description of the design ──────────────────────────────
     nodes = graph_data.get("nodes", [])
@@ -1245,8 +1247,11 @@ def llm_identify_threats(graph_data: dict) -> dict:
 
     description = "\n".join(lines) if lines else "Empty design with no components."
 
-    # ── Try Ollama LLM ────────────────────────────────────────────────────
-    model = "qwen3:1.7b"
+    # ── Try governed LLM via the Security Canvas adapter ──────────────────
+    # Routing, provider selection, model IDs, governance, and budget caps are
+    # resolved from args/llm_config.yaml under the ``security_canvas`` function
+    # (see tools/security_canvas/llm_adapter.py). The adapter returns None on
+    # ANY failure, which drops us into the deterministic STRIDE fallback below.
     try:
         prompt = (
             "You are a security architect. Analyze this system design and "
@@ -1262,36 +1267,28 @@ def llm_identify_threats(graph_data: dict) -> dict:
             '"description": "...", "affected": "...", "nist_control": "..."}]}'
         )
 
-        payload = json.dumps(
-            {
-                "model": model,
-                "messages": [{"role": "user", "content": prompt}],
-                "stream": False,
-                "options": {"num_predict": 1024, "temperature": 0.3},
-            }
-        ).encode("utf-8")
-        req = urllib.request.Request(
-            "http://localhost:11434/api/chat",
-            data=payload,
-            headers={"Content-Type": "application/json"},
-            method="POST",
+        content = llm_adapter.generate(
+            prompt,
+            purpose="security_canvas",
+            max_tokens=1024,
+            temperature=0.3,
         )
-        with urllib.request.urlopen(req, timeout=30) as resp:  # nosec B310 — localhost-only Ollama
-            result = json.loads(resp.read().decode("utf-8"))
-            content = result.get("message", {}).get("content", "")
-            # Strip thinking tags if present (qwen3 thinking mode)
-            content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
-            # Try to extract JSON from the response (may be wrapped in markdown)
-            json_match = re.search(r"\{[\s\S]*\}", content)
-            if json_match:
-                threats = json.loads(json_match.group()).get("threats", [])
-            else:
-                threats = json.loads(content).get("threats", [])
+        if not content:
+            raise RuntimeError("LLM adapter returned no text")
+
+        # Strip thinking tags if present (e.g. qwen thinking mode)
+        content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
+        # Try to extract JSON from the response (may be wrapped in markdown)
+        json_match = re.search(r"\{[\s\S]*\}", content)
+        if json_match:
+            threats = json.loads(json_match.group()).get("threats", [])
+        else:
+            threats = json.loads(content).get("threats", [])
 
         return {
             "threats": threats,
-            "source": "ollama",
-            "model": model,
+            "source": "llm",
+            "model": "security_canvas",
             "total_threats": len(threats),
             "error": None,
         }

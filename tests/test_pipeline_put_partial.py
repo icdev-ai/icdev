@@ -115,13 +115,13 @@ def test_partial_put_does_not_clobber_omitted_fields():
     sql = update_calls[0].args[0]
     sql_lc = sql.lower()
     # Only the fields we sent should be in the SET clause
-    assert "name=?" in sql_lc
-    assert "graph_json=?" in sql_lc
-    assert "description=?" not in sql_lc, "description not in payload — must not be SET"
-    assert "classification=?" not in sql_lc, "classification not in payload — must not be SET"
-    assert "target_csp=?" not in sql_lc, "target_csp not in payload — must not be SET"
+    assert "name=%s" in sql_lc
+    assert "graph_json=%s" in sql_lc
+    assert "description=%s" not in sql_lc, "description not in payload — must not be SET"
+    assert "classification=%s" not in sql_lc, "classification not in payload — must not be SET"
+    assert "target_csp=%s" not in sql_lc, "target_csp not in payload — must not be SET"
     # updated_at is always written
-    assert "updated_at=?" in sql_lc
+    assert "updated_at=%s" in sql_lc
 
     # Params should be exactly [name, graph_json, updated_at, pipe_id]
     params = update_calls[0].args[1]
@@ -177,10 +177,10 @@ def test_explicit_empty_string_clears_field():
                     if "UPDATE pipelines" in str(c.args[0])]
     assert update_calls
     sql_lc = update_calls[0].args[0].lower()
-    assert "description=?" in sql_lc
+    assert "description=%s" in sql_lc
     # Other fields absent from payload — must not be SET
-    assert "name=?" not in sql_lc
-    assert "classification=?" not in sql_lc
+    assert "name=%s" not in sql_lc
+    assert "classification=%s" not in sql_lc
     # Param value is the empty string (the explicit clear)
     params = update_calls[0].args[1]
     assert "" in params
@@ -217,7 +217,7 @@ def test_full_put_with_all_fields_backward_compat():
     sql_lc = update_calls[0].args[0].lower()
     # All 5 fields present in SET
     for col in ("name", "description", "graph_json", "classification", "target_csp"):
-        assert f"{col}=?" in sql_lc, f"{col} should be in SET for full PUT"
+        assert f"{col}=%s" in sql_lc, f"{col} should be in SET for full PUT"
 
 
 def test_savepipeline_payload_preserves_all_metadata():
@@ -252,6 +252,6 @@ def test_savepipeline_payload_preserves_all_metadata():
     assert resp.status_code == 200
     assert len(captured_sql) == 1
     # The bug: server wrote ALL 5 fields. The fix: only name + graph_json.
-    assert "description=?" not in captured_sql[0]
-    assert "classification=?" not in captured_sql[0]
-    assert "target_csp=?" not in captured_sql[0]
+    assert "description=%s" not in captured_sql[0]
+    assert "classification=%s" not in captured_sql[0]
+    assert "target_csp=%s" not in captured_sql[0]

@@ -19,6 +19,10 @@ from __future__ import annotations
 import heapq
 from typing import Any
 
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.security_canvas.attack_path_twin")
+
 # ── MITRE ATT&CK TTP assignment rules ────────────────────────────────────────
 # Each rule: (condition_fn, ttp_id, ttp_name, tactic, confidence_penalty)
 # condition_fn receives (src_type, tgt_type, edge) and returns bool.
@@ -536,7 +540,14 @@ def _safe_eval_predicate(predicate: str, path: dict) -> bool:
     if pred in _ALLOWED_PRED_FIELDS:
         return bool(_resolve_field(pred, path))
 
-    return True  # unknown predicate → include all (fail-open)
+    # Unknown/unrecognized predicate → fail-closed (exclude the path). In a
+    # security attack-graph, silently widening results to include every path
+    # would hide real exposure behind a malformed filter.
+    logger.warning(
+        "attack_path_twin: unrecognized predicate %r — excluding path (fail-closed)",
+        pred,
+    )
+    return False
 
 
 def _resolve_field(field: str, path: dict) -> Any:

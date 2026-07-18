@@ -33,7 +33,7 @@ def score_pillar(pillar_slug: str) -> dict:
     try:
         # Capabilities for this pillar
         caps = conn.execute(
-            "SELECT id, implementation_status FROM zig_capabilities WHERE pillar_slug=%s",
+            "SELECT id, implementation_status FROM zig_capabilities WHERE pillar_slug=?",
             (pillar_slug,),
         ).fetchall()
 

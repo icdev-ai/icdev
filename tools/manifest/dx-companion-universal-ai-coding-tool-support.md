@@ -11,4 +11,5 @@
 | MCP Config Generator | tools/dx/mcp_config_generator.py | Translate .mcp.json to tool-specific MCP config formats (D196) | --platform, --all, --write, --json | Config file content + paths |
 | Skill Translator | tools/dx/skill_translator.py | Translate Claude Code skills to Codex/Copilot/Cursor formats (D198) | --platform, --all, --skills, --write, --json | Translated skill content + paths |
 | Companion Registry | args/companion_registry.yaml | Declarative registry of 10 supported AI coding tools (D194) | (data) | Tool definitions |
+| Mirror Parity Auditor | tools/dx/mirror_parity.py | Byte-level (SHA256) parity audit of tools/<path> vs icdev/tools/<path>; reconciles drift by copying tools/→icdev/ (never deletes icdev-only) | --paths, --fix, --gate, --json | Per-subtree drift report |
 

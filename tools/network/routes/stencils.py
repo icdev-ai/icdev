@@ -165,14 +165,14 @@ def register_stencil_routes(bp: Blueprint) -> None:
 
             if vendor:
                 where_clauses.append(
-                    "s.library_id IN (SELECT id FROM nc_stencil_libraries WHERE vendor=?)"
+                    "s.library_id IN (SELECT id FROM nc_stencil_libraries WHERE vendor=%s)"
                 )
                 params.append(vendor)
             if lib_id:
-                where_clauses.append("s.library_id=?")
+                where_clauses.append("s.library_id=%s")
                 params.append(lib_id)
             if q:
-                where_clauses.append("(s.name LIKE ? OR s.category LIKE ?)")
+                where_clauses.append("(s.name LIKE %s OR s.category LIKE %s)")
                 params.extend([f"%{q}%", f"%{q}%"])
 
             where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""

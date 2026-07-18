@@ -21,7 +21,13 @@ _PC_BACKEND = os.environ.get("PC_STORAGE_BACKEND", os.environ.get("ICDEV_CANVAS_
 
 
 def get_connection():
-    """Get a database connection — SQLite or PostgreSQL."""
+    """Get a database connection — SQLite or PostgreSQL.
+
+    cvx-sql-03: this is the canvas-connection pattern — it already disables RLS
+    via set_security_context(None) below. It is NOT renamed to
+    get_canvas_connection() because that helper targets the shared icdev DB on PG,
+    which would break this canvas's dedicated PC_PG_DATABASE=pipeline_canvas contract.
+    """
     if _PC_BACKEND == "postgresql":
         try:
             from tools.db.storage import get_connection as _icdev_conn

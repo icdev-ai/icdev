@@ -4,7 +4,8 @@
 -- but previously missing from any migration (orphan tables).
 --
 -- "order" is a reserved SQL keyword and must be double-quoted.
--- Columns mirror the schema queried in tools/bdc/boundary_scanner.py:
+-- RETIRED (bdr-sec-5): the tools/bdc/ package that originally queried this
+-- schema has been removed; columns retained for the historical shape below.
 --   SELECT id, name, design_json FROM {table} ORDER BY updated_at DESC
 
 CREATE TABLE IF NOT EXISTS "order" (

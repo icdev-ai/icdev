@@ -146,6 +146,23 @@ from tools.config.component_registry import get_registry  # noqa: E402
 
 _REGISTRY = get_registry()
 
+# cvx-nav-01: build the IQE canvas dispatch map and the client-side path→canvas
+# map ONCE at import (the registry is load-once — no hot-reload) instead of
+# rebuilding per request in iqe_dispatch(). Both are cached at module scope.
+_IQE_CANVAS_MAP: dict[str, tuple[str, list[str]]] = _REGISTRY.get_iqe_mapping()
+# Supplement with canvases registered in app.py (not in component_registry.yaml)
+# and the ai-brief-only alias cpmp_deliverables (served by the cpmp adapter,
+# whose collections include cpmp.deliverables).
+_IQE_CANVAS_MAP.setdefault("updates", ("tools.iqe.adapters.updates", ["updates.releases"]))
+_IQE_CANVAS_MAP.setdefault("logs", ("tools.iqe.adapters.logs", ["logs.entries", "logs.errors"]))
+if "cpmp" in _IQE_CANVAS_MAP:
+    _IQE_CANVAS_MAP.setdefault("cpmp_deliverables", _IQE_CANVAS_MAP["cpmp"])
+
+# Ordered [regex_source, canvas_key] list, JSON-serialized once for injection
+# into base.html as window.__ICDEV_PATH_CANVAS__ (consumed by the IQE mini-bar
+# and the AI-brief banner — single source of truth).
+_IQE_PATH_CANVAS_JSON: str = json.dumps(_REGISTRY.get_iqe_path_canvas())
+
 
 def _get_active_tier_safe() -> str:
     """Return the active license tier; falls back to 'community' if unavailable."""
@@ -2201,6 +2218,9 @@ def create_app(testing: bool = False) -> Flask:
             "route_module_map": _route_map,
             "nav_tree": _REGISTRY.get_nav_context(),
             "component_registry": _REGISTRY,
+            # cvx-nav-01: single registry-derived path→canvas map (JSON) injected
+            # once into base.html as window.__ICDEV_PATH_CANVAS__.
+            "iqe_path_canvas_json": _IQE_PATH_CANVAS_JSON,
             "canvas_menu_active": any(
                 flask_request.path.startswith(prefix)
                 for prefix in _CANVAS_URL_PREFIXES
@@ -3744,10 +3764,9 @@ def create_app(testing: bool = False) -> Flask:
         from tools.iqe.parser import parse as _iqe_parse, IQESyntaxError as _IQESyntaxError
         from tools.iqe.executor import execute_query
 
-        _CANVAS_MAP = _REGISTRY.get_iqe_mapping()
-        # Supplement with app.py-registered canvases not in component_registry.yaml
-        _CANVAS_MAP.setdefault("updates", ("tools.iqe.adapters.updates", ["updates.releases"]))
-        _CANVAS_MAP.setdefault("logs", ("tools.iqe.adapters.logs", ["logs.entries", "logs.errors"]))
+        # cvx-nav-01: use the module-level cache built once at import (registry
+        # is load-once) instead of rebuilding the map on every request.
+        _CANVAS_MAP = _IQE_CANVAS_MAP
 
         data = flask_request.get_json(silent=True) or {}
         question = (data.get("question") or "").strip()

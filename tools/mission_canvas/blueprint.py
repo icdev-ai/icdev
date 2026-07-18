@@ -8,6 +8,7 @@ Feature flag: ICDEV_MISSION_CANVAS_ENABLED.
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
+import hmac
 import os
 from functools import wraps
 from pathlib import Path
@@ -48,11 +49,24 @@ def create_mission_canvas_blueprint():
         @wraps(f)
         def decorated(*args, **kwargs):
             if not session.get("user_id"):
-                # Allow bypass when ICDEV_AUTH_BYPASS or ICDEV_DASHBOARD_API_KEY is set
-                # (used by E2E tests and CI environments that don't perform a login flow)
-                if os.environ.get("ICDEV_AUTH_BYPASS") or os.environ.get("ICDEV_DASHBOARD_API_KEY"):
+                # ICDEV_AUTH_BYPASS: explicit test-only opt-in — bypass unchanged.
+                if os.environ.get("ICDEV_AUTH_BYPASS"):
                     session["user_id"] = "e2e-bypass"
                     return f(*args, **kwargs)
+                # ICDEV_DASHBOARD_API_KEY: presented-key semantics. Authenticate
+                # ONLY if the request presents the key (header X-ICDEV-API-Key or
+                # Authorization: Bearer), compared with constant-time
+                # hmac.compare_digest. A merely-set env var does NOT auto-auth.
+                api_key = os.environ.get("ICDEV_DASHBOARD_API_KEY", "")
+                if api_key:
+                    presented = request.headers.get("X-ICDEV-API-Key", "")
+                    if not presented:
+                        auth_header = request.headers.get("Authorization", "")
+                        if auth_header.startswith("Bearer "):
+                            presented = auth_header[len("Bearer "):].strip()
+                    if presented and hmac.compare_digest(presented, api_key):
+                        session["user_id"] = "api-key"
+                        return f(*args, **kwargs)
                 if request.is_json or request.path.startswith("/api/"):
                     return jsonify({"error": "Authentication required"}), 401
                 return redirect("/login")

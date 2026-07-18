@@ -235,6 +235,9 @@ CREATE INDEX IF NOT EXISTS idx_mi_scans_started ON mi_scans(started_at DESC);
 
 
 def get_connection(db_path: str | None = None) -> sqlite3.Connection:
+    # legacy-sqlite: flagged cvx-sql-03 — raw sqlite3 connection to a dedicated
+    # mi_*.db file; not wired to the storage-global RLS path, so no canvas-connection
+    # conversion applies. Left as-is pending PG-primary migration.
     path = db_path or str(_DB_PATH)
     conn = sqlite3.connect(path, check_same_thread=False)
     conn.row_factory = sqlite3.Row

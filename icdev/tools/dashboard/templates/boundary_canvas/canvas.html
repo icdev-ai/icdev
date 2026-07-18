@@ -102,15 +102,17 @@
           <div style="padding:4px 8px;cursor:pointer;font-size:11px;color:#eaeaea;" onmouseover="this.style.background='#1e3a6e'" onmouseout="this.style.background=''" onclick="canvasExport('svg')">SVG</div>
           <div style="padding:4px 8px;cursor:pointer;font-size:11px;color:#eaeaea;" onmouseover="this.style.background='#1e3a6e'" onmouseout="this.style.background=''" onclick="canvasExport('json')">JSON</div>
           <div style="padding:4px 8px;cursor:pointer;font-size:11px;color:#eaeaea;" onmouseover="this.style.background='#1e3a6e'" onmouseout="this.style.background=''" onclick="canvasExport('visio')">Visio (.vsdx)</div>
+          <div style="padding:4px 8px;cursor:pointer;font-size:11px;color:#eaeaea;" onmouseover="this.style.background='#1e3a6e'" onmouseout="this.style.background=''" onclick="canvasExport('pptx')">PowerPoint (.pptx)</div>
         </div>
       </div>
       <!-- Analysis -->
       <button class="secondary analysis" onclick="canvasGovernance()" title="Boundary Governance Check" style="color:#9b59b6;">Governance</button>
-      <button class="secondary analysis" onclick="canvasAssess()" title="Compliance Assessment">Assess</button>
+      <button class="secondary analysis" onclick="canvasAssess()" title="Grade diagram completeness (A-F)">Diagram Grade</button>
       <button class="secondary analysis" onclick="canvasGaps()" title="Gap Analysis">Gaps</button>
       <button class="secondary analysis" onclick="canvasNistOverlay()" title="NIST 800-53 Overlay">NIST</button>
       <button class="secondary analysis" onclick="canvasFips()" title="FIPS Encryption Overlay">FIPS</button>
       <button class="secondary analysis" onclick="canvasCrosswalk()" title="Compliance Crosswalk">Crosswalk</button>
+      <button class="secondary analysis" onclick="openImpactModal()" title="RICOAS 4-tier ATO Boundary Impact (GREEN/YELLOW/ORANGE/RED)" style="color:#f0883e;">Boundary Impact (ATO)</button>
       <button class="secondary analysis" onclick="canvasLegend()" title="Toggle Legend">Legend</button>
       <!-- Workflow -->
       {% set wf_canvas_id = "bdc" %}
@@ -188,5 +190,212 @@ document.addEventListener('keydown', function(e) {
   if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); canvasUndo(); }
   if ((e.ctrlKey || e.metaKey) && e.key === 'y') { e.preventDefault(); canvasRedo(); }
 });
+// ── Cross-link: external-system node → Supply Chain SCRM/CVE posture ──────
+// Wraps the shared design-canvas openRightPanel (defined in its own
+// DOMContentLoaded handler, which runs before this one) to append a nav-only
+// link when the selected node is an external-system type. Link only — no fetch.
+document.addEventListener('DOMContentLoaded', function() {
+  var EXTERNAL_TYPES = ['sys-external', 'sys-cloud', 'sys-saas'];
+  var _orig = window.openRightPanel;
+  if (typeof _orig !== 'function') return;
+  window.openRightPanel = function(title, html) {
+    _orig(title, html);
+    try {
+      if (title !== 'Properties' || typeof html !== 'string') return;
+      var isExternal = EXTERNAL_TYPES.some(function(t) {
+        return html.indexOf('>' + t + '<') !== -1;
+      });
+      if (!isExternal) return;
+      var body = document.getElementById('dc-panel-body');
+      if (!body || body.querySelector('.bdc-sc-posture')) return;
+      var block = document.createElement('div');
+      block.className = 'bdc-sc-posture';
+      block.innerHTML =
+        '<div style="font-weight:700;font-size:12px;margin:14px 0 6px;padding-bottom:4px;'
+        + 'border-bottom:1px solid #1e3a6e;color:#eaeaea;">Supply Chain</div>'
+        + '<a href="/supply_chain" target="_blank" rel="noopener" '
+        + 'style="display:inline-block;background:#1e3a6e;border:1px solid #2a4070;color:#f0883e;'
+        + 'padding:5px 10px;border-radius:4px;text-decoration:none;font-size:11px;">'
+        + '🔗 View SCRM/CVE posture &rarr;</a>';
+      body.appendChild(block);
+    } catch (e) { /* non-fatal */ }
+  };
+});
+</script>
+
+<!-- ── Boundary Impact (ATO) modal — RICOAS 4-tier engine  [bdr-feat-3] ── -->
+<div id="impact-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1000;align-items:flex-start;justify-content:center;overflow:auto;">
+  <div style="background:#0a1628;border:1px solid #1e3a6e;border-radius:8px;width:640px;max-width:94vw;margin:48px 0;box-shadow:0 8px 40px rgba(0,0,0,0.5);">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid #1e3a6e;">
+      <span style="font-weight:700;font-size:14px;color:#eaeaea;">Boundary Impact (ATO) — RICOAS 4-tier</span>
+      <button onclick="closeImpactModal()" style="background:transparent;border:1px solid #1e3a6e;color:#7a8cb0;width:26px;height:26px;border-radius:4px;cursor:pointer;">&#10005;</button>
+    </div>
+    <div style="padding:16px;font-size:12px;color:#eaeaea;">
+      <div id="impact-empty" style="display:none;color:#f9a825;background:#2a2410;border:1px solid #5a4a10;border-radius:6px;padding:10px 12px;margin-bottom:12px;"></div>
+      <div id="impact-pickers">
+        <label style="display:block;margin-bottom:4px;color:#7a8cb0;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;">ATO System</label>
+        <select id="impact-system" style="width:100%;background:#16213e;border:1px solid #1e3a6e;color:#eaeaea;padding:6px 8px;border-radius:4px;margin-bottom:12px;"></select>
+        <label style="display:block;margin-bottom:4px;color:#7a8cb0;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;">Requirement</label>
+        <select id="impact-req" style="width:100%;background:#16213e;border:1px solid #1e3a6e;color:#eaeaea;padding:6px 8px;border-radius:4px;margin-bottom:12px;"></select>
+        <button onclick="impactAssess()" style="background:#9c27b0;border:none;color:#fff;padding:6px 16px;border-radius:4px;cursor:pointer;font-size:12px;">Assess</button>
+      </div>
+      <div id="impact-result" style="margin-top:16px;"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var IMPACT_API = '/boundary/api/impact';
+  var DESIGN_ID = (window.CANVAS_CONFIG && window.CANVAS_CONFIG.designId) || '';
+  var TIER_COLORS = { GREEN: '#2e7d32', YELLOW: '#f9a825', ORANGE: '#ef6c00', RED: '#c62828' };
+  var _lastAssessmentId = null;
+  var _lastProjectId = null;
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+    });
+  }
+
+  window.openImpactModal = function () {
+    document.getElementById('impact-modal').style.display = 'flex';
+    document.getElementById('impact-result').innerHTML = '';
+    var empty = document.getElementById('impact-empty');
+    var pickers = document.getElementById('impact-pickers');
+    empty.style.display = 'none';
+    pickers.style.display = 'block';
+    var url = IMPACT_API + '/context?design_id=' + encodeURIComponent(DESIGN_ID);
+    fetch(url).then(function (r) { return r.json(); }).then(function (data) {
+      _lastProjectId = data.project_id;
+      var sysSel = document.getElementById('impact-system');
+      var reqSel = document.getElementById('impact-req');
+      if (data.empty || !data.systems || !data.systems.length) {
+        pickers.style.display = 'none';
+        empty.style.display = 'block';
+        empty.textContent = data.message || 'No ATO system registered for this project — register via intake.';
+        return;
+      }
+      sysSel.innerHTML = data.systems.map(function (s) {
+        return '<option value="' + esc(s.id) + '">' + esc(s.system_name || s.id)
+          + ' [' + esc(s.impact_level || '') + ']</option>';
+      }).join('');
+      if (!data.requirements || !data.requirements.length) {
+        reqSel.innerHTML = '<option value="">— no intake requirements for this project —</option>';
+      } else {
+        reqSel.innerHTML = data.requirements.map(function (q) {
+          return '<option value="' + esc(q.id) + '">' + esc(q.label || q.id) + '</option>';
+        }).join('');
+      }
+    }).catch(function (e) {
+      document.getElementById('impact-result').innerHTML =
+        '<div style="color:#c62828;">Failed to load context: ' + esc(e) + '</div>';
+    });
+  };
+
+  window.closeImpactModal = function () {
+    document.getElementById('impact-modal').style.display = 'none';
+  };
+
+  window.impactAssess = function () {
+    var systemId = document.getElementById('impact-system').value;
+    var reqId = document.getElementById('impact-req').value;
+    var out = document.getElementById('impact-result');
+    if (!systemId || !reqId) {
+      out.innerHTML = '<div style="color:#f9a825;">Select an ATO system and a requirement.</div>';
+      return;
+    }
+    out.innerHTML = '<div style="color:#7a8cb0;">Assessing…</div>';
+    fetch(IMPACT_API + '/assess?design_id=' + encodeURIComponent(DESIGN_ID), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ system_id: systemId, requirement_id: reqId })
+    }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (res) {
+        if (!res.ok) {
+          out.innerHTML = '<div style="color:#c62828;">' + esc(res.j.error || 'Assessment failed') + '</div>';
+          return;
+        }
+        renderAssessment(res.j);
+      }).catch(function (e) {
+        out.innerHTML = '<div style="color:#c62828;">Error: ' + esc(e) + '</div>';
+      });
+  };
+
+  function renderAssessment(a) {
+    _lastAssessmentId = a.assessment_id;
+    _lastProjectId = a.project_id || _lastProjectId;
+    var tier = a.impact_tier || 'GREEN';
+    var color = TIER_COLORS[tier] || '#5a6e8c';
+    var html = '';
+    html += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">'
+      + '<span style="background:' + color + ';color:#fff;font-weight:700;padding:4px 12px;'
+      + 'border-radius:14px;font-size:13px;letter-spacing:0.5px;">' + esc(tier) + '</span>'
+      + '<span style="color:#eaeaea;font-size:13px;">Impact score: <b>' + esc(a.impact_score) + '</b>/100</span>'
+      + '<span style="color:#7a8cb0;font-size:11px;">(' + esc(a.impact_category || '') + ')</span></div>';
+    html += '<div style="color:#cdd6e6;margin-bottom:10px;line-height:1.5;">' + esc(a.impact_description || '') + '</div>';
+
+    var controls = a.affected_controls || [];
+    if (controls.length) {
+      html += '<div style="font-weight:600;color:#7a8cb0;font-size:11px;text-transform:uppercase;margin:10px 0 4px;">Affected Controls</div>';
+      html += '<div>' + controls.map(function (c) {
+        return '<span style="display:inline-block;background:#16213e;border:1px solid #1e3a6e;'
+          + 'color:#eaeaea;padding:2px 8px;border-radius:4px;margin:2px;font-size:11px;">' + esc(c) + '</span>';
+      }).join('') + '</div>';
+    }
+
+    var steps = a.remediation_steps || [];
+    if (steps.length) {
+      html += '<div style="font-weight:600;color:#7a8cb0;font-size:11px;text-transform:uppercase;margin:12px 0 4px;">Remediation Steps</div>';
+      html += '<ol style="margin:0;padding-left:18px;color:#cdd6e6;line-height:1.6;">'
+        + steps.map(function (s) { return '<li>' + esc(s) + '</li>'; }).join('') + '</ol>';
+    }
+
+    if (tier === 'RED') {
+      html += '<div style="margin-top:14px;"><button onclick="impactAlternatives()" '
+        + 'style="background:#c62828;border:none;color:#fff;padding:6px 16px;border-radius:4px;'
+        + 'cursor:pointer;font-size:12px;">Generate alternatives</button></div>';
+      html += '<div id="impact-alts" style="margin-top:12px;"></div>';
+    }
+    document.getElementById('impact-result').innerHTML = html;
+  }
+
+  window.impactAlternatives = function () {
+    var box = document.getElementById('impact-alts');
+    if (!_lastAssessmentId) { return; }
+    box.innerHTML = '<div style="color:#7a8cb0;">Generating alternative COAs…</div>';
+    fetch(IMPACT_API + '/alternatives', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ assessment_id: _lastAssessmentId, project_id: _lastProjectId })
+    }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (res) {
+        if (!res.ok) {
+          box.innerHTML = '<div style="color:#c62828;">' + esc(res.j.error || 'Failed') + '</div>';
+          return;
+        }
+        var alts = res.j.alternatives || [];
+        if (!alts.length) { box.innerHTML = '<div style="color:#7a8cb0;">No alternatives generated.</div>'; return; }
+        box.innerHTML = '<div style="font-weight:600;color:#7a8cb0;font-size:11px;text-transform:uppercase;margin:6px 0 6px;">Alternative COAs</div>'
+          + alts.map(function (alt) {
+            var tc = TIER_COLORS[alt.boundary_tier_after] || '#5a6e8c';
+            var tradeoffs = (alt.tradeoffs || []).map(function (t) {
+              return '<li>' + esc(t) + '</li>';
+            }).join('');
+            return '<div style="background:#0f1e36;border:1px solid #1e3a6e;border-radius:6px;padding:10px 12px;margin-bottom:8px;">'
+              + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">'
+              + '<span style="font-weight:700;color:#eaeaea;">' + esc(alt.approach_name || '') + '</span>'
+              + '<span style="background:' + tc + ';color:#fff;padding:1px 8px;border-radius:10px;font-size:10px;">'
+              + esc(alt.boundary_tier_after || '') + '</span>'
+              + '<span style="color:#7a8cb0;font-size:11px;">feasibility ' + Math.round((alt.feasibility_score || 0) * 100) + '%</span></div>'
+              + '<div style="color:#cdd6e6;font-size:11px;line-height:1.5;margin-bottom:6px;">' + esc(alt.description || '') + '</div>'
+              + (tradeoffs ? '<ul style="margin:0;padding-left:16px;color:#9fb0c8;font-size:11px;line-height:1.5;">' + tradeoffs + '</ul>' : '')
+              + '</div>';
+          }).join('');
+      }).catch(function (e) {
+        box.innerHTML = '<div style="color:#c62828;">Error: ' + esc(e) + '</div>';
+      });
+  };
+})();
 </script>
 {% endblock %}

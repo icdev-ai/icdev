@@ -271,7 +271,20 @@ def _pull_framework_controls(conn, project_id: str, framework: str) -> List[Dict
             (project_id,),
         ).fetchall()
         return [dict(r) for r in rows]
-    except Exception:
+    except Exception as exc:
+        # A query error here (e.g. a schema/column mismatch on the live backend)
+        # must NOT poison the shared transaction. On PostgreSQL a failed statement
+        # aborts the whole transaction, so without a rollback EVERY subsequent
+        # query in this reflex cycle fails with "current transaction is aborted",
+        # cascading one framework's error across all the rest (and every project).
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        logger.debug(
+            "cato_twin: controls query failed for %s/%s — %s (rolled back; skipping framework)",
+            project_id, table, exc,
+        )
         return []
 
 
@@ -294,12 +307,43 @@ def _log_audit(conn, project_id: str, summary: Dict) -> None:
         logger.warning("audit log failed: %s", e)
 
 
+def _stamp_dispatch_contract(totals: Dict[str, Any]) -> Dict[str, Any]:
+    """Add the (success, metric_value, details) keys the Genesis daemon reads.
+
+    ``tools/daemon/base.py::run_reflex`` derives a reflex's run outcome from
+    ``result.get("success")`` / ``result.get("metric_value")`` /
+    ``result.get("details")``. A reflex that returns only a flat ``status``/count
+    dict (as this one historically did) is scored ``success=False`` on every run
+    and sent to ``record_failure`` — which, repeated, trips the reflex circuit
+    breaker and permanently stops it being dispatched. Stamping these keys makes
+    a healthy cycle record as a success (metric = snapshots_written).
+    """
+    totals["success"] = totals.get("status") != "error"
+    totals["metric_value"] = float(totals.get("snapshots_written", 0) or 0)
+    totals["details"] = {
+        k: totals.get(k)
+        for k in (
+            "snapshots_written",
+            "violations_found",
+            "poam_items_created",
+            "projects_processed",
+            "ai_anomalies_found",
+            "status",
+            "errors",
+        )
+    }
+    return totals
+
+
 def run(ctx: Dict[str, Any], conn=None) -> Dict[str, Any]:
     """Execute one cATO Twin continuous monitoring cycle.
 
     Args:
         ctx:  Genesis context dict (may contain 'triggered_by', 'dry_run').
-        conn: Optional existing DB connection (for tests).
+        conn: Optional existing DB connection (for tests). The Genesis daemon
+              dispatches reflexes as ``run(config, trust)`` — the second
+              positional arg is the TrustKernel, NOT a DB connection — so this
+              is only reused when it actually quacks like a connection.
 
     Returns:
         Summary dict: snapshots_written, violations_found,
@@ -313,6 +357,10 @@ def run(ctx: Dict[str, Any], conn=None) -> Dict[str, Any]:
     triggered_by = ctx.get("triggered_by", "genesis_reflex")
     dry_run = ctx.get("dry_run", False)
 
+    # bdr-ops-1: the daemon passes the TrustKernel as the 2nd positional; only
+    # reuse it when it is a real DB connection (tests pass one), else open our own.
+    if conn is not None and not hasattr(conn, "execute"):
+        conn = None
     _own_conn = conn is None
     if _own_conn:
         conn = get_connection()
@@ -333,7 +381,7 @@ def run(ctx: Dict[str, Any], conn=None) -> Dict[str, Any]:
         projects = _get_active_projects(conn)
         if not projects:
             totals["status"] = "no_projects"
-            return totals
+            return _stamp_dispatch_contract(totals)
 
         for project in projects:
             project_id = project["id"]
@@ -387,10 +435,12 @@ def run(ctx: Dict[str, Any], conn=None) -> Dict[str, Any]:
                     project_ai_anomalies += len(anomalies)
                     totals["ai_anomalies_found"] += len(anomalies)
 
-                    # Run seed queries (logging only — non-fatal)
+                    # Run seed queries (logging only — non-fatal).
+                    # Scope to the current project so a per-project monitoring
+                    # cycle never reads another project's compliance state.
                     for query in seed_queries:
                         try:
-                            _results = run_query(query, conn=conn)
+                            _results = run_query(query, conn=conn, project_id=project_id)
                         except Exception:
                             pass
 
@@ -417,7 +467,7 @@ def run(ctx: Dict[str, Any], conn=None) -> Dict[str, Any]:
         if _own_conn:
             conn.close()
 
-    return totals
+    return _stamp_dispatch_contract(totals)
 
 
 if __name__ == "__main__":

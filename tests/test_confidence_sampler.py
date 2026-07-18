@@ -211,6 +211,49 @@ class TestReflexContract:
         assert "not_a_surface" in out["details"]["error"]
 
 
+class TestTombstonesAreNotAudited:
+    """Retired / dismissed predictions are tombstones and must not be re-drawn.
+
+    A ``dismissed*`` row is a killed prediction (operator ruled it a false
+    positive, or a retired rule left it behind); a ``promoted:*`` row already
+    has real ground truth via the organic kanban_verifications join. Drawing
+    either into the audit sample folds a stale/duplicate observation into the
+    sampled calibration aggregate — the exact "stale tombstone rows keep
+    influencing aggregate statistics" defect. The candidate query must restrict
+    to still-open rows, matching suggested_card_writer._load_pending_predictions.
+    """
+
+    class _RecordingConn:
+        def __init__(self):
+            self.queries = []
+
+        def execute(self, sql, *args, **kwargs):
+            self.queries.append(sql)
+
+            class _C:
+                def fetchall(self_inner):
+                    return []
+
+            return _C()
+
+        def close(self):
+            pass
+
+    def test_candidate_query_filters_out_closed_outcomes(self):
+        conn = self._RecordingConn()
+        cs._candidates(conn, "oracle_triage")
+        sql = " ".join(self.conn_sql(conn)).lower()
+        # The tombstone guard: only NULL / '' / 'pending' outcomes are eligible.
+        assert "outcome is null" in sql
+        assert "outcome = ''" in sql
+        assert "outcome = 'pending'" in sql
+
+    @staticmethod
+    def conn_sql(conn):
+        # The candidate query is the one that mentions oracle_predictions.
+        return [q for q in conn.queries if "oracle_predictions" in q.lower()]
+
+
 class TestPendingRowsAreInert:
     def test_a_pending_sample_cannot_move_a_metric(self):
         """The sampler writes rows with outcome NULL. _compute_ece drops

@@ -32,6 +32,59 @@ _SC_IQE_EXAMPLES = [
 ]
 
 
+def find_boundary_isa_matches(partner_systems) -> dict:
+    """Cross-link supply-chain ISA partner systems to Boundary Canvas ISAs.
+
+    NAVIGATION-ONLY: the two ISA stores stay separate (bd_isa_tracker in the
+    Boundary Canvas DB vs isa_agreements in the project DB). This helper does a
+    conservative, case-insensitive EXACT match of each supply-chain
+    ``partner_system`` against a boundary ``bd_isa_tracker.interconnection_id``
+    or the parent boundary design name, so the /supply_chain ISA listing can
+    render a "related" backlink to /boundary/isa-tracker.
+
+    Args:
+        partner_systems: iterable of partner-system name strings.
+
+    Returns:
+        dict mapping each matched original partner_system string -> True.
+        Fails closed: on any error (missing DB/table, empty store) returns {}
+        and logs a warning — never raises, so callers never 500.
+    """
+    matches: dict = {}
+    wanted: dict = {}
+    for p in (partner_systems or []):
+        norm = (p or "").strip().lower()
+        if norm:
+            wanted[norm] = p
+    if not wanted:
+        return matches
+    try:
+        from tools.boundary_canvas.db.init_db import get_connection as _bdc_conn
+
+        known: set = set()
+        with _bdc_conn() as conn:
+            rows = conn.execute(
+                "SELECT t.interconnection_id, d.name AS design_name "
+                "FROM bd_isa_tracker t "
+                "LEFT JOIN boundary_designs d ON t.design_id = d.id"
+            ).fetchall()
+        for r in rows:
+            rd = dict(r)
+            ic = (rd.get("interconnection_id") or "").strip().lower()
+            dn = (rd.get("design_name") or "").strip().lower()
+            if ic:
+                known.add(ic)
+            if dn:
+                known.add(dn)
+        for norm, original in wanted.items():
+            if norm in known:
+                matches[original] = True
+    except Exception as exc:
+        logger.warning("boundary ISA cross-link lookup failed: %s", exc)
+        return {}
+    return matches
+
+
 def create_supply_chain_blueprint() -> Blueprint:
     bp = Blueprint(
         "supply_chain",
@@ -183,6 +236,16 @@ def create_supply_chain_blueprint() -> Blueprint:
                 "  WHEN 'signed' THEN 4 ELSE 5 END, expiry_date ASC NULLS LAST "
                 "LIMIT 200"
             ))
+            # NAVIGATION cross-link: flag rows that have a matching Boundary
+            # Canvas ISA so the UI can render a backlink. Fails closed — the
+            # cross-DB lookup never propagates an error to this response.
+            try:
+                _bd = find_boundary_isa_matches([r.get("partner_system") for r in rows])
+            except Exception as exc:  # defensive; find_* already fails closed
+                logger.warning("sc_isa boundary enrichment failed: %s", exc)
+                _bd = {}
+            for r in rows:
+                r["boundary_match"] = bool(_bd.get(r.get("partner_system")))
             return jsonify(rows)
         except Exception as exc:
             logger.warning("sc_isa_agreements error: %s", exc)

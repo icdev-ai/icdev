@@ -18,24 +18,28 @@ Usage:
 
 import importlib
 import json
-
-from tools.logging.icdev_logger import get_logger
 import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, Tuple
 
-logger = get_logger(__name__)
-
 # ---------------------------------------------------------------------------
-# Path bootstrapping
+# Path bootstrapping — MUST run before ANY `tools.*` / `icdev.*` import.
+# Script-style launches (`python tools/genesis/daemon.py`) put only the script
+# directory on sys.path[0]; a user-site `.pth` (e.g. fathomdesk-root.pth) can
+# otherwise inject a STALE vendored copy of the repo ahead of this checkout and
+# bind `sys.modules["tools"]` to it. Inserting the repo root at position 0
+# before the first `tools.*` import guarantees this checkout wins. (shx-safe-05)
 # ---------------------------------------------------------------------------
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
+from tools.logging.icdev_logger import get_logger  # noqa: E402 — must follow sys.path bootstrap
+
+logger = get_logger(__name__)
+
 from tools.daemon.base import (  # noqa: E402
-    BASE_DIR,
     DaemonBase,
     ReflexStateBase,
     TrustKernelBase,
@@ -119,6 +123,10 @@ REFLEX_NAMES = [
     "pma_credential_monitor",
     "pma_int_gap_monitor",
     "skill_security_monitor",
+    "sdc_control_expiry",  # shx-safe-04: SDC security control-expiry sweep (4h) — IQR anomaly threshold
+    "cato_monitor",        # shx-safe-04: cATO continuous compliance monitoring (6h) — compliance/* IQE + POAM
+    "bdc_isa_expiry",      # bdr-ops-1: BDC ISA expiry alerting (24h) — was registered-but-undispatched
+    "cato_twin",           # bdr-ops-1: cATO twin continuous monitoring (6h) — config enabled:false until hardened query path soaks
     "ndc_topology_drift",  # ndc→ACOIC: topology config drift vs nc_versions baseline
     "dic_integration",     # dsyn-reflex-02: DIC Canvas Synergy — 15-min cadence
     "dic_review_cadence",  # dsyn-suggest-02: nightly collection review overdue check

@@ -211,14 +211,14 @@ def register_ingestion_routes(bp: Blueprint) -> None:
             params = []  # type: list
             wheres = []  # type: list
             if channel:
-                wheres.append("channel=?")
+                wheres.append("channel=%s")
                 params.append(channel)
             if status_filter:
-                wheres.append("status=?")
+                wheres.append("status=%s")
                 params.append(status_filter)
             if wheres:
                 sql += " WHERE " + " AND ".join(wheres)
-            sql += " ORDER BY created_at DESC LIMIT ?"
+            sql += " ORDER BY created_at DESC LIMIT %s"
             params.append(int(limit))
 
             rows = conn.execute(sql, params).fetchall()
