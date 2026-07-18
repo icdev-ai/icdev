@@ -615,51 +615,58 @@ class TestMalformedInputRobustness:
         assert result["error"] == "not a mapping"
 
 
-# ── Known adapter bugs (documented, NOT fixed in this test-only task) ─────────
+# ── Malformed JSON shapes degrade cleanly (shx-hyg-05) ────────────────────────
 
-class TestKnownAdapterBugsTracebackOnMalformed:
-    """Malformed inputs that currently raise a traceback instead of a clean error.
+class TestMalformedShapesDegradeCleanly:
+    """Malformed inputs return a clean error dict instead of raising a traceback.
 
-    These pin CURRENT (buggy) behavior so a future fix flips the expectation.
-    Root cause: ingest_sbom / ingest_sast / ingest_survey assume the parsed JSON
-    is a dict (they call ``.get`` / ``.items`` on it) and that list elements are
-    dicts. A top-level JSON array — or a non-dict element — reaches those calls
-    unguarded and raises AttributeError. See PR body for the follow-up.
+    Fixed in shx-hyg-05: ingest_sbom / ingest_sast / ingest_survey guard the
+    parsed JSON with ``isinstance(data, dict)`` (top-level "not a mapping"
+    clean-degrade, mirroring ingest_openapi) and skip non-dict list elements
+    with per-element ``isinstance`` guards, so a top-level JSON array — or a
+    non-dict element — degrades cleanly instead of raising AttributeError.
     """
 
-    def test_sbom_toplevel_json_array_raises(self, stub_activity_tracker):
+    def test_sbom_toplevel_json_array_degrades(self, stub_activity_tracker):
         from tools.security_canvas.zig_external_adapter import ingest_sbom
-        # FOLLOW-UP: should return {'error': ...}, currently AttributeError.
-        with pytest.raises(AttributeError):
-            ingest_sbom("t", "[]")
+        result = ingest_sbom("t", "[]")
+        assert result["error"] == "not a mapping"
+        assert result["findings"] == 0
+        assert result["activities_updated"] == []
 
-    def test_sbom_nondict_component_raises(self, stub_activity_tracker):
+    def test_sbom_nondict_component_skipped(self, stub_activity_tracker):
         from tools.security_canvas.zig_external_adapter import ingest_sbom
-        # FOLLOW-UP: a component that is a bare string breaks comp.get(...).
-        with pytest.raises(AttributeError):
-            ingest_sbom("t", json.dumps({"components": ["not-a-dict"]}))
+        # A component that is a bare string is skipped, not fatal.
+        result = ingest_sbom("t", json.dumps({"components": ["not-a-dict"]}))
+        assert "error" not in result
+        assert result["findings"] == 0
 
-    def test_sast_toplevel_json_array_raises(self, stub_activity_tracker):
+    def test_sast_toplevel_json_array_degrades(self, stub_activity_tracker):
         from tools.security_canvas.zig_external_adapter import ingest_sast
-        # FOLLOW-UP: should return {'error': ...}, currently AttributeError.
-        with pytest.raises(AttributeError):
-            ingest_sast("t", "[]")
+        result = ingest_sast("t", "[]")
+        assert result["error"] == "not a mapping"
+        assert result["findings"] == 0
+        assert result["activities_updated"] == []
 
-    def test_sast_results_wrong_type_list_of_str_raises(self, stub_activity_tracker):
+    def test_sast_results_wrong_type_list_of_str_skipped(self, stub_activity_tracker):
         from tools.security_canvas.zig_external_adapter import ingest_sast
-        # "wrong types (list where dict expected)": results is a list of strings,
-        # so finding.get(...) raises on the string element.
-        with pytest.raises(AttributeError):
-            ingest_sast("t", json.dumps({"results": ["oops-not-a-dict"]}))
+        # results is a list of strings: each non-dict element is skipped.
+        result = ingest_sast("t", json.dumps({"results": ["oops-not-a-dict"]}))
+        assert "error" not in result
+        assert result["findings"] == 0
+        assert result["activities_updated"] == []
 
-    def test_sast_results_is_dict_raises(self, stub_activity_tracker):
+    def test_sast_results_is_dict_skipped(self, stub_activity_tracker):
         from tools.security_canvas.zig_external_adapter import ingest_sast
-        # results given as a dict → iteration yields str keys → finding.get raises.
-        with pytest.raises(AttributeError):
-            ingest_sast("t", json.dumps({"results": {"finding1": {}}}))
+        # results given as a dict → iteration yields str keys → each skipped.
+        result = ingest_sast("t", json.dumps({"results": {"finding1": {}}}))
+        assert "error" not in result
+        assert result["findings"] == 0
+        assert result["activities_updated"] == []
 
-    def test_survey_toplevel_json_array_raises(self, stub_activity_tracker):
+    def test_survey_toplevel_json_array_degrades(self, stub_activity_tracker):
         from tools.security_canvas.zig_external_adapter import ingest_survey
-        # FOLLOW-UP: should return {'error': ...}, currently AttributeError on .items().
-        with pytest.raises(AttributeError):
-            ingest_survey("t", "[]")
+        result = ingest_survey("t", "[]")
+        assert result["error"] == "not a mapping"
+        assert result["findings"] == 0
+        assert result["activities_updated"] == []
