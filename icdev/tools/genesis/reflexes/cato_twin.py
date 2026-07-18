@@ -299,7 +299,10 @@ def run(ctx: Dict[str, Any], conn=None) -> Dict[str, Any]:
 
     Args:
         ctx:  Genesis context dict (may contain 'triggered_by', 'dry_run').
-        conn: Optional existing DB connection (for tests).
+        conn: Optional existing DB connection (for tests). The Genesis daemon
+              dispatches reflexes as ``run(config, trust)`` — the second
+              positional arg is the TrustKernel, NOT a DB connection — so this
+              is only reused when it actually quacks like a connection.
 
     Returns:
         Summary dict: snapshots_written, violations_found,
@@ -313,6 +316,10 @@ def run(ctx: Dict[str, Any], conn=None) -> Dict[str, Any]:
     triggered_by = ctx.get("triggered_by", "genesis_reflex")
     dry_run = ctx.get("dry_run", False)
 
+    # bdr-ops-1: the daemon passes the TrustKernel as the 2nd positional; only
+    # reuse it when it is a real DB connection (tests pass one), else open our own.
+    if conn is not None and not hasattr(conn, "execute"):
+        conn = None
     _own_conn = conn is None
     if _own_conn:
         conn = get_connection()

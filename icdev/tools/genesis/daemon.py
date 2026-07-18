@@ -121,6 +121,8 @@ REFLEX_NAMES = [
     "skill_security_monitor",
     "sdc_control_expiry",  # shx-safe-04: SDC security control-expiry sweep (4h) — IQR anomaly threshold
     "cato_monitor",        # shx-safe-04: cATO continuous compliance monitoring (6h) — compliance/* IQE + POAM
+    "bdc_isa_expiry",      # bdr-ops-1: BDC ISA expiry alerting (24h) — was registered-but-undispatched
+    "cato_twin",           # bdr-ops-1: cATO twin continuous monitoring (6h) — config enabled:false until hardened query path soaks
     "ndc_topology_drift",  # ndc→ACOIC: topology config drift vs nc_versions baseline
     "dic_integration",     # dsyn-reflex-02: DIC Canvas Synergy — 15-min cadence
     "dic_review_cadence",  # dsyn-suggest-02: nightly collection review overdue check
