@@ -1836,6 +1836,16 @@ def create_app(testing: bool = False) -> Flask:
     except Exception as _exc:
         app.logger.warning("Health blueprint skipped: %s", _exc)
 
+    # Distributed tracing activation (obx-trc-01, D290). Gated by
+    # ICDEV_TRACING_ENABLED (default on) inside the helper. Wrapped so tracing
+    # never blocks app startup. Span store routes to the primary backend via
+    # tools.db.storage.
+    try:
+        from tools.observability import enable_tracing_if_enabled
+        enable_tracing_if_enabled()
+    except Exception as _exc:
+        app.logger.warning("Tracing activation skipped: %s", _exc)
+
     @app.route("/api/_introspect/routes", methods=["GET"])
     def _introspect_routes():
         """Internal: real GET-able, parameter-free page routes for the health prober.
