@@ -98,12 +98,11 @@ def _prune_auto_snapshots(conn, pipeline_id: str, keep: int = AUTO_SNAPSHOT_RETE
     label starts with ``AUTO_SNAPSHOT_LABEL_PREFIX`` are considered — manual /
     user-labeled snapshots are never selected and therefore never deleted.
 
-    NOTE (append-only interaction): ``pdc_snapshots`` is listed in
-    ``APPEND_ONLY_TABLES`` in ``.claude/hooks/pre_tool_use.py``. That hook guards
-    AI *coding* sessions from hand-writing DELETEs against audit-style tables in
-    source edits; it is NOT a DB constraint. This runtime prune is a deliberate,
-    bounded retention behavior (auto snapshots only, keep=20) — the equivalent of
-    log rotation — and does not touch any user-authored/manual snapshot. See the
+    NOTE (append-only interaction): ``pdc_snapshots`` is intentionally NOT
+    append-only (see the ``APPEND_ONLY_TABLES`` comment in
+    ``.claude/hooks/pre_tool_use.py``). Pruning is bounded to auto-labeled rows
+    (label starts with ``AUTO_SNAPSHOT_LABEL_PREFIX``, keep=20) — the equivalent
+    of log rotation; manual / user-labeled snapshots are never deleted. See the
     task pdx-perf-01 rationale documented on the PR.
     """
     rows = conn.execute(

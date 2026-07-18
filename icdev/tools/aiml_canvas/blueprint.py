@@ -18,8 +18,6 @@ Routes:
 
   POST /ai-ml/api/designs/<id>/assess      run canvas compliance assessment
   POST /ai-ml/api/designs/<id>/assess-gov  run governance assessment (DoD RAI + IL + OMB)
-  POST /ai-ml/api/designs/<id>/adapt       get adaptation strategy recommendation
-  POST /ai-ml/api/designs/<id>/deploy-plan get deployment plan for a model
   POST /ai-ml/api/designs/<id>/artifact/model-card      generate model card
   POST /ai-ml/api/designs/<id>/artifact/deploy-manifest generate deployment manifest
 
@@ -46,7 +44,17 @@ import os
 
 from flask import Blueprint, jsonify, redirect, render_template, request, url_for
 
+# penta-aimc-03: hard-gate AIMC mutating routes with the established dashboard
+# RBAC decorator (same pattern as tools/aiify/blueprint.py, PR #514). Enforces
+# login (401) + operator role (403) independent of ICDEV_ENFORCE_CANVAS_ACCESS.
+# Read-only pages and GET/list JSON routes keep their current posture.
+from tools.dashboard.auth import require_role
+
 log = get_logger(__name__)
+
+# Roles permitted to invoke AIMC mutating routes (create/save/delete designs,
+# run assessments, generate artifacts, apply templates/snippets, recommend).
+_AIMC_MUTATE_ROLES = ("admin", "pm", "developer", "isso")
 
 try:
     from tools.canvas.ai_trace_mixin import record_canvas_decision as _record_decision
@@ -54,6 +62,26 @@ except Exception:
     def _record_decision(**_kw): pass  # type: ignore[assignment]
 
 _AIMC_ENABLED = os.environ.get("ICDEV_AIML_CANVAS_ENABLED", "true").lower() not in ("0", "false", "no")
+
+
+def _load_scanned_inventory(project_id: str) -> dict | None:
+    """Return real scanned model inventory for ``project_id``, or None.
+
+    Reads through ``tools.aimc.model_scanner.scan_models`` (PR #507), which uses
+    the RLS-disabled canvas connection and returns an explicit ``no-data`` result
+    rather than fabricating demo values. Returns the scan dict only when it has
+    real rows (``status == 'success'``); otherwise None so the model-catalog page
+    shows nothing extra. Never raises — the catalog page must always render.
+    """
+    try:
+        from tools.aimc.model_scanner import scan_models
+        result = scan_models(project_id)
+    except Exception as exc:
+        log.warning("AIMC model-catalog scanned-inventory load failed: %s", exc)
+        return None
+    if isinstance(result, dict) and result.get("status") == "success":
+        return result
+    return None
 
 
 def create_aiml_blueprint() -> Blueprint | None:
@@ -116,7 +144,6 @@ def create_aiml_blueprint() -> Blueprint | None:
         return render_template(
             "aiml_canvas/canvas.html",
             design=design,
-            design_json=json.dumps(design),
             templates=templates,
             snippets=snippets,
             palette=AIMC_NODE_PALETTE,
@@ -138,10 +165,17 @@ def create_aiml_blueprint() -> Blueprint | None:
 
     @bp.route("/model-catalog")
     def model_catalog():
+        # Static catalog (FOUNDATION_MODELS) plus, when present, the real scanned
+        # inventory recorded in aimc_models for the given project. Empty/no-data
+        # inventory yields scanned=None and the page shows only the catalog.
+        project_id = request.args.get("project_id", "default")
+        scanned = _load_scanned_inventory(project_id)
         return render_template(
             "aiml_canvas/model_catalog.html",
             models=FOUNDATION_MODELS,
             il_levels=IL_LEVELS,
+            scanned=scanned,
+            scanned_project_id=project_id,
         )
 
     @bp.route("/assessments/<assessment_id>")
@@ -170,6 +204,7 @@ def create_aiml_blueprint() -> Blueprint | None:
         return jsonify(eng.list_designs())
 
     @bp.route("/api/designs", methods=["POST"])
+    @require_role(*_AIMC_MUTATE_ROLES)
     def api_create_design():
         data = request.get_json(silent=True) or {}
         name = data.get("name", "Untitled AI/ML Design")
@@ -192,6 +227,7 @@ def create_aiml_blueprint() -> Blueprint | None:
         return jsonify(design)
 
     @bp.route("/api/designs/<design_id>", methods=["PUT"])
+    @require_role(*_AIMC_MUTATE_ROLES)
     def api_save_design(design_id: str):
         data = request.get_json(silent=True) or {}
         try:
@@ -208,6 +244,7 @@ def create_aiml_blueprint() -> Blueprint | None:
             return jsonify({"error": str(exc)}), 404
 
     @bp.route("/api/designs/<design_id>", methods=["DELETE"])
+    @require_role(*_AIMC_MUTATE_ROLES)
     def api_delete_design(design_id: str):
         deleted = eng.delete_design(design_id)
         return jsonify({"deleted": deleted}), 200 if deleted else 404
@@ -215,6 +252,7 @@ def create_aiml_blueprint() -> Blueprint | None:
     # ── API: Assessment ───────────────────────────────────────────────────────
 
     @bp.route("/api/designs/<design_id>/assess", methods=["POST"])
+    @require_role(*_AIMC_MUTATE_ROLES)
     def api_assess(design_id: str):
         data = request.get_json(silent=True) or {}
         use_cot = data.get("use_cot", False)
@@ -235,6 +273,7 @@ def create_aiml_blueprint() -> Blueprint | None:
             return jsonify({"error": str(exc)}), 404
 
     @bp.route("/api/designs/<design_id>/assess-gov", methods=["POST"])
+    @require_role(*_AIMC_MUTATE_ROLES)
     def api_assess_gov(design_id: str):
         design = eng.get_design(design_id)
         if not design:
@@ -244,22 +283,19 @@ def create_aiml_blueprint() -> Blueprint | None:
             canvas_type="aimc",
             record_id=design_id,
             decision_type="compliance_finding",
-            decision=f"Gov assessment score={result.get('score','?')}",
+            decision=f"Gov assessment score={result.get('overall_score','?')}",
             rationale=f"IL={design.get('il_level','?')}",
             model_used=None,
         )
         return jsonify(result)
 
     # ── API: Adaptation Recommendation ───────────────────────────────────────
-
-    @bp.route("/api/designs/<design_id>/adapt", methods=["POST"])
-    def api_adapt(design_id: str):
-        data = request.get_json(silent=True) or {}
-        rec = adapt_eng.recommend(**{k: v for k, v in data.items()
-                                     if k in adapt_eng.recommend.__code__.co_varnames})
-        return jsonify(rec)
+    # NOTE (penta-aimc-04): the design-scoped /api/designs/<id>/adapt and
+    # /api/designs/<id>/deploy-plan endpoints were removed — the canvas UI only
+    # ever calls the standalone /api/adapt/recommend and /api/deploy/plan routes.
 
     @bp.route("/api/adapt/recommend", methods=["POST"])
+    @require_role(*_AIMC_MUTATE_ROLES)
     def api_adapt_recommend():
         data = request.get_json(silent=True) or {}
         valid_keys = {
@@ -274,22 +310,8 @@ def create_aiml_blueprint() -> Blueprint | None:
 
     # ── API: Deployment Plan ──────────────────────────────────────────────────
 
-    @bp.route("/api/designs/<design_id>/deploy-plan", methods=["POST"])
-    def api_deploy_plan(design_id: str):
-        design = eng.get_design(design_id)
-        if not design:
-            return jsonify({"error": "not found"}), 404
-        data = request.get_json(silent=True) or {}
-        plan = dep_plan.plan(
-            model_id=data.get("model_id", "qwen3-local"),
-            il_level=design.get("il_level", "IL4"),
-            vram_gb=float(data.get("vram_gb", 8)),
-            latency_target_ms=int(data.get("latency_target_ms", 2000)),
-            throughput_rps=int(data.get("throughput_rps", 1)),
-        )
-        return jsonify(plan)
-
     @bp.route("/api/deploy/plan", methods=["POST"])
+    @require_role(*_AIMC_MUTATE_ROLES)
     def api_deploy_plan_standalone():
         data = request.get_json(silent=True) or {}
         plan = dep_plan.plan(
@@ -321,6 +343,7 @@ def create_aiml_blueprint() -> Blueprint | None:
             conn.close()
 
     @bp.route("/api/designs/<design_id>/artifact/model-card", methods=["POST"])
+    @require_role(*_AIMC_MUTATE_ROLES)
     def api_artifact_model_card(design_id: str):
         try:
             result = eng.generate_model_card(design_id)
@@ -329,6 +352,7 @@ def create_aiml_blueprint() -> Blueprint | None:
             return jsonify({"error": str(exc)}), 404
 
     @bp.route("/api/designs/<design_id>/artifact/deploy-manifest", methods=["POST"])
+    @require_role(*_AIMC_MUTATE_ROLES)
     def api_artifact_deploy_manifest(design_id: str):
         try:
             result = eng.generate_deployment_manifest(design_id)
@@ -343,6 +367,7 @@ def create_aiml_blueprint() -> Blueprint | None:
         return jsonify(eng.list_templates())
 
     @bp.route("/api/templates/<template_id>/apply/<design_id>", methods=["POST"])
+    @require_role(*_AIMC_MUTATE_ROLES)
     def api_apply_template(template_id: str, design_id: str):
         tpl = eng.get_template(template_id)
         if not tpl:
@@ -359,6 +384,7 @@ def create_aiml_blueprint() -> Blueprint | None:
         return jsonify(eng.list_snippets(category=cat))
 
     @bp.route("/api/snippets/<snippet_id>/insert/<design_id>", methods=["POST"])
+    @require_role(*_AIMC_MUTATE_ROLES)
     def api_insert_snippet(snippet_id: str, design_id: str):
         snippets = eng.list_snippets()
         snp = next((s for s in snippets if s["id"] == snippet_id), None)
@@ -408,6 +434,19 @@ def create_aiml_blueprint() -> Blueprint | None:
         il_level = request.args.get("il_level", "IL4")
         ranked = adapt_eng.rank_models_for_il(il_level)
         return jsonify(ranked)
+
+    @bp.route("/api/scanned-inventory", methods=["GET"])
+    def api_scanned_inventory():
+        """Real scanned model inventory (aimc_models) for the model catalog.
+
+        Returns the scanner's ``success`` payload when inventory exists, or an
+        explicit ``no-data`` result — never fabricated demo values.
+        """
+        project_id = request.args.get("project_id", "default")
+        result = _load_scanned_inventory(project_id)
+        if result is None:
+            return jsonify({"status": "no-data", "project_id": project_id})
+        return jsonify(result)
 
     # ── API: Versions ─────────────────────────────────────────────────────────
 
@@ -490,6 +529,7 @@ def create_aiml_blueprint() -> Blueprint | None:
         )
 
     @bp.route("/api/modernize/recommend", methods=["POST"])
+    @require_role(*_AIMC_MUTATE_ROLES)
     def api_modernize_recommend():
         data = request.get_json(silent=True) or {}
         from tools.aiml_canvas.modernization_bridge import recommend_json
@@ -507,26 +547,37 @@ def create_aiml_blueprint() -> Blueprint | None:
 
     @bp.route("/api/ai-trace")
     def aimc_api_ai_trace():
-        """Return recent AI decisions made by AIMC assessment engines."""
+        """Return recent AI decisions made by AIMC assessment engines.
+
+        canvas_ai_decisions is written through the RLS-aware
+        tools.db.storage.get_connection (see tools/canvas/ai_trace_mixin.py), so
+        it is read back through the same connection. Placeholders are derived
+        from sql_placeholder() rather than hardcoded to %s so the SQLite
+        init-fallback path works too, and query failures are logged instead of
+        being swallowed silently.
+        """
         limit = min(int(request.args.get("limit", 50)), 200)
         record_id = request.args.get("record_id")
         try:
-            from tools.db.storage import get_connection as _gc
+            from tools.db.storage import get_connection as _gc, sql_placeholder
             with _gc() as _conn:
+                ph = sql_placeholder(_conn)
                 if record_id:
                     rows = _conn.execute(
-                        "SELECT * FROM canvas_ai_decisions WHERE canvas_type='aimc' AND record_id=%s "
-                        "ORDER BY created_at DESC LIMIT %s",
-                        (record_id, limit),
+                        f"SELECT * FROM canvas_ai_decisions "
+                        f"WHERE canvas_type={ph} AND record_id={ph} "
+                        f"ORDER BY created_at DESC LIMIT {ph}",
+                        ("aimc", record_id, limit),
                     ).fetchall()
                 else:
                     rows = _conn.execute(
-                        "SELECT * FROM canvas_ai_decisions WHERE canvas_type='aimc' "
-                        "ORDER BY created_at DESC LIMIT %s",
-                        (limit,),
+                        f"SELECT * FROM canvas_ai_decisions WHERE canvas_type={ph} "
+                        f"ORDER BY created_at DESC LIMIT {ph}",
+                        ("aimc", limit),
                     ).fetchall()
             return jsonify({"ok": True, "canvas": "aimc", "decisions": [dict(r) for r in rows]})
         except Exception as exc:
+            log.warning("AIMC ai-trace query failed: %s", exc)
             return jsonify({"ok": False, "error": str(exc)}), 500
 
     return bp

@@ -132,6 +132,9 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "ad_options_coach_events",
         # FathomDesk lessons (Phase 6.5) — quiz attempt audit (NIST AU; anti-cheat + learning analytics)
         "ad_user_quiz_attempts",
+        # AI-ify Canvas (penta-aiify-04) — PRD provenance/citation lineage for
+        # AI-boosted PRDs; the latest row per phase supersedes, never mutated
+        "aiify_prd_provenance",
         # Document Modernization Engine (docmod, migration 258) — findings state
         # transitions are superseding rows; scan runs and catalog curation are audit
         "docmod_findings",
@@ -595,9 +598,11 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "docmod_catalog_audit",
         # Pipeline Design Canvas (pdx-sec-04, NIST AU) — write-route audit trail and
         # twin/snapshot history are immutable evidence; rows never UPDATE/DELETE
+        # pdc_snapshots deliberately excluded (pdx reconciliation, user-approved
+        # 2026-07-18): design-history working store with bounded auto-snapshot
+        # retention (review finding P1-7), not an audit record.
         "pc_audit",
         "pipeline_snapshots",
-        "pdc_snapshots",
         # Security Design Canvas (migration 272, NIST AU) — sc_audit carries DB-level
         # immutability triggers (sc_audit_no_update/no_delete); non-repudiation trail
         # for ZIG capability/activity/evidence/assessment writes (cnr-zig-03)

@@ -36,9 +36,12 @@ class AcademyOracleRunner:
         all_predictions: list[OraclePrediction] = []
 
         for LensClass in _LENSES:
-            lens = LensClass()
+            # Instantiation is INSIDE the try: a lens that fails to construct
+            # (e.g. an incomplete abstract subclass) must be skipped, not allowed
+            # to abort the whole sweep — that would 500 the on-demand run route
+            # and the scheduled academy_oracle_reflex. (penta-aca-06)
             try:
-                preds = lens.run()
+                preds = LensClass().run()
                 all_predictions.extend(preds)
             except Exception:
                 pass

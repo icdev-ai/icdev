@@ -1,0 +1,21 @@
+# CUI // SP-CTI
+name: Adjudication Rubric
+inject_type: adjudication
+description: Evaluates the provenance auditor's ruling on a contested export.
+max_score: 100
+dimensions:
+- id: ruling_consistency
+  weight: 0.4
+  prompt: 'Is the releasable/not-releasable ruling consistent with policy given claim #2''s spoofed state?
+    10 = consistent + cited policy; 5 = partial; 0 = inconsistent.'
+- id: audit_completeness
+  weight: 0.35
+  prompt: Did the auditor verify provenance/citation/override records for completeness and list gaps?
+    10 = thorough completeness check; 5 = verdict only; 0 = none.
+- id: lessons_learned
+  weight: 0.15
+  prompt: Are there 2 durable controls carried forward from the exercise? 10 = 2 concrete; 5 = 1/vague;
+    0 = none.
+- id: ai_tool_quality
+  weight: 0.1
+  prompt: Were governance receipts referenced? 10 = yes; 5 = present, unused; 0 = none.

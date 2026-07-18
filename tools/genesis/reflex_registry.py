@@ -136,6 +136,10 @@ REGISTRY: List[ReflexEntry] = [
     ReflexEntry("observability_retention",   SUPPORT, 24.0,
                 "Observability retention: archive-then-prune otel_spans/prov_*/shap_attributions "
                 "(append-only → cold *_archive twin) so list_traces/trace_stats stay fast"),
+    # ODC MITRE coverage drift (obx-cov-02)
+    ReflexEntry("odc_coverage_refresh",      SUPPORT, 6.0,
+                "ODC coverage refresh: scheduled MITRE ATT&CK coverage recompute per design; "
+                "flag >15pt coverage drops as od_audit drift events + suggested kanban cards"),
 ]
 
 # Quick lookup: name → entry

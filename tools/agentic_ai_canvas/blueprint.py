@@ -47,7 +47,7 @@ import json
 import uuid
 from datetime import datetime, timezone
 
-from flask import Blueprint, Response, jsonify, render_template, request
+from flask import Blueprint, Response, abort, g, jsonify, render_template, request, session
 
 from tools.agentic_ai_canvas.constants import AADC_OBJECTS, FRAMEWORK_LABELS, NODE_DESCRIPTIONS
 from tools.agentic_ai_canvas.agentic_engine import assess_design
@@ -126,6 +126,97 @@ def _row(row) -> dict:
 @aadc_bp.before_request
 def _init():
     _ensure_init()
+
+
+# ---------------------------------------------------------------------------
+# Authentication guard (penta-aadc-01)
+# ---------------------------------------------------------------------------
+#
+# This canvas exposes ~130 routes and previously carried no auth of its own;
+# the platform's app-level auth hook (tools/dashboard/auth.py) was the only
+# barrier, and it (a) keys its API-path 401 branch off the literal "/api/"
+# prefix — which this canvas's own "/agentic-ai/api/..." paths do not match —
+# and (b) can be bypassed entirely when ICDEV_DASHBOARD_API_KEY is set
+# (fail-open-as-admin). That left mass-delete (delete_all_designs) and the
+# live LLM/web-search cost endpoints (simulate_cot, simulate_cod,
+# run_research_pipeline, run_research_agent) reachable unauthenticated.
+#
+# Rather than edit 130 decorators, we enforce authentication at the blueprint
+# level for every state-changing (non-GET) request plus an explicit set of
+# expensive GET endpoints. Read-only page/API GETs keep their existing
+# posture (SCOPE: this canvas only; platform-wide default untouched). Demo
+# mode (ICDEV_DEMO_MODE) is preserved — the app-level read-only guard already
+# blocks writes there, and demo browsing of GET surfaces stays open.
+#
+# Follows the auth-session pattern in tools/dashboard/auth.py: identity is
+# drawn from g.current_user (populated by the app-level before_request), with
+# a session-cookie / API-key fallback so the guard is self-sufficient even
+# when mounted without the platform auth middleware.
+
+# Expensive GET endpoints that invoke the LLM / web-search and must be
+# authenticated despite being GET. Endpoint names are "<blueprint>.<function>".
+# The four known live-cost endpoints (simulate_cot, simulate_cod,
+# run_research_pipeline, run_research_agent) are POST and are already covered
+# by the non-GET rule; this set exists so any future GET cost endpoint can be
+# protected by name without a decorator edit.
+_AADC_PROTECTED_GET_ENDPOINTS: frozenset = frozenset()
+
+_AADC_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+
+def _aadc_request_needs_auth() -> bool:
+    """Return True if the current request must be authenticated."""
+    if request.method.upper() not in _AADC_SAFE_METHODS:
+        return True
+    return request.endpoint in _AADC_PROTECTED_GET_ENDPOINTS
+
+
+def _aadc_current_user():
+    """Resolve the authenticated user for this request, or None.
+
+    Prefers ``g.current_user`` (set by the app-level auth hook); falls back to
+    the session cookie / API key using the shared dashboard auth module so the
+    guard also holds when the blueprint is mounted without platform auth.
+    """
+    user = getattr(g, "current_user", None)
+    if user:
+        uid = user.get("id") if isinstance(user, dict) else getattr(user, "id", None)
+        if uid:
+            return user
+    try:
+        from tools.dashboard import auth as _auth
+
+        uid = session.get("user_id")
+        if uid:
+            row = _auth.get_user_by_id(uid)
+            if row is not None:
+                d = dict(row)
+                if d.get("status", "active") == "active":
+                    return d
+        raw_key = _auth._extract_api_key_from_request()
+        if raw_key:
+            row = _auth.validate_api_key(raw_key)
+            if row is not None:
+                return dict(row)
+    except Exception as exc:
+        logger.debug("aadc auth fallback error: %s", exc)
+    return None
+
+
+@aadc_bp.before_request
+def _aadc_auth_guard():
+    """Enforce authentication on state-changing and expensive-GET requests."""
+    if not _aadc_request_needs_auth():
+        return None
+    if _aadc_current_user() is not None:
+        return None
+    logger.warning(
+        "aadc: unauthenticated %s %s blocked", request.method, request.path
+    )
+    # 401 for API/JSON callers; 403 for browser form posts to page routes.
+    if request.is_json or "/api/" in request.path:
+        abort(401)
+    abort(403)
 
 
 @aadc_bp.route("/")

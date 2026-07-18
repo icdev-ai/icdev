@@ -1,0 +1,15 @@
+# CUI // SP-CTI
+label: Red — Grounding Attacker
+description: Adversary who defeats citation grounding via prompt injection and citation spoofing (simulated).
+attributes:
+- organization/red-cell
+- prompt-injection craft
+- familiarity with RAG grounding internals
+- social-engineering angle
+- clearance level
+prompt_hint: Generate a red-team operator who attacks the grounding layer itself — hiding instructions
+  in source bodies and crafting citations that point at real-but-irrelevant passages to slip past existence
+  checks. All work is simulated; no real exfiltration. Mention the Academy threat-modeling bonus.
+academy_relevant_missions:
+- threat-modeling
+- prompt-injection

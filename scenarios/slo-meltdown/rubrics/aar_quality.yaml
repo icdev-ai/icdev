@@ -1,0 +1,21 @@
+# CUI // SP-CTI
+name: After-Action Review Rubric
+inject_type: aar_quality
+description: Evaluates the factual quality and actionability of the after-action review.
+max_score: 100
+dimensions:
+- id: timeline_accuracy
+  weight: 0.3
+  prompt: Is the timeline reconstructed from evidence at each step? 10 = evidence at each stage; 5 = partial;
+    0 = narrative without evidence.
+- id: root_cause_statement
+  weight: 0.35
+  prompt: Is root cause stated and grounded in the PSI/entropy/latency-timing evidence? 10 = precise +
+    grounded; 5 = correct but ungrounded; 0 = wrong/absent.
+- id: corrective_actions
+  weight: 0.25
+  prompt: Are there 3 owned corrective actions including a detection improvement (e.g. drift-SLO canary
+    gate)? 10 = 3 specific owned actions with a detection fix; 5 = generic; 0 = none.
+- id: ai_tool_quality
+  weight: 0.1
+  prompt: Were prior receipts referenced to support the AAR? 10 = yes; 5 = present, unused; 0 = none.

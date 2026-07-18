@@ -1,13 +1,17 @@
 # CUI // SP-CTI
-"""GameDay League — game master (thin adapter over AI Game Engine).
+"""GameDay League — game master.
 
-Retained for backward compatibility and the Genesis reflex.
-All orchestration is now delegated to tools.ai_game_engine.GameSession.
+Drives an autonomous tournament by delegating each round to the working
+RoundManager orchestrator (tools/gameday/round_manager.py), which runs the four
+teams (Red/Blue/Gold/Green) and the judge. The previous adapter delegated to a
+never-built ``tools.ai_game_engine.GameSession``; that generic engine is
+intentionally not resurrected here (YAGNI).
 """
 
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
+import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
@@ -24,7 +28,7 @@ def _now() -> str:
 
 
 class GameMaster:
-    """Thin adapter — delegates to ai_game_engine.GameSession."""
+    """Orchestrates a full tournament via RoundManager rounds."""
 
     def __init__(
         self,
@@ -39,20 +43,66 @@ class GameMaster:
         self.timing      = timing
 
     def run_tournament(self) -> dict[str, Any]:
-        from tools.ai_game_engine.game_session import GameSession
-        session = GameSession(
-            game_key="gameday",
-            round_count=self.round_count,
-            timing=self.timing,
-            tournament_name=self.tournament_name,
-            ollama_url=self.ollama_url,
-        )
-        return session.run()
+        """Run all rounds end-to-end. Persists failure state on the tournament row.
+
+        Raises the original exception after recording ``status='aborted'`` so
+        callers (the /api/gameday/ai-league/start thread, the Genesis reflex)
+        can log it rather than silently swallowing an ImportError.
+        """
+        from . import db as _db
+        from .constants import CYBER_SCENARIOS
+        from .round_manager import RoundManager
+
+        tournament = get_or_create_active_tournament()
+        tournament_id = tournament["id"]
+        _db.update_tournament(tournament_id, status="active", started_at=_now())
+
+        try:
+            manager = RoundManager(tournament_id, ollama_url=self.ollama_url)
+            scenarios = CYBER_SCENARIOS or [{}]
+            round_summaries: list[dict] = []
+            for i in range(self.round_count):
+                scenario = scenarios[i % len(scenarios)]
+                _db.update_tournament(tournament_id, current_round=i + 1)
+                round_summaries.append(manager.run_round(i + 1, scenario))
+
+            _db.update_tournament(tournament_id, status="completed", completed_at=_now())
+
+            # Refresh the persisted leaderboard (best-effort).
+            try:
+                from .leaderboard_engine import refresh_leaderboard
+                refresh_leaderboard(tournament_id)
+            except Exception as exc:  # noqa: BLE001
+                log.debug("Leaderboard refresh skipped: %s", exc)
+
+            return {
+                "tournament_id":   tournament_id,
+                "tournament_name": self.tournament_name,
+                "rounds":          len(round_summaries),
+                "status":          "completed",
+            }
+
+        except Exception as exc:
+            # Persist failure state on the tournament row (never except:pass).
+            log.error("Tournament %s failed: %s", tournament_id, exc)
+            try:
+                cfg = json.loads(tournament.get("config_json") or "{}")
+            except Exception:
+                cfg = {}
+            cfg["error"] = str(exc)
+            cfg["failed_at"] = _now()
+            try:
+                _db.update_tournament(
+                    tournament_id, status="aborted", config_json=json.dumps(cfg)
+                )
+            except Exception as persist_exc:  # noqa: BLE001
+                log.error("Failed to persist tournament failure state: %s", persist_exc)
+            raise
 
 
 def get_or_create_active_tournament() -> dict:
     """Return the latest active tournament, or create a new one (seeded but not started)."""
-    from .db import get_latest_tournament, create_tournament, seed_teams
+    from .db import create_tournament, get_latest_tournament, seed_teams
     latest = get_latest_tournament()
     if latest and latest["status"] in ("pending", "active"):
         return latest
