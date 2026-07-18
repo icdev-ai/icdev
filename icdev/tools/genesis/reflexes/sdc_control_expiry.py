@@ -307,6 +307,21 @@ def run(ctx: Dict[str, Any], conn=None) -> Dict[str, Any]:
         result["status"] = "error"
         result["errors"].append(str(exc))
 
+    # Genesis daemon success contract (shx-safe-04): the daemon reads
+    # result["success"], result["metric_value"] and result["details"].  Without
+    # these keys run_reflex_impl() treats every run as a failure and trips the
+    # circuit breaker after 3 cycles, so the reflex would go dormant again.
+    result["success"] = result["status"] == "ok"
+    result["metric_value"] = float(len(result["expiring_soon"]))
+    result["details"] = {
+        "controls_checked": result["controls_checked"],
+        "expiring_soon": len(result["expiring_soon"]),
+        "warn_threshold_days": result["warn_threshold_days"],
+        "threshold_source": result["threshold_source"],
+        "events_published": result["events_published"],
+        "status": result["status"],
+    }
+
     return result
 
 
