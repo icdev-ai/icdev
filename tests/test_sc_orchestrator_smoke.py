@@ -229,16 +229,17 @@ def test_estimate_effort_shapes():
 def test_generate_poam_entries_shape():
     """generate_poam_entries maps a phase's actions to OMB POA&M entries.
 
-    NOTE (shx-test-07 finding): this exercises the function's *consumed*
-    contract -- a ``phases`` DICT keyed by phase number. ``generate_remediation_plan``
-    emits ``phases`` as a LIST, so ``generate_poam_entries(generate_remediation_plan(...))``
-    raises ``AttributeError`` (the two functions are not wired to each other).
-    See PR body. This test asserts the POA&M entry shape via the dict contract
-    the function actually iterates, so the mapping itself stays covered.
+    ``generate_remediation_plan`` emits ``phases`` as a LIST of phase dicts,
+    which is the shape every consumer (POA&M/SAR artifact generators, blueprint
+    export routes) reads. This test asserts the POA&M entry shape via that same
+    LIST contract, so the mapping stays covered. The end-to-end chaining of the
+    two functions is verified by ``test_generate_poam_entries_chained_end_to_end``.
     """
-    dict_shaped_plan = {
-        "phases": {
-            1: {
+    list_shaped_plan = {
+        "phases": [
+            {
+                "phase": 1,
+                "name": "Phase 1: Critical (0-48h)",
                 "deadline": "2026-01-01T00:00:00+00:00",
                 "actions": [
                     {
@@ -252,15 +253,62 @@ def test_generate_poam_entries_shape():
                     }
                 ],
             }
-        }
+        ]
     }
-    entries = remediation.generate_poam_entries(dict_shaped_plan)
+    entries = remediation.generate_poam_entries(list_shaped_plan)
     assert isinstance(entries, list)
     assert len(entries) == 1
     entry = entries[0]
     for key in ("poam_id", "weakness_id", "weakness_name", "severity", "status", "risk_level"):
         assert key in entry, f"missing POA&M key '{key}': {sorted(entry)}"
     assert entry["risk_level"] == "High"  # CAT1 -> High
+    assert entry["milestone"].startswith("Phase 1:")
 
-    # Empty plan -> empty entry list (no exception).
-    assert remediation.generate_poam_entries({"phases": {}}) == []
+    # Empty plan -> empty entry list (no exception), for both list and dict defaults.
+    assert remediation.generate_poam_entries({"phases": []}) == []
+    assert remediation.generate_poam_entries({}) == []
+
+
+def test_generate_poam_entries_chained_end_to_end():
+    """generate_poam_entries(generate_remediation_plan(...)) works end-to-end.
+
+    Reconciled contract (shx-hyg-06): ``generate_remediation_plan`` emits a LIST
+    of phases and ``generate_poam_entries`` consumes that same LIST shape, so the
+    two functions chain without raising. Regression guard against the prior
+    list/dict mismatch (AttributeError on ``phases.items()``).
+    """
+    assessment = {
+        "design_id": "smoke-design",
+        "findings": [
+            {
+                "rule_id": "siem_present",
+                "severity": "CAT1",
+                "title": "SIEM not deployed",
+                "affected_entity": "design",
+            },
+            {
+                "rule_id": "encryption_at_rest",
+                "severity": "CAT2",
+                "title": "Encryption at rest missing",
+                "affected_entity": "datastore",
+            },
+        ],
+        "_rules": [],
+        "risk_score": 10,
+        "posture_grade": "F",
+    }
+
+    plan = remediation.generate_remediation_plan(assessment, {})
+    assert isinstance(plan["phases"], list)
+
+    entries = remediation.generate_poam_entries(plan)
+    assert isinstance(entries, list)
+    # One POA&M entry per action across all phases.
+    assert len(entries) == plan["total_actions"] == 2
+    poam_ids = [e["poam_id"] for e in entries]
+    assert poam_ids == ["POAM-0001", "POAM-0002"]
+    severities = {e["severity"] for e in entries}
+    assert severities == {"CAT1", "CAT2"}
+    for entry in entries:
+        for key in ("poam_id", "weakness_id", "milestone", "scheduled_completion", "status"):
+            assert key in entry, f"missing POA&M key '{key}': {sorted(entry)}"
