@@ -28,6 +28,7 @@ Usage
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
+import hashlib
 import json
 import sys
 import uuid
@@ -554,6 +555,109 @@ def _invoke_llm(
     return None
 
 
+# ── Read-through narrative cache (ndc-perf-01) ────────────────────────────────
+# Persisted persona narratives in nc_step_persona_responses are re-usable across
+# walkthrough runs when nothing that feeds the prompt has changed. We key the
+# cache on (step_id, persona_id, classification, flow_hash), where flow_hash is a
+# sha256 (repo rule: NEVER md5) over the canonicalized step + node + prev_node +
+# flow fields that actually feed the system/user prompt. The step_id + persona_id
+# select the row (they are the table's UNIQUE key); classification + flow_hash are
+# stored inside the existing detail_json column under reserved meta keys, so NO
+# schema migration is required. Rows written before this change carry no meta and
+# are treated as cache MISSES.
+_CACHE_HASH_KEY = "_cache_flow_hash"
+_CACHE_CLS_KEY = "_cache_classification"
+
+
+def _canonical_flow_hash(
+    step: dict,
+    node: dict,
+    flow: dict,
+    prev_node: dict | None,
+) -> str:
+    """Return a sha256 hex digest over the prompt-relevant step/node/flow content.
+
+    The payload includes exactly the fields that flow into the persona prompts
+    (see generate_for_persona): the step's action/details, the node (type/label/
+    config drives CSP context), the previous node (inter-CSP detection) and the
+    flow's app_type. Persona and classification are NOT hashed here — they are
+    independent components of the cache key.
+    """
+    payload = {
+        "step": {
+            "step_number": step.get("step_number"),
+            "node_id": step.get("node_id", ""),
+            "node_label": step.get("node_label", ""),
+            "action_type": step.get("action_type", ""),
+            "security_detail": step.get("security_detail", {}),
+            "network_detail": step.get("network_detail", {}),
+        },
+        "node": {
+            "id": node.get("id", ""),
+            "type": node.get("type", ""),
+            "label": node.get("label", ""),
+            "config": node.get("config", {}),
+        },
+        "prev_node": (
+            {
+                "id": prev_node.get("id", ""),
+                "type": prev_node.get("type", ""),
+                "label": prev_node.get("label", ""),
+            }
+            if prev_node
+            else None
+        ),
+        "flow": {
+            "app_type": flow.get("app_type", ""),
+        },
+    }
+    canon = json.dumps(payload, sort_keys=True, default=str)
+    return hashlib.sha256(canon.encode("utf-8")).hexdigest()
+
+
+def _read_cached_response(
+    conn: Any,
+    step_id: str | None,
+    persona_id: str,
+    classification: str,
+    flow_hash: str,
+) -> dict | None:
+    """Return a cached {narrative, detail_json} on a hit, else None (miss).
+
+    Graceful degradation: any error (missing table, unusable connection, bad JSON)
+    is logged at debug and treated as a cache miss — cache reads must NEVER fail
+    narrative generation. A row whose stored meta does not match the current
+    flow_hash + classification (including legacy rows with no meta) is a miss.
+    """
+    if conn is None or not step_id:
+        return None
+    try:
+        row = conn.execute(
+            "SELECT narrative, detail_json FROM nc_step_persona_responses"
+            " WHERE step_id = %s AND persona_id = %s",
+            (step_id, persona_id),
+        ).fetchone()
+        if not row:
+            return None
+        row = dict(row)
+        stored = json.loads(row.get("detail_json") or "{}")
+        if not isinstance(stored, dict):
+            return None
+        if stored.get(_CACHE_HASH_KEY) != flow_hash:
+            return None
+        if (stored.get(_CACHE_CLS_KEY) or "") != (classification or ""):
+            return None
+        # Strip cache meta so the returned detail_json matches a fresh generation.
+        clean = {
+            k: v for k, v in stored.items()
+            if k not in (_CACHE_HASH_KEY, _CACHE_CLS_KEY)
+        }
+        return {"narrative": row.get("narrative") or "", "detail_json": clean}
+    except Exception as exc:  # pragma: no cover - defensive, logged as miss
+        logger.debug("narrative cache read miss (error): %s", exc)
+        return None
+
+
 # ── Core: generate for one persona at one step ────────────────────────────────
 
 def generate_for_persona(
@@ -565,6 +669,10 @@ def generate_for_persona(
     prev_node: dict | None = None,
     llm_client: Any = None,
     use_llm: bool = True,
+    conn: Any = None,
+    step_id: str | None = None,
+    flow_hash: str | None = None,
+    force_regenerate: bool = False,
 ) -> dict:
     """Generate narrative + detail_json for one walkthrough step + persona.
 
@@ -577,6 +685,10 @@ def generate_for_persona(
     classification : classification level key (NIPR, IL4, IL5, IL6, SIPR)
     prev_node   : previous hop's node dict (for inter-CSP detection)
     llm_client  : ignored; LLMRouter is loaded internally when available
+    conn        : optional canvas DB connection for the read-through cache
+    step_id     : optional nc_flow_walkthrough_steps.id (cache row selector)
+    flow_hash   : optional precomputed canonical hash; computed if not supplied
+    force_regenerate : if True, bypass the cache and always (re)generate
 
     Returns
     -------
@@ -588,6 +700,19 @@ def generate_for_persona(
     persona = personas.get(persona_id, {})
     if not persona:
         return {"narrative": "", "detail_json": {}}
+
+    # ── Read-through cache lookup (ndc-perf-01) ───────────────────────────────
+    # Compute the canonical flow hash (shared with generate_all's persist step)
+    # and, unless force_regenerate is set, return any matching persisted response
+    # WITHOUT invoking the LLM. Cache-read failures degrade to a miss.
+    if flow_hash is None:
+        flow_hash = _canonical_flow_hash(step, node, flow, prev_node)
+    if not force_regenerate:
+        cached = _read_cached_response(
+            conn, step_id, persona_id, classification, flow_hash
+        )
+        if cached is not None:
+            return cached
 
     cls_ctx = _get_classification_ctx(classification)
     csp_ctx = _get_csp_ctx(node)
@@ -709,6 +834,7 @@ def generate_all(
     personas: list[str] | None = None,
     classification: str = "NIPR",
     use_llm: bool = True,
+    force_regenerate: bool = False,
 ) -> dict:
     """Generate narrative + detail_json for every step × persona combination.
 
@@ -719,6 +845,8 @@ def generate_all(
     personas       : list of persona ids to generate; None = all defined
     classification : classification level (NIPR, IL4, IL5, IL6, SIPR)
     use_llm        : if False, skip LLM and return deterministic output only
+    force_regenerate : if True, bypass the read-through cache and re-generate
+                       every step × persona (see ndc-perf-01)
 
     Returns
     -------
@@ -766,6 +894,21 @@ def generate_all(
     prev_node: dict | None = None
     prev_csp_key: str | None = None
 
+    # ── Read-through cache wiring (ndc-perf-01) ───────────────────────────────
+    # Resolve step DB ids up front so generate_for_persona can look up (and, on a
+    # miss, we can persist under) the canonical flow hash. Best-effort: a lookup
+    # failure just yields an empty map, degrading every step to a cache miss.
+    step_id_by_num: dict[Any, str] = {}
+    try:
+        _sid_rows = conn.execute(
+            "SELECT id, step_number FROM nc_flow_walkthrough_steps WHERE flow_id = %s",
+            (flow_id,),
+        ).fetchall()
+        step_id_by_num = {r["step_number"]: r["id"] for r in _sid_rows}
+    except Exception as _sid_exc:  # pragma: no cover - defensive
+        logger.debug("narrative cache: step-id lookup failed: %s", _sid_exc)
+    flow_hash_by_num: dict[Any, str] = {}
+
     for step in steps:
         node_id = step.get("node_id", "")
         node = nodes_dict.get(node_id, {"id": node_id, "label": step.get("node_label", node_id), "type": ""})
@@ -793,6 +936,11 @@ def generate_all(
             "personas":    {},
         }
 
+        step_num = step.get("step_number")
+        s_id = step_id_by_num.get(step_num)
+        flow_hash = _canonical_flow_hash(step, node, flow, prev_node if prev_node else None)
+        flow_hash_by_num[step_num] = flow_hash
+
         per_step_results: dict = {}
         for pid in active_personas:
             result = generate_for_persona(
@@ -804,6 +952,10 @@ def generate_all(
                 prev_node=prev_node if prev_node else None,
                 llm_client=None,
                 use_llm=use_llm,
+                conn=conn,
+                step_id=s_id,
+                flow_hash=flow_hash,
+                force_regenerate=force_regenerate,
             )
             step_result["personas"][pid] = result
             per_step_results[pid] = result
@@ -853,18 +1005,21 @@ def generate_all(
         "description":      description,
     }
 
-    # Persist persona responses to nc_step_persona_responses (best-effort)
+    # Persist persona responses to nc_step_persona_responses (best-effort).
+    # Embed the cache meta (flow_hash + classification) into detail_json so a later
+    # generate_all with an unchanged flow reads it back instead of re-invoking the
+    # LLM (ndc-perf-01). step_id_by_num was resolved above.
     try:
-        step_id_rows = conn.execute(
-            "SELECT id, step_number FROM nc_flow_walkthrough_steps WHERE flow_id = %s",
-            (flow_id,),
-        ).fetchall()
-        step_id_by_num = {r["step_number"]: r["id"] for r in step_id_rows}
         for out_step in output_steps:
-            s_id = step_id_by_num.get(out_step["step_number"])
+            s_num = out_step["step_number"]
+            s_id = step_id_by_num.get(s_num)
             if not s_id:
                 continue
+            f_hash = flow_hash_by_num.get(s_num, "")
             for pid, pr in out_step["personas"].items():
+                detail_with_meta = dict(pr.get("detail_json", {}))
+                detail_with_meta[_CACHE_HASH_KEY] = f_hash
+                detail_with_meta[_CACHE_CLS_KEY] = classification
                 conn.execute(
                     "INSERT OR REPLACE INTO nc_step_persona_responses"
                     " (id, step_id, persona_id, narrative, detail_json)"
@@ -874,7 +1029,7 @@ def generate_all(
                         s_id,
                         pid,
                         pr.get("narrative", ""),
-                        json.dumps(pr.get("detail_json", {})),
+                        json.dumps(detail_with_meta),
                     ),
                 )
         conn.commit()
@@ -899,6 +1054,8 @@ def _cli() -> None:
                         help="Persona IDs to include (default: all)")
     parser.add_argument("--no-llm", action="store_true",
                         help="Disable LLM narrative generation")
+    parser.add_argument("--force-regenerate", action="store_true",
+                        help="Bypass the read-through narrative cache and regenerate")
     parser.add_argument("--json", action="store_true", dest="as_json",
                         help="Output JSON")
     args = parser.parse_args()
@@ -912,6 +1069,7 @@ def _cli() -> None:
         personas=args.personas,
         classification=args.classification,
         use_llm=not args.no_llm,
+        force_regenerate=args.force_regenerate,
     )
 
     if args.as_json:

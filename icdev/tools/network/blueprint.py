@@ -12325,9 +12325,11 @@ Respond with ONLY this JSON (no other text):
         """Run multi-persona walkthrough for a traffic flow.
 
         Request body (JSON, all optional):
-          personas       : list of persona IDs to generate (default: all 7)
-          classification : override flow classification (NIPR, IL4, IL5, IL6, SIPR)
-          use_llm        : bool, default True
+          personas        : list of persona IDs to generate (default: all 7)
+          classification  : override flow classification (NIPR, IL4, IL5, IL6, SIPR)
+          use_llm         : bool, default True
+          force_regenerate: bool, default False — bypass the read-through
+                            narrative cache and re-generate every step × persona
 
         Returns:
           {steps: [...], summary: {...}}
@@ -12340,6 +12342,9 @@ Respond with ONLY this JSON (no other text):
         body = request.get_json(silent=True) or {}
         personas = body.get("personas") or None
         use_llm = bool(body.get("use_llm", True))
+        force_regenerate = bool(
+            body.get("force_regenerate", request.args.get("force_regenerate") in ("1", "true", "True"))
+        )
         phase_id_filter = request.args.get("phase_id") or body.get("phase_id")
 
         try:
@@ -12375,6 +12380,7 @@ Respond with ONLY this JSON (no other text):
                 personas=personas,
                 classification=classification,
                 use_llm=use_llm,
+                force_regenerate=force_regenerate,
             )
 
             # Reformat steps to use 'persona_responses' key for API consumers
