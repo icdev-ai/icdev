@@ -168,6 +168,23 @@ governance:
   # grounding gates.)
   skip_grounding_for_plain_complete: true
 
+  # Content-grounding gate (gate 5) knobs. The gate runs semantic
+  # claim-vs-context grounding (tools/quality/content_grounding.ground_content)
+  # when a retrieval call injects snippet text, and falls back to the
+  # placeholder scan otherwise.
+  content_grounding:
+    # Pass/warn floor for the grounding score. LEAVE NULL to inherit the SHARED
+    # confidence band citation_grounding.CONF_ABSTAIN (0.4) — the single source
+    # of truth that keeps the two TRUST gates from drifting apart. Set a float
+    # in [0,1] only to override deliberately.
+    min_score: null
+    # Optional LLM-assisted grounding judge. OFF by default: the LLM-free
+    # heuristic is the floor. When true, the gate routes an extra check through
+    # the LLMRouter chain named by routing_function (a routing FUNCTION, never a
+    # model id); any failure degrades back to the heuristic.
+    llm_assisted: false
+    routing_function: cortex_complete
+
 analyst:
   # When the deterministic NLQ->SQL path returns nothing, fall back to the
   # cortex_analyst LLM routing chain.

@@ -2,8 +2,9 @@
 
 Extracted from tools/govcon/rfi_grounding.py so any drafting surface
 (RFI workbench, proposals, DIC document generator, Tech Writer) can reuse
-the deterministic pieces. Everything here is pure regex/dict — no LLM,
-no DB, no Flask.
+the deterministic pieces. The deterministic pieces are pure regex/dict —
+no DB, no Flask — and ``ground_content`` is LLM-FREE by default (an optional
+LLM-assisted pass is off unless a caller injects a router callable).
 
   - find_placeholders(text)         -> unresolved [BRACKETED] tokens
   - substitute_facts(text, pairs)   -> replace tokens with known values
@@ -11,6 +12,17 @@ no DB, no Flask.
                                        ready for an export/publish gate
   - check_numeric_claims(sections)  -> cross-section numeric conflicts
                                        (ROM totals, prototype timelines)
+  - ground_content(out, snippets)   -> semantic claim-vs-context grounding
+                                       score + ungrounded-claim list. This is
+                                       the real grounding check (not a
+                                       placeholder scan): it segments the
+                                       output into sentences and scores how
+                                       well each is supported by the retrieval
+                                       snippets injected into the LLM call.
+
+Where ``find_placeholders`` removes the *opportunity* to hallucinate,
+``ground_content`` measures whether the claims that were made are actually
+*supported* by the evidence. Both are used by the Cortex governance gate.
 
 Surface-specific logic (which facts are substitutable, which citation
 structures are valid) stays in the caller — see rfi_grounding.py for the
@@ -20,6 +32,7 @@ RFI-structure validator built on top of this module.
 from __future__ import annotations
 
 import re
+from typing import Callable, Optional
 
 # ── Placeholders ──────────────────────────────────────────────────────────────
 
@@ -81,6 +94,221 @@ def placeholder_findings(sections: list[dict], content_keys: tuple[str, ...] = (
             label = sec.get("item_number") or sec.get("title") or sec.get("id") or "?"
             findings.append({"item_number": label, "placeholders": tokens})
     return findings
+
+
+# ── Semantic content grounding (claim vs. context) ────────────────────────────
+#
+# The Cortex governance content-grounding gate used to be a bare placeholder
+# scan (find_placeholders) plus a single token-overlap recall of the whole
+# output against a chunk. ground_content is the real thing: per-sentence
+# support scoring of the output against the retrieval snippets injected into
+# the LLM call. LLM-free heuristic by default (token + bigram overlap
+# precision), with an optional LLM-assisted pass a caller can inject.
+
+# Confidence bands are the single source of truth for "grounded enough" — the
+# same >=0.7 include / 0.4 abstain bands citation_grounding uses. Imported
+# here (not re-declared) so every TRUST surface shares one seam. Defensive
+# fallback keeps this module importable if the companion is ever absent.
+try:  # pragma: no cover - companion is always present in tools/quality
+    from .citation_grounding import CONF_ABSTAIN as _CONF_ABSTAIN
+except ImportError:  # pragma: no cover
+    _CONF_ABSTAIN = 0.4
+
+# Small English stopword set: grounding must not be satisfied by shared
+# function words ("the", "is", "of"). Kept intentionally short.
+_STOPWORDS = frozenset("""
+a an and are as at be but by for from has have if in into is it its of on or
+that the their this to was were will with not no be been being do does did
+you your we our they them he she his her which who whom whose can could should
+would may might must shall over under between within per via such than then
+""".split())
+
+# Citation tags must not count as evidence overlap — strip them before scoring.
+_CITE_TAG_RE = re.compile(r"\[source:[^\]]*\]|\[SOURCE-\d+\]", re.IGNORECASE)
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+|\n+")
+_WORD_RE = re.compile(r"\b\w+\b")
+
+
+def _content_tokens(text: str) -> list[str]:
+    """Lowercase word tokens with stopwords and pure-digit noise removed."""
+    return [
+        t for t in _WORD_RE.findall(text.lower())
+        if t not in _STOPWORDS and len(t) > 1
+    ]
+
+
+def _bigrams(tokens: list[str]) -> set[tuple[str, str]]:
+    return set(zip(tokens, tokens[1:]))
+
+
+def _sentences(text: str) -> list[str]:
+    """Segment text into sentences, citation tags stripped, blanks dropped."""
+    cleaned = _CITE_TAG_RE.sub(" ", text or "")
+    return [s.strip() for s in _SENTENCE_SPLIT_RE.split(cleaned) if s.strip()]
+
+
+def _sentence_support(sentence: str, ctx_tokens: set[str], ctx_bigrams: set) -> float:
+    """Fraction of a sentence's content supported by the context [0,1].
+
+    Blends unigram-overlap precision (0.7) with bigram-overlap precision (0.3):
+    the unigram term rewards vocabulary reuse, the bigram term penalizes
+    word-salad that reuses tokens in an order the context never states.
+    """
+    tokens = _content_tokens(sentence)
+    if not tokens:
+        return 1.0  # no factual content (heading, "Yes.") — neutral, not ungrounded
+    uni = sum(1 for t in tokens if t in ctx_tokens) / len(tokens)
+    bg = _bigrams(tokens)
+    if bg:
+        bi = len(bg & ctx_bigrams) / len(bg)
+        return round(0.7 * uni + 0.3 * bi, 4)
+    return round(uni, 4)
+
+
+def ground_content(
+    output_text: str,
+    context_snippets,
+    *,
+    method: str = "heuristic",
+    support_floor: Optional[float] = None,
+    llm_invoke: Optional[Callable[[str], str]] = None,
+) -> dict:
+    """Score how well ``output_text`` is grounded in ``context_snippets``.
+
+    This is semantic claim-vs-context grounding, NOT a placeholder scan. Each
+    output sentence is scored for how much of its content is supported by the
+    union of the retrieval snippets; the overall score is the token-weighted
+    mean of the per-sentence scores.
+
+    Args:
+        output_text: the model output to check.
+        context_snippets: the retrieval snippets injected into the LLM call —
+            an iterable of strings (or dicts/objects carrying ``content``/
+            ``text``). Empty/None means there is nothing to ground against.
+        method: ``"heuristic"`` (LLM-free, default) or ``"llm"`` (only used
+            when ``llm_invoke`` is also supplied; any failure degrades to the
+            heuristic — the heuristic is always the floor).
+        support_floor: per-sentence score below which a sentence is reported
+            as an ungrounded claim. Defaults to the shared ``CONF_ABSTAIN``
+            band from ``citation_grounding`` — one source of truth for "grounded
+            enough" across every TRUST surface.
+        llm_invoke: optional ``(prompt) -> str`` callable routed by a caller
+            through ``LLMRouter`` (no model ids here). Enables ``method="llm"``.
+
+    Returns:
+        ``{score, ungrounded_claims, method, sentence_count}`` where ``score``
+        is in [0, 1]. When there is no context to ground against, returns
+        ``score=0.0`` and ``method="no_context"`` so the caller can fall back
+        to the placeholder scan safely rather than mistaking "no evidence" for
+        "fabricated".
+    """
+    snippets = _snippet_texts(context_snippets)
+    floor = _CONF_ABSTAIN if support_floor is None else float(support_floor)
+
+    if not snippets or not (output_text or "").strip():
+        return {
+            "score": 0.0,
+            "ungrounded_claims": [],
+            "method": "no_context",
+            "sentence_count": 0,
+        }
+
+    if method == "llm" and llm_invoke is not None:
+        llm_result = _ground_content_llm(output_text, snippets, llm_invoke, floor)
+        if llm_result is not None:
+            return llm_result
+        # fall through to the heuristic — it is always the floor
+
+    ctx_tokens: set[str] = set()
+    ctx_bigrams: set = set()
+    for snip in snippets:
+        toks = _content_tokens(snip)
+        ctx_tokens.update(toks)
+        ctx_bigrams.update(_bigrams(toks))
+
+    weighted_sum = 0.0
+    weight_total = 0
+    scored = 0
+    ungrounded: list[str] = []
+    for sentence in _sentences(output_text):
+        toks = _content_tokens(sentence)
+        if not toks:
+            continue
+        scored += 1
+        s = _sentence_support(sentence, ctx_tokens, ctx_bigrams)
+        weighted_sum += s * len(toks)
+        weight_total += len(toks)
+        if s < floor:
+            ungrounded.append(sentence)
+
+    score = round(weighted_sum / weight_total, 4) if weight_total else 1.0
+    return {
+        "score": score,
+        "ungrounded_claims": ungrounded,
+        "method": "heuristic",
+        "sentence_count": scored,
+    }
+
+
+def _snippet_texts(context_snippets) -> list[str]:
+    """Normalize injected context into a list of non-empty snippet strings."""
+    if not context_snippets or isinstance(context_snippets, (int, bool)):
+        return []
+    if isinstance(context_snippets, str):
+        return [context_snippets] if context_snippets.strip() else []
+    texts: list[str] = []
+    for src in context_snippets:
+        if isinstance(src, str):
+            text = src
+        elif isinstance(src, dict):
+            text = src.get("content") or src.get("text") or ""
+        else:
+            text = getattr(src, "content", "") or getattr(src, "text", "") or ""
+        if text and str(text).strip():
+            texts.append(str(text))
+    return texts
+
+
+def _ground_content_llm(
+    output_text: str,
+    snippets: list[str],
+    llm_invoke: Callable[[str], str],
+    floor: float,
+) -> Optional[dict]:
+    """Optional LLM-assisted grounding. Returns None on any failure.
+
+    ``llm_invoke`` is a caller-provided ``(prompt) -> str`` closure over the
+    platform ``LLMRouter`` routing chains — this module never names a model.
+    The prompt asks the model to return strict JSON; anything unparseable makes
+    the caller fall back to the deterministic heuristic.
+    """
+    import json
+
+    context_block = "\n\n".join(f"[{i + 1}] {s}" for i, s in enumerate(snippets))
+    prompt = (
+        "You are a grounding judge. Decide how well the ANSWER is supported by "
+        "the CONTEXT. Respond with STRICT JSON only, no prose:\n"
+        '{"score": <float 0-1>, "ungrounded_claims": [<verbatim unsupported '
+        'sentences>]}\n\n'
+        f"CONTEXT:\n{context_block}\n\nANSWER:\n{output_text}\n"
+    )
+    try:
+        raw = llm_invoke(prompt)
+        if not raw:
+            return None
+        match = re.search(r"\{.*\}", raw, re.DOTALL)
+        data = json.loads(match.group(0) if match else raw)
+        score = float(data.get("score"))
+        score = min(1.0, max(0.0, score))
+        claims = [str(c) for c in (data.get("ungrounded_claims") or [])]
+        return {
+            "score": round(score, 4),
+            "ungrounded_claims": claims,
+            "method": "llm",
+            "sentence_count": len(_sentences(output_text)),
+        }
+    except Exception:  # noqa: BLE001 — LLM path is best-effort; heuristic is the floor
+        return None
 
 
 # ── Cross-section numeric consistency ─────────────────────────────────────────
