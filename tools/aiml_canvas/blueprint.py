@@ -64,6 +64,26 @@ except Exception:
 _AIMC_ENABLED = os.environ.get("ICDEV_AIML_CANVAS_ENABLED", "true").lower() not in ("0", "false", "no")
 
 
+def _load_scanned_inventory(project_id: str) -> dict | None:
+    """Return real scanned model inventory for ``project_id``, or None.
+
+    Reads through ``tools.aimc.model_scanner.scan_models`` (PR #507), which uses
+    the RLS-disabled canvas connection and returns an explicit ``no-data`` result
+    rather than fabricating demo values. Returns the scan dict only when it has
+    real rows (``status == 'success'``); otherwise None so the model-catalog page
+    shows nothing extra. Never raises — the catalog page must always render.
+    """
+    try:
+        from tools.aimc.model_scanner import scan_models
+        result = scan_models(project_id)
+    except Exception as exc:
+        log.warning("AIMC model-catalog scanned-inventory load failed: %s", exc)
+        return None
+    if isinstance(result, dict) and result.get("status") == "success":
+        return result
+    return None
+
+
 def create_aiml_blueprint() -> Blueprint | None:
     if not _AIMC_ENABLED:
         log.info("AIMC disabled via ICDEV_AIML_CANVAS_ENABLED=false")
@@ -145,10 +165,17 @@ def create_aiml_blueprint() -> Blueprint | None:
 
     @bp.route("/model-catalog")
     def model_catalog():
+        # Static catalog (FOUNDATION_MODELS) plus, when present, the real scanned
+        # inventory recorded in aimc_models for the given project. Empty/no-data
+        # inventory yields scanned=None and the page shows only the catalog.
+        project_id = request.args.get("project_id", "default")
+        scanned = _load_scanned_inventory(project_id)
         return render_template(
             "aiml_canvas/model_catalog.html",
             models=FOUNDATION_MODELS,
             il_levels=IL_LEVELS,
+            scanned=scanned,
+            scanned_project_id=project_id,
         )
 
     @bp.route("/assessments/<assessment_id>")
@@ -407,6 +434,19 @@ def create_aiml_blueprint() -> Blueprint | None:
         il_level = request.args.get("il_level", "IL4")
         ranked = adapt_eng.rank_models_for_il(il_level)
         return jsonify(ranked)
+
+    @bp.route("/api/scanned-inventory", methods=["GET"])
+    def api_scanned_inventory():
+        """Real scanned model inventory (aimc_models) for the model catalog.
+
+        Returns the scanner's ``success`` payload when inventory exists, or an
+        explicit ``no-data`` result — never fabricated demo values.
+        """
+        project_id = request.args.get("project_id", "default")
+        result = _load_scanned_inventory(project_id)
+        if result is None:
+            return jsonify({"status": "no-data", "project_id": project_id})
+        return jsonify(result)
 
     # ── API: Versions ─────────────────────────────────────────────────────────
 
