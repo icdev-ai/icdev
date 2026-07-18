@@ -6199,7 +6199,13 @@ TOOL_REGISTRY = {
         "category": "canvas",
         "module": "tools.canvas.orchestrator",
         "handler": "get_compliance_summary",
-        "description": "Aggregate compliance scores across all canvases linked to a project.",
+        # cnr-cc-02(c): NAME-COLLISION NOTE — this is the canvas *project-design*
+        # tool (tools.canvas.orchestrator), scoped to one project_id and the
+        # canvases linked to it. It is NOT the platform-wide compliance posture
+        # dashboard at /canvas-compliance (tools/canvas_compliance/ +
+        # tools/canvas_compliance/posture.py::compute_canvas_posture). Kept as-is
+        # by design; the description disambiguates the two rather than renaming.
+        "description": "Aggregate compliance scores across the canvases linked to a specific canvas PROJECT (project-design orchestrator). Distinct from the platform-wide Canvas Posture dashboard at /canvas-compliance.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -6239,7 +6245,10 @@ TOOL_REGISTRY = {
         "category": "canvas",
         "module": "tools.canvas.orchestrator",
         "handler": "compute_readiness",
-        "description": "Gate check: verify canvas project readiness meets thresholds for ATO/deploy.",
+        # cnr-cc-02(c): NAME-COLLISION NOTE — operates on a canvas PROJECT
+        # (project-design orchestrator), NOT the platform-wide Canvas Posture
+        # dashboard at /canvas-compliance. Kept as-is by design.
+        "description": "Gate check: verify a canvas PROJECT's readiness meets thresholds for ATO/deploy (project-design orchestrator). Distinct from the platform-wide Canvas Posture dashboard at /canvas-compliance.",
         "input_schema": {
             "type": "object",
             "properties": {

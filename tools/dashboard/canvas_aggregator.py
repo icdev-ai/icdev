@@ -193,7 +193,16 @@ def _dedup_key(f: dict) -> str:
 # ---------------------------------------------------------------------------
 
 def get_canvas_compliance_summary() -> list[dict]:
-    """Return a compliance summary row for each of the 7 canvases.
+    """Return a compliance summary row for each canvas.
+
+    cnr-cc-02: delegates to the canonical posture aggregator
+    (tools/canvas_compliance/posture.py) so the home index route, this summary,
+    and the MCP surfaces share ONE implementation instead of three parallel
+    ones. The posture module is backend-aware (reads each canvas through its own
+    init_db.get_connection(), honoring PG/SQLite), unlike the previous
+    implementation here which only scanned the stale per-canvas SQLite ``.db``
+    files and returned ``available=False`` for every canvas on a PostgreSQL
+    deployment.
 
     Each row::
 
@@ -201,131 +210,45 @@ def get_canvas_compliance_summary() -> list[dict]:
             "name":            str,   # human-readable canvas label
             "slug":            str,   # short identifier
             "latest_score":    float | None,
-            "grade":           str,   # letter grade or ""
+            "grade":           str,   # letter grade or "" (posture is numeric)
             "open_findings":   int,
             "closed_findings": int,
-            "last_assessed":   str,   # ISO timestamp or ""
-            "available":       bool,  # False when DB file doesn't exist
+            "last_assessed":   str,   # "" (posture aggregates latest per design)
+            "available":       bool,
         }
     """
     cached = _cache_get("compliance_summary")
     if cached is not None:
         return cached
 
-    results: list[dict] = []
+    from tools.canvas_compliance.posture import compute_canvas_posture
 
-    # --- JSON canvases ---
-    for (db, label, slug, atbl, score_col, grade_col, time_col, _, _) in _JSON_CANVASES:
-        path = DATA_DIR / db
-        conn = _get_canvas_conn(path)
-        row: dict[str, Any] = {
-            "name": label,
-            "slug": slug,
-            "latest_score": None,
-            "grade": "",
-            "open_findings": 0,
-            "closed_findings": 0,
-            "last_assessed": "",
-            "available": conn is not None,
-        }
-        if conn is None:
-            results.append(row)
-            continue
+    conn = get_connection()
+    try:
+        conn.set_security_context(None)  # rls-bypass: cross-canvas system aggregate; icdev tables read platform-wide with RLS disabled
+    except Exception:
+        pass
+    try:
+        posture, _overall = compute_canvas_posture(conn)
+    finally:
         try:
-            # Latest score / grade / timestamp from the most recent assessment.
-            grade_sel = f", {grade_col}" if grade_col else ""
-            r = conn.execute(
-                f"SELECT {score_col}{grade_sel}, {time_col} FROM {atbl}"  # nosec B608
-                f" ORDER BY {time_col} DESC LIMIT 1",
-            ).fetchone()
-            if r is not None:
-                r = dict(r)
-                row["latest_score"] = r.get(score_col)
-                if grade_col:
-                    row["grade"] = r.get(grade_col) or ""
-                row["last_assessed"] = r.get(time_col) or ""
+            conn.close()
+        except Exception:
+            pass
 
-            # Open / closed counts — scan most recent 10 assessments, de-dup.
-            arows = conn.execute(
-                f"SELECT findings_json FROM {atbl}"  # nosec B608
-                f" ORDER BY {time_col} DESC LIMIT 10",
-            ).fetchall()
-            seen: set[str] = set()
-            for arow in arows:
-                try:
-                    findings = json.loads(arow[0] or "[]")
-                except (json.JSONDecodeError, TypeError):
-                    findings = []
-                for f in findings:
-                    if not isinstance(f, dict):
-                        continue
-                    dk = _dedup_key(f)
-                    if dk in seen:
-                        continue
-                    seen.add(dk)
-                    status = (f.get("status") or "open").lower()
-                    if status in ("remediated", "accepted_risk", "false_positive"):
-                        row["closed_findings"] += 1
-                    else:
-                        row["open_findings"] += 1
-        except Exception as exc:
-            logger.warning(
-                "canvas_aggregator: compliance_summary failed for %s: %s", db, exc
-            )
-            _conn_cache.pop(str(path), None)
-        results.append(row)
-
-    # --- Direct canvases ---
-    for (db, label, slug, findings_tbl, checks_tbl, _, _) in _DIRECT_CANVASES:
-        path = DATA_DIR / db
-        conn = _get_canvas_conn(path)
-        row = {
-            "name": label,
-            "slug": slug,
-            "latest_score": None,
+    results: list[dict] = [
+        {
+            "name": row["name"],
+            "slug": row["name"].lower().replace("/", "_").replace(" ", "_"),
+            "latest_score": row.get("score"),
             "grade": "",
-            "open_findings": 0,
-            "closed_findings": 0,
+            "open_findings": row.get("open_findings", 0),
+            "closed_findings": row.get("closed_findings", 0),
             "last_assessed": "",
-            "available": conn is not None,
+            "available": True,
         }
-        if conn is None:
-            results.append(row)
-            continue
-        try:
-            # Derive score from latest compliance check (passed / total * 100).
-            r = conn.execute(
-                f"SELECT passed, failed, ran_at FROM {checks_tbl}"  # nosec B608
-                f" ORDER BY ran_at DESC LIMIT 1",
-            ).fetchone()
-            if r is not None:
-                r = dict(r)
-                passed = r.get("passed") or 0
-                failed = r.get("failed") or 0
-                total = passed + failed
-                if total > 0:
-                    row["latest_score"] = round(passed / total * 100, 1)
-                row["last_assessed"] = r.get("ran_at") or ""
-
-            # Open / closed from the findings table.
-            counts = conn.execute(
-                f"SELECT status, COUNT(*) AS cnt FROM {findings_tbl}"  # nosec B608
-                f" GROUP BY status",
-            ).fetchall()
-            for c in counts:
-                status = (c["status"] or "open").lower()
-                cnt = c["cnt"] or 0
-                if status in ("remediated", "accepted_risk", "false_positive"):
-                    row["closed_findings"] += cnt
-                else:
-                    row["open_findings"] += cnt
-        except Exception as exc:
-            logger.warning(
-                "canvas_aggregator: compliance_summary failed for %s: %s", db, exc
-            )
-            _conn_cache.pop(str(path), None)
-        results.append(row)
-
+        for row in posture
+    ]
     _cache_set("compliance_summary", results)
     return results
 
