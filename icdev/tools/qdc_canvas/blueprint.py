@@ -1318,6 +1318,52 @@ def api_collab_participants(design_id: str):
     return jsonify({"participants": rows, "count": len(rows)})
 
 
+# ===================================================================
+# API Endpoints — IQE natural-language query (cnr-qdc-03)
+# ===================================================================
+
+
+@qdc_bp.route("/api/iqe-query", methods=["POST"])
+def api_iqe_query():
+    """Answer a plain-English question over QDC collections via IQE.
+
+    Mirrors BI Studio's /api/iqe-query. Importing the adapter registers the
+    qdc.* collections on the module-level IQE Executor.
+    """
+    import importlib
+
+    data = request.get_json(silent=True) or {}
+    question = (data.get("question") or "").strip()
+    execute = data.get("execute", True)
+    if not question:
+        return jsonify({"error": "question is required"}), 400
+
+    try:
+        importlib.import_module("tools.iqe.adapters.qdc")
+    except Exception:
+        pass
+
+    iqe_str = ""
+    try:
+        from tools.iqe.executor import execute_query
+        from tools.iqe.nl_to_iqe import nl_to_iqe
+        from tools.iqe.parser import parse as _parse
+
+        collections = [
+            "qdc.designs",
+            "qdc.assessments",
+            "qdc.gate_results",
+            "qdc.ai_decisions",
+        ]
+        translation = nl_to_iqe(question, collections=collections)
+        iqe_str = translation["iqe"]
+        ast = _parse(iqe_str)
+        results = execute_query(ast, None) if execute else []
+        return jsonify({"iqe": iqe_str, "results": results, "row_count": len(results)})
+    except Exception as exc:
+        return jsonify({"error": str(exc), "iqe": iqe_str}), 500
+
+
 # ── Gate Execution API ─────────────────────────────────────────────────────
 
 
