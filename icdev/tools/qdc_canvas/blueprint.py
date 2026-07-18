@@ -82,6 +82,19 @@ qdc_bp = Blueprint(
     template_folder="../../tools/dashboard/templates",
 )
 
+# Initialize the QDC schema + seeds at blueprint import time (best-effort). This
+# is the module-level-blueprint equivalent of BI Studio's init_db() at
+# blueprint-factory creation (tools/bi_dashboard/blueprint.py:47-51). Guarded so
+# an unavailable DB never blocks dashboard startup; page routes also degrade
+# gracefully to empty lists if a table is still absent (cnr-qdc-04).
+try:
+    from tools.qdc_canvas.db.init_db import init_db as _qdc_init_db
+
+    _qdc_init_db()
+except Exception as _exc:  # pragma: no cover - defensive startup guard
+    logger.warning("QDC DB init at blueprint import failed: %s", _exc)
+
+
 # ---------------------------------------------------------------------------
 # Authentication (cnr-qdc-01)
 # ---------------------------------------------------------------------------
@@ -165,6 +178,43 @@ def _rows_to_list(rows) -> list[dict]:
     return [_row_to_dict(r) for r in rows]
 
 
+# --- Graceful fetch + pagination (cnr-qdc-04) -----------------------------
+
+_DEFAULT_PAGE_SIZE = 200
+_MAX_PAGE_SIZE = 500
+
+
+def _safe_rows(conn, sql: str, params=()) -> list[dict]:
+    """Fetch rows as dicts, degrading to [] if the table is absent or query fails.
+
+    Fresh-DB installs (before migrations/seeds run) must render the page rather
+    than 500. On PostgreSQL a failed statement aborts the transaction, so roll
+    back before returning so later queries on the same connection still work.
+    """
+    try:
+        return _rows_to_list(conn.execute(sql, params).fetchall())
+    except Exception as exc:
+        logger.debug("QDC list query degraded to empty: %s", exc)
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return []
+
+
+def _page_bounds() -> tuple[int, int]:
+    """Return (limit, offset) from ?page / ?per_page query args, safely bounded."""
+    try:
+        per_page = min(max(int(request.args.get("per_page", _DEFAULT_PAGE_SIZE)), 1), _MAX_PAGE_SIZE)
+    except (TypeError, ValueError):
+        per_page = _DEFAULT_PAGE_SIZE
+    try:
+        page = max(int(request.args.get("page", 1)), 1)
+    except (TypeError, ValueError):
+        page = 1
+    return per_page, (page - 1) * per_page
+
+
 def _audit(conn, design_id: str, action: str, detail: str = "", user: str = "system") -> None:
     """Write an append-only audit entry."""
     conn.execute(
@@ -181,18 +231,20 @@ def _audit(conn, design_id: str, action: str, detail: str = "", user: str = "sys
 @qdc_bp.route("/")
 def index():
     """List all designs and templates."""
+    limit, offset = _page_bounds()
     conn = _get_conn()
     try:
-        designs = _rows_to_list(
-            conn.execute(
-                "SELECT id, name, description, classification, created_at, updated_at "
-                "FROM qdc_designs ORDER BY updated_at DESC"
-            ).fetchall()
+        designs = _safe_rows(
+            conn,
+            "SELECT id, name, description, classification, created_at, updated_at "
+            "FROM qdc_designs ORDER BY updated_at DESC LIMIT %s OFFSET %s",
+            (limit, offset),
         )
-        templates = _rows_to_list(
-            conn.execute(
-                "SELECT id, name, category, description, compliance_target, tags FROM qdc_templates ORDER BY name"
-            ).fetchall()
+        templates = _safe_rows(
+            conn,
+            "SELECT id, name, category, description, compliance_target, tags "
+            "FROM qdc_templates ORDER BY name LIMIT %s OFFSET %s",
+            (limit, offset),
         )
     finally:
         conn.close()
@@ -251,25 +303,35 @@ def new_canvas():
 @qdc_bp.route("/canvas/<design_id>")
 def canvas_editor(design_id: str):
     """Canvas editor page for a specific design."""
+    limit, offset = _page_bounds()
     conn = _get_conn()
     try:
-        row = conn.execute("SELECT * FROM qdc_designs WHERE id = %s", (design_id,)).fetchone()
+        try:
+            row = conn.execute("SELECT * FROM qdc_designs WHERE id = %s", (design_id,)).fetchone()
+        except Exception as exc:
+            logger.debug("QDC canvas_editor design lookup degraded: %s", exc)
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            row = None
         if not row:
             return render_template(
                 "qdc_canvas/index.html", designs=[], templates=[], config=_QDC_CONFIG, error="Design not found"
             ), 404
         design_dict = _row_to_dict(row)
 
-        snippets_list = _rows_to_list(
-            conn.execute(
-                "SELECT id, name, category, description, graph_json, node_count, tags FROM qdc_snippets ORDER BY name"
-            ).fetchall()
+        snippets_list = _safe_rows(
+            conn,
+            "SELECT id, name, category, description, graph_json, node_count, tags "
+            "FROM qdc_snippets ORDER BY name LIMIT %s OFFSET %s",
+            (limit, offset),
         )
-        runbooks_list = _rows_to_list(
-            conn.execute(
-                "SELECT id, name, trigger_gate, auto_executable, confidence_threshold, "
-                "run_count, last_run FROM qdc_runbooks ORDER BY name"
-            ).fetchall()
+        runbooks_list = _safe_rows(
+            conn,
+            "SELECT id, name, trigger_gate, auto_executable, confidence_threshold, "
+            "run_count, last_run FROM qdc_runbooks ORDER BY name LIMIT %s OFFSET %s",
+            (limit, offset),
         )
     finally:
         conn.close()
@@ -290,12 +352,14 @@ def canvas_editor(design_id: str):
 @qdc_bp.route("/templates")
 def templates_page():
     """Template gallery page."""
+    limit, offset = _page_bounds()
     conn = _get_conn()
     try:
-        templates = _rows_to_list(
-            conn.execute(
-                "SELECT id, name, category, description, compliance_target, tags FROM qdc_templates ORDER BY name"
-            ).fetchall()
+        templates = _safe_rows(
+            conn,
+            "SELECT id, name, category, description, compliance_target, tags "
+            "FROM qdc_templates ORDER BY name LIMIT %s OFFSET %s",
+            (limit, offset),
         )
     finally:
         conn.close()
@@ -311,12 +375,14 @@ def templates_page():
 @qdc_bp.route("/snippets")
 def snippets_page():
     """Snippet library page."""
+    limit, offset = _page_bounds()
     conn = _get_conn()
     try:
-        snippets = _rows_to_list(
-            conn.execute(
-                "SELECT id, name, category, description, graph_json, node_count, tags FROM qdc_snippets ORDER BY name"
-            ).fetchall()
+        snippets = _safe_rows(
+            conn,
+            "SELECT id, name, category, description, graph_json, node_count, tags "
+            "FROM qdc_snippets ORDER BY name LIMIT %s OFFSET %s",
+            (limit, offset),
         )
     finally:
         conn.close()
@@ -333,16 +399,17 @@ def snippets_page():
 @qdc_bp.route("/assessments")
 def assessments_page():
     """Assessment history with UQS trends."""
+    limit, offset = _page_bounds()
     conn = _get_conn()
     try:
-        assessments = _rows_to_list(
-            conn.execute(
-                "SELECT a.id, a.design_id, a.score, a.uqs_score, a.created_at, "
-                "d.name AS design_name "
-                "FROM qdc_assessments a "
-                "LEFT JOIN qdc_designs d ON d.id = a.design_id "
-                "ORDER BY a.created_at DESC LIMIT 100"
-            ).fetchall()
+        assessments = _safe_rows(
+            conn,
+            "SELECT a.id, a.design_id, a.score, a.uqs_score, a.created_at, "
+            "d.name AS design_name "
+            "FROM qdc_assessments a "
+            "LEFT JOIN qdc_designs d ON d.id = a.design_id "
+            "ORDER BY a.created_at DESC LIMIT %s OFFSET %s",
+            (limit, offset),
         )
     finally:
         conn.close()
@@ -359,14 +426,15 @@ def assessments_page():
 @qdc_bp.route("/runbooks")
 def runbooks_page():
     """Runbook library page."""
+    limit, offset = _page_bounds()
     conn = _get_conn()
     try:
-        runbooks = _rows_to_list(
-            conn.execute(
-                "SELECT id, name, trigger_gate, body_markdown, auto_executable, "
-                "confidence_threshold, run_count, last_run, created_at "
-                "FROM qdc_runbooks ORDER BY name"
-            ).fetchall()
+        runbooks = _safe_rows(
+            conn,
+            "SELECT id, name, trigger_gate, body_markdown, auto_executable, "
+            "confidence_threshold, run_count, last_run, created_at "
+            "FROM qdc_runbooks ORDER BY name LIMIT %s OFFSET %s",
+            (limit, offset),
         )
     finally:
         conn.close()
@@ -383,14 +451,15 @@ def runbooks_page():
 @qdc_bp.route("/sops")
 def sops_page():
     """SOP library page."""
+    limit, offset = _page_bounds()
     conn = _get_conn()
     try:
-        sops = _rows_to_list(
-            conn.execute(
-                "SELECT id, sop_number, title, version, frequency, audience, "
-                "approval_status, classification, created_at, updated_at "
-                "FROM qdc_sops ORDER BY sop_number"
-            ).fetchall()
+        sops = _safe_rows(
+            conn,
+            "SELECT id, sop_number, title, version, frequency, audience, "
+            "approval_status, classification, created_at, updated_at "
+            "FROM qdc_sops ORDER BY sop_number LIMIT %s OFFSET %s",
+            (limit, offset),
         )
     finally:
         conn.close()
@@ -407,9 +476,18 @@ def sops_page():
 @qdc_bp.route("/remediation/<design_id>")
 def remediation_page(design_id: str):
     """Gap analysis / remediation view for a design."""
+    limit, offset = _page_bounds()
     conn = _get_conn()
     try:
-        row = conn.execute("SELECT * FROM qdc_designs WHERE id = %s", (design_id,)).fetchone()
+        try:
+            row = conn.execute("SELECT * FROM qdc_designs WHERE id = %s", (design_id,)).fetchone()
+        except Exception as exc:
+            logger.debug("QDC remediation design lookup degraded: %s", exc)
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            row = None
         if not row:
             return render_template(
                 "qdc_canvas/index.html", designs=[], templates=[], config=_QDC_CONFIG, error="Design not found"
@@ -417,16 +495,20 @@ def remediation_page(design_id: str):
         design_dict = _row_to_dict(row)
 
         # Get latest assessment
-        assess_row = conn.execute(
+        assess_rows = _safe_rows(
+            conn,
             "SELECT findings_json, score, uqs_score, uqs_breakdown "
             "FROM qdc_assessments WHERE design_id = %s ORDER BY created_at DESC LIMIT 1",
             (design_id,),
-        ).fetchone()
-        assessment = _row_to_dict(assess_row) if assess_row else {}
+        )
+        assessment = assess_rows[0] if assess_rows else {}
 
         # Get runbooks for remediation suggestions
-        runbooks = _rows_to_list(
-            conn.execute("SELECT id, name, trigger_gate, body_markdown FROM qdc_runbooks ORDER BY name").fetchall()
+        runbooks = _safe_rows(
+            conn,
+            "SELECT id, name, trigger_gate, body_markdown FROM qdc_runbooks "
+            "ORDER BY name LIMIT %s OFFSET %s",
+            (limit, offset),
         )
     finally:
         conn.close()

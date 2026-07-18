@@ -326,7 +326,7 @@ components:
     template: tools/dashboard/templates/qdc_canvas/index.html
     blueprint: true
     constants: tools/qdc_canvas/constants.py
-    db_migration: tools/qdc_canvas/db/migrations
+    db_migration: tools/qdc_canvas/db/init_db.py
     iqe_adapter: true
     nav_link: true
     seed_queries: context/iqe/queries/qdc/

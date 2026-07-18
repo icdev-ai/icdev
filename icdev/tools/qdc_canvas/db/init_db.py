@@ -37,7 +37,16 @@ def get_connection():
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
-    return conn
+    try:
+        # Wrap so the %s placeholders used across init_db + blueprint + IQE
+        # adapter translate to ? on SQLite (mirrors tools/security_canvas). Without
+        # this the raw sqlite3 connection raises "near %: syntax error" on every
+        # seed/query, and the canvas is unusable on the SQLite backend.
+        from tools.db.storage import StorageConnection
+
+        return StorageConnection(conn, "sqlite")
+    except Exception:
+        return conn
 
 
 SCHEMA = """
