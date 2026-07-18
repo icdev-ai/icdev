@@ -23,6 +23,8 @@
   .badge-pending_review { background: #1a237e33; color: #7986cb; }
   .badge-revoked { background: #4a148c33; color: #ce93d8; }
   .isa-empty { color: #7a8cb0; padding: 40px 30px; text-align: center; font-size: 14px; }
+  .isa-sc-link { color: #f0883e; text-decoration: none; font-size: 12px; font-weight: 600; white-space: nowrap; }
+  .isa-sc-link:hover { text-decoration: underline; }
 </style>
 
 <div class="isa-hero">
@@ -55,6 +57,7 @@
         <th>Expiry Date</th>
         <th>Owner</th>
         <th>Review Date</th>
+        <th>Supply Chain</th>
       </tr>
     </thead>
     <tbody>
@@ -66,6 +69,8 @@
         <td>{{ isa.expiry_date or '-' }}</td>
         <td>{{ isa.owner or '-' }}</td>
         <td>{{ isa.review_date or '-' }}</td>
+        <td><a class="isa-sc-link" href="/supply_chain#isa"
+               title="View SCRM / CVE posture for this interconnection">View in Supply Chain &rarr;</a></td>
       </tr>
       {% endfor %}
     </tbody>
