@@ -1423,17 +1423,17 @@ def create_observability_blueprint():
         if not design:
             return render_template("404.html"), 404
         design = _row_to_dict(design)
+        # Read snapshots through the same code path take_snapshot writes to
+        # (twin.list_snapshots → canvas connection), so read DB == write DB.
         try:
-            snapshots = conn.execute(
-                "SELECT * FROM odc_twin_snapshots WHERE design_id=%s ORDER BY created_at DESC LIMIT 20",
-                (design_id,),
-            ).fetchall()
+            from tools.observability_canvas.twin import list_snapshots
+            snapshots = list_snapshots(design_id)
         except Exception:
             snapshots = []
         return render_template(
             "observability_canvas/twin.html",
             design=design,
-            snapshots=[_row_to_dict(s) for s in snapshots],
+            snapshots=snapshots,
         )
 
     @bp.route("/api/twin/<design_id>/snapshot", methods=["POST"])
@@ -1441,7 +1441,14 @@ def create_observability_blueprint():
     def oc_api_twin_snapshot(design_id):
         from tools.observability_canvas.twin import take_snapshot
         data = request.get_json(silent=True) or {}
-        snap = take_snapshot(design_id, label=data.get("label"))
+        try:
+            snap = take_snapshot(design_id, label=data.get("label"))
+        except ValueError as exc:
+            # Unknown design — surface a 404 rather than a fake 201.
+            return jsonify({"error": str(exc)}), 404
+        except Exception as exc:
+            # Persist failure — surface a 500 rather than a fake 201.
+            return jsonify({"error": f"snapshot persist failed: {exc}"}), 500
         return jsonify(snap), 201
 
     @bp.route("/api/twin/<design_id>/simulate", methods=["POST"])

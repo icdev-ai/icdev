@@ -2221,6 +2221,36 @@ CREATE TABLE IF NOT EXISTS ace_webhook_log (
     last_attempted_at TEXT,
     created_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+-- Observability Design Canvas (ODC) — twin snapshot round-trip + projections.
+CREATE TABLE IF NOT EXISTS observability_designs (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    description     TEXT,
+    graph_json      TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[]}',
+    template_id     TEXT,
+    classification  TEXT DEFAULT 'CUI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS od_assessments (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT,
+    assessment_type TEXT NOT NULL,
+    findings_json   TEXT DEFAULT '[]',
+    score           REAL DEFAULT 0,
+    grade           TEXT DEFAULT 'F',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS odc_twin_snapshots (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT NOT NULL,
+    label           TEXT NOT NULL DEFAULT '',
+    service_count   INTEGER NOT NULL DEFAULT 0,
+    coverage_score  REAL NOT NULL DEFAULT 0.0,
+    coverage_basis  TEXT NOT NULL DEFAULT 'no_assessment',
+    payload_json    TEXT NOT NULL DEFAULT '{}',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 
