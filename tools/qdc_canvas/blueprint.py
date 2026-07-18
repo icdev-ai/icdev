@@ -260,6 +260,7 @@ def index():
 def new_canvas():
     """Create a new design, optionally from a template."""
     template_id = request.args.get("template")
+    project_id = request.args.get("project_id")
     graph_json = '{"nodes":[],"edges":[]}'
     name = "Untitled Quality Design"
 
@@ -288,9 +289,9 @@ def new_canvas():
     try:
         conn.execute(
             "INSERT INTO qdc_designs "
-            "(id, name, description, graph_json, template_id, classification, "
-            "created_at, updated_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
-            (design_id, name, "", graph_json, template_id, "CUI", now, now),
+            "(id, name, description, graph_json, template_id, project_id, classification, "
+            "created_at, updated_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            (design_id, name, "", graph_json, template_id, project_id, "CUI", now, now),
         )
         conn.commit()
         _audit(conn, design_id, "create", f"Created from template={template_id}")
@@ -569,6 +570,7 @@ def api_save_design(design_id: str):
         now = _utcnow()
         graph_json = data.get("graph_json")
         name = data.get("name")
+        project_id = data.get("project_id")
 
         updates = ["updated_at = ?"]
         params: list = [now]
@@ -579,6 +581,11 @@ def api_save_design(design_id: str):
         if name is not None:
             updates.append("name = ?")
             params.append(name)
+        # cnr-qdc-05: project_id (schema column) is now writable so a design can
+        # be associated with an owning project rather than being permanently null.
+        if project_id is not None:
+            updates.append("project_id = ?")
+            params.append(project_id)
 
         params.append(design_id)
         conn.execute(
@@ -643,9 +650,6 @@ def api_delete_all_designs():
 @qdc_bp.route("/api/designs/<design_id>/assess", methods=["POST"])
 def api_assess_design(design_id: str):
     """Run quality assessment on a design."""
-    data = request.get_json(silent=True) or {}
-    use_cod = data.get("use_cod", False)
-    chain_mode = "cod" if use_cod else ""
     conn = _get_conn()
     try:
         row = conn.execute("SELECT graph_json FROM qdc_designs WHERE id = %s", (design_id,)).fetchone()
@@ -755,7 +759,6 @@ def api_assess_design(design_id: str):
             "result": result,
             "uqs": uqs_result,
             "sa11_mapping": sa11_mapping,
-            "chain_mode": chain_mode,
         }
     )
 
@@ -1332,15 +1335,33 @@ def api_collab_leave(design_id: str):
 
 @qdc_bp.route("/api/collab/<design_id>/push", methods=["POST"])
 def api_collab_push(design_id: str):
-    """Push an operation to the collaboration session."""
+    """Push an operation to the collaboration session and persist it.
+
+    cnr-qdc-05: previously this endpoint reported ``{"ok": True}`` but dropped the
+    operation on the floor — poll then returned only presence, so no operation
+    sync ever occurred. Now the op is appended to ``qdc_collab_ops`` with a
+    monotonic per-design ``seq`` (same MAX+1 pattern as version snapshots) so
+    peers can replay it via poll's ``?since=`` cursor.
+    """
     data = request.get_json(silent=True) or {}
     session_id = data.get("session_id", "")
+    user_id = data.get("user_id", "")
     operation = data.get("operation", {})
 
     conn = _get_conn()
     try:
-        # Update last_seen
         now = _utcnow()
+        max_row = conn.execute(
+            "SELECT COALESCE(MAX(seq), 0) FROM qdc_collab_ops WHERE design_id = %s",
+            (design_id,),
+        ).fetchone()
+        next_seq = (max_row[0] if max_row else 0) + 1
+        conn.execute(
+            "INSERT INTO qdc_collab_ops "
+            "(id, design_id, seq, session_id, user_id, operation, created_at) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s)",
+            (_gen_id(), design_id, next_seq, session_id, user_id, json.dumps(operation), now),
+        )
         conn.execute(
             "UPDATE qdc_collab_sessions SET last_seen = %s WHERE id = %s",
             (now, session_id),
@@ -1349,22 +1370,37 @@ def api_collab_push(design_id: str):
     finally:
         conn.close()
 
-    return jsonify({"ok": True, "received_at": now, "operation": operation})
+    return jsonify({"ok": True, "seq": next_seq, "received_at": now, "operation": operation})
 
 
 @qdc_bp.route("/api/collab/<design_id>/poll", methods=["GET"])
 def api_collab_poll(design_id: str):
-    """Poll for collaboration updates."""
+    """Poll for collaboration updates — participants plus operations since a cursor.
+
+    cnr-qdc-05: replays operations pushed by peers. Pass ``?since=<seq>`` (the
+    ``cursor`` from the previous poll, default 0) to receive only newer ops; the
+    returned ``cursor`` is the highest seq seen so the client can advance.
+    """
+    try:
+        since = int(request.args.get("since", 0))
+    except (TypeError, ValueError):
+        since = 0
+
     conn = _get_conn()
     try:
-        participants = _rows_to_list(
-            conn.execute(
-                "SELECT id, user_id, user_name, color, last_seen "
-                "FROM qdc_collab_sessions "
-                "WHERE design_id = %s AND is_active = 1 "
-                "ORDER BY joined_at",
-                (design_id,),
-            ).fetchall()
+        participants = _safe_rows(
+            conn,
+            "SELECT id, user_id, user_name, color, last_seen "
+            "FROM qdc_collab_sessions "
+            "WHERE design_id = %s AND is_active = 1 "
+            "ORDER BY joined_at",
+            (design_id,),
+        )
+        operations = _safe_rows(
+            conn,
+            "SELECT seq, session_id, user_id, operation, created_at "
+            "FROM qdc_collab_ops WHERE design_id = %s AND seq > %s ORDER BY seq ASC",
+            (design_id, since),
         )
         row = conn.execute(
             "SELECT graph_json, updated_at FROM qdc_designs WHERE id = %s",
@@ -1373,9 +1409,20 @@ def api_collab_poll(design_id: str):
         design_state = _row_to_dict(row) if row else {}
     finally:
         conn.close()
+
+    for op in operations:
+        raw = op.get("operation", "{}")
+        try:
+            op["operation"] = json.loads(raw) if isinstance(raw, str) else raw
+        except (json.JSONDecodeError, TypeError):
+            op["operation"] = {}
+
+    cursor = operations[-1]["seq"] if operations else since
     return jsonify(
         {
             "participants": participants,
+            "operations": operations,
+            "cursor": cursor,
             "design_updated_at": design_state.get("updated_at", ""),
         }
     )
