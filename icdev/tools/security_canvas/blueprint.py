@@ -2342,6 +2342,11 @@ def create_security_blueprint():
             conn.commit()
         finally:
             conn.close()
+        # Non-repudiation: capability status + evidence writes are audited.
+        _audit(
+            "zig_capability_status_change", "zig_capability", cap_id,
+            details=f"status={new_status}; evidence={'yes' if evidence_note else 'no'}",
+        )
         return jsonify({"ok": True, "id": cap_id, "implementation_status": new_status})
 
     @bp.route("/api/zig/activities")
@@ -2383,6 +2388,12 @@ def create_security_blueprint():
         completed_by = data.get("completed_by")
         try:
             result = set_activity_status(activity_id, status, evidence_note, completed_by)
+            # Non-repudiation: activity completion + evidence writes are audited.
+            _audit(
+                "zig_activity_completion", "zig_activity", activity_id,
+                details=(f"target=icdev-self; status={status}; "
+                         f"evidence={'yes' if evidence_note else 'no'}"),
+            )
             return jsonify({"ok": True, **result})
         except ValueError as e:
             return jsonify({"ok": False, "error": str(e)}), 400
@@ -2423,6 +2434,11 @@ def create_security_blueprint():
             }), 400
         try:
             result = run_zig_assessment()
+            # Non-repudiation: assessment runs are audited.
+            _audit(
+                "zig_assessment_run", "zig_target", "icdev-self",
+                details=f"scope=global; aggregate={result.get('aggregate', {}).get('score')}",
+            )
             return jsonify({"ok": True, **result})
         except Exception as exc:
             return jsonify({"ok": False, "error": str(exc)}), 500
@@ -2537,6 +2553,11 @@ def create_security_blueprint():
         from tools.security_canvas.zig_portfolio import get_target_assessment
         try:
             result = get_target_assessment(target_id)
+            # Non-repudiation: target-scoped assessment runs are audited.
+            _audit(
+                "zig_assessment_run", "zig_target", target_id,
+                details=f"scope=target; aggregate={result.get('aggregate', {}).get('score')}",
+            )
             return jsonify({"ok": True, **result})
         except Exception as exc:
             return jsonify({"ok": False, "error": str(exc)}), 500
@@ -2549,11 +2570,20 @@ def create_security_blueprint():
         data = request.get_json(force=True, silent=True) or {}
         status = data.get("status", "in_progress")
         try:
+            evidence_note = data.get("evidence_note")
             result = set_activity_status(
                 activity_id, status,
                 target_id=target_id,
-                evidence_note=data.get("evidence_note"),
+                evidence_note=evidence_note,
                 completed_by=data.get("completed_by", "api"),
+            )
+            # Non-repudiation: per-target activity completion + evidence writes
+            # are audited (entity_id is the target-scoped completion key).
+            _audit(
+                "zig_activity_completion", "zig_activity",
+                f"{target_id}:{activity_id}",
+                details=(f"target={target_id}; status={status}; "
+                         f"evidence={'yes' if evidence_note else 'no'}"),
             )
             return jsonify({"ok": True, **result})
         except ValueError as exc:

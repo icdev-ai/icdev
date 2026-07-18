@@ -603,6 +603,10 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # retention (review finding P1-7), not an audit record.
         "pc_audit",
         "pipeline_snapshots",
+        # Security Design Canvas (migration 272, NIST AU) — sc_audit carries DB-level
+        # immutability triggers (sc_audit_no_update/no_delete); non-repudiation trail
+        # for ZIG capability/activity/evidence/assessment writes (cnr-zig-03)
+        "sc_audit",
     ]
 
     if tool_name == "Bash":

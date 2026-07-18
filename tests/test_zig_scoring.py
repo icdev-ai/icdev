@@ -81,6 +81,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_zig_comp_act
 CREATE TABLE IF NOT EXISTS zig_maturity_scores (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
     pillar_slug         TEXT NOT NULL,
+    target_id           TEXT NOT NULL DEFAULT 'icdev-self',
     score               REAL NOT NULL DEFAULT 0.0,
     maturity_level      TEXT,
     capability_count    INTEGER DEFAULT 0,
@@ -311,6 +312,41 @@ def test_score_all_pillars_returns_seven_with_metadata(conn):
     for r in results:
         for key in ("name", "full_name", "color", "icon", "pillar_weight"):
             assert key in r
+
+
+def test_score_all_pillars_accepts_target_id_kwarg(conn):
+    """Regression (cnr-zig-01): /security/zig/portfolio calls
+    score_all_pillars(target_id='icdev-self'). The signature must accept the
+    kwarg — the old no-arg signature raised TypeError, which the page swallowed
+    (pillar_scores=[]) so the portfolio rendered all-zero on every visit. This
+    calls the REAL function (only get_connection is patched), so a signature
+    regression fails here instead of silently emptying the page."""
+    from tools.security_canvas.zig_pillar_scorer import score_all_pillars
+
+    with patch_conn(conn):
+        results = score_all_pillars(target_id="icdev-self")
+
+    assert len(results) == len(ZIG_PILLARS) == 7
+
+
+def test_score_pillar_completions_are_target_scoped(conn):
+    """cnr-zig-01/02: a completion recorded for one target must not inflate a
+    different target's pillar score."""
+    _add_cap(conn, "cap-A", "user", "not_started")
+    _add_act(conn, "a1", "cap-A")
+    _add_completion(conn, "a1", "complete", target="external-target")
+    conn.commit()
+
+    from tools.security_canvas.zig_pillar_scorer import score_pillar
+
+    with patch_conn(conn):
+        selfd = score_pillar("user", target_id="icdev-self")
+        externald = score_pillar("user", target_id="external-target")
+
+    # The lone completion belongs to external-target, not icdev-self.
+    assert selfd["complete_activities"] == 0
+    assert externald["complete_activities"] == 1
+    assert externald["score"] > selfd["score"]
 
 
 def test_aggregate_zig_score_weighted_average(conn):
@@ -749,3 +785,77 @@ def test_bulk_activity_status_returns_count(conn):
         "SELECT COUNT(*) FROM zig_activity_completions WHERE status='complete'"
     ).fetchone()[0]
     assert total == 3
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 4. cnr-zig-02 — end-to-end target scoping (set_activity_status -> score -> run)
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+def test_set_activity_status_writes_to_given_target(conn):
+    """cnr-zig-02: the completion INSERT lands on the supplied target_id, not the
+    'icdev-self' default. Calls the REAL function (get_connection patched)."""
+    _add_cap(conn, "cap-A", "user", "not_started")
+    _add_act(conn, "a1", "cap-A")
+    conn.commit()
+
+    from tools.security_canvas.zig_activity_tracker import set_activity_status
+
+    with patch_conn(conn):
+        result = set_activity_status("a1", "complete", target_id="tgt-z")
+
+    assert result["target_id"] == "tgt-z"
+    row = conn.execute(
+        "SELECT target_id, status FROM zig_activity_completions WHERE activity_id=?",
+        ("a1",),
+    ).fetchone()
+    assert row["target_id"] == "tgt-z"
+    assert row["status"] == "complete"
+
+
+def test_same_activity_two_targets_recorded_and_scored_independently(conn):
+    """cnr-zig-02 acceptance: two targets record independent completions on the
+    same activity graph and receive independent pillar scores."""
+    _add_cap(conn, "cap-A", "user", "not_started")
+    _add_act(conn, "a1", "cap-A")
+    _add_act(conn, "a2", "cap-A")
+    conn.commit()
+
+    from tools.security_canvas.zig_activity_tracker import set_activity_status
+    from tools.security_canvas.zig_pillar_scorer import score_pillar
+
+    with patch_conn(conn):
+        set_activity_status("a1", "complete", target_id="tgt-a")
+        set_activity_status("a2", "complete", target_id="tgt-a")
+        set_activity_status("a1", "in_progress", target_id="tgt-b")
+
+        score_a = score_pillar("user", target_id="tgt-a")
+        score_b = score_pillar("user", target_id="tgt-b")
+
+    # Independent completion rows (unique index on activity_id+target_id).
+    n = conn.execute("SELECT COUNT(*) FROM zig_activity_completions").fetchone()[0]
+    assert n == 3
+    assert score_a["complete_activities"] == 2
+    assert score_a["in_progress_activities"] == 0
+    assert score_b["complete_activities"] == 0
+    assert score_b["in_progress_activities"] == 1
+    assert score_a["score"] > score_b["score"]
+
+
+def test_run_zig_assessment_persists_rows_tagged_by_target(conn):
+    """cnr-zig-02: persisted zig_maturity_scores rows carry the assessed target,
+    so per-target history stays separable for the portfolio comparison."""
+    from tools.security_canvas.zig_assessor import run_zig_assessment
+
+    with patch.dict(sys.modules, {"tools.devsecops.zta_maturity_scorer": None}):
+        with patch_conn(conn):
+            result = run_zig_assessment(target_id="tgt-x")
+
+    assert result["target_id"] == "tgt-x"
+    tgts = [
+        r["target_id"]
+        for r in conn.execute(
+            "SELECT DISTINCT target_id FROM zig_maturity_scores"
+        ).fetchall()
+    ]
+    assert tgts == ["tgt-x"]
