@@ -8,13 +8,25 @@ Target dossier: rdoss-903cbd6858e5 (Server Migration Analysis)
 Target session: rsess-1e2fb0fe6c96
 """
 from __future__ import annotations
+
+import sqlite3
 from tools.logging.icdev_logger import get_logger
 
 from typing import Optional
 
-from tools.db.storage import get_connection
+from tools.db.storage import sql_placeholder
+from tools.migration_canvas.db.init_db import get_connection
 
 logger = get_logger("icdev.migration_canvas.dossier_advisor")
+
+# DB error types to tolerate (backend unavailable / transient query error).
+# Narrower than a bare ``except Exception`` so genuine programming errors surface.
+try:  # pragma: no cover - psycopg2 optional in sqlite-only environments
+    import psycopg2  # type: ignore
+
+    _DB_ERRORS: tuple[type[BaseException], ...] = (sqlite3.Error, psycopg2.Error)
+except ImportError:  # pragma: no cover
+    _DB_ERRORS = (sqlite3.Error,)
 
 TARGET_DOSSIER_ID = "rdoss-903cbd6858e5"
 TARGET_SESSION_ID = "rsess-1e2fb0fe6c96"
@@ -91,17 +103,21 @@ def get_guidance_for_step(
         return []
 
     try:
+        # Canvas-safe connection (RLS disabled) so the research_challenges read
+        # is not filtered by the global RLS predicate, and so a single backend
+        # is resolved consistently for placeholder selection.
         conn = get_connection()
-        placeholders = ", ".join("?" * len(categories))
+        ph = sql_placeholder(conn)
+        in_clause = ", ".join([ph] * len(categories))
         rows = conn.execute(
             f"""
             SELECT rc.title, rc.description, rc.severity, rc.category
             FROM   research_challenges rc
-            WHERE  rc.session_id = %s
-              AND  rc.category IN ({placeholders})
+            WHERE  rc.session_id = {ph}
+              AND  rc.category IN ({in_clause})
               AND  rc.composite_score IS NOT NULL
             ORDER  BY rc.composite_score DESC
-            LIMIT  %s
+            LIMIT  {ph}
             """,
             [TARGET_SESSION_ID, *categories, top_k],
         ).fetchall()
@@ -114,8 +130,11 @@ def get_guidance_for_step(
             }
             for r in rows
         ]
-    except Exception as exc:
-        logger.debug("Dossier DB unavailable for step %d: %s", wizard_step, exc)
+    except _DB_ERRORS as exc:
+        logger.warning(
+            "Dossier DB query failed for step %d (%s): %s",
+            wizard_step, type(exc).__name__, exc,
+        )
         return []
 
 
