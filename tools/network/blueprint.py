@@ -135,6 +135,8 @@ def create_network_blueprint():
         _crud_create,
         _crud_delete,
         _NDC_LIFECYCLE,
+        get_parsed_graph,
+        invalidate_parsed_graph,
     )
 
     # ── Load config ────────────────────────────────────────────────────────
@@ -340,10 +342,11 @@ def create_network_blueprint():
 
         # Upcoming EOL (devices across all topologies)
         eol_alerts = []
-        for r in conn.execute("SELECT t.name AS topo_name, t.graph_json FROM topologies t LIMIT 20").fetchall():
-            try:
-                graph = json.loads(r["graph_json"])
-            except Exception:
+        for r in conn.execute("SELECT t.id AS topo_id, t.name AS topo_name FROM topologies t LIMIT 20").fetchall():
+            topo_id = r["topo_id"] if hasattr(r, "keys") else r[0]
+            # Read-only iteration → take the shared cached parse (ndc-perf-02).
+            graph = get_parsed_graph(conn, topo_id)
+            if not graph:
                 continue
             for n in graph.get("nodes", []):
                 cfg = n.get("config") or n.get("configData") or {}
@@ -1751,6 +1754,7 @@ def create_network_blueprint():
         conn.execute(f"UPDATE topologies SET {', '.join(fields)} WHERE id={_ph}", values)  # nosec B608 -- table/column names are internal constants, not user input
         conn.commit()
         conn.close()
+        invalidate_parsed_graph(topo_id)  # same-timestamp-save safety (ndc-perf-02)
         _audit("UPDATE", "topology", topo_id)
         # Hook: notify Security Design Canvas of topology change
         sdc_assessment = None
@@ -3189,6 +3193,7 @@ def create_network_blueprint():
         )
         conn.commit()
         conn.close()
+        invalidate_parsed_graph(topo_id)  # ndc-perf-02
         return jsonify({"reclassified": changed, "total_nodes": len(graph.get("nodes", []))})
 
     # ══════════════════════════════════════════════════════════════════════
@@ -6156,6 +6161,7 @@ def create_network_blueprint():
         conn.execute(f"UPDATE topologies SET graph_json={_ph}, updated_at={_ph} WHERE id={_ph}", (json.dumps(graph), now, topo_id))
         conn.commit()
         conn.close()
+        invalidate_parsed_graph(topo_id)  # ndc-perf-02
         return jsonify(
             {
                 "updated_devices": updated,
@@ -7250,6 +7256,7 @@ def create_network_blueprint():
             )
             conn.commit()
             conn.close()
+            invalidate_parsed_graph(topo_id)  # ndc-perf-02
             _audit("COMPLIANCE_FIX", "topology", topo_id, detail)
             return jsonify({"applied": True, "detail": detail})
         conn.close()
@@ -8163,6 +8170,7 @@ def create_network_blueprint():
                     f"UPDATE topologies SET graph_json={_ph}, updated_at={_ph} WHERE id={_ph}", (json.dumps(graph), now, topo_id)
                 )
                 conn.commit()
+                invalidate_parsed_graph(topo_id)  # ndc-perf-02
             conn.close()
         csp_labels = {"aws": "AWS", "azure": "Azure", "gcp": "GCP", "oci": "OCI", "ibm": "IBM Cloud"}
         label = data.get("label", csp_labels.get(csp, csp.upper()))
@@ -8248,6 +8256,7 @@ def create_network_blueprint():
                             f"UPDATE topologies SET graph_json={_ph}, updated_at={_ph} WHERE id={_ph}",
                             (json.dumps(graph), _now(), topo_id),
                         )
+                        invalidate_parsed_graph(topo_id)  # ndc-perf-02
             except Exception:
                 pass
         conn.execute(f"DELETE FROM nc_groups WHERE parent_id={_ph}", (gid,))
@@ -12115,17 +12124,16 @@ Respond with ONLY this JSON (no other text):
             return jsonify({"iqe": iqe_str, "explanation": explanation}), 200
 
         conn = get_connection()
-        _ph = sql_placeholder(conn)
         try:
             ast = parse(iqe_str)
 
             # Build adapters for topology node/edge data
             def _nodes_adapter(c):
-                row = c.execute(f"SELECT graph_json FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
-                if not row:
+                # Read-only — take the shared cached parse (ndc-perf-02); the
+                # sibling _edges_adapter reuses it as a hit within this query.
+                graph = get_parsed_graph(c, topo_id)
+                if graph is None:
                     return []
-                import json as _json
-                graph = _json.loads(row["graph_json"] or "{}")
                 cells = graph.get("cells") or []
                 result = []
                 for cell in cells:
@@ -12151,11 +12159,11 @@ Respond with ONLY this JSON (no other text):
                 return result
 
             def _edges_adapter(c):
-                row = c.execute(f"SELECT graph_json FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
-                if not row:
+                # Read-only — shared cached parse (ndc-perf-02); typically a hit
+                # after _nodes_adapter primed the cache for this topology.
+                graph = get_parsed_graph(c, topo_id)
+                if graph is None:
                     return []
-                import json as _json
-                graph = _json.loads(row["graph_json"] or "{}")
                 cells = graph.get("cells") or []
                 result = []
                 for cell in cells:

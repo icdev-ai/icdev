@@ -1,7 +1,10 @@
 # CUI // SP-CTI
 """Network Design Canvas — Blueprint helper functions."""
 
+import json
 import uuid
+from collections import OrderedDict
+from copy import deepcopy
 from datetime import datetime, timezone
 from functools import wraps
 
@@ -95,6 +98,113 @@ def col_exists(conn, table: str, col: str) -> bool:
     if exists:
         _COL_EXISTS_CACHE[key] = True
     return exists
+
+
+# ── Parsed-graph LRU cache (ndc-perf-02) ───────────────────────────────────────
+# `topologies.graph_json` is a large JSON blob that runtime routes json.loads
+# ~126 times (a dashboard EOL loop parses up to 20 blobs per render; the IQE
+# node/edge adapters parse the same blob twice per query; the enricher re-parses
+# on every call). Parsing large blobs repeatedly is pure waste when the row has
+# not changed. This bounded module-level LRU memoizes the parse keyed by
+# (topo_id, updated_at): because `updated_at` is bumped on every save, a stale
+# entry can never be served — its key simply stops matching and the entry ages
+# out. `invalidate_parsed_graph()` is a belt-and-suspenders hook for the rare
+# same-timestamp save.
+#
+# MUTATION-SAFETY CONTRACT: the cached dict is SHARED. Callers MUST treat the
+# returned value as read-only. Sites that mutate the graph (e.g. the enricher
+# rebuilds nodes and rewrites device config) MUST pass ``copy=True`` to receive
+# a private deepcopy; mutating the shared object would corrupt every concurrent
+# reader. Read-only sites (dashboard EOL loop, IQE adapters) take the shared
+# object directly to avoid the copy cost.
+_PARSED_GRAPH_CACHE: "OrderedDict[tuple, dict]" = OrderedDict()
+_PARSED_GRAPH_MAX = 64
+_PARSED_GRAPH_STATS = {"hits": 0, "misses": 0, "evictions": 0}
+
+
+def _scalar(row, key, idx):
+    """Read a column from a StorageConnection row (dict-like or tuple)."""
+    if row is None:
+        return None
+    if hasattr(row, "keys"):
+        return row[key]
+    return row[idx]
+
+
+def get_parsed_graph(conn, topo_id, copy: bool = False):
+    """Return the parsed ``graph_json`` dict for a topology, memoized.
+
+    Fetches ``updated_at`` (cheap PK lookup) on every call to key the cache;
+    ``graph_json`` is fetched and parsed ONLY on a miss. The cache is keyed by
+    (topo_id, updated_at) so a saved topology (which bumps ``updated_at``)
+    naturally misses and re-parses — stale data can never be served.
+
+    Args:
+        conn: A canvas StorageConnection (``get_connection()`` / canvas conn).
+        topo_id: Topology primary key.
+        copy: When True return a private ``deepcopy`` safe to mutate. Default
+            False returns the SHARED cached object — the caller MUST NOT mutate
+            it (see the module contract above).
+
+    Returns:
+        The parsed graph dict, or ``None`` if the topology row does not exist.
+    """
+    stamp_row = conn.execute(
+        "SELECT updated_at FROM topologies WHERE id = %s", (topo_id,)
+    ).fetchone()
+    if stamp_row is None:
+        return None
+    updated_at = _scalar(stamp_row, "updated_at", 0)
+    key = (topo_id, updated_at)
+
+    cached = _PARSED_GRAPH_CACHE.get(key)
+    if cached is not None:
+        _PARSED_GRAPH_CACHE.move_to_end(key)
+        _PARSED_GRAPH_STATS["hits"] += 1
+        return deepcopy(cached) if copy else cached
+
+    # Miss — fetch the blob and parse it exactly once.
+    row = conn.execute(
+        "SELECT graph_json FROM topologies WHERE id = %s", (topo_id,)
+    ).fetchone()
+    if row is None:
+        return None
+    raw = _scalar(row, "graph_json", 0)
+    parsed = json.loads(raw or '{"nodes":[],"edges":[]}')
+    _PARSED_GRAPH_STATS["misses"] += 1
+    _PARSED_GRAPH_CACHE[key] = parsed
+    _PARSED_GRAPH_CACHE.move_to_end(key)
+    while len(_PARSED_GRAPH_CACHE) > _PARSED_GRAPH_MAX:
+        _PARSED_GRAPH_CACHE.popitem(last=False)
+        _PARSED_GRAPH_STATS["evictions"] += 1
+    return deepcopy(parsed) if copy else parsed
+
+
+def invalidate_parsed_graph(topo_id) -> int:
+    """Drop every cached parse for a topology (all ``updated_at`` variants).
+
+    Called from graph-save routes for same-timestamp-save safety. Returns the
+    number of entries removed.
+    """
+    stale = [k for k in _PARSED_GRAPH_CACHE if k[0] == topo_id]
+    for k in stale:
+        _PARSED_GRAPH_CACHE.pop(k, None)
+    return len(stale)
+
+
+def parsed_graph_cache_stats() -> dict:
+    """Lightweight debug hook — current cache effectiveness counters."""
+    return {
+        **_PARSED_GRAPH_STATS,
+        "size": len(_PARSED_GRAPH_CACHE),
+        "max": _PARSED_GRAPH_MAX,
+    }
+
+
+def parsed_graph_cache_clear() -> None:
+    """Reset cache + counters (test isolation; not used in runtime paths)."""
+    _PARSED_GRAPH_CACHE.clear()
+    _PARSED_GRAPH_STATS.update(hits=0, misses=0, evictions=0)
 
 
 def _normalize_sop_step(step: dict) -> dict:
