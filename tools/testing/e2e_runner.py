@@ -102,6 +102,88 @@ def discover_selenium_tests() -> List[str]:
     )
 
 
+# ────────────────────────────────────────────────────────────────────────────
+# Standalone script allowlist (oxf-e2e-01)
+# ────────────────────────────────────────────────────────────────────────────
+
+
+def _allowlist_path() -> Path:
+    return PROJECT_ROOT / "args" / "e2e_script_allowlist.yaml"
+
+
+def _load_allowlist_doc(logger: Optional[logging.Logger] = None) -> Dict[str, Any]:
+    """Parse args/e2e_script_allowlist.yaml. Missing/broken → {} with a warning.
+
+    Never raises: a missing or malformed allowlist degrades gracefully so that
+    ``--include-scripts`` is a no-op rather than an error.
+    """
+    path = _allowlist_path()
+    if not path.exists():
+        if logger:
+            logger.warning(
+                "e2e_runner: script allowlist not found at %s — "
+                "--include-scripts will run no standalone scripts",
+                path,
+            )
+        return {}
+    try:
+        import yaml
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except Exception as exc:  # noqa: BLE001 - degrade gracefully on any parse error
+        if logger:
+            logger.warning(
+                "e2e_runner: cannot parse script allowlist %s: %s", path, exc
+            )
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def load_script_allowlist(logger: Optional[logging.Logger] = None) -> set:
+    """Return the set of allowlisted standalone-script names (no .py suffix)."""
+    doc = _load_allowlist_doc(logger)
+    names = doc.get("allowlist") or []
+    return {str(n).strip() for n in names if str(n).strip()}
+
+
+def load_script_exclusions(logger: Optional[logging.Logger] = None) -> Dict[str, str]:
+    """Return the {script_name: reason} exclusion map from the allowlist doc."""
+    doc = _load_allowlist_doc(logger)
+    excluded = doc.get("excluded") or {}
+    if not isinstance(excluded, dict):
+        return {}
+    return {str(k).strip(): str(v) for k, v in excluded.items()}
+
+
+def discover_allowlisted_scripts(
+    logger: Optional[logging.Logger] = None,
+) -> List[str]:
+    """Standalone tests/e2e_*.py scripts present on disk AND in the allowlist.
+
+    Logs the skipped/excluded count so truncation is never silent. Scripts on
+    disk but not allowlisted are skipped; allowlisted names with no file are
+    reported as missing.
+    """
+    allow = load_script_allowlist(logger)
+    on_disk = discover_selenium_scripts()
+    disk_names = {os.path.basename(s)[:-3] for s in on_disk}
+
+    included = [s for s in on_disk if os.path.basename(s)[:-3] in allow]
+    skipped = len(on_disk) - len(included)
+    missing = sorted(allow - disk_names)
+
+    if logger:
+        logger.info(
+            "e2e_runner: allowlist → include=%d skipped=%d (of %d on disk)",
+            len(included), skipped, len(on_disk),
+        )
+        if missing:
+            logger.warning(
+                "e2e_runner: %d allowlisted script(s) not found on disk: %s",
+                len(missing), ", ".join(missing),
+            )
+    return sorted(included)
+
+
 def discover_e2e_tests(mode: str = "auto") -> List[str]:
     if mode == "native":
         return discover_native_tests()
@@ -900,6 +982,15 @@ def _build_parser() -> argparse.ArgumentParser:
         default="chromium",
         help="Playwright browser project (chromium, firefox, webkit)",
     )
+    parser.add_argument(
+        "--include-scripts",
+        action="store_true",
+        help=(
+            "With --driver selenium --run-all, additionally execute the standalone "
+            "tests/e2e_*.py scripts listed in args/e2e_script_allowlist.yaml. "
+            "Opt-in; default --run-all behavior is unchanged."
+        ),
+    )
     parser.add_argument("--validate-screenshots", action="store_true")
     parser.add_argument(
         "--vision-assertions", action="append",
@@ -956,6 +1047,16 @@ def main(argv: Optional[List[str]] = None) -> int:
         if args.run_all or args.test_file:
             target = args.test_file if args.test_file else None
             results = run_selenium(run_id, logger, test_file=target)
+            # Opt-in: additionally run allowlisted standalone scripts on --run-all.
+            # Default behavior (flag absent) is unchanged.
+            if args.run_all and getattr(args, "include_scripts", False):
+                scripts = discover_allowlisted_scripts(logger)
+                logger.info(
+                    "e2e_runner: --include-scripts → executing %d allowlisted "
+                    "standalone script(s)", len(scripts),
+                )
+                for script in scripts:
+                    results.extend(run_selenium_script(run_id, logger, script))
         else:
             parser.print_help()
             return 1

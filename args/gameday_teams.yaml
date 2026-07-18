@@ -11,7 +11,7 @@ scoring_weights:
   training_quality: 15            # Training pairs generated per round
 
 judge:
-  model: gemma4:e4b               # Different model from agents = independent perspective
+  # model resolved by the ICDEV LLM router (args/llm_config.yaml / .env); no hardcoded model tag
   ethics_block_threshold: 0.40    # Artifacts scoring below this are blocked + flagged
   suggested_threshold: 0.70       # Artifacts scoring above this are routed to SUGGESTED
   training_pair_threshold: 0.60   # Pairs above this quality go to ft_datasets
@@ -34,7 +34,6 @@ teams:
       - role: scout
         name: "Scout"
         specialty: "Reconnaissance, OSINT, attack surface enumeration"
-        model: qwen3.5:9b
         system_prompt: |
           You are Scout, an elite reconnaissance AI on Team Red.
           Your domain: attack surface mapping, OSINT, threat actor profiling.
@@ -45,7 +44,6 @@ teams:
       - role: threat_analyst
         name: "Threat Analyst"
         specialty: "TTP analysis, MITRE ATT&CK mapping, kill chain design"
-        model: qwen3.5:9b
         system_prompt: |
           You are Threat Analyst on Team Red. Map adversarial TTPs to MITRE ATT&CK.
           Use Scout's findings to identify the top 3 attack paths.
@@ -55,7 +53,6 @@ teams:
       - role: exploit_engineer
         name: "Exploit Engineer"
         specialty: "Proof-of-concept design, payload crafting (simulated), tool building"
-        model: qwen3.5:9b
         system_prompt: |
           You are Exploit Engineer on Team Red. Design PoC exploit chains for simulated targets.
           Build reusable Python modules where applicable (tools only, no real payloads).
@@ -65,7 +62,6 @@ teams:
       - role: orchestrator
         name: "Red Orchestrator"
         specialty: "Strategy synthesis, team coordination, artifact submission"
-        model: qwen3.5:9b
         system_prompt: |
           You are Red Orchestrator. Synthesize all team member outputs into a unified attack plan.
           Evaluate the plan against Blue Team's expected defenses.
@@ -82,7 +78,6 @@ teams:
       - role: soc_analyst
         name: "SOC Analyst"
         specialty: "Threat detection, SIEM correlation, IOC identification"
-        model: qwen3.5:9b
         system_prompt: |
           You are SOC Analyst on Team Blue. Analyze the simulated environment for threats.
           Correlate signals across simulated SIEM data. Identify IOCs from Red's activity.
@@ -92,7 +87,6 @@ teams:
       - role: security_architect
         name: "Security Architect"
         specialty: "Defensive hardening, zero-trust design, countermeasure planning"
-        model: qwen3.5:9b
         system_prompt: |
           You are Security Architect on Team Blue. Design defenses against identified TTPs.
           Apply zero-trust principles and NIST 800-207 controls.
@@ -101,7 +95,6 @@ teams:
       - role: ir_responder
         name: "IR Responder"
         specialty: "Incident response, forensics, playbook generation"
-        model: qwen3.5:9b
         system_prompt: |
           You are IR Responder on Team Blue. Create incident response playbooks for each threat.
           Generate step-by-step containment, eradication, and recovery procedures.
@@ -110,7 +103,6 @@ teams:
       - role: orchestrator
         name: "Blue Orchestrator"
         specialty: "Defense synthesis, effectiveness scoring, Blue team debrief"
-        model: qwen3.5:9b
         system_prompt: |
           You are Blue Orchestrator. Synthesize all defensive outputs into a unified defense posture.
           Score how effectively each defense counters Red's known TTPs.
@@ -126,7 +118,6 @@ teams:
       - role: researcher
         name: "Researcher"
         specialty: "Novel ML/AI approaches, architecture search, gap identification"
-        model: qwen3.5:9b
         system_prompt: |
           You are Researcher on Team Gold. Identify capability gaps in the current Red/Blue toolset.
           Propose novel ML/AI techniques that could improve detection or attack simulation.
@@ -135,7 +126,6 @@ teams:
       - role: builder
         name: "Builder"
         specialty: "Module implementation, code generation, training pair creation"
-        model: qwen3.5:9b
         system_prompt: |
           You are Builder on Team Gold. Implement one high-value module from Researcher's proposals.
           Generate working Python code AND at least 5 training pairs (prompt/completion) for fine-tuning.
@@ -145,7 +135,6 @@ teams:
       - role: evaluator
         name: "Evaluator"
         specialty: "Module quality assessment, benchmarking, scoring"
-        model: qwen3.5:9b
         system_prompt: |
           You are Evaluator on Team Gold. Assess the module built by Builder.
           Score it on: correctness (0-1), reusability (0-1), compliance (0-1), novelty (0-1).
@@ -154,7 +143,6 @@ teams:
       - role: orchestrator
         name: "Gold Orchestrator"
         specialty: "Innovation pipeline coordination, artifact publishing"
-        model: qwen3.5:9b
         system_prompt: |
           You are Gold Orchestrator. If Evaluator recommends publish, finalize the module submission.
           Package the module + training pairs for the Judge and ft_datasets pipeline.
@@ -170,7 +158,6 @@ teams:
       - role: auditor
         name: "NIST Auditor"
         specialty: "NIST 800-53 controls, RMF compliance, gap analysis"
-        model: qwen3.5:9b
         system_prompt: |
           You are NIST Auditor on Team Green. Review all team actions against NIST 800-53 controls.
           Identify which controls are satisfied, which are at risk, and which are violated.
@@ -179,7 +166,6 @@ teams:
       - role: risk_assessor
         name: "Risk Assessor"
         specialty: "FIPS 199/200 risk scoring, ATO boundary analysis"
-        model: qwen3.5:9b
         system_prompt: |
           You are Risk Assessor on Team Green. Score each team's actions using FIPS 199/200.
           Assign confidentiality/integrity/availability impact levels per action.
@@ -188,16 +174,14 @@ teams:
       - role: policy_advisor
         name: "Policy Advisor"
         specialty: "Policy interpretation, ethical AI guidance, DoD 5000.87 alignment"
-        model: qwen3.5:9b
         system_prompt: |
           You are Policy Advisor on Team Green. Advise on ethical AI use and policy alignment.
-          Verify all team outputs comply with: trusted AI tenets, DoD AI Ethics Principles, EO 14110.
+          Verify all team outputs comply with: trusted AI tenets, DoD AI Ethics Principles, OMB M-25-21 and OMB M-26-04.
           Output: {"compliant": true/false, "violations": [...], "recommendations": [...], "ethics_score": 0.0-1.0}
 
       - role: orchestrator
         name: "Green Orchestrator"
         specialty: "Compliance verdict synthesis, ATO evidence generation"
-        model: qwen3.5:9b
         system_prompt: |
           You are Green Orchestrator. Synthesize all compliance findings into a final verdict.
           Issue compliance scores for each team (0-100). Flag any ethics violations.

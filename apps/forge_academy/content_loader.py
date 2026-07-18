@@ -1415,14 +1415,67 @@ def _seed_steps(conn, mission_id: int, mission_slug: str) -> None:
 # Load step content from files
 # ---------------------------------------------------------------------------
 
+# Allowlist for rendered-markdown HTML. Covers exactly what the markdown
+# extensions below can emit (headings, lists, tables, fenced code, links,
+# emphasis) — nothing that can execute script. Anything outside this set is
+# escaped (rendered inert), so untrusted LLM coach output cannot inject markup.
+_MD_ALLOWED_TAGS = frozenset({
+    "p", "br", "hr", "pre", "code", "blockquote", "span",
+    "h1", "h2", "h3", "h4", "h5", "h6",
+    "ul", "ol", "li", "dl", "dt", "dd",
+    "strong", "em", "b", "i", "u", "del", "ins", "sub", "sup", "kbd", "abbr",
+    "a", "img",
+    "table", "thead", "tbody", "tfoot", "tr", "th", "td", "caption", "col", "colgroup",
+})
+_MD_ALLOWED_ATTRS = {
+    "a": ["href", "title", "rel"],
+    "img": ["src", "alt", "title"],
+    "code": ["class"],
+    "span": ["class"],
+    "th": ["align"],
+    "td": ["align"],
+    "abbr": ["title"],
+}
+_MD_ALLOWED_PROTOCOLS = ["http", "https", "mailto"]
+
+
+def _sanitize_html(rendered: str, raw_fallback: str = "") -> str:
+    """Allowlist-sanitize already-rendered HTML.
+
+    Uses ``bleach`` when available (``strip=False`` so disallowed tags such as
+    ``<script>`` are escaped to inert text rather than dropped). When bleach is
+    unavailable (air-gap minimal install) we fail SAFE: escape the raw source so
+    no markup survives at all.
+    """
+    try:
+        import bleach
+    except Exception:
+        import html
+        return f"<pre>{html.escape(raw_fallback or rendered)}</pre>"
+    return bleach.clean(
+        rendered,
+        tags=set(_MD_ALLOWED_TAGS),
+        attributes=_MD_ALLOWED_ATTRS,
+        protocols=_MD_ALLOWED_PROTOCOLS,
+        strip=False,
+    )
+
+
 def _md_to_html(text: str) -> str:
-    """Convert markdown text to safe HTML."""
+    """Convert markdown text to sanitized HTML.
+
+    The output is allowlist-sanitized (see ``_sanitize_html``) so this is safe
+    for UNTRUSTED input — notably LLM coach hints surfaced at
+    ``/api/academy/coach/hint`` — not only first-party lesson content.
+    """
+    text = text or ""
     try:
         import markdown as md_lib
-        return md_lib.markdown(text, extensions=["fenced_code", "tables", "nl2br"])
+        rendered = md_lib.markdown(text, extensions=["fenced_code", "tables", "nl2br"])
     except Exception:
         import html
         return f"<pre>{html.escape(text)}</pre>"
+    return _sanitize_html(rendered, raw_fallback=text)
 
 
 def load_step_content(content_path: str) -> dict:
