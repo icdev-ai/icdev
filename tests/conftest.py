@@ -34,6 +34,12 @@ else:
     os.environ["CCC_STORAGE_BACKEND"] = "sqlite"
     os.environ["DSOC_STORAGE_BACKEND"] = "sqlite"
 
+# cnr-plat-01: keep CSRF enforcement (fail-closed by default) OPT-OUT during the
+# test suite so the many existing dashboard tests that use logged-in sessions
+# (session_transaction) and POST keep passing; the dedicated cnr-plat tests
+# re-enable it per-test via monkeypatch.setenv. An explicit env value still wins.
+os.environ.setdefault("ICDEV_CSRF_ENFORCE", "0")
+
 
 MINIMAL_ICDEV_SCHEMA = """
 -- Dashboard auth: the before_request hook validates session user_id against

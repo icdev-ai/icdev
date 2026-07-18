@@ -1796,6 +1796,16 @@ def create_app(testing: bool = False) -> Flask:
     # Register dashboard auth middleware (D169-D172)
     register_dashboard_auth(app)
 
+    # cnr-plat-01: CSRF protection for cookie-authenticated mutating JSON APIs.
+    # Registered right after auth so its before_request runs after the auth hook
+    # (g.current_user / cortex_binding are resolved first). Enforced by default
+    # (ICDEV_CSRF_ENFORCE); token-auth / API-key / ICDEV_AUTH_BYPASS paths exempt.
+    try:
+        from tools.security.csrf import register_csrf
+        register_csrf(app)
+    except Exception as _csrf_exc:
+        app.logger.warning("CSRF protection not registered: %s", _csrf_exc)
+
     # Register field-level security middleware (CUI enforcement on JSON responses)
     try:
         from tools.security.middleware import init_security
@@ -4593,6 +4603,13 @@ def create_app(testing: bool = False) -> Flask:
                     user = bootstrap_env_user(env_key)
             if user:
                 flask_session["user_id"] = user["id"]
+                # cnr-plat-01: issue a fresh CSRF token at login (rotate on each
+                # successful authentication to avoid token fixation).
+                try:
+                    from tools.security.csrf import issue_csrf_token
+                    issue_csrf_token()
+                except Exception:
+                    pass
                 log_auth_event(
                     user["id"],
                     "login_success",
