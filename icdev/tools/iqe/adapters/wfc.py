@@ -6,6 +6,14 @@ Collections:
     wfc.workflows     — studio_workflows table
     wfc.submissions   — studio_form_submissions table
     wfc.templates     — built-in FORM_TEMPLATES list
+
+Tenant filtering (cnr-wfc-04(d)): the backing studio_forms / studio_workflows /
+studio_form_submissions tables carry NO tenant_id or classification column, so
+there is nothing to filter on at the SQL level — a WHERE tenant_id=? clause
+would raise on every query. Row-level tenant isolation for these tables is a
+schema change (add tenant_id + backfill + RLS predicate) tracked as a separate
+platform item and is intentionally NOT attempted here. This matches the known
+studio/proposal tenant-column gap noted elsewhere in the platform.
 """
 from __future__ import annotations
 

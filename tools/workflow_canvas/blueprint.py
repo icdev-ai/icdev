@@ -49,7 +49,7 @@ from __future__ import annotations
 import json
 import sys
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from flask import Blueprint, jsonify, render_template, request, send_file
@@ -58,7 +58,7 @@ _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from tools.db.storage import get_connection, get_canvas_connection, sql_placeholder
+from tools.db.storage import get_connection, get_canvas_connection, sql_placeholder, is_pg
 from tools.logging.icdev_logger import get_logger
 from tools.workflow_canvas.constants import (
     EXPORT_FORMATS,
@@ -242,8 +242,7 @@ def _ensure_init() -> None:
         logger.warning("wfc: studio DB init error: %s", exc)
     try:
         conn = get_canvas_connection("ICDEV_WFC_ENABLED")
-        is_pg = hasattr(conn, 'server_version') or 'psycopg2' in type(conn).__module__
-        migration_sql = _WFC_MIGRATION_PG if is_pg else _WFC_MIGRATION_SQLITE
+        migration_sql = _WFC_MIGRATION_PG if is_pg(conn) else _WFC_MIGRATION_SQLITE
         # Execute each statement separately (executescript is SQLite-only)
         for stmt in migration_sql.strip().split(';'):
             stmt = stmt.strip()
@@ -379,11 +378,17 @@ def create_wfc_blueprint() -> Blueprint:
     def _count_submissions_today() -> int:
         conn = get_connection()
         try:
-            today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            # Half-open range on the ISO-8601 submitted_at so an index on
+            # submitted_at can be used (a leading-wildcard-free LIKE would work
+            # too, but a range is unambiguously sargable). (cnr-wfc-04)
+            now = datetime.now(timezone.utc)
+            start = now.strftime("%Y-%m-%dT00:00:00")
+            end = (now + timedelta(days=1)).strftime("%Y-%m-%dT00:00:00")
             ph = _ph(conn)
             row = conn.execute(
-                f"SELECT COUNT(*) FROM studio_form_submissions WHERE submitted_at LIKE {ph}",
-                (f"{today}%",),
+                f"SELECT COUNT(*) FROM studio_form_submissions "
+                f"WHERE submitted_at >= {ph} AND submitted_at < {ph}",
+                (start, end),
             ).fetchone()
             return row[0] if row else 0
         except Exception:
