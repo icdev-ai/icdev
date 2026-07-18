@@ -19,6 +19,13 @@
     {% block head %}{% endblock %}
     {% block extra_css %}{% endblock %}
     <script>
+    // cvx-nav-01: single registry-derived path→canvas map (ComponentRegistry
+    // .get_iqe_path_canvas), injected once and shared by the IQE mini-bar and
+    // the AI-brief banner. Each entry is [regex_source, canvas_key]; first match
+    // wins. Replaces the two divergent hardcoded PATH_CANVAS copies.
+    window.__ICDEV_PATH_CANVAS__ = {{ iqe_path_canvas_json | safe }};
+    </script>
+    <script>
     // Apply theme before render to prevent FOUC
     (function() {
         var serverTheme = document.documentElement.getAttribute('data-theme');
@@ -782,64 +789,16 @@
         var results = document.getElementById('iqe-mb-results');
         var _open = false;
 
-        var PATH_CANVAS = [
-            [/^\/network|^\/twin/, 'ndc'],
-            [/^\/zta/, 'zta'],
-            [/^\/security/, 'sdc'],
-            [/^\/devops/, 'pdc'],
-            [/^\/data/, 'ddc'],
-            [/^\/infra/, 'idc'],
-            [/^\/observability/, 'odc'],
-            [/^\/boundary/, 'bdc'],
-            [/^\/simulate\/chat.*canvas=cam/, 'cam'],
-            [/^\/migration-canvas\/projects/, 'cam'],
-            [/^\/migration-canvas/, 'mc'],
-            [/^\/agentic-ai/, 'aadc'],
-            [/^\/ai-ml/, 'aimc'],
-            [/^\/ops/, 'ohc'],
-            [/^\/govlift/, 'govlift'],
-            [/^\/kanban/, 'kanban'],
-            [/^\/compliance/, 'compliance'],
-            [/^\/agents/, 'agents'],
-            [/^\/projects/, 'projects'],
-            [/^\/ai-observatory/, 'ai_observatory'],
-            [/^\/ontology/, 'ontology'],
-            [/^\/cache-savings/, 'cache_savings'],
-            [/^\/strategos/, 'strategos'],
-            [/^\/supply.chain/, 'supply_chain'],
-            [/^\/noc/, 'nocc'],
-            [/^\/pmc/, 'pmc'],
-            [/^\/ccc/, 'ccc'],
-            [/^\/dsoc/, 'dsoc'],
-            [/^\/ai-ify/, 'aiify'],
-            [/^\/document-intelligence/, 'dic'],
-            [/^\/integrity/, 'integrity'],
-            [/^\/logs/, 'logs'],
-            [/^\/demo-runner/, 'demo_runner'],
-            [/^\/innovation/, 'innovation'],
-            [/^\/mission-canvas/, 'mission_canvas'],
-            [/^\/proposals/, 'govcon'],
-            [/^\/govcon/, 'govcon'],
-            [/^\/cpmp\/deliverables/, 'govcon'],
-            [/^\/cpmp/, 'govcon'],
-            [/^\/slides/, 'slides'],
-            [/^\/coworker/, 'ace'],
-            [/^\/foundry/, 'foundry'],
-            [/^\/ai-|^\/dashboard\/.*-view/, 'aisg'],
-            [/^\/dat/, 'dat'],
-            [/^\/mcip/, 'dat'],
-            [/^\/updates/, 'updates'],
-            [/^\/docgen/, 'docgen'],
-            [/^\/monitoring\/forecast/, 'forecast'],
-            [/^\/monitoring/, 'logs'],
-            [/^\/me/, 'second_brain'],
-            [/^\/bi_dashboard/, 'bi_dashboard'],
-        ];
+        // cvx-nav-01: registry-derived, injected once in <head> as
+        // window.__ICDEV_PATH_CANVAS__ = [[regex_source, canvas_key], ...].
+        var PATH_CANVAS = window.__ICDEV_PATH_CANVAS__ || [];
 
         function detectCanvas() {
             var p = window.location.pathname;
             for (var i = 0; i < PATH_CANVAS.length; i++) {
-                if (PATH_CANVAS[i][0].test(p)) return PATH_CANVAS[i][1];
+                try {
+                    if (new RegExp(PATH_CANVAS[i][0]).test(p)) return PATH_CANVAS[i][1];
+                } catch (e) { /* skip malformed pattern */ }
             }
             return 'ndc';
         }

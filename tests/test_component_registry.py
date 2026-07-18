@@ -14,6 +14,7 @@ handles missing/invalid entries gracefully.
 
 from __future__ import annotations
 
+import re
 import sqlite3
 
 import pytest
@@ -661,3 +662,128 @@ def test_validate_canvas_completeness_synthetic_canvas_passes(tmp_path, monkeypa
     for item in report.items:
         if item.required:
             assert item.present, f"{item.point}: {item.message}"
+
+
+# ---------------------------------------------------------------------------
+# get_iqe_path_canvas() — registry-derived PATH_CANVAS (cvx-nav-01)
+# ---------------------------------------------------------------------------
+
+# Canvas keys used by the detector that are registered in app.py rather than in
+# component_registry.yaml (app-only IQE adapters / ai-brief-only renderers).
+_PATH_CANVAS_APP_ONLY_KEYS = {"updates", "zta", "dat", "cpmp_deliverables"}
+
+# Previously missing from the hardcoded PATH_CANVAS arrays — the whole point of
+# cvx-nav-01. These must all appear in the registry-derived map.
+_PATH_CANVAS_TARGETS = {"qdc", "iop", "cortex", "rfi_canvas", "wfc", "canvas_health", "cwk"}
+
+
+def _first_match(entries, path):
+    """Mirror the JS detector: first entry whose regex matches wins."""
+    for src, canvas in entries:
+        if re.search(src, path):
+            return canvas
+    return "ndc"
+
+
+def test_get_iqe_path_canvas_returns_ordered_pairs(registry):
+    entries = registry.get_iqe_path_canvas()
+    assert isinstance(entries, list) and entries
+    for item in entries:
+        assert isinstance(item, tuple) and len(item) == 2
+        src, canvas = item
+        assert isinstance(src, str) and src.startswith("^")
+        assert isinstance(canvas, str) and canvas
+
+
+def test_get_iqe_path_canvas_includes_previously_missing_canvases(registry):
+    """All seven canvases missing from the legacy hardcoded arrays are present."""
+    canvases = {c for _, c in registry.get_iqe_path_canvas()}
+    missing = _PATH_CANVAS_TARGETS - canvases
+    assert not missing, f"registry-derived PATH_CANVAS still missing: {sorted(missing)}"
+
+
+def test_get_iqe_path_canvas_regex_sources_compile(registry):
+    """Every emitted regex source is a valid pattern (Python == JS here)."""
+    for src, _canvas in registry.get_iqe_path_canvas():
+        re.compile(src)  # raises on malformed pattern
+
+
+def test_get_iqe_path_canvas_cwk_ace_collision_rule(registry):
+    """The documented collision rule: /coworkers → cwk resolves before
+    /coworker → ace (longest path first), and each routes deterministically."""
+    entries = registry.get_iqe_path_canvas()
+    keys = [c for _, c in entries]
+    assert keys.index("cwk") < keys.index("ace"), "cwk must precede ace"
+    assert _first_match(entries, "/coworkers") == "cwk"
+    assert _first_match(entries, "/coworkers/123") == "cwk"
+    assert _first_match(entries, "/coworker") == "ace"
+    assert _first_match(entries, "/coworker/launch") == "ace"
+
+
+def test_get_iqe_path_canvas_specific_before_broad(registry):
+    """More specific paths must win over broader ones and regex catch-alls."""
+    entries = registry.get_iqe_path_canvas()
+    cases = {
+        "/ai-ml/foo": "aimc",
+        "/ai-observatory": "ai_observatory",
+        "/ai-security": "aisg",          # broad ^/ai- catch-all
+        "/migration-canvas/projects": "cam",
+        "/migration-canvas": "mc",
+        "/monitoring/forecast": "forecast",
+        "/monitoring": "logs",
+        "/quality": "qdc",
+        "/workflow-canvas": "wfc",
+        "/health/canvases": "canvas_health",
+        "/rfi/list": "rfi_canvas",
+        "/info-ops": "iop",
+        "/network": "ndc",
+        "/twin": "ndc",
+    }
+    for path, expected in cases.items():
+        assert _first_match(entries, path) == expected, path
+
+
+def test_get_iqe_path_canvas_keys_are_registered_or_app_known(registry):
+    """Guard against typos: every canvas key is either a registered component
+    or a known app-registered detector key."""
+    valid = {c.key for c in registry} | _PATH_CANVAS_APP_ONLY_KEYS
+    unknown = {c for _, c in registry.get_iqe_path_canvas() if c not in valid}
+    assert not unknown, f"unknown canvas keys in PATH_CANVAS: {sorted(unknown)}"
+
+
+def test_get_iqe_path_canvas_auto_appends_new_canvas(tmp_path):
+    """A canvas with a url_prefix + IQE adapter is auto-appended even when it is
+    not listed explicitly in the iqe_path_canvas block."""
+    import yaml as _yaml
+
+    registry_yaml = tmp_path / "component_registry.yaml"
+    registry_yaml.write_text(
+        _yaml.safe_dump(
+            {
+                "components": [
+                    {
+                        "key": "zeta",
+                        "kind": "canvas",
+                        "display_name": "Zeta Canvas",
+                        "env_flag": "ICDEV_ZETA_ENABLED",
+                        "module": "tools.zeta.blueprint",
+                        "blueprint_attr": "zeta_bp",
+                        "url_prefix": "/zeta",
+                        "iqe": {
+                            "adapter_module": "tools.iqe.adapters.zeta",
+                            "collections": ["zeta.things"],
+                        },
+                    }
+                ],
+                "iqe_path_canvas": [
+                    {"path": "/other", "canvas": "other"},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    reg = ComponentRegistry(registry_path=registry_yaml, env={})
+    entries = reg.get_iqe_path_canvas()
+    canvases = {c for _, c in entries}
+    assert "zeta" in canvases, "canvas with url_prefix + IQE adapter must auto-append"
+    assert _first_match(entries, "/zeta/x") == "zeta"

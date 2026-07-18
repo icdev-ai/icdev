@@ -602,6 +602,90 @@ class ComponentRegistry:
                 mapping[c.key] = (str(adapter), list(collections))
         return mapping
 
+    def get_iqe_path_canvas(self) -> list[tuple[str, str]]:
+        """Return an ordered ``(regex_source, canvas_key)`` list for the
+        client-side canvas detector (IQE mini-bar + AI-brief banner).
+
+        Single source of truth replacing the two divergent hardcoded
+        ``PATH_CANVAS`` copies in ``base.html`` and
+        ``includes/ai_brief_banner.html``. The result is injected once into
+        ``base.html`` as ``window.__ICDEV_PATH_CANVAS__`` and consumed by both.
+
+        Derivation (priority order — first match wins in JS, loose ``^prefix``
+        semantics preserved from the legacy array):
+
+          1. The explicit, ordered ``iqe_path_canvas`` list from
+             ``component_registry.yaml``. Each entry is either
+             ``{path: <prefix>, canvas: <key>}`` (loose prefix → ``^<prefix>``)
+             or ``{regex: <src>, canvas: <key>}`` (verbatim pattern, e.g.
+             ``^/network|^/twin``). This preserves legacy ordering, regex
+             specials, and path→canvas aliases (e.g. ``/proposals`` → ``govcon``).
+             More specific paths are listed before shorter ones, and the
+             ``/coworkers`` → ``cwk`` entry precedes ``/coworker`` → ``ace``
+             (the documented longest-path-first collision resolution).
+
+          2. Auto-derived entries for every ``canvas`` component that declares a
+             ``url_prefix`` AND an IQE adapter and is not already covered by (1).
+             Appended longest-prefix-first so a longer path is always tested
+             before a shorter one. This future-proofs the detector: a new canvas
+             with a ``url_prefix`` + IQE adapter appears automatically, without
+             editing either template.
+
+        Each returned regex source is anchored with ``^`` and is compatible with
+        both Python ``re`` and JavaScript ``RegExp``. The registry is load-once
+        (YAML parsed at construction), so callers may cache the result at module
+        scope.
+        """
+        import re as _re
+
+        raw = self._load_yaml(self.registry_path)
+        explicit = raw.get("iqe_path_canvas") or []
+
+        result: list[tuple[str, str]] = []
+        covered_prefixes: set[str] = set()
+        covered_keys: set[str] = set()
+
+        def _prefix_to_src(prefix: str) -> str:
+            return "^" + _re.escape(prefix)
+
+        if isinstance(explicit, list):
+            for entry in explicit:
+                if not isinstance(entry, dict):
+                    continue
+                canvas = str(entry.get("canvas", "")).strip()
+                if not canvas:
+                    continue
+                if entry.get("regex"):
+                    src = str(entry["regex"])
+                elif entry.get("path"):
+                    prefix = str(entry["path"]).rstrip("/") or "/"
+                    src = _prefix_to_src(prefix)
+                    covered_prefixes.add(prefix)
+                else:
+                    continue
+                result.append((src, canvas))
+                covered_keys.add(canvas)
+
+        # Auto-derive: enabled-or-not canvases with a url_prefix + IQE adapter
+        # not already covered, longest-prefix-first for deterministic matching.
+        auto: list[tuple[int, str, str]] = []
+        for c in self._components:
+            if c.kind != "canvas":
+                continue
+            prefix = (c.url_prefix or "").rstrip("/")
+            if not prefix or not c.iqe.get("adapter_module"):
+                continue
+            if c.key in covered_keys or prefix in covered_prefixes:
+                continue
+            auto.append((len(prefix), _prefix_to_src(prefix), c.key))
+            covered_keys.add(c.key)
+            covered_prefixes.add(prefix)
+        auto.sort(key=lambda t: -t[0])
+        for _length, src, key in auto:
+            result.append((src, key))
+
+        return result
+
     @staticmethod
     def _normalize_nav_links(
         nav: dict[str, Any], url_prefix: str

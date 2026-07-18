@@ -1776,3 +1776,91 @@ components:
     iqe_adapter: true
     nav_link: true
     seed_queries: context/iqe/queries/second_brain/
+
+# ═══════════════════════════════════════════════════════════════════════════
+# IQE / AI-brief path → canvas map (cvx-nav-01)
+# ═══════════════════════════════════════════════════════════════════════════
+# Single source of truth for the client-side canvas detector. Replaces the two
+# divergent hardcoded PATH_CANVAS copies in:
+#   - tools/dashboard/templates/base.html            (IQE mini-bar)
+#   - tools/dashboard/templates/includes/ai_brief_banner.html (AI-brief banner)
+# Consumed via ComponentRegistry.get_iqe_path_canvas() and injected once into
+# base.html as window.__ICDEV_PATH_CANVAS__.
+#
+# Ordering is authoritative — entries are tested top-to-bottom, first match wins
+# (loose ^prefix match, mirroring the legacy behaviour):
+#   - More specific paths precede shorter ones (/migration-canvas/projects
+#     before /migration-canvas; /monitoring/forecast before /monitoring).
+#   - /coworkers → cwk precedes /coworker → ace — the documented cwk/ace
+#     collision resolution (longest path first).
+#   - Broad regex catch-alls (^/ai-, ai-view) come AFTER their specific paths.
+# Entry forms:
+#   {path: "/x", canvas: "key"}       -> loose "^/x" prefix match
+#   {regex: "^/x|^/y", canvas: "key"} -> verbatim JS/Python regex source
+# Canvases with a url_prefix + IQE adapter are auto-appended by the accessor,
+# so most new canvases need NO edit here.
+iqe_path_canvas:
+- {regex: "^/network|^/twin", canvas: ndc}
+- {path: /zta, canvas: zta}
+- {path: /security, canvas: sdc}
+- {path: /devops, canvas: pdc}
+- {path: /data, canvas: ddc}
+- {path: /infra, canvas: idc}
+- {path: /observability, canvas: odc}
+- {path: /boundary, canvas: bdc}
+- {regex: "^/simulate/chat.*canvas=cam", canvas: cam}
+- {path: /migration-canvas/projects, canvas: cam}
+- {path: /migration-canvas, canvas: mc}
+- {path: /agentic-ai, canvas: aadc}
+- {path: /ai-ml, canvas: aimc}
+- {path: /ops, canvas: ohc}
+- {path: /govlift, canvas: govlift}
+- {path: /kanban, canvas: kanban}
+- {path: /compliance, canvas: compliance}
+- {path: /agents, canvas: agents}
+- {path: /projects, canvas: projects}
+- {path: /ai-observatory, canvas: ai_observatory}
+- {path: /ontology, canvas: ontology}
+- {path: /cache-savings, canvas: cache_savings}
+- {path: /strategos, canvas: strategos}
+- {regex: "^/supply.chain", canvas: supply_chain}
+- {path: /noc, canvas: nocc}
+- {path: /pmc, canvas: pmc}
+- {path: /ccc, canvas: ccc}
+- {path: /dsoc, canvas: dsoc}
+- {path: /ai-ify, canvas: aiify}
+- {path: /cortex, canvas: cortex}
+- {path: /document-intelligence, canvas: dic}
+- {path: /integrity, canvas: integrity}
+- {path: /logs, canvas: logs}
+- {path: /demo-runner, canvas: demo_runner}
+- {path: /innovation, canvas: innovation}
+- {path: /mission-canvas, canvas: mission_canvas}
+# Fine-grained GovCon keys so the AI-brief banner keeps its distinct briefs;
+# IQE dispatch resolves each via its own adapter (cpmp_deliverables aliases the
+# cpmp adapter in app.py — see _CANVAS_MAP supplement).
+- {path: /proposals, canvas: proposals}
+- {path: /govcon, canvas: govcon}
+- {path: /cpmp/deliverables, canvas: cpmp_deliverables}
+- {path: /cpmp, canvas: cpmp}
+- {path: /slides, canvas: slides}
+# cvx-nav-01: /coworkers (cwk) MUST precede /coworker (ace) — collision rule
+- {path: /coworkers, canvas: cwk}
+- {path: /coworker, canvas: ace}
+- {path: /foundry, canvas: foundry}
+- {regex: "^/ai-|^/dashboard/.*-view", canvas: aisg}
+- {path: /dat, canvas: dat}
+- {path: /mcip, canvas: dat}
+- {path: /updates, canvas: updates}
+- {path: /docgen, canvas: docgen}
+- {path: /monitoring/forecast, canvas: forecast}
+- {path: /monitoring, canvas: logs}
+- {path: /me, canvas: second_brain}
+- {path: /bi_dashboard, canvas: bi_dashboard}
+# cvx-nav-01: previously-missing registered canvases
+- {path: /quality, canvas: qdc}
+- {path: /info-ops, canvas: iop}
+- {path: /rfi, canvas: rfi_canvas}
+- {path: /capture, canvas: rfi_canvas}
+- {path: /workflow-canvas, canvas: wfc}
+- {path: /health/canvases, canvas: canvas_health}
