@@ -692,7 +692,14 @@ components:
   blueprint_attr: aiify_bp
   url_prefix: /ai-ify
   min_il: IL4
-  default_roles: []
+  # penta-aiify-02: seed read access for operator roles so canvas access grants
+  # exist when ICDEV_ENFORCE_CANVAS_ACCESS is on. Mutating/expensive routes are
+  # additionally hard-gated with @require_role in tools/aiify/blueprint.py.
+  default_roles:
+  - admin
+  - pm
+  - developer
+  - isso
   nav:
     section: Canvases
     label: AI-ify
@@ -732,7 +739,12 @@ components:
   blueprint_attr: aiify_compat_bp
   url_prefix: ''
   min_il: IL4
-  default_roles: []
+  # penta-aiify-02: mirror the aiify canvas operator roles onto the compat alias.
+  default_roles:
+  - admin
+  - pm
+  - developer
+  - isso
   nav:
     section: Canvases
     label: AI-ify

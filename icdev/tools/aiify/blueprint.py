@@ -19,8 +19,15 @@ import re
 
 from tools.aiify.db.init_db import get_connection, init_db
 from tools.aiify.engine import run_scan
+# penta-aiify-02: hard-gate destructive/expensive routes with the established
+# dashboard RBAC decorator (same pattern as tools/dashboard/app.py). Enforces
+# login (401) + operator role (403) independent of ICDEV_ENFORCE_CANVAS_ACCESS.
+from tools.dashboard.auth import require_role
 
 logger = get_logger(__name__)
+
+# Roles permitted to invoke AI-ify mutating / resource-spawning routes.
+_AIIFY_MUTATE_ROLES = ("admin", "pm", "developer", "isso")
 
 aiify_bp = Blueprint(
     "aiify",
@@ -167,6 +174,7 @@ def index():
 
 
 @aiify_bp.route("/api/scan/<int:scan_id>", methods=["DELETE"])
+@require_role(*_AIIFY_MUTATE_ROLES)
 def api_delete_scan(scan_id: int):
     """Delete a single scan and cascade to its opportunities, scores, and roadmaps."""
     conn = _conn()
@@ -186,6 +194,7 @@ def api_delete_scan(scan_id: int):
 
 
 @aiify_bp.route("/api/scan/all", methods=["DELETE"])
+@require_role(*_AIIFY_MUTATE_ROLES)
 def api_delete_all_scans():
     """Delete all scan records and their cascaded children."""
     conn = _conn()
@@ -414,6 +423,7 @@ def _build_prd(
 
 
 @aiify_bp.route("/api/scan", methods=["POST"])
+@require_role(*_AIIFY_MUTATE_ROLES)
 def api_scan():
     data = request.get_json(force=True, silent=True) or {}
     input_type = data.get("input_type", "local_path")
@@ -472,6 +482,7 @@ def api_get_scan(scan_id: int):
 
 
 @aiify_bp.route("/api/send-to-kanban", methods=["POST"])
+@require_role(*_AIIFY_MUTATE_ROLES)
 def api_send_to_kanban():
     """Promote roadmap opportunities to kanban_tasks with atomic decomposition.
 
@@ -1242,6 +1253,7 @@ def api_hitl_decision():
 
 
 @aiify_bp.route("/api/run-innovation", methods=["POST"])
+@require_role(*_AIIFY_MUTATE_ROLES)
 def api_run_innovation():
     """Trigger the Innovation engine pipeline asynchronously."""
     import threading
