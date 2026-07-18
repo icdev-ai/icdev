@@ -1676,6 +1676,175 @@ def sql_strftime(conn, fmt: str, col: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Backend-aware schema introspection (translation-independent)
+# ---------------------------------------------------------------------------
+#
+# These helpers replace ad-hoc ``sqlite_master`` / ``PRAGMA table_info`` probes
+# that only work on SQLite — or that silently rely on translate_sql rule-14,
+# which rewrites only three exact query shapes and lets every other shape bypass
+# translation and raise (or silently skip) on PostgreSQL.  They build the correct
+# catalogue query per backend DIRECTLY and execute it against the raw DB-API
+# connection (bypassing StorageConnection's translating cursor), so they are
+# correct regardless of whether translate_sql would have matched the shape.
+#
+# All three accept either a StorageConnection wrapper OR a raw psycopg2 / sqlite3
+# connection, never raise for a missing table/column (they return False / []),
+# and validate identifiers with a strict regex before any interpolation.
+
+_INTROSPECT_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _introspect_backend(conn) -> str:
+    """Return ``'postgresql'`` or ``'sqlite'`` for a StorageConnection or raw conn.
+
+    Duck-types the ``_backend`` attribute first (StorageConnection / StorageCursor
+    / _PooledPgConnection expose it); otherwise sniffs the raw connection's class
+    module/name to distinguish psycopg2 from sqlite3.  Unknown connections default
+    to ``'sqlite'`` (the ``?`` + ``sqlite_master`` dialect).
+    """
+    backend = getattr(conn, "_backend", None)
+    if isinstance(backend, str) and backend:
+        return "postgresql" if backend.lower().startswith("postgre") else "sqlite"
+    cls = type(conn)
+    ident = f"{getattr(cls, '__module__', '')}.{getattr(cls, '__name__', '')}".lower()
+    if "psycopg" in ident:
+        return "postgresql"
+    if "sqlite" in ident:
+        return "sqlite"
+    return "sqlite"
+
+
+def _introspect_raw(conn):
+    """Return the underlying DB-API connection.
+
+    For a StorageConnection this returns ``conn._conn`` so introspection SQL runs
+    verbatim through the raw cursor, bypassing StorageCursor's translate_sql pass.
+    Raw connections are returned unchanged.
+    """
+    return getattr(conn, "_conn", conn)
+
+
+def _introspect_scalar_rows(cursor) -> list:
+    """Return the first column of every fetched row, tolerant of dict rows.
+
+    psycopg2 RealDictCursor yields dict rows; sqlite3 yields tuples / Row objects.
+    """
+    out = []
+    for row in cursor.fetchall():
+        if row is None:
+            continue
+        if isinstance(row, dict):
+            out.append(next(iter(row.values())))
+        else:
+            out.append(row[0])
+    return out
+
+
+def _validate_identifier(name: str, kind: str = "identifier") -> str:
+    """Raise ValueError unless *name* is a bare SQL identifier (``^[A-Za-z_]\\w*$``)."""
+    if not isinstance(name, str) or not _INTROSPECT_IDENTIFIER_RE.match(name):
+        raise ValueError(f"Invalid SQL {kind}: {name!r}")
+    return name
+
+
+def table_exists(conn, table_name: str) -> bool:
+    """Return True if *table_name* exists in the connected database.
+
+    Backend-aware and translation-independent:
+        * PostgreSQL → ``information_schema.tables`` (table_schema='public')
+        * SQLite     → ``sqlite_master`` (type='table')
+
+    Accepts a StorageConnection or a raw psycopg2 / sqlite3 connection.  Never
+    raises for a missing table (returns False).  Raises ValueError if
+    *table_name* is not a valid SQL identifier.
+    """
+    _validate_identifier(table_name, "table name")
+    backend = _introspect_backend(conn)
+    raw = _introspect_raw(conn)
+    if backend == "postgresql":
+        sql = (
+            "SELECT 1 FROM information_schema.tables "
+            "WHERE table_schema = 'public' AND table_name = %s LIMIT 1"
+        )
+    else:
+        sql = "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1"
+    try:
+        cur = raw.cursor()
+        cur.execute(sql, (table_name,))
+        return cur.fetchone() is not None
+    except Exception:
+        return False
+
+
+def list_tables(conn) -> list[str]:
+    """Return a sorted list of user table names in the connected database.
+
+    PostgreSQL reads ``information_schema.tables`` (table_schema='public',
+    BASE TABLE); SQLite reads ``sqlite_master`` (type='table', excluding internal
+    ``sqlite_*`` tables).  Accepts a StorageConnection or raw connection and never
+    raises (returns [] on error).
+    """
+    backend = _introspect_backend(conn)
+    raw = _introspect_raw(conn)
+    if backend == "postgresql":
+        sql = (
+            "SELECT table_name FROM information_schema.tables "
+            "WHERE table_schema = 'public' AND table_type = 'BASE TABLE' "
+            "ORDER BY table_name"
+        )
+    else:
+        sql = (
+            "SELECT name FROM sqlite_master "
+            "WHERE type = 'table' AND name NOT LIKE 'sqlite_%' "
+            "ORDER BY name"
+        )
+    try:
+        cur = raw.cursor()
+        cur.execute(sql)
+        return [str(v) for v in _introspect_scalar_rows(cur)]
+    except Exception:
+        return []
+
+
+def column_exists(conn, table_name: str, column: str) -> bool:
+    """Return True if *table_name* has a column named *column*.
+
+    PostgreSQL → ``information_schema.columns`` (fully parameterized).
+    SQLite     → ``PRAGMA table_info(<table>)`` — PRAGMA takes no bind parameters,
+                 so the table name is interpolated; it is validated against a
+                 strict identifier regex and double-quoted first.
+
+    Accepts a StorageConnection or a raw connection.  Returns False for a missing
+    table or column; raises ValueError for an invalid identifier.
+    """
+    _validate_identifier(table_name, "table name")
+    _validate_identifier(column, "column name")
+    backend = _introspect_backend(conn)
+    raw = _introspect_raw(conn)
+    try:
+        cur = raw.cursor()
+        if backend == "postgresql":
+            cur.execute(
+                "SELECT 1 FROM information_schema.columns "
+                "WHERE table_schema = 'public' AND table_name = %s "
+                "AND column_name = %s LIMIT 1",
+                (table_name, column),
+            )
+            return cur.fetchone() is not None
+        # SQLite: PRAGMA accepts no bind params; table_name was validated above
+        # and is double-quoted to survive reserved-word identifiers.
+        cur.execute(f'PRAGMA table_info("{table_name}")')  # nosec B608 — identifier regex-validated
+        for row in cur.fetchall():
+            # PRAGMA table_info cols: cid, name, type, notnull, dflt_value, pk
+            name = row.get("name") if isinstance(row, dict) else row[1]
+            if name == column:
+                return True
+        return False
+    except Exception:
+        return False
+
+
+# ---------------------------------------------------------------------------
 # Health check
 # ---------------------------------------------------------------------------
 def health_check() -> dict:
