@@ -251,6 +251,7 @@ def test_sop_approve_records_session_identity_not_body(client):
     _login(client, user_id="approver-bob", role="admin")
     with patch("tools.pipeline.blueprint._pdc_get_sop_by_id") as gp, \
          patch("tools.pipeline.blueprint._pdc_approve_sop") as ap, \
+         patch("tools.pipeline.blueprint._audit_strict"), \
          patch("tools.pipeline.blueprint._audit"):
         gp.return_value = _row(id=sop_id, owner="carol",
                                approval_status="pending_review")
@@ -285,6 +286,7 @@ def test_sop_reject_uses_session_identity_not_body(client):
     sop_id = str(uuid.uuid4())
     _login(client, user_id="isso-dan", role="isso")
     with patch("tools.pipeline.blueprint._pdc_reject_sop") as rp, \
+         patch("tools.pipeline.blueprint._audit_strict"), \
          patch("tools.pipeline.blueprint._audit"):
         rp.return_value = (_row(id=sop_id, approval_status="rejected"), None)
         resp = client.post(
