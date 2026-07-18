@@ -376,6 +376,31 @@ def parse_graph_json(raw):
 PC_WRITE_ROLES = ("admin", "isso", "pm", "developer")
 PC_ELEVATED_ROLES = ("admin", "isso")
 
+# ── Input-validation enums (pdx-fix-03) ───────────────────────────────────────
+#
+# The pipeline canvas is an IL4 surface (min_il: IL4 in the component registry,
+# "CUI // SP-CTI" banner). constants.py exposes no classification/CSP enum, so the
+# allowed sets are defined here from the values actually used across the schema
+# (tools/pipeline/db/init_db.py) and the UI:
+#   * classification — pipelines.classification defaults to 'public'; snippets carry
+#     'public' | 'CUI' | 'SECRET'; the SOP/boundary banner uses 'CUI // SP-CTI'.
+#   * target_csp — deploy_generator recognizes aws/azure/gcp/oci/ibm/on_prem plus
+#     the 'auto' detector; pipelines.target_csp defaults to 'generic'.
+# Default CHOICE (documented, pdx-fix-03): we KEEP the existing create defaults of
+# classification='public' and target_csp='generic' rather than forcing CUI. This
+# preserves backward compatibility (existing rows, the PUT-as-PATCH partial-update
+# contract, and the put_partial regression tests that round-trip non-enum csp
+# labels like 'aws-il5'/'onprem-dod' on UPDATE). Enum validation is enforced at
+# CREATE only; PUT keeps free-form PATCH semantics so it never rejects a value an
+# older client legitimately stored. 'public'/'generic' are members of the allowed
+# sets, so the defaults always pass.
+PC_ALLOWED_CLASSIFICATIONS = frozenset(
+    {"public", "CUI", "CUI // SP-CTI", "SECRET"}
+)
+PC_ALLOWED_TARGET_CSPS = frozenset(
+    {"generic", "auto", "aws", "azure", "gcp", "oci", "ibm", "on_prem"}
+)
+
 # ── Child-row delete order for pipeline DELETE (pdx-data-02) ───────────────────
 #
 # The pipeline FK children in tools/pipeline/db/init_db.py are declared WITHOUT
@@ -483,11 +508,40 @@ def pc_role_required(*roles):
 def create_pipeline_blueprint():
     """Create and return the Pipeline Design Canvas Blueprint.
 
-    Returns None if ICDEV_PIPELINE_ENABLED is false.
+    Feature-flag gate, aligned with the unified component registry (pdx-fix-03 /
+    deferred pdx-ops-01). The registry (args/component_registry.yaml, key ``pdc``)
+    declares ``env_flag: ICDEV_PDC_ENABLED`` with ``default_enabled: false`` and
+    lists ``ICDEV_PIPELINE_ENABLED`` as a legacy ``extra_env_flag``. Previously
+    this factory gated on ``ICDEV_PIPELINE_ENABLED`` defaulting to *true*, so the
+    canvas was silently ON while the registry considered it OFF.
+
+    New rule — the canvas activates only if a flag is EXPLICITLY enabled:
+        enabled = truthy(ICDEV_PDC_ENABLED, default False)
+                  OR (ICDEV_PIPELINE_ENABLED explicitly set AND truthy)
+    The silent default is now registry-consistent OFF. Truth table:
+        PDC unset,  PIPELINE unset  -> OFF   (registry default)
+        PDC true,   PIPELINE *      -> ON
+        PDC unset,  PIPELINE true   -> ON    (legacy explicit)
+        PDC false,  PIPELINE true   -> ON    (legacy explicit truthy)
+        PDC *,      PIPELINE false  -> OFF unless PDC true
+        PDC false,  PIPELINE unset  -> OFF
+
+    Returns None (canvas disabled) when neither flag is explicitly enabled.
     """
-    enabled = os.environ.get("ICDEV_PIPELINE_ENABLED", "true").lower()
-    if enabled not in ("true", "1", "yes"):
-        logger.info("Pipeline Canvas disabled (ICDEV_PIPELINE_ENABLED=%s)", enabled)
+    def _truthy(val):
+        return str(val).strip().strip('"').strip("'").lower() in ("true", "1", "yes", "on")
+
+    pdc_raw = os.environ.get("ICDEV_PDC_ENABLED")
+    legacy_raw = os.environ.get("ICDEV_PIPELINE_ENABLED")
+    # Primary flag: registry-consistent default OFF (only ON when truthy).
+    pdc_on = _truthy(pdc_raw) if pdc_raw is not None else False
+    # Legacy flag: activates ONLY when explicitly set truthy (no silent default-on).
+    legacy_on = legacy_raw is not None and _truthy(legacy_raw)
+    if not (pdc_on or legacy_on):
+        logger.info(
+            "Pipeline Canvas disabled (ICDEV_PDC_ENABLED=%s, ICDEV_PIPELINE_ENABLED=%s)",
+            pdc_raw, legacy_raw,
+        )
         return None
 
     # Initialize DB
@@ -639,6 +693,21 @@ def create_pipeline_blueprint():
             )
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 422
+        # Validate classification / target_csp against the allowed enums. Unknown
+        # values are rejected (422) rather than silently persisted. Defaults
+        # 'public'/'generic' are members of the sets, so an omitted field passes.
+        classification = data.get("classification", "public")
+        target_csp = data.get("target_csp", "generic")
+        if classification not in PC_ALLOWED_CLASSIFICATIONS:
+            return jsonify({
+                "error": f"invalid classification: {classification!r}",
+                "allowed": sorted(PC_ALLOWED_CLASSIFICATIONS),
+            }), 422
+        if target_csp not in PC_ALLOWED_TARGET_CSPS:
+            return jsonify({
+                "error": f"invalid target_csp: {target_csp!r}",
+                "allowed": sorted(PC_ALLOWED_TARGET_CSPS),
+            }), 422
         logger.info("Creating pipeline: %s (%s)", name, pipe_id)
         conn = get_connection()
         conn.execute(
@@ -649,8 +718,8 @@ def create_pipeline_blueprint():
                 name,
                 data.get("description", ""),
                 graph_json,
-                data.get("classification", "public"),
-                data.get("target_csp", "generic"),
+                classification,
+                target_csp,
                 now_isoformat(),
                 now_isoformat(),
             ),
@@ -866,15 +935,25 @@ def create_pipeline_blueprint():
             return jsonify({"error": "Not found"}), 404
         tpl = row_to_dict(row)
         pipe_id = str(_uuid.uuid4())
+        # Propagate the template's classification / target_csp onto the new
+        # pipeline instead of dropping them (which defaulted every template-derived
+        # pipeline to public/generic even for DoD/IL5 templates). `.get()` falls
+        # back to the create defaults when the source row lacks the column (the
+        # current pc_templates schema has no classification/target_csp column, so
+        # this is forward-compatible: it activates as soon as those columns exist
+        # without re-touching this route).
         conn.execute(
             "INSERT INTO pipelines (id, name, description, graph_json, template_id, "
-            "created_at, updated_at) VALUES (%s,%s,%s,%s,%s,%s,%s)",
+            "classification, target_csp, created_at, updated_at) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (
                 pipe_id,
                 f"{tpl['name']} (copy)",
                 tpl.get("description", ""),
                 tpl["graph_json"],
                 tpl_id,
+                tpl.get("classification") or "public",
+                tpl.get("target_csp") or "generic",
                 now_isoformat(),
                 now_isoformat(),
             ),
@@ -930,15 +1009,21 @@ def create_pipeline_blueprint():
             return jsonify({"error": "Not found"}), 404
         snip = row_to_dict(row)
         pipe_id = str(_uuid.uuid4())
+        # Propagate the snippet's classification (from classification_level) and
+        # target_csp onto the new pipeline. Snippets carry real DoD levels
+        # (public/CUI/SECRET, IL2–IL6), so dropping them defaulted IL5/SECRET
+        # snippets to public. target_csp defaults to generic when the snippet row
+        # has no such column (current schema).
         conn.execute(
             "INSERT INTO pipelines (id, name, description, graph_json, classification, "
-            "created_at, updated_at) VALUES (%s,%s,%s,%s,%s,%s,%s)",
+            "target_csp, created_at, updated_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
             (
                 pipe_id,
                 f"{snip['name']} (copy)",
                 snip.get("description", ""),
                 snip["graph_json"],
                 snip.get("classification_level", "CUI"),
+                snip.get("target_csp") or "generic",
                 now_isoformat(),
                 now_isoformat(),
             ),
@@ -1169,6 +1254,22 @@ def create_pipeline_blueprint():
     def pc_api_create_boundary(pipe_id):
         data = request.get_json(force=True, silent=True) or {}
         bid = str(_uuid.uuid4())[:8]
+        # Validate the numeric geometry fields: a client-supplied non-numeric
+        # value (e.g. pos_x="abc") returns 400 rather than a DB type error / 500.
+        _num_defaults = (
+            ("fill_opacity", 0.08, float),
+            ("pos_x", 0, float),
+            ("pos_y", 0, float),
+            ("width", 400, float),
+            ("height", 300, float),
+        )
+        nums = {}
+        for field, default, caster in _num_defaults:
+            raw = data.get(field, default)
+            try:
+                nums[field] = caster(raw)
+            except (TypeError, ValueError):
+                return jsonify({"error": f"{field} must be a number"}), 400
         conn = get_connection()
         conn.execute(
             "INSERT INTO pc_boundaries (id, pipeline_id, label, classification, color, "
@@ -1180,13 +1281,13 @@ def create_pipeline_blueprint():
                 data.get("label", "Stage Boundary"),
                 data.get("classification", "CUI"),
                 data.get("color", "#e94560"),
-                data.get("fill_opacity", 0.08),
+                nums["fill_opacity"],
                 json.dumps(data.get("node_ids", [])),
                 data.get("boundary_type", "security_zone"),
-                data.get("pos_x", 0),
-                data.get("pos_y", 0),
-                data.get("width", 400),
-                data.get("height", 300),
+                nums["pos_x"],
+                nums["pos_y"],
+                nums["width"],
+                nums["height"],
             ),
         )
         conn.commit()
@@ -1236,11 +1337,12 @@ def create_pipeline_blueprint():
 
             result = export_pipeline(graph, pipe["name"], fmt)
         except ImportError:
-            result = {
-                "format": fmt,
-                "content": f"# Export format '{fmt}' — module not yet loaded",
-                "filename": f"pipeline.{fmt}",
-            }
+            # The export module is genuinely unavailable — fail with 501 rather
+            # than returning HTTP 200 with a placeholder body + a real .<fmt>
+            # filename (which a caller would save/download as if it were a valid
+            # export). 501 Not Implemented signals the capability is absent.
+            logger.error("Export module unavailable for pipeline %s (fmt=%s)", pipe_id, fmt)
+            return jsonify({"error": "export module unavailable"}), 501
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
 
@@ -1268,6 +1370,13 @@ def create_pipeline_blueprint():
             return jsonify({"error": "corrupt graph"}), 422
         data = request.get_json(force=True, silent=True) or {}
 
+        # Guard the int() cast on a client-supplied query/body param: garbage
+        # (e.g. "abc") returns 400, not an unhandled 500.
+        try:
+            max_layer = int(data.get("max_layer", 3))
+        except (TypeError, ValueError):
+            return jsonify({"error": "max_layer must be an integer"}), 400
+
         try:
             from tools.pipeline.iac_validator import validate_deploy_bundle_from_generator
 
@@ -1275,7 +1384,7 @@ def create_pipeline_blueprint():
                 graph,
                 pipe["name"],
                 target_csp=data.get("target_csp", "auto"),
-                max_layer=int(data.get("max_layer", 3)),
+                max_layer=max_layer,
             )
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
@@ -1961,14 +2070,23 @@ def create_pipeline_blueprint():
     @pc_login_required
     def pc_collab_poll(design_id):
         """Poll for PDC collaborative operations since a sequence number."""
-        since = int(request.args.get("since", 0))
+        # Guard the int() cast on a client-supplied query param: garbage -> 400.
+        try:
+            since = int(request.args.get("since", 0))
+        except (TypeError, ValueError):
+            return jsonify({"error": "since must be an integer"}), 400
         # Cursor position is attributed to the authenticated caller, not the
         # query-string user_id (same identity-spoofing class as push/join).
         user_id = _pc_identity()
         cx = request.args.get("cx")
         cy = request.args.get("cy")
         if user_id and cx is not None and cy is not None:
-            _pdc_collab.update_cursor(design_id, user_id, float(cx), float(cy))
+            # Guard the float() casts on client-supplied cursor coords.
+            try:
+                cx_f, cy_f = float(cx), float(cy)
+            except (TypeError, ValueError):
+                return jsonify({"error": "cx and cy must be numbers"}), 400
+            _pdc_collab.update_cursor(design_id, user_id, cx_f, cy_f)
         ops, participants, latest_seq = _pdc_collab.poll(design_id, since)
         return jsonify({"operations": ops, "participants": participants, "latest_seq": latest_seq})
 
@@ -2294,11 +2412,16 @@ def create_pipeline_blueprint():
     def pdc_api_ask():
         from tools.knowledge_graph.canvas_ask import handle_ask_request
         data = request.get_json(silent=True) or {}
+        # Guard the int() cast on a client-supplied param: garbage -> 400.
+        try:
+            top_k = int(data.get("top_k", 10))
+        except (TypeError, ValueError):
+            return jsonify({"error": "top_k must be an integer"}), 400
         payload = handle_ask_request(
             query=data.get("query", ""),
             graph_id="pdc-designs",
             profile="provenance",
-            top_k=int(data.get("top_k", 10)),
+            top_k=top_k,
             narrate=bool(data.get("narrate", False)),
             canvas_label="CI/CD pipeline",
         )
@@ -2342,7 +2465,14 @@ def create_pipeline_blueprint():
     @pc_login_required
     def pc_api_ai_trace():
         """Return recent AI decisions made by PDC assessment engines."""
-        limit = min(int(request.args.get("limit", 50)), 200)
+        # Validate the int FIRST, then clamp: min() must be applied to an already
+        # validated int (min("abc", 200) would compare str<int on py2 / raise on
+        # py3, and int("abc") raises). Garbage -> 400.
+        try:
+            limit = int(request.args.get("limit", 50))
+        except (TypeError, ValueError):
+            return jsonify({"ok": False, "error": "limit must be an integer"}), 400
+        limit = min(max(limit, 1), 200)
         record_id = request.args.get("record_id")
         try:
             from tools.db.storage import get_connection as _gc

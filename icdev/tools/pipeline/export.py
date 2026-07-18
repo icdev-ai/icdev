@@ -801,8 +801,27 @@ def _to_openslo(nodes, edges, name):
     return "\n".join(lines)
 
 
+def _yaml_squote(value):
+    """Return a YAML single-quoted scalar, safely escaping embedded quotes.
+
+    In YAML single-quoted style a literal single quote is escaped by doubling it.
+    Callers interpolate arbitrary UI-supplied strings (e.g. a runbook
+    ``trigger_pattern`` regex, which routinely contains quotes/backslashes) into
+    emitted YAML; without escaping, a value like ``it's``  would break the
+    document. Backslashes need no escaping in single-quoted style.
+    """
+    return "'" + str(value).replace("'", "''") + "'"
+
+
 def _openslo_service_block(service, target=99.9, slo_type="availability"):
     """Generate a single OpenSLO service + SLO + SLI block."""
+    # Coerce target to float: SLO node config comes from the UI, where the
+    # `target` field arrives as a string (e.g. "99.9"). `target / 100` on a str
+    # raises TypeError. Fall back to the 99.9 default on any non-numeric value.
+    try:
+        target = float(target)
+    except (TypeError, ValueError):
+        target = 99.9
     return [
         "apiVersion: openslo/v1",
         "kind: Service",
@@ -935,8 +954,8 @@ def _to_runbook_manifest(nodes, edges, name):
             lines.extend(
                 [
                     f"  - name: {rb_name}",
-                    f"    description: {config.get('description', rb.get('label', ''))}",
-                    f"    trigger_pattern: '{config.get('trigger_pattern', '.*')}'",
+                    f"    description: {_yaml_squote(config.get('description', rb.get('label', '')))}",
+                    f"    trigger_pattern: {_yaml_squote(config.get('trigger_pattern', '.*'))}",
                     f"    risk_level: {config.get('risk_level', 'green')}",
                     f"    auto_execute: {str(config.get('auto_execute', True)).lower()}",
                     "    steps:",
