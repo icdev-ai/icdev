@@ -66,6 +66,63 @@ RISK_ORANGE = "orange"
 
 
 # ---------------------------------------------------------------------------
+# Startup integrity guard — fail-closed against a shadowed `tools` tree
+# ---------------------------------------------------------------------------
+def verify_tools_tree_integrity(base_dir: Path = BASE_DIR) -> None:
+    """Fail closed if the imported ``tools`` package is NOT this checkout.
+
+    A user-site ``.pth`` file (e.g. fathomdesk-root.pth) can prepend a stale
+    vendored copy of the repo onto sys.path. Script-style daemon launches
+    (``python tools/genesis/daemon.py``) have only the script dir on sys.path[0],
+    so user-site can win and bind ``sys.modules["tools"]`` to the stale tree —
+    every later ``tools.*`` import, including the reflex dispatch
+    ``importlib.import_module(f"tools.genesis.reflexes.{name}")``, then executes
+    STALE code silently. This guard resolves the actually-imported ``tools``
+    package and aborts if it does not live under this repo root.
+
+    Set ``ICDEV_SKIP_TREE_GUARD=1`` to bypass — ONLY for exotic packaging
+    scenarios (e.g. a legitimately relocated/vendored install where the check
+    would false-positive). Never set it to paper over a real shadowing bug.
+    """
+    if os.environ.get("ICDEV_SKIP_TREE_GUARD") == "1":
+        return
+    try:
+        import tools as _tools_pkg  # noqa: PLC0415 — must resolve the live binding
+
+        tools_path = Path(_tools_pkg.__file__).resolve()
+    except Exception as exc:  # pragma: no cover — import machinery failure
+        print(
+            f"CRITICAL: startup integrity guard could not resolve the 'tools' "
+            f"package: {type(exc).__name__}: {exc}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    expected_root = Path(base_dir).resolve()
+    # tools_path is <root>/tools/__init__.py — its parent.parent is the repo root.
+    resolved_root = tools_path.parent.parent
+    try:
+        tools_path.relative_to(expected_root)
+        under_root = True
+    except ValueError:
+        under_root = False
+
+    if not under_root:
+        print(
+            "CRITICAL: shadowed 'tools' package detected — refusing to start.\n"
+            f"  expected repo root : {expected_root}\n"
+            f"  resolved tools root: {resolved_root}\n"
+            f"  imported tools path: {tools_path}\n"
+            "  A stale vendored copy of the repo is ahead of this checkout on "
+            "sys.path (likely a user-site .pth file). Fix PYTHONPATH / remove the "
+            "shadow, or set ICDEV_SKIP_TREE_GUARD=1 if this is an intentional "
+            "relocated install.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+
+# ---------------------------------------------------------------------------
 # Utility helpers
 # ---------------------------------------------------------------------------
 def generate_id(prefix: str = "gen") -> str:
@@ -1010,6 +1067,9 @@ class DaemonBase(abc.ABC):
     # --- CLI ---
     def run_cli(self) -> None:
         """Standard CLI entry point."""
+        # Fail closed before doing any work if a stale 'tools' tree shadows this
+        # checkout (see verify_tools_tree_integrity). shx-safe-05.
+        verify_tools_tree_integrity(BASE_DIR)
         parser = argparse.ArgumentParser(description=f"{self.daemon_name} — ICDEV™ Autonomous Engine")
         parser.add_argument("--once", action="store_true", help="Single pass: run all due reflexes then exit")
         parser.add_argument("--status", action="store_true", help="Show daemon & reflex status")

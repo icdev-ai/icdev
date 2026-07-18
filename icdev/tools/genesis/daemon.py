@@ -18,24 +18,28 @@ Usage:
 
 import importlib
 import json
-
-from tools.logging.icdev_logger import get_logger
 import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, Tuple
 
-logger = get_logger(__name__)
-
 # ---------------------------------------------------------------------------
-# Path bootstrapping
+# Path bootstrapping — MUST run before ANY `tools.*` / `icdev.*` import.
+# Script-style launches (`python tools/genesis/daemon.py`) put only the script
+# directory on sys.path[0]; a user-site `.pth` (e.g. fathomdesk-root.pth) can
+# otherwise inject a STALE vendored copy of the repo ahead of this checkout and
+# bind `sys.modules["tools"]` to it. Inserting the repo root at position 0
+# before the first `tools.*` import guarantees this checkout wins. (shx-safe-05)
 # ---------------------------------------------------------------------------
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
+from tools.logging.icdev_logger import get_logger  # noqa: E402 — must follow sys.path bootstrap
+
+logger = get_logger(__name__)
+
 from tools.daemon.base import (  # noqa: E402
-    BASE_DIR,
     DaemonBase,
     ReflexStateBase,
     TrustKernelBase,
