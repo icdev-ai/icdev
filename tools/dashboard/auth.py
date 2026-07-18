@@ -401,6 +401,16 @@ RBAC_MATRIX = {
     "cpmp_deliverable_detail": {"admin", "pm", "contract_mgr", "co", "cor", "isso"},
     # Proposal Genesis (prop-fix-08)
     "proposal_genesis": {"admin", "pm", "bd", "capture_mgr"},
+    # Strategos — approval / resolution / workflow-advance / authoritative-deletion
+    # class of state-changing routes (nav-sec-05). Enforcement is via the
+    # @require_role(*_STRATEGOS_APPROVAL_ROLES) decorators in
+    # apps/strategos/blueprint.py; this entry is the documentary role map (the
+    # matrix itself is not consumed programmatically for enforcement).
+    "strategos_approval": {"admin", "pm", "isso", "co", "cor", "reviewer"},
+    # ZIG mutating endpoints — capability-status PATCH + global assess POST
+    # (nav-sec-05). Enforced via @require_role(*_ZIG_MUTATION_ROLES) in
+    # tools/security_canvas/blueprint.py.
+    "zig_mutation": {"admin", "isso", "ciso"},
 }
 
 

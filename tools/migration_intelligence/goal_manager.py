@@ -170,8 +170,12 @@ def parse_goals_from_chat(
 
     prompt = _GOAL_PARSE_PROMPT.format(user_input=user_input)
     try:
-        response = router.complete(prompt, function="text_analysis", max_tokens=2048)
-        raw_text = response.get("text", "").strip()
+        from tools.llm.provider import LLMRequest
+        response = router.invoke(
+            "text_analysis",
+            LLMRequest(messages=[{"role": "user", "content": prompt}], max_tokens=2048),
+        )
+        raw_text = (response.content or "").strip()
     except Exception as exc:
         return {"ok": False, "error": f"LLM call failed: {exc}", "log_id": log_id}
 

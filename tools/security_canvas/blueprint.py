@@ -34,6 +34,16 @@ from flask import (
 
 logger = get_logger("icdev.security_canvas")
 
+# nav-sec-05: ZIG mutating endpoints (capability-status PATCH, global assess
+# POST) must be restricted to security-officer roles, not merely any
+# authenticated session. require_role reads g.current_user (set by the
+# dashboard before_request hook) and 401s anonymous / 403s an unauthorized
+# role. Every role here also appears in VALID_DASHBOARD_ROLES
+# (tools/dashboard/auth.py).
+from tools.dashboard.auth import require_role  # noqa: E402
+
+_ZIG_MUTATION_ROLES = ("admin", "isso", "ciso")
+
 # ── Paths ──────────────────────────────────────────────────────────────────────
 _SC_DIR = Path(__file__).resolve().parent
 _ICDEV_ROOT = _SC_DIR.parent.parent
@@ -2321,6 +2331,7 @@ def create_security_blueprint():
         return jsonify({"ok": True, "capabilities": caps, "count": len(caps)})
 
     @bp.route("/api/zig/capabilities/<cap_id>", methods=["PATCH"])
+    @require_role(*_ZIG_MUTATION_ROLES)
     @sc_login_required
     def zig_api_cap_status(cap_id):
         """PATCH /security/api/zig/capabilities/<id> — update implementation_status."""
@@ -2415,6 +2426,7 @@ def create_security_blueprint():
         })
 
     @bp.route("/api/zig/assess", methods=["POST"])
+    @require_role(*_ZIG_MUTATION_ROLES)
     @sc_login_required
     def zig_api_assess():
         """POST /security/api/zig/assess — run the GLOBAL ZIG assessment.

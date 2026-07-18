@@ -343,7 +343,7 @@ def _ground_paragraph(text: str, evidence_ids: list[str], require_citations: boo
 
 
 def _has_grounding_columns(conn) -> bool:
-    """True when migration 279 grounding columns are present on sg_intsums."""
+    """True when migration 280 grounding columns are present on sg_intsums."""
     try:
         conn.execute("SELECT grounding_status FROM sg_intsums LIMIT 0").fetchall()
         return True
@@ -364,7 +364,7 @@ def _audit_force_override(conn, intsum_id: str, findings: list[dict]) -> None:
             (str(uuid.uuid4()), intsum_id, json.dumps(findings), _now_utc()),
         )
     except Exception as exc:
-        # Table may not exist yet (migration 279 not applied). The grounding
+        # Table may not exist yet (migration 280 not applied). The grounding
         # verdict itself is still persisted on sg_intsums.grounding_json.
         logger.warning("grounding force-override audit skipped: %s", exc)
         try:
