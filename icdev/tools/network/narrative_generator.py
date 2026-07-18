@@ -36,6 +36,19 @@ from typing import Any
 
 logger = get_logger(__name__)
 
+# LLM stack — imported at module level so tests can monkeypatch these names on
+# tools.network.narrative_generator directly (see tests/test_ndc_narrative_egress.py),
+# and so the fail-closed egress gate can reuse the canonical locality primitive.
+# Guarded so the module still loads (deterministic-only) when the LLM stack is
+# unavailable; _invoke_llm then degrades to NARRATIVE_TEMPLATES.
+try:
+    from tools.llm.router import LLMRouter, _provider_is_local_only
+    from tools.llm.provider import LLMRequest
+except Exception:  # pragma: no cover - LLM stack optional
+    LLMRouter = None  # type: ignore[assignment]
+    LLMRequest = None  # type: ignore[assignment]
+    _provider_is_local_only = None  # type: ignore[assignment]
+
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
@@ -454,16 +467,78 @@ def _build_appdev_detail(
     return detail
 
 
+# ── Classification egress gate (ndc-gov-02) ───────────────────────────────────
+# Gov/DoD fail-closed posture: TFW narrative content (node/flow details) may only
+# egress to an LLM provider when the flow classification is UNRESTRICTED
+# (NIPR/unclassified), or when the resolved provider is LOCAL/air-gapped. The
+# restricted set below is the classification-side decision; the local/cloud
+# decision reuses the canonical locality primitive (see _tfw_provider_is_local).
+RESTRICTED_CLASSIFICATIONS: frozenset[str] = frozenset(
+    {"CUI", "IL4", "IL5", "IL6", "SIPR"}
+)
+
+
+def _is_restricted_classification(classification: str) -> bool:
+    """True when *classification* requires a local-only LLM provider for egress."""
+    return (classification or "").strip().upper() in RESTRICTED_CLASSIFICATIONS
+
+
+def _tfw_provider_is_local(router: Any) -> tuple[bool, str]:
+    """Resolve the ``tfw_narrative`` provider and whether it is local-only.
+
+    Reuses the ONE definition of "local" for the CUI egress boundary — the router's
+    ``_provider_is_local_only`` (a fail-closed wrapper over
+    ``cli_bridge.activate._is_local_only_provider``): a provider of ``type: ollama``
+    carrying no ``api_key_env``. Inventing a second locality definition here is
+    precisely how CUI leaks, so we delegate.
+
+    Fail-closed: any resolution error (or an unavailable LLM stack) is treated as
+    NOT local. Returns ``(is_local, provider_name)``.
+    """
+    if _provider_is_local_only is None:  # LLM stack unavailable at import
+        return False, ""
+    try:
+        _provider, _model_id, model_cfg = router.get_provider_for_function("tfw_narrative")
+        provider_name = (model_cfg or {}).get("provider", "")
+        providers = getattr(router, "_config", {}).get("providers", {}) or {}
+        return bool(_provider_is_local_only(provider_name, providers)), provider_name
+    except Exception as exc:
+        logger.warning("tfw narrative provider locality resolution failed: %s", exc)
+        return False, ""
+
+
 # ── LLM invocation ────────────────────────────────────────────────────────────
 
-def _invoke_llm(system_prompt: str, user_content: str) -> str | None:
+def _invoke_llm(
+    system_prompt: str,
+    user_content: str,
+    classification: str = "NIPR",
+    persona_id: str = "",
+) -> str | None:
+    if LLMRouter is None or LLMRequest is None:  # LLM stack unavailable
+        return None
     try:
-        from tools.llm.router import LLMRouter
-        from tools.llm.provider import LLMRequest
-
         router = LLMRouter()
         if not router.has_any_llm():
             return None
+
+        # Fail-closed classification egress gate (ndc-gov-02): a restricted
+        # classification may ONLY use a local/air-gapped provider. If the resolved
+        # provider for tfw_narrative is cloud-hosted, do NOT egress the
+        # (potentially classified) node/flow details — return None so the caller
+        # falls back to the deterministic NARRATIVE_TEMPLATES path.
+        if _is_restricted_classification(classification):
+            is_local, provider_name = _tfw_provider_is_local(router)
+            if not is_local:
+                logger.warning(
+                    "tfw narrative LLM egress BLOCKED (fail-closed): classification=%s "
+                    "persona=%s resolved_provider=%s is not local — falling back to "
+                    "deterministic templates.",
+                    classification,
+                    persona_id or "?",
+                    provider_name or "?",
+                )
+                return None
 
         req = LLMRequest(
             messages=[{"role": "user", "content": user_content}],
@@ -474,8 +549,8 @@ def _invoke_llm(system_prompt: str, user_content: str) -> str | None:
         resp = router.invoke("tfw_narrative", req)
         if resp and resp.content:
             return resp.content.strip()
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("tfw narrative LLM call failed: %s", exc)
     return None
 
 
@@ -566,7 +641,16 @@ def generate_for_persona(
         + f"\nNetwork detail: {json.dumps(step.get('network_detail', {}))}"
     )
 
-    narrative = _invoke_llm(system_prompt, user_content) if use_llm else None
+    narrative = (
+        _invoke_llm(
+            system_prompt,
+            user_content,
+            classification=classification,
+            persona_id=persona_id,
+        )
+        if use_llm
+        else None
+    )
 
     if not narrative:
         # Try NARRATIVE_TEMPLATES for a richer deterministic fallback
