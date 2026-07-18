@@ -97,6 +97,7 @@ REFLEX_NAMES = [
     "fathomdesk_trap_scenarios",
     "migration_canvas",
     "academy_reflex",
+    "academy_oracle_reflex",  # penta-aca-06: 6h in-app 7-lens AcademyOracleRunner → fa_oracle_* (replaces dead forge_academy_oracle)
     "e2e_runner",
     "qa_agent_reflex",  # 6-hour QA coverage gap sweep + E2E sweep scheduling
     "coherence_to_kanban_reflex",  # diffs coherence violations → files kanban bug tasks

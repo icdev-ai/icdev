@@ -7,6 +7,7 @@ import secrets
 
 from flask import Blueprint, g, jsonify, redirect, render_template, request, url_for
 
+from .auth import require_org_intel
 from .constants import ROLES, TECHNICAL_ROLES, LEVELS, xp_to_next_level
 from .db import (
     migrate, get_or_create_user, get_user, update_user_role, list_missions, get_mission, get_mission_progress, start_mission, complete_mission,
@@ -55,6 +56,30 @@ def _inject_fa_nav():
     return {}
 
 
+# Health of the one-time init/seed. ``seed_mission_catalog()`` swallows its own
+# failures (content_loader.py) and returns, so a silent seed failure would leave
+# _initialized=True while serving an EMPTY catalog. We verify a non-empty catalog
+# after seeding and, on any failure, log LOUD (error) + record a health flag
+# instead of pretending init succeeded. (penta-aca-06)
+_INIT_HEALTH: dict = {"initialized": False, "error": None, "mission_count": 0}
+
+
+def get_init_health() -> dict:
+    """Return a copy of the Academy init/seed health flag."""
+    return dict(_INIT_HEALTH)
+
+
+def _mission_count() -> int:
+    try:
+        from tools.db.storage import get_connection
+        row = get_connection().execute(
+            "SELECT COUNT(*) FROM fa_missions WHERE is_active=1"
+        ).fetchone()
+        return int(row[0]) if row else 0
+    except Exception:
+        return 0
+
+
 def _ensure_init():
     global _initialized
     if _initialized:
@@ -62,13 +87,29 @@ def _ensure_init():
     with _init_lock:
         if _initialized:  # double-checked locking
             return
+        import logging
+        log = logging.getLogger(__name__)
         try:
             migrate()
             seed_mission_catalog()
-            _initialized = True
+            count = _mission_count()
+            _INIT_HEALTH["mission_count"] = count
+            if count <= 0:
+                # seed_mission_catalog() swallows its own exception, so an empty
+                # catalog here means seeding failed silently — surface it.
+                raise RuntimeError(
+                    "mission catalog is empty after seeding — refusing to serve an empty Academy"
+                )
         except Exception as exc:
-            import logging
-            logging.getLogger(__name__).warning("FORGE Academy init failed: %s", exc)
+            _INIT_HEALTH["initialized"] = False
+            _INIT_HEALTH["error"] = str(exc)
+            # Fail loud: error (not warning) with traceback, and DO NOT mark
+            # initialized — the next request retries rather than serving empty.
+            log.error("FORGE Academy init/seed failed: %s", exc, exc_info=True)
+            return
+        _INIT_HEALTH["initialized"] = True
+        _INIT_HEALTH["error"] = None
+        _initialized = True
 
 
 def _fa_tenant_id() -> str | None:
@@ -511,6 +552,8 @@ def api_coach_hint():
         design_id=design_id,
         chain_mode=chain_mode,
     )
+    # _md_to_html allowlist-sanitizes its output (penta-aca-06), so this LLM
+    # coach hint is safe to return as HTML — <script>/inline handlers render inert.
     from .content_loader import _md_to_html
     hint_html = _md_to_html(hint)
     update_user_xp(fa_user["id"], -10)
@@ -608,6 +651,7 @@ def api_workflow_submit():
 # ---------------------------------------------------------------------------
 
 @bp.route("/academy/oracle")
+@require_org_intel  # org-wide predictive intelligence — leadership tier only (penta-aca-06)
 def oracle_page():
     _ensure_init()
     # Single shared DB connection for all three reads — each new canvas
@@ -624,6 +668,7 @@ def oracle_page():
 
 
 @bp.route("/api/academy/oracle/predictions")
+@require_org_intel
 def api_oracle_predictions():
     _ensure_init()
     from .oracle.db import list_predictions
@@ -636,6 +681,7 @@ def api_oracle_predictions():
 
 
 @bp.route("/api/academy/oracle/summary")
+@require_org_intel
 def api_oracle_summary():
     _ensure_init()
     from .oracle.db import summary_stats
@@ -643,6 +689,7 @@ def api_oracle_summary():
 
 
 @bp.route("/api/academy/oracle/run", methods=["POST"])
+@require_org_intel
 def api_oracle_run():
     _ensure_init()
     from .oracle.runner import AcademyOracleRunner
@@ -656,6 +703,7 @@ def api_oracle_run():
 
 
 @bp.route("/api/academy/oracle/prediction/<pred_id>/outcome", methods=["POST"])
+@require_org_intel
 def api_oracle_update_outcome(pred_id: str):
     _ensure_init()
     from .oracle.db import update_prediction_outcome
@@ -702,6 +750,7 @@ def pattern_detail(pattern_id: str):
 
 
 @bp.route("/academy/org-readiness")
+@require_org_intel  # org-wide readiness/cohort intelligence — leadership tier only (penta-aca-06)
 def org_readiness_page():
     _ensure_init()
     try:
@@ -717,6 +766,7 @@ def org_readiness_page():
 
 
 @bp.route("/api/academy/org-readiness")
+@require_org_intel
 def api_org_readiness():
     _ensure_init()
     try:
@@ -724,6 +774,18 @@ def api_org_readiness():
         return jsonify(compute_org_readiness())
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
+
+
+@bp.route("/api/academy/health")
+def api_academy_health():
+    """Surface the Academy init/seed health flag (penta-aca-06).
+
+    Returns 200 when the mission catalog seeded successfully, 503 when init/seed
+    failed — so an empty catalog is observable instead of silently served.
+    """
+    _ensure_init()
+    health = get_init_health()
+    return jsonify(health), (200 if health.get("initialized") else 503)
 
 
 # ---------------------------------------------------------------------------

@@ -343,7 +343,7 @@
 | Bootstrap Hmm | tools\trading\ml\bootstrap_hmm.py | Auto-registered: ml/bootstrap_hmm.py | --json | JSON |
 | Cmmi L3 Assessor | tools\compliance\cmmi_l3_assessor.py | Auto-registered: compliance/cmmi_l3_assessor.py | --json | JSON |
 | Connectivity Ref | tools\network\connectivity_ref.py | Auto-registered: network/connectivity_ref.py | --json | JSON |
-| Forge Academy Oracle | tools\genesis\reflexes\forge_academy_oracle.py | Auto-registered: reflexes/forge_academy_oracle.py | --json | JSON |
+| Academy Oracle Reflex | tools\genesis\reflexes\academy_oracle_reflex.py | Auto-registered: reflexes/academy_oracle_reflex.py | --json | JSON |
 | Cost Estimator | tools\agentic_ai_canvas\cost_estimator.py | Auto-registered: agentic_ai_canvas/cost_estimator.py | --json | JSON |
 | Data Profiler | tools\data_canvas\data_profiler.py | Auto-registered: data_canvas/data_profiler.py | --json | JSON |
 | Quality Engine | tools\data_canvas\quality_engine.py | Auto-registered: data_canvas/quality_engine.py | --json | JSON |
