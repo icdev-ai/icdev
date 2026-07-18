@@ -359,15 +359,19 @@ def test_workflow_stage3_gate_passes_when_all_resolved():
     assert stage3_check_gate(session["id"])
 
 
-def test_workflow_writeguard_bypassed_gracefully_when_not_installed():
+def test_workflow_writeguard_fails_closed_when_not_installed():
+    """cnr-doc-02: a missing WriteGuard engine must FAIL CLOSED, never bypass."""
+    import sys
     from tools.docgen.session_manager import create_session
     from tools.docgen.workflow import stage6_writeguard
 
-    with patch("tools.docgen.workflow.stage6_writeguard") as mock_wg:
-        mock_wg.return_value = {"passed": True, "score": 100, "result": {}, "fixed_text": "text"}
-        session = create_session(title="WG Test", domain="network")
+    session = create_session(title="WG Test", domain="network")
+    # sys.modules[name]=None makes `from tools.pulse.writeguard import …` raise ImportError.
+    with patch.dict(sys.modules, {"tools.pulse.writeguard": None}):
         result = stage6_writeguard(session["id"], "Some doc text.", "network")
-        assert result["passed"]
+    assert result["passed"] is False
+    assert result["blocked"] is True
+    assert result.get("writeguard_unavailable") is True
 
 
 # ─── Context builder ──────────────────────────────────────────────────────────

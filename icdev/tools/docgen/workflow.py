@@ -1122,12 +1122,18 @@ def stage6_writeguard(
         }
 
     except ImportError:
-        log.warning("WriteGuard not available — gate bypassed (import error)")
+        # cnr-doc-02: a missing WriteGuard engine must FAIL CLOSED — "quality
+        # check unavailable" can never be reported as "quality passed". Block the
+        # gate and surface the reason so publish cannot proceed.
+        log.error("WriteGuard not available (ImportError) — FAILING CLOSED (gate blocked)")
         return {
-            "passed": True, "score": 100, "result": {}, "fixed_text": doc_text,
-            "attempts": 0, "blocked": False, "ace_regen_needed": False,
+            "passed": False, "score": 0,
+            "result": {"error": "WriteGuard unavailable (ImportError) — gate failed closed"},
+            "fixed_text": doc_text,
+            "attempts": 0, "blocked": True, "ace_regen_needed": False,
             "policy_violations": [], "policy_warnings": [],
             "citation_findings": [], "placeholder_findings": [],
+            "writeguard_unavailable": True,
         }
     except Exception as exc:
         log.exception("IDR WriteGuard exception: session=%s", session_id)

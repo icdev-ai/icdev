@@ -156,3 +156,54 @@ def test_publish_route_allows_cited_document(tmp_path):
     with patch("tools.docgen.workflow.stage8_publish", return_value=[{"format": "html"}]):
         resp = client.post(f"/docgen/api/sessions/{s['id']}/publish", json={})
     assert resp.status_code == 201
+
+
+# ═══════════════ cnr-doc-02: publish-gate bypass + fail-closed WG ══════════════
+
+def test_publish_ignores_client_doc_text(tmp_path):
+    """A client-supplied doc_text can NOT override the validated final_doc_text."""
+    client = _client(tmp_path)
+    s = _session_ready("Server body cited [source: kb1].")
+    captured = {}
+
+    def _fake_publish(session_id, doc_text, title, **kw):
+        captured["doc_text"] = doc_text
+        return [{"format": "html"}]
+
+    with patch("tools.docgen.workflow.stage8_publish", side_effect=_fake_publish):
+        resp = client.post(
+            f"/docgen/api/sessions/{s['id']}/publish",
+            json={"doc_text": "HOSTILE arbitrary bytes with no gate [source: x]."},
+        )
+    assert resp.status_code == 201
+    # The published bytes are the server-side validated text, not the client payload.
+    assert captured["doc_text"] == "Server body cited [source: kb1]."
+
+
+def test_stage6_writeguard_fails_closed_on_import_error():
+    import sys
+    from tools.docgen.session_manager import create_session
+    from tools.docgen.workflow import stage6_writeguard
+    s = create_session(title="WG", domain="network")
+    with patch.dict(sys.modules, {"tools.pulse.writeguard": None}):
+        res = stage6_writeguard(s["id"], "Some text.", "network")
+    assert res["passed"] is False
+    assert res["blocked"] is True
+    assert res.get("writeguard_unavailable") is True
+
+
+def test_api_writeguard_route_fails_closed_on_import_error(tmp_path):
+    import sys
+    from tools.docgen.session_manager import create_session, advance_stage
+    client = _client(tmp_path)
+    s = create_session(title="WG route", domain="network")
+    advance_stage(s["id"], 6, "writeguard")
+    with patch.dict(sys.modules, {"tools.pulse.writeguard": None}):
+        resp = client.post(
+            f"/docgen/api/sessions/{s['id']}/writeguard",
+            json={"doc_text": "Some doc text to check."},
+        )
+    assert resp.status_code == 409
+    body = resp.get_json()
+    assert body["passed"] is False
+    assert body["writeguard_unavailable"] is True

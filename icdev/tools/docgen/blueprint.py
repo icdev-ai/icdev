@@ -988,10 +988,14 @@ def api_writeguard(session_id: str):
         "blocked": gate.get("blocked", False),
         "ace_regen_triggered": ace_regen_triggered,
         "message": (
+            "WriteGuard engine unavailable — quality gate failed closed (cnr-doc-02). "
+            "Publishing is blocked until the engine is restored."
+            if gate.get("writeguard_unavailable") else
             "WriteGuard blocked after maximum auto-fix attempts — ACE regeneration triggered."
             if ace_regen_triggered else
             f"Quality gate failed (score {gate['score']:.1f} < 70)."
         ),
+        "writeguard_unavailable": bool(gate.get("writeguard_unavailable")),
     }), 409
 
 
@@ -1025,11 +1029,15 @@ def api_publish(session_id: str):
         }), 409
 
     data = request.get_json(force=True, silent=True) or {}
-    doc_text = (
-        data.get("doc_text")
-        or session.get("final_doc_text")
-        or session.get("title", "Document")
-    )
+    # cnr-doc-02: publish ONLY the server-side validated document. A client-supplied
+    # doc_text is IGNORED — otherwise a caller could pass clean text through the
+    # WriteGuard gate, then publish arbitrary unvalidated bytes (publish-gate bypass).
+    doc_text = session.get("final_doc_text") or session.get("title", "Document")
+    if data.get("doc_text") and data.get("doc_text") != doc_text:
+        logger.warning(
+            "IDR publish: ignoring client-supplied doc_text (session=%s) — publishing "
+            "server-side validated final_doc_text only", session_id,
+        )
     title = data.get("title") or session.get("title", "Document")
     classification = data.get("classification") or session.get("classification", "CUI")
 
