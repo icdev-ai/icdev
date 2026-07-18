@@ -119,6 +119,47 @@ def _int_arg(name: str, default: int, *, lo: int, hi: int) -> int:
     return max(lo, min(n, hi))
 
 
+def _pending_confidence_hitl(conn, instance_id: str) -> list[dict]:
+    """Unresolved HITL approval requests for every co-worker in an instance.
+
+    Reads ace_audit_log: a ``hitl_pending`` row is outstanding until a matching
+    ``hitl_resolved`` / ``hitl_rejected`` row (same coworker_id + detail) exists.
+    Covers both the confidence gate (fired at run start for low-trust co-workers)
+    and the required-step gate — each renders in the instance page's approval
+    banner (coworker/hitl.html) whose Approve button POSTs to /api/ace/<id>/hitl.
+    """
+    try:
+        pending = _rows(
+            conn.execute(
+                _q(
+                    conn,
+                    "SELECT id, coworker_id, detail, created_at FROM ace_audit_log "
+                    "WHERE instance_id = ? AND action = 'hitl_pending' "
+                    "ORDER BY created_at DESC",
+                ),
+                (instance_id,),
+            )
+        )
+        if not pending:
+            return []
+        resolved = _rows(
+            conn.execute(
+                _q(
+                    conn,
+                    "SELECT coworker_id, detail FROM ace_audit_log "
+                    "WHERE instance_id = ? "
+                    "AND action IN ('hitl_resolved', 'hitl_rejected')",
+                ),
+                (instance_id,),
+            )
+        )
+        done = {(r["coworker_id"], r["detail"]) for r in resolved}
+        return [r for r in pending if (r["coworker_id"], r["detail"]) not in done]
+    except Exception as exc:  # noqa: BLE001 — table may be empty/absent pre-migration
+        logger.warning("ace pending HITL read failed for %s: %s", instance_id, exc)
+        return []
+
+
 # --------------------------------------------------------------------------- #
 # Blueprints
 # --------------------------------------------------------------------------- #
@@ -336,6 +377,7 @@ def instance_detail(instance_id: str):
     coworkers: list[dict] = []
     messages: list[dict] = []
     artifacts: list[dict] = []
+    pending_hitl: list[dict] = []
     conn = None
     try:
         conn = _db()
@@ -390,6 +432,7 @@ def instance_detail(instance_id: str):
                     (instance_id,),
                 )
             )
+            pending_hitl = _pending_confidence_hitl(conn, instance_id)
     except Exception as exc:  # noqa: BLE001
         logger.warning("ace instance_detail read failed for %s: %s", instance_id, exc)
     finally:
@@ -405,10 +448,12 @@ def instance_detail(instance_id: str):
         return render_template(
             "coworker/instance.html",
             instance=instance,
+            instance_id=instance_id,
             coworkers=coworkers,
             messages=messages,
             artifacts=artifacts,
             coworker_display=coworker_display,
+            pending_hitl=pending_hitl,
         )
     except Exception as exc:  # noqa: BLE001
         logger.info("coworker/instance.html unavailable (%s); JSON fallback", exc)
