@@ -483,6 +483,11 @@ DM_GOVERNANCE_POLICY_TYPES = ["opa", "rbac", "classification", "retention", "dlp
 
 # Data Mesh v2 constants (dm-found-02 — used by data_mesh/* modules)
 DM_MATURITY_LEVELS = ["defined", "managed", "optimizing"]       # simple validation list
+# label→int mapping for the INTEGER dm_domains.maturity_level column (dcpr-fix-08).
+# Aligns the DM_MATURITY_LEVELS labels with the DM_DOMAIN_MATURITY_LEVELS numeric
+# levels so create_domain persists an int, not a string, into the INTEGER column.
+DM_MATURITY_LEVEL_MAP = {"defined": 1, "managed": 2, "optimizing": 3}
+DM_DEFAULT_MATURITY_LEVEL = 1                                    # "defined"
 DM_PRODUCT_STATUS = ["draft", "published", "deprecated"]
 DM_OUTPUT_PORT_TYPES = ["table", "api", "stream", "file", "lakehouse"]
 DM_SLA_TIERS = ["bronze", "silver", "gold", "platinum"]
