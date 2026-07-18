@@ -19,6 +19,12 @@ import re
 
 from tools.aiify.db.init_db import get_connection, init_db
 from tools.aiify.engine import run_scan
+from tools.aiify.prd_common import (
+    PHASE_PRIORITY,
+    build_task_steps,
+    load_engine_enrichment,
+    phase_key,
+)
 # penta-aiify-02: hard-gate destructive/expensive routes with the established
 # dashboard RBAC decorator (same pattern as tools/dashboard/app.py). Enforces
 # login (401) + operator role (403) independent of ICDEV_ENFORCE_CANVAS_ACCESS.
@@ -239,8 +245,10 @@ def index():
             "ORDER BY g.last_used DESC LIMIT 10"
         ).fetchall()]
 
-        # Lazy backfill: compute summary for old scans that predate the feature
-        _needs_commit = False
+        # Display-only summary for old scans that predate the feature. The read
+        # path performs NO write — the canonical summary is persisted once at scan
+        # completion (engine.run_scan step 4a); computing it here for display keeps
+        # index() side-effect-free (no UPDATE on a GET). (penta-aiify-06)
         for scan in scans:
             if not scan.get("project_summary"):
                 try:
@@ -249,17 +257,9 @@ def index():
                         "SELECT pattern_type, ai_paradigm FROM aiify_opportunities WHERE scan_id = %s",
                         (scan["scan_id"],),
                     ).fetchall()]
-                    summary = _build_summary(scan["input_ref"], opps_for_scan)
-                    conn.execute(
-                        "UPDATE aiify_scans SET project_summary = %s WHERE scan_id = %s",
-                        (summary, scan["scan_id"]),
-                    )
-                    scan["project_summary"] = summary
-                    _needs_commit = True
+                    scan["project_summary"] = _build_summary(scan["input_ref"], opps_for_scan)
                 except Exception:
                     pass
-        if _needs_commit:
-            conn.commit()
 
         opportunities: list[dict] = []
         roadmap: dict | None = None
@@ -769,7 +769,7 @@ def api_send_to_kanban():
     if all_opp_ids:
         conn = _conn()
         try:
-            placeholders = ",".join("?" * len(all_opp_ids))
+            placeholders = ",".join(["%s"] * len(all_opp_ids))
             rows = conn.execute(
                 f"SELECT opportunity_id, composite_score, value_score, feasibility_score, risk_score "
                 f"FROM aiify_scores WHERE opportunity_id IN ({placeholders})",
@@ -780,7 +780,6 @@ def api_send_to_kanban():
         finally:
             conn.close()
 
-    _PHASE_PRIORITY = {"P1": "high", "P2": "medium", "P3": "low"}
     short_id = roadmap_id[:8]
 
     # Build all task specs, then create them through the canonical task_factory —
@@ -796,8 +795,8 @@ def api_send_to_kanban():
 
     for ph in target_phases:
         label   = ph.get("label", "")
-        ph_key  = ph.get("phase_id") or (label.split(" ")[0] if label else "P3")
-        priority = _PHASE_PRIORITY.get(ph_key, "medium")
+        ph_key  = phase_key(ph)
+        priority = PHASE_PRIORITY.get(ph_key, "medium")
         opps    = ph.get("opportunities", [])
 
         decision = prd_decisions.get(ph_key)
@@ -861,20 +860,18 @@ def api_send_to_kanban():
                 "acceptance_criterion": criterion,
             }
 
-            steps = [
-                ("d1", "Design",     None,            f"Define interface contract and test cases for {pattern} replacement in {module}:{fn}"),
-                ("d2", "Implement",  f"{base_id}-d1", f"Replace {pattern} with {paradigm} ({model or 'recommended model'}) in {module}:{fn}"),
-                ("d3", "Test",       f"{base_id}-d2", f"Validate AI output parity; {criterion[:60]}"),
-                ("d4", "Review",     f"{base_id}-d3", f"Security scan + compliance gate for {paradigm} integration in {module}"),
-            ]
-
-            for suffix, step_name, dep_id, step_title in steps:
-                child_id = f"{base_id}-{suffix}"
-                child_desc = json.dumps({**base_desc_data, "step": step_name, "depends_on": dep_id})
+            steps = build_task_steps(
+                base_id, pattern=pattern, paradigm=paradigm, module=module,
+                fn=fn, model=model, criterion=criterion,
+            )
+            for step in steps:
+                child_id = f"{base_id}-{step['suffix']}"
+                dep_id = step["dep"]
+                child_desc = json.dumps({**base_desc_data, "step": step["step"], "depends_on": dep_id})
                 specs.append({
                     "id": child_id,
                     "idempotency_key": child_id,
-                    "title": f"[{step_name}] {step_title[:90]}",
+                    "title": f"[{step['step']}] {step['title'][:90]}",
                     "description": child_desc,
                     "task_type": "build",
                     "priority": child_priority,
@@ -982,7 +979,7 @@ def api_generate_prd():
     if opp_ids:
         conn = _conn()
         try:
-            placeholders = ",".join("?" * len(opp_ids))
+            placeholders = ",".join(["%s"] * len(opp_ids))
             rows = conn.execute(
                 f"SELECT opportunity_id, composite_score, value_score, feasibility_score, risk_score "
                 f"FROM aiify_scores WHERE opportunity_id IN ({placeholders})",
@@ -1015,72 +1012,15 @@ def api_generate_prd():
     except Exception:
         pass
 
-    # Enrich with Innovation + Research + Creative engine data (HITL-filtered, best-effort)
-    innovation_signals: list[dict] = []
-    regulatory_items: list[dict] = []
-    pain_points: list[dict] = []
-    rejected_innovation: list[dict] = []
-    rejected_research: list[dict] = []
-    rejected_creative: list[dict] = []
-    try:
-        from tools.db.storage import get_connection as _icdev_conn
-        icdev = _icdev_conn()
-        try:
-            try:
-                rows = icdev.execute(
-                    "SELECT id, source_type, title, description, composite_score "
-                    "FROM innovation_signals ORDER BY id DESC LIMIT 10"
-                ).fetchall()
-                for r in rows:
-                    dec = hitl.get(("innovation", str(r["id"])))
-                    if dec == "reject":
-                        rejected_innovation.append(dict(r))
-                        continue
-                    item = dict(r)
-                    item["hitl_accepted"] = dec == "accept"
-                    innovation_signals.append(item)
-                    if len(innovation_signals) == 3:
-                        break
-            except Exception:
-                pass
-            try:
-                rows = icdev.execute(
-                    "SELECT id, regulation_name, regulatory_body, deadline, nist_controls "
-                    "FROM research_regulatory_map LIMIT 10"
-                ).fetchall()
-                for r in rows:
-                    dec = hitl.get(("research", str(r["id"])))
-                    if dec == "reject":
-                        rejected_research.append(dict(r))
-                        continue
-                    item = dict(r)
-                    item["hitl_accepted"] = dec == "accept"
-                    regulatory_items.append(item)
-                    if len(regulatory_items) == 3:
-                        break
-            except Exception:
-                pass
-            try:
-                rows = icdev.execute(
-                    "SELECT id, description, composite_score "
-                    "FROM creative_pain_points ORDER BY composite_score DESC LIMIT 10"
-                ).fetchall()
-                for r in rows:
-                    dec = hitl.get(("creative", str(r["id"])))
-                    if dec == "reject":
-                        rejected_creative.append(dict(r))
-                        continue
-                    item = dict(r)
-                    item["hitl_accepted"] = dec == "accept"
-                    pain_points.append(item)
-                    if len(pain_points) == 3:
-                        break
-            except Exception:
-                pass
-        finally:
-            icdev.close()
-    except Exception:
-        pass
+    # Enrich with Innovation + Research + Creative engine data (HITL-filtered,
+    # best-effort). Shared reader — see tools/aiify/prd_common.py.
+    _enr = load_engine_enrichment(hitl=hitl, limit=3)
+    innovation_signals = _enr["innovation"]
+    regulatory_items = _enr["research"]
+    pain_points = _enr["creative"]
+    rejected_innovation = _enr["rejected_innovation"]
+    rejected_research = _enr["rejected_research"]
+    rejected_creative = _enr["rejected_creative"]
 
     prd = _build_prd(
         phase_id, target_phase, scan_dict, score_map,
@@ -1160,7 +1100,7 @@ def api_prd_dry_run():
     if opp_ids:
         conn = _conn()
         try:
-            placeholders = ",".join("?" * len(opp_ids))
+            placeholders = ",".join(["%s"] * len(opp_ids))
             rows = conn.execute(
                 f"SELECT opportunity_id, composite_score, value_score, feasibility_score, risk_score "
                 f"FROM aiify_scores WHERE opportunity_id IN ({placeholders})",
@@ -1196,39 +1136,11 @@ def api_prd_dry_run():
         pass
 
     # ── Generate PRD for scoring ─────────────────────────────────────────────
-    # Re-use _build_prd with minimal engine data (best-effort)
-    innovation_signals: list[dict] = []
-    regulatory_items: list[dict] = []
-    pain_points: list[dict] = []
-    try:
-        from tools.db.storage import get_connection as _icdev_conn
-        icdev = _icdev_conn()
-        try:
-            try:
-                for r in icdev.execute(
-                    "SELECT id, source_type, title, description, composite_score FROM innovation_signals ORDER BY id DESC LIMIT 3"
-                ).fetchall():
-                    innovation_signals.append(dict(r))
-            except Exception:
-                pass
-            try:
-                for r in icdev.execute(
-                    "SELECT id, regulation_name, regulatory_body, deadline, nist_controls FROM research_regulatory_map LIMIT 3"
-                ).fetchall():
-                    regulatory_items.append(dict(r))
-            except Exception:
-                pass
-            try:
-                for r in icdev.execute(
-                    "SELECT id, description, composite_score FROM creative_pain_points ORDER BY composite_score DESC LIMIT 3"
-                ).fetchall():
-                    pain_points.append(dict(r))
-            except Exception:
-                pass
-        finally:
-            icdev.close()
-    except Exception:
-        pass
+    # Re-use _build_prd with minimal engine data (best-effort, unfiltered top-3).
+    _enr = load_engine_enrichment(hitl=None, limit=3)
+    innovation_signals = _enr["innovation"]
+    regulatory_items = _enr["research"]
+    pain_points = _enr["creative"]
 
     prd = _build_prd(
         phase_id, target_phase, scan_dict, score_map,
@@ -1331,10 +1243,9 @@ def api_prd_dry_run():
             logger.warning("aiify: AI Boost failed — graceful degrade", exc_info=True)
 
     # ── Kanban task preview (no insert) ─────────────────────────────────────
-    _PHASE_PRIORITY = {"P1": "high", "P2": "medium", "P3": "low"}
     short_id = roadmap_id[:8]
-    ph_key = target_phase.get("phase_id") or (target_phase.get("label", "").split(" ")[0] if target_phase.get("label") else "P3")
-    priority = _PHASE_PRIORITY.get(ph_key, "medium")
+    ph_key = phase_key(target_phase)
+    priority = PHASE_PRIORITY.get(ph_key, "medium")
     tasks_preview: list[dict] = []
 
     epic_id = f"aiify-{short_id}-{ph_key.lower()}-epic"
@@ -1350,22 +1261,22 @@ def api_prd_dry_run():
         opp_id = opp.get("opportunity_id", 0)
         pattern = opp.get("pattern_type", "unknown")
         module = opp.get("module_path", "?")
+        fn = opp.get("function_name", "")
         paradigm = opp.get("ai_paradigm", "llm_generation")
+        model = opp.get("il_recommended_model", "")
         scores = score_map.get(opp_id, {})
         composite = float(scores.get("composite_score", 0.0))
         child_priority = "high" if composite >= 0.7 else priority
         base_id = f"aiify-{short_id}-{ph_key.lower()}-{opp_id}"
-        steps = [
-            ("d1", "Design", f"Define interface contract and test cases for {pattern} replacement in {module}"),
-            ("d2", "Implement", f"Replace {pattern} with {paradigm} in {module}"),
-            ("d3", "Test", f"Validate AI output parity for {pattern} in {module}"),
-            ("d4", "Review", f"Security scan + compliance gate for {paradigm} integration in {module}"),
-        ]
-        for suffix, step_name, step_title in steps:
-            child_id = f"{base_id}-{suffix}"
+        # Same canonical steps the real promotion creates, so the preview titles
+        # never drift from the seeded tasks (shared build_task_steps helper).
+        for step in build_task_steps(
+            base_id, pattern=pattern, paradigm=paradigm, module=module,
+            fn=fn, model=model,
+        ):
             tasks_preview.append({
-                "id": child_id,
-                "title": f"[{step_name}] {step_title[:90]}",
+                "id": f"{base_id}-{step['suffix']}",
+                "title": f"[{step['step']}] {step['title'][:90]}",
                 "type": "task",
                 "priority": child_priority,
             })
