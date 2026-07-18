@@ -29,6 +29,9 @@ rank_bm25>=0.2           # BM25 keyword search
 # === IQE: Intent Query Engine ===
 lark>=1.2                # PEG/EBNF parser for IQE intent grammar (tools/iqe/)
 
+# === Data Design Canvas — Query sandbox (dcpr-sec-01) ===
+sqlparse>=0.5            # Parser-based read-only SQL gate (tools/data_canvas/query_sandbox.py)
+
 # === Network Design Canvas ===
 defusedxml>=0.7          # Safe XML parsing for STIG import (XXE protection)
 networkx>=3.2            # Graph analysis for topology NL query engine
