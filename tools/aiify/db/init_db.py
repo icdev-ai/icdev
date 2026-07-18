@@ -69,15 +69,34 @@ def _sqlite_connection():
     return conn
 
 
-def get_connection():
-    """Return a canvas DB connection.
+def _sqlite_storage_connection():
+    """Wrap the raw SQLite connection in a translating StorageConnection.
 
-    On the PostgreSQL path a connection failure is FAIL-CLOSED by default: the
-    exception re-raises rather than silently degrading to a separate SQLite
-    store (which would fork canvas data and mask a real outage). SQLite fallback
-    happens only when AIIFY_ALLOW_SQLITE_FALLBACK is explicitly enabled, and is
-    logged loudly. When the backend is explicitly SQLite, this branch is skipped
-    entirely and behaviour is unchanged.
+    Returns a ``StorageConnection`` (RLS disabled) bound to the same
+    ``_sqlite_connection()`` (PRAGMA foreign_keys=ON + WAL preserved). Because it
+    translates ``%s`` → ``?`` at execute time, callers author ONE PG-native
+    placeholder style that flows through this seam on SQLite exactly as it does on
+    PostgreSQL — this is what lets engine.py drop its blind ``_exec`` retry
+    (penta-aiify-06).
+    """
+    from tools.db.storage import StorageConnection
+    conn = StorageConnection(_sqlite_connection(), "sqlite")
+    conn.set_security_context(None)
+    return conn
+
+
+def get_connection():
+    """Return a translating canvas DB connection (StorageConnection).
+
+    Both backends return a translating ``StorageConnection`` so a single
+    ``%s`` placeholder style works everywhere:
+
+      * PostgreSQL — the shared icdev DB via ``get_canvas_connection`` (RLS off).
+        A connection failure is FAIL-CLOSED by default: the exception re-raises
+        rather than silently degrading to a separate SQLite store. SQLite fallback
+        happens only when AIIFY_ALLOW_SQLITE_FALLBACK is explicitly enabled.
+      * SQLite — the dedicated ``.db`` at ``DB_PATH``, wrapped so ``%s`` → ``?``
+        translation happens transparently.
     """
     if _backend() == "postgresql":
         try:
@@ -97,7 +116,7 @@ def get_connection():
                 "until PostgreSQL is restored: %s",
                 DB_PATH, exc,
             )
-    return _sqlite_connection()
+    return _sqlite_storage_connection()
 
 
 # Static DDL — no dynamic expressions; must appear as plain string literals so
@@ -226,9 +245,112 @@ SCHEMA_SQLITE = (
 )
 
 
+# Directory of versioned .sql migrations (registry-declared: component_registry
+# aiify.db_migration = tools/aiify/db/migrations). Files apply in filename order,
+# each tracked once in aiify_schema_migrations.
+_MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
+
+# Columns that pre-date-feature DBs may lack. Introspection-based backfill (see
+# _ensure_columns) — replaces the former blind ALTER-in-try/except loop with an
+# orderly "add only if missing" reconcile that never swallows real errors.
+_BACKFILL_COLUMNS: list[tuple[str, str, str]] = [
+    ("aiify_scans", "project_summary", "TEXT"),
+    ("aiify_scans", "overall_verdict", "TEXT"),
+    ("aiify_scans", "overall_ai_readiness", "TEXT"),
+    ("aiify_scans", "overall_rationale", "TEXT"),
+    ("aiify_scores", "verdict", "TEXT"),
+    ("aiify_scores", "ai_readiness", "TEXT"),
+    ("aiify_scores", "rationale", "TEXT"),
+    ("aiify_scores", "pros", "TEXT"),
+    ("aiify_scores", "cons", "TEXT"),
+    ("aiify_scores", "category", "TEXT"),
+]
+
+
+def _existing_columns(conn, table: str) -> set[str]:
+    """Return the set of column names on ``table`` (empty if it doesn't exist).
+
+    Uses PRAGMA table_info on SQLite; the translating StorageConnection rewrites
+    it to an information_schema query on PostgreSQL. Best-effort by design.
+    """
+    try:
+        rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+        cols: set[str] = set()
+        for r in rows:
+            if hasattr(r, "keys"):
+                cols.add(r["name"])
+            else:
+                cols.add(r[1])
+        return cols
+    except Exception:
+        return set()
+
+
+def _ensure_columns(conn) -> None:
+    """Add any missing backfill columns, checking existence first (idempotent).
+
+    Unlike the prior blind ``try: ALTER … except: rollback`` loop, this queries
+    the live column set and only issues an ALTER for a genuinely absent column,
+    so a real DDL error is no longer masked as a benign "already exists".
+    """
+    by_table: dict[str, list[tuple[str, str]]] = {}
+    for table, col, coltype in _BACKFILL_COLUMNS:
+        by_table.setdefault(table, []).append((col, coltype))
+    for table, cols in by_table.items():
+        present = _existing_columns(conn, table)
+        if not present:
+            continue  # table absent (fresh schema already created it with all cols)
+        for col, coltype in cols:
+            if col not in present:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {coltype}")
+    conn.commit()
+
+
+def _applied_migrations(conn) -> set[str]:
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS aiify_schema_migrations ("
+        "version TEXT PRIMARY KEY, applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+    )
+    conn.commit()
+    try:
+        rows = conn.execute("SELECT version FROM aiify_schema_migrations").fetchall()
+        return {(r["version"] if hasattr(r, "keys") else r[0]) for r in rows}
+    except Exception:
+        return set()
+
+
+def _run_file_migrations(conn) -> None:
+    """Apply any unapplied ``migrations/*.sql`` in filename order, tracked once.
+
+    Statements are PG-authored and flow through the translating connection, so
+    the same file applies on SQLite and PostgreSQL. CREATE … IF NOT EXISTS keeps
+    re-runs idempotent.
+    """
+    if not _MIGRATIONS_DIR.is_dir():
+        return
+    applied = _applied_migrations(conn)
+    for path in sorted(_MIGRATIONS_DIR.glob("*.sql")):
+        version = path.stem
+        if version in applied:
+            continue
+        sql = path.read_text(encoding="utf-8")
+        for stmt in sql.split(";"):
+            stmt = stmt.strip()
+            if stmt:
+                conn.execute(stmt)
+        conn.execute(
+            "INSERT INTO aiify_schema_migrations (version) VALUES (%s)", (version,)
+        )
+        conn.commit()
+
+
 def init_db() -> None:
     backend = _backend()
     conn = get_connection()
+    # SQLite needs the AUTOINCREMENT form (translate_sql does NOT rewrite
+    # PG ``SERIAL`` → ``INTEGER PRIMARY KEY AUTOINCREMENT``), so keep the
+    # backend-specific baseline. The connection still translates other dialect
+    # differences (%s, JSONB, datetime) at execute time.
     schema = SCHEMA_PG if backend == "postgresql" else SCHEMA_SQLITE
     try:
         for stmt in schema.split(";"):
@@ -236,25 +358,9 @@ def init_db() -> None:
             if stmt:
                 conn.execute(stmt)
         conn.commit()
-        # Lazy migration: add columns that may be missing on pre-existing DBs.
-        _lazy_cols = [
-            ("aiify_scans", "project_summary", "TEXT"),
-            ("aiify_scans", "overall_verdict", "TEXT"),
-            ("aiify_scans", "overall_ai_readiness", "TEXT"),
-            ("aiify_scans", "overall_rationale", "TEXT"),
-            ("aiify_scores", "verdict", "TEXT"),
-            ("aiify_scores", "ai_readiness", "TEXT"),
-            ("aiify_scores", "rationale", "TEXT"),
-            ("aiify_scores", "pros", "TEXT"),
-            ("aiify_scores", "cons", "TEXT"),
-            ("aiify_scores", "category", "TEXT"),
-        ]
-        for _t, _c, _ty in _lazy_cols:
-            try:
-                conn.execute(f"ALTER TABLE {_t} ADD COLUMN {_c} {_ty}")
-                conn.commit()
-            except Exception:
-                conn.rollback()
+        # Orderly, tracked file migrations + idempotent column reconcile.
+        _run_file_migrations(conn)
+        _ensure_columns(conn)
         print(f"[init_db] AI-ify schema ready ({backend})")
     finally:
         conn.close()

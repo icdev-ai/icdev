@@ -142,17 +142,6 @@ def _dump(value: Any) -> Any:
     return json.dumps(value)
 
 
-def _exec(conn: Any, sql: str, params: tuple) -> Any:
-    try:
-        return conn.execute(sql, params)
-    except Exception:
-        try:
-            conn.rollback()
-        except Exception:
-            pass
-        return conn.execute(sql.replace("?", "%s"), params)
-
-
 def _backend() -> str:
     return os.environ.get(
         "AIIFY_STORAGE_BACKEND",
@@ -160,16 +149,31 @@ def _backend() -> str:
     ).lower()
 
 
-def _insert(conn: Any, sql: str, params: tuple, id_col: str = "id") -> int:
-    """Execute INSERT and return the generated PK for both SQLite and PostgreSQL."""
-    if _backend() == "postgresql":
-        pg_sql = sql.replace("?", "%s") + f" RETURNING {id_col}"
-        cur = conn.execute(pg_sql, params)
+def _insert(conn: Any, sql: str, params: tuple, id_col: str = "id",
+            commit: bool = True) -> int:
+    """Execute a ``%s``-placeholder INSERT and return the generated PK.
+
+    Connections are translating StorageConnections (see init_db.get_connection),
+    so the single PG-native ``%s`` style flows through unchanged on PostgreSQL and
+    is rewritten to ``?`` on SQLite. PostgreSQL uses RETURNING; SQLite uses
+    ``lastrowid``. The former ``_exec`` blind retry-with-%s helper is gone — every
+    call site now authors ``%s`` directly (penta-aiify-06).
+
+    ``commit=False`` returns the new PK without committing so a caller can batch
+    many inserts into a single transaction (the returned id is visible within the
+    open transaction for a follow-on FK insert). RETURNING/lastrowid both work
+    pre-commit, so batching is safe.
+    """
+    from tools.db.storage import is_pg
+    if is_pg(conn):
+        cur = conn.execute(sql + f" RETURNING {id_col}", params)
         row = cur.fetchone()
-        conn.commit()
+        if commit:
+            conn.commit()
         return int(row[0]) if row else 0
     cur = conn.execute(sql, params)
-    conn.commit()
+    if commit:
+        conn.commit()
     return cur.lastrowid or 0
 
 
@@ -404,9 +408,8 @@ def _write_promotion_audit(scan_id: int, roadmap_id: str, entries: list[dict]) -
         return
     try:
         for e in entries:
-            _exec(
-                aiify_conn,
-                "INSERT INTO aiify_audit_log (event_type, scan_id, actor, detail) VALUES (?, ?, ?, ?)",
+            aiify_conn.execute(
+                "INSERT INTO aiify_audit_log (event_type, scan_id, actor, detail) VALUES (%s, %s, %s, %s)",
                 (
                     "kanban_promoted",
                     scan_id,
@@ -908,14 +911,13 @@ def run_scan(
                 conn,
                 "INSERT INTO aiify_scans "
                 "(input_type, input_ref, language_profile, total_files, total_loc, status) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s)",
                 (input_type, input_ref, _dump(language_profile), total_files, total_loc, "running"),
                 "scan_id",
             )
 
-            _exec(
-                conn,
-                "INSERT INTO aiify_audit_log (event_type, scan_id, actor, detail) VALUES (?, ?, ?, ?)",
+            conn.execute(
+                "INSERT INTO aiify_audit_log (event_type, scan_id, actor, detail) VALUES (%s, %s, %s, %s)",
                 ("scan_started", scan_id, "system", _dump({"input_type": input_type, "input_ref": input_ref})),
             )
             conn.commit()
@@ -931,6 +933,10 @@ def run_scan(
 
         conn = get_connection()
         try:
+            # Batch all opportunity+score inserts into ONE transaction (was a
+            # per-row commit each iteration). The opportunity id is visible to its
+            # own score insert pre-commit; a single commit lands after the loop
+            # (penta-aiify-06 — atomic per scan, far fewer fsyncs).
             for pat in patterns:
                 paradigm = _PATTERN_TO_PARADIGM.get(pat["pattern_type"], "llm_generation")
                 il_model = _PARADIGM_TO_MODEL.get(paradigm, "claude-sonnet-4-6")
@@ -940,7 +946,7 @@ def run_scan(
                     "INSERT INTO aiify_opportunities "
                     "(scan_id, module_path, function_name, line_start, line_end, language, "
                     "pattern_type, pattern_detail, ai_paradigm, il_recommended_model, data_requirements) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                     (
                         scan_id,
                         pat["module_path"],
@@ -955,16 +961,16 @@ def run_scan(
                         _dump({}),
                     ),
                     "opportunity_id",
+                    commit=False,
                 )
 
                 pat["ai_paradigm"] = paradigm
                 score = score_and_assess(pat, scan_context)
-                _exec(
-                    conn,
+                conn.execute(
                     "INSERT INTO aiify_scores "
                     "(opportunity_id, value_score, feasibility_score, risk_score, composite_score, "
                     "score_detail, verdict, ai_readiness, rationale, pros, cons, category) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                     (
                         opp_id,
                         score["value_score"],
@@ -980,7 +986,6 @@ def run_scan(
                         score["category"],
                     ),
                 )
-                conn.commit()
 
                 opp_rows.append({
                     "opportunity_id": opp_id,
@@ -989,6 +994,7 @@ def run_scan(
                     **pat,
                 })
                 score_rows.append({"opportunity_id": opp_id, **score})
+            conn.commit()  # single commit for the whole opportunity+score batch
         finally:
             conn.close()
 
@@ -1000,10 +1006,9 @@ def run_scan(
         overall = roll_up_scan_verdict(score_rows)
         conn = get_connection()
         try:
-            _exec(
-                conn,
-                "UPDATE aiify_scans SET project_summary = ?, overall_verdict = ?, "
-                "overall_ai_readiness = ?, overall_rationale = ? WHERE scan_id = ?",
+            conn.execute(
+                "UPDATE aiify_scans SET project_summary = %s, overall_verdict = %s, "
+                "overall_ai_readiness = %s, overall_rationale = %s WHERE scan_id = %s",
                 (project_summary, overall["overall_verdict"],
                  overall["overall_ai_readiness"], overall["overall_rationale"], scan_id),
             )
@@ -1021,14 +1026,12 @@ def run_scan(
         # 6. Mark scan completed + final audit entry
         conn = get_connection()
         try:
-            _exec(
-                conn,
-                "UPDATE aiify_scans SET status = ?, completed_at = ? WHERE scan_id = ?",
+            conn.execute(
+                "UPDATE aiify_scans SET status = %s, completed_at = %s WHERE scan_id = %s",
                 ("completed", _now(), scan_id),
             )
-            _exec(
-                conn,
-                "INSERT INTO aiify_audit_log (event_type, scan_id, actor, detail) VALUES (?, ?, ?, ?)",
+            conn.execute(
+                "INSERT INTO aiify_audit_log (event_type, scan_id, actor, detail) VALUES (%s, %s, %s, %s)",
                 (
                     "scan_completed",
                     scan_id,
