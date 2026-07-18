@@ -2658,6 +2658,9 @@ def create_security_blueprint():
 
         Body: {"source_type": "sbom|sast|survey|nmap|openapi", "payload": <string or object>}
         """
+        import json
+
+        from tools.security_canvas.constants import ZIG_INGEST_MAX_BYTES
         from tools.security_canvas.zig_external_adapter import (
             ingest_sbom, ingest_sast, ingest_survey, ingest_nmap, ingest_openapi,
         )
@@ -2678,11 +2681,20 @@ def create_security_blueprint():
             return jsonify({"ok": False,
                             "error": f"unknown source_type; valid: {list(dispatch)}"}), 400
 
+        # Normalize payload to a string, then reject oversized payloads with
+        # HTTP 413 BEFORE any parsing (bounds memory/CPU; DoS defense).
+        if not isinstance(payload, str):
+            payload = json.dumps(payload)
+        payload_bytes = len(payload.encode("utf-8"))
+        if payload_bytes > ZIG_INGEST_MAX_BYTES:
+            return jsonify({
+                "ok": False,
+                "error": (f"payload too large: {payload_bytes} bytes exceeds "
+                          f"limit of {ZIG_INGEST_MAX_BYTES} bytes"),
+                "max_bytes": ZIG_INGEST_MAX_BYTES,
+            }), 413
+
         try:
-            # Accept payload as string or already-parsed dict/list
-            if not isinstance(payload, str):
-                import json
-                payload = json.dumps(payload)
             result = dispatch[source_type](target_id, payload)
             return jsonify({"ok": True, **result})
         except Exception as exc:

@@ -241,6 +241,77 @@ class TestIngestNmap:
         assert "error" in result
 
 
+# ── XML entity-expansion / XXE defense (shx-auth-03) ──────────────────────────
+
+# Classic "billion laughs" — nested entity expansion that balloons to gigabytes.
+_BILLION_LAUGHS = '''<?xml version="1.0"?>
+<!DOCTYPE lolz [
+  <!ENTITY lol "lol">
+  <!ENTITY lol1 "&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;">
+  <!ENTITY lol2 "&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;">
+  <!ENTITY lol3 "&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;">
+  <!ENTITY lol4 "&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;">
+]>
+<nmaprun>&lol4;</nmaprun>'''
+
+# DOCTYPE with an external-entity reference (XXE file read attempt).
+_XXE_EXTERNAL = '''<?xml version="1.0"?>
+<!DOCTYPE foo [ <!ENTITY xxe SYSTEM "file:///etc/passwd"> ]>
+<nmaprun><host>&xxe;</host></nmaprun>'''
+
+# DOCTYPE with no entities — still rejected by the pre-parse guard.
+_DOCTYPE_ONLY = '''<?xml version="1.0"?>
+<!DOCTYPE nmaprun SYSTEM "nmap.dtd">
+<nmaprun><host></host></nmaprun>'''
+
+
+class TestIngestNmapXmlDefense:
+    def test_billion_laughs_rejected_cleanly(self, stub_activity_tracker):
+        """Entity-expansion DoS is rejected with a clear error, no hang/expansion."""
+        from tools.security_canvas.zig_external_adapter import ingest_nmap
+        result = ingest_nmap("test-app", _BILLION_LAUGHS)
+        assert "error" in result
+        assert result["findings"] == 0
+        assert result["activities_updated"] == []
+        # No stub calls means the payload never reached activity tracking.
+        assert stub_activity_tracker.calls == []
+
+    def test_external_entity_rejected(self, stub_activity_tracker):
+        from tools.security_canvas.zig_external_adapter import ingest_nmap
+        result = ingest_nmap("test-app", _XXE_EXTERNAL)
+        assert "error" in result
+        assert result["findings"] == 0
+
+    def test_doctype_only_rejected(self, stub_activity_tracker):
+        from tools.security_canvas.zig_external_adapter import ingest_nmap
+        result = ingest_nmap("test-app", _DOCTYPE_ONLY)
+        assert "error" in result
+
+    def test_parse_xml_safe_raises_valueerror_on_entity(self):
+        from tools.security_canvas.zig_external_adapter import _parse_xml_safe
+        with pytest.raises(ValueError):
+            _parse_xml_safe(_BILLION_LAUGHS)
+
+    def test_benign_nmap_still_parses(self, stub_activity_tracker):
+        """A benign nmap XML (no DOCTYPE/ENTITY) still parses and yields findings."""
+        from tools.security_canvas.zig_external_adapter import ingest_nmap
+        benign = '''<?xml version="1.0"?>
+<nmaprun>
+  <host>
+    <ports>
+      <port protocol="tcp" portid="80">
+        <state state="open" reason="syn-ack"/>
+        <service name="http"/>
+      </port>
+    </ports>
+  </host>
+</nmaprun>'''
+        result = ingest_nmap("test-app", benign)
+        assert "error" not in result
+        assert result["source"] == "nmap"
+        assert result["findings"] >= 1
+
+
 # ── OpenAPI tests ─────────────────────────────────────────────────────────────
 
 class TestIngestOpenapi:

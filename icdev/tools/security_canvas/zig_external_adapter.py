@@ -13,11 +13,55 @@ Each method returns a summary dict:
 """
 
 import json
-import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
+
+# Safe XML parsing: defusedxml disables entity expansion (billion-laughs) and
+# external entity resolution (XXE). It is already a project dependency
+# (requirements.txt). ParseError is re-exported so callers can catch it.
+from defusedxml.ElementTree import fromstring as _safe_fromstring
+from xml.etree.ElementTree import ParseError
 
 from tools.security_canvas.zig_activity_tracker import set_activity_status
 from tools.security_canvas.constants import ZIG_EVIDENCE_MAP
+
+
+# Cap the scan window for the cheap pre-parse guard; DOCTYPE/ENTITY markers
+# in a well-formed XML prolog appear within the first few hundred bytes, but we
+# also scan the full payload defensively.
+_XML_GUARD_SCAN_BYTES = 65536
+
+
+def _parse_xml_safe(xml_text):
+    """Parse an XML string with entity-expansion / XXE defenses.
+
+    Two layers of defense:
+      1. Pre-parse guard — reject any payload containing ``<!DOCTYPE`` or
+         ``<!ENTITY`` (case-insensitive) before it ever reaches the parser.
+         This blocks billion-laughs entity-expansion DoS and DTD-based XXE
+         regardless of parser configuration.
+      2. defusedxml.ElementTree.fromstring — forbids entity expansion and
+         external entity resolution as a second line of defense.
+
+    Raises:
+        ValueError: if a DOCTYPE / ENTITY declaration is present.
+        xml.etree.ElementTree.ParseError: if the XML is malformed.
+    """
+    if xml_text is None:
+        raise ValueError("empty XML payload")
+    if isinstance(xml_text, bytes):
+        probe = xml_text.decode("utf-8", errors="replace")
+    else:
+        probe = str(xml_text)
+
+    # Scan the leading window (fast path) and, if clean, the full payload.
+    head = probe[:_XML_GUARD_SCAN_BYTES].lower()
+    lowered = head if len(probe) <= _XML_GUARD_SCAN_BYTES else probe.lower()
+    if "<!doctype" in lowered or "<!entity" in lowered:
+        raise ValueError(
+            "XML DOCTYPE/ENTITY declarations are not permitted "
+            "(entity-expansion / XXE defense)"
+        )
+    return _safe_fromstring(xml_text)
 
 
 def _upsert_activity_completion(target_id: str, activity_id: str,
@@ -186,8 +230,10 @@ def ingest_nmap(target_id: str, nmap_xml: str) -> dict:
     now_note = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
     try:
-        root = ET.fromstring(nmap_xml)
-    except ET.ParseError as exc:
+        root = _parse_xml_safe(nmap_xml)
+    except (ParseError, ValueError) as exc:
+        # ParseError → malformed XML; ValueError → entity-expansion / DTD guard
+        # (defusedxml raises DefusedXmlException, a ValueError subclass).
         return {"source": "nmap", "target_id": target_id,
                 "activities_updated": [], "findings": 0, "error": str(exc)}
 
