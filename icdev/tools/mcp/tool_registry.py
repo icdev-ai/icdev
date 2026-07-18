@@ -4914,7 +4914,6 @@ TOOL_REGISTRY = {
                 "top_k": {"type": "integer", "description": "Number of results to return (default 5)", "default": 5},
                 "source_type": {"type": "string", "description": "Filter by source type (optional)"},
                 "tenant_id": {"type": "string", "description": "Tenant ID for multi-tenant isolation"},
-                "child_id": {"type": "string", "description": "Child app ID for federated queries"},
             },
             "required": ["query"],
         },

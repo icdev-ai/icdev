@@ -42,7 +42,6 @@ def handle_rag_search(arguments: Dict[str, Any]) -> Dict[str, Any]:
     top_k = arguments.get("top_k", 5)
     source_type = arguments.get("source_type", "")
     tenant_id = arguments.get("tenant_id", "")
-    child_id = arguments.get("child_id", "")
 
     if not query:
         return {"error": "query is required", "results": []}
@@ -51,21 +50,21 @@ def handle_rag_search(arguments: Dict[str, Any]) -> Dict[str, Any]:
         from tools.rag.retriever import RAGRetriever
         from tools.rag.retriever_common import run_rag_search
 
-        filters = {}
+        # Map MCP-schema params onto RAGRetriever.search()'s real signature
+        # (query, top_k, source_types, project_id, rerank, query_label). The
+        # single ``source_type`` filter becomes the retriever's ``source_types``
+        # list; tenant scoping is applied by run_rag_search constructing the
+        # retriever with ``tenant_id=``. There is no retriever/provenance hook
+        # for a caller-supplied agent/child id (provenance records a fixed
+        # ``agent_id="rag_retriever"``), so ``child_id`` is not advertised.
+        search_kwargs: Dict[str, Any] = {"top_k": top_k}
         if source_type:
-            filters["source_type"] = source_type
-        # NOTE: filters=/agent_id= are forwarded verbatim to preserve this
-        # handler's existing behavior; RAGRetriever.search() does not accept
-        # them, so this call raises TypeError today (caught below). The shared
-        # helper centralizes the tenant-scoped construction without unifying
-        # that pre-existing divergence — see retriever_common module docstring.
+            search_kwargs["source_types"] = [source_type]
         results = run_rag_search(
             RAGRetriever,
             query,
             tenant_id=tenant_id,
-            top_k=top_k,
-            filters=filters if filters else None,
-            agent_id=f"child:{child_id}" if child_id else "",
+            **search_kwargs,
         )
         return {
             "classification": "CUI // SP-CTI",
