@@ -18,6 +18,35 @@ const escapeAttr = (typeof window !== 'undefined' && window.escapeAttr) || funct
   return escapeHtml(value).replace(/`/g, '&#96;');
 };
 
+// ── Shared JSON fetch + toast (pdx-fix-01) ───────────────────────────────────
+// Provided by pdc-http.js when loaded; local fallbacks keep the canvas working
+// self-contained (canvas.html does not load pdc-http.js). fetchJson rejects on
+// !r.ok or a body-level `error`; callers .catch and surface via pdcToast.
+const fetchJson = (typeof window !== 'undefined' && window.fetchJson) || async function (url, opts) {
+  const resp = await fetch(url, opts || {});
+  let data = null;
+  try { const t = await resp.text(); data = t ? JSON.parse(t) : null; } catch (_) { data = null; }
+  if (!resp.ok) { throw new Error((data && data.error) || ('Request failed (HTTP ' + resp.status + ')')); }
+  if (data && data.error) { throw new Error(data.error); }
+  return data;
+};
+const pdcToast = (typeof window !== 'undefined' && window.pdcToast) || function (message, type) {
+  const accent = type === 'success' ? '#27ae60' : type === 'info' ? '#3498db' : '#e74c3c';
+  const toast = document.createElement('div');
+  toast.style.cssText = 'position:fixed;bottom:24px;right:24px;z-index:10000;background:#0f1e35;border:1px solid #1e3a6e;border-left:4px solid ' + accent + ';border-radius:8px;padding:12px 40px 12px 16px;max-width:360px;box-shadow:0 4px 16px rgba(0,0,0,0.5);font-family:sans-serif;font-size:13px;color:#eaeaea;';
+  const msg = document.createElement('div');
+  msg.textContent = String(message == null ? '' : message);
+  toast.appendChild(msg);
+  const close = document.createElement('button');
+  close.textContent = '✕';
+  close.style.cssText = 'position:absolute;top:8px;right:8px;background:none;border:none;color:#7a8cb0;cursor:pointer;font-size:14px;';
+  close.addEventListener('click', () => toast.remove());
+  toast.appendChild(close);
+  document.body.appendChild(toast);
+  setTimeout(() => { if (toast.parentElement) toast.remove(); }, 6000);
+  return toast;
+};
+
 // ── Node Styles (100+ types) ─────────────────────────────────────────────────
 // Each: { fill, stroke, label, symbol }
 // Color families: orchestration=blue, source=green, build=cyan, test=purple,
@@ -563,18 +592,22 @@ function savePipeline() {
   const method = pipelineId === 'new' ? 'POST' : 'PUT';
   const url = pipelineId === 'new' ? '/devops/api/pipelines' : `/devops/api/pipelines/${pipelineId}`;
 
-  fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
-    .then(r => r.json())
+  fetchJson(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
     .then(data => {
-      if (data.id && pipelineId === 'new') { pipelineId = data.id; history.replaceState(null, '', `/devops/canvas/${data.id}`); }
+      if (data && data.id && pipelineId === 'new') { pipelineId = data.id; history.replaceState(null, '', `/devops/canvas/${data.id}`); }
       isDirty = false;
       updateStatus('Saved');
       // Show SDC cross-canvas compliance result if Security Canvas re-assessed
-      if (data.sdc_assessment) {
+      if (data && data.sdc_assessment) {
         _showSdcToast(data.sdc_assessment, 'PDC');
       }
     })
-    .catch(() => updateStatus('Save failed!'));
+    .catch(err => {
+      // Keep isDirty true so autosave retries and the user is not misled: a
+      // 413 / RLS-denial / server error must NOT clear the dirty flag or claim "Saved".
+      updateStatus('Save failed');
+      pdcToast('Save failed: ' + (err && err.message ? err.message : 'unknown error'), 'error');
+    });
 }
 
 function _showSdcToast(sdc, source) {
@@ -837,34 +870,40 @@ function fetchNdcHealth(topoId) {
   const panel = document.getElementById('ndc-health-panel');
   if (panel) panel.innerHTML = '<i style="color:#7a8cb0;font-size:10px;">Analyzing...</i>';
 
-  fetch('/network/api/topologies/' + topoId + '/cloud-analysis', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
-  })
-    .then(r => r.ok ? r.json() : null)
+  // The former POST /cloud-analysis endpoint never existed — the panel hung on
+  // "Analyzing..." forever. Use the real NDC analysis health endpoint
+  // (GET /network/api/topologies/<id>/analysis/topology-health), which returns
+  // an overall health score plus five scored dimensions. Adapt those to the panel.
+  const _rate = (v) => (v >= 80 ? '#27ae60' : v >= 50 ? '#f39c12' : '#e74c3c');
+  fetchJson('/network/api/topologies/' + topoId + '/analysis/topology-health', { method: 'GET' })
     .then(data => {
-      if (!panel || !data) return;
-      const score = data.cloud_health_score || 0;
-      const rating = data.cloud_health_rating || 'N/A';
-      const res = data.resiliency || {};
-      const patterns = (data.connectivity_patterns?.detected_patterns || []).map(p => p.label).join(', ') || 'None detected';
-      const csps = Object.entries(data.csp_breakdown || {}).map(([k, v]) => k.toUpperCase() + ':' + v).join(', ') || 'None';
-      const antipatterns = (data.antipatterns || []).length;
+      if (!panel) return;
+      const overall = Number(data && data.overall_health) || 0;
+      const dims = (data && data.dimensions) || {};
+      const _DIM_LABELS = {
+        compliance: 'Compliance', security: 'Security', eol: 'End-of-Life',
+        redundancy: 'Redundancy', capacity: 'Capacity',
+      };
 
       let html = _section('Infrastructure Health');
-      html += _metric('Health Score', score + '/100');
-      html += _bar(score, score >= 80 ? '#27ae60' : score >= 50 ? '#f39c12' : '#e74c3c');
-      html += _metric('Rating', rating);
-      html += _metric('Resiliency', res.tier_label || res.tier || 'Unknown');
-      html += _metric('SLA', res.sla || 'None');
-      html += _metric('Failover', (res.estimated_failover_sec || '?') + 's');
-      html += _metric('CSP Breakdown', csps);
-      html += _metric('Connectivity', patterns);
-      if (antipatterns > 0) html += _metric('Anti-patterns', antipatterns + ' detected', 'Review in NDC');
-      if (data.is_multi_cloud) html += _pill('MULTI-CLOUD', '#3498db');
+      html += _metric('Overall Health', overall + '/100');
+      html += _bar(overall, _rate(overall));
+      Object.keys(_DIM_LABELS).forEach(key => {
+        if (dims[key] === undefined || dims[key] === null) return;
+        const v = Number(dims[key]) || 0;
+        html += _metric(_DIM_LABELS[key], v + '/100');
+        html += _bar(v, _rate(v));
+      });
+      html += `<div style="font-size:10px;color:#5a6e8c;margin-top:6px;">Live from linked NDC topology. <a href="/network/canvas/${escapeAttr(topoId)}" target="_blank" style="color:#3498db;">Open in NDC →</a></div>`;
       panel.innerHTML = html;
     })
-    .catch(() => {
-      if (panel) panel.innerHTML = '<p style="font-size:10px;color:#e74c3c;">Failed to fetch NDC health. Is the topology accessible?</p>';
+    .catch(err => {
+      const emsg = err && err.message ? err.message : 'topology unreachable';
+      if (panel) {
+        panel.innerHTML = '<p style="font-size:10px;color:#e74c3c;">Failed to fetch NDC health: '
+          + escapeHtml(emsg) + '. Is the topology accessible and the Network Canvas enabled?</p>';
+      }
+      pdcToast('NDC health check failed: ' + emsg, 'error');
     });
 }
 
@@ -883,9 +922,12 @@ function openTemplatesModal() { document.getElementById('pc-templates-modal')?.c
 function closeTemplatesModal(){ document.getElementById('pc-templates-modal')?.classList.remove('open'); }
 
 function loadTemplate(tplId) {
-  fetch(`/devops/api/templates/${tplId}/load`, { method: 'POST', headers: { 'Content-Type': 'application/json' } })
-    .then(r => r.json())
-    .then(data => { if (data.id) { window.location.href = `/devops/canvas/${data.id}`; } });
+  fetchJson(`/devops/api/templates/${tplId}/load`, { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+    .then(data => {
+      if (data && data.id) { window.location.href = `/devops/canvas/${data.id}`; }
+      else { pdcToast('Template loaded but no pipeline id was returned.', 'error'); }
+    })
+    .catch(err => pdcToast('Failed to load template: ' + (err && err.message ? err.message : 'unknown error'), 'error'));
 }
 
 function toggleSnippets() { document.querySelector('.pc-snippet-drawer')?.classList.toggle('open'); }
@@ -953,10 +995,9 @@ const PIPELINE_TYPE_SETS = {
 // ── Smart Snippet Insertion ─────────────────────────────────────────────────
 
 function loadSnippet(snippetId) {
-  fetch(`/devops/api/snippets/${snippetId}`)
-    .then(r => r.json())
+  fetchJson(`/devops/api/snippets/${snippetId}`)
     .then(data => {
-      if (!data.graph_json) return;
+      if (!data || !data.graph_json) { pdcToast('Snippet has no graph content to load.', 'error'); return; }
       pushUndo();
       const g = data.graph_json;
       const snippetNodes = g.nodes || [];
@@ -1030,7 +1071,8 @@ function loadSnippet(snippetId) {
       markDirty();
       toggleSnippets();
       updateStatus(`Loaded snippet: ${data.name} (${newNodes.length} nodes)`);
-    });
+    })
+    .catch(err => pdcToast('Failed to load snippet: ' + (err && err.message ? err.message : 'unknown error'), 'error'));
 }
 
 // ── Auto-Connect Rule Engine ────────────────────────────────────────────────
@@ -1490,18 +1532,25 @@ function exportAs(fmt) {
     });
 }
 
+// exportCanvasPDF — the toolbar "Export PDF" button previously called a function
+// that only existed in network-canvas.js (never loaded here), always throwing a
+// ReferenceError. Provide the same trivially-correct, honest implementation the
+// NDC uses: open the browser print dialog (Print → Save as PDF).
+function exportCanvasPDF() {
+  window.print();
+}
+
 // ── Analysis (renders in right panel with narrative) ────────────────────────
 
 function runAnalysis(type) {
   if (pipelineId === 'new') { alert('Save pipeline first'); return; }
   updateStatus('Analyzing...');
-  fetch(`/devops/api/pipelines/${pipelineId}/analyze`, {
+  fetchJson(`/devops/api/pipelines/${pipelineId}/analyze`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ analysis_type: type }),
   })
-    .then(r => r.json())
     .then(data => {
-      const r = data.result || {};
+      const r = (data && data.result) || {};
       let html = '';
       if (type === 'security_coverage') html = _renderOWASP(r);
       else if (type === 'slsa') html = _renderSLSA(r);
@@ -1523,7 +1572,12 @@ function runAnalysis(type) {
       openRightPanel(titles[type] || type, html);
       updateStatus('Analysis complete');
     })
-    .catch(() => updateStatus('Analysis failed'));
+    .catch(err => {
+      // fetchJson rejects on !r.ok or a body-level `error` — never claim
+      // "Analysis complete" when the backend reported a failure.
+      updateStatus('Analysis failed');
+      pdcToast('Analysis failed: ' + (err && err.message ? err.message : 'unknown error'), 'error');
+    });
 }
 
 function runScorecard() {
@@ -1864,6 +1918,16 @@ function updateStatus(msg) {
   const el = document.getElementById('pc-status');
   if (el) el.textContent = msg;
 }
+
+// Warn before navigating away / closing the tab with unsaved edits. Since save
+// failures now keep isDirty true, this prevents silent loss of unsaved work.
+window.addEventListener('beforeunload', (e) => {
+  if (isDirty) {
+    e.preventDefault();
+    e.returnValue = '';
+    return '';
+  }
+});
 
 function newCanvas() {
   if (isDirty && !confirm('Unsaved changes. Continue?')) return;

@@ -113,6 +113,7 @@
 ] %}
 {% include "includes/iqe_query_widget.html" %}
 
+<script src="{{ url_for('static', filename='js/pdc-http.js') }}"></script>
 <script>
 // Wire pipeline cards via listeners (id/name from data-*, never a JS-string sink).
 document.querySelectorAll('.pdc-card[data-pid]').forEach(card => {
@@ -130,27 +131,44 @@ document.querySelectorAll('.pdc-card[data-pid]').forEach(card => {
 });
 
 function loadTemplate(tplId) {
-  fetch(`/devops/api/templates/${tplId}/load`, { method: 'POST', headers: { 'Content-Type': 'application/json' } })
-    .then(r => r.json())
-    .then(data => { if (data.id) window.location.href = `/devops/canvas/${data.id}`; });
+  fetchJson(`/devops/api/templates/${tplId}/load`, { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+    .then(data => {
+      if (data && data.id) window.location.href = `/devops/canvas/${data.id}`;
+      else pdcToast('Template loaded but no pipeline id was returned.', 'error');
+    })
+    .catch(err => pdcToast('Failed to load template: ' + (err && err.message ? err.message : 'unknown error'), 'error'));
 }
 
 function deletePipeline(id, name) {
   if (!confirm('Delete pipeline "' + name + '"? This cannot be undone.')) return;
-  fetch('/devops/api/pipelines/' + id, { method: 'DELETE' })
-    .then(r => r.json())
-    .then(() => window.location.reload());
+  fetchJson('/devops/api/pipelines/' + id, { method: 'DELETE' })
+    .then(() => window.location.reload())
+    .catch(err => pdcToast('Failed to delete pipeline: ' + (err && err.message ? err.message : 'unknown error'), 'error'));
 }
 
 function clearAllPipelines() {
-  if (!confirm('Delete ALL pipelines? This cannot be undone.')) return;
-  fetch('/devops/api/pipelines')
-    .then(r => r.json())
+  // Fetch the full (UNLIMITED) list first so the confirmation count matches what
+  // will actually be deleted — the page only shows LIMIT 20. Use allSettled so
+  // one failed DELETE does not abort the rest, and report failures visibly.
+  fetchJson('/devops/api/pipelines')
     .then(pipelines => {
-      Promise.all(pipelines.map(p =>
-        fetch('/devops/api/pipelines/' + p.id, { method: 'DELETE' })
-      )).then(() => window.location.reload());
-    });
+      const list = pipelines || [];
+      if (!list.length) { pdcToast('No pipelines to delete.', 'info'); return; }
+      if (!confirm('Delete ALL ' + list.length + ' pipelines? This cannot be undone.')) return;
+      Promise.allSettled(list.map(p =>
+        fetchJson('/devops/api/pipelines/' + p.id, { method: 'DELETE' })
+      )).then(results => {
+        const failed = results.filter(r => r.status === 'rejected').length;
+        if (failed > 0) {
+          pdcToast(failed + ' of ' + list.length + ' pipelines could not be deleted.', 'error');
+          // Delay reload so the user can see the failure notice.
+          setTimeout(() => window.location.reload(), 2500);
+        } else {
+          window.location.reload();
+        }
+      });
+    })
+    .catch(err => pdcToast('Failed to list pipelines: ' + (err && err.message ? err.message : 'unknown error'), 'error'));
 }
 
 function loadSnippetAsNew(snippetId) {
