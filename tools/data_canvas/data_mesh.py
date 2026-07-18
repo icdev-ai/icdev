@@ -46,13 +46,21 @@ def create_domain(name: str, **kwargs) -> dict:
         "created_at": now,
         "updated_at": now,
     }
+    # Positional ? + ordered tuple: get_connection() is HYBRID (raw sqlite3 on the
+    # SQLite branch — no translate wrapper; StorageConnection on PG). translate_sql
+    # only rewrites ?→%s (never :name), and StorageCursor wraps a dict param into a
+    # 1-tuple, so a :name mapping never reaches either driver. ? is the only portable
+    # form. Column order MUST match _DM_DOMAIN_COLS.
+    _DM_DOMAIN_COLS = (
+        "id", "name", "description", "owner", "steward", "bounded_context",
+        "maturity_level", "classification", "status", "created_at", "updated_at",
+    )
     with get_connection() as conn:
         conn.execute(
             """INSERT INTO dm_domains (id, name, description, owner, steward, bounded_context,
                maturity_level, classification, status, created_at, updated_at)
-               VALUES (:id, :name, :description, :owner, :steward, :bounded_context,
-               :maturity_level, :classification, :status, :created_at, :updated_at)""",
-            row,
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            tuple(row[c] for c in _DM_DOMAIN_COLS),
         )
         _audit(conn, "domain.create", domain_id=domain_id, detail=name, user=kwargs.get("user", "system"))
         conn.commit()
@@ -92,13 +100,18 @@ def create_data_product(domain_id: str, name: str, **kwargs) -> dict:
         "created_at": now,
         "updated_at": now,
     }
+    # Positional ? + ordered tuple (hybrid connection — see create_domain).
+    _DM_PRODUCT_COLS = (
+        "id", "domain_id", "name", "description", "owner", "version",
+        "availability_sla", "latency_sla_ms", "status", "classification",
+        "created_at", "updated_at",
+    )
     with get_connection() as conn:
         conn.execute(
             """INSERT INTO dm_data_products (id, domain_id, name, description, owner, version,
                availability_sla, latency_sla_ms, status, classification, created_at, updated_at)
-               VALUES (:id, :domain_id, :name, :description, :owner, :version,
-               :availability_sla, :latency_sla_ms, :status, :classification, :created_at, :updated_at)""",
-            row,
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            tuple(row[c] for c in _DM_PRODUCT_COLS),
         )
         _audit(conn, "product.create", domain_id=domain_id, product_id=product_id, detail=name, user=kwargs.get("user", "system"))
         conn.commit()
@@ -132,11 +145,16 @@ def assess_domain_maturity(domain_id: str, maturity_level: int, scores: dict | N
         "created_at": _now(),
     }
     level_label = next((l["label"] for l in DM_DOMAIN_MATURITY_LEVELS if l["level"] == maturity_level), str(maturity_level))
+    # Positional ? + ordered tuple (hybrid connection — see create_domain).
+    _DM_MATURITY_COLS = (
+        "id", "domain_id", "maturity_level", "scores_json", "assessed_by",
+        "notes", "classification", "created_at",
+    )
     with get_connection() as conn:
         conn.execute(
             """INSERT INTO dm_domain_maturity (id, domain_id, maturity_level, scores_json, assessed_by, notes, classification, created_at)
-               VALUES (:id, :domain_id, :maturity_level, :scores_json, :assessed_by, :notes, :classification, :created_at)""",
-            row,
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            tuple(row[c] for c in _DM_MATURITY_COLS),
         )
         conn.execute(
             "UPDATE dm_domains SET maturity_level = %s, updated_at = %s WHERE id = %s",
