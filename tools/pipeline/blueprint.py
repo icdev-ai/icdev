@@ -375,6 +375,38 @@ def parse_graph_json(raw):
 PC_WRITE_ROLES = ("admin", "isso", "pm", "developer")
 PC_ELEVATED_ROLES = ("admin", "isso")
 
+# ── Child-row delete order for pipeline DELETE (pdx-data-02) ───────────────────
+#
+# The pipeline FK children in tools/pipeline/db/init_db.py are declared WITHOUT
+# ON DELETE CASCADE (only pc_collab_sessions has it). SQLite runs with
+# PRAGMA foreign_keys=ON and PostgreSQL enforces FKs, so deleting a pipeline that
+# still has children raises IntegrityError (HTTP 500). Because auto-snapshot fires
+# on every save, every real pipeline has at least one pdc_snapshots child — so the
+# DELETE always 500'd. We delete child rows explicitly (deterministic across both
+# backends, and — unlike editing the DDL to CASCADE — it also works on already
+# deployed DBs whose tables were created before any CASCADE clause). Order matters:
+# rows are deleted children-first so intra-canvas FKs hold —
+# pc_compliance_findings before pc_compliance_checks (findings REFERENCES checks),
+# and pdc_simulations before pdc_snapshots (simulations REFERENCES snapshots).
+# pc_stages and pc_project_pipelines also REFERENCE pipelines(id); they are
+# included for completeness so no residual child can raise IntegrityError.
+# pc_audit is intentionally ABSENT: it is an append-only audit trail and has NO FK
+# to pipelines(id) (entity_id is a plain TEXT value), so its rows survive the
+# delete and remain queryable by the deleted pipeline's id (NIST AU).
+# (table_name, fk_column) — column is the pipeline reference on that table.
+_PC_CHILD_DELETE_TABLES = (
+    ("pc_compliance_findings", "pipeline_id"),
+    ("pc_compliance_checks", "pipeline_id"),
+    ("pdc_simulations", "pipeline_id"),
+    ("pdc_snapshots", "pipeline_id"),
+    ("pc_versions", "pipeline_id"),
+    ("pc_boundaries", "pipeline_id"),
+    ("pc_change_requests", "pipeline_id"),
+    ("pc_stages", "pipeline_id"),
+    ("pc_project_pipelines", "pipeline_id"),
+    ("pc_collab_sessions", "design_id"),
+)
+
 
 def _pc_current_role():
     """Resolve the caller's role from server-side auth state only.
@@ -677,10 +709,15 @@ def create_pipeline_blueprint():
         sets.append("updated_at=%s")
         params.append(now_isoformat())
         params.append(pipe_id)
-        conn.execute(
+        cur = conn.execute(
             f"UPDATE pipelines SET {', '.join(sets)} WHERE id=%s",
             params,
         )
+        # 404 when the target pipeline does not exist: the UPDATE matched no rows.
+        # (Previously this returned {"updated": true} for any unknown id.)
+        if getattr(cur, "rowcount", -1) == 0:
+            conn.close()
+            return jsonify({"error": "Not found"}), 404
         conn.commit()
         conn.close()
         _audit("UPDATE", "pipeline", pipe_id, data.get("name", ""))
@@ -745,10 +782,29 @@ def create_pipeline_blueprint():
     def pc_api_delete(pipe_id):
         logger.info("Deleting pipeline: %s", pipe_id)
         conn = get_connection()
-        # Fail-closed (NIST AU): the audit INSERT shares this transaction, so if it
-        # raises the DELETE is rolled back and never commits — no un-audited delete.
+        # Fail-closed (NIST AU): the child-row deletes, the pipeline delete and the
+        # audit INSERT all share THIS transaction. If the audit raises, the whole
+        # cascade is rolled back and never commits — no un-audited delete, and no
+        # orphaned/partial child removal.
         try:
-            conn.execute("DELETE FROM pipelines WHERE id=%s", (pipe_id,))
+            # Explicit child-row deletes (see _PC_CHILD_DELETE_TABLES) — the DDL has
+            # no ON DELETE CASCADE, and every real pipeline has children (auto-
+            # snapshot fires on save), so without these the FKs raise IntegrityError.
+            for _tbl, _col in _PC_CHILD_DELETE_TABLES:
+                conn.execute(f"DELETE FROM {_tbl} WHERE {_col}=%s", (pipe_id,))
+            cur = conn.execute("DELETE FROM pipelines WHERE id=%s", (pipe_id,))
+            # 404 when the pipeline row did not exist: nothing was deleted. Roll back
+            # the (no-op) child deletes and return without writing a delete-audit row
+            # for a pipeline that never existed.
+            if getattr(cur, "rowcount", -1) == 0:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                conn.close()
+                return jsonify({"error": "Not found"}), 404
+            # pc_audit is append-only and is NEVER deleted here (no FK to
+            # pipelines(id)) — audit rows for this pipeline id remain after delete.
             _audit_strict("DELETE", "pipeline", pipe_id, "", user_id=_pc_identity(), conn=conn)
             conn.commit()
         except AuditUnavailable:
