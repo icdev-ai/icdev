@@ -94,6 +94,7 @@ from tools.security_canvas.sops import (  # noqa: E402
     seed_sops,
 )
 from tools.canvas.ai_trace_mixin import record_canvas_decision  # noqa: E402
+from tools.security_canvas.posture import compute_posture_summary  # noqa: E402
 
 
 def create_security_blueprint():
@@ -1334,157 +1335,13 @@ def create_security_blueprint():
     @bp.route("/api/posture-summary", methods=["GET"])
     @sc_login_required
     def sc_api_posture_summary():
-        """Aggregate security posture across all designs."""
+        """Aggregate security posture across all designs.
+
+        Thin wrapper — all aggregation lives in
+        ``tools/security_canvas/posture.py::compute_posture_summary`` (shx-hyg-02).
+        """
         with get_connection() as conn:
-            designs = [
-                _row_to_dict(r) for r in conn.execute("SELECT id, name FROM security_designs ORDER BY name").fetchall()
-            ]
-
-        design_list = []
-        total_score = 0.0
-        assessed_count = 0
-        grade_dist = {"A": 0, "B": 0, "C": 0, "D": 0, "F": 0}
-
-        for d in designs:
-            with get_connection() as conn:
-                latest = conn.execute(
-                    "SELECT risk_score, posture_grade, ran_at "
-                    "FROM sc_assessments WHERE design_id=%s "
-                    "ORDER BY ran_at DESC LIMIT 1",
-                    (d["id"],),
-                ).fetchone()
-
-            entry = {
-                "id": d["id"],
-                "name": d["name"] or d["id"],
-                "risk_score": None,
-                "grade": None,
-                "last_assessed": None,
-                "cat1_count": 0,
-            }
-
-            if latest:
-                entry["risk_score"] = latest["risk_score"]
-                entry["grade"] = latest["posture_grade"]
-                entry["last_assessed"] = latest["ran_at"]
-                total_score += latest["risk_score"] or 0.0
-                assessed_count += 1
-                g = latest["posture_grade"] or "F"
-                if g in grade_dist:
-                    grade_dist[g] += 1
-                # Count CAT1 findings from the latest assessment
-                try:
-                    findings = json.loads(latest["findings_json"] or "[]")
-                    entry["cat1_count"] = sum(1 for f in findings if f.get("severity") == "CAT1")
-                except Exception:
-                    pass
-
-            design_list.append(entry)
-
-        total_designs = len(designs)
-        unassessed = total_designs - assessed_count
-        avg_score = round(total_score / assessed_count, 1) if assessed_count else 0.0
-
-        # Determine average grade from avg_score
-        if avg_score >= 90:
-            avg_grade = "A"
-        elif avg_score >= 80:
-            avg_grade = "B"
-        elif avg_score >= 70:
-            avg_grade = "C"
-        elif avg_score >= 60:
-            avg_grade = "D"
-        else:
-            avg_grade = "F"
-
-        # Overall posture
-        if avg_score >= 80:
-            overall_posture = "strong"
-        elif avg_score >= 60:
-            overall_posture = "moderate"
-        elif avg_score >= 40:
-            overall_posture = "weak"
-        else:
-            overall_posture = "critical"
-
-        # Aggregate CAT1 counts from pipeline-level assessments (design_id IS NULL, PDC-triggered)
-        with get_connection() as conn:
-            pipeline_rows = conn.execute(
-                "SELECT source_entity_id, findings_json, ran_at "
-                "FROM sc_assessments WHERE design_id IS NULL "
-                "AND trigger_source='pdc_save' "
-                "ORDER BY ran_at DESC"
-            ).fetchall()
-
-        seen_pipelines: set = set()
-        pipeline_assessments = []
-        total_cat1 = sum(e["cat1_count"] for e in design_list)
-        for pr in pipeline_rows:
-            pid = pr["source_entity_id"] or pr[0]
-            if pid in seen_pipelines:
-                continue
-            seen_pipelines.add(pid)
-            try:
-                findings = json.loads(pr["findings_json"] or "[]")
-                cat1 = sum(1 for f in findings if f.get("severity") == "CAT1")
-            except Exception:
-                cat1 = 0
-            total_cat1 += cat1
-            pipeline_assessments.append(
-                {
-                    "pipeline_id": pid,
-                    "cat1_count": cat1,
-                    "last_assessed": pr["ran_at"],
-                }
-            )
-
-        # Aggregate NDC-triggered design assessments (design_id IS NOT NULL, ndc_save)
-        with get_connection() as conn:
-            ndc_rows = conn.execute(
-                "SELECT design_id, source_entity_id, risk_score, posture_grade, "
-                "findings_json, ran_at "
-                "FROM sc_assessments WHERE trigger_source='ndc_save' "
-                "ORDER BY ran_at DESC"
-            ).fetchall()
-
-        seen_ndc: set = set()
-        ndc_assessments = []
-        for nr in ndc_rows:
-            did = nr["design_id"] or nr[0]
-            if did in seen_ndc:
-                continue
-            seen_ndc.add(did)
-            try:
-                findings = json.loads(nr["findings_json"] or "[]")
-                cat1 = sum(1 for f in findings if f.get("severity") == "CAT1")
-            except Exception:
-                cat1 = 0
-            ndc_assessments.append(
-                {
-                    "topology_id": nr["source_entity_id"],
-                    "design_id": did,
-                    "risk_score": nr["risk_score"],
-                    "posture_grade": nr["posture_grade"],
-                    "cat1_count": cat1,
-                    "last_assessed": nr["ran_at"],
-                }
-            )
-
-        return jsonify(
-            {
-                "total_designs": total_designs,
-                "assessed_designs": assessed_count,
-                "unassessed_designs": unassessed,
-                "average_risk_score": avg_score,
-                "average_grade": avg_grade,
-                "grade_distribution": grade_dist,
-                "designs": design_list,
-                "overall_posture": overall_posture,
-                "total_cat1_findings": total_cat1,
-                "pipeline_assessments": pipeline_assessments,
-                "ndc_assessments": ndc_assessments,
-            }
-        )
+            return jsonify(compute_posture_summary(conn))
 
     # ====================================================================
     # API ROUTES — IaC Scanning
