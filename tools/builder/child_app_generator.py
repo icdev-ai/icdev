@@ -1122,12 +1122,14 @@ def _generate_dashboard_stub(child_root: Path, blueprint: dict) -> bool:
         f"Customize routes and pages for your domain.\n"
         f'"""\n'
         f"\n"
-        f"import sqlite3\n"
-        f"from pathlib import Path\n"
         f"from flask import Flask, jsonify\n"
         f"\n"
-        f"DB_PATH = str(Path(__file__).resolve().parent.parent.parent\n"
-        f'              / "data" / "{app_name}.db")\n'
+        f"# NOTE: These pages are minimal placeholders and perform no DB access.\n"
+        f"# When you add data-backed routes, import get_connection from the\n"
+        f"# vendored storage layer (PostgreSQL-primary, RLS-aware) rather than\n"
+        f"# opening a raw sqlite3 connection:\n"
+        f"#     from tools.db.storage import get_connection\n"
+        f"#     conn = get_connection()\n"
         f"\n"
         f"\n"
         f"def _layout(title: str, body: str) -> str:\n"
