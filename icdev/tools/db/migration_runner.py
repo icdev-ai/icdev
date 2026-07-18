@@ -76,8 +76,9 @@ class MigrationRunner:
         """Get a database connection.
 
         Uses get_connection() from storage abstraction when
-        ICDEV_STORAGE_BACKEND=postgresql; falls back to direct sqlite3
-        so the runner remains stdlib-only on SQLite deployments.
+        ICDEV_STORAGE_BACKEND=postgresql; falls back to a
+        StorageConnection-wrapped sqlite3 connection so the module's
+        %s-authored SQL translates on SQLite deployments.
         """
         import os
 
@@ -86,12 +87,14 @@ class MigrationRunner:
             from tools.db.storage import get_connection
 
             return get_connection()
-        # SQLite default
+        # SQLite default — wrapped so the module's %s-authored SQL translates
+        from tools.db.storage import StorageConnection
+
         conn = sqlite3.connect(str(self.db_path))
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA foreign_keys=ON")
-        return conn
+        return StorageConnection(conn, "sqlite")
 
     # ------------------------------------------------------------------
     # Schema migrations table
