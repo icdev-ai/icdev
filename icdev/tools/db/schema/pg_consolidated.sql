@@ -62415,6 +62415,250 @@ CREATE INDEX IF NOT EXISTS idx_briefing
     ON public.user_daily_briefings (user_id, tenant_id, briefing_date);
 
 
+-- ============================================================================
+-- ICDEV ADDITIVE SECTION (post-dump, hand-maintained) — APPEND ONLY
+-- ============================================================================
+-- Pipeline Design Canvas (PDC) core schema — parity with the runtime
+-- initializer tools/pipeline/db/init_db.py::SCHEMA and migration
+-- tools/db/migrations/027_pipeline_snapshots/up.py. On PG-primary the canvas
+-- db_path 'pipeline_canvas' routes to the SHARED icdev database, so these are
+-- shared-DB tables that must exist in the consolidated baseline. (task
+-- pdx-data-04) PG-NATIVE, schema-qualified public., SERIAL for autoincrement,
+-- all idempotent (CREATE ... IF NOT EXISTS), no seeding. Tables ordered so
+-- every REFERENCES target precedes its referrers.
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS public.pipelines (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    description     TEXT,
+    graph_json      TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[]}',
+    template_id     TEXT,
+    classification  TEXT DEFAULT 'public',
+    target_csp      TEXT DEFAULT 'generic',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public.pc_templates (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    category        TEXT,
+    description     TEXT,
+    graph_json      TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[]}',
+    thumbnail_svg   TEXT,
+    tags            TEXT DEFAULT '[]'
+);
+
+CREATE TABLE IF NOT EXISTS public.pc_snippets (
+    id                      TEXT PRIMARY KEY,
+    name                    TEXT NOT NULL,
+    category                TEXT NOT NULL DEFAULT 'DevSecOps',
+    description             TEXT,
+    classification_level    TEXT DEFAULT 'CUI',
+    impact_level            TEXT DEFAULT 'IL4',
+    slsa_level              TEXT DEFAULT 'L1',
+    ssdf_practices          TEXT DEFAULT '[]',
+    graph_json              TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[]}',
+    tags                    TEXT DEFAULT '[]',
+    created_at              TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public.pc_audit (
+    id              SERIAL PRIMARY KEY,
+    action          TEXT NOT NULL,
+    entity_type     TEXT,
+    entity_id       TEXT,
+    details         TEXT,
+    user_id         TEXT,
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    ts              TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public.pc_projects (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    description     TEXT,
+    status          TEXT DEFAULT 'draft',
+    owner           TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public.pdc_sops (
+    id              TEXT PRIMARY KEY,
+    title           TEXT NOT NULL,
+    sop_type        TEXT NOT NULL DEFAULT 'custom',
+    description     TEXT DEFAULT '',
+    purpose         TEXT DEFAULT '',
+    scope           TEXT DEFAULT '',
+    steps           TEXT,
+    nist_controls   TEXT,
+    owner           TEXT DEFAULT '',
+    reviewer        TEXT DEFAULT '',
+    approval_status TEXT DEFAULT 'draft',
+    version         TEXT DEFAULT '1.0',
+    approved_by     TEXT,
+    approved_at     TEXT,
+    next_review_date TEXT,
+    rejected_reason TEXT DEFAULT '',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_pdc_sops_type ON public.pdc_sops(sop_type);
+CREATE INDEX IF NOT EXISTS idx_pdc_sops_status ON public.pdc_sops(approval_status);
+
+CREATE TABLE IF NOT EXISTS public.pipeline_snapshots (
+    id             TEXT PRIMARY KEY,
+    pipeline_id    TEXT NOT NULL,
+    snapshot_type  TEXT NOT NULL DEFAULT 'baseline',
+    label          TEXT,
+    nodes_json     TEXT NOT NULL DEFAULT '[]',
+    edges_json     TEXT NOT NULL DEFAULT '[]',
+    meta_json      TEXT NOT NULL DEFAULT '{}',
+    created_by     TEXT,
+    created_at     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ps_pipeline ON public.pipeline_snapshots(pipeline_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ps_type ON public.pipeline_snapshots(snapshot_type, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS public.pc_versions (
+    id              TEXT PRIMARY KEY,
+    pipeline_id     TEXT REFERENCES public.pipelines(id),
+    version_num     INTEGER NOT NULL,
+    label           TEXT,
+    graph_json      TEXT NOT NULL,
+    created_by      TEXT,
+    notes           TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public.pc_stages (
+    id              TEXT PRIMARY KEY,
+    pipeline_id     TEXT REFERENCES public.pipelines(id),
+    parent_id       TEXT,
+    stage_type      TEXT NOT NULL,
+    label           TEXT NOT NULL,
+    description     TEXT,
+    auto_nodes_json TEXT DEFAULT '[]',
+    pos_x           REAL DEFAULT 0,
+    pos_y           REAL DEFAULT 0,
+    width           REAL DEFAULT 300,
+    height          REAL DEFAULT 200,
+    color           TEXT,
+    collapsed       INTEGER DEFAULT 0,
+    parallel        INTEGER DEFAULT 0,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public.pc_compliance_checks (
+    id              TEXT PRIMARY KEY,
+    pipeline_id     TEXT REFERENCES public.pipelines(id),
+    check_type      TEXT NOT NULL,
+    passed          INTEGER DEFAULT 0,
+    failed          INTEGER DEFAULT 0,
+    findings_json   TEXT DEFAULT '[]',
+    ran_at          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public.pc_compliance_findings (
+    id              TEXT PRIMARY KEY,
+    pipeline_id     TEXT REFERENCES public.pipelines(id),
+    audit_id        TEXT REFERENCES public.pc_compliance_checks(id),
+    rule_id         TEXT NOT NULL,
+    framework       TEXT NOT NULL,
+    severity        TEXT DEFAULT 'CAT2',
+    title           TEXT NOT NULL,
+    description     TEXT,
+    affected_entity TEXT,
+    affected_type   TEXT,
+    status          TEXT DEFAULT 'open',
+    fix_action      TEXT,
+    remediated_at   TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public.pc_boundaries (
+    id              TEXT PRIMARY KEY,
+    pipeline_id     TEXT REFERENCES public.pipelines(id),
+    label           TEXT NOT NULL DEFAULT 'Stage Boundary',
+    classification  TEXT DEFAULT 'CUI',
+    color           TEXT DEFAULT '#e94560',
+    fill_opacity    REAL DEFAULT 0.08,
+    node_ids        TEXT DEFAULT '[]',
+    boundary_type   TEXT DEFAULT 'security_zone',
+    pos_x           REAL DEFAULT 0,
+    pos_y           REAL DEFAULT 0,
+    width           REAL DEFAULT 400,
+    height          REAL DEFAULT 300,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public.pc_project_pipelines (
+    project_id      TEXT REFERENCES public.pc_projects(id),
+    pipeline_id     TEXT REFERENCES public.pipelines(id),
+    PRIMARY KEY (project_id, pipeline_id)
+);
+
+CREATE TABLE IF NOT EXISTS public.pc_change_requests (
+    id              TEXT PRIMARY KEY,
+    pipeline_id     TEXT REFERENCES public.pipelines(id),
+    cr_number       TEXT,
+    cr_type         TEXT DEFAULT 'modify',
+    status          TEXT DEFAULT 'draft',
+    markup_json     TEXT DEFAULT '[]',
+    created_by      TEXT,
+    approved_by     TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public.pc_collab_sessions (
+    id          TEXT PRIMARY KEY,
+    design_id   TEXT NOT NULL REFERENCES public.pipelines(id) ON DELETE CASCADE,
+    user_id     TEXT NOT NULL,
+    user_name   TEXT NOT NULL DEFAULT '',
+    color       TEXT NOT NULL DEFAULT '#3498db',
+    joined_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_seen   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    is_active   INTEGER NOT NULL DEFAULT 1
+);
+CREATE INDEX IF NOT EXISTS idx_pc_collab_design ON public.pc_collab_sessions(design_id);
+
+CREATE TABLE IF NOT EXISTS public.pdc_snapshots (
+    id              TEXT PRIMARY KEY,
+    pipeline_id     TEXT REFERENCES public.pipelines(id),
+    label           TEXT,
+    graph_json      TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[]}',
+    node_count      INTEGER DEFAULT 0,
+    edge_count      INTEGER DEFAULT 0,
+    created_by      TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_pdc_snapshots_pipeline ON public.pdc_snapshots(pipeline_id);
+
+CREATE TABLE IF NOT EXISTS public.pdc_simulations (
+    id              TEXT PRIMARY KEY,
+    pipeline_id     TEXT REFERENCES public.pipelines(id),
+    baseline_snap_id TEXT REFERENCES public.pdc_snapshots(id),
+    delta_graph_json TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[]}',
+    verdict         TEXT NOT NULL DEFAULT 'unknown',
+    antipatterns_json   TEXT DEFAULT '[]',
+    slsa_json           TEXT DEFAULT '{}',
+    compliance_json     TEXT DEFAULT '{}',
+    diff_json           TEXT DEFAULT '{}',
+    critical_count  INTEGER DEFAULT 0,
+    high_count      INTEGER DEFAULT 0,
+    medium_count    INTEGER DEFAULT 0,
+    created_by      TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_pdc_simulations_pipeline ON public.pdc_simulations(pipeline_id);
+-- ============================================================================
+-- END ICDEV ADDITIVE SECTION (Pipeline Design Canvas core schema)
+-- ============================================================================
+
 --
 -- PostgreSQL database dump complete
 --
