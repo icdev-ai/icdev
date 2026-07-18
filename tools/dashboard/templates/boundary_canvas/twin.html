@@ -159,12 +159,14 @@
       <!-- OSCAL export button -->
       <div style="border-top:1px solid #1e3a6e;padding-top:12px;margin-top:4px;">
         <strong style="font-size:12px;color:#7a8cb0;">OSCAL EXPORT</strong>
-        <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
+        <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center;">
           <button class="btn btn-primary btn-sm" onclick="exportOscal('ssp')">SSP</button>
           <button class="btn btn-primary btn-sm" onclick="exportOscal('poam')">POA&amp;M</button>
           <button class="btn btn-primary btn-sm" onclick="exportOscal('ar')">Assessment Results</button>
           <button class="btn btn-primary btn-sm" onclick="exportOscal('cd')">Component Def.</button>
+          <span id="oscalSpinner" class="spinner" style="display:none;"></span>
         </div>
+        <div id="oscalResult" style="display:none;margin-top:8px;padding:8px;border-radius:4px;font-size:12px;"></div>
       </div>
 
       <p class="hint" style="margin-top:12px;" id="simId"></p>
@@ -365,9 +367,46 @@ function renderResults(d) {
   document.getElementById('simId').textContent = d.simulation_id ? 'Simulation ID: ' + d.simulation_id : '';
 }
 
+const OSCAL_LABELS = { ssp: 'SSP', poam: 'POA&M', ar: 'Assessment Results', cd: 'Component Definition' };
+
 async function exportOscal(artifactType) {
-  if (!selectedSnapId) { alert('Take or select a snapshot first.'); return; }
-  window.open(`/boundary/api/twin/${PROJECT_ID}/oscal-export?snapshot_id=${selectedSnapId}&artifact_type=${artifactType}&format=json`, '_blank');
+  const spinner = document.getElementById('oscalSpinner');
+  const out = document.getElementById('oscalResult');
+  const label = OSCAL_LABELS[artifactType] || artifactType;
+  spinner.style.display = 'inline-block';
+  out.style.display = 'none';
+  try {
+    const url = `/boundary/api/twin/${PROJECT_ID}/oscal-export?`
+      + (selectedSnapId ? `snapshot_id=${encodeURIComponent(selectedSnapId)}&` : '')
+      + `artifact_type=${encodeURIComponent(artifactType)}&format=json`;
+    const r = await fetch(url);
+    const data = await r.json();
+    out.style.display = 'block';
+    if (!r.ok || data.status === 'error') {
+      // Explicit error state — do NOT pretend an artifact was produced.
+      out.style.background = '#2a1414';
+      out.style.borderLeft = '3px solid #e74c3c';
+      out.style.color = '#e74c3c';
+      out.textContent = `${label} export failed: ` + (data.error || ('HTTP ' + r.status));
+      return;
+    }
+    const validBadge = data.valid
+      ? '<span style="color:#2ecc71;font-weight:600;">✓ schema-valid</span>'
+      : '<span style="color:#f39c12;font-weight:600;">⚠ generated, schema warnings</span>';
+    out.style.background = '#0a1628';
+    out.style.borderLeft = '3px solid #2ecc71';
+    out.style.color = '#7a8cb0';
+    out.innerHTML = `<strong style="color:#eaeaea;">${label}</strong> ${validBadge}`
+      + `<div style="margin-top:4px;"><code style="color:#7a8cb0;word-break:break-all;">${data.path || ''}</code></div>`;
+  } catch (e) {
+    out.style.display = 'block';
+    out.style.background = '#2a1414';
+    out.style.borderLeft = '3px solid #e74c3c';
+    out.style.color = '#e74c3c';
+    out.textContent = `${label} export failed: ` + e.message;
+  } finally {
+    spinner.style.display = 'none';
+  }
 }
 
 let _loadedGraphJson = null;
