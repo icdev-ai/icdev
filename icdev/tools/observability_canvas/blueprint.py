@@ -69,6 +69,11 @@ from tools.observability_canvas.observability_engine import (  # noqa: E402
 )
 from tools.canvas.ai_trace_mixin import record_canvas_decision  # noqa: E402
 
+# Tracks whether the startup init_db() failed so page routes can lazily retry once.
+# Default False; set True when create_observability_blueprint's init_db() raises so
+# the first subsequent request re-attempts init before querying.
+_init_failed = False
+
 
 def create_observability_blueprint():
     """Create and return the Observability Design Canvas Blueprint.
@@ -81,12 +86,18 @@ def create_observability_blueprint():
         return None
 
     # Initialize DB
+    global _init_failed
     try:
         from tools.observability_canvas.db.init_db import init_db
 
         init_db()
+        _init_failed = False
     except Exception as exc:
-        logger.warning("Observability Canvas DB init failed: %s", exc)
+        _init_failed = True
+        logger.warning(
+            "Observability Canvas DB init failed (will retry lazily on first request): %s",
+            exc,
+        )
 
     try:
         from tools.observability_canvas import bus_subscriber as _odc_bus
@@ -119,6 +130,25 @@ def create_observability_blueprint():
     # ── DB helpers ─────────────────────────────────────────────────────────
     from tools.observability_canvas.db.init_db import get_connection
 
+    def _ensure_init():
+        """Lazily retry DB init once if the startup init_db() failed.
+
+        Cheap guard invoked at the top of every page route: if the canvas was
+        mounted while the store was unreachable, the first request that lands
+        after the store recovers re-runs init_db() and clears the failure flag.
+        """
+        global _init_failed
+        if not _init_failed:
+            return
+        try:
+            from tools.observability_canvas.db.init_db import init_db as _retry_init
+
+            _retry_init()
+            _init_failed = False
+            logger.info("Observability Canvas DB init retry succeeded")
+        except Exception as exc:
+            logger.warning("Observability Canvas DB init retry failed: %s", exc)
+
     def _now():
         return datetime.now(timezone.utc).isoformat()
 
@@ -148,37 +178,45 @@ def create_observability_blueprint():
     @oc_login_required
     def oc_index():
         """Observability Design Canvas dashboard — list designs + recent assessments."""
-        with get_connection() as conn:
-            designs = [
-                _row_to_dict(r)
-                for r in conn.execute(
-                    "SELECT id, name, description, classification, "
-                    "created_at, updated_at "
-                    "FROM observability_designs ORDER BY updated_at DESC"
-                ).fetchall()
-            ]
-            recent_assessments = [
-                _row_to_dict(r)
-                for r in conn.execute(
-                    "SELECT a.id, a.design_id, a.assessment_type, a.score, "
-                    "a.grade, a.created_at, d.name AS design_name "
-                    "FROM od_assessments a "
-                    "JOIN observability_designs d ON a.design_id = d.id "
-                    "ORDER BY a.created_at DESC LIMIT 10"
-                ).fetchall()
-            ]
-            templates = [
-                _row_to_dict(r)
-                for r in conn.execute(
-                    "SELECT id, name, category, description, tags FROM od_templates ORDER BY category, name"
-                ).fetchall()
-            ]
+        _ensure_init()
+        designs, recent_assessments, templates = [], [], []
+        store_unavailable = False
+        try:
+            with get_connection() as conn:
+                designs = [
+                    _row_to_dict(r)
+                    for r in conn.execute(
+                        "SELECT id, name, description, classification, "
+                        "created_at, updated_at "
+                        "FROM observability_designs ORDER BY updated_at DESC"
+                    ).fetchall()
+                ]
+                recent_assessments = [
+                    _row_to_dict(r)
+                    for r in conn.execute(
+                        "SELECT a.id, a.design_id, a.assessment_type, a.score, "
+                        "a.grade, a.created_at, d.name AS design_name "
+                        "FROM od_assessments a "
+                        "JOIN observability_designs d ON a.design_id = d.id "
+                        "ORDER BY a.created_at DESC LIMIT 10"
+                    ).fetchall()
+                ]
+                templates = [
+                    _row_to_dict(r)
+                    for r in conn.execute(
+                        "SELECT id, name, category, description, tags FROM od_templates ORDER BY category, name"
+                    ).fetchall()
+                ]
+        except Exception as exc:
+            store_unavailable = True
+            logger.warning("ODC index page DB unavailable: %s", exc)
         return render_template(
             "observability_canvas/index.html",
             designs=designs,
             recent_assessments=recent_assessments,
             templates=templates,
             objects=OBSERVABILITY_OBJECTS,
+            store_unavailable=store_unavailable,
         )
 
     @bp.route("/canvas/new")
@@ -230,56 +268,100 @@ def create_observability_blueprint():
     @oc_login_required
     def oc_templates():
         """Template gallery page."""
-        with get_connection() as conn:
-            templates = [
-                _row_to_dict(r)
-                for r in conn.execute(
-                    "SELECT id, name, category, description, tags FROM od_templates ORDER BY category, name"
-                ).fetchall()
-            ]
-        return render_template("observability_canvas/templates.html", templates=templates)
+        _ensure_init()
+        templates = []
+        store_unavailable = False
+        try:
+            with get_connection() as conn:
+                templates = [
+                    _row_to_dict(r)
+                    for r in conn.execute(
+                        "SELECT id, name, category, description, tags FROM od_templates ORDER BY category, name"
+                    ).fetchall()
+                ]
+        except Exception as exc:
+            store_unavailable = True
+            logger.warning("ODC templates page DB unavailable: %s", exc)
+        return render_template(
+            "observability_canvas/templates.html",
+            templates=templates,
+            store_unavailable=store_unavailable,
+        )
 
     @bp.route("/assessments")
     @oc_login_required
     def oc_assessments():
         """Assessment history page."""
-        conn = get_connection()
+        _ensure_init()
+        assessments = []
+        store_unavailable = False
         try:
-            rows = conn.execute(
-                "SELECT a.id, a.design_id, a.assessment_type, a.score, "
-                "a.grade, a.created_at, d.name AS design_name "
-                "FROM od_assessments a "
-                "LEFT JOIN observability_designs d ON a.design_id = d.id "
-                "ORDER BY a.created_at DESC LIMIT 50"
-            ).fetchall()
-            assessments = [_row_to_dict(r) for r in rows]
-        finally:
-            conn.close()
-        return render_template("observability_canvas/assessments.html", assessments=assessments)
+            conn = get_connection()
+            try:
+                rows = conn.execute(
+                    "SELECT a.id, a.design_id, a.assessment_type, a.score, "
+                    "a.grade, a.created_at, d.name AS design_name "
+                    "FROM od_assessments a "
+                    "LEFT JOIN observability_designs d ON a.design_id = d.id "
+                    "ORDER BY a.created_at DESC LIMIT 50"
+                ).fetchall()
+                assessments = [_row_to_dict(r) for r in rows]
+            finally:
+                conn.close()
+        except Exception as exc:
+            store_unavailable = True
+            logger.warning("ODC assessments page DB unavailable: %s", exc)
+        return render_template(
+            "observability_canvas/assessments.html",
+            assessments=assessments,
+            store_unavailable=store_unavailable,
+        )
 
     @bp.route("/coverage/<design_id>")
     @oc_login_required
     def oc_coverage_page(design_id):
         """Detection coverage page for a specific observability design."""
-        with get_connection() as conn:
-            design = _row_to_dict(
-                conn.execute("SELECT id, name FROM observability_designs WHERE id=%s", (design_id,)).fetchone()
-            )
-        if not design:
-            return redirect("/observability/")
-        return render_template("observability_canvas/coverage.html", design=design)
+        _ensure_init()
+        design = {}
+        store_unavailable = False
+        try:
+            with get_connection() as conn:
+                design = _row_to_dict(
+                    conn.execute("SELECT id, name FROM observability_designs WHERE id=%s", (design_id,)).fetchone()
+                )
+            if not design:
+                return redirect("/observability/")
+        except Exception as exc:
+            store_unavailable = True
+            logger.warning("ODC coverage page DB unavailable: %s", exc)
+        return render_template(
+            "observability_canvas/coverage.html",
+            design=design,
+            store_unavailable=store_unavailable,
+        )
 
     @bp.route("/remediation/<design_id>")
     @oc_login_required
     def oc_remediation_page(design_id):
         """Remediation page — gap analysis with recommended fixes."""
-        with get_connection() as conn:
-            design = _row_to_dict(
-                conn.execute("SELECT id, name FROM observability_designs WHERE id=%s", (design_id,)).fetchone()
-            )
-        if not design:
-            return redirect("/observability/")
-        return render_template("observability_canvas/remediation.html", design=design)
+        _ensure_init()
+        design = {}
+        store_unavailable = False
+        try:
+            with get_connection() as conn:
+                design = _row_to_dict(
+                    conn.execute("SELECT id, name FROM observability_designs WHERE id=%s", (design_id,)).fetchone()
+                )
+            if not design:
+                return redirect("/observability/")
+        except Exception as exc:
+            store_unavailable = True
+            logger.warning("ODC remediation page DB unavailable: %s", exc)
+        return render_template(
+            "observability_canvas/remediation.html",
+            design=design,
+            store_unavailable=store_unavailable,
+        )
 
     # ====================================================================
     # API — DESIGN CRUD
