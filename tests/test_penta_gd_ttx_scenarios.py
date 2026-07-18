@@ -20,8 +20,18 @@ from __future__ import annotations
 
 import pytest
 
-from tools.ttx.ai_scorer import _fallback_score, _weighted_total
+from tools.ttx.ai_scorer import _weighted_total
 from tools.ttx.scenario_loader import list_scenario_slugs, load_scenario
+
+# penta-gd-07: `_fallback_score` was removed by penta-gd-04 (commit 23b2d83f5)
+# when silent-midpoint scoring was replaced with fail-loud `_unscored`. This test
+# module (penta-gd-06 / PR #546) was merged still importing it, so it fails at
+# collection on origin/main. Make the import defensive so the suite collects; the
+# single assertion that used it is xfailed below (see the note in the PR body).
+try:
+    from tools.ttx.ai_scorer import _fallback_score
+except ImportError:  # pragma: no cover - removed by penta-gd-04 fail-loud scoring
+    _fallback_score = None
 
 NEW_SLUGS = ("document-integrity", "slo-meltdown", "grounding-red-team")
 
@@ -72,6 +82,16 @@ def test_injects_escalate_in_sequence(slug):
     assert len(sc["injects"]) >= 3, f"{slug} should escalate over >=3 injects"
 
 
+@pytest.mark.xfail(
+    _fallback_score is None,
+    reason=(
+        "penta-gd-06 relies on ai_scorer._fallback_score, which penta-gd-04 "
+        "(commit 23b2d83f5) deliberately removed when replacing silent-midpoint "
+        "scoring with fail-loud _unscored. Stale test — follow-up should rewrite "
+        "this assertion against the current scoreability contract (_weighted_total)."
+    ),
+    strict=False,
+)
 @pytest.mark.parametrize("slug", NEW_SLUGS)
 def test_rubrics_parse_and_are_scoreable(slug):
     sc = load_scenario(slug)
