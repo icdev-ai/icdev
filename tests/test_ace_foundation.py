@@ -144,3 +144,52 @@ def test_db_tables_exist():
         "ace_agent_workflows",
     }
     assert expected.issubset(table_names), f"Missing tables: {expected - table_names}"
+
+
+def test_schema_creates_every_required_table():
+    """Every table in controller._REQUIRED_ACE_TABLES must have DDL in SCHEMA.
+
+    Guards against the latent "relation does not exist" class of bug: a table
+    named in the required-tables contract (and written by runtime code) but with
+    no CREATE TABLE anywhere -- exactly the ace_webhook_log gap fixed in
+    hcx-ace-02. Iterates the constant and SELECTs from each table so a future
+    addition to the contract without matching DDL fails here.
+    """
+    from icdev.tools.ace.controller import _REQUIRED_ACE_TABLES
+
+    conn = sqlite3.connect(":memory:")
+    conn.executescript(SCHEMA)
+    conn.commit()
+    try:
+        missing = []
+        for table in _REQUIRED_ACE_TABLES:
+            try:
+                conn.execute(f"SELECT * FROM {table} LIMIT 0")
+            except sqlite3.OperationalError:
+                missing.append(table)
+    finally:
+        conn.close()
+
+    assert not missing, f"_REQUIRED_ACE_TABLES with no DDL in SCHEMA: {missing}"
+
+
+def test_webhook_log_table_present_and_writable():
+    """ace_webhook_log exists in SCHEMA with the columns webhook._log_attempt writes."""
+    conn = sqlite3.connect(":memory:")
+    conn.executescript(SCHEMA)
+    conn.commit()
+    try:
+        conn.execute(
+            "INSERT INTO ace_webhook_log"
+            " (instance_id, url, status_code, response, attempt_count, last_attempted_at, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?)",
+            ("inst-1", "http://x.test/hook", 200, "OK", 1, "2026-07-17T00:00:00", "2026-07-17T00:00:00"),
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT instance_id, status_code, attempt_count FROM ace_webhook_log ORDER BY id"
+        ).fetchone()
+    finally:
+        conn.close()
+
+    assert row == ("inst-1", 200, 1)

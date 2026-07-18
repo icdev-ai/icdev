@@ -56,13 +56,17 @@ def _patch_canvas_conn(ace_db):
     import sqlite3 as _sqlite3
     import importlib
 
+    from icdev.tools.db.storage import translate_sql
+
     class _FakeConn:
         def __init__(self, path):
             self._conn = _sqlite3.connect(str(path))
             self._conn.row_factory = _sqlite3.Row
 
         def execute(self, sql, params=()):
-            return self._conn.execute(sql, params)
+            # Mirror get_canvas_connection's sqlite path: runtime SQL is authored
+            # with PG %s placeholders; translate to ? before hitting sqlite3.
+            return self._conn.execute(translate_sql(sql, "sqlite"), params)
 
         def executescript(self, sql):
             return self._conn.executescript(sql)

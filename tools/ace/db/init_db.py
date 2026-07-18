@@ -187,6 +187,24 @@ CREATE TABLE IF NOT EXISTS ace_skill_candidates (
 );
 CREATE INDEX IF NOT EXISTS idx_ace_skill_cand_status ON ace_skill_candidates(status);
 CREATE INDEX IF NOT EXISTS idx_ace_skill_cand_role ON ace_skill_candidates(role_id);
+
+-- Webhook delivery log (tools/ace/webhook.py::_log_attempt). One summary row per
+-- delivery attempt sequence. Previously listed in controller._REQUIRED_ACE_TABLES
+-- and written by webhook.py, but had NO CREATE TABLE anywhere -- a latent
+-- "relation does not exist" on fresh installs. Columns mirror the INSERT in
+-- _log_attempt; id AUTOINCREMENT supports the ORDER BY id read path. Append-only
+-- (NIST AU) -- see APPEND_ONLY_TABLES in .claude/hooks/pre_tool_use.py.
+CREATE TABLE IF NOT EXISTS ace_webhook_log (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    instance_id       TEXT NOT NULL DEFAULT '',
+    url               TEXT NOT NULL DEFAULT '',
+    status_code       INTEGER,
+    response          TEXT,
+    attempt_count     INTEGER NOT NULL DEFAULT 0,
+    last_attempted_at TEXT,
+    created_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_ace_webhook_log_instance ON ace_webhook_log(instance_id);
 """
 
 # ---------------------------------------------------------------------------

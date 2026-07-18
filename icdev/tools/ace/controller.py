@@ -42,7 +42,6 @@ _REQUIRED_ACE_TABLES = (
     "ace_audit_log",
     "ace_webhook_log",
     "ace_sessions",
-    "ace_preflight_decisions",
 )
 
 # Patterns that identify decision/outcome/lesson sentences worth persisting
