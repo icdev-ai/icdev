@@ -26,6 +26,7 @@ Routes:
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import uuid
 
@@ -41,6 +42,35 @@ docgen_bp = Blueprint(
     url_prefix="/docgen",
     template_folder="../../tools/dashboard/templates",
 )
+
+
+# ─── Tenant scoping (cnr-doc-03: cross-tenant IDOR guard) ────────────────────
+
+def _request_tenant_id():
+    """Current request's tenant id from the security context, or None (system/CLI)."""
+    try:
+        from flask import g
+        ctx = getattr(g, "security_context", None)
+        return getattr(ctx, "tenant_id", None) if ctx else None
+    except Exception:
+        return None
+
+
+def _tenant_visible(row) -> bool:
+    """False when *row* belongs to a DIFFERENT tenant than the request's.
+
+    Rows with no tenant (shared/default) and requests with no tenant context
+    (system/CLI/single-tenant) are always visible — this blocks cross-tenant IDOR
+    without breaking the default single-tenant deployment.
+    """
+    req_tenant = _request_tenant_id()
+    if not req_tenant:
+        return True
+    if isinstance(row, dict):
+        row_tenant = row.get("tenant_id")
+    else:
+        row_tenant = getattr(row, "tenant_id", None)
+    return row_tenant is None or row_tenant == req_tenant
 
 
 # ─── Page routes ─────────────────────────────────────────────────────────────
@@ -149,7 +179,7 @@ def session_detail(session_id: str):
     from tools.docgen.domain_profiles import get_profile
 
     session = sm.get_session(session_id)
-    if not session:
+    if not session or not _tenant_visible(session):  # cnr-doc-03: cross-tenant IDOR guard
         return render_template("errors/404.html"), 404
     uploads = sm.list_uploads(session_id)
     analyses = sm.list_analyses(session_id)
@@ -350,7 +380,7 @@ def api_get_session(session_id: str):
     from tools.docgen import session_manager as sm
 
     session = sm.get_session(session_id)
-    if not session:
+    if not session or not _tenant_visible(session):  # cnr-doc-03: cross-tenant IDOR guard
         return jsonify({"error": "not found"}), 404
     return jsonify(session)
 
@@ -409,9 +439,36 @@ def api_add_upload(session_id: str):
 
     # Handle multipart file upload or JSON metadata
     if request.files:
+        from tools.docgen.constants import ALLOWED_UPLOAD_EXTENSIONS, max_upload_bytes
+
         file = next(iter(request.files.values()))
         upload_type = (request.form.get("upload_type") or "doc").strip()
-        safe_name = pathlib.Path(file.filename or "upload").name
+        safe_name = pathlib.Path(file.filename or "upload").name  # traversal-safe
+
+        # cnr-doc-03: extension allowlist — reject executables/scripts and anything
+        # outside the documented analyzer input set.
+        ext = pathlib.Path(safe_name).suffix.lower()
+        if ext not in ALLOWED_UPLOAD_EXTENSIONS:
+            return jsonify({
+                "error": f"File type '{ext or '(none)'}' is not permitted.",
+                "allowed_extensions": sorted(ALLOWED_UPLOAD_EXTENSIONS),
+            }), 400
+
+        # cnr-doc-03: per-file size cap (coordinates with cnr-plat-02 global cap via env).
+        cap = max_upload_bytes()
+        try:
+            file.stream.seek(0, os.SEEK_END)
+            size = file.stream.tell()
+            file.stream.seek(0)
+        except (OSError, ValueError):
+            size = request.content_length or 0
+        if size > cap:
+            return jsonify({
+                "error": f"File exceeds the {cap // (1024 * 1024)} MiB upload limit.",
+                "max_bytes": cap,
+                "size": size,
+            }), 400
+
         save_dir = pathlib.Path("data") / "docgen" / "uploads" / session_id
         save_dir.mkdir(parents=True, exist_ok=True)
         file_path = str(save_dir / safe_name)
@@ -445,6 +502,9 @@ def api_add_upload(session_id: str):
 def api_list_uploads(session_id: str):
     from tools.docgen import session_manager as sm
 
+    session = sm.get_session(session_id)
+    if not session or not _tenant_visible(session):  # cnr-doc-03: cross-tenant IDOR guard
+        return jsonify({"error": "not found"}), 404
     uploads = sm.list_uploads(session_id)
     return jsonify(uploads)
 
@@ -1100,6 +1160,9 @@ def api_publish(session_id: str):
 def api_list_artifacts(session_id: str):
     from tools.docgen import session_manager as sm
 
+    session = sm.get_session(session_id)
+    if not session or not _tenant_visible(session):  # cnr-doc-03: cross-tenant IDOR guard
+        return jsonify({"error": "not found"}), 404
     artifacts = sm.list_artifacts(session_id)
     return jsonify(artifacts)
 
@@ -1112,7 +1175,8 @@ def api_download_artifact(session_id: str, artifact_id: str):
     from tools.docgen import session_manager as sm
 
     artifact = sm.get_artifact(artifact_id)
-    if not artifact or artifact.get("session_id") != session_id:
+    if (not artifact or artifact.get("session_id") != session_id
+            or not _tenant_visible(artifact)):  # cnr-doc-03: cross-tenant IDOR guard
         abort(404)
 
     file_path = artifact.get("file_path")

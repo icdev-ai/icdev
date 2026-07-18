@@ -207,3 +207,89 @@ def test_api_writeguard_route_fails_closed_on_import_error(tmp_path):
     body = resp.get_json()
     assert body["passed"] is False
     assert body["writeguard_unavailable"] is True
+
+
+# ═══════════ cnr-doc-03: upload allowlist/size, tenant IDOR, XSS ═══════════════
+
+def test_upload_rejects_disallowed_extension(tmp_path):
+    from io import BytesIO
+    from tools.docgen.session_manager import create_session
+    client = _client(tmp_path)
+    s = create_session(title="Up", domain="network")
+    resp = client.post(
+        f"/docgen/api/sessions/{s['id']}/uploads",
+        data={"file": (BytesIO(b"MZ evil"), "malware.exe"), "upload_type": "doc"},
+        content_type="multipart/form-data",
+    )
+    assert resp.status_code == 400
+    assert "not permitted" in resp.get_json()["error"]
+
+
+def test_upload_rejects_oversize_file(tmp_path, monkeypatch):
+    from io import BytesIO
+    from tools.docgen.session_manager import create_session
+    monkeypatch.setenv("DOCGEN_MAX_UPLOAD_BYTES", "10")
+    client = _client(tmp_path)
+    s = create_session(title="Up", domain="network")
+    resp = client.post(
+        f"/docgen/api/sessions/{s['id']}/uploads",
+        data={"file": (BytesIO(b"x" * 500), "notes.txt"), "upload_type": "doc"},
+        content_type="multipart/form-data",
+    )
+    assert resp.status_code == 400
+    assert "upload limit" in resp.get_json()["error"]
+
+
+def test_get_session_cross_tenant_is_404(tmp_path):
+    from tools.docgen.session_manager import create_session, set_field
+    client = _client(tmp_path)
+    s = create_session(title="TenantA doc", domain="network", tenant_id="tenant-a")
+    set_field(s["id"], tenant_id="tenant-a")
+    with patch("tools.docgen.blueprint._request_tenant_id", return_value="tenant-b"):
+        resp = client.get(f"/docgen/api/sessions/{s['id']}")
+    assert resp.status_code == 404
+
+
+def test_get_session_same_tenant_ok(tmp_path):
+    from tools.docgen.session_manager import create_session, set_field
+    client = _client(tmp_path)
+    s = create_session(title="TenantA doc", domain="network", tenant_id="tenant-a")
+    set_field(s["id"], tenant_id="tenant-a")
+    with patch("tools.docgen.blueprint._request_tenant_id", return_value="tenant-a"):
+        resp = client.get(f"/docgen/api/sessions/{s['id']}")
+    assert resp.status_code == 200
+
+
+def test_download_artifact_cross_tenant_is_404(tmp_path):
+    from tools.docgen.session_manager import create_session, add_artifact, set_field
+    client = _client(tmp_path)
+    s = create_session(title="TenantA", domain="network", tenant_id="tenant-a")
+    set_field(s["id"], tenant_id="tenant-a")
+    art = add_artifact(s["id"], "html", file_path=str(tmp_path / "doc.html"), tenant_id="tenant-a")
+    with patch("tools.docgen.blueprint._request_tenant_id", return_value="tenant-b"):
+        resp = client.get(f"/docgen/api/sessions/{s['id']}/artifacts/{art['id']}/download")
+    assert resp.status_code == 404
+
+
+def test_export_html_escapes_hostile_title_and_body(tmp_path):
+    from tools.docgen.workflow import _try_export_html
+    from tools.docgen.session_manager import create_session
+    s = create_session(title="X", domain="network")
+    out_dir = str(tmp_path / "out")
+    os.makedirs(out_dir, exist_ok=True)
+    artifacts = []
+    hostile_title = "<script>alert('xss')</script>Report"
+    hostile_body = "Intro\n\n<script>steal()</script>\n\n<img src=x onerror=alert(1)>\n\n[click](javascript:alert(2))"
+    _try_export_html(s["id"], hostile_body, hostile_title, out_dir, "CUI", artifacts)
+    content = Path(artifacts[0]["file_path"]).read_text(encoding="utf-8")
+    assert "<script>" not in content
+    assert "onerror=" not in content
+    assert "javascript:alert" not in content
+    # Hostile title is HTML-escaped, not rendered as a live tag.
+    assert "&lt;script&gt;" in content
+
+
+def test_sanitize_html_keeps_safe_formatting():
+    from tools.docgen.workflow import _sanitize_html
+    out = _sanitize_html("<h1>Title</h1><p>ok <strong>bold</strong></p>")
+    assert "<h1>" in out and "<strong>" in out

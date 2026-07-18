@@ -1234,17 +1234,48 @@ _CLS_BANNER_STYLES: dict[str, str] = {
 }
 
 
+def _sanitize_html(html_str: str) -> str:
+    """Strip stored-XSS vectors from rendered markdown (cnr-doc-03).
+
+    Removes <script>/<style>/<iframe>/<object>/<embed>/<svg>/<form> and similar
+    active elements, inline on* event-handler attributes, and javascript:/vbscript:/
+    data: URIs in href/src. Pure-regex — no external deps (air-gap safe). Markdown
+    passes raw HTML through by default, so this runs on the RENDERED output.
+    """
+    import re as _re
+
+    if not html_str:
+        return ""
+    s = html_str
+    _dangerous = r"script|style|iframe|object|embed|svg|math|template|link|meta|base|form|input|button|textarea|noscript|frame|frameset|applet"
+    # Remove dangerous element blocks (opening tag through matching close).
+    s = _re.sub(rf"(?is)<\s*({_dangerous})\b.*?<\s*/\s*\1\s*>", "", s)
+    # Remove any remaining dangerous opening/void/closing tags.
+    s = _re.sub(rf"(?is)<\s*/?\s*({_dangerous})\b[^>]*>", "", s)
+    # Strip inline event-handler attributes (onload=, onerror=, onclick=, …).
+    s = _re.sub(r"(?i)\son\w+\s*=\s*(\"[^\"]*\"|'[^']*'|[^\s>]+)", "", s)
+    # Neutralize javascript:/vbscript:/data: URIs in href/src.
+    s = _re.sub(r"(?i)(href|src)\s*=\s*([\"']?)\s*(?:javascript|vbscript|data)\s*:[^\"'>\s]*", r"\1=\2#", s)
+    return s
+
+
 def _try_export_html(session_id, text, title, out_dir, classification, artifacts):
     try:
+        import html as _html
+
         html_path = str(pathlib.Path(out_dir) / "document.html")
         cls_upper = (classification or "CUI").upper()
         banner_style = _CLS_BANNER_STYLES.get(cls_upper, _CLS_BANNER_STYLES["CUI"])
         banner_css = f"{banner_style};padding:6px 12px;font-size:13px;font-weight:bold;text-align:center;letter-spacing:1px;"
+        # cnr-doc-03: escape untrusted title/classification and sanitize the rendered
+        # markdown body so a hostile document title or embedded HTML can't inject XSS
+        # into the exported artifact.
+        title = _html.escape(str(title or ""))
+        classification = _html.escape(str(classification or "CUI"))
         try:
             import markdown as _md
-            body_html = _md.markdown(text, extensions=["tables", "fenced_code"])
+            body_html = _sanitize_html(_md.markdown(text, extensions=["tables", "fenced_code"]))
         except Exception:
-            import html as _html
             body_html = f"<pre>{_html.escape(text)}</pre>"
         html = f"""<!DOCTYPE html>
 <html lang="en">
