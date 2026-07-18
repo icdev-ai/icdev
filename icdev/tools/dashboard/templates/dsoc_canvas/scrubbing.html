@@ -157,6 +157,12 @@
 <script>
 const IQE_CANVAS = 'dsoc';
 
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 function addCenter() {
   const data = {
     name:            document.getElementById('f-scrub-name').value.trim(),
@@ -180,10 +186,10 @@ function addCenter() {
       if (d.status === 'created' || d.id) {
         msg.innerHTML = '<span class="text-success">Center added. Reload to see it.</span>';
       } else {
-        msg.innerHTML = `<span class="text-danger">${d.error || 'Error adding center.'}</span>`;
+        msg.innerHTML = `<span class="text-danger">${esc(d.error) || 'Error adding center.'}</span>`;
       }
     })
-    .catch(e => { msg.innerHTML = `<span class="text-danger">${e}</span>`; });
+    .catch(e => { msg.innerHTML = `<span class="text-danger">${esc(e)}</span>`; });
 }
 </script>
 {% endblock %}

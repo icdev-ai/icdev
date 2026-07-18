@@ -168,6 +168,12 @@
 <script>
 const IQE_CANVAS = 'dsoc';
 
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 function addFlowspecRule() {
   const data = {
     rule_name:          document.getElementById('f-rule-name').value,
@@ -194,10 +200,10 @@ function addFlowspecRule() {
       if (d.status === 'created' || d.id) {
         msg.innerHTML = '<span class="text-success">Rule created. Reload to see it.</span>';
       } else {
-        msg.innerHTML = `<span class="text-danger">${d.error || 'Error creating rule.'}</span>`;
+        msg.innerHTML = `<span class="text-danger">${esc(d.error) || 'Error creating rule.'}</span>`;
       }
     })
-    .catch(e => { msg.innerHTML = `<span class="text-danger">${e}</span>`; });
+    .catch(e => { msg.innerHTML = `<span class="text-danger">${esc(e)}</span>`; });
 }
 
 function withdrawFlowspec(id) {
