@@ -37,7 +37,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from tools.db.storage import get_connection  # noqa: E402
+from tools.db.storage import get_connection, table_exists  # noqa: E402
 
 logger = get_logger(__name__)
 
@@ -161,21 +161,30 @@ Flag only genuinely anomalous controls. If none are found, return {{"anomalies":
 
 
 def _build_seed_queries(threshold: float = _AI_SCORE_THRESHOLD_DEFAULT) -> List[str]:
-    """Return the standard IQE seed queries with the given anomaly threshold applied."""
+    """Return the standard IQE seed queries with the given anomaly threshold applied.
+
+    Authored in the maintained IQE grammar (``tools/iqe/parser.py``) against the
+    ``compliance.twin_snapshots`` collection registered by
+    ``tools/iqe/adapters/compliance.py``. ``run_query`` injects the per-project
+    scope, so each query carries only the framework argument. NULL evidence is
+    expressed as ``== null`` and prefix matching as ``startswith`` (the IQE
+    operators) — the retired regex engine's ``is null`` / ``starts_with`` forms
+    are not part of this grammar.
+    """
     t = f"{threshold:.2f}"
     return [
         # FedRAMP Moderate
-        "foreach ctrl in framework('FedRAMP Moderate').controls where ctrl.status != 'satisfied' select ctrl.control_id, ctrl.implementation_status, ctrl.project_id, ctrl.score",
-        "foreach ctrl in framework('FedRAMP Moderate').controls where ctrl.evidence_ref is null select ctrl.control_id, ctrl.implementation_status, ctrl.project_id",
-        f"foreach ctrl in framework('FedRAMP Moderate').controls where ctrl.score < {t} select ctrl.control_id, ctrl.score, ctrl.implementation_status, ctrl.project_id",
-        "foreach ctrl in framework('FedRAMP Moderate').controls where ctrl.control_id starts_with 'AC' and ctrl.status != 'satisfied' select ctrl.control_id, ctrl.implementation_status, ctrl.score, ctrl.project_id",
-        "foreach ctrl in framework('FedRAMP Moderate').controls where ctrl.control_id starts_with 'IA' and ctrl.status != 'satisfied' select ctrl.control_id, ctrl.implementation_status, ctrl.score, ctrl.project_id",
+        'foreach ctrl in compliance.twin_snapshots("FedRAMP Moderate") where ctrl.status != "satisfied" select ctrl.control_id, ctrl.implementation_status, ctrl.project_id, ctrl.score',
+        'foreach ctrl in compliance.twin_snapshots("FedRAMP Moderate") where ctrl.evidence_ref == null select ctrl.control_id, ctrl.implementation_status, ctrl.project_id',
+        f'foreach ctrl in compliance.twin_snapshots("FedRAMP Moderate") where ctrl.score < {t} select ctrl.control_id, ctrl.score, ctrl.implementation_status, ctrl.project_id',
+        'foreach ctrl in compliance.twin_snapshots("FedRAMP Moderate") where ctrl.control_id startswith "AC" and ctrl.status != "satisfied" select ctrl.control_id, ctrl.implementation_status, ctrl.score, ctrl.project_id',
+        'foreach ctrl in compliance.twin_snapshots("FedRAMP Moderate") where ctrl.control_id startswith "IA" and ctrl.status != "satisfied" select ctrl.control_id, ctrl.implementation_status, ctrl.score, ctrl.project_id',
         # FedRAMP High
-        "foreach ctrl in framework('FedRAMP High').controls where ctrl.status != 'satisfied' select ctrl.control_id, ctrl.implementation_status, ctrl.project_id, ctrl.score",
-        "foreach ctrl in framework('FedRAMP High').controls where ctrl.evidence_ref is null select ctrl.control_id, ctrl.implementation_status, ctrl.project_id",
-        f"foreach ctrl in framework('FedRAMP High').controls where ctrl.score < {t} and ctrl.status == 'not_satisfied' select ctrl.control_id, ctrl.score, ctrl.project_id, ctrl.assessor",
-        "foreach ctrl in framework('FedRAMP High').controls where ctrl.control_id starts_with 'SC' and ctrl.status != 'satisfied' select ctrl.control_id, ctrl.implementation_status, ctrl.score, ctrl.project_id",
-        "foreach ctrl in framework('FedRAMP High').controls where ctrl.control_id starts_with 'SI' and ctrl.status != 'satisfied' select ctrl.control_id, ctrl.implementation_status, ctrl.score, ctrl.project_id",
+        'foreach ctrl in compliance.twin_snapshots("FedRAMP High") where ctrl.status != "satisfied" select ctrl.control_id, ctrl.implementation_status, ctrl.project_id, ctrl.score',
+        'foreach ctrl in compliance.twin_snapshots("FedRAMP High") where ctrl.evidence_ref == null select ctrl.control_id, ctrl.implementation_status, ctrl.project_id',
+        f'foreach ctrl in compliance.twin_snapshots("FedRAMP High") where ctrl.score < {t} and ctrl.status == "not_satisfied" select ctrl.control_id, ctrl.score, ctrl.project_id, ctrl.assessor',
+        'foreach ctrl in compliance.twin_snapshots("FedRAMP High") where ctrl.control_id startswith "SC" and ctrl.status != "satisfied" select ctrl.control_id, ctrl.implementation_status, ctrl.score, ctrl.project_id',
+        'foreach ctrl in compliance.twin_snapshots("FedRAMP High") where ctrl.control_id startswith "SI" and ctrl.status != "satisfied" select ctrl.control_id, ctrl.implementation_status, ctrl.score, ctrl.project_id',
     ]
 
 
@@ -336,37 +345,6 @@ def _get_active_projects(conn) -> List[Dict]:
     return [dict(r) for r in rows]
 
 
-def _table_exists(conn, table: str) -> bool:
-    """Backend-aware table existence check (SQLite ``sqlite_master`` / PG
-    ``information_schema``).
-
-    The original reflex only ever queried ``sqlite_master``, which does not
-    exist on PostgreSQL — so on the live PG backend the existence probe itself
-    raised and every framework was skipped (one of the reasons the reflex wrote
-    0 snapshots). Any probe error degrades to ``False`` (and rolls back so a PG
-    transaction is not left aborted).
-    """
-    backend = getattr(conn, "_backend", "sqlite")
-    try:
-        if backend == "postgresql":
-            row = conn.execute(
-                "SELECT 1 FROM information_schema.tables WHERE table_name = %s",
-                (table,),
-            ).fetchone()
-        else:
-            row = conn.execute(
-                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=%s",
-                (table,),
-            ).fetchone()
-        return row is not None
-    except Exception:
-        try:
-            conn.rollback()
-        except Exception:
-            pass
-        return False
-
-
 def _normalize_assessor_rows(rows, status_map: Dict[str, str]) -> List[Dict]:
     """Turn raw assessor rows into snapshot_writer control records.
 
@@ -411,7 +389,10 @@ def _pull_framework_controls(conn, project_id: str, framework: str) -> List[Dict
         return []
 
     table = src["table"]
-    if not _table_exists(conn, table):
+    # Shared backend-aware probe: information_schema on PG, sqlite_master on
+    # SQLite. Never raises for a missing table (returns False), so a missing
+    # assessor table degrades to an empty control list, never a raised probe.
+    if not table_exists(conn, table):
         return []
 
     where = "project_id = %s"
@@ -516,7 +497,7 @@ def run(ctx: Dict[str, Any], conn=None) -> Dict[str, Any]:
                       ai_anomalies_found, errors.
     """
     from tools.boundary_canvas.cato_twin.snapshot_writer import write_snapshot
-    from tools.boundary_canvas.cato_twin.query_engine import run_query
+    from tools.iqe.adapters.compliance import run_query
     from tools.boundary_canvas.cato_twin.poam_auto_generator import generate_from_violations
 
     triggered_by = ctx.get("triggered_by", "genesis_reflex")

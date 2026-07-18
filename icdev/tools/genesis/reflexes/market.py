@@ -26,7 +26,7 @@ from typing import Any, Dict, List, Optional
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
-from tools.db.storage import get_connection  # noqa: E402
+from tools.db.storage import get_connection, list_tables  # noqa: E402
 
 
 def _utcnow_iso() -> str:
@@ -37,8 +37,12 @@ def _get_module_stats() -> List[Dict[str, Any]]:
     """Query marketplace module usage statistics."""
     conn = get_connection()
     try:
-        # Check if marketplace tables exist
-        tables = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'mkt_%'").fetchall()
+        # Check if marketplace tables exist. Uses the shared backend-aware
+        # list_tables() + a Python prefix filter: the previous inline
+        # ``sqlite_master ... LIKE 'mkt_%'`` bypassed translate_sql on PG (the
+        # rewritten query referenced a non-existent ``name`` column and raised),
+        # so this probe silently returned [] on every PostgreSQL stack.
+        tables = [t for t in list_tables(conn) if t.startswith("mkt_")]
         if not tables:
             return []
 

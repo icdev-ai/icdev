@@ -25,7 +25,7 @@ import json
 import os
 import sqlite3
 import uuid
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection, is_pg
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -34,6 +34,27 @@ logger = get_logger("icdev.observability.provenance")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
+
+# Backend-appropriate DB error tuple. Writes route through get_connection,
+# which targets PostgreSQL by default; PG raises psycopg2.Error subclasses
+# that sqlite3.Error does not cover.
+try:  # pragma: no cover - import guard
+    import psycopg2
+
+    _DB_ERRORS: tuple = (sqlite3.Error, psycopg2.Error)
+except ImportError:  # sqlite-only install
+    _DB_ERRORS = (sqlite3.Error,)
+
+
+def _db_file_missing(db_path: Path) -> bool:
+    """Whether the SQLite file gate should short-circuit I/O.
+
+    Only meaningful when the effective backend is SQLite. Under the
+    PG-primary runtime, I/O goes through get_connection (PostgreSQL) and the
+    .db path is ignored, so the file-existence gate must NOT apply — otherwise
+    provenance writes silently no-op on a clean PG deployment (data loss).
+    """
+    return not is_pg() and not db_path.exists()
 
 
 class ProvRecorder:
@@ -89,7 +110,7 @@ class ProvRecorder:
 
         stored_content = content if self._content_tracing_enabled() else None
 
-        if not self._db_path.exists():
+        if _db_file_missing(self._db_path):
             return None
 
         try:
@@ -116,7 +137,7 @@ class ProvRecorder:
             conn.commit()
             conn.close()
             return entity_id
-        except sqlite3.Error as e:
+        except _DB_ERRORS as e:
             logger.error("Failed to record entity: %s", e)
             return None
 
@@ -147,7 +168,7 @@ class ProvRecorder:
         activity_id = str(uuid.uuid4())
         now = datetime.now(timezone.utc).isoformat()
 
-        if not self._db_path.exists():
+        if _db_file_missing(self._db_path):
             return None
 
         try:
@@ -174,7 +195,7 @@ class ProvRecorder:
             conn.commit()
             conn.close()
             return activity_id
-        except sqlite3.Error as e:
+        except _DB_ERRORS as e:
             logger.error("Failed to record activity: %s", e)
             return None
 
@@ -198,7 +219,7 @@ class ProvRecorder:
         Returns:
             True if recorded, False on failure.
         """
-        if not self._db_path.exists():
+        if _db_file_missing(self._db_path):
             return False
 
         try:
@@ -221,7 +242,7 @@ class ProvRecorder:
             conn.commit()
             conn.close()
             return True
-        except sqlite3.Error as e:
+        except _DB_ERRORS as e:
             logger.error("Failed to record relation: %s", e)
             return False
 
@@ -241,7 +262,7 @@ class ProvRecorder:
         Returns:
             List of relation dicts forming the lineage chain.
         """
-        if not self._db_path.exists():
+        if _db_file_missing(self._db_path):
             return []
 
         results = []
@@ -278,7 +299,7 @@ class ProvRecorder:
                 depth += 1
 
             conn.close()
-        except sqlite3.Error as e:
+        except _DB_ERRORS as e:
             logger.error("Lineage query error: %s", e)
 
         return results
@@ -293,7 +314,7 @@ class ProvRecorder:
             PROV-JSON dictionary.
         """
         pid = project_id or self._project_id
-        if not self._db_path.exists():
+        if _db_file_missing(self._db_path):
             return {"entity": {}, "activity": {}, "relation": []}
 
         try:
@@ -335,6 +356,6 @@ class ProvRecorder:
                     for r in relations
                 ],
             }
-        except sqlite3.Error as e:
+        except _DB_ERRORS as e:
             logger.error("PROV-JSON export error: %s", e)
             return {"entity": {}, "activity": {}, "relation": []}

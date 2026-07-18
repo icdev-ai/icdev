@@ -610,7 +610,6 @@
 | Enclave Scanner | tools\network\enclave_scanner.py | Auto-registered: network/enclave_scanner.py | --json | JSON |
 | Nipr Constraint Validator | tools\network\nipr_constraint_validator.py | Auto-registered: network/nipr_constraint_validator.py | --json | JSON |
 | Schema Extractor | tools\ontology\schema_extractor.py | Auto-registered: ontology/schema_extractor.py | --json | JSON |
-| Localstack Ecr | tools\pipeline\localstack_ecr.py | Auto-registered: pipeline/localstack_ecr.py | --json | JSON |
 | Timeline Loader | tools\project\timeline_loader.py | Auto-registered: project/timeline_loader.py | --json | JSON |
 | Backfill Registry | tools\provenance\backfill_registry.py | Auto-registered: provenance/backfill_registry.py | --json | JSON |
 | Budget Validator | tools\requirements\budget_validator.py | Auto-registered: requirements/budget_validator.py | --json | JSON |

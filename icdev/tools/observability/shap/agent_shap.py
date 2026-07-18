@@ -24,7 +24,7 @@ import json
 import math
 import random
 import sqlite3
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection, is_pg
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
@@ -32,6 +32,26 @@ logger = get_logger("icdev.observability.shap")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
+
+# Backend-appropriate DB error tuple. I/O routes through get_connection,
+# which targets PostgreSQL by default; PG raises psycopg2.Error subclasses
+# that sqlite3.Error does not cover.
+try:  # pragma: no cover - import guard
+    import psycopg2
+
+    _DB_ERRORS: tuple = (sqlite3.Error, psycopg2.Error)
+except ImportError:  # sqlite-only install
+    _DB_ERRORS = (sqlite3.Error,)
+
+
+def _db_file_missing(db_path: Path) -> bool:
+    """Whether the SQLite file gate should short-circuit I/O.
+
+    Only meaningful when the effective backend is SQLite. Under the
+    PG-primary runtime, I/O goes through get_connection (PostgreSQL) and the
+    .db path is ignored, so the file-existence gate must NOT apply.
+    """
+    return not is_pg() and not db_path.exists()
 
 
 class AgentSHAP:
@@ -189,7 +209,7 @@ class AgentSHAP:
 
     def _get_trace_spans(self, trace_id: str) -> List[Dict]:
         """Fetch all spans for a trace."""
-        if not self._db_path.exists():
+        if _db_file_missing(self._db_path):
             return []
 
         try:
@@ -200,7 +220,7 @@ class AgentSHAP:
             ).fetchall()
             conn.close()
             return [dict(row) for row in rows]
-        except sqlite3.Error:
+        except _DB_ERRORS:
             return []
 
     def _store_attributions(
@@ -211,7 +231,7 @@ class AgentSHAP:
         outcome_metric: str,
     ) -> None:
         """Store Shapley attributions in DB (append-only, D6)."""
-        if not self._db_path.exists():
+        if _db_file_missing(self._db_path):
             return
 
         try:
@@ -237,7 +257,7 @@ class AgentSHAP:
                 )
             conn.commit()
             conn.close()
-        except sqlite3.Error as e:
+        except _DB_ERRORS as e:
             logger.error("Failed to store SHAP attributions: %s", e)
 
 

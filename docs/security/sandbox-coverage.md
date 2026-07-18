@@ -757,3 +757,19 @@ scanner then runs against the *staged copy as data* — the target is read, hash
   - **Defense in depth** — the module documents that the DB connection SHOULD authenticate as a low-privilege, read-only role (no COPY/superuser/write grants).
   - **Regression test** — `tests/test_dcpr_query_sandbox.py` asserts rejection of stacked statements, COPY, `pg_read_file`, `information_schema`, DML/DDL, and admin verbs, and acceptance of `SELECT 1` / `EXPLAIN SELECT 1`.
 - **Revisit if:** the Query tab ever accepts unauthenticated input, the sandbox is asked to allow writes, or a new backend adds a file/catalog function not covered by the identifier blocklist.
+
+### Gap 30 — Data Mesh `ext.*` governance gate — local no-OPA fail-open (`tools/data_canvas/data_mesh/governance_engine.py`)
+
+**Module:** `tools/data_canvas/data_mesh/governance_engine.py` (`check_ext_access()`)
+
+**Ingress path:** `check_ext_access(connector_name, table, user_attrs=None)` is the governance gate IQE's `ext.*` adapter (`tools/iqe/adapters/ext_databridge.py`) calls before reading rows from an external DataBridge connector (Splunk, Tenable, ServiceNow, GDELT, …). When an OPA server is configured (`ICDEV_OPA_URL`), the gate evaluates the datamesh policy. When `ICDEV_OPA_URL` is **blank — the default** — the gate historically returned `allowed=True` unconditionally with a `local pass-through` audit entry. For an IL4 canvas this is a **fail-open** posture: absent policy infrastructure, every external read is permitted.
+
+- **Decision:** **sandboxed-on-demand** (fail-open by default; a toggle switches the local no-OPA path to fail-closed default-deny)
+- **Rationale:** Parity with the sibling `check_access()` in `tools/data_canvas/governance_engine.py`, which was given default-deny in dcpr-sec-03. Flipping the ext path unconditionally to deny would break existing dev/IL2 deployments that run without OPA, so the fail-closed behavior is gated behind an explicit, default-off env toggle (mirroring the `redaction.fail_closed` convention). When the toggle is set, a missing OPA server denies the read instead of allowing it; the OPA-configured branch is unchanged. The gate performs no code execution — it only reads env/config, evaluates policy, and writes an append-only audit row.
+- **Guardrails:**
+  - **`ICDEV_GOVERNANCE_FAIL_CLOSED`** env toggle (accepts `1`/`true`/`yes`, case-insensitive), **default OFF** to preserve historical fail-open behavior. Read at **call time** (not import time) so operators/tests can flip it per environment without reimport.
+  - When ON **and** no OPA server is configured, `check_ext_access()` returns `{"allowed": False, "reason": "governance fail-closed: no OPA server configured", "method": "local", "policy_id": None}` and **still writes** the `dm_policy_audit_log` audit entry (decision=0), preserving the audit trail on deny.
+  - When OFF, the local pass-through allow is preserved exactly (decision=1 audit row).
+  - The OPA-configured branch (`ICDEV_OPA_URL` set) is untouched — it always evaluates the policy.
+  - **Regression test** — `tests/test_dcpr_ext_access_failclosed.py` asserts (a) toggle ON + no OPA denies and audits, and (b) toggle OFF (default) + no OPA allows (behavior preserved), plus case-insensitive token parsing.
+- **Revisit if:** the default is ever flipped to fail-closed (make the toggle opt-*out* and re-audit dev/IL2 impact), or if a policy-decision cache is added that could serve a stale allow after the toggle is set.

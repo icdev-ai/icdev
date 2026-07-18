@@ -6154,6 +6154,8 @@ def _verify_task_specific(task_id: str) -> Tuple[bool, str]:
                         (table_name,),
                     ).fetchone()
                 else:
+                    # pg-portability: sqlite-only path — reached only when the
+                    # backend is SQLite (PG uses the information_schema branch above).
                     check = conn.execute(
                         "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = %s",
                         (table_name,),

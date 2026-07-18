@@ -18,7 +18,7 @@ Exports:
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection, table_exists
 from pathlib import Path
 
 logger = get_logger("icdev.extensions.bayesian_learning_chat")
@@ -133,11 +133,10 @@ def _get_fallback_advisory(project_id: str) -> dict | None:
         tables = ["fedramp_assessments", "cmmc_assessments", "stig_findings"]
         assessment_count = 0
         for tbl in tables:
-            row = conn.execute(
-                "SELECT COUNT(*) as cnt FROM sqlite_master WHERE type='table' AND name=%s",
-                (tbl,),
-            ).fetchone()
-            if (row[0] if isinstance(row, (tuple, list)) else row["cnt"]) > 0:
+            # Shared backend-aware probe: the inline ``sqlite_master ... as cnt``
+            # form bypassed translate_sql (the ``as cnt`` alias defeats rule-14)
+            # and raised on PostgreSQL, silently yielding zero assessments.
+            if table_exists(conn, tbl):
                 cnt = conn.execute(  # nosec B608 — tbl from hardcoded constant list
                     f"SELECT COUNT(*) as cnt FROM {tbl} WHERE project_id = %s",  # nosec B608 -- table/column names are internal constants, not user input
                     (project_id,),

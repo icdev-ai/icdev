@@ -125,6 +125,8 @@ class MigrationRunner:
             return False
         conn = self._get_connection()
         try:
+            # pg-portability: sqlite-only path — SQLite branch (the PG branch above
+            # queries information_schema); backend selected by ICDEV_STORAGE_BACKEND.
             c = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_migrations'")
             return c.fetchone() is not None
         finally:

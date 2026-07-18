@@ -20,7 +20,7 @@ CLI:
 import argparse
 import json
 import sqlite3
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection, is_pg
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -28,6 +28,26 @@ logger = get_logger("icdev.observability.mlflow_exporter")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
+
+# Backend-appropriate DB error tuple. Reads route through get_connection,
+# which targets PostgreSQL by default; PG raises psycopg2.Error subclasses
+# that sqlite3.Error does not cover.
+try:  # pragma: no cover - import guard
+    import psycopg2
+
+    _DB_ERRORS: tuple = (sqlite3.Error, psycopg2.Error)
+except ImportError:  # sqlite-only install
+    _DB_ERRORS = (sqlite3.Error,)
+
+
+def _db_file_missing(db_path: Path) -> bool:
+    """Whether the SQLite file gate should short-circuit I/O.
+
+    Only meaningful when the effective backend is SQLite. Under the
+    PG-primary runtime, reads go through get_connection (PostgreSQL) and the
+    .db path is ignored, so the file-existence gate must NOT apply.
+    """
+    return not is_pg() and not db_path.exists()
 
 try:
     import mlflow
@@ -72,7 +92,7 @@ class MLflowExporter:
             return {"status": "skipped", "reason": "mlflow not installed"}
         if not self._tracking_uri:
             return {"status": "skipped", "reason": "no tracking URI configured"}
-        if not self._db_path.exists():
+        if _db_file_missing(self._db_path):
             return {"status": "skipped", "reason": "database not found"}
 
         spans = self._read_unexported_spans(batch_size)
@@ -118,7 +138,7 @@ class MLflowExporter:
             ).fetchall()
             conn.close()
             return [dict(row) for row in rows]
-        except sqlite3.Error as e:
+        except _DB_ERRORS as e:
             logger.error("Failed to read spans: %s", e)
             return []
 
@@ -152,7 +172,7 @@ class MLflowExporter:
             "db_path": str(self._db_path),
         }
 
-        if self._db_path.exists():
+        if not _db_file_missing(self._db_path):
             try:
                 conn = get_connection(db_path=str(self._db_path))
                 count = conn.execute("SELECT COUNT(*) FROM otel_spans").fetchone()[0]
