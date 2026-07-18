@@ -1782,6 +1782,9 @@ def create_boundary_blueprint():
         from tools.boundary_canvas.twin import take_snapshot
         data = request.get_json(silent=True) or {}
         snap = take_snapshot(design_id, framework_id=data.get("framework_id", "FedRAMP Moderate"))
+        if snap.get("status") == "error":
+            _audit(design_id, "twin_snapshot_failed", f"err={snap.get('error')}")
+            return jsonify(snap), 500
         _audit(design_id, "twin_snapshot", f"snap={snap.get('snapshot_id')}")
         return jsonify(snap), 201
 
@@ -1821,7 +1824,7 @@ def create_boundary_blueprint():
         fw_src = request.args.get("fw_src", "NIST 800-53")
         fw_tgt = request.args.get("fw_tgt", "CMMC Level 2")
         result = crosswalk_drift(design_id, fw_src, fw_tgt)
-        return jsonify(result), 200
+        return jsonify(result), (500 if result.get("status") == "error" else 200)
 
     @bp.route("/api/twin/<design_id>/oscal-export", methods=["GET"])
     @bdc_login_required

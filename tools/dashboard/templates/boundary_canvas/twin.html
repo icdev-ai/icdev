@@ -268,7 +268,7 @@ async function takeSnapshot() {
       body: JSON.stringify({project_id: PROJECT_ID, framework_id: fw})
     });
     const data = await r.json();
-    if (!r.ok) { alert('Snapshot failed: ' + (data.error || r.status)); return; }
+    if (!r.ok || data.status === 'error') { alert('Snapshot failed: ' + (data.error || r.status)); return; }
     const ul = document.getElementById('snapList') || (() => {
       const newUl = document.createElement('ul');
       newUl.id = 'snapList'; newUl.className = 'snap-list';
@@ -279,7 +279,9 @@ async function takeSnapshot() {
     li.className = 'snap-item active';
     li.dataset.id = data.snapshot_id;
     li.onclick = () => selectSnap(li, data.snapshot_id);
-    li.innerHTML = `<span>${fw} · ${new Date().toISOString().slice(0,10)}</span><span class="snap-meta">${data.control_count} controls · ${data.evidence_count} evidence</span>`;
+    const cc = (data.control_count === null || data.control_count === undefined) ? '—' : data.control_count;
+    const ec = (data.evidence_count === null || data.evidence_count === undefined) ? '—' : data.evidence_count;
+    li.innerHTML = `<span>${fw} · ${new Date().toISOString().slice(0,10)}</span><span class="snap-meta">${cc} controls · ${ec} evidence</span>`;
     ul.prepend(li);
     document.querySelectorAll('.snap-item').forEach(i => i.classList.remove('active'));
     li.classList.add('active');
@@ -318,10 +320,13 @@ function renderResults(d) {
 
   renderVerdict(document.getElementById('verdictBanner'), d.rating || d.verdict);
 
-  const score = d.score ?? 0;
-  document.getElementById('readinessScore').textContent = Math.round(score * 100) + '%';
-  document.getElementById('ctrlScore').textContent = Math.round((d.control_score ?? 0) * 100) + '%';
-  document.getElementById('evScore').textContent = Math.round((d.evidence_score ?? 0) * 100) + '%';
+  // A null score means "nothing to score" (empty delta) — render honestly as
+  // "Not scored" / "—" rather than a fabricated 0%.
+  const notScored = (v) => (v === null || v === undefined);
+  const score = notScored(d.score) ? 0 : d.score;
+  document.getElementById('readinessScore').textContent = notScored(d.score) ? 'Not scored' : Math.round(d.score * 100) + '%';
+  document.getElementById('ctrlScore').textContent = notScored(d.control_score) ? '—' : Math.round(d.control_score * 100) + '%';
+  document.getElementById('evScore').textContent = notScored(d.evidence_score) ? '—' : Math.round(d.evidence_score * 100) + '%';
   document.getElementById('critGaps').textContent = d.critical_gaps ?? 0;
 
   const delta = d.compliance_delta || {};
@@ -336,7 +341,7 @@ function renderResults(d) {
   if (window.ICDEV) {
     ICDEV.gaugeChart('readinessGauge', {
       value: score,
-      label: Math.round(score * 100) + '% Ready',
+      label: notScored(d.score) ? 'Not scored' : Math.round(score * 100) + '% Ready',
       thresholds: { good: 0.7, warning: 0.4 },
       size: 155
     });
@@ -412,8 +417,25 @@ async function runDrift() {
   try {
     const r = await fetch(`/boundary/api/twin/${PROJECT_ID}/crosswalk-drift?fw_src=${encodeURIComponent(src)}&fw_tgt=${encodeURIComponent(tgt)}`);
     const data = await r.json();
-    if (!r.ok) { alert(data.error || 'Drift detection failed'); return; }
-    document.getElementById('driftResults').style.display = 'block';
+    const driftResults = document.getElementById('driftResults');
+    driftResults.style.display = 'block';
+    if (!r.ok || data.status === 'error') {
+      // Visible failure state — do NOT silently render an empty (zero-drift) list.
+      document.getElementById('driftList').innerHTML = '';
+      document.getElementById('noDrift').style.display = 'none';
+      let errEl = document.getElementById('driftError');
+      if (!errEl) {
+        errEl = document.createElement('p');
+        errEl.id = 'driftError';
+        errEl.style.cssText = 'color:#e74c3c;font-size:12px;margin-top:8px;';
+        driftResults.appendChild(errEl);
+      }
+      errEl.style.display = 'block';
+      errEl.textContent = 'Crosswalk drift detection failed: ' + (data.error || ('HTTP ' + r.status));
+      return;
+    }
+    const okErrEl = document.getElementById('driftError');
+    if (okErrEl) okErrEl.style.display = 'none';
     renderFindingList(
       document.getElementById('driftList'),
       (data.drifts || []).map(d => ({
