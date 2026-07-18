@@ -530,6 +530,12 @@ def api_session_responses(session_id: int):
         row["is_aadc"] = cfg.get("inject_type") == "aadc_design_challenge"
         if row["is_aadc"]:
             row["aadc_score"] = row.get("judge_pts") or 0
+        # Surface the fail-loud unscored marker so the monitor renders an LLM
+        # outage distinctly instead of as a real judge score of 0.
+        try:
+            row["judge_unscored"] = bool(json.loads(row.get("judge_rationale_json") or "{}").get("unscored"))
+        except Exception:
+            row["judge_unscored"] = False
         # Truncate response text for display
         row["response_preview"] = (row.get("response_text") or "")[:120]
         out.append(row)
