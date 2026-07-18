@@ -274,7 +274,8 @@ def create_mission_canvas_blueprint():
         """IQE structured query — translate NL to IQE and optionally execute against mission collections."""
         from tools.iqe.nl_to_iqe import nl_to_iqe
         from tools.iqe.parser import IQESyntaxError, parse
-        from tools.iqe.executor import Executor
+        from tools.iqe.executor import execute_query
+        import tools.iqe.adapters.mission_canvas  # noqa: F401 — registers mission.* collections
 
         data = request.get_json(silent=True) or {}
         question = (data.get("question") or "").strip()
@@ -295,11 +296,10 @@ def create_mission_canvas_blueprint():
         except IQESyntaxError as exc:
             return jsonify({"error": f"IQE parse error: {exc}", "iqe": iqe_str, "explanation": explanation}), 400
 
+        # cnr-mc-02: adapters open their own Mission Canvas connection (conn=None),
+        # so mission.* collections resolve against the real canvas tables.
         try:
-            from tools.db.storage import get_connection
-            with get_connection() as conn:
-                executor = Executor(conn)
-                rows = executor.run(ast)
+            rows = execute_query(ast, conn=None)
         except Exception as exc:
             logger.warning("IQE execution failed: %s", exc)
             return jsonify({"error": str(exc), "iqe": iqe_str, "explanation": explanation}), 500

@@ -1,1 +1,1 @@
-foreach a in mission.alerts where a.severity == "critical" and a.acknowledged == 0 select a.session_id, a.alert_type, a.message, a.created_at
+foreach a in mission.alerts where a.zta_score < 50 select a.design_id, a.il_level, a.zta_score, a.fedramp_status, a.assessed_at
