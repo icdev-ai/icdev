@@ -383,6 +383,7 @@ class CoWorkerThread(threading.Thread):
             from icdev.tools.llm.agent_loop import (
                 AgentLoopUnsupported,
                 run_agent_loop,
+                run_agent_loop_with_rubric,
             )
             from icdev.tools.ace.agent_tools import AgentToolRegistry
             from tools.llm.router import LLMRouter
@@ -574,27 +575,78 @@ class CoWorkerThread(threading.Thread):
             except Exception:
                 pass
 
+        # Every kwarg the plain loop uses; the opt-in rubric wrapper forwards the
+        # exact same set via **loop_kwargs (run_agent_loop_with_rubric passes
+        # them straight through to run_agent_loop).
+        loop_kwargs = dict(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            tools=tools,
+            tool_handlers=tool_handlers,
+            llm_function=llm_function,
+            max_iterations=max_iter,
+            stop_event=self._stop_event,
+            on_turn=self._on_agent_turn,
+            on_pre_tool_use=_combined_pre_hook,
+            on_stop=_on_stop_hook,
+            max_total_tokens=max_total_tokens,
+            max_cost_usd=max_cost_usd,
+            context_window_tokens=context_window_tokens,
+            compression_budget_tokens=compression_budget_tokens,
+            parent_session_id=getattr(self, "_parent_session_id", ""),
+            tenant_id=getattr(self, "tenant_id", ""),
+            user_id=getattr(self, "user_id", ""),
+        )
+
+        # Opt-in real-time rubric gating: a role that declares `rubric: pipeline`
+        # is graded by the delivery pipeline (build -> gates -> revise in-session)
+        # instead of trusting the loop's own `done`. Absent/other = plain loop
+        # (byte-unchanged behaviour). Agent-mode co-workers edit the SHARED repo
+        # checkout scoped by folder_access (no isolated worktree), so the grader
+        # runs against that repo root — the same root FileAccessBroker resolves.
+        _rubric_mode = str(getattr(role, "rubric", "") or "").strip().lower()
         try:
-            result = run_agent_loop(
-                router,
-                system_prompt=system_prompt,
-                user_prompt=user_prompt,
-                tools=tools,
-                tool_handlers=tool_handlers,
-                llm_function=llm_function,
-                max_iterations=max_iter,
-                stop_event=self._stop_event,
-                on_turn=self._on_agent_turn,
-                on_pre_tool_use=_combined_pre_hook,
-                on_stop=_on_stop_hook,
-                max_total_tokens=max_total_tokens,
-                max_cost_usd=max_cost_usd,
-                context_window_tokens=context_window_tokens,
-                compression_budget_tokens=compression_budget_tokens,
-                parent_session_id=getattr(self, "_parent_session_id", ""),
-                tenant_id=getattr(self, "tenant_id", ""),
-                user_id=getattr(self, "user_id", ""),
-            )
+            if _rubric_mode == "pipeline":
+                from icdev.tools.ace.file_access_broker import _REPO_ROOT as _repo_root
+                from tools.workflow.pipeline_grader import make_pipeline_grader
+
+                def _changed(_root=str(_repo_root)):
+                    # Repo files changed vs origin/main; never let a diff failure
+                    # crash the grader (make_pipeline_grader accepts a callable).
+                    try:
+                        from tools.integrity.pr_gates import _git_changed_files
+                        return _git_changed_files("origin/main", False, Path(_root))
+                    except Exception:
+                        return []
+
+                grader = make_pipeline_grader(
+                    cwd=str(_repo_root),
+                    task_id=self.instance_id,
+                    modified_files=_changed,
+                    run_e2e=False,
+                    # Conformance needs a kanban task's acceptance criteria; an
+                    # agent-mode co-worker has none, so skip it (record-only).
+                    run_conformance=False,
+                    compare_to_main=True,
+                )
+                self._audit("agent_loop_rubric", "delivery-pipeline rubric gating enabled")
+                rubric_result = run_agent_loop_with_rubric(
+                    router,
+                    grader=grader,
+                    max_grading_iterations=3,
+                    # One harness_eval decision keyed on the run instance
+                    # (mirrors the kanban runner keying on the task id).
+                    harness_task_id=self.instance_id,
+                    **loop_kwargs,
+                )
+                self._audit(
+                    "agent_loop_rubric_done",
+                    f"satisfied={rubric_result.satisfied} "
+                    f"grading_attempts={rubric_result.grading_attempts}",
+                )
+                result = rubric_result.result
+            else:
+                result = run_agent_loop(router, **loop_kwargs)
         except AgentLoopUnsupported as exc:
             # Provider can't do native tool use — fall back to step mode with audit.
             self._audit("agent_loop_unsupported", str(exc))
