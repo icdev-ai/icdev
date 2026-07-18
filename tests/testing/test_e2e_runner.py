@@ -247,3 +247,116 @@ def test_main_test_file_native_path(monkeypatch, tmp_path):
     )
     rc = er.main(["--test-file", "tests/e2e/t.spec.ts"])
     assert rc == 0
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Standalone script allowlist (oxf-e2e-01)
+# ────────────────────────────────────────────────────────────────────────────
+
+
+def _seed_allowlist(tmp_path, allowlist, excluded=None, scripts=None):
+    """Point PROJECT_ROOT at tmp_path; write an allowlist yaml + fake scripts."""
+    (tmp_path / "args").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "tests").mkdir(parents=True, exist_ok=True)
+    lines = ["allowlist:"]
+    for n in allowlist:
+        lines.append(f"  - {n}")
+    lines.append("excluded:")
+    for n, reason in (excluded or {}).items():
+        lines.append(f'  {n}: "{reason}"')
+    (tmp_path / "args" / "e2e_script_allowlist.yaml").write_text(
+        "\n".join(lines) + "\n", encoding="utf-8"
+    )
+    for n in (scripts or []):
+        (tmp_path / "tests" / f"{n}.py").write_text("# fake\n", encoding="utf-8")
+
+
+def test_allowlist_respected_only_allowlisted_scripts(monkeypatch, tmp_path):
+    monkeypatch.setattr(er, "PROJECT_ROOT", tmp_path)
+    _seed_allowlist(
+        tmp_path,
+        allowlist=["e2e_good_one", "e2e_good_two"],
+        excluded={"e2e_bad": "sqlite3.OperationalError: no such table"},
+        scripts=["e2e_good_one", "e2e_good_two", "e2e_bad"],
+    )
+    out = er.discover_allowlisted_scripts(_logger())
+    names = {er.os.path.basename(s)[:-3] for s in out}
+    assert names == {"e2e_good_one", "e2e_good_two"}
+    assert not any("e2e_bad" in s for s in out)
+
+
+def test_broken_import_script_excluded_with_reason(monkeypatch, tmp_path):
+    monkeypatch.setattr(er, "PROJECT_ROOT", tmp_path)
+    _seed_allowlist(
+        tmp_path,
+        allowlist=["e2e_good"],
+        excluded={"e2e_bad": "ModuleNotFoundError: No module named 'x'"},
+        scripts=["e2e_good", "e2e_bad"],
+    )
+    allow = er.load_script_allowlist(_logger())
+    excl = er.load_script_exclusions(_logger())
+    assert "e2e_bad" not in allow
+    assert "e2e_bad" in excl
+    assert "ModuleNotFoundError" in excl["e2e_bad"]
+
+
+def test_missing_allowlist_degrades_with_warning(monkeypatch, tmp_path, caplog):
+    # tmp_path has no args/e2e_script_allowlist.yaml
+    monkeypatch.setattr(er, "PROJECT_ROOT", tmp_path)
+    (tmp_path / "tests").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "tests" / "e2e_orphan.py").write_text("# x\n", encoding="utf-8")
+    with caplog.at_level("WARNING"):
+        out = er.discover_allowlisted_scripts(_logger())
+    assert out == []
+    assert any("allowlist" in r.message.lower() for r in caplog.records)
+
+
+def test_run_all_selenium_unchanged_without_include_flag(monkeypatch, tmp_path):
+    """Default --driver selenium --run-all must NOT touch standalone scripts."""
+    monkeypatch.setattr(er, "check_selenium_driver", lambda: True)
+    monkeypatch.setattr(
+        er, "run_selenium",
+        lambda *a, **k: [
+            E2ETestResult(test_name="suite", status="passed", test_path="p"),
+        ],
+    )
+
+    def _boom(*a, **k):  # must not be reached without the flag
+        raise AssertionError("discover_allowlisted_scripts called without flag")
+
+    monkeypatch.setattr(er, "discover_allowlisted_scripts", _boom)
+    called = {"script": False}
+
+    def _script(*a, **k):
+        called["script"] = True
+        return []
+
+    monkeypatch.setattr(er, "run_selenium_script", _script)
+    rc = er.main(["--driver", "selenium", "--run-all"])
+    assert rc == 0
+    assert called["script"] is False
+
+
+def test_run_all_selenium_include_scripts_runs_allowlisted(monkeypatch):
+    """--include-scripts appends allowlisted script results to the suite run."""
+    monkeypatch.setattr(er, "check_selenium_driver", lambda: True)
+    monkeypatch.setattr(
+        er, "run_selenium",
+        lambda *a, **k: [
+            E2ETestResult(test_name="suite", status="passed", test_path="p"),
+        ],
+    )
+    monkeypatch.setattr(
+        er, "discover_allowlisted_scripts",
+        lambda logger=None: ["tests/e2e_good.py"],
+    )
+    ran = []
+
+    def _script(run_id, logger, script):
+        ran.append(script)
+        return [E2ETestResult(test_name="e2e_good", status="passed", test_path=script)]
+
+    monkeypatch.setattr(er, "run_selenium_script", _script)
+    rc = er.main(["--driver", "selenium", "--run-all", "--include-scripts"])
+    assert rc == 0
+    assert ran == ["tests/e2e_good.py"]

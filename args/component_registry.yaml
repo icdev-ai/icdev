@@ -424,7 +424,9 @@ components:
     template: tools/dashboard/templates/agentic_ai_canvas/analytics.html
     blueprint: true
     constants: tools/agentic_ai_canvas/constants.py
-    db_migration: tools/agentic_ai_canvas/db/migrations
+    # Canvas tables are created imperatively by tools/agentic_ai_canvas/db/init_db.py
+    # (there is no db/migrations dir); point at the real initializer, matching aimc.
+    db_migration: tools/agentic_ai_canvas/db/init_db.py
     iqe_adapter: true
     nav_link: true
     seed_queries: context/iqe/queries/aadc/
@@ -438,8 +440,14 @@ components:
   blueprint_attr: create_aiml_blueprint
   url_prefix: /ai-ml
   min_il: IL4
+  # penta-aimc-03: seed read access for operator roles so canvas access grants
+  # exist when ICDEV_ENFORCE_CANVAS_ACCESS is on. Mutating routes are additionally
+  # hard-gated with @require_role in tools/aiml_canvas/blueprint.py.
   default_roles:
+  - admin
+  - pm
   - developer
+  - isso
   nav:
     section: Canvases
     label: AI/ML
@@ -455,7 +463,11 @@ components:
     template: tools/dashboard/templates/aiml_canvas/canvas.html
     blueprint: true
     constants: tools/aiml_canvas/constants.py
-    db_migration: tools/aiml_canvas/db/migrations
+    # Canvas tables are created imperatively by tools/aiml_canvas/db/init_db.py
+    # (there is no db/migrations dir). Point at the init_db module so the completeness
+    # checker (tools/config/component_registry.py db_migration probe) verifies a path
+    # that actually exists, mirroring the boundary_canvas (bdc) / observability (odc) convention.
+    db_migration: tools/aiml_canvas/db/init_db.py
     iqe_adapter: true
     nav_link: true
     seed_queries: context/iqe/queries/aimc/
@@ -1102,12 +1114,19 @@ components:
   default_enabled: false
   module: apps.forge_academy.blueprint
   blueprint_attr: academy_bp
-  url_prefix: /forge-academy
+  # Routes are hardcoded to /academy in the blueprint (registered without a
+  # url_prefix), so the registry prefix and nav link must match /academy or the
+  # derived nav link 404s. A 301 redirect from the legacy /forge-academy paths
+  # lives in the blueprint for stale bookmarks. (penta-aca-01)
+  url_prefix: /academy
   min_il: IL2
   default_roles: []
   nav:
     section: Learn
     label: FORGE Academy
+    links:
+      - label: Dashboard
+        href: /academy
   completeness:
     blueprint: true
     backing_module: true
