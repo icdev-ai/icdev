@@ -215,9 +215,11 @@ def _fetch_top_values(ctx: _ProfileCtx, safe_col: str, safe_table: str) -> list[
             f"GROUP BY {safe_col} ORDER BY cnt DESC LIMIT %s", (limit,),
         )
     else:
+        # sqlite3 and duckdb use the qmark paramstyle ("?"), not "%s".
+        # Passing "%s" here raises (swallowed upstream), silently emptying top_values.
         cur = ctx.conn.execute(
             f"SELECT {safe_col}, COUNT(*) AS cnt FROM {safe_table} WHERE {safe_col} IS NOT NULL "  # nosec B608
-            f"GROUP BY {safe_col} ORDER BY cnt DESC LIMIT %s", (limit,),
+            f"GROUP BY {safe_col} ORDER BY cnt DESC LIMIT ?", (limit,),
         )
     return [{"value": str(r[0]), "count": r[1]} for r in cur.fetchall()]
 
@@ -374,7 +376,7 @@ def main() -> None:
         for tbl in result.get("tables", []):
             row_count = tbl.get("row_count", 0)
             col_count = len(tbl.get("columns", []))
-            print(f"  {tbl.get('table_name','?'):40s}  rows={row_count:>8,}  cols={col_count}")
+            print(f"  {tbl.get('name','?'):40s}  rows={row_count:>8,}  cols={col_count}")
 
 
 if __name__ == "__main__":
