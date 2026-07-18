@@ -2,10 +2,11 @@
 """Second Brain (/me) canvas blueprint — profile, objectives, relationships, challenges, briefing, integrations."""
 from __future__ import annotations
 
-import json
+import hmac
+import os
 import secrets
 
-from flask import Blueprint, g, jsonify, redirect, render_template, request, session, url_for
+from flask import Blueprint, abort, g, jsonify, redirect, render_template, request, session, url_for
 
 from tools.logging.icdev_logger import get_logger
 
@@ -22,13 +23,83 @@ _OAUTH_SERVICES = {"gcal", "gmail", "slack"}
 _PAT_SERVICES = {"github", "gitlab", "jira", "linear", "notion"}
 
 
+def _authenticated_user_id() -> str | None:
+    """Return the authenticated user id, or None if the request is unauthenticated.
+
+    Never returns a shared 'default' identity — the Second Brain stores per-user
+    personal data (profile, relationships, integration tokens); a shared fallback
+    would collapse every unauthenticated caller into one identity (cnr-me-01).
+    """
+    return getattr(g, "user_id", None) or session.get("user_id")
+
+
+@second_brain_bp.before_request
+def _second_brain_auth_gate():
+    """Fail-closed login guard for every /me route.
+
+    Adopts the Security Canvas ``sc_login_required`` pattern: an authenticated
+    ICDEV dashboard session (or an explicit test/API-key opt-in) is required.
+    Unauthenticated API / JSON / mutating requests get a JSON 401; unauthenticated
+    page loads redirect to /login. There is no shared-identity fallback.
+    """
+    if _authenticated_user_id():
+        return None
+
+    # ICDEV_AUTH_BYPASS: explicit test-only opt-in.
+    if os.environ.get("ICDEV_AUTH_BYPASS"):
+        session["user_id"] = "e2e-bypass"
+        return None
+
+    # ICDEV_DASHBOARD_API_KEY: presented-key semantics — authenticate ONLY if the
+    # request actually presents the key (constant-time compared). Merely having the
+    # env var set does NOT auto-authenticate.
+    api_key = os.environ.get("ICDEV_DASHBOARD_API_KEY", "")
+    if api_key:
+        presented = request.headers.get("X-ICDEV-API-Key", "")
+        if not presented:
+            auth_header = request.headers.get("Authorization", "")
+            if auth_header.startswith("Bearer "):
+                presented = auth_header[len("Bearer "):].strip()
+        if presented and hmac.compare_digest(presented, api_key):
+            session["user_id"] = "api-key"
+            return None
+
+    if (
+        request.is_json
+        or request.path.startswith("/me/api/")
+        or request.method in ("DELETE", "POST", "PUT")
+    ):
+        return jsonify({"error": "Authentication required"}), 401
+    return redirect("/login")
+
+
 def _user_id() -> str:
-    """Current user identifier — falls back to 'default' if auth not configured."""
-    return getattr(g, "user_id", None) or session.get("user_id") or "default"
+    """Current authenticated user identifier.
+
+    The before_request gate guarantees an authenticated identity for every /me
+    route, so this never returns a shared 'default'. Aborts 401 defensively if
+    called outside the gated request path with no session.
+    """
+    uid = _authenticated_user_id()
+    if not uid:
+        abort(401)
+    return uid
 
 
 def _tenant_id() -> str:
     return getattr(g, "tenant_id", None) or "default"
+
+
+def _err(exc: Exception, **extra):
+    """Return a generic 500 JSON payload; log the real detail server-side.
+
+    cnr-me-04(d): never leak raw str(exc) (stack/internal detail) to clients.
+    *extra* preserves per-endpoint response keys (e.g. canvases=[], results=[]).
+    """
+    logger.warning("[second_brain] error in %s: %s", getattr(request, "endpoint", "?"), exc)
+    payload = {"ok": False, "error": "Internal server error"}
+    payload.update(extra)
+    return jsonify(payload), 500
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -175,7 +246,7 @@ def api_save_profile():
         return jsonify({"ok": True, "profile": result})
     except Exception as exc:
         logger.warning("[second_brain] save_profile error: %s", exc)
-        return jsonify({"ok": False, "error": str(exc)}), 500
+        return _err(exc)
 
 
 @second_brain_bp.route("/api/second-brain/profile/infer-role")
@@ -198,7 +269,7 @@ def api_summarize_profile():
         summary = generate_profile_summary(_user_id(), _tenant_id())
         return jsonify({"ok": True, "summary": summary})
     except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 500
+        return _err(exc)
 
 
 @second_brain_bp.route("/api/second-brain/profile", methods=["GET"])
@@ -223,7 +294,7 @@ def api_generate_briefing():
         delivery = deliver_briefing(_user_id(), briefing_date, _tenant_id())
         return jsonify({"ok": True, "briefing": content, "delivery": delivery})
     except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 500
+        return _err(exc)
 
 
 @second_brain_bp.route("/api/second-brain/briefing/today", methods=["GET"])
@@ -277,7 +348,7 @@ def api_verify_integration(service: str):
                 )
         return jsonify({"ok": ok})
     except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 500
+        return _err(exc)
 
 
 @second_brain_bp.route("/api/integrations/oauth/start/<service>", methods=["GET"])
@@ -336,7 +407,7 @@ def api_sync_integration(service: str):
         update_sync_time(_user_id(), service, _tenant_id())
         return jsonify({"ok": True, **result})
     except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 500
+        return _err(exc)
 
 
 @second_brain_bp.route("/api/integrations/<service>", methods=["DELETE"])
@@ -358,7 +429,7 @@ def api_calendar_contacts():
                     attendees.add(a)
         return jsonify(list(attendees)[:20])
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        return _err(exc)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -374,7 +445,7 @@ def api_tomorrow_prep():
         prep = generate_tomorrow_prep(_user_id(), _tenant_id())
         return jsonify({"ok": True, "prep": prep})
     except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 500
+        return _err(exc)
 
 
 @second_brain_bp.route("/api/second-brain/proactive/weekly-digest", methods=["POST"])
@@ -385,7 +456,7 @@ def api_weekly_digest():
         digest = generate_weekly_architecture_digest(_user_id(), _tenant_id())
         return jsonify({"ok": True, "digest": digest})
     except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 500
+        return _err(exc)
 
 
 @second_brain_bp.route("/api/second-brain/proactive/stalled-work", methods=["GET"])
@@ -396,7 +467,7 @@ def api_stalled_work():
         items = scan_stalled_objectives(_user_id(), _tenant_id())
         return jsonify({"ok": True, "stalled": items})
     except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 500
+        return _err(exc)
 
 
 @second_brain_bp.route("/api/second-brain/proactive/design-review", methods=["POST"])
@@ -408,7 +479,7 @@ def api_design_review():
         findings = customer_aware_review(data, _user_id(), _tenant_id())
         return jsonify({"ok": True, "findings": findings})
     except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 500
+        return _err(exc)
 
 
 @second_brain_bp.route("/api/second-brain/proactive/relevant-canvases", methods=["GET"])
@@ -419,7 +490,7 @@ def api_relevant_canvases():
         canvases = get_relevant_canvases(_user_id(), _tenant_id())
         return jsonify({"ok": True, "canvases": canvases})
     except Exception as exc:
-        return jsonify({"ok": False, "canvases": [], "error": str(exc)}), 500
+        return _err(exc, canvases=[])
 
 
 @second_brain_bp.route("/api/second-brain/proactive/expectation-fields", methods=["GET"])
@@ -435,7 +506,7 @@ def api_expectation_fields():
             "persona": persona.get("display_name", ""),
         })
     except Exception as exc:
-        return jsonify({"ok": False, "fields": [], "error": str(exc)}), 500
+        return _err(exc, fields=[])
 
 
 @second_brain_bp.route("/api/second-brain/challenges/mitigate", methods=["POST"])
@@ -446,7 +517,7 @@ def api_challenge_mitigate():
         result = generate_challenge_mitigations(_user_id(), _tenant_id())
         return jsonify({"ok": True, "mitigations": result})
     except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 500
+        return _err(exc)
 
 
 @second_brain_bp.route("/api/second-brain/objectives/sync", methods=["POST"])
@@ -457,7 +528,7 @@ def api_objectives_sync():
         updated = sync_objective_progress(_user_id(), _tenant_id())
         return jsonify({"ok": True, "updated": updated, "count": len(updated)})
     except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 500
+        return _err(exc)
 
 
 @second_brain_bp.route("/api/second-brain/proactive/commitment-alerts", methods=["GET"])
@@ -468,7 +539,7 @@ def api_commitment_alerts():
         alerts = generate_commitment_alerts(_user_id(), _tenant_id())
         return jsonify({"ok": True, "alerts": alerts, "count": len(alerts)})
     except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 500
+        return _err(exc)
 
 
 @second_brain_bp.route("/api/second-brain/proactive/meeting-preps", methods=["POST"])
@@ -479,7 +550,7 @@ def api_meeting_preps():
         cards = generate_meeting_preps(_user_id(), _tenant_id())
         return jsonify({"ok": True, "cards": cards, "count": len(cards)})
     except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 500
+        return _err(exc)
 
 
 @second_brain_bp.route("/api/second-brain/proactive/launch-meeting-coworker", methods=["POST"])
@@ -543,7 +614,7 @@ def api_log_interaction(relationship_id: str):
         )
         return jsonify({"ok": True, "interaction": result})
     except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 500
+        return _err(exc)
 
 
 @second_brain_bp.route(
@@ -571,7 +642,7 @@ def api_iqe_query():
         results = iqe_query(query, collection, _user_id(), _tenant_id())
         return jsonify({"ok": True, "results": results})
     except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc), "results": []}), 500
+        return _err(exc, results=[])
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -679,7 +750,7 @@ def api_relationship_health():
         from tools.second_brain.relationship_health import get_relationship_health_map
         return jsonify({"ok": True, "relationships": get_relationship_health_map(_user_id(), _tenant_id())})
     except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 500
+        return _err(exc)
 
 
 @second_brain_bp.route("/api/integrations/google/contacts", methods=["GET"])
@@ -703,7 +774,7 @@ def api_google_contacts():
                     contacts.append({"email": email, "name": email.split("@")[0], "org": ""})
         return jsonify({"ok": True, "contacts": contacts[:20]})
     except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 500
+        return _err(exc)
 
 
 def _get_connector(service: str):
@@ -745,7 +816,6 @@ def oauth_start_msgraph():
 
 @second_brain_bp.route("/api/integrations/oauth/callback/msgraph")
 def oauth_callback_msgraph():
-    import uuid as _uuid
     code = request.args.get("code", "")
     state = request.args.get("state", "")
     if not code or state != session.pop("oauth_state_msgraph", None):
@@ -756,34 +826,23 @@ def oauth_callback_msgraph():
         tokens = exchange_code(code, redirect_uri)
         access_tok = tokens.get("access_token", "")
         ms_profile = get_user_profile(access_tok)
-        meta = json.dumps({
+        meta = {
             "ms_user_id": ms_profile.get("id", ""),
             "ms_email": ms_profile.get("mail") or ms_profile.get("userPrincipalName", ""),
             "ms_name": ms_profile.get("displayName", ""),
-        })
-        from tools.db.storage import get_connection, sql_placeholder
-        with get_connection() as conn:
-            ph = sql_placeholder(conn)
-            try:
-                conn.execute(
-                    f"INSERT INTO user_integrations (id,user_id,tenant_id,service,access_token_enc,refresh_token_enc,token_expiry,metadata_json,status) "
-                    f"VALUES ({ph},{ph},{ph},'msgraph',{ph},{ph},{ph},{ph},'active') "
-                    f"ON CONFLICT(user_id,tenant_id,service) DO UPDATE SET "
-                    f"access_token_enc=excluded.access_token_enc, refresh_token_enc=excluded.refresh_token_enc, "
-                    f"token_expiry=excluded.token_expiry, metadata_json=excluded.metadata_json, status='active'",
-                    (str(_uuid.uuid4()), _user_id(), _tenant_id(),
-                     access_tok, tokens.get("refresh_token", ""),
-                     str(tokens.get("expires_in", "")), meta),
-                )
-            except Exception:
-                conn.execute(
-                    f"INSERT OR REPLACE INTO user_integrations (id,user_id,tenant_id,service,access_token_enc,refresh_token_enc,token_expiry,metadata_json,status) "
-                    f"VALUES ({ph},{ph},{ph},'msgraph',{ph},{ph},{ph},{ph},'active')",
-                    (str(_uuid.uuid4()), _user_id(), _tenant_id(),
-                     access_tok, tokens.get("refresh_token", ""),
-                     str(tokens.get("expires_in", "")), meta),
-                )
-            conn.commit()
+        }
+        # cnr-me-03: persist via the canvas connection (same DB every other
+        # integration read/write uses) with encrypted tokens — no more split-brain.
+        from tools.second_brain.integrations import save_integration
+        save_integration(
+            user_id=_user_id(),
+            service="msgraph",
+            access_token=access_tok,
+            refresh_token=tokens.get("refresh_token", ""),
+            token_expiry=str(tokens.get("expires_in", "")),
+            metadata=meta,
+            tenant_id=_tenant_id(),
+        )
         return redirect(url_for("second_brain.integrations_page") + "?connected=msgraph")
     except Exception as exc:
         logger.warning("[second_brain] M365 OAuth callback error: %s", exc)

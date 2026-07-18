@@ -274,3 +274,55 @@ def build_identity_preamble(role: str) -> str:
             lines.append(f"- {fact['content']}")
 
     return "\n".join(lines)
+
+
+def inject_user_profile_context(preamble: str, user_id: str, tenant_id: str = "default") -> str:
+    """Append the launching user's Second Brain world-model context to a SOUL preamble.
+
+    cnr-me-04(f): coworker_thread already calls this to enrich the identity
+    preamble with the operator's profile, but the function did not exist —
+    making `build_world_model_context`'s advertised "ACE SOUL injection" a dead
+    claim. This wires it: when the Second Brain profile is complete, a compact
+    "## Operator Context" section (name, role, objectives, challenges, comm
+    style) is appended so the coworker tailors its work to the person it serves.
+
+    Best-effort and additive: returns *preamble* unchanged if the Second Brain
+    feature is absent, the profile is incomplete, or anything fails.
+    """
+    if not user_id or user_id in ("default", "system"):
+        return preamble
+    try:
+        from icdev.tools.second_brain.profile import build_world_model_context
+    except Exception:
+        try:
+            from tools.second_brain.profile import build_world_model_context
+        except Exception:
+            return preamble
+    try:
+        ctx = build_world_model_context(user_id, tenant_id)
+    except Exception:
+        ctx = None
+    if not ctx:
+        return preamble
+
+    lines: list[str] = []
+    lines.append("## Operator Context")
+    lines.append(
+        f"You are assisting **{ctx.get('name', user_id)}**"
+        + (f", {ctx['title']}" if ctx.get("title") else "")
+        + (f" at {ctx['org_name']}" if ctx.get("org_name") else "")
+        + "."
+    )
+    if ctx.get("comm_style_label"):
+        lines.append(f"Preferred communication style: {ctx['comm_style_label']}.")
+    if ctx.get("objectives"):
+        lines.append("Their current objectives:")
+        for obj in ctx["objectives"][:5]:
+            lines.append(f"- {obj}")
+    if ctx.get("challenge_keys"):
+        readable = ", ".join(k.replace("_", " ") for k in ctx["challenge_keys"][:5] if k)
+        if readable:
+            lines.append(f"Known challenges to be mindful of: {readable}.")
+
+    section = "\n".join(lines)
+    return f"{preamble}\n\n{section}" if preamble else section
