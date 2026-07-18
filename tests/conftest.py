@@ -418,6 +418,26 @@ CREATE TABLE IF NOT EXISTS canvas_ai_decisions (
     classification  TEXT NOT NULL DEFAULT 'CUI',
     created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
+CREATE TABLE IF NOT EXISTS canvas_kg_nodes (
+    id            TEXT PRIMARY KEY,
+    canvas        TEXT NOT NULL,
+    design_id     TEXT NOT NULL,
+    node_id       TEXT NOT NULL,
+    node_type     TEXT,
+    label         TEXT,
+    metadata_json TEXT,
+    updated_at    TEXT
+);
+CREATE TABLE IF NOT EXISTS canvas_kg_edges (
+    id            TEXT PRIMARY KEY,
+    canvas        TEXT NOT NULL,
+    design_id     TEXT NOT NULL,
+    source_id     TEXT NOT NULL,
+    target_id     TEXT NOT NULL,
+    edge_type     TEXT,
+    metadata_json TEXT,
+    updated_at    TEXT
+);
 CREATE TABLE IF NOT EXISTS cpmp_contracts (
     id TEXT PRIMARY KEY,
     contract_number TEXT NOT NULL DEFAULT '',
