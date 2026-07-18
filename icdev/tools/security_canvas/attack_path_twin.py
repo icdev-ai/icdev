@@ -17,10 +17,11 @@ No Flask, no LLM — pure deterministic functions.
 from __future__ import annotations
 
 import heapq
-import logging
 from typing import Any
 
-logger = logging.getLogger(__name__)
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.security_canvas.attack_path_twin")
 
 # ── MITRE ATT&CK TTP assignment rules ────────────────────────────────────────
 # Each rule: (condition_fn, ttp_id, ttp_name, tactic, confidence_penalty)
