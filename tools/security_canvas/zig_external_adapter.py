@@ -107,6 +107,10 @@ def ingest_sbom(target_id: str, cyclonedx_json: str) -> dict:
         return {"source": "sbom", "target_id": target_id,
                 "activities_updated": [], "findings": 0, "error": "invalid JSON"}
 
+    if not isinstance(data, dict):
+        return {"source": "sbom", "target_id": target_id,
+                "activities_updated": [], "findings": 0, "error": "not a mapping"}
+
     components = data.get("components", [])
     if not components:
         _upsert_activity_completion(
@@ -116,6 +120,8 @@ def ingest_sbom(target_id: str, cyclonedx_json: str) -> dict:
         updated.append("zig-act-d08")
 
     for comp in components:
+        if not isinstance(comp, dict):
+            continue
         vulns = comp.get("vulnerabilities", []) or []
         for vuln in vulns:
             sev = (vuln.get("ratings", [{}]) or [{}])[0].get("severity", "").lower()
@@ -165,8 +171,14 @@ def ingest_sast(target_id: str, bandit_json: str) -> dict:
         return {"source": "sast", "target_id": target_id,
                 "activities_updated": [], "findings": 0, "error": "invalid JSON"}
 
+    if not isinstance(data, dict):
+        return {"source": "sast", "target_id": target_id,
+                "activities_updated": [], "findings": 0, "error": "not a mapping"}
+
     results = data.get("results", [])
     for finding in results:
+        if not isinstance(finding, dict):
+            continue
         test_id = finding.get("test_id", "")
         severity = finding.get("issue_severity", "").upper()
         if severity not in ("HIGH", "MEDIUM"):
@@ -198,6 +210,10 @@ def ingest_survey(target_id: str, survey_json: str) -> dict:
     except (json.JSONDecodeError, TypeError):
         return {"source": "survey", "target_id": target_id,
                 "activities_updated": [], "findings": 0, "error": "invalid JSON"}
+
+    if not isinstance(data, dict):
+        return {"source": "survey", "target_id": target_id,
+                "activities_updated": [], "findings": 0, "error": "not a mapping"}
 
     for key, enabled in data.items():
         for act_id in _map_finding_to_activities("survey", key):
