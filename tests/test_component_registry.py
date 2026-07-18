@@ -39,7 +39,6 @@ _EXPECTED_CANVAS_DEFS = [
     ("aadc", "ICDEV_AADC_ENABLED", "tools.agentic_ai_canvas.blueprint", "aadc_bp"),
     ("aimc", "ICDEV_AIML_CANVAS_ENABLED", "tools.aiml_canvas.blueprint", "create_aiml_blueprint"),
     ("ohc", "ICDEV_OPS_HUB_ENABLED", "tools.ops_hub.blueprint", "create_ops_hub_blueprint"),
-    ("iop", "ICDEV_INFO_OPS_ENABLED", "tools.info_ops.blueprint", "create_info_ops_blueprint"),
     ("mission_canvas", "ICDEV_MISSION_CANVAS_ENABLED", "tools.mission_canvas.blueprint", "create_mission_canvas_blueprint"),
     ("nocc", "ICDEV_NOCC_ENABLED", "tools.noc_canvas.blueprint", "create_noc_canvas_blueprint"),
     ("pmc", "ICDEV_PMC_ENABLED", "tools.pmc_canvas.blueprint", "create_pmc_blueprint"),
@@ -78,7 +77,6 @@ _EXPECTED_CANVAS_ROUTES = {
     "mdc": "/migration-canvas",
     "aimc": "/ai-ml",
     "ohc": "",
-    "iop": "/info-ops",
     "mission_canvas": "/mission-canvas",
     "nocc": "",
     "pmc": "",
@@ -563,14 +561,13 @@ def test_validate_canvas_completeness_non_canvas(registry):
     assert any(item.point == "registered" and "not canvas" in item.message for item in report.items)
 
 
-def test_validate_canvas_completeness_info_ops_reports_items(registry):
-    """info_ops is a real canvas; the validator runs and reports per-point findings."""
-    report = registry.validate_canvas_completeness("iop")
+def test_validate_canvas_completeness_real_canvas_reports_items(registry):
+    """A real canvas (mdc): the validator runs and reports per-point findings."""
+    report = registry.validate_canvas_completeness("mdc")
     points = {item.point: item for item in report.items}
     assert "page_template" in points
     assert "blueprint_route" in points
     assert "nav_link" in points
-    # info_ops uses index.html; the validator finds it via the legacy-name fallback scan.
     assert points["page_template"].present is True
 
 
@@ -674,7 +671,7 @@ _PATH_CANVAS_APP_ONLY_KEYS = {"updates", "zta", "dat", "cpmp_deliverables"}
 
 # Previously missing from the hardcoded PATH_CANVAS arrays — the whole point of
 # cvx-nav-01. These must all appear in the registry-derived map.
-_PATH_CANVAS_TARGETS = {"qdc", "iop", "cortex", "rfi_canvas", "wfc", "canvas_health", "cwk"}
+_PATH_CANVAS_TARGETS = {"qdc", "cortex", "rfi_canvas", "wfc", "canvas_health", "cwk"}
 
 
 def _first_match(entries, path):
@@ -735,7 +732,6 @@ def test_get_iqe_path_canvas_specific_before_broad(registry):
         "/workflow-canvas": "wfc",
         "/health/canvases": "canvas_health",
         "/rfi/list": "rfi_canvas",
-        "/info-ops": "iop",
         "/network": "ndc",
         "/twin": "ndc",
     }

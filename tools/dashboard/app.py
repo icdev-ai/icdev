@@ -2240,7 +2240,6 @@ def create_app(testing: bool = False) -> Flask:
             "dic_enabled": _CANVAS_FLAGS.get("dic", False),
             "demo_runner_enabled": _CANVAS_FLAGS.get("demo_runner", False),
             "govlift_enabled": _CANVAS_FLAGS.get("govlift", False),
-            "info_ops_enabled": _CANVAS_FLAGS.get("iop", False),
             "mission_canvas_enabled": _CANVAS_FLAGS.get("mission_canvas", False),
             "canvas_flags": _CANVAS_FLAGS,
             "hitl_enabled": _APP_FLAGS.get("hitl_workflow", False),

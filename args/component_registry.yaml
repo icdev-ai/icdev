@@ -490,25 +490,6 @@ components:
     iqe_adapter: true
     nav_link: true
     seed_queries: context/iqe/queries/ohc/
-- key: iop
-  kind: canvas
-  display_name: Info Ops Canvas
-  description: Information operations canvas.
-  env_flag: ICDEV_INFO_OPS_ENABLED
-  default_enabled: false
-  module: tools.info_ops.blueprint
-  blueprint_attr: create_info_ops_blueprint
-  url_prefix: /info-ops
-  min_il: IL4
-  default_roles: []
-  nav:
-    section: Canvases
-    label: Info Ops
-  completeness:
-    template: tools/dashboard/templates/info_ops/index.html
-    blueprint: true
-    constants: tools/info_ops/constants.py
-    nav_link: true
 - key: mission_canvas
   kind: canvas
   display_name: Mission Control Canvas
@@ -1943,7 +1924,6 @@ iqe_path_canvas:
 - {path: /bi_dashboard, canvas: bi_dashboard}
 # cvx-nav-01: previously-missing registered canvases
 - {path: /quality, canvas: qdc}
-- {path: /info-ops, canvas: iop}
 - {path: /rfi, canvas: rfi_canvas}
 - {path: /capture, canvas: rfi_canvas}
 - {path: /workflow-canvas, canvas: wfc}

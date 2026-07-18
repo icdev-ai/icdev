@@ -40,7 +40,6 @@ iqe_exempt:
   forge_academy:    "Training / learning content pages — static curriculum, no data model"
   il5:              "IL5 enclave config/legacy page — environment posture, no query-worthy records"
   includes:         "Not a canvas — shared Jinja partials directory (templates/includes/)"
-  info_ops:         "Thin blueprint-only page (no backing module / data model yet) — promote if a data model lands"
   mfa:              "Multi-factor auth screen — authentication utility, no data model"
   monitoring:       "Ops alert/monitoring dashboard — live metrics view, not query-worthy domain data"
   orchestration:    "Orchestration status panel — runtime state, not a stored record set"
