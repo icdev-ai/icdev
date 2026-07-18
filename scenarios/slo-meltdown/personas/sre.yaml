@@ -1,0 +1,15 @@
+# CUI // SP-CTI
+label: Site Reliability Engineer
+description: Owns SLOs, alerting, error budgets, and the rollback lever for the inference service.
+attributes:
+- organization
+- on-call scale (services/SLOs owned)
+- observability stack experience
+- incident tenure
+- clearance level
+prompt_hint: Generate an SRE who reads error budgets before touching a lever and knows a correlated alert
+  storm usually has one real breach. They can execute a safe rollback and verify prior-model health first.
+  Mention the Academy observability bonus for evidence-driven triage.
+academy_relevant_missions:
+- observability
+- incident-response

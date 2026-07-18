@@ -1,0 +1,23 @@
+# CUI // SP-CTI
+name: Source Provenance Rubric
+inject_type: source_provenance
+description: Evaluates identification and containment of the poisoned ingested source.
+max_score: 100
+dimensions:
+- id: source_identification
+  weight: 0.4
+  prompt: Did the team identify LOGREADINESS-Q2.pdf and cite the hash change + unattended re-ingest as
+    evidence? 10 = correct source + both provenance signals + tie to the fabricated claim; 6 = correct
+    source, partial evidence; 3 = correct source, no evidence; 0 = wrong source.
+- id: containment
+  weight: 0.3
+  prompt: Is the quarantine action correct and are the downstream deliverables to re-ground identified?
+    10 = quarantine + explicit re-grounding scope; 5 = quarantine only; 0 = none.
+- id: confidence_calibration
+  weight: 0.2
+  prompt: Is the stated confidence justified by independent evidence? 10 = High with >=2 evidence sources;
+    5 = Medium with one; 0 = unstated or circular.
+- id: ai_tool_quality
+  weight: 0.1
+  prompt: Were DIC Ingest/Search receipts used to ground the trace? 10 = yes; 5 = present, unused; 0 =
+    none.
