@@ -900,7 +900,7 @@ def register_analytics_routes(bp):
         """
         from tools.db.storage import get_connection as _get_platform_connection
         conn = _get_platform_connection()
-        conn.set_security_context(None)
+        conn.set_security_context(None)  # rls-bypass: showcase_demo_runs is an unscoped platform table with no tenant_id/classification columns; RLS predicate would raise UndefinedColumn (ndc program)
         return conn
 
     def _ensure_showcase_table():
