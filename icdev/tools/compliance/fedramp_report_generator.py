@@ -323,7 +323,12 @@ def _calculate_readiness_score(assessments):
 
     scoreable = total - not_applicable
     if scoreable <= 0:
-        return 100.0, "Ready for Assessment"
+        # Every control is marked not_applicable, so there are zero scoreable
+        # controls. Returning 100% / "Ready for Assessment" here would be
+        # actively misleading: a system that has assessed *nothing* has not
+        # demonstrated any readiness. Report 0.0 with an explicit status so the
+        # readiness gate fails and the report explains that scope is missing.
+        return 0.0, "Insufficient Scope"
 
     score = 100.0 * (satisfied + risk_accepted * 0.75) / scoreable
     score = round(score, 1)
@@ -675,6 +680,10 @@ def _build_executive_summary(readiness_score, readiness_level, gate_result, asse
             weakest_score = data["score"]
             weakest_family = f"{code} ({data.get('name', code)})"
 
+    # A system with zero scoreable controls (every control marked
+    # not_applicable, or no controls at all) cannot be assessed for readiness.
+    scoreable = total - not_applicable
+
     lines = []
     lines.append(
         f"This FedRAMP security assessment evaluated {total} controls "
@@ -683,6 +692,16 @@ def _build_executive_summary(readiness_score, readiness_level, gate_result, asse
         f"**{gate_result['gate_result']}**."
     )
     lines.append("")
+    if scoreable <= 0:
+        lines.append(
+            "- **Readiness cannot be assessed: there are no scoreable controls.** "
+            f"All {total} control(s) are marked not applicable (or none are in "
+            "scope), so no evidence of compliance exists. The readiness score is "
+            "reported as 0.0% (**Insufficient Scope**) rather than 100% to avoid "
+            "overstating readiness. Bring in-scope controls into the assessment "
+            "before relying on this report."
+        )
+        lines.append("")
     lines.append(
         f"- **{satisfied}** controls satisfied, "
         f"**{other_than_satisfied}** other than satisfied, "
@@ -882,10 +901,14 @@ def generate_fedramp_report(project_id, baseline="moderate", output_path=None, d
             "critical_control_gate": gate_result["critical_control_gate"],
             "readiness_gate": gate_result["readiness_gate"],
             "family_coverage_gate": gate_result["family_coverage_gate"],
-            # Readiness level thresholds
-            "readiness_level_80": "CURRENT" if readiness_score >= 80 else "--",
-            "readiness_level_60": "CURRENT" if 60 <= readiness_score < 80 else "--",
-            "readiness_level_below_60": "CURRENT" if readiness_score < 60 else "--",
+            # Readiness level thresholds. When there are no scoreable controls the
+            # level is "Insufficient Scope" (not one of the three graded bands), so
+            # none of the standard rows are marked current.
+            "readiness_level_80": "CURRENT" if readiness_level != "Insufficient Scope" and readiness_score >= 80 else "--",
+            "readiness_level_60": "CURRENT" if readiness_level != "Insufficient Scope" and 60 <= readiness_score < 80 else "--",
+            "readiness_level_below_60": "CURRENT"
+            if readiness_level != "Insufficient Scope" and readiness_score < 60
+            else "--",
             # Control counts
             "total_controls": str(total_controls),
             "controls_satisfied": str(controls_satisfied),
