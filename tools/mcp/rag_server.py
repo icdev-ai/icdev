@@ -49,13 +49,20 @@ def handle_rag_search(arguments: Dict[str, Any]) -> Dict[str, Any]:
 
     try:
         from tools.rag.retriever import RAGRetriever
+        from tools.rag.retriever_common import run_rag_search
 
-        retriever = RAGRetriever(tenant_id=tenant_id)
         filters = {}
         if source_type:
             filters["source_type"] = source_type
-        results = retriever.retrieve(
-            query=query,
+        # NOTE: filters=/agent_id= are forwarded verbatim to preserve this
+        # handler's existing behavior; RAGRetriever.search() does not accept
+        # them, so this call raises TypeError today (caught below). The shared
+        # helper centralizes the tenant-scoped construction without unifying
+        # that pre-existing divergence — see retriever_common module docstring.
+        results = run_rag_search(
+            RAGRetriever,
+            query,
+            tenant_id=tenant_id,
             top_k=top_k,
             filters=filters if filters else None,
             agent_id=f"child:{child_id}" if child_id else "",

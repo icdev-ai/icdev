@@ -14,6 +14,7 @@
 | Source Registry | tools/rag/source_registry.py | Declarative SOURCE_REGISTRY mapping 20+ source types to tables, columns, priority, chunk strategy | (import) | Registry dict |
 | Ingestion Manager | tools/rag/ingestion_manager.py | Real-time + batch ingestion pipeline with content hash dedup, watermarking, CLI (D-RAG-9) | --ingest, --sweep, --status, --daemon, --json | Ingestion stats JSON |
 | RAG Retriever | tools/rag/retriever.py | Two-stage retrieval: vector top-50 → BM25 boost → time-decay → qwen3 re-rank → top-5 (D-RAG-3) | --query, --json | Ranked results JSON |
+| Retriever Common | tools/rag/retriever_common.py | Shared helpers for tenant-scoped RAGRetriever construction + search invocation (run_rag_search) and unit-interval score clamp (clamp_unit); used by Cortex search_rag adapter and the rag_search MCP handler | (import) | run_rag_search, clamp_unit |
 | Re-ranker | tools/rag/reranker.py | qwen3 re-ranking via LLM router scanner_function (D-RAG-3) | query, chunks | Ranked chunk IDs |
 | Retention Manager | tools/rag/retention_manager.py | Hot/warm/cold tier migration with float16 compression (D-RAG-6) | --migrate, --status, --json | Migration stats JSON |
 | RAG Ingestion Hook | tools/extensions/builtins/020_rag_ingestion.py | Extension hook at TOOL_EXECUTE_AFTER for real-time ingestion (D-RAG-9) | (hook) | Auto-ingest |
