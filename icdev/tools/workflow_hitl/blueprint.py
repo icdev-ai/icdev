@@ -12,7 +12,7 @@ from tools.logging.icdev_logger import get_logger
 import dataclasses
 import os
 
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, g
 
 from tools.workflow_hitl import (
     template_manager,
@@ -26,8 +26,20 @@ from tools.workflow_hitl import (
 from tools.workflow_hitl.engine import WorkflowEngine
 from tools.workflow_hitl import report_generator
 from tools.db.storage import get_connection
+from tools.dashboard.auth import require_role
 
 logger = get_logger(__name__)
+
+# ── Segregation-of-duties gate for HITL governance mutations (nav-sec-04) ──────
+# Every instance-level *state-changing* route (approve / kickback / escalate /
+# cancel) is restricted to reviewer/approver-class roles. `developer` is
+# deliberately excluded: before this fix any authenticated user — including a
+# developer whose own work is under review — could approve or kick back a
+# governance gate and be recorded as the approver, defeating segregation of
+# duties for the Human-In-The-Loop layer. All roles below already exist in
+# tools.dashboard.auth.VALID_DASHBOARD_ROLES. Read-only routes stay ungated so
+# they still render for any logged-in user.
+_WF_APPROVAL_ROLES = ("admin", "pm", "isso", "co", "cor", "reviewer")
 
 # ── Feature-flag guard ────────────────────────────────────────────────────────
 
@@ -49,12 +61,23 @@ def _disabled_response():
 # ── Auth helper ───────────────────────────────────────────────────────────────
 
 def _get_current_user() -> str | None:
-    """Return the authenticated user identifier from the session cookie.
+    """Return the authenticated user identifier from the resolved auth context.
 
-    Auth check goes here — in production the ICDEV auth middleware validates the
-    session token and populates request.user.  In dev mode (ICDEV_DEV_MODE=true)
-    we fall back to the X-Dev-User header so engineers can test without a session.
+    In production the ICDEV dashboard auth middleware validates the session /
+    API key and populates ``g.current_user`` (a dict with ``id`` + ``role``);
+    this is the authoritative identity and is what gets recorded as the
+    approver on governance-gate decisions. It is NEVER read from the request
+    body, which a caller could spoof. In dev mode (ICDEV_DEV_MODE=true) we fall
+    back to the X-Dev-User header so engineers can test without a session.
     """
+    user = getattr(g, "current_user", None)
+    if user:
+        if isinstance(user, dict):
+            return user.get("id")
+        try:
+            return user["id"]
+        except Exception:
+            return getattr(user, "id", None)
     dev_mode = os.getenv("ICDEV_DEV_MODE", "false").lower() in ("true", "1")
     if dev_mode:
         return request.headers.get("X-Dev-User", "dev-user")
@@ -352,6 +375,7 @@ def create_wf_blueprint() -> Blueprint:
             return jsonify({"error": str(exc)}), 500
 
     @bp.route("/instances/<instance_id>/approve", methods=["POST"])
+    @require_role(*_WF_APPROVAL_ROLES)
     def approve_instance_route(instance_id: str):
         if not _hitl_enabled():
             return _disabled_response()
@@ -396,6 +420,7 @@ def create_wf_blueprint() -> Blueprint:
             return jsonify({"error": str(exc)}), 500
 
     @bp.route("/instances/<instance_id>/kickback", methods=["POST"])
+    @require_role(*_WF_APPROVAL_ROLES)
     def kickback_instance_route(instance_id: str):
         if not _hitl_enabled():
             return _disabled_response()
@@ -435,6 +460,7 @@ def create_wf_blueprint() -> Blueprint:
             return jsonify({"error": str(exc)}), 500
 
     @bp.route("/instances/<instance_id>/escalate", methods=["POST"])
+    @require_role(*_WF_APPROVAL_ROLES)
     def escalate_instance_route(instance_id: str):
         if not _hitl_enabled():
             return _disabled_response()
@@ -453,6 +479,7 @@ def create_wf_blueprint() -> Blueprint:
             return jsonify({"error": str(exc)}), 500
 
     @bp.route("/instances/<instance_id>/cancel", methods=["POST"])
+    @require_role(*_WF_APPROVAL_ROLES)
     def cancel_instance_route(instance_id: str):
         if not _hitl_enabled():
             return _disabled_response()
