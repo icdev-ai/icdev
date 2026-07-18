@@ -184,7 +184,10 @@ components:
     template: tools/dashboard/templates/boundary_canvas/canvas.html
     blueprint: true
     constants: tools/boundary_canvas/constants.py
-    db_migration: tools/boundary_canvas/db/migrations
+    # Canvas tables are created imperatively by tools/boundary_canvas/db/init_db.py
+    # (there is no db/migrations dir). cATO twin tables are provided by the shared
+    # migrations tools/db/migrations/027_compliance_snapshots + 027_compliance_twin_schema.
+    db_migration: tools/boundary_canvas/db/init_db.py
     iqe_adapter: true
     nav_link: true
     seed_queries: context/iqe/queries/boundary/

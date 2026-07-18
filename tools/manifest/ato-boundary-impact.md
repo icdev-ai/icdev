@@ -18,3 +18,20 @@
 | DB Migration 027 | tools/db/migrations/027_compliance_twin_schema/up.py | Create compliance_twin_snapshots, compliance_twin_violations, compliance_twin_runs tables | sqlite3.Connection | {status, actions} |
 | IQE Seed Queries | context/iqe/queries/boundary/*.iqe | 20 seed queries across FedRAMP Moderate (frm-001…010) and FedRAMP High (frh-001…010) | — | IQE DSL files |
 
+## ISA lifecycle — two deliberately separate stores
+Interconnection Security Agreements (ISAs) live in **two independent stores**;
+this split is intentional. Consolidating them is a **rejected non-goal for now**
+— the two surfaces serve different consumers and are wired together by a
+nav-link only (PR #374), not by a shared table.
+
+| Store | Scope | Table (DB) | Code | Surface |
+|-------|-------|-----------|------|---------|
+| Design-scoped ISA tracker | Per boundary **design**; feeds cATO readiness ISA-expiry scoring and boundary risk | `bd_isa_tracker` (**canvas DB**) | `tools/boundary_canvas/boundary_engine.py::compute_isa_status`; `tools/boundary_canvas/isa_expiry.py` (`ensure_isa_expiry_column`, `check_isa_expiry`) | Page `GET /boundary/isa-tracker` (`bdc_isa_tracker_page`); API `GET/POST /boundary/api/designs/<design_id>/isa-tracker`; IQE `bdc.isas` |
+| Supply-chain ISA/MOU manager | Project-level ISA/MOU **agreements** lifecycle (create, list, expiring, review-due) | `isa_agreements` (**main DB**) | `tools/supply_chain/isa_manager.py` (`create_isa`, `list_isas`, `get_expiring`, `get_review_due`) | MCP tool `manage_isa` (`tools/mcp/supply_chain_server.py::handle_manage_isa`, actions: list / create / expiring / review_due) |
+
+- The two stores are **not** joined: the boundary canvas reads only
+  `bd_isa_tracker`; the supply-chain manager reads only `isa_agreements`.
+- Integration between them is a **nav link only** (PR #374) — deliberately loose
+  coupling. A future consolidation card may revisit this, but it is out of scope
+  today.
+
