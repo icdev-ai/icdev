@@ -129,18 +129,30 @@ def create_bi_dashboard_blueprint() -> Blueprint | None:
     @bp.route("/api/upload", methods=["POST"])
     @_login_required
     def api_upload():
-        from tools.bi_dashboard.constants import MAX_UPLOAD_BYTES
+        from tools.bi_dashboard.constants import ALLOWED_UPLOAD_EXTENSIONS, MAX_UPLOAD_BYTES
         from tools.bi_dashboard.data_source import ingest_upload
 
         file = request.files.get("file")
         if not file or not file.filename:
             return jsonify({"error": "file is required"}), 400
 
+        # Enforce the allowlist at the route (defense-in-depth): reject
+        # unsupported/dangerous extensions up front rather than relying on
+        # parse_dataset to fail downstream.
+        fname = file.filename.lower()
+        if not fname.endswith(ALLOWED_UPLOAD_EXTENSIONS):
+            return jsonify({
+                "error": "unsupported file type; allowed: "
+                         + ", ".join(ALLOWED_UPLOAD_EXTENSIONS),
+            }), 400
+
         content = file.read(MAX_UPLOAD_BYTES + 1)
         if len(content) > MAX_UPLOAD_BYTES:
             return jsonify({"error": f"file exceeds {MAX_UPLOAD_BYTES} byte limit"}), 400
 
-        result = ingest_upload(filename=file.filename, content_bytes=content)
+        result = ingest_upload(
+            filename=file.filename, content_bytes=content, tenant_id=_current_tenant()
+        )
         status = 200 if result.get("success") else 400
         return jsonify(result), status
 
@@ -148,7 +160,7 @@ def create_bi_dashboard_blueprint() -> Blueprint | None:
     @_login_required
     def api_list_datasets():
         from tools.bi_dashboard.data_source import list_datasets
-        return jsonify({"datasets": list_datasets()})
+        return jsonify({"datasets": list_datasets(tenant_id=_current_tenant())})
 
     # ══════════════════════════════════════════════════════════════════════
     # API — NL chart generation
@@ -171,12 +183,13 @@ def create_bi_dashboard_blueprint() -> Blueprint | None:
         if not source_id:
             return jsonify({"error": "source_id is required"}), 400
 
-        dataset = get_dataset(source_id)
+        dataset = get_dataset(source_id, tenant_id=_current_tenant())
         if dataset is None:
             return jsonify({"error": f"unknown source_id {source_id!r}"}), 404
 
         spec, method, structure = generate_spec(prompt, dataset, prior_structure)
-        log_generation(prompt=prompt, structure=structure, method=method)
+        log_generation(prompt=prompt, structure=structure, method=method,
+                       tenant_id=_current_tenant())
 
         return jsonify({"spec": spec.to_dict(), "method": method, "structure": structure})
 
