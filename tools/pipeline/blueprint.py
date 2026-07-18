@@ -89,8 +89,21 @@ except Exception:
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
+class AuditUnavailable(Exception):
+    """Raised by ``_audit_strict`` when an audit row cannot be persisted.
+
+    Destructive routes catch this and fail closed (HTTP 500, no mutation) so a
+    delete/approve/reject can never happen without an audit record (NIST AU).
+    """
+
+
 def _audit(action, entity_type, entity_id, details="", user_id=None):
-    """Write an audit log entry."""
+    """Write an audit log entry (best-effort).
+
+    Failures are logged at ERROR and swallowed — appropriate for non-destructive
+    writes where losing the mutation would be worse than a missing audit row.
+    Destructive routes must use ``_audit_strict`` instead (fail-closed).
+    """
     try:
         conn = get_connection()
         conn.execute(
@@ -100,7 +113,42 @@ def _audit(action, entity_type, entity_id, details="", user_id=None):
         conn.commit()
         conn.close()
     except Exception as exc:
-        logger.warning("Audit write failed: %s", exc)
+        logger.error("Audit write failed: %s", exc)
+
+
+def _audit_strict(action, entity_type, entity_id, details="", user_id=None, conn=None):
+    """Write an audit row, RAISING ``AuditUnavailable`` on failure (fail-closed).
+
+    Two modes:
+      * ``conn`` provided — the INSERT runs on the caller's connection and is NOT
+        committed here, so the caller can commit audit + mutation atomically. If
+        the INSERT raises, the exception propagates as ``AuditUnavailable`` and
+        the caller aborts (rolls back) the whole transaction — no un-audited
+        mutation can commit.
+      * ``conn`` is None — a dedicated connection is opened and committed here.
+        Any failure raises ``AuditUnavailable`` so a route can fail closed BEFORE
+        invoking a mutation that runs on a separate connection (e.g. SOP
+        delete/approve/reject in tools/pipeline/sops.py).
+    """
+    owning = conn is None
+    try:
+        if owning:
+            conn = get_connection()
+        conn.execute(
+            "INSERT INTO pc_audit (action, entity_type, entity_id, details, user_id, ts) VALUES (%s, %s, %s, %s, %s, %s)",
+            (action, entity_type, entity_id, details, user_id or session.get("user_id", "system"), now_isoformat()),
+        )
+        if owning:
+            conn.commit()
+            conn.close()
+    except Exception as exc:
+        if owning and conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+        logger.error("Audit write failed (fail-closed): %s", exc)
+        raise AuditUnavailable(str(exc)) from exc
 
 
 # ── Module-level analysis helpers (also used by twin.py) ─────────────────────
@@ -697,10 +745,20 @@ def create_pipeline_blueprint():
     def pc_api_delete(pipe_id):
         logger.info("Deleting pipeline: %s", pipe_id)
         conn = get_connection()
-        conn.execute("DELETE FROM pipelines WHERE id=%s", (pipe_id,))
-        conn.commit()
+        # Fail-closed (NIST AU): the audit INSERT shares this transaction, so if it
+        # raises the DELETE is rolled back and never commits — no un-audited delete.
+        try:
+            conn.execute("DELETE FROM pipelines WHERE id=%s", (pipe_id,))
+            _audit_strict("DELETE", "pipeline", pipe_id, "", user_id=_pc_identity(), conn=conn)
+            conn.commit()
+        except AuditUnavailable:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            conn.close()
+            return jsonify({"error": "audit trail unavailable"}), 500
         conn.close()
-        _audit("DELETE", "pipeline", pipe_id, "")
         return jsonify({"deleted": True})
 
     # ══════════════════════════════════════════════════════════════════════
@@ -1030,6 +1088,10 @@ def create_pipeline_blueprint():
         )
         conn.commit()
         conn.close()
+        _audit(
+            "CREATE_VERSION", "version", ver_id,
+            f"pipeline={pipe_id} v{max_ver + 1}", user_id=_pc_identity(),
+        )
         return jsonify({"id": ver_id, "version_num": max_ver + 1}), 201
 
     # ══════════════════════════════════════════════════════════════════════
@@ -1072,6 +1134,11 @@ def create_pipeline_blueprint():
         )
         conn.commit()
         conn.close()
+        _audit(
+            "CREATE_BOUNDARY", "boundary", bid,
+            f"pipeline={pipe_id} label={data.get('label', 'Stage Boundary')}",
+            user_id=_pc_identity(),
+        )
         return jsonify({"id": bid}), 201
 
     @bp.route("/api/boundaries/<pipe_id>/<bid>", methods=["DELETE"])
@@ -1082,6 +1149,7 @@ def create_pipeline_blueprint():
         conn.execute("DELETE FROM pc_boundaries WHERE id=%s AND pipeline_id=%s", (bid, pipe_id))
         conn.commit()
         conn.close()
+        _audit("DELETE_BOUNDARY", "boundary", bid, f"pipeline={pipe_id}", user_id=_pc_identity())
         return jsonify({"deleted": True})
 
     # ══════════════════════════════════════════════════════════════════════
@@ -1395,6 +1463,11 @@ def create_pipeline_blueprint():
         )
         conn.commit()
         conn.close()
+        _audit(
+            "CREATE_CR", "change_request", cr_id,
+            f"pipeline={pipe_id} cr={data.get('cr_number', f'CR-{cr_id[:4]}')}",
+            user_id=_pc_identity(),
+        )
         return jsonify({"id": cr_id}), 201
 
     # ══════════════════════════════════════════════════════════════════════
@@ -1717,7 +1790,9 @@ def create_pipeline_blueprint():
         # trusting body.user_id let a caller join a session as an arbitrary user.
         user_id = _pc_identity() or str(_uuid_mod.uuid4())[:8]
         user_name = body.get("user_name", "")
-        return jsonify(_pdc_collab.join(design_id, user_id, user_name))
+        result = _pdc_collab.join(design_id, user_id, user_name)
+        _audit("COLLAB_JOIN", "collab", design_id, f"user={user_id}", user_id=user_id)
+        return jsonify(result)
 
     @bp.route("/api/collab/<design_id>/leave", methods=["POST"])
     @pc_login_required
@@ -1727,6 +1802,7 @@ def create_pipeline_blueprint():
         # Server-derived identity only — a caller may only remove themselves.
         user_id = _pc_identity()
         _pdc_collab.leave(design_id, user_id)
+        _audit("COLLAB_LEAVE", "collab", design_id, f"user={user_id}", user_id=user_id)
         return jsonify({"ok": True})
 
     @bp.route("/api/collab/<design_id>/push", methods=["POST"])
@@ -1741,6 +1817,7 @@ def create_pipeline_blueprint():
         op_type = body.get("op_type", "")
         data = body.get("data", {})
         seq = _pdc_collab.push(design_id, user_id, op_type, data)
+        _audit("COLLAB_PUSH", "collab", design_id, f"user={user_id} op={op_type}", user_id=user_id)
         return jsonify({"seq": seq})
 
     @bp.route("/api/collab/<design_id>/poll", methods=["GET"])
@@ -1802,6 +1879,10 @@ def create_pipeline_blueprint():
         """Create a new pipeline SOP."""
         data = request.json or {}
         sop = _pdc_create_sop(data)
+        _audit(
+            "SOP_CREATE", "sop", (sop or {}).get("id", ""),
+            (sop or {}).get("title", ""), user_id=_pc_identity(),
+        )
         return jsonify(sop), 201
 
     @bp.route("/api/sops/<sop_id>", methods=["PUT"])
@@ -1813,17 +1894,25 @@ def create_pipeline_blueprint():
         sop = _pdc_update_sop(sop_id, data)
         if not sop:
             return jsonify({"error": "Not found"}), 404
+        _audit("SOP_UPDATE", "sop", sop_id, "", user_id=_pc_identity())
         return jsonify(sop)
 
     @bp.route("/api/sops/<sop_id>", methods=["DELETE"])
     @pc_login_required
     @pc_role_required(*PC_ELEVATED_ROLES)
     def pc_api_delete_sop(sop_id):
-        """Delete a pipeline SOP (governance action — elevated role only)."""
-        deleted = _pdc_delete_sop(sop_id)
-        if not deleted:
+        """Delete a pipeline SOP (governance action — elevated role only).
+
+        Fail-closed (NIST AU): the audit row is written BEFORE the delete, so if
+        the audit write fails the SOP is never deleted (500, no mutation).
+        """
+        if not _pdc_get_sop_by_id(sop_id):
             return jsonify({"error": "Not found"}), 404
-        _audit("SOP_DELETE", "sop", sop_id, "", user_id=_pc_identity())
+        try:
+            _audit_strict("SOP_DELETE", "sop", sop_id, "", user_id=_pc_identity())
+        except AuditUnavailable:
+            return jsonify({"error": "audit trail unavailable"}), 500
+        _pdc_delete_sop(sop_id)
         return jsonify({"ok": True})
 
     @bp.route("/api/sops/<sop_id>/submit", methods=["POST"])
@@ -1834,6 +1923,7 @@ def create_pipeline_blueprint():
         sop, err = _pdc_submit_for_review(sop_id)
         if err:
             return jsonify({"error": err}), 400
+        _audit("SOP_SUBMIT", "sop", sop_id, "draft->pending_review", user_id=_pc_identity())
         return jsonify(sop)
 
     @bp.route("/api/sops/<sop_id>/approve", methods=["POST"])
@@ -1862,10 +1952,15 @@ def create_pipeline_blueprint():
             return jsonify(
                 {"error": "Separation of duties: you may not approve a SOP you own"}
             ), 403
+        # Fail-closed (NIST AU): record the approval BEFORE mutating state, so an
+        # approval can never commit without an audit row.
+        try:
+            _audit_strict("SOP_APPROVE", "sop", sop_id, f"approved_by={approver}", user_id=approver)
+        except AuditUnavailable:
+            return jsonify({"error": "audit trail unavailable"}), 500
         sop, err = _pdc_approve_sop(sop_id, approved_by=approver)
         if err:
             return jsonify({"error": err}), 400
-        _audit("SOP_APPROVE", "sop", sop_id, f"approved_by={approver}", user_id=approver)
         return jsonify(sop)
 
     @bp.route("/api/sops/<sop_id>/reject", methods=["POST"])
@@ -1877,10 +1972,15 @@ def create_pipeline_blueprint():
         reason = body.get("reason", "")
         # Rejecter identity is server-derived, never the request body.
         rejected_by = _pc_identity()
+        # Fail-closed (NIST AU): record the rejection BEFORE mutating state, so a
+        # governance rejection can never commit without an audit row.
+        try:
+            _audit_strict("SOP_REJECT", "sop", sop_id, f"rejected_by={rejected_by}", user_id=rejected_by)
+        except AuditUnavailable:
+            return jsonify({"error": "audit trail unavailable"}), 500
         sop, err = _pdc_reject_sop(sop_id, reason=reason, rejected_by=rejected_by)
         if err:
             return jsonify({"error": err}), 400
-        _audit("SOP_REJECT", "sop", sop_id, f"rejected_by={rejected_by}", user_id=rejected_by)
         return jsonify(sop)
 
     # ══════════════════════════════════════════════════════════════════════

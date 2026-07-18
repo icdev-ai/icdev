@@ -593,6 +593,11 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "docmod_scan_runs",
         "docmod_findings",
         "docmod_catalog_audit",
+        # Pipeline Design Canvas (pdx-sec-04, NIST AU) — write-route audit trail and
+        # twin/snapshot history are immutable evidence; rows never UPDATE/DELETE
+        "pc_audit",
+        "pipeline_snapshots",
+        "pdc_snapshots",
     ]
 
     if tool_name == "Bash":
