@@ -88,6 +88,35 @@ def test_table_exists_uses_cache(tmp_path, monkeypatch):
     assert calls["n"] == 0
 
 
+def test_table_exists_does_not_cache_negatives(tmp_path, monkeypatch):
+    """A table absent on the first probe but created later must be seen."""
+    conn = _canvas_sqlite_conn(tmp_path, monkeypatch)
+
+    # First probe: table does not exist yet.
+    assert table_exists(conn, "nc_late") is False
+
+    # It gets created in-process (migration / ensure-path).
+    conn.execute("CREATE TABLE nc_late (id TEXT PRIMARY KEY)")
+    conn.commit()
+
+    # Second probe must re-query and see it — the False was not cached.
+    assert table_exists(conn, "nc_late") is True
+
+
+def test_col_exists_does_not_cache_negatives(tmp_path, monkeypatch):
+    """A column absent on the first probe but added later must be seen."""
+    conn = _canvas_sqlite_conn(tmp_path, monkeypatch)
+    conn.execute("CREATE TABLE nc_grow (id TEXT PRIMARY KEY)")
+    conn.commit()
+
+    assert col_exists(conn, "nc_grow", "extra") is False
+
+    conn.execute("ALTER TABLE nc_grow ADD COLUMN extra TEXT")
+    conn.commit()
+
+    assert col_exists(conn, "nc_grow", "extra") is True
+
+
 def test_col_exists_uses_cache(tmp_path, monkeypatch):
     conn = _canvas_sqlite_conn(tmp_path, monkeypatch)
     conn.execute("CREATE TABLE nc_ccache (id TEXT PRIMARY KEY, label TEXT)")

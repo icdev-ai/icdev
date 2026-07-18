@@ -22,7 +22,10 @@ def _row_to_dict(row):
 # worked on PostgreSQL because the storage translate layer regex-rewrites
 # sqlite_master; that is fragile. These shared helpers branch explicitly on the
 # backend (PG → information_schema, SQLite → sqlite_master / PRAGMA) and cache
-# results process-wide because schema shape is stable within a process lifetime.
+# only POSITIVE results process-wide: once a table/column is known to exist it
+# never disappears, so caching True is safe. Negatives are NEVER cached —
+# migrations and ensure-paths create tables/columns while the process is up, so
+# a probe that ran before creation must re-probe rather than latch "absent".
 _TABLE_EXISTS_CACHE: dict = {}
 _COL_EXISTS_CACHE: dict = {}
 
@@ -39,15 +42,17 @@ def _conn_backend(conn) -> str:
 
 
 def table_exists(conn, name: str) -> bool:
-    """Backend-aware table existence check with a process-level cache.
+    """Backend-aware table existence check with a positive-only cache.
 
-    Cached by (backend, table_name) — schema shape is stable within a process,
-    and these probes run repeatedly per request (see routes/analysis.py).
+    Only True results are cached (keyed by (backend, table_name)): a table that
+    exists never disappears, so the probe can be skipped thereafter. A negative
+    is never cached — tables can be created later in-process (migrations,
+    ensure-paths) — so absence always re-probes.
     """
     backend = _conn_backend(conn)
     key = (backend, name)
-    if key in _TABLE_EXISTS_CACHE:
-        return _TABLE_EXISTS_CACHE[key]
+    if _TABLE_EXISTS_CACHE.get(key):
+        return True
     if backend == "postgresql":
         row = conn.execute(
             "SELECT table_name FROM information_schema.tables "
@@ -60,20 +65,23 @@ def table_exists(conn, name: str) -> bool:
             (name,),
         ).fetchone()
     exists = row is not None
-    _TABLE_EXISTS_CACHE[key] = exists
+    if exists:
+        _TABLE_EXISTS_CACHE[key] = True
     return exists
 
 
 def col_exists(conn, table: str, col: str) -> bool:
-    """Backend-aware column existence check with a process-level cache.
+    """Backend-aware column existence check with a positive-only cache.
 
-    Cached by (backend, table, col). PG uses information_schema.columns;
-    SQLite uses PRAGMA table_info.
+    Only True results are cached (keyed by (backend, table, col)): a column that
+    exists never disappears. A negative is never cached — columns can be added
+    later in-process (migrations) — so absence always re-probes. PG uses
+    information_schema.columns; SQLite uses PRAGMA table_info.
     """
     backend = _conn_backend(conn)
     key = (backend, table, col)
-    if key in _COL_EXISTS_CACHE:
-        return _COL_EXISTS_CACHE[key]
+    if _COL_EXISTS_CACHE.get(key):
+        return True
     if backend == "postgresql":
         row = conn.execute(
             "SELECT column_name FROM information_schema.columns "
@@ -84,7 +92,8 @@ def col_exists(conn, table: str, col: str) -> bool:
     else:
         cols = [r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()]  # noqa: S608
         exists = col in cols
-    _COL_EXISTS_CACHE[key] = exists
+    if exists:
+        _COL_EXISTS_CACHE[key] = True
     return exists
 
 
