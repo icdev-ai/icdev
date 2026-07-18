@@ -455,15 +455,27 @@ def translate_sql(sql: str, backend: str = "postgresql") -> str:
             flags=re.IGNORECASE,
         )
         # Pattern: SELECT name FROM sqlite_master WHERE type='table'  (list all tables)
+        #
+        # The trailing ``(?!\s+AND\b)`` negative lookahead stops this list-all
+        # regex from PREFIX-matching a literal-name query such as
+        # ``... WHERE type='table' AND name='foo'``. The named-form regex above
+        # handles only the parameterised ``AND name=%s`` shape, so without the
+        # lookahead the list-all rule rewrote just the prefix and left a dangling
+        # ``AND name='foo'`` that references information_schema's nonexistent
+        # ``name`` column (invalid PG). With the lookahead a query carrying an
+        # extra ``AND`` condition is left ALONE rather than mangled, while the
+        # legitimate list-all shapes (bare, or followed by ORDER BY/GROUP BY)
+        # still translate. See tests/test_translate_sql_rule14.py.
         sql = re.sub(
-            r"SELECT\s+name\s+FROM\s+sqlite_master\s+WHERE\s+type\s*=\s*'table'",
+            r"SELECT\s+name\s+FROM\s+sqlite_master\s+WHERE\s+type\s*=\s*'table'(?!\s+AND\b)",
             "SELECT table_name AS name FROM information_schema.tables WHERE table_schema = 'public'",
             sql,
             flags=re.IGNORECASE,
         )
         # Pattern: SELECT count(*) FROM sqlite_master WHERE type='table'
+        #          (same anti-prefix-match lookahead as the list-all name shape)
         sql = re.sub(
-            r"SELECT\s+count\(\*\)\s+FROM\s+sqlite_master\s+WHERE\s+type\s*=\s*'table'",
+            r"SELECT\s+count\(\*\)\s+FROM\s+sqlite_master\s+WHERE\s+type\s*=\s*'table'(?!\s+AND\b)",
             "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public'",
             sql,
             flags=re.IGNORECASE,
