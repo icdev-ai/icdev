@@ -483,17 +483,27 @@ def api_step_design_assess():
     hints_used = int(data.get("hints_used", 0))
     base_xp = int(data.get("base_xp", 100))
 
-    result = verify_step("aadc_design_compliant", fa_user["id"], {
+    # verify_step signature is (user_id, step_type, verification_data). penta-fix-02:
+    # the first two args were SWAPPED here, and the route read result["evidence"] as
+    # a dict though verify_step ALWAYS returns "evidence" as a string and never a
+    # "check_results" list — either mistake 500'd the route on every call.
+    result = verify_step(fa_user["id"], "aadc_design_compliant", {
         "design_id": design_id,
         "required_checks": required_checks,
         "min_score": min_score,
     })
 
+    # verify_step returns {passed, evidence(str), score?, failed_checks?}. Derive
+    # checks_passed from the requested required_checks minus whatever came back
+    # failing, preserving the route's list-of-check-ids response contract.
+    failed_checks = result.get("failed_checks", [])
+    checks_passed = [c for c in required_checks if c not in failed_checks]
     resp = {
         "passed": result.get("passed", False),
         "score": result.get("score", 0),
-        "checks_passed": [c["id"] for c in result.get("evidence", {}).get("check_results", []) if c.get("passed")],
-        "failed_checks": result.get("failed_checks", []),
+        "checks_passed": checks_passed,
+        "failed_checks": failed_checks,
+        "evidence": result.get("evidence", ""),
     }
 
     if result.get("passed"):
