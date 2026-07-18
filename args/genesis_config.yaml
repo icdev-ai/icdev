@@ -1042,6 +1042,22 @@ reflexes:
       threshold: 0
       operator: gte          # Informational — 0 when no active projects; >0 is normal operation
 
+  # ── PDC Pipeline Staleness Alert (pdx-ops-01 — was implemented-but-undispatched) ─
+
+  pdc_pipeline_stale:
+    timeout_seconds: 120     # pipelines table scan + IQR stats + optional LLM anomaly pass + canvas event publish
+    enabled: true
+    risk_tier: green         # read-only against pipelines; writes only append-only canvas events + pc_compliance_findings
+    schedule: "every 6h"
+    interval_seconds: 21600  # 6 hours — matches CADENCE_HOURS = 6 in the reflex module
+    cooldown_minutes: 60
+    description: "PDC pipeline staleness alerting: scan Pipeline Design Canvas pipelines, compute an IQR-based dynamic staleness threshold (Tukey's fence, STALE_DAYS_FLOOR=14 floor), optionally validate candidates with claude-haiku anomaly detection (air-gap safe), and publish pdc.pipeline.stale canvas events consumed by tools.pipeline.bus_subscriber. Delegates to tools.genesis.reflexes.pdc_pipeline_stale.run."
+    dry_run: false           # when true, detects and reports stale pipelines without publishing events
+    success_metric:
+      name: pipelines_checked
+      threshold: 0
+      operator: gte          # Informational — 0 pipelines is healthy; >0 checked is normal operation
+
   # ── DIC Integration (Canvas Synergy — dsyn-reflex-02) ────────────────────────
 
   dic_integration:
