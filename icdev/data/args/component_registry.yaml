@@ -196,6 +196,13 @@ components:
   cli_name: pipeline
   display_name: Pipeline Design Canvas
   description: CI/CD pipeline management, worktree isolation, GitLab integration.
+  # Flag story (pdx-ops-01): ICDEV_PDC_ENABLED is the primary registry-side gate
+  # (default off). ICDEV_PIPELINE_ENABLED is a secondary/legacy flag also flipped
+  # by icdev enable/disable. NOTE: the blueprint factory (tools/pipeline/blueprint.py)
+  # currently defaults ICDEV_PIPELINE_ENABLED to true independently of this registry
+  # gate — that factory-side divergence is deliberately deferred to task pdx-fix-03
+  # (do not edit blueprint.py here). Enable in production via a core profile
+  # (args/core_profiles.yaml: government / saas-il4) or `icdev enable pipeline`.
   env_flag: ICDEV_PDC_ENABLED
   extra_env_flags:
   - ICDEV_PIPELINE_ENABLED
