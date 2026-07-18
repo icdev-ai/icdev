@@ -450,14 +450,23 @@ def update_user_role(user_id: int, role: str) -> None:
     conn.commit()
 
 
-def update_user_xp(user_id: int, xp_delta: int) -> dict:
-    conn = get_connection()
+def update_user_xp(user_id: int, xp_delta: int, conn=None) -> dict:
+    # penta-fix-03: accept an optional caller-supplied connection so an enclosing
+    # transaction (e.g. issue_certificate's cert INSERT) can award XP on the SAME
+    # connection instead of opening a second one. Opening a second connection while
+    # the first transaction is still uncommitted self-deadlocks the SQLite backend
+    # (the uncommitted writer holds the DB write lock). When conn is supplied the
+    # caller owns the commit; otherwise we manage our own transaction as before.
+    own_conn = conn is None
+    if own_conn:
+        conn = get_connection()
     conn.execute("UPDATE fa_users SET xp = xp + ? WHERE id=?", (xp_delta, user_id))
     row = conn.execute("SELECT xp FROM fa_users WHERE id=?", (user_id,)).fetchone()
     new_xp = row["xp"]
     new_level = xp_to_level(new_xp)["slug"]
     conn.execute("UPDATE fa_users SET level=? WHERE id=?", (new_level, user_id))
-    conn.commit()
+    if own_conn:
+        conn.commit()
     return {"xp": new_xp, "level": new_level}
 
 
@@ -1091,17 +1100,22 @@ def issue_certificate(user_id: int, cert_key: str) -> dict | None:
 
     token = secrets.token_urlsafe(32)
     now = datetime.now(timezone.utc).isoformat()
+    # penta-fix-03: INSERT the certificate AND award its XP bonus on ONE connection
+    # in a single transaction, then commit once. Previously the INSERT was left
+    # uncommitted while update_user_xp opened a SECOND connection to UPDATE
+    # fa_users — fine on PostgreSQL (MVCC) but a self-deadlock under the SQLite test
+    # backend, where the uncommitted writer holds the DB write lock and the second
+    # connection's UPDATE blocks on busy_timeout, then errors.
     conn.execute(
         """INSERT INTO fa_certificates
            (user_id, cert_tier, cert_label, token, issued_at)
            VALUES (?,?,?,?,?)""",
         (user_id, cert_key, cert_def.get("label", cert_key), token, now),
     )
-    # Award XP bonus
+    # Award XP bonus on the SAME connection/transaction as the cert INSERT.
     xp_bonus = cert_def.get("xp_bonus", 0)
     if xp_bonus:
-        from apps.forge_academy.db import update_user_xp
-        update_user_xp(user_id, xp_bonus)
+        update_user_xp(user_id, xp_bonus, conn=conn)
     conn.commit()
     return conn.execute(
         "SELECT * FROM fa_certificates WHERE user_id=? AND cert_tier=?",
