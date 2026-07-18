@@ -12043,3 +12043,48 @@ projects:
   - key: sweep
     title: PRAGMA sqlite_master cleanup sweep
     priority: medium
+- key: dcpr
+  name: Data Canvas Production Readiness
+  description: 'Production-hardening of the Data Design Canvas (/data) and its Data
+    Mesh ecosystem. Four independent reviews found: a bypassable regex-blocklist SQL
+    sandbox (stacked-statements/COPY/pg_read_file RCE surface), 11 unauthenticated
+    geoint/osint/pipeline-ops routes incl. two mutating ingest endpoints, a fail-open
+    ABAC governance gate, dead LLM paths in ai_mapper, an always-fresh freshness
+    guardian, fabricated twin simulate/quality-gate, 5+ RLS-breaking get_connection
+    calls, 38 core tables missing from the PG consolidated schema, unprotected audit
+    tables, and ~22 zero-coverage engine modules. MANUAL-ONLY: all tasks gated behind
+    dcpr-gate-00 (held in_progress) so the kanban runner never dispatches them; Fable
+    plans, Opus 4.8 implements in worktrees; push+PR with auto-merge on green CI
+    authorized by user 2026-07-18.'
+  default_open: true
+  briefs:
+  - Harden query_sandbox to a real parser-based read-only gate; close stacked-statement,
+    COPY/INSTALL/LOAD, pg_read_file, and system-catalog bypasses; add statement
+    timeout and a sandbox-coverage.md entry.
+  - Add @dc_login_required to the 11 unauthenticated geoint/osint/pipeline-ops routes
+    (two are mutating ingest endpoints on an IL4 canvas).
+  - Fix fail-open governance check_access to default-deny; make twin simulate_delta/quality_gate
+    compute from real lineage/DB or scope their contracts honestly.
+  - Repair dead ai_mapper LLM paths (wrong import + wrong LLMRequest API) and the
+    always-fresh freshness_guardian key bug; standardize get_connection -> get_canvas_connection.
+  - Land the 38 missing data-canvas tables in the PG consolidated schema with real
+    migrations; add PG append-only triggers and hook protection for audit tables;
+    add missing-table resilience to routes.
+  - Backfill test coverage for the ~22 zero-coverage engine modules using the storage
+    translate layer (not raw sqlite); reconcile manifest shards and the start.md Pages line.
+  epics:
+  - key: gate
+    title: Manual Gate (held)
+    priority: high
+  - key: sec
+    title: Security Hardening (P0/P1)
+    priority: high
+  - key: fix
+    title: Broken/Inert Feature Repair (P1)
+    priority: high
+  - key: db
+    title: Schema, Migrations & Audit Integrity (P0/P1)
+    priority: high
+  - key: qa
+    title: Test Coverage & Hygiene (P2)
+    priority: medium
