@@ -3662,16 +3662,19 @@ def create_data_canvas_blueprint():
     # ── GeoINT routes ────────────────────────────────────────────────────────
 
     @bp.route("/geoint")
+    @dc_login_required
     def dc_geoint():
         return render_template("data_canvas/geoint.html",
                                page_title="GeoINT Situational Awareness")
 
     @bp.route("/osint")
+    @dc_login_required
     def dc_osint():
         return render_template("data_canvas/osint.html",
                                page_title="OSINT Intelligence Feed")
 
     @bp.route("/api/geoint/events")
+    @dc_login_required
     def dc_api_geoint_events():
         from tools.geoint.geoint_ingestor import list_events
         try:
@@ -3685,6 +3688,7 @@ def create_data_canvas_blueprint():
             return jsonify({"events": [], "count": 0})
 
     @bp.route("/api/geoint/ingest", methods=["POST"])
+    @dc_login_required
     def dc_api_geoint_ingest():
         from tools.geoint.geoint_ingestor import ingest as _gi
         try:
@@ -3697,6 +3701,7 @@ def create_data_canvas_blueprint():
             return jsonify({"status": "error", "error": str(e)}), 500
 
     @bp.route("/api/geoint/stats")
+    @dc_login_required
     def dc_api_geoint_stats():
         from tools.geoint.geoint_ingestor import event_stats
         try:
@@ -3705,6 +3710,7 @@ def create_data_canvas_blueprint():
             return jsonify({"error": str(e)}), 500
 
     @bp.route("/api/osint/signals")
+    @dc_login_required
     def dc_api_osint_signals():
         from tools.osint.osint_ingestor import list_signals
         try:
@@ -3718,6 +3724,7 @@ def create_data_canvas_blueprint():
             return jsonify({"signals": [], "count": 0})
 
     @bp.route("/api/osint/ingest", methods=["POST"])
+    @dc_login_required
     def dc_api_osint_ingest():
         from tools.osint.osint_ingestor import ingest as _oi
         try:
@@ -3730,6 +3737,7 @@ def create_data_canvas_blueprint():
             return jsonify({"status": "error", "error": str(e)}), 500
 
     @bp.route("/api/osint/stats")
+    @dc_login_required
     def dc_api_osint_stats():
         from tools.osint.osint_ingestor import signal_stats
         try:
@@ -3740,11 +3748,13 @@ def create_data_canvas_blueprint():
     # ── Pipeline Command Center ───────────────────────────────────────────────
 
     @bp.route("/pipeline-ops")
+    @dc_login_required
     def dc_pipeline_ops():
         return render_template("data_canvas/pipeline_ops.html",
                                page_title="Pipeline Command Center")
 
     @bp.route("/api/pipeline/status")
+    @dc_login_required
     def dc_api_pipeline_status():
         """Real metrics from live DB tables for the Pipeline Command Center."""
         from tools.db.storage import get_connection as _get_main_conn
@@ -3813,6 +3823,7 @@ def create_data_canvas_blueprint():
         return jsonify(out)
 
     @bp.route("/api/pipeline/feed")
+    @dc_login_required
     def dc_api_pipeline_feed():
         """Recent real events from DB, formatted as co-worker feed items."""
         from tools.db.storage import get_connection as _get_main_conn
