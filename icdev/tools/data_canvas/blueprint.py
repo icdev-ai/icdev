@@ -2729,14 +2729,23 @@ def create_data_canvas_blueprint():
             "created_at": now,
             "updated_at": now,
         }
+        # Positional ? + ordered tuple: get_connection() is HYBRID (raw sqlite3 on
+        # the SQLite branch — no translate wrapper; StorageConnection on PG).
+        # translate_sql only rewrites ?→%s (never :name), and StorageCursor wraps a
+        # dict param into a 1-tuple, so a :name mapping never reaches either driver.
+        # Column order MUST match _dm_contract_cols.
+        _dm_contract_cols = (
+            "id", "product_id", "title", "version", "schema_json", "sla_json",
+            "quality_rules_json", "status", "classification", "created_at",
+            "updated_at",
+        )
         conn = get_connection()
         conn.execute(
             """INSERT INTO dm_contracts
                (id, product_id, title, version, schema_json, sla_json,
                 quality_rules_json, status, classification, created_at, updated_at)
-               VALUES (:id, :product_id, :title, :version, :schema_json, :sla_json,
-               :quality_rules_json, :status, :classification, :created_at, :updated_at)""",
-            row,
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            tuple(row[c] for c in _dm_contract_cols),
         )
         conn.commit()
         conn.close()
