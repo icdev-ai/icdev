@@ -260,6 +260,19 @@ CREATE TABLE IF NOT EXISTS odc_mitre_techniques (
 
 CREATE INDEX IF NOT EXISTS idx_odc_mt_technique ON odc_mitre_techniques(technique_id);
 CREATE INDEX IF NOT EXISTS idx_odc_mt_tactic    ON odc_mitre_techniques(tactic);
+
+CREATE TABLE IF NOT EXISTS odc_twin_snapshots (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT NOT NULL,
+    label           TEXT NOT NULL DEFAULT '',
+    service_count   INTEGER NOT NULL DEFAULT 0,
+    coverage_score  REAL NOT NULL DEFAULT 0.0,
+    coverage_basis  TEXT NOT NULL DEFAULT 'no_assessment',
+    payload_json    TEXT NOT NULL DEFAULT '{}',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_odc_twin_snap_design ON odc_twin_snapshots(design_id);
 """
 
 # ── Template seeds ────────────────────────────────────────────────────────────
