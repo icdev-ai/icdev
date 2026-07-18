@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import threading
-import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -28,8 +27,49 @@ from tools.logging.icdev_logger import get_logger
 logger = get_logger("icdev.ace.coworker_thread")
 
 _DB_ENV = "ICDEV_ACE_DB_URL"
-_HITL_POLL_INTERVAL = 2.0  # seconds between HITL resolution checks
+# Event-driven HITL wake: the waiting thread blocks on a threading.Event that
+# HITLGate.resolve() sets the instant a human approves.  A 30 s fallback poll is
+# retained so a resolution written by a *different* process (e.g. the dashboard
+# Flask worker) is still noticed even though it can't set this in-process Event.
+_HITL_EVENT_WAIT = 30.0  # seconds — cross-process fallback re-check interval
 _DEFAULT_MONITOR_INTERVAL = 10  # steps between behavioral compliance checks
+
+# ---------------------------------------------------------------------------
+# HITL wake registry — one threading.Event per coworker_id.
+#
+# The confidence gate and the required-step gate both block a co-worker thread
+# until a human inserts a matching ``hitl_resolved`` row.  Instead of busy-
+# polling every 2 s, the waiter blocks on this Event; HITLGate.resolve() (which
+# may run in a different thread within the same process, e.g. the Flask worker)
+# sets it so the waiter wakes immediately.  Access is guarded by a lock because
+# resolve() and the waiter run on different threads.
+# ---------------------------------------------------------------------------
+_hitl_events_lock = threading.Lock()
+_hitl_events: dict[str, threading.Event] = {}
+
+
+def _get_hitl_event(coworker_id: str) -> threading.Event:
+    """Return (creating if absent) the wake Event for ``coworker_id``."""
+    with _hitl_events_lock:
+        ev = _hitl_events.get(coworker_id)
+        if ev is None:
+            ev = threading.Event()
+            _hitl_events[coworker_id] = ev
+        return ev
+
+
+def _signal_hitl_event(coworker_id: str) -> None:
+    """Wake any thread waiting on ``coworker_id``'s HITL gate (best-effort)."""
+    with _hitl_events_lock:
+        ev = _hitl_events.get(coworker_id)
+    if ev is not None:
+        ev.set()
+
+
+def _discard_hitl_event(coworker_id: str) -> None:
+    """Drop the wake Event once the wait is over (best-effort cleanup)."""
+    with _hitl_events_lock:
+        _hitl_events.pop(coworker_id, None)
 
 # Topics that may legitimately appear alongside task.assigned (gateway prerequisites only).
 # Reactive callback topics (e.g. doc.review_feedback) must NOT be listed here; they
@@ -72,6 +112,46 @@ def _load_monitor_interval() -> int:
         return int(cfg.get("monitor_interval", _DEFAULT_MONITOR_INTERVAL))
     except Exception:
         return _DEFAULT_MONITOR_INTERVAL
+
+
+def _load_trust_overrides() -> dict[str, Any]:
+    """Read confidence-gate overrides from args/ace/trust.yaml.
+
+    Returns a dict with two keys (always present, defaulting to empty):
+      * ``initial_trust``     — {role_id: float} seed score consulted by the
+        confidence gate before falling back to the learned trust score.
+      * ``auto_approve_roles`` — [role_id, ...] whose fresh co-workers skip the
+        human confidence gate entirely.
+
+    Defaults keep today's behavior: no overrides, no auto-approvals, so every
+    role starts at 0.5 (< TRUST_SUPERVISED) and the gate fires.
+    """
+    out: dict[str, Any] = {"initial_trust": {}, "auto_approve_roles": []}
+    try:
+        import yaml
+
+        # Resolve args/ace/ by walking up from this file — works whether the
+        # live module is tools/ace/… or the mirrored icdev/tools/ace/… copy.
+        here = Path(__file__).resolve()
+        cfg_path = None
+        for parent in here.parents:
+            cand = parent / "args" / "ace" / "trust.yaml"
+            if cand.exists():
+                cfg_path = cand
+                break
+        if cfg_path is None:
+            return out
+        with open(cfg_path, encoding="utf-8") as fh:
+            cfg = yaml.safe_load(fh) or {}
+        it = cfg.get("initial_trust")
+        if isinstance(it, dict):
+            out["initial_trust"] = {str(k): float(v) for k, v in it.items()}
+        ar = cfg.get("auto_approve_roles")
+        if isinstance(ar, list):
+            out["auto_approve_roles"] = [str(r) for r in ar]
+    except Exception:
+        return out
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -154,6 +234,10 @@ class HITLGate:
                 conn.close()
         except Exception:
             pass
+        # Wake the waiting co-worker thread immediately (event-driven, no 2 s
+        # poll delay).  Best-effort and idempotent — set even if the insert
+        # above failed so a same-process waiter re-checks the DB promptly.
+        _signal_hitl_event(coworker_id)
 
 
 # ---------------------------------------------------------------------------
@@ -207,6 +291,45 @@ class CoWorkerThread(threading.Thread):
     def stop(self) -> None:
         """Signal the thread to stop at the next step boundary."""
         self._stop_event.set()
+        # If the thread is parked in a HITL wait, wake it now so it observes the
+        # stop signal promptly instead of after the 30 s fallback poll.
+        _signal_hitl_event(self.spec.coworker_id)
+
+    # ------------------------------------------------------------------
+    # Event-driven HITL wait
+    # ------------------------------------------------------------------
+
+    def _wait_for_hitl_resolution(self) -> bool:
+        """Block until this coworker's pending HITL clears or stop is signalled.
+
+        Event-driven: parks on a threading.Event that HITLGate.resolve() (and
+        stop()) sets, so approval is observed within milliseconds.  A 30 s
+        fallback re-check covers cross-process resolution (a dashboard worker
+        inserting hitl_resolved cannot set our in-process Event).
+
+        Returns:
+            True  — resolved; the caller may continue.
+            False — stop was signalled while waiting.
+        """
+        # Release the per-run write connection before parking — a HITL wait can
+        # last minutes, and holding a (possibly pooled PG) connection idle that
+        # long would starve the pool. It recreates lazily on the next write once
+        # the gate clears.
+        self._close_write_conn()
+        ev = _get_hitl_event(self.spec.coworker_id)
+        try:
+            while not self._stop_event.is_set():
+                # Clear BEFORE reading so a resolve() that lands after this read
+                # still leaves the Event set → next ev.wait() returns at once
+                # (no lost wakeup).
+                ev.clear()
+                if not HITLGate.get_pending(self.spec.coworker_id):
+                    return True
+                # Woken by resolve(), stop(), or the cross-process fallback.
+                ev.wait(timeout=_HITL_EVENT_WAIT)
+            return False
+        finally:
+            _discard_hitl_event(self.spec.coworker_id)
 
     # ------------------------------------------------------------------
     # Thread entry point
@@ -219,6 +342,10 @@ class CoWorkerThread(threading.Thread):
             self._set_state("failed")
             self._audit("coworker_failed", str(exc))
             logger.exception("CoWorkerThread %s raised unhandled exception", self.spec.coworker_id)
+        finally:
+            # Close the per-run canvas connection opened lazily for state/audit
+            # writes.  Reads in _run_inner manage their own connections.
+            self._close_write_conn()
 
     # ------------------------------------------------------------------
     # Core loop
@@ -266,11 +393,19 @@ class CoWorkerThread(threading.Thread):
         # NOVA SOUL: inject identity preamble into dispatch context so
         # $soul_preamble is available to all step argument substitutions.
         try:
-            from icdev.tools.ace.soul_manager import build_identity_preamble, inject_user_profile_context
+            from icdev.tools.ace.soul_manager import build_identity_preamble
             preamble = build_identity_preamble(self.spec.role_id)
-            # Inject the launching user's world model context (Second Brain) if available.
-            user_id = getattr(self.spec, "user_id", None) or self._ace_context.get("user_id") or "default"
-            preamble = inject_user_profile_context(preamble, user_id)
+            # Optional Second Brain enrichment: inject the launching user's world
+            # model context. This is best-effort and MUST NOT break core soul
+            # injection — inject_user_profile_context may be absent on installs
+            # without the Second Brain feature, and an ImportError here previously
+            # silently killed the entire preamble.
+            try:
+                from icdev.tools.ace.soul_manager import inject_user_profile_context
+                user_id = getattr(self.spec, "user_id", None) or self._ace_context.get("user_id") or "default"
+                preamble = inject_user_profile_context(preamble, user_id)
+            except Exception as _uexc:
+                logger.debug("[SOUL] user profile enrichment skipped for %s: %s", self.spec.role_id, _uexc)
             if preamble:
                 self._ace_context["soul_preamble"] = preamble
                 self._audit("soul_preamble_injected", f"role={self.spec.role_id} len={len(preamble)}")
@@ -285,32 +420,49 @@ class CoWorkerThread(threading.Thread):
                 get_trust_score,
                 TRUST_SUPERVISED,
             )
-            _ts = get_trust_score(self.spec.role_id)
-            if _ts < TRUST_SUPERVISED:
+            _overrides = _load_trust_overrides()
+            _auto_approve = _overrides.get("auto_approve_roles") or []
+            _initial_map = _overrides.get("initial_trust") or {}
+
+            if self.spec.role_id in _auto_approve:
+                # Operator has pre-authorized this role: skip the gate entirely.
                 logger.info(
-                    "ace_trust_gate: coworker=%s role=%s score=%.2f < 0.6 — "
-                    "HITL required (supervised band)",
-                    self.spec.coworker_id,
+                    "ace_trust_gate: role=%s in auto_approve_roles — skipping confidence gate",
                     self.spec.role_id,
-                    _ts,
                 )
-                self._set_state("hitl_pending")
                 self._audit(
-                    "hitl_pending",
-                    f"low_confidence: trust_score={_ts:.2f} (supervised band, threshold=0.6)",
+                    "hitl_auto_approved",
+                    f"role={self.spec.role_id} in auto_approve_roles (confidence gate skipped)",
                 )
-                while not self._stop_event.is_set():
-                    pending = HITLGate.get_pending(self.spec.coworker_id)
-                    if not pending:
-                        break
-                    time.sleep(_HITL_POLL_INTERVAL)
-                if self._stop_event.is_set():
-                    return
-                self._audit("hitl_resolved", "confidence gate cleared by human approval")
-                logger.info(
-                    "ace_trust_gate: HITL resolved for %s, proceeding",
-                    self.spec.coworker_id,
-                )
+            else:
+                # initial_trust override (if present) seeds the gate decision;
+                # otherwise consult the learned trust score.
+                if self.spec.role_id in _initial_map:
+                    _ts = float(_initial_map[self.spec.role_id])
+                else:
+                    _ts = get_trust_score(self.spec.role_id)
+                if _ts < TRUST_SUPERVISED:
+                    logger.info(
+                        "ace_trust_gate: coworker=%s role=%s score=%.2f < 0.6 — "
+                        "HITL required (supervised band)",
+                        self.spec.coworker_id,
+                        self.spec.role_id,
+                        _ts,
+                    )
+                    _reason = (
+                        f"low_confidence: trust_score={_ts:.2f} "
+                        "(supervised band, threshold=0.6)"
+                    )
+                    self._set_state("hitl_pending")
+                    self._audit("hitl_pending", _reason)
+                    self._emit_hitl_pending_notification(_reason)
+                    if not self._wait_for_hitl_resolution():
+                        return  # stop signalled while waiting
+                    self._audit("hitl_resolved", "confidence gate cleared by human approval")
+                    logger.info(
+                        "ace_trust_gate: HITL resolved for %s, proceeding",
+                        self.spec.coworker_id,
+                    )
         except Exception as _tg_exc:
             logger.debug("ace_trust_gate: check skipped: %s", _tg_exc)
 
@@ -713,30 +865,25 @@ class CoWorkerThread(threading.Thread):
         try:
             import json as _json
             import uuid as _uuid
-            from icdev.tools.db.storage import get_canvas_connection
 
-            conn = get_canvas_connection(_DB_ENV)
-            try:
-                conn.execute(
-                    "INSERT INTO ace_messages "
-                    "(id, instance_id, coworker_id, message_type, role, content, metadata_json) "
-                    "VALUES (%s, %s, %s, %s, %s, %s, %s)",
-                    (
-                        str(_uuid.uuid4()),
-                        self.instance_id,
-                        self.spec.coworker_id,
-                        "agent_turn",
-                        "assistant",
-                        f"{text}\n[tools: {tool_summary}]",
-                        _json.dumps(
-                            {"turn": turn, "tools": tool_summary},
-                            ensure_ascii=False,
-                        ),
+            self._write(
+                "INSERT INTO ace_messages "
+                "(id, instance_id, coworker_id, message_type, role, content, metadata_json) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                (
+                    str(_uuid.uuid4()),
+                    self.instance_id,
+                    self.spec.coworker_id,
+                    "agent_turn",
+                    "assistant",
+                    f"{text}\n[tools: {tool_summary}]",
+                    _json.dumps(
+                        {"turn": turn, "tools": tool_summary},
+                        ensure_ascii=False,
                     ),
-                )
-                conn.commit()
-            finally:
-                conn.close()
+                ),
+                "persist_agent_turn",
+            )
         except Exception as exc:
             logger.debug("ace agent turn persist failed for %s: %s", self.spec.coworker_id, exc)
 
@@ -837,6 +984,7 @@ class CoWorkerThread(threading.Thread):
 
         self._set_state("hitl_pending")
         self._audit("hitl_pending", hitl_detail)
+        self._emit_hitl_pending_notification(f"required step failed: {hitl_detail}")
         logger.warning(
             "HITL required: coworker=%s step=%s reason=%s",
             self.spec.coworker_id,
@@ -844,14 +992,8 @@ class CoWorkerThread(threading.Thread):
             exc,
         )
 
-        # Poll HITLGate until the pending item is resolved or stop is signalled
-        while not self._stop_event.is_set():
-            pending = HITLGate.get_pending(self.spec.coworker_id)
-            if not pending:
-                break
-            time.sleep(_HITL_POLL_INTERVAL)
-
-        if self._stop_event.is_set():
+        # Event-driven wait — wakes the instant a human resolves the gate.
+        if not self._wait_for_hitl_resolution():
             return False
 
         self._set_state("working")
@@ -968,61 +1110,139 @@ class CoWorkerThread(threading.Thread):
     # DB helpers
     # ------------------------------------------------------------------
 
-    def _set_state(self, state: str) -> None:
-        """Update ace_coworkers.state for this coworker (best-effort)."""
-        try:
+    # ------------------------------------------------------------------
+    # Per-run canvas connection reuse
+    #
+    # State/assigned-step/audit/message writes happen dozens of times per run.
+    # Opening and closing a fresh canvas connection for each was wasteful, so a
+    # single connection is created lazily on first write and reused for the rest
+    # of the run (closed in run()'s finally).  Connections can die mid-run, so
+    # _write() closes and recreates once on any failure before giving up.
+    # ------------------------------------------------------------------
+
+    def _get_write_conn(self):
+        """Return the lazily-created per-run canvas connection."""
+        conn = getattr(self, "_canvas_conn", None)
+        if conn is None:
             from icdev.tools.db.storage import get_canvas_connection
 
-            now = datetime.now(timezone.utc).isoformat(timespec="seconds")
             conn = get_canvas_connection(_DB_ENV)
+            self._canvas_conn = conn
+        return conn
+
+    def _close_write_conn(self) -> None:
+        """Close and drop the per-run canvas connection (best-effort)."""
+        conn = getattr(self, "_canvas_conn", None)
+        if conn is not None:
             try:
-                conn.execute(
-                    "UPDATE ace_coworkers SET state = %s, last_active_at = %s WHERE id = %s",
-                    (state, now, self.spec.coworker_id),
-                )
-                conn.commit()
-            finally:
                 conn.close()
-        except Exception as db_exc:
-            logger.warning("_set_state(%s) failed: %s", state, db_exc)
+            except Exception:
+                pass
+            self._canvas_conn = None
+
+    def _write(self, sql: str, params: tuple, label: str) -> None:
+        """Execute one write on the reused connection; retry once on failure.
+
+        A dead/aborted connection is discarded and re-created a single time so a
+        transient DB hiccup doesn't silently drop every subsequent write.
+        """
+        for attempt in (1, 2):
+            try:
+                conn = self._get_write_conn()
+                conn.execute(sql, params)
+                conn.commit()
+                return
+            except Exception as exc:
+                # Drop the (possibly poisoned) connection; a fresh one is made on
+                # the retry.  On the second failure, log and give up (best-effort).
+                self._close_write_conn()
+                if attempt == 2:
+                    logger.warning("ace %s write failed for %s: %s", label, self.spec.coworker_id, exc)
+
+    def _set_state(self, state: str) -> None:
+        """Update ace_coworkers.state for this coworker (best-effort)."""
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        self._write(
+            "UPDATE ace_coworkers SET state = %s, last_active_at = %s WHERE id = %s",
+            (state, now, self.spec.coworker_id),
+            "set_state",
+        )
 
     def _set_assigned_step(self, step_id: str) -> None:
         """Update ace_coworkers.assigned_step (best-effort)."""
-        try:
-            from icdev.tools.db.storage import get_canvas_connection
-
-            conn = get_canvas_connection(_DB_ENV)
-            try:
-                conn.execute(
-                    "UPDATE ace_coworkers SET assigned_step = %s WHERE id = %s",
-                    (step_id, self.spec.coworker_id),
-                )
-                conn.commit()
-            finally:
-                conn.close()
-        except Exception as step_exc:
-            logger.warning("_set_assigned_step(%s) failed: %s", step_id, step_exc)
+        self._write(
+            "UPDATE ace_coworkers SET assigned_step = %s WHERE id = %s",
+            (step_id, self.spec.coworker_id),
+            "set_assigned_step",
+        )
 
     def _audit(self, action: str, detail: str = "") -> None:
         """Append one row to ace_audit_log (best-effort, never crashes)."""
-        try:
-            from icdev.tools.db.storage import get_canvas_connection
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        # Canvas DB is PG-primary at runtime — use %s placeholders.
+        self._write(
+            "INSERT INTO ace_audit_log "
+            "(instance_id, coworker_id, action, detail, actor, created_at) "
+            "VALUES (%s, %s, %s, %s, %s, %s)",
+            (self.instance_id, self.spec.coworker_id, action, detail, "coworker_thread", now),
+            "audit",
+        )
 
-            now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-            conn = get_canvas_connection(_DB_ENV)
-            try:
-                # Canvas DB is PG-primary at runtime — use %s placeholders.
-                conn.execute(
-                    "INSERT INTO ace_audit_log "
-                    "(instance_id, coworker_id, action, detail, actor, created_at) "
-                    "VALUES (%s, %s, %s, %s, %s, %s)",
-                    (self.instance_id, self.spec.coworker_id, action, detail, "coworker_thread", now),
-                )
-                conn.commit()
-            finally:
-                conn.close()
-        except Exception as _exc:
-            logger.warning("ace audit write failed for %s/%s: %s", self.instance_id, action, _exc)
+    # ------------------------------------------------------------------
+    # HITL visibility — SSE + canvas notification
+    # ------------------------------------------------------------------
+
+    def _emit_hitl_pending_notification(self, reason: str) -> None:
+        """Actively announce that a co-worker has entered the HITL gate.
+
+        Three best-effort channels (each independently guarded):
+          1. in-process ACE event bus → the instance ``/api/ace/<id>/stream`` SSE
+          2. dashboard-wide ``ace_progress`` SSE (home monitor tile)
+          3. canvas event bus (mirrors _emit_compliance_event) — durable notice
+        """
+        payload = {
+            "type": "hitl_pending",
+            "instance_id": self.instance_id,
+            "coworker_id": self.spec.coworker_id,
+            "role_id": self.spec.role_id,
+            "reason": reason,
+        }
+        try:
+            from icdev.tools.ace import event_bus as _eb
+            _eb.publish(self.instance_id, payload)
+        except Exception:
+            pass
+        try:
+            from tools.dashboard.sse_manager import sse_manager
+            sse_manager.broadcast(
+                {
+                    "type": "ace_progress",
+                    "instance_id": self.instance_id,
+                    "coworker_id": self.spec.coworker_id,
+                    "phase": "hitl_pending",
+                    "detail": reason,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                },
+                event_type="ace_progress",
+            )
+        except Exception:
+            pass
+        try:
+            from icdev.tools.canvas.event_bus import publish
+            publish(
+                source_canvas="ace",
+                event_type="hitl.pending",
+                payload_dict={
+                    "topic": "hitl.pending",
+                    "instance_id": self.instance_id,
+                    "coworker_id": self.spec.coworker_id,
+                    "role_id": self.spec.role_id,
+                    "reason": reason,
+                },
+                target_canvas="ace",
+            )
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # Chat feedback loop — write completion summary back to originating chat context

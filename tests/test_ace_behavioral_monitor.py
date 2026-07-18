@@ -269,6 +269,20 @@ class TestTextToManifest:
 class TestCoWorkerThreadBehavioralMonitor:
     """Integration tests: dangerous step output → hitl_pending within 1 step."""
 
+    @pytest.fixture(autouse=True)
+    def _open_confidence_gate(self, monkeypatch):
+        """Neutralize the trust confidence gate for this class.
+
+        Every role defaults to trust 0.5 < TRUST_SUPERVISED (0.6), so _run_inner
+        would park in the confidence-gate HITL wait before ever reaching the step
+        loop these tests exercise. Force a trusted score so the gate is skipped;
+        the behavioral monitor (the actual subject) still runs in the step loop.
+        """
+        monkeypatch.setattr(
+            "icdev.tools.ace.trust_calibrator.get_trust_score",
+            lambda role_id: 0.9,
+        )
+
     def _make_executor_cls(self, outputs: list):
         """Executor that returns successive outputs for each step."""
         idx = {"i": 0}
