@@ -508,6 +508,18 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "session_risk_log",
         # AI Data Mapping — transformation artifact audit (NIST AU-9, append-only)
         "dd_mapping_transforms",
+        # Data Design Canvas (dcpr-) — audit trails + immutable run-logs (NIST AU-9, append-only)
+        # dd_audit / dm_audit are trigger-protected; the run/scan logs are insert-only.
+        # EXCLUDED: dd_lineage (runtime DELETE of edges), ddc_runbook_executions (runtime status UPDATE + DELETE).
+        "dd_audit",
+        "dm_audit",
+        "dm_policy_audit_log",
+        "dm_csp_sync_log",
+        "dm_contract_test_runs",
+        "dd_query_history",
+        "dd_anomaly_runs",
+        "dd_quality_runs",
+        "dd_pii_scans",
         # Slide Deck Generator — generation audit trail (NIST AU, append-only)
         "slides_audit",
         # ACE (Autonomous Collaborative Engine) — step execution audit trail + skill candidates (NIST AU, append-only)
