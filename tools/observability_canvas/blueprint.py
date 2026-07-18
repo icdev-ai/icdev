@@ -323,20 +323,38 @@ def create_observability_blueprint():
         """Detection coverage page for a specific observability design."""
         _ensure_init()
         design = {}
+        gap_score = None
         store_unavailable = False
         try:
             with get_connection() as conn:
                 design = _row_to_dict(
                     conn.execute("SELECT id, name FROM observability_designs WHERE id=%s", (design_id,)).fetchone()
                 )
-            if not design:
-                return redirect("/observability/")
+                if not design:
+                    return redirect("/observability/")
+                # obx-cov-01: surface the latest persisted signal-source gap score
+                # (mitre_coverage_twin.compute_gap_score writer). This is a DISTINCT
+                # metric from the client-side "design baseline" MITRE coverage the
+                # page fetches via /assess — do not conflate the two.
+                try:
+                    gs = conn.execute(
+                        "SELECT total_techniques, covered_count, partial_count, "
+                        "gap_count, overall_gap_score, assessed_at "
+                        "FROM odc_gap_scores WHERE design_id=%s "
+                        "ORDER BY assessed_at DESC LIMIT 1",
+                        (design_id,),
+                    ).fetchone()
+                    if gs:
+                        gap_score = _row_to_dict(gs)
+                except Exception as exc:
+                    logger.debug("ODC coverage page gap-score read unavailable: %s", exc)
         except Exception as exc:
             store_unavailable = True
             logger.warning("ODC coverage page DB unavailable: %s", exc)
         return render_template(
             "observability_canvas/coverage.html",
             design=design,
+            gap_score=gap_score,
             store_unavailable=store_unavailable,
         )
 
@@ -624,6 +642,18 @@ def create_observability_blueprint():
             conn.close()
 
         _audit("ASSESS", design_id, f"Score: {assessment['score']}, Grade: {assessment['grade']}")
+
+        # obx-cov-01: after a successful assessment, compute the signal-source
+        # coverage gap score so the ODC compliance card (get_odc_card reads
+        # odc_gap_scores) lights up in production. GUARDED — a coverage failure
+        # must NEVER fail the assessment; it is a best-effort side effect.
+        try:
+            from tools.observability_canvas.mitre_coverage_twin import compute_gap_score
+
+            compute_gap_score(design_id, graph_data)
+        except Exception as exc:
+            logger.warning("ODC coverage compute during assess failed (non-fatal): %s", exc)
+
         record_canvas_decision(
             canvas_type="odc",
             record_id=design_id,
@@ -686,6 +716,74 @@ def create_observability_blueprint():
 
         _audit("replay_verify", design_id, f"ttps={len(ttp_ids)} summary={result.get('summary')}")
         return jsonify(result)
+
+    # ====================================================================
+    # API — MITRE SIGNAL-SOURCE COVERAGE (mitre_coverage_twin)
+    # ====================================================================
+    #
+    # obx-cov-01: expose the previously-orphaned mitre_coverage_twin engine.
+    # These routes are the runtime writers of odc_gap_scores /
+    # odc_technique_coverage — the primary read of the ODC compliance card
+    # (tools/canvas_compliance/compliance.py::get_odc_card). NOTE: this is the
+    # signal-source gap metric (design signal sources vs required MITRE detection
+    # sources), NOT the design-baseline coverage from a cmp-baseline node that
+    # observability_engine.compute_mitre_detection_coverage computes.
+
+    def _odc_load_graph(design_id):
+        """Load and parse a design's graph_json; returns (graph_data, error_resp).
+
+        error_resp is None on success, else a (json, status) tuple to return.
+        """
+        conn = get_connection()
+        try:
+            row = conn.execute(
+                "SELECT graph_json FROM observability_designs WHERE id=%s",
+                (design_id,),
+            ).fetchone()
+        finally:
+            conn.close()
+        if not row:
+            return None, (jsonify({"error": "Design not found"}), 404)
+        graph_raw = row["graph_json"]
+        try:
+            graph_data = json.loads(graph_raw) if isinstance(graph_raw, str) else graph_raw
+        except (json.JSONDecodeError, TypeError):
+            return None, (jsonify({"error": "Invalid graph data"}), 400)
+        return graph_data, None
+
+    @bp.route("/api/coverage/<design_id>/compute", methods=["POST"])
+    @oc_login_required
+    def oc_api_coverage_compute(design_id):
+        """Compute signal-source coverage gap score and persist odc_gap_scores.
+
+        Runs mitre_coverage_twin.compute_gap_score, which persists both
+        odc_gap_scores and odc_technique_coverage as a side effect, and returns
+        the score JSON.
+        """
+        from tools.observability_canvas.mitre_coverage_twin import compute_gap_score
+
+        graph_data, err = _odc_load_graph(design_id)
+        if err is not None:
+            return err
+        result = compute_gap_score(design_id, graph_data)
+        _audit("coverage_compute", design_id, f"gap_score={result.get('gap_score')}")
+        return jsonify(result)
+
+    @bp.route("/api/coverage/<design_id>/report", methods=["GET"])
+    @oc_login_required
+    def oc_api_coverage_report(design_id):
+        """Return the full signal-source gap report (generate_gap_report output).
+
+        Includes prioritized remediation steps and quick wins. Recomputes and
+        persists the gap score as a side effect (shared compute_gap_score path).
+        """
+        from tools.observability_canvas.mitre_coverage_twin import generate_gap_report
+
+        graph_data, err = _odc_load_graph(design_id)
+        if err is not None:
+            return err
+        report = generate_gap_report(design_id, graph_data)
+        return jsonify(report)
 
     # ====================================================================
     # API — AUTO-FIX
