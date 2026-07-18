@@ -3,7 +3,7 @@
 
 Exercises the three blueprint routes through a Flask test client and asserts
 the canvas satisfies the 8-point completeness gate and advertises exactly the
-seven Cortex facades.
+eight Cortex facades.
 """
 from __future__ import annotations
 
@@ -159,12 +159,12 @@ class TestCompletenessGate:
 
 
 class TestConstants:
-    def test_advertises_seven_facades(self):
+    def test_advertises_eight_facades(self):
         from tools.cortex import constants
 
         keys = [m["key"] for m in constants.CORTEX_MODES]
         assert keys == [
-            "complete", "classify", "extract", "search", "ask", "govern", "agent",
+            "complete", "reason", "classify", "extract", "search", "ask", "govern", "agent",
         ]
 
     def test_default_mode_and_domain_are_valid(self):

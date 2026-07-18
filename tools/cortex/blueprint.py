@@ -337,7 +337,7 @@ def api_chat():
 
     Body: ``{question, mode?, domain?, session_id?, confirm_agent?}``
 
-    A concrete ``mode`` (one of the seven facades) is honored as a manual
+    A concrete ``mode`` (one of the eight facades) is honored as a manual
     override; otherwise the message is classified (retrieval → search,
     data-question → ask, generative → complete, multi-step goal → agent behind
     a confirm affordance). The user turn and the assistant turn are persisted to

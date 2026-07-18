@@ -3,12 +3,15 @@
 
 The /cortex dashboard canvas is the Snowflake-Intelligence-style entry point
 over the unified Cortex facade (tools/cortex/api.py). These constants describe
-the surface the canvas presents: the seven facade *modes* and the *domain
+the surface the canvas presents: the eight facade *modes* and the *domain
 lenses* that map onto ``CortexContext.domain`` for retrieval/governance scoping.
 
 Kept declarative on purpose — the blueprint and template read these so the two
 never drift, and tests can assert the canvas advertises exactly the facades the
 package exports.
+
+There are eight facade modes (complete / reason / classify / extract / search /
+ask / govern / agent); each maps onto one public facade in tools/cortex/api.py.
 """
 from __future__ import annotations
 
@@ -19,6 +22,8 @@ from __future__ import annotations
 CORTEX_MODES = [
     {"key": "complete", "label": "Complete", "icon": "✍️", "facade": "complete",
      "desc": "Free-form completion routed through the governed LLM chain."},
+    {"key": "reason", "label": "Reason", "icon": "🧠", "facade": "reason",
+     "desc": "Multi-step reasoning (CoT / debate / council) over the governed chain."},
     {"key": "classify", "label": "Classify", "icon": "🏷️", "facade": "classify",
      "desc": "Assign text to exactly one of a caller-supplied label set."},
     {"key": "extract", "label": "Extract", "icon": "🧲", "facade": "extract",
