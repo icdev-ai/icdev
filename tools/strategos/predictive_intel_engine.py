@@ -354,13 +354,16 @@ def _generate_narrative(
     )
 
     try:
+        from tools.llm.provider import LLMRequest
         router = LLMRouter()
-        response = router.complete(
-            system=_BRIEF_SYSTEM_PROMPT,
-            user=user_prompt,
-            function="intelligence_report",
+        response = router.invoke(
+            "intelligence_report",
+            LLMRequest(
+                system_prompt=_BRIEF_SYSTEM_PROMPT,
+                messages=[{"role": "user", "content": user_prompt}],
+            ),
         )
-        return response.get("text", "").strip() or _fallback_narrative(theater, oracle, mesh, forecasts)
+        return (response.content or "").strip() or _fallback_narrative(theater, oracle, mesh, forecasts)
     except Exception:
         return _fallback_narrative(theater, oracle, mesh, forecasts)
 

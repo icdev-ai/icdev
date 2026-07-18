@@ -520,18 +520,21 @@ def handle_rag_decompose(arguments: Dict[str, Any]) -> Dict[str, Any]:
             # Try scanner-tier LLM decomposition
             try:
                 from tools.llm.router import LLMRouter
+                from tools.llm.provider import LLMRequest
                 import json as _json
 
                 router = LLMRouter()
                 prompt = _DECOMPOSE_PROMPT.format(query=query)
-                raw = router.complete(
-                    prompt=prompt,
-                    function_name="rag_decompose",
-                    temperature=0.0,
-                    max_tokens=512,
+                resp = router.invoke(
+                    "rag_decompose",
+                    LLMRequest(
+                        messages=[{"role": "user", "content": prompt}],
+                        temperature=0.0,
+                        max_tokens=512,
+                    ),
                 )
                 # Extract JSON array from response
-                text = raw.strip()
+                text = (resp.content or "").strip()
                 start = text.find("[")
                 end = text.rfind("]") + 1
                 if start >= 0 and end > start:
@@ -598,17 +601,20 @@ def _grade_chunk(query: str, chunk_text: str) -> Dict[str, Any]:
     """Grade a single chunk's relevance to the query using scanner-tier LLM."""
     try:
         from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
         import json as _json
 
         router = LLMRouter()
         prompt = _CHUNK_GRADE_PROMPT.format(query=query, chunk=chunk_text[:800])
-        raw = router.complete(
-            prompt=prompt,
-            function_name="rag_evaluate",
-            temperature=0.0,
-            max_tokens=80,
+        resp = router.invoke(
+            "rag_evaluate",
+            LLMRequest(
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.0,
+                max_tokens=80,
+            ),
         )
-        text = raw.strip()
+        text = (resp.content or "").strip()
         start = text.find("{")
         end = text.rfind("}") + 1
         if start >= 0 and end > start:
