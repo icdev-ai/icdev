@@ -12,11 +12,21 @@ handler did, in the same order, with the same SQL, using a single connection for
 all reads (equivalent to the original per-block connections since these are all
 reads). Focused internal helpers cover each aggregation block.
 
-IMPORTANT — pinned known behavior (see tests/test_sc_posture_summary.py):
-the per-design "latest assessment" query intentionally selects only
-``risk_score, posture_grade, ran_at`` (NOT ``findings_json``), so the per-design
-``cat1_count`` lookup raises and is swallowed, leaving every design's
-``cat1_count`` at 0. This is preserved verbatim.
+CAT1 accounting (fixed in shx-hyg-09):
+the per-design "latest assessment" query now selects ``findings_json`` and
+counts CAT1-severity findings via ``_count_cat1``, so each design reports its
+real ``cat1_count`` (previously the query omitted ``findings_json``, the lookup
+raised and was swallowed, and every design reported ``cat1_count`` 0 — a
+blocking security-gate signal that was silently understated). Those real
+per-design CAT1s roll into ``total_cat1_findings`` alongside pipeline CAT1s.
+
+NDC CAT1s are intentionally NOT added to ``total_cat1_findings`` a second time.
+NDC topologies are imported as ``security_designs`` rows (see
+``bridge.import_ndc_topology`` / ``agent.on_ndc_save``), and their ``ndc_save``
+assessment is that design's latest — so their CAT1 findings already flow into
+the total via the per-design roll-up above. ``_compute_ndc_assessments`` is a
+display-only dedup view for the "Network Topology Security (NDC)" table; rolling
+its CAT1s into the total again would double-count the same assessments.
 """
 from __future__ import annotations
 
@@ -61,9 +71,9 @@ def _compute_design_rollup(conn):
 
     Returns ``(design_list, total_score, assessed_count, grade_dist)``.
 
-    Note: mirrors the original exactly — the latest-assessment SELECT omits
-    ``findings_json``, so the per-design ``cat1_count`` access raises and is
-    swallowed, leaving every entry's ``cat1_count`` at 0.
+    The latest-assessment SELECT includes ``findings_json`` so each entry's
+    ``cat1_count`` reflects the real CAT1-severity findings of that design's
+    most recent assessment (via ``_count_cat1``).
     """
     designs = [
         dict(r)
@@ -77,7 +87,7 @@ def _compute_design_rollup(conn):
 
     for d in designs:
         latest = conn.execute(
-            "SELECT risk_score, posture_grade, ran_at "
+            "SELECT risk_score, posture_grade, ran_at, findings_json "
             "FROM sc_assessments WHERE design_id=%s "
             "ORDER BY ran_at DESC LIMIT 1",
             (d["id"],),
@@ -101,12 +111,8 @@ def _compute_design_rollup(conn):
             g = latest["posture_grade"] or "F"
             if g in grade_dist:
                 grade_dist[g] += 1
-            # Count CAT1 findings from the latest assessment
-            try:
-                findings = json.loads(latest["findings_json"] or "[]")
-                entry["cat1_count"] = sum(1 for f in findings if f.get("severity") == "CAT1")
-            except Exception:
-                pass
+            # Count real CAT1 findings from this design's latest assessment.
+            entry["cat1_count"] = _count_cat1(latest["findings_json"])
 
         design_list.append(entry)
 
@@ -196,8 +202,10 @@ def compute_posture_summary(conn) -> dict:
     avg_grade = _grade_for_score(avg_score)
     overall_posture = _overall_posture(avg_score)
 
-    # total_cat1 starts from the per-design roll-up (always 0 today; see note),
-    # then accrues pipeline CAT1 findings — matching the original ordering.
+    # total_cat1 starts from the real per-design roll-up CAT1s (shx-hyg-09),
+    # then accrues pipeline CAT1 findings. NDC CAT1s are already counted in the
+    # per-design roll-up (NDC designs are security_designs rows), so they are
+    # NOT added again here — see module docstring.
     total_cat1 = sum(e["cat1_count"] for e in design_list)
 
     pipeline_assessments, pipeline_cat1_total = _compute_pipeline_assessments(conn)
