@@ -34,6 +34,12 @@ from flask import Blueprint, jsonify, render_template, request
 def create_ops_hub_blueprint() -> Blueprint:
     bp = Blueprint("ohc", __name__, url_prefix="")
 
+    # cnr-ops-01: fail-closed auth on state-changing routes (models/run, register,
+    # transition, slos POST, incidents POST, reasoned-codegen/advise) regardless
+    # of ICDEV_ENFORCE_CANVAS_ACCESS. Defense-in-depth alongside guard_component_access.
+    from tools.security.canvas_mutation_auth import require_mutation_auth
+    bp.before_request(require_mutation_auth)
+
     # Init OHC canvas DB on first import so all route handlers find required tables
     try:
         from tools.ops_hub.db.init_db import init_db

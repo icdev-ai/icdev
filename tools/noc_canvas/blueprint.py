@@ -43,6 +43,13 @@ def _now() -> str:
 def create_noc_canvas_blueprint() -> Blueprint:
     bp = Blueprint("noc_canvas", __name__, url_prefix="")
 
+    # cnr-ops-01: fail-closed auth on state-changing routes (alarm ingest/ack/clear,
+    # incident create/update, RFC create, MOP generate, maintenance create)
+    # regardless of ICDEV_ENFORCE_CANVAS_ACCESS. Defense-in-depth alongside
+    # guard_component_access.
+    from tools.security.canvas_mutation_auth import require_mutation_auth
+    bp.before_request(require_mutation_auth)
+
     # ── Page Routes ──────────────────────────────────────────────────────────
 
     @bp.route("/noc")
