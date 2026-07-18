@@ -60,13 +60,33 @@ class TestAdapterFactory:
 # ---------------------------------------------------------------------------
 
 class TestStubAdapters:
-    def test_disa_icam_returns_permit(self):
+    # NOTE (shx-safe-03): stub adapters now FAIL CLOSED. Previously these
+    # asserted unconditional permit=True (fail-open). They now deny by default
+    # and only permit when ICDEV_ZT_ALLOW_STUB is set. Full matrix lives in
+    # tests/test_zt_stub_gate.py.
+    def test_disa_icam_denies_by_default(self, monkeypatch):
+        monkeypatch.delenv("ICDEV_ZT_ALLOW_STUB", raising=False)
+        adapter = _pdp.DisaICAMAdapter()
+        decision = adapter.evaluate({}, "res", "read")
+        assert decision.permit is False
+        assert decision.adapter == "disa_icam"
+
+    def test_disa_icam_permits_with_stub_flag(self, monkeypatch):
+        monkeypatch.setenv("ICDEV_ZT_ALLOW_STUB", "1")
         adapter = _pdp.DisaICAMAdapter()
         decision = adapter.evaluate({}, "res", "read")
         assert decision.permit is True
         assert decision.adapter == "disa_icam"
 
-    def test_zscaler_zpa_returns_permit(self):
+    def test_zscaler_zpa_denies_by_default(self, monkeypatch):
+        monkeypatch.delenv("ICDEV_ZT_ALLOW_STUB", raising=False)
+        adapter = _pdp.ZscalerZPAAdapter()
+        decision = adapter.evaluate({}, "res", "read")
+        assert decision.permit is False
+        assert decision.adapter == "zscaler_zpa"
+
+    def test_zscaler_zpa_permits_with_stub_flag(self, monkeypatch):
+        monkeypatch.setenv("ICDEV_ZT_ALLOW_STUB", "1")
         adapter = _pdp.ZscalerZPAAdapter()
         decision = adapter.evaluate({}, "res", "read")
         assert decision.permit is True
