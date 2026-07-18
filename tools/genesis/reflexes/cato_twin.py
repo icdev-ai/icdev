@@ -387,10 +387,12 @@ def run(ctx: Dict[str, Any], conn=None) -> Dict[str, Any]:
                     project_ai_anomalies += len(anomalies)
                     totals["ai_anomalies_found"] += len(anomalies)
 
-                    # Run seed queries (logging only — non-fatal)
+                    # Run seed queries (logging only — non-fatal).
+                    # Scope to the current project so a per-project monitoring
+                    # cycle never reads another project's compliance state.
                     for query in seed_queries:
                         try:
-                            _results = run_query(query, conn=conn)
+                            _results = run_query(query, conn=conn, project_id=project_id)
                         except Exception:
                             pass
 
