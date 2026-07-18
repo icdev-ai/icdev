@@ -1,8 +1,0 @@
-{
-    "version": "003",
-    "description": "Dev profiles — versioned development standards with 5-layer cascade, dimension locks, auto-detection (D183-D188)",
-    "date": "2026-02-21",
-    "author": "icdev_builder",
-    "database": "sparkpilot",
-    "reversible": true
-}
