@@ -424,7 +424,9 @@ components:
     template: tools/dashboard/templates/agentic_ai_canvas/analytics.html
     blueprint: true
     constants: tools/agentic_ai_canvas/constants.py
-    db_migration: tools/agentic_ai_canvas/db/migrations
+    # Canvas tables are created imperatively by tools/agentic_ai_canvas/db/init_db.py
+    # (there is no db/migrations dir); point at the real initializer, matching aimc.
+    db_migration: tools/agentic_ai_canvas/db/init_db.py
     iqe_adapter: true
     nav_link: true
     seed_queries: context/iqe/queries/aadc/
