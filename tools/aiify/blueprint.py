@@ -72,6 +72,47 @@ def _conn():
     return get_connection()
 
 
+def _load_prd_hitl_decisions(roadmap_id: str) -> dict[str, str]:
+    """Load PRD HITL decisions for ``roadmap_id`` as {phase_id: decision}.
+
+    Decisions are stored with source_id of the form '{roadmap_id}:{phase_id}';
+    we fetch all PRD rows (no bound params → backend agnostic) and filter in
+    Python. This lookup is a fail-CLOSED control gate: it deliberately does NOT
+    swallow DB errors — the caller must treat a lookup failure as "cannot verify
+    approval" and refuse to promote, rather than silently proceeding.
+    """
+    prd_decisions: dict[str, str] = {}
+    aiify = _conn()
+    try:
+        rows = aiify.execute(
+            "SELECT source_id, decision FROM aiify_hitl_decisions WHERE source_type='prd'"
+        ).fetchall()
+        for r in rows:
+            sid = r["source_id"] if hasattr(r, "keys") else r[0]
+            dec = r["decision"] if hasattr(r, "keys") else r[1]
+            if sid and str(sid).startswith(roadmap_id + ":"):
+                prd_decisions[str(sid).split(":", 1)[1]] = dec
+    finally:
+        aiify.close()
+    return prd_decisions
+
+
+def _audit_aiify_event(event_type: str, scan_id, actor: str, detail: dict) -> None:
+    """Best-effort append to aiify_audit_log (never raises)."""
+    try:
+        conn = _conn()
+        try:
+            conn.execute(
+                "INSERT INTO aiify_audit_log (event_type, scan_id, actor, detail) VALUES (%s, %s, %s, %s)",
+                (event_type, scan_id, actor, json.dumps(detail)),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        logger.warning("aiify: audit write failed (%s)", event_type, exc_info=True)
+
+
 def _parse_phases(raw):
     if isinstance(raw, str):
         try:
@@ -530,25 +571,39 @@ def api_send_to_kanban():
     finally:
         conn.close()
 
-    # ── PRD HITL gate + status policy (penta-aiify-01) ────────────────────────
-    # Fetch all PRD HITL decisions (no bound params → backend agnostic) and
-    # filter in Python by the '{roadmap_id}:{phase_id}' source_id form.
-    prd_decisions: dict[str, str] = {}
+    # ── PRD HITL gate + status policy (penta-aiify-01/03) ─────────────────────
+    # This is a fail-CLOSED control gate. If the HITL decision lookup fails we
+    # cannot verify whether any phase's PRD was rejected, so we MUST refuse to
+    # promote (503) rather than proceed and risk seeding tasks for a rejected
+    # PRD. An explicit force override (force / force_send in the body) lets an
+    # authorized operator proceed anyway; the override is audited.
+    force_override = bool(data.get("force") or data.get("force_send"))
     try:
-        aiify = _conn()
-        try:
-            rows = aiify.execute(
-                "SELECT source_id, decision FROM aiify_hitl_decisions WHERE source_type='prd'"
-            ).fetchall()
-            for r in rows:
-                sid = r["source_id"] if hasattr(r, "keys") else r[0]
-                dec = r["decision"] if hasattr(r, "keys") else r[1]
-                if sid and str(sid).startswith(roadmap_id + ":"):
-                    prd_decisions[str(sid).split(":", 1)[1]] = dec
-        finally:
-            aiify.close()
+        prd_decisions = _load_prd_hitl_decisions(roadmap_id)
     except Exception:
-        pass
+        logger.error(
+            "aiify: HITL PRD gate lookup failed for roadmap=%s — failing closed",
+            roadmap_id, exc_info=True,
+        )
+        if not force_override:
+            return jsonify({
+                "error": (
+                    "HITL PRD approval gate is unavailable — cannot verify PRD "
+                    "approval status; refusing to promote to Kanban (fail-closed). "
+                    "Retry once the datastore is reachable, or resubmit with "
+                    "force=true to override."
+                ),
+                "gate_unavailable": True,
+            }), 503
+        # Operator chose to override the unavailable gate. Proceed with NO known
+        # approvals, so every task lands in 'suggested' quarantine (never
+        # 'backlog'); record the override for audit.
+        prd_decisions = {}
+        _audit_aiify_event(
+            "hitl_gate_force_override", scan_id, "user",
+            {"roadmap_id": roadmap_id, "phase_id": phase_id,
+             "reason": "prd_hitl_lookup_failed"},
+        )
 
     # A rejected PRD blocks its phase. For an explicit single-phase request this
     # is a hard 403 (unchanged); for 'all' the rejected phase is skipped below
