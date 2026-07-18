@@ -13,8 +13,10 @@ Fixes verified here:
      BEFORE/with the mutation, so if the audit write fails the mutation never
      commits and the route returns 500 {'error': 'audit trail unavailable'}.
      Verified for pipeline DELETE (same-transaction) and SOP approve.
-  3. pc_audit / pipeline_snapshots / pdc_snapshots are registered in
-     APPEND_ONLY_TABLES (static assertion against the hook file).
+  3. pc_audit / pipeline_snapshots are registered in APPEND_ONLY_TABLES
+     (static assertion against the hook file). pdc_snapshots is deliberately
+     NOT append-only — a design-history store with bounded auto-snapshot
+     retention (pdx reconciliation, user-approved 2026-07-18).
 """
 from __future__ import annotations
 
@@ -307,7 +309,13 @@ def test_sop_delete_fails_closed_when_audit_fails(client):
 # ══════════════════════════════════════════════════════════════════════════════
 
 class TestAppendOnlyRegistration:
-    """The three pipeline audit/snapshot tables must be append-only protected."""
+    """The pipeline audit/snapshot tables must be append-only protected.
+
+    pc_audit and pipeline_snapshots are true audit records and remain
+    append-only. pdc_snapshots is deliberately excluded — it is a design-history
+    working store with bounded auto-snapshot retention (see pdx reconciliation,
+    user-approved 2026-07-18).
+    """
 
     def _hook_text(self):
         hook_path = BASE_DIR / ".claude" / "hooks" / "pre_tool_use.py"
@@ -319,5 +327,7 @@ class TestAppendOnlyRegistration:
     def test_pipeline_snapshots_protected(self):
         assert '"pipeline_snapshots"' in self._hook_text()
 
-    def test_pdc_snapshots_protected(self):
-        assert '"pdc_snapshots"' in self._hook_text()
+    def test_pdc_snapshots_not_protected(self):
+        # pdc_snapshots deliberately excluded — design-history store with bounded
+        # auto-snapshot retention (pdx reconciliation, user-approved 2026-07-18).
+        assert '"pdc_snapshots"' not in self._hook_text()
