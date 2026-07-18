@@ -265,6 +265,20 @@ DIRECTORY_TREE = [
     "tests",
 ]
 
+# cvx-gen-04: Always-on TRUST / framework directories that must be RE-INHERITED
+# into already-materialized child apps. Child apps snapshot DIRECTORY_TREE at
+# generation time and never re-sync, so parent-side upgrades (e.g. the semantic
+# grounding `ground_content` in tools/quality/content_grounding.py — trust-cite-05,
+# and coherence-engine drift detection in tools/workflow — wf-intg) never reach
+# them. `refresh_trust_modules()` re-copies these dirs on demand. Every entry
+# MUST also appear in DIRECTORY_TREE (always-on) and MUST NOT be a PARENT_ONLY_DIR.
+TRUST_REFRESH_DIRS = [
+    "tools/quality",   # trust-cite-05: content + citation grounding (ground_content)
+    "tools/workflow",  # wf-intg: coherence engine / implementation-drift detection
+    "tools/builder",   # shared builder infra (safe tools only; GENERATION_TOOLS excluded)
+    "tools/dx",        # LLM-agnostic companion + fundamental DX infra
+]
+
 # Conditional directories — only created when capability is enabled
 CONDITIONAL_DIRS = {
     "compliance": [
@@ -741,6 +755,136 @@ def step_02_copy_and_adapt_tools(child_root: Path, blueprint: dict, icdev_root: 
         "files_copied": total_copied,
         "files_skipped": total_skipped,
         "entries": results,
+    }
+
+
+# ---------------------------------------------------------------------------
+# TRUST re-inheritance refresh (cvx-gen-04)
+# ---------------------------------------------------------------------------
+
+
+def _content_signature(path: Path) -> Tuple[bool, Any]:
+    """Return (is_binary, comparable_content) for a file.
+
+    Text files are newline-normalized (LF) so a child written with CRLF on
+    Windows does not falsely diff against an LF parent. Binary files compare
+    by raw bytes.
+    """
+    try:
+        text = path.read_text(encoding="utf-8")
+        return False, text.replace("\r\n", "\n").replace("\r", "\n")
+    except (UnicodeDecodeError, ValueError):
+        return True, path.read_bytes()
+
+
+def refresh_trust_modules(
+    app_dir,
+    icdev_root=None,
+    dirs: Optional[List[str]] = None,
+    dry_run: bool = True,
+) -> dict:
+    """Re-inherit always-on TRUST / framework modules into an existing child app.
+
+    Generated child apps snapshot the always-on ``DIRECTORY_TREE`` dirs at
+    generation time and never re-sync. This re-copies ``TRUST_REFRESH_DIRS``
+    (tools/quality, tools/workflow, tools/builder, tools/dx) from the current
+    parent repo into the target child, so parent-side upgrades (e.g.
+    ``ground_content`` in tools/quality/content_grounding.py) reach materialized
+    apps.
+
+    Args:
+        app_dir: Path to the existing child app root.
+        icdev_root: Parent ICDEV™ repo root (default: this repo, ``BASE_DIR``).
+        dirs: Override the set of dirs to refresh (default: ``TRUST_REFRESH_DIRS``).
+        dry_run: When True (default), produce a DIFF REPORT only and write
+            nothing (HITL confirmation gate). Pass ``dry_run=False`` (CLI
+            ``--apply``) to write the changes.
+
+    Returns:
+        dict report with ``added`` / ``updated`` file lists, ``unchanged_count``,
+        ``skipped`` dir reasons, ``would_change`` count, ``applied`` flag.
+    """
+    app_root = Path(app_dir).resolve()
+    parent_root = Path(icdev_root).resolve() if icdev_root else BASE_DIR
+    refresh_dirs = list(dirs) if dirs is not None else list(TRUST_REFRESH_DIRS)
+
+    if not app_root.exists() or not app_root.is_dir():
+        return {
+            "status": "error",
+            "error": f"child app dir not found: {app_root}",
+            "app_dir": str(app_root),
+        }
+
+    added: List[str] = []
+    updated: List[str] = []
+    unchanged = 0
+    skipped: List[dict] = []
+
+    for rel_dir in refresh_dirs:
+        rel_dir = rel_dir.replace("\\", "/").rstrip("/")
+        # Guard: never refresh parent-only directories (test invariant).
+        if any(rel_dir == d or rel_dir.startswith(d + "/") for d in PARENT_ONLY_DIRS):
+            skipped.append({"dir": rel_dir, "reason": "parent_only"})
+            continue
+
+        src_dir = parent_root / rel_dir
+        if not src_dir.exists() or not src_dir.is_dir():
+            skipped.append({"dir": rel_dir, "reason": "missing_in_parent"})
+            continue
+
+        # tools/builder: only ever ship SAFE tools — never generation tools (D28).
+        exclude = GENERATION_TOOLS if (rel_dir == "tools/builder" or rel_dir.startswith("tools/builder/")) else set()
+
+        for src_file in sorted(src_dir.rglob("*")):
+            if not src_file.is_file():
+                continue
+            if src_file.name in exclude:
+                continue
+            if src_file.suffix == ".pyc" or "__pycache__" in str(src_file):
+                continue
+
+            rel = src_file.relative_to(parent_root)
+            rel_str = str(rel).replace("\\", "/")
+            dest_file = app_root / rel
+
+            if not dest_file.exists():
+                added.append(rel_str)
+                if not dry_run:
+                    dest_file.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(src_file, dest_file)
+                continue
+
+            src_bin, src_content = _content_signature(src_file)
+            dst_bin, dst_content = _content_signature(dest_file)
+            if src_bin != dst_bin or src_content != dst_content:
+                updated.append(rel_str)
+                if not dry_run:
+                    dest_file.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(src_file, dest_file)
+            else:
+                unchanged += 1
+
+    would_change = len(added) + len(updated)
+    logger.info(
+        "refresh_trust_modules: %s — %d added, %d updated, %d unchanged (dry_run=%s)",
+        app_root,
+        len(added),
+        len(updated),
+        unchanged,
+        dry_run,
+    )
+    return {
+        "status": "success",
+        "dry_run": dry_run,
+        "applied": (not dry_run) and would_change > 0,
+        "app_dir": str(app_root),
+        "icdev_root": str(parent_root),
+        "dirs": refresh_dirs,
+        "added": sorted(added),
+        "updated": sorted(updated),
+        "unchanged_count": unchanged,
+        "skipped": skipped,
+        "would_change": would_change,
     }
 
 
@@ -3741,9 +3885,21 @@ def main():
             "--source-path ./src --auto-detect --json"
         ),
     )
-    parser.add_argument("--blueprint", required=True, help="Path to blueprint JSON file")
-    parser.add_argument("--project-path", required=True, help="Parent directory for the child app")
-    parser.add_argument("--name", required=True, help="Child application name")
+    parser.add_argument("--blueprint", help="Path to blueprint JSON file (required unless --refresh-trust)")
+    parser.add_argument("--project-path", help="Parent directory for the child app (required unless --refresh-trust)")
+    parser.add_argument("--name", help="Child application name (required unless --refresh-trust)")
+    parser.add_argument(
+        "--refresh-trust",
+        metavar="APP_DIR",
+        help="Re-inherit always-on TRUST/framework modules (tools/quality, tools/workflow, "
+        "tools/builder, tools/dx) into an EXISTING child app at APP_DIR. Prints a DIFF REPORT "
+        "and writes nothing by default (HITL gate); pass --apply to write.",
+    )
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="With --refresh-trust: write the changes (default is a dry-run diff report).",
+    )
     parser.add_argument("--source-path", help="Source directory to scan for zero-config language/framework detection")
     parser.add_argument(
         "--auto-detect",
@@ -3776,6 +3932,47 @@ def main():
         level=level,
         format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
     )
+
+    # cvx-gen-04: TRUST re-inheritance mode (does not generate a new app).
+    if args.refresh_trust:
+        icdev_root = Path(args.icdev_root) if args.icdev_root else BASE_DIR
+        result = refresh_trust_modules(
+            args.refresh_trust,
+            icdev_root=icdev_root,
+            dry_run=not args.apply,
+        )
+        if args.json:
+            print(json.dumps(result, indent=2))
+        else:
+            if result.get("status") != "success":
+                print(f"ERROR: {result.get('error')}")
+            else:
+                mode = "APPLIED" if result["applied"] else ("DRY-RUN (no changes written)" if result["dry_run"] else "NO CHANGES")
+                print(f"\n{'=' * 60}")
+                print("TRUST Re-Inheritance Refresh")
+                print(f"{'=' * 60}")
+                print(f"Child app:  {result['app_dir']}")
+                print(f"Parent:     {result['icdev_root']}")
+                print(f"Dirs:       {', '.join(result['dirs'])}")
+                print(f"Mode:       {mode}")
+                print(f"Would add:     {len(result['added'])}")
+                print(f"Would update:  {len(result['updated'])}")
+                print(f"Unchanged:     {result['unchanged_count']}")
+                for f in result["added"]:
+                    print(f"  [ADD]    {f}")
+                for f in result["updated"]:
+                    print(f"  [UPDATE] {f}")
+                if result["skipped"]:
+                    for s in result["skipped"]:
+                        print(f"  [SKIP]   {s['dir']} ({s['reason']})")
+                if result["dry_run"] and result["would_change"]:
+                    print("\nRe-run with --apply to write these changes (HITL confirmation).")
+        sys.exit(0 if result.get("status") == "success" else 1)
+
+    # Generation mode requires the core args.
+    missing = [n for n, v in (("--blueprint", args.blueprint), ("--project-path", args.project_path), ("--name", args.name)) if not v]
+    if missing:
+        parser.error(f"the following arguments are required: {', '.join(missing)}")
 
     # Load blueprint
     bp_path = Path(args.blueprint)
