@@ -103,7 +103,7 @@ def test_partial_put_does_not_clobber_omitted_fields():
         _login(client)
         resp = client.put(
             f"/devops/api/pipelines/{pipe_id}",
-            data=json.dumps({"name": "BCAP IL5 (renamed)", "graph_json": '{"nodes":[]}'}),
+            data=json.dumps({"name": "BCAP IL5 (renamed)", "graph_json": '{"nodes":[],"edges":[]}'}),
             content_type="application/json",
         )
     assert resp.status_code == 200, resp.get_data(as_text=True)
@@ -128,7 +128,9 @@ def test_partial_put_does_not_clobber_omitted_fields():
     assert isinstance(params, (list, tuple)), f"params must be sequence, got {type(params)}"
     assert len(params) == 4, f"expected 4 params, got {len(params)}: {params!r}"
     assert params[0] == "BCAP IL5 (renamed)", f"name mismatch: {params[0]!r}"
-    assert params[1] == '{"nodes":[]}', f"graph_json mismatch: {params[1]!r}"
+    # graph_json is validated + canonicalized at the write boundary (pdx-sec-01),
+    # so compare parsed structure rather than exact bytes (json.dumps adds spaces).
+    assert json.loads(params[1]) == {"nodes": [], "edges": []}, f"graph_json mismatch: {params[1]!r}"
     assert isinstance(params[2], str) and len(params[2]) >= 10, (
         f"updated_at must be ISO timestamp string, got {params[2]!r}"
     )
@@ -205,7 +207,7 @@ def test_full_put_with_all_fields_backward_compat():
             data=json.dumps({
                 "name": "New Name",
                 "description": "New desc",
-                "graph_json": '{"nodes":[]}',
+                "graph_json": '{"nodes":[],"edges":[]}',
                 "classification": "SECRET",
                 "target_csp": "onprem-dod",
             }),

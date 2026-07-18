@@ -262,6 +262,50 @@ def run_compliance_check(nodes, edges):
     return {"passed": passed, "failed": failed, "findings": findings, "total": passed + failed}
 
 
+# ── graph_json validation / parsing (stored-XSS + corruption defense) ─────────
+
+
+def validate_graph_json_payload(raw):
+    """Validate + canonicalize an incoming graph_json payload at the write boundary.
+
+    Accepts a JSON string or a dict. Requires a JSON object containing ``nodes``
+    and ``edges`` lists. Returns the canonical ``json.dumps()`` string so only a
+    well-formed graph is ever persisted (defeats stored-XSS payloads smuggled in
+    as an arbitrary string). Raises ``ValueError`` with a human-readable message
+    on any violation; callers translate that into HTTP 422.
+    """
+    if isinstance(raw, (str, bytes, bytearray)):
+        try:
+            obj = json.loads(raw)
+        except (ValueError, TypeError):
+            raise ValueError("graph_json is not valid JSON")
+    elif isinstance(raw, dict):
+        obj = raw
+    else:
+        raise ValueError("graph_json must be a JSON object")
+    if not isinstance(obj, dict):
+        raise ValueError("graph_json must be a JSON object")
+    if not isinstance(obj.get("nodes"), list) or not isinstance(obj.get("edges"), list):
+        raise ValueError("graph_json must contain nodes[] and edges[]")
+    return json.dumps(obj)
+
+
+def parse_graph_json(raw):
+    """Defensively parse a stored graph_json value into a graph dict.
+
+    Raises ``ValueError`` if the stored blob is not valid JSON or not an object.
+    Request handlers translate that into HTTP 422 ('corrupt graph') rather than
+    surfacing an unhandled 500.
+    """
+    try:
+        graph = json.loads(raw) if isinstance(raw, (str, bytes, bytearray)) else raw
+    except (ValueError, TypeError):
+        raise ValueError("corrupt graph")
+    if not isinstance(graph, dict):
+        raise ValueError("corrupt graph")
+    return graph
+
+
 # ── Blueprint Factory ─────────────────────────────────────────────────────────
 
 
@@ -414,6 +458,15 @@ def create_pipeline_blueprint():
             return jsonify({"error": "Payload too large"}), 413
         pipe_id = str(_uuid.uuid4())
         name = data.get("name", "Untitled Pipeline")[:200]  # Limit name length
+        # Validate graph_json at the write boundary: reject anything that is not a
+        # well-formed {nodes:[], edges:[]} object, and persist a canonical dump so
+        # a stored-XSS payload can never round-trip into the canvas renderer.
+        try:
+            graph_json = validate_graph_json_payload(
+                data.get("graph_json", '{"nodes":[],"edges":[]}')
+            )
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 422
         logger.info("Creating pipeline: %s (%s)", name, pipe_id)
         conn = get_connection()
         conn.execute(
@@ -423,7 +476,7 @@ def create_pipeline_blueprint():
                 pipe_id,
                 name,
                 data.get("description", ""),
-                data.get("graph_json", '{"nodes":[],"edges":[]}'),
+                graph_json,
                 data.get("classification", "public"),
                 data.get("target_csp", "generic"),
                 now_isoformat(),
@@ -467,9 +520,19 @@ def create_pipeline_blueprint():
         params = []
         for col in ("name", "description", "graph_json", "classification", "target_csp"):
             if col in data:
+                if col == "graph_json":
+                    # Validate + canonicalize at the write boundary (stored-XSS defense).
+                    try:
+                        value = validate_graph_json_payload(data[col])
+                    except ValueError as exc:
+                        conn.close()
+                        return jsonify({"error": str(exc)}), 422
+                else:
+                    value = data[col]
                 sets.append(f"{col}=%s")
-                params.append(data[col])
+                params.append(value)
         if not sets:
+            conn.close()
             return jsonify({"error": "No updatable fields provided"}), 400
         sets.append("updated_at=%s")
         params.append(now_isoformat())
@@ -726,7 +789,10 @@ def create_pipeline_blueprint():
         if not row:
             return jsonify({"error": "Not found"}), 404
 
-        graph = json.loads(row["graph_json"])
+        try:
+            graph = parse_graph_json(row["graph_json"])
+        except ValueError:
+            return jsonify({"error": "corrupt graph"}), 422
         nodes = graph.get("nodes", [])
         edges = graph.get("edges", [])
         node_types = [n.get("type", "") for n in nodes]
@@ -782,7 +848,11 @@ def create_pipeline_blueprint():
         if not row:
             conn.close()
             return jsonify({"error": "Not found"}), 404
-        graph = json.loads(row["graph_json"])
+        try:
+            graph = parse_graph_json(row["graph_json"])
+        except ValueError:
+            conn.close()
+            return jsonify({"error": "corrupt graph"}), 422
         nodes = graph.get("nodes", [])
         edges = graph.get("edges", [])
 
@@ -931,7 +1001,10 @@ def create_pipeline_blueprint():
         if not row:
             return jsonify({"error": "Not found"}), 404
         pipe = row_to_dict(row)
-        graph = json.loads(pipe["graph_json"])
+        try:
+            graph = parse_graph_json(pipe["graph_json"])
+        except ValueError:
+            return jsonify({"error": "corrupt graph"}), 422
         data = request.get_json(force=True, silent=True) or {}
         fmt = data.get("format", "gitlab_ci")
 
@@ -966,7 +1039,10 @@ def create_pipeline_blueprint():
         if not row:
             return jsonify({"error": "Not found"}), 404
         pipe = row_to_dict(row)
-        graph = json.loads(pipe["graph_json"])
+        try:
+            graph = parse_graph_json(pipe["graph_json"])
+        except ValueError:
+            return jsonify({"error": "corrupt graph"}), 422
         data = request.get_json(force=True, silent=True) or {}
 
         try:
@@ -998,7 +1074,10 @@ def create_pipeline_blueprint():
         if not row:
             return jsonify({"error": "Not found"}), 404
         pipe = row_to_dict(row)
-        graph = json.loads(pipe["graph_json"])
+        try:
+            graph = parse_graph_json(pipe["graph_json"])
+        except ValueError:
+            return jsonify({"error": "corrupt graph"}), 422
         data = request.get_json(force=True, silent=True) or {}
         fixes = data.get("fixes", [])
 
@@ -1079,7 +1158,10 @@ def create_pipeline_blueprint():
         if not row:
             return jsonify({"error": "Not found"}), 404
         pipe = row_to_dict(row)
-        graph = json.loads(pipe["graph_json"])
+        try:
+            graph = parse_graph_json(pipe["graph_json"])
+        except ValueError:
+            return jsonify({"error": "corrupt graph"}), 422
         data = request.get_json(force=True, silent=True) or {}
 
         try:
@@ -1151,7 +1233,10 @@ def create_pipeline_blueprint():
         conn.close()
         if not row:
             return jsonify({"error": "Not found"}), 404
-        graph = json.loads(row["graph_json"])
+        try:
+            graph = parse_graph_json(row["graph_json"])
+        except ValueError:
+            return jsonify({"error": "corrupt graph"}), 422
         nodes = graph.get("nodes", [])
 
         heatmap = {}
@@ -1262,7 +1347,10 @@ def create_pipeline_blueprint():
         conn.close()
         if not row:
             return jsonify({"error": "Not found"}), 404
-        graph = json.loads(row["graph_json"])
+        try:
+            graph = parse_graph_json(row["graph_json"])
+        except ValueError:
+            return jsonify({"error": "corrupt graph"}), 422
         nodes = graph.get("nodes", [])
         edges = graph.get("edges", [])
         node_types = [n.get("type", "") for n in nodes]
@@ -1478,7 +1566,11 @@ def create_pipeline_blueprint():
             conn.close()
             return jsonify({"error": "Not found"}), 404
 
-        graph = json.loads(row["graph_json"])
+        try:
+            graph = parse_graph_json(row["graph_json"])
+        except ValueError:
+            conn.close()
+            return jsonify({"error": "corrupt graph"}), 422
         nodes = graph.get("nodes", [])
         edges = graph.get("edges", [])
 
@@ -1678,10 +1770,12 @@ def create_pipeline_blueprint():
     @pc_login_required
     def pc_api_twin_snapshot(pipe_id):
         """Take a DAG snapshot of the current pipeline state."""
-        from tools.pipeline.twin import take_snapshot
+        from tools.pipeline.twin import take_snapshot, CorruptGraphError
         data = request.get_json(force=True, silent=True) or {}
         try:
             snap = take_snapshot(pipe_id, label=data.get("label"), user_id=session.get("user_id", "system"))
+        except CorruptGraphError:
+            return jsonify({"error": "corrupt graph"}), 422
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 404
         _audit("twin_snapshot", "pipeline", pipe_id, f"snap={snap['id']}", session.get("user_id"))
@@ -1703,7 +1797,7 @@ def create_pipeline_blueprint():
             delta_graph: {"nodes": [...], "edges": [...]}
             baseline_snap_id: (optional) snapshot ID to diff against
         """
-        from tools.pipeline.twin import simulate_delta
+        from tools.pipeline.twin import simulate_delta, CorruptGraphError
         data = request.get_json(force=True, silent=True) or {}
         if len(json.dumps(data)) > 5_000_000:
             return jsonify({"error": "Payload too large"}), 413
@@ -1717,6 +1811,8 @@ def create_pipeline_blueprint():
                 baseline_snap_id=baseline_snap_id,
                 user_id=session.get("user_id", "system"),
             )
+        except CorruptGraphError:
+            return jsonify({"error": "corrupt graph"}), 422
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 404
         _audit("twin_simulate", "pipeline", pipe_id, f"sim={result['id']} verdict={result['verdict']}", session.get("user_id"))
