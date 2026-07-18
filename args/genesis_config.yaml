@@ -1030,7 +1030,7 @@ reflexes:
 
   cato_twin:
     timeout_seconds: 300     # per-project compliance snapshot + IQE seed queries + POA&M auto-gen across frameworks
-    enabled: false           # bdr-ops-1: held off until the hardened cato_twin query path soaks; a later task flips this on
+    enabled: true            # bdr-vv-2: enabled after operational smoke — dispatch contract + PG transaction hardening verified end-to-end
     risk_tier: green         # writes compliance twin snapshots + POA&M items; append-only audit_trail
     schedule: "every 6h"
     interval_seconds: 21600  # 6 hours — matches CADENCE_HOURS = 6 in the reflex module

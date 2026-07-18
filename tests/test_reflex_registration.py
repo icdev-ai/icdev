@@ -214,7 +214,7 @@ def test_bdr_ops_1_config_blocks_have_required_keys():
     required = {"enabled", "risk_tier", "schedule", "description", "success_metric"}
     expected_cadence = {
         "bdc_isa_expiry": ("every 24h", True),
-        "cato_twin": ("every 6h", False),
+        "cato_twin": ("every 6h", True),  # bdr-vv-2: enabled after operational smoke
         "cato_monitor": ("every 6h", True),
     }
     for name, (schedule, enabled) in expected_cadence.items():
