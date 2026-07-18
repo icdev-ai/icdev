@@ -99,6 +99,60 @@ def get_decrypted_token(user_id: str, service: str, tenant_id: str = "default") 
     return _decrypt(val) or None
 
 
+def get_integration_tokens(user_id: str, service: str, tenant_id: str = "default") -> dict:
+    """Return decrypted tokens + expiry + metadata for an active integration.
+
+    Uses the canvas connection (same DB every other integration read/write uses),
+    fixing the msgraph split-brain where token IO went to the main RLS DB while
+    everything else used the canvas DB (cnr-me-03). Returns {} if not found.
+    """
+    with _conn() as conn:
+        ph = sql_placeholder(conn)
+        row = conn.execute(
+            f"SELECT access_token_enc, refresh_token_enc, token_expiry, metadata_json "
+            f"FROM user_integrations WHERE user_id={ph} AND tenant_id={ph} AND service={ph} AND status='active'",
+            (user_id, tenant_id, service),
+        ).fetchone()
+    if row is None:
+        return {}
+    if isinstance(row, dict):
+        access_enc = row.get("access_token_enc", "")
+        refresh_enc = row.get("refresh_token_enc", "")
+        expiry = row.get("token_expiry", "")
+        meta_raw = row.get("metadata_json", "{}")
+    else:
+        access_enc, refresh_enc, expiry, meta_raw = row[0], row[1], row[2], row[3]
+    try:
+        metadata = json.loads(meta_raw or "{}")
+    except Exception:
+        metadata = {}
+    return {
+        "access_token": _decrypt(access_enc or ""),
+        "refresh_token": _decrypt(refresh_enc or ""),
+        "token_expiry": expiry or "",
+        "metadata": metadata,
+    }
+
+
+def update_integration_tokens(
+    user_id: str,
+    service: str,
+    access_token: str,
+    token_expiry: str = "",
+    tenant_id: str = "default",
+) -> None:
+    """Update the (encrypted) access token + expiry for an integration on the
+    canvas connection. Used after an OAuth refresh (cnr-me-03)."""
+    with _conn() as conn:
+        ph = sql_placeholder(conn)
+        conn.execute(
+            f"UPDATE user_integrations SET access_token_enc={ph}, token_expiry={ph} "
+            f"WHERE user_id={ph} AND tenant_id={ph} AND service={ph}",
+            (_encrypt(access_token), token_expiry, user_id, tenant_id, service),
+        )
+        conn.commit()
+
+
 def get_integration_metadata(user_id: str, service: str, tenant_id: str = "default") -> dict:
     """Return the metadata_json dict for an integration (used for Jira base_url etc.)."""
     with _conn() as conn:

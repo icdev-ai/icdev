@@ -403,23 +403,21 @@ def _deliver_calendar(user_id: str, briefing_date: str, ctx: dict, tenant_id: st
 
 
 def _get_m365_token(user_id: str, tenant_id: str) -> str:
-    """Load and auto-refresh the msgraph access token. Returns empty string if not configured."""
+    """Load and auto-refresh the msgraph access token. Returns empty string if not configured.
+
+    Reads via the canvas connection (integrations.get_integration_tokens) so it
+    hits the SAME DB the connect flow wrote to — the msgraph split-brain fix
+    (cnr-me-03). Tokens are stored encrypted and returned decrypted.
+    """
     try:
-        from tools.db.storage import get_connection, sql_placeholder
         from datetime import datetime, timezone
-        with get_connection() as conn:
-            ph = sql_placeholder(conn)
-            row = conn.execute(
-                f"SELECT access_token_enc, refresh_token_enc, token_expiry FROM user_integrations "
-                f"WHERE user_id={ph} AND tenant_id={ph} AND service='msgraph' AND status='active'",
-                (user_id, tenant_id),
-            ).fetchone()
-        if not row:
+        from tools.second_brain.integrations import get_integration_tokens
+        toks = get_integration_tokens(user_id, "msgraph", tenant_id)
+        if not toks:
             return ""
-        if isinstance(row, dict):
-            access_tok, refresh_tok, expiry = row.get("access_token_enc", ""), row.get("refresh_token_enc", ""), row.get("token_expiry", "")
-        else:
-            access_tok, refresh_tok, expiry = row[0], row[1], row[2]
+        access_tok = toks.get("access_token", "")
+        refresh_tok = toks.get("refresh_token", "")
+        expiry = toks.get("token_expiry", "")
         if expiry:
             try:
                 exp_dt = datetime.fromisoformat(str(expiry).replace("Z", "+00:00"))
@@ -438,15 +436,13 @@ def _get_m365_token(user_id: str, tenant_id: str) -> str:
 
 def _update_m365_token(user_id: str, tenant_id: str, tokens: dict) -> None:
     try:
-        from tools.db.storage import get_connection, sql_placeholder
-        with get_connection() as conn:
-            ph = sql_placeholder(conn)
-            conn.execute(
-                f"UPDATE user_integrations SET access_token_enc={ph}, token_expiry={ph} "
-                f"WHERE user_id={ph} AND tenant_id={ph} AND service='msgraph'",
-                (tokens.get("access_token", ""), tokens.get("expires_in", ""), user_id, tenant_id),
-            )
-            conn.commit()
+        from tools.second_brain.integrations import update_integration_tokens
+        update_integration_tokens(
+            user_id, "msgraph",
+            tokens.get("access_token", ""),
+            str(tokens.get("expires_in", "")),
+            tenant_id,
+        )
     except Exception:
         pass
 
@@ -476,17 +472,11 @@ def _deliver_teams(user_id: str, briefing_date: str, ctx: dict, tenant_id: str) 
     if not token:
         return "skipped_no_m365_token"
     try:
-        from tools.db.storage import get_connection, sql_placeholder
-        with get_connection() as conn:
-            ph = sql_placeholder(conn)
-            row = conn.execute(
-                f"SELECT metadata_json FROM user_integrations "
-                f"WHERE user_id={ph} AND tenant_id={ph} AND service='msgraph' AND status='active'",
-                (user_id, tenant_id),
-            ).fetchone()
-        if not row:
+        from tools.second_brain.integrations import get_integration_tokens
+        toks = get_integration_tokens(user_id, "msgraph", tenant_id)
+        if not toks:
             return "skipped_no_integration"
-        meta = json.loads((row[0] if not isinstance(row, dict) else row.get("metadata_json", "")) or "{}")
+        meta = toks.get("metadata", {}) or {}
         chat_id = meta.get("teams_chat_id", "")
         if not chat_id:
             return "skipped_no_teams_chat_id"

@@ -84,6 +84,9 @@ CREATE TABLE IF NOT EXISTS user_challenges (
     status               TEXT DEFAULT 'active',
     created_at           TEXT NOT NULL DEFAULT (datetime('now'))
 );
+-- cnr-me-03: drop any stale copy so tests exercise the current (msgraph-capable)
+-- schema regardless of a pre-existing table left in a bootstrapped worktree DB.
+DROP TABLE IF EXISTS user_integrations;
 CREATE TABLE IF NOT EXISTS user_integrations (
     id                TEXT PRIMARY KEY,
     user_id           TEXT NOT NULL,
@@ -857,3 +860,47 @@ class TestEgressRedaction:
         # No assertion on names (NER may be offline); ensure the path invoked the
         # router with a prompt (redaction ran without raising).
         assert captured, "router was never invoked"
+
+
+# ── msgraph integration: CHECK + split-brain connection (cnr-me-03) ─────────────
+
+class TestMsGraphIntegration:
+    def test_check_constraint_includes_msgraph_and_matches_constant(self):
+        import re
+        from tools.second_brain.constants import INTEGRATION_SERVICES
+        for rel in (
+            pathlib.Path("icdev") / "tools" / "db" / "migrations" / "223_user_identity.sql",
+            pathlib.Path("icdev") / "tools" / "db" / "schema" / "pg_consolidated.sql",
+        ):
+            sql = (pathlib.Path(__file__).parent.parent / rel).read_text(encoding="utf-8")
+            m = re.search(r"service\s+TEXT NOT NULL CHECK\(service IN \(([^)]*)\)\)", sql)
+            assert m, f"service CHECK not found in {rel}"
+            services = {s.strip().strip("'") for s in m.group(1).split(",")}
+            assert "msgraph" in services, f"msgraph missing from CHECK in {rel}"
+            assert services == set(INTEGRATION_SERVICES), (
+                f"CHECK service list in {rel} diverges from INTEGRATION_SERVICES"
+            )
+
+    def test_msgraph_token_roundtrip_same_connection(self):
+        """Connect flow persists and get_integration_tokens retrieves the same row."""
+        from tools.second_brain.integrations import save_integration, get_integration_tokens
+        save_integration(
+            user_id="ms-user", service="msgraph",
+            access_token="AT123", refresh_token="RT456",
+            token_expiry="2030-01-01T00:00:00+00:00",
+            metadata={"teams_chat_id": "chat-1"}, tenant_id=TENANT_ID,
+        )
+        toks = get_integration_tokens("ms-user", "msgraph", TENANT_ID)
+        assert toks.get("access_token") == "AT123"
+        assert toks.get("refresh_token") == "RT456"
+        assert toks.get("metadata", {}).get("teams_chat_id") == "chat-1"
+
+    def test_get_m365_token_retrieves_saved(self):
+        from tools.second_brain.integrations import save_integration
+        from tools.second_brain.briefing import _get_m365_token
+        save_integration(
+            user_id="ms-user2", service="msgraph",
+            access_token="LIVE-TOKEN",
+            token_expiry="2030-01-01T00:00:00+00:00", tenant_id=TENANT_ID,
+        )
+        assert _get_m365_token("ms-user2", TENANT_ID) == "LIVE-TOKEN"

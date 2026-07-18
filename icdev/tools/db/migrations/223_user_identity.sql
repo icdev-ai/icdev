@@ -82,7 +82,10 @@ CREATE TABLE IF NOT EXISTS user_integrations (
     id                TEXT PRIMARY KEY,
     user_id           TEXT NOT NULL,
     tenant_id         TEXT NOT NULL DEFAULT 'default',
-    service           TEXT NOT NULL CHECK(service IN ('gmail','gcal','slack','github','gitlab','jira','linear','notion')),
+    -- Service list derived from icdev.tools.second_brain.constants.INTEGRATION_SERVICES
+    -- (guarded by tests/test_second_brain.py::TestMsGraphIntegration). 'msgraph'
+    -- MUST be present — blueprint.py persists Microsoft Graph tokens (cnr-me-03).
+    service           TEXT NOT NULL CHECK(service IN ('gmail','gcal','slack','msgraph','github','gitlab','jira','linear','notion')),
     access_token_enc  TEXT,
     refresh_token_enc TEXT,
     token_expiry      TEXT,

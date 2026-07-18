@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hmac
-import json
 import os
 import secrets
 
@@ -805,7 +804,6 @@ def oauth_start_msgraph():
 
 @second_brain_bp.route("/api/integrations/oauth/callback/msgraph")
 def oauth_callback_msgraph():
-    import uuid as _uuid
     code = request.args.get("code", "")
     state = request.args.get("state", "")
     if not code or state != session.pop("oauth_state_msgraph", None):
@@ -816,34 +814,23 @@ def oauth_callback_msgraph():
         tokens = exchange_code(code, redirect_uri)
         access_tok = tokens.get("access_token", "")
         ms_profile = get_user_profile(access_tok)
-        meta = json.dumps({
+        meta = {
             "ms_user_id": ms_profile.get("id", ""),
             "ms_email": ms_profile.get("mail") or ms_profile.get("userPrincipalName", ""),
             "ms_name": ms_profile.get("displayName", ""),
-        })
-        from tools.db.storage import get_connection, sql_placeholder
-        with get_connection() as conn:
-            ph = sql_placeholder(conn)
-            try:
-                conn.execute(
-                    f"INSERT INTO user_integrations (id,user_id,tenant_id,service,access_token_enc,refresh_token_enc,token_expiry,metadata_json,status) "
-                    f"VALUES ({ph},{ph},{ph},'msgraph',{ph},{ph},{ph},{ph},'active') "
-                    f"ON CONFLICT(user_id,tenant_id,service) DO UPDATE SET "
-                    f"access_token_enc=excluded.access_token_enc, refresh_token_enc=excluded.refresh_token_enc, "
-                    f"token_expiry=excluded.token_expiry, metadata_json=excluded.metadata_json, status='active'",
-                    (str(_uuid.uuid4()), _user_id(), _tenant_id(),
-                     access_tok, tokens.get("refresh_token", ""),
-                     str(tokens.get("expires_in", "")), meta),
-                )
-            except Exception:
-                conn.execute(
-                    f"INSERT OR REPLACE INTO user_integrations (id,user_id,tenant_id,service,access_token_enc,refresh_token_enc,token_expiry,metadata_json,status) "
-                    f"VALUES ({ph},{ph},{ph},'msgraph',{ph},{ph},{ph},{ph},'active')",
-                    (str(_uuid.uuid4()), _user_id(), _tenant_id(),
-                     access_tok, tokens.get("refresh_token", ""),
-                     str(tokens.get("expires_in", "")), meta),
-                )
-            conn.commit()
+        }
+        # cnr-me-03: persist via the canvas connection (same DB every other
+        # integration read/write uses) with encrypted tokens — no more split-brain.
+        from tools.second_brain.integrations import save_integration
+        save_integration(
+            user_id=_user_id(),
+            service="msgraph",
+            access_token=access_tok,
+            refresh_token=tokens.get("refresh_token", ""),
+            token_expiry=str(tokens.get("expires_in", "")),
+            metadata=meta,
+            tenant_id=_tenant_id(),
+        )
         return redirect(url_for("second_brain.integrations_page") + "?connected=msgraph")
     except Exception as exc:
         logger.warning("[second_brain] M365 OAuth callback error: %s", exc)
