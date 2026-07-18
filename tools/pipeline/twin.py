@@ -23,6 +23,26 @@ from datetime import datetime, timezone
 logger = get_logger("icdev.pipeline.twin")
 
 
+class CorruptGraphError(ValueError):
+    """Raised when a stored graph_json blob cannot be parsed into a graph object.
+
+    A subclass of ValueError so existing ``except ValueError`` callers still catch
+    it, while route handlers that want a distinct HTTP 422 (vs the 404 raised for a
+    missing pipeline/snapshot) can catch this type explicitly first.
+    """
+
+
+def _parse_graph_json(raw):
+    """Parse a stored graph_json value into a dict, or raise CorruptGraphError."""
+    try:
+        graph = json.loads(raw) if isinstance(raw, (str, bytes, bytearray)) else raw
+    except (ValueError, TypeError):
+        raise CorruptGraphError("corrupt graph")
+    if not isinstance(graph, dict):
+        raise CorruptGraphError("corrupt graph")
+    return graph
+
+
 # ── lazy imports so this module loads even without Flask app context ──────────
 
 def _get_connection():
@@ -48,7 +68,11 @@ def take_snapshot(pipeline_id: str, label: str = None, user_id: str = "system") 
         conn.close()
         raise ValueError(f"Pipeline {pipeline_id!r} not found")
 
-    graph = json.loads(row["graph_json"])
+    try:
+        graph = _parse_graph_json(row["graph_json"])
+    except CorruptGraphError:
+        conn.close()
+        raise
     nodes = graph.get("nodes", [])
     edges = graph.get("edges", [])
 
@@ -166,13 +190,21 @@ def simulate_delta(
         if not snap_row:
             conn.close()
             raise ValueError(f"Snapshot {baseline_snap_id!r} not found")
-        baseline_graph = json.loads(snap_row["graph_json"])
+        try:
+            baseline_graph = _parse_graph_json(snap_row["graph_json"])
+        except CorruptGraphError:
+            conn.close()
+            raise
     else:
         pipe_row = conn.execute("SELECT graph_json FROM pipelines WHERE id=%s", (pipeline_id,)).fetchone()
         if not pipe_row:
             conn.close()
             raise ValueError(f"Pipeline {pipeline_id!r} not found")
-        baseline_graph = json.loads(pipe_row["graph_json"])
+        try:
+            baseline_graph = _parse_graph_json(pipe_row["graph_json"])
+        except CorruptGraphError:
+            conn.close()
+            raise
         # Auto-take a snapshot so the baseline is preserved
         conn.close()
         snap = take_snapshot(pipeline_id, label="auto-pre-sim", user_id=user_id)

@@ -157,8 +157,16 @@ if (typeof TOOL_INFO !== 'undefined') {
     pipelineId = '{{ pipeline_id }}';
     initCanvas();
 
-    // Load existing graph
-    const graphJson = {{ graph_json | safe }};
+    // Load existing graph. graph_json is a JSON *string*; the `| tojson` filter
+    // emits it as a safely-escaped JS string literal (angle brackets become
+    // < / >), defeating stored XSS such as a script-closing label.
+    // JSON.parse() then turns that string back into the graph object.
+    let graphJson;
+    try {
+      graphJson = JSON.parse({{ graph_json | tojson }});
+    } catch (e) {
+      graphJson = { nodes: [], edges: [] };
+    }
     if (graphJson && (graphJson.nodes?.length || graphJson.edges?.length)) {
       loadGraph(graphJson);
       // Defer fit: first RAF lets JointJS paint cells; setTimeout lets the
