@@ -126,3 +126,55 @@ def test_qdc_registry_seed_queries_correct():
     assert c is not None
     sq_path = REPO / c["completeness"]["seed_queries"]
     assert sq_path.exists(), f"qdc seed_queries path {sq_path} does not exist"
+
+
+# ── pdx-ops-02: reachability — nav links to previously orphaned pdc pages ──────
+
+_PDC_INDEX_REL = "tools/dashboard/templates/pipeline/index.html"
+_PDC_INDEX_MIRROR_REL = "icdev/tools/dashboard/templates/pipeline/index.html"
+_PDC_NAV_LINKS = [
+    "/devops/runbooks",
+    "/devops/sops",
+    "/devops/twin",
+    "/devops/ask",
+]
+
+
+def test_pdc_index_has_reachability_nav_links():
+    """index.html must link the four otherwise-orphaned pdc pages (page-gate item 7)."""
+    html = (REPO / _PDC_INDEX_REL).read_text(encoding="utf-8")
+    for href in _PDC_NAV_LINKS:
+        assert f'href="{href}"' in html, f"pdc index missing nav link to {href}"
+
+
+def test_pdc_index_mirror_has_reachability_nav_links():
+    """The icdev/ mirror must carry the same nav links (byte-identical mirror)."""
+    html = (REPO / _PDC_INDEX_MIRROR_REL).read_text(encoding="utf-8")
+    for href in _PDC_NAV_LINKS:
+        assert f'href="{href}"' in html, f"pdc index mirror missing nav link to {href}"
+
+
+def test_pdc_index_mirror_byte_identical():
+    src = (REPO / _PDC_INDEX_REL).read_bytes()
+    mirror = (REPO / _PDC_INDEX_MIRROR_REL).read_bytes()
+    assert src == mirror, "pdc index.html and its icdev/ mirror diverge"
+
+
+def test_pdc_runbooks_extend_base_navy_theme():
+    """runbooks.html + runbook_detail.html must extend base.html (navy theme), not be
+    standalone GitHub-dark HTML documents."""
+    for rel in (
+        "tools/dashboard/templates/pipeline/runbooks.html",
+        "tools/dashboard/templates/pipeline/runbook_detail.html",
+    ):
+        html = (REPO / rel).read_text(encoding="utf-8")
+        assert '{% extends "base.html" %}' in html, f"{rel} must extend base.html"
+        assert "<!DOCTYPE html>" not in html, f"{rel} must not be a standalone document"
+        assert "#0d1117" not in html, f"{rel} must not keep the GitHub-dark palette"
+
+
+def test_pdc_runbooks_mirror_byte_identical():
+    for rel in ("runbooks.html", "runbook_detail.html"):
+        src = (REPO / "tools/dashboard/templates/pipeline" / rel).read_bytes()
+        mirror = (REPO / "icdev/tools/dashboard/templates/pipeline" / rel).read_bytes()
+        assert src == mirror, f"pipeline/{rel} and its icdev/ mirror diverge"
