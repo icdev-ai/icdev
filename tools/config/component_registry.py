@@ -839,12 +839,10 @@ def _file_exists(path: Path | str | None) -> bool:
     return Path(path).exists()
 
 
-def _has_route_decorator(blueprint_path: Path) -> bool:
-    """Return True if the blueprint file contains a Flask route decorator."""
-    if not blueprint_path.exists():
-        return False
+def _ast_has_route_decorator(text: str) -> bool:
+    """Return True if the Python source declares a Flask ``@*.route(...)`` decorator."""
     try:
-        tree = ast.parse(blueprint_path.read_text(encoding="utf-8"))
+        tree = ast.parse(text)
     except SyntaxError:
         return False
     for node in ast.walk(tree):
@@ -855,6 +853,46 @@ def _has_route_decorator(blueprint_path: Path) -> bool:
                         return True
                 elif isinstance(deco, ast.Attribute) and deco.attr == "route":
                     return True
+    return False
+
+
+def _has_route_decorator(blueprint_path: Path) -> bool:
+    """Return True if the blueprint declares a Flask route — inline or split.
+
+    Classic blueprints carry ``@bp.route(...)`` decorators directly in the file.
+    After a route-group split (cvx-net-01) the blueprint becomes a thin assembler
+    whose ``create_*_blueprint()`` delegates to ``register_<group>_routes(bp)``
+    helpers imported from a sibling ``routes/`` subpackage; the actual ``@route``
+    decorators live in those modules. When the file itself carries no route but
+    (a) references ``register_*_routes`` / imports from a ``routes`` subpackage,
+    OR (b) has a ``routes/`` directory beside it, scan ``routes/**/*.py`` and pass
+    if any declares a route. Still returns False when nothing declares a route.
+    """
+    if not blueprint_path.exists():
+        return False
+    try:
+        text = blueprint_path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    if _ast_has_route_decorator(text):
+        return True
+
+    import re
+
+    references_split = bool(
+        re.search(r"register_\w+_routes", text)
+        or re.search(r"from\s+[\w.]*routes(?:\.\w+)?\s+import", text)
+        or re.search(r"import\s+[\w.]*\.routes\b", text)
+    )
+    routes_dir = blueprint_path.parent / "routes"
+    if references_split or routes_dir.is_dir():
+        if routes_dir.is_dir():
+            for py in sorted(routes_dir.rglob("*.py")):
+                try:
+                    if _ast_has_route_decorator(py.read_text(encoding="utf-8")):
+                        return True
+                except OSError:
+                    continue
     return False
 
 

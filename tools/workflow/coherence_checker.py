@@ -158,6 +158,45 @@ def _read_text(path: Path) -> str:
         return ""
 
 
+_ROUTE_DECORATOR_RE = re.compile(r"@\w+\.route\s*\(")
+
+
+def _blueprint_has_route(bp_file: Path) -> bool:
+    """Return True if a blueprint declares Flask routes — inline or split.
+
+    Classic blueprints carry ``@bp.route(...)`` decorators directly in the
+    module file. After a route-group split (cvx-net-01), the blueprint module
+    becomes a thin assembler whose ``create_*_blueprint()`` calls
+    ``register_<group>_routes(bp)`` for each module under a sibling ``routes/``
+    subpackage; the actual ``@route`` decorators live in those route modules.
+
+    Detection:
+      1. If the blueprint file itself has a ``@\\w+\\.route(`` decorator -> True.
+      2. Otherwise, if the blueprint (a) references ``register_*_routes`` /
+         imports from a sibling ``routes`` subpackage, OR (b) has a ``routes/``
+         directory beside it — scan ``routes/**/*.py`` for a route decorator and
+         return True if any is found.
+      3. If neither the blueprint nor any routes/ module declares a route,
+         return False (genuine failure — the gate still fires).
+    """
+    text = _read_text(bp_file)
+    if _ROUTE_DECORATOR_RE.search(text):
+        return True
+
+    references_split = bool(
+        re.search(r"register_\w+_routes", text)
+        or re.search(r"from\s+[\w.]*routes(?:\.\w+)?\s+import", text)
+        or re.search(r"import\s+[\w.]*\.routes\b", text)
+    )
+    routes_dir = bp_file.parent / "routes"
+    if references_split or routes_dir.is_dir():
+        if routes_dir.is_dir():
+            for py in sorted(routes_dir.rglob("*.py")):
+                if _ROUTE_DECORATOR_RE.search(_read_text(py)):
+                    return True
+    return False
+
+
 def _parse_create_tables(sql_text: str) -> Dict[str, List[str]]:
     """Extract table_name → [column_names] from SQL CREATE TABLE statements."""
     tables: Dict[str, List[str]] = {}
@@ -3061,7 +3100,7 @@ def check_new_page_completeness() -> CoherenceCheck:
         )
         if not bp_file.exists():
             missing.append(f"{bp_file.name} missing (expected at {bp_file.parent.name}/)")
-        elif not re.search(r"@\w+\.route\s*\(", _read_text(bp_file)):
+        elif not _blueprint_has_route(bp_file):
             missing.append("blueprint has no @route decorator")
 
         # 3. Backing module (any .py other than __init__.py and the blueprint itself)
@@ -3270,7 +3309,7 @@ def check_new_page_completeness() -> CoherenceCheck:
                 registry_violations.append(
                     f"tch-completeness-{key}-blueprint: {module_path}.py missing"
                 )
-            elif bp_file and not re.search(r"@\w+\.route\s*\(", _read_text(bp_file)):
+            elif bp_file and not _blueprint_has_route(bp_file):
                 registry_violations.append(
                     f"tch-completeness-{key}-blueprint: {module_path} has no @route"
                 )
