@@ -63,8 +63,10 @@ def _now() -> str:
 
 
 def _get_conn():
-    from tools.migration_intelligence.db.init_db import get_connection, init_db
-    init_db(_DB_PATH)
+    # cnr-mi-01: schema is initialized once at blueprint registration, not on
+    # every request. Return a StorageConnection (RLS disabled) so %s placeholders
+    # translate correctly on both SQLite and PostgreSQL.
+    from tools.migration_intelligence.db.init_db import get_connection
     return get_connection(_DB_PATH)
 
 
@@ -332,9 +334,9 @@ def mi_api_wishlist_list():
     try:
         where, params = [], []
         if status:
-            where.append("status=?"); params.append(status)
+            where.append("status=%s"); params.append(status)
         if fy:
-            where.append("fiscal_year=?"); params.append(int(fy))
+            where.append("fiscal_year=%s"); params.append(int(fy))
         clause = ("WHERE " + " AND ".join(where)) if where else ""
         rows = conn.execute(
             f"SELECT * FROM mi_wishlist {clause} ORDER BY replacement_urgency DESC, fiscal_year ASC",
@@ -526,4 +528,11 @@ def mi_api_scans_list():
 
 
 def create_migration_intel_blueprint():
+    # cnr-mi-01: initialize the schema ONCE at registration instead of on every
+    # request (_get_conn previously ran a full executescript per call).
+    try:
+        from tools.migration_intelligence.db.init_db import init_db
+        init_db(_DB_PATH)
+    except Exception:  # noqa: BLE001 — never block dashboard startup on DB init
+        pass
     return bp

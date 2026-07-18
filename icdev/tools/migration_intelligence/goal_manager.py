@@ -78,9 +78,9 @@ def list_goals(status: str | None = None, category: str | None = None, db_path: 
     try:
         where, params = [], []
         if status:
-            where.append("status = ?"); params.append(status)
+            where.append("status = %s"); params.append(status)
         if category:
-            where.append("category = ?"); params.append(category)
+            where.append("category = %s"); params.append(category)
         clause = ("WHERE " + " AND ".join(where)) if where else ""
         rows = conn.execute(
             f"SELECT * FROM mi_goals {clause} ORDER BY priority DESC, created_at DESC", params
@@ -110,7 +110,7 @@ def update_goal(goal_id: str, updates: dict[str, Any], db_path: str | None = Non
         if f in cols and isinstance(cols[f], list):
             cols[f] = json.dumps(cols[f])
     cols["updated_at"] = _now()
-    set_clause = ", ".join(f"{k} = ?" for k in cols)
+    set_clause = ", ".join(f"{k} = %s" for k in cols)
     conn = _get_conn(db_path)
     try:
         conn.execute(f"UPDATE mi_goals SET {set_clause} WHERE id = %s", [*cols.values(), goal_id])
