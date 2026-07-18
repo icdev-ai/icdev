@@ -34,6 +34,15 @@ else:
     os.environ["CCC_STORAGE_BACKEND"] = "sqlite"
     os.environ["DSOC_STORAGE_BACKEND"] = "sqlite"
 
+# cnr-plat-01 / cnr-plat-03: keep the two new fail-closed-by-default platform
+# gates (CSRF on cookie-authed mutating APIs; canvas access enforcement) OPT-OUT
+# during the test suite so the many existing dashboard/canvas tests that use
+# logged-in sessions (session_transaction) or unauthenticated test clients keep
+# passing; the dedicated cnr-plat tests re-enable them per-test via
+# monkeypatch.setenv. An explicit env value still wins.
+os.environ.setdefault("ICDEV_CSRF_ENFORCE", "0")
+os.environ.setdefault("ICDEV_CANVAS_ACCESS_OPEN", "true")
+
 
 MINIMAL_ICDEV_SCHEMA = """
 -- Dashboard auth: the before_request hook validates session user_id against

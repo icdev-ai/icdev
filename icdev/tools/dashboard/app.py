@@ -1778,6 +1778,18 @@ def create_app(testing: bool = False) -> Flask:
     app.jinja_env.auto_reload = True
     app.config["EXCALIDRAW_HOST"] = os.environ.get("EXCALIDRAW_HOST", "")
 
+    # cnr-plat-02: global upload size cap. Flask rejects any request body larger
+    # than MAX_CONTENT_LENGTH with 413 before it is buffered into memory. Tunable
+    # via ICDEV_MAX_UPLOAD_MB (default 50 MB). Tighter per-route caps (docgen,
+    # workflow_canvas) already validate content_length and stay authoritative for
+    # their routes; this is the platform-wide backstop.
+    try:
+        _max_upload_mb = float(os.environ.get("ICDEV_MAX_UPLOAD_MB", "50"))
+    except (TypeError, ValueError):
+        _max_upload_mb = 50.0
+    if _max_upload_mb > 0:
+        app.config["MAX_CONTENT_LENGTH"] = int(_max_upload_mb * 1024 * 1024)
+
     # Release cached canvas DB connections after each request (OPT-06).
     @app.teardown_appcontext
     def _teardown_canvas_connections(exc):  # noqa: ANN001
@@ -1795,6 +1807,16 @@ def create_app(testing: bool = False) -> Flask:
 
     # Register dashboard auth middleware (D169-D172)
     register_dashboard_auth(app)
+
+    # cnr-plat-01: CSRF protection for cookie-authenticated mutating JSON APIs.
+    # Registered right after auth so its before_request runs after the auth hook
+    # (g.current_user / cortex_binding are resolved first). Enforced by default
+    # (ICDEV_CSRF_ENFORCE); token-auth / API-key / ICDEV_AUTH_BYPASS paths exempt.
+    try:
+        from tools.security.csrf import register_csrf
+        register_csrf(app)
+    except Exception as _csrf_exc:
+        app.logger.warning("CSRF protection not registered: %s", _csrf_exc)
 
     # Register field-level security middleware (CUI enforcement on JSON responses)
     try:
@@ -4593,6 +4615,13 @@ def create_app(testing: bool = False) -> Flask:
                     user = bootstrap_env_user(env_key)
             if user:
                 flask_session["user_id"] = user["id"]
+                # cnr-plat-01: issue a fresh CSRF token at login (rotate on each
+                # successful authentication to avoid token fixation).
+                try:
+                    from tools.security.csrf import issue_csrf_token
+                    issue_csrf_token()
+                except Exception:
+                    pass
                 log_auth_event(
                     user["id"],
                     "login_success",
@@ -8396,6 +8425,30 @@ def create_app(testing: bool = False) -> Flask:
     @app.errorhandler(404)
     def not_found(e):
         return render_template("404.html", message="Page not found"), 404
+
+    @app.errorhandler(413)
+    def payload_too_large(e):
+        # cnr-plat-02: graceful JSON 413 when a request body exceeds
+        # MAX_CONTENT_LENGTH (or a per-route cap that aborts 413).
+        _limit = app.config.get("MAX_CONTENT_LENGTH")
+        _limit_mb = round(_limit / (1024 * 1024), 1) if _limit else None
+        if flask_request.is_json or flask_request.path.startswith("/api/"):
+            return jsonify({
+                "error": "Payload too large",
+                "code": "PAYLOAD_TOO_LARGE",
+                "max_upload_mb": _limit_mb,
+                "message": (
+                    f"Upload exceeds the maximum allowed size ({_limit_mb} MB)."
+                    if _limit_mb else "Upload exceeds the maximum allowed size."
+                ),
+            }), 413
+        return render_template(
+            "404.html",
+            message=(
+                f"Upload exceeds the maximum allowed size ({_limit_mb} MB)."
+                if _limit_mb else "Upload exceeds the maximum allowed size."
+            ),
+        ), 413
 
     @app.errorhandler(500)
     def internal_error(e):

@@ -157,10 +157,16 @@ It renders `nav_tree.sections` from the registry:
 `tools/dashboard/app.py` attaches it as a `before_request` guard for every
 registered canvas blueprint. The guard:
 
-- Is a no-op unless `ICDEV_ENFORCE_CANVAS_ACCESS` is set.
+- Is **fail-closed by default** (cnr-plat-03): an unauthenticated canvas request
+  is redirected to login (browser) or `401`'d (API/JSON). Set
+  `ICDEV_CANVAS_ACCESS_OPEN=true` (dev) or `ICDEV_AUTH_BYPASS` (test/CI) to allow
+  unauthenticated access. The legacy `ICDEV_ENFORCE_CANVAS_ACCESS` still works
+  when set explicitly (`true`=enforce, `false`=open) and takes precedence, but is
+  no longer required to turn enforcement on.
 - Enforces that the user's impact level is ≥ the canvas `min_il`.
-- Requires an explicit canvas access grant (user, role, or group) when enforcement
-  is on.
+- Requires an explicit canvas access grant (user, role, or group). An
+  authenticated principal without a tenant (e.g. a platform admin) is allowed
+  through the tenant-scoped grant checks.
 
 Default tenant grants are seeded from `ComponentRegistry.default_roles`.
 
