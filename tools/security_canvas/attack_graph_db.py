@@ -86,13 +86,13 @@ def list_nodes(
     clauses: list[str] = []
     params: list[Any] = []
     if asset_id is not None:
-        clauses.append("asset_id = ?")
+        clauses.append("asset_id = %s")
         params.append(asset_id)
     if classification is not None:
-        clauses.append("classification = ?")
+        clauses.append("classification = %s")
         params.append(classification)
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
-    sql = f"SELECT * FROM attack_graph_nodes {where} ORDER BY created_at DESC LIMIT ?"  # nosec B608
+    sql = f"SELECT * FROM attack_graph_nodes {where} ORDER BY created_at DESC LIMIT %s"  # nosec B608
     params.append(limit)
     with get_canvas_connection() as conn:
         rows = conn.execute(sql, params).fetchall()
@@ -152,16 +152,16 @@ def list_edges(
     clauses: list[str] = []
     params: list[Any] = []
     if src_node_id is not None:
-        clauses.append("src_node_id = ?")
+        clauses.append("src_node_id = %s")
         params.append(src_node_id)
     if dst_node_id is not None:
-        clauses.append("dst_node_id = ?")
+        clauses.append("dst_node_id = %s")
         params.append(dst_node_id)
     if ttp_id is not None:
-        clauses.append("ttp_id = ?")
+        clauses.append("ttp_id = %s")
         params.append(ttp_id)
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
-    sql = f"SELECT * FROM attack_graph_edges {where} ORDER BY created_at DESC LIMIT ?"  # nosec B608
+    sql = f"SELECT * FROM attack_graph_edges {where} ORDER BY created_at DESC LIMIT %s"  # nosec B608
     params.append(limit)
     with get_canvas_connection() as conn:
         rows = conn.execute(sql, params).fetchall()
