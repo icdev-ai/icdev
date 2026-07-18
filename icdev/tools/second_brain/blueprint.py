@@ -2,10 +2,12 @@
 """Second Brain (/me) canvas blueprint — profile, objectives, relationships, challenges, briefing, integrations."""
 from __future__ import annotations
 
+import hmac
 import json
+import os
 import secrets
 
-from flask import Blueprint, g, jsonify, redirect, render_template, request, session, url_for
+from flask import Blueprint, abort, g, jsonify, redirect, render_template, request, session, url_for
 
 from tools.logging.icdev_logger import get_logger
 
@@ -22,9 +24,67 @@ _OAUTH_SERVICES = {"gcal", "gmail", "slack"}
 _PAT_SERVICES = {"github", "gitlab", "jira", "linear", "notion"}
 
 
+def _authenticated_user_id() -> str | None:
+    """Return the authenticated user id, or None if the request is unauthenticated.
+
+    Never returns a shared 'default' identity — the Second Brain stores per-user
+    personal data (profile, relationships, integration tokens); a shared fallback
+    would collapse every unauthenticated caller into one identity (cnr-me-01).
+    """
+    return getattr(g, "user_id", None) or session.get("user_id")
+
+
+@second_brain_bp.before_request
+def _second_brain_auth_gate():
+    """Fail-closed login guard for every /me route.
+
+    Adopts the Security Canvas ``sc_login_required`` pattern: an authenticated
+    ICDEV dashboard session (or an explicit test/API-key opt-in) is required.
+    Unauthenticated API / JSON / mutating requests get a JSON 401; unauthenticated
+    page loads redirect to /login. There is no shared-identity fallback.
+    """
+    if _authenticated_user_id():
+        return None
+
+    # ICDEV_AUTH_BYPASS: explicit test-only opt-in.
+    if os.environ.get("ICDEV_AUTH_BYPASS"):
+        session["user_id"] = "e2e-bypass"
+        return None
+
+    # ICDEV_DASHBOARD_API_KEY: presented-key semantics — authenticate ONLY if the
+    # request actually presents the key (constant-time compared). Merely having the
+    # env var set does NOT auto-authenticate.
+    api_key = os.environ.get("ICDEV_DASHBOARD_API_KEY", "")
+    if api_key:
+        presented = request.headers.get("X-ICDEV-API-Key", "")
+        if not presented:
+            auth_header = request.headers.get("Authorization", "")
+            if auth_header.startswith("Bearer "):
+                presented = auth_header[len("Bearer "):].strip()
+        if presented and hmac.compare_digest(presented, api_key):
+            session["user_id"] = "api-key"
+            return None
+
+    if (
+        request.is_json
+        or request.path.startswith("/me/api/")
+        or request.method in ("DELETE", "POST", "PUT")
+    ):
+        return jsonify({"error": "Authentication required"}), 401
+    return redirect("/login")
+
+
 def _user_id() -> str:
-    """Current user identifier — falls back to 'default' if auth not configured."""
-    return getattr(g, "user_id", None) or session.get("user_id") or "default"
+    """Current authenticated user identifier.
+
+    The before_request gate guarantees an authenticated identity for every /me
+    route, so this never returns a shared 'default'. Aborts 401 defensively if
+    called outside the gated request path with no session.
+    """
+    uid = _authenticated_user_id()
+    if not uid:
+        abort(401)
+    return uid
 
 
 def _tenant_id() -> str:

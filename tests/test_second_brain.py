@@ -162,15 +162,38 @@ def sb_env(monkeypatch):
 
 @pytest.fixture
 def flask_client():
-    """Flask test client for route smoke tests."""
+    """Flask test client for route smoke tests (authenticated session)."""
     import importlib
     app_mod = importlib.import_module("tools.dashboard.app")
     app = app_mod.app
     app.config["TESTING"] = True
     app.config["SECRET_KEY"] = "test-sb-secret"
     with app.test_client() as client:
+        # Establish an authenticated session — the /me routes are fail-closed
+        # (cnr-me-01), so route smoke tests must present a logged-in identity.
+        # 'test-admin' is the user seeded into dashboard_users by conftest.
+        with client.session_transaction() as sess:
+            sess["user_id"] = "test-admin"
         with app.app_context():
             yield client
+
+
+@pytest.fixture
+def sb_app():
+    """Isolated Flask app hosting ONLY second_brain_bp.
+
+    Tests the blueprint's fail-closed auth gate (cnr-me-01) in isolation, free of
+    the full dashboard boot (airgap probing, dashboard_users seeding, etc.).
+    """
+    import importlib
+    from flask import Flask
+    bp_mod = importlib.import_module("tools.second_brain.blueprint")
+    app = Flask(__name__)
+    app.config["TESTING"] = True
+    app.config["SECRET_KEY"] = "test-sb-secret"
+    app.add_url_rule("/login", "login", lambda: ("login page", 200))
+    app.register_blueprint(bp_mod.second_brain_bp)
+    return app
 
 
 # ── profile ──────────────────────────────────────────────────────────────────
@@ -685,3 +708,73 @@ class TestRoutes:
         assert r.status_code == 200
         data = json.loads(r.data)
         assert data.get("ok") is True
+
+
+# ── auth gate (cnr-me-01) ──────────────────────────────────────────────────────
+
+class TestAuthGate:
+    def test_unauth_api_returns_401(self, sb_app, monkeypatch):
+        monkeypatch.delenv("ICDEV_AUTH_BYPASS", raising=False)
+        monkeypatch.delenv("ICDEV_DASHBOARD_API_KEY", raising=False)
+        r = sb_app.test_client().get("/me/api/second-brain/profile")
+        assert r.status_code == 401
+        assert json.loads(r.data).get("error") == "Authentication required"
+
+    def test_unauth_page_redirects_to_login(self, sb_app, monkeypatch):
+        monkeypatch.delenv("ICDEV_AUTH_BYPASS", raising=False)
+        monkeypatch.delenv("ICDEV_DASHBOARD_API_KEY", raising=False)
+        r = sb_app.test_client().get("/me/profile", follow_redirects=False)
+        assert r.status_code in (301, 302)
+        assert "/login" in r.headers.get("Location", "")
+
+    def test_unauth_mutating_returns_401(self, sb_app, monkeypatch):
+        monkeypatch.delenv("ICDEV_AUTH_BYPASS", raising=False)
+        monkeypatch.delenv("ICDEV_DASHBOARD_API_KEY", raising=False)
+        r = sb_app.test_client().post(
+            "/me/api/second-brain/profile",
+            json={"title": "Hacker"},
+        )
+        assert r.status_code == 401
+
+    def test_authed_session_allows_access(self, sb_app, monkeypatch):
+        monkeypatch.delenv("ICDEV_AUTH_BYPASS", raising=False)
+        client = sb_app.test_client()
+        with client.session_transaction() as sess:
+            sess["user_id"] = "auth-user-a"
+        r = client.get("/me/api/second-brain/profile")
+        assert r.status_code == 200
+
+    def test_no_default_identity_fallback(self, sb_app):
+        """_user_id() must never collapse to a shared 'default' identity."""
+        import importlib
+        bp = importlib.import_module("tools.second_brain.blueprint")
+        # A request context with no session must abort(401) rather than 'default'.
+        from werkzeug.exceptions import Unauthorized
+        with sb_app.test_request_context("/me/profile"):
+            with pytest.raises(Unauthorized):
+                bp._user_id()
+
+    def test_two_users_see_distinct_data(self, sb_app, monkeypatch):
+        """Authenticated users must read only their own profile rows."""
+        monkeypatch.delenv("ICDEV_AUTH_BYPASS", raising=False)
+        from tools.second_brain.profile import upsert_profile
+        upsert_profile("auth-user-a", "default", org_name="Org-A")
+        upsert_profile("auth-user-b", "default", org_name="Org-B")
+
+        client = sb_app.test_client()
+        with client.session_transaction() as sess:
+            sess["user_id"] = "auth-user-a"
+        data_a = json.loads(client.get("/me/api/second-brain/profile").data)
+
+        client_b = sb_app.test_client()
+        with client_b.session_transaction() as sess:
+            sess["user_id"] = "auth-user-b"
+        data_b = json.loads(client_b.get("/me/api/second-brain/profile").data)
+
+        assert data_a.get("profile", {}).get("org_name") == "Org-A"
+        assert data_b.get("profile", {}).get("org_name") == "Org-B"
+
+    def test_auth_bypass_env_allows_access(self, sb_app, monkeypatch):
+        monkeypatch.setenv("ICDEV_AUTH_BYPASS", "1")
+        r = sb_app.test_client().get("/me/api/second-brain/profile")
+        assert r.status_code == 200
