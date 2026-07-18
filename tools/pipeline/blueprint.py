@@ -306,6 +306,96 @@ def parse_graph_json(raw):
     return graph
 
 
+# ── RBAC — role sets + session-derived identity (pdx-sec-03) ──────────────────
+#
+# Every route below runs inside the ICDEV dashboard, whose auth layer
+# (tools/dashboard/auth.py::_auth_before_request) populates ``g.current_user``
+# with a ``role`` and sets ``session['user_id']``. Before this fix the pipeline
+# canvas only checked ``session['user_id']`` (pc_login_required), so ANY
+# authenticated user of ANY role could delete pipelines, approve/reject/delete
+# SOPs, and generate deploy bundles. These sets mirror the established dashboard
+# RBAC_MATRIX:
+#   * PC_WRITE_ROLES  == RBAC_MATRIX["cicd"] — the pipeline canvas IS the CI/CD
+#     design surface; developer/pm/isso/admin may mutate designs.
+#   * PC_ELEVATED_ROLES == RBAC_MATRIX["gateway"] — the most-restricted
+#     operational surface; only platform admin + the ISSO security authority may
+#     perform destructive / governance actions (pipeline DELETE, SOP
+#     approve/reject/delete).
+# Roles are always sourced from server-side auth state (g.current_user, then the
+# signed session cookie) — NEVER from the request body. Missing/unknown role
+# fails closed (403).
+PC_WRITE_ROLES = ("admin", "isso", "pm", "developer")
+PC_ELEVATED_ROLES = ("admin", "isso")
+
+
+def _pc_current_role():
+    """Resolve the caller's role from server-side auth state only.
+
+    Prefers ``g.current_user['role']`` (set by the dashboard auth layer); falls
+    back to the signed-session ``role`` claim. Returns ``""`` when no role can be
+    established so callers fail closed. Never reads the request body/query.
+    """
+    user = getattr(g, "current_user", None)
+    if isinstance(user, dict):
+        role = user.get("role") or ""
+    elif user is not None:
+        try:
+            role = user["role"] or ""
+        except (KeyError, TypeError, IndexError):
+            role = ""
+    else:
+        role = ""
+    if not role:
+        role = session.get("role", "") or ""
+    return role
+
+
+def _pc_identity():
+    """Resolve the caller's identity from server-side auth state only.
+
+    Used for audit attribution, SOP approver identity, and collaboration
+    membership. Sourced from ``g.current_user`` (id → display_name) then the
+    session cookie ``user_id`` — NEVER from the request body (defeats identity
+    spoofing / self-approval bypass). Returns ``""`` when unknown.
+    """
+    user = getattr(g, "current_user", None)
+    if isinstance(user, dict):
+        ident = user.get("id") or user.get("display_name") or ""
+        if ident:
+            return ident
+    return session.get("user_id", "") or ""
+
+
+def pc_role_required(*roles):
+    """Fail-closed RBAC decorator for pipeline write / governance routes.
+
+    Restricts the wrapped route to callers whose server-derived role
+    (``g.current_user`` / session — never the request body) is in ``roles``.
+    Missing or unknown role -> 403. Stack this *below* ``@pc_login_required`` so
+    an unauthenticated caller is rejected with 401 by the auth gate first.
+    """
+    allowed = frozenset(roles)
+
+    def decorator(f):
+        @wraps(f)
+        def decorated(*args, **kwargs):
+            role = _pc_current_role()
+            if role not in allowed:
+                _audit(
+                    "RBAC_DENY",
+                    "route",
+                    request.path,
+                    f"required={sorted(allowed)} had={role or 'none'}",
+                    user_id=_pc_identity() or "anonymous",
+                )
+                return jsonify({"error": "Forbidden: insufficient role"}), 403
+            return f(*args, **kwargs)
+
+        return decorated
+
+    return decorator
+
+
 # ── Blueprint Factory ─────────────────────────────────────────────────────────
 
 
@@ -451,6 +541,7 @@ def create_pipeline_blueprint():
 
     @bp.route("/api/pipelines", methods=["POST"])
     @pc_login_required
+    @pc_role_required(*PC_WRITE_ROLES)
     def pc_api_create():
         data = request.get_json(force=True, silent=True) or {}
         # Input validation
@@ -503,6 +594,7 @@ def create_pipeline_blueprint():
 
     @bp.route("/api/pipelines/<pipe_id>", methods=["PUT"])
     @pc_login_required
+    @pc_role_required(*PC_WRITE_ROLES)
     def pc_api_update(pipe_id):
         data = request.get_json(force=True, silent=True) or {}
         if len(json.dumps(data)) > 5_000_000:
@@ -601,6 +693,7 @@ def create_pipeline_blueprint():
 
     @bp.route("/api/pipelines/<pipe_id>", methods=["DELETE"])
     @pc_login_required
+    @pc_role_required(*PC_ELEVATED_ROLES)
     def pc_api_delete(pipe_id):
         logger.info("Deleting pipeline: %s", pipe_id)
         conn = get_connection()
@@ -649,6 +742,7 @@ def create_pipeline_blueprint():
 
     @bp.route("/api/templates/<tpl_id>/load", methods=["POST"])
     @pc_login_required
+    @pc_role_required(*PC_WRITE_ROLES)
     def pc_api_load_template(tpl_id):
         conn = get_connection()
         row = conn.execute("SELECT * FROM pc_templates WHERE id=%s", (tpl_id,)).fetchone()
@@ -711,6 +805,7 @@ def create_pipeline_blueprint():
 
     @bp.route("/api/snippets/<snip_id>/load", methods=["POST"])
     @pc_login_required
+    @pc_role_required(*PC_WRITE_ROLES)
     def pc_api_load_snippet(snip_id):
         """Create a new pipeline from a snippet (like template load)."""
         conn = get_connection()
@@ -907,6 +1002,7 @@ def create_pipeline_blueprint():
 
     @bp.route("/api/versions/<pipe_id>", methods=["POST"])
     @pc_login_required
+    @pc_role_required(*PC_WRITE_ROLES)
     def pc_api_create_version(pipe_id):
         conn = get_connection()
         row = conn.execute("SELECT graph_json FROM pipelines WHERE id=%s", (pipe_id,)).fetchone()
@@ -950,6 +1046,7 @@ def create_pipeline_blueprint():
 
     @bp.route("/api/boundaries/<pipe_id>", methods=["POST"])
     @pc_login_required
+    @pc_role_required(*PC_WRITE_ROLES)
     def pc_api_create_boundary(pipe_id):
         data = request.get_json(force=True, silent=True) or {}
         bid = str(_uuid.uuid4())[:8]
@@ -979,6 +1076,7 @@ def create_pipeline_blueprint():
 
     @bp.route("/api/boundaries/<pipe_id>/<bid>", methods=["DELETE"])
     @pc_login_required
+    @pc_role_required(*PC_WRITE_ROLES)
     def pc_api_delete_boundary(pipe_id, bid):
         conn = get_connection()
         conn.execute("DELETE FROM pc_boundaries WHERE id=%s AND pipeline_id=%s", (bid, pipe_id))
@@ -1149,6 +1247,7 @@ def create_pipeline_blueprint():
 
     @bp.route("/api/deploy/<pipe_id>", methods=["POST"])
     @pc_login_required
+    @pc_role_required(*PC_WRITE_ROLES)
     def pc_api_deploy(pipe_id):
         """Generate IaC deployment bundle."""
         logger.info("Generating deploy bundle for pipeline %s", pipe_id)
@@ -1274,6 +1373,7 @@ def create_pipeline_blueprint():
 
     @bp.route("/api/change-requests/<pipe_id>", methods=["POST"])
     @pc_login_required
+    @pc_role_required(*PC_WRITE_ROLES)
     def pc_api_create_cr(pipe_id):
         data = request.get_json(force=True, silent=True) or {}
         cr_id = str(_uuid.uuid4())[:8]
@@ -1609,28 +1709,35 @@ def create_pipeline_blueprint():
 
     @bp.route("/api/collab/<design_id>/join", methods=["POST"])
     @pc_login_required
+    @pc_role_required(*PC_WRITE_ROLES)
     def pc_collab_join(design_id):
         """Join a collaborative PDC editing session."""
         body = request.json or {}
-        user_id = body.get("user_id", str(_uuid_mod.uuid4())[:8])
+        # Identity is server-derived (session / g.current_user), NEVER the body:
+        # trusting body.user_id let a caller join a session as an arbitrary user.
+        user_id = _pc_identity() or str(_uuid_mod.uuid4())[:8]
         user_name = body.get("user_name", "")
         return jsonify(_pdc_collab.join(design_id, user_id, user_name))
 
     @bp.route("/api/collab/<design_id>/leave", methods=["POST"])
     @pc_login_required
+    @pc_role_required(*PC_WRITE_ROLES)
     def pc_collab_leave(design_id):
         """Leave a PDC collaborative session."""
-        body = request.json or {}
-        user_id = body.get("user_id", "")
+        # Server-derived identity only — a caller may only remove themselves.
+        user_id = _pc_identity()
         _pdc_collab.leave(design_id, user_id)
         return jsonify({"ok": True})
 
     @bp.route("/api/collab/<design_id>/push", methods=["POST"])
     @pc_login_required
+    @pc_role_required(*PC_WRITE_ROLES)
     def pc_collab_push(design_id):
         """Push an operation into a PDC collaborative session."""
         body = request.json or {}
-        user_id = body.get("user_id", "")
+        # Attribute the op to the authenticated caller, not body.user_id
+        # (identity spoofing — a caller could forge ops as another participant).
+        user_id = _pc_identity()
         op_type = body.get("op_type", "")
         data = body.get("data", {})
         seq = _pdc_collab.push(design_id, user_id, op_type, data)
@@ -1641,7 +1748,9 @@ def create_pipeline_blueprint():
     def pc_collab_poll(design_id):
         """Poll for PDC collaborative operations since a sequence number."""
         since = int(request.args.get("since", 0))
-        user_id = request.args.get("user_id", "")
+        # Cursor position is attributed to the authenticated caller, not the
+        # query-string user_id (same identity-spoofing class as push/join).
+        user_id = _pc_identity()
         cx = request.args.get("cx")
         cy = request.args.get("cy")
         if user_id and cx is not None and cy is not None:
@@ -1688,6 +1797,7 @@ def create_pipeline_blueprint():
 
     @bp.route("/api/sops", methods=["POST"])
     @pc_login_required
+    @pc_role_required(*PC_WRITE_ROLES)
     def pc_api_create_sop():
         """Create a new pipeline SOP."""
         data = request.json or {}
@@ -1696,6 +1806,7 @@ def create_pipeline_blueprint():
 
     @bp.route("/api/sops/<sop_id>", methods=["PUT"])
     @pc_login_required
+    @pc_role_required(*PC_WRITE_ROLES)
     def pc_api_update_sop(sop_id):
         """Update an existing pipeline SOP."""
         data = request.json or {}
@@ -1706,15 +1817,18 @@ def create_pipeline_blueprint():
 
     @bp.route("/api/sops/<sop_id>", methods=["DELETE"])
     @pc_login_required
+    @pc_role_required(*PC_ELEVATED_ROLES)
     def pc_api_delete_sop(sop_id):
-        """Delete a pipeline SOP."""
+        """Delete a pipeline SOP (governance action — elevated role only)."""
         deleted = _pdc_delete_sop(sop_id)
         if not deleted:
             return jsonify({"error": "Not found"}), 404
+        _audit("SOP_DELETE", "sop", sop_id, "", user_id=_pc_identity())
         return jsonify({"ok": True})
 
     @bp.route("/api/sops/<sop_id>/submit", methods=["POST"])
     @pc_login_required
+    @pc_role_required(*PC_WRITE_ROLES)
     def pc_api_submit_sop(sop_id):
         """Submit a pipeline SOP for review (draft → pending_review)."""
         sop, err = _pdc_submit_for_review(sop_id)
@@ -1724,25 +1838,49 @@ def create_pipeline_blueprint():
 
     @bp.route("/api/sops/<sop_id>/approve", methods=["POST"])
     @pc_login_required
+    @pc_role_required(*PC_ELEVATED_ROLES)
     def pc_api_approve_sop(sop_id):
-        """Approve a pending pipeline SOP."""
-        body = request.json or {}
-        approved_by = body.get("approved_by", "")
-        sop, err = _pdc_approve_sop(sop_id, approved_by=approved_by)
+        """Approve a pending pipeline SOP.
+
+        Separation of duties (NIST AC-5): the approver identity is taken from
+        the authenticated session — NEVER the request body — and an approver may
+        not approve a SOP they own/authored (self-approval -> 403).
+        """
+        sop = _pdc_get_sop_by_id(sop_id)
+        if not sop:
+            return jsonify({"error": "Not found"}), 404
+        approver = _pc_identity()
+        owner = (sop.get("owner") or "").strip()
+        if approver and owner and owner.lower() == approver.lower():
+            _audit(
+                "SOP_SELF_APPROVAL_DENY",
+                "sop",
+                sop_id,
+                f"approver={approver} owner={owner}",
+                user_id=approver,
+            )
+            return jsonify(
+                {"error": "Separation of duties: you may not approve a SOP you own"}
+            ), 403
+        sop, err = _pdc_approve_sop(sop_id, approved_by=approver)
         if err:
             return jsonify({"error": err}), 400
+        _audit("SOP_APPROVE", "sop", sop_id, f"approved_by={approver}", user_id=approver)
         return jsonify(sop)
 
     @bp.route("/api/sops/<sop_id>/reject", methods=["POST"])
     @pc_login_required
+    @pc_role_required(*PC_ELEVATED_ROLES)
     def pc_api_reject_sop(sop_id):
-        """Reject a pending pipeline SOP."""
+        """Reject a pending pipeline SOP (governance action — elevated role only)."""
         body = request.json or {}
         reason = body.get("reason", "")
-        rejected_by = body.get("rejected_by", "")
+        # Rejecter identity is server-derived, never the request body.
+        rejected_by = _pc_identity()
         sop, err = _pdc_reject_sop(sop_id, reason=reason, rejected_by=rejected_by)
         if err:
             return jsonify({"error": err}), 400
+        _audit("SOP_REJECT", "sop", sop_id, f"rejected_by={rejected_by}", user_id=rejected_by)
         return jsonify(sop)
 
     # ══════════════════════════════════════════════════════════════════════

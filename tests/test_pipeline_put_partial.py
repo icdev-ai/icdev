@@ -74,6 +74,9 @@ def _make_app_with_pipeline(existing: dict) -> tuple[Flask, MagicMock]:
 def _login(client):
     with client.session_transaction() as sess:
         sess["user_id"] = "test-user"
+        # pdx-sec-03: pipeline write routes now require a write-tier role
+        # (developer/pm/isso/admin). An authorized editor is a developer.
+        sess["role"] = "developer"
 
 
 # ── tests ────────────────────────────────────────────────────────────────────
