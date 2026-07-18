@@ -2,6 +2,12 @@
 {% extends "base.html" %}
 {% block title %}Remediation — Observability Canvas — ICDEV{% endblock %}
 {% block content %}
+{% if store_unavailable %}
+<div class="odc-store-banner" role="alert" style="margin:16px 30px;padding:12px 16px;background:#3a1c1c;border:1px solid #b71c1c;border-radius:6px;color:#ef9a9a;font-size:13px;display:flex;justify-content:space-between;align-items:center;">
+  <span>&#9888; Observability store unavailable — showing empty state.</span>
+  <a href="#" onclick="this.parentElement.style.display='none';return false;" style="color:#ef9a9a;text-decoration:none;font-weight:700;margin-left:16px;" aria-label="Dismiss">&times;</a>
+</div>
+{% endif %}
 <style>
   .rem-hero { padding: 20px 30px; }
   .rem-hero h1 { font-size: 22px; margin: 0 0 4px; color: #4caf50; }
