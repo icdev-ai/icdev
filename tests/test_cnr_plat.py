@@ -9,7 +9,7 @@ Covers:
 from __future__ import annotations
 
 import pytest
-from flask import Flask, jsonify
+from flask import Flask, g, jsonify
 
 
 # ---------------------------------------------------------------------------
@@ -195,3 +195,77 @@ def test_normal_request_not_413(monkeypatch):
 
 
 
+# ---------------------------------------------------------------------------
+# cnr-plat-03 — fail-closed canvas access
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def _clear_canvas_env(monkeypatch):
+    monkeypatch.delenv("ICDEV_ENFORCE_CANVAS_ACCESS", raising=False)
+    monkeypatch.delenv("ICDEV_CANVAS_ACCESS_OPEN", raising=False)
+    monkeypatch.delenv("ICDEV_AUTH_BYPASS", raising=False)
+    return monkeypatch
+
+
+def test_canvas_access_enforced_by_default(_clear_canvas_env):
+    from tools.security.canvas_access import _canvas_access_enforced
+
+    assert _canvas_access_enforced() is True
+
+
+def test_canvas_access_open_opt_out(_clear_canvas_env):
+    _clear_canvas_env.setenv("ICDEV_CANVAS_ACCESS_OPEN", "true")
+    from tools.security.canvas_access import _canvas_access_enforced
+
+    assert _canvas_access_enforced() is False
+
+
+def test_canvas_access_bypass_opt_out(_clear_canvas_env):
+    _clear_canvas_env.setenv("ICDEV_AUTH_BYPASS", "1")
+    from tools.security.canvas_access import _canvas_access_enforced
+
+    assert _canvas_access_enforced() is False
+
+
+def test_canvas_access_explicit_false_wins(_clear_canvas_env):
+    _clear_canvas_env.setenv("ICDEV_ENFORCE_CANVAS_ACCESS", "false")
+    from tools.security.canvas_access import _canvas_access_enforced
+
+    assert _canvas_access_enforced() is False
+
+
+def test_guard_unauth_returns_401_by_default(_clear_canvas_env):
+    from tools.security.canvas_access import guard_component_access
+
+    app = Flask(__name__)
+    with app.test_request_context(
+        "/dic", headers={"Accept": "application/json"}
+    ):
+        # no g.current_user → unauthenticated
+        guard_fn = guard_component_access("dic", min_il="IL4")
+        result = guard_fn()
+        assert result is not None
+        # (response, status) tuple
+        status = result[1] if isinstance(result, tuple) else getattr(result, "status_code", None)
+        assert status == 401
+
+
+def test_guard_unauth_allowed_when_open(_clear_canvas_env):
+    _clear_canvas_env.setenv("ICDEV_CANVAS_ACCESS_OPEN", "true")
+    from tools.security.canvas_access import guard_component_access
+
+    app = Flask(__name__)
+    with app.test_request_context("/dic"):
+        guard_fn = guard_component_access("dic", min_il="IL4")
+        assert guard_fn() is None
+
+
+def test_guard_authenticated_no_tenant_allowed(_clear_canvas_env):
+    from tools.security.canvas_access import guard_component_access
+
+    app = Flask(__name__)
+    with app.test_request_context("/dic"):
+        g.current_user = {"id": "admin1", "role": "admin"}  # no tenant_id
+        guard_fn = guard_component_access("dic", min_il="IL4")
+        assert guard_fn() is None
