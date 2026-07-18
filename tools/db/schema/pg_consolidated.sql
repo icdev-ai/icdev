@@ -9130,6 +9130,8 @@ CREATE TABLE public.cpmp_clins (
     created_at text DEFAULT now(),
     updated_at text DEFAULT now(),
     classification text DEFAULT 'CUI'::text,
+    tenant_id text,
+    obligated_value real DEFAULT 0.0,
     CONSTRAINT cpmp_clins_clin_type_check CHECK ((clin_type = ANY (ARRAY['labor'::text, 'materials'::text, 'travel'::text, 'odc'::text, 'subcontract'::text, 'fixed_price'::text]))),
     CONSTRAINT cpmp_clins_status_check CHECK ((status = ANY (ARRAY['active'::text, 'fully_funded'::text, 'expended'::text, 'deobligated'::text])))
 );
@@ -9163,6 +9165,31 @@ CREATE TABLE public.cpmp_contract_mods (
     updated_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
     CONSTRAINT cpmp_contract_mods_status_check CHECK ((status = ANY (ARRAY['requested'::text, 'in_review'::text, 'approved'::text, 'rejected'::text, 'executed'::text]))),
     CONSTRAINT cpmp_contract_mods_type_check CHECK ((type = ANY (ARRAY['admin'::text, 'funding'::text, 'scope'::text, 'pop'::text])))
+);
+
+
+--
+-- Name: cpmp_contract_periods; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.cpmp_contract_periods (
+    id text NOT NULL,
+    contract_id text NOT NULL,
+    period_type text DEFAULT 'base'::text NOT NULL,
+    option_number integer DEFAULT 0,
+    pop_start text,
+    pop_end text,
+    obligated_value real DEFAULT 0.0,
+    funded_value real DEFAULT 0.0,
+    ceiling_value real DEFAULT 0.0,
+    status text DEFAULT 'unexercised'::text NOT NULL,
+    exercised_at text,
+    exercised_by text,
+    notes text,
+    created_at text DEFAULT now(),
+    updated_at text DEFAULT now(),
+    classification text DEFAULT 'CUI'::text,
+    tenant_id text
 );
 
 
@@ -9206,6 +9233,10 @@ CREATE TABLE public.cpmp_contracts (
     created_by text,
     classification text DEFAULT 'CUI'::text,
     compartments text DEFAULT '[]'::text NOT NULL,
+    tenant_id text,
+    obligated_value real DEFAULT 0.0,
+    period_type text DEFAULT 'base'::text,
+    option_number integer DEFAULT 0,
     CONSTRAINT cpmp_contracts_contract_type_check CHECK ((contract_type = ANY (ARRAY['FFP'::text, 'T&M'::text, 'CPFF'::text, 'CPIF'::text, 'IDIQ'::text, 'BPA'::text, 'BOA'::text]))),
     CONSTRAINT cpmp_contracts_health_check CHECK ((health = ANY (ARRAY['green'::text, 'yellow'::text, 'red'::text]))),
     CONSTRAINT cpmp_contracts_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'active'::text, 'option_pending'::text, 'complete'::text, 'closed'::text, 'terminated'::text])))
@@ -10363,7 +10394,7 @@ CREATE TABLE public.dashboard_users (
     classification character varying(50) DEFAULT 'CUI'::character varying,
     clearance_level text DEFAULT 'CUI'::text NOT NULL,
     compartments text DEFAULT '[]'::text NOT NULL,
-    CONSTRAINT dashboard_users_role_check CHECK ((role = ANY (ARRAY['admin'::text, 'pm'::text, 'developer'::text, 'isso'::text, 'co'::text, 'cor'::text]))),
+    CONSTRAINT dashboard_users_role_check CHECK ((role = ANY (ARRAY['admin'::text, 'pm'::text, 'developer'::text, 'isso'::text, 'co'::text, 'cor'::text, 'bd'::text, 'capture_mgr'::text, 'contract_mgr'::text, 'reviewer'::text]))),
     CONSTRAINT dashboard_users_status_check CHECK ((status = ANY (ARRAY['active'::text, 'suspended'::text])))
 );
 
@@ -22283,7 +22314,9 @@ CREATE TABLE public.pg_competitor_awards (
     naics_code text,
     labor_categories text,
     source text,
-    created_at text NOT NULL
+    created_at text NOT NULL,
+    tenant_id text,
+    classification text DEFAULT 'CUI'::text
 );
 
 
@@ -22612,7 +22645,9 @@ CREATE TABLE public.pg_pwin_assessments (
     past_performance_fit real,
     factor_breakdown text NOT NULL,
     method text DEFAULT 'logistic_weighted'::text NOT NULL,
-    assessed_at text NOT NULL
+    assessed_at text NOT NULL,
+    tenant_id text,
+    classification text DEFAULT 'CUI'::text
 );
 
 
@@ -22897,6 +22932,31 @@ CREATE TABLE public.pg_win_loss_records (
 -- Name: pg_win_themes; Type: TABLE; Schema: public; Owner: -
 --
 
+-- prem-pstaff-01: bid-side person -> LCAT registry. Evidence is mandatory (CHECK).
+CREATE TABLE IF NOT EXISTS public.proposal_key_personnel (
+    id text NOT NULL,
+    opportunity_id text NOT NULL,
+    person_ref text NOT NULL,
+    name text NOT NULL,
+    proposed_lcat text NOT NULL,
+    qualification_verdict text NOT NULL,
+    evidence_json text NOT NULL,
+    source text,
+    key_person integer DEFAULT 0 NOT NULL,
+    gaps_json text DEFAULT '[]'::text NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    created_at timestamp without time zone,
+    updated_at timestamp without time zone,
+    CONSTRAINT proposal_key_personnel_pkey PRIMARY KEY (id),
+    CONSTRAINT proposal_key_personnel_opp_person_key UNIQUE (opportunity_id, person_ref),
+    CONSTRAINT proposal_key_personnel_verdict_check CHECK ((qualification_verdict = ANY (ARRAY['qualified'::text, 'gap'::text, 'exceeds'::text]))),
+    CONSTRAINT proposal_key_personnel_source_check CHECK ((source IS NULL OR (source = ANY (ARRAY['compass'::text, 'manual'::text, 'resume_match'::text, 'scraped'::text])))),
+    CONSTRAINT proposal_key_personnel_evidence_check CHECK (((evidence_json <> ''::text) AND (evidence_json <> '[]'::text)))
+);
+CREATE INDEX IF NOT EXISTS idx_pkp_opportunity ON public.proposal_key_personnel(opportunity_id);
+CREATE INDEX IF NOT EXISTS idx_pkp_verdict ON public.proposal_key_personnel(qualification_verdict);
+
 CREATE TABLE public.pg_win_themes (
     id text NOT NULL,
     opportunity_id text NOT NULL,
@@ -22911,7 +22971,7 @@ CREATE TABLE public.pg_win_themes (
     updated_at text NOT NULL,
     classification character varying(50) DEFAULT 'CUI'::character varying,
     CONSTRAINT pg_win_themes_status_check CHECK ((status = ANY (ARRAY['active'::text, 'archived'::text, 'superseded'::text]))),
-    CONSTRAINT pg_win_themes_theme_type_check CHECK ((theme_type = ANY (ARRAY['win_theme'::text, 'discriminator'::text, 'ghost'::text])))
+    CONSTRAINT pg_win_themes_theme_type_check CHECK ((theme_type = ANY (ARRAY['win_theme'::text, 'discriminator'::text, 'ghost_strategy'::text])))
 );
 
 
@@ -23868,7 +23928,7 @@ CREATE TABLE public.proposal_review_findings (
     created_at text DEFAULT now(),
     resolved_evidence text,
     closure_approved_by text,
-    CONSTRAINT proposal_review_findings_finding_type_check CHECK ((finding_type = ANY (ARRAY['compliance_gap'::text, 'content_weakness'::text, 'competitive_risk'::text, 'formatting'::text, 'pricing_concern'::text, 'technical_error'::text, 'missing_content'::text, 'other'::text]))),
+    CONSTRAINT proposal_review_findings_finding_type_check CHECK ((finding_type = ANY (ARRAY['compliance_gap'::text, 'content_weakness'::text, 'competitive_risk'::text, 'formatting'::text, 'pricing_concern'::text, 'technical_error'::text, 'missing_content'::text, 'invalid_citation'::text, 'other'::text]))),
     CONSTRAINT proposal_review_findings_severity_check CHECK ((severity = ANY (ARRAY['critical'::text, 'major'::text, 'minor'::text, 'observation'::text]))),
     CONSTRAINT proposal_review_findings_status_check CHECK ((status = ANY (ARRAY['open'::text, 'in_progress'::text, 'resolved'::text, 'deferred'::text, 'wont_fix'::text])))
 );
@@ -24489,6 +24549,78 @@ CREATE TABLE public.rag_chunks (
     kg_node_ids text DEFAULT '[]'::text,
     CONSTRAINT rag_chunks_tier_check CHECK ((tier = ANY (ARRAY['hot'::text, 'warm'::text, 'cold'::text])))
 );
+
+
+--
+-- Name: rag_provenance_ledger; Type: TABLE; Schema: public; Owner: -
+-- Append-only AIA chain-of-custody ledger (D-AIDP, NIST AU-3). trust-cite-04:
+-- materialized here so fresh-PG bootstrap has it (bootstrap_pg marks migrations
+-- applied, so migration 250 alone would not reach a fresh database).
+--
+
+CREATE TABLE IF NOT EXISTS public.rag_provenance_ledger (
+    id SERIAL PRIMARY KEY,
+    chunk_uuid text NOT NULL,
+    parent_doc_uuid text,
+    sha256_hash text,
+    token_count integer DEFAULT 0,
+    classification_label text,
+    version_tree_ref text,
+    model_id text,
+    hyperparams_json text DEFAULT '{}'::text,
+    prompt_sha256 text,
+    signature text,
+    event_type text NOT NULL DEFAULT 'ingest'::text,
+    ingest_timestamp timestamp without time zone,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT rag_provenance_ledger_event_type_check CHECK ((event_type = ANY (ARRAY['ingest'::text, 'chain_of_custody'::text])))
+);
+
+CREATE INDEX IF NOT EXISTS idx_rag_prov_chunk ON public.rag_provenance_ledger(chunk_uuid);
+CREATE INDEX IF NOT EXISTS idx_rag_prov_parent_doc ON public.rag_provenance_ledger(parent_doc_uuid);
+CREATE INDEX IF NOT EXISTS idx_rag_prov_event_type ON public.rag_provenance_ledger(event_type);
+
+--
+-- Name: rag_queries; Type: TABLE; Schema: public; Owner: -
+-- RAG knowledge search requests + lifecycle. Queried by
+-- notification_service/render_handler_service.py; materialized here so fresh-PG
+-- bootstrap has it (bootstrap_pg marks migrations applied, so migration 252
+-- alone would not reach a fresh database).
+--
+
+CREATE TABLE IF NOT EXISTS public.rag_queries (
+    id text PRIMARY KEY,
+    query_text text NOT NULL,
+    lens text DEFAULT 'default'::text,
+    status text DEFAULT 'pending'::text,
+    agent_id text,
+    tenant_id text DEFAULT ''::text,
+    classification text DEFAULT 'CUI'::text,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    completed_at timestamp without time zone,
+    CONSTRAINT rag_queries_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'running'::text, 'done'::text, 'failed'::text])))
+);
+
+CREATE INDEX IF NOT EXISTS idx_rag_queries_status ON public.rag_queries(status);
+CREATE INDEX IF NOT EXISTS idx_rag_queries_agent ON public.rag_queries(agent_id);
+
+--
+-- Name: rag_citations; Type: TABLE; Schema: public; Owner: -
+-- Source citations attached to a rag_queries result.
+--
+
+CREATE TABLE IF NOT EXISTS public.rag_citations (
+    id BIGSERIAL PRIMARY KEY,
+    query_id text NOT NULL REFERENCES public.rag_queries(id),
+    source_doc text NOT NULL,
+    citation_text text,
+    confidence real DEFAULT 0.0,
+    tenant_id text DEFAULT ''::text,
+    classification text DEFAULT 'CUI'::text,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_rag_citations_query ON public.rag_citations(query_id);
 
 
 --
@@ -38687,6 +38819,14 @@ ALTER TABLE ONLY public.cpmp_contract_mods
 
 
 --
+-- Name: cpmp_contract_periods cpmp_contract_periods_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cpmp_contract_periods
+    ADD CONSTRAINT cpmp_contract_periods_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: cpmp_contracts cpmp_contracts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -50255,6 +50395,20 @@ CREATE INDEX idx_cpmp_contract_health ON public.cpmp_contracts USING btree (heal
 --
 
 CREATE INDEX idx_cpmp_contract_idiq ON public.cpmp_contracts USING btree (idiq_contract_id);
+
+
+--
+-- Name: idx_cpmp_contract_periods_contract; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_cpmp_contract_periods_contract ON public.cpmp_contract_periods USING btree (contract_id);
+
+
+--
+-- Name: idx_cpmp_contract_periods_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_cpmp_contract_periods_status ON public.cpmp_contract_periods USING btree (contract_id, status);
 
 
 --
@@ -62388,10 +62542,7 @@ CREATE TABLE IF NOT EXISTS public.user_integrations (
     id                TEXT PRIMARY KEY,
     user_id           TEXT NOT NULL,
     tenant_id         TEXT NOT NULL DEFAULT 'default',
-    -- Service list derived from icdev.tools.second_brain.constants.INTEGRATION_SERVICES
-    -- (guarded by tests/test_second_brain.py::TestMsGraphIntegration). 'msgraph'
-    -- MUST be present — blueprint.py persists Microsoft Graph tokens (cnr-me-03).
-    service           TEXT NOT NULL CHECK(service IN ('gmail','gcal','slack','msgraph','github','gitlab','jira','linear','notion')),
+    service           TEXT NOT NULL CHECK(service IN ('gmail','gcal','slack','github','gitlab','jira','linear','notion','msgraph')),
     access_token_enc  TEXT,
     refresh_token_enc TEXT,
     token_expiry      TEXT,
@@ -62779,11 +62930,24 @@ CREATE INDEX IF NOT EXISTS idx_fedramp_controls_status  ON public.fedramp_contro
 -- Pipeline Design Canvas (PDC) core schema — parity with the runtime
 -- initializer tools/pipeline/db/init_db.py::SCHEMA and migration
 -- tools/db/migrations/027_pipeline_snapshots/up.py. On PG-primary the canvas
--- db_path 'pipeline_canvas' routes to the SHARED icdev database, so these are
--- shared-DB tables that must exist in the consolidated baseline. (task
--- pdx-data-04) PG-NATIVE, schema-qualified public., SERIAL for autoincrement,
--- all idempotent (CREATE ... IF NOT EXISTS), no seeding. Tables ordered so
--- every REFERENCES target precedes its referrers.
+-- db_path 'pipeline_canvas' routes to the SHARED icdev database
+-- (tools/db/storage.py), so these are shared-DB tables that must exist in the
+-- consolidated baseline; otherwise a fresh PG instance only gets them lazily
+-- if the blueprint factory's swallowed init_db() succeeds. Added so a fresh
+-- PostgreSQL bootstrapped from this baseline can serve /pipeline without first
+-- running runtime init. (task pdx-data-04)
+--
+-- PG-NATIVE dialect: this file is applied RAW by tools/db/bootstrap_pg.py
+-- (psycopg2 simple-query, NO translate_sql) under search_path='', so every
+-- object is schema-qualified with public. and INTEGER PRIMARY KEY AUTOINCREMENT
+-- is written as SERIAL PRIMARY KEY (mirrors translate_sql, tools/db/storage.py).
+-- All statements idempotent (CREATE ... IF NOT EXISTS). NO data seeding
+-- (init_db seeds templates/snippets; it remains authoritative). Tables are
+-- ordered so every REFERENCES target precedes its referrers.
+--
+-- pdx-data-01 (PR #441) decision: pdc_snapshots is the authoritative
+-- twin-snapshot store; pipeline_snapshots (deprecated module, migration 027)
+-- stays — so all 17 tables belong here.
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS public.pipelines (
@@ -62867,6 +63031,7 @@ CREATE TABLE IF NOT EXISTS public.pdc_sops (
 CREATE INDEX IF NOT EXISTS idx_pdc_sops_type ON public.pdc_sops(sop_type);
 CREATE INDEX IF NOT EXISTS idx_pdc_sops_status ON public.pdc_sops(approval_status);
 
+-- pipeline_snapshots: append-only DAG snapshot store (migration 027 PG parity).
 CREATE TABLE IF NOT EXISTS public.pipeline_snapshots (
     id             TEXT PRIMARY KEY,
     pipeline_id    TEXT NOT NULL,
@@ -63017,11 +63182,45 @@ CREATE INDEX IF NOT EXISTS idx_pdc_simulations_pipeline ON public.pdc_simulation
 -- END ICDEV ADDITIVE SECTION (Pipeline Design Canvas core schema)
 -- ============================================================================
 
---
--- PostgreSQL database dump complete
---
 
-\unrestrict Qap9jwGnwjCLnf0yuzwfDjdGVcjK3amQNXgGbTCQZ4s0nx7szFJkVZl8XRi6Q9N
+-- ============================================================================
+-- ICDEV ADDITIVE SECTION (post-dump, hand-maintained) — APPEND ONLY
+-- ============================================================================
+-- Data Design Canvas (DDC) core schema — parity with the runtime initializer
+-- tools/data_canvas/db/init_db.py::SCHEMA and migration
+-- tools/db/migrations/273_data_canvas_core.sql. On PG-primary the Data Canvas
+-- routes to the SHARED icdev database (tools/db/storage.py), so these are
+-- shared-DB tables that must exist in the consolidated baseline; otherwise a
+-- fresh PG instance only gets them lazily if the blueprint factory's swallowed
+-- init_db() succeeds (tools/data_canvas/blueprint.py). Added so a fresh
+-- PostgreSQL bootstrapped from this baseline can serve /data without first
+-- running runtime init. (task dcpr-db-01)
+--
+-- PG-NATIVE dialect: this file is applied RAW by tools/db/bootstrap_pg.py
+-- (psycopg2 simple-query, NO translate_sql) under search_path='', so every
+-- object is schema-qualified with public. and INTEGER PRIMARY KEY AUTOINCREMENT
+-- is written as SERIAL PRIMARY KEY (mirrors translate_sql, tools/db/storage.py).
+-- The reserved word `user` is double-quoted (existing file convention). All
+-- statements idempotent (CREATE ... IF NOT EXISTS). NO data seeding (init_db
+-- TEMPLATES/SNIPPETS/RUNBOOKS/SOPS remain authoritative). NO append-only
+-- triggers here (dd_audit/dm_audit/dd_mapping_transforms immutability is
+-- provisioned separately — task dcpr-db-02). Tables are ordered so every
+-- REFERENCES target precedes its referrers. The 6 DDC tables already present in
+-- the pg_dump body (data_nodes, data_edges, data_twin_snapshots,
+-- dd_freshness_alerts, dm_ports, dd_pii_scans) are NOT repeated here.
+-- ============================================================================
+
+-- ── Design core ──────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.data_designs (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    description     TEXT,
+    graph_json      TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[],"boundaries":[]}',
+    template_id     TEXT,
+    classification  TEXT DEFAULT 'CUI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
 
 CREATE TABLE IF NOT EXISTS public.dd_templates (
     id            TEXT PRIMARY KEY,
