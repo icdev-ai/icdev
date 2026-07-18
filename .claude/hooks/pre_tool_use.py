@@ -132,6 +132,9 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "ad_options_coach_events",
         # FathomDesk lessons (Phase 6.5) — quiz attempt audit (NIST AU; anti-cheat + learning analytics)
         "ad_user_quiz_attempts",
+        # AI-ify Canvas (penta-aiify-04) — PRD provenance/citation lineage for
+        # AI-boosted PRDs; the latest row per phase supersedes, never mutated
+        "aiify_prd_provenance",
         # Document Modernization Engine (docmod, migration 258) — findings state
         # transitions are superseding rows; scan runs and catalog curation are audit
         "docmod_findings",

@@ -122,6 +122,103 @@ def _parse_phases(raw):
     return raw or []
 
 
+# ── TRUST: grounding evidence + provenance for AI-boosted PRDs (penta-aiify-04) ─
+
+def _build_prd_evidence(opps, innovation_signals, regulatory_items, pain_points):
+    """Build the citable evidence set for a PRD from its scan context.
+
+    Returns ``(evidence_lines, allowed_ids)`` where every line names a stable id
+    (``OPP-<n>`` / ``SIG-<n>`` / ``REG-<n>`` / ``PAIN-<n>``) the boost prompt asks
+    the model to cite inline as ``[source: <id>]``. ``allowed_ids`` is the set
+    citation validation checks against, so a boosted PRD cannot cite a source
+    that is not real scan evidence.
+    """
+    lines: list[str] = []
+    allowed: set[str] = set()
+    for o in opps or []:
+        oid = o.get("opportunity_id")
+        if oid is None:
+            continue
+        sid = f"OPP-{oid}"
+        allowed.add(sid)
+        lines.append(
+            f"- {sid}: {o.get('module_path', '?')}:{o.get('function_name', '')} — "
+            f"{o.get('pattern_type', '')} → {o.get('ai_paradigm', '')}"
+        )
+    for s in innovation_signals or []:
+        sid = f"SIG-{s.get('id')}"
+        allowed.add(sid)
+        lines.append(f"- {sid}: {str(s.get('title') or '')[:120]}")
+    for r in regulatory_items or []:
+        sid = f"REG-{r.get('id')}"
+        allowed.add(sid)
+        lines.append(f"- {sid}: {str(r.get('regulation_name') or '')[:120]}")
+    for p in pain_points or []:
+        sid = f"PAIN-{p.get('id')}"
+        allowed.add(sid)
+        lines.append(f"- {sid}: {str(p.get('description') or '')[:120]}")
+    return lines, allowed
+
+
+def _persist_prd_provenance(roadmap_id, phase_id, *, ai_boosted, model,
+                            citation_valid, citation_report, evidence_ids, provenance):
+    """Append a PRD provenance record (aiify_prd_provenance is append-only)."""
+    try:
+        conn = _conn()
+        try:
+            conn.execute(
+                "INSERT INTO aiify_prd_provenance "
+                "(roadmap_id, phase_id, ai_boosted, generation_model, citation_valid, "
+                " citation_report, evidence_sources, provenance) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                (
+                    roadmap_id, phase_id, 1 if ai_boosted else 0, model or "",
+                    1 if citation_valid else 0,
+                    json.dumps(citation_report or {}),
+                    json.dumps(list(evidence_ids or [])),
+                    json.dumps(provenance or {}),
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        logger.warning("aiify: PRD provenance persist failed", exc_info=True)
+
+
+def _boosted_prd_citation_defects(roadmap_id: str) -> set[str]:
+    """Phase ids whose LATEST AI-boosted PRD failed inline-citation validation.
+
+    Reads the append-only aiify_prd_provenance; the most recent row per phase
+    wins. Best-effort: a lookup failure returns an empty set (this gate only
+    ADDS a restriction on top of the HITL gate — it never fails a promotion open
+    on its own behalf).
+    """
+    latest: dict[str, dict] = {}
+    try:
+        conn = _conn()
+        try:
+            rows = conn.execute(
+                "SELECT phase_id, ai_boosted, citation_valid FROM aiify_prd_provenance "
+                "WHERE roadmap_id = %s ORDER BY created_at ASC, id ASC",
+                (roadmap_id,),
+            ).fetchall()
+            for r in rows:
+                if hasattr(r, "keys"):
+                    rec = dict(r)
+                else:
+                    rec = {"phase_id": r[0], "ai_boosted": r[1], "citation_valid": r[2]}
+                latest[str(rec.get("phase_id"))] = rec
+        finally:
+            conn.close()
+    except Exception:
+        return set()
+    return {
+        pid for pid, rec in latest.items()
+        if int(rec.get("ai_boosted") or 0) == 1 and int(rec.get("citation_valid") or 0) == 0
+    }
+
+
 @aiify_bp.route("/")
 def index():
     conn = _conn()
@@ -617,6 +714,42 @@ def api_send_to_kanban():
             "blocked": True,
         }), 403
 
+    # ── TRUST citation gate for AI-boosted PRDs (penta-aiify-04) ──────────────
+    # An AI-boosted PRD that failed inline-citation validation (no valid
+    # [source: …] grounding against the scan evidence) must not seed tasks —
+    # mirrors the placeholder_guard / citation_guard pattern. Single-phase → 403;
+    # for 'all' the defective phase is skipped below. An explicit force override
+    # (force / force_send) bypasses, audited.
+    force_override = bool(data.get("force") or data.get("force_send"))
+    citation_defect_phases = _boosted_prd_citation_defects(roadmap_id)
+    if (not force_override and phase_id != "all"
+            and phase_id in citation_defect_phases):
+        return jsonify({
+            "error": (
+                f"AI-boosted PRD for {phase_id} has citation defects — it lacks "
+                "valid [source: …] grounding against the scan evidence. Re-generate "
+                "the PRD, or resubmit with force=true to override."
+            ),
+            "blocked": True,
+            "citation_defect": True,
+        }), 403
+    if force_override and citation_defect_phases:
+        try:
+            _ac = _conn()
+            try:
+                _ac.execute(
+                    "INSERT INTO aiify_audit_log (event_type, scan_id, actor, detail) "
+                    "VALUES (%s, %s, %s, %s)",
+                    ("citation_gate_force_override", scan_id, "user",
+                     json.dumps({"roadmap_id": roadmap_id, "phase_id": phase_id,
+                                 "defect_phases": sorted(citation_defect_phases)})),
+                )
+                _ac.commit()
+            finally:
+                _ac.close()
+        except Exception:
+            logger.warning("aiify: citation force-override audit write failed", exc_info=True)
+
     # Filter to requested phase(s)
     target_phases = [
         ph for ph in phases
@@ -670,6 +803,9 @@ def api_send_to_kanban():
         decision = prd_decisions.get(ph_key)
         if decision == "reject":
             # Blocked phase — never seed its tasks (fail-closed).
+            continue
+        if not force_override and ph_key in citation_defect_phases:
+            # AI-boosted PRD failed citation validation — never seed (TRUST).
             continue
         task_status = "backlog" if decision == "accept" else "suggested"
 
@@ -954,8 +1090,12 @@ def api_generate_prd():
     )
     try:
         import markdown as _markdown_lib
-        prd_html = _markdown_lib.markdown(
-            prd, extensions=["tables", "fenced_code"]
+        from tools.quality.html_sanitizer import sanitize_html
+        # Strict server-side allowlist sanitize: the client injects prd_html via
+        # innerHTML, and the PRD embeds scan-derived (module paths) and
+        # LLM-drafted prose that must not be able to smuggle <script>/handlers.
+        prd_html = sanitize_html(
+            _markdown_lib.markdown(prd, extensions=["tables", "fenced_code"])
         )
     except Exception:
         prd_html = ""
@@ -1122,31 +1262,73 @@ def api_prd_dry_run():
     original_score = score
     ai_boosted = False
     boost_would_trigger = score < 0.6
+    citation_valid: bool | None = None  # None == not boosted
 
     # ── AI Boost ──────────────────────────────────────────────────────────────
     if boost_would_trigger:
         try:
             from tools.llm.router import LLMRouter
             from tools.llm.provider import LLMRequest
+            from tools.quality.citation_grounding import (
+                citation_gate, parse_citations, build_artifact_provenance,
+            )
             router = LLMRouter()
+            evidence_lines, allowed_sources = _build_prd_evidence(
+                opps, innovation_signals, regulatory_items, pain_points)
+            evidence_block = "\n".join(evidence_lines) if evidence_lines else \
+                "- (no evidence sources available)"
             boost_prompt = (
                 "You are an expert technical product manager. Improve the following PRD so it scores higher on:\n"
                 "1. Detailed acceptance criteria per opportunity\n"
                 "2. Clear architecture rationale and GenAI/ML component mapping\n"
                 "3. Quantified business impact and risk mitigation\n"
                 "4. Precise effort estimates with dependencies\n\n"
+                "GROUNDING REQUIREMENT (mandatory): every factual claim MUST carry an\n"
+                "inline citation of the form [source: <ID>] using ONLY ids from the\n"
+                "EVIDENCE list below. Never cite an id that is not in the list. Include\n"
+                "at least one citation.\n\n"
+                "EVIDENCE:\n" + evidence_block + "\n\n"
                 "Return ONLY the improved PRD markdown (no extra commentary).\n\n"
                 f"--- PRD START ---\n{prd}\n--- PRD END ---"
             )
-            request_obj = LLMRequest(prompt=boost_prompt, max_tokens=4000, temperature=0.3)
+            # NOTE: correct router API is messages=[…] + response.content — the
+            # prior LLMRequest(prompt=…)/resp.text form raised on every call and
+            # silently degraded (the AI Boost never actually ran). Fixed here so
+            # the citation/provenance TRUST controls have real output to gate on.
+            request_obj = LLMRequest(
+                messages=[{"role": "user", "content": boost_prompt}],
+                agent_id="aiify-prd-boost",
+                classification="CUI",
+                max_tokens=4000,
+                temperature=0.3,
+            )
             resp = router.invoke("code_generation", request_obj)
-            boosted = resp.text or ""
+            boosted = (getattr(resp, "content", None) or getattr(resp, "text", None) or "")
             if boosted and len(boosted) > len(prd) * 0.8:
                 prd = boosted
                 score = _score_prd(prd, opps, score_map)
                 ai_boosted = True
+                # TRUST: validate inline citations against the scan evidence and
+                # persist a provenance record. send-to-kanban gates on this.
+                defects = citation_gate(
+                    [{"item_number": phase_id, "content": prd,
+                      "allowed_sources": allowed_sources}],
+                    require_citations=True,
+                )
+                citation_valid = not defects
+                cited = [c for c in parse_citations(prd) if c in allowed_sources]
+                model_name = getattr(resp, "model_id", "") or getattr(resp, "model", "") or ""
+                prov = build_artifact_provenance(
+                    f"{roadmap_id}:{phase_id}", cited,
+                    generation_model=model_name, method="ai_boost").to_dict()
+                _persist_prd_provenance(
+                    roadmap_id, phase_id, ai_boosted=True, model=model_name,
+                    citation_valid=citation_valid,
+                    citation_report={"defects": defects, "cited": cited,
+                                     "allowed_count": len(allowed_sources)},
+                    evidence_ids=sorted(allowed_sources), provenance=prov)
         except Exception:
-            pass  # Graceful degradation in air-gap / no-LLM mode
+            logger.warning("aiify: AI Boost failed — graceful degrade", exc_info=True)
 
     # ── Kanban task preview (no insert) ─────────────────────────────────────
     _PHASE_PRIORITY = {"P1": "high", "P2": "medium", "P3": "low"}
@@ -1193,6 +1375,7 @@ def api_prd_dry_run():
         "original_score": original_score,
         "ai_boosted": ai_boosted,
         "boost_would_trigger": boost_would_trigger,
+        "citation_valid": citation_valid,
         "opportunity_count": len(opps),
         "tasks": tasks_preview,
         "prd_hitl_decision": prd_hitl_decision,
