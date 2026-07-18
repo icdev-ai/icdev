@@ -920,6 +920,59 @@ BUILTIN_MISSIONS = [
         "difficulty": "intermediate", "estimated_minutes": 35,
         "prereqs": ["m10-tier1-capstone"],
     },
+    # ── penta-aca-05 missions — ICDEV platform AI subsystems (batch 2) ─────────
+    # Foundry/ACF, Strategos, ZIG zero trust, TRUST grounding, design-canvas trio.
+    # Appended AFTER the batch-1 block so both batches stay conflict-free.
+    {
+        "slug": "m-foundry-01-capability-pipeline",
+        "title": "Autonomous Capability Foundry — 0 to 1",
+        "tagline": "Invent a net-new canvas with no human in the loop. The novelty gate and CoD decide what lives.",
+        "tier": 2, "topic": "foundry", "role_filter": "swe,swe_arch,ai_developer",
+        "mission_type": "coding",
+        "xp_reward": 500, "order_idx": 1,
+        "difficulty": "advanced", "estimated_minutes": 40,
+        "prereqs": ["m10-tier1-capstone"],
+    },
+    {
+        "slug": "m-strategos-01-signal-wargaming",
+        "title": "Strategos — Signals to Wargamed Decision",
+        "tagline": "Score raw OSINT, keep the top signals, then wargame the call. DIB intelligence, end to end.",
+        "tier": 2, "topic": "strategos", "role_filter": "analyst,swe,swe_arch",
+        "mission_type": "coding",
+        "xp_reward": 500, "order_idx": 1,
+        "difficulty": "advanced", "estimated_minutes": 40,
+        "prereqs": ["m10-tier1-capstone"],
+    },
+    {
+        "slug": "m-zig-01-zero-trust-maturity",
+        "title": "NSA ZIG — Scoring Zero Trust Maturity",
+        "tagline": "7 pillars, 42 capabilities, one posture score. Then find the pillar to invest in next.",
+        "tier": 2, "topic": "zig", "role_filter": "isso,issm,secops_eng,swe_arch",
+        "mission_type": "coding",
+        "xp_reward": 450, "order_idx": 1,
+        "difficulty": "intermediate", "estimated_minutes": 35,
+        "prereqs": ["m10-tier1-capstone"],
+    },
+    {
+        "slug": "m-trust-01-citation-grounding",
+        "title": "TRUST — Grounding, Provenance, Fail-Closed Egress",
+        "tagline": "Measure how well a claim is grounded, decide include/flag/abstain, stamp provenance, block un-redacted egress.",
+        "tier": 2, "topic": "trust", "role_filter": "swe,swe_arch,analyst,isso",
+        "mission_type": "coding",
+        "xp_reward": 450, "order_idx": 1,
+        "difficulty": "intermediate", "estimated_minutes": 35,
+        "prereqs": ["m03-rag-basics"],
+    },
+    {
+        "slug": "m-canvas-trio-01-design-canvases",
+        "title": "The Design Canvas Trio — DDC, ODC, NDC",
+        "tagline": "Route a design need to the right canvas — or return None. Registry-driven, no forced fits.",
+        "tier": 2, "topic": "canvas", "role_filter": "swe,swe_arch,devops,pm",
+        "mission_type": "coding",
+        "xp_reward": 400, "order_idx": 1,
+        "difficulty": "intermediate", "estimated_minutes": 30,
+        "prereqs": ["m10-tier1-capstone"],
+    },
 ]
 
 # ---------------------------------------------------------------------------
@@ -1429,6 +1482,69 @@ BUILTIN_STEPS: dict[str, list] = {
             "test_code_path": "tier2/m-kanban-01-governed-pipeline/steps/step1_test.py",
             "config_schema": {},
             "xp_partial": 150, "skill_tag": "kanban", "estimated_seconds": 600,
+        },
+    ],
+    # ── penta-aca-05 missions (batch 2) ───────────────────────────────────────
+    # Single-step coding missions. Step files live under
+    # content/tier2/<slug>/steps/step1_{starter,test}.py + step1_<name>.md.
+    "m-foundry-01-capability-pipeline": [
+        {
+            "step_num": 1,
+            "title": "Novelty gate, CoD go/no-go, and task-graph seed",
+            "step_type": "coding",
+            "content_path": "tier2/m-foundry-01-capability-pipeline/steps/step1_foundry.md",
+            "starter_code_path": "tier2/m-foundry-01-capability-pipeline/steps/step1_starter.py",
+            "test_code_path": "tier2/m-foundry-01-capability-pipeline/steps/step1_test.py",
+            "config_schema": {},
+            "xp_partial": 150, "skill_tag": "foundry", "estimated_seconds": 600,
+        },
+    ],
+    "m-strategos-01-signal-wargaming": [
+        {
+            "step_num": 1,
+            "title": "Score signals, prioritize, and wargame",
+            "step_type": "coding",
+            "content_path": "tier2/m-strategos-01-signal-wargaming/steps/step1_strategos.md",
+            "starter_code_path": "tier2/m-strategos-01-signal-wargaming/steps/step1_starter.py",
+            "test_code_path": "tier2/m-strategos-01-signal-wargaming/steps/step1_test.py",
+            "config_schema": {},
+            "xp_partial": 150, "skill_tag": "strategos", "estimated_seconds": 600,
+        },
+    ],
+    "m-zig-01-zero-trust-maturity": [
+        {
+            "step_num": 1,
+            "title": "Score ZIG pillars and roll up maturity",
+            "step_type": "coding",
+            "content_path": "tier2/m-zig-01-zero-trust-maturity/steps/step1_zig.md",
+            "starter_code_path": "tier2/m-zig-01-zero-trust-maturity/steps/step1_starter.py",
+            "test_code_path": "tier2/m-zig-01-zero-trust-maturity/steps/step1_test.py",
+            "config_schema": {},
+            "xp_partial": 150, "skill_tag": "zig", "estimated_seconds": 600,
+        },
+    ],
+    "m-trust-01-citation-grounding": [
+        {
+            "step_num": 1,
+            "title": "Attribution, confidence, provenance, fail-closed egress",
+            "step_type": "coding",
+            "content_path": "tier2/m-trust-01-citation-grounding/steps/step1_trust.md",
+            "starter_code_path": "tier2/m-trust-01-citation-grounding/steps/step1_starter.py",
+            "test_code_path": "tier2/m-trust-01-citation-grounding/steps/step1_test.py",
+            "config_schema": {},
+            "xp_partial": 150, "skill_tag": "trust", "estimated_seconds": 600,
+        },
+    ],
+    "m-canvas-trio-01-design-canvases": [
+        {
+            "step_num": 1,
+            "title": "Route a design need to DDC / ODC / NDC",
+            "step_type": "coding",
+            "content_path": "tier2/m-canvas-trio-01-design-canvases/steps/step1_canvas.md",
+            "starter_code_path": "tier2/m-canvas-trio-01-design-canvases/steps/step1_starter.py",
+            "test_code_path": "tier2/m-canvas-trio-01-design-canvases/steps/step1_test.py",
+            "config_schema": {},
+            "xp_partial": 150, "skill_tag": "canvas", "estimated_seconds": 600,
         },
     ],
 }
