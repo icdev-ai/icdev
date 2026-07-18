@@ -2359,8 +2359,8 @@ python -c "from tools.cortex import assert_airgap_ready; assert_airgap_ready(); 
 # Load the security (XSIAM-style) lens; scope search to threat/vuln/incident sources
 python -c "from tools.cortex import load_domain_profile, list_domain_names; print(list_domain_names()); print(load_domain_profile('security').sources)"
 
-# --- MCP server (cortex_server.py: 7 cortex_* tools, ctx-expose-01) ---
-# Start the Cortex MCP server over stdio (cortex_search/ask/complete/classify/extract/govern/agent_launch)
+# --- MCP server (cortex_server.py: 8 cortex_* tools, ctx-expose-01) ---
+# Start the Cortex MCP server over stdio (cortex_search/ask/complete/reason/classify/extract/govern/agent_launch)
 python tools/mcp/cortex_server.py
 
 # --- REST API v1 (rest_v1.py folded onto the /cortex blueprint, ctx-expose-02) ---
@@ -2368,6 +2368,7 @@ python tools/mcp/cortex_server.py
 #   POST /cortex/api/v1/search   {"query": "...", "top_k": 5, "strategy": "auto", "domain": "security"}
 #   POST /cortex/api/v1/ask      {"question": "...", "mode": "auto", "summarize": true}
 #   POST /cortex/api/v1/complete {"prompt": "...", "system_prompt": "..."}
+#   POST /cortex/api/v1/reason   {"prompt": "...", "mode": "cot"}   # mode: cot | debate | council
 #   POST /cortex/api/v1/classify {"text": "...", "labels": ["a", "b"]}
 #   POST /cortex/api/v1/extract  {"text": "...", "schema": {"type": "object"}}
 #   POST /cortex/api/v1/govern   {"text": "...", "retrieval": false}
