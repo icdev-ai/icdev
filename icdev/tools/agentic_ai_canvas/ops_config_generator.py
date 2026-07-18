@@ -4,7 +4,7 @@
 Given an AADC design_id, reads the canvas node inventory, maps each node type
 to its corresponding runtime tool via args/aadc_node_tool_map.yaml, and outputs:
 
-  1. args/ops_config_<design_id>.yaml  — tool activation config + thresholds
+  1. data/aadc_ops_config/ops_config_<design_id>.yaml  — tool activation config + thresholds
   2. A list of Kanban task dicts ready to create via the Kanban API
 
 This is NOT a runtime execution engine. It generates configuration and tasks;
@@ -15,6 +15,7 @@ from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -25,7 +26,11 @@ _log = get_logger(__name__)
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 _NODE_MAP_PATH = _PROJECT_ROOT / "args" / "aadc_node_tool_map.yaml"
-_ARGS_DIR = _PROJECT_ROOT / "args"
+# Generated ops configs are runtime output, not source-controlled input: write
+# them under data/ (overridable via AADC_OPS_CONFIG_DIR), never into args/.
+_OUTPUT_DIR = Path(
+    os.environ.get("AADC_OPS_CONFIG_DIR", str(_PROJECT_ROOT / "data" / "aadc_ops_config"))
+)
 
 
 # ---------------------------------------------------------------------------
@@ -124,9 +129,9 @@ def generate_ops_config(design_id: str) -> dict[str, Any]:
     # Strip the comment key (YAML doesn't allow None values for comment keys)
     clean_config = {k: v for k, v in config.items() if v is not None or k == "notes"}
 
-    config_path = _ARGS_DIR / f"ops_config_{design_id}.yaml"
+    config_path = _OUTPUT_DIR / f"ops_config_{design_id}.yaml"
     try:
-        _ARGS_DIR.mkdir(parents=True, exist_ok=True)
+        _OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         with open(config_path, "w", encoding="utf-8") as f:
             f.write("# CUI // SP-CTI\n")
             f.write(f"# AADC Ops Config — {design_name}\n")

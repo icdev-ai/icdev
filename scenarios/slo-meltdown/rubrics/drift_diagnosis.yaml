@@ -1,0 +1,22 @@
+# CUI // SP-CTI
+name: Drift Diagnosis Rubric
+inject_type: drift_diagnosis
+description: Evaluates separation of model drift from infrastructure fault.
+max_score: 100
+dimensions:
+- id: root_cause
+  weight: 0.4
+  prompt: Did the team identify the model canary as primary cause using PSI + entropy + latency-vs-canary
+    timing while noting nominal infra/GC? 10 = all signals; 6 = most; 3 = correct call, weak evidence;
+    0 = blames infra/nodes.
+- id: blast_radius
+  weight: 0.25
+  prompt: Is the blast radius confined to ~20% canary traffic with justification? 10 = correct + reasoned;
+    5 = vague; 0 = wrong scope.
+- id: confidence_calibration
+  weight: 0.25
+  prompt: Is confidence justified by independent signals? 10 = High with >=2 signals; 5 = Medium with
+    one; 0 = unstated/circular.
+- id: ai_tool_quality
+  weight: 0.1
+  prompt: Were Drift Monitor + SLO receipts used? 10 = yes; 5 = present, unused; 0 = none.

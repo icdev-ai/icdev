@@ -371,7 +371,6 @@
 | Sim Cipher Forge | tools\ttx\scenarios\sim_cipher_forge.py | Auto-registered: scenarios/sim_cipher_forge.py | --json | JSON |
 | Sim Forge Ascent | tools\ttx\scenarios\sim_forge_ascent.py | Auto-registered: scenarios/sim_forge_ascent.py | --json | JSON |
 | Sim Hunt The Fleet | tools\ttx\scenarios\sim_hunt_the_fleet.py | Auto-registered: scenarios/sim_hunt_the_fleet.py | --json | JSON |
-| Sim Lifecycle E2E | tools\ttx\scenarios\sim_lifecycle_e2e.py | Auto-registered: scenarios/sim_lifecycle_e2e.py | --json | JSON |
 | Sim Meridian | tools\ttx\scenarios\sim_meridian.py | Auto-registered: scenarios/sim_meridian.py | --json | JSON |
 | Solarwinds Connector | tools\databridge\connectors\solarwinds_connector.py | Auto-registered: connectors/solarwinds_connector.py | --json | JSON |
 | Librenms Connector | tools\databridge\connectors\librenms_connector.py | Auto-registered: connectors/librenms_connector.py | --json | JSON |

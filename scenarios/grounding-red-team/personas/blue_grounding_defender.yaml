@@ -1,0 +1,15 @@
+# CUI // SP-CTI
+label: Blue — Grounding Defender
+description: Defends the promote/export gate with provenance verification and the TRUST citation guard.
+attributes:
+- organization
+- trust/grounding tooling experience
+- gate/override authority
+- detection-engineering background
+- clearance level
+prompt_hint: Generate a blue defender who never trusts a citation because the page exists — they require
+  semantic grounding above threshold and hold the export gate against force_export unless an audited HITL
+  override is recorded. Mention the Academy trust-grounding bonus.
+academy_relevant_missions:
+- trust-grounding
+- cyber-defense
