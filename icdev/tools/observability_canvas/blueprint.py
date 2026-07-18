@@ -1565,9 +1565,13 @@ def create_observability_blueprint():
             except Exception as exc:
                 logger.debug("actor alias lookup failed: %s", exc)
 
-        from tools.db.storage import get_connection as _sg_conn
+        # canvas_kg_nodes/canvas_kg_edges are canvas-namespaced tables with no
+        # tenant_id/classification columns, so the global RLS predicate would raise
+        # UndefinedColumn under any authenticated security context.  Use the
+        # RLS-bypassing canvas connection.
+        from tools.db.storage import get_canvas_connection
 
-        conn = _sg_conn()
+        conn = get_canvas_connection()
         try:
             # Ensure KG tables exist (created by stix_importer / temporal_correlator)
             conn.execute(
@@ -1730,8 +1734,12 @@ def create_observability_blueprint():
         limit = min(int(request.args.get("limit", 50)), 200)
         record_id = request.args.get("record_id")
         try:
-            from tools.db.storage import get_connection as _gc
-            with _gc() as _conn:
+            # canvas_ai_decisions is a canvas-namespaced table without
+            # tenant_id/classification columns; the global RLS predicate would raise
+            # UndefinedColumn under an authenticated security context.  Use the
+            # RLS-bypassing canvas connection.
+            from tools.db.storage import get_canvas_connection
+            with get_canvas_connection() as _conn:
                 if record_id:
                     rows = _conn.execute(
                         "SELECT * FROM canvas_ai_decisions WHERE canvas_type='odc' AND record_id=%s "
@@ -1746,6 +1754,7 @@ def create_observability_blueprint():
                     ).fetchall()
             return jsonify({"ok": True, "canvas": "odc", "decisions": [dict(r) for r in rows]})
         except Exception as exc:
+            logger.warning("ODC ai-trace query failed: %s", exc)
             return jsonify({"ok": False, "error": str(exc)}), 500
 
     def _compute_odc_governance(graph_data: dict) -> dict:
