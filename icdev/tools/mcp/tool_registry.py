@@ -7822,7 +7822,7 @@ RESOURCE_REGISTRY = {
         "category": "dsoc",
         "module": "tools.dsoc_canvas.rtbh_manager",
         "handler": "trigger_rtbh",
-        "description": "Trigger RTBH (Remotely Triggered Black Hole) routing for a target prefix to null-route attack traffic.",
+        "description": "Record an RTBH (Remotely Triggered Black Hole) null-route for a target prefix (RECORD-ONLY / SIMULATION — does not push to live routers; generates apply-ready config for human review). Requires MCP authorization (deny-by-default): supply mcp_role.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -7830,6 +7830,7 @@ RESOURCE_REGISTRY = {
                 "trigger_reason":        {"type": "string", "enum": ["volumetric_attack","syn_flood","udp_flood","icmp_flood","amplification","spoofed_traffic","manual","policy"]},
                 "triggered_by":          {"type": "string", "default": "system"},
                 "auto_withdraw_minutes": {"type": "integer", "default": 60},
+                "mcp_role":              {"type": "string", "description": "RBAC role for MCP authorization (deny-by-default)"},
             },
             "required": ["prefix", "trigger_reason"],
         },
@@ -7838,11 +7839,12 @@ RESOURCE_REGISTRY = {
         "category": "dsoc",
         "module": "tools.dsoc_canvas.flowspec_engine",
         "handler": "activate_rule",
-        "description": "Activate a BGP flowspec rule by ID to rate-limit or drop matching traffic.",
+        "description": "Activate a BGP flowspec rule by ID to rate-limit or drop matching traffic (RECORD-ONLY / SIMULATION — does not push to live routers; generates apply-ready IOS-XR/JunOS config for human review). Requires MCP authorization (deny-by-default): supply mcp_role.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "rule_id": {"type": "integer"},
+                "mcp_role": {"type": "string", "description": "RBAC role for MCP authorization (deny-by-default)"},
             },
             "required": ["rule_id"],
         },

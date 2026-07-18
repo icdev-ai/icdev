@@ -92,6 +92,14 @@
 
   <!-- IQE Widget -->
   <div class="iqe-host">
+    {% set iqe_canvas = "dsoc" %}
+    {% set iqe_api_route = "/api/dsoc/iqe-query" %}
+    {% set iqe_title = "IQE Query — RTBH" %}
+    {% set iqe_examples = [
+      {"label": "Active RTBH", "query": "List active RTBH entries"},
+      {"label": "Withdrawn RTBH", "query": "Show withdrawn RTBH entries"},
+      {"label": "Manual triggers", "query": "Show manual RTBH triggers"},
+    ] %}
     {% include 'includes/iqe_query_widget.html' %}
   </div>
 </div>
@@ -152,6 +160,12 @@
 <script>
 const IQE_CANVAS = 'dsoc';
 
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 function triggerRTBH() {
   const prefix  = document.getElementById('rtbh-prefix').value.trim();
   const reason  = document.getElementById('rtbh-reason').value;
@@ -180,10 +194,10 @@ function triggerRTBH() {
         msg.innerHTML = '<span class="text-success">RTBH triggered. Reloading…</span>';
         setTimeout(() => location.reload(), 1200);
       } else {
-        msg.innerHTML = `<span class="text-danger">${d.error || 'Error triggering RTBH.'}</span>`;
+        msg.innerHTML = `<span class="text-danger">${esc(d.error) || 'Error triggering RTBH.'}</span>`;
       }
     })
-    .catch(e => { msg.innerHTML = `<span class="text-danger">${e}</span>`; });
+    .catch(e => { msg.innerHTML = `<span class="text-danger">${esc(e)}</span>`; });
 }
 
 function withdrawRTBH(id) {

@@ -161,12 +161,26 @@
 
   <!-- IQE Widget -->
   <div class="iqe-host">
+    {% set iqe_canvas = "dsoc" %}
+    {% set iqe_api_route = "/api/dsoc/iqe-query" %}
+    {% set iqe_title = "IQE Query — FlowSpec" %}
+    {% set iqe_examples = [
+      {"label": "Drop rules", "query": "Show active flowspec drop rules"},
+      {"label": "Rate-limit rules", "query": "Show flowspec rate-limit rules"},
+      {"label": "Redirect rules", "query": "Show flowspec redirect rules"},
+    ] %}
     {% include 'includes/iqe_query_widget.html' %}
   </div>
 </div>
 
 <script>
 const IQE_CANVAS = 'dsoc';
+
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
 
 function addFlowspecRule() {
   const data = {
@@ -194,10 +208,10 @@ function addFlowspecRule() {
       if (d.status === 'created' || d.id) {
         msg.innerHTML = '<span class="text-success">Rule created. Reload to see it.</span>';
       } else {
-        msg.innerHTML = `<span class="text-danger">${d.error || 'Error creating rule.'}</span>`;
+        msg.innerHTML = `<span class="text-danger">${esc(d.error) || 'Error creating rule.'}</span>`;
       }
     })
-    .catch(e => { msg.innerHTML = `<span class="text-danger">${e}</span>`; });
+    .catch(e => { msg.innerHTML = `<span class="text-danger">${esc(e)}</span>`; });
 }
 
 function withdrawFlowspec(id) {

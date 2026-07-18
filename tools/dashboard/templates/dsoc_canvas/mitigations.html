@@ -115,6 +115,14 @@
 
   <!-- IQE Widget -->
   <div class="iqe-host">
+    {% set iqe_canvas = "dsoc" %}
+    {% set iqe_api_route = "/api/dsoc/iqe-query" %}
+    {% set iqe_title = "IQE Query — Mitigations" %}
+    {% set iqe_examples = [
+      {"label": "Active mitigations", "query": "Show active mitigations"},
+      {"label": "Completed", "query": "Show completed mitigations"},
+      {"label": "Scrubbing mitigations", "query": "Show scrubbing mitigations"},
+    ] %}
     {% include 'includes/iqe_query_widget.html' %}
   </div>
 </div>

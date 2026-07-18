@@ -97,6 +97,7 @@ REFLEX_NAMES = [
     "fathomdesk_trap_scenarios",
     "migration_canvas",
     "academy_reflex",
+    "academy_oracle_reflex",  # penta-aca-06: 6h in-app 7-lens AcademyOracleRunner → fa_oracle_* (replaces dead forge_academy_oracle)
     "e2e_runner",
     "qa_agent_reflex",  # 6-hour QA coverage gap sweep + E2E sweep scheduling
     "coherence_to_kanban_reflex",  # diffs coherence violations → files kanban bug tasks
@@ -126,6 +127,7 @@ REFLEX_NAMES = [
     "sdc_control_expiry",  # shx-safe-04: SDC security control-expiry sweep (4h) — IQR anomaly threshold
     "cato_monitor",        # shx-safe-04: cATO continuous compliance monitoring (6h) — compliance/* IQE + POAM
     "bdc_isa_expiry",      # bdr-ops-1: BDC ISA expiry alerting (24h) — was registered-but-undispatched
+    "freshness_guardian",  # dcpr-fix-06: DDC freshness quality sweep (1h) → dd_freshness_alerts/dd_quality_runs
     "cato_twin",           # bdr-ops-1: cATO twin continuous monitoring (6h) — config enabled:false until hardened query path soaks
     "ndc_topology_drift",  # ndc→ACOIC: topology config drift vs nc_versions baseline
     "dic_integration",     # dsyn-reflex-02: DIC Canvas Synergy — 15-min cadence
@@ -148,6 +150,9 @@ REFLEX_NAMES = [
     "commitment_watch_reflex",    # second-brain: daily 06:00 UTC — commitment date alerts
     "weekly_retro_reflex",        # second-brain: Friday 18:00 UTC — weekly retrospective
     "pdc_pipeline_stale",  # pdx-ops-01: PDC pipeline staleness alert (6h) — IQR anomaly threshold; was implemented-but-undispatched
+    "observability_retention",  # obx-trc-05: 24h archive-then-prune of otel_spans/prov_*/shap_attributions (append-only → cold twin)
+    "bgp_hijack_monitor",  # cnr-dsoc-05: DSOC RTBH auto-expiry (always) + best-effort BGP hijack/route-leak sweep (pmacct feed)
+    "odc_coverage_refresh",  # obx-cov-02: 6h scheduled ODC MITRE coverage recompute + >15% drift detection → od_audit + suggested cards
 ]
 
 # Backward-compat aliases for module-level access used by other code
