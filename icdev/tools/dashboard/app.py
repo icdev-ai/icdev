@@ -58,6 +58,7 @@ from tools.dashboard.config import (  # noqa: E402
     DEBUG,
 )
 from tools.dashboard.brand import brand_context_processor  # noqa: E402
+from tools.dashboard.lazy_canvas import install_lazy_canvas_loader  # noqa: E402
 from tools.dashboard.auth import register_dashboard_auth, validate_api_key, log_auth_event, require_role  # noqa: E402
 from tools.dashboard.websocket import init_socketio, get_socketio  # noqa: E402
 from tools.dashboard.findings_aggregator import (  # noqa: E402
@@ -181,10 +182,31 @@ _CANVAS_URL_PREFIXES = tuple(
 )
 
 # ── Design Canvases (conditional registration) ────────────────────────────
+# cvx-net-02: eager canvas blueprint import is the dominant one-time startup
+# cost (each factory imports its module and, for several canvases, seeds a DB).
+# When ICDEV_LAZY_CANVASES is set, the heavy module import is DEFERRED until the
+# first request to each canvas (see install_lazy_canvas_loader). Default OFF so
+# existing behavior — and url_map-at-import expectations in the test suite —
+# stay byte-for-byte unchanged unless an operator opts in.
+_LAZY_CANVASES_ENABLED = os.environ.get(
+    "ICDEV_LAZY_CANVASES", "false"
+).strip().strip('"').strip("'").lower() in ("true", "1", "yes", "on")
+
 _CANVAS_FLAGS: dict[str, bool] = {}
 _CANVAS_BLUEPRINTS: dict[str, object] = {}
 
+_CANVAS_URL_PREFIX_MAP = _REGISTRY.get_url_prefixes()
 for _comp in _REGISTRY.iter_enabled(kind="canvas"):
+    # Only canvases that declare a non-empty url_prefix can be matched by request
+    # path, so only those are deferred. Empty-prefix canvases self-prefix inside
+    # their blueprint (unknowable without importing) and are cheap — they stay
+    # eager. The heavy canvas (network / ndc, '/network') declares a prefix.
+    _canvas_pfx = (_CANVAS_URL_PREFIX_MAP.get(_comp.key) or "").strip()
+    if _LAZY_CANVASES_ENABLED and _canvas_pfx:
+        # Deferred: nav/context flag on, but do NOT import the module now.
+        # install_lazy_canvas_loader() registers a first-hit loader in create_app.
+        _CANVAS_FLAGS[_comp.key] = True
+        continue
     try:
         _bp = _comp.get_blueprint()
         if _bp:
@@ -2415,6 +2437,9 @@ def create_app(testing: bool = False) -> Flask:
         app.logger.warning("Canvas access guard unavailable: %s", _guard_exc)
         guard_component_access = None  # type: ignore[assignment]
 
+    # Eager registration for whatever is already imported in _CANVAS_BLUEPRINTS.
+    # In eager mode that is every enabled canvas; in lazy mode it is only the
+    # empty-prefix (self-prefixing) canvases that cannot be matched by path.
     _CANVAS_ROUTES = _REGISTRY.get_url_prefixes()
     for _ck, _cbp in _CANVAS_BLUEPRINTS.items():
         try:
@@ -2441,6 +2466,23 @@ def create_app(testing: bool = False) -> Flask:
             app.logger.info("Canvas %s registered at %s/", _ck.upper(), prefix)
         except Exception as exc:
             app.logger.warning("Canvas %s registration failed: %s", _ck.upper(), exc)
+
+    if _LAZY_CANVASES_ENABLED:
+        # cvx-net-02: defer heavy canvas blueprint module imports until the first
+        # request to each prefixed canvas. Nav/context flags were populated at
+        # module import; only the module import + route registration is deferred.
+        _lazy_comps = [
+            _c
+            for _c in _REGISTRY.iter_enabled(kind="canvas")
+            if (_CANVAS_ROUTES.get(_c.key) or "").strip()
+        ]
+        install_lazy_canvas_loader(
+            app, _lazy_comps, _CANVAS_ROUTES, guard_component_access
+        )
+        app.logger.info(
+            "Lazy canvas loading active — %d prefixed canvases deferred to first-hit import",
+            len(_lazy_comps),
+        )
 
     # ---- Simulation Chat Blueprint ----
     try:
