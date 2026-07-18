@@ -280,24 +280,34 @@ def test_create_target_persists_row(client):
     assert row["status"] == "active"
 
 
-def test_assess_route_locked_in_500_target_id_bug(client):
-    """LOCKED-IN OBSERVED BEHAVIOR (not desirable): the /assess route passes a
-    target_id kwarg to run_zig_assessment(), which accepts no arguments, so the
-    route raises and is caught as a 500. As a consequence zig_maturity_scores is
-    NOT written. See PR body. If run_zig_assessment gains a target_id parameter,
-    update this test to assert the 200 + persistence happy path."""
-    resp = client.post("/security/api/zig/assess", json={"target_id": "icdev-self"})
-    assert resp.status_code == 500
+def test_assess_route_runs_global_and_persists(client):
+    """FIXED (shx-hyg-08): the plain /assess route now runs the GLOBAL ZIG
+    assessment (run_zig_assessment() takes no args) and persists pillar scores
+    to zig_maturity_scores. Target-scoped assessment lives at
+    POST /api/zig/targets/<id>/assess."""
+    resp = client.post("/security/api/zig/assess", json={})
+    assert resp.status_code == 200
     body = resp.get_json()
-    assert body["ok"] is False
-    assert "target_id" in body["error"]
+    assert body["ok"] is True
+    assert "pillar_scores" in body
+    assert "aggregate" in body
 
     conn = _db()
     try:
         n = conn.execute("SELECT COUNT(*) AS c FROM zig_maturity_scores").fetchone()["c"]
     finally:
         conn.close()
-    assert n == 0
+    assert n > 0
+
+
+def test_assess_route_rejects_target_id_400(client):
+    """A target_id in the body is rejected with a 400 that points callers to the
+    target-scoped route, so a global run is never mistaken for a scoped one."""
+    resp = client.post("/security/api/zig/assess", json={"target_id": "icdev-self"})
+    assert resp.status_code == 400
+    body = resp.get_json()
+    assert body["ok"] is False
+    assert "target" in body["error"]
 
 
 # ── 3. Bad input 4xx ────────────────────────────────────────────────────────
@@ -311,19 +321,17 @@ def test_patch_capability_invalid_status_400(client, seed):
     assert resp.get_json()["ok"] is False
 
 
-def test_patch_unknown_capability_id_returns_ok_true(client):
-    """LOCKED-IN OBSERVED BEHAVIOR: the handler runs an UPDATE without checking
-    rowcount, so an unknown id still yields 200 ok=True (no row is touched).
-    Documented in the PR body; asserted here so a future rowcount/404 change is
-    a conscious, visible break rather than a silent regression."""
+def test_patch_unknown_capability_id_returns_404(client):
+    """FIXED (shx-hyg-08): the handler now checks rowcount after the UPDATE, so
+    an unknown id yields 404 ok=False instead of a silent 200."""
     resp = client.patch(
         "/security/api/zig/capabilities/does-not-exist-999",
         json={"implementation_status": "planned"},
     )
-    assert resp.status_code == 200
+    assert resp.status_code == 404
     body = resp.get_json()
-    assert body["ok"] is True
-    assert body["id"] == "does-not-exist-999"
+    assert body["ok"] is False
+    assert "unknown capability id" in body["error"]
 
     # No phantom row was created.
     conn = _db()
