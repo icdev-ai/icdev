@@ -460,6 +460,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "sg_war_readiness_events",
         # STRATEGOS — adversarial data validation audit (NIST AU-9 — append-only)
         "sg_adversarial_validation_audit",
+        # STRATEGOS — INTSUM grounding force-override audit (migration 279, nav-strat-01, NIST AU — append-only HITL override log)
+        "sg_intsum_grounding_audit",
         # NDC↔Migration — topology snapshots (NIST AU; phase-completion history must be immutable)
         "nc_topology_snapshots",
         # Phase 71 — OHC Ops Hub Canvas (migration 120, NIST AU — adapter health log + drift events append-only)

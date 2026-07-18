@@ -2694,13 +2694,24 @@ def api_intsum_generate():
     data = request.get_json(silent=True) or {}
     theater = data.get("theater", "global")
     lookback_hours = int(data.get("lookback_hours", 24))
+    # TRUST invariant (nav-strat-01): promoting ungrounded INTSUM prose requires
+    # an explicit, audited HITL override.
+    force_ungrounded = bool(data.get("force_ungrounded", False))
     try:
         from tools.strategos.intsum import generate_intsum  # noqa: PLC0415
-        result = generate_intsum(theater=theater, lookback_hours=lookback_hours)
+        result = generate_intsum(
+            theater=theater, lookback_hours=lookback_hours,
+            force_ungrounded=force_ungrounded,
+        )
         if "error" in result:
             return jsonify(result), 500
-        resp = make_response(jsonify(result), 201)
+        # Surface ungrounded content clearly: 202 Accepted (draft persisted but
+        # not source-grounded) vs 201 Created for grounded/template output.
+        grounding_status = (result.get("grounding") or {}).get("status", "")
+        http_status = 202 if grounding_status == "ungrounded" else 201
+        resp = make_response(jsonify(result), http_status)
         resp.headers["X-Classification"] = "CUI"
+        resp.headers["X-INTSUM-Grounding"] = grounding_status or "unknown"
         return resp
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
