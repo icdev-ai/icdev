@@ -1,0 +1,25 @@
+# CUI // SP-CTI
+name: Citation Forensics Rubric
+inject_type: citation_forensics
+description: Evaluates whether the team correctly classifies a suspect citation using retrieval evidence.
+max_score: 100
+dimensions:
+- id: verdict_correctness
+  weight: 0.4
+  prompt: Did the team correctly classify the citation as fabricated and justify it with the low retrieval
+    score (0.38 vs 0.72 threshold) AND the page-content mismatch? 10 = fabricated verdict grounded in
+    both signals; 6 = correct verdict, one signal; 3 = correct verdict, no evidence; 0 = wrong verdict
+    or guess.
+- id: evidence_grounding
+  weight: 0.3
+  prompt: Did the team use DIC/Knowledge Search to show what the cited source actually says vs the claim?
+    10 = quoted retrieved text contrasted with the claim; 5 = tool used but not incorporated; 0 = no grounding
+    evidence.
+- id: next_steps
+  weight: 0.2
+  prompt: Are the 3 next steps concrete and aimed at distinguishing poisoned source from generator hallucination?
+    10 = specific, sequenced, includes an ingestion-provenance check; 5 = generic; 0 = missing or irrelevant.
+- id: ai_tool_quality
+  weight: 0.1
+  prompt: Were AI tool receipts present and clearly used in the reasoning? 10 = receipts drive the verdict;
+    5 = present, unused; 0 = none.
