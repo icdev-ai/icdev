@@ -6,14 +6,14 @@ results to zig_maturity_scores. Bridges to existing zta_maturity_scorer.py
 when available.
 """
 
-import logging
 from datetime import datetime, timezone
 
+from tools.logging.icdev_logger import get_logger
 from tools.security_canvas.db.init_db import get_connection
 from tools.security_canvas.zig_pillar_scorer import score_all_pillars, aggregate_zig_score
 from tools.security_canvas.zig_phase_tracker import get_all_phases_status, compute_fy2027_readiness
 
-logger = logging.getLogger(__name__)
+logger = get_logger("icdev.security_canvas.zig_assessor")
 
 
 def _try_zta_bridge(pillar_slug: str) -> float:
