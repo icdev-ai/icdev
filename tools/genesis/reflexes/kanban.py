@@ -7522,6 +7522,32 @@ def _check_completed():
     for task_id, proc in list(_running.items()):
         ret = proc.poll()
         if ret is not None:
+            # Continuous Harness feed — the claude-cli executor is the PRIMARY
+            # build path but records nothing at dispatch, so its later
+            # record_outcome() would attach to no decision row and codegen
+            # metrics would only ever see fallback builds. Record the codegen
+            # decision here, at the point the subprocess finishes, mirroring the
+            # LLMRouter executor's record_decision. Guard on isinstance(Popen)
+            # so the _LLMTaskHandle paths (LLMRouter / rubric loop), which
+            # already self-record at dispatch, are not double-counted.
+            if isinstance(proc, subprocess.Popen):
+                try:
+                    from tools.genesis.harness.eval_harness import record_decision
+                    record_decision(
+                        task_id=task_id,
+                        reflex="codegen",
+                        decision="done" if ret == 0 else "error_nonzero_exit",
+                        confidence=0.6 if ret == 0 else 0.3,
+                        metadata={
+                            "executor": "claude_cli",
+                            "returncode": ret,
+                            "completed": ret == 0,
+                        },
+                    )
+                except Exception as _hd_exc:
+                    logger.warning(
+                        "harness record_decision skipped for %s: %s", task_id, _hd_exc
+                    )
             completed.append(task_id)
             prompt_path = PROMPT_DIR / f"{task_id}.md"
             # Read Claude output log
