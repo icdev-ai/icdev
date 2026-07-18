@@ -79,9 +79,13 @@ def tmp_db(tmp_path):
     conn.close()
 
     with patch("tools.monitor.watchcon.get_connection") as mock_conn:
-        # Return a fresh connection on every call so tests are isolated
+        # Return a fresh connection on every call so tests are isolated.
+        # Wrapped in StorageConnection so the module's PG-native %s SQL is
+        # translated for SQLite (same pattern as tests/test_cato_twin.py).
+        from tools.db.storage import StorageConnection
+
         def _get_conn(db_path=None, **kw):
-            return sqlite3.connect(str(db_file))
+            return StorageConnection(sqlite3.connect(str(db_file)), "sqlite")
 
         mock_conn.side_effect = _get_conn
         yield db_file

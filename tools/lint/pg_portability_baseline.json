@@ -1,7 +1,7 @@
 {
   "linter": "pg_portability_linter",
   "root": ".",
-  "finding_count": 496,
+  "finding_count": 431,
   "findings": [
     {
       "file": "tools/agent/dispatcher_mode.py",
@@ -14,7 +14,7 @@
     },
     {
       "file": "tools/airgap/health_check.py",
-      "line": 95,
+      "line": 98,
       "col": 57,
       "pattern": "sqlite_master",
       "severity": "medium",
@@ -77,21 +77,12 @@
     },
     {
       "file": "tools/appforge/reflexes/build.py",
-      "line": 177,
-      "col": 31,
+      "line": 181,
+      "col": 35,
       "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
+      "severity": "high",
+      "fix": "Bypasses translate_sql rule-14 (only 3 exact shapes are rewritten to information_schema); use tools.db.storage.table_exists()/list_tables() instead",
       "text": "\"SELECT name FROM sqlite_master WHERE type=\\'table\\' ORDER BY name\""
-    },
-    {
-      "file": "tools/ato_compliance/dashboard.py",
-      "line": 52,
-      "col": 28,
-      "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "\"SELECT 1 FROM sqlite_master WHERE type='table' AND name=%s\","
     },
     {
       "file": "tools/audit/audit_logger.py",
@@ -110,15 +101,6 @@
       "severity": "high",
       "fix": "Use get_connection() from tools.db.storage instead",
       "text": "conn = _sqlite3.connect(str(db_path))"
-    },
-    {
-      "file": "tools/audit/cross_agency_transfer_logger.py",
-      "line": 44,
-      "col": 24,
-      "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "\"SELECT 1 FROM sqlite_master WHERE type='table' AND name=%s\","
     },
     {
       "file": "tools/autonomy/behavior_learner.py",
@@ -188,8 +170,8 @@
       "line": 752,
       "col": 10,
       "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
+      "severity": "high",
+      "fix": "Bypasses translate_sql rule-14 (only 3 exact shapes are rewritten to information_schema); use tools.db.storage.table_exists()/list_tables() instead",
       "text": "\"sqlite_master\","
     },
     {
@@ -197,54 +179,54 @@
       "line": 44,
       "col": 34,
       "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
+      "severity": "high",
+      "fix": "Bypasses translate_sql rule-14 (only 3 exact shapes are rewritten to information_schema); use tools.db.storage.table_exists()/list_tables() instead",
       "text": "\"pg_class\", \"pg_namespace\", \"sqlite_master\", \"sqlite_temp_master\","
     },
     {
       "file": "tools/awareness/orphan_table_generator.py",
       "line": 1048,
-      "col": 38,
+      "col": 16,
+      "pattern": "sqlite_master",
+      "severity": "high",
+      "fix": "Bypasses translate_sql rule-14 (only 3 exact shapes are rewritten to information_schema); use tools.db.storage.table_exists()/list_tables() instead",
+      "text": "\"    # sqlite_master query only if the storage layer is unavailable.\\n\","
+    },
+    {
+      "file": "tools/awareness/orphan_table_generator.py",
+      "line": 1054,
+      "col": 42,
       "pattern": "sqlite_master",
       "severity": "medium",
       "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "\"            \\\"SELECT 1 FROM sqlite_master WHERE type='table' AND name=?\\\",\\n\","
+      "text": "\"                \\\"SELECT 1 FROM sqlite_master WHERE type='table' AND name=?\\\",\\n\","
     },
     {
       "file": "tools/builder/child_app_generator.py",
-      "line": 1644,
-      "col": 41,
+      "line": 1799,
+      "col": 45,
       "pattern": "sqlite_master",
       "severity": "medium",
       "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "\"            \\\"SELECT name FROM sqlite_master WHERE type='table'\\\"\\n\""
-    },
-    {
-      "file": "tools/builder/child_app_generator.py",
-      "line": 3456,
-      "col": 68,
-      "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "tables = [r[0] for r in conn.execute(\"SELECT name FROM sqlite_master WHERE type='table'\").fetchall()]"
+      "text": "\"                \\\"SELECT name FROM sqlite_master WHERE type='table'\\\"\\n\""
     },
     {
       "file": "tools/builder/db_init_generator.py",
-      "line": 1910,
-      "col": 58,
+      "line": 1917,
+      "col": 62,
       "pattern": "sqlite_master",
       "severity": "medium",
       "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "parts.append(\"        cur.execute(\\\"SELECT name FROM sqlite_master WHERE type='table' ORDER BY name\\\")\")"
+      "text": "parts.append(\"            cur.execute(\\\"SELECT name FROM sqlite_master WHERE type='table' ORDER BY name\\\")\")"
     },
     {
       "file": "tools/builder/db_init_generator.py",
-      "line": 1954,
-      "col": 58,
+      "line": 1966,
+      "col": 62,
       "pattern": "sqlite_master",
       "severity": "medium",
       "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "parts.append(\"        cur.execute(\\\"SELECT name FROM sqlite_master WHERE type='table' ORDER BY name\\\")\")"
+      "text": "parts.append(\"            cur.execute(\\\"SELECT name FROM sqlite_master WHERE type='table' ORDER BY name\\\")\")"
     },
     {
       "file": "tools/builder/dev_profile_manager.py",
@@ -265,49 +247,76 @@
       "text": "conn.execute(\"PRAGMA foreign_keys=ON\")"
     },
     {
-      "file": "tools/canvas/orchestrator.py",
-      "line": 245,
+      "file": "tools/builder/forge_validator.py",
+      "line": 37,
+      "col": 36,
+      "pattern": "sqlite3.connect(",
+      "severity": "high",
+      "fix": "Use get_connection() from tools.db.storage instead",
+      "text": "FORGE-12   \u2014 banned DB patterns: sqlite3.connect() outside db/init_db.py/tests"
+    },
+    {
+      "file": "tools/builder/forge_validator.py",
+      "line": 1139,
+      "col": 48,
+      "pattern": "sqlite3.connect(",
+      "severity": "high",
+      "fix": "Use get_connection() from tools.db.storage instead",
+      "text": "PostgreSQL is the primary backend. A raw ``sqlite3.connect()`` outside"
+    },
+    {
+      "file": "tools/builder/forge_validator.py",
+      "line": 1144,
+      "col": 35,
+      "pattern": "sqlite3.connect(",
+      "severity": "high",
+      "fix": "Use get_connection() from tools.db.storage instead",
+      "text": "Severity (first iteration): ``sqlite3.connect()`` -> FAIL; bare ``?`` -> WARN."
+    },
+    {
+      "file": "tools/builder/forge_validator.py",
+      "line": 1174,
+      "col": 35,
+      "pattern": "sqlite3.connect(",
+      "severity": "high",
+      "fix": "Use get_connection() from tools.db.storage instead",
+      "text": "check_name=\"No banned sqlite3.connect() in runtime tools\","
+    },
+    {
+      "file": "tools/builder/forge_validator.py",
+      "line": 1177,
+      "col": 23,
+      "pattern": "sqlite3.connect(",
+      "severity": "high",
+      "fix": "Use get_connection() from tools.db.storage instead",
+      "text": "expected=\"sqlite3.connect( only in tools/db/init_db.py or tests\","
+    },
+    {
+      "file": "tools/builder/forge_validator.py",
+      "line": 1181,
+      "col": 37,
+      "pattern": "sqlite3.connect(",
+      "severity": "high",
+      "fix": "Use get_connection() from tools.db.storage instead",
+      "text": "\"confine sqlite3.connect() to db/init_db.py\","
+    },
+    {
+      "file": "tools/builder/forge_validator.py",
+      "line": 1182,
       "col": 31,
-      "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "\"SELECT name FROM sqlite_master WHERE type='table' AND name=%s\","
+      "pattern": "sqlite3.connect(",
+      "severity": "high",
+      "fix": "Use get_connection() from tools.db.storage instead",
+      "text": "message=(f\"Banned sqlite3.connect() in runtime files: {', '.join(sqlite_hits[:5])}\""
     },
     {
-      "file": "tools/canvas/orchestrator.py",
-      "line": 252,
-      "col": 39,
-      "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "\"SELECT name FROM sqlite_master WHERE type='table' AND name='nc_compliance_findings'\","
-    },
-    {
-      "file": "tools/canvas/orchestrator.py",
-      "line": 317,
-      "col": 31,
-      "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "\"SELECT name FROM sqlite_master WHERE type='table' AND name LIKE '%findings%'\","
-    },
-    {
-      "file": "tools/canvas/orchestrator.py",
-      "line": 322,
-      "col": 46,
-      "pattern": "PRAGMA ",
-      "severity": "medium",
-      "fix": "SQLite PRAGMA has no PG equivalent; remove or guard behind is_sqlite check",
-      "text": "r[1] for r in conn.execute(f\"PRAGMA table_info({tbl})\").fetchall()"
-    },
-    {
-      "file": "tools/canvas/orchestrator.py",
-      "line": 326,
-      "col": 115,
-      "pattern": "PRAGMA ",
-      "severity": "medium",
-      "fix": "SQLite PRAGMA has no PG equivalent; remove or guard behind is_sqlite check",
-      "text": "f\"SELECT COUNT(*) FROM {tbl} WHERE severity = 'CAT1'\",  # noqa: S608  # nosec B608 \u2014 tbl from PRAGMA table_info, not user input"
+      "file": "tools/builder/forge_validator.py",
+      "line": 1183,
+      "col": 53,
+      "pattern": "sqlite3.connect(",
+      "severity": "high",
+      "fix": "Use get_connection() from tools.db.storage instead",
+      "text": "if sqlite_hits else \"No banned sqlite3.connect() in runtime tools/\"),"
     },
     {
       "file": "tools/canvas_compliance/compliance.py",
@@ -319,42 +328,6 @@
       "text": "conn = sqlite3.connect(str(path), check_same_thread=False)"
     },
     {
-      "file": "tools/cloud/csp_changelog.py",
-      "line": 153,
-      "col": 45,
-      "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "cursor = conn.execute(\"SELECT name FROM sqlite_master WHERE type='table' AND name='innovation_signals'\")"
-    },
-    {
-      "file": "tools/cloud/csp_health_checker.py",
-      "line": 80,
-      "col": 53,
-      "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "cursor = conn.execute(\"SELECT name FROM sqlite_master WHERE type='table' AND name='cloud_provider_status'\")"
-    },
-    {
-      "file": "tools/cloud/csp_health_checker.py",
-      "line": 177,
-      "col": 53,
-      "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "cursor = conn.execute(\"SELECT name FROM sqlite_master WHERE type='table' AND name='cloud_provider_status'\")"
-    },
-    {
-      "file": "tools/cloud/csp_monitor.py",
-      "line": 248,
-      "col": 45,
-      "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "cursor = conn.execute(\"SELECT name FROM sqlite_master WHERE type='table' AND name=%s\", (table_name,))"
-    },
-    {
       "file": "tools/compat/db_utils.py",
       "line": 72,
       "col": 53,
@@ -364,44 +337,17 @@
       "text": "existing callers that use the returned path for sqlite3.connect() still  # sqlite3-ok \u2014 docstring reference, not a call"
     },
     {
-      "file": "tools/compliance/base_assessor.py",
-      "line": 146,
-      "col": 54,
-      "pattern": "PRAGMA ",
-      "severity": "medium",
-      "fix": "SQLite PRAGMA has no PG equivalent; remove or guard behind is_sqlite check",
-      "text": "existing = {row[1] for row in conn.execute(f\"PRAGMA table_info({self.TABLE_NAME})\").fetchall()}"
-    },
-    {
-      "file": "tools/compliance/eu_ai_act_classifier.py",
-      "line": 145,
-      "col": 39,
-      "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "\"SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=%s\","
-    },
-    {
-      "file": "tools/compliance/eu_ai_act_classifier.py",
+      "file": "tools/compliance/evidence_chain.py",
       "line": 152,
-      "col": 50,
-      "pattern": "PRAGMA ",
-      "severity": "medium",
-      "fix": "SQLite PRAGMA has no PG equivalent; remove or guard behind is_sqlite check",
-      "text": "cols = [c[1] for c in conn.execute(f\"PRAGMA table_info({table})\").fetchall()]"
-    },
-    {
-      "file": "tools/compliance/evidence_chain.py",
-      "line": 151,
-      "col": 54,
+      "col": 12,
       "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "SQLite files and _table_exists() below relies on sqlite_master (SQLite-only)."
+      "severity": "high",
+      "fix": "Bypasses translate_sql rule-14 (only 3 exact shapes are rewritten to information_schema); use tools.db.storage.table_exists()/list_tables() instead",
+      "text": "speaks sqlite_master with ``?`` against these raw connections; the icdev"
     },
     {
       "file": "tools/compliance/evidence_chain.py",
-      "line": 156,
+      "line": 157,
       "col": 12,
       "pattern": "sqlite3.connect(",
       "severity": "high",
@@ -410,16 +356,25 @@
     },
     {
       "file": "tools/compliance/evidence_chain.py",
-      "line": 162,
-      "col": 46,
+      "line": 166,
+      "col": 52,
       "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "row = conn.execute(\"SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=%s\", (name,)).fetchone()"
+      "severity": "high",
+      "fix": "Bypasses translate_sql rule-14 (only 3 exact shapes are rewritten to information_schema); use tools.db.storage.table_exists()/list_tables() instead",
+      "text": "speaks the right dialect for the connection: ``sqlite_master`` with a ``?``"
     },
     {
       "file": "tools/compliance/evidence_chain.py",
-      "line": 197,
+      "line": 173,
+      "col": 54,
+      "pattern": "sqlite_master",
+      "severity": "high",
+      "fix": "Bypasses translate_sql rule-14 (only 3 exact shapes are rewritten to information_schema); use tools.db.storage.table_exists()/list_tables() instead",
+      "text": "dropped its events, and on PostgreSQL the bare ``sqlite_master`` reference"
+    },
+    {
+      "file": "tools/compliance/evidence_chain.py",
+      "line": 211,
       "col": 27,
       "pattern": "PRAGMA ",
       "severity": "medium",
@@ -428,7 +383,7 @@
     },
     {
       "file": "tools/compliance/evidence_chain.py",
-      "line": 198,
+      "line": 212,
       "col": 27,
       "pattern": "PRAGMA ",
       "severity": "medium",
@@ -437,7 +392,7 @@
     },
     {
       "file": "tools/compliance/evidence_chain.py",
-      "line": 203,
+      "line": 217,
       "col": 16,
       "pattern": "sqlite3.connect(",
       "severity": "high",
@@ -446,7 +401,7 @@
     },
     {
       "file": "tools/compliance/evidence_chain.py",
-      "line": 205,
+      "line": 219,
       "col": 23,
       "pattern": "PRAGMA ",
       "severity": "medium",
@@ -454,35 +409,8 @@
       "text": "conn.execute(\"PRAGMA journal_mode=WAL\")"
     },
     {
-      "file": "tools/compliance/evidence_collector.py",
-      "line": 134,
-      "col": 31,
-      "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "\"SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=%s\","
-    },
-    {
-      "file": "tools/compliance/evidence_collector.py",
-      "line": 146,
-      "col": 42,
-      "pattern": "PRAGMA ",
-      "severity": "medium",
-      "fix": "SQLite PRAGMA has no PG equivalent; remove or guard behind is_sqlite check",
-      "text": "cols = [c[1] for c in conn.execute(f\"PRAGMA table_info({table_name})\").fetchall()]"
-    },
-    {
-      "file": "tools/compliance/fedramp_ksi_generator.py",
-      "line": 45,
-      "col": 27,
-      "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "\"SELECT name FROM sqlite_master WHERE type='table' AND name=%s\","
-    },
-    {
       "file": "tools/compliance/gdpr_eraser.py",
-      "line": 93,
+      "line": 95,
       "col": 35,
       "pattern": "sqlite_master",
       "severity": "medium",
@@ -491,7 +419,7 @@
     },
     {
       "file": "tools/compliance/gdpr_eraser.py",
-      "line": 101,
+      "line": 103,
       "col": 47,
       "pattern": "PRAGMA ",
       "severity": "medium",
@@ -500,7 +428,7 @@
     },
     {
       "file": "tools/compliance/gdpr_eraser.py",
-      "line": 121,
+      "line": 124,
       "col": 39,
       "pattern": "PRAGMA ",
       "severity": "medium",
@@ -535,51 +463,6 @@
       "text": "conn.execute(f\"PRAGMA busy_timeout = {_nlq.QUERY_TIMEOUT_SECONDS * 1000}\")"
     },
     {
-      "file": "tools/dashboard/api/ato_package.py",
-      "line": 98,
-      "col": 28,
-      "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "\"SELECT 1 FROM sqlite_master WHERE type='table' AND name=%s\","
-    },
-    {
-      "file": "tools/dashboard/api/cato.py",
-      "line": 72,
-      "col": 28,
-      "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "\"SELECT 1 FROM sqlite_master WHERE type='table' AND name=%s\","
-    },
-    {
-      "file": "tools/dashboard/api/chat.py",
-      "line": 301,
-      "col": 49,
-      "pattern": "PRAGMA ",
-      "severity": "medium",
-      "fix": "SQLite PRAGMA has no PG equivalent; remove or guard behind is_sqlite check",
-      "text": "existing = {row[1] for row in conn.execute(\"PRAGMA table_info(use_case_overrides)\").fetchall()}"
-    },
-    {
-      "file": "tools/dashboard/api/compliance_debt.py",
-      "line": 50,
-      "col": 28,
-      "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "\"SELECT 1 FROM sqlite_master WHERE type='table' AND name=%s\","
-    },
-    {
-      "file": "tools/dashboard/api/control_inheritance.py",
-      "line": 83,
-      "col": 28,
-      "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "\"SELECT 1 FROM sqlite_master WHERE type='table' AND name=%s\","
-    },
-    {
       "file": "tools/dashboard/api/cpmp.py",
       "line": 55,
       "col": 19,
@@ -598,15 +481,6 @@
       "text": "conn.execute(\"PRAGMA foreign_keys=ON\")"
     },
     {
-      "file": "tools/dashboard/api/executive.py",
-      "line": 40,
-      "col": 28,
-      "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "\"SELECT 1 FROM sqlite_master WHERE type='table' AND name=%s\","
-    },
-    {
       "file": "tools/dashboard/api/govcon.py",
       "line": 71,
       "col": 19,
@@ -614,42 +488,6 @@
       "severity": "medium",
       "fix": "SQLite PRAGMA has no PG equivalent; remove or guard behind is_sqlite check",
       "text": "conn.execute(\"PRAGMA journal_mode=WAL\")"
-    },
-    {
-      "file": "tools/dashboard/api/iac.py",
-      "line": 56,
-      "col": 28,
-      "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "\"SELECT 1 FROM sqlite_master WHERE type='table' AND name=%s\","
-    },
-    {
-      "file": "tools/dashboard/api/lineage.py",
-      "line": 32,
-      "col": 35,
-      "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "\"SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=%s\","
-    },
-    {
-      "file": "tools/dashboard/api/migration.py",
-      "line": 36,
-      "col": 28,
-      "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "\"SELECT 1 FROM sqlite_master WHERE type='table' AND name=%s\","
-    },
-    {
-      "file": "tools/dashboard/api/migration_cost.py",
-      "line": 93,
-      "col": 28,
-      "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "\"SELECT 1 FROM sqlite_master WHERE type='table' AND name=%s\","
     },
     {
       "file": "tools/dashboard/api/orchestration.py",
@@ -661,24 +499,6 @@
       "text": "conn.execute(\"PRAGMA journal_mode=WAL\")"
     },
     {
-      "file": "tools/dashboard/api/orchestration.py",
-      "line": 54,
-      "col": 39,
-      "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "\"SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=%s\","
-    },
-    {
-      "file": "tools/dashboard/api/pr_intel.py",
-      "line": 42,
-      "col": 28,
-      "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "\"SELECT 1 FROM sqlite_master WHERE type='table' AND name=%s\","
-    },
-    {
       "file": "tools/dashboard/api/proposal_genesis.py",
       "line": 48,
       "col": 19,
@@ -688,53 +508,8 @@
       "text": "conn.execute(\"PRAGMA journal_mode=WAL\")"
     },
     {
-      "file": "tools/dashboard/api/sbd.py",
-      "line": 61,
-      "col": 28,
-      "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "\"SELECT 1 FROM sqlite_master WHERE type='table' AND name=%s\","
-    },
-    {
-      "file": "tools/dashboard/api/security_scan.py",
-      "line": 40,
-      "col": 28,
-      "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "\"SELECT 1 FROM sqlite_master WHERE type='table' AND name=%s\","
-    },
-    {
-      "file": "tools/dashboard/api/servicenow_changes.py",
-      "line": 42,
-      "col": 28,
-      "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "\"SELECT 1 FROM sqlite_master WHERE type='table' AND name=%s\","
-    },
-    {
-      "file": "tools/dashboard/api/stig_manager.py",
-      "line": 57,
-      "col": 28,
-      "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "\"SELECT 1 FROM sqlite_master WHERE type='table' AND name=%s\","
-    },
-    {
       "file": "tools/dashboard/app.py",
-      "line": 5477,
-      "col": 51,
-      "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "\"SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='pc_compliance_findings'\""
-    },
-    {
-      "file": "tools/dashboard/app.py",
-      "line": 8476,
+      "line": 8544,
       "col": 27,
       "pattern": "PRAGMA ",
       "severity": "medium",
@@ -743,7 +518,7 @@
     },
     {
       "file": "tools/dashboard/app.py",
-      "line": 9089,
+      "line": 9157,
       "col": 23,
       "pattern": "PRAGMA ",
       "severity": "medium",
@@ -764,8 +539,8 @@
       "line": 80,
       "col": 8,
       "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
+      "severity": "high",
+      "fix": "Bypasses translate_sql rule-14 (only 3 exact shapes are rewritten to information_schema); use tools.db.storage.table_exists()/list_tables() instead",
       "text": "A `sqlite_master` lookup would be wrong on PostgreSQL, which is the primary"
     },
     {
@@ -788,16 +563,7 @@
     },
     {
       "file": "tools/dashboard/nlq_processor.py",
-      "line": 53,
-      "col": 27,
-      "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "\"SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name\""
-    },
-    {
-      "file": "tools/dashboard/nlq_processor.py",
-      "line": 58,
+      "line": 56,
       "col": 34,
       "pattern": "PRAGMA ",
       "severity": "medium",
@@ -806,39 +572,12 @@
     },
     {
       "file": "tools/dashboard/nlq_processor.py",
-      "line": 226,
+      "line": 224,
       "col": 20,
       "pattern": "PRAGMA ",
       "severity": "medium",
       "fix": "SQLite PRAGMA has no PG equivalent; remove or guard behind is_sqlite check",
       "text": "conn.execute(f\"PRAGMA busy_timeout = {QUERY_TIMEOUT_SECONDS * 1000}\")"
-    },
-    {
-      "file": "tools/dashboard/pages/provenance.py",
-      "line": 33,
-      "col": 35,
-      "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "\"SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=%s\","
-    },
-    {
-      "file": "tools/data_canvas/anomaly_detector.py",
-      "line": 260,
-      "col": 16,
-      "pattern": "sqlite3.connect(",
-      "severity": "high",
-      "fix": "Use get_connection() from tools.db.storage instead",
-      "text": "return sqlite3.connect(str(db))"
-    },
-    {
-      "file": "tools/data_canvas/blueprint.py",
-      "line": 2988,
-      "col": 54,
-      "pattern": "PRAGMA ",
-      "severity": "medium",
-      "fix": "SQLite PRAGMA has no PG equivalent; remove or guard behind is_sqlite check",
-      "text": "existing_cols = {r[1] for r in conn.execute(\"PRAGMA table_info(dm_domains)\").fetchall()}"
     },
     {
       "file": "tools/data_canvas/data_profiler.py",
@@ -851,7 +590,7 @@
     },
     {
       "file": "tools/data_canvas/data_profiler.py",
-      "line": 109,
+      "line": 112,
       "col": 46,
       "pattern": "sqlite_master",
       "severity": "medium",
@@ -860,7 +599,7 @@
     },
     {
       "file": "tools/data_canvas/data_profiler.py",
-      "line": 129,
+      "line": 134,
       "col": 30,
       "pattern": "PRAGMA ",
       "severity": "medium",
@@ -869,39 +608,12 @@
     },
     {
       "file": "tools/data_canvas/data_profiler.py",
-      "line": 131,
+      "line": 136,
       "col": 36,
       "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
+      "severity": "high",
+      "fix": "Bypasses translate_sql rule-14 (only 3 exact shapes are rewritten to information_schema); use tools.db.storage.table_exists()/list_tables() instead",
       "text": "if not cols and table in (\"sqlite_master\", \"sqlite_schema\"):"
-    },
-    {
-      "file": "tools/data_canvas/freshness_guardian.py",
-      "line": 65,
-      "col": 16,
-      "pattern": "sqlite3.connect(",
-      "severity": "high",
-      "fix": "Use get_connection() from tools.db.storage instead",
-      "text": "conn = sqlite3.connect(db_path)"
-    },
-    {
-      "file": "tools/data_canvas/freshness_guardian.py",
-      "line": 194,
-      "col": 16,
-      "pattern": "sqlite3.connect(",
-      "severity": "high",
-      "fix": "Use get_connection() from tools.db.storage instead",
-      "text": "conn = sqlite3.connect(str(_DB_PATH))"
-    },
-    {
-      "file": "tools/data_canvas/mcp_scanner.py",
-      "line": 191,
-      "col": 16,
-      "pattern": "sqlite3.connect(",
-      "severity": "high",
-      "fix": "Use get_connection() from tools.db.storage instead",
-      "text": "conn = sqlite3.connect(str(db))"
     },
     {
       "file": "tools/databridge/connection_manager.py",
@@ -1133,8 +845,8 @@
       "line": 61,
       "col": 30,
       "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
+      "severity": "high",
+      "fix": "Bypasses translate_sql rule-14 (only 3 exact shapes are rewritten to information_schema); use tools.db.storage.table_exists()/list_tables() instead",
       "text": "\"SELECT sql FROM sqlite_master WHERE type='table' \""
     },
     {
@@ -1196,8 +908,8 @@
       "line": 60,
       "col": 30,
       "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
+      "severity": "high",
+      "fix": "Bypasses translate_sql rule-14 (only 3 exact shapes are rewritten to information_schema); use tools.db.storage.table_exists()/list_tables() instead",
       "text": "\"SELECT sql FROM sqlite_master WHERE type='table' \""
     },
     {
@@ -1232,8 +944,8 @@
       "line": 77,
       "col": 28,
       "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
+      "severity": "high",
+      "fix": "Bypasses translate_sql rule-14 (only 3 exact shapes are rewritten to information_schema); use tools.db.storage.table_exists()/list_tables() instead",
       "text": "\"SELECT 1 FROM sqlite_master WHERE type=\\'table\\' AND name=?\","
     },
     {
@@ -1241,8 +953,8 @@
       "line": 215,
       "col": 28,
       "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
+      "severity": "high",
+      "fix": "Bypasses translate_sql rule-14 (only 3 exact shapes are rewritten to information_schema); use tools.db.storage.table_exists()/list_tables() instead",
       "text": "\"SELECT 1 FROM sqlite_master WHERE type=\\'table\\' AND name=?\","
     },
     {
@@ -1286,8 +998,8 @@
       "line": 23,
       "col": 19,
       "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
+      "severity": "high",
+      "fix": "Bypasses translate_sql rule-14 (only 3 exact shapes are rewritten to information_schema); use tools.db.storage.table_exists()/list_tables() instead",
       "text": "Idempotent \u2014 uses sqlite_master check before CREATE."
     },
     {
@@ -1349,8 +1061,8 @@
       "line": 20,
       "col": 19,
       "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
+      "severity": "high",
+      "fix": "Bypasses translate_sql rule-14 (only 3 exact shapes are rewritten to information_schema); use tools.db.storage.table_exists()/list_tables() instead",
       "text": "Idempotent \u2014 uses sqlite_master check before CREATE."
     },
     {
@@ -1367,8 +1079,8 @@
       "line": 20,
       "col": 19,
       "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
+      "severity": "high",
+      "fix": "Bypasses translate_sql rule-14 (only 3 exact shapes are rewritten to information_schema); use tools.db.storage.table_exists()/list_tables() instead",
       "text": "Idempotent \u2014 uses sqlite_master check before CREATE."
     },
     {
@@ -1880,8 +1592,8 @@
       "line": 30,
       "col": 30,
       "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
+      "severity": "high",
+      "fix": "Bypasses translate_sql rule-14 (only 3 exact shapes are rewritten to information_schema); use tools.db.storage.table_exists()/list_tables() instead",
       "text": "\"SELECT sql FROM sqlite_master WHERE type='table' AND name='proposal_reviews'\""
     },
     {
@@ -2038,60 +1750,6 @@
       "text": "conn.execute(\"PRAGMA journal_mode=WAL\")"
     },
     {
-      "file": "tools/extensions/builtins/010_ai_governance_chat.py",
-      "line": 117,
-      "col": 38,
-      "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "\"SELECT COUNT(*) as cnt FROM sqlite_master WHERE type='table' AND name=%s\","
-    },
-    {
-      "file": "tools/extensions/builtins/030_workflow_loop_chat.py",
-      "line": 59,
-      "col": 38,
-      "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "\"SELECT COUNT(*) as cnt FROM sqlite_master WHERE type='table' AND name=%s\","
-    },
-    {
-      "file": "tools/extensions/builtins/040_bayesian_learning_chat.py",
-      "line": 137,
-      "col": 46,
-      "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "\"SELECT COUNT(*) as cnt FROM sqlite_master WHERE type='table' AND name=%s\","
-    },
-    {
-      "file": "tools/extensions/builtins/060_code_quality_chat.py",
-      "line": 79,
-      "col": 38,
-      "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "\"SELECT COUNT(*) as cnt FROM sqlite_master WHERE type='table' AND name=%s\","
-    },
-    {
-      "file": "tools/extensions/builtins/070_genesis_status_chat.py",
-      "line": 76,
-      "col": 38,
-      "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "\"SELECT COUNT(*) as cnt FROM sqlite_master WHERE type='table' AND name=%s\","
-    },
-    {
-      "file": "tools/extensions/builtins/080_intake_enrichment_chat.py",
-      "line": 94,
-      "col": 38,
-      "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "\"SELECT COUNT(*) as cnt FROM sqlite_master WHERE type='table' AND name=%s\","
-    },
-    {
       "file": "tools/finetune/ab_evaluator.py",
       "line": 39,
       "col": 19,
@@ -2236,40 +1894,13 @@
       "text": "conn.execute(\"PRAGMA journal_mode=WAL\")"
     },
     {
-      "file": "tools/genesis/reflexes/cato_twin.py",
-      "line": 256,
-      "col": 24,
-      "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "\"SELECT 1 FROM sqlite_master WHERE type='table' AND name=%s\","
-    },
-    {
       "file": "tools/genesis/reflexes/kanban.py",
-      "line": 6158,
+      "line": 6160,
       "col": 40,
       "pattern": "sqlite_master",
       "severity": "medium",
       "fix": "SQLite system catalogue; use information_schema.tables in PG",
       "text": "\"SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = %s\","
-    },
-    {
-      "file": "tools/genesis/reflexes/market.py",
-      "line": 41,
-      "col": 49,
-      "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "tables = conn.execute(\"SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'mkt_%'\").fetchall()"
-    },
-    {
-      "file": "tools/genesis/reflexes/mdc_cutover_countdown.py",
-      "line": 57,
-      "col": 53,
-      "pattern": "PRAGMA ",
-      "severity": "medium",
-      "fix": "SQLite PRAGMA has no PG equivalent; remove or guard behind is_sqlite check",
-      "text": "cols = [r[1] for r in conn_mdc.execute(\"PRAGMA table_info(mc_sops)\").fetchall()]"
     },
     {
       "file": "tools/genesis/reflexes/quality.py",
@@ -2281,21 +1912,12 @@
       "text": "conn.execute(\"PRAGMA journal_mode=WAL\")"
     },
     {
-      "file": "tools/genesis/reflexes/sdc_control_expiry.py",
-      "line": 232,
-      "col": 53,
-      "pattern": "PRAGMA ",
-      "severity": "medium",
-      "fix": "SQLite PRAGMA has no PG equivalent; remove or guard behind is_sqlite check",
-      "text": "cols = [r[1] for r in conn_sdc.execute(\"PRAGMA table_info(sc_controls)\").fetchall()]"
-    },
-    {
       "file": "tools/genesis/reflexes/strategos/osint_harvester.py",
-      "line": 86,
+      "line": 88,
       "col": 46,
       "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
+      "severity": "high",
+      "fix": "Bypasses translate_sql rule-14 (only 3 exact shapes are rewritten to information_schema); use tools.db.storage.table_exists()/list_tables() instead",
       "text": "\"SELECT COUNT(*) AS cnt FROM sqlite_master \""
     },
     {
@@ -2398,15 +2020,6 @@
       "text": "conn.execute(\"PRAGMA journal_mode=WAL\")"
     },
     {
-      "file": "tools/govcon/color_review_simulator.py",
-      "line": 131,
-      "col": 27,
-      "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "\"SELECT name FROM sqlite_master WHERE type='table' AND name=%s\","
-    },
-    {
       "file": "tools/govcon/competitor_profiler.py",
       "line": 37,
       "col": 19,
@@ -2432,15 +2045,6 @@
       "severity": "medium",
       "fix": "SQLite PRAGMA has no PG equivalent; remove or guard behind is_sqlite check",
       "text": "conn.execute(\"PRAGMA journal_mode=WAL\")"
-    },
-    {
-      "file": "tools/govcon/compliance_populator.py",
-      "line": 80,
-      "col": 27,
-      "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "\"SELECT name FROM sqlite_master WHERE type='table' AND name='proposal_compliance_items'\""
     },
     {
       "file": "tools/govcon/contract_manager.py",
@@ -2614,15 +2218,6 @@
       "text": "conn.execute(\"PRAGMA journal_mode=WAL\")"
     },
     {
-      "file": "tools/govcon/opportunity_lifecycle.py",
-      "line": 247,
-      "col": 30,
-      "pattern": "PRAGMA ",
-      "severity": "medium",
-      "fix": "SQLite PRAGMA has no PG equivalent; remove or guard behind is_sqlite check",
-      "text": "cols = conn.execute(\"PRAGMA table_info(proposal_opportunities)\").fetchall()"
-    },
-    {
       "file": "tools/govcon/option_period_tracker.py",
       "line": 46,
       "col": 19,
@@ -2747,15 +2342,6 @@
       "severity": "medium",
       "fix": "SQLite PRAGMA has no PG equivalent; remove or guard behind is_sqlite check",
       "text": "conn.execute(\"PRAGMA foreign_keys=ON\")"
-    },
-    {
-      "file": "tools/govcon/shipley_mapper.py",
-      "line": 394,
-      "col": 31,
-      "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "\"SELECT name FROM sqlite_master WHERE type='table' AND name=%s\","
     },
     {
       "file": "tools/govcon/subcontractor_tracker.py",
@@ -2893,24 +2479,6 @@
       "text": "conn = sqlite3.connect(db_path)"
     },
     {
-      "file": "tools/innovation/introspective_analyzer.py",
-      "line": 159,
-      "col": 47,
-      "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "return conn.execute(\"SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=%s\", (name,)).fetchone()[0] > 0"
-    },
-    {
-      "file": "tools/innovation/triage_engine.py",
-      "line": 240,
-      "col": 54,
-      "pattern": "PRAGMA ",
-      "severity": "medium",
-      "fix": "SQLite PRAGMA has no PG equivalent; remove or guard behind is_sqlite check",
-      "text": "existing_cols = {row[1] for row in conn.execute(\"PRAGMA table_info(innovation_signals)\").fetchall()}"
-    },
-    {
       "file": "tools/installer/installer.py",
       "line": 356,
       "col": 53,
@@ -2936,24 +2504,6 @@
       "severity": "high",
       "fix": "Use get_connection() from tools.db.storage instead",
       "text": "c = sqlite3.connect(str(_CANVAS_DB))"
-    },
-    {
-      "file": "tools/kanban/des_audit_logger.py",
-      "line": 35,
-      "col": 24,
-      "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "\"SELECT 1 FROM sqlite_master WHERE type='table' AND name=%s\","
-    },
-    {
-      "file": "tools/kanban/state_machine.py",
-      "line": 207,
-      "col": 30,
-      "pattern": "PRAGMA ",
-      "severity": "medium",
-      "fix": "SQLite PRAGMA has no PG equivalent; remove or guard behind is_sqlite check",
-      "text": "cols = conn.execute(\"PRAGMA table_info(kanban_tasks)\").fetchall()"
     },
     {
       "file": "tools/knowledge/pattern_detector.py",
@@ -3082,15 +2632,6 @@
       "text": "\"SELECT name FROM sqlite_master WHERE type='table' AND name='agent_token_usage'\""
     },
     {
-      "file": "tools/marketplace/install_manager.py",
-      "line": 724,
-      "col": 38,
-      "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "\"SELECT COUNT(*) AS cnt FROM sqlite_master WHERE type='table' AND name=%s\","
-    },
-    {
       "file": "tools/mbse/diagram_extractor.py",
       "line": 295,
       "col": 19,
@@ -3143,15 +2684,6 @@
       "severity": "medium",
       "fix": "SQLite PRAGMA has no PG equivalent; remove or guard behind is_sqlite check",
       "text": "conn.execute(\"PRAGMA foreign_keys=ON\")"
-    },
-    {
-      "file": "tools/mcp/gap_handlers.py",
-      "line": 741,
-      "col": 49,
-      "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "cursor = conn.execute(\"SELECT name FROM sqlite_master WHERE type='table' ORDER BY name\")"
     },
     {
       "file": "tools/memory/auto_capture.py",
@@ -3460,15 +2992,6 @@
       "text": "conn.execute(\"PRAGMA journal_mode=WAL\")"
     },
     {
-      "file": "tools/monitor/watchcon.py",
-      "line": 60,
-      "col": 45,
-      "pattern": "PRAGMA ",
-      "severity": "medium",
-      "fix": "SQLite PRAGMA has no PG equivalent; remove or guard behind is_sqlite check",
-      "text": "cols = {row[1] for row in conn.execute(\"PRAGMA table_info(alerts)\")}"
-    },
-    {
       "file": "tools/ndc/agentic_netops.py",
       "line": 75,
       "col": 16,
@@ -3523,40 +3046,49 @@
       "text": "conn = sqlite3.connect(str(db))"
     },
     {
-      "file": "tools/network/blueprint.py",
-      "line": 10664,
-      "col": 16,
-      "pattern": "sqlite3.connect(",
-      "severity": "high",
-      "fix": "Use get_connection() from tools.db.storage instead",
-      "text": "conn = sqlite3.connect(str(db_path), check_same_thread=False)"
+      "file": "tools/network/blueprint_helpers.py",
+      "line": 70,
+      "col": 31,
+      "pattern": "sqlite_master",
+      "severity": "medium",
+      "fix": "SQLite system catalogue; use information_schema.tables in PG",
+      "text": "\"SELECT name FROM sqlite_master WHERE type = 'table' AND name = %s\","
     },
     {
-      "file": "tools/network/blueprint.py",
-      "line": 10692,
-      "col": 20,
-      "pattern": "sqlite3.connect(",
-      "severity": "high",
-      "fix": "Use get_connection() from tools.db.storage instead",
-      "text": "conn = sqlite3.connect(str(db_path), check_same_thread=False)"
+      "file": "tools/network/blueprint_helpers.py",
+      "line": 85,
+      "col": 45,
+      "pattern": "PRAGMA ",
+      "severity": "medium",
+      "fix": "SQLite PRAGMA has no PG equivalent; remove or guard behind is_sqlite check",
+      "text": "information_schema.columns; SQLite uses PRAGMA table_info."
     },
     {
-      "file": "tools/network/blueprint.py",
-      "line": 10784,
-      "col": 20,
-      "pattern": "sqlite3.connect(",
-      "severity": "high",
-      "fix": "Use get_connection() from tools.db.storage instead",
-      "text": "conn = sqlite3.connect(str(db_path), check_same_thread=False)"
+      "file": "tools/network/blueprint_helpers.py",
+      "line": 101,
+      "col": 46,
+      "pattern": "PRAGMA ",
+      "severity": "medium",
+      "fix": "SQLite PRAGMA has no PG equivalent; remove or guard behind is_sqlite check",
+      "text": "cols = [r[1] for r in conn.execute(f\"PRAGMA table_info({table})\").fetchall()]  # noqa: S608"
     },
     {
-      "file": "tools/network/blueprint.py",
-      "line": 10823,
-      "col": 20,
+      "file": "tools/network/config_parser.py",
+      "line": 46,
+      "col": 13,
       "pattern": "sqlite3.connect(",
       "severity": "high",
       "fix": "Use get_connection() from tools.db.storage instead",
-      "text": "conn = sqlite3.connect(str(db_path), check_same_thread=False)"
+      "text": "conn = _sqlite3.connect(str(path))"
+    },
+    {
+      "file": "tools/network/container_node.py",
+      "line": 116,
+      "col": 12,
+      "pattern": "sqlite3.connect(",
+      "severity": "high",
+      "fix": "Use get_connection() from tools.db.storage instead",
+      "text": "conn = sqlite3.connect(str(path))"
     },
     {
       "file": "tools/network/ip_address_space.py",
@@ -3568,42 +3100,6 @@
       "text": "conn = sqlite3.connect(args.db)"
     },
     {
-      "file": "tools/network/routes/analysis.py",
-      "line": 497,
-      "col": 38,
-      "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "r = db.execute(\"SELECT name FROM sqlite_master WHERE type='table' AND name=%s\", (table,)).fetchone()"
-    },
-    {
-      "file": "tools/network/routes/analysis.py",
-      "line": 502,
-      "col": 40,
-      "pattern": "PRAGMA ",
-      "severity": "medium",
-      "fix": "SQLite PRAGMA has no PG equivalent; remove or guard behind is_sqlite check",
-      "text": "cols = [r[1] for r in db.execute(f\"PRAGMA table_info({table})\").fetchall()]"
-    },
-    {
-      "file": "tools/network/routes/governance.py",
-      "line": 265,
-      "col": 38,
-      "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "r = db.execute(\"SELECT name FROM sqlite_master WHERE type='table' AND name=%s\", (table,)).fetchone()"
-    },
-    {
-      "file": "tools/network/routes/governance.py",
-      "line": 311,
-      "col": 40,
-      "pattern": "PRAGMA ",
-      "severity": "medium",
-      "fix": "SQLite PRAGMA has no PG equivalent; remove or guard behind is_sqlite check",
-      "text": "cols = [r[1] for r in db.execute(f\"PRAGMA table_info({table})\").fetchall()]"
-    },
-    {
       "file": "tools/ontology/federation.py",
       "line": 353,
       "col": 19,
@@ -3611,15 +3107,6 @@
       "severity": "medium",
       "fix": "SQLite PRAGMA has no PG equivalent; remove or guard behind is_sqlite check",
       "text": "conn.execute(\"PRAGMA journal_mode=WAL\")"
-    },
-    {
-      "file": "tools/proposal_genesis/reflexes/discover.py",
-      "line": 125,
-      "col": 30,
-      "pattern": "PRAGMA ",
-      "severity": "medium",
-      "fix": "SQLite PRAGMA has no PG equivalent; remove or guard behind is_sqlite check",
-      "text": "cols = conn.execute(\"PRAGMA table_info(proposal_opportunities)\").fetchall()"
     },
     {
       "file": "tools/rag/ingestion_manager.py",
@@ -3650,21 +3137,12 @@
     },
     {
       "file": "tools/redaction/db_scanner.py",
-      "line": 113,
-      "col": 49,
-      "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "exists = conn.execute(\"SELECT name FROM sqlite_master WHERE type='table' AND name=%s\", (table,)).fetchone()"
-    },
-    {
-      "file": "tools/redaction/db_scanner.py",
-      "line": 118,
+      "line": 119,
       "col": 33,
       "pattern": "PRAGMA ",
       "severity": "medium",
       "fix": "SQLite PRAGMA has no PG equivalent; remove or guard behind is_sqlite check",
-      "text": "pragma = conn.execute(f\"PRAGMA table_info({table})\").fetchall()"
+      "text": "pragma = conn.execute(f\"PRAGMA table_info({table})\").fetchall()  # noqa: S608 \u2014 table from GOVCON_TABLES constant"
     },
     {
       "file": "tools/registry/absorption_engine.py",
@@ -3820,33 +3298,6 @@
       "text": "conn.execute(\"PRAGMA foreign_keys=ON\")"
     },
     {
-      "file": "tools/requirements/ai_governance_scorer.py",
-      "line": 115,
-      "col": 42,
-      "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "\"SELECT COUNT(*) as cnt FROM sqlite_master WHERE type='table' AND name=%s\","
-    },
-    {
-      "file": "tools/requirements/intake_kanban_promoter.py",
-      "line": 88,
-      "col": 31,
-      "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "\"SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=%s\", (name,)"
-    },
-    {
-      "file": "tools/research/forecast_generator.py",
-      "line": 114,
-      "col": 24,
-      "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "\"SELECT 1 FROM sqlite_master WHERE type='table' AND name=%s\","
-    },
-    {
       "file": "tools/review_board/compliance_bridge.py",
       "line": 76,
       "col": 23,
@@ -3935,15 +3386,6 @@
       "severity": "medium",
       "fix": "SQLite PRAGMA has no PG equivalent; remove or guard behind is_sqlite check",
       "text": "conn.execute(\"PRAGMA busy_timeout=30000\")"
-    },
-    {
-      "file": "tools/review_board/reflexes/perf.py",
-      "line": 60,
-      "col": 57,
-      "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "tables = conn.execute(\"SELECT name FROM sqlite_master WHERE type='table' ORDER BY name\").fetchall()"
     },
     {
       "file": "tools/review_board/reflexes/report.py",
@@ -4064,7 +3506,7 @@
     },
     {
       "file": "tools/security_canvas/nl_query.py",
-      "line": 1154,
+      "line": 1141,
       "col": 23,
       "pattern": "PRAGMA ",
       "severity": "medium",
@@ -4361,16 +3803,16 @@
     },
     {
       "file": "tools/trading/news/db.py",
-      "line": 411,
+      "line": 413,
       "col": 39,
       "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
+      "severity": "high",
+      "fix": "Bypasses translate_sql rule-14 (only 3 exact shapes are rewritten to information_schema); use tools.db.storage.table_exists()/list_tables() instead",
       "text": "\"SELECT name FROM sqlite_master\""
     },
     {
       "file": "tools/workflow/coherence_checker.py",
-      "line": 4717,
+      "line": 4757,
       "col": 31,
       "pattern": "sqlite3.connect(",
       "severity": "high",
@@ -4379,7 +3821,7 @@
     },
     {
       "file": "tools/workflow/coherence_checker.py",
-      "line": 4733,
+      "line": 4773,
       "col": 52,
       "pattern": "sqlite3.connect(",
       "severity": "high",
@@ -4405,15 +3847,6 @@
       "text": "conn.execute(\"PRAGMA journal_mode=WAL\")"
     },
     {
-      "file": "tools/workflow/intake_bridge.py",
-      "line": 47,
-      "col": 38,
-      "pattern": "sqlite_master",
-      "severity": "medium",
-      "fix": "SQLite system catalogue; use information_schema.tables in PG",
-      "text": "\"SELECT COUNT(*) as cnt FROM sqlite_master WHERE type='table' AND name=%s\","
-    },
-    {
       "file": "tools/workflow/loop_engine.py",
       "line": 62,
       "col": 19,
@@ -4421,15 +3854,6 @@
       "severity": "medium",
       "fix": "SQLite PRAGMA has no PG equivalent; remove or guard behind is_sqlite check",
       "text": "conn.execute(\"PRAGMA journal_mode=WAL\")"
-    },
-    {
-      "file": "tools/workflow/loop_engine.py",
-      "line": 203,
-      "col": 31,
-      "pattern": "PRAGMA ",
-      "severity": "medium",
-      "fix": "SQLite PRAGMA has no PG equivalent; remove or guard behind is_sqlite check",
-      "text": "cols = conn.execute(f\"PRAGMA table_info({table})\").fetchall()"
     },
     {
       "file": "tools/workflow/next_action.py",
@@ -4457,15 +3881,6 @@
       "severity": "medium",
       "fix": "SQLite PRAGMA has no PG equivalent; remove or guard behind is_sqlite check",
       "text": "conn.execute(\"PRAGMA journal_mode=WAL\")"
-    },
-    {
-      "file": "tools/workflow_hitl/engine.py",
-      "line": 328,
-      "col": 38,
-      "pattern": "PRAGMA ",
-      "severity": "medium",
-      "fix": "SQLite PRAGMA has no PG equivalent; remove or guard behind is_sqlite check",
-      "text": "cols = conn.execute(\"PRAGMA table_info(wf_approvals)\").fetchall()"
     }
   ]
 }
