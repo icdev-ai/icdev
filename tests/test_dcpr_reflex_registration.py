@@ -10,8 +10,6 @@ from __future__ import annotations
 
 import importlib
 
-import pytest
-
 REFLEX = "freshness_guardian"
 
 
@@ -29,14 +27,9 @@ def test_freshness_guardian_in_registry():
     assert REFLEX in {e.name for e in registry.list_reflexes()}
 
 
-@pytest.mark.xfail(
-    reason="Pre-existing bug OUTSIDE dcpr-fix-06 scope: freshness_guardian.py places "
-    "`IMPLEMENTATION_STATUS = \"full\"` before `from __future__ import annotations`, a "
-    "SyntaxError that blocks import/dispatch. Registration (this task) is necessary but "
-    "not sufficient; the module must be fixed in a follow-up. Flips to pass once fixed.",
-    strict=False,
-    raises=SyntaxError,
-)
 def test_freshness_guardian_module_resolves_with_run():
+    # dcpr-fix-07: the `from __future__` import is now first after the docstring,
+    # so the module imports cleanly (previously a SyntaxError blocked dispatch).
     module = importlib.import_module(f"tools.genesis.reflexes.{REFLEX}")
+    assert module.IMPLEMENTATION_STATUS == "full"
     assert hasattr(module, "run"), "daemon dispatch requires a module-level run()"
