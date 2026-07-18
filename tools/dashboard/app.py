@@ -29,7 +29,7 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from tools.logging.icdev_logger import get_logger  # noqa: E402
-from tools.db.storage import get_connection, sql_placeholder  # noqa: E402
+from tools.db.storage import get_connection, sql_placeholder, table_exists  # noqa: E402
 
 from flask import (
     Flask,
@@ -1835,6 +1835,16 @@ def create_app(testing: bool = False) -> Flask:
         app.register_blueprint(_health_bp)
     except Exception as _exc:
         app.logger.warning("Health blueprint skipped: %s", _exc)
+
+    # Distributed tracing activation (obx-trc-01, D290). Gated by
+    # ICDEV_TRACING_ENABLED (default on) inside the helper. Wrapped so tracing
+    # never blocks app startup. Span store routes to the primary backend via
+    # tools.db.storage.
+    try:
+        from tools.observability import enable_tracing_if_enabled
+        enable_tracing_if_enabled()
+    except Exception as _exc:
+        app.logger.warning("Tracing activation skipped: %s", _exc)
 
     @app.route("/api/_introspect/routes", methods=["GET"])
     def _introspect_routes():
@@ -5534,10 +5544,7 @@ def create_app(testing: bool = False) -> Flask:
                         pass
                     # SSDF coverage — remediation rate of SSDF framework findings
                     try:
-                        tables_row = pc.execute(
-                            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='pc_compliance_findings'"
-                        ).fetchone()
-                        if tables_row and tables_row[0] > 0:
+                        if table_exists(pc, "pc_compliance_findings"):
                             ssdf_total = pc.execute(
                                 "SELECT COUNT(*) FROM pc_compliance_findings WHERE framework LIKE 'SSDF%'"
                             ).fetchone()[0]

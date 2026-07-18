@@ -35,7 +35,7 @@ _ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from tools.db.storage import get_connection  # noqa: E402
+from tools.db.storage import get_connection, table_exists  # noqa: E402
 
 # ── Constants ─────────────────────────────────────────────────────────
 
@@ -388,20 +388,8 @@ def _audit(conn, event_type, action, details):
 
 
 def _safe_table_exists(conn, table_name):
-    """Check if a table exists in the database."""
-    try:
-        rows = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name=%s",
-            (table_name,),
-        ).fetchall()
-        return len(rows) > 0
-    except Exception:
-        # PostgreSQL or other backend
-        try:
-            conn.execute(f"SELECT 1 FROM {table_name} LIMIT 0")  # noqa: S608  # nosec B608 -- table/column names are internal constants, not user input
-            return True
-        except Exception:
-            return False
+    """Check if a table exists in the database (backend-aware, translation-independent)."""
+    return table_exists(conn, table_name)
 
 
 def _safe_count(conn, query, params=()):

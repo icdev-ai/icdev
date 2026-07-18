@@ -27,7 +27,8 @@ from datetime import datetime, timezone
 
 from tools.logging.icdev_logger import get_logger
 from tools.pipeline.deploy_catalog import (
-    HELM_CHARTS,
+    DEPLOY_CATALOG,
+    get_helm_chart_url,
     resolve_dependencies,
 )
 from tools.pipeline.constants import estimate_pipeline_cost
@@ -615,6 +616,24 @@ def _gen_platform_services(csp, project_name, env, deps):
     return files
 
 
+def _helm_install_order(chart_key):
+    """Return the deployment ordering weight for a Helm chart key.
+
+    The authoritative ordering lives on the DEPLOY_CATALOG node-type entries
+    (``install_order``). Several node types can map to the same chart, so we take
+    the minimum ordering across every catalog entry that references this chart —
+    i.e. deploy the chart as early as its earliest-needed consumer requires.
+    Charts with no catalog reference fall back to 50 (mid-range, same default the
+    catalog uses for CI/CD tooling).
+    """
+    orders = [
+        info.get("install_order", 50)
+        for info in DEPLOY_CATALOG.values()
+        if info.get("helm") == chart_key
+    ]
+    return min(orders) if orders else 50
+
+
 def _gen_helm_releases(helm_keys, project_name, opts):
     """Generate Terraform helm_release blocks + values files for each tool."""
     files = []
@@ -630,27 +649,45 @@ def _gen_helm_releases(helm_keys, project_name, opts):
         "",
     ]
 
-    for chart_key in sorted(helm_keys, key=lambda k: HELM_CHARTS.get(k, {}).get("version", "")):
-        chart = HELM_CHARTS.get(chart_key)
+    # Emit releases in DEPLOY_CATALOG install_order (dependency-correct: Vault /
+    # cert-manager / registries before policy engines before monitoring), NOT by
+    # chart *version* string — version-string ordering was arbitrary and could
+    # place a dependent chart before its prerequisite. Ties broken by chart key
+    # for deterministic output.
+    ordered_keys = sorted(helm_keys, key=lambda k: (_helm_install_order(k), k))
+
+    prev_release_name = None
+    for chart_key in ordered_keys:
+        # Route the repo URL through get_helm_chart_url() so the ICDEV_HELM_MIRROR
+        # air-gap override is honored (reading HELM_CHARTS[...]["repo"] directly
+        # silently ignored the mirror). Returns the chart dict with the repo
+        # already rewritten to the mirror when one is configured.
+        chart = get_helm_chart_url(chart_key)
         if not chart:
             continue
 
         release_name = chart_key.replace("-", "_")
         ns = chart.get("namespace", "default")
 
-        # Terraform helm_release
-        tf_lines.extend(
+        block = [
+            f'resource "helm_release" "{release_name}" {{',
+            f'  name       = "{chart_key}"',
+            f'  repository = "{chart["repo"]}"',
+            f'  chart      = "{chart["chart"]}"',
+            f'  version    = "{chart["version"]}"',
+            f'  namespace  = "{ns}"',
+            "  create_namespace = true",
+            "",
+            f'  values = [file("${{path.module}}/../values/{chart_key}.yaml")]',
+            "",
+        ]
+        # Chain each release to the previous one so Terraform applies them in the
+        # catalog-defined order rather than its own dependency-graph guess.
+        if prev_release_name is not None:
+            block.append(f"  depends_on = [helm_release.{prev_release_name}]")
+            block.append("")
+        block.extend(
             [
-                f'resource "helm_release" "{release_name}" {{',
-                f'  name       = "{chart_key}"',
-                f'  repository = "{chart["repo"]}"',
-                f'  chart      = "{chart["chart"]}"',
-                f'  version    = "{chart["version"]}"',
-                f'  namespace  = "{ns}"',
-                "  create_namespace = true",
-                "",
-                f'  values = [file("${{path.module}}/../values/{chart_key}.yaml")]',
-                "",
                 "  set {",
                 '    name  = "global.labels.project"',
                 f'    value = "{project_name}"',
@@ -659,6 +696,8 @@ def _gen_helm_releases(helm_keys, project_name, opts):
                 "",
             ]
         )
+        tf_lines.extend(block)
+        prev_release_name = release_name
 
         # Values file
         values_content = _gen_helm_values(chart_key, project_name, opts)

@@ -11,7 +11,7 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | cATO Twin Snapshot Writer | tools/boundary_canvas/cato_twin/snapshot_writer.py | Freeze cross-framework compliance state (control × project × framework × timestamp → status + evidence_ref) into compliance_twin_snapshots | --project-id, --framework, --controls-json, --triggered-by, --json | snapshot_id |
-| cATO Twin IQE Query Engine | tools/boundary_canvas/cato_twin/query_engine.py | Execute IQE DSL queries against compliance_twin_snapshots; foreach/where/select over framework controls, violations, or runs | IQE query string, --json | list[dict] rows |
+| cATO Twin IQE Query Surface | tools/iqe/adapters/compliance.py | Execute IQE DSL queries against compliance_twin_* via the maintained IQE executor/adapters (`compliance.twin_snapshots`/`.twin_violations`/`.twin_runs`); `run_query` enforces a fail-closed field whitelist + project scoping. bdt-iqe-1 retired the Phase-1 regex engine `cato_twin/query_engine.py`. | IQE query string, project_id | list[dict] rows |
 | cATO Twin POA&M Auto-Generator | tools/boundary_canvas/cato_twin/poam_auto_generator.py | Generate POA&M items from compliance_twin_violations for a snapshot; idempotent dedup; links back to violations table | --snapshot-id, --project-id, --json | {new_items, skipped_items} |
 | cATO Twin CLI | tools/boundary_canvas/cato_twin/cli.py | Unified CLI: snapshot / query / poam / status / migrate sub-commands | sub-command + args, --json | varies |
 | cATO Twin Genesis Reflex | tools/genesis/reflexes/cato_twin.py | 6h continuous monitoring reflex; per-project snapshot + IQE violation scan + auto POA&M | ctx dict, conn (optional) | {snapshots_written, violations_found, poam_items_created} |

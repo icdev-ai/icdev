@@ -243,7 +243,7 @@ def run_rule(rule: dict, conn_params: dict) -> dict:
 def run_all_rules(design_id: str, conn_params: dict, ddc_conn) -> list[dict]:
     """Run all enabled rules for a design_id. Stores results in dd_quality_runs.
 
-    ddc_conn: connection to the data_canvas.db (from get_connection()).
+    ddc_conn: connection to the data_canvas.db (from get_canvas_connection()).
     Returns list of {rule, result} dicts.
     """
     from tools.common.helpers import now_isoformat

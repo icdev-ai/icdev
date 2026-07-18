@@ -222,6 +222,8 @@ def _existing_columns(conn, table: str) -> set:
             ).fetchall()
             key, idx = "column_name", 0
         else:
+            # pg-portability: sqlite-only path — SQLite branch of an explicit
+            # is_pg(conn) guard (the PG branch above uses information_schema).
             rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
             key, idx = "name", 1
     except Exception:

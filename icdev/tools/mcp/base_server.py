@@ -47,6 +47,18 @@ class MCPServer:
         # Whether the client has completed initialization handshake
         self._initialized = False
 
+        # Distributed tracing activation (obx-trc-01, D290) so MCP tool-call
+        # spans (see _handle_tools_call) actually record. Gated by
+        # ICDEV_TRACING_ENABLED (default on) inside the helper; wrapped so
+        # tracing never blocks server init. Span store routes to the primary
+        # backend via tools.db.storage.
+        try:
+            from tools.observability import enable_tracing_if_enabled
+
+            enable_tracing_if_enabled()
+        except Exception as _exc:  # pragma: no cover - defensive
+            logger.warning("Tracing activation skipped: %s", _exc)
+
     # ------------------------------------------------------------------
     # Registration helpers
     # ------------------------------------------------------------------

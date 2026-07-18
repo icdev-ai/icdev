@@ -84,11 +84,15 @@ _MIGRATE_TABLES = [
 
 def _table_columns(conn: sqlite3.Connection, table: str) -> list[str]:
     """Return column names for a table via PRAGMA."""
+    # pg-portability: sqlite-only path — reads columns from the SQLite migration
+    # SOURCE (raw sqlite3.Connection); the PG destination uses _dest_columns_pg().
     rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
     return [r[1] for r in rows]
 
 
 def _source_tables(conn: sqlite3.Connection) -> set[str]:
+    # pg-portability: sqlite-only path — enumerates tables in the SQLite migration
+    # SOURCE (raw sqlite3.Connection); never runs against a PG connection.
     rows = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name NOT IN ('sqlite_sequence')"
     ).fetchall()

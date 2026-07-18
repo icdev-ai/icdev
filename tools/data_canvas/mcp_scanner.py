@@ -181,14 +181,10 @@ def scan_graph(graph: dict) -> dict[str, Any]:
 
 def scan_design_id(design_id: str) -> dict[str, Any]:
     """Load a design by ID from the DDC DB and scan its graph."""
-    try:
-        from tools.data_canvas.db.init_db import get_connection
-        conn = get_connection()
-    except Exception:
-        import sqlite3
-        from pathlib import Path
-        db = Path(__file__).resolve().parents[2] / "data" / "icdev.db"
-        conn = sqlite3.connect(str(db))
+    # data_designs is a canvas table without classification/tenant_id, so use
+    # get_canvas_connection() to avoid the global RLS predicate (UndefinedColumn).
+    from tools.db.storage import get_canvas_connection
+    conn = get_canvas_connection()
 
     try:
         row = conn.execute(

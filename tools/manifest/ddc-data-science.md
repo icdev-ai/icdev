@@ -190,3 +190,32 @@ quality:
   min_score_gate: 70
   assessment_rule_id: DDC-QUA-001
 ```
+
+---
+
+## Data Canvas Core Modules (`tools/data_canvas/` root)
+
+> Reconciliation (dcpr-qa-04, 2026-07-18): these library modules back the primary
+> `/data/*` routes but were previously only partially indexed (some in
+> `design-canvases.md` / `dashboard.md`). Listed here for shard completeness.
+> All are **pure library modules — no CLI entrypoint** (no `argparse` / `__main__`);
+> they are imported by `tools/data_canvas/blueprint.py`.
+
+| Module | File | Purpose | CLI | Key functions |
+|--------|------|---------|-----|---------------|
+| Data Assessment Engine | `tools/data_canvas/data_engine.py` | Compliance assessment engine: 12 deterministic rules (DDC-ENC-001…DDC-DLP-001) across 7 categories → findings, risk_score (0–100), posture_grade (A–F), NIST 800-53 family coverage. Wraps lineage primitives. | No CLI (library) | `assess_data_design(design_id, graph_data, rules=None)`, `analyze_column_lineage`, `detect_data_gaps`, `compute_nist_coverage` |
+| Column Lineage Engine | `tools/data_canvas/lineage.py` | Column-level lineage DAG builder, 8 lineage types. Classification-aware (blocks SECRET→UNCLASSIFIED downgrade, CAT1). Max BFS depth 20. Table: `dd_lineage`. | No CLI (library) | `validate_lineage_edge`, `build_column_lineage_dag`, `compute_downstream_impact`, `compute_upstream_provenance`, `summarize_lineage`, `generate_contract_assertions` |
+| Data Digital Twin | `tools/data_canvas/twin.py` | Lineage digital twin — snapshot schema+lineage, simulate downstream impact of schema changes, enforce quality gates. Tables: `data_nodes`, `data_edges`, `data_twin_snapshots` (append-only, NIST AU). | No CLI (library) | `take_snapshot(design_id, label, classification)`, `simulate_delta(design_id, schema_changes, classification, baseline_snap_id)`, `quality_gate(design_id, schema_changes)` |
+| AI Data Mapper | `tools/data_canvas/ai_mapper.py` | AI-assisted schema-to-schema field mapping. Degrades to name+type similarity when LLM unavailable. Backs `/data/mapping/*`. | No CLI (library) | `parse_schema(raw, fmt)`, `score_field_pairs(src, tgt)`, `assign_status(conf)`, `generate_transforms(session_id, pairs, artifact_type)` |
+| Data Mesh (flat) | `tools/data_canvas/data_mesh.py` | Data mesh CRUD for `dm_*` tables: domains, data products, ODCS contracts, maturity scoring. **Shadowed by the `data_mesh/` package dir** but explicitly re-exported via `data_mesh/__init__.py`, so `from tools.data_canvas.data_mesh import …` resolves to this flat module's public API. | No CLI (library) | `create_domain`, `list_domains`, `get_domain`, `create_data_product`, `list_products`, `assess_domain_maturity` |
+| Data Mesh Governance (flat) | `tools/data_canvas/governance_engine.py` | Data mesh governance — policy CRUD, ABAC-style `check_access`, and governance scoring. Backs `/data/governance`. Distinct from the OPA-client variant `data_mesh/governance_engine.py` (see `data-mesh.md`). | No CLI (library) | `list_policies`, `create_policy`, `check_access(user_attrs, resource)`, `compute_governance_score(domain_id=None)` |
+| Data Mesh CSP Sync | `tools/data_canvas/csp.py` | Data Mesh CSP sync router (AWS DataZone / Azure Purview / GCP Dataplex). Backs `/data/csp`. Delegates to the `data_mesh/csp/` provider adapters (optional boto3/azure/google deps). | No CLI (library) | `get_csp_status()`, `run_sync(provider, domain_ids, dry_run=True)` |
+
+### CLI claims — reconciliation note
+
+The `--output-json` CLIs documented above for `data_profiler.py`, `freshness_guardian.py`,
+`mcp_scanner.py`, and `pii_scanner.py` are accurate (each has an `argparse`/`main()` entrypoint).
+The remaining data-canvas modules — `data_engine.py`, `quality_engine.py`, `anomaly_detector.py`,
+`ai_mapper.py`, `lineage.py`, `twin.py`, `data_mesh.py`, `governance_engine.py`, `csp.py` — are
+**library-only (no CLI)**. In particular, `data_engine.py` has **no** `--json` CLI despite the
+auto-generated row in `auto-registered.md`; call `assess_data_design()` in-process instead.

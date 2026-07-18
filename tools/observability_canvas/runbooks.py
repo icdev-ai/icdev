@@ -49,13 +49,13 @@ def _runbook_to_dict(row):
 def get_all_runbooks(category=None, severity=None):
     """Return all runbooks, optionally filtered by category and/or severity."""
     if category and severity:
-        sql = "SELECT * FROM odc_runbooks WHERE category=? AND severity=? ORDER BY severity, title"
+        sql = "SELECT * FROM odc_runbooks WHERE category=%s AND severity=%s ORDER BY severity, title"
         params = [category, severity]
     elif category:
-        sql = "SELECT * FROM odc_runbooks WHERE category=? ORDER BY severity, title"
+        sql = "SELECT * FROM odc_runbooks WHERE category=%s ORDER BY severity, title"
         params = [category]
     elif severity:
-        sql = "SELECT * FROM odc_runbooks WHERE severity=? ORDER BY title"
+        sql = "SELECT * FROM odc_runbooks WHERE severity=%s ORDER BY title"
         params = [severity]
     else:
         sql = "SELECT * FROM odc_runbooks ORDER BY severity, title"

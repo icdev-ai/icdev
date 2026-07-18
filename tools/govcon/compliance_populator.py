@@ -22,7 +22,7 @@ import argparse
 import json
 import os
 import uuid
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection, table_exists
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -75,10 +75,9 @@ def populate_compliance_matrix(opportunity_id):
 
     conn = _get_db()
 
-    # Check if proposal_compliance_items table exists (from GovProposal)
-    has_table = conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='proposal_compliance_items'"
-    ).fetchone()
+    # Check if proposal_compliance_items table exists (from GovProposal).
+    # Backend-aware probe — works on PG + SQLite without translate_sql.
+    has_table = table_exists(conn, "proposal_compliance_items")
 
     populated = 0
     if has_table:

@@ -379,41 +379,65 @@ def get_ddc_card() -> dict:
 # ---------------------------------------------------------------------------
 
 def get_odc_card() -> dict:
-    conn = _open(_DATA / "observability_canvas.db")
+    # PG-primary: read through the ODC canvas connection (honors OC_STORAGE_BACKEND
+    # via get_canvas_connection under PostgreSQL) rather than opening the raw
+    # SQLite file directly. On a PG deployment the .db file is absent, so the old
+    # sqlite3.connect() path left the card permanently available=False.
     coverage_pct: float | None = None
     sigma_needed = 0
     badge = "yellow"
-    available = conn is not None
+    available = False
 
-    if conn:
+    conn = None
+    try:
+        from tools.observability_canvas.db.init_db import (
+            get_connection as _odc_get_connection,
+        )
+        conn = _odc_get_connection()
+    except Exception as exc:
+        logger.warning("ODC card: cannot open canvas connection: %s", exc)
+        conn = None
+
+    if conn is not None:
         try:
-            row = conn.execute(
-                "SELECT total_techniques, covered_count, gap_count"
-                " FROM odc_gap_scores ORDER BY assessed_at DESC LIMIT 1"
-            ).fetchone()
-            if row and (row["total_techniques"] or 0) > 0:
-                coverage_pct = round(
-                    row["covered_count"] / row["total_techniques"] * 100, 1
-                )
-                sigma_needed = row["gap_count"] or 0
-        except Exception as exc:
-            logger.warning("ODC gap_scores error: %s", exc)
-
-        if coverage_pct is None:
+            # Primary source: latest odc_gap_scores assessment.
             try:
-                total = conn.execute(
-                    "SELECT COUNT(*) AS cnt FROM od_ttp_coverage"
+                row = conn.execute(
+                    "SELECT total_techniques, covered_count, gap_count"
+                    " FROM odc_gap_scores ORDER BY assessed_at DESC LIMIT 1"
                 ).fetchone()
-                covered = conn.execute(
-                    "SELECT COUNT(*) AS cnt FROM od_ttp_coverage WHERE state='full'"
-                ).fetchone()
-                t = (total["cnt"] if total else 0) or 0
-                c = (covered["cnt"] if covered else 0) or 0
-                if t > 0:
-                    coverage_pct = round(c / t * 100, 1)
-                    sigma_needed = t - c
+                available = True  # table exists / query succeeded
+                if row and (row["total_techniques"] or 0) > 0:
+                    coverage_pct = round(
+                        row["covered_count"] / row["total_techniques"] * 100, 1
+                    )
+                    sigma_needed = row["gap_count"] or 0
             except Exception as exc:
-                logger.warning("ODC ttp_coverage fallback error: %s", exc)
+                # Missing table / empty DB — degrade gracefully, no raise.
+                logger.debug("ODC gap_scores unavailable: %s", exc)
+
+            # Fallback: od_ttp_coverage state counts.
+            if coverage_pct is None:
+                try:
+                    total = conn.execute(
+                        "SELECT COUNT(*) AS cnt FROM od_ttp_coverage"
+                    ).fetchone()
+                    covered = conn.execute(
+                        "SELECT COUNT(*) AS cnt FROM od_ttp_coverage WHERE state='full'"
+                    ).fetchone()
+                    available = True  # table exists / query succeeded
+                    t = (total["cnt"] if total else 0) or 0
+                    c = (covered["cnt"] if covered else 0) or 0
+                    if t > 0:
+                        coverage_pct = round(c / t * 100, 1)
+                        sigma_needed = t - c
+                except Exception as exc:
+                    logger.debug("ODC ttp_coverage fallback unavailable: %s", exc)
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
     if coverage_pct is None:
         badge = "yellow"
