@@ -40,7 +40,7 @@ def get_product(product_id: str) -> dict | None:
     try:
         with get_connection() as conn:
             row = conn.execute(
-                "SELECT * FROM dm_data_products WHERE id=%s", (product_id,)
+                "SELECT * FROM dm_data_products WHERE id=?", (product_id,)
             ).fetchone()
         return dict(row) if row else None
     except Exception as exc:
@@ -59,7 +59,7 @@ def create_product(data: dict) -> dict:
                 """INSERT INTO dm_data_products
                    (id, domain_id, name, description, status, output_port_type,
                     sla_tier, owner_team, classification, created_at, updated_at)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     product_id,
                     data.get("domain_id", ""),
@@ -92,7 +92,7 @@ def update_product(product_id: str, data: dict) -> dict | None:
         values = list(fields.values()) + [now, product_id]
         with get_connection() as conn:
             conn.execute(
-                f"UPDATE dm_data_products SET {set_clause}, updated_at=%s WHERE id=%s",
+                f"UPDATE dm_data_products SET {set_clause}, updated_at=? WHERE id=?",
                 values,
             )
             conn.commit()
@@ -104,7 +104,7 @@ def update_product(product_id: str, data: dict) -> dict | None:
 def delete_product(product_id: str) -> bool:
     try:
         with get_connection() as conn:
-            conn.execute("DELETE FROM dm_data_products WHERE id=%s", (product_id,))
+            conn.execute("DELETE FROM dm_data_products WHERE id=?", (product_id,))
             conn.commit()
         return True
     except Exception:
@@ -115,7 +115,7 @@ def get_product_slas(product_id: str) -> list[dict]:
     try:
         with get_connection() as conn:
             rows = conn.execute(
-                "SELECT * FROM dm_product_slas WHERE product_id=%s ORDER BY sla_type",
+                "SELECT * FROM dm_product_slas WHERE product_id=? ORDER BY sla_type",
                 (product_id,),
             ).fetchall()
         return [dict(r) for r in rows]
@@ -129,7 +129,7 @@ def add_product_sla(product_id: str, sla_type: str, target: float, unit: str) ->
         with get_connection() as conn:
             conn.execute(
                 """INSERT INTO dm_product_slas (id, product_id, sla_type, target_value, unit, created_at)
-                   VALUES (%s,%s,%s,%s,%s,%s)""",
+                   VALUES (?,?,?,?,?,?)""",
                 (sla_id, product_id, sla_type, target, unit, _now()),
             )
             conn.commit()
@@ -146,7 +146,7 @@ def subscribe_to_product(product_id: str, subscriber: dict) -> dict:
             conn.execute(
                 """INSERT INTO dm_product_subscriptions
                    (id, product_id, subscriber_team, purpose, approved, created_at)
-                   VALUES (%s,%s,%s,%s,0,%s)""",
+                   VALUES (?,?,?,?,0,?)""",
                 (
                     sub_id,
                     product_id,
@@ -165,7 +165,7 @@ def approve_subscription(sub_id: str) -> bool:
     try:
         with get_connection() as conn:
             conn.execute(
-                "UPDATE dm_product_subscriptions SET approved=1 WHERE id=%s", (sub_id,)
+                "UPDATE dm_product_subscriptions SET approved=1 WHERE id=?", (sub_id,)
             )
             conn.commit()
         return True
@@ -181,21 +181,21 @@ def compute_discoverability_score(product_id: str) -> dict:
 
         with get_connection() as conn:
             has_slas = bool(conn.execute(
-                "SELECT COUNT(*) FROM dm_product_slas WHERE product_id=%s",
+                "SELECT COUNT(*) FROM dm_product_slas WHERE product_id=?",
                 (product_id,),
             ).fetchone()[0])
             has_contract = bool(conn.execute(
-                "SELECT COUNT(*) FROM dm_data_contracts WHERE product_id=%s AND status='active'",
+                "SELECT COUNT(*) FROM dm_data_contracts WHERE product_id=? AND status='active'",
                 (product_id,),
             ).fetchone()[0])
             has_lineage = bool(conn.execute(
-                "SELECT COUNT(*) FROM dd_lineage WHERE design_id=%s",
+                "SELECT COUNT(*) FROM dd_lineage WHERE design_id=?",
                 (product.get("domain_id", ""),),
             ).fetchone()[0])
             seven_days_ago = datetime.now(timezone.utc).isoformat()[:10]
             has_quality = bool(conn.execute(
                 """SELECT COUNT(*) FROM dd_quality_runs
-                   WHERE passed=1 AND created_at >= %s""",
+                   WHERE passed=1 AND created_at >= ?""",
                 (seven_days_ago,),
             ).fetchone()[0])
 

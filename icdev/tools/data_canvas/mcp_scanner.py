@@ -192,7 +192,7 @@ def scan_design_id(design_id: str) -> dict[str, Any]:
 
     try:
         row = conn.execute(
-            "SELECT graph_json FROM data_designs WHERE id = %s", (design_id,)
+            "SELECT graph_json FROM data_designs WHERE id = ?", (design_id,)
         ).fetchone()
     finally:
         conn.close()

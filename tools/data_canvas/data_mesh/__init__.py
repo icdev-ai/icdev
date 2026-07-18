@@ -32,7 +32,7 @@ def list_contracts(product_id: str | None = None) -> list:
         conn = _gc()
         if product_id:
             rows = conn.execute(
-                "SELECT * FROM dm_contracts WHERE product_id=%s ORDER BY title",
+                "SELECT * FROM dm_contracts WHERE product_id=? ORDER BY title",
                 (product_id,),
             ).fetchall()
         else:

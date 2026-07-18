@@ -521,14 +521,14 @@ _EXT_PROVENANCE_DESIGN_ID = "ext-iqe-provenance"
 
 def _ensure_ext_provenance_design(conn) -> None:
     existing = conn.execute(
-        "SELECT id FROM data_designs WHERE id = %s", (_EXT_PROVENANCE_DESIGN_ID,)
+        "SELECT id FROM data_designs WHERE id = ?", (_EXT_PROVENANCE_DESIGN_ID,)
     ).fetchone()
     if not existing:
         now = datetime.now(timezone.utc).isoformat()
         conn.execute(
             "INSERT INTO data_designs"
             " (id, name, description, classification, created_at, updated_at)"
-            " VALUES (%s,%s,%s,%s,%s,%s)",
+            " VALUES (?,?,?,?,?,?)",
             (
                 _EXT_PROVENANCE_DESIGN_ID,
                 "External IQE Query Provenance",
@@ -565,7 +565,7 @@ def record_external_fetch(
             "INSERT INTO dd_lineage"
             " (id, design_id, source_node_id, target_node_id,"
             "  lineage_type, column_name, transform_desc, classification, created_at)"
-            " VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            " VALUES (?,?,?,?,?,?,?,?,?)",
             (
                 edge_id,
                 _EXT_PROVENANCE_DESIGN_ID,

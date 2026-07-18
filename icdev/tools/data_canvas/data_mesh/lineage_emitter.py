@@ -58,7 +58,7 @@ def _insert_internal_event(
                     INSERT INTO dd_lineage
                         (id, design_id, source_node_id, target_node_id,
                          lineage_type, column_name, transform_desc, classification, created_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         edge_id,
@@ -157,7 +157,7 @@ def emit_data_product_lineage(product_id: str, design_id: str) -> dict[str, Any]
     conn = _get_db()
     try:
         rows = conn.execute(
-            "SELECT * FROM dd_lineage WHERE design_id = %s", (design_id,)
+            "SELECT * FROM dd_lineage WHERE design_id = ?", (design_id,)
         ).fetchall()
     finally:
         conn.close()
@@ -246,7 +246,7 @@ def emit_data_product_lineage(product_id: str, design_id: str) -> dict[str, Any]
                 INSERT OR IGNORE INTO dd_lineage
                     (id, design_id, source_node_id, target_node_id,
                      lineage_type, column_name, transform_desc, classification, created_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     str(uuid.uuid4()),

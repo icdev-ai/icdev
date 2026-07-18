@@ -610,7 +610,7 @@ class DDCOpenMetadataSync:
         try:
             row = conn.execute(
                 "SELECT id, name, description, graph_json, classification "
-                "FROM data_designs WHERE id = %s",
+                "FROM data_designs WHERE id = ?",
                 (design_id,),
             ).fetchone()
             return dict(row) if row else None
@@ -633,7 +633,7 @@ class DDCOpenMetadataSync:
         try:
             rows = conn.execute(
                 "SELECT source_node_id, target_node_id, lineage_type "
-                "FROM dd_lineage WHERE design_id = %s",
+                "FROM dd_lineage WHERE design_id = ?",
                 (design_id,),
             ).fetchall()
             return [dict(r) for r in rows]
