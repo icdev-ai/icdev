@@ -46,6 +46,7 @@ from tools.pipeline.constants import (  # noqa: E402
     compute_owasp_coverage,
     estimate_pipeline_cost,
     estimate_execution_time,
+    stage_from_type,
 )
 from tools.common.helpers import row_to_dict, now_isoformat  # noqa: E402
 from tools.pipeline.db.init_db import get_connection, init_db  # noqa: E402
@@ -1462,6 +1463,42 @@ def create_pipeline_blueprint():
             return jsonify({"error": "corrupt graph"}), 422
         nodes = graph.get("nodes", [])
 
+        # Findings are sourced from pc_compliance_findings (written by the QDC
+        # gate bus subscriber), NOT from node config. They are attributed at the
+        # PIPELINE level — ``affected_entity`` holds a QDC gate id, not a PDC
+        # node id — so we report an honest pipeline-level count instead of the
+        # old ``config.findings_count`` (which nothing ever set → permanent 0)
+        # or a fabricated per-node distribution.
+        if heatmap_type == "findings":
+            fconn = get_connection()
+            try:
+                frows = fconn.execute(
+                    "SELECT severity, status FROM pc_compliance_findings WHERE pipeline_id=%s",
+                    (pipe_id,),
+                ).fetchall()
+            finally:
+                fconn.close()
+            total = 0
+            open_count = 0
+            by_severity: dict = {}
+            for fr in frows:
+                fd = row_to_dict(fr)
+                total += 1
+                sev = (fd.get("severity") or "unknown")
+                status = (fd.get("status") or "open")
+                by_severity[sev] = by_severity.get(sev, 0) + 1
+                if status == "open":
+                    open_count += 1
+            return jsonify({
+                "type": "findings",
+                "scope": "pipeline",
+                "data": {},  # findings are not node-attributed — no per-node overlay
+                "total": total,
+                "open": open_count,
+                "by_severity": by_severity,
+                "color": _findings_color(open_count),
+            })
+
         heatmap = {}
         for node in nodes:
             nid = node.get("id", "")
@@ -1469,9 +1506,6 @@ def create_pipeline_blueprint():
             if heatmap_type == "execution_time":
                 minutes = config.get("avg_execution_min", 5)
                 heatmap[nid] = {"value": minutes, "color": _time_color(minutes)}
-            elif heatmap_type == "findings":
-                findings = config.get("findings_count", 0)
-                heatmap[nid] = {"value": findings, "color": _findings_color(findings)}
             elif heatmap_type == "compliance":
                 pct = config.get("compliance_pct", 100)
                 heatmap[nid] = {"value": pct, "color": _compliance_color(pct)}
@@ -1480,6 +1514,35 @@ def create_pipeline_blueprint():
                 heatmap[nid] = {"value": age_days, "color": _age_color(age_days)}
 
         return jsonify({"type": heatmap_type, "data": heatmap})
+
+    @bp.route("/api/pipelines/<pipe_id>/findings", methods=["GET"])
+    @pc_login_required
+    def pc_api_pipeline_findings(pipe_id):
+        """Raw compliance findings for a pipeline (read-only, paginated LIMIT 100).
+
+        Reads pc_compliance_findings — the table written by the QDC gate bus
+        subscriber that was previously write-only (nothing read it). Supports an
+        ``?offset=`` cursor; newest first.
+        """
+        try:
+            offset = max(0, int(request.args.get("offset", 0)))
+        except (TypeError, ValueError):
+            offset = 0
+        conn = get_connection()
+        try:
+            rows = conn.execute(
+                "SELECT * FROM pc_compliance_findings WHERE pipeline_id=%s "
+                "ORDER BY created_at DESC LIMIT 100 OFFSET %s",
+                (pipe_id, offset),
+            ).fetchall()
+        finally:
+            conn.close()
+        return jsonify({
+            "pipeline_id": pipe_id,
+            "offset": offset,
+            "count": len(rows),
+            "findings": [row_to_dict(r) for r in rows],
+        })
 
     # ══════════════════════════════════════════════════════════════════════
     # API — CHANGE REQUESTS
@@ -1599,6 +1662,12 @@ def create_pipeline_blueprint():
         except Exception:
             antipatterns = []
 
+        # Stage coverage: the save path never persists a node ``stage`` (only
+        # ``type``), so derive the stage from the type server-side. Explicit
+        # stage wins when present; otherwise inferred from the type taxonomy.
+        _covered = {stage_from_type(n.get("type", ""), n.get("stage")) for n in nodes}
+        _covered.discard(None)
+
         scorecard = {
             "security_coverage": owasp,
             "slsa_level": slsa,
@@ -1619,7 +1688,7 @@ def create_pipeline_blueprint():
             "execution_time": exec_time,
             "node_count": len(nodes),
             "edge_count": len(edges),
-            "stages_covered": len(set(n.get("stage", "") for n in nodes if n.get("stage"))),
+            "stages_covered": len(_covered),
             "total_stages": len(PIPELINE_STAGES),
         }
         return jsonify(scorecard)
@@ -1640,29 +1709,41 @@ def create_pipeline_blueprint():
         _edges = graph_data.get("edges", [])
         _types = [n.get("type", "").lower() for n in _nodes]
         _labels = [str(n.get("label", "")).lower() for n in _nodes]
+        # Derived stages (server-side) — the save path never persists ``stage``.
+        _stages_present = {stage_from_type(n.get("type", ""), n.get("stage")) for n in _nodes}
+        _stages_present.discard(None)
 
+        # Predicate helpers. ``_any`` matches type PREFIXES, ``_typ`` matches
+        # exact PDC type keys (from constants.py), ``_stage`` checks a derived
+        # stage is present, and ``_lbl`` is the secondary label-keyword signal.
+        # The pre-fix predicates checked src-/bld-/tst-/sast-/reg-/dep- prefixes
+        # that belong to a DIFFERENT canvas taxonomy and never matched PDC types
+        # (scm-/build-/scan-/registry-/deploy- …), so scores survived only on
+        # incidental label keywords. These are rewritten against the real keys.
         def _any(*pfx): return any(any(t.startswith(p) for p in pfx) for t in _types)
+        def _typ(*keys): return any(t in frozenset(keys) for t in _types)
+        def _stage(*ss): return any(s in _stages_present for s in ss)
         def _lbl(*kws): return any(kw in l for l in _labels for kw in kws)
 
         CHECKS = [
-            ("Source Control Defined",           "Source Control",   "CAT1", _any("src-","git-","vcs-") or _lbl("git","gitlab","github","bitbucket","svn","vcs","source control")),
-            ("Automated Build Stage",            "CI/CD Pipeline",   "CAT1", _any("bld-","build-","ci-") or _lbl("build","compile","make","gradle","maven","npm build","docker build")),
-            ("Automated Test Stage",             "CI/CD Pipeline",   "CAT1", _any("tst-","test-") or _lbl("test","pytest","jest","junit","mocha","rspec","automated test")),
-            ("SAST Integration",                 "Security",         "CAT1", _any("sast-","sec-") or _lbl("sast","sonar","semgrep","bandit","snyk","veracode","checkmarx")),
-            ("Container Image Scanning",         "Security",         "CAT1", _lbl("trivy","snyk","aqua","anchore","image scan","clair","container scan")),
-            ("SCA / Dependency Scanning",        "Security",         "CAT2", _lbl("sca","dependency","sbom","cyclonedx","dependency-check","owasp dependency")),
-            ("Secrets Detection",                "Security",         "CAT1", _lbl("secret detect","truffleH","detect-secrets","gitleaks","credscan")),
-            ("Artifact Registry Defined",        "CI/CD Pipeline",   "CAT2", _any("reg-","art-") or _lbl("registry","nexus","artifactory","ecr","acr","gcr","harbor")),
-            ("Deployment Stage",                 "CI/CD Pipeline",   "CAT1", _any("dep-","deploy-","cd-") or _lbl("deploy","release","rollout","helm","argocd","flux","eks deploy")),
-            ("Environment Promotion Gates",      "CI/CD Pipeline",   "CAT2", _lbl("staging","prod","promote","env gate","approval","manual gate","dev→staging")),
-            ("SLSA L2 or Higher",                "Supply Chain",     "CAT2", _lbl("slsa","provenance","build attestation","sigstore","cosign","rekor")),
-            ("SBOM Generation",                  "Supply Chain",     "CAT2", _lbl("sbom","cyclonedx","spdx","bill of materials","bom")),
-            ("IaC Scanning / Policy",            "Security",         "CAT2", _lbl("terrascan","checkov","tflint","opa","sentinel","policy as code","iac scan")),
-            ("Pipeline Execution Monitoring",    "Observability",    "CAT2", _lbl("monitor","pipeline log","metrics","duration","observ","grafana","datadog pipeline")),
-            ("Failure Alerting",                 "Observability",    "CAT2", _lbl("alert","notify","pagerduty","slack notify","webhook","on failure")),
-            ("Rollback / Blue-Green / Canary",   "Resilience",       "CAT2", _lbl("rollback","blue-green","canary","progressive","feature flag")),
-            ("Compliance Gate (FedRAMP/CMMC)",   "Compliance",       "CAT1", _lbl("fedramp","cmmc","stig","il4","il5","rmf","ato","compliance gate")),
-            ("DoD DevSecOps Ref Arch Aligned",   "Compliance",       "CAT2", _lbl("devsecops","dod","enterprise devsecops","p-ato","continuous ato","c-ato")),
+            ("Source Control Defined",           "Source Control",   "CAT1", _any("scm-") or _typ("aws-codecommit","az-repos","gcp-source","oci-code-repos","branch-policy","commit-signing") or _lbl("git","gitlab","github","bitbucket","svn","vcs","source control")),
+            ("Automated Build Stage",            "CI/CD Pipeline",   "CAT1", _any("cicd-","build-") or _typ("aws-codepipeline","aws-codebuild","az-pipelines","gcp-cloudbuild","oci-devops","ibm-cd") or _lbl("build","compile","make","gradle","maven","npm build","docker build")),
+            ("Automated Test Stage",             "CI/CD Pipeline",   "CAT1", _any("scan-") or _stage("test") or _lbl("test","pytest","jest","junit","mocha","rspec","automated test")),
+            ("SAST Integration",                 "Security",         "CAT1", _typ("scan-sast","scan-sonarqube","scan-semgrep","scan-codeql","scan-bandit","scan-spotbugs","aws-codeguru") or _lbl("sast","sonar","semgrep","bandit","snyk","veracode","checkmarx")),
+            ("Container Image Scanning",         "Security",         "CAT1", _typ("scan-container","scan-anchore","scan-neuvector","scan-trivy","aws-inspector","az-defender","gcp-artifact-analysis","ibm-vuln-advisor") or _lbl("trivy","snyk","aqua","anchore","image scan","clair","container scan")),
+            ("SCA / Dependency Scanning",        "Security",         "CAT2", _typ("scan-sca","scan-trivy","scan-grype","scan-snyk","scan-dep-check") or _lbl("sca","dependency","sbom","cyclonedx","dependency-check","owasp dependency")),
+            ("Secrets Detection",                "Security",         "CAT1", _typ("scan-secret","scan-gitleaks","scan-trufflehog","scan-detect-secrets") or _lbl("secret detect","truffleH","detect-secrets","gitleaks","credscan")),
+            ("Artifact Registry Defined",        "CI/CD Pipeline",   "CAT2", _any("registry-") or _typ("aws-ecr","az-acr","gcp-gar","oci-cr","ibm-cr","sbom-store","package-repo") or _lbl("registry","nexus","artifactory","ecr","acr","gcr","harbor")),
+            ("Deployment Stage",                 "CI/CD Pipeline",   "CAT1", _any("deploy-","gitops-","k8s-") or _typ("aws-eks","az-aks","gcp-gke","oci-oke","ibm-iks","openshift","rke2","k3s","aws-codedeploy","gcp-deploy") or _lbl("deploy","release","rollout","helm","argocd","flux","eks deploy")),
+            ("Environment Promotion Gates",      "CI/CD Pipeline",   "CAT2", _typ("gate-manual","gate-automated","gate-deploy-window") or _stage("approval") or _lbl("staging","prod","promote","env gate","approval","manual gate","dev→staging")),
+            ("SLSA L2 or Higher",                "Supply Chain",     "CAT2", _typ("attest-slsa-gen","verify-slsa","attest-in-toto","sign-cosign","sign-notation","gcp-binary-auth") or _lbl("slsa","provenance","build attestation","sigstore","cosign","rekor")),
+            ("SBOM Generation",                  "Supply Chain",     "CAT2", _typ("sbom-syft","sbom-cyclonedx","sbom-spdx","sbom-store","sc-cargo-auditable") or _lbl("sbom","cyclonedx","spdx","bill of materials","bom")),
+            ("IaC Scanning / Policy",            "Security",         "CAT2", _typ("scan-iac","scan-checkov","scan-tfsec","scan-kics","policy-opa","policy-kyverno","policy-gatekeeper","policy-kubewarden") or _lbl("terrascan","checkov","tflint","opa","sentinel","policy as code","iac scan")),
+            ("Pipeline Execution Monitoring",    "Observability",    "CAT2", _any("mon-") or _typ("aws-cloudwatch","az-monitor","gcp-monitoring") or _stage("monitor") or _lbl("monitor","pipeline log","metrics","duration","observ","grafana","datadog pipeline")),
+            ("Failure Alerting",                 "Observability",    "CAT2", _typ("mon-pagerduty","mon-soar","aws-guardduty") or _lbl("alert","notify","pagerduty","slack notify","webhook","on failure")),
+            ("Rollback / Blue-Green / Canary",   "Resilience",       "CAT2", _typ("deploy-canary","deploy-bluegreen","deploy-feature-flag") or _lbl("rollback","blue-green","canary","progressive","feature flag")),
+            ("Compliance Gate (FedRAMP/CMMC)",   "Compliance",       "CAT1", _any("comp-") or _typ("aws-config","az-policy","aws-securityhub","aws-audit","az-defender-cloud","ibm-scc") or _stage("compliance") or _lbl("fedramp","cmmc","stig","il4","il5","rmf","ato","compliance gate")),
+            ("DoD DevSecOps Ref Arch Aligned",   "Compliance",       "CAT2", _typ("deploy-bigbang","registry-ironbank") or _lbl("devsecops","dod","enterprise devsecops","p-ato","continuous ato","c-ato")),
         ]
 
         PILLARS = ["Source Control", "CI/CD Pipeline", "Security", "Supply Chain", "Observability", "Resilience", "Compliance"]

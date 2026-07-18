@@ -55,12 +55,26 @@ def _on_qdc_gate_executed(event_id: str, canvas_id: str, event_type: str, payloa
         from tools.pipeline.db.init_db import get_connection
         conn = get_connection()
         try:
-            # Find the most recent pipeline to attach findings to
-            pipeline_row = conn.execute(
-                "SELECT id FROM pipelines ORDER BY updated_at DESC LIMIT 1"
-            ).fetchone()
-            pipeline_id = (pipeline_row[0] if isinstance(pipeline_row, (list, tuple))
-                           else (pipeline_row["id"] if pipeline_row else None))
+            # Resolve the target pipeline from an explicit CORRELATION field in
+            # the event payload. QDC publishes design_id (a QDC design, NOT a PDC
+            # pipeline) and MAY publish pipeline_id. We attribute the finding ONLY
+            # when a correlation id resolves to a real pipeline row; we NEVER fall
+            # back to "most recently updated" (the old behaviour), which silently
+            # mis-attributed every finding to whatever pipeline anyone touched
+            # last. If nothing resolves, pipeline_id stays NULL (the column is
+            # nullable) — an honest "unattributed" finding beats a wrong guess.
+            pipeline_id = None
+            for _key in ("pipeline_id", "design_id"):
+                _cand = payload.get(_key)
+                if not _cand:
+                    continue
+                _prow = conn.execute(
+                    "SELECT id FROM pipelines WHERE id=%s", (_cand,)
+                ).fetchone()
+                if _prow:
+                    pipeline_id = (_prow[0] if isinstance(_prow, (list, tuple))
+                                   else _prow["id"])
+                    break
 
             if passed:
                 # Close any open finding for this gate
