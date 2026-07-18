@@ -655,6 +655,38 @@ def create_observability_blueprint():
             }
         )
 
+    @bp.route("/api/replay-verify/<design_id>", methods=["POST"])
+    @oc_login_required
+    def oc_api_replay_verify(design_id):
+        """Replay an SDC attack path and verify TTP detection coverage.
+
+        Wraps tools.observability_canvas.replay_verify.verify_path — the only
+        non-demo writer of od_ttp_coverage (the fallback source for the ODC
+        compliance card). Persists one od_ttp_coverage + od_audit row per TTP.
+
+        Body (JSON):
+          ttp_ids: list[str] — MITRE technique IDs (alias: "path")
+
+        Returns verify_path() result:
+          {path, results[{ttp_id, state, coverage_row_id}], summary{full,partial,none,total}}
+        """
+        from tools.observability_canvas.replay_verify import verify_path
+
+        data = request.get_json(force=True, silent=True) or {}
+        raw = data.get("ttp_ids", data.get("path", []))
+        if not isinstance(raw, list):
+            return jsonify({"error": "ttp_ids must be a list"}), 400
+        ttp_ids = [str(t).strip() for t in raw if str(t).strip()]
+
+        try:
+            result = verify_path(ttp_ids, design_id=design_id)
+        except Exception as exc:
+            logger.warning("replay verify failed for %s: %s", design_id, exc)
+            return jsonify({"error": str(exc)}), 500
+
+        _audit("replay_verify", design_id, f"ttps={len(ttp_ids)} summary={result.get('summary')}")
+        return jsonify(result)
+
     # ====================================================================
     # API — AUTO-FIX
     # ====================================================================
@@ -1625,6 +1657,47 @@ def create_observability_blueprint():
 
         _audit("sigma_generate", details=tid)
         return jsonify({"technique_id": tid, "sigma_yaml": sigma_yaml})
+
+    @bp.route("/api/mitre/ingest", methods=["POST"])
+    @oc_login_required
+    def oc_api_mitre_ingest():
+        """Admin: ingest MITRE ATT&CK techniques into odc_mitre_techniques.
+
+        Wraps tools.observability.mitre_ingestor.ingest (previously CLI-only).
+
+        Body (JSON):
+          source: 'local' (default) — seed FROM the single-source-of-truth
+                  mitre_catalog.MITRE_CATALOG code constant (offline, drift-free);
+                  'stix' — external MITRE STIX bundle / enterprise.json mirror.
+          force_download: bool — fetch the external STIX bundle (source='stix').
+          catalog_path:   str  — optional STIX/enterprise.json file (source='stix').
+
+        Returns {ingested, skipped, errors, source}.
+        """
+        from tools.observability.mitre_ingestor import ingest as _mitre_ingest
+
+        data = request.get_json(force=True, silent=True) or {}
+        source = (data.get("source") or "local").strip().lower()
+        if source not in ("local", "stix"):
+            return jsonify({"error": "source must be 'local' or 'stix'"}), 400
+
+        try:
+            if source == "stix":
+                cat = data.get("catalog_path")
+                result = _mitre_ingest(
+                    catalog_path=Path(cat) if cat else None,
+                    force_download=bool(data.get("force_download", False)),
+                    source="stix",
+                )
+            else:
+                result = _mitre_ingest(source="local")
+        except Exception as exc:
+            logger.warning("MITRE ingest failed (source=%s): %s", source, exc)
+            return jsonify({"error": str(exc)}), 500
+
+        result["source"] = source
+        _audit("mitre_ingest", details=f"source={source} ingested={result.get('ingested')}")
+        return jsonify(result)
 
     # ====================================================================
     # Kill Chain — force-directed graph page + API
