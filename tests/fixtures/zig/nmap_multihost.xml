@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Realistic multi-host nmap -sV -O output: web host, api host, clean db host. -->
+<nmaprun scanner="nmap" args="nmap -sV -O 10.0.1.0/24" start="1718100000" version="7.94">
+  <host starttime="1718100000" endtime="1718100030">
+    <status state="up" reason="echo-reply"/>
+    <address addr="10.0.1.10" addrtype="ipv4"/>
+    <hostnames><hostname name="web01.corp.local" type="PTR"/></hostnames>
+    <ports>
+      <port protocol="tcp" portid="22">
+        <state state="open" reason="syn-ack"/>
+        <service name="ssh" product="OpenSSH" version="8.9p1" ostype="Linux"/>
+      </port>
+      <port protocol="tcp" portid="80">
+        <state state="open" reason="syn-ack"/>
+        <service name="http" product="nginx" version="1.24.0"/>
+      </port>
+      <port protocol="tcp" portid="443">
+        <state state="closed" reason="conn-refused"/>
+        <service name="https"/>
+      </port>
+    </ports>
+    <os>
+      <osmatch name="Linux 5.15" accuracy="97">
+        <osclass type="general purpose" vendor="Linux" osfamily="Linux" osgen="5.X" accuracy="97"/>
+      </osmatch>
+    </os>
+  </host>
+  <host starttime="1718100000" endtime="1718100035">
+    <status state="up" reason="echo-reply"/>
+    <address addr="10.0.1.20" addrtype="ipv4"/>
+    <hostnames><hostname name="api01.corp.local" type="PTR"/></hostnames>
+    <ports>
+      <port protocol="tcp" portid="3389">
+        <state state="open" reason="syn-ack"/>
+        <service name="ms-wbt-server" product="Microsoft Terminal Services"/>
+      </port>
+      <port protocol="tcp" portid="8080">
+        <state state="open" reason="syn-ack"/>
+        <service name="http-proxy" product="gunicorn" version="21.2.0"/>
+      </port>
+      <port protocol="tcp" portid="8443">
+        <state state="filtered" reason="no-response"/>
+        <service name="https-alt"/>
+      </port>
+    </ports>
+    <os>
+      <osmatch name="Windows Server 2019" accuracy="92">
+        <osclass type="general purpose" vendor="Microsoft" osfamily="Windows" osgen="2019" accuracy="92"/>
+      </osmatch>
+    </os>
+  </host>
+  <host starttime="1718100000" endtime="1718100040">
+    <status state="up" reason="echo-reply"/>
+    <address addr="10.0.1.30" addrtype="ipv4"/>
+    <hostnames><hostname name="db01.corp.local" type="PTR"/></hostnames>
+    <ports>
+      <port protocol="tcp" portid="443">
+        <state state="open" reason="syn-ack"/>
+        <service name="https" product="nginx" version="1.24.0"/>
+      </port>
+      <port protocol="tcp" portid="5432">
+        <state state="open" reason="syn-ack"/>
+        <service name="postgresql" product="PostgreSQL DB" version="16.1"/>
+      </port>
+    </ports>
+    <os>
+      <osmatch name="Linux 6.1" accuracy="95">
+        <osclass type="general purpose" vendor="Linux" osfamily="Linux" osgen="6.X" accuracy="95"/>
+      </osmatch>
+    </os>
+  </host>
+</nmaprun>
