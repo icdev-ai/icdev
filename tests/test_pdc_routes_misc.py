@@ -17,8 +17,10 @@ Highlights:
     which on THIS branch reads ``pipeline_snapshots`` (NOT ``pdc_snapshots`` —
     #441's IQE repoint is not in this chain; see KNOWN-ISSUE below).
   * /api/ask delegation + top_k guard.
-  * collab join happy path (session identity); push/poll/participants are BROKEN
-    on this branch (signature mismatch) — asserted as KNOWN-ISSUE.
+  * collab join happy path (session identity); push/poll/participants now reconciled
+    to CanvasCollabManager's real API (pdx-hyg-01) and asserted as working.
+  * pdx-hyg-01 hygiene: full-uuid PKs (no truncation), sanitized export download
+    filenames, sops connection close, and the estimate_execution_time parallel flag.
 """
 from __future__ import annotations
 
@@ -27,7 +29,7 @@ import sqlite3
 import sys
 import uuid
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -474,7 +476,7 @@ def test_ask_bad_top_k_400(client, wired):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 9. Collab — join happy path (session identity); push/poll broken (KNOWN-ISSUE)
+# 9. Collab — join / push / poll / participants (reconciled to manager API, pdx-hyg-01)
 # ══════════════════════════════════════════════════════════════════════════════
 
 
@@ -499,34 +501,140 @@ def test_collab_join_uses_session_identity(client, wired):
     assert row["user_name"] == "Mallory"
 
 
-def test_collab_push_broken_signature_mismatch(client, wired):
-    """KNOWN-ISSUE(pdx): the sec-03 RBAC fix rewired the collab push/poll/
-    participants routes to call CanvasCollabManager with a richer interface
-    (push(design_id, user_id, op_type, data); poll(design_id, since) -> 3-tuple;
-    get_participants(...)), but tools/canvas/collaboration.py was never updated to
-    match — push() still takes (design_id, user_id, operation). So the push route
-    raises TypeError. The rbac_sod chain test passes only because it MOCKS
-    CanvasCollabManager.push. Asserting the current broken behavior; the fix
-    (align the manager signatures) is out of scope for a test-only task.
-    """
-    _login(client, user_id="u", role="developer")
-    with pytest.raises(TypeError, match="push"):
-        client.post(f"/devops/api/collab/{uuid.uuid4()}/push",
-                    data=json.dumps({"op_type": "add", "data": {}}),
+def test_collab_push_records_operation(client, wired):
+    """pdx-hyg-01: the push route now adapts to CanvasCollabManager.push(design_id,
+    user_id, operation) — bundling op_type + data into the single operation dict the
+    real (shared) manager API expects. Returns 200 with the echoed operation instead
+    of raising TypeError (the sec-03 signature mismatch)."""
+    _login(client, user_id="real-user", role="developer")
+    design_id = str(uuid.uuid4())
+    _seed_pipeline(wired, design_id)
+    with patch("tools.canvas.collaboration.get_connection",
+               side_effect=lambda *a, **k: _new_conn(wired)):
+        client.post(f"/devops/api/collab/{design_id}/join",
+                    data=json.dumps({"user_name": "Alice"}),
                     content_type="application/json")
+        resp = client.post(f"/devops/api/collab/{design_id}/push",
+                           data=json.dumps({"op_type": "add_node", "data": {"x": 1}}),
+                           content_type="application/json")
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    body = resp.get_json()
+    assert body["design_id"] == design_id
+    # op_type + payload are bundled into the operation dict handed to the manager.
+    assert body["operation"] == {"op_type": "add_node", "data": {"x": 1}}
+    assert "pushed_at" in body
 
 
-def test_collab_poll_broken_signature_mismatch(client, wired):
-    """KNOWN-ISSUE(pdx): poll route calls poll(design_id, since) but the manager's
-    poll() takes only (design_id) and returns a dict (route unpacks a 3-tuple)."""
+def test_collab_poll_returns_participants(client, wired):
+    """pdx-hyg-01: the poll route now calls CanvasCollabManager.poll(design_id) and
+    returns {operations, participants, polled_at} (200) instead of unpacking a
+    3-tuple from a dict (the sec-03 TypeError)."""
+    _login(client, user_id="real-user", role="developer")
+    design_id = str(uuid.uuid4())
+    _seed_pipeline(wired, design_id)
+    with patch("tools.canvas.collaboration.get_connection",
+               side_effect=lambda *a, **k: _new_conn(wired)):
+        client.post(f"/devops/api/collab/{design_id}/join",
+                    data=json.dumps({"user_name": "Alice"}),
+                    content_type="application/json")
+        resp = client.get(f"/devops/api/collab/{design_id}/poll?since=0")
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    body = resp.get_json()
+    assert body["operations"] == []   # manager is participant-oriented, no op log
+    assert "real-user" in [p["user_id"] for p in body["participants"]]
+
+
+def test_collab_poll_bad_since_400(client, wired):
+    """pdx-hyg-01: the poll route still validates the client-supplied `since` query
+    param and returns 400 on garbage (input-validation preserved)."""
     _login(client, user_id="u", role="developer")
-    with pytest.raises(TypeError, match="poll"):
-        client.get(f"/devops/api/collab/{uuid.uuid4()}/poll?since=0")
+    resp = client.get(f"/devops/api/collab/{uuid.uuid4()}/poll?since=not-an-int")
+    assert resp.status_code == 400
 
 
-def test_collab_participants_missing_method(client, wired):
-    """KNOWN-ISSUE(pdx): participants route calls get_participants(), which does
-    not exist on CanvasCollabManager (the method is named participants())."""
-    _login(client, user_id="u", role="developer")
-    with pytest.raises(AttributeError, match="get_participants"):
-        client.get(f"/devops/api/collab/{uuid.uuid4()}/participants")
+def test_collab_participants_lists_active(client, wired):
+    """pdx-hyg-01: the participants route now calls CanvasCollabManager.participants()
+    (the real method name) instead of the nonexistent get_participants(); returns 200
+    with the active participant list."""
+    _login(client, user_id="real-user", role="developer")
+    design_id = str(uuid.uuid4())
+    _seed_pipeline(wired, design_id)
+    with patch("tools.canvas.collaboration.get_connection",
+               side_effect=lambda *a, **k: _new_conn(wired)):
+        client.post(f"/devops/api/collab/{design_id}/join",
+                    data=json.dumps({"user_name": "Bob"}),
+                    content_type="application/json")
+        resp = client.get(f"/devops/api/collab/{design_id}/participants")
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    assert "real-user" in [p["user_id"] for p in resp.get_json()["participants"]]
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 10. pdx-hyg-01 hygiene — full-uuid PKs, download-name sanitize, sops close, parallel
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+def test_created_ids_are_full_uuids(client, wired):
+    """pdx-hyg-01: entity PKs use full uuid4() strings, not truncated [:8]/[:12]
+    slices (truncation multiplies collision risk)."""
+    _login(client, role="developer")
+    pid = str(uuid.uuid4())
+    _seed_pipeline(wired, pid, {"nodes": [{"id": "n1", "type": "scm-gitlab"}], "edges": []})
+    resp = client.post(f"/devops/api/versions/{pid}",
+                       data=json.dumps({"label": "x"}), content_type="application/json")
+    assert resp.status_code == 201, resp.get_data(as_text=True)
+    new_id = resp.get_json()["id"]
+    assert len(new_id) == 36            # canonical uuid4 length (not 8 or 12)
+    uuid.UUID(new_id)                   # parses as a valid uuid (raises otherwise)
+
+
+def test_deploy_zip_download_name_sanitized(client, wired):
+    """pdx-hyg-01: the deploy-bundle zip download_name is sanitized to [a-z0-9._-]
+    so a hostile pipeline name cannot inject path separators / spaces / header chars
+    into the Content-Disposition filename."""
+    _login(client, role="developer")
+    pid = str(uuid.uuid4())
+    _seed_pipeline(wired, pid, {"nodes": [{"id": "n1", "type": "scm-gitlab"}], "edges": []})
+    # Rename the pipeline to a hostile value AFTER seeding.
+    conn = _raw_conn(wired)
+    conn.execute("UPDATE pipelines SET name=? WHERE id=?", ("../../etc/passwd owned!", pid))
+    conn.commit()
+    conn.close()
+    resp = client.post(f"/devops/api/deploy/{pid}",
+                       data=json.dumps({"format": "zip"}), content_type="application/json")
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    cd = resp.headers.get("Content-Disposition", "")
+    import re as _re
+    m = _re.search(r"filename=\"?([^\";]+)\"?", cd)
+    assert m, cd
+    filename = m.group(1)
+    assert "/" not in filename and " " not in filename
+    assert _re.fullmatch(r"[a-z0-9._-]+", filename), filename
+    assert filename.endswith("-deploy-bundle.zip")
+
+
+def test_sops_get_all_closes_connection():
+    """pdx-hyg-01: the SQLite fallback wraps _get_conn() in contextlib.closing, so the
+    connection is closed after use. sqlite3's `with conn` commits but never closes,
+    leaking connections; closing() guarantees the close."""
+    mock_conn = MagicMock()
+    mock_conn.execute.return_value.fetchall.return_value = []
+    with patch("tools.pipeline.db.init_db.get_connection", return_value=mock_conn):
+        from tools.pipeline import sops
+        result = sops.get_all_sops()
+    assert result == []
+    mock_conn.close.assert_called_once()
+
+
+def test_estimate_execution_time_honors_any_parallel_node():
+    """pdx-hyg-01: a stage is parallel if ANY of its nodes sets parallel=True, not
+    only the first node encountered (the previous first-node-only bug)."""
+    from tools.pipeline.constants import estimate_execution_time
+    # Two nodes in the SAME stage; only the SECOND declares parallel=True.
+    nodes = [
+        {"id": "a", "stage": "test", "config": {"avg_execution_min": 10, "parallel": False}},
+        {"id": "b", "stage": "test", "config": {"avg_execution_min": 10, "parallel": True}},
+    ]
+    result = estimate_execution_time(nodes, [])
+    # stage total = 20 min; with the parallel discount (0.6) => 12.0, not 20.0.
+    assert result["total_minutes"] == 12.0

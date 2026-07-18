@@ -2609,8 +2609,12 @@ def estimate_execution_time(nodes, edges):
         config = node.get("config") or {}
         minutes = config.get("avg_execution_min", 5)
         if stage not in stage_times:
-            stage_times[stage] = {"total_min": 0, "parallel": config.get("parallel", False)}
+            stage_times[stage] = {"total_min": 0, "parallel": False}
         stage_times[stage]["total_min"] += minutes
+        # Honor the parallel flag from ANY node in the stage, not just the first
+        # one seen — a stage is parallel if at least one of its nodes declares it.
+        if config.get("parallel", False):
+            stage_times[stage]["parallel"] = True
 
     ordered_stages = sorted(
         PIPELINE_STAGES.keys(),

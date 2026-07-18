@@ -176,7 +176,7 @@ def take_snapshot(pipeline_id: str, label: str = None, user_id: str = "system") 
             "skipped": True,
         }
 
-    snap_id = str(uuid.uuid4())[:12]
+    snap_id = str(uuid.uuid4())
     created_at = _now()
     conn.execute(
         """INSERT INTO pdc_snapshots
@@ -370,7 +370,7 @@ def simulate_delta(
     high_count = len([a for a in antipatterns if a.get("severity") == "high"])
     medium_count = len([a for a in antipatterns if a.get("severity") == "medium"])
 
-    sim_id = str(uuid.uuid4())[:12]
+    sim_id = str(uuid.uuid4())
     conn.execute(
         """INSERT INTO pdc_simulations
            (id, pipeline_id, baseline_snap_id, delta_graph_json,

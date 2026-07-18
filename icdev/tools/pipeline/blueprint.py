@@ -16,6 +16,7 @@ Usage in ICDEV dashboard app.py:
 
 import json
 import os
+import re
 import uuid as _uuid
 from functools import wraps
 from pathlib import Path
@@ -1232,7 +1233,7 @@ def create_pipeline_blueprint():
         result = _run_compliance_check(nodes, edges)
 
         # Persist findings
-        check_id = str(_uuid.uuid4())[:8]
+        check_id = str(_uuid.uuid4())
         conn.execute(
             "INSERT INTO pc_compliance_checks (id, pipeline_id, check_type, passed, failed, findings_json, ran_at) "
             "VALUES (%s,%s,%s,%s,%s,%s,%s)",
@@ -1291,7 +1292,7 @@ def create_pipeline_blueprint():
             "SELECT COALESCE(MAX(version_num), 0) FROM pc_versions WHERE pipeline_id=%s", (pipe_id,)
         ).fetchone()[0]
         data = request.get_json(force=True, silent=True) or {}
-        ver_id = str(_uuid.uuid4())[:8]
+        ver_id = str(_uuid.uuid4())
         conn.execute(
             "INSERT INTO pc_versions (id, pipeline_id, version_num, label, graph_json, created_by, notes, created_at) "
             "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
@@ -1331,7 +1332,7 @@ def create_pipeline_blueprint():
     @pc_role_required(*PC_WRITE_ROLES)
     def pc_api_create_boundary(pipe_id):
         data = request.get_json(force=True, silent=True) or {}
-        bid = str(_uuid.uuid4())[:8]
+        bid = str(_uuid.uuid4())
         # Validate the numeric geometry fields: a client-supplied non-numeric
         # value (e.g. pos_x="abc") returns 400 rather than a DB type error / 500.
         _num_defaults = (
@@ -1467,7 +1468,7 @@ def create_pipeline_blueprint():
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
 
-        _audit("VALIDATE_IAC", "pipeline", pipe_id, f"gate={result.get('validation', {}).get('gate', '?')}")
+        _audit("VALIDATE_IAC", "pipeline", pipe_id, f"gate={result.get('validation', {}).get('gate', 'unknown')}")
         return jsonify(result)
 
     # ══════════════════════════════════════════════════════════════════════
@@ -1613,7 +1614,11 @@ def create_pipeline_blueprint():
             buf.seek(0)
             from flask import send_file
 
-            safe = pipe["name"].replace(" ", "-").lower()[:30]
+            # Sanitize the download filename to [a-z0-9._-] — the pipeline name is
+            # user-controlled and flows into the Content-Disposition header; strip
+            # path separators and any other characters that could enable header
+            # injection or path traversal in a downloaded filename.
+            safe = re.sub(r"[^a-z0-9._-]", "", pipe["name"].replace(" ", "-").lower())[:30] or "pipeline"
             return send_file(
                 buf,
                 mimetype="application/zip",
@@ -1750,7 +1755,7 @@ def create_pipeline_blueprint():
     @pc_role_required(*PC_WRITE_ROLES)
     def pc_api_create_cr(pipe_id):
         data = request.get_json(force=True, silent=True) or {}
-        cr_id = str(_uuid.uuid4())[:8]
+        cr_id = str(_uuid.uuid4())
         conn = get_connection()
         conn.execute(
             "INSERT INTO pc_change_requests (id, pipeline_id, cr_number, cr_type, status, "
@@ -2112,7 +2117,7 @@ def create_pipeline_blueprint():
         body = request.json or {}
         # Identity is server-derived (session / g.current_user), NEVER the body:
         # trusting body.user_id let a caller join a session as an arbitrary user.
-        user_id = _pc_identity() or str(_uuid_mod.uuid4())[:8]
+        user_id = _pc_identity() or str(_uuid_mod.uuid4())
         user_name = body.get("user_name", "")
         result = _pdc_collab.join(design_id, user_id, user_name)
         _audit("COLLAB_JOIN", "collab", design_id, f"user={user_id}", user_id=user_id)
@@ -2140,39 +2145,42 @@ def create_pipeline_blueprint():
         user_id = _pc_identity()
         op_type = body.get("op_type", "")
         data = body.get("data", {})
-        seq = _pdc_collab.push(design_id, user_id, op_type, data)
+        # CanvasCollabManager.push(design_id, user_id, operation: dict) is the real,
+        # shared interface (other canvases depend on it). Bundle op_type + payload
+        # into the single operation dict it expects rather than passing 4 positional
+        # args (which raised TypeError before pdx-hyg-01).
+        result = _pdc_collab.push(design_id, user_id, {"op_type": op_type, "data": data})
         _audit("COLLAB_PUSH", "collab", design_id, f"user={user_id} op={op_type}", user_id=user_id)
-        return jsonify({"seq": seq})
+        return jsonify(result)
 
     @bp.route("/api/collab/<design_id>/poll", methods=["GET"])
     @pc_login_required
     def pc_collab_poll(design_id):
-        """Poll for PDC collaborative operations since a sequence number."""
+        """Poll for PDC collaborative session participants."""
         # Guard the int() cast on a client-supplied query param: garbage -> 400.
+        # CanvasCollabManager.poll() is participant-oriented (no server-side op log
+        # or cursor tracking), so `since` is validated for a clean 400 but does not
+        # slice an operation stream.
         try:
-            since = int(request.args.get("since", 0))
+            int(request.args.get("since", 0))
         except (TypeError, ValueError):
             return jsonify({"error": "since must be an integer"}), 400
-        # Cursor position is attributed to the authenticated caller, not the
-        # query-string user_id (same identity-spoofing class as push/join).
-        user_id = _pc_identity()
-        cx = request.args.get("cx")
-        cy = request.args.get("cy")
-        if user_id and cx is not None and cy is not None:
-            # Guard the float() casts on client-supplied cursor coords.
-            try:
-                cx_f, cy_f = float(cx), float(cy)
-            except (TypeError, ValueError):
-                return jsonify({"error": "cx and cy must be numbers"}), 400
-            _pdc_collab.update_cursor(design_id, user_id, cx_f, cy_f)
-        ops, participants, latest_seq = _pdc_collab.poll(design_id, since)
-        return jsonify({"operations": ops, "participants": participants, "latest_seq": latest_seq})
+        # CanvasCollabManager.poll(design_id) -> {"participants": [...], "polled_at": ...}
+        result = _pdc_collab.poll(design_id)
+        return jsonify(
+            {
+                "operations": [],
+                "participants": result.get("participants", []),
+                "polled_at": result.get("polled_at"),
+            }
+        )
 
     @bp.route("/api/collab/<design_id>/participants", methods=["GET"])
     @pc_login_required
     def pc_collab_participants(design_id):
         """Return current participants in a PDC collaborative session."""
-        return jsonify({"participants": _pdc_collab.get_participants(design_id)})
+        # CanvasCollabManager exposes participants() (not get_participants()).
+        return jsonify({"participants": _pdc_collab.participants(design_id)})
 
     # ══════════════════════════════════════════════════════════════════════
     # SOPs — Standard Operating Procedures

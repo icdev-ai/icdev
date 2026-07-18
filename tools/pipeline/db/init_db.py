@@ -117,6 +117,10 @@ CREATE TABLE IF NOT EXISTS pc_audit (
     ts              TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+-- RESERVED (pdx-hyg-01): no runtime reader/writer as of pdx-hyg-01. Only the
+-- demo seeder (tools/db/seeds/seed_pdc_demo.py) populates this table, and the PDC
+-- delete-cascade list in blueprint.py references it by FK. No route or engine
+-- reads pc_stages. Kept (not dropped) to preserve deployed DBs.
 CREATE TABLE IF NOT EXISTS pc_stages (
     id              TEXT PRIMARY KEY,
     pipeline_id     TEXT REFERENCES pipelines(id),
@@ -178,6 +182,9 @@ CREATE TABLE IF NOT EXISTS pc_boundaries (
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+-- RESERVED (pdx-hyg-01): no runtime reader/writer as of pdx-hyg-01. Only the
+-- demo seeder (tools/db/seeds/seed_pdc_demo.py) populates this table. No route or
+-- engine reads pc_projects. Kept (not dropped) to preserve deployed DBs.
 CREATE TABLE IF NOT EXISTS pc_projects (
     id              TEXT PRIMARY KEY,
     name            TEXT NOT NULL,
@@ -188,6 +195,10 @@ CREATE TABLE IF NOT EXISTS pc_projects (
     updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+-- RESERVED (pdx-hyg-01): no runtime reader/writer as of pdx-hyg-01. Only the
+-- demo seeder (tools/db/seeds/seed_pdc_demo.py) populates this join table, and the
+-- PDC delete-cascade list in blueprint.py references it by FK. No route or engine
+-- reads pc_project_pipelines. Kept (not dropped) to preserve deployed DBs.
 CREATE TABLE IF NOT EXISTS pc_project_pipelines (
     project_id      TEXT REFERENCES pc_projects(id),
     pipeline_id     TEXT REFERENCES pipelines(id),

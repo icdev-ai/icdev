@@ -7215,6 +7215,53 @@ TOOL_REGISTRY = {
             "required": ["goal"],
         },
     },
+    # ============================================================
+    # PIPELINE DESIGN CANVAS (PDC) (3 tools)
+    # ============================================================
+    "pdc_analyze": {
+        "category": "infra",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_pdc_analyze",
+        "description": "Detect CI/CD pipeline architectural anti-patterns (missing scanners/signing/gates, insecure ordering) in a Pipeline Design Canvas graph. Accepts a pipeline_id (loaded from pipeline_canvas.db) or an inline graph.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "pipeline_id": {"type": "string", "description": "UUID of a stored PDC pipeline"},
+                "graph": {"type": "object", "description": "Inline pipeline graph {nodes, edges} (overrides pipeline_id)"},
+            },
+        },
+    },
+    "pdc_validate": {
+        "category": "infra",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_pdc_validate",
+        "description": "Generate a deploy bundle from a PDC pipeline and validate the IaC through the layered validator (syntax → policy → security). Accepts a pipeline_id or an inline graph plus target CSP.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "pipeline_id": {"type": "string", "description": "UUID of a stored PDC pipeline"},
+                "graph": {"type": "object", "description": "Inline pipeline graph {nodes, edges} (overrides pipeline_id)"},
+                "name": {"type": "string", "description": "Pipeline name (used for bundle labeling)"},
+                "target_csp": {"type": "string", "description": "Target cloud (aws/azure/gcp/auto)", "default": "auto"},
+                "max_layer": {"type": "integer", "description": "Highest validation layer to run (1-5)", "default": 3},
+            },
+        },
+    },
+    "pdc_export": {
+        "category": "infra",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_pdc_export",
+        "description": "Export a PDC pipeline graph to a target CI/CD format (gitlab_ci, github_actions, jenkinsfile, tekton, azure_pipelines). Accepts a pipeline_id or an inline graph.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "pipeline_id": {"type": "string", "description": "UUID of a stored PDC pipeline"},
+                "graph": {"type": "object", "description": "Inline pipeline graph {nodes, edges} (overrides pipeline_id)"},
+                "name": {"type": "string", "description": "Pipeline name"},
+                "format": {"type": "string", "description": "Export format", "default": "gitlab_ci"},
+            },
+        },
+    },
 }
 
 

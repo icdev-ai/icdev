@@ -93,7 +93,6 @@ module's docstring.
 | Blueprint | tools/ontology/blueprint.py | Ontology Explorer Flask blueprint. | `--json` / (library) | JSON / objects |
 | Iac Generator | tools/pdc/iac_generator.py | PDC IaC Generator — PDC Workflow Step 3. | `--json` / (library) | JSON / objects |
 | Bus Subscriber | tools/pipeline/bus_subscriber.py | PDC Cross-Canvas Event Bus Subscriber. | `--json` / (library) | JSON / objects |
-| Sla Handler | tools/pipeline/sla_handler.py | pipeline module — sla handler. | `--json` / (library) | JSON / objects |
 | Enforce | tools/pki/enforce.py | mTLS Enforcement Middleware — reject inbound requests lacking a valid client certificate. | `--json` / (library) | JSON / objects |
 | Generate | tools/pki/generate.py | PKI Certificate Management — generate CA, server, and client certificates. | `--json` / (library) | JSON / objects |
 | Validate | tools/pki/validate.py | PKI Certificate Validation — verify chain, expiry, and mTLS configuration. | `--json` / (library) | JSON / objects |

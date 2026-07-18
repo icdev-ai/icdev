@@ -2662,3 +2662,91 @@ def handle_rfi_demand_scan(args: dict) -> dict:
     except Exception as exc:
         logger.warning("handle_rfi_demand_scan: %s", exc)
         return {"error": str(exc)}
+
+
+# ===========================================================================
+# Category: infra — Pipeline Design Canvas (PDC)
+# ===========================================================================
+
+
+def _pdc_resolve_graph(args: dict) -> tuple:
+    """Resolve a pipeline graph + name from args.
+
+    Prefers an inline ``graph`` dict; otherwise loads the pipeline row identified
+    by ``pipeline_id`` from the pipeline-canvas DB. Returns (graph, name, error).
+    """
+    graph = args.get("graph")
+    name = args.get("name") or "pipeline"
+    if isinstance(graph, dict) and graph:
+        return graph, name, None
+    pipeline_id = args.get("pipeline_id")
+    if not pipeline_id:
+        return None, name, "provide either graph or pipeline_id"
+    try:
+        from tools.pipeline.db.init_db import get_connection
+
+        conn = get_connection()
+        try:
+            row = conn.execute(
+                "SELECT name, graph_json FROM pipelines WHERE id=%s", (pipeline_id,)
+            ).fetchone()
+        finally:
+            conn.close()
+    except Exception as exc:
+        return None, name, f"pipeline lookup failed: {exc}"
+    if not row:
+        return None, name, f"pipeline not found: {pipeline_id}"
+    row = dict(row)
+    try:
+        graph = json.loads(row.get("graph_json") or "{}")
+    except (json.JSONDecodeError, TypeError):
+        return None, name, "corrupt graph_json"
+    return graph, (args.get("name") or row.get("name") or "pipeline"), None
+
+
+def handle_pdc_analyze(args: dict) -> dict:
+    """Detect PDC pipeline architectural anti-patterns."""
+    try:
+        graph, _name, err = _pdc_resolve_graph(args)
+        if err:
+            return {"error": err}
+        from tools.pipeline.antipattern_detector import detect_antipatterns
+
+        findings = detect_antipatterns(graph.get("nodes", []), graph.get("edges", []))
+        return {"findings": findings, "count": len(findings)}
+    except Exception as exc:
+        logger.warning("handle_pdc_analyze: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_pdc_validate(args: dict) -> dict:
+    """Generate + validate the IaC deploy bundle for a PDC pipeline."""
+    try:
+        graph, name, err = _pdc_resolve_graph(args)
+        if err:
+            return {"error": err}
+        from tools.pipeline.iac_validator import validate_deploy_bundle_from_generator
+
+        return validate_deploy_bundle_from_generator(
+            graph,
+            name,
+            target_csp=args.get("target_csp", "auto"),
+            max_layer=int(args.get("max_layer") or 3),
+        )
+    except Exception as exc:
+        logger.warning("handle_pdc_validate: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_pdc_export(args: dict) -> dict:
+    """Export a PDC pipeline graph to a target CI/CD format."""
+    try:
+        graph, name, err = _pdc_resolve_graph(args)
+        if err:
+            return {"error": err}
+        from tools.pipeline.export import export_pipeline
+
+        return export_pipeline(graph, name, args.get("format", "gitlab_ci"))
+    except Exception as exc:
+        logger.warning("handle_pdc_export: %s", exc)
+        return {"error": str(exc)}
