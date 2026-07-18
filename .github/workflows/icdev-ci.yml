@@ -268,6 +268,10 @@ jobs:
       ICDEV_GOVCON_ENABLED: "true"
       ICDEV_MIGRATION_CANVAS_ENABLED: "true"
       ICDEV_AUTH_BYPASS: "true"
+      # nav-sec-01: E2E previously authenticated via the unconditional env-key
+      # auto-login (the P0 bypass this wave removed). The CI test server now
+      # opts into dev auto-login explicitly — the documented use of this flag.
+      ICDEV_DASHBOARD_DEV_AUTOLOGIN: "true"
       ICDEV_MISSION_CANVAS_ENABLED: "true"
       ICDEV_OPS_HUB_ENABLED: "true"
       # NOC Operations Canvas — required by tests/e2e/noc_canvas.spec.ts (cnr-ops-02).
