@@ -9,7 +9,9 @@ enhancements, and emitting OSCAL evidence artifacts.
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
+import hmac
 import json
+import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -25,6 +27,7 @@ from flask import (
     redirect,
     render_template,
     request,
+    session,
     url_for,
 )
 
@@ -78,6 +81,53 @@ qdc_bp = Blueprint(
     url_prefix="/quality",
     template_folder="../../tools/dashboard/templates",
 )
+
+# ---------------------------------------------------------------------------
+# Authentication (cnr-qdc-01)
+# ---------------------------------------------------------------------------
+
+
+@qdc_bp.before_request
+def _require_auth():
+    """Enforce authentication on every QDC route.
+
+    Mirrors BI Studio's ``_login_required`` behaviour but applied blueprint-wide
+    via ``before_request`` so no route (including destructive endpoints such as
+    ``DELETE /quality/api/designs``) can be reached unauthenticated. Page (GET)
+    routes redirect to /login; API routes and any mutating method return a JSON
+    401. ``ICDEV_AUTH_BYPASS`` keeps CI/E2E parity with other canvases, and a
+    presented ``ICDEV_DASHBOARD_API_KEY`` authenticates headless callers.
+    """
+    if session.get("user_id"):
+        return None
+
+    # ICDEV_AUTH_BYPASS: explicit test-only opt-in — bypass unchanged.
+    if os.environ.get("ICDEV_AUTH_BYPASS", "").lower() in ("1", "true", "yes"):
+        session["user_id"] = "e2e-bypass"
+        return None
+
+    # ICDEV_DASHBOARD_API_KEY: presented-key semantics (constant-time compare).
+    # Merely having the var set does NOT auto-authenticate.
+    api_key = os.environ.get("ICDEV_DASHBOARD_API_KEY", "")
+    if api_key:
+        presented = request.headers.get("X-ICDEV-API-Key", "")
+        if not presented:
+            auth_header = request.headers.get("Authorization", "")
+            if auth_header.startswith("Bearer "):
+                presented = auth_header[len("Bearer "):].strip()
+        if presented and hmac.compare_digest(presented, api_key):
+            session["user_id"] = "api-key"
+            return None
+
+    # API calls and any mutating method get JSON 401; page GETs redirect.
+    if (
+        request.is_json
+        or request.path.startswith("/quality/api/")
+        or request.method in ("DELETE", "POST", "PUT")
+    ):
+        return jsonify({"error": "Authentication required"}), 401
+    return redirect("/login")
+
 
 # ---------------------------------------------------------------------------
 # Helpers
