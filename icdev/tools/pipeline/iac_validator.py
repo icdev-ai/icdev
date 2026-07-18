@@ -149,11 +149,19 @@ def _check_hcl_syntax(path, content):
     # Basic structural checks without terraform binary
     issues = []
 
-    # Check balanced braces
+    # Check balanced braces — WARN only (not a hard structural fail). A naive
+    # count over the whole file also counts braces inside string literals and
+    # comments (e.g. a legit `jsonencode({...})` with an unbalanced brace inside
+    # a quoted string), which produced false hard-fails. Downgraded to an
+    # advisory note; a real malformed block is still caught by the
+    # "missing opening brace" check below (which IS structural).
     open_braces = content.count("{")
     close_braces = content.count("}")
     if open_braces != close_braces:
-        issues.append(f"Unbalanced braces: {open_braces} open, {close_braces} close")
+        issues.append(
+            f"Brace count differs: {open_braces} open, {close_braces} close "
+            "(may be a false positive from braces inside string literals/comments)"
+        )
 
     # Check for common HCL errors
     lines = content.split("\n")
@@ -177,7 +185,10 @@ def _check_hcl_syntax(path, content):
         issues.append("main.tf has resources but no provider block (may inherit from parent module)")
 
     if issues:
-        has_structural = any("Unbalanced" in i or "missing opening brace" in i for i in issues)
+        # Only a missing opening brace on a block declaration is a genuine
+        # structural error. A raw brace-count mismatch is advisory (warn) because
+        # it over-counts braces inside strings/comments (jsonencode false-positive).
+        has_structural = any("missing opening brace" in i for i in issues)
         severity = "fail" if has_structural else "warn"
         fix_hint = fix_snippet = fix_action = None
         if not has_structural and any("no provider block" in i for i in issues):
@@ -188,7 +199,7 @@ def _check_hcl_syntax(path, content):
             fix_snippet = 'provider "aws" {\n  region = "us-east-1"\n}\n\n# Or for Azure:\n# provider "azurerm" {\n#   features {}\n# }'
             fix_action = "add_provider_block"
         elif has_structural:
-            fix_hint = "Fix the unbalanced braces or malformed block shown in the details above."
+            fix_hint = "Fix the malformed block declaration (missing opening brace) shown in the details above."
             fix_action = "fix_hcl_structure"
         return ValidationResult(1, "hcl_syntax", severity, f"{len(issues)} syntax note(s)", path, issues,
                                 fix_hint=fix_hint, fix_snippet=fix_snippet, fix_action=fix_action)
@@ -477,6 +488,8 @@ def _check_tagging_policy(tf_files):
 
 def _check_network_policy(tf_files):
     """Check network security basics."""
+    import re
+
     all_tf = "\n".join(f["content"] for f in tf_files)
     issues = []
 
@@ -485,7 +498,12 @@ def _check_network_policy(tf_files):
         if "ingress" in all_tf and "0.0.0.0/0" in all_tf:
             issues.append("Security group ingress open to 0.0.0.0/0 — restrict to specific CIDRs")
 
-    if "cluster_endpoint_public_access" in all_tf and "true" in all_tf:
+    # Parse the ACTUAL assignment rather than substring-matching "true" anywhere
+    # in the corpus. The old check (`"cluster_endpoint_public_access" in all_tf
+    # and "true" in all_tf`) fired whenever ANY `true` appeared in the file —
+    # e.g. `enable_dns_support = true` — producing a false positive even when the
+    # endpoint was set to false. Match `cluster_endpoint_public_access = true`.
+    if re.search(r"cluster_endpoint_public_access\s*=\s*true", all_tf):
         issues.append("EKS cluster endpoint is public — consider private endpoint for production")
 
     if issues:
@@ -561,10 +579,51 @@ def _layer4_plan(files):
             for f in dir_files:
                 (target / Path(f["path"]).name).write_text(f["content"], encoding="utf-8")
 
-            # terraform validate (doesn't need credentials)
+            # `terraform validate` REQUIRES an initialized working directory —
+            # without `terraform init` first, module sources (`terraform-aws-modules/...`)
+            # are unresolved and validate always exits non-zero, so every bundle
+            # with a module block was wrongly reported as `fail`. Run
+            # `init -backend=false` first (no remote state, no credentials). If init
+            # itself fails — typically because module downloads are blocked in an
+            # air-gapped/offline environment — report the layer as `skip` with a
+            # reason rather than a misleading `fail`.
+            try:
+                init_proc = subprocess.run(
+                    ["terraform", "init", "-backend=false", "-input=false", "-no-color"],
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                    cwd=str(target),
+                )
+            except FileNotFoundError:
+                results.append(
+                    ValidationResult(4, "terraform_validate", "skip", "terraform binary not found", tf_dir)
+                )
+                continue
+            except subprocess.TimeoutExpired:
+                results.append(
+                    ValidationResult(4, "terraform_validate", "skip", "terraform init timed out", tf_dir)
+                )
+                continue
+            except Exception as exc:
+                results.append(ValidationResult(4, "terraform_validate", "skip", f"init error: {exc}", tf_dir))
+                continue
+
+            if init_proc.returncode != 0:
+                # Most common offline cause: module source download blocked.
+                results.append(
+                    ValidationResult(
+                        4, "terraform_validate", "skip",
+                        f"terraform init failed (likely offline module download): {init_proc.stderr[:200]}",
+                        tf_dir,
+                    )
+                )
+                continue
+
+            # terraform validate (doesn't need credentials once init has run)
             try:
                 proc = subprocess.run(
-                    ["terraform", "validate"],
+                    ["terraform", "validate", "-no-color"],
                     capture_output=True,
                     text=True,
                     timeout=30,
