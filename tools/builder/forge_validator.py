@@ -1042,8 +1042,8 @@ def _check_coherence(project_dir: Path) -> List[GotchaCheck]:
     tools/workflow is always shipped by DIRECTORY_TREE, so a child MISSING the
     coherence_checker module is stale/incomplete — that is an explicit FAIL, not
     a silent pass. Previously an ImportError here recorded a pass, letting broken
-    child apps (e.g. projects/sparkpilot, which lacks tools/workflow entirely)
-    skip coherence validation completely.
+    child apps that lack tools/workflow entirely skip coherence validation
+    completely.
     """
     checks = []
     checker_path = project_dir / "tools" / "workflow" / "coherence_checker.py"
