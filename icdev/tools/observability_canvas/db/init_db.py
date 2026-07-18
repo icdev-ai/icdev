@@ -785,6 +785,65 @@ TEMPLATES = [
 ]
 
 
+# ── Additive schema migrations ────────────────────────────────────────────────
+#
+# obx-fix-04: ODC-NDC-001 (check_nc_audit_to_siem_forwarder) needs to record,
+# per ODC design, which NDC topology has its audit events forwarded to a SIEM.
+# The base odc_sdc_verifications table only carries MITRE TTP-coverage columns,
+# which cannot express audit->SIEM forwarding. These additive columns extend it
+# WITHOUT touching the base CREATE TABLE (kept as a separate, idempotent block to
+# avoid merge conflicts with concurrent init_db.py edits, e.g. PR #468).
+_ODC_SDCV_ADDITIVE_COLUMNS = [
+    ("topology_id", "TEXT DEFAULT ''"),      # NDC topology this row's forwarding covers
+    ("siem_node_id", "TEXT DEFAULT ''"),     # SIEM node in the ODC design receiving audit
+    ("forward_status", "TEXT DEFAULT ''"),   # '' | 'forwarded' | 'verified' | 'unverified'
+]
+
+
+def _existing_columns(conn, table):
+    """Return the set of column names on ``table`` (backend-agnostic).
+
+    Uses PRAGMA table_info, which StorageConnection translates to an
+    information_schema query on PostgreSQL. Returns an empty set on error.
+    """
+    cols = set()
+    try:
+        for r in conn.execute(f"PRAGMA table_info({table})").fetchall():
+            try:
+                cols.add(r["name"])
+            except (KeyError, IndexError, TypeError):
+                try:
+                    cols.add(r[1])
+                except (KeyError, IndexError, TypeError):
+                    pass
+    except Exception:
+        return set()
+    return cols
+
+
+def _ensure_odc_sdcv_columns(conn):
+    """Idempotently add the ODC-NDC-001 audit-forwarding columns.
+
+    Only ALTERs columns that are actually missing, so no statement is expected
+    to fail — this avoids poisoning a PostgreSQL transaction with an
+    already-exists error.
+    """
+    existing = _existing_columns(conn, "odc_sdc_verifications")
+    if not existing:
+        # Table not present yet (or introspection unavailable) — the base CREATE
+        # TABLE runs first in init_db(), so this should not happen; bail safely.
+        return
+    for col, decl in _ODC_SDCV_ADDITIVE_COLUMNS:
+        if col in existing:
+            continue
+        try:
+            conn.execute(f"ALTER TABLE odc_sdc_verifications ADD COLUMN {col} {decl}")
+        except Exception:
+            # Best-effort: a concurrent init may have added it between introspection
+            # and ALTER. The check that reads these columns is fail-closed regardless.
+            pass
+
+
 # ── Init function ────────────────────────────────────────────────────────────
 
 
@@ -797,6 +856,10 @@ def init_db():
             stmt = stmt.strip()
             if stmt:
                 conn.execute(stmt)
+        conn.commit()
+
+        # Additive columns for ODC-NDC-001 audit->SIEM forwarding (obx-fix-04).
+        _ensure_odc_sdcv_columns(conn)
         conn.commit()
 
         # Seed templates (skip if already seeded)
