@@ -47,7 +47,6 @@ Registers tools flagged by the gap detector's `tool_not_in_manifest` rule (8-poi
 | ANVIL Build | tools/anvil/build.py | ANVIL `build` command — headless wrapper (OPT-42). | `-- "<args>"`, `--json` | Build result |
 | ANVIL Fix | tools/anvil/fix.py | ANVIL `fix` command — headless wrapper (OPT-42). | `-- "<args>"`, `--json` | Fix result |
 | ANVIL Research | tools/anvil/research.py | ANVIL `research` command — headless wrapper (OPT-42). | `-- "<args>"`, `--json` | Research result |
-| Boundary IaC Generator | tools/bdc/iac_generator.py | Boundary Design Canvas (BDC) — Infrastructure-as-Code generator (workflow step 3). | `--design-id`, `--json` | IaC artifact |
 | Canvas KG Blueprint | tools/canvas/blueprint.py | Canvas Knowledge Graph — REST API blueprint for cross-canvas KG queries. | (Flask blueprint) | KG query API |
 | Canvas Provenance | tools/canvas/provenance.py | Central canvas provenance helper — registers design + assessment hashes. | (library) | Provenance records |
 | Data IaC Generator | tools/data/iac_generator.py | Data Design Canvas (DDC) — Infrastructure-as-Code generator (workflow step 3). | `--design-id`, `--json` | IaC artifact |

@@ -512,8 +512,6 @@
 | Game Pack | tools\ai_game_engine\game_pack.py | Auto-registered: ai_game_engine/game_pack.py | --json | JSON |
 | Game Session | tools\ai_game_engine\game_session.py | Auto-registered: ai_game_engine/game_session.py | --json | JSON |
 | Round Runner | tools\ai_game_engine\round_runner.py | Auto-registered: ai_game_engine/round_runner.py | --json | JSON |
-| Boundary Scanner | tools\bdc\boundary_scanner.py | Auto-registered: bdc/boundary_scanner.py | --json | JSON |
-| Isa Checker | tools\bdc\isa_checker.py | Auto-registered: bdc/isa_checker.py | --json | JSON |
 | Blockchain Config | tools\blockchain\blockchain_config.py | Auto-registered: blockchain/blockchain_config.py | --json | JSON |
 | Chain Anchor | tools\blockchain\chain_anchor.py | Auto-registered: blockchain/chain_anchor.py | --json | JSON |
 | Channel Manager | tools\blockchain\channel_manager.py | Auto-registered: blockchain/channel_manager.py | --json | JSON |
