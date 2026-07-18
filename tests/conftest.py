@@ -2200,6 +2200,16 @@ CREATE TABLE IF NOT EXISTS ace_step_audit_log (
     duration_ms REAL,
     created_at  TEXT    NOT NULL
 );
+CREATE TABLE IF NOT EXISTS ace_webhook_log (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    instance_id       TEXT NOT NULL DEFAULT '',
+    url               TEXT NOT NULL DEFAULT '',
+    status_code       INTEGER,
+    response          TEXT,
+    attempt_count     INTEGER NOT NULL DEFAULT 0,
+    last_attempted_at TEXT,
+    created_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 
