@@ -129,7 +129,7 @@ def create_boundary_blueprint():
                     (design_id, user_id, action, detail, now_isoformat()),
                 )
         except Exception:
-            pass
+            logger.warning("audit trail write failed for design %s", design_id, exc_info=True)
 
     def _row_to_dict(row):
         return dict(row) if row else {}
@@ -396,7 +396,7 @@ def create_boundary_blueprint():
 
             on_bdc_design_saved(design_id)
         except Exception:
-            pass
+            logger.warning("security-canvas boundary validation hook failed for design %s", design_id, exc_info=True)
         try:
             from tools.canvas.event_bus import publish as _eb_publish
             _eb_publish("bdc", "bdc.design.saved", {
@@ -405,7 +405,7 @@ def create_boundary_blueprint():
                 "graph_changed": "graph_json" in data,
             }, target_canvas="odc")
         except Exception:
-            pass
+            logger.warning("event bus publish (bdc.design.saved) failed for design %s", design_id, exc_info=True)
 
         # Incremental KG update: re-extract only if graph_json changed
         try:
@@ -413,7 +413,7 @@ def create_boundary_blueprint():
 
             rebuild_canvas_kg("bdc", design_id)
         except Exception:
-            pass
+            logger.warning("canvas KG rebuild failed for design %s", design_id, exc_info=True)
         # Blockchain provenance
         try:
             from tools.canvas.provenance import register_canvas_provenance
@@ -424,7 +424,7 @@ def create_boundary_blueprint():
                 project_id=data.get("project_id", ""),
             )
         except Exception:
-            pass
+            logger.warning("blockchain provenance registration failed for design %s", design_id, exc_info=True)
 
         return jsonify({"id": design_id, "updated_at": now})
 
@@ -540,7 +540,7 @@ def create_boundary_blueprint():
                 project_id="",
             )
         except Exception:
-            pass
+            logger.warning("blockchain provenance registration (assessment) failed for design %s", design_id, exc_info=True)
         return jsonify(result)
 
     # ====================================================================
@@ -763,7 +763,7 @@ def create_boundary_blueprint():
                         prev_graph = json.loads(prev[0]) if isinstance(prev[0], str) else prev[0]
                         change_summary = _bdc_diff_graph(prev_graph, current_graph)
                     except Exception:
-                        pass
+                        logger.warning("graph diff change-summary computation failed for design %s", design_id, exc_info=True)
             ver_id = str(_uuid.uuid4())
             now = now_isoformat()
             conn.execute(
