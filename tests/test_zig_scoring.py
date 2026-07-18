@@ -89,6 +89,16 @@ CREATE TABLE IF NOT EXISTS zig_maturity_scores (
     assessment_run_at   TEXT DEFAULT CURRENT_TIMESTAMP,
     created_at          TEXT DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS zta_maturity_scores (
+    id              TEXT PRIMARY KEY,
+    project_id      TEXT NOT NULL,
+    pillar          TEXT NOT NULL,
+    score           REAL,
+    maturity_level  TEXT,
+    evidence        TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 
@@ -158,6 +168,17 @@ def _add_completion(conn, act_id, status, target="icdev-self"):
     conn.execute(
         "INSERT INTO zig_activity_completions (activity_id, target_id, status) VALUES (?,?,?)",
         (act_id, target, status),
+    )
+
+
+def _add_zta_score(conn, score_id, project_id, pillar, score, maturity="advanced",
+                   created_at="2026-01-01T00:00:00+00:00"):
+    """Seed a row in the real zta_maturity_scores table (the accessor's source)."""
+    conn.execute(
+        "INSERT INTO zta_maturity_scores "
+        "(id, project_id, pillar, score, maturity_level, evidence, created_at) "
+        "VALUES (?,?,?,?,?,?,?)",
+        (score_id, project_id, pillar, score, maturity, "[]", created_at),
     )
 
 
@@ -531,6 +552,81 @@ def test_run_assessment_no_blend_when_bridge_absent(conn):
     from tools.security_canvas.zig_assessor import run_zig_assessment
 
     with patch.dict(sys.modules, {"tools.devsecops.zta_maturity_scorer": None}):
+        with patch_conn(conn):
+            result = run_zig_assessment()
+
+    user = next(p for p in result["pillar_scores"] if p["slug"] == "user")
+    assert user["score"] == 0.0
+
+
+def test_get_latest_score_reads_seeded_real_row(conn):
+    """The REAL get_latest_score accessor returns persisted per-pillar scores.
+
+    Seeds two pillar rows + an overall row for one project; the accessor
+    (no project_id -> latest project wins) returns pillar_scores keyed by the
+    ZTA pillar names in the raw 0.0-1.0 range, plus the overall summary.
+    """
+    _add_zta_score(conn, "z-u", "proj-A", "user_identity", 0.9, "optimal")
+    _add_zta_score(conn, "z-d", "proj-A", "device", 0.6, "advanced")
+    _add_zta_score(conn, "z-o", "proj-A", "overall", 0.75, "optimal")
+    conn.commit()
+
+    zta_mod = importlib.import_module("tools.devsecops.zta_maturity_scorer")
+
+    with patch.object(zta_mod, "get_connection", lambda: conn):
+        data = zta_mod.get_latest_score()
+
+    assert data is not None
+    assert data["project_id"] == "proj-A"
+    assert data["pillar_scores"]["user_identity"] == 0.9
+    assert data["pillar_scores"]["device"] == 0.6
+    # 'overall' is surfaced separately, never as a pillar key.
+    assert "overall" not in data["pillar_scores"]
+    assert data["overall_score"] == 0.75
+    assert data["overall_maturity"] == "optimal"
+
+
+def test_get_latest_score_none_when_empty(conn):
+    """No persisted assessment -> accessor returns None cleanly (no error)."""
+    zta_mod = importlib.import_module("tools.devsecops.zta_maturity_scorer")
+
+    with patch.object(zta_mod, "get_connection", lambda: conn):
+        assert zta_mod.get_latest_score() is None
+
+
+def test_run_assessment_blends_seeded_real_zta_score(conn):
+    """End-to-end: a SEEDED real zta row flows through the REAL accessor and
+    the documented 0.5 blend, with no fake injected.
+
+    Seeded user_identity=0.9 -> ZIG 'user' pillar (empty, ZIG score 0.0) picks
+    up round(0.9 * 0.5, 4) = 0.45. A pillar with no seeded zta key stays 0.0.
+    """
+    _add_zta_score(conn, "z-u", "proj-B", "user_identity", 0.9, "optimal")
+    conn.commit()
+
+    zta_mod = importlib.import_module("tools.devsecops.zta_maturity_scorer")
+    from tools.security_canvas.zig_assessor import run_zig_assessment
+
+    with patch.object(zta_mod, "get_connection", lambda: conn):
+        with patch_conn(conn):
+            result = run_zig_assessment()
+
+    user = next(p for p in result["pillar_scores"] if p["slug"] == "user")
+    assert user["score"] == 0.45
+    automation = next(p for p in result["pillar_scores"] if p["slug"] == "automation")
+    assert automation["score"] == 0.0
+
+
+def test_run_assessment_pure_zig_when_no_seeded_zta_score(conn):
+    """Bridge present + accessor returns None (empty zta table) -> pure ZIG 0.0.
+
+    Distinct from the ImportError path: here get_latest_score is importable and
+    runs, but finds no persisted assessment, so no blend is applied.
+    """
+    zta_mod = importlib.import_module("tools.devsecops.zta_maturity_scorer")
+    from tools.security_canvas.zig_assessor import run_zig_assessment
+
+    with patch.object(zta_mod, "get_connection", lambda: conn):
         with patch_conn(conn):
             result = run_zig_assessment()
 
