@@ -32,6 +32,21 @@ def _uid() -> str:
     return str(uuid.uuid4())
 
 
+def _governance_fail_closed() -> bool:
+    """Read the governance fail-closed toggle at call time (not import time).
+
+    Default OFF to preserve the historical local pass-through behavior. When ON
+    (``ICDEV_GOVERNANCE_FAIL_CLOSED`` in ``{"1", "true", "yes"}``, case-insensitive)
+    and no OPA server is configured, ``check_ext_access`` denies by default instead
+    of allowing. Read at call time so tests can toggle it via monkeypatch/env.
+    """
+    return os.environ.get("ICDEV_GOVERNANCE_FAIL_CLOSED", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+
+
 # ── Policy CRUD ───────────────────────────────────────────────────────────────
 
 def list_policies(domain_id: str | None = None) -> list[dict]:
@@ -204,8 +219,10 @@ def check_ext_access(
 ) -> dict:
     """Governance gate for IQE ext.* collection reads.
 
-    Local mode (ICDEV_OPA_URL blank): always allows and writes a pass-through
-    audit entry — no OPA server is configured.
+    Local mode (ICDEV_OPA_URL blank): default (fail-open) allows and writes a
+    pass-through audit entry — no OPA server is configured. When the
+    ``ICDEV_GOVERNANCE_FAIL_CLOSED`` toggle is ON, local mode instead DENIES and
+    still writes an audit entry (fail-closed posture for IL4+ deployments).
     OPA mode: evaluates the datamesh policy and writes an audit entry.
 
     Args:
@@ -227,12 +244,20 @@ def check_ext_access(
     effective_user = user_attrs or {"user": "system", "clearance": "CUI"}
 
     if not _OPA_URL:
-        result: dict = {
-            "allowed": True,
-            "reason": "local pass-through — no OPA server configured",
-            "method": "local",
-            "policy_id": None,
-        }
+        if _governance_fail_closed():
+            result: dict = {
+                "allowed": False,
+                "reason": "governance fail-closed: no OPA server configured",
+                "method": "local",
+                "policy_id": None,
+            }
+        else:
+            result = {
+                "allowed": True,
+                "reason": "local pass-through — no OPA server configured",
+                "method": "local",
+                "policy_id": None,
+            }
         _log_audit(effective_user, resource, result)
         return result
 
