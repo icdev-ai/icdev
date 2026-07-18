@@ -2476,10 +2476,12 @@ def create_security_blueprint():
             return jsonify({"ok": False, "error": f"status must be one of {valid}"}), 400
         conn = get_connection()
         try:
-            conn.execute(
+            cur = conn.execute(
                 "UPDATE zig_capabilities SET implementation_status=%s, evidence_note=%s, updated_at=CURRENT_TIMESTAMP WHERE id=%s",
                 (new_status, evidence_note, cap_id),
             )
+            if cur.rowcount == 0:
+                return jsonify({"ok": False, "error": "unknown capability id"}), 404
             conn.commit()
         finally:
             conn.close()
@@ -2547,15 +2549,23 @@ def create_security_blueprint():
     @bp.route("/api/zig/assess", methods=["POST"])
     @sc_login_required
     def zig_api_assess():
-        """POST /security/api/zig/assess — run full ZIG assessment.
+        """POST /security/api/zig/assess — run the GLOBAL ZIG assessment.
 
-        Optional JSON body: {"target_id": "my-app"} (default: "icdev-self")
+        Scores all 7 pillars org-wide and persists the run to
+        zig_maturity_scores. This endpoint is not target-scoped; to assess a
+        specific target use POST /api/zig/targets/<target_id>/assess.
         """
         from tools.security_canvas.zig_assessor import run_zig_assessment
         data = request.get_json(force=True, silent=True) or {}
-        target_id = (data.get("target_id") or "icdev-self").strip() or "icdev-self"
+        if (data.get("target_id") or "").strip():
+            return jsonify({
+                "ok": False,
+                "error": "target_id is not supported on /api/zig/assess; use "
+                         "POST /api/zig/targets/<target_id>/assess for a "
+                         "target-scoped assessment",
+            }), 400
         try:
-            result = run_zig_assessment(target_id=target_id)
+            result = run_zig_assessment()
             return jsonify({"ok": True, **result})
         except Exception as exc:
             return jsonify({"ok": False, "error": str(exc)}), 500
