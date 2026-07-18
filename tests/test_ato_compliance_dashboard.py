@@ -151,7 +151,11 @@ def ato_db():
     conn.row_factory = sqlite3.Row
     conn.executescript(ATO_DASHBOARD_SCHEMA)
     conn.commit()
-    return conn
+    # Wrapped in StorageConnection so the module's PG-native %s SQL is
+    # translated for SQLite (same pattern as tests/test_cato_twin.py).
+    from tools.db.storage import StorageConnection
+
+    return StorageConnection(conn, "sqlite")
 
 
 @pytest.fixture()

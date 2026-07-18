@@ -403,7 +403,13 @@ components:
   blueprint_attr: aadc_bp
   url_prefix: /agentic-ai
   min_il: IL4
-  default_roles: []
+  # penta-aadc-01: seed canvas-access default_roles so tenant provisioning
+  # (canvas_access.seed_tenant_defaults) auto-grants read access to the roles
+  # that operate this canvas, instead of the prior deny-all posture ([]).
+  default_roles:
+  - developer
+  - compliance_officer
+  - isso
   nav:
     section: Canvases
     label: Agentic AI
@@ -692,7 +698,14 @@ components:
   blueprint_attr: aiify_bp
   url_prefix: /ai-ify
   min_il: IL4
-  default_roles: []
+  # penta-aiify-02: seed read access for operator roles so canvas access grants
+  # exist when ICDEV_ENFORCE_CANVAS_ACCESS is on. Mutating/expensive routes are
+  # additionally hard-gated with @require_role in tools/aiify/blueprint.py.
+  default_roles:
+  - admin
+  - pm
+  - developer
+  - isso
   nav:
     section: Canvases
     label: AI-ify
@@ -732,7 +745,12 @@ components:
   blueprint_attr: aiify_compat_bp
   url_prefix: ''
   min_il: IL4
-  default_roles: []
+  # penta-aiify-02: mirror the aiify canvas operator roles onto the compat alias.
+  default_roles:
+  - admin
+  - pm
+  - developer
+  - isso
   nav:
     section: Canvases
     label: AI-ify

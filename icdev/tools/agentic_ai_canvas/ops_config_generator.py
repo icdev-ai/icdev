@@ -55,7 +55,12 @@ def generate_ops_config(design_id: str) -> dict[str, Any]:
       - matched_nodes: list[str] — node types that had a tool mapping
       - unmatched_nodes: list[str] — node types with no mapping
     """
-    from tools.db.storage import get_connection
+    # penta-aadc-02: aadc_designs is a canvas table with no tenant_id/
+    # classification columns, so the RLS-enforcing tools.db.storage
+    # get_connection() injects a predicate that raises UndefinedColumn on PG.
+    # Use the canvas connection factory, which wraps get_canvas_connection()
+    # (RLS disabled) on PG and points at the canvas .db file on SQLite.
+    from tools.agentic_ai_canvas.db.init_db import get_connection
 
     conn = get_connection()
     row = conn.execute(
