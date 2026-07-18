@@ -132,6 +132,10 @@ REGISTRY: List[ReflexEntry] = [
                 "PMA: nightly credential expiry scan and SPOF dependency detection"),
     ReflexEntry("pma_int_gap_monitor",       DOMAIN, 168.0,
                 "PMA: weekly INT gap persistence scan; seeds collection requirements and compliance risks"),
+    # Observability retention (obx-trc-05)
+    ReflexEntry("observability_retention",   SUPPORT, 24.0,
+                "Observability retention: archive-then-prune otel_spans/prov_*/shap_attributions "
+                "(append-only → cold *_archive twin) so list_traces/trace_stats stay fast"),
 ]
 
 # Quick lookup: name → entry

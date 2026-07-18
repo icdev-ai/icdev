@@ -2741,6 +2741,82 @@ CREATE TABLE IF NOT EXISTS odc_twin_snapshots (
     payload_json    TEXT NOT NULL DEFAULT '{}',
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
+-- Observability trace / provenance / XAI tables (obx-trc-05 retention target).
+-- Columns mirror tools/db/schema/pg_consolidated.sql. All five are append-only
+-- by design/NIST AU; the observability_retention reflex archives-then-prunes.
+CREATE TABLE IF NOT EXISTS otel_spans (
+    id              TEXT PRIMARY KEY,
+    trace_id        TEXT NOT NULL,
+    parent_span_id  TEXT,
+    name            TEXT NOT NULL,
+    kind            TEXT DEFAULT 'INTERNAL',
+    start_time      TEXT NOT NULL,
+    end_time        TEXT,
+    duration_ms     INTEGER DEFAULT 0,
+    status_code     TEXT DEFAULT 'UNSET',
+    status_message  TEXT,
+    attributes      TEXT,
+    events          TEXT,
+    agent_id        TEXT,
+    project_id      TEXT,
+    classification  TEXT DEFAULT 'CUI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS prov_entities (
+    id              TEXT PRIMARY KEY,
+    entity_type     TEXT NOT NULL,
+    label           TEXT,
+    content_hash    TEXT,
+    content         TEXT,
+    attributes      TEXT,
+    trace_id        TEXT,
+    span_id         TEXT,
+    agent_id        TEXT,
+    project_id      TEXT,
+    classification  TEXT DEFAULT 'CUI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS prov_activities (
+    id              TEXT PRIMARY KEY,
+    activity_type   TEXT NOT NULL,
+    label           TEXT,
+    start_time      TEXT,
+    end_time        TEXT,
+    attributes      TEXT,
+    trace_id        TEXT,
+    span_id         TEXT,
+    agent_id        TEXT,
+    project_id      TEXT,
+    classification  TEXT DEFAULT 'CUI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS prov_relations (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    relation_type   TEXT NOT NULL,
+    subject_id      TEXT NOT NULL,
+    object_id       TEXT NOT NULL,
+    attributes      TEXT,
+    trace_id        TEXT,
+    project_id      TEXT,
+    classification  TEXT DEFAULT 'CUI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS shap_attributions (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    trace_id        TEXT NOT NULL,
+    tool_name       TEXT NOT NULL,
+    shapley_value   REAL NOT NULL,
+    coalition_size  INTEGER,
+    confidence_low  REAL,
+    confidence_high REAL,
+    outcome_metric  TEXT DEFAULT 'success',
+    outcome_value   REAL,
+    analysis_params TEXT,
+    agent_id        TEXT,
+    project_id      TEXT,
+    classification  TEXT DEFAULT 'CUI',
+    analyzed_at     TEXT DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 
