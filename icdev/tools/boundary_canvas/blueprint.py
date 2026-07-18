@@ -960,6 +960,57 @@ def create_boundary_blueprint():
         data = base64.b64encode(export_svg(name, graph, "BDC")).decode("ascii")
         return jsonify({"format": "svg", "filename": f"{name.replace(' ', '_')}.svg", "data": data})
 
+    @bp.route("/api/export/<design_id>/pptx", methods=["GET"])
+    @bdc_login_required
+    def bdc_api_export_pptx(design_id):
+        """Export boundary design as a PowerPoint (.pptx) deck.
+
+        Returns the raw file bytes (not base64) with an attachment filename.
+        Bundles a title slide, the boundary diagram (same geometry the SVG /
+        drawio exporters use), and a compliance/readiness table from the
+        latest bd_assessments row + cATO readiness — each degrading cleanly
+        when its data is absent.
+        """
+        from flask import Response
+
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM boundary_designs WHERE id=%s", (design_id,)
+            ).fetchone()
+            if not row:
+                return jsonify({"error": "Not found"}), 404
+            design = _row_to_dict(row)
+
+            assessment = None
+            try:
+                a_row = conn.execute(
+                    "SELECT * FROM bd_assessments WHERE design_id=%s "
+                    "ORDER BY created_at DESC LIMIT 1",
+                    (design_id,),
+                ).fetchone()
+                if a_row:
+                    assessment = _row_to_dict(a_row)
+            except Exception as exc:  # noqa: BLE001 — missing table -> no assessment slide data
+                logger.info("bd_assessments unavailable for %s: %s", design_id, exc)
+
+        readiness = None
+        try:
+            from tools.boundary_canvas.cato_readiness import compute_readiness
+
+            readiness = compute_readiness(design_id, design_id)
+        except Exception as exc:  # noqa: BLE001 — readiness slide degrades gracefully
+            logger.info("cATO readiness unavailable for %s: %s", design_id, exc)
+
+        from tools.boundary_canvas.export_pptx import design_to_pptx
+
+        pptx_bytes = design_to_pptx(design, assessment=assessment, readiness=readiness)
+        filename = f"{str(design.get('name') or 'design').replace(' ', '_')}.pptx"
+        return Response(
+            pptx_bytes,
+            mimetype="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
     # ── Collaboration (Task 18) ───────────────────────────────────────────────
     import uuid as _uuid_mod
     from tools.canvas.collaboration import CanvasCollabManager as _BDCCollabMgr
