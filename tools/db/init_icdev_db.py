@@ -11334,6 +11334,8 @@ def _has_migration_system(path):
         return False
     try:
         conn = sqlite3.connect(str(path))
+        # pg-portability: sqlite-only path — monolithic SQLite initializer probing
+        # a raw sqlite3 file; the PG init path is handled by pg_init / MigrationRunner.
         c = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_migrations'")
         has_table = c.fetchone() is not None
         conn.close()
@@ -11529,6 +11531,8 @@ def init_db(db_path=None):
 
     # D-WG-14: Migrate wg_glossary CHECK constraint to include 'required'
     try:
+        # pg-portability: sqlite-only path — reads table DDL from sqlite_master to
+        # migrate a CHECK constraint during the monolithic SQLite init; not run on PG.
         _cur = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='wg_glossary'")
         _row = _cur.fetchone()
         if _row and _row[0] and "'required'" not in _row[0]:
@@ -11608,6 +11612,8 @@ def init_db(db_path=None):
     # Verify tables
     conn = sqlite3.connect(str(path))
     c = conn.cursor()
+    # pg-portability: sqlite-only path — verifies created tables in the raw sqlite3
+    # file at the end of the monolithic SQLite init; PG uses information_schema.
     c.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
     tables = [row[0] for row in c.fetchall()]
     conn.close()

@@ -46,7 +46,7 @@ import sys
 import time
 import uuid
 import xml.etree.ElementTree as ET
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection, table_exists
 from tools.common.helpers import now_iso
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -244,9 +244,8 @@ def _store_signal(conn: sqlite3.Connection, signal: Dict) -> bool:
 
 
 def _check_table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
-    """Check if a DB table exists."""
-    cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=%s", (table_name,))
-    return cursor.fetchone() is not None
+    """Check if a DB table exists (backend-aware, translation-independent)."""
+    return table_exists(conn, table_name)
 
 
 # ── RSS/ATOM PARSER ─────────────────────────────────────────────────────
