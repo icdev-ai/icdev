@@ -18,9 +18,9 @@ MUTATING = [
     ("delete", "/ai-ml/api/designs/d1"),
     ("post", "/ai-ml/api/designs/d1/assess"),
     ("post", "/ai-ml/api/designs/d1/assess-gov"),
-    ("post", "/ai-ml/api/designs/d1/adapt"),
+    # penta-aimc-04 removed the design-scoped /adapt and /deploy-plan duplicates;
+    # only the standalone /api/adapt/recommend and /api/deploy/plan remain.
     ("post", "/ai-ml/api/adapt/recommend"),
-    ("post", "/ai-ml/api/designs/d1/deploy-plan"),
     ("post", "/ai-ml/api/deploy/plan"),
     ("post", "/ai-ml/api/designs/d1/artifact/model-card"),
     ("post", "/ai-ml/api/designs/d1/artifact/deploy-manifest"),

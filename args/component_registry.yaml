@@ -461,7 +461,11 @@ components:
     template: tools/dashboard/templates/aiml_canvas/canvas.html
     blueprint: true
     constants: tools/aiml_canvas/constants.py
-    db_migration: tools/aiml_canvas/db/migrations
+    # Canvas tables are created imperatively by tools/aiml_canvas/db/init_db.py
+    # (there is no db/migrations dir). Point at the init_db module so the completeness
+    # checker (tools/config/component_registry.py db_migration probe) verifies a path
+    # that actually exists, mirroring the boundary_canvas (bdc) / observability (odc) convention.
+    db_migration: tools/aiml_canvas/db/init_db.py
     iqe_adapter: true
     nav_link: true
     seed_queries: context/iqe/queries/aimc/
