@@ -339,6 +339,24 @@ def validate_graph_json_payload(raw):
     return json.dumps(obj)
 
 
+def _graph_json_sha256(raw):
+    """Stable sha256 over a graph_json value, insensitive to key ordering.
+
+    Used by the PUT save-path (pdx-perf-01) to decide whether the graph actually
+    changed. When it did not, ALL post-save side-effects (KG reindex, auto-
+    snapshot, Security-Canvas assessment, KG rebuild, provenance) are skipped —
+    they are amplified by the client's auto-save timer and are pure no-ops when
+    the graph is identical. Falls back to hashing the raw string for non-JSON.
+    """
+    try:
+        obj = json.loads(raw) if isinstance(raw, (str, bytes, bytearray)) else raw
+        canon = json.dumps(obj, sort_keys=True, separators=(",", ":"))
+    except (ValueError, TypeError):
+        canon = raw if isinstance(raw, str) else json.dumps(raw, sort_keys=True, default=str)
+    import hashlib as _hashlib
+    return _hashlib.sha256(canon.encode("utf-8")).hexdigest()
+
+
 def parse_graph_json(raw):
     """Defensively parse a stored graph_json value into a graph dict.
 
@@ -666,10 +684,25 @@ def create_pipeline_blueprint():
     @bp.route("/api/pipelines", methods=["GET"])
     @pc_login_required
     def pc_api_list():
+        # pdx-perf-01: this list was unbounded. Add limit (default 50, max 200)
+        # and offset paging. Validate the ints FIRST (garbage -> 400), then clamp
+        # — mirrors the pc_api_ai_trace pattern (pdx-fix-03).
+        try:
+            limit = int(request.args.get("limit", 50))
+        except (TypeError, ValueError):
+            return jsonify({"error": "limit must be an integer"}), 400
+        try:
+            offset = int(request.args.get("offset", 0))
+        except (TypeError, ValueError):
+            return jsonify({"error": "offset must be an integer"}), 400
+        limit = min(max(limit, 1), 200)
+        offset = max(offset, 0)
         conn = get_connection()
         rows = conn.execute(
             "SELECT id, name, description, classification, target_csp, "
-            "created_at, updated_at FROM pipelines ORDER BY updated_at DESC"
+            "created_at, updated_at FROM pipelines ORDER BY updated_at DESC "
+            "LIMIT %s OFFSET %s",
+            (limit, offset),
         ).fetchall()
         conn.close()
         return jsonify([row_to_dict(r) for r in rows])
@@ -727,9 +760,14 @@ def create_pipeline_blueprint():
         conn.commit()
         conn.close()
         _audit("CREATE", "pipeline", pipe_id, name)
-        # Hook: refresh PDC KG so /ask reflects the new design immediately
-        from tools.knowledge_graph.canvas_ask import reindex_canvas_on_save
-        reindex_canvas_on_save("pdc")
+        # Hook: refresh PDC KG so /ask reflects the new design immediately.
+        # Guarded (pdx-perf-01): an ImportError / KG failure must NOT 500 a create
+        # whose row already committed above.
+        try:
+            from tools.knowledge_graph.canvas_ask import reindex_canvas_on_save
+            reindex_canvas_on_save("pdc")
+        except Exception as exc:
+            logger.warning("PDC KG reindex hook failed on create (%s): %s", pipe_id, exc)
         return jsonify({"id": pipe_id, "name": name}), 201
 
     @bp.route("/api/pipelines/<pipe_id>", methods=["GET"])
@@ -752,14 +790,33 @@ def create_pipeline_blueprint():
         logger.info("Updating pipeline: %s", pipe_id)
         conn = get_connection()
 
+        # Fetch the current graph_json BEFORE the UPDATE so we can (a) 404 early
+        # on an unknown id and (b) decide whether the save actually changed the
+        # graph. The five post-save side-effects below (KG reindex, auto-snapshot,
+        # Security-Canvas assessment, KG rebuild, blockchain provenance) are heavy
+        # and are hammered by the client's 3s auto-save timer — they are pure
+        # no-ops when the graph is unchanged, so we skip ALL of them in that case
+        # (pdx-perf-01).
+        existing_row = conn.execute(
+            "SELECT graph_json FROM pipelines WHERE id=%s", (pipe_id,)
+        ).fetchone()
+        if existing_row is None:
+            conn.close()
+            return jsonify({"error": "Not found"}), 404
+        old_graph_json = (
+            existing_row["graph_json"]
+            if not isinstance(existing_row, (list, tuple))
+            else existing_row[0]
+        )
+
         # PUT-as-PATCH semantics: only update fields the client explicitly sent.
         # The auto-save timer in pipeline-canvas.js sends {name, graph_json} only;
         # a partial PUT must NOT clobber description/classification/target_csp
         # back to defaults. (Fixes bug where opening a canvas auto-reset
         # classification="public", target_csp="generic", description="".)
-        _UNSET = object()
         sets = []
         params = []
+        new_graph_json = None
         for col in ("name", "description", "graph_json", "classification", "target_csp"):
             if col in data:
                 if col == "graph_json":
@@ -769,6 +826,7 @@ def create_pipeline_blueprint():
                     except ValueError as exc:
                         conn.close()
                         return jsonify({"error": str(exc)}), 422
+                    new_graph_json = value
                 else:
                     value = data[col]
                 sets.append(f"{col}=%s")
@@ -784,63 +842,83 @@ def create_pipeline_blueprint():
             params,
         )
         # 404 when the target pipeline does not exist: the UPDATE matched no rows.
-        # (Previously this returned {"updated": true} for any unknown id.)
+        # (Belt-and-suspenders with the early SELECT above — covers a concurrent
+        # delete between the SELECT and the UPDATE.)
         if getattr(cur, "rowcount", -1) == 0:
             conn.close()
             return jsonify({"error": "Not found"}), 404
         conn.commit()
         conn.close()
         _audit("UPDATE", "pipeline", pipe_id, data.get("name", ""))
-        # Hook: refresh PDC KG so /ask reflects the edit immediately
-        from tools.knowledge_graph.canvas_ask import reindex_canvas_on_save
-        reindex_canvas_on_save("pdc")
-        # Hook: auto-snapshot on every pipeline save (PDC twin)
-        try:
-            from tools.pipeline.twin import take_snapshot as _twin_snapshot
-            _twin_snapshot(
-                pipe_id,
-                label=f"auto-save-{now_isoformat()[:10]}",
-                user_id=session.get("user_id", "system"),
-            )
-        except Exception:
-            pass  # snapshot failure must never block saves
-        # Hook: notify Security Design Canvas of pipeline change
+
+        # Did the graph actually change? Only then do we run the post-save hooks.
+        # A metadata-only PUT (no graph_json in the payload) never touches the
+        # graph, and a graph_json that is byte-equivalent to what was stored is a
+        # no-op save from the auto-save timer.
+        graph_changed = new_graph_json is not None and (
+            _graph_json_sha256(new_graph_json) != _graph_json_sha256(old_graph_json)
+        )
+
         sdc_assessment = None
-        try:
-            from tools.security_canvas.agent import on_pdc_pipeline_saved
-
-            graph_raw = data.get("graph_json", "{}")
-            graph = json.loads(graph_raw) if isinstance(graph_raw, str) else graph_raw
-            result = on_pdc_pipeline_saved(pipe_id, graph)
-            if result and result.get("status") != "error":
-                sdc_assessment = {
-                    "risk_score": result.get("risk_score"),
-                    "posture_grade": result.get("posture_grade"),
-                    "cat1_count": result.get("cat1_count", 0),
-                    "cat2_count": result.get("cat2_count", 0),
-                    "cat3_count": result.get("cat3_count", 0),
-                    "total_findings": result.get("total_findings", 0),
-                }
-        except Exception:
-            pass  # Security Canvas is optional
-        # Incremental KG update: re-extract only if graph_json changed
-        try:
-            from tools.canvas.kg_builder import rebuild_canvas_kg
-
-            rebuild_canvas_kg("pdc", pipe_id)
-        except Exception:
-            pass
-        # Blockchain provenance
-        try:
-            from tools.canvas.provenance import register_canvas_provenance
-            register_canvas_provenance(
-                canvas_key="pdc",
-                design_id=pipe_id,
-                graph_json=data.get("graph_json", {}),
-                project_id=data.get("project_id", ""),
+        if not graph_changed:
+            logger.info(
+                "Pipeline %s save: graph_json unchanged — skipping post-save hooks", pipe_id
             )
-        except Exception:
-            pass
+        else:
+            # Hook: refresh PDC KG so /ask reflects the edit immediately (guarded:
+            # an ImportError must not 500 a save whose row already committed).
+            try:
+                from tools.knowledge_graph.canvas_ask import reindex_canvas_on_save
+                reindex_canvas_on_save("pdc")
+            except Exception as exc:
+                logger.warning("PDC KG reindex hook failed on update (%s): %s", pipe_id, exc)
+            # Hook: auto-snapshot on pipeline save (PDC twin). take_snapshot itself
+            # de-dups and bounds retention (pdx-perf-01).
+            try:
+                from tools.pipeline.twin import take_snapshot as _twin_snapshot
+                _twin_snapshot(
+                    pipe_id,
+                    label=f"auto-save-{now_isoformat()[:10]}",
+                    user_id=session.get("user_id", "system"),
+                )
+            except Exception as exc:
+                logger.warning("PDC auto-snapshot hook failed (%s): %s", pipe_id, exc)
+            # Hook: notify Security Design Canvas of pipeline change
+            try:
+                from tools.security_canvas.agent import on_pdc_pipeline_saved
+
+                graph_raw = data.get("graph_json", "{}")
+                graph = json.loads(graph_raw) if isinstance(graph_raw, str) else graph_raw
+                result = on_pdc_pipeline_saved(pipe_id, graph)
+                if result and result.get("status") != "error":
+                    sdc_assessment = {
+                        "risk_score": result.get("risk_score"),
+                        "posture_grade": result.get("posture_grade"),
+                        "cat1_count": result.get("cat1_count", 0),
+                        "cat2_count": result.get("cat2_count", 0),
+                        "cat3_count": result.get("cat3_count", 0),
+                        "total_findings": result.get("total_findings", 0),
+                    }
+            except Exception as exc:
+                logger.warning("PDC Security Canvas hook failed (%s): %s", pipe_id, exc)
+            # Incremental KG update: re-extract only if graph_json changed
+            try:
+                from tools.canvas.kg_builder import rebuild_canvas_kg
+
+                rebuild_canvas_kg("pdc", pipe_id)
+            except Exception as exc:
+                logger.warning("PDC KG rebuild hook failed (%s): %s", pipe_id, exc)
+            # Blockchain provenance
+            try:
+                from tools.canvas.provenance import register_canvas_provenance
+                register_canvas_provenance(
+                    canvas_key="pdc",
+                    design_id=pipe_id,
+                    graph_json=data.get("graph_json", {}),
+                    project_id=data.get("project_id", ""),
+                )
+            except Exception as exc:
+                logger.warning("PDC provenance hook failed (%s): %s", pipe_id, exc)
         resp = {"updated": True}
         if sdc_assessment is not None:
             resp["sdc_assessment"] = sdc_assessment
@@ -2328,18 +2406,25 @@ def create_pipeline_blueprint():
     @bp.route("/twin")
     @pc_login_required
     def pc_twin_list():
-        """PDC Twin dashboard — all pipelines with last snapshot."""
-        from tools.pipeline.twin import list_snapshots as _ls
+        """PDC Twin dashboard — all pipelines with last snapshot.
+
+        pdx-perf-01: previously this loaded every pipeline then called
+        list_snapshots() once per pipeline (an N+1 query) just to use the two
+        newest snapshots. Now a single windowed query fetches the two newest
+        snapshots for all pipelines at once.
+        """
+        from tools.pipeline.twin import latest_snapshots_by_pipeline
         conn = get_connection()
         rows = conn.execute(
             "SELECT id, name, description, classification, updated_at "
             "FROM pipelines ORDER BY updated_at DESC"
         ).fetchall()
         conn.close()
+        snaps_by_pipeline = latest_snapshots_by_pipeline(per_pipeline=2)
         pipelines = []
         for row in rows:
             p = row_to_dict(row)
-            snaps = _ls(p["id"])
+            snaps = snaps_by_pipeline.get(p["id"], [])
             p["last_snapshot"] = snaps[0] if snaps else None
             p["prev_snapshot"] = snaps[1] if len(snaps) > 1 else None
             pipelines.append(p)
