@@ -1029,6 +1029,23 @@ components:
   # ═══════════════════════════════════════════════════════════════════════════
   # Child / Application Modules
   # ═══════════════════════════════════════════════════════════════════════════
+  #
+  # Child-app completeness: of the 8 canvas completeness components (cvx-gen-02),
+  # only the ones meaningful for a self-contained child app are declared here.
+  # The forge_validator FORGE-13 gate runs the full 8-point validator only on
+  # `kind: canvas` components; these child_app blocks are documentary metadata of
+  # which components each app actually ships.
+  #   1. page_template — CANVAS-ONLY: the dashboard canvas template dir
+  #        (tools/dashboard/templates/<key>/page.html). Child apps template under
+  #        their own package, so this point is N/A and is intentionally omitted.
+  #   2. icdev_mirror  — CANVAS-ONLY: mirror of point 1. N/A, omitted.
+  #   3. blueprint     — applies -> `blueprint: true`
+  #   4. backing_module— applies -> `backing_module: true`
+  #   5. constants     — applies when the app ships constants.py -> `constants: <path>`
+  #   6. db_migration  — child apps carry an app-local db.py rather than a
+  #        tools/db migration dir, declared here as `db_module: <path>`
+  #   7. nav_link      — applies -> `nav_link: true`
+  #   8. iqe           — applies when an IQE adapter is registered -> `iqe_adapter: true`
 - key: hitl_workflow
   kind: child_app
   display_name: HITL Workflow
@@ -1045,6 +1062,8 @@ components:
     label: HITL
   completeness:
     blueprint: true
+    backing_module: true
+    constants: tools/workflow_hitl/constants.py
     nav_link: true
 - key: forge_academy
   kind: child_app
@@ -1062,6 +1081,9 @@ components:
     label: FORGE Academy
   completeness:
     blueprint: true
+    backing_module: true
+    constants: apps/forge_academy/constants.py
+    db_module: apps/forge_academy/db.py
     nav_link: true
 - key: gameday
   kind: child_app
@@ -1079,6 +1101,9 @@ components:
     label: AI GameDay
   completeness:
     blueprint: true
+    backing_module: true
+    constants: apps/ai_gameday/constants.py
+    db_module: apps/ai_gameday/db.py
     nav_link: true
 - key: innovation
   kind: child_app
@@ -1103,6 +1128,9 @@ components:
     - innovation.pilots
   completeness:
     blueprint: true
+    backing_module: true
+    db_module: apps/innovation/db.py
+    iqe_adapter: true
     nav_link: true
 
   # ═══════════════════════════════════════════════════════════════════════════

@@ -37,6 +37,18 @@ Hardening checks (cvx-gen-01 — prevent broken child apps passing --gate):
   FORGE-12   — banned DB patterns: sqlite3.connect() outside db/init_db.py/tests
                FAILS; bare '?' SQLite-dialect placeholders in runtime files WARN.
 
+Completeness gate (cvx-gen-02 — generated canvases must ship all 8 components):
+  FORGE-13   — 8-component completeness gate for every canvas the child declares.
+               Reuses tools.config.component_registry.validate_canvas_completeness
+               (the same validator the parent coherence checker runs — no 8-point
+               logic duplicated), loading the CHILD's own
+               args/component_registry.yaml and pointing repo_root at the child
+               tree. A generated canvas missing a component — template in either
+               tree, blueprint route, backing module, constants, DB migration, nav
+               link, or IQE integration — FAILS. No registry / no canvases = pass
+               (nothing to validate); a missing parent validator SKIPS (pass) so a
+               stale toolchain never false-fails an otherwise-good child.
+
 Decision D44: Flag-based backward compatibility (--gate for CI/CD blocking).
 Pattern: Follows claude_dir_validator.py declarative check registry.
 
@@ -1193,6 +1205,158 @@ def _check_db_patterns(project_dir: Path) -> List[GotchaCheck]:
     return checks
 
 
+def _check_canvas_completeness(project_dir: Path) -> List[GotchaCheck]:
+    """Check Completeness: FORGE-13 — 8-component gate on the child's canvases.
+
+    Scaffolded/generated child apps and canvases never used to run through the
+    8-component dashboard-page completeness gate; it lived only in the parent's
+    ``tools/workflow/coherence_checker.py`` and generated child trees could not
+    invoke it locally. This check closes that gap by REUSING the canonical
+    validator ``tools.config.component_registry.validate_canvas_completeness``
+    (the exact function the parent coherence checker's ``check_canvas_completeness``
+    calls) rather than duplicating the 8-point logic.
+
+    It loads the CHILD's own ``args/component_registry.yaml``, iterates every
+    ``kind: canvas`` component, and validates each against the child tree
+    (``repo_root=project_dir``). A canvas missing any *required* component —
+    template in both trees, blueprint route, backing module, constants, DB
+    migration (when declared), nav link, or IQE integration (when an adapter is
+    declared) — is an explicit FAIL.
+
+    Non-failure exits:
+      * no ``args/component_registry.yaml``  -> pass (skipped, nothing to validate)
+      * registry present but no canvases     -> pass (nothing to validate)
+      * parent validator unimportable        -> pass (skipped; never false-fail a
+                                                 good child on a stale toolchain)
+    """
+    checks: List[GotchaCheck] = []
+    registry_path = project_dir / "args" / "component_registry.yaml"
+    if not registry_path.is_file():
+        checks.append(
+            GotchaCheck(
+                check_id="FORGE-13",
+                check_name="Canvas completeness gate",
+                layer="meta",
+                status="pass",
+                expected="args/component_registry.yaml (optional)",
+                actual="Not present (skipped)",
+                fix_suggestion="",
+                message="Canvas completeness skipped: no args/component_registry.yaml to validate",
+            )
+        )
+        return checks
+
+    try:
+        from tools.config.component_registry import (
+            ComponentRegistry,
+            validate_canvas_completeness,
+        )
+    except Exception as exc:  # pragma: no cover - defensive; parent toolchain absent
+        checks.append(
+            GotchaCheck(
+                check_id="FORGE-13",
+                check_name="Canvas completeness gate",
+                layer="meta",
+                status="pass",
+                expected="tools.config.component_registry validator importable",
+                actual=f"Skipped (validator unavailable): {exc}",
+                fix_suggestion="",
+                message=f"Canvas completeness skipped: {exc}",
+            )
+        )
+        return checks
+
+    try:
+        registry = ComponentRegistry(registry_path=registry_path)
+        canvases = registry.list_all(kind="canvas")
+    except Exception as exc:
+        checks.append(
+            GotchaCheck(
+                check_id="FORGE-13",
+                check_name="Canvas completeness gate",
+                layer="meta",
+                status="fail",
+                expected="Child component_registry.yaml loads and lists canvases",
+                actual=f"Registry load error: {exc}",
+                fix_suggestion="Fix args/component_registry.yaml so it parses and declares canvases",
+                message=f"Canvas completeness validator failed to load child registry: {exc}",
+            )
+        )
+        return checks
+
+    if not canvases:
+        checks.append(
+            GotchaCheck(
+                check_id="FORGE-13",
+                check_name="Canvas completeness gate",
+                layer="meta",
+                status="pass",
+                expected="At least one kind:canvas component (optional)",
+                actual="0 canvases declared",
+                fix_suggestion="",
+                message="Canvas completeness skipped: registry declares no canvases",
+            )
+        )
+        return checks
+
+    for comp in canvases:
+        try:
+            report = validate_canvas_completeness(
+                comp.key, registry=registry, repo_root=project_dir
+            )
+        except Exception as exc:
+            checks.append(
+                GotchaCheck(
+                    check_id=f"FORGE-13-{comp.key}",
+                    check_name=f"Canvas completeness ({comp.key})",
+                    layer="meta",
+                    status="fail",
+                    expected="8-component completeness gate runs without error",
+                    actual=f"Validator error: {exc}",
+                    fix_suggestion="Investigate the completeness validator failure for this canvas",
+                    message=f"Canvas '{comp.key}' completeness validation raised: {exc}",
+                )
+            )
+            continue
+
+        # `required` is False for components the registry never declared (e.g. a
+        # canvas with no DB migration); only surface required-but-absent gaps.
+        missing = [
+            f"{item.point} ({item.path or item.message})"
+            for item in report.items
+            if item.required and not item.present
+        ]
+        if missing:
+            checks.append(
+                GotchaCheck(
+                    check_id=f"FORGE-13-{comp.key}",
+                    check_name=f"Canvas completeness ({comp.key})",
+                    layer="meta",
+                    status="fail",
+                    expected="All 8 required components present for the canvas",
+                    actual=f"{len(missing)} missing: {', '.join(missing[:6])}",
+                    fix_suggestion="Ship all 8 components (template in both trees, route, module, "
+                                   "constants, migration, nav link, IQE) before generating the canvas",
+                    message=f"Canvas '{comp.key}' incomplete: {', '.join(missing[:6])}",
+                )
+            )
+        else:
+            checks.append(
+                GotchaCheck(
+                    check_id=f"FORGE-13-{comp.key}",
+                    check_name=f"Canvas completeness ({comp.key})",
+                    layer="meta",
+                    status="pass",
+                    expected="All 8 required components present for the canvas",
+                    actual="Complete",
+                    fix_suggestion="",
+                    message=f"Canvas '{comp.key}' passes the 8-component completeness gate",
+                )
+            )
+
+    return checks
+
+
 # ---------------------------------------------------------------------------
 # Check registry
 # ---------------------------------------------------------------------------
@@ -1210,6 +1374,7 @@ CHECK_REGISTRY = {
     "anvil": _check_atlas,
     "coherence": _check_coherence,
     "db_patterns": _check_db_patterns,
+    "canvas_completeness": _check_canvas_completeness,
     "child_app_templates": _check_child_app_templates,
 }
 

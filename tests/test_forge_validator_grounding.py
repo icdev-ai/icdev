@@ -135,3 +135,108 @@ def test_db_patterns_warns_on_bare_placeholder(tmp_path):
     assert check is not None
     assert check.status == "warn"
     assert "query.py" in check.actual
+
+
+# ── FORGE-13: 8-component canvas completeness gate (cvx-gen-02) ──────────────
+
+
+def _write_complete_canvas(root, key="foo"):
+    """Build a child tree with one canvas satisfying all 8 completeness points.
+
+    Mirrors what child_app_generator would emit for a well-formed canvas so the
+    reused validate_canvas_completeness (pointed at repo_root=root) passes.
+    """
+    def _w(rel, text="x\n"):
+        p = root / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(text, encoding="utf-8")
+        return p
+
+    # Registry with a single canvas declaring the 8-point paths.
+    _w(
+        "args/component_registry.yaml",
+        (
+            "components:\n"
+            f"- key: {key}\n"
+            "  kind: canvas\n"
+            f"  display_name: {key.title()}\n"
+            f"  module: tools.{key}.blueprint\n"
+            f"  blueprint_attr: create_{key}_blueprint\n"
+            f"  url_prefix: /{key}\n"
+            "  nav:\n"
+            "    section: Build\n"
+            f"    label: {key.title()}\n"
+            "  iqe:\n"
+            f"    adapter_module: tools.iqe.adapters.{key}\n"
+            "  completeness:\n"
+            f"    template: tools/dashboard/templates/{key}/page.html\n"
+            f"    constants: tools/{key}/constants.py\n"
+            f"    db_migration: tools/{key}/db/migrations/001_init.sql\n"
+            f"    seed_queries: context/iqe/queries/{key}\n"
+            "    nav_link: true\n"
+        ),
+    )
+    # Point 1 + 2: template in both the app tree and the icdev/ mirror
+    _w(f"tools/dashboard/templates/{key}/page.html", "<html>page</html>\n")
+    _w(f"icdev/tools/dashboard/templates/{key}/page.html", "<html>page</html>\n")
+    # Point 3: blueprint with a @bp.route decorator
+    _w(
+        f"tools/{key}/blueprint.py",
+        (
+            "bp = object()\n\n"
+            "@bp.route('/')\n"
+            "def index():\n    return 'ok'\n"
+        ),
+    )
+    # Point 4: backing module (non-blueprint, non-init)
+    _w(f"tools/{key}/service.py", "def run():\n    return 1\n")
+    _w(f"tools/{key}/__init__.py", "")
+    # Point 5: constants
+    _w(f"tools/{key}/constants.py", "OBJECT_TYPES = []\n")
+    # Point 6: DB migration
+    _w(f"tools/{key}/db/migrations/001_init.sql", "-- init\n")
+    # Point 8: IQE adapter + seed queries
+    _w(f"tools/iqe/adapters/{key}.py", "def register():\n    return []\n")
+    _w(f"context/iqe/queries/{key}/q1.json", "{}\n")
+    return root
+
+
+def _completeness_check(checks, key="foo"):
+    return next((c for c in checks if c.check_id == f"FORGE-13-{key}"), None)
+
+
+def test_completeness_passes_for_complete_canvas(tmp_path):
+    # A fully-generated canvas passes the 8-component gate.
+    _write_complete_canvas(tmp_path)
+    check = _completeness_check(fv._check_canvas_completeness(tmp_path))
+    assert check is not None, "expected a FORGE-13-foo per-canvas result"
+    assert check.status == "pass", check.actual
+
+
+def test_completeness_fails_when_icdev_mirror_missing(tmp_path):
+    # Template present in only one tree (no icdev/ mirror) -> FAIL.
+    _write_complete_canvas(tmp_path)
+    (tmp_path / "icdev" / "tools" / "dashboard" / "templates" / "foo" / "page.html").unlink()
+    check = _completeness_check(fv._check_canvas_completeness(tmp_path))
+    assert check is not None
+    assert check.status == "fail"
+    assert "icdev_mirror" in check.actual
+
+
+def test_completeness_fails_when_iqe_adapter_missing(tmp_path):
+    # IQE adapter declared in registry but the adapter file is absent -> FAIL.
+    _write_complete_canvas(tmp_path)
+    (tmp_path / "tools" / "iqe" / "adapters" / "foo.py").unlink()
+    check = _completeness_check(fv._check_canvas_completeness(tmp_path))
+    assert check is not None
+    assert check.status == "fail"
+    assert "iqe_integration" in check.actual
+
+
+def test_completeness_skips_without_registry(tmp_path):
+    # No args/component_registry.yaml -> pass (nothing to validate), base ID.
+    (tmp_path / "tools").mkdir()
+    check = _check(fv._check_canvas_completeness(tmp_path), "FORGE-13")
+    assert check is not None
+    assert check.status == "pass"
+    assert "skipped" in check.message.lower()
