@@ -1,0 +1,37 @@
+# CUI // SP-CTI
+# BDC cATO Readiness Scorer configuration (task bdr-feat-2).
+#
+# Consumed by tools/boundary_canvas/cato_readiness.py:compute_readiness().
+# If this file is missing or unparsable, the scorer falls back to the
+# built-in _DEFAULT_CONFIG (identical values) — NO weights are hardcoded
+# in scoring logic; they are only mirrored here as the safe default.
+#
+# weights: relative contribution of each component to the 0-100 composite.
+#          Need not sum to 1.0 — the scorer re-normalises over whichever
+#          components have data available (missing data is excluded, not
+#          treated as zero).
+weights:
+  control_coverage: 0.40   # mean control-satisfaction of the latest snapshot
+  poam: 0.25               # open POA&M items linked via twin violations
+  isa_expiry: 0.20         # ISA interconnection agreement expiry health
+  freshness: 0.15          # age of the latest compliance snapshot
+
+# bands: composite score thresholds (inclusive lower bound).
+#   score >= green -> "green"
+#   score >= amber -> "amber"
+#   else           -> "red"
+bands:
+  green: 80
+  amber: 50
+
+# freshness_half_life_days: snapshot freshness decays exponentially.
+#   freshness_score = 100 * 0.5 ** (age_days / half_life)
+freshness_half_life_days: 30
+
+# poam_full_penalty_count: number of open linked POA&M items at which the
+#   POA&M component score reaches 0. Fewer open items -> higher score.
+poam_full_penalty_count: 20
+
+# isa_warn_days: an ISA expiring within this many days counts as "expiring
+#   soon" (half credit); already-expired counts as zero credit.
+isa_warn_days: 90
