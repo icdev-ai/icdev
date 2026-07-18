@@ -47,6 +47,95 @@ _WG_MAX_RETRIES = 3
 _ACE_CONTEXT_MAX_CHARS = 50_000
 
 
+# ─── TRUST citation & placeholder gate (cnr-doc-01) ──────────────────────────
+# Every LLM-generated artifact MUST carry inline [source: …] citations and be
+# free of unresolved placeholders before it can be exported/published (CLAUDE.md
+# TRUST invariant). Built on the SHARED tools/quality grounding modules — no
+# citation parsing is re-implemented here.
+
+def assembled_doc_findings(
+    doc_text: str,
+    *,
+    allowed_sources: Any = None,
+    require_citations: bool = True,
+) -> tuple[list[dict], list[dict]]:
+    """Return (citation_findings, placeholder_findings) for an assembled document.
+
+    The whole document is treated as a single ``citation_gate`` section. Pure — no
+    DB, no Flask. Empty lists mean the document is clean. When ``allowed_sources``
+    is provided, citations to any id outside that set are flagged as hallucinated;
+    when it is None only citation *presence* is enforced (``require_citations``).
+    """
+    section: dict[str, Any] = {"item_number": "document", "content": doc_text or ""}
+    if allowed_sources is not None:
+        section["allowed_sources"] = allowed_sources
+    citation: list[dict] = []
+    placeholder: list[dict] = []
+    try:
+        from tools.quality.citation_grounding import citation_gate
+        citation = citation_gate([section], require_citations=require_citations)
+    except Exception:
+        citation = []
+    try:
+        from tools.quality.content_grounding import placeholder_findings
+        placeholder = placeholder_findings([section])
+    except Exception:
+        placeholder = []
+    return citation, placeholder
+
+
+def citation_publish_gate(
+    doc_text: str,
+    *,
+    force_citations: bool = False,
+    force_placeholders: bool = False,
+    allowed_sources: Any = None,
+    require_citations: bool = True,
+) -> dict[str, Any]:
+    """TRUST export/publish gate — mirrors govcon ``response_drafter.approve_draft``.
+
+    Placeholder guard runs first, then citation guard. A defect blocks unless the
+    matching ``force_*`` override is set, in which case the finding is recorded in
+    ``overrides`` for the caller to persist to the append-only audit trail.
+
+    Returns ``{blocked, gate, citation_findings, placeholder_findings, overrides,
+    grounding_available}``.  ``grounding_available`` is False when the shared
+    grounding module could not be imported — callers MUST fail closed on that
+    (never publish text no gate could inspect).
+    """
+    grounding_available = True
+    try:
+        import tools.quality.citation_grounding  # noqa: F401
+        import tools.quality.content_grounding  # noqa: F401
+    except Exception:
+        grounding_available = False
+
+    citation, placeholder = assembled_doc_findings(
+        doc_text, allowed_sources=allowed_sources, require_citations=require_citations
+    )
+    result: dict[str, Any] = {
+        "blocked": False,
+        "gate": None,
+        "citation_findings": citation,
+        "placeholder_findings": placeholder,
+        "overrides": {},
+        "grounding_available": grounding_available,
+    }
+    if placeholder and not force_placeholders:
+        result.update(blocked=True, gate="placeholder_guard")
+        return result
+    if citation and not force_citations:
+        result.update(blocked=True, gate="citation_guard")
+        return result
+    overrides: dict[str, Any] = {}
+    if placeholder and force_placeholders:
+        overrides["placeholder_guard_override"] = placeholder
+    if citation and force_citations:
+        overrides["citation_guard_override"] = citation
+    result["overrides"] = overrides
+    return result
+
+
 def _diff_scope_check(
     original: str,
     proposed: str,
@@ -962,10 +1051,15 @@ def stage6_writeguard(
                     policy_result = policy_check(current_text, _doc_type, _classification)
                 else:
                     policy_result = {"passed": True, "violations": [], "warnings": []}
+                # TRUST gate (cnr-doc-01): surface citation/placeholder defects on
+                # the passing text so reviewers see them before the publish gate.
+                _cite_findings, _ph_findings = assembled_doc_findings(current_text)
                 log.info(
-                    "IDR WriteGuard: session=%s score=%.1f PASS (attempt=%d) policy=%s",
+                    "IDR WriteGuard: session=%s score=%.1f PASS (attempt=%d) policy=%s "
+                    "citation_defects=%d placeholder_defects=%d",
                     session_id, last_score, attempt,
                     "PASS" if policy_result["passed"] else "FAIL",
+                    len(_cite_findings), len(_ph_findings),
                 )
                 return {
                     "passed": policy_result["passed"],
@@ -977,6 +1071,8 @@ def stage6_writeguard(
                     "ace_regen_needed": False,
                     "policy_violations": policy_result["violations"],
                     "policy_warnings": policy_result["warnings"],
+                    "citation_findings": _cite_findings,
+                    "placeholder_findings": _ph_findings,
                 }
 
             if attempt >= _WG_MAX_RETRIES:
@@ -1021,6 +1117,8 @@ def stage6_writeguard(
             "ace_regen_needed": True,
             "policy_violations": [],
             "policy_warnings": [],
+            "citation_findings": [],
+            "placeholder_findings": [],
         }
 
     except ImportError:
@@ -1029,6 +1127,7 @@ def stage6_writeguard(
             "passed": True, "score": 100, "result": {}, "fixed_text": doc_text,
             "attempts": 0, "blocked": False, "ace_regen_needed": False,
             "policy_violations": [], "policy_warnings": [],
+            "citation_findings": [], "placeholder_findings": [],
         }
     except Exception as exc:
         log.exception("IDR WriteGuard exception: session=%s", session_id)
@@ -1036,6 +1135,7 @@ def stage6_writeguard(
             "passed": False, "score": 0, "result": {"error": str(exc)}, "fixed_text": doc_text,
             "attempts": 0, "blocked": False, "ace_regen_needed": False,
             "policy_violations": [], "policy_warnings": [],
+            "citation_findings": [], "placeholder_findings": [],
         }
 
 

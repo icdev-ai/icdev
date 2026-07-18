@@ -975,7 +975,13 @@ class TestApiPublish:
         from tools.docgen.session_manager import create_session, set_field, advance_stage
         s = create_session(title="Publish Route Test", domain="network")
         advance_stage(s["id"], 6, "writeguard")
-        set_field(s["id"], wg_result_id="wg-test-ready")
+        # cnr-doc-01/02: publish reads server-side final_doc_text and runs the TRUST
+        # gate — it must carry a citation and no unresolved placeholders to pass.
+        set_field(
+            s["id"],
+            wg_result_id="wg-test-ready",
+            final_doc_text="Reviewed network runbook body with evidence [source: kb1].",
+        )
         return s
 
     def test_publish_route_returns_201_with_artifacts(self, tmp_path):
@@ -994,7 +1000,9 @@ class TestApiPublish:
         with patch("tools.docgen.workflow.stage8_publish", return_value=[html_artifact]) as mock_pub:
             resp = client.post(
                 f"/docgen/api/sessions/{session['id']}/publish",
-                json={"doc_text": "<p>Test content</p>", "title": "Test Doc"},
+                # cnr-doc-02: client doc_text is ignored — publish uses the
+                # server-side validated final_doc_text set in _make_session_with_wg.
+                json={"title": "Test Doc"},
                 content_type="application/json",
             )
 
@@ -1074,7 +1082,7 @@ class TestApiPublish:
         with patch("tools.docgen.workflow.stage8_publish", return_value=multi_artifacts):
             resp = client.post(
                 f"/docgen/api/sessions/{session['id']}/publish",
-                json={"doc_text": "Content", "classification": "SECRET"},
+                json={"classification": "SECRET"},  # cnr-doc-02: server-side final_doc_text
             )
 
         assert resp.status_code == 201

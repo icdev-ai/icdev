@@ -2196,6 +2196,15 @@ CREATE TABLE IF NOT EXISTS idr_artifacts (
     flagged_sections TEXT,
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS idr_publish_audit (
+    id          TEXT PRIMARY KEY,
+    session_id  TEXT NOT NULL,
+    gate        TEXT NOT NULL,
+    reviewer    TEXT,
+    findings    TEXT,
+    tenant_id   TEXT,
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
 
 -- PNA: Predictive Network Analytics (migration 222)
 CREATE TABLE IF NOT EXISTS nc_eol_predictions (

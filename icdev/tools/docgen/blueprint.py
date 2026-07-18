@@ -965,6 +965,10 @@ def api_writeguard(session_id: str):
             "blocked": False,
             "ace_regen_triggered": False,
             "wg_result_id": wg_result_id,
+            # TRUST (cnr-doc-01): surface citation/placeholder defects so reviewers
+            # resolve them before the publish gate blocks export.
+            "citation_findings": gate.get("citation_findings", []),
+            "placeholder_findings": gate.get("placeholder_findings", []),
         })
 
     # Gate failed after all auto-fix attempts.
@@ -1004,7 +1008,7 @@ def api_publish(session_id: str):
     Returns list of idr_artifacts rows.
     """
     from tools.docgen import session_manager as sm
-    from tools.docgen.workflow import stage8_publish, stage6_check_gate
+    from tools.docgen.workflow import stage8_publish, stage6_check_gate, citation_publish_gate
 
     session = sm.get_session(session_id)
     if not session:
@@ -1028,6 +1032,42 @@ def api_publish(session_id: str):
     )
     title = data.get("title") or session.get("title", "Document")
     classification = data.get("classification") or session.get("classification", "CUI")
+
+    # ── TRUST publish gate (cnr-doc-01) ──────────────────────────────────────
+    # Block export on citation / placeholder defects. A HITL force_* override
+    # publishes past the defect but writes an append-only audit row.
+    force_citations = bool(data.get("force_citations", False))
+    force_placeholders = bool(data.get("force_placeholders", False))
+    trust = citation_publish_gate(
+        doc_text,
+        force_citations=force_citations,
+        force_placeholders=force_placeholders,
+    )
+    if trust["blocked"]:
+        return jsonify({
+            "error": (
+                "Cannot publish: document has "
+                + ("unresolved [PLACEHOLDER] tokens"
+                   if trust["gate"] == "placeholder_guard"
+                   else "citation defects (missing/hallucinated [source: …] tags)")
+                + f" — resolve them or pass force_{trust['gate'].split('_')[0]}s=True after review."
+            ),
+            "gate": trust["gate"],
+            "citation_findings": trust["citation_findings"],
+            "placeholder_findings": trust["placeholder_findings"],
+        }), 409
+    reviewer = data.get("reviewer") or session.get("created_by") or "dashboard"
+    for gate_name, key in (("placeholder_guard", "placeholder_guard_override"),
+                           ("citation_guard", "citation_guard_override")):
+        if trust["overrides"].get(key):
+            sm.record_publish_audit(
+                session_id, gate_name, reviewer,
+                trust["overrides"][key], tenant_id=session.get("tenant_id"),
+            )
+            logger.warning(
+                "IDR publish %s OVERRIDE: session=%s reviewer=%s defects=%d",
+                gate_name, session_id, reviewer, len(trust["overrides"][key]),
+            )
 
     try:
         artifacts = stage8_publish(

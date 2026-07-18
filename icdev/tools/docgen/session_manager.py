@@ -342,6 +342,56 @@ def add_artifact(
     return dict(row)
 
 
+# ─── Publish gate audit (cnr-doc-01, append-only) ────────────────────────────
+
+def record_publish_audit(
+    session_id: str,
+    gate: str,
+    reviewer: str,
+    findings: Any,
+    tenant_id: str | None = None,
+) -> str | None:
+    """Persist a HITL force-override of the TRUST publish gate (append-only).
+
+    Called when an operator publishes past a ``citation_guard`` / ``placeholder_guard``
+    defect via ``force_*``. Best-effort: never raises (a failed audit write must not
+    block the operator), but returns the row id when it succeeds so callers can assert.
+    """
+    audit_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    try:
+        detail = findings if isinstance(findings, str) else json.dumps(findings)
+    except (TypeError, ValueError):
+        detail = str(findings)
+    try:
+        with get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO idr_publish_audit
+                  (id, session_id, gate, reviewer, findings, tenant_id, created_at)
+                VALUES (%s,%s,%s,%s,%s,%s,%s)
+                """,
+                (audit_id, session_id, gate, reviewer, detail, tenant_id, now),
+            )
+            conn.commit()
+        return audit_id
+    except Exception:
+        return None
+
+
+def list_publish_audit(session_id: str) -> list[dict[str, Any]]:
+    """Return append-only publish-gate override rows for a session (newest first)."""
+    try:
+        with get_connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM idr_publish_audit WHERE session_id=%s ORDER BY created_at DESC",
+                (session_id,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+    except Exception:
+        return []
+
+
 def get_artifact(artifact_id: str) -> dict[str, Any] | None:
     with get_connection() as conn:
         row = conn.execute(
