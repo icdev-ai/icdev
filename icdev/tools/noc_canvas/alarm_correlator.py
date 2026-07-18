@@ -129,12 +129,38 @@ def acknowledge_alarm(conn: Any, alarm_id: str, user_id: str) -> bool:
 
 
 def create_alarm(conn: Any, alarm_data: dict) -> str:
-    """Insert a new alarm record and return its id."""
+    """Insert a new alarm record and return its id.
+
+    Ingest is open to arbitrary NMS adapters, but ``noc_alarms`` enforces
+    CHECK-constraint enums on ``alarm_source``/``severity``/``alarm_type`` in
+    PostgreSQL.  An out-of-enum value (e.g. a new NMS source) would raise a
+    CheckViolation → HTTP 500.  Coerce unknown values to the safe catch-all
+    defaults ('custom'/'warning'/'interface') and preserve the caller's
+    original source in ``raw_payload`` for traceability.  (The SQLite schema
+    omits these CHECKs, which is why the PG-only 500 passed local tests.)
+    """
     import json
     from datetime import datetime, timezone
+    from tools.noc_canvas.constants import (
+        ALARM_SEVERITIES,
+        ALARM_SOURCES,
+        ALARM_TYPES,
+    )
     alarm_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
-    payload = json.dumps(alarm_data.get("raw_payload", {}))
+
+    raw_source = alarm_data.get("alarm_source", "custom") or "custom"
+    alarm_source = raw_source if raw_source in ALARM_SOURCES else "custom"
+    raw_severity = alarm_data.get("severity", "warning") or "warning"
+    severity = raw_severity if raw_severity in ALARM_SEVERITIES else "warning"
+    raw_type = alarm_data.get("alarm_type", "interface") or "interface"
+    alarm_type = raw_type if raw_type in ALARM_TYPES else "interface"
+
+    payload_obj = dict(alarm_data.get("raw_payload", {}) or {})
+    if alarm_source != raw_source:
+        # Keep the caller's original source identifier for audit/traceability.
+        payload_obj.setdefault("_ingest_source", raw_source)
+    payload = json.dumps(payload_obj)
 
     for sql, params in [
         (
@@ -144,10 +170,10 @@ def create_alarm(conn: Any, alarm_data: dict) -> str:
                 raw_payload, classification, first_seen, last_seen)
                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (alarm_id,
-             alarm_data.get("alarm_source", "custom"),
+             alarm_source,
              alarm_data.get("source_alarm_id", ""),
-             alarm_data.get("severity", "warning"),
-             alarm_data.get("alarm_type", "interface"),
+             severity,
+             alarm_type,
              alarm_data.get("device_name", ""),
              alarm_data.get("device_ip", ""),
              alarm_data.get("circuit_id", ""),
@@ -164,10 +190,10 @@ def create_alarm(conn: Any, alarm_data: dict) -> str:
                 raw_payload, classification, first_seen, last_seen)
                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (alarm_id,
-             alarm_data.get("alarm_source", "custom"),
+             alarm_source,
              alarm_data.get("source_alarm_id", ""),
-             alarm_data.get("severity", "warning"),
-             alarm_data.get("alarm_type", "interface"),
+             severity,
+             alarm_type,
              alarm_data.get("device_name", ""),
              alarm_data.get("device_ip", ""),
              alarm_data.get("circuit_id", ""),
