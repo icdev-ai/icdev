@@ -1304,6 +1304,12 @@ components:
   url_prefix: ''
   min_il: IL4
   default_roles: []
+  nav:
+    section: Intelligence
+    label: Awareness
+    links:
+    - label: AI Observatory
+      href: /ai-observatory
   iqe:
     adapter_module: tools.iqe.adapters.ai_observatory
     collections:
@@ -1333,6 +1339,12 @@ components:
   url_prefix: ''
   min_il: IL4
   default_roles: []
+  nav:
+    section: Ops
+    label: Monitor
+    links:
+    - label: Cache Savings
+      href: /cache-savings
   iqe:
     adapter_module: tools.iqe.adapters.cache_savings
     collections:

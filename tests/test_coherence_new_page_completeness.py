@@ -537,6 +537,101 @@ class TestSlugTemplateDirAliasesLive:
         assert "aiify" in cc._load_registry_nav_dirs()
 
 
+class TestCompletenessWhitelistRetiredLive:
+    """cvx-tch-01/02/03: the legacy args/page_completeness_whitelist.yaml
+    grandfather list is fully retired (emptied). The final 10 canvases were
+    resolved three ways:
+
+      CLEARED     — brought to full 8-component compliance (ai_observatory,
+                    cache_savings, aisg, strategos) or already passing after
+                    earlier merged work (demo_runner, ontology). These must be
+                    absent from the ENTIRE skip set (no legacy entry AND no
+                    completion_exemptions.yaml entry).
+      RECLASSIFIED — utility pages with no query-worthy data model
+                    (forge_academy, il5, safety_monitor, system_graph). Removed
+                    from the legacy whitelist but still correctly excused via
+                    completion_exemptions.yaml :: iqe_exempt.
+
+    Runs against the LIVE repo (no PROJECT_ROOT patch). The overall gate may
+    still fail on unrelated pre-existing debt (e.g. the security_canvas/sdc
+    registry gap), so we assert on per-canvas absence of violations, not on the
+    aggregate status — mirroring TestSlugTemplateDirAliasesLive (cvx-nav-02).
+    """
+
+    CLEARED = (
+        "ai_observatory", "cache_savings", "aisg", "strategos",
+        "demo_runner", "ontology",
+    )
+    RECLASSIFIED = ("forge_academy", "il5", "safety_monitor", "system_graph")
+
+    @staticmethod
+    def _legacy_entries():
+        import yaml
+        from tools.workflow import coherence_checker as cc
+
+        path = cc._PAGE_COMPLETENESS_WHITELIST_CONFIG
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        return list(data.get("whitelisted_canvases") or [])
+
+    @staticmethod
+    def _violations_for(names):
+        from tools.workflow import coherence_checker as cc
+
+        result = cc.check_new_page_completeness()
+        return [
+            m for m in result.missing
+            if any(
+                f"templates{sep}{canvas}{sep}" in m or f"{canvas}-" in m
+                for canvas in names
+                for sep in ("/", "\\")
+            )
+        ]
+
+    def test_legacy_whitelist_file_is_fully_retired(self):
+        assert self._legacy_entries() == [], (
+            "args/page_completeness_whitelist.yaml must be emptied "
+            f"(cvx-tch-01/02/03); still lists: {self._legacy_entries()}"
+        )
+
+    def test_cleared_canvases_not_in_any_skip_set(self):
+        from tools.workflow import coherence_checker as cc
+
+        skip = cc._load_page_completeness_whitelist()
+        for canvas in self.CLEARED:
+            assert canvas not in skip, (
+                f"{canvas} was brought to full 8-component compliance (or already "
+                "passes) and must not be skipped by the whitelist or exemptions"
+            )
+
+    def test_cleared_canvases_have_no_completeness_violations(self):
+        offenders = self._violations_for(self.CLEARED)
+        assert not offenders, (
+            "cleared canvases must pass the 8-component gate with no whitelist "
+            f"entry; violations: {offenders}"
+        )
+
+    def test_reclassified_removed_from_legacy_but_still_exempt(self):
+        from tools.workflow import coherence_checker as cc
+
+        legacy = set(self._legacy_entries())
+        skip = cc._load_page_completeness_whitelist()
+        for canvas in self.RECLASSIFIED:
+            assert canvas not in legacy, (
+                f"{canvas} must be removed from the legacy whitelist file"
+            )
+            assert canvas in skip, (
+                f"{canvas} must remain excused via completion_exemptions.yaml "
+                "(iqe_exempt utility page — no query-worthy data model)"
+            )
+
+    def test_reclassified_canvases_have_no_completeness_violations(self):
+        offenders = self._violations_for(self.RECLASSIFIED)
+        assert not offenders, (
+            "reclassified utility canvases must not surface completeness "
+            f"violations; got: {offenders}"
+        )
+
+
 class TestSeedQueryConsolidationLive:
     """cvx-nav-02: the duplicate seed-query dirs (ccc+ccc_canvas, dsoc+dsoc_canvas,
     pmc+pmc_canvas) are consolidated onto the loaded `<key>_canvas/*.iqe` dirs;

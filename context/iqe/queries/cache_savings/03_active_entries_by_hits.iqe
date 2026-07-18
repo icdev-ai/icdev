@@ -1,0 +1,7 @@
+# Intent: List active (non-expired) cache entries that have been reused, to see
+#         which specific cached responses are carrying real load.
+# Expected: rows from cache.entries where hit_count > 0.
+
+foreach e in cache.entries
+  where e.hit_count > 0
+  select e.function, e.model_id, e.provider, e.hit_count, e.created_at, e.expires_at
