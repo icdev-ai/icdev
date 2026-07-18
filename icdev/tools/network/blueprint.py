@@ -1111,14 +1111,14 @@ def create_network_blueprint():
         # Migration phases with linked SOPs and parsed steps
         migration_phases_raw = [
             _row_to_dict(r) for r in conn.execute(
-                "SELECT * FROM nc_migration_phases WHERE project_id={_ph} ORDER BY phase_num",
+                f"SELECT * FROM nc_migration_phases WHERE project_id={_ph} ORDER BY phase_num",
                 (proj_id,)
             ).fetchall()
         ]
         for mphase in migration_phases_raw:
             linked_docs = [
                 _row_to_dict(r) for r in conn.execute(
-                    """SELECT pd.doc_title, pd.doc_type, pd.doc_source, pd.relevance_note,
+                    f"""SELECT pd.doc_title, pd.doc_type, pd.doc_source, pd.relevance_note,
                               s.steps, s.prerequisites, s.validation,
                               s.rollback AS sop_rollback, s.escalation
                        FROM nc_phase_documents pd
@@ -1737,7 +1737,7 @@ def create_network_blueprint():
         if not fields:
             conn.close()
             return jsonify({"error": "No fields"}), 400
-        fields.append("updated_at={_ph}")
+        fields.append(f"updated_at={_ph}")
         values.append(_now())
         values.append(topo_id)
         conn.execute(f"UPDATE topologies SET {', '.join(fields)} WHERE id={_ph}", values)  # nosec B608 -- table/column names are internal constants, not user input
@@ -4249,7 +4249,7 @@ def create_network_blueprint():
             fields.append(f"locations={_ph}")
             values.append(locs)
         if fields:
-            fields.append("updated_at={_ph}")
+            fields.append(f"updated_at={_ph}")
             values.append(_now())
             values.append(aid)
             conn.execute(
@@ -5073,7 +5073,7 @@ def create_network_blueprint():
             fields.append(f"moved_from={_ph}")
             values.append(old[0])
         if fields:
-            fields.append("updated_at={_ph}")
+            fields.append(f"updated_at={_ph}")
             values.append(_now())
             values.append(tid)
             conn.execute(
@@ -6241,7 +6241,7 @@ def create_network_blueprint():
         if not fields:
             conn.close()
             return jsonify({"error": "No fields"}), 400
-        fields.append("updated_at={_ph}")
+        fields.append(f"updated_at={_ph}")
         values.append(_now())
         values.append(cid)
         conn.execute(f"UPDATE nc_circuits SET {', '.join(fields)} WHERE id={_ph}", values)  # nosec B608 -- table/column names are internal constants, not user input
@@ -6743,7 +6743,7 @@ def create_network_blueprint():
         if not fields:
             conn.close()
             return jsonify({"error": "No fields"}), 400
-        fields.append("updated_at={_ph}")
+        fields.append(f"updated_at={_ph}")
         values.append(_now())
         values.append(cid)
         conn.execute(f"UPDATE nc_cross_connects SET {', '.join(fields)} WHERE id={_ph}", values)  # nosec B608 -- table/column names are internal constants, not user input
@@ -7075,7 +7075,7 @@ def create_network_blueprint():
                 fields.append(f"{k}={_ph}")
                 values.append(val)
         if fields:
-            fields.append("updated_at={_ph}")
+            fields.append(f"updated_at={_ph}")
             values.append(_now())
             values.append(profile["id"])
             conn.execute(f"UPDATE nc_compliance_profiles SET {', '.join(fields)} WHERE id={_ph}", values)  # nosec B608 -- table/column names are internal constants, not user input
@@ -8454,7 +8454,7 @@ def create_network_blueprint():
         if not fields:
             conn.close()
             return jsonify({"error": "No fields"}), 400
-        fields.append("updated_at={_ph}")
+        fields.append(f"updated_at={_ph}")
         values.append(_now())
         values.append(bid)
         conn.execute(f"UPDATE nc_boundaries SET {', '.join(fields)} WHERE id={_ph}", values)  # nosec B608 -- table/column names are internal constants, not user input
@@ -12071,12 +12071,13 @@ Respond with ONLY this JSON (no other text):
             return jsonify({"iqe": iqe_str, "explanation": explanation}), 200
 
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         try:
             ast = parse(iqe_str)
 
             # Build adapters for topology node/edge data
             def _nodes_adapter(c):
-                row = c.execute("SELECT graph_json FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
+                row = c.execute(f"SELECT graph_json FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
                 if not row:
                     return []
                 import json as _json
@@ -12106,7 +12107,7 @@ Respond with ONLY this JSON (no other text):
                 return result
 
             def _edges_adapter(c):
-                row = c.execute("SELECT graph_json FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
+                row = c.execute(f"SELECT graph_json FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
                 if not row:
                     return []
                 import json as _json
@@ -13492,7 +13493,7 @@ Planning rules:
             project = dict(project_row)
 
             phases = [dict(r) for r in conn.execute(
-                "SELECT * FROM nc_migration_phases WHERE project_id={_ph} ORDER BY phase_num",
+                f"SELECT * FROM nc_migration_phases WHERE project_id={_ph} ORDER BY phase_num",
                 (project_id,),
             ).fetchall()]
 
@@ -13507,7 +13508,7 @@ Planning rules:
 
             snapshots = [dict(r) for r in conn.execute(
                 "SELECT id, phase_id, label, created_at FROM nc_topology_snapshots "
-                "WHERE topo_id={_ph} ORDER BY created_at DESC",
+                f"WHERE topo_id={_ph} ORDER BY created_at DESC",
                 (topo_id,),
             ).fetchall()] if topo_id else []
 
@@ -13917,6 +13918,7 @@ Planning rules:
 
     def _gather_ato_evidence(advisory_id, conn):
         """Collect all audit-chain rows for one advisory from available tables."""
+        _ph = sql_placeholder(conn)
 
         def _q(sql, params=()):
             try:
@@ -13931,7 +13933,7 @@ Planning rules:
             except Exception:
                 return None
 
-        advisory = _q1("SELECT * FROM nc_advisories WHERE id = {_ph}", (advisory_id,))
+        advisory = _q1(f"SELECT * FROM nc_advisories WHERE id = {_ph}", (advisory_id,))
 
         assessments = _q(
             "SELECT * FROM nc_advisory_assessments WHERE advisory_id = ? ORDER BY created_at ASC",
