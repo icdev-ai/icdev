@@ -123,6 +123,14 @@
 
   <!-- IQE Widget -->
   <div class="iqe-host">
+    {% set iqe_canvas = "dsoc" %}
+    {% set iqe_api_route = "/api/dsoc/iqe-query" %}
+    {% set iqe_title = "IQE Query — Threat Feed" %}
+    {% set iqe_examples = [
+      {"label": "High-confidence threats", "query": "Show high confidence threats"},
+      {"label": "Botnet C2", "query": "Show botnet c2 threats"},
+      {"label": "Amplifiers", "query": "Show amplifier threats"},
+    ] %}
     {% include 'includes/iqe_query_widget.html' %}
   </div>
 </div>

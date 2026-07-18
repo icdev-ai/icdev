@@ -122,6 +122,15 @@
 
   <!-- IQE Widget -->
   <div class="iqe-host">
+    {% set iqe_canvas = "dsoc" %}
+    {% set iqe_api_route = "/api/dsoc/iqe-query" %}
+    {% set iqe_title = "IQE Query — DSOC" %}
+    {% set iqe_examples = [
+      {"label": "Active mitigations", "query": "Show active mitigations"},
+      {"label": "High-confidence threats", "query": "Show high confidence threats"},
+      {"label": "Active RTBH", "query": "List active RTBH entries"},
+      {"label": "Scrubbing utilization", "query": "Which scrubbing centers have high utilization?"},
+    ] %}
     {% include 'includes/iqe_query_widget.html' %}
   </div>
 </div>

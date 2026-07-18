@@ -640,9 +640,10 @@ def create_dsoc_blueprint() -> Blueprint:
         from tools.dsoc_canvas.db.init_db import get_connection
         from tools.iqe.adapters.dsoc import handle_query
         data = request.get_json(force=True) or {}
-        q = data.get("q", "").strip()
+        # The shared IQE widget POSTs {question, execute}; accept 'q' as a legacy alias.
+        q = (data.get("question") or data.get("q") or "").strip()
         if not q:
-            return jsonify({"error": "q required"}), 400
+            return jsonify({"error": "question required"}), 400
         conn = get_connection()
         try:
             result = handle_query(conn, q)

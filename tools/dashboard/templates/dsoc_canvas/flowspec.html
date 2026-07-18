@@ -161,6 +161,14 @@
 
   <!-- IQE Widget -->
   <div class="iqe-host">
+    {% set iqe_canvas = "dsoc" %}
+    {% set iqe_api_route = "/api/dsoc/iqe-query" %}
+    {% set iqe_title = "IQE Query — FlowSpec" %}
+    {% set iqe_examples = [
+      {"label": "Drop rules", "query": "Show active flowspec drop rules"},
+      {"label": "Rate-limit rules", "query": "Show flowspec rate-limit rules"},
+      {"label": "Redirect rules", "query": "Show flowspec redirect rules"},
+    ] %}
     {% include 'includes/iqe_query_widget.html' %}
   </div>
 </div>

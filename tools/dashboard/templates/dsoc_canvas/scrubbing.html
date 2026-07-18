@@ -150,6 +150,14 @@
 
   <!-- IQE Widget -->
   <div class="iqe-host">
+    {% set iqe_canvas = "dsoc" %}
+    {% set iqe_api_route = "/api/dsoc/iqe-query" %}
+    {% set iqe_title = "IQE Query — Scrubbing Centers" %}
+    {% set iqe_examples = [
+      {"label": "High utilization", "query": "Which scrubbing centers have high utilization?"},
+      {"label": "Saturated centers", "query": "Show saturated scrubbing centers"},
+      {"label": "Offline centers", "query": "Show offline scrubbing centers"},
+    ] %}
     {% include 'includes/iqe_query_widget.html' %}
   </div>
 </div>

@@ -92,6 +92,14 @@
 
   <!-- IQE Widget -->
   <div class="iqe-host">
+    {% set iqe_canvas = "dsoc" %}
+    {% set iqe_api_route = "/api/dsoc/iqe-query" %}
+    {% set iqe_title = "IQE Query — RTBH" %}
+    {% set iqe_examples = [
+      {"label": "Active RTBH", "query": "List active RTBH entries"},
+      {"label": "Withdrawn RTBH", "query": "Show withdrawn RTBH entries"},
+      {"label": "Manual triggers", "query": "Show manual RTBH triggers"},
+    ] %}
     {% include 'includes/iqe_query_widget.html' %}
   </div>
 </div>
