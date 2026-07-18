@@ -367,6 +367,87 @@ def _load_codebase_structure() -> tuple[list[dict], list[dict]]:
 
 
 # ---------------------------------------------------------------------------
+# Source 7: Network Design Canvas (NDC)
+# ---------------------------------------------------------------------------
+
+def _ndc_topology_count() -> int | None:
+    """Best-effort live topology count. Returns None if the canvas DB is absent."""
+    try:
+        from tools.network.db.init_db import get_connection
+        conn = get_connection()
+        try:
+            row = conn.execute("SELECT COUNT(*) AS c FROM topologies").fetchone()
+            if row is None:
+                return None
+            row = dict(row) if hasattr(row, "keys") else {"c": row[0]}
+            return int(row.get("c") or 0)
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    except Exception:
+        return None
+
+
+def _load_ndc() -> tuple[list[dict], list[dict]]:
+    """Contribute the Network Design Canvas (NDC) to the federated graph.
+
+    Emits a self-contained NDC subgraph (all target nodes owned here so edges
+    always resolve, even when the canvas DB and the codebase source are absent):
+      - NDC canvas node
+      - grouped "network_canvas tables" DB node (nc_*/ndc_*/ni_*)
+      - the /network route surface
+      - the Security Design Canvas (SDC) node it couples to via the
+        on_ndc_topology_saved assessment hook (tools/network/blueprint.py)
+
+    Read-only and cheap: the only DB touch is an optional COUNT guarded by
+    try/except that degrades to a node with no live count when the DB is down.
+    """
+    nodes: list[dict] = []
+    edges: list[dict] = []
+
+    ndc_id = _nid("canvas", "network_canvas")
+    tables_id = _nid("db_table", "network_canvas tables")
+    route_id = _nid("route", "/network")
+    sdc_id = _nid("canvas", "security_canvas")
+
+    topo_count = _ndc_topology_count()
+    ndc_props: dict[str, Any] = {
+        "canvas": "network_canvas",
+        "surface": "/network",
+        "table_prefixes": ["nc_", "ndc_", "ni_"],
+    }
+    if topo_count is not None:
+        ndc_props["topology_count"] = topo_count
+
+    nodes.append(_node(ndc_id, "Network Design Canvas", "canvas_module",
+                       source="ndc", props=ndc_props, health="ok"))
+    nodes.append(_node(tables_id, "network_canvas tables (nc_*/ndc_*/ni_*)",
+                       "db_table", source="ndc",
+                       props={"prefixes": ["nc_", "ndc_", "ni_"],
+                              "backend": "network_canvas"}))
+    nodes.append(_node(route_id, "/network", "route", source="ndc",
+                       props={"path": "/network", "blueprint": "network_canvas"}))
+    nodes.append(_node(sdc_id, "Security Design Canvas", "canvas_module",
+                       source="ndc", props={"canvas": "security_canvas",
+                                            "surface": "/security"}))
+
+    # NDC canvas → its owned surfaces (always resolve; >=3 edges guaranteed)
+    edges.append(_edge(ndc_id, tables_id, "related"))
+    edges.append(_edge(ndc_id, route_id, "registers"))
+    # NDC → SDC assessment coupling (on_ndc_topology_saved topology-save hook)
+    edges.append(_edge(ndc_id, sdc_id, "triggers"))
+
+    # Richer links to the codebase-sourced blueprint nodes when that source is
+    # active; filtered out gracefully by _filter_edges if those nodes are absent.
+    edges.append(_edge(ndc_id, _nid("blueprint", "network_canvas"), "registers"))
+    edges.append(_edge(sdc_id, _nid("blueprint", "security_canvas"), "registers"))
+
+    return nodes, edges
+
+
+# ---------------------------------------------------------------------------
 # Federation + layout
 # ---------------------------------------------------------------------------
 
@@ -479,6 +560,7 @@ def build_graph(
         "goals":         _load_goals,
         "migrations":    _load_migrations,
         "codebase":      _load_codebase_structure,
+        "ndc":           _load_ndc,
     }
     active = sources or list(loaders.keys())
     for src in active:
@@ -592,6 +674,7 @@ def build_search_fallback(
         "goals":        _load_goals,
         "migrations":   _load_migrations,
         "codebase":     _load_codebase_structure,
+        "ndc":          _load_ndc,
     }
     active = sources or list(loaders.keys())
     for src in active:
