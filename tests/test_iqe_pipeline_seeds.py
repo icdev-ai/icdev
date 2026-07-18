@@ -27,16 +27,15 @@ def _read(name: str) -> str:
 
 
 _SCHEMA = """
-CREATE TABLE IF NOT EXISTS pipeline_snapshots (
+CREATE TABLE IF NOT EXISTS pdc_snapshots (
     id             TEXT PRIMARY KEY,
-    pipeline_id    TEXT NOT NULL,
-    snapshot_type  TEXT NOT NULL DEFAULT 'baseline',
+    pipeline_id    TEXT,
     label          TEXT,
-    nodes_json     TEXT NOT NULL DEFAULT '[]',
-    edges_json     TEXT NOT NULL DEFAULT '[]',
-    meta_json      TEXT NOT NULL DEFAULT '{}',
+    graph_json     TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[]}',
+    node_count     INTEGER DEFAULT 0,
+    edge_count     INTEGER DEFAULT 0,
     created_by     TEXT,
-    created_at     TEXT NOT NULL
+    created_at     TEXT
 );
 """
 
@@ -63,46 +62,52 @@ def _pipeline_db() -> sqlite3.Connection:
     """
     conn = sqlite3.connect(":memory:")
     conn.executescript(_SCHEMA)
-    snap1_nodes = json.dumps([
-        {
-            "id": "build-01", "type": "build-runner",
-            "env_source": "plaintext", "signing_enabled": "false",
-            "slsa_level": 1, "parallel_conflict": "false",
-        },
-        {
-            "id": "build-02", "type": "build-runner",
-            "env_source": "vault", "signing_enabled": "true",
-            "slsa_level": 3, "parallel_conflict": "true",
-        },
-        {
-            "id": "publish-01", "type": "artifact-publisher",
-            "artifact_tag": None, "env_source": "vault",
-        },
-    ])
-    snap2_nodes = json.dumps([
-        {
-            "id": "build-03", "type": "build-runner",
-            "env_source": "plaintext", "signing_enabled": "false",
-            "slsa_level": 2, "parallel_conflict": "false",
-        },
-        {
-            "id": "publish-02", "type": "artifact-publisher",
-            "artifact_tag": "v1.2.3", "env_source": "vault",
-        },
-        {
-            "id": "publish-03", "type": "artifact-publisher",
-            "artifact_tag": None, "env_source": "vault",
-        },
-    ])
+    snap1_graph = json.dumps({
+        "nodes": [
+            {
+                "id": "build-01", "type": "build-runner",
+                "env_source": "plaintext", "signing_enabled": "false",
+                "slsa_level": 1, "parallel_conflict": "false",
+            },
+            {
+                "id": "build-02", "type": "build-runner",
+                "env_source": "vault", "signing_enabled": "true",
+                "slsa_level": 3, "parallel_conflict": "true",
+            },
+            {
+                "id": "publish-01", "type": "artifact-publisher",
+                "artifact_tag": None, "env_source": "vault",
+            },
+        ],
+        "edges": [],
+    })
+    snap2_graph = json.dumps({
+        "nodes": [
+            {
+                "id": "build-03", "type": "build-runner",
+                "env_source": "plaintext", "signing_enabled": "false",
+                "slsa_level": 2, "parallel_conflict": "false",
+            },
+            {
+                "id": "publish-02", "type": "artifact-publisher",
+                "artifact_tag": "v1.2.3", "env_source": "vault",
+            },
+            {
+                "id": "publish-03", "type": "artifact-publisher",
+                "artifact_tag": None, "env_source": "vault",
+            },
+        ],
+        "edges": [],
+    })
     conn.executemany(
-        "INSERT INTO pipeline_snapshots "
-        "(id, pipeline_id, snapshot_type, label, nodes_json, edges_json, meta_json, created_by, created_at) "
-        "VALUES (?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO pdc_snapshots "
+        "(id, pipeline_id, label, graph_json, node_count, edge_count, created_by, created_at) "
+        "VALUES (?,?,?,?,?,?,?,?)",
         [
-            ("snap-001", "pipe-001", "baseline", "Q1 baseline",
-             snap1_nodes, "[]", "{}", "ci", "2025-01-01T00:00:00"),
-            ("snap-002", "pipe-002", "baseline", "Q2 baseline",
-             snap2_nodes, "[]", "{}", "ci", "2025-04-01T00:00:00"),
+            ("snap-001", "pipe-001", "Q1 baseline",
+             snap1_graph, 3, 0, "ci", "2025-01-01T00:00:00"),
+            ("snap-002", "pipe-002", "Q2 baseline",
+             snap2_graph, 3, 0, "ci", "2025-04-01T00:00:00"),
         ],
     )
     conn.commit()

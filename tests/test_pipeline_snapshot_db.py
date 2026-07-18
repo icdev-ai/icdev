@@ -1,5 +1,12 @@
 # CUI // SP-CTI
-"""Tests for tools.pipeline.snapshot_db — 4-function CRUD layer."""
+"""Tests for tools.pipeline.snapshot_db — 4-function CRUD layer.
+
+NOTE (pdx-data-01): snapshot_db targets the shared-icdev ``pipeline_snapshots``
+table and is DEPRECATED in favor of the ``pdc_snapshots`` canvas store (the
+delta view and IQE pipeline adapters now read pdc_snapshots via the canvas
+connection). The module is retained but has no remaining runtime callers, so
+this suite continues to cover its CRUD contract unchanged.
+"""
 
 import importlib.util
 import json
