@@ -74,6 +74,46 @@ def _run_cli(script_path: str, cli_args: list = None, timeout: int = 300) -> dic
         return {"error": str(exc)}
 
 
+def _mcp_authz_gate(tool_name: str, args: dict) -> dict | None:
+    """Fail-closed MCP per-tool RBAC gate (D261).
+
+    Returns an error dict when the call is NOT authorized (so the caller can
+    return it directly), or None when the call may proceed.
+
+    Authorization is deny-by-default: the caller MUST supply a role via
+    ``args["mcp_role"]`` (or ``args["role"]``). With no role the call is denied.
+    ``ICDEV_MCP_AUTHZ_BYPASS`` is an explicit test/dev opt-out, mirroring the
+    dashboard's ICDEV_AUTH_BYPASS. State-changing DSOC tools (RTBH/flowspec) are
+    gated with this so an ungated MCP client cannot inject routing actions.
+    """
+    if os.environ.get("ICDEV_MCP_AUTHZ_BYPASS", "").lower() in ("1", "true", "yes"):
+        return None
+    role = (args.get("mcp_role") or args.get("role") or "").strip()
+    if not role:
+        return {
+            "error": "authorization required: no MCP role supplied (fail-closed)",
+            "authorized": False,
+            "tool": tool_name,
+        }
+    try:
+        from tools.security.mcp_tool_authorizer import MCPToolAuthorizer
+        decision = MCPToolAuthorizer().authorize(role, tool_name)
+    except Exception as exc:  # noqa: BLE001 — authorizer failure must fail closed
+        return {
+            "error": f"authorization unavailable (fail-closed): {exc}",
+            "authorized": False,
+            "tool": tool_name,
+        }
+    if not decision.get("allowed"):
+        return {
+            "error": f"unauthorized: {decision.get('reason', 'denied')}",
+            "authorized": False,
+            "role": role,
+            "tool": tool_name,
+        }
+    return None
+
+
 # ===========================================================================
 # Category: translation (Phase 43 — Cross-Language Translation)
 # ===========================================================================
@@ -1855,7 +1895,15 @@ def ccc_loa_create(args: dict) -> dict:
 
 
 def dsoc_rtbh_trigger(args: dict) -> dict:
-    """Trigger RTBH null-route for a target prefix."""
+    """Trigger RTBH null-route record for a target prefix (record-only/simulation).
+
+    Requires MCP authorization (deny-by-default). This does NOT push routes to
+    live routers — it records the RTBH entry and generates apply-ready config
+    text for human review.
+    """
+    denied = _mcp_authz_gate("dsoc_rtbh_trigger", args)
+    if denied is not None:
+        return denied
     try:
         from tools.dsoc_canvas.db.init_db import get_connection
         from tools.dsoc_canvas.rtbh_manager import trigger_rtbh
@@ -1875,6 +1923,8 @@ def dsoc_rtbh_trigger(args: dict) -> dict:
             conn.commit()
         finally:
             conn.close()
+        if isinstance(result, dict):
+            result.setdefault("mode", "simulation-record-only")
         return result
     except Exception as exc:
         logger.warning("dsoc_rtbh_trigger: %s", exc)
@@ -1882,7 +1932,15 @@ def dsoc_rtbh_trigger(args: dict) -> dict:
 
 
 def dsoc_flowspec_activate(args: dict) -> dict:
-    """Activate a BGP flowspec rule by ID."""
+    """Activate a BGP flowspec rule record by ID (record-only/simulation).
+
+    Requires MCP authorization (deny-by-default). This does NOT push flowspec
+    to live routers — it flips the rule's status and generates apply-ready
+    IOS-XR/JunOS config text for human review.
+    """
+    denied = _mcp_authz_gate("dsoc_flowspec_activate", args)
+    if denied is not None:
+        return denied
     try:
         from tools.dsoc_canvas.db.init_db import get_connection
         from tools.dsoc_canvas.flowspec_engine import activate_rule
@@ -1895,6 +1953,8 @@ def dsoc_flowspec_activate(args: dict) -> dict:
             conn.commit()
         finally:
             conn.close()
+        if isinstance(result, dict):
+            result.setdefault("mode", "simulation-record-only")
         return result
     except Exception as exc:
         logger.warning("dsoc_flowspec_activate: %s", exc)

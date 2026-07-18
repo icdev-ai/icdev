@@ -29,9 +29,11 @@ Routes:
 """
 from __future__ import annotations
 
+import hmac
+import os
 from datetime import datetime, timezone
 
-from flask import Blueprint, jsonify, render_template, request
+from flask import Blueprint, jsonify, redirect, render_template, request, session
 
 
 def _now() -> str:
@@ -40,6 +42,54 @@ def _now() -> str:
 
 def create_dsoc_blueprint() -> Blueprint:
     bp = Blueprint("dsoc_canvas", __name__, url_prefix="")
+
+    # ── Fail-closed authentication (before_request covers EVERY route) ────────
+    # DSOC exposes state-changing POST/PUT routes (flowspec create, RTBH trigger,
+    # scrubbing, threat ingest, mitigation, bgp-hijack) plus the record-only
+    # engines that emit apply-ready IOS-XR/JunOS config text. Unauthenticated
+    # access = an integrity/pivot risk (config-injection + unauth threat feed
+    # poisoning that later renders in the UI). Modelled on ZIG's sc_login_required
+    # (tools/security_canvas/blueprint.py): authenticate via the ICDEV dashboard
+    # session, an explicit ICDEV_AUTH_BYPASS test opt-in, or a presented
+    # ICDEV_DASHBOARD_API_KEY (constant-time compare). Merely having the key set
+    # in the environment does NOT auto-authenticate — the request must present it.
+    @bp.before_request
+    def _dsoc_require_auth():
+        try:
+            if session.get("user_id"):
+                return None
+        except RuntimeError:
+            # No request/session context — treat as unauthenticated (fail-closed).
+            pass
+
+        # Explicit test-only opt-in.
+        if os.environ.get("ICDEV_AUTH_BYPASS"):
+            try:
+                session["user_id"] = "e2e-bypass"
+            except RuntimeError:
+                pass
+            return None
+
+        # Presented-API-key semantics (X-ICDEV-API-Key or Authorization: Bearer).
+        api_key = os.environ.get("ICDEV_DASHBOARD_API_KEY", "")
+        if api_key:
+            presented = request.headers.get("X-ICDEV-API-Key", "")
+            if not presented:
+                auth_header = request.headers.get("Authorization", "")
+                if auth_header.startswith("Bearer "):
+                    presented = auth_header[len("Bearer "):].strip()
+            if presented and hmac.compare_digest(presented, api_key):
+                session["user_id"] = "api-key"
+                return None
+
+        # Fail closed. API/JSON/mutating requests get JSON 401 (never a redirect).
+        if (
+            request.is_json
+            or request.path.startswith("/api/dsoc")
+            or request.method in ("DELETE", "POST", "PUT")
+        ):
+            return jsonify({"error": "Authentication required"}), 401
+        return redirect("/login")
 
     # ── Page Routes ──────────────────────────────────────────────────────────
 
