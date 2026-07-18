@@ -878,16 +878,19 @@ def ai_league_start():
     round_count = max(1, min(round_count, 10))
     from tools.gameday.game_master import GameMaster
     gm = GameMaster(tournament_name=name, round_count=round_count)
-    # run_tournament() drives LLM rounds (needs Ollama) and can take minutes —
+    # run_tournament() drives LLM rounds via the router and can take minutes —
     # run it off the request thread so the endpoint returns immediately.
     import threading
 
     def _run():
+        # run_tournament() already records status='aborted' + the error on the
+        # tournament row before re-raising, so a failed run is visible on the
+        # AI League ops page (/gameday/ai-league/ops) rather than a silent no-op.
         try:
             gm.run_tournament()
         except Exception as exc:
             import logging
-            logging.getLogger(__name__).warning("AI League tournament run failed: %s", exc)
+            logging.getLogger(__name__).error("AI League tournament run failed: %s", exc)
 
     threading.Thread(target=_run, daemon=True).start()
     return jsonify({"ok": True, "tournament_name": gm.tournament_name, "round_count": round_count})

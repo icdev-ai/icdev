@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import os
+
 # ── Tournament / Round States ──────────────────────────────────────────────────
 TOURNAMENT_STATES = ("pending", "active", "completed", "aborted")
 ROUND_STATES      = ("pending", "active", "completed", "timed_out")
@@ -81,10 +83,21 @@ MEMBER_TIME_BUDGET_MINUTES     = 8
 ORCHESTRATOR_TIME_BUDGET_MINUTES = 6
 MODEL_TRAIN_TRIGGER_PAIRS      = 20   # LoRA fine-tune fires at this threshold
 
-# ── Default Models ─────────────────────────────────────────────────────────────
-DEFAULT_AGENT_MODEL = "qwen3.5:9b"
-JUDGE_MODEL         = "gemma4:e4b"
-OLLAMA_BASE_URL     = "http://localhost:11434"
+# ── Model resolution ────────────────────────────────────────────────────────
+# Model IDs are NOT hardcoded here. Concrete models are resolved by the ICDEV
+# LLM router from args/llm_config.yaml / .env via get_provider_for_function().
+# These optional env overrides let an operator pin a specific model without
+# touching code; when empty (the default) the router's routing chain decides.
+DEFAULT_AGENT_MODEL = os.environ.get("GAMEDAY_AGENT_MODEL", "").strip()
+JUDGE_MODEL         = os.environ.get("GAMEDAY_JUDGE_MODEL", "").strip()
+
+# LLM router routing keys (see the `routing` section of args/llm_config.yaml).
+GAMEDAY_LLM_FUNCTION       = os.environ.get("GAMEDAY_LLM_FUNCTION", "chat").strip() or "chat"
+GAMEDAY_JUDGE_LLM_FUNCTION = os.environ.get("GAMEDAY_JUDGE_LLM_FUNCTION", "chat").strip() or "chat"
+
+# Retained for backward compatibility (base_agent no longer calls Ollama
+# directly — inference goes through the router).
+OLLAMA_BASE_URL     = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
 
 # ── Scenario Pack ──────────────────────────────────────────────────────────────
 SCENARIO_PACK = "cyber_adversarial"
