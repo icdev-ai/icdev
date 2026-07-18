@@ -17,18 +17,20 @@ packs + the AI_TOOLS_CATALOG mcp_tool resolution) by widening coverage to the
     actually scoreable by tools/ttx/ai_scorer; the 3 new penta-gd-06 TTX
     scenarios (document-integrity / slo-meltdown / grounding-red-team) are
     fully list-format and scoreable.
-  * The legacy forge_ascent-era packs use the dict-of-dicts rubric shape, which
-    the loader tolerates but ai_scorer.judge_response CANNOT consume — see
-    ``test_legacy_dict_of_dicts_rubric_should_be_scoreable`` (xfail).
+  * The legacy forge_ascent-era packs authored the dict-of-dicts rubric shape on
+    disk; penta-fix-01 normalizes them to the canonical dimensions-LIST format at
+    load time (scenario_loader.normalize_rubric_dimensions), so once loaded they
+    are list-format and scoreable like every other pack.
 
-LATENT BUG (documented, not fixed here — belongs to a follow-up):
-  ``ai_scorer.judge_response`` reads ``rubric["dimensions"]`` and iterates it.
-  For the legacy dict-of-dicts packs (forge_ascent, hunt_the_fleet, meridian)
-  ``dimensions`` is a *mapping*, so iteration yields string keys and
-  ``d.get("weight")`` raises ``AttributeError`` — uncaught by ``score_response``,
-  so ``POST /api/gameday/response`` would 500 for those scenarios. This module
-  locks the incompatibility as an xfail so the fix (tolerate or fail-loud on the
-  legacy shape) flips it green.
+FIXED (penta-fix-01):
+  ``ai_scorer.judge_response`` previously read ``rubric["dimensions"]`` and
+  iterated it. For the legacy dict-of-dicts packs (forge_ascent, hunt_the_fleet,
+  meridian) ``dimensions`` was a *mapping*, so iteration yielded string keys and
+  ``d.get("weight")`` raised ``AttributeError`` — uncaught by ``score_response``,
+  so ``POST /api/gameday/response`` 500'd for those scenarios. The fix normalizes
+  the legacy shape at load time (single conversion point) and hardens
+  ``judge_response`` to fail-loud ``_unscored`` on any malformed rubric instead of
+  crashing. This module now asserts the fixed behaviour directly.
 """
 
 from __future__ import annotations
@@ -175,38 +177,36 @@ def test_new_ttx_scenarios_are_fully_scoreable(slug):
 
 
 # ---------------------------------------------------------------------------
-# Legacy dict-of-dicts rubrics — tolerated by loader, NOT scoreable (latent bug)
+# Legacy dict-of-dicts rubrics — normalized to list format at load (penta-fix-01)
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("slug", _LEGACY_DOD_SLUGS)
-def test_legacy_packs_use_dict_of_dicts_rubrics(slug):
-    """The forge_ascent-era packs load fine but expose the legacy dict-of-dicts
-    rubric shape (dimensions is a mapping, not a list) — i.e. NOT the ai_scorer
-    format. This asserts loader tolerance and pins the format for the xfail
-    below."""
+def test_legacy_packs_rubrics_normalized_to_list(slug):
+    """penta-fix-01: the forge_ascent-era packs author dict-of-dicts rubrics on
+    disk, but scenario_loader normalizes them to the canonical dimensions-LIST
+    format at load time. After loading, NO inject should still expose a
+    dict-shaped ``dimensions``, and at least one must carry a real list rubric."""
     sc = load_scenario(slug)
-    saw_dod = False
+    saw_list = False
     for inj in sc["injects"]:
         rub = inj.get("scoring", {}).get("rubric")
-        if isinstance(rub, dict) and isinstance(rub.get("dimensions"), dict):
-            saw_dod = True
-    assert saw_dod, f"{slug}: expected at least one legacy dict-of-dicts rubric"
+        if not isinstance(rub, dict):
+            continue
+        dims = rub.get("dimensions")
+        assert not isinstance(dims, dict), (
+            f"{slug}/{inj['id']}: dimensions still dict-of-dicts — loader did not normalize"
+        )
+        if isinstance(dims, list) and dims:
+            saw_list = True
+            for d in dims:
+                assert {"id", "weight", "prompt"} <= set(d), (
+                    f"{slug}/{inj['id']} normalized dim missing id/weight/prompt: {d}"
+                )
+    assert saw_list, f"{slug}: expected at least one normalized list rubric"
 
 
-@pytest.mark.xfail(
-    reason=(
-        "LATENT BUG: ai_scorer.judge_response cannot consume legacy dict-of-dicts "
-        "rubrics — dimensions is a mapping, so iterating yields str keys and "
-        "d.get('weight') raises AttributeError (uncaught by score_response, so "
-        "POST /api/gameday/response 500s for forge_ascent/hunt_the_fleet/meridian). "
-        "Follow-up: tolerate the legacy shape or mark it fail-loud unscored."
-    ),
-    strict=False,
-    raises=AttributeError,
-)
-def test_legacy_dict_of_dicts_rubric_should_be_scoreable(monkeypatch):
-    """Desired behaviour: a legacy dict-of-dicts rubric is either scored or
-    fail-loud unscored — never an unhandled crash. Currently raises."""
+def _mock_router(monkeypatch, content='{"scores": {}, "rationale": "x", "confidence": 0.5}'):
+    """Patch tools.llm.router so judge_response runs without a live LLM."""
     router_mod = importlib.import_module("tools.llm.router")
 
     class _R:
@@ -218,9 +218,11 @@ def test_legacy_dict_of_dicts_rubric_should_be_scoreable(monkeypatch):
 
         def invoke(self, function, req):
             class _X:
-                content = '{"scores": {}, "rationale": "x", "confidence": 0.5}'
+                pass
 
-            return _X()
+            x = _X()
+            x.content = content
+            return x
 
     class _Req:
         def __init__(self, **k):
@@ -229,6 +231,12 @@ def test_legacy_dict_of_dicts_rubric_should_be_scoreable(monkeypatch):
     monkeypatch.setattr(router_mod, "LLMRouter", _R)
     monkeypatch.setattr(router_mod, "LLMRequest", _Req)
 
+
+def test_legacy_dict_of_dicts_rubric_is_failloud_not_crash(monkeypatch):
+    """penta-fix-01: a raw legacy dict-of-dicts rubric reaching judge_response
+    (i.e. bypassing the loader normalization) must fail-loud ``unscored`` — never
+    raise AttributeError on ``str.get``."""
+    _mock_router(monkeypatch)
     from tools.ttx import ai_scorer
 
     legacy_rubric = {
@@ -238,5 +246,32 @@ def test_legacy_dict_of_dicts_rubric_should_be_scoreable(monkeypatch):
         }
     }
     out = ai_scorer.judge_response("inject", "response", legacy_rubric)
-    # If the bug is fixed this must hold (score or explicit unscored, not a crash):
     assert "total" in out
+    assert out.get("unscored") is True
+    assert out["total"] == 0
+
+
+@pytest.mark.parametrize("slug", _LEGACY_DOD_SLUGS)
+def test_legacy_pack_rubric_scoreable_after_load(monkeypatch, slug):
+    """penta-fix-01 end-to-end: a legacy pack loaded through scenario_loader is
+    normalized to list format and judge_response scores it (no crash, bounded
+    total) with a mocked router that returns per-dimension scores."""
+    sc = load_scenario(slug)
+    inj = next(
+        i for i in sc["injects"]
+        if isinstance(i.get("scoring", {}).get("rubric"), dict)
+        and isinstance(i["scoring"]["rubric"].get("dimensions"), list)
+    )
+    rub = inj["scoring"]["rubric"]
+    scores = {d["id"]: 8 for d in rub["dimensions"]}
+    import json as _json
+
+    _mock_router(
+        monkeypatch,
+        content=_json.dumps({"scores": scores, "rationale": "ok", "confidence": 0.8}),
+    )
+    from tools.ttx import ai_scorer
+
+    out = ai_scorer.judge_response("inject body", "team response", rub)
+    assert not out.get("unscored"), f"{slug}: legacy rubric unexpectedly unscored"
+    assert 0 <= out["total"] <= 100, f"{slug}: total out of range: {out['total']}"

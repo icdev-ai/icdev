@@ -23,15 +23,11 @@ import pytest
 from tools.ttx.ai_scorer import _weighted_total
 from tools.ttx.scenario_loader import list_scenario_slugs, load_scenario
 
-# penta-gd-07: `_fallback_score` was removed by penta-gd-04 (commit 23b2d83f5)
-# when silent-midpoint scoring was replaced with fail-loud `_unscored`. This test
-# module (penta-gd-06 / PR #546) was merged still importing it, so it fails at
-# collection on origin/main. Make the import defensive so the suite collects; the
-# single assertion that used it is xfailed below (see the note in the PR body).
-try:
-    from tools.ttx.ai_scorer import _fallback_score
-except ImportError:  # pragma: no cover - removed by penta-gd-04 fail-loud scoring
-    _fallback_score = None
+# penta-fix-01: `_fallback_score` was removed by penta-gd-04 (commit 23b2d83f5)
+# when silent-midpoint scoring was replaced with fail-loud `_unscored`. The
+# scoreability assertion below was rewritten against the current contract
+# (`_weighted_total`), so this module no longer imports the deleted helper and
+# no longer xfails.
 
 NEW_SLUGS = ("document-integrity", "slo-meltdown", "grounding-red-team")
 
@@ -82,16 +78,6 @@ def test_injects_escalate_in_sequence(slug):
     assert len(sc["injects"]) >= 3, f"{slug} should escalate over >=3 injects"
 
 
-@pytest.mark.xfail(
-    _fallback_score is None,
-    reason=(
-        "penta-gd-06 relies on ai_scorer._fallback_score, which penta-gd-04 "
-        "(commit 23b2d83f5) deliberately removed when replacing silent-midpoint "
-        "scoring with fail-loud _unscored. Stale test — follow-up should rewrite "
-        "this assertion against the current scoreability contract (_weighted_total)."
-    ),
-    strict=False,
-)
 @pytest.mark.parametrize("slug", NEW_SLUGS)
 def test_rubrics_parse_and_are_scoreable(slug):
     sc = load_scenario(slug)
@@ -112,11 +98,16 @@ def test_rubrics_parse_and_are_scoreable(slug):
         # weights should form a sane distribution
         total_w = sum(d["weight"] for d in dims)
         assert abs(total_w - 1.0) < 1e-6, f"{slug}/{inj['id']} weights sum={total_w}"
-        # ai_scorer must consume it without raising, and produce a bounded score
-        fb = _fallback_score(rub)
-        assert set(fb["dimension_scores"]) == {d["id"] for d in dims}
+        # ai_scorer must consume it and produce a bounded score. penta-fix-01:
+        # asserted against the current scoreability contract (_weighted_total),
+        # not the removed silent-midpoint _fallback_score helper.
+        wt_full = _weighted_total({d["id"]: 10 for d in dims}, dims)
+        assert wt_full == 100, f"{slug}/{inj['id']} all-10 total should be 100, got {wt_full}"
         wt = _weighted_total({d["id"]: 9 for d in dims}, dims)
         assert 0 <= wt <= 100, f"{slug}/{inj['id']} weighted total out of range: {wt}"
+        # A missing dimension score must not crash and must stay bounded.
+        wt_partial = _weighted_total({dims[0]["id"]: 7}, dims)
+        assert 0 <= wt_partial <= 100
 
 
 @pytest.mark.parametrize("slug", NEW_SLUGS)
