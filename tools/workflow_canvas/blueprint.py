@@ -180,17 +180,7 @@ CREATE TABLE IF NOT EXISTS wfc_branding (
     updated_at       TEXT DEFAULT to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"'),
     UNIQUE(entity_type, entity_id)
 );
-CREATE TABLE IF NOT EXISTS wfc_workflow_form_nodes (
-    id                   TEXT PRIMARY KEY,
-    workflow_id          TEXT NOT NULL,
-    node_key             TEXT NOT NULL,
-    form_id              TEXT NOT NULL,
-    node_label           TEXT,
-    required_before_next INTEGER DEFAULT 1,
-    created_at           TEXT DEFAULT to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"')
-);
 CREATE INDEX IF NOT EXISTS idx_wfc_branding_entity ON wfc_branding(entity_type, entity_id);
-CREATE INDEX IF NOT EXISTS idx_wfc_form_nodes_workflow ON wfc_workflow_form_nodes(workflow_id);
 """
 
 _WFC_MIGRATION_SQLITE = """
@@ -237,17 +227,7 @@ CREATE TABLE IF NOT EXISTS wfc_branding (
     updated_at TEXT DEFAULT (datetime('now')),
     UNIQUE(entity_type, entity_id)
 );
-CREATE TABLE IF NOT EXISTS wfc_workflow_form_nodes (
-    id TEXT PRIMARY KEY,
-    workflow_id TEXT NOT NULL,
-    node_key TEXT NOT NULL,
-    form_id TEXT NOT NULL,
-    node_label TEXT,
-    required_before_next INTEGER DEFAULT 1,
-    created_at TEXT DEFAULT (datetime('now'))
-);
 CREATE INDEX IF NOT EXISTS idx_wfc_branding_entity ON wfc_branding(entity_type, entity_id);
-CREATE INDEX IF NOT EXISTS idx_wfc_form_nodes_workflow ON wfc_workflow_form_nodes(workflow_id);
 """
 
 
@@ -999,24 +979,11 @@ Process Document:
         finally:
             conn.close()
 
-        # Link forms to workflow nodes
-        if step_form_ids:
-            wfc_conn = get_canvas_connection("ICDEV_WFC_ENABLED")
-            try:
-                wfc_ph = _ph(wfc_conn)
-                for step in steps:
-                    form_id = step_form_ids.get(step["id"])
-                    if form_id:
-                        wfc_conn.execute(
-                            f"""INSERT INTO wfc_workflow_form_nodes
-                                (id, workflow_id, node_key, form_id, node_label, required_before_next, created_at)
-                                VALUES ({wfc_ph},{wfc_ph},{wfc_ph},{wfc_ph},{wfc_ph},{wfc_ph},{wfc_ph})""",
-                            (_new_id("wfn"), workflow_id, step["id"],
-                             form_id, step.get("title", ""), 1, _now_iso()),
-                        )
-                wfc_conn.commit()
-            finally:
-                wfc_conn.close()
+        # NOTE (cnr-wfc-03): the per-step form_id linkage is persisted in the
+        # workflow's template_yaml above (yaml_steps[].form_id). The former
+        # wfc_workflow_form_nodes write was dead — nothing ever read those rows
+        # and no executor enforced the advertised form-intake HITL gate — so it
+        # was removed along with the form_node.py module.
 
         # Optionally seed kanban tasks
         kanban_ids: list = []
@@ -1233,6 +1200,10 @@ Process Document:
     def api_submit_form(form_id: str):
         data = request.get_json(force=True) or {}
         result = submit_form(form_id, data.get("data", {}), submitted_by=data.get("submitted_by", "user"))
+        if result.get("status") == "error":
+            # Missing form -> 404; schema validation failure -> 400.
+            code = 404 if result.get("error") == "Form not found" else 400
+            return jsonify(result), code
         return jsonify(result)
 
     @bp.route("/api/forms/<form_id>/export/<fmt>", methods=["POST"])
