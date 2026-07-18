@@ -256,6 +256,17 @@ reflexes:
       threshold: 0
       operator: gte  # Informational — 0 archived means nothing was old enough yet
 
+  bgp_hijack_monitor:
+    enabled: true
+    risk_tier: green
+    schedule: "every 1h"
+    interval: 3600  # seconds (1 h)
+    description: "DSOC BGP hijack monitor: withdraw expired RTBH entries (rtbh_manager.auto_expire_rtbh) every 1h; best-effort BGP hijack/route-leak sweep when a pmacct feed with BGP ASN data is reachable (skips gracefully otherwise)."
+    success_metric:
+      name: actions
+      threshold: 0
+      operator: gte  # Informational — 0 means nothing expired and no hijack detected
+
   ingest:
     timeout_seconds: 90   # network fetch — cut hangs fast so the loop proceeds
     enabled: true
