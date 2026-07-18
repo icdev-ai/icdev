@@ -10657,26 +10657,48 @@ Respond with ONLY this JSON (no other text):
             logger.warning("nc_api_cloud_overlay failed: %s", exc)
             return jsonify({"error": str(exc)}), 500
 
+    def _showcase_conn():
+        """Return a MAIN platform-DB connection for the showcase_demo_runs table.
+
+        Uses the platform storage layer (``get_connection``, no db_path) so a
+        PostgreSQL-primary deployment writes to the real database instead of a
+        stray local SQLite file. ``showcase_demo_runs`` is an unscoped platform
+        table with no ``tenant_id``/``classification`` columns, so the RLS
+        predicate that ``get_connection`` auto-attaches inside a Flask request
+        would raise ``UndefinedColumn`` on every SELECT — clear the security
+        context to disable predicate injection for this table.
+        """
+        from tools.db.storage import get_connection as _get_platform_connection
+        conn = _get_platform_connection()
+        conn.set_security_context(None)
+        return conn
+
     def _ensure_showcase_table():
-        """Create showcase_demo_runs if missing (raw sqlite3, no RLS)."""
-        import sqlite3
-        db_path = _ICDEV_ROOT / "data" / "icdev.db"
-        conn = sqlite3.connect(str(db_path), check_same_thread=False)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS showcase_demo_runs (
-                run_id      TEXT PRIMARY KEY,
-                audience    TEXT NOT NULL DEFAULT 'exec',
-                scenarios_json TEXT NOT NULL DEFAULT '[]',
-                status      TEXT NOT NULL DEFAULT 'running',
-                result_json TEXT,
-                scenarios_passed INTEGER DEFAULT 0,
-                scenarios_total  INTEGER DEFAULT 0,
-                elapsed_ms  INTEGER DEFAULT 0,
-                created_at  TEXT NOT NULL
+        """Create showcase_demo_runs if missing, via the platform storage layer.
+
+        The DDL uses only portable TEXT/INTEGER column types so it runs on both
+        SQLite and PostgreSQL through the storage layer's translate path.
+        """
+        conn = _showcase_conn()
+        try:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS showcase_demo_runs (
+                    run_id      TEXT PRIMARY KEY,
+                    audience    TEXT NOT NULL DEFAULT 'exec',
+                    scenarios_json TEXT NOT NULL DEFAULT '[]',
+                    status      TEXT NOT NULL DEFAULT 'running',
+                    result_json TEXT,
+                    scenarios_passed INTEGER DEFAULT 0,
+                    scenarios_total  INTEGER DEFAULT 0,
+                    elapsed_ms  INTEGER DEFAULT 0,
+                    created_at  TEXT NOT NULL
+                )
+                """
             )
-        """)
-        conn.commit()
-        conn.close()
+            conn.commit()
+        finally:
+            conn.close()
 
     @bp.route("/demo-runner")
     @nc_login_required
@@ -10687,17 +10709,16 @@ Respond with ONLY this JSON (no other text):
         last_result = {}
         try:
             _ensure_showcase_table()
-            import sqlite3
-            db_path = _ICDEV_ROOT / "data" / "icdev.db"
-            conn = sqlite3.connect(str(db_path), check_same_thread=False)
-            conn.row_factory = sqlite3.Row
-            rows = conn.execute(
-                "SELECT run_id, audience, scenarios_json, status, result_json, scenarios_passed, "
-                "scenarios_total, elapsed_ms, created_at "
-                "FROM showcase_demo_runs WHERE audience IN ('exec','tech','engineer') "
-                "ORDER BY created_at DESC LIMIT 15"
-            ).fetchall()
-            conn.close()
+            conn = _showcase_conn()
+            try:
+                rows = conn.execute(
+                    "SELECT run_id, audience, scenarios_json, status, result_json, scenarios_passed, "
+                    "scenarios_total, elapsed_ms, created_at "
+                    "FROM showcase_demo_runs WHERE audience IN ('exec','tech','engineer') "
+                    "ORDER BY created_at DESC LIMIT 15"
+                ).fetchall()
+            finally:
+                conn.close()
             for row in rows:
                 d = dict(row) if hasattr(row, "keys") else {
                     "run_id": row[0], "audience": row[1], "scenarios_json": row[2],
@@ -10776,28 +10797,36 @@ Respond with ONLY this JSON (no other text):
             status = "error"
             logger.exception("nc_api_demo_run error: %s", exc)
 
-        # Store run via raw sqlite3 to avoid RLS on showcase_demo_runs
+        # Persist the run via the platform storage layer (main icdev DB).
+        # showcase_demo_runs is an unscoped platform table; _showcase_conn()
+        # disables RLS so the INSERT/SELECT do not fail on the missing
+        # tenant_id/classification columns.
+        persisted = False
+        store_error = None
         try:
             _ensure_showcase_table()
-            import sqlite3
-            db_path = _ICDEV_ROOT / "data" / "icdev.db"
-            conn = sqlite3.connect(str(db_path), check_same_thread=False)
-            conn.execute(
-                "INSERT INTO showcase_demo_runs "
-                "(run_id, audience, scenarios_json, status, result_json, "
-                "scenarios_passed, scenarios_total, elapsed_ms, created_at) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
-                (run_id, audience, json.dumps(scenarios or "all"),
-                 status, json.dumps(result_payload, default=str),
-                 passed, total, elapsed_ms,
-                 datetime.now(timezone.utc).isoformat()),
-            )
-            conn.commit()
-            conn.close()
+            conn = _showcase_conn()
+            try:
+                conn.execute(
+                    "INSERT INTO showcase_demo_runs "
+                    "(run_id, audience, scenarios_json, status, result_json, "
+                    "scenarios_passed, scenarios_total, elapsed_ms, created_at) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                    (run_id, audience, json.dumps(scenarios or "all"),
+                     status, json.dumps(result_payload, default=str),
+                     passed, total, elapsed_ms,
+                     datetime.now(timezone.utc).isoformat()),
+                )
+                conn.commit()
+                persisted = True
+            finally:
+                conn.close()
         except Exception as exc:
+            store_error = str(exc)
             logger.warning("nc_api_demo_run store error: %s", exc)
 
-        return jsonify({
+        payload = {
+            "ok": persisted,
             "run_id": run_id,
             "status": status,
             "results": result_payload,
@@ -10809,7 +10838,13 @@ Respond with ONLY this JSON (no other text):
                 "B": {"title": "Multi-Cloud Expansion", "short": "Cloud", "color": "#3498db", "hook": "Hybrid connectivity overlay"},
                 "C": {"title": "Compliance Audit",      "short": "Audit", "color": "#f39c12", "hook": "STIG → Remediation → cATO"},
             },
-        })
+        }
+        if not persisted:
+            # Surface the persistence failure instead of pretending success —
+            # a silent warning here previously masked total data loss.
+            payload["error"] = store_error or "failed to persist demo run"
+            return jsonify(payload), 500
+        return jsonify(payload)
 
     @bp.route("/api/demo-runs")
     @nc_login_required
@@ -10818,18 +10853,17 @@ Respond with ONLY this JSON (no other text):
         limit = min(int(request.args.get("limit", 20)), 100)
         try:
             _ensure_showcase_table()
-            import sqlite3
-            db_path = _ICDEV_ROOT / "data" / "icdev.db"
-            conn = sqlite3.connect(str(db_path), check_same_thread=False)
-            conn.row_factory = sqlite3.Row
-            rows = conn.execute(
-                "SELECT run_id, audience, scenarios_json, status, result_json, scenarios_passed, "
-                "scenarios_total, elapsed_ms, created_at "
-                "FROM showcase_demo_runs WHERE audience IN ('exec','tech','engineer') "
-                "ORDER BY created_at DESC LIMIT %s",
-                (limit,),
-            ).fetchall()
-            conn.close()
+            conn = _showcase_conn()
+            try:
+                rows = conn.execute(
+                    "SELECT run_id, audience, scenarios_json, status, result_json, scenarios_passed, "
+                    "scenarios_total, elapsed_ms, created_at "
+                    "FROM showcase_demo_runs WHERE audience IN ('exec','tech','engineer') "
+                    "ORDER BY created_at DESC LIMIT %s",
+                    (limit,),
+                ).fetchall()
+            finally:
+                conn.close()
             result = []
             for row in rows:
                 d = dict(row) if hasattr(row, "keys") else {
@@ -10844,8 +10878,10 @@ Respond with ONLY this JSON (no other text):
                 result.append(d)
             return jsonify(result)
         except Exception as exc:
+            # Surface the read failure explicitly rather than returning an
+            # empty history that is indistinguishable from "no runs yet".
             logger.warning("nc_api_demo_runs error: %s", exc)
-            return jsonify([])
+            return jsonify({"ok": False, "error": str(exc)}), 500
 
     @bp.route("/design-patterns")
     @nc_login_required
