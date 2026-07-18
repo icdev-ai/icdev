@@ -149,6 +149,7 @@ REFLEX_NAMES = [
     "commitment_watch_reflex",    # second-brain: daily 06:00 UTC — commitment date alerts
     "weekly_retro_reflex",        # second-brain: Friday 18:00 UTC — weekly retrospective
     "pdc_pipeline_stale",  # pdx-ops-01: PDC pipeline staleness alert (6h) — IQR anomaly threshold; was implemented-but-undispatched
+    "observability_retention",  # obx-trc-05: 24h archive-then-prune of otel_spans/prov_*/shap_attributions (append-only → cold twin)
 ]
 
 # Backward-compat aliases for module-level access used by other code
