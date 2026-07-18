@@ -14,6 +14,7 @@ Usage in ICDEV dashboard app.py:
         app.register_blueprint(bp, url_prefix="/security")
 """
 
+import hmac
 import json
 import os
 import uuid as _uuid
@@ -138,10 +139,25 @@ def create_security_blueprint():
         @wraps(f)
         def decorated(*args, **kwargs):
             if not session.get("user_id"):
-                # Allow bypass for E2E tests and CI environments
-                if os.environ.get("ICDEV_AUTH_BYPASS") or os.environ.get("ICDEV_DASHBOARD_API_KEY"):
+                # ICDEV_AUTH_BYPASS: explicit test-only opt-in — bypass unchanged.
+                if os.environ.get("ICDEV_AUTH_BYPASS"):
                     session["user_id"] = "e2e-bypass"
                     return f(*args, **kwargs)
+                # ICDEV_DASHBOARD_API_KEY: presented-key semantics. Authenticate
+                # ONLY if the request actually presents the key (header
+                # X-ICDEV-API-Key or Authorization: Bearer), compared with a
+                # constant-time hmac.compare_digest. Merely having the var set in
+                # the environment does NOT auto-authenticate.
+                api_key = os.environ.get("ICDEV_DASHBOARD_API_KEY", "")
+                if api_key:
+                    presented = request.headers.get("X-ICDEV-API-Key", "")
+                    if not presented:
+                        auth_header = request.headers.get("Authorization", "")
+                        if auth_header.startswith("Bearer "):
+                            presented = auth_header[len("Bearer "):].strip()
+                    if presented and hmac.compare_digest(presented, api_key):
+                        session["user_id"] = "api-key"
+                        return f(*args, **kwargs)
                 # All API calls and DELETE/POST/PUT return JSON 401 (never redirect)
                 if (
                     request.is_json
@@ -152,6 +168,7 @@ def create_security_blueprint():
                 return redirect("/login")
             return f(*args, **kwargs)
 
+        decorated._sc_auth_wrapped = True
         return decorated
 
     # ── DB helpers ─────────────────────────────────────────────────────────
@@ -2247,6 +2264,7 @@ def create_security_blueprint():
 
     @bp.route("/zig/")
     @bp.route("/zig")
+    @sc_login_required
     def zig_index():
         """ZIG home — 7-pillar radar, phase progress, FY2027 status."""
         from tools.security_canvas.zig_pillar_scorer import score_all_pillars, aggregate_zig_score
@@ -2266,6 +2284,7 @@ def create_security_blueprint():
         )
 
     @bp.route("/zig/pillar/<pillar_slug>")
+    @sc_login_required
     def zig_pillar_detail(pillar_slug):
         """Per-pillar ZIG detail — capabilities checklist + activities."""
         from tools.security_canvas.zig_phase_tracker import get_capability_status_by_pillar
@@ -2305,6 +2324,7 @@ def create_security_blueprint():
         )
 
     @bp.route("/zig/phase")
+    @sc_login_required
     def zig_phase_tracker():
         """Phase tracker — Discovery / Phase 1 / Phase 2 activity grids."""
         from tools.security_canvas.zig_phase_tracker import get_all_phases_status
@@ -2336,6 +2356,7 @@ def create_security_blueprint():
         )
 
     @bp.route("/zig/assessment")
+    @sc_login_required
     def zig_assessment_page():
         """ZIG assessment page — run gap assessment, view results."""
         from tools.security_canvas.zig_assessor import get_latest_zig_maturity
@@ -2343,6 +2364,7 @@ def create_security_blueprint():
         return render_template("security_canvas/zig/assessment.html", latest=latest)
 
     @bp.route("/zig/roadmap")
+    @sc_login_required
     def zig_roadmap_page():
         """ZIG roadmap — FY2027/FY2032 milestone timeline."""
         from tools.security_canvas.zig_roadmap_generator import generate_roadmap
@@ -2352,6 +2374,7 @@ def create_security_blueprint():
     # ── ZIG API Endpoints ────────────────────────────────────────────────────
 
     @bp.route("/api/zig/pillars")
+    @sc_login_required
     def zig_api_pillars():
         """GET /security/api/zig/pillars — all pillars with current maturity scores."""
         from tools.security_canvas.zig_pillar_scorer import score_all_pillars, aggregate_zig_score
@@ -2360,6 +2383,7 @@ def create_security_blueprint():
         return jsonify({"ok": True, "pillars": pillar_scores, "aggregate": aggregate})
 
     @bp.route("/api/zig/pillars/<pillar_slug>")
+    @sc_login_required
     def zig_api_pillar_detail(pillar_slug):
         """GET /security/api/zig/pillars/<slug> — pillar + capabilities + maturity."""
         from tools.security_canvas.zig_pillar_scorer import score_pillar
@@ -2373,6 +2397,7 @@ def create_security_blueprint():
         return jsonify({"ok": True, "pillar": meta, "score": score, "capabilities": capabilities})
 
     @bp.route("/api/zig/capabilities")
+    @sc_login_required
     def zig_api_capabilities():
         """GET /security/api/zig/capabilities?pillar=&phase=&status= — filterable list."""
         from tools.security_canvas.db.init_db import get_connection
@@ -2398,6 +2423,7 @@ def create_security_blueprint():
         return jsonify({"ok": True, "capabilities": caps, "count": len(caps)})
 
     @bp.route("/api/zig/capabilities/<cap_id>", methods=["PATCH"])
+    @sc_login_required
     def zig_api_cap_status(cap_id):
         """PATCH /security/api/zig/capabilities/<id> — update implementation_status."""
         from tools.security_canvas.db.init_db import get_connection
@@ -2419,6 +2445,7 @@ def create_security_blueprint():
         return jsonify({"ok": True, "id": cap_id, "implementation_status": new_status})
 
     @bp.route("/api/zig/activities")
+    @sc_login_required
     def zig_api_activities():
         """GET /security/api/zig/activities?capability=&phase= — filterable list."""
         from tools.security_canvas.db.init_db import get_connection
@@ -2446,6 +2473,7 @@ def create_security_blueprint():
         return jsonify({"ok": True, "activities": acts, "count": len(acts)})
 
     @bp.route("/api/zig/activities/<activity_id>/complete", methods=["PATCH"])
+    @sc_login_required
     def zig_api_activity_complete(activity_id):
         """PATCH /security/api/zig/activities/<id>/complete — set completion status."""
         from tools.security_canvas.zig_activity_tracker import set_activity_status
@@ -2460,6 +2488,7 @@ def create_security_blueprint():
             return jsonify({"ok": False, "error": str(e)}), 400
 
     @bp.route("/api/zig/maturity")
+    @sc_login_required
     def zig_api_maturity():
         """GET /security/api/zig/maturity — aggregate scores + FY2027 readiness."""
         from tools.security_canvas.zig_pillar_scorer import score_all_pillars, aggregate_zig_score
@@ -2475,6 +2504,7 @@ def create_security_blueprint():
         })
 
     @bp.route("/api/zig/assess", methods=["POST"])
+    @sc_login_required
     def zig_api_assess():
         """POST /security/api/zig/assess — run full ZIG assessment.
 
@@ -2490,6 +2520,7 @@ def create_security_blueprint():
             return jsonify({"ok": False, "error": str(exc)}), 500
 
     @bp.route("/api/zig/phases")
+    @sc_login_required
     def zig_api_phases():
         """GET /security/api/zig/phases — Discovery/Ph1/Ph2 completion metrics."""
         from tools.security_canvas.zig_phase_tracker import get_all_phases_status, compute_fy2027_readiness
@@ -2498,6 +2529,7 @@ def create_security_blueprint():
         return jsonify({"ok": True, "phases": phases, "fy2027": fy2027})
 
     @bp.route("/api/zig/roadmap")
+    @sc_login_required
     def zig_api_roadmap():
         """GET /security/api/zig/roadmap — milestone timeline JSON."""
         from tools.security_canvas.zig_roadmap_generator import generate_roadmap
@@ -2508,6 +2540,7 @@ def create_security_blueprint():
             return jsonify({"ok": False, "error": str(exc)}), 500
 
     @bp.route("/api/zig/artifact")
+    @sc_login_required
     def zig_api_artifact():
         """GET /security/api/zig/artifact — download ZIG gap assessment report."""
         from tools.security_canvas.zig_artifact_generator import generate_zig_artifact
@@ -2525,6 +2558,7 @@ def create_security_blueprint():
     # ── ZIG External Targets ──────────────────────────────────────────────────
 
     @bp.route("/api/zig/targets", methods=["GET"])
+    @sc_login_required
     def zig_api_targets_list():
         """GET /security/api/zig/targets — list all active ZIG targets."""
         from tools.security_canvas.db.init_db import get_connection
@@ -2540,6 +2574,7 @@ def create_security_blueprint():
             return jsonify({"ok": False, "error": str(exc)}), 500
 
     @bp.route("/api/zig/targets", methods=["POST"])
+    @sc_login_required
     def zig_api_targets_create():
         """POST /security/api/zig/targets — create a new ZIG target."""
         from tools.security_canvas.db.init_db import get_connection
@@ -2569,6 +2604,7 @@ def create_security_blueprint():
             return jsonify({"ok": False, "error": str(exc)}), 500
 
     @bp.route("/api/zig/targets/<target_id>", methods=["GET"])
+    @sc_login_required
     def zig_api_target_get(target_id):
         """GET /security/api/zig/targets/<id> — get single ZIG target."""
         from tools.security_canvas.db.init_db import get_connection
@@ -2585,6 +2621,7 @@ def create_security_blueprint():
             return jsonify({"ok": False, "error": str(exc)}), 500
 
     @bp.route("/api/zig/targets/<target_id>/assess", methods=["POST"])
+    @sc_login_required
     def zig_api_target_assess(target_id):
         """POST /security/api/zig/targets/<id>/assess — run ZIG assessment for a target."""
         from tools.security_canvas.zig_portfolio import get_target_assessment
@@ -2595,6 +2632,7 @@ def create_security_blueprint():
             return jsonify({"ok": False, "error": str(exc)}), 500
 
     @bp.route("/api/zig/targets/<target_id>/activities/<activity_id>", methods=["PATCH"])
+    @sc_login_required
     def zig_api_target_activity_update(target_id, activity_id):
         """PATCH /security/api/zig/targets/<id>/activities/<act_id> — update activity status."""
         from tools.security_canvas.zig_activity_tracker import set_activity_status
@@ -2614,6 +2652,7 @@ def create_security_blueprint():
             return jsonify({"ok": False, "error": str(exc)}), 500
 
     @bp.route("/api/zig/targets/<target_id>/ingest", methods=["POST"])
+    @sc_login_required
     def zig_api_target_ingest(target_id):
         """POST /security/api/zig/targets/<id>/ingest — ingest scan results for a target.
 
@@ -2652,6 +2691,7 @@ def create_security_blueprint():
     # ── ZIG Portfolio ─────────────────────────────────────────────────────────
 
     @bp.route("/zig/portfolio")
+    @sc_login_required
     def zig_portfolio_page():
         """GET /security/zig/portfolio — multi-target portfolio dashboard."""
         from tools.security_canvas.zig_pillar_scorer import score_all_pillars, aggregate_zig_score
@@ -2723,6 +2763,7 @@ def create_security_blueprint():
         )
 
     @bp.route("/api/zig/portfolio/health")
+    @sc_login_required
     def zig_api_portfolio_health():
         """GET /security/api/zig/portfolio/health — portfolio health JSON."""
         from tools.security_canvas.zig_portfolio import get_portfolio_health
@@ -2732,6 +2773,7 @@ def create_security_blueprint():
             return jsonify({"ok": False, "error": str(exc)}), 500
 
     @bp.route("/api/zig/portfolio/compare")
+    @sc_login_required
     def zig_api_portfolio_compare():
         """GET /security/api/zig/portfolio/compare?targets=id1,id2 — radar comparison."""
         from tools.security_canvas.zig_portfolio import compare_targets
