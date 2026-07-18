@@ -538,7 +538,7 @@ components:
     template: tools/dashboard/templates/mission_canvas/index.html
     blueprint: true
     constants: tools/mission_canvas/constants.py
-    db_migration: tools/mission_canvas/db/migrations
+    db_migration: tools/mission_canvas/db/init_db.py
     iqe_adapter: true
     nav_link: true
     seed_queries: context/iqe/queries/mission_canvas/
