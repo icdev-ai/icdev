@@ -50,6 +50,17 @@ def run(ctx: Dict[str, Any], conn=None) -> Dict[str, Any]:
         logger.error("bdc_isa_expiry reflex error: %s", exc)
         result["status"] = "error"
         result["errors"].append(str(exc))
+
+    # Dispatch contract: tools/daemon/base.py::run_reflex derives the run outcome
+    # from result.get("success")/("metric_value")/("details"). Without these keys
+    # a successful cycle is scored as a FAILURE and, repeated, trips the reflex
+    # circuit breaker (metric = isas_checked, informational gte 0).
+    result["success"] = result["status"] != "error"
+    result["metric_value"] = float(result.get("isas_checked", 0) or 0)
+    result["details"] = {
+        k: result.get(k)
+        for k in ("isas_checked", "events_published", "notifications_sent", "dry_run", "status", "errors")
+    }
     return result
 
 
