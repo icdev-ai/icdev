@@ -665,6 +665,13 @@ routing:
     chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
     effort: medium
 
+  # Security Canvas (tools/security_canvas) — agent reasoning + NL query.
+  # Local-first utility chain routed through the governed LLMRouter (shx-llm-01);
+  # replaces the canvas's hardcoded direct-to-Ollama calls.
+  security_canvas:
+    chain: [qwen3-local, claude-sonnet, gpt-4o-mini, gemini-2.5-flash, llama-local]
+    effort: medium
+
   # INTaaS / FathomDesk intelligence functions (Phase INT-COT)
   news_reasoning:
     chain: [qwen3-local, claude-sonnet, gpt-4o]
