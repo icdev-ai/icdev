@@ -30,12 +30,21 @@ _ADMIN_ROLES = {"admin", "superadmin", "system_admin"}
 
 
 def _require_admin():
-    """Abort 403 unless the current user has an admin role."""
+    """Abort 403 unless the current user has an admin role.
+
+    Authorization is enforced UNCONDITIONALLY. It deliberately does NOT depend
+    on ICDEV_ENFORCE_CANVAS_ACCESS: that flag governs *canvas access*
+    enforcement platform-wide and must never gate the tenant Admin Console's
+    mutating endpoints (component overrides, SSO providers, API keys, GDPR
+    erasure). Gating admin auth on an unset-by-default canvas flag was a
+    fail-open regression — see kanban nav-sec-02.
+
+    There is no local-dev bypass by design. Tests / local dev supply an admin
+    role via g.current_user like any other authenticated caller.
+    """
     user = getattr(g, "current_user", None) or {}
     role = str(user.get("role", "") or "")
-    # In local-dev (no enforced auth) we allow through
-    enforce = os.environ.get("ICDEV_ENFORCE_CANVAS_ACCESS", "").lower() in ("true", "1", "yes")
-    if enforce and role not in _ADMIN_ROLES:
+    if role not in _ADMIN_ROLES:
         abort(403, "Admin role required")
 
 
