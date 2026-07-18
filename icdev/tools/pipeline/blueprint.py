@@ -467,11 +467,11 @@ def create_pipeline_blueprint():
         params = []
         for col in ("name", "description", "graph_json", "classification", "target_csp"):
             if col in data:
-                sets.append(f"{col}=?")
+                sets.append(f"{col}=%s")
                 params.append(data[col])
         if not sets:
             return jsonify({"error": "No updatable fields provided"}), 400
-        sets.append("updated_at=?")
+        sets.append("updated_at=%s")
         params.append(now_isoformat())
         params.append(pipe_id)
         conn.execute(

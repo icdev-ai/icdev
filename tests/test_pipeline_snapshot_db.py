@@ -36,12 +36,21 @@ def mem_conn():
 
 @pytest.fixture(autouse=True)
 def patch_get_connection(mem_conn):
-    """Redirect get_connection() to the in-memory fixture."""
+    """Redirect get_connection() to the in-memory fixture.
+
+    Wrapped in StorageConnection so snapshot_db's PG-native %s placeholders
+    translate to ? on SQLite — mirroring production (pipeline get_connection()
+    returns a StorageConnection). A raw sqlite3 connection bypasses that
+    translator and %s becomes a syntax error.
+    """
+    from tools.db.storage import StorageConnection
+
+    sconn = StorageConnection(mem_conn, "sqlite")
     mock = MagicMock()
-    mock.__enter__ = lambda s: mem_conn
+    mock.__enter__ = lambda s: sconn
     mock.__exit__ = MagicMock(return_value=False)
-    mock.execute = mem_conn.execute
-    mock.commit = mem_conn.commit
+    mock.execute = sconn.execute
+    mock.commit = sconn.commit
     mock.close = MagicMock()
 
     with patch("tools.pipeline.snapshot_db.get_connection", return_value=mock):
