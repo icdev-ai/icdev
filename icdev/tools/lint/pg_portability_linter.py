@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -282,6 +283,19 @@ def _finding_key(f: dict) -> tuple:
     return (f["file"], f["line"], f["pattern"])
 
 
+def _rel(file: str, root) -> str:
+    """Repo-relative posix path — keeps the baseline portable across checkouts/CI."""
+    try:
+        return os.path.relpath(file, str(root)).replace("\\", "/")
+    except ValueError:  # e.g. different drive on Windows
+        return _normalise(file)
+
+
+def _rel_key(f: dict, root) -> tuple:
+    """Root-relative finding key so a committed baseline matches any checkout."""
+    return (_rel(f["file"], root), f["line"], f["pattern"])
+
+
 # ---------------------------------------------------------------------------
 # Filesystem walk
 # ---------------------------------------------------------------------------
@@ -358,18 +372,21 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.write_baseline:
         baseline_path.parent.mkdir(parents=True, exist_ok=True)
+        # Store repo-relative paths so the committed baseline matches any checkout
+        # (worktrees, CI) rather than this machine's absolute paths.
+        rel_findings = [{**f, "file": _rel(f["file"], root)} for f in findings]
         data = {
             "linter": "pg_portability_linter",
-            "root": _normalise(str(root)),
-            "finding_count": len(findings),
-            "findings": findings,
+            "root": ".",
+            "finding_count": len(rel_findings),
+            "findings": rel_findings,
         }
         baseline_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
-        print(f"pg_portability_linter: baseline written to {baseline_path} ({len(findings)} findings)")
+        print(f"pg_portability_linter: baseline written to {baseline_path} ({len(rel_findings)} findings)")
         return 0
 
     baseline = _load_baseline(baseline_path)
-    new_findings = [f for f in findings if _finding_key(f) not in baseline]
+    new_findings = [f for f in findings if _rel_key(f, root) not in baseline]
     new_highs = [f for f in new_findings if f["severity"] == "high"]
 
     if args.json_output:
