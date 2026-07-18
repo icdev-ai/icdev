@@ -867,6 +867,59 @@ BUILTIN_MISSIONS = [
         "difficulty": "advanced", "estimated_minutes": 60,
         "prereqs": ["m-gov-03-intake"],
     },
+    # ── penta-aca-04 missions — ICDEV platform AI subsystems (batch 1) ────────
+    # NOTE: penta-aca-05 (batch 2) appends AFTER this block. Keep new missions
+    # here so both batches stay conflict-free.
+    {
+        "slug": "m-cortex-01-unified-ai-layer",
+        "title": "ICDEV Cortex — The Unified AI Layer",
+        "tagline": "One governed facade over RAG, KG, documents, and keyword search. Stop wiring five backends by hand.",
+        "tier": 2, "topic": "cortex", "role_filter": "swe,swe_arch,ai_developer",
+        "mission_type": "coding",
+        "xp_reward": 450, "order_idx": 1,
+        "difficulty": "intermediate", "estimated_minutes": 35,
+        "prereqs": ["m03-rag-basics"],
+    },
+    {
+        "slug": "m-dic-01-grounded-citations",
+        "title": "Document Intelligence — Grounded Citations",
+        "tagline": "Ingest, cite, and gate. Every claim carries a [source:] or it does not ship.",
+        "tier": 2, "topic": "dic", "role_filter": "swe,swe_arch,analyst,isso",
+        "mission_type": "coding",
+        "xp_reward": 450, "order_idx": 1,
+        "difficulty": "intermediate", "estimated_minutes": 35,
+        "prereqs": ["m03-rag-basics"],
+    },
+    {
+        "slug": "m-graphrag-01-kg-traversal",
+        "title": "GraphRAG & the Knowledge Graph",
+        "tagline": "Vectors find similar chunks. The graph finds connected facts. GraphRAG uses both.",
+        "tier": 2, "topic": "graphrag", "role_filter": "swe,swe_arch,ai_developer,analyst",
+        "mission_type": "coding",
+        "xp_reward": 500, "order_idx": 1,
+        "difficulty": "advanced", "estimated_minutes": 40,
+        "prereqs": ["m03-rag-basics"],
+    },
+    {
+        "slug": "m-iqe-01-collections-adapters",
+        "title": "IQE — In-App Query Engine",
+        "tagline": "Ask any canvas a question in plain language. Collections + adapters make it possible.",
+        "tier": 2, "topic": "iqe", "role_filter": "swe,swe_arch,analyst",
+        "mission_type": "coding",
+        "xp_reward": 450, "order_idx": 1,
+        "difficulty": "intermediate", "estimated_minutes": 35,
+        "prereqs": ["m10-tier1-capstone"],
+    },
+    {
+        "slug": "m-kanban-01-governed-pipeline",
+        "title": "The Governed Delivery Pipeline",
+        "tagline": "Task to merge, with gates that hold. Understand the lifecycle before you ship into it.",
+        "tier": 2, "topic": "kanban", "role_filter": "swe,swe_arch,devops",
+        "mission_type": "coding",
+        "xp_reward": 450, "order_idx": 1,
+        "difficulty": "intermediate", "estimated_minutes": 35,
+        "prereqs": ["m10-tier1-capstone"],
+    },
 ]
 
 # ---------------------------------------------------------------------------
@@ -1314,6 +1367,70 @@ BUILTIN_STEPS: dict[str, list] = {
             {"id": "leadership_brief", "label": "What I'd brief to senior leadership in 2 sentences", "type": "textarea"},
         ]),
     ]),
+    # ── penta-aca-04 missions ─────────────────────────────────────────────────
+    # Single-step coding missions. Step files live under
+    # content/tier2/<slug>/steps/step1_{starter,test}.py + step1_<name>.md.
+    # penta-aca-05 (batch 2) appends its BUILTIN_STEPS entries AFTER this block.
+    "m-cortex-01-unified-ai-layer": [
+        {
+            "step_num": 1,
+            "title": "Route a request through the Cortex facade",
+            "step_type": "coding",
+            "content_path": "tier2/m-cortex-01-unified-ai-layer/steps/step1_cortex.md",
+            "starter_code_path": "tier2/m-cortex-01-unified-ai-layer/steps/step1_starter.py",
+            "test_code_path": "tier2/m-cortex-01-unified-ai-layer/steps/step1_test.py",
+            "config_schema": {},
+            "xp_partial": 150, "skill_tag": "cortex", "estimated_seconds": 600,
+        },
+    ],
+    "m-dic-01-grounded-citations": [
+        {
+            "step_num": 1,
+            "title": "Parse and validate [source:] citations",
+            "step_type": "coding",
+            "content_path": "tier2/m-dic-01-grounded-citations/steps/step1_dic.md",
+            "starter_code_path": "tier2/m-dic-01-grounded-citations/steps/step1_starter.py",
+            "test_code_path": "tier2/m-dic-01-grounded-citations/steps/step1_test.py",
+            "config_schema": {},
+            "xp_partial": 150, "skill_tag": "dic", "estimated_seconds": 600,
+        },
+    ],
+    "m-graphrag-01-kg-traversal": [
+        {
+            "step_num": 1,
+            "title": "Traverse kg_edges for GraphRAG retrieval",
+            "step_type": "coding",
+            "content_path": "tier2/m-graphrag-01-kg-traversal/steps/step1_graphrag.md",
+            "starter_code_path": "tier2/m-graphrag-01-kg-traversal/steps/step1_starter.py",
+            "test_code_path": "tier2/m-graphrag-01-kg-traversal/steps/step1_test.py",
+            "config_schema": {},
+            "xp_partial": 150, "skill_tag": "graphrag", "estimated_seconds": 600,
+        },
+    ],
+    "m-iqe-01-collections-adapters": [
+        {
+            "step_num": 1,
+            "title": "Register a collection and dispatch a query",
+            "step_type": "coding",
+            "content_path": "tier2/m-iqe-01-collections-adapters/steps/step1_iqe.md",
+            "starter_code_path": "tier2/m-iqe-01-collections-adapters/steps/step1_starter.py",
+            "test_code_path": "tier2/m-iqe-01-collections-adapters/steps/step1_test.py",
+            "config_schema": {},
+            "xp_partial": 150, "skill_tag": "iqe", "estimated_seconds": 600,
+        },
+    ],
+    "m-kanban-01-governed-pipeline": [
+        {
+            "step_num": 1,
+            "title": "Enforce the task lifecycle and its gates",
+            "step_type": "coding",
+            "content_path": "tier2/m-kanban-01-governed-pipeline/steps/step1_kanban.md",
+            "starter_code_path": "tier2/m-kanban-01-governed-pipeline/steps/step1_starter.py",
+            "test_code_path": "tier2/m-kanban-01-governed-pipeline/steps/step1_test.py",
+            "config_schema": {},
+            "xp_partial": 150, "skill_tag": "kanban", "estimated_seconds": 600,
+        },
+    ],
 }
 
 
@@ -1392,14 +1509,17 @@ def _seed_steps(conn, mission_id: int, mission_slug: str) -> None:
             conn.execute(
                 """INSERT OR IGNORE INTO fa_mission_steps
                    (mission_id, step_num, title, step_type, content_path,
+                    starter_code_path, test_code_path,
                     config_schema_json, xp_partial, skill_tag, hint_allowed, estimated_seconds)
-                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     mission_id,
                     step["step_num"],
                     step["title"],
                     step.get("step_type", "configure"),
                     step.get("content_path", ""),
+                    step.get("starter_code_path", ""),
+                    step.get("test_code_path", ""),
                     json.dumps(step.get("config_schema", {})),
                     step.get("xp_partial", 50),
                     step.get("skill_tag", ""),
