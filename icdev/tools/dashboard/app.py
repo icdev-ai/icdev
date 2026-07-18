@@ -29,7 +29,7 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from tools.logging.icdev_logger import get_logger  # noqa: E402
-from tools.db.storage import get_connection, sql_placeholder  # noqa: E402
+from tools.db.storage import get_connection, sql_placeholder, table_exists  # noqa: E402
 
 from flask import (
     Flask,
@@ -5534,10 +5534,7 @@ def create_app(testing: bool = False) -> Flask:
                         pass
                     # SSDF coverage — remediation rate of SSDF framework findings
                     try:
-                        tables_row = pc.execute(
-                            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='pc_compliance_findings'"
-                        ).fetchone()
-                        if tables_row and tables_row[0] > 0:
+                        if table_exists(pc, "pc_compliance_findings"):
                             ssdf_total = pc.execute(
                                 "SELECT COUNT(*) FROM pc_compliance_findings WHERE framework LIKE 'SSDF%'"
                             ).fetchone()[0]

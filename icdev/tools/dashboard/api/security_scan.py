@@ -3,7 +3,7 @@
 """Dashboard API: Security Scan Results."""
 
 import sys
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection, table_exists
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request
@@ -29,20 +29,7 @@ def _get_db():
 
 def _table_exists(conn, table_name: str) -> bool:
     """Check if a table exists (works for both SQLite and PostgreSQL)."""
-    try:
-        if getattr(conn, "_backend", "sqlite") == "postgresql":
-            row = conn.execute(
-                "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = %s",
-                (table_name,),
-            ).fetchone()
-            return row is not None
-        row = conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=%s",
-            (table_name,),
-        ).fetchone()
-        return row is not None
-    except Exception:
-        return False
+    return table_exists(conn, table_name)
 
 
 @security_scan_api.route("/stats", methods=["GET"])
