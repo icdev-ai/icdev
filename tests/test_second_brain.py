@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 from datetime import datetime, timezone, timedelta
 
@@ -165,16 +166,38 @@ def sb_env(monkeypatch):
 
 @pytest.fixture
 def flask_client():
-    """Flask test client for route smoke tests (authenticated session)."""
+    """Flask test client for route smoke tests (authenticated session).
+
+    Both the dashboard's global auth hook and the fail-closed /me gate
+    (cnr-me-01) require a real, active dashboard user, so seed 'test-admin' into
+    dashboard_users on the app's own DB before setting the session cookie.
+    """
     import importlib
+    # Skip the dashboard's import-time API-key auto-provisioning (needs the full
+    # auth schema, absent in a bare worktree DB) by presenting an env key.
+    os.environ.setdefault("ICDEV_DASHBOARD_API_KEY", "test-sb-key")
+    try:
+        from tools.db.storage import get_connection
+        conn = get_connection()
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS dashboard_users (
+                id TEXT PRIMARY KEY, email TEXT UNIQUE, display_name TEXT,
+                role TEXT DEFAULT 'admin', status TEXT DEFAULT 'active',
+                created_by TEXT, created_at TIMESTAMP, updated_at TIMESTAMP
+            );
+            INSERT OR IGNORE INTO dashboard_users (id, email, display_name, role, status)
+            VALUES ('test-admin', 'admin@test.local', 'Test Admin', 'admin', 'active');
+            """
+        )
+        conn.commit()
+    except Exception:
+        pass
     app_mod = importlib.import_module("tools.dashboard.app")
     app = app_mod.app
     app.config["TESTING"] = True
     app.config["SECRET_KEY"] = "test-sb-secret"
     with app.test_client() as client:
-        # Establish an authenticated session — the /me routes are fail-closed
-        # (cnr-me-01), so route smoke tests must present a logged-in identity.
-        # 'test-admin' is the user seeded into dashboard_users by conftest.
         with client.session_transaction() as sess:
             sess["user_id"] = "test-admin"
         with app.app_context():
@@ -627,7 +650,7 @@ class TestSearch:
 
 class TestRoutes:
     PAGES = [
-        "/me",
+        "/me/",
         "/me/profile",
         "/me/objectives",
         "/me/customers",
@@ -904,3 +927,94 @@ class TestMsGraphIntegration:
             token_expiry="2030-01-01T00:00:00+00:00", tenant_id=TENANT_ID,
         )
         assert _get_m365_token("ms-user2", TENANT_ID) == "LIVE-TOKEN"
+
+
+# ── hygiene: batching, dialect, base URL, SOUL, migration (cnr-me-04) ───────────
+
+class TestBriefingBatching:
+    def test_single_llm_call_for_briefing(self, monkeypatch):
+        """Greeting + focus + all per-meeting prep notes = ONE LLM call."""
+        import importlib
+        calls = {"n": 0}
+
+        def fake_invoke(self, function, request, **kwargs):
+            calls["n"] += 1
+            return {"content": '{"greeting":"Hi.","focus":"Ship it.",'
+                               '"meetings":[{"prep":"Review agenda."},{"prep":"Bring notes."}]}'}
+
+        for name in ("tools.llm.router", "icdev.tools.llm.router"):
+            try:
+                mod = importlib.import_module(name)
+                monkeypatch.setattr(mod.LLMRouter, "invoke", fake_invoke)
+            except Exception:
+                pass
+
+        from tools.second_brain.briefing import _build_content
+        cal = [{"title": "A", "attendees": []}, {"title": "B", "attendees": []}]
+        out = _build_content(
+            ctx={"name": "Jane", "title": "Arch", "org_name": "ACME",
+                 "delivery_channels": ["dashboard"]},
+            briefing_date="2026-07-18", calendar_items=cal,
+            task_items=[], mention_items=[], objectives=[], challenges=[],
+            user_id="batch-user", tenant_id=TENANT_ID,
+        )
+        assert calls["n"] == 1, f"expected 1 batched LLM call, got {calls['n']}"
+        assert out["greeting"] == "Hi."
+        assert out["focus"] == "Ship it."
+        assert out["meetings"][0]["prep_notes"] == "Review agenda."
+        assert out["meetings"][1]["prep_notes"] == "Bring notes."
+
+    def test_base_url_configurable(self, monkeypatch):
+        from tools.second_brain.briefing import _base_url
+        monkeypatch.setenv("ICDEV_BASE_URL", "https://icdev.example.mil/")
+        assert _base_url() == "https://icdev.example.mil"
+        monkeypatch.delenv("ICDEV_BASE_URL", raising=False)
+        assert _base_url() == "http://localhost:5050"
+
+    def test_ensure_tables_removed(self):
+        """The dead _ensure_tables() must be gone (cnr-me-04b)."""
+        from tools.second_brain import profile as prof
+        assert not hasattr(prof, "_ensure_tables")
+
+    def test_migration_uses_portable_default(self):
+        sql = (pathlib.Path(__file__).parent.parent / "icdev" / "tools" / "db"
+               / "migrations" / "223_user_identity.sql").read_text(encoding="utf-8")
+        assert "DEFAULT (datetime('now'))" not in sql
+        assert "DEFAULT CURRENT_TIMESTAMP" in sql
+
+
+class TestErrorHygiene:
+    def test_500_returns_generic_message(self, sb_app, monkeypatch):
+        """API 500s must not leak raw exception detail (cnr-me-04d)."""
+        monkeypatch.setenv("ICDEV_AUTH_BYPASS", "1")
+        import tools.second_brain.relationship_health as rh
+
+        def boom(*a, **k):
+            raise RuntimeError("SECRET internal path /etc/creds")
+
+        monkeypatch.setattr(rh, "get_relationship_health_map", boom)
+        r = sb_app.test_client().get("/me/api/second-brain/relationships/health")
+        assert r.status_code == 500
+        body = json.loads(r.data)
+        assert body.get("error") == "Internal server error"
+        assert "SECRET" not in r.data.decode()
+
+
+class TestSoulInjection:
+    def test_inject_user_profile_context_appends_operator_section(self):
+        from tools.second_brain.profile import upsert_profile, save_objectives
+        upsert_profile("soul-user", TENANT_ID, full_name="Dana Lee",
+                       title="Architect", org_name="Initech", context_complete=1)
+        save_objectives("soul-user", [{"title": "Ship the platform"}], TENANT_ID)
+        from icdev.tools.ace.soul_manager import inject_user_profile_context
+        out = inject_user_profile_context("## Identity\nYou are helpful.", "soul-user", TENANT_ID)
+        assert "Operator Context" in out
+        assert "Dana Lee" in out
+        assert "Ship the platform" in out
+
+    def test_inject_skips_for_default_and_incomplete(self):
+        from icdev.tools.ace.soul_manager import inject_user_profile_context
+        base = "## Identity"
+        assert inject_user_profile_context(base, "default", TENANT_ID) == base
+        # unknown user → no profile → unchanged
+        assert inject_user_profile_context(base, "nobody-xyz", TENANT_ID) == base

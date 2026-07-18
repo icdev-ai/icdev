@@ -90,6 +90,18 @@ def _tenant_id() -> str:
     return getattr(g, "tenant_id", None) or "default"
 
 
+def _err(exc: Exception, **extra):
+    """Return a generic 500 JSON payload; log the real detail server-side.
+
+    cnr-me-04(d): never leak raw str(exc) (stack/internal detail) to clients.
+    *extra* preserves per-endpoint response keys (e.g. canvases=[], results=[]).
+    """
+    logger.warning("[second_brain] error in %s: %s", getattr(request, "endpoint", "?"), exc)
+    payload = {"ok": False, "error": "Internal server error"}
+    payload.update(extra)
+    return jsonify(payload), 500
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Page routes
 # ─────────────────────────────────────────────────────────────────────────────
@@ -234,7 +246,7 @@ def api_save_profile():
         return jsonify({"ok": True, "profile": result})
     except Exception as exc:
         logger.warning("[second_brain] save_profile error: %s", exc)
-        return jsonify({"ok": False, "error": str(exc)}), 500
+        return _err(exc)
 
 
 @second_brain_bp.route("/api/second-brain/profile/infer-role")
@@ -257,7 +269,7 @@ def api_summarize_profile():
         summary = generate_profile_summary(_user_id(), _tenant_id())
         return jsonify({"ok": True, "summary": summary})
     except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 500
+        return _err(exc)
 
 
 @second_brain_bp.route("/api/second-brain/profile", methods=["GET"])
@@ -282,7 +294,7 @@ def api_generate_briefing():
         delivery = deliver_briefing(_user_id(), briefing_date, _tenant_id())
         return jsonify({"ok": True, "briefing": content, "delivery": delivery})
     except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 500
+        return _err(exc)
 
 
 @second_brain_bp.route("/api/second-brain/briefing/today", methods=["GET"])
@@ -336,7 +348,7 @@ def api_verify_integration(service: str):
                 )
         return jsonify({"ok": ok})
     except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 500
+        return _err(exc)
 
 
 @second_brain_bp.route("/api/integrations/oauth/start/<service>", methods=["GET"])
@@ -395,7 +407,7 @@ def api_sync_integration(service: str):
         update_sync_time(_user_id(), service, _tenant_id())
         return jsonify({"ok": True, **result})
     except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 500
+        return _err(exc)
 
 
 @second_brain_bp.route("/api/integrations/<service>", methods=["DELETE"])
@@ -417,7 +429,7 @@ def api_calendar_contacts():
                     attendees.add(a)
         return jsonify(list(attendees)[:20])
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        return _err(exc)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -433,7 +445,7 @@ def api_tomorrow_prep():
         prep = generate_tomorrow_prep(_user_id(), _tenant_id())
         return jsonify({"ok": True, "prep": prep})
     except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 500
+        return _err(exc)
 
 
 @second_brain_bp.route("/api/second-brain/proactive/weekly-digest", methods=["POST"])
@@ -444,7 +456,7 @@ def api_weekly_digest():
         digest = generate_weekly_architecture_digest(_user_id(), _tenant_id())
         return jsonify({"ok": True, "digest": digest})
     except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 500
+        return _err(exc)
 
 
 @second_brain_bp.route("/api/second-brain/proactive/stalled-work", methods=["GET"])
@@ -455,7 +467,7 @@ def api_stalled_work():
         items = scan_stalled_objectives(_user_id(), _tenant_id())
         return jsonify({"ok": True, "stalled": items})
     except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 500
+        return _err(exc)
 
 
 @second_brain_bp.route("/api/second-brain/proactive/design-review", methods=["POST"])
@@ -467,7 +479,7 @@ def api_design_review():
         findings = customer_aware_review(data, _user_id(), _tenant_id())
         return jsonify({"ok": True, "findings": findings})
     except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 500
+        return _err(exc)
 
 
 @second_brain_bp.route("/api/second-brain/proactive/relevant-canvases", methods=["GET"])
@@ -478,7 +490,7 @@ def api_relevant_canvases():
         canvases = get_relevant_canvases(_user_id(), _tenant_id())
         return jsonify({"ok": True, "canvases": canvases})
     except Exception as exc:
-        return jsonify({"ok": False, "canvases": [], "error": str(exc)}), 500
+        return _err(exc, canvases=[])
 
 
 @second_brain_bp.route("/api/second-brain/proactive/expectation-fields", methods=["GET"])
@@ -494,7 +506,7 @@ def api_expectation_fields():
             "persona": persona.get("display_name", ""),
         })
     except Exception as exc:
-        return jsonify({"ok": False, "fields": [], "error": str(exc)}), 500
+        return _err(exc, fields=[])
 
 
 @second_brain_bp.route("/api/second-brain/challenges/mitigate", methods=["POST"])
@@ -505,7 +517,7 @@ def api_challenge_mitigate():
         result = generate_challenge_mitigations(_user_id(), _tenant_id())
         return jsonify({"ok": True, "mitigations": result})
     except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 500
+        return _err(exc)
 
 
 @second_brain_bp.route("/api/second-brain/objectives/sync", methods=["POST"])
@@ -516,7 +528,7 @@ def api_objectives_sync():
         updated = sync_objective_progress(_user_id(), _tenant_id())
         return jsonify({"ok": True, "updated": updated, "count": len(updated)})
     except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 500
+        return _err(exc)
 
 
 @second_brain_bp.route("/api/second-brain/proactive/commitment-alerts", methods=["GET"])
@@ -527,7 +539,7 @@ def api_commitment_alerts():
         alerts = generate_commitment_alerts(_user_id(), _tenant_id())
         return jsonify({"ok": True, "alerts": alerts, "count": len(alerts)})
     except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 500
+        return _err(exc)
 
 
 @second_brain_bp.route("/api/second-brain/proactive/meeting-preps", methods=["POST"])
@@ -538,7 +550,7 @@ def api_meeting_preps():
         cards = generate_meeting_preps(_user_id(), _tenant_id())
         return jsonify({"ok": True, "cards": cards, "count": len(cards)})
     except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 500
+        return _err(exc)
 
 
 @second_brain_bp.route("/api/second-brain/proactive/launch-meeting-coworker", methods=["POST"])
@@ -602,7 +614,7 @@ def api_log_interaction(relationship_id: str):
         )
         return jsonify({"ok": True, "interaction": result})
     except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 500
+        return _err(exc)
 
 
 @second_brain_bp.route(
@@ -630,7 +642,7 @@ def api_iqe_query():
         results = iqe_query(query, collection, _user_id(), _tenant_id())
         return jsonify({"ok": True, "results": results})
     except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc), "results": []}), 500
+        return _err(exc, results=[])
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -738,7 +750,7 @@ def api_relationship_health():
         from tools.second_brain.relationship_health import get_relationship_health_map
         return jsonify({"ok": True, "relationships": get_relationship_health_map(_user_id(), _tenant_id())})
     except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 500
+        return _err(exc)
 
 
 @second_brain_bp.route("/api/integrations/google/contacts", methods=["GET"])
@@ -762,7 +774,7 @@ def api_google_contacts():
                     contacts.append({"email": email, "name": email.split("@")[0], "org": ""})
         return jsonify({"ok": True, "contacts": contacts[:20]})
     except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 500
+        return _err(exc)
 
 
 def _get_connector(service: str):

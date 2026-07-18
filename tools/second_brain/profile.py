@@ -28,14 +28,6 @@ def _utcnow() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def _ensure_tables(conn) -> None:
-    try:
-        from icdev.tools.db.migrations import apply_migration
-        apply_migration(conn, "223_user_identity")
-    except Exception:
-        pass  # tables may already exist
-
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Profile (user_identity_profiles)
 # ─────────────────────────────────────────────────────────────────────────────
