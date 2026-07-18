@@ -35,6 +35,11 @@ def get_connection():
 
     For PostgreSQL, uses ICDEV's StorageConnection wrapper which
     auto-translates SQLite SQL to PostgreSQL (? → %s, PRAGMA → no-op, etc.)
+
+    cvx-sql-03: this is the canvas-connection pattern — it already disables RLS
+    via set_security_context(None) below. It is NOT renamed to
+    get_canvas_connection() because that helper targets the shared icdev DB on PG,
+    which would break this canvas's dedicated NC_PG_DATABASE=network_canvas contract.
     """
     if _NC_BACKEND == "postgresql":
         try:

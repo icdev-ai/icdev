@@ -45,6 +45,10 @@ _SCHEMA_STMTS = [
 
 def init_db() -> None:
     """Create mcip_dat_events and mcip_dti_scores in the global ICDEV DB."""
+    # cvx-sql-03: reviewed — BY DESIGN the storage-global get_connection() is used
+    # here. These tables live in the global ICDEV DB and mcip_dat_events carries a
+    # `classification` column that participates in the RLS predicate, so this is
+    # NOT a canvas-connection bypass. Do not convert to get_canvas_connection().
     from tools.db.storage import get_connection
 
     conn = get_connection()

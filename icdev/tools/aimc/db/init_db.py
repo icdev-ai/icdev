@@ -75,12 +75,15 @@ _AIMC_DEPLOYMENT_IDX = [
 
 def init_db() -> None:
     """Create AIMC tables if they do not exist."""
-    from tools.db.storage import get_connection
+    # cvx-sql-03: aimc_* tables carry `classification` but no `tenant_id`, so the
+    # storage-global get_connection() would attach the RLS predicate and raise
+    # UndefinedColumn. Use get_canvas_connection() (RLS disabled) instead.
+    from tools.db.storage import get_canvas_connection
 
     models_ddl = _AIMC_MODELS_DDL_PG if _IS_PG else _AIMC_MODELS_DDL_SQLITE
     deployment_ddl = _AIMC_DEPLOYMENT_DDL_PG if _IS_PG else _AIMC_DEPLOYMENT_DDL_SQLITE
 
-    with get_connection() as conn:
+    with get_canvas_connection("AIMC_DB_URL") as conn:
         cur = conn.cursor()
         cur.execute(models_ddl)
         for idx_sql in _AIMC_MODELS_IDX:
