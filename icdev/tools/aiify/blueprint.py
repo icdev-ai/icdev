@@ -519,29 +519,37 @@ def api_send_to_kanban():
     finally:
         conn.close()
 
-    # PRD HITL gate: block send if PRD for this phase was rejected
-    if phase_id != "all":
+    # ── PRD HITL gate + status policy (penta-aiify-01) ────────────────────────
+    # Fetch all PRD HITL decisions (no bound params → backend agnostic) and
+    # filter in Python by the '{roadmap_id}:{phase_id}' source_id form.
+    prd_decisions: dict[str, str] = {}
+    try:
+        aiify = _conn()
         try:
-            aiify = _conn()
-            try:
-                prd_key = f"{roadmap_id}:{phase_id}"
-                row = aiify.execute(
-                    "SELECT decision FROM aiify_hitl_decisions "
-                    "WHERE source_type='prd' AND source_id=%s",
-                    (prd_key,),
-                ).fetchone()
-                if row and row["decision"] == "reject":
-                    return jsonify({
-                        "error": (
-                            f"PRD for {phase_id} was rejected — "
-                            "update your HITL decision before sending to Kanban"
-                        ),
-                        "blocked": True,
-                    }), 403
-            finally:
-                aiify.close()
-        except Exception:
-            pass
+            rows = aiify.execute(
+                "SELECT source_id, decision FROM aiify_hitl_decisions WHERE source_type='prd'"
+            ).fetchall()
+            for r in rows:
+                sid = r["source_id"] if hasattr(r, "keys") else r[0]
+                dec = r["decision"] if hasattr(r, "keys") else r[1]
+                if sid and str(sid).startswith(roadmap_id + ":"):
+                    prd_decisions[str(sid).split(":", 1)[1]] = dec
+        finally:
+            aiify.close()
+    except Exception:
+        pass
+
+    # A rejected PRD blocks its phase. For an explicit single-phase request this
+    # is a hard 403 (unchanged); for 'all' the rejected phase is skipped below
+    # and the remaining phases proceed.
+    if phase_id != "all" and prd_decisions.get(phase_id) == "reject":
+        return jsonify({
+            "error": (
+                f"PRD for {phase_id} was rejected — "
+                "update your HITL decision before sending to Kanban"
+            ),
+            "blocked": True,
+        }), 403
 
     # Filter to requested phase(s)
     target_phases = [
@@ -576,111 +584,123 @@ def api_send_to_kanban():
     _PHASE_PRIORITY = {"P1": "high", "P2": "medium", "P3": "low"}
     short_id = roadmap_id[:8]
 
-    from tools.db.storage import get_connection as _icdev_conn
-    created = skipped = epics = 0
-    icdev_conn = _icdev_conn()
+    # Build all task specs, then create them through the canonical task_factory —
+    # the single dedup + INSERT choke point (penta-aiify-01). Tasks land in
+    # 'suggested' (quarantine) unless the phase PRD was explicitly approved
+    # ('accept'), in which case they land in 'backlog' (directly dispatchable).
+    # Never seed 'backlog' without HITL approval.
+    from tools.kanban.task_factory import create_tasks
 
-    try:
-        prev_epic_id: str | None = None  # for inter-phase chaining when phase_id == 'all'
+    specs: list[dict] = []
+    epic_ids: set[str] = set()
+    prev_epic_id: str | None = None  # inter-phase chaining when phase_id == 'all'
 
-        for ph in target_phases:
-            label   = ph.get("label", "")
-            ph_key  = ph.get("phase_id") or (label.split(" ")[0] if label else "P3")
-            priority = _PHASE_PRIORITY.get(ph_key, "medium")
-            opps    = ph.get("opportunities", [])
+    for ph in target_phases:
+        label   = ph.get("label", "")
+        ph_key  = ph.get("phase_id") or (label.split(" ")[0] if label else "P3")
+        priority = _PHASE_PRIORITY.get(ph_key, "medium")
+        opps    = ph.get("opportunities", [])
 
-            # ── Epic task ────────────────────────────────────────────────────
-            epic_id = f"aiify-{short_id}-{ph_key.lower()}-epic"
-            if icdev_conn.execute("SELECT id FROM kanban_tasks WHERE id = %s", (epic_id,)).fetchone():
-                skipped += 1
-            else:
-                subtitle = label.split("—")[1].strip() if "—" in label else label
-                epic_title = f"[{ph_key} Epic] AI-ify — {subtitle}"
-                epic_desc = json.dumps({
-                    "roadmap_id": roadmap_id, "scan_id": scan_id,
-                    "phase": label, "opportunity_count": len(opps),
-                    "total_effort_days": ph.get("total_effort_days", 0),
+        decision = prd_decisions.get(ph_key)
+        if decision == "reject":
+            # Blocked phase — never seed its tasks (fail-closed).
+            continue
+        task_status = "backlog" if decision == "accept" else "suggested"
+
+        # ── Epic task ────────────────────────────────────────────────────────
+        epic_id = f"aiify-{short_id}-{ph_key.lower()}-epic"
+        subtitle = label.split("—")[1].strip() if "—" in label else label
+        epic_title = f"[{ph_key} Epic] AI-ify — {subtitle}"
+        epic_desc = json.dumps({
+            "roadmap_id": roadmap_id, "scan_id": scan_id,
+            "phase": label, "opportunity_count": len(opps),
+            "total_effort_days": ph.get("total_effort_days", 0),
+        })
+        specs.append({
+            "id": epic_id,
+            "idempotency_key": epic_id,
+            "title": epic_title,
+            "description": epic_desc,
+            "task_type": "chore",
+            "priority": priority,
+            "status": task_status,
+            "depends_on_task_id": prev_epic_id if phase_id == "all" else None,
+        })
+        epic_ids.add(epic_id)
+        if phase_id == "all":
+            prev_epic_id = epic_id
+
+        # ── 4 atomic child tasks per opportunity ──────────────────────────────
+        for opp in opps:
+            opp_id   = opp.get("opportunity_id", 0)
+            pattern  = opp.get("pattern_type", "unknown")
+            module   = opp.get("module_path", "?")
+            fn       = opp.get("function_name", "<unknown>")
+            paradigm = opp.get("ai_paradigm", "llm_generation")
+            model    = opp.get("il_recommended_model", "")
+            scores   = score_map.get(opp_id, {})
+            composite = float(scores.get("composite_score", 0.0))
+            child_priority = "high" if composite >= 0.7 else priority
+            criterion = _PATTERN_CRITERIA.get(pattern, f"Replace {pattern} with {paradigm}")
+
+            base_id  = f"aiify-{short_id}-{ph_key.lower()}-{opp_id}"
+            base_desc_data = {
+                "opportunity_id": opp_id, "scan_id": scan_id,
+                "roadmap_id": roadmap_id, "phase": label,
+                "pattern_type": pattern, "module_path": module,
+                "function_name": fn, "ai_paradigm": paradigm,
+                "model_recommendation": model,
+                "scores": {
+                    "composite": scores.get("composite_score"),
+                    "value": scores.get("value_score"),
+                    "feasibility": scores.get("feasibility_score"),
+                    "risk": scores.get("risk_score"),
+                },
+                "acceptance_criterion": criterion,
+            }
+
+            steps = [
+                ("d1", "Design",     None,            f"Define interface contract and test cases for {pattern} replacement in {module}:{fn}"),
+                ("d2", "Implement",  f"{base_id}-d1", f"Replace {pattern} with {paradigm} ({model or 'recommended model'}) in {module}:{fn}"),
+                ("d3", "Test",       f"{base_id}-d2", f"Validate AI output parity; {criterion[:60]}"),
+                ("d4", "Review",     f"{base_id}-d3", f"Security scan + compliance gate for {paradigm} integration in {module}"),
+            ]
+
+            for suffix, step_name, dep_id, step_title in steps:
+                child_id = f"{base_id}-{suffix}"
+                child_desc = json.dumps({**base_desc_data, "step": step_name, "depends_on": dep_id})
+                specs.append({
+                    "id": child_id,
+                    "idempotency_key": child_id,
+                    "title": f"[{step_name}] {step_title[:90]}",
+                    "description": child_desc,
+                    "task_type": "build",
+                    "priority": child_priority,
+                    "status": task_status,
+                    "depends_on_task_id": dep_id,
                 })
-                icdev_conn.execute(
-                    "INSERT INTO kanban_tasks "
-                    "(id, title, description, task_type, priority, status, executor_type, depends_on_task_id) "
-                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
-                    (epic_id, epic_title, epic_desc, "chore", priority, "backlog", "claude_cli",
-                     prev_epic_id if phase_id == "all" else None),
-                )
-                icdev_conn.commit()
-                created += 1
-                epics += 1
 
-            if phase_id == "all":
-                prev_epic_id = epic_id
+    created_ids = create_tasks(specs)
+    created = len(created_ids)
+    skipped = len(specs) - created
+    _created_set = set(created_ids)
+    epics = len([e for e in epic_ids if e in _created_set])
 
-            # ── 4 atomic child tasks per opportunity ─────────────────────────
-            for opp in opps:
-                opp_id   = opp.get("opportunity_id", 0)
-                pattern  = opp.get("pattern_type", "unknown")
-                module   = opp.get("module_path", "?")
-                fn       = opp.get("function_name", "<unknown>")
-                paradigm = opp.get("ai_paradigm", "llm_generation")
-                model    = opp.get("il_recommended_model", "")
-                scores   = score_map.get(opp_id, {})
-                composite = float(scores.get("composite_score", 0.0))
-                child_priority = "high" if composite >= 0.7 else priority
-                criterion = _PATTERN_CRITERIA.get(pattern, f"Replace {pattern} with {paradigm}")
-
-                base_id  = f"aiify-{short_id}-{ph_key.lower()}-{opp_id}"
-                base_desc_data = {
-                    "opportunity_id": opp_id, "scan_id": scan_id,
-                    "roadmap_id": roadmap_id, "phase": label,
-                    "pattern_type": pattern, "module_path": module,
-                    "function_name": fn, "ai_paradigm": paradigm,
-                    "model_recommendation": model,
-                    "scores": {
-                        "composite": scores.get("composite_score"),
-                        "value": scores.get("value_score"),
-                        "feasibility": scores.get("feasibility_score"),
-                        "risk": scores.get("risk_score"),
-                    },
-                    "acceptance_criterion": criterion,
-                }
-
-                steps = [
-                    ("d1", "Design",     None,            f"Define interface contract and test cases for {pattern} replacement in {module}:{fn}"),
-                    ("d2", "Implement",  f"{base_id}-d1", f"Replace {pattern} with {paradigm} ({model or 'recommended model'}) in {module}:{fn}"),
-                    ("d3", "Test",       f"{base_id}-d2", f"Validate AI output parity; {criterion[:60]}"),
-                    ("d4", "Review",     f"{base_id}-d3", f"Security scan + compliance gate for {paradigm} integration in {module}"),
-                ]
-
-                for suffix, step_name, dep_id, step_title in steps:
-                    child_id = f"{base_id}-{suffix}"
-                    if icdev_conn.execute("SELECT id FROM kanban_tasks WHERE id = %s", (child_id,)).fetchone():
-                        skipped += 1
-                        continue
-                    child_desc = json.dumps({**base_desc_data, "step": step_name, "depends_on": dep_id})
-                    icdev_conn.execute(
-                        "INSERT INTO kanban_tasks "
-                        "(id, title, description, task_type, priority, status, executor_type, depends_on_task_id) "
-                        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
-                        (child_id, f"[{step_name}] {step_title[:90]}", child_desc,
-                         "build", child_priority, "backlog", "claude_cli", dep_id),
-                    )
-                    icdev_conn.commit()
-                    created += 1
-    finally:
-        icdev_conn.close()
-
-    # Audit log
-    conn = _conn()
+    # Audit log (best-effort — an audit hiccup must not fail a successful create)
     try:
-        conn.execute(
-            "INSERT INTO aiify_audit_log (event_type, scan_id, actor, detail) VALUES (%s, %s, %s, %s)",
-            ("kanban_promoted", scan_id, "user",
-             json.dumps({"roadmap_id": roadmap_id, "phase_id": phase_id,
-                         "created": created, "skipped": skipped, "epics": epics})),
-        )
-        conn.commit()
-    finally:
-        conn.close()
+        conn = _conn()
+        try:
+            conn.execute(
+                "INSERT INTO aiify_audit_log (event_type, scan_id, actor, detail) VALUES (%s, %s, %s, %s)",
+                ("kanban_promoted", scan_id, "user",
+                 json.dumps({"roadmap_id": roadmap_id, "phase_id": phase_id,
+                             "created": created, "skipped": skipped, "epics": epics})),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        logger.warning("aiify: send-to-kanban audit write failed", exc_info=True)
 
     return jsonify({"created": created, "skipped": skipped, "phase_id": phase_id, "epics": epics})
 
