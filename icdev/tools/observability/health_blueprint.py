@@ -7,6 +7,7 @@ GET /health/live   — Kubernetes liveness (always 200)
 """
 from __future__ import annotations
 
+import os
 import time
 
 from flask import Blueprint, jsonify
@@ -47,10 +48,42 @@ def _check_db() -> str:
         return "fail"
 
 
+def _llm_ping_enabled() -> bool:
+    """Whether the optional deeper LLM reachability probe is enabled.
+
+    Off by default so the probe stays air-gap safe (no network I/O unless the
+    operator explicitly opts in via ICDEV_HEALTH_LLM_PING).
+    """
+    return os.environ.get("ICDEV_HEALTH_LLM_PING", "").strip().lower() in (
+        "1", "true", "yes", "on",
+    )
+
+
 def _check_llm() -> str:
+    """Truthful LLM availability check (key: ``llm_import``).
+
+    Default behaviour verifies only that the LLMRouter module *imports*. A
+    successful import proves the code is installed — it does NOT prove any
+    provider is reachable — hence the key name ``llm_import``.
+
+    Optional deeper probe (env ``ICDEV_HEALTH_LLM_PING=true``, default off):
+    asks the router whether at least one configured provider+model is actually
+    reachable via ``LLMRouter.has_any_llm()`` — a reachability check that does
+    NOT invoke a completion. Any failure degrades gracefully (returns
+    ``"degraded"``) rather than raising, so the probe never breaks the
+    endpoint. When disabled, no network I/O is attempted.
+    """
     try:
         from tools.llm.router import LLMRouter  # noqa: F401
+    except Exception:
+        return "degraded"
+
+    if not _llm_ping_enabled():
         return "ok"
+
+    # Deep probe: provider reachability (no completion invoked).
+    try:
+        return "ok" if LLMRouter().has_any_llm() else "degraded"
     except Exception:
         return "degraded"
 
@@ -72,7 +105,7 @@ def _check_kanban() -> str:
 def _run_checks() -> dict:
     return {
         "db": _check_db(),
-        "llm": _check_llm(),
+        "llm_import": _check_llm(),
         "kanban": _check_kanban(),
         "redis": "skip",
     }
