@@ -326,6 +326,11 @@
   function vClass(r){return 'v-'+(r||'not_suitable');}
   function bClass(r){return 'b-'+(r||'not_suitable');}
   function jparse(x){ if(!x)return []; if(Array.isArray(x))return x; try{return JSON.parse(x);}catch(e){return [];} }
+  /* HTML-escape scan/LLM-derived text before it is placed into innerHTML
+     (penta-aiify-04): module paths, function names, verdicts, pros/cons and
+     rationale are attacker-influenceable and must render inert. */
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
 
   function loadResults(id){
     var list=document.getElementById('oppList'); list.innerHTML='<span class="spin"></span> loading…';
@@ -370,15 +375,15 @@
         var pros=jparse(o.pros), cons=jparse(o.cons);
         var sc=(o.composite_score!=null)?Math.round(o.composite_score*100)+'%':'—';
         return '<div class="opp"><div class="opp-head"><div>'+
-          '<div class="opp-title">'+(o.module_path||'?')+' <span style="color:#64748b">·</span> '+(o.function_name||'')+
-          '<span class="chip '+(o.category||'')+'">'+(o.category||'')+'</span></div>'+
-          '<div class="opp-meta">'+(o.pattern_type||'')+' → '+(o.ai_paradigm||'')+' · '+(o.il_recommended_model||'')+'</div></div>'+
-          '<div style="text-align:right"><div class="badge '+bClass(o.ai_readiness)+'">'+(o.verdict||'')+'</div>'+
+          '<div class="opp-title">'+esc(o.module_path||'?')+' <span style="color:#64748b">·</span> '+esc(o.function_name||'')+
+          '<span class="chip '+esc(o.category||'')+'">'+esc(o.category||'')+'</span></div>'+
+          '<div class="opp-meta">'+esc(o.pattern_type||'')+' → '+esc(o.ai_paradigm||'')+' · '+esc(o.il_recommended_model||'')+'</div></div>'+
+          '<div style="text-align:right"><div class="badge '+bClass(o.ai_readiness)+'">'+esc(o.verdict||'')+'</div>'+
           '<div class="score" style="margin-top:6px">'+sc+'</div></div></div>'+
           ((pros.length||cons.length)?'<div class="pc"><div class="pros"><b>Pros</b><ul>'+
-            pros.map(p=>'<li>'+p+'</li>').join('')+'</ul></div><div class="cons"><b>Cons</b><ul>'+
-            cons.map(c=>'<li>'+c+'</li>').join('')+'</ul></div></div>':'')+
-          (o.rationale?'<div class="rationale">'+o.rationale+'</div>':'')+'</div>';
+            pros.map(p=>'<li>'+esc(p)+'</li>').join('')+'</ul></div><div class="cons"><b>Cons</b><ul>'+
+            cons.map(c=>'<li>'+esc(c)+'</li>').join('')+'</ul></div></div>':'')+
+          (o.rationale?'<div class="rationale">'+esc(o.rationale)+'</div>':'')+'</div>';
       }).join('');
     }).catch(e=>{list.innerHTML='<div class="err">Failed to load results: '+e+'</div>';});
   }

@@ -147,6 +147,19 @@ CREATE TABLE IF NOT EXISTS aiify_posture_snapshots (
     dimensions_json   JSONB,
     snapshot_json     JSONB,
     created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS aiify_prd_provenance (
+    id                SERIAL PRIMARY KEY,
+    roadmap_id        TEXT NOT NULL,
+    phase_id          TEXT NOT NULL,
+    ai_boosted        INTEGER NOT NULL DEFAULT 0,
+    generation_model  TEXT,
+    citation_valid    INTEGER NOT NULL DEFAULT 1,
+    citation_report   JSONB,
+    evidence_sources  JSONB,
+    provenance        JSONB,
+    created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )"""
 
 SCHEMA_PG = _SCHEMA_PG_PRE + ";\n" + _SCHEMA_PG_OPPS + ";\n" + _SCHEMA_PG_POST
