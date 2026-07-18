@@ -3,10 +3,15 @@
 Boundary Design Canvas — DB initializer
 Creates schema and seeds 5 canonical boundary design templates.
 
-Dual-backend: SQLite (default) or PostgreSQL.
-Set BDC_STORAGE_BACKEND=postgresql + BDC_PG_* env vars to use PostgreSQL.
-SQLite is the default for dev, air-gap, and single-user deployments.
-PostgreSQL is recommended for production multi-user/global deployments.
+Dual-backend: PostgreSQL (default/primary) or SQLite (init-only fallback).
+BDC_STORAGE_BACKEND defaults to ``postgresql``; set BDC_STORAGE_BACKEND=sqlite
+to pin the per-canvas SQLite file (``boundary_canvas.db``) for dev, air-gap,
+and single-user deployments. PostgreSQL is used for production
+multi-user/global deployments.
+
+The SQLite connection is wrapped in ICDEV's translating StorageConnection so
+that runtime SQL written with PG-native ``%s`` placeholders is translated to
+SQLite ``?`` — a RAW ``sqlite3.connect`` would raise ProgrammingError on ``%s``.
 """
 
 import json
@@ -44,12 +49,21 @@ def get_connection():
             return conn
         except ImportError:
             pass  # Fall through to SQLite
-    # SQLite (default) — per-canvas DB, distinct from icdev.db
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
-    return conn
+    # SQLite (init-only fallback) — per-canvas DB, distinct from icdev.db.
+    # Wrap the raw sqlite3 connection in ICDEV's StorageConnection so runtime
+    # SQL written with PG-native %s placeholders is translated to ? on this
+    # path. A raw sqlite3 connection does NOT translate %s and would raise
+    # sqlite3.ProgrammingError on every %s query.
+    raw = sqlite3.connect(str(DB_PATH))
+    raw.row_factory = sqlite3.Row
+    raw.execute("PRAGMA journal_mode=WAL")
+    raw.execute("PRAGMA foreign_keys=ON")
+    try:
+        from tools.db.storage import StorageConnection
+
+        return StorageConnection(raw, "sqlite")
+    except ImportError:
+        return raw
 
 
 SCHEMA = """

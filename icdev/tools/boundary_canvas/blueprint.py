@@ -372,13 +372,13 @@ def create_boundary_blueprint():
             params = []
             for key in ("name", "description", "classification"):
                 if key in data:
-                    updates.append(f"{key}=?")
+                    updates.append(f"{key}=%s")
                     params.append(data[key])
             if "graph_json" in data:
-                updates.append("graph_json=?")
+                updates.append("graph_json=%s")
                 val = data["graph_json"]
                 params.append(json.dumps(val) if isinstance(val, (dict, list)) else val)
-            updates.append("updated_at=?")
+            updates.append("updated_at=%s")
             params.append(now)
             params.append(design_id)
             conn.execute(
@@ -1173,7 +1173,7 @@ def create_boundary_blueprint():
             query = (
                 "SELECT a.*, i.interconnection_id, i.expiry_date, i.owner "
                 "FROM bd_alerts a LEFT JOIN bd_isa_tracker i ON a.isa_id=i.id "
-                "WHERE a.design_id=?"
+                "WHERE a.design_id=%s"
             )
             params: list = [design_id]
             if unacked_only:
