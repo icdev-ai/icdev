@@ -433,6 +433,12 @@ AIMC_NODE_TYPES: list[str] = [
     for node in group
 ]
 
+# Model ("models" palette group) node types — foundation-model nodes that may
+# carry a `model_id` property. Used by graph persistence and the
+# aimc_orphan_refs Genesis reflex to identify model nodes. Derived from the
+# palette so it never drifts from AIMC_NODE_PALETTE.
+AIMC_MODEL_NODE_TYPES: list[str] = [node["type"] for node in AIMC_NODE_PALETTE["models"]]
+
 # ── Foundation Model Catalog ──────────────────────────────────────────────────
 # Each entry: id, name, provider, family, context_window, vram_gb, cost_per_1k_tokens,
 #             il_suitability [2,4,5,6], air_gap_ready, quantization_options, notes

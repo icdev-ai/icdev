@@ -1,0 +1,39 @@
+# CUI // SP-CTI
+id: inject-03-rollback-decision
+title: 'The Lever: Rollback, Mitigate, or Ride It Out'
+body_md: '## DECISION: ROLLBACK vs MITIGATE
+
+
+  **Classification:** CUI // SP-CTI
+
+
+  The latency SLO error budget is exhausted and the canary is the suspect. Options on the table:
+
+
+  - **A. Roll back the canary** to the prior model — fast, restores latency, loses the canary''s   recall
+  improvement.
+
+  - **B. Mitigate** — cap canary traffic to 5% and add replicas — keeps the canary, slower fix,   risk
+  of continued burn.
+
+  - **C. Ride it out** — the Mission Planning cycle ends in 30 minutes anyway.
+
+
+  ### Your Task
+
+  1. **Decision** — A, B, or C, justified against the exhausted error budget and the confined    (~20%)
+  blast radius.
+
+  2. **Rollback safety** — If rolling back, the steps to verify the prior model is healthy first.
+
+  3. **Comms** — The one-line status you post to the customer program office.
+
+
+  Use SLO/Drift evidence to justify. The judge rewards a decision proportionate to the evidence.'
+context_note: 'Rollback (A) is the defensible default given an exhausted latency budget and a confined
+  canary
+
+  blast radius, but B is acceptable if the team justifies keeping the canary with a concrete burn
+
+  cap and verification. C (ride it out) should score low unless exceptionally justified. Reward rollback-safety
+  verification and a crisp customer comms line.'

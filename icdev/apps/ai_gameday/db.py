@@ -1,7 +1,7 @@
 # CUI // SP-CTI
 """AI GameDay DB layer — all ttx_* tables via get_connection()."""
 
-from tools.db.storage import get_connection
+from tools.db.storage import column_exists, get_connection
 
 _DDL = """
 CREATE TABLE IF NOT EXISTS ttx_sessions (
@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS ttx_sessions (
     started_at TEXT,
     ended_at TEXT,
     config_json TEXT DEFAULT '{}',
+    ontology_tags_json TEXT DEFAULT '{}',
     tenant_id TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -50,6 +51,7 @@ CREATE TABLE IF NOT EXISTS ttx_injects (
     depends_on_slug TEXT,
     state TEXT NOT NULL DEFAULT 'pending',
     config_json TEXT DEFAULT '{}',
+    ontology_tags_json TEXT DEFAULT '{}',
     dispatched_at TEXT,
     closed_at TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -135,6 +137,15 @@ CREATE INDEX IF NOT EXISTS idx_ttx_api_log_team ON ttx_api_log(team_id, session_
 CREATE INDEX IF NOT EXISTS idx_ttx_leaderboard_session ON ttx_leaderboard(session_id);
 """
 
+# Columns added after the tables shipped. The CREATE TABLE blocks above already
+# include them for fresh installs; this list drives an idempotent, guarded
+# ALTER-ADD for pre-existing tables created before the column existed (ontology
+# tagging, penta-gd-03). Format: (table, column, column_def).
+_ADD_COLUMNS = [
+    ("ttx_sessions", "ontology_tags_json", "TEXT DEFAULT '{}'"),
+    ("ttx_injects", "ontology_tags_json", "TEXT DEFAULT '{}'"),
+]
+
 _migrated = False
 
 
@@ -155,4 +166,20 @@ def migrate() -> None:
             except Exception:
                 pass
     conn.commit()
+
+    # Guarded column adds for tables that predate the column. CREATE TABLE
+    # IF NOT EXISTS above is a no-op on such installs, so the column would
+    # otherwise be missing and the ontology read/write paths in blueprint.py
+    # would raise on PostgreSQL. Existence-check first to avoid poisoning the
+    # PG transaction with an "already exists" error.
+    for table, column, coldef in _ADD_COLUMNS:
+        try:
+            if not column_exists(conn, table, column):
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {coldef}")
+                conn.commit()
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
     _migrated = True
