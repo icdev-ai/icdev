@@ -87,11 +87,21 @@ def graph() -> TopologyGraphAdapter:
 
 
 @pytest.fixture()
-def mem_db() -> sqlite3.Connection:
-    """In-memory SQLite DB with minimal network canvas schema."""
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
-    conn.executescript(
+def mem_db():
+    """In-memory SQLite DB with minimal network canvas schema.
+
+    The raw sqlite3 connection is set up directly (with ``?`` placeholders), then
+    wrapped in ``StorageConnection(raw, "sqlite")`` so the PG-native ``%s``
+    placeholders issued by ``nl_query.answer_query`` are translated to SQLite
+    ``?`` exactly as they are in production (where the route passes a
+    StorageConnection from ``get_connection()``). Passing a raw sqlite3 connection
+    here previously raised ``sqlite3.OperationalError: near "%": syntax error``.
+    """
+    from tools.db.storage import StorageConnection
+
+    raw = sqlite3.connect(":memory:")
+    raw.row_factory = sqlite3.Row
+    raw.executescript(
         """
         CREATE TABLE topologies (
             id TEXT PRIMARY KEY,
@@ -110,12 +120,12 @@ def mem_db() -> sqlite3.Connection:
         );
         """
     )
-    conn.execute(
+    raw.execute(
         "INSERT INTO topologies (id, name, graph_json) VALUES (?,?,?)",
         ("topo-1", "Test Topology", json.dumps(_GRAPH_JSON)),
     )
-    conn.commit()
-    return conn
+    raw.commit()
+    return StorageConnection(raw, "sqlite")
 
 
 # ---------------------------------------------------------------------------

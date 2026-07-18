@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from tools.db.storage import get_connection
+from tools.db.storage import column_exists, get_connection, list_tables, table_exists
 
 logger = get_logger("icdev.canvas.orchestrator")
 
@@ -240,18 +240,11 @@ def _read_canvas_score(
         return None
     try:
         conn = get_connection(str(db_path))
-        # Check table exists
-        cur = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name=%s",
-            (table,),
-        )
-        if cur.fetchone() is None:
+        # Check table exists — backend-aware probe (pgrt-sweep-06).
+        if not table_exists(conn, table):
             # NDC fallback: try nc_compliance_findings
             if canvas_key == "ndc":
-                cur2 = conn.execute(
-                    "SELECT name FROM sqlite_master WHERE type='table' AND name='nc_compliance_findings'",
-                )
-                if cur2.fetchone() is not None:
+                if table_exists(conn, "nc_compliance_findings"):
                     row = conn.execute(
                         "SELECT score FROM nc_compliance_findings "
                         "ORDER BY created_at DESC LIMIT 1",
@@ -312,18 +305,16 @@ def _count_cat1_findings(canvas_key: str) -> int:
         return 0
     try:
         conn = get_connection(str(db_path))
-        # Look for findings table with severity column
-        tables = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE '%findings%'",
-        ).fetchall()
+        # Look for findings table with severity column — backend-aware probes
+        # (pgrt-sweep-06). The prior "name LIKE '%findings%'" against sqlite_master
+        # only partial-translated on PG (left an invalid `name` column ref), so it
+        # raised. list_tables() + a Python filter is portable.
+        findings_tables = [t for t in list_tables(conn) if "findings" in t]
         count = 0
-        for (tbl,) in tables:
-            cols = [
-                r[1] for r in conn.execute(f"PRAGMA table_info({tbl})").fetchall()
-            ]
-            if "severity" in cols:
+        for tbl in findings_tables:
+            if column_exists(conn, tbl, "severity"):
                 row = conn.execute(
-                    f"SELECT COUNT(*) FROM {tbl} WHERE severity = 'CAT1'",  # noqa: S608  # nosec B608 — tbl from PRAGMA table_info, not user input
+                    f"SELECT COUNT(*) FROM {tbl} WHERE severity = 'CAT1'",  # noqa: S608  # nosec B608 — tbl from list_tables(), not user input
                 ).fetchone()
                 count += row[0] if row else 0
         conn.close()

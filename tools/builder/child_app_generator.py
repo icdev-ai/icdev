@@ -23,7 +23,7 @@ import shutil
 import subprocess
 import sys
 import uuid
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection, list_tables
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -1787,11 +1787,18 @@ def step_05_db_init_script(child_root: Path, blueprint: dict) -> dict:
         '        "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"\n'
         "    )\n"
         "    conn.commit()\n"
-        "    tables = [\n"
-        "        r[0] for r in conn.execute(\n"
-        "            \"SELECT name FROM sqlite_master WHERE type='table'\"\n"
-        "        ).fetchall()\n"
-        "    ]\n"
+        "    # Backend-aware table listing: prefer the vendored ICDEV helper\n"
+        "    # (works on PostgreSQL and SQLite); fall back to a direct catalog\n"
+        "    # probe only when running standalone (no vendored storage layer).\n"
+        "    try:\n"
+        "        from tools.db.storage import list_tables\n"
+        "        tables = list_tables(conn)\n"
+        "    except Exception:\n"
+        "        tables = [\n"
+        "            r[0] for r in conn.execute(\n"
+        "                \"SELECT name FROM sqlite_master WHERE type='table'\"\n"
+        "            ).fetchall()\n"
+        "        ]\n"
         f'    print(f"{app_name} database initialized at {{db_path}}")\n'
         '    _names = ", ".join(sorted(tables))\n'
         '    print(f"Tables created ({len(tables)}): {_names}")\n'
@@ -3601,7 +3608,8 @@ def step_16_db_execution(child_root: Path, blueprint: dict) -> dict:
         if db_path.exists():
 
             conn = get_connection(str(db_path))
-            tables = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
+            # Backend-aware table listing (pgrt-sweep-06) — no sqlite_master/translation reliance.
+            tables = list_tables(conn)
             conn.close()
 
             logger.info(

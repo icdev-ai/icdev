@@ -106,6 +106,9 @@ def list_tables(conn_params: dict) -> dict:
 
 def _get_table_list(conn, db_kind: str) -> list[str]:
     if db_kind == "sqlite":
+        # pg-portability: sqlite-only path — profiles arbitrary EXTERNAL user
+        # databases over a raw driver connection keyed by db_kind, not the ICDEV
+        # storage backend; the PG branch below is the information_schema equivalent.
         cur = conn.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
         return [r[0] for r in cur.fetchall()]
     if db_kind == "postgresql":
@@ -126,6 +129,8 @@ def _get_table_list(conn, db_kind: str) -> list[str]:
 def _get_column_info(conn, db_kind: str, table: str) -> list[dict]:
     """Return [{name, type_str}] for each column in table."""
     if db_kind == "sqlite":
+        # pg-portability: sqlite-only path — external DB profiling keyed by db_kind
+        # (the PG branch below uses information_schema.columns).
         cur = conn.execute(f"PRAGMA table_info({_ident(table)})")  # nosec B608
         cols = [{"name": r[1], "type_str": r[2] or ""} for r in cur.fetchall()]
         if not cols and table in ("sqlite_master", "sqlite_schema"):

@@ -37,7 +37,7 @@ BASE_DIR = Path(__file__).resolve().parents[2]
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from tools.db.storage import get_connection  # noqa: E402
+from tools.db.storage import get_connection, table_exists  # noqa: E402
 
 CONFIG_PATH = BASE_DIR / "args" / "intake_promoter.yaml"
 
@@ -84,10 +84,8 @@ def _short_id(prefix: str = "task") -> str:
 
 
 def _table_exists(conn, name: str) -> bool:
-    row = conn.execute(
-        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=%s", (name,)
-    ).fetchone()
-    return (row[0] if row else 0) > 0
+    # Backend-aware, translation-independent existence probe (pgrt-sweep-06).
+    return table_exists(conn, name)
 
 
 def _wsjf_to_priority(wsjf_score: float, thresholds: dict) -> str:
