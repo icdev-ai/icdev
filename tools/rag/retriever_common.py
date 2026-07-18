@@ -21,14 +21,16 @@ performs (``tools.*`` shim vs canonical ``icdev.tools.*``) stays under the
 caller's control — see the ``tools/cortex/search_service.py`` module
 docstring for why that resolution matters.
 
-Behavior note (divergence, intentionally preserved): ``handle_rag_search``
-forwards ``filters=`` and ``agent_id=`` keyword arguments that
-``RAGRetriever.search()`` does not accept. This helper forwards
-``search_kwargs`` verbatim, so that call still raises ``TypeError`` exactly as
-before (the handler catches it and returns an error). Only ``search_rag``
+Behavior note: both call sites forward only kwargs that
+``RAGRetriever.search()`` actually accepts (``top_k``, ``source_types``,
+``project_id``, ``rerank``, ``query_label``); ``search_kwargs`` is forwarded
+verbatim, so passing an unsupported kwarg would raise ``TypeError`` — each
+caller wraps this in its own ``try/except``. (Historically ``handle_rag_search``
+forwarded ``filters=``/``agent_id=``, which ``search()`` rejects, so every MCP
+``rag_search`` call errored; fixed in hcx-ctx-06 by mapping ``source_type`` onto
+``source_types`` and dropping the unsupported ``child_id``.) Only ``search_rag``
 consumes ``clamp_unit`` — the MCP handler normalizes via
-``SearchResult.to_dict()`` rounding instead. Both facts are documented rather
-than silently unified.
+``SearchResult.to_dict()`` rounding instead.
 """
 from __future__ import annotations
 
