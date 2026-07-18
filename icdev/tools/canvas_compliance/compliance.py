@@ -24,7 +24,7 @@ from typing import Any
 
 import sqlite3
 
-from tools.db.storage import get_connection
+from tools.db.storage import get_canvas_connection
 from tools.canvas_compliance.constants import (
     NDC_POAM_YELLOW, NDC_POAM_RED,
     SDC_AGE_YELLOW, SDC_AGE_RED, SDC_PATHS_RED,
@@ -45,19 +45,27 @@ _ICDEV_DB = _DATA / "icdev.db"
 def _open(path: Path) -> Any | None:
     """Open a DB connection.
 
-    For icdev.db: use get_connection() (respects ICDEV_STORAGE_BACKEND / PostgreSQL).
-    For canvas-specific SQLite files: open directly via sqlite3 so they are not
-    misrouted to the PostgreSQL backend.
+    For icdev.db: use get_canvas_connection() (cnr-cc-01). The global ICDEV
+    tables read here — poam_items, cato_evidence, threat_models,
+    cf_provision_log — carry classification/tenant_id RLS columns. This
+    aggregate runs on a *context-less* route (no ``g.tenant_id``), so a normal
+    get_connection() would attach the global RLS predicate and, under
+    PostgreSQL, filter every row out (or error). PostgreSQL also has no SQLite
+    ``.db`` file, so the old ``path.exists()`` gate left the icdev-backed cards
+    permanently ``available=False``. get_canvas_connection() disables RLS and,
+    on PG, reads the shared icdev database — the correct whole-platform posture
+    read. For canvas-specific SQLite files, open directly via sqlite3 so they
+    are not misrouted to the PostgreSQL backend.
     """
-    if not path.exists():
-        return None
     if path.name == "icdev.db":
         try:
-            return get_connection(str(path))
+            return get_canvas_connection()
         except Exception as exc:
             logger.warning("canvas_compliance: cannot open %s: %s", path.name, exc)
             return None
     # Canvas-specific SQLite files — always open directly.
+    if not path.exists():
+        return None
     try:
         conn = sqlite3.connect(str(path), check_same_thread=False)
         conn.row_factory = sqlite3.Row
@@ -632,27 +640,76 @@ def get_idc_card() -> dict:
 # Aggregator
 # ---------------------------------------------------------------------------
 
-_CARD_FNS = [
-    get_ndc_card,
-    get_sdc_card,
-    get_pdc_card,
-    get_bdc_card,
-    get_ddc_card,
-    get_odc_card,
-    get_idc_card,
-]
+# Bespoke compliance probes, keyed by the component-registry canvas key.
+# These carry hand-written per-canvas logic (POA&M counts, ISA expiry, MITRE
+# coverage, …) and are NOT registry-derived — but the FULL card list is
+# (cnr-cc-02(b)): any other enabled canvas in the registry gets a generic
+# "no compliance signal yet" card, so NOCC/PMC/CCC/DSOC/OHC/mission appear
+# automatically as they gain compliance probes, instead of the old hardcoded
+# 7-canvas list.
+_BESPOKE_CARDS = {
+    "network": get_ndc_card,
+    "security": get_sdc_card,
+    "pipeline": get_pdc_card,
+    "boundary": get_bdc_card,
+    "data": get_ddc_card,
+    "observability": get_odc_card,
+    "infra": get_idc_card,
+}
+
+# Back-compat alias — some callers/tests referenced the flat list.
+_CARD_FNS = list(_BESPOKE_CARDS.values())
+
+
+def _generic_card(comp) -> dict:
+    """Placeholder card for a registered canvas without a bespoke probe."""
+    prefix = (getattr(comp, "url_prefix", "") or f"/{comp.key}").rstrip("/")
+    return {
+        "key": comp.key.upper(),
+        "name": getattr(comp, "display_name", None) or comp.key.replace("_", " ").title(),
+        "path": (prefix + "/") if prefix else "/",
+        "color": "#607d8b",
+        "badge": "gray",
+        "available": False,
+        "metrics": [{"label": "Compliance Signal", "value": "not yet reported"}],
+    }
 
 
 def get_all_cards() -> list[dict]:
-    """Return compliance card dicts for all 7 canvases.
+    """Return compliance card dicts for every enabled design canvas.
 
-    Individual query failures are caught per-card so one unavailable canvas
-    never blocks the rest from rendering.
+    The card list is driven by the component registry (cnr-cc-02): canvases with
+    a bespoke probe in ``_BESPOKE_CARDS`` render their hand-written card; every
+    other enabled canvas renders a generic placeholder card. Individual query
+    failures are caught per-card so one unavailable canvas never blocks the rest.
     """
-    cards = []
-    for fn in _CARD_FNS:
+    cards: list[dict] = []
+    covered: set[str] = set()
+
+    # 1. Bespoke cards (preserve existing order + logic). Dedup is keyed off the
+    #    card's own "key" (NDC/SDC/…), lowercased, because a bespoke card's
+    #    registry canvas key is the short-code (ndc/sdc/…), not the dict key
+    #    (network/security/…) used to look up its probe function.
+    for _dict_key, fn in _BESPOKE_CARDS.items():
         try:
-            cards.append(fn())
+            card = fn()
+            cards.append(card)
+            covered.add(str(card.get("key", "")).lower())
         except Exception as exc:
             logger.error("canvas_compliance: %s failed: %s", fn.__name__, exc)
+
+    # 2. Registry-driven: generic cards for other enabled canvases.
+    try:
+        from tools.config.component_registry import get_registry
+        for comp in get_registry().iter_enabled(kind="canvas"):
+            if comp.key.lower() in covered:
+                continue
+            covered.add(comp.key.lower())
+            try:
+                cards.append(_generic_card(comp))
+            except Exception as exc:
+                logger.warning("canvas_compliance: generic card for %s failed: %s", comp.key, exc)
+    except Exception as exc:
+        logger.warning("canvas_compliance: registry-driven cards unavailable: %s", exc)
+
     return cards

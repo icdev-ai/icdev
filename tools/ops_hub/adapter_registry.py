@@ -109,6 +109,40 @@ def probe_all(persist: bool = True) -> list[dict]:
     return results
 
 
+# ── TTL cache for probe_all (cnr-ops-02) ─────────────────────────────────────
+# probe_all(persist=True) runs a live health check against every adapter (network
+# I/O) AND writes a row per adapter to the DB. The /ops overview page and the
+# adapters grid both invoked it on EVERY GET, so each dashboard load hammered the
+# network and the DB. Cache the result process-wide for a short TTL (pattern:
+# tools/dashboard/canvas_aggregator.py) so repeat loads are cheap; the first hit
+# after expiry re-probes and re-persists.
+import time as _time  # noqa: E402
+
+_PROBE_CACHE: dict[str, tuple[float, list[dict]]] = {}
+_PROBE_TTL = 60.0  # seconds
+
+
+def probe_all_cached(persist: bool = True, ttl: float = _PROBE_TTL) -> list[dict]:
+    """Return ``probe_all(persist)`` results, cached for *ttl* seconds.
+
+    Keyed on ``persist`` so a caller that wants a non-persisting probe never
+    receives a persisted-cache entry (and vice-versa).
+    """
+    key = f"persist={persist}"
+    entry = _PROBE_CACHE.get(key)
+    now = _time.monotonic()
+    if entry is not None and (now - entry[0]) < ttl:
+        return entry[1]
+    results = probe_all(persist=persist)
+    _PROBE_CACHE[key] = (now, results)
+    return results
+
+
+def invalidate_probe_cache() -> None:
+    """Clear the probe_all TTL cache (e.g. after a forced adapter re-probe)."""
+    _PROBE_CACHE.clear()
+
+
 def _persist_health(name: str, health: dict, now: str) -> None:
     """Write adapter health to ohc_adapter_status and ohc_adapter_health_log."""
     try:

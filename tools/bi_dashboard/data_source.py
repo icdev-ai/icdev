@@ -54,14 +54,22 @@ def ingest_upload(filename: str, content_bytes: bytes | None = None, text: str |
     return {"success": True, "id": source_id, "dataset": dataset}
 
 
-def get_dataset(source_id: str) -> dict[str, Any] | None:
-    """Return the parsed {columns, dimensions, measures, rows} dict for a stored source."""
+def get_dataset(source_id: str, tenant_id: str | None = None) -> dict[str, Any] | None:
+    """Return the parsed {columns, dimensions, measures, rows} dict for a stored source.
+
+    When ``tenant_id`` is provided the lookup is scoped to that tenant so a
+    caller in one tenant cannot read another tenant's uploaded data.
+    """
     conn = get_connection()
-    cur = conn.execute(
+    sql = (
         "SELECT name, columns_json, dimensions_json, measures_json, rows_json "
-        "FROM bi_data_sources WHERE id = %s",
-        (source_id,),
+        "FROM bi_data_sources WHERE id = %s"
     )
+    params: list[Any] = [source_id]
+    if tenant_id is not None:
+        sql += " AND tenant_id = %s"
+        params.append(tenant_id)
+    cur = conn.execute(sql, tuple(params))
     row = cur.fetchone()
     conn.close()
     if not row:

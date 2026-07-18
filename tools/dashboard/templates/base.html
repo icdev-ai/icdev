@@ -182,7 +182,7 @@
                     <li class="nav-section-label">Monitor</li>
                     <li><a href="/monitoring">Monitoring</a></li>
                     <li><a href="/platform-health">Platform Health</a></li>
-                    <li><a href="/health/canvases">Canvas Health</a></li>
+                    <li><a href="/health/canvases" title="Canvas Health — file-existence / wiring QA for every registered canvas (template, route, module, IQE, …). For runtime compliance posture see Canvas Posture under Canvases.">Canvas Health</a></li>
                     <li><a href="/cache-savings">Cache Savings</a></li>
                     <li><a href="/activity">Activity</a></li>
                     <li><a href="/il5">IL5 Ingestion</a></li>
@@ -243,7 +243,7 @@
                         {% endif %}
                     {% endfor %}
                     <li class="nav-section-label">Cross-Canvas</li>
-                    <li><a href="/canvas-compliance">Canvas Posture</a></li>
+                    <li><a href="/canvas-compliance" title="Canvas Posture — runtime compliance posture (scores, POA&amp;Ms, findings) across the design canvases. For file-existence / wiring QA see Canvas Health under Monitor.">Canvas Posture</a></li>
                     {% if canvas_kg_enabled %}<li><a href="/canvas-kg">Canvas KG</a></li>{% endif %}
                 </ul>
             </li>

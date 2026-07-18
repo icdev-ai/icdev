@@ -1985,6 +1985,7 @@ iqe_path_canvas:
 - {path: /demo-runner, canvas: demo_runner}
 - {path: /innovation, canvas: innovation}
 - {path: /mission-canvas, canvas: mission_canvas}
+- {path: /canvas-compliance, canvas: canvas_compliance}
 # Fine-grained GovCon keys so the AI-brief banner keeps its distinct briefs;
 # IQE dispatch resolves each via its own adapter (cpmp_deliverables aliases the
 # cpmp adapter in app.py — see _CANVAS_MAP supplement).

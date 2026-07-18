@@ -10,8 +10,10 @@
     <span class="badge bg-warning text-dark fs-6">{{ amber }} amber</span>
     <span class="badge bg-danger fs-6">{{ red }} red</span>
     <span class="text-muted ms-auto small">{{ total }} canvases total</span>
+    <a href="/canvas-compliance" class="btn btn-sm btn-outline-info" title="Runtime compliance posture (scores, POA&Ms, findings)">Canvas Posture &rarr;</a>
     <a href="/health/canvases" class="btn btn-sm btn-outline-secondary">Refresh</a>
   </div>
+  <p class="text-muted small mb-3">File-existence / wiring QA for every registered canvas. For runtime compliance posture (scores, findings) see <a href="/canvas-compliance">Canvas Posture</a>.</p>
 
   {% if red > 0 %}
   <div class="alert alert-danger py-2 mb-3">
