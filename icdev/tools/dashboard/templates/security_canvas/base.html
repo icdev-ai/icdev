@@ -65,7 +65,7 @@
         <div class="mega-group">
           <div class="mega-label">NSA Zero Trust Guide</div>
           <a href="/security/zig/" class="mega-item">&#x1f6e1; ZIG Overview</a>
-          <a href="/security/zig/external" class="mega-item">&#x1f4ca; External Portfolio</a>
+          <a href="/security/zig/portfolio" class="mega-item">&#x1f4ca; External Portfolio</a>
           <a href="/security/zig/phase" class="mega-item">&#x1f4c5; Phase Tracker</a>
           <a href="/security/zig/assessment" class="mega-item">&#x1f4ca; Assessment</a>
           <a href="/security/zig/roadmap" class="mega-item">&#x1f5fa; Roadmap</a>
@@ -89,6 +89,24 @@
 </nav>
 <main class="main-content" style="flex:1;overflow:auto;">
 {% block content %}{% endblock %}
+
+{# IQE Query Widget — rendered once for every Security Canvas page. Single backing
+   endpoint /security/api/iqe-query (SDC attack graph: attack.nodes/edges/paths).
+   Pages may override iqe_title/iqe_examples via the iqe_widget block. #}
+{% block iqe_widget %}
+{% set iqe_canvas = iqe_canvas if iqe_canvas is defined else "security" %}
+{% set iqe_api_route = iqe_api_route if iqe_api_route is defined else "/security/api/iqe-query" %}
+{% set iqe_title = iqe_title if iqe_title is defined else "IQE Query — Attack Graph" %}
+{% set iqe_examples = iqe_examples if iqe_examples is defined else [
+  {"label": "All attack nodes", "query": "foreach n in attack.nodes select *"},
+  {"label": "High-risk edges", "query": "foreach e in attack.edges where e.risk_score > 7 select e.source, e.target, e.risk_score"},
+  {"label": "Lateral movement", "query": "foreach e in attack.edges where e.technique_id contains \"T1021\" select e.source, e.target, e.technique_id"},
+  {"label": "All attack paths", "query": "foreach p in attack.paths select p.src, p.goal, p.hops"}
+] %}
+<div style="padding:0 24px 24px;">
+{% include "includes/iqe_query_widget.html" %}
+</div>
+{% endblock %}
 </main>
 {% block scripts %}{% endblock %}
 </body>
