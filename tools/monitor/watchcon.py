@@ -17,7 +17,7 @@ from pathlib import Path
 
 logger = get_logger(__name__)
 
-from tools.db.storage import get_connection
+from tools.db.storage import column_exists, get_connection
 from tools.monitor.constants import (
     WATCHCON_LABELS,
     WATCHCON_TIERS,
@@ -57,8 +57,8 @@ def tier_severity(tier: int) -> str:
 
 def _ensure_column(conn) -> None:
     """Add watchcon_tier column to alerts table if absent (idempotent)."""
-    cols = {row[1] for row in conn.execute("PRAGMA table_info(alerts)")}
-    if "watchcon_tier" not in cols:
+    # Backend-aware column probe (pgrt-sweep-06) — no PRAGMA/translation reliance.
+    if not column_exists(conn, "alerts", "watchcon_tier"):
         conn.execute(
             "ALTER TABLE alerts ADD COLUMN watchcon_tier INTEGER DEFAULT 4 "
             "CHECK(watchcon_tier IN (2, 3, 4))"

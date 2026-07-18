@@ -47,23 +47,9 @@ _ARTIFACT_TYPES = ["ssp", "poam", "stig", "sbom"]
 
 def _table_exists(conn: Any, table_name: str) -> bool:
     """Check if a table exists; works for both SQLite and PostgreSQL."""
-    try:
-        row = conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=%s",
-            (table_name,),
-        ).fetchone()
-        return row is not None
-    except Exception:
-        # PostgreSQL fallback
-        try:
-            row = conn.execute(
-                "SELECT 1 FROM information_schema.tables "
-                "WHERE table_schema='public' AND table_name=%s",
-                (table_name,),
-            ).fetchone()
-            return row is not None
-        except Exception:
-            return False
+    # Backend-aware, translation-independent existence probe (pgrt-sweep-06).
+    from tools.db.storage import table_exists as _table_exists_helper
+    return _table_exists_helper(conn, table_name)
 
 
 def _scalar(row: Any) -> int:

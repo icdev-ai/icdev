@@ -63,6 +63,9 @@ def table_exists(conn, name: str) -> bool:
             (name,),
         ).fetchone()
     else:
+        # pg-portability: sqlite-only path — explicit backend branch (PG branch
+        # above uses information_schema); wraps the shared probe semantics with a
+        # positive-only per-request cache.
         row = conn.execute(
             "SELECT name FROM sqlite_master WHERE type = 'table' AND name = %s",
             (name,),
@@ -93,6 +96,8 @@ def col_exists(conn, table: str, col: str) -> bool:
         ).fetchone()
         exists = row is not None
     else:
+        # pg-portability: sqlite-only path — explicit backend branch (PG branch
+        # above uses information_schema.columns).
         cols = [r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()]  # noqa: S608
         exists = col in cols
     if exists:

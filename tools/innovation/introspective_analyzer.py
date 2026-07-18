@@ -37,7 +37,7 @@ import os
 import sqlite3
 import sys
 import uuid
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection, table_exists
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
@@ -156,7 +156,8 @@ def _audit(event_type, actor, action, details=None, project_id=None):
 
 
 def _table_exists(conn, name):
-    return conn.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=%s", (name,)).fetchone()[0] > 0
+    # Backend-aware, translation-independent existence probe (pgrt-sweep-06).
+    return table_exists(conn, name)
 
 
 def _sig_id():

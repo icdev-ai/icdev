@@ -19,7 +19,7 @@ from tools.logging.icdev_logger import get_logger
 import json
 import sqlite3
 import uuid
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection, table_exists
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -110,11 +110,8 @@ def _get_db(db_path: Optional[str] = None) -> sqlite3.Connection:
 
 def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
     """Check if a table exists in the database."""
-    cur = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=%s",
-        (table_name,),
-    )
-    return cur.fetchone() is not None
+    # Backend-aware, translation-independent existence probe (pgrt-sweep-06).
+    return table_exists(conn, table_name)
 
 
 def _parse_json(text: str) -> Optional[List[Dict]]:

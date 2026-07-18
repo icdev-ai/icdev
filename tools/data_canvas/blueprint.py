@@ -3112,9 +3112,10 @@ def create_data_canvas_blueprint():
             "updated_at": now,
         }
         conn = get_connection()
-        existing_cols = {r[1] for r in conn.execute("PRAGMA table_info(dm_domains)").fetchall()}
+        # Backend-aware column probe (pgrt-sweep-06) — no PRAGMA/translation reliance.
+        from tools.db.storage import column_exists
         fixed_cols = ["id", "name", "description", "owner", "status", "maturity_level", "classification", "tags_json", "created_at", "updated_at"]
-        extra_cols = [c for c in ("owner_team", "owner_email") if c in existing_cols]
+        extra_cols = [c for c in ("owner_team", "owner_email") if column_exists(conn, "dm_domains", c)]
         cols = fixed_cols + extra_cols
         placeholders = ", ".join(f":{c}" for c in cols)
         conn.execute(

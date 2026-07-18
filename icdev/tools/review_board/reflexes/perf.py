@@ -17,9 +17,10 @@ from typing import Any, Dict, List
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 
 try:
-    from tools.db.storage import get_connection
+    from tools.db.storage import get_connection, list_tables
 except ImportError:
     get_connection = None
+    list_tables = None
 
 
 def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
@@ -57,10 +58,10 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         if get_connection:
             conn = get_connection()
             try:
-                tables = conn.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").fetchall()
+                # Backend-aware table listing (pgrt-sweep-06) — no sqlite_master/translation reliance.
+                table_names = list_tables(conn)
                 large_tables = []
-                for row in tables:
-                    table_name = row[0]
+                for table_name in table_names:
                     try:
                         # table_name comes from sqlite_master (trusted), bracket-escape
                         safe_name = table_name.replace("]", "]]")

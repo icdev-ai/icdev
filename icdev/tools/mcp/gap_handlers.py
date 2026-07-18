@@ -18,7 +18,7 @@ import json
 import os
 import subprocess
 import sys
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection, list_tables
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -738,8 +738,8 @@ def handle_nlq_query(args: dict) -> dict:
         conn = get_connection()
         # Simple passthrough — NLQ requires LLM which is not invoked here.
         # Return available tables for the user to formulate queries.
-        cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
-        tables = [row["name"] for row in cursor.fetchall()]
+        # Backend-aware table listing (pgrt-sweep-06) — no sqlite_master/translation reliance.
+        tables = list_tables(conn)
         conn.close()
         return {
             "status": "info",

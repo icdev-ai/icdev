@@ -17,7 +17,7 @@ import argparse
 import json
 import sqlite3
 import sys
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection, table_exists
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -43,11 +43,8 @@ def _get_db(db_path: Optional[Path] = None) -> sqlite3.Connection:
 
 
 def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
-    row = conn.execute(
-        "SELECT COUNT(*) as cnt FROM sqlite_master WHERE type='table' AND name=%s",
-        (name,),
-    ).fetchone()
-    return (row[0] if isinstance(row, (tuple, list)) else row["cnt"]) > 0
+    # Backend-aware, translation-independent existence probe (pgrt-sweep-06).
+    return table_exists(conn, name)
 
 
 def check_bridge_readiness(

@@ -28,7 +28,7 @@ import hashlib
 import json
 import sqlite3
 import sys
-from tools.db.storage import get_connection
+from tools.db.storage import column_exists, get_connection
 from tools.common.helpers import now_iso
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -200,8 +200,8 @@ def finalize_plan(
 def _ensure_column(conn: sqlite3.Connection, table: str, column: str, ddl: str) -> None:
     """Add column to table if missing."""
     try:
-        cols = conn.execute(f"PRAGMA table_info({table})").fetchall()
-        if not any(c[1] == column for c in cols):
+        # Backend-aware column probe (pgrt-sweep-06) — no PRAGMA/translation reliance.
+        if not column_exists(conn, table, column):
             conn.execute(ddl)
     except Exception:
         pass
