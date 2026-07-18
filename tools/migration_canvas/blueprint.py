@@ -900,7 +900,7 @@ def create_migration_blueprint():
         fields = {k: v for k, v in data.items() if k in allowed}
         if not fields:
             return jsonify({"error": "No valid fields"}), 400
-        set_clause = ", ".join(f"{k}=?" for k in fields)
+        set_clause = ", ".join(f"{k}=%s" for k in fields)
         with get_connection() as conn:
             conn.execute(
                 f"UPDATE mc_net_sessions SET {set_clause}, updated_at=%s WHERE id=%s",  # nosec B608
@@ -1495,7 +1495,7 @@ def create_migration_blueprint():
         with get_connection() as conn:
             existing = conn.execute("SELECT id FROM mc_net_erb_metadata WHERE session_id=%s", (sid,)).fetchone()
             if existing:
-                set_clause = ", ".join(f"{k}=?" for k in fields)
+                set_clause = ", ".join(f"{k}=%s" for k in fields)
                 conn.execute(
                     f"UPDATE mc_net_erb_metadata SET {set_clause}, updated_at=%s WHERE session_id=%s",  # nosec B608
                     list(fields.values()) + [now_isoformat(), sid],
@@ -1506,7 +1506,7 @@ def create_migration_blueprint():
                 fields["created_at"] = now_isoformat()
                 fields["updated_at"] = now_isoformat()
                 cols = ", ".join(fields.keys())
-                placeholders = ", ".join("?" * len(fields))
+                placeholders = ", ".join(["%s"] * len(fields))
                 conn.execute(f"INSERT INTO mc_net_erb_metadata ({cols}) VALUES ({placeholders})", list(fields.values()))  # nosec B608
             conn.commit()
 
@@ -2184,7 +2184,7 @@ def create_migration_blueprint():
             if not updates:
                 return jsonify({"error": "no valid fields"}), 400
             updates["updated_at"] = _sm._now()
-            set_clause = ", ".join(f"{k}=?" for k in updates)
+            set_clause = ", ".join(f"{k}=%s" for k in updates)
             vals = list(updates.values()) + [sid]
             conn = get_connection()
             conn.execute(f"UPDATE mc_srv_sessions SET {set_clause} WHERE id=%s", vals)  # nosec B608 – cols from hardcoded allowlist; values parameterized
@@ -3148,13 +3148,13 @@ def create_migration_blueprint():
             sql = "SELECT * FROM mc_app_inventory WHERE 1=1"
             params: list = []
             if session_id:
-                sql += " AND session_id=?"
+                sql += " AND session_id=%s"
                 params.append(session_id)
             if criticality:
-                sql += " AND criticality=?"
+                sql += " AND criticality=%s"
                 params.append(criticality)
             if environment:
-                sql += " AND environment=?"
+                sql += " AND environment=%s"
                 params.append(environment)
             sql += " ORDER BY created_at DESC"
             rows = [dict(r) for r in db.execute(sql, params).fetchall()]
@@ -3231,7 +3231,7 @@ def create_migration_blueprint():
         if not updates:
             return jsonify({"error": "No valid fields to update"}), 400
         updates["updated_at"] = now_isoformat()
-        set_clause = ", ".join(f"{k}=?" for k in updates)
+        set_clause = ", ".join(f"{k}=%s" for k in updates)
         vals = list(updates.values()) + [app_id]
         with get_connection() as db:
             db.execute(f"UPDATE mc_app_inventory SET {set_clause} WHERE id=%s", vals)  # nosec B608 – cols from hardcoded allowlist; values parameterized
@@ -3554,7 +3554,7 @@ def create_migration_blueprint():
             updates["started_at"] = now
         elif status in ("done", "failed"):
             updates["completed_at"] = now
-        set_clause = ", ".join(f"{k}=?" for k in updates)
+        set_clause = ", ".join(f"{k}=%s" for k in updates)
         vals = list(updates.values()) + [dm_id]
         with get_connection() as db:
             db.execute(f"UPDATE mc_data_migration SET {set_clause} WHERE id=%s", vals)  # nosec B608 – cols from hardcoded updates dict; values parameterized

@@ -391,17 +391,17 @@ def create_security_blueprint():
             params = []
             for key in ("name", "description", "classification"):
                 if key in data:
-                    updates.append(f"{key}=?")
+                    updates.append(f"{key}=%s")
                     params.append(data[key])
             if "graph_json" in data:
-                updates.append("graph_json=?")
+                updates.append("graph_json=%s")
                 val = data["graph_json"]
                 params.append(json.dumps(val) if isinstance(val, dict) else val)
-            updates.append("updated_at=?")
+            updates.append("updated_at=%s")
             params.append(now)
             params.append(design_id)
             conn.execute(
-                f"UPDATE security_designs SET {', '.join(updates)} WHERE id=?",  # nosec B608 -- keys from hardcoded allowlist
+                f"UPDATE security_designs SET {', '.join(updates)} WHERE id=%s",  # nosec B608 -- keys from hardcoded allowlist
                 params,
             )
         _audit("UPDATE", "design", design_id, json.dumps(list(data.keys())))
@@ -2408,11 +2408,11 @@ def create_security_blueprint():
         sql = "SELECT * FROM zig_capabilities WHERE 1=1"
         params = []
         if pillar:
-            sql += " AND pillar_slug=?"; params.append(pillar)
+            sql += " AND pillar_slug=%s"; params.append(pillar)
         if phase:
-            sql += " AND phase=?"; params.append(phase)
+            sql += " AND phase=%s"; params.append(phase)
         if status:
-            sql += " AND implementation_status=?"; params.append(status)
+            sql += " AND implementation_status=%s"; params.append(status)
         sql += " ORDER BY pillar_slug, phase"
 
         conn = get_connection()
@@ -2460,9 +2460,9 @@ def create_security_blueprint():
                "LEFT JOIN zig_activity_completions ac ON a.id=ac.activity_id WHERE 1=1")
         params = []
         if capability:
-            sql += " AND a.capability_id=?"; params.append(capability)
+            sql += " AND a.capability_id=%s"; params.append(capability)
         if phase:
-            sql += " AND a.phase=?"; params.append(phase)
+            sql += " AND a.phase=%s"; params.append(phase)
         sql += " ORDER BY a.phase, c.pillar_slug"
 
         conn = get_connection()
