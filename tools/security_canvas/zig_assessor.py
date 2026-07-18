@@ -93,18 +93,22 @@ def _identify_gaps(pillar_scores: list) -> list:
         conn.close()
 
 
-def _persist_scores(pillar_scores: list):
-    """Persist pillar scores to zig_maturity_scores (one row per pillar per run)."""
+def _persist_scores(pillar_scores: list, target_id: str = "icdev-self"):
+    """Persist pillar scores to zig_maturity_scores (one row per pillar per run).
+
+    Rows are tagged with ``target_id`` so per-target assessment history stays
+    separable — zig_portfolio._latest_scores_for_target reads back by target.
+    """
     conn = get_connection()
     now = datetime.now(timezone.utc).isoformat()
     try:
         for ps in pillar_scores:
             conn.execute(
                 "INSERT INTO zig_maturity_scores "
-                "(pillar_slug, score, maturity_level, capability_count, activity_count, "
-                "complete_activities, assessment_run_at, created_at) "
-                "VALUES (?,?,?,?,?,?,?,?)",
-                (ps["slug"], ps["score"], ps["maturity_level"],
+                "(pillar_slug, target_id, score, maturity_level, capability_count, "
+                "activity_count, complete_activities, assessment_run_at, created_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?)",
+                (ps["slug"], target_id, ps["score"], ps["maturity_level"],
                  ps.get("capability_count", 0), ps.get("activity_count", 0),
                  ps.get("complete_activities", 0), now, now),
             )
@@ -164,8 +168,13 @@ def reconcile_capability_status() -> int:
     return changed
 
 
-def run_zig_assessment() -> dict:
-    """Run full ZIG assessment across all 7 pillars.
+def run_zig_assessment(target_id: str = "icdev-self") -> dict:
+    """Run full ZIG assessment across all 7 pillars for one target.
+
+    ``target_id`` scopes the activity-completion signal and the persisted
+    zig_maturity_scores rows; capability reconciliation stays platform-wide.
+    Defaults to 'icdev-self' so the global /api/zig/assess route and the seven
+    pillar orchestrators keep their existing no-arg call semantics.
 
     Returns:
         {
@@ -180,7 +189,7 @@ def run_zig_assessment() -> dict:
     # Keep capability status in sync with activity completion before scoring
     reconcile_capability_status()
 
-    pillar_scores = score_all_pillars()
+    pillar_scores = score_all_pillars(target_id=target_id)
 
     # Attempt ZTA bridge enrichment for pillars with no activity data yet
     for ps in pillar_scores:
@@ -194,7 +203,7 @@ def run_zig_assessment() -> dict:
     phases = get_all_phases_status()
     fy2027 = compute_fy2027_readiness(phases)
 
-    _persist_scores(pillar_scores)
+    _persist_scores(pillar_scores, target_id=target_id)
 
     return {
         "pillar_scores": pillar_scores,
@@ -202,6 +211,7 @@ def run_zig_assessment() -> dict:
         "gaps": gaps,
         "phases": phases,
         "fy2027": fy2027,
+        "target_id": target_id,
         "assessed_at": datetime.now(timezone.utc).isoformat(),
         "top_gaps": gaps[:10],
     }

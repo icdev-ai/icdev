@@ -280,6 +280,67 @@ def test_create_target_persists_row(client):
     assert row["status"] == "active"
 
 
+def test_target_activity_update_returns_200(client, seed):
+    """cnr-zig-02: PATCH /api/zig/targets/<id>/activities/<act_id> threads
+    target_id into set_activity_status and returns 200. Previously the tracker
+    signature had no target_id, so this raised TypeError -> 500 on every call.
+    Exercises the REAL route + tracker (no mocks) — the path the strong suite
+    left untested."""
+    client.post(
+        "/security/api/zig/targets",
+        json={"id": "tgt-patch", "name": "Patch Target"},
+    )
+    act_id = seed["act_id"]
+    resp = client.patch(
+        f"/security/api/zig/targets/tgt-patch/activities/{act_id}",
+        json={"status": "complete", "evidence_note": "done"},
+    )
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["ok"] is True
+    assert body["target_id"] == "tgt-patch"
+    assert body["status"] == "complete"
+
+    conn = _db()
+    try:
+        row = conn.execute(
+            "SELECT target_id, status FROM zig_activity_completions "
+            "WHERE activity_id=? AND target_id=?",
+            (act_id, "tgt-patch"),
+        ).fetchone()
+    finally:
+        conn.close()
+    assert row is not None
+    assert row["target_id"] == "tgt-patch"
+    assert row["status"] == "complete"
+
+
+def test_target_completion_isolated_from_icdev_self(client, seed):
+    """cnr-zig-02: a completion recorded for an external target must NOT appear
+    under the platform self target (they were previously collapsed onto
+    'icdev-self' because the INSERT omitted target_id)."""
+    client.post(
+        "/security/api/zig/targets",
+        json={"id": "tgt-iso", "name": "Isolated Target"},
+    )
+    act_id = seed["act_id"]
+    client.patch(
+        f"/security/api/zig/targets/tgt-iso/activities/{act_id}",
+        json={"status": "complete"},
+    )
+
+    conn = _db()
+    try:
+        self_row = conn.execute(
+            "SELECT 1 FROM zig_activity_completions "
+            "WHERE activity_id=? AND target_id=?",
+            (act_id, "icdev-self"),
+        ).fetchone()
+    finally:
+        conn.close()
+    assert self_row is None
+
+
 def test_assess_route_runs_global_and_persists(client):
     """FIXED (shx-hyg-08): the plain /assess route now runs the GLOBAL ZIG
     assessment (run_zig_assessment() takes no args) and persists pillar scores
@@ -308,6 +369,76 @@ def test_assess_route_rejects_target_id_400(client):
     body = resp.get_json()
     assert body["ok"] is False
     assert "target" in body["error"]
+
+
+# ── 2b. Non-repudiation: evidence/assessment writes are audited (cnr-zig-03) ──
+
+
+def _audit_actions(entity_id=None):
+    """Return the list of sc_audit action strings, optionally filtered by entity_id.
+
+    Reads the REAL sc_audit table written by the route handlers (no mocks)."""
+    conn = _db()
+    try:
+        if entity_id is not None:
+            rows = conn.execute(
+                "SELECT action FROM sc_audit WHERE entity_id=?", (entity_id,)
+            ).fetchall()
+        else:
+            rows = conn.execute("SELECT action FROM sc_audit").fetchall()
+        return [r["action"] for r in rows]
+    finally:
+        conn.close()
+
+
+def test_capability_status_change_is_audited(client, seed):
+    cap_id = seed["cap_id"]
+    resp = client.patch(
+        f"/security/api/zig/capabilities/{cap_id}",
+        json={"implementation_status": "in_progress", "evidence_note": "wip"},
+    )
+    assert resp.status_code == 200
+    assert "zig_capability_status_change" in _audit_actions(cap_id)
+
+
+def test_activity_completion_is_audited(client, seed):
+    act_id = seed["act_id"]
+    resp = client.patch(
+        f"/security/api/zig/activities/{act_id}/complete",
+        json={"status": "complete", "evidence_note": "verified"},
+    )
+    assert resp.status_code == 200
+    assert "zig_activity_completion" in _audit_actions(act_id)
+
+
+def test_target_activity_completion_is_audited(client, seed):
+    client.post(
+        "/security/api/zig/targets",
+        json={"id": "tgt-audit", "name": "Audit Target"},
+    )
+    act_id = seed["act_id"]
+    resp = client.patch(
+        f"/security/api/zig/targets/tgt-audit/activities/{act_id}",
+        json={"status": "complete", "evidence_note": "e"},
+    )
+    assert resp.status_code == 200
+    assert "zig_activity_completion" in _audit_actions(f"tgt-audit:{act_id}")
+
+
+def test_global_assessment_run_is_audited(client):
+    resp = client.post("/security/api/zig/assess", json={})
+    assert resp.status_code == 200
+    assert "zig_assessment_run" in _audit_actions("icdev-self")
+
+
+def test_target_assessment_run_is_audited(client):
+    client.post(
+        "/security/api/zig/targets",
+        json={"id": "tgt-assess", "name": "Assess Target"},
+    )
+    resp = client.post("/security/api/zig/targets/tgt-assess/assess", json={})
+    assert resp.status_code == 200
+    assert "zig_assessment_run" in _audit_actions("tgt-assess")
 
 
 # ── 3. Bad input 4xx ────────────────────────────────────────────────────────

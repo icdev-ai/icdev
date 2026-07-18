@@ -39,3 +39,9 @@ WORKFLOW_STATUS_LABELS: dict[str, str] = {
 
 DEFAULT_PRIMARY_COLOR = "#1a365d"
 DEFAULT_SECONDARY_COLOR = "#c8a951"
+
+# ── Upload / extraction bounds (cnr-wfc-02) ───────────────────────────────
+# Reject uploads larger than this before they are read into memory.
+MAX_UPLOAD_BYTES = 15 * 1024 * 1024  # 15 MB
+# Hard cap on extracted document text kept in memory / passed downstream.
+MAX_EXTRACT_CHARS = 200_000

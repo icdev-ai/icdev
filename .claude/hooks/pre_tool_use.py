@@ -563,6 +563,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "api_keys",
         # IDR — conflict resolution trail is append-only (resolution recorded in-place, rows never deleted — NIST AU)
         "idr_conflicts",
+        # IDR — TRUST publish-gate override audit (migration 276 — NIST AU): one row per force_* override
+        "idr_publish_audit",
         # NQE / Forward Networks Integration (migration 220, 222 — NIST AU)
         "nc_advisory_assessments",   # impact assessment results — proof chain for ATO
         "nc_nqe_audit_log",          # every translate/run/approve action traced
@@ -603,6 +605,10 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # retention (review finding P1-7), not an audit record.
         "pc_audit",
         "pipeline_snapshots",
+        # Security Design Canvas (migration 272, NIST AU) — sc_audit carries DB-level
+        # immutability triggers (sc_audit_no_update/no_delete); non-repudiation trail
+        # for ZIG capability/activity/evidence/assessment writes (cnr-zig-03)
+        "sc_audit",
     ]
 
     if tool_name == "Bash":

@@ -694,12 +694,20 @@ class ComponentRegistry:
 
         If the registry entry does not declare explicit links, generate a single
         "Dashboard" link pointing at the component's ``url_prefix``.
+
+        cnr-nav-01: when a component declares no explicit links **and** has no
+        ``url_prefix`` (empty string), emit **no** link rather than fabricating a
+        link to ``/``. The old ``href = url_prefix or "/"`` fallback dumped users
+        back on the home dashboard for every ``url_prefix: ''`` component whose
+        real routes live in its blueprint — such components must declare explicit
+        ``nav.links`` (or none, if they are page-less feature toggles).
         """
         links = nav.get("links")
         if not links:
-            href = url_prefix or "/"
-            if not href.endswith("/"):
-                href = f"{href}/"
+            prefix = (url_prefix or "").strip()
+            if not prefix:
+                return []
+            href = prefix if prefix.endswith("/") else f"{prefix}/"
             return [
                 {
                     "label": "Dashboard",

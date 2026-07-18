@@ -39,7 +39,6 @@ _EXPECTED_CANVAS_DEFS = [
     ("aadc", "ICDEV_AADC_ENABLED", "tools.agentic_ai_canvas.blueprint", "aadc_bp"),
     ("aimc", "ICDEV_AIML_CANVAS_ENABLED", "tools.aiml_canvas.blueprint", "create_aiml_blueprint"),
     ("ohc", "ICDEV_OPS_HUB_ENABLED", "tools.ops_hub.blueprint", "create_ops_hub_blueprint"),
-    ("iop", "ICDEV_INFO_OPS_ENABLED", "tools.info_ops.blueprint", "create_info_ops_blueprint"),
     ("mission_canvas", "ICDEV_MISSION_CANVAS_ENABLED", "tools.mission_canvas.blueprint", "create_mission_canvas_blueprint"),
     ("nocc", "ICDEV_NOCC_ENABLED", "tools.noc_canvas.blueprint", "create_noc_canvas_blueprint"),
     ("pmc", "ICDEV_PMC_ENABLED", "tools.pmc_canvas.blueprint", "create_pmc_blueprint"),
@@ -78,7 +77,6 @@ _EXPECTED_CANVAS_ROUTES = {
     "mdc": "/migration-canvas",
     "aimc": "/ai-ml",
     "ohc": "",
-    "iop": "/info-ops",
     "mission_canvas": "/mission-canvas",
     "nocc": "",
     "pmc": "",
@@ -384,17 +382,72 @@ def test_nav_context_links_have_required_keys(registry):
 
 
 def test_nav_context_default_dashboard_for_components_without_links(registry):
-    """A component with no explicit nav.links falls back to a Dashboard link."""
-    # The rag feature toggle has nav metadata but no explicit links.
+    """A component with a non-empty url_prefix but no explicit nav.links falls
+    back to a single "Dashboard" link pointing at that url_prefix."""
+    # finetune declares a nav section and url_prefix (/finetune) but no links.
     ctx = registry.get_nav_context()
-    rag = None
+    finetune = None
     for section in ctx["sections"].values():
         for group in section["groups"]:
             for item in group["items"]:
-                if item["key"] == "rag":
-                    rag = item
-    assert rag is not None
-    assert rag["links"][0]["label"] == "Dashboard"
+                if item["key"] == "finetune":
+                    finetune = item
+    assert finetune is not None
+    assert finetune["links"][0]["label"] == "Dashboard"
+    assert finetune["links"][0]["href"] == "/finetune/"
+
+
+def test_nav_context_no_component_links_to_bare_root(registry):
+    """cnr-nav-01: no sidebar item may link to bare '/' (the home dashboard).
+
+    Regression guard for the "Operations / NOC Operations take me back to the
+    main dashboard" bug: components with url_prefix '' and a nav section but no
+    explicit links used to fall back to href '/'.
+    """
+    ctx = registry.get_nav_context()
+    offenders = []
+    for section in ctx["sections"].values():
+        for group in section["groups"]:
+            for item in group["items"]:
+                for link in item["links"]:
+                    if link["href"] == "/":
+                        offenders.append(item["key"])
+    assert not offenders, f"components link to bare '/': {offenders}"
+
+
+def test_normalize_nav_links_explicit_links_pass_through():
+    """Explicitly declared links are sanitized and returned unchanged in href."""
+    nav = {
+        "links": [
+            {"label": "Operations", "href": "/ops"},
+            {"label": "Details", "href": "/ops/details", "style": "color:#f00;"},
+        ]
+    }
+    out = ComponentRegistry._normalize_nav_links(nav, "")
+    assert [(l_["label"], l_["href"]) for l_ in out] == [
+        ("Operations", "/ops"),
+        ("Details", "/ops/details"),
+    ]
+    assert out[1]["style"] == "color:#f00;"
+
+
+def test_normalize_nav_links_empty_prefix_no_links_yields_no_link():
+    """cnr-nav-01: empty url_prefix + no declared links must NOT yield href '/'."""
+    out = ComponentRegistry._normalize_nav_links({}, "")
+    assert out == []
+    # Also when nav has a section/label but still no links.
+    out2 = ComponentRegistry._normalize_nav_links(
+        {"section": "Canvases", "label": "Operations"}, ""
+    )
+    assert out2 == []
+
+
+def test_normalize_nav_links_nonempty_prefix_no_links_gets_dashboard():
+    """A component with a real url_prefix but no links still gets a Dashboard link."""
+    out = ComponentRegistry._normalize_nav_links({}, "/finetune")
+    assert len(out) == 1
+    assert out[0]["label"] == "Dashboard"
+    assert out[0]["href"] == "/finetune/"
 
 
 # ---------------------------------------------------------------------------
@@ -563,14 +616,13 @@ def test_validate_canvas_completeness_non_canvas(registry):
     assert any(item.point == "registered" and "not canvas" in item.message for item in report.items)
 
 
-def test_validate_canvas_completeness_info_ops_reports_items(registry):
-    """info_ops is a real canvas; the validator runs and reports per-point findings."""
-    report = registry.validate_canvas_completeness("iop")
+def test_validate_canvas_completeness_real_canvas_reports_items(registry):
+    """A real canvas (mdc): the validator runs and reports per-point findings."""
+    report = registry.validate_canvas_completeness("mdc")
     points = {item.point: item for item in report.items}
     assert "page_template" in points
     assert "blueprint_route" in points
     assert "nav_link" in points
-    # info_ops uses index.html; the validator finds it via the legacy-name fallback scan.
     assert points["page_template"].present is True
 
 
@@ -674,7 +726,7 @@ _PATH_CANVAS_APP_ONLY_KEYS = {"updates", "zta", "dat", "cpmp_deliverables"}
 
 # Previously missing from the hardcoded PATH_CANVAS arrays — the whole point of
 # cvx-nav-01. These must all appear in the registry-derived map.
-_PATH_CANVAS_TARGETS = {"qdc", "iop", "cortex", "rfi_canvas", "wfc", "canvas_health", "cwk"}
+_PATH_CANVAS_TARGETS = {"qdc", "cortex", "rfi_canvas", "wfc", "canvas_health", "cwk"}
 
 
 def _first_match(entries, path):
@@ -735,7 +787,6 @@ def test_get_iqe_path_canvas_specific_before_broad(registry):
         "/workflow-canvas": "wfc",
         "/health/canvases": "canvas_health",
         "/rfi/list": "rfi_canvas",
-        "/info-ops": "iop",
         "/network": "ndc",
         "/twin": "ndc",
     }

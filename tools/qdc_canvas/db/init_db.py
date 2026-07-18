@@ -37,7 +37,16 @@ def get_connection():
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
-    return conn
+    try:
+        # Wrap so the %s placeholders used across init_db + blueprint + IQE
+        # adapter translate to ? on SQLite (mirrors tools/security_canvas). Without
+        # this the raw sqlite3 connection raises "near %: syntax error" on every
+        # seed/query, and the canvas is unusable on the SQLite backend.
+        from tools.db.storage import StorageConnection
+
+        return StorageConnection(conn, "sqlite")
+    except Exception:
+        return conn
 
 
 SCHEMA = """
@@ -181,6 +190,18 @@ CREATE TABLE IF NOT EXISTS qdc_collab_sessions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_qdc_collab_design ON qdc_collab_sessions(design_id);
+
+CREATE TABLE IF NOT EXISTS qdc_collab_ops (
+    id          TEXT PRIMARY KEY,
+    design_id   TEXT NOT NULL,
+    seq         INTEGER NOT NULL DEFAULT 0,
+    session_id  TEXT,
+    user_id     TEXT,
+    operation   TEXT NOT NULL DEFAULT '{}',
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_qdc_collab_ops_design ON qdc_collab_ops(design_id, seq);
 """
 
 

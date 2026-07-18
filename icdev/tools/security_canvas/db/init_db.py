@@ -316,6 +316,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_zig_comp_act ON zig_activity_completions(a
 CREATE TABLE IF NOT EXISTS zig_maturity_scores (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     pillar_slug     TEXT NOT NULL,
+    target_id       TEXT NOT NULL DEFAULT 'icdev-self',
     score           REAL NOT NULL DEFAULT 0.0,
     maturity_level  TEXT,
     capability_count INTEGER DEFAULT 0,
@@ -325,6 +326,7 @@ CREATE TABLE IF NOT EXISTS zig_maturity_scores (
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_zig_score_pillar ON zig_maturity_scores(pillar_slug);
+CREATE INDEX IF NOT EXISTS idx_zig_score_target ON zig_maturity_scores(target_id);
 
 CREATE TABLE IF NOT EXISTS fedramp_ato_packages (
     id                  TEXT PRIMARY KEY,

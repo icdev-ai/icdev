@@ -290,11 +290,9 @@ def run_full_pipeline(db_path=None) -> dict:
 
 def get_status(db_path=None) -> dict:
     """Return MI engine status: opportunity counts, goal counts, scan history."""
-    import sqlite3
-    path = db_path or str(_DB_PATH)
-    if not Path(path).exists():
-        return {"error": f"DB not found: {path}", "healthy": False}
-
+    # cnr-mi-01: schema is ensured via _get_conn()/init_db and errors are handled
+    # per-table, so no SQLite-only file-existence guard (which broke on the
+    # PostgreSQL-primary backend where mi_* tables live in the shared icdev db).
     conn = _get_conn(db_path)
     try:
         status = {"healthy": True, "timestamp": _now(), "airgap_mode": _AIRGAP}
@@ -310,7 +308,7 @@ def get_status(db_path=None) -> dict:
             try:
                 rows = conn.execute(f"SELECT status, COUNT(*) as c FROM {table} GROUP BY status").fetchall()
                 status[f"{label}_by_status"] = {r["status"]: r["c"] for r in rows}
-            except sqlite3.OperationalError:
+            except Exception:  # noqa: BLE001 — table may not exist yet (any backend)
                 status[f"{label}_by_status"] = {}
 
         try:
@@ -318,7 +316,7 @@ def get_status(db_path=None) -> dict:
                 "SELECT * FROM mi_scans ORDER BY started_at DESC LIMIT 1"
             ).fetchone()
             status["last_scan"] = dict(row) if row else None
-        except sqlite3.OperationalError:
+        except Exception:  # noqa: BLE001
             status["last_scan"] = None
 
         return status

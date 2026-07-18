@@ -326,7 +326,7 @@ components:
     template: tools/dashboard/templates/qdc_canvas/index.html
     blueprint: true
     constants: tools/qdc_canvas/constants.py
-    db_migration: tools/qdc_canvas/db/migrations
+    db_migration: tools/qdc_canvas/db/init_db.py
     iqe_adapter: true
     nav_link: true
     seed_queries: context/iqe/queries/qdc/
@@ -357,7 +357,7 @@ components:
     template: tools/dashboard/templates/migration_canvas/canvas.html
     blueprint: true
     constants: tools/migration_canvas/constants.py
-    db_migration: tools/migration_canvas/db/migrations
+    db_migration: tools/migration_canvas/db/init_db.py
     iqe_adapter: true
     nav_link: true
     seed_queries: context/iqe/queries/migration/
@@ -485,6 +485,11 @@ components:
   nav:
     section: Canvases
     label: Operations
+    # cnr-nav-01: explicit landing link — url_prefix is '' so without this the
+    # normalizer emitted href '/' (dumped users back on the home dashboard).
+    links:
+    - label: Operations
+      href: /ops
   iqe:
     adapter_module: tools.iqe.adapters.ohc
     collections:
@@ -502,25 +507,6 @@ components:
     iqe_adapter: true
     nav_link: true
     seed_queries: context/iqe/queries/ohc/
-- key: iop
-  kind: canvas
-  display_name: Info Ops Canvas
-  description: Information operations canvas.
-  env_flag: ICDEV_INFO_OPS_ENABLED
-  default_enabled: false
-  module: tools.info_ops.blueprint
-  blueprint_attr: create_info_ops_blueprint
-  url_prefix: /info-ops
-  min_il: IL4
-  default_roles: []
-  nav:
-    section: Canvases
-    label: Info Ops
-  completeness:
-    template: tools/dashboard/templates/info_ops/index.html
-    blueprint: true
-    constants: tools/info_ops/constants.py
-    nav_link: true
 - key: mission_canvas
   kind: canvas
   display_name: Mission Control Canvas
@@ -550,7 +536,7 @@ components:
     template: tools/dashboard/templates/mission_canvas/index.html
     blueprint: true
     constants: tools/mission_canvas/constants.py
-    db_migration: tools/mission_canvas/db/migrations
+    db_migration: tools/mission_canvas/db/init_db.py
     iqe_adapter: true
     nav_link: true
     seed_queries: context/iqe/queries/mission_canvas/
@@ -568,6 +554,10 @@ components:
   nav:
     section: Canvases
     label: NOC Operations
+    # cnr-nav-01: explicit landing link (url_prefix '' → would otherwise be '/').
+    links:
+    - label: NOC Operations
+      href: /noc
   iqe:
     adapter_module: tools.iqe.adapters.nocc
     collections:
@@ -599,6 +589,10 @@ components:
   nav:
     section: Canvases
     label: Peering Management
+    # cnr-nav-01: explicit landing link (url_prefix '' → would otherwise be '/').
+    links:
+    - label: Peering Management
+      href: /pmc
   iqe:
     adapter_module: tools.iqe.adapters.pmc
     collections:
@@ -632,6 +626,10 @@ components:
   nav:
     section: Canvases
     label: Circuit & Capacity
+    # cnr-nav-01: explicit landing link (url_prefix '' → would otherwise be '/').
+    links:
+    - label: Circuit & Capacity
+      href: /ccc
   iqe:
     adapter_module: tools.iqe.adapters.ccc
     collections:
@@ -763,9 +761,12 @@ components:
   - pm
   - developer
   - isso
-  nav:
-    section: Canvases
-    label: AI-ify
+  # cnr-nav-01: no nav section. This is a legacy 301-redirect alias
+  # (/ai-augmentation → /ai-ify/); completeness declares nav_link: false and the
+  # real `aiify` canvas already provides the "AI-ify" sidebar link (/ai-ify/).
+  # Previously the empty-links + url_prefix '' normalizer emitted a duplicate
+  # "AI-ify" entry pointing at '/'.
+  nav: {}
   completeness:
     blueprint: true
     nav_link: false
@@ -974,6 +975,12 @@ components:
   nav:
     section: Build
     label: AI Enablement
+    # cnr-nav-01: the aisg blueprint registers no root index (url_prefix ''); its
+    # entry point is the AI Launchpad Wizard at /ai-wizard. Without an explicit
+    # link the normalizer emitted href '/'.
+    links:
+    - label: AI Enablement
+      href: /ai-wizard
   iqe:
     adapter_module: tools.iqe.adapters.aisg
     collections:
@@ -1001,6 +1008,10 @@ components:
   nav:
     section: Security
     label: SIPA
+    # cnr-nav-01: explicit landing link (url_prefix '' → would otherwise be '/').
+    links:
+    - label: SIPA
+      href: /integrity
   iqe:
     adapter_module: tools.iqe.adapters.integrity
     collections:
@@ -1029,6 +1040,10 @@ components:
   nav:
     section: Build
     label: Foundry
+    # cnr-nav-01: explicit landing link (url_prefix '' → would otherwise be '/').
+    links:
+    - label: Foundry
+      href: /foundry
   iqe:
     adapter_module: tools.iqe.adapters.foundry
     collections:
@@ -1056,6 +1071,10 @@ components:
   nav:
     section: Security
     label: Logs
+    # cnr-nav-01: explicit landing link (url_prefix '' → would otherwise be '/').
+    links:
+    - label: Logs
+      href: /logs
   iqe:
     adapter_module: tools.iqe.adapters.logs
     collections:
@@ -1101,6 +1120,13 @@ components:
   nav:
     section: Ops
     label: HITL
+    # cnr-nav-01: the registry url_prefix is '' but create_wf_page_blueprint mounts
+    # its own url_prefix '/workflow', so the landing page is /workflow/ (app.py
+    # registers as-is when the blueprint declares its own prefix). Without this
+    # explicit link the normalizer emitted href '/'.
+    links:
+    - label: HITL
+      href: /workflow/
   completeness:
     blueprint: true
     backing_module: true
@@ -1500,9 +1526,10 @@ components:
   url_prefix: ''
   min_il: IL4
   default_roles: []
-  nav:
-    section: Intelligence
-    label: RAG
+  # cnr-nav-01: RAG is a cross-canvas feature toggle, not a page. It has no
+  # landing route, so it declares no nav section (the empty-links + url_prefix ''
+  # normalizer previously rendered a dead sidebar link to '/').
+  nav: {}
 - key: rfi_canvas
   kind: canvas
   cli_name: rfi
@@ -1615,9 +1642,9 @@ components:
   url_prefix: ''
   min_il: IL2
   default_roles: []
-  nav:
-    section: System
-    label: CUI Banner
+  # cnr-nav-01: banner render toggle, not a page — no nav section (previously
+  # rendered a dead '/' sidebar link).
+  nav: {}
 - key: byok
   kind: feature
   display_name: Bring Your Own Key
@@ -1627,9 +1654,9 @@ components:
   url_prefix: ''
   min_il: IL4
   default_roles: []
-  nav:
-    section: System
-    label: BYOK
+  # cnr-nav-01: tenant key-isolation feature toggle, not a page — no nav section
+  # (previously rendered a dead '/' sidebar link).
+  nav: {}
 - key: two_tier_llm
   kind: feature
   cli_name: two-tier-llm
@@ -1640,9 +1667,9 @@ components:
   url_prefix: ''
   min_il: IL4
   default_roles: []
-  nav:
-    section: System
-    label: Two-Tier LLM
+  # cnr-nav-01: LLM routing feature toggle, not a page — no nav section
+  # (previously rendered a dead '/' sidebar link).
+  nav: {}
 - key: admin_console
   kind: core_extension
   cli_name: admin-console
@@ -1939,6 +1966,7 @@ iqe_path_canvas:
 - {path: /demo-runner, canvas: demo_runner}
 - {path: /innovation, canvas: innovation}
 - {path: /mission-canvas, canvas: mission_canvas}
+- {path: /canvas-compliance, canvas: canvas_compliance}
 # Fine-grained GovCon keys so the AI-brief banner keeps its distinct briefs;
 # IQE dispatch resolves each via its own adapter (cpmp_deliverables aliases the
 # cpmp adapter in app.py — see _CANVAS_MAP supplement).
@@ -1962,7 +1990,6 @@ iqe_path_canvas:
 - {path: /bi_dashboard, canvas: bi_dashboard}
 # cvx-nav-01: previously-missing registered canvases
 - {path: /quality, canvas: qdc}
-- {path: /info-ops, canvas: iop}
 - {path: /rfi, canvas: rfi_canvas}
 - {path: /capture, canvas: rfi_canvas}
 - {path: /workflow-canvas, canvas: wfc}

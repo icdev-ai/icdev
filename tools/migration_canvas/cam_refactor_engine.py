@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import textwrap
 import uuid
 from datetime import datetime, timezone
@@ -41,6 +42,36 @@ logger = get_logger("icdev.cam_refactor_engine")
 _ROOT = Path(__file__).resolve().parents[2]
 _REFACTOR_RULES_PATH = _ROOT / "context" / "migration" / "refactor_rules.yaml"
 _ARTIFACTS_BASE = _ROOT / "data" / "cam_artifacts"
+
+# ── Bedrock model identifiers for generated migration artifacts ──────────────
+# LLM config via .env — never hardcode model IDs in code.  These are the model
+# identifiers baked into the AWS Bedrock scaffolds this engine generates; they
+# are configurable via .env so an operator can retarget the customer's Bedrock
+# models without editing generator code.  The generated Python artifacts also
+# read from the same env vars at runtime (with the resolved value as default),
+# so they stay configurable in the customer's own environment.
+
+
+def _bedrock_embed_model_id() -> str:
+    """Resolve the Bedrock embedding model id (env-overridable)."""
+    return (
+        os.environ.get("MC_BEDROCK_EMBED_MODEL_ID")
+        or os.environ.get("BEDROCK_EMBED_MODEL_ID")
+        or "amazon.titan-embed-text-v2:0"
+    )
+
+
+def _bedrock_llm_model_arn() -> str:
+    """Resolve the Bedrock foundation-model ARN for RAG (env-overridable)."""
+    arn = os.environ.get("MC_BEDROCK_LLM_MODEL_ARN") or os.environ.get("BEDROCK_LLM_MODEL_ARN")
+    if arn:
+        return arn
+    region = os.environ.get("MC_BEDROCK_REGION") or os.environ.get("AWS_REGION") or "us-east-1"
+    model_id = (
+        os.environ.get("MC_BEDROCK_LLM_MODEL_ID")
+        or "anthropic.claude-3-sonnet-20240229-v1:0"
+    )
+    return f"arn:aws:bedrock:{region}::foundation-model/{model_id}"
 
 # ── DB helpers ───────────────────────────────────────────────────────────────
 
@@ -596,16 +627,18 @@ def _scaffold_pgvector(job, params, output_dir) -> tuple[list[dict], str]:
         $$ LANGUAGE sql STABLE;
     """))
 
-    arts.append(_write(output_dir / "embed_existing_rows.py", """\
+    _embed_backfill_tpl = """\
         # CUI // SP-CTI
-        # Backfill embeddings for existing rows using Amazon Bedrock Titan Embed.
+        # Backfill embeddings for existing rows using an Amazon Bedrock embed model.
         # Run once after DMS full-load, before HNSW index creation.
+        # Model id is configurable via the BEDROCK_EMBED_MODEL_ID env var.
         import boto3
         import json
+        import os
         import psycopg2
 
-        BEDROCK = boto3.client("bedrock-runtime", region_name="us-east-1")
-        MODEL_ID = "amazon.titan-embed-text-v2:0"
+        BEDROCK = boto3.client("bedrock-runtime", region_name=os.environ.get("AWS_REGION", "us-east-1"))
+        MODEL_ID = os.environ.get("BEDROCK_EMBED_MODEL_ID", "__EMBED_MODEL_ID__")
         BATCH_SIZE = 100
 
         def get_embedding(text: str) -> list[float]:
@@ -636,9 +669,12 @@ def _scaffold_pgvector(job, params, output_dir) -> tuple[list[dict], str]:
             print("Backfill complete.")
 
         if __name__ == "__main__":
-            import os
             backfill(os.environ["AURORA_CONN_STR"])
-    """))
+    """
+    arts.append(_write(
+        output_dir / "embed_existing_rows.py",
+        _embed_backfill_tpl.replace("__EMBED_MODEL_ID__", _bedrock_embed_model_id()),
+    ))
 
     return arts, f"pgvector setup: {len(arts)} artifacts (SQL + embedding backfill script)"
 
@@ -739,18 +775,19 @@ def _scaffold_elasticache(job, params, output_dir) -> tuple[list[dict], str]:
 
 def _scaffold_semantic_cache(job, params, output_dir) -> tuple[list[dict], str]:
     arts = []
-    arts.append(_write(output_dir / "semantic_cache.py", """\
+    _semcache_tpl = """\
         # CUI // SP-CTI
         # Semantic cache using Bedrock embeddings + ElastiCache Redis.
         # Reduces Bedrock API spend by caching semantically similar queries.
+        # Embed model id is configurable via the BEDROCK_EMBED_MODEL_ID env var.
         import hashlib
         import json
         import os
         import boto3
         import redis
 
-        BEDROCK = boto3.client("bedrock-runtime", region_name="us-east-1")
-        EMBED_MODEL = "amazon.titan-embed-text-v2:0"
+        BEDROCK = boto3.client("bedrock-runtime", region_name=os.environ.get("AWS_REGION", "us-east-1"))
+        EMBED_MODEL = os.environ.get("BEDROCK_EMBED_MODEL_ID", "__EMBED_MODEL_ID__")
         SIMILARITY_THRESHOLD = float(os.environ.get("SEMANTIC_CACHE_THRESHOLD", "0.92"))
         TTL_SECONDS = int(os.environ.get("SEMANTIC_CACHE_TTL", "3600"))
 
@@ -797,7 +834,11 @@ def _scaffold_semantic_cache(job, params, output_dir) -> tuple[list[dict], str]:
                 "prompt": prompt, "embedding": emb, "response": response,
             }))
             return response
-    """))
+    """
+    arts.append(_write(
+        output_dir / "semantic_cache.py",
+        _semcache_tpl.replace("__EMBED_MODEL_ID__", _bedrock_embed_model_id()),
+    ))
 
     return arts, "Semantic cache: Bedrock embeddings + ElastiCache Redis — 1 artifact"
 
@@ -904,14 +945,22 @@ def _scaffold_opensearch(job, params, output_dir) -> tuple[list[dict], str]:
 
 def _scaffold_bedrock_kb(job, params, output_dir) -> tuple[list[dict], str]:
     arts = []
-    arts.append(_write(output_dir / "bedrock_kb_setup.py", """\
+    _kb_tpl = """\
         # CUI // SP-CTI
         # Bedrock Knowledge Base + OpenSearch vector store setup.
         # Run after OpenSearch restore and index template migration.
-        import boto3, json
+        # Model ARNs are configurable via BEDROCK_EMBED_MODEL_ARN /
+        # BEDROCK_LLM_MODEL_ARN (defaults resolved from ICDEV LLM config).
+        import boto3, json, os
 
-        bedrock_agent = boto3.client("bedrock-agent", region_name="us-east-1")
+        REGION = os.environ.get("AWS_REGION", "us-east-1")
+        bedrock_agent = boto3.client("bedrock-agent", region_name=REGION)
         OPENSEARCH_HOST = "https://search-analytics-xxxx.us-east-1.es.amazonaws.com"
+        EMBED_MODEL_ARN = os.environ.get(
+            "BEDROCK_EMBED_MODEL_ARN",
+            f"arn:aws:bedrock:{REGION}::foundation-model/__EMBED_MODEL_ID__",
+        )
+        LLM_MODEL_ARN = os.environ.get("BEDROCK_LLM_MODEL_ARN", "__LLM_MODEL_ARN__")
 
         def create_knowledge_base():
             resp = bedrock_agent.create_knowledge_base(
@@ -921,7 +970,7 @@ def _scaffold_bedrock_kb(job, params, output_dir) -> tuple[list[dict], str]:
                 knowledgeBaseConfiguration={
                     "type": "VECTOR",
                     "vectorKnowledgeBaseConfiguration": {
-                        "embeddingModelArn": "arn:aws:bedrock:us-east-1::foundation-model/amazon.titan-embed-text-v2:0"
+                        "embeddingModelArn": EMBED_MODEL_ARN
                     },
                 },
                 storageConfiguration={
@@ -942,14 +991,14 @@ def _scaffold_bedrock_kb(job, params, output_dir) -> tuple[list[dict], str]:
 
         def rag_query(kb_id: str, query: str, max_results: int = 5) -> str:
             \"\"\"Retrieve-and-generate using the knowledge base.\"\"\"
-            bedrock_runtime = boto3.client("bedrock-agent-runtime", region_name="us-east-1")
+            bedrock_runtime = boto3.client("bedrock-agent-runtime", region_name=REGION)
             resp = bedrock_runtime.retrieve_and_generate(
                 input={"text": query},
                 retrieveAndGenerateConfiguration={
                     "type": "KNOWLEDGE_BASE",
                     "knowledgeBaseConfiguration": {
                         "knowledgeBaseId": kb_id,
-                        "modelArn": "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0",
+                        "modelArn": LLM_MODEL_ARN,
                         "retrievalConfiguration": {
                             "vectorSearchConfiguration": {"numberOfResults": max_results}
                         },
@@ -963,7 +1012,13 @@ def _scaffold_bedrock_kb(job, params, output_dir) -> tuple[list[dict], str]:
             # Test query
             answer = rag_query(kb_id, "What are the top metrics for Q1?")
             print("RAG answer:", answer)
-    """))
+    """
+    _kb_content = (
+        _kb_tpl
+        .replace("__EMBED_MODEL_ID__", _bedrock_embed_model_id())
+        .replace("__LLM_MODEL_ARN__", _bedrock_llm_model_arn())
+    )
+    arts.append(_write(output_dir / "bedrock_kb_setup.py", _kb_content))
 
     return arts, "Bedrock KB setup: 1 artifact (KB creation + RAG query template)"
 

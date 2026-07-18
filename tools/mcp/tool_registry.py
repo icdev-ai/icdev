@@ -6199,7 +6199,13 @@ TOOL_REGISTRY = {
         "category": "canvas",
         "module": "tools.canvas.orchestrator",
         "handler": "get_compliance_summary",
-        "description": "Aggregate compliance scores across all canvases linked to a project.",
+        # cnr-cc-02(c): NAME-COLLISION NOTE — this is the canvas *project-design*
+        # tool (tools.canvas.orchestrator), scoped to one project_id and the
+        # canvases linked to it. It is NOT the platform-wide compliance posture
+        # dashboard at /canvas-compliance (tools/canvas_compliance/ +
+        # tools/canvas_compliance/posture.py::compute_canvas_posture). Kept as-is
+        # by design; the description disambiguates the two rather than renaming.
+        "description": "Aggregate compliance scores across the canvases linked to a specific canvas PROJECT (project-design orchestrator). Distinct from the platform-wide Canvas Posture dashboard at /canvas-compliance.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -6239,7 +6245,10 @@ TOOL_REGISTRY = {
         "category": "canvas",
         "module": "tools.canvas.orchestrator",
         "handler": "compute_readiness",
-        "description": "Gate check: verify canvas project readiness meets thresholds for ATO/deploy.",
+        # cnr-cc-02(c): NAME-COLLISION NOTE — operates on a canvas PROJECT
+        # (project-design orchestrator), NOT the platform-wide Canvas Posture
+        # dashboard at /canvas-compliance. Kept as-is by design.
+        "description": "Gate check: verify a canvas PROJECT's readiness meets thresholds for ATO/deploy (project-design orchestrator). Distinct from the platform-wide Canvas Posture dashboard at /canvas-compliance.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -7822,7 +7831,7 @@ RESOURCE_REGISTRY = {
         "category": "dsoc",
         "module": "tools.dsoc_canvas.rtbh_manager",
         "handler": "trigger_rtbh",
-        "description": "Trigger RTBH (Remotely Triggered Black Hole) routing for a target prefix to null-route attack traffic.",
+        "description": "Record an RTBH (Remotely Triggered Black Hole) null-route for a target prefix (RECORD-ONLY / SIMULATION — does not push to live routers; generates apply-ready config for human review). Requires MCP authorization (deny-by-default): supply mcp_role.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -7830,6 +7839,7 @@ RESOURCE_REGISTRY = {
                 "trigger_reason":        {"type": "string", "enum": ["volumetric_attack","syn_flood","udp_flood","icmp_flood","amplification","spoofed_traffic","manual","policy"]},
                 "triggered_by":          {"type": "string", "default": "system"},
                 "auto_withdraw_minutes": {"type": "integer", "default": 60},
+                "mcp_role":              {"type": "string", "description": "RBAC role for MCP authorization (deny-by-default)"},
             },
             "required": ["prefix", "trigger_reason"],
         },
@@ -7838,11 +7848,12 @@ RESOURCE_REGISTRY = {
         "category": "dsoc",
         "module": "tools.dsoc_canvas.flowspec_engine",
         "handler": "activate_rule",
-        "description": "Activate a BGP flowspec rule by ID to rate-limit or drop matching traffic.",
+        "description": "Activate a BGP flowspec rule by ID to rate-limit or drop matching traffic (RECORD-ONLY / SIMULATION — does not push to live routers; generates apply-ready IOS-XR/JunOS config for human review). Requires MCP authorization (deny-by-default): supply mcp_role.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "rule_id": {"type": "integer"},
+                "mcp_role": {"type": "string", "description": "RBAC role for MCP authorization (deny-by-default)"},
             },
             "required": ["rule_id"],
         },
