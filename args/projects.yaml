@@ -12088,3 +12088,57 @@ projects:
   - key: qa
     title: Test Coverage & Hygiene (P2)
     priority: medium
+- key: penta
+  name: PENTA Five-Canvas Production Readiness
+  task_prefix: penta-
+  description: 'Production-hardening + content refresh of five canvases and their
+    ecosystems: /ai-ml (AIMC), /ai-ify, /agentic-ai (AADC), /gameday, /academy (FORGE
+    Academy). Five independent reviews found: unauthenticated destructive/LLM-cost
+    routes on four canvases (AADC delete-all, aiify scan-wipe, all ~35 gameday routes);
+    fabricated compliance data (AADC compliance_checker/governance_scanner hardcoded
+    defaults; tools/aimc scanner/checker RLS-broken fallback to demo inventory);
+    the aiify runaway kanban seeding that produced 353 branches; a non-importable
+    GameDay AI League engine (silent no-op); a weak Academy code-runner sandbox
+    (env/secret exfiltration); the /forge-academy vs /academy nav 404; stored XSS
+    across AADC/GameDay/aiify templates; and stale learning content (wrong 7-canvas
+    taxonomy lesson, missing Cortex/DIC/NDC/DDC/ODC/Foundry/Strategos/GraphRAG/IQE/ZIG/TRUST/kanban-pipeline
+    missions and scenarios). MANUAL-ONLY: all tasks gated behind penta-gate-00 (held
+    in_progress) so the kanban runner never dispatches them; Fable planned 2026-07-18,
+    Opus 4.8 implements in worktrees; push+PR, no auto-merge.'
+  default_open: true
+  briefs:
+  - Add route-level auth/RBAC + registry default_roles to the five canvases only
+    (platform-wide ICDEV_ENFORCE_CANVAS_ACCESS default untouched, per user decision).
+  - Kill fabricated-data paths; replace AADC workflow compliance with graph-driven
+    agentic_engine.assess_design; fail loud, never serve demo defaults as real.
+  - Stop aiify runaway task generation by routing all kanban inserts through
+    task_factory.create_tasks with caps, idempotency keys, and the HITL PRD gate.
+  - Make GameDay AI League runnable (repoint game_master to round_manager), route
+    agents through the LLM router, and add the missing ontology_tags_json migration.
+  - Harden the Academy code-runner sandbox (enforce allowlist, block env/network
+    egress, resource caps) and fix the /forge-academy nav 404.
+  - 'Comprehensive content refresh: rewrite the wrong Tier-3 canvas-taxonomy lesson;
+    add ~10 Academy missions and ~6 GameDay packs/TTX scenarios covering Cortex,
+    DIC, NDC, DDC, ODC/OHC, Foundry, Strategos, GraphRAG/KG, IQE, ZIG, TRUST
+    grounding, and the governed kanban pipeline; retire EO 14110 anchors.'
+  - Backfill tests (route smoke, engines, scorers, sandbox escapes) across all five
+    ecosystems; escape XSS innerHTML sinks; batch P2 hygiene per canvas.
+  epics:
+  - key: gate
+    title: Manual Gate (held)
+    priority: high
+  - key: aimc
+    title: AI-ML Canvas (/ai-ml)
+    priority: high
+  - key: aiify
+    title: AI-ify Canvas (/ai-ify)
+    priority: high
+  - key: aadc
+    title: Agentic-AI Canvas (/agentic-ai)
+    priority: high
+  - key: gd
+    title: AI GameDay (/gameday)
+    priority: high
+  - key: aca
+    title: FORGE Academy (/academy)
+    priority: high
