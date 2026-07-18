@@ -15,16 +15,19 @@
 #   - Remove the entry once all 8 components are complete
 
 whitelisted_canvases:
-  - aiify    # template dir 'aiify' vs URL slug '/ai-ify/' mismatch; nav link + IQE + mirror all present and verified (HTTP 200)
+  # aiify, workflow_canvas, canvas_health removed (cvx-nav-02): the registry-nav
+  # alias mechanism (_load_registry_nav_dirs) now recognizes all three. aiify's
+  # registry completeness.template was corrected from the ghost 'ai-ify/' dir to
+  # the real on-disk 'aiify/' dir so the alias key matches; workflow_canvas and
+  # canvas_health already passed on registry nav.section alone (URL slug differs
+  # from template dir but nav is registry-driven, not a hardcoded href).
   - ai_observatory     # missing nav link, IQE seed queries (pre-existing debt)
   - aisg               # missing nav link, IQE adapter, seed queries, IQE widget (pre-existing debt)
   - cache_savings      # missing nav link, IQE seed queries (pre-existing debt)
   - demo_runner        # missing blueprint, directory, nav link, seed queries (pre-existing debt)
   - forge_academy      # missing blueprint, directory, nav link, IQE adapter, seed queries, widget (pre-existing debt)
   - il5                # missing icdev mirror, blueprint, IQE adapter, seed queries, widget (pre-existing debt)
-  - canvas_health      # route is /health/canvases not /canvas_health; nav link check is a false positive
   - ontology           # IQE seed queries missing (.iqe files present — need .yaml or .iqe glob fix) (pre-existing debt)
   - safety_monitor     # missing blueprint, directory, nav link, IQE adapter, seed queries, widget (pre-existing debt)
   - strategos          # missing IQE seed queries, IQE widget (pre-existing debt)
   - system_graph       # missing nav link, IQE adapter, seed queries, IQE widget (pre-existing debt)
-  - workflow_canvas    # dir name 'workflow_canvas' vs URL slug '/workflow-canvas' (hyphen); nav is registry-driven (not hardcoded in base.html)

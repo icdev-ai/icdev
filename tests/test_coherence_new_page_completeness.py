@@ -340,3 +340,94 @@ class TestRegistryNavKindAgnostic:
         assert "my_canvas" in dirs          # canvas kind still recognized
         assert "my_core_ext" in dirs        # core_extension with nav.section now recognized
         assert "no_nav_ext" not in dirs     # no nav.section → not a nav dir
+
+
+class TestSlugTemplateDirAliasesLive:
+    """cvx-nav-02: canvases whose URL slug differs from their template-dir name
+    (aiify→/ai-ify, workflow_canvas→/workflow-canvas, canvas_health→/health/
+    canvases) must pass the 8-component gate on the registry-nav alias mechanism
+    ALONE — with NO entry in args/page_completeness_whitelist.yaml.
+
+    These run against the LIVE repo (no PROJECT_ROOT patch): they assert the real
+    whitelist no longer lists the three canvases AND that the real completeness
+    check reports zero violations for any of them. The overall gate may still fail
+    on unrelated pre-existing debt, so we assert on the per-canvas absence of
+    violations, not on the aggregate status.
+    """
+
+    ALIASED = ("aiify", "workflow_canvas", "canvas_health")
+
+    def test_aliased_canvases_not_whitelisted(self):
+        from tools.workflow import coherence_checker as cc
+
+        whitelist = cc._load_page_completeness_whitelist()
+        for canvas in self.ALIASED:
+            assert canvas not in whitelist, (
+                f"{canvas} must resolve via the registry-nav alias, not a "
+                f"page_completeness_whitelist.yaml entry (cvx-nav-02)"
+            )
+
+    def test_aliased_canvases_have_no_completeness_violations(self):
+        from tools.workflow import coherence_checker as cc
+
+        result = cc.check_new_page_completeness()
+        offenders = [
+            m for m in result.missing
+            if any(
+                f"templates{sep}{canvas}{sep}" in m or f"{canvas}-" in m
+                for canvas in self.ALIASED
+                for sep in ("/", "\\")
+            )
+        ]
+        assert not offenders, (
+            "aliased canvases must pass the 8-component gate without a "
+            f"whitelist entry; violations: {offenders}"
+        )
+
+    def test_aiify_registry_template_points_at_real_dir(self):
+        """The aiify fix: completeness.template must reference the on-disk
+        'aiify/' dir (not the ghost 'ai-ify/'), so _load_registry_nav_dirs keys
+        it under 'aiify' and the nav-link alias resolves."""
+        import yaml
+        from tools.workflow import coherence_checker as cc
+
+        registry = cc.PROJECT_ROOT / "args" / "component_registry.yaml"
+        data = yaml.safe_load(registry.read_text(encoding="utf-8"))
+        aiify = next(c for c in data["components"] if c.get("key") == "aiify")
+        tpl = aiify["completeness"]["template"]
+        assert tpl == "tools/dashboard/templates/aiify/page.html", tpl
+        assert (cc.PROJECT_ROOT / tpl).exists(), f"{tpl} must exist on disk"
+        assert "aiify" in cc._load_registry_nav_dirs()
+
+
+class TestSeedQueryConsolidationLive:
+    """cvx-nav-02: the duplicate seed-query dirs (ccc+ccc_canvas, dsoc+dsoc_canvas,
+    pmc+pmc_canvas) are consolidated onto the loaded `<key>_canvas/*.iqe` dirs;
+    the unread bare `<key>/seed.yaml` orphans are removed. Assert the loaded dir
+    is populated, the orphan is gone, and the registry seed_queries path points
+    at the surviving dir."""
+
+    CANVASES = ("ccc", "dsoc", "pmc")
+
+    def test_loaded_canvas_dirs_populated_and_orphans_removed(self):
+        from tools.workflow import coherence_checker as cc
+
+        root = cc.PROJECT_ROOT
+        for key in self.CANVASES:
+            loaded = root / "context" / "iqe" / "queries" / f"{key}_canvas"
+            orphan = root / "context" / "iqe" / "queries" / key
+            assert loaded.is_dir(), f"{loaded} must exist"
+            assert list(loaded.glob("*.iqe")), f"{loaded} must hold .iqe seeds"
+            assert not orphan.exists(), f"orphan {orphan} must be removed"
+
+    def test_registry_seed_queries_points_at_surviving_dir(self):
+        import yaml
+        from tools.workflow import coherence_checker as cc
+
+        registry = cc.PROJECT_ROOT / "args" / "component_registry.yaml"
+        data = yaml.safe_load(registry.read_text(encoding="utf-8"))
+        by_key = {c.get("key"): c for c in data["components"]}
+        for key in self.CANVASES:
+            seed = by_key[key]["completeness"]["seed_queries"]
+            assert seed == f"context/iqe/queries/{key}_canvas/", seed
+            assert (cc.PROJECT_ROOT / seed).is_dir()
