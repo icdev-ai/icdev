@@ -2740,7 +2740,7 @@ def aadc_api_list_assessments(design_id):
         rows = conn.execute(
             "SELECT id, design_id, score, nist_rmf_score, owasp_score, omb_compliant, "
             "autonomy_max, safety_impacting, rights_impacting, findings_json, atlas_threats, "
-            "hitl_paths, created_at FROM aadc_assessments "
+            "created_at FROM aadc_assessments "
             "WHERE design_id=%s ORDER BY created_at DESC LIMIT %s",
             (design_id, limit),
         ).fetchall()
