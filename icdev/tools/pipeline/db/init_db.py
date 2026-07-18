@@ -45,7 +45,25 @@ def get_connection():
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
-    return conn
+    # pdx-data-03: ALL runtime SQL in tools/pipeline (blueprint.py, twin.py,
+    # sops.py) is authored with psycopg2-native %s placeholders. A bare
+    # sqlite3.Connection raises OperationalError near '%'. Wrap it in the shared
+    # StorageConnection(backend="sqlite"), which routes execute/executemany/
+    # cursor through StorageCursor → translate_sql(sql, "sqlite") →
+    # _translate_pg_to_sqlite (%s → ?, string-literal / quoted-identifier /
+    # comment aware; see tools/db/storage.py). No security context is attached,
+    # so _inject_rls is a no-op — correct for these canvas tables, which lack
+    # tenant_id/classification columns. row_factory (sqlite3.Row), commit/
+    # rollback/close, executescript, cursor(), and the context-manager protocol
+    # all pass through unchanged, so callers work without modification.
+    try:
+        from tools.db.storage import StorageConnection
+
+        return StorageConnection(conn, "sqlite")
+    except ImportError:
+        # Reuse impossible (storage layer unavailable) — return the raw
+        # connection so init/seed with native ? placeholders still works.
+        return conn
 
 
 # ── Schema ────────────────────────────────────────────────────────────────────
@@ -1630,7 +1648,7 @@ def init_db():
             for tpl in TEMPLATES:
                 conn.execute(
                     "INSERT INTO pc_templates (id, name, category, description, graph_json, tags) "
-                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    "VALUES (%s, %s, %s, %s, %s, %s)",
                     (tpl["id"], tpl["name"], tpl["category"], tpl["description"], tpl["graph_json"], tpl["tags"]),
                 )
             conn.commit()
@@ -1644,7 +1662,7 @@ def init_db():
                     "INSERT INTO pc_snippets "
                     "(id, name, category, description, classification_level, impact_level, "
                     "slsa_level, ssdf_practices, graph_json, tags) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                     (
                         snip["id"],
                         snip["name"],
