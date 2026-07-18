@@ -100,6 +100,27 @@ def on_ndc_topology_saved(topology_id: str) -> dict:
         )
         findings = assessment.get("findings", [])
         cat1_count = sum(1 for f in findings if f.get("severity") == "CAT1")
+
+        # Close the NDC->SDC loop: notify the Network Design Canvas that this
+        # topology has been assessed so it can record the posture on its side.
+        try:
+            from tools.canvas.event_bus import publish as _eb_publish
+
+            _eb_publish(
+                "sdc",
+                "sdc.assessment.completed",
+                {
+                    "topology_id": topology_id,
+                    "design_id": design_id,
+                    "assessment_id": assess_id,
+                    "risk_score": assessment.get("risk_score"),
+                    "posture_grade": assessment.get("posture_grade"),
+                    "cat1_count": cat1_count,
+                },
+            )
+        except Exception as _emit_exc:  # noqa: BLE001 — bus failure must not break assessment
+            logger.debug("Security agent: assessment.completed emit skipped: %s", _emit_exc)
+
         return {
             "status": "assessed",
             "design_id": design_id,

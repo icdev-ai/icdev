@@ -107,6 +107,14 @@ def create_network_blueprint():
     except Exception as exc:
         logger.warning("Network DB init failed: %s", exc)
 
+    # Register canvas event bus subscribers (reactive NDC listener)
+    try:
+        from tools.network.bus_subscriber import register as _register_bus
+
+        _register_bus()
+    except Exception as exc:
+        logger.warning("Network Canvas bus subscriber registration failed: %s", exc)
+
     bp = Blueprint(
         "network_canvas",
         __name__,

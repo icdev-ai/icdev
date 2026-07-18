@@ -189,6 +189,30 @@ def run(context: dict, session) -> dict:  # noqa: ANN001
             result["error"] = kev_result.get("error", "unknown")
 
         _log_run(conn, result)
+
+        # Notify downstream canvases (e.g. NDC vuln overlays) that new CVE /
+        # KEV data landed so they can mark affected overlays stale.
+        try:
+            total_new = int(result.get("nvd_upserted", 0)) + int(
+                result.get("kev_flagged", 0)
+            )
+            if total_new > 0:
+                from tools.canvas.event_bus import publish as _eb_publish
+
+                _eb_publish(
+                    "sdc",
+                    "sdc.cve.published",
+                    {
+                        "nvd_upserted": result.get("nvd_upserted", 0),
+                        "kev_flagged": result.get("kev_flagged", 0),
+                        "cve_ids": [],
+                    },
+                )
+        except Exception as _emit_exc:  # noqa: BLE001 — bus failure must not break the reflex
+            logger.debug(
+                "cyber_feed_refresh: cve.published emit skipped: %s", _emit_exc
+            )
+
         return result
 
     finally:
