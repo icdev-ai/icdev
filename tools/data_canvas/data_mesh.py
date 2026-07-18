@@ -23,7 +23,7 @@ def _uid() -> str:
 
 def _audit(conn, action: str, domain_id: str = "", product_id: str = "", detail: str = "", user: str = "system"):
     conn.execute(
-        "INSERT INTO dm_audit (domain_id, product_id, user, action, detail) VALUES (?, ?, ?, ?, ?)",
+        'INSERT INTO dm_audit (domain_id, product_id, "user", action, detail) VALUES (?, ?, ?, ?, ?)',
         (domain_id, product_id, user, action, detail),
     )
 
