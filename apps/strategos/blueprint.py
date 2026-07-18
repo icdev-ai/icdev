@@ -2893,8 +2893,20 @@ def api_opord_approve(opord_id: str):
     try:
         from tools.strategos.opord import approve_opord  # noqa: PLC0415
         data = request.get_json(force=True, silent=True) or {}
-        ok = approve_opord(opord_id, approved_by=data.get("approved_by", "commander"))
-        resp = make_response(jsonify({"status": "approved" if ok else "error"}))
+        # TRUST gate (nav-strat-02): approval is blocked for ungrounded OPORDs
+        # unless an explicit, audited force override is supplied.
+        result = approve_opord(
+            opord_id,
+            approved_by=data.get("approved_by", "commander"),
+            force=bool(data.get("force", False)),
+            force_reason=data.get("force_reason", ""),
+        )
+        http_status = 200
+        if result.get("status") == "blocked":
+            http_status = 409
+        elif result.get("status") == "error":
+            http_status = 404 if result.get("error") == "OPORD not found" else 500
+        resp = make_response(jsonify(result), http_status)
         resp.headers["X-Classification"] = "CUI"
         return resp
     except Exception as exc:
