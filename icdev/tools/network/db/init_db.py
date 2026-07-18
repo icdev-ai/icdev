@@ -78,7 +78,7 @@ def get_connection():
     auto-translates SQLite SQL to PostgreSQL (? → %s, PRAGMA → no-op, etc.)
 
     cvx-sql-03: this is the canvas-connection pattern — it already disables RLS
-    via set_security_context(None) below. It is NOT renamed to
+    by clearing the security context below (see the annotated call). It is NOT renamed to
     get_canvas_connection() because that helper targets the shared icdev DB on PG,
     which would break this canvas's dedicated NC_PG_DATABASE=network_canvas contract.
     """
@@ -90,7 +90,7 @@ def get_connection():
             conn = _icdev_conn(db_path=os.environ.get("NC_PG_DATABASE", "network_canvas"))
             # Canvas tables have no tenant_id/classification columns — disable
             # RLS so the global row-level predicate does not raise UndefinedColumn.
-            conn.set_security_context(None)  # rls-bypass: canvas tables lack tenant_id/classification cols
+            conn.set_security_context(None)  # rls-bypass: canvas tables lack tenant_id/classification columns; RLS predicate would raise UndefinedColumn (ndc program)
             return conn
         except ImportError:
             pass  # Fall through to SQLite
