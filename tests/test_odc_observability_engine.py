@@ -425,43 +425,37 @@ class TestFailurePaths:
         assert compute_coverage_score({})["coverage_pct"] == 0.0
         assert compute_mitre_detection_coverage({})["has_baseline"] is False
 
-    def test_node_without_id_raises_keyerror(self):
-        """FINDING: engine assumes every node has an 'id' — a node missing it
-        raises KeyError rather than being handled gracefully (obx-test-01
-        documents behaviour only; fix is out of scope)."""
-        with pytest.raises(KeyError):
-            assess_observability_design({"nodes": [{"type": "src-app-log"}], "edges": []})
+    def test_node_without_id_is_skipped(self):
+        """Fixed under obx-fix-04: a node missing 'id' is skipped gracefully
+        instead of raising KeyError."""
+        res = assess_observability_design({"nodes": [{"type": "src-app-log"}], "edges": []})
+        assert res["total_findings"] >= 0
 
-    def test_string_graph_data_raises_attributeerror(self):
-        """FINDING: functions call graph_data.get(...); a non-dict (e.g. a raw
-        JSON string) raises AttributeError — the engine does not parse or
-        validate string input."""
-        with pytest.raises(AttributeError):
-            compute_coverage_score("{\"nodes\": []}")
+    def test_string_graph_data_is_parsed(self):
+        """Fixed under obx-fix-04: string graph_json is json.loads'd; invalid
+        JSON degrades to an empty design instead of raising AttributeError."""
+        assert compute_coverage_score("{\"nodes\": []}")["coverage_pct"] == 0.0
+        assert compute_coverage_score("not valid json")["coverage_pct"] == 0.0
 
-    def test_edge_without_source_target_raises_keyerror(self):
-        """FINDING: _build_adjacency indexes e['source']/e['target'] directly;
-        a malformed edge raises KeyError."""
+    def test_edge_without_source_target_is_skipped(self):
+        """Fixed under obx-fix-04: malformed edges (missing source/target) are
+        skipped instead of raising KeyError."""
         design = {"nodes": [_node("a", "src-app-log")], "edges": [{"foo": "bar"}]}
-        with pytest.raises(KeyError):
-            assess_observability_design(design)
+        res = assess_observability_design(design)
+        assert res["total_findings"] >= 0
 
 
 # ── check_nc_audit_to_siem_forwarder (ODC-NDC-001) — shape only ──────────────
 
 
 class TestCrossCanvasShapeOnly:
-    def test_returns_expected_shape(self):
-        """Structural-shape probe ONLY.
-
-        ODC-NDC-001's check function is known-broken (fabricates pass) and is
-        being fixed under obx-fix-04, so this test deliberately does NOT assert
-        status/score values — only that the contract shape is intact. Do not
-        add assertions locking in status=='pass' / score==100 here.
-        """
+    def test_fail_closed_unknown_without_data(self):
+        """Fixed under obx-fix-04: with no NDC/ODC data available the check
+        fail-closes to status='unknown' with a reason and NO score — never a
+        fabricated pass."""
         res = check_nc_audit_to_siem_forwarder("proj-does-not-exist", "design-does-not-exist")
-        assert set(res.keys()) == {"rule_id", "status", "violations", "score"}
         assert res["rule_id"] == "ODC-NDC-001"
-        assert res["status"] in {"pass", "fail"}
+        assert res["status"] == "unknown"
+        assert "score" not in res
+        assert res.get("reason")
         assert isinstance(res["violations"], list)
-        assert 0 <= res["score"] <= 100
