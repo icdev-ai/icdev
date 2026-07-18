@@ -72,17 +72,46 @@ def _collect_iqe_files() -> List[Path]:
 
 
 def _run_iqe_query(query_file: Path, conn: Any) -> Dict[str, Any]:
-    """Parse and execute one IQE file. Returns {name, rows, error}."""
+    """Parse and execute one IQE file against the real compliance tables.
+
+    The seed queries reference the ``compliance.*`` collections
+    (``compliance.controls`` / ``.snapshots`` / ``.violations``). Those are
+    registered on the module-level *default* Executor by
+    ``tools.iqe.adapters.compliance`` and resolve to the real tables:
+    ``project_controls`` LEFT JOIN ``compliance_controls`` (controls),
+    ``pi_compliance_tracking`` (snapshots), and ``poam_items`` (violations).
+
+    A previous version instantiated a *fresh* ``Executor()`` whose registry was
+    empty and never imported the adapter, so every ``compliance.X`` fell through
+    to the executor's bare-table fallback — which strips the namespace and runs
+    ``SELECT * FROM controls`` (etc.), a relation that does not exist. That was
+    the pre-existing "missing controls table" failure (bdt-mon-1). Using the
+    default Executor (via ``execute_query``) with the adapter imported repoints
+    the queries at the real tables; an empty table is a healthy 0-row no-op.
+
+    Returns {name, rows, error}; a genuine execution failure is surfaced
+    explicitly in ``error`` — never a silent success.
+    """
     name = f"{query_file.parent.name}/{query_file.stem}"
     try:
         parser = importlib.import_module("tools.iqe.parser")
         executor_mod = importlib.import_module("tools.iqe.executor")
+        # Registers compliance.* collections on the module-level default Executor.
+        importlib.import_module("tools.iqe.adapters.compliance")
         text = query_file.read_text(encoding="utf-8")
         ast = parser.parse(text)
-        ex = executor_mod.Executor()
-        rows = ex.run(ast, conn)
+        rows = executor_mod.execute_query(ast, conn)
         return {"name": name, "rows": rows, "error": None}
     except Exception as exc:
+        # On PostgreSQL a failed statement aborts the surrounding transaction, so
+        # every subsequent seed query in this cycle would otherwise fail with
+        # "current transaction is aborted". Roll back to de-poison the shared
+        # connection (mirrors cato_twin._pull_framework_controls). The error is
+        # reported explicitly in the returned dict, not swallowed.
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         return {"name": name, "rows": [], "error": str(exc)}
 
 
