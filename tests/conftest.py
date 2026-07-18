@@ -2674,6 +2674,43 @@ CREATE TABLE IF NOT EXISTS ace_webhook_log (
     last_attempted_at TEXT,
     created_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+-- Observability tables (mirror tools/db/init_icdev_db.py). These carry a
+-- classification column but intentionally NO tenant_id column — the traces API
+-- must bypass RLS predicate injection when querying them (see obx-trc-03).
+CREATE TABLE IF NOT EXISTS otel_spans (
+    id TEXT PRIMARY KEY,
+    trace_id TEXT NOT NULL,
+    parent_span_id TEXT,
+    name TEXT NOT NULL,
+    kind TEXT DEFAULT 'INTERNAL',
+    start_time TEXT NOT NULL,
+    end_time TEXT,
+    duration_ms INTEGER DEFAULT 0,
+    status_code TEXT DEFAULT 'UNSET',
+    status_message TEXT,
+    attributes TEXT,
+    events TEXT,
+    agent_id TEXT,
+    project_id TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS shap_attributions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    trace_id TEXT NOT NULL,
+    tool_name TEXT NOT NULL,
+    shapley_value REAL NOT NULL,
+    coalition_size INTEGER,
+    confidence_low REAL,
+    confidence_high REAL,
+    outcome_metric TEXT DEFAULT 'success',
+    outcome_value REAL,
+    analysis_params TEXT,
+    agent_id TEXT,
+    project_id TEXT,
+    classification TEXT DEFAULT 'CUI',
+    analyzed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 -- Observability Design Canvas (ODC) — twin snapshot round-trip + projections.
 CREATE TABLE IF NOT EXISTS observability_designs (
     id              TEXT PRIMARY KEY,

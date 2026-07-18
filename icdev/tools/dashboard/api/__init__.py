@@ -173,13 +173,15 @@ def register_api_blueprints(app: "Flask") -> None:  # noqa: C901
     _mount(provenance_api, v1_prefix="/api/v1/provenance")
     _mount(xai_api, v1_prefix="/api/v1/xai")
 
-    # Blockchain provenance verification API (orphaned, now registered)
+    # GovChain / blockchain provenance verification API — mounted at
+    # /api/govchain-provenance so it no longer shares /api/provenance (and the
+    # blueprint name) with the W3C PROV-AGENT provenance_api above.
     try:
-        from tools.dashboard.pages.provenance import provenance_api as blockchain_provenance_api
-        _mount_inline(blockchain_provenance_api)
-        logger.info("blockchain_provenance_api registered at /api/provenance/*")
+        from tools.dashboard.pages.provenance import govchain_provenance_api
+        _mount_inline(govchain_provenance_api)
+        logger.info("govchain_provenance_api registered at /api/govchain-provenance/*")
     except Exception as exc:
-        logger.warning("blockchain_provenance_api skipped: %s", exc)
+        logger.warning("govchain_provenance_api skipped: %s", exc)
 
     from tools.dashboard.api.oscal import oscal_api
     _mount(oscal_api, v1_prefix="/api/v1/oscal")
