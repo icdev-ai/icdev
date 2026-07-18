@@ -190,10 +190,35 @@ def create_security_blueprint():
                     (action, entity_type, entity_id, details, user_id, _now()),
                 )
         except Exception:
-            pass
+            # Non-repudiation: an audit-write failure must be surfaced (logged),
+            # not silently swallowed — but it must NOT break the request, so we
+            # log a warning and continue rather than re-raising.
+            logger.warning(
+                "sc_audit write failed: action=%s entity=%s/%s",
+                action,
+                entity_type,
+                entity_id,
+            )
 
     def _row_to_dict(row):
         return dict(row) if row else {}
+
+    def _require_json():
+        """Parse a required JSON body for a mutating route.
+
+        Returns ``(data, error)``. If the request carries a non-empty body that
+        fails to parse as a JSON object, ``error`` is a ready-to-return
+        ``(response, 400)`` tuple and ``data`` is ``None``. An empty body yields
+        ``({}, None)`` so handlers keep their own required-field validation and
+        GET/optional-body semantics are unaffected.
+        """
+        raw = request.get_data(cache=True)
+        if raw and raw.strip():
+            data = request.get_json(force=True, silent=True)
+            if not isinstance(data, dict):
+                return None, (jsonify({"error": "invalid JSON body"}), 400)
+            return data, None
+        return {}, None
 
     # ====================================================================
     # PAGE ROUTES
@@ -1469,7 +1494,9 @@ def create_security_blueprint():
     @sc_login_required
     def sc_api_iac_scan_text():
         """Scan inline IaC content for security misconfigurations."""
-        data = request.get_json(force=True, silent=True) or {}
+        data, _err = _require_json()
+        if _err:
+            return _err
         content = data.get("content", "")
         iac_type = data.get("iac_type", "terraform")
         topology_id = data.get("topology_id", "")
@@ -1482,7 +1509,9 @@ def create_security_blueprint():
     @sc_login_required
     def sc_api_iac_scan_file():
         """Scan a single IaC file on disk for security misconfigurations."""
-        data = request.get_json(force=True, silent=True) or {}
+        data, _err = _require_json()
+        if _err:
+            return _err
         file_path = data.get("file_path", "")
         if not file_path:
             return jsonify({"error": "file_path is required"}), 400
@@ -1493,7 +1522,9 @@ def create_security_blueprint():
     @sc_login_required
     def sc_api_iac_scan_directory():
         """Scan all IaC files in a directory for security misconfigurations."""
-        data = request.get_json(force=True, silent=True) or {}
+        data, _err = _require_json()
+        if _err:
+            return _err
         directory_path = data.get("directory_path", "")
         if not directory_path:
             return jsonify({"error": "directory_path is required"}), 400
@@ -1532,7 +1563,9 @@ def create_security_blueprint():
         """Import a threat model from Threat Dragon or TMT format."""
         from tools.security_canvas.importers import import_threat_model
 
-        data = request.get_json(force=True, silent=True) or {}
+        data, _err = _require_json()
+        if _err:
+            return _err
         content = data.get("content", "")
         fmt = data.get("format", "auto")
         if not content:
@@ -1807,7 +1840,9 @@ def create_security_blueprint():
     @sc_login_required
     def sc_api_create_sop():
         """Create a new SOP."""
-        data = request.get_json(force=True, silent=True) or {}
+        data, _err = _require_json()
+        if _err:
+            return _err
         sop = create_sop(data)
         _audit("CREATE", "sop", sop["id"], sop["title"])
         return jsonify(sop), 201
@@ -1825,7 +1860,9 @@ def create_security_blueprint():
     @sc_login_required
     def sc_api_update_sop(sop_id):
         """Update an existing SOP."""
-        data = request.get_json(force=True, silent=True) or {}
+        data, _err = _require_json()
+        if _err:
+            return _err
         sop = update_sop(sop_id, data)
         if not sop:
             return jsonify({"error": "Not found"}), 404
@@ -2080,7 +2117,9 @@ def create_security_blueprint():
     @sc_login_required
     def sc_api_twin_chat_delta(design_id):
         from tools.twin_chat import security_chat_to_delta
-        data = request.get_json(silent=True) or {}
+        data, _err = _require_json()
+        if _err:
+            return _err
         message = (data.get("message") or "").strip()
         if not message:
             return jsonify({"error": "message is required"}), 400
@@ -2096,7 +2135,9 @@ def create_security_blueprint():
         from tools.iqe.executor import execute_query
         import tools.iqe.adapters.security  # noqa: F401 — registers attack.* collections
 
-        data = request.get_json(silent=True) or {}
+        data, _err = _require_json()
+        if _err:
+            return _err
         question = (data.get("question") or "").strip()
         if not question:
             return jsonify({"error": "question is required"}), 400
@@ -2579,7 +2620,9 @@ def create_security_blueprint():
         """POST /security/api/zig/targets — create a new ZIG target."""
         from tools.security_canvas.db.init_db import get_connection
         from datetime import datetime, timezone
-        data = request.get_json(force=True, silent=True) or {}
+        data, _err = _require_json()
+        if _err:
+            return _err
         target_id = data.get("id", "").strip()
         name = data.get("name", "").strip()
         if not target_id or not name:
@@ -2664,7 +2707,9 @@ def create_security_blueprint():
         from tools.security_canvas.zig_external_adapter import (
             ingest_sbom, ingest_sast, ingest_survey, ingest_nmap, ingest_openapi,
         )
-        data = request.get_json(force=True, silent=True) or {}
+        data, _err = _require_json()
+        if _err:
+            return _err
         source_type = data.get("source_type", "").lower()
         payload = data.get("payload")
         if not source_type or payload is None:
