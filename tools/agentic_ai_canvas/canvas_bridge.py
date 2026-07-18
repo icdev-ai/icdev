@@ -120,6 +120,33 @@ def get_aadc_refs_for_model(aimc_model_id: str) -> list[dict]:
         conn.close()
 
 
+# Explicit classification-marking → DoD Impact Level map. Keys are matched
+# case-insensitively against the leading marking (anything before a '//' banner
+# separator, e.g. "CUI // SP-CTI" → "CUI"). Unknown markings default to IL4.
+_CLASSIFICATION_IL_MAP = {
+    "UNCLASSIFIED": "IL2",
+    "U": "IL2",
+    "PUBLIC": "IL2",
+    "CUI": "IL4",
+    "CONTROLLED UNCLASSIFIED INFORMATION": "IL4",
+    "CUI-HIGH": "IL5",
+    "SECRET": "IL6",
+    "S": "IL6",
+    "TOP SECRET": "IL6",
+    "TS": "IL6",
+}
+
+
+def _classification_to_il(classification: str | None) -> str:
+    """Map an aadc_designs classification marking to an IL string (default IL4)."""
+    if not classification:
+        return "IL4"
+    marking = str(classification).split("//")[0].strip().upper()
+    if marking.startswith("IL"):
+        return marking
+    return _CLASSIFICATION_IL_MAP.get(marking, "IL4")
+
+
 def check_il_compatibility(aadc_design_id: str, target_il: str | None = None) -> list[dict]:
     """Check IL compatibility of all linked models for an AADC design.
 
@@ -133,8 +160,10 @@ def check_il_compatibility(aadc_design_id: str, target_il: str | None = None) ->
         if not design_row:
             return [{"error": f"AADC design '{aadc_design_id}' not found"}]
         design_dict = dict(design_row)
-        # aadc_designs uses 'classification' not 'il_level' — map if needed
-        il_level = target_il or design_dict.get("il_level") or "IL4"
+        # aadc_designs stores a 'classification' marking, not an 'il_level'.
+        # An explicit target_il always wins; otherwise derive the IL from the
+        # design's classification value (defaulting to IL4).
+        il_level = target_il or _classification_to_il(design_dict.get("classification"))
 
         refs = conn.execute(
             "SELECT * FROM aadc_aimc_model_refs WHERE aadc_design_id=%s",

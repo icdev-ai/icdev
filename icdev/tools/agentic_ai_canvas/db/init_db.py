@@ -2,7 +2,13 @@
 """Agentic AI Design Canvas — DB initializer.
 
 Creates schema and seeds 12 built-in templates + 12 built-in snippets.
-Dual-backend: SQLite (default) or PostgreSQL.
+Dual-backend: PostgreSQL (default) or SQLite. All SQL is authored with
+PostgreSQL ``%s`` placeholders; both backends run through the storage shim's
+translating ``StorageConnection`` (``tools/db/storage.py``), which rewrites
+``%s`` → ``?`` for SQLite and provides a cross-backend ``executescript()``.
+
+Backend selection (first set wins, default ``postgresql``):
+    AADC_STORAGE_BACKEND → ICDEV_CANVAS_STORAGE_BACKEND → ICDEV_STORAGE_BACKEND
 
 Usage:
     python tools/agentic_ai_canvas/db/init_db.py
@@ -12,7 +18,6 @@ from __future__ import annotations
 
 import json
 import os
-import sqlite3
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -29,9 +34,18 @@ _BACKEND = os.environ.get(
 def get_connection():
     """Get a database connection — SQLite or PostgreSQL.
 
-    Uses get_canvas_connection() for PostgreSQL because aadc_* tables have no
+    Both paths return a translating ``StorageConnection`` from the storage
+    shim so the PG-style ``%s`` placeholders used throughout this module work
+    identically on either backend.
+
+    PostgreSQL uses get_canvas_connection() because aadc_* tables have no
     tenant_id/classification columns; get_connection() would inject RLS and
     raise UndefinedColumn on every query.
+
+    SQLite targets the dedicated per-canvas ``.db`` file (DB_PATH) but is
+    still wrapped in ``StorageConnection`` so ``%s`` → ``?`` translation and
+    ``executescript()`` behave the same as on PG. A raw ``sqlite3.connect``
+    here would raise ``OperationalError`` on the first ``%s`` statement.
     """
     if _BACKEND == "postgresql":
         try:
@@ -39,10 +53,14 @@ def get_connection():
             return get_canvas_connection("AADC_PG_DATABASE")
         except Exception:
             pass
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
+
+    # SQLite path — dedicated canvas .db file wrapped in the translating shim.
+    from tools.db.storage import StorageConnection, _get_sqlite_connection
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    raw_conn = _get_sqlite_connection(str(DB_PATH))
+    conn = StorageConnection(raw_conn, "sqlite")
+    # Canvas tables have no tenant_id/classification columns — no RLS.
+    conn.set_security_context(None)
     return conn
 
 
@@ -987,12 +1005,21 @@ if __name__ == "__main__":
     init_db()
     conn = get_connection()
     try:
-        tables = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-        ).fetchall()
+        from tools.db.storage import is_pg
+        if is_pg(conn):
+            rows = conn.execute(
+                "SELECT tablename FROM pg_catalog.pg_tables "
+                "WHERE tablename LIKE 'aadc_%' ORDER BY tablename"
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT name FROM sqlite_master "
+                "WHERE type='table' AND name LIKE 'aadc_%' ORDER BY name"
+            ).fetchall()
+        tables = [r[0] for r in rows]
         print(f"AADC Canvas DB initialized: {len(tables)} tables")
         for t in tables:
-            count = conn.execute(f"SELECT COUNT(*) FROM [{t[0]}]").fetchone()[0]  # noqa: S608
-            print(f"  {t[0]}: {count} rows")
+            count = conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]  # noqa: S608
+            print(f"  {t}: {count} rows")
     finally:
         conn.close()
