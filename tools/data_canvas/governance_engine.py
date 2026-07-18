@@ -16,6 +16,19 @@ def _uid() -> str:
     return str(uuid.uuid4())
 
 
+def _safe_int(value) -> int:
+    """Best-effort int coercion for maturity levels (dcpr-fix-08).
+
+    Legacy rows may hold a non-numeric label (e.g. the string 'defined') in the
+    INTEGER maturity_level column. Treat any unparseable value as 0 (lowest)
+    rather than raising ValueError and crashing the whole score.
+    """
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
 def list_policies(domain_id: str | None = None) -> list:
     """List governance policies, optionally filtered by domain (applies_to)."""
     with get_connection() as conn:
@@ -221,7 +234,7 @@ def compute_governance_score(domain_id: str | None = None) -> dict:
             pts += 25
         if any(p["applies_to"] in ("all", did) for p in active_policies):
             pts += 25
-        if int(maturity_by_domain.get(did) or d.get("maturity_level", 0) or 0) >= 2:
+        if _safe_int(maturity_by_domain.get(did) or d.get("maturity_level", 0) or 0) >= 2:
             pts += 25
         if d.get("owner") and d.get("steward"):
             pts += 25

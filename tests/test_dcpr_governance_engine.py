@@ -128,20 +128,20 @@ def test_score_single_domain_by_id():
     assert out["domains"][0]["id"] == "a"
 
 
-# ── Characterization: known bug in create_domain × compute_governance_score ───
+# ── Regression: create_domain × compute_governance_score (dcpr-fix-08) ────────
 
-@pytest.mark.xfail(
-    reason="BUG: domain_manager.create_domain defaults maturity_level to the "
-           "string 'defined', but dm_domains.maturity_level is INTEGER and "
-           "compute_governance_score calls int() on it → ValueError. Not fixed "
-           "in this test-only task; see PR notes.",
-    raises=ValueError,
-    strict=False,
-)
-def test_governance_score_crashes_on_string_maturity_from_create_domain():
+def test_governance_score_no_crash_on_create_domain_maturity():
+    """dcpr-fix-08: create_domain now maps the default 'defined' label to the
+    INTEGER maturity_level (1), and compute_governance_score's int() read is
+    guarded, so scoring a create_domain-created domain no longer raises
+    ValueError."""
     from tools.data_canvas.data_mesh import domain_manager as dm
-    dm.create_domain({"name": "Legacy"})  # writes maturity_level='defined'
-    ge.compute_governance_score()  # raises ValueError under the bug
+    created = dm.create_domain({"name": "Legacy"})  # writes maturity_level=1 (int)
+    assert "error" not in created
+    assert created["maturity_level"] == 1
+    out = ge.compute_governance_score()  # must not raise
+    assert isinstance(out["score"], float)
+    assert out["domain_count"] >= 1
 
 
 if __name__ == "__main__":

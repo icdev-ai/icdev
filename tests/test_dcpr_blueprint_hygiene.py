@@ -48,6 +48,9 @@ def test_pipeline_status_degrades_on_db_failure():
     status with null metrics — not the 94.2 / 3200 demo values."""
     app = _make_app()
     client = app.test_client()
+    # /data/api/pipeline/status is @dc_login_required (sec-02) — authenticate.
+    with client.session_transaction() as sess:
+        sess["user_id"] = "test-user"
 
     def _boom(*args, **kwargs):
         raise RuntimeError("simulated DB outage")
@@ -72,6 +75,9 @@ def test_pipeline_status_healthy_shape_has_degraded_false():
     """A successful call carries degraded=False (the honest default)."""
     app = _make_app()
     client = app.test_client()
+    # /data/api/pipeline/status is @dc_login_required (sec-02) — authenticate.
+    with client.session_transaction() as sess:
+        sess["user_id"] = "test-user"
     # No DB patch: on this fresh checkout the query may or may not find tables,
     # but the handler swallows per-query errors internally and returns 200.
     resp = client.get("/data/api/pipeline/status")
