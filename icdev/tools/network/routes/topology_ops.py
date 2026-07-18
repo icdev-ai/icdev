@@ -14,7 +14,14 @@ from pathlib import Path
 from flask import jsonify, render_template, request
 from tools.network.routes._common import _ICDEV_ROOT
 from tools.db.storage import sql_placeholder
-from tools.network.blueprint_helpers import _audit, _notify, _now, _row_to_dict, nc_login_required
+from tools.network.blueprint_helpers import (
+    _audit,
+    _notify,
+    _now,
+    _row_to_dict,
+    invalidate_parsed_graph,
+    nc_login_required,
+)
 from tools.network.constants import CSP_GROUP_DEFAULTS
 from tools.network.db.init_db import get_connection
 from tools.network.montecarlo import run_monte_carlo
@@ -663,6 +670,7 @@ def register_topology_ops_routes(bp):
                     f"UPDATE topologies SET graph_json={_ph}, updated_at={_ph} WHERE id={_ph}", (json.dumps(graph), now, topo_id)
                 )
                 conn.commit()
+                invalidate_parsed_graph(topo_id)  # ndc-perf-02
             conn.close()
         csp_labels = {"aws": "AWS", "azure": "Azure", "gcp": "GCP", "oci": "OCI", "ibm": "IBM Cloud"}
         label = data.get("label", csp_labels.get(csp, csp.upper()))
@@ -748,6 +756,7 @@ def register_topology_ops_routes(bp):
                             f"UPDATE topologies SET graph_json={_ph}, updated_at={_ph} WHERE id={_ph}",
                             (json.dumps(graph), _now(), topo_id),
                         )
+                        invalidate_parsed_graph(topo_id)  # ndc-perf-02
             except Exception:
                 pass
         conn.execute(f"DELETE FROM nc_groups WHERE parent_id={_ph}", (gid,))

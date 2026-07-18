@@ -11,7 +11,13 @@ import uuid as _uuid
 from flask import jsonify, render_template, request
 from tools.network.routes._common import _classify_imported_nodes
 from tools.db.storage import sql_placeholder
-from tools.network.blueprint_helpers import _audit, _now, _row_to_dict, nc_login_required
+from tools.network.blueprint_helpers import (
+    _audit,
+    _now,
+    _row_to_dict,
+    invalidate_parsed_graph,
+    nc_login_required,
+)
 from tools.network.compliance import run_compliance_audit
 from tools.network.db.init_db import get_connection
 from tools.network.export_import import import_drawio, import_svg, import_vdx
@@ -597,6 +603,7 @@ def register_collect_routes(bp):
         conn.execute(f"UPDATE topologies SET graph_json={_ph}, updated_at={_ph} WHERE id={_ph}", (json.dumps(graph), now, topo_id))
         conn.commit()
         conn.close()
+        invalidate_parsed_graph(topo_id)  # ndc-perf-02
         return jsonify(
             {
                 "updated_devices": updated,

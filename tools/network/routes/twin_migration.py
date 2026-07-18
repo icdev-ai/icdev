@@ -12,7 +12,13 @@ import uuid as _uuid
 from flask import current_app, jsonify, render_template, request
 from tools.network.routes._common import _AI_MIGRATION_PLAN_PROMPT, logger
 from tools.db.storage import sql_placeholder
-from tools.network.blueprint_helpers import _audit, _now, _row_to_dict, nc_login_required
+from tools.network.blueprint_helpers import (
+    _audit,
+    _now,
+    _row_to_dict,
+    get_parsed_graph,
+    nc_login_required,
+)
 from tools.network.db.init_db import get_connection
 
 
@@ -233,17 +239,16 @@ def register_twin_migration_routes(bp, nc_config=None):
             return jsonify({"iqe": iqe_str, "explanation": explanation}), 200
 
         conn = get_connection()
-        _ph = sql_placeholder(conn)
         try:
             ast = parse(iqe_str)
 
             # Build adapters for topology node/edge data
             def _nodes_adapter(c):
-                row = c.execute(f"SELECT graph_json FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
-                if not row:
+                # Read-only — take the shared cached parse (ndc-perf-02); the
+                # sibling _edges_adapter reuses it as a hit within this query.
+                graph = get_parsed_graph(c, topo_id)
+                if graph is None:
                     return []
-                import json as _json
-                graph = _json.loads(row["graph_json"] or "{}")
                 cells = graph.get("cells") or []
                 result = []
                 for cell in cells:
@@ -269,11 +274,11 @@ def register_twin_migration_routes(bp, nc_config=None):
                 return result
 
             def _edges_adapter(c):
-                row = c.execute(f"SELECT graph_json FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
-                if not row:
+                # Read-only — shared cached parse (ndc-perf-02); typically a hit
+                # after _nodes_adapter primed the cache for this topology.
+                graph = get_parsed_graph(c, topo_id)
+                if graph is None:
                     return []
-                import json as _json
-                graph = _json.loads(row["graph_json"] or "{}")
                 cells = graph.get("cells") or []
                 result = []
                 for cell in cells:

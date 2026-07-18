@@ -11,7 +11,13 @@ import uuid as _uuid
 from flask import jsonify, request
 from tools.canvas.ai_trace_mixin import record_canvas_decision
 from tools.db.storage import sql_placeholder
-from tools.network.blueprint_helpers import _audit, _now, _row_to_dict, nc_login_required
+from tools.network.blueprint_helpers import (
+    _audit,
+    _now,
+    _row_to_dict,
+    invalidate_parsed_graph,
+    nc_login_required,
+)
 from tools.network.compliance import apply_compliance_fix, export_fips_report_html, generate_fips_coverage_report, generate_xacta_export, run_compliance_audit
 from tools.network.constants import BOM_COSTS
 from tools.network.db.init_db import get_connection
@@ -1104,6 +1110,7 @@ def register_crud_routes(bp):
             )
             conn.commit()
             conn.close()
+            invalidate_parsed_graph(topo_id)  # ndc-perf-02
             _audit("COMPLIANCE_FIX", "topology", topo_id, detail)
             return jsonify({"applied": True, "detail": detail})
         conn.close()

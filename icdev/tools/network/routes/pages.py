@@ -12,7 +12,13 @@ import uuid as _uuid
 from datetime import datetime, timezone
 from flask import abort, g, jsonify, render_template, request
 from tools.db.storage import sql_placeholder
-from tools.network.blueprint_helpers import _normalize_sop_step, _now, _row_to_dict, nc_login_required
+from tools.network.blueprint_helpers import (
+    _normalize_sop_step,
+    _now,
+    _row_to_dict,
+    get_parsed_graph,
+    nc_login_required,
+)
 from tools.network.constants import BOM_COSTS, COMPLIANCE_REGIMES
 from tools.network.db.init_db import get_connection
 
@@ -191,10 +197,11 @@ def register_pages_routes(bp, nc_config=None):
 
         # Upcoming EOL (devices across all topologies)
         eol_alerts = []
-        for r in conn.execute("SELECT t.name AS topo_name, t.graph_json FROM topologies t LIMIT 20").fetchall():
-            try:
-                graph = json.loads(r["graph_json"])
-            except Exception:
+        for r in conn.execute("SELECT t.id AS topo_id, t.name AS topo_name FROM topologies t LIMIT 20").fetchall():
+            topo_id = r["topo_id"] if hasattr(r, "keys") else r[0]
+            # Read-only iteration → take the shared cached parse (ndc-perf-02).
+            graph = get_parsed_graph(conn, topo_id)
+            if not graph:
                 continue
             for n in graph.get("nodes", []):
                 cfg = n.get("config") or n.get("configData") or {}

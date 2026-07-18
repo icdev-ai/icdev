@@ -12,8 +12,25 @@ from tools.logging.icdev_logger import get_logger
 
 import json
 import os
+from functools import lru_cache
 
 logger = get_logger("icdev.network.routes.analysis")
+
+
+@lru_cache(maxsize=256)
+def _version_meta_fields(meta_json: str):
+    """Parse an ``nc_versions.metadata_json`` blob once and return the two
+    fields the trend view needs, as an immutable tuple (ndc-perf-02).
+
+    Bounded memo keyed by the raw JSON string — identical metadata across many
+    version rows (common when compliance scores are unchanged) is parsed once.
+    Returning a tuple (not the dict) keeps the memo mutation-safe.
+    """
+    try:
+        meta = json.loads(meta_json or "{}")
+    except Exception:
+        meta = {}
+    return meta.get("compliance_score"), meta.get("cat1_count")
 
 
 def register_analysis_routes(bp, get_conn=None, helpers=None):
@@ -186,15 +203,12 @@ def register_analysis_routes(bp, get_conn=None, helpers=None):
         trend = []
         for v in versions:
             version_num, created_at, meta_json = v
-            try:
-                meta = json.loads(meta_json or "{}")
-            except Exception:
-                meta = {}
+            compliance_score, cat1_count = _version_meta_fields(meta_json or "{}")
             trend.append({
                 "version": version_num,
                 "date": created_at,
-                "compliance_score": meta.get("compliance_score"),
-                "cat1_count": meta.get("cat1_count"),
+                "compliance_score": compliance_score,
+                "cat1_count": cat1_count,
             })
         return jsonify({"topology_id": topo_id, "trend": trend})
 

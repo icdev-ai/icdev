@@ -14,7 +14,13 @@ from flask import jsonify, request
 from tools.network.routes._common import _classify_imported_nodes, logger
 from tools.canvas.ai_trace_mixin import record_canvas_decision
 from tools.db.storage import sql_placeholder
-from tools.network.blueprint_helpers import _audit, _now, _row_to_dict, nc_login_required
+from tools.network.blueprint_helpers import (
+    _audit,
+    _now,
+    _row_to_dict,
+    invalidate_parsed_graph,
+    nc_login_required,
+)
 from tools.network.config_generator import generate_device_configs, generate_device_configs_zip, list_configurable_nodes
 from tools.network.constants import CLOUD_OBJECTS
 from tools.network.db.init_db import get_connection
@@ -346,6 +352,7 @@ def register_topology_routes(bp):
         conn.execute(f"UPDATE topologies SET {', '.join(fields)} WHERE id={_ph}", values)  # nosec B608 -- table/column names are internal constants, not user input
         conn.commit()
         conn.close()
+        invalidate_parsed_graph(topo_id)  # same-timestamp-save safety (ndc-perf-02)
         _audit("UPDATE", "topology", topo_id)
         # Hook: notify Security Design Canvas of topology change
         sdc_assessment = None
