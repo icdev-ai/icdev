@@ -335,8 +335,8 @@ def create_ops_hub_blueprint() -> Blueprint:
 
     @bp.route("/api/ops/adapters")
     def api_ops_adapters():
-        from tools.ops_hub.adapter_registry import probe_all
-        raw = probe_all(persist=True)
+        from tools.ops_hub.adapter_registry import probe_all_cached
+        raw = probe_all_cached(persist=True)  # cnr-ops-02: TTL-cached (60s)
         # Normalize to dict keyed by adapter_name for consistent API shape
         if isinstance(raw, list):
             adapters = {a.get("adapter_name", str(i)): a for i, a in enumerate(raw)}

@@ -458,10 +458,25 @@ def create_noc_canvas_blueprint() -> Blueprint:
 
     @bp.route("/noc/looking-glass")
     def noc_looking_glass():
+        # cnr-ops-02: validate HYPERGLASS_URL before embedding it in an iframe.
+        # An unvalidated env value could carry a javascript:/data: scheme (XSS) or
+        # a malformed URL. Only embed a well-formed http(s) URL; otherwise fall back
+        # to the friendly not-configured state and flag the misconfiguration.
         import os
-        hyperglass_url = os.environ.get("HYPERGLASS_URL", "")
+        from urllib.parse import urlparse
+        raw = os.environ.get("HYPERGLASS_URL", "").strip()
+        hyperglass_url = ""
+        hyperglass_invalid = False
+        if raw:
+            parsed = urlparse(raw)
+            if parsed.scheme in ("http", "https") and parsed.netloc:
+                hyperglass_url = raw
+            else:
+                hyperglass_invalid = True
         return render_template("noc_canvas/looking_glass.html",
-                               hyperglass_url=hyperglass_url)
+                               hyperglass_url=hyperglass_url,
+                               hyperglass_invalid=hyperglass_invalid,
+                               classification="CUI // SP-CTI")
 
     # ── JSON API — IQE ───────────────────────────────────────────────────────
 
