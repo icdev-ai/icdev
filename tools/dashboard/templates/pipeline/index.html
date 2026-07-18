@@ -52,8 +52,11 @@
 </div>
 <div class="pdc-grid">
   {% for p in pipelines %}
-  <div class="pdc-card" style="position:relative;">
-    <div onclick="window.location='/devops/canvas/{{ p.id }}'">
+  {# data-* + addEventListener: p.name in a JS-string sink is unsafe because the
+     browser HTML-decodes attribute values before JS parses; Jinja attribute
+     escaping does not protect the JS string context. #}
+  <div class="pdc-card" style="position:relative;" data-pid="{{ p.id }}" data-pname="{{ p.name }}">
+    <div class="pdc-card-open">
       <h3>{{ p.name }}</h3>
       <p>{{ p.description or 'No description' }}</p>
       <div class="meta">
@@ -62,8 +65,7 @@
         {{ p.updated_at[:10] if p.updated_at else '' }}
       </div>
     </div>
-    <button onclick="event.stopPropagation(); deletePipeline('{{ p.id }}', '{{ p.name }}')"
-            class="pdc-delete-btn" title="Delete this pipeline">✕</button>
+    <button class="pdc-delete-btn pdc-delete-pipeline" title="Delete this pipeline">✕</button>
   </div>
   {% endfor %}
 </div>
@@ -112,6 +114,21 @@
 {% include "includes/iqe_query_widget.html" %}
 
 <script>
+// Wire pipeline cards via listeners (id/name from data-*, never a JS-string sink).
+document.querySelectorAll('.pdc-card[data-pid]').forEach(card => {
+  const id = card.dataset.pid;
+  const name = card.dataset.pname;
+  const open = card.querySelector('.pdc-card-open');
+  if (open) open.addEventListener('click', () => {
+    window.location = '/devops/canvas/' + encodeURIComponent(id);
+  });
+  const del = card.querySelector('.pdc-delete-pipeline');
+  if (del) del.addEventListener('click', e => {
+    e.stopPropagation();
+    deletePipeline(id, name);
+  });
+});
+
 function loadTemplate(tplId) {
   fetch(`/devops/api/templates/${tplId}/load`, { method: 'POST', headers: { 'Content-Type': 'application/json' } })
     .then(r => r.json())

@@ -5,6 +5,19 @@
 
 'use strict';
 
+// ── XSS-safe escaping (pdx-sec-02) ───────────────────────────────────────────
+// Provided by pdc-escape.js (loaded before this file on canvas.html). Local
+// fallbacks keep the canvas self-contained if the shared file is absent.
+const escapeHtml = (typeof window !== 'undefined' && window.escapeHtml) || function (value) {
+  if (value === null || value === undefined) return '';
+  return String(value)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+};
+const escapeAttr = (typeof window !== 'undefined' && window.escapeAttr) || function (value) {
+  return escapeHtml(value).replace(/`/g, '&#96;');
+};
+
 // ── Node Styles (100+ types) ─────────────────────────────────────────────────
 // Each: { fill, stroke, label, symbol }
 // Color families: orchestration=blue, source=green, build=cyan, test=purple,
@@ -726,11 +739,11 @@ function openConfigPanel(cell) {
   const style = getStyle(type);
   const label = cell.attr('label/text') || '';
   let html = `
-    <label>Type</label><input value="${type}" readonly>
-    <label>Label</label><input id="cfg-label" value="${label}" onchange="updateNodeLabel(this.value)">
-    <label>Icon</label><input value="${style.symbol}" readonly>
-    <label>Stroke Color</label><div style="width:20px;height:20px;border-radius:4px;background:${style.stroke};border:1px solid #1e3a6e;display:inline-block;vertical-align:middle;margin-top:4px;"></div>
-    <span style="color:#7a8cb0;margin-left:6px;font-size:11px;">${style.stroke}</span>
+    <label>Type</label><input value="${escapeAttr(type)}" readonly>
+    <label>Label</label><input id="cfg-label" value="${escapeAttr(label)}" onchange="updateNodeLabel(this.value)">
+    <label>Icon</label><input value="${escapeAttr(style.symbol)}" readonly>
+    <label>Stroke Color</label><div style="width:20px;height:20px;border-radius:4px;background:${escapeAttr(style.stroke)};border:1px solid #1e3a6e;display:inline-block;vertical-align:middle;margin-top:4px;"></div>
+    <span style="color:#7a8cb0;margin-left:6px;font-size:11px;">${escapeHtml(style.stroke)}</span>
   `;
 
   // NDC Bridge: show topology picker
@@ -738,9 +751,9 @@ function openConfigPanel(cell) {
     html += _section('Link to NDC Topology');
     const linkedId = cell.get('configData')?.ndc_topology_id || '';
     if (linkedId) {
-      html += `<div style="padding:4px;background:#0f3460;border-radius:4px;margin:4px 0;font-size:11px;">Linked: <b>${cell.get('configData')?.ndc_topology_name || linkedId}</b></div>`;
-      html += `<button class="tb-btn" style="margin:4px 0;" onclick="fetchNdcHealth('${linkedId}')">Refresh Health</button>`;
-      html += `<a href="/network/canvas/${linkedId}" target="_blank" class="tb-btn" style="display:inline-block;text-decoration:none;margin:4px 0;">Open in NDC →</a>`;
+      html += `<div style="padding:4px;background:#0f3460;border-radius:4px;margin:4px 0;font-size:11px;">Linked: <b>${escapeHtml(cell.get('configData')?.ndc_topology_name || linkedId)}</b></div>`;
+      html += `<button class="tb-btn" style="margin:4px 0;" onclick="fetchNdcHealth('${encodeURIComponent(linkedId)}')">Refresh Health</button>`;
+      html += `<a href="/network/canvas/${encodeURIComponent(linkedId)}" target="_blank" class="tb-btn" style="display:inline-block;text-decoration:none;margin:4px 0;">Open in NDC →</a>`;
       html += '<div id="ndc-health-panel"></div>';
     }
     html += '<div id="ndc-topology-list" style="margin-top:8px;"><i style="color:#7a8cb0;font-size:11px;">Loading topologies...</i></div>';
@@ -787,12 +800,18 @@ function _loadNdcTopologyList(cell) {
       let html = '<div style="font-size:11px;font-weight:600;margin-bottom:4px;">Available Topologies:</div>';
       topologies.forEach(t => {
         const isLinked = cell.get('configData')?.ndc_topology_id === t.id;
-        html += `<div style="background:${isLinked ? '#0f3460' : '#0f2040'};border:1px solid ${isLinked ? '#3498db' : '#1e3a6e'};border-radius:4px;padding:6px 8px;margin:3px 0;cursor:pointer;" onclick="linkNdcTopology('${t.id}','${(t.name || '').replace(/'/g, '')}')">`;
-        html += `<div style="font-weight:600;font-size:11px;">${t.name || 'Untitled'}${isLinked ? ' ✓' : ''}</div>`;
-        html += `<div style="font-size:10px;color:#7a8cb0;">${t.classification || 'public'} · ${t.updated_at ? t.updated_at.substring(0, 10) : ''}</div>`;
+        const updated = t.updated_at ? String(t.updated_at).substring(0, 10) : '';
+        // data-* + addEventListener: id/name (incl. cross-canvas NDC data) never
+        // reach a JS/HTML-injection sink. escapeAttr guards the attribute values.
+        html += `<div class="ndc-topo-row" data-topo-id="${escapeAttr(t.id)}" data-topo-name="${escapeAttr(t.name || '')}" style="background:${isLinked ? '#0f3460' : '#0f2040'};border:1px solid ${isLinked ? '#3498db' : '#1e3a6e'};border-radius:4px;padding:6px 8px;margin:3px 0;cursor:pointer;">`;
+        html += `<div style="font-weight:600;font-size:11px;">${escapeHtml(t.name || 'Untitled')}${isLinked ? ' ✓' : ''}</div>`;
+        html += `<div style="font-size:10px;color:#7a8cb0;">${escapeHtml(t.classification || 'public')} · ${escapeHtml(updated)}</div>`;
         html += '</div>';
       });
       container.innerHTML = html;
+      container.querySelectorAll('.ndc-topo-row').forEach(row => {
+        row.addEventListener('click', () => linkNdcTopology(row.dataset.topoId, row.dataset.topoName));
+      });
     })
     .catch(() => {
       const container = document.getElementById('ndc-topology-list');
@@ -1172,7 +1191,7 @@ function _buildIntegrationSuggestions(snippetNodes, snippetData, isAirgap, snipp
 
 function _showIntegrationGuide(snippetData, suggestions, isAirgap, snippetClass) {
   const clsBadge = snippetClass === 'SECRET' ? '#e74c3c' : snippetClass === 'CUI' ? '#f39c12' : '#27ae60';
-  let html = _section('Snippet: ' + snippetData.name);
+  let html = _section('Snippet: ' + escapeHtml(snippetData.name));
   html += '<div style="margin-bottom:8px;">';
   html += _pill(snippetClass, clsBadge);
   html += _pill(snippetData.impact_level || 'IL4', '#0f3460');
@@ -1180,7 +1199,7 @@ function _showIntegrationGuide(snippetData, suggestions, isAirgap, snippetClass)
   if (isAirgap) html += _pill('AIR-GAPPED', '#c0392b');
   html += '</div>';
   if (snippetData.description) {
-    html += '<p style="font-size:11px;color:#7a8cb0;margin:0 0 8px;">' + snippetData.description + '</p>';
+    html += '<p style="font-size:11px;color:#7a8cb0;margin:0 0 8px;">' + escapeHtml(snippetData.description) + '</p>';
   }
 
   // Security warnings
@@ -1202,10 +1221,11 @@ function _showIntegrationGuide(snippetData, suggestions, isAirgap, snippetClass)
 
       html += '<div style="background:#0f2040;border:1px solid #1e3a6e;border-radius:6px;padding:8px;margin:4px 0;">';
       html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
-      html += '<div><span style="color:#3498db;font-weight:600;">' + fromLabel + '</span>';
+      html += '<div><span style="color:#3498db;font-weight:600;">' + escapeHtml(fromLabel) + '</span>';
       html += ' <span style="color:#e94560;">→</span> ';
-      html += '<span style="color:#27ae60;font-weight:600;">' + toLabel + '</span></div>';
-      html += '<button class="tb-btn" style="font-size:10px;padding:2px 8px;" onclick="applyIntegrationLink(\'' + fromId + '\',\'' + toId + '\',\'' + (s.label || '') + '\')">Connect</button>';
+      html += '<span style="color:#27ae60;font-weight:600;">' + escapeHtml(toLabel) + '</span></div>';
+      // data-* + addEventListener: node ids/label never enter a JS string sink.
+      html += '<button class="tb-btn integ-connect-btn" style="font-size:10px;padding:2px 8px;" data-from="' + escapeAttr(fromId) + '" data-to="' + escapeAttr(toId) + '" data-label="' + escapeAttr(s.label || '') + '">Connect</button>';
       html += '</div>';
       html += '<div style="font-size:10px;color:#7a8cb0;margin-top:3px;">' + s.reason + '</div>';
       html += '<div style="font-size:9px;color:#5a6e8c;">Protocol: ' + (s.protocol || 'auto') + '</div>';
@@ -1220,17 +1240,22 @@ function _showIntegrationGuide(snippetData, suggestions, isAirgap, snippetClass)
   }
 
   openRightPanel('Integration Guide', html);
+  // Wire Connect buttons via listeners (data-* args, no inline JS-string sink).
+  document.querySelectorAll('.pc-config-body .integ-connect-btn').forEach(btn => {
+    btn.addEventListener('click', e => applyIntegrationLink(
+      btn.dataset.from, btn.dataset.to, btn.dataset.label, e.currentTarget));
+  });
   // Store suggestions for "Connect All"
   window._pendingSuggestions = suggestions;
 }
 
-function applyIntegrationLink(fromId, toId, label) {
+function applyIntegrationLink(fromId, toId, label, el) {
   pushUndo();
   createLink(fromId, toId, label);
   markDirty();
   // Visual feedback: flash the button
-  event?.target?.style && (event.target.style.background = '#27ae60');
-  event?.target && (event.target.textContent = '✓');
+  const btn = el || (typeof event !== 'undefined' ? event?.target : null);
+  if (btn) { if (btn.style) btn.style.background = '#27ae60'; btn.textContent = '✓'; }
 }
 
 function applyAllSuggestions() {
@@ -1302,11 +1327,11 @@ function _renderValidation(data) {
       html += `<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:4px;">`;
       html += `<div style="flex:1;min-width:0;">
         <span style="color:${colors[r.status]};font-size:13px;margin-right:4px;">${icons[r.status]}</span>
-        <b style="font-size:11px;color:#1a1a2e;">${r.check}</b>`;
-      if (r.file) html += ` <span style="color:#4a5568;font-size:10px;">(${r.file})</span>`;
-      html += `<div style="font-size:10px;color:#4a5568;margin-top:2px;">${r.message}</div>`;
+        <b style="font-size:11px;color:#1a1a2e;">${escapeHtml(r.check)}</b>`;
+      if (r.file) html += ` <span style="color:#4a5568;font-size:10px;">(${escapeHtml(r.file)})</span>`;
+      html += `<div style="font-size:10px;color:#4a5568;margin-top:2px;">${escapeHtml(r.message)}</div>`;
       if (r.details && r.details.length) {
-        r.details.forEach(d => { html += `<div style="font-size:9px;color:#4a5568;margin-left:12px;">— ${d}</div>`; });
+        r.details.forEach(d => { html += `<div style="font-size:9px;color:#4a5568;margin-left:12px;">— ${escapeHtml(d)}</div>`; });
       }
       html += `</div>`;
       if (needsAction) {
@@ -1322,7 +1347,7 @@ function _renderValidation(data) {
         const safeSnippet = (r.fix_snippet || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
         html += `<div id="${rid}-fix" style="display:none;margin-top:6px;padding:8px;background:#eaf3fb;border-radius:4px;border:1px solid #aed6f1;">`;
         html += `<div style="font-size:10px;font-weight:700;color:#1a5276;margin-bottom:4px;">💡 Suggested Fix</div>`;
-        html += `<div style="font-size:10px;color:#2c3e50;margin-bottom:6px;">${r.fix_hint}</div>`;
+        html += `<div style="font-size:10px;color:#2c3e50;margin-bottom:6px;">${escapeHtml(r.fix_hint)}</div>`;
         if (r.fix_snippet) {
           html += `<pre style="font-size:9px;background:#d6eaf8;padding:6px;border-radius:3px;white-space:pre-wrap;color:#1a1a2e;margin:0 0 6px;font-family:var(--pc-mono);">${safeSnippet}</pre>`;
           html += `<button class="tb-btn" style="font-size:10px;padding:2px 8px;background:#1a5276;color:#fff;" onclick="_copyFix(this,'${rid}')">Copy Snippet</button>`;
