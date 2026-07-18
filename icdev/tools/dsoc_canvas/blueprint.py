@@ -112,7 +112,7 @@ def create_dsoc_blueprint() -> Blueprint:
         conn = get_connection()
         try:
             rows = conn.execute(
-                "SELECT * FROM dsoc_flowspec_rules ORDER BY created_at DESC"
+                "SELECT * FROM dsoc_flowspec_rules ORDER BY created_at DESC LIMIT 500"
             ).fetchall()
             rules = [dict(r) for r in rows]
         except Exception:
@@ -127,7 +127,7 @@ def create_dsoc_blueprint() -> Blueprint:
         conn = get_connection()
         try:
             rows = conn.execute(
-                "SELECT * FROM dsoc_rtbh_entries ORDER BY created_at DESC"
+                "SELECT * FROM dsoc_rtbh_entries ORDER BY created_at DESC LIMIT 500"
             ).fetchall()
             entries = [dict(r) for r in rows]
         except Exception:
@@ -142,7 +142,7 @@ def create_dsoc_blueprint() -> Blueprint:
         conn = get_connection()
         try:
             rows = conn.execute(
-                "SELECT * FROM dsoc_scrubbing_centers ORDER BY status, name"
+                "SELECT * FROM dsoc_scrubbing_centers ORDER BY status, name LIMIT 500"
             ).fetchall()
             centers = [dict(r) for r in rows]
         except Exception:
@@ -157,7 +157,7 @@ def create_dsoc_blueprint() -> Blueprint:
         conn = get_connection()
         try:
             rows = conn.execute(
-                "SELECT * FROM dsoc_threats ORDER BY last_seen DESC, confidence_pct DESC"
+                "SELECT * FROM dsoc_threats ORDER BY last_seen DESC, confidence_pct DESC LIMIT 500"
             ).fetchall()
             threats = [dict(r) for r in rows]
         except Exception:
@@ -172,10 +172,13 @@ def create_dsoc_blueprint() -> Blueprint:
         conn = get_connection()
         try:
             rows = conn.execute(
-                "SELECT *, "
-                "(SELECT name FROM dsoc_scrubbing_centers WHERE id=dsoc_mitigations.scrubbing_center_id) AS scrubbing_center_name, "
-                "(SELECT rule_name FROM dsoc_flowspec_rules WHERE id=dsoc_mitigations.flowspec_rule_id) AS flowspec_rule_name "
-                "FROM dsoc_mitigations ORDER BY started_at DESC"
+                "SELECT m.*, "
+                "sc.name AS scrubbing_center_name, "
+                "fr.rule_name AS flowspec_rule_name "
+                "FROM dsoc_mitigations m "
+                "LEFT JOIN dsoc_scrubbing_centers sc ON sc.id = m.scrubbing_center_id "
+                "LEFT JOIN dsoc_flowspec_rules fr ON fr.id = m.flowspec_rule_id "
+                "ORDER BY m.started_at DESC LIMIT 500"
             ).fetchall()
             mitigations = [dict(r) for r in rows]
         except Exception:
@@ -193,31 +196,31 @@ def create_dsoc_blueprint() -> Blueprint:
         conn = get_connection()
         try:
             return jsonify(get_dsoc_overview(conn))
+        except Exception:
+            return jsonify({})
         finally:
             conn.close()
 
     @bp.route("/api/dsoc/flowspec", methods=["GET"])
     def api_dsoc_flowspec_list():
+        # Runtime SQL is authored PG-native (%s); StorageConnection translates
+        # for the SQLite init-fallback. Missing tables → graceful [].
         from tools.dsoc_canvas.db.init_db import get_connection
         conn = get_connection()
         try:
             action_f = request.args.get("action", "")
             if action_f:
-                try:
-                    rows = conn.execute(
-                        "SELECT * FROM dsoc_flowspec_rules WHERE action=%s ORDER BY created_at DESC",
-                        (action_f,)
-                    ).fetchall()
-                except Exception:
-                    rows = conn.execute(
-                        "SELECT * FROM dsoc_flowspec_rules WHERE action=%s ORDER BY created_at DESC",
-                        (action_f,)
-                    ).fetchall()
+                rows = conn.execute(
+                    "SELECT * FROM dsoc_flowspec_rules WHERE action=%s ORDER BY created_at DESC LIMIT 500",
+                    (action_f,)
+                ).fetchall()
             else:
                 rows = conn.execute(
-                    "SELECT * FROM dsoc_flowspec_rules ORDER BY created_at DESC"
+                    "SELECT * FROM dsoc_flowspec_rules ORDER BY created_at DESC LIMIT 500"
                 ).fetchall()
             return jsonify([dict(r) for r in rows])
+        except Exception:
+            return jsonify([])
         finally:
             conn.close()
 
@@ -249,18 +252,11 @@ def create_dsoc_blueprint() -> Blueprint:
                 "created_by":        data.get("created_by", "system"),
             }
             cols = ", ".join(fields.keys())
-            try:
-                placeholders = ", ".join("?" * len(fields))
-                conn.execute(
-                    f"INSERT INTO dsoc_flowspec_rules ({cols}) VALUES ({placeholders})",
-                    tuple(fields.values())
-                )
-            except Exception:
-                placeholders = ", ".join("%s" * len(fields))
-                conn.execute(
-                    f"INSERT INTO dsoc_flowspec_rules ({cols}) VALUES ({placeholders})",
-                    tuple(fields.values())
-                )
+            placeholders = ", ".join(["%s"] * len(fields))
+            conn.execute(
+                f"INSERT INTO dsoc_flowspec_rules ({cols}) VALUES ({placeholders})",
+                tuple(fields.values())
+            )
             conn.commit()
             return jsonify({"status": "created", "rule_name": data["rule_name"]}), 201
         except Exception as exc:
@@ -287,9 +283,11 @@ def create_dsoc_blueprint() -> Blueprint:
         conn = get_connection()
         try:
             rows = conn.execute(
-                "SELECT * FROM dsoc_rtbh_entries ORDER BY created_at DESC"
+                "SELECT * FROM dsoc_rtbh_entries ORDER BY created_at DESC LIMIT 500"
             ).fetchall()
             return jsonify([dict(r) for r in rows])
+        except Exception:
+            return jsonify([])
         finally:
             conn.close()
 
@@ -304,7 +302,14 @@ def create_dsoc_blueprint() -> Blueprint:
             return jsonify({"error": f"Missing: {', '.join(missing)}"}), 400
         conn = get_connection()
         try:
-            result = trigger_rtbh(conn, data)
+            # trigger_rtbh takes unpacked args, not the raw dict.
+            result = trigger_rtbh(
+                conn,
+                prefix=data["prefix"],
+                reason=data["trigger_reason"],
+                triggered_by=data.get("triggered_by") or "system",
+                auto_withdraw_minutes=int(data.get("auto_withdraw_minutes") or 60),
+            )
             return jsonify(result), 201
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
@@ -330,9 +335,11 @@ def create_dsoc_blueprint() -> Blueprint:
         conn = get_connection()
         try:
             rows = conn.execute(
-                "SELECT * FROM dsoc_scrubbing_centers ORDER BY status, name"
+                "SELECT * FROM dsoc_scrubbing_centers ORDER BY status, name LIMIT 500"
             ).fetchall()
             return jsonify([dict(r) for r in rows])
+        except Exception:
+            return jsonify([])
         finally:
             conn.close()
 
@@ -357,18 +364,11 @@ def create_dsoc_blueprint() -> Blueprint:
                 "anycast_prefix":      data.get("anycast_prefix", ""),
             }
             cols = ", ".join(fields.keys())
-            try:
-                placeholders = ", ".join("?" * len(fields))
-                conn.execute(
-                    f"INSERT INTO dsoc_scrubbing_centers ({cols}) VALUES ({placeholders})",
-                    tuple(fields.values())
-                )
-            except Exception:
-                placeholders = ", ".join("%s" * len(fields))
-                conn.execute(
-                    f"INSERT INTO dsoc_scrubbing_centers ({cols}) VALUES ({placeholders})",
-                    tuple(fields.values())
-                )
+            placeholders = ", ".join(["%s"] * len(fields))
+            conn.execute(
+                f"INSERT INTO dsoc_scrubbing_centers ({cols}) VALUES ({placeholders})",
+                tuple(fields.values())
+            )
             conn.commit()
             return jsonify({"status": "created", "name": data["name"]}), 201
         except Exception as exc:
@@ -385,16 +385,10 @@ def create_dsoc_blueprint() -> Blueprint:
         conn = get_connection()
         try:
             load = float(data["current_load_gbps"])
-            try:
-                conn.execute(
-                    "UPDATE dsoc_scrubbing_centers SET current_load_gbps=%s WHERE id=%s",
-                    (load, center_id)
-                )
-            except Exception:
-                conn.execute(
-                    "UPDATE dsoc_scrubbing_centers SET current_load_gbps=%s WHERE id=%s",
-                    (load, center_id)
-                )
+            conn.execute(
+                "UPDATE dsoc_scrubbing_centers SET current_load_gbps=%s WHERE id=%s",
+                (load, center_id)
+            )
             conn.commit()
             return jsonify({"status": "updated", "id": center_id, "current_load_gbps": load})
         except Exception as exc:
@@ -409,21 +403,17 @@ def create_dsoc_blueprint() -> Blueprint:
         try:
             active_only = request.args.get("active", "")
             if active_only.lower() in ("1", "true", "yes"):
-                try:
-                    rows = conn.execute(
-                        "SELECT * FROM dsoc_threats WHERE is_active=%s ORDER BY last_seen DESC",
-                        (1,)
-                    ).fetchall()
-                except Exception:
-                    rows = conn.execute(
-                        "SELECT * FROM dsoc_threats WHERE is_active=%s ORDER BY last_seen DESC",
-                        (1,)
-                    ).fetchall()
+                rows = conn.execute(
+                    "SELECT * FROM dsoc_threats WHERE is_active=%s ORDER BY last_seen DESC LIMIT 500",
+                    (1,)
+                ).fetchall()
             else:
                 rows = conn.execute(
-                    "SELECT * FROM dsoc_threats ORDER BY last_seen DESC, confidence_pct DESC"
+                    "SELECT * FROM dsoc_threats ORDER BY last_seen DESC, confidence_pct DESC LIMIT 500"
                 ).fetchall()
             return jsonify([dict(r) for r in rows])
+        except Exception:
+            return jsonify([])
         finally:
             conn.close()
 
@@ -451,18 +441,11 @@ def create_dsoc_blueprint() -> Blueprint:
                 "is_active":       int(data.get("is_active", 1)),
             }
             cols = ", ".join(fields.keys())
-            try:
-                placeholders = ", ".join("?" * len(fields))
-                conn.execute(
-                    f"INSERT INTO dsoc_threats ({cols}) VALUES ({placeholders})",
-                    tuple(fields.values())
-                )
-            except Exception:
-                placeholders = ", ".join("%s" * len(fields))
-                conn.execute(
-                    f"INSERT INTO dsoc_threats ({cols}) VALUES ({placeholders})",
-                    tuple(fields.values())
-                )
+            placeholders = ", ".join(["%s"] * len(fields))
+            conn.execute(
+                f"INSERT INTO dsoc_threats ({cols}) VALUES ({placeholders})",
+                tuple(fields.values())
+            )
             conn.commit()
             return jsonify({"status": "created", "source_prefix": data["source_prefix"]}), 201
         except Exception as exc:
@@ -476,12 +459,17 @@ def create_dsoc_blueprint() -> Blueprint:
         conn = get_connection()
         try:
             rows = conn.execute(
-                "SELECT *, "
-                "(SELECT name FROM dsoc_scrubbing_centers WHERE id=dsoc_mitigations.scrubbing_center_id) AS scrubbing_center_name, "
-                "(SELECT rule_name FROM dsoc_flowspec_rules WHERE id=dsoc_mitigations.flowspec_rule_id) AS flowspec_rule_name "
-                "FROM dsoc_mitigations ORDER BY started_at DESC"
+                "SELECT m.*, "
+                "sc.name AS scrubbing_center_name, "
+                "fr.rule_name AS flowspec_rule_name "
+                "FROM dsoc_mitigations m "
+                "LEFT JOIN dsoc_scrubbing_centers sc ON sc.id = m.scrubbing_center_id "
+                "LEFT JOIN dsoc_flowspec_rules fr ON fr.id = m.flowspec_rule_id "
+                "ORDER BY m.started_at DESC LIMIT 500"
             ).fetchall()
             return jsonify([dict(r) for r in rows])
+        except Exception:
+            return jsonify([])
         finally:
             conn.close()
 
@@ -496,16 +484,10 @@ def create_dsoc_blueprint() -> Blueprint:
         conn = get_connection()
         try:
             ts = datetime.now(timezone.utc).strftime("%Y%m")
-            try:
-                row = conn.execute(
-                    "SELECT COUNT(*) FROM dsoc_mitigations WHERE mitigation_number LIKE %s",
-                    (f"MIT-{ts}-%",)
-                ).fetchone()
-            except Exception:
-                row = conn.execute(
-                    "SELECT COUNT(*) FROM dsoc_mitigations WHERE mitigation_number LIKE %s",
-                    (f"MIT-{ts}-%",)
-                ).fetchone()
+            row = conn.execute(
+                "SELECT COUNT(*) FROM dsoc_mitigations WHERE mitigation_number LIKE %s",
+                (f"MIT-{ts}-%",)
+            ).fetchone()
             n = (row[0] if row else 0) + 1
             mit_num = f"MIT-{ts}-{n:04d}"
 
@@ -524,18 +506,11 @@ def create_dsoc_blueprint() -> Blueprint:
                 "notes":              data.get("notes", ""),
             }
             cols = ", ".join(fields.keys())
-            try:
-                placeholders = ", ".join("?" * len(fields))
-                conn.execute(
-                    f"INSERT INTO dsoc_mitigations ({cols}) VALUES ({placeholders})",
-                    tuple(fields.values())
-                )
-            except Exception:
-                placeholders = ", ".join("%s" * len(fields))
-                conn.execute(
-                    f"INSERT INTO dsoc_mitigations ({cols}) VALUES ({placeholders})",
-                    tuple(fields.values())
-                )
+            placeholders = ", ".join(["%s"] * len(fields))
+            conn.execute(
+                f"INSERT INTO dsoc_mitigations ({cols}) VALUES ({placeholders})",
+                tuple(fields.values())
+            )
             conn.commit()
             return jsonify({"status": "created", "mitigation_number": mit_num}), 201
         except Exception as exc:
@@ -549,16 +524,10 @@ def create_dsoc_blueprint() -> Blueprint:
         conn = get_connection()
         try:
             ended = _now()
-            try:
-                conn.execute(
-                    "UPDATE dsoc_mitigations SET status=%s, ended_at=%s WHERE id=%s",
-                    ("completed", ended, mitigation_id)
-                )
-            except Exception:
-                conn.execute(
-                    "UPDATE dsoc_mitigations SET status=%s, ended_at=%s WHERE id=%s",
-                    ("completed", ended, mitigation_id)
-                )
+            conn.execute(
+                "UPDATE dsoc_mitigations SET status=%s, ended_at=%s WHERE id=%s",
+                ("completed", ended, mitigation_id)
+            )
             conn.commit()
             return jsonify({"status": "completed", "id": mitigation_id, "ended_at": ended})
         except Exception as exc:

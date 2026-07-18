@@ -238,7 +238,7 @@ fetch('/api/dsoc/mitigations?status=active')
         <td class="text-info fw-bold" style="font-family:monospace;">${esc(m.target_prefix) || '—'}</td>
         <td><span class="badge-rtbh">${esc(m.mitigation_type) || '—'}</span></td>
         <td class="text-muted" style="font-size:.8rem;">${esc(m.attack_type) || '—'}</td>
-        <td class="${(m.peak_gbps || 0) > 100 ? 'text-danger fw-bold' : 'text-warning'}">${m.peak_gbps || 0}</td>
+        <td class="${(m.peak_traffic_gbps || 0) > 100 ? 'text-danger fw-bold' : 'text-warning'}">${m.peak_traffic_gbps || 0}</td>
         <td class="text-muted" style="font-size:.78rem;">${started}</td>
       </tr>`;
     }).join('');
