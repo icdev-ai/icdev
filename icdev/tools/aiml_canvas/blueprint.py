@@ -46,7 +46,17 @@ import os
 
 from flask import Blueprint, jsonify, redirect, render_template, request, url_for
 
+# penta-aimc-03: hard-gate AIMC mutating routes with the established dashboard
+# RBAC decorator (same pattern as tools/aiify/blueprint.py, PR #514). Enforces
+# login (401) + operator role (403) independent of ICDEV_ENFORCE_CANVAS_ACCESS.
+# Read-only pages and GET/list JSON routes keep their current posture.
+from tools.dashboard.auth import require_role
+
 log = get_logger(__name__)
+
+# Roles permitted to invoke AIMC mutating routes (create/save/delete designs,
+# run assessments, generate artifacts, apply templates/snippets, recommend).
+_AIMC_MUTATE_ROLES = ("admin", "pm", "developer", "isso")
 
 try:
     from tools.canvas.ai_trace_mixin import record_canvas_decision as _record_decision
@@ -170,6 +180,7 @@ def create_aiml_blueprint() -> Blueprint | None:
         return jsonify(eng.list_designs())
 
     @bp.route("/api/designs", methods=["POST"])
+    @require_role(*_AIMC_MUTATE_ROLES)
     def api_create_design():
         data = request.get_json(silent=True) or {}
         name = data.get("name", "Untitled AI/ML Design")
@@ -192,6 +203,7 @@ def create_aiml_blueprint() -> Blueprint | None:
         return jsonify(design)
 
     @bp.route("/api/designs/<design_id>", methods=["PUT"])
+    @require_role(*_AIMC_MUTATE_ROLES)
     def api_save_design(design_id: str):
         data = request.get_json(silent=True) or {}
         try:
@@ -208,6 +220,7 @@ def create_aiml_blueprint() -> Blueprint | None:
             return jsonify({"error": str(exc)}), 404
 
     @bp.route("/api/designs/<design_id>", methods=["DELETE"])
+    @require_role(*_AIMC_MUTATE_ROLES)
     def api_delete_design(design_id: str):
         deleted = eng.delete_design(design_id)
         return jsonify({"deleted": deleted}), 200 if deleted else 404
@@ -215,6 +228,7 @@ def create_aiml_blueprint() -> Blueprint | None:
     # ── API: Assessment ───────────────────────────────────────────────────────
 
     @bp.route("/api/designs/<design_id>/assess", methods=["POST"])
+    @require_role(*_AIMC_MUTATE_ROLES)
     def api_assess(design_id: str):
         data = request.get_json(silent=True) or {}
         use_cot = data.get("use_cot", False)
@@ -235,6 +249,7 @@ def create_aiml_blueprint() -> Blueprint | None:
             return jsonify({"error": str(exc)}), 404
 
     @bp.route("/api/designs/<design_id>/assess-gov", methods=["POST"])
+    @require_role(*_AIMC_MUTATE_ROLES)
     def api_assess_gov(design_id: str):
         design = eng.get_design(design_id)
         if not design:
@@ -253,6 +268,7 @@ def create_aiml_blueprint() -> Blueprint | None:
     # ── API: Adaptation Recommendation ───────────────────────────────────────
 
     @bp.route("/api/designs/<design_id>/adapt", methods=["POST"])
+    @require_role(*_AIMC_MUTATE_ROLES)
     def api_adapt(design_id: str):
         data = request.get_json(silent=True) or {}
         rec = adapt_eng.recommend(**{k: v for k, v in data.items()
@@ -260,6 +276,7 @@ def create_aiml_blueprint() -> Blueprint | None:
         return jsonify(rec)
 
     @bp.route("/api/adapt/recommend", methods=["POST"])
+    @require_role(*_AIMC_MUTATE_ROLES)
     def api_adapt_recommend():
         data = request.get_json(silent=True) or {}
         valid_keys = {
@@ -275,6 +292,7 @@ def create_aiml_blueprint() -> Blueprint | None:
     # ── API: Deployment Plan ──────────────────────────────────────────────────
 
     @bp.route("/api/designs/<design_id>/deploy-plan", methods=["POST"])
+    @require_role(*_AIMC_MUTATE_ROLES)
     def api_deploy_plan(design_id: str):
         design = eng.get_design(design_id)
         if not design:
@@ -290,6 +308,7 @@ def create_aiml_blueprint() -> Blueprint | None:
         return jsonify(plan)
 
     @bp.route("/api/deploy/plan", methods=["POST"])
+    @require_role(*_AIMC_MUTATE_ROLES)
     def api_deploy_plan_standalone():
         data = request.get_json(silent=True) or {}
         plan = dep_plan.plan(
@@ -321,6 +340,7 @@ def create_aiml_blueprint() -> Blueprint | None:
             conn.close()
 
     @bp.route("/api/designs/<design_id>/artifact/model-card", methods=["POST"])
+    @require_role(*_AIMC_MUTATE_ROLES)
     def api_artifact_model_card(design_id: str):
         try:
             result = eng.generate_model_card(design_id)
@@ -329,6 +349,7 @@ def create_aiml_blueprint() -> Blueprint | None:
             return jsonify({"error": str(exc)}), 404
 
     @bp.route("/api/designs/<design_id>/artifact/deploy-manifest", methods=["POST"])
+    @require_role(*_AIMC_MUTATE_ROLES)
     def api_artifact_deploy_manifest(design_id: str):
         try:
             result = eng.generate_deployment_manifest(design_id)
@@ -343,6 +364,7 @@ def create_aiml_blueprint() -> Blueprint | None:
         return jsonify(eng.list_templates())
 
     @bp.route("/api/templates/<template_id>/apply/<design_id>", methods=["POST"])
+    @require_role(*_AIMC_MUTATE_ROLES)
     def api_apply_template(template_id: str, design_id: str):
         tpl = eng.get_template(template_id)
         if not tpl:
@@ -359,6 +381,7 @@ def create_aiml_blueprint() -> Blueprint | None:
         return jsonify(eng.list_snippets(category=cat))
 
     @bp.route("/api/snippets/<snippet_id>/insert/<design_id>", methods=["POST"])
+    @require_role(*_AIMC_MUTATE_ROLES)
     def api_insert_snippet(snippet_id: str, design_id: str):
         snippets = eng.list_snippets()
         snp = next((s for s in snippets if s["id"] == snippet_id), None)
@@ -490,6 +513,7 @@ def create_aiml_blueprint() -> Blueprint | None:
         )
 
     @bp.route("/api/modernize/recommend", methods=["POST"])
+    @require_role(*_AIMC_MUTATE_ROLES)
     def api_modernize_recommend():
         data = request.get_json(silent=True) or {}
         from tools.aiml_canvas.modernization_bridge import recommend_json

@@ -438,8 +438,14 @@ components:
   blueprint_attr: create_aiml_blueprint
   url_prefix: /ai-ml
   min_il: IL4
+  # penta-aimc-03: seed read access for operator roles so canvas access grants
+  # exist when ICDEV_ENFORCE_CANVAS_ACCESS is on. Mutating routes are additionally
+  # hard-gated with @require_role in tools/aiml_canvas/blueprint.py.
   default_roles:
+  - admin
+  - pm
   - developer
+  - isso
   nav:
     section: Canvases
     label: AI/ML
