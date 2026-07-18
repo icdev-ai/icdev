@@ -227,12 +227,15 @@ def run(ctx: Dict[str, Any], conn=None) -> Dict[str, Any]:
 
     try:
         from tools.security_canvas.db.init_db import get_connection as sdc_conn  # noqa: PLC0415
+        from tools.db.storage import column_exists  # noqa: PLC0415
         conn_sdc = sdc_conn()
         try:
-            cols = [r[1] for r in conn_sdc.execute("PRAGMA table_info(sc_controls)").fetchall()]
+            # Shared backend-aware column probe (information_schema on PG,
+            # PRAGMA table_info on SQLite) instead of a raw PRAGMA that only
+            # introspects on SQLite.
             date_col = (
-                "review_date" if "review_date" in cols
-                else ("next_review" if "next_review" in cols else None)
+                "review_date" if column_exists(conn_sdc, "sc_controls", "review_date")
+                else ("next_review" if column_exists(conn_sdc, "sc_controls", "next_review") else None)
             )
             if date_col:
                 rows = conn_sdc.execute(

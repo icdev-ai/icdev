@@ -25,7 +25,7 @@ from __future__ import annotations
 import argparse
 import json
 import sqlite3
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection, table_exists as _table_exists
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
@@ -38,14 +38,6 @@ KSI_SCHEMA_PATH = BASE_DIR / "context" / "compliance" / "fedramp_20x_ksi_schemas
 def _get_connection(db_path: Path = DB_PATH) -> sqlite3.Connection:
     conn = get_connection(db_path=str(db_path))
     return conn
-
-
-def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
-    row = conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name=%s",
-        (table_name,),
-    ).fetchone()
-    return row is not None
 
 
 def _count_rows(conn: sqlite3.Connection, table: str, project_id: str) -> int:

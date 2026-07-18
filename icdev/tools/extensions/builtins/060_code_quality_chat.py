@@ -18,8 +18,7 @@ Exports:
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
-import sqlite3
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection, table_exists as _table_exists
 from pathlib import Path
 
 logger = get_logger("icdev.extensions.code_quality_chat")
@@ -72,14 +71,6 @@ def _record_advisory(context_id: str, turn_number: int):
 # ---------------------------------------------------------------------------
 # Code quality check
 # ---------------------------------------------------------------------------
-
-
-def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
-    row = conn.execute(
-        "SELECT COUNT(*) as cnt FROM sqlite_master WHERE type='table' AND name=%s",
-        (name,),
-    ).fetchone()
-    return (row[0] if isinstance(row, (tuple, list)) else row["cnt"]) > 0
 
 
 def _check_code_quality(project_id: str) -> dict | None:
