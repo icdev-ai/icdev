@@ -37,7 +37,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from tools.db.storage import get_connection  # noqa: E402
+from tools.db.storage import get_connection, table_exists  # noqa: E402
 
 logger = get_logger(__name__)
 
@@ -336,37 +336,6 @@ def _get_active_projects(conn) -> List[Dict]:
     return [dict(r) for r in rows]
 
 
-def _table_exists(conn, table: str) -> bool:
-    """Backend-aware table existence check (SQLite ``sqlite_master`` / PG
-    ``information_schema``).
-
-    The original reflex only ever queried ``sqlite_master``, which does not
-    exist on PostgreSQL — so on the live PG backend the existence probe itself
-    raised and every framework was skipped (one of the reasons the reflex wrote
-    0 snapshots). Any probe error degrades to ``False`` (and rolls back so a PG
-    transaction is not left aborted).
-    """
-    backend = getattr(conn, "_backend", "sqlite")
-    try:
-        if backend == "postgresql":
-            row = conn.execute(
-                "SELECT 1 FROM information_schema.tables WHERE table_name = %s",
-                (table,),
-            ).fetchone()
-        else:
-            row = conn.execute(
-                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=%s",
-                (table,),
-            ).fetchone()
-        return row is not None
-    except Exception:
-        try:
-            conn.rollback()
-        except Exception:
-            pass
-        return False
-
-
 def _normalize_assessor_rows(rows, status_map: Dict[str, str]) -> List[Dict]:
     """Turn raw assessor rows into snapshot_writer control records.
 
@@ -411,7 +380,10 @@ def _pull_framework_controls(conn, project_id: str, framework: str) -> List[Dict
         return []
 
     table = src["table"]
-    if not _table_exists(conn, table):
+    # Shared backend-aware probe: information_schema on PG, sqlite_master on
+    # SQLite. Never raises for a missing table (returns False), so a missing
+    # assessor table degrades to an empty control list, never a raised probe.
+    if not table_exists(conn, table):
         return []
 
     where = "project_id = %s"

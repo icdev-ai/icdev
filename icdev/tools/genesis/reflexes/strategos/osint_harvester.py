@@ -82,6 +82,8 @@ def _ensure_tables() -> None:
                 "WHERE table_name IN ('sg_raw_signals','sg_raw_signals_audit')"
             ).fetchone()
         else:
+            # pg-portability: sqlite-only path — reached only when the backend is
+            # SQLite (PG uses the information_schema branch above).
             row = conn.execute(
                 "SELECT COUNT(*) AS cnt FROM sqlite_master "
                 "WHERE type='table' AND name IN ('sg_raw_signals','sg_raw_signals_audit')"
