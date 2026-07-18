@@ -44,7 +44,7 @@ def _identify_gaps(pillar_scores: list) -> list:
         for ps in pillar_scores:
             caps = conn.execute(
                 "SELECT id, title, phase, maturity_level, implementation_status, description "
-                "FROM zig_capabilities WHERE pillar_slug=%s AND implementation_status IN ('not_started','planned')"
+                "FROM zig_capabilities WHERE pillar_slug=? AND implementation_status IN ('not_started','planned')"
                 "ORDER BY CASE phase WHEN 'discovery' THEN 1 WHEN 'phase1' THEN 2 ELSE 3 END",
                 (ps["slug"],),
             ).fetchall()
@@ -76,7 +76,7 @@ def _persist_scores(pillar_scores: list):
                 "INSERT INTO zig_maturity_scores "
                 "(pillar_slug, score, maturity_level, capability_count, activity_count, "
                 "complete_activities, assessment_run_at, created_at) "
-                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+                "VALUES (?,?,?,?,?,?,?,?)",
                 (ps["slug"], ps["score"], ps["maturity_level"],
                  ps.get("capability_count", 0), ps.get("activity_count", 0),
                  ps.get("complete_activities", 0), now, now),
@@ -107,7 +107,7 @@ def reconcile_capability_status() -> int:
         ).fetchall()
         for cap in caps:
             acts = conn.execute(
-                "SELECT id FROM zig_activities WHERE capability_id=%s", (cap["id"],)
+                "SELECT id FROM zig_activities WHERE capability_id=?", (cap["id"],)
             ).fetchall()
             if not acts:
                 continue
@@ -127,7 +127,7 @@ def reconcile_capability_status() -> int:
                 new_status = "in_progress"
             if new_status != cap["implementation_status"]:
                 conn.execute(
-                    "UPDATE zig_capabilities SET implementation_status=%s WHERE id=%s",
+                    "UPDATE zig_capabilities SET implementation_status=? WHERE id=?",
                     (new_status, cap["id"]),
                 )
                 changed += 1

@@ -384,7 +384,7 @@ def create_security_blueprint():
             params.append(now)
             params.append(design_id)
             conn.execute(
-                f"UPDATE security_designs SET {', '.join(updates)} WHERE id=%s",  # nosec B608 -- keys from hardcoded allowlist
+                f"UPDATE security_designs SET {', '.join(updates)} WHERE id=?",  # nosec B608 -- keys from hardcoded allowlist
                 params,
             )
         _audit("UPDATE", "design", design_id, json.dumps(list(data.keys())))
