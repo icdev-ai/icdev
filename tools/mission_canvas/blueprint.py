@@ -23,7 +23,10 @@ _TEMPLATE_DIR = _ICDEV_ROOT / "tools" / "dashboard" / "templates"
 
 
 def _get_conn():
-    from tools.db.storage import get_connection
+    # cnr-mc-01: use the Mission Canvas connection (RLS disabled, dedicated
+    # mission_* tables), NOT the main icdev DB — otherwise canvas data is
+    # unreachable and the global RLS predicate raises UndefinedColumn on PG.
+    from tools.mission_canvas.db.init_db import get_connection
 
     return get_connection()
 
@@ -81,25 +84,45 @@ def create_mission_canvas_blueprint():
     @bp.route("/")
     @mc_login_required
     def mc_index():
+        # cnr-mc-01: query the real Mission Canvas tables (mission_designs and
+        # friends), not the nonexistent mission_canvas_sessions table. Table
+        # existence is handled gracefully so a not-yet-initialized canvas renders.
         conn = _get_conn()
+        designs: list[dict] = []
+        counts = {"designs": 0, "twins": 0, "evidence": 0, "posture": 0}
         try:
-            sessions = [
+            designs = [
                 dict(r)
                 for r in conn.execute(
-                    "SELECT id, name, status, created_at, updated_at "
-                    "FROM mission_canvas_sessions ORDER BY updated_at DESC LIMIT 20"
+                    "SELECT id, name, description, design_type, classification, "
+                    "created_at, updated_at "
+                    "FROM mission_designs ORDER BY updated_at DESC LIMIT 20"
                 ).fetchall()
             ]
         except Exception:
-            sessions = []
-        finally:
+            designs = []
+        for label, table in (
+            ("designs", "mission_designs"),
+            ("twins", "mission_twin_snapshots"),
+            ("evidence", "mission_evidence"),
+            ("posture", "mission_security_posture"),
+        ):
+            try:
+                row = conn.execute(f"SELECT COUNT(*) AS c FROM {table}").fetchone()
+                counts[label] = (row["c"] if row else 0) or 0
+            except Exception:
+                counts[label] = 0
+        try:
             conn.close()
+        except Exception:
+            pass
 
         from tools.mission_canvas.constants import OBJECT_TYPES
 
         return render_template(
             "mission_canvas/index.html",
-            sessions=sessions,
+            designs=designs,
+            counts=counts,
             objects=OBJECT_TYPES,
         )
 
