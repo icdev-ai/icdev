@@ -307,8 +307,11 @@ def _semantic_similarity(names_a: list[str], names_b: list[str]) -> list[list[fl
     if not names_a or not names_b:
         return zero
     try:
-        from icdev.tools.llm.router import LLMRouter  # noqa: PLC0415
+        from tools.llm.router import LLMRouter  # noqa: PLC0415
         router = LLMRouter()
+        # get_embedding_provider() returns a live provider or raises
+        # LLMUnavailableError (no-LLM / air-gap) — the broad except below then
+        # degrades to the zero matrix so callers fall back to name+type only.
         provider = getattr(router, "get_embedding_provider", lambda: None)()
         if provider is None:
             return zero
@@ -494,7 +497,8 @@ def generate_transforms(
 
     if artifact_type in ("python", "dbt"):
         try:
-            from icdev.tools.llm.router import LLMRouter  # noqa: PLC0415
+            from tools.llm.router import LLMRouter  # noqa: PLC0415
+            from tools.llm.provider import LLMRequest  # noqa: PLC0415
             router = LLMRouter()
             provider, model_id, _ = router.get_provider_for_function("code_generation")
             if provider and model_id:
@@ -505,14 +509,25 @@ def generate_transforms(
                     f"Field pairs (source_field → target_field):\n{pairs_json}\n"
                     "Return only the code, no explanation."
                 )
-                from icdev.tools.llm.router import LLMRequest  # noqa: PLC0415
-                req = LLMRequest(prompt=prompt, max_tokens=1024, temperature=0.1)
+                req = LLMRequest(
+                    messages=[{"role": "user", "content": prompt}],
+                    system_prompt=(
+                        "You are a data engineer. Generate a correct, minimal field-mapping "
+                        "transform. Return only code, no prose and no markdown fences."
+                    ),
+                    max_tokens=1024,
+                    temperature=0.1,
+                    classification=classification,
+                    skip_injection_scan=True,
+                )
                 resp = router.invoke("code_generation", req)
                 text = getattr(resp, "content", "") or getattr(resp, "text", "")
                 if text:
                     return text.strip(), model_id
         except Exception as exc:  # noqa: BLE001
-            logger.debug("ai_mapper: LLM transform unavailable: %s", exc)
+            # Do not silently swallow — a dead LLM path here previously looked
+            # identical to a working one. Log at WARNING so the fallback is visible.
+            logger.warning("ai_mapper: LLM transform generation failed, using template: %s", exc)
 
         # Template fallback
         if artifact_type == "python":
