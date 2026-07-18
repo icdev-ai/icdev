@@ -36,6 +36,27 @@
   <p>Design: <strong>{{ design.name }}</strong></p>
 </div>
 
+{% if gap_score %}
+<!-- Signal-source gap score (mitre_coverage_twin.compute_gap_score). Persisted
+     server-side; DISTINCT from the design-baseline MITRE coverage shown below. -->
+<div style="padding: 0 30px 16px;">
+  <div class="cov-card">
+    <h3>Signal-Source Gap Score</h3>
+    <p style="color:#7a8cb0;font-size:12px;margin:-6px 0 12px;">
+      Derived from the design's signal sources vs. each MITRE technique's required
+      detection sources (<code>mitre_coverage_twin</code>). This is a different
+      measure from the <strong>design-baseline coverage</strong> below, which reads
+      a MITRE baseline node embedded in the design.
+    </p>
+    <div class="cov-mitre-row"><span>Overall gap score (0.0 = full coverage, 1.0 = all gaps)</span><span>{{ gap_score.overall_gap_score }}</span></div>
+    <div class="cov-mitre-row"><span>Techniques covered</span><span>{{ gap_score.covered_count }} / {{ gap_score.total_techniques }}</span></div>
+    <div class="cov-mitre-row"><span>Partial</span><span>{{ gap_score.partial_count }}</span></div>
+    <div class="cov-mitre-row"><span>Gap</span><span>{{ gap_score.gap_count }}</span></div>
+    <div class="cov-score-lbl" style="text-align:left;margin-top:8px;">Last computed: {{ gap_score.assessed_at }}</div>
+  </div>
+</div>
+{% endif %}
+
 <div id="covLoading" class="cov-loading">Running coverage assessment...</div>
 
 <div class="cov-grid" id="covGrid" style="display:none;">
@@ -52,9 +73,10 @@
     <div id="sourceChecklist"></div>
   </div>
 
-  <!-- MITRE ATT&CK Detection -->
+  <!-- MITRE ATT&CK Detection (design baseline node — distinct from the
+       signal-source gap score above) -->
   <div class="cov-card" style="grid-column: span 2;">
-    <h3>MITRE ATT&CK Detection Coverage</h3>
+    <h3>MITRE ATT&CK Detection Coverage &mdash; Design Baseline</h3>
     <div id="mitreCoverage"></div>
   </div>
 
