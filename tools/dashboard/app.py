@@ -1684,6 +1684,46 @@ def _enrich_chart_patterns(patterns: list[dict]) -> list[dict]:
     return enriched
 
 
+def _derive_chart_provenance(bars: list[dict]) -> dict:
+    """Derive top-level data-provenance flags for a chart response.
+
+    ``market_data.fetch_bars`` tags every bar with a per-bar ``source``
+    ("alpaca" / "alpaca_crypto" / "sample") plus ``as_of``. The chart frontend
+    ignores those per-bar markers, so synthetic ("sample") bars can render as
+    real market data in a financial UI. This helper collapses the per-bar
+    markers into top-level ``data_source`` / ``simulated`` / ``as_of`` fields
+    the UI can surface as a prominent "SIMULATED DATA" banner (nav-plat-01).
+
+    Args:
+        bars: OHLCV bar dicts, each optionally carrying ``source`` / ``as_of``.
+
+    Returns:
+        Dict with keys::
+
+            {
+              "data_source": str,   # "alpaca"|"sample"|...|"mixed"|"unknown"
+              "simulated": bool,    # True iff any bar is synthetic ("sample")
+              "as_of": str | None,  # most-recent per-bar as_of, if present
+            }
+    """
+    if not bars:
+        return {"data_source": "unknown", "simulated": False, "as_of": None}
+    sources = {str(b.get("source") or "unknown") for b in bars if isinstance(b, dict)}
+    simulated = "sample" in sources
+    if len(sources) == 1:
+        data_source = next(iter(sources))
+    elif sources:
+        data_source = "mixed"
+    else:
+        data_source = "unknown"
+    as_of = None
+    for b in reversed(bars):
+        if isinstance(b, dict) and b.get("as_of"):
+            as_of = b["as_of"]
+            break
+    return {"data_source": data_source, "simulated": simulated, "as_of": as_of}
+
+
 def _get_chat_models() -> tuple[list[dict], str]:
     """Read available chat models from args/llm_config.yaml.
 
@@ -11237,6 +11277,7 @@ def create_app(testing: bool = False) -> Flask:
             from tools.trading.ta.support_resistance import compute_sr
 
             bars = fetch_bars(ticker, timeframe, limit)
+            provenance = _derive_chart_provenance(bars)
             vp = compute_vp(bars, bucket_count=40)
             swings = find_swings(bars)
             raw_patterns = detect_patterns(bars)
@@ -11248,6 +11289,11 @@ def create_app(testing: bool = False) -> Flask:
                 "volume_profile": vp,
                 "patterns": patterns,
                 "sr_levels": sr_levels,
+                # Top-level data provenance so the UI can flag synthetic bars
+                # (nav-plat-01) — never render simulated data as real market data.
+                "data_source": provenance["data_source"],
+                "simulated": provenance["simulated"],
+                "as_of": provenance["as_of"],
             })
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
