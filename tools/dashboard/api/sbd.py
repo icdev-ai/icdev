@@ -12,8 +12,13 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection, table_exists  # noqa: E402
+from tools.dashboard.auth import require_role  # noqa: E402
 
 DB_PATH = BASE_DIR / "data" / "icdev.db"
+
+# SbD assessment mutation is restricted to security/compliance roles,
+# mirroring GOVCON_WRITE_ROLES in api/govcon.py.
+COMPLIANCE_WRITE_ROLES = ("admin", "isso", "ciso")
 
 sbd_api = Blueprint("sbd_api", __name__, url_prefix="/api/sbd")
 
@@ -241,6 +246,7 @@ def sbd_domains():
 
 
 @sbd_api.route("/assess", methods=["POST"])
+@require_role(*COMPLIANCE_WRITE_ROLES)
 def sbd_assess():
     """POST /api/sbd/assess — Trigger SbD assessment for a project."""
     data = request.get_json(force=True, silent=True) or {}

@@ -11,8 +11,13 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection, table_exists  # noqa: E402
+from tools.dashboard.auth import require_role  # noqa: E402
 
 DB_PATH = BASE_DIR / "data" / "icdev.db"
+
+# Evidence-refresh mutation is restricted to security/compliance roles,
+# mirroring GOVCON_WRITE_ROLES in api/govcon.py.
+COMPLIANCE_WRITE_ROLES = ("admin", "isso", "ciso")
 
 cato_api = Blueprint("cato_api", __name__, url_prefix="/api/cato")
 
@@ -406,6 +411,7 @@ def cato_timeline():
 # POST /api/cato/refresh — Trigger evidence refresh
 # ---------------------------------------------------------------------------
 @cato_api.route("/refresh", methods=["POST"])
+@require_role(*COMPLIANCE_WRITE_ROLES)
 def cato_refresh():
     """Mark stale evidence as needing refresh for a project."""
     conn = _get_db()
@@ -418,8 +424,11 @@ def cato_refresh():
         if not _table_exists(conn, "cato_evidence"):
             return jsonify({"refreshed": 0, "message": "cato_evidence table not found"})
 
+        # Use ? so _PGCompatConn rewrites to %s on PostgreSQL while SQLite
+        # keeps its qmark paramstyle. A raw %s literal raised on the default
+        # SQLite backend, so /refresh previously always errored there.
         cursor = conn.execute(
-            "UPDATE cato_evidence SET status = 'stale' WHERE project_id = %s AND status = 'expired'",
+            "UPDATE cato_evidence SET status = 'stale' WHERE project_id = ? AND status = 'expired'",
             (project_id,),
         )
         conn.commit()

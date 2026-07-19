@@ -11,8 +11,14 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection, table_exists, sql_placeholder  # noqa: E402
+from tools.dashboard.auth import require_role  # noqa: E402
 
 DB_PATH = BASE_DIR / "data" / "icdev.db"
+
+# Flipping a STIG finding status (incl. CAT1 ATO-blockers) is a compliance
+# posture mutation — restrict to security/compliance roles, mirroring
+# GOVCON_WRITE_ROLES in api/govcon.py.
+COMPLIANCE_WRITE_ROLES = ("admin", "isso", "ciso")
 
 stig_manager_api = Blueprint("stig_manager_api", __name__, url_prefix="/api/stig-manager")
 
@@ -405,6 +411,7 @@ def cat1():
 
 
 @stig_manager_api.route("/assess", methods=["POST"])
+@require_role(*COMPLIANCE_WRITE_ROLES)
 def assess():
     """POST /api/stig-manager/assess — Update finding status."""
     conn = _get_db()

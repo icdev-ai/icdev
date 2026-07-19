@@ -13,8 +13,13 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection, table_exists  # noqa: E402
+from tools.dashboard.auth import require_role  # noqa: E402
 
 DB_PATH = BASE_DIR / "data" / "icdev.db"
+
+# Triggering a PR compliance-drift analysis is a state-changing operation —
+# restrict to security/compliance roles, mirroring GOVCON_WRITE_ROLES.
+COMPLIANCE_WRITE_ROLES = ("admin", "isso", "ciso")
 
 pr_intel_api = Blueprint("pr_intel_api", __name__, url_prefix="/api/pr-intel")
 
@@ -339,6 +344,7 @@ def compliance_drift():
 
 
 @pr_intel_api.route("/analyze", methods=["POST"])
+@require_role(*COMPLIANCE_WRITE_ROLES)
 def analyze():
     """Trigger PR analysis for a given project and PR reference."""
     data = request.get_json(force=True, silent=True) or {}
