@@ -3975,7 +3975,6 @@ def create_app(testing: bool = False) -> Flask:
     @app.route("/intake/prd/<session_id>/view")
     def intake_prd_view(session_id):
         """Render PRD as a styled HTML page instead of downloading raw markdown."""
-        import json as _json_mod
         from datetime import datetime as _dt, timezone as _tz
         try:
             import markdown as _md_lib
@@ -4011,7 +4010,7 @@ def create_app(testing: bool = False) -> Flask:
                 session_customer=session_customer,
                 error=result.get("error", "PRD could not be generated."),
                 prd_html="",
-                prd_markdown_json="''",
+                prd_markdown_raw="",
                 classification_banner=cui_banner,
                 generated_at=generated_at,
             )
@@ -4023,6 +4022,15 @@ def create_app(testing: bool = False) -> Flask:
                 raw_md,
                 extensions=["tables", "fenced_code", "nl2br", "toc"],
             )
+            # nav-sec-07: python-markdown passes raw HTML through, and PRD content is
+            # LLM/user-derived → stored/reflected XSS. Sanitize the rendered HTML with
+            # the repo's canonical air-gap-safe sanitizer (no new dependency).
+            try:
+                from tools.docgen.workflow import _sanitize_html as _sanitize_prd_html
+                prd_html = _sanitize_prd_html(prd_html)
+            except Exception:
+                import html as _html_lib
+                prd_html = "<pre style='white-space:pre-wrap'>" + _html_lib.escape(raw_md) + "</pre>"
         else:
             import html as _html_lib
             prd_html = "<pre style='white-space:pre-wrap'>" + _html_lib.escape(raw_md) + "</pre>"
@@ -4033,7 +4041,9 @@ def create_app(testing: bool = False) -> Flask:
             session_customer=session_customer,
             error=None,
             prd_html=prd_html,
-            prd_markdown_json=_json_mod.dumps(raw_md),
+            # nav-sec-07: pass raw markdown; the template serializes it with Jinja
+            # |tojson so a </script> sequence in the PRD cannot break out of the block.
+            prd_markdown_raw=raw_md,
             classification_banner=cui_banner,
             generated_at=generated_at,
         )
@@ -7222,6 +7232,17 @@ def create_app(testing: bool = False) -> Flask:
             if in_code:
                 html_parts.append("</code></pre>")
             post["body_html"] = "\n".join(html_parts)
+        # nav-sec-07: body_html may be LLM-generated/persisted or built above without
+        # escaping user text → stored XSS. Sanitize at the render chokepoint (covers
+        # both the DB-persisted and inline-generated paths) with the canonical
+        # air-gap-safe sanitizer.
+        if post.get("body_html"):
+            try:
+                from tools.docgen.workflow import _sanitize_html as _sanitize_post_html
+                post["body_html"] = _sanitize_post_html(post["body_html"])
+            except Exception:
+                import html as _html_lib
+                post["body_html"] = "<pre>" + _html_lib.escape(post["body_html"]) + "</pre>"
         return render_template("pulse_post.html", post=post)
 
     # ── Pulse API Endpoints ──────────────────────────────────────────

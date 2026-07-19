@@ -254,8 +254,12 @@
     const bubble = document.createElement('div');
     bubble.className = 'sgc-bubble';
 
-    if (role === 'assistant' && typeof marked !== 'undefined') {
-      bubble.innerHTML = marked.parse(content || '');
+    // nav-sec-07: assistant content is LLM output. marked.parse emits raw HTML,
+    // so it MUST be sanitized before innerHTML. DOMPurify is vendored locally
+    // (static/vendor/dompurify) and loaded on Strategos pages via base.html. If it
+    // is somehow unavailable, fail safe by rendering as plain text (textContent).
+    if (role === 'assistant' && typeof marked !== 'undefined' && typeof DOMPurify !== 'undefined') {
+      bubble.innerHTML = DOMPurify.sanitize(marked.parse(content || ''));
     } else {
       bubble.textContent = content || '';
     }

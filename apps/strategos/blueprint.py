@@ -4531,7 +4531,6 @@ def strategos_dat_page():
         cables=cables,
         unsc_events=unsc_events,
         backchannels=backchannels,
-        history_json=json.dumps(history),
     )
 
 
