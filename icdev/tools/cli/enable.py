@@ -12,7 +12,7 @@ Usage:
     icdev disable network                       # flip both flags to false
     icdev status                                # show current state per canvas
     icdev status --json                         # machine-readable
-    icdev enable --list                         # list supported toggles
+    icdev list                                  # list supported toggles
 
 All commands operate on ./.env by default (override with --env-file PATH).
 Preserves comments and existing formatting.
@@ -204,6 +204,10 @@ def _print_status(result: dict) -> None:
           f"({'exists' if result['env_file_exists'] else 'NOT FOUND'})")
     print(f"Enabled: {result['enabled_count']} / {result['total_count']}")
     print()
+    if not rows:
+        print("  No components found — component_registry.yaml could not be located.")
+        print("  Run from an ICDEV project directory, or reinstall the package.")
+        return
     # Table: status | name | description | flags
     name_w = max(len(r["name"]) for r in rows) + 2
     for r in rows:
@@ -279,7 +283,7 @@ def main(argv: list[str] | None = None) -> int:
     # enable or disable
     if not args.names:
         parser.error(f"{args.action}: need at least one toggle name "
-                     f"(try `icdev enable --list` for supported names)")
+                     f"(try `icdev list` for supported names)")
 
     value = args.action == "enable"
     result = set_toggles(env_file, args.names, value)

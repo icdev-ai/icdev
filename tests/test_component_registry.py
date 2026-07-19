@@ -838,3 +838,58 @@ def test_get_iqe_path_canvas_auto_appends_new_canvas(tmp_path):
     canvases = {c for _, c in entries}
     assert "zeta" in canvases, "canvas with url_prefix + IQE adapter must auto-append"
     assert _first_match(entries, "/zeta/x") == "zeta"
+
+
+# ---------------------------------------------------------------------------
+# Packaged-wheel registry discovery (regression: 1.2.37/1.2.38)
+# ---------------------------------------------------------------------------
+
+def test_find_repo_root_discovers_packaged_data_args_layout(tmp_path, monkeypatch):
+    """A pip-installed wheel ships the registry under ``icdev/data/args/``.
+
+    Regression for 1.2.37/1.2.38, where ``_find_repo_root`` probed only
+    ``<parent>/args/`` and so resolved zero components after ``pip install``:
+    ``icdev status`` crashed and ``icdev list`` came back empty.
+    """
+    import importlib
+
+    mod = importlib.import_module("tools.config.component_registry")
+
+    # Mimic the wheel layout: <site-packages>/icdev/{data/args,tools/config}
+    pkg = tmp_path / "icdev"
+    (pkg / "data" / "args").mkdir(parents=True)
+    (pkg / "tools" / "config").mkdir(parents=True)
+    registry = pkg / "data" / "args" / "component_registry.yaml"
+    registry.write_text("components: []\n", encoding="utf-8")
+    module_file = pkg / "tools" / "config" / "component_registry.py"
+    module_file.write_text("", encoding="utf-8")
+
+    monkeypatch.setattr(mod, "__file__", str(module_file))
+    base, found = mod._find_repo_root()
+
+    assert found == registry, "packaged data/args layout must be discovered"
+    assert base == pkg
+
+
+def test_find_repo_root_prefers_source_args_layout(tmp_path, monkeypatch):
+    """The source checkout's ``<root>/args/`` still wins when both exist."""
+    import importlib
+
+    mod = importlib.import_module("tools.config.component_registry")
+
+    root = tmp_path / "repo"
+    (root / "args").mkdir(parents=True)
+    (root / "data" / "args").mkdir(parents=True)
+    (root / "tools" / "config").mkdir(parents=True)
+    src = root / "args" / "component_registry.yaml"
+    src.write_text("components: []\n", encoding="utf-8")
+    (root / "data" / "args" / "component_registry.yaml").write_text(
+        "components: []\n", encoding="utf-8"
+    )
+    module_file = root / "tools" / "config" / "component_registry.py"
+    module_file.write_text("", encoding="utf-8")
+
+    monkeypatch.setattr(mod, "__file__", str(module_file))
+    _base, found = mod._find_repo_root()
+
+    assert found == src, "source args/ layout must take precedence"
