@@ -651,7 +651,7 @@ function loadFromOrbat() {
   const statusEl = document.getElementById('lch-orbat-status');
   statusEl.textContent = 'Loading…';
   statusEl.style.color = 'var(--text-muted,#9ca3af)';
-  fetch(`/wargame/${wid}/orbat-seed`)
+  fetch(`/api/strategos/wargame/${wid}/orbat-seed`)
     .then(r => r.json())
     .then(data => {
       if (data.error) {
@@ -708,7 +708,7 @@ function runLanchester() {
   if (_lchMode === 'mc') {
     const iters = parseInt(document.getElementById('lch-iterations').value) || 500;
     resultEl.innerHTML = '<span style="color:var(--text-muted)">Running Monte Carlo…</span>';
-    fetch(`/wargame/${wid}/lanchester/monte-carlo?b0=${b0}&r0=${r0}&beta=${beta}&rho=${rho}&iterations=${iters}`)
+    fetch(`/api/strategos/wargame/${wid}/lanchester/monte-carlo?b0=${b0}&r0=${r0}&beta=${beta}&rho=${rho}&iterations=${iters}`)
       .then(r => r.json())
       .then(renderLanchesterMC)
       .catch(e => { resultEl.textContent = 'Error: ' + e; });
@@ -1240,7 +1240,7 @@ function advanceTurn() {
   const statusEl = document.getElementById('turn-status');
   btn.disabled = true;
   statusEl.textContent = 'Advancing…';
-  fetch(`/wargame/${wid}/turn/advance`, { method: 'POST' })
+  fetch(`/api/strategos/wargame/${wid}/turn/advance`, { method: 'POST' })
     .then(r => r.json())
     .then(d => {
       btn.disabled = false;
@@ -1257,7 +1257,7 @@ function advanceTurn() {
 function loadTurnLog() {
   const wid = _wargameId;
   if (!wid) return;
-  fetch(`/wargame/${wid}/turns`)
+  fetch(`/api/strategos/wargame/${wid}/turns`)
     .then(r => r.json())
     .then(renderTurnLog)
     .catch(() => {
