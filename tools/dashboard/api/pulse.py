@@ -34,6 +34,43 @@ _PULSE_EDITORIAL_ROLES = ("admin", "pm", "reviewer")
 _pulse_pipeline_runs: dict = {}
 _sam_bridge_runs: dict[str, dict] = {}
 
+# nav-intel-09-d1: LLM-judge publish gate. pulse_posts.judge_color is written
+# only when a judge run completes ("evaluated"), so it holds the latest verdict;
+# NULL means the judge never ran or errored. Fail-closed: only a known
+# non-blocking verdict clears publish. "amber" accepted as a YELLOW alias.
+_JUDGE_BLOCKING_COLORS = frozenset({"red"})
+_JUDGE_CLEARED_COLORS = frozenset({"blue", "purple", "green", "yellow", "amber"})
+
+
+def _judge_publish_gate(post):
+    """Return a (json, 409) response if the judge verdict blocks publish, else None."""
+    color = (post.get("judge_color") or "").strip().lower()
+    if color in _JUDGE_BLOCKING_COLORS:
+        return (
+            jsonify(
+                {
+                    "status": "blocked",
+                    "error": f"Publish blocked: LLM judge verdict is {color.upper()}",
+                    "judge_color": color,
+                    "post_id": post.get("id"),
+                }
+            ),
+            409,
+        )
+    if color not in _JUDGE_CLEARED_COLORS:
+        return (
+            jsonify(
+                {
+                    "status": "blocked",
+                    "error": "Publish blocked: no LLM judge verdict for this post — run judge first",
+                    "judge_color": color or None,
+                    "post_id": post.get("id"),
+                }
+            ),
+            409,
+        )
+    return None
+
 
 def _get_db():
     """Verbatim copy of app.py create_app()._get_db (nav-misc-03)."""
@@ -412,6 +449,9 @@ def api_pulse_publish(post_id):
         post = get_row("posts", post_id)
         if not post:
             return jsonify({"error": "Post not found"}), 404
+        blocked = _judge_publish_gate(post)
+        if blocked is not None:
+            return blocked
         now = datetime.now(timezone.utc).isoformat()
         update_row("posts", post_id, {"status": "published", "published_at": now})
         exports = export_both(post_id)
