@@ -47,8 +47,36 @@ def validate_topology(topology_id: str, fix: bool = False) -> dict[str, Any]:
         conn.close()
         return {"error": f"Topology {topology_id} not found"}
 
-    graph = json.loads(row["graph_json"])
     topo_name = row["name"]
+
+    # ── Guard: persisted graph_json must be valid JSON encoding an object ──
+    # Malformed persisted data is reported as a fail-closed finding, never
+    # allowed to crash the validator.
+    try:
+        graph = json.loads(row["graph_json"])
+        if not isinstance(graph, dict):
+            raise ValueError("graph_json did not decode to a JSON object")
+    except (json.JSONDecodeError, TypeError, ValueError) as exc:
+        conn.close()
+        return {
+            "topology_id": topology_id,
+            "topology_name": topo_name,
+            "total_nodes": 0,
+            "total_edges": 0,
+            "issues_found": 1,
+            "unknown_types": 0,
+            "orphan_edges": 0,
+            "fixes_applied": 0,
+            "issues": [{
+                "type": "invalid_graph_json",
+                "severity": "error",
+                "message": "graph_json is not valid JSON",
+                "detail": str(exc),
+            }],
+            "fixes": [],
+            "passed": False,
+        }
+
     nodes = graph.get("nodes", [])
     edges = graph.get("edges", [])
 
@@ -56,8 +84,34 @@ def validate_topology(topology_id: str, fix: bool = False) -> dict[str, Any]:
     fixes: list[dict] = []
     node_ids = set()
 
+    # ── Check 0: Malformed nodes (non-dict / missing id) ──────────────
+    # A node that is not a dict, or a dict without an "id", would crash the
+    # downstream checks. Report each as a finding and exclude it from the
+    # remaining checks so the rest of the topology is still validated.
+    valid_nodes: list[dict] = []
+    for idx, n in enumerate(nodes):
+        if not isinstance(n, dict):
+            issues.append({
+                "type": "malformed_node",
+                "severity": "error",
+                "node_index": idx,
+                "content": repr(n)[:120],
+                "message": f"Node at index {idx} is not an object: {repr(n)[:120]}",
+            })
+            continue
+        if "id" not in n:
+            issues.append({
+                "type": "malformed_node",
+                "severity": "error",
+                "node_index": idx,
+                "content": json.dumps(n)[:120],
+                "message": f"Node at index {idx} is missing 'id': {json.dumps(n)[:120]}",
+            })
+            continue
+        valid_nodes.append(n)
+
     # ── Check 1: Unknown device types ─────────────────────────────────
-    for n in nodes:
+    for n in valid_nodes:
         ntype = n.get("type", "")
         if ntype == "group-site":
             continue
@@ -112,7 +166,7 @@ def validate_topology(topology_id: str, fix: bool = False) -> dict[str, Any]:
 
     # ── Check 3: Duplicate node IDs ───────────────────────────────────
     seen_ids: dict[str, int] = {}
-    for n in nodes:
+    for n in valid_nodes:
         nid = n["id"]
         seen_ids[nid] = seen_ids.get(nid, 0) + 1
     dupes = {k: v for k, v in seen_ids.items() if v > 1}
@@ -139,7 +193,7 @@ def validate_topology(topology_id: str, fix: bool = False) -> dict[str, Any]:
     return {
         "topology_id": topology_id,
         "topology_name": topo_name,
-        "total_nodes": len([n for n in nodes if n.get("type") != "group-site"]),
+        "total_nodes": len([n for n in valid_nodes if n.get("type") != "group-site"]),
         "total_edges": len(edges),
         "issues_found": len(issues),
         "unknown_types": unknown_count,
