@@ -15,6 +15,7 @@ import importlib
 import json
 import os  # noqa: F811 — needed directly (not just as _os)
 import sys
+import threading
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -112,6 +113,44 @@ def _current_user_id() -> "str | None":
 # Every role here also appears in ``VALID_DASHBOARD_ROLES`` in
 # tools/dashboard/auth.py.
 _PULSE_EDITORIAL_ROLES = ("admin", "pm", "reviewer")
+
+# nav-intel-06: the Ask-ICDEV Q&A endpoints (/api/components-map/ask and
+# /api/ask-icdev/sessions/<id>/message) route every narrate=true request through
+# the LLMRouter — a real cost surface. Both endpoints are already
+# authenticated-only (the global before_request 401s anon), but any
+# authenticated user could otherwise trigger unbounded LLM calls. Role-gating
+# narration to admin/pm would break the chat UX for the developer/isso/co roles
+# that legitimately use it, so we rate-limit the narration per user instead
+# (defense-in-depth against authenticated abuse) and degrade to raw evidence
+# when the budget is exhausted — the non-narration retrieval branches stay live.
+_NARRATION_RATE_LOCK = threading.Lock()
+_NARRATION_CALLS: dict[str, list[float]] = {}
+
+
+def _narration_budget_ok(key: str, *, max_per_min: int | None = None) -> bool:
+    """Per-key sliding-window budget for the LLM narration cost surface.
+
+    Records a call and returns True while under the per-minute cap; returns
+    False (→ caller falls back to raw evidence) once the cap is exhausted.
+    Cap defaults to ICDEV_ASK_NARRATION_MAX_PER_MIN (20).
+    """
+    try:
+        cap = max_per_min if max_per_min is not None else int(
+            os.environ.get("ICDEV_ASK_NARRATION_MAX_PER_MIN", "20")
+        )
+    except (TypeError, ValueError):
+        cap = 20
+    now = time.monotonic()
+    with _NARRATION_RATE_LOCK:
+        recent = [t for t in _NARRATION_CALLS.get(key, ()) if now - t < 60.0]
+        if len(recent) >= cap:
+            _NARRATION_CALLS[key] = recent
+            return False
+        recent.append(now)
+        _NARRATION_CALLS[key] = recent
+        return True
+
+
 # Air-gap mode: hide cloud-dependent pages (Pulse, ClawHub, Genesis, GovCon, etc.)
 _AIRGAP_MODE = os.environ.get("ICDEV_AIRGAP", "").lower() in ("true", "1", "yes")
 # Demo mode: read-only enforcement (POST/PUT/DELETE to /api/* blocked except onboarding + IQE)
@@ -6630,6 +6669,14 @@ def create_app(testing: bool = False) -> Flask:
         None if the router is unavailable or the call fails, so the
         caller can show raw evidence instead.
         """
+        # nav-intel-06: rate-limit the LLM cost surface per authenticated user.
+        # Both /ask endpoints funnel their narration through this one function,
+        # so the budget check here covers both. Over budget -> None, and the
+        # caller already renders the raw-evidence fallback.
+        _u = getattr(g, "current_user", None)
+        _key = _u.get("id", "anon") if isinstance(_u, dict) else "anon"
+        if not _narration_budget_ok(_key):
+            return None
         try:
             from tools.llm.router import LLMRouter
         except ImportError:
