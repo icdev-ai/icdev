@@ -6,10 +6,11 @@
 <p align="center">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License">
   <img src="https://img.shields.io/badge/python-3.9%2B-brightgreen" alt="Python 3.9+">
-  <img src="https://img.shields.io/badge/version-1.2.38-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-1.2.39-blue" alt="Version">
   <a href="https://pypi.org/project/icdev/"><img src="https://img.shields.io/pypi/v/icdev?color=informational&label=PyPI" alt="PyPI Version"></a>
   <a href="https://pypi.org/project/icdev/"><img src="https://img.shields.io/pypi/dm/icdev?label=PyPI%20downloads" alt="PyPI Downloads"></a>
-  <img src="https://img.shields.io/badge/compliance%20frameworks-42-orange" alt="Compliance Frameworks">
+  <img src="https://img.shields.io/badge/compliance%20frameworks-35-orange" alt="Compliance Frameworks">
+  <img src="https://img.shields.io/badge/AI%20governance%20standards-12-9c27b0" alt="AI Governance Standards">
   <img src="https://img.shields.io/badge/tools-560%2B-blueviolet" alt="Tools">
   <img src="https://img.shields.io/badge/agents-16-red" alt="Agents">
   <img src="https://img.shields.io/badge/languages-6-green" alt="Languages">
@@ -27,7 +28,7 @@
 
 ## Table of Contents
 
-- [What's New](#whats-new-in-1238--platform-wide-production-hardening)
+- [What's New](#whats-new-in-1239--pip-install-fixes-registry-discovery--honest-framework-counts)
 - [What ICDEV™ Builds](#what-icdev-builds)
 - [13 Design Canvases](#13-design-canvases)
 - [Quick Start](#quick-start)
@@ -45,6 +46,18 @@
 - [Testing](#testing)
 - [Project Structure](#project-structure)
 - [License](#license)
+
+---
+
+## What's New in 1.2.39 — `pip install` Fixes: Registry Discovery & Honest Framework Counts
+
+A bug-fix release. **If you installed ICDEV from PyPI, upgrade — 1.2.38 and earlier could not find their own component registry.**
+
+- **`pip install icdev` now resolves its components.** `_find_repo_root()` probed only `<parent>/args/component_registry.yaml`, but the wheel installs that file as package data under `icdev/data/args/`. The lookup failed on every PyPI install, falling through to a heuristic that pointed at a nonexistent path — so the registry loaded **zero** components. Both layouts are now probed at each level, with the source checkout still taking precedence. Present since at least 1.2.37; invisible when running from a repo clone, because there the source path resolves fine.
+- **`icdev status` no longer crashes on a fresh install.** With an empty registry it raised `ValueError: max() iterable argument is empty` from `_print_status`. It now prints an actionable message instead of a traceback — defence in depth, so a future registry-resolution failure degrades rather than crashes.
+- **`icdev init` stopped recommending a command that doesn't exist.** Its closing message pointed users at `icdev enable --list`, which exits with an argparse error. The working command is `icdev list`; corrected in the init message, the module docstring, and the unknown-toggle hint.
+- **Framework counts now derive from the source of truth.** The README advertised "42 compliance frameworks" over a table listing 36, while `args/framework_registry.yaml` declared 35 — three numbers, none matching. The two sets also described different things: the registry carried 11 international regimes the README omitted (ISO 27017/27018/27701, IRAP, BSI C5, UK CE+, TISAX, K-ISMS, ENS, …), while the README counted AI-assurance capabilities with no formal assessor as if they were certifiable frameworks. Now split into **35 compliance frameworks** (all enumerated, straight from the registry) and **12 AI governance & assurance standards**, with the four DoD/federal programs that ship as dedicated assessors called out separately.
+- **Regression coverage.** Two tests pin the packaged-wheel layout and the source-layout precedence rule; both fail against the 1.2.38 code.
 
 ---
 
@@ -690,19 +703,33 @@ python tools/installer/installer.py --profile healthcare --compliance hipaa,hitr
 
 ---
 
-## 42 Compliance Frameworks
+## 35 Compliance Frameworks
 
-| Category | Frameworks |
-|----------|------------|
-| **Federal** | NIST 800-53 Rev 5, NIST 800-171, FedRAMP (Moderate/High/20x), CMMC Level 2/3, FIPS 199/200, CNSSI 1253 |
-| **DoD** | DoDI 5000.87 DES, MOSA (10 U.S.C. §4401), CSSP (DI 8530.01), cATO Monitoring |
-| **Healthcare** | HIPAA Security Rule, HITRUST CSF v11 |
-| **Financial** | PCI DSS v4.0, SOC 2 Type II |
-| **Law Enforcement** | CJIS Security Policy |
-| **International** | ISO/IEC 27001:2022, ISO/IEC 42001:2023, EU AI Act (Annex III) |
+Every framework below is declared in [`args/framework_registry.yaml`](args/framework_registry.yaml) with a named assessor and report generator — the count is derived from that file, not maintained by hand.
+
+| Category | Count | Frameworks |
+|----------|-------|------------|
+| **Federal** | 9 | NIST 800-53 Rev 5, NIST 800-171 Rev 2, FedRAMP Moderate, FedRAMP High, CMMC Level 2, CMMC Level 3, FIPS 199, FIPS 200, IRS Publication 1075 |
+| **International** | 10 | ISO/IEC 27001:2022, ISO/IEC 27017:2015 (Cloud Security), ISO/IEC 27018:2019 (Cloud PII), ISO/IEC 27701:2019 (Privacy), Australian IRAP, BSI C5 (Germany), UK Cyber Essentials Plus, TISAX (Automotive), K-ISMS (Korea), ENS (Spain) |
+| **AI Governance** | 5 | ISO/IEC 42001 (AI Management), OMB M-25-21 (High-Impact AI), OMB M-26-04 (Unbiased AI), NIST AI 600-1 (GenAI Profile), GAO-21-519SP (AI Accountability) |
+| **Architecture** | 3 | NIST 800-207 Zero Trust, CISA Secure by Design, IEEE 1012 IV&V |
+| **Financial** | 3 | PCI DSS v4.0, SOC 1 Type II, SOC 2 Type II |
+| **DoD** | 2 | MOSA (10 U.S.C. §4401), CSSP (DI 8530.01) |
+| **Healthcare** | 2 | HIPAA Security Rule (45 CFR 164), HITRUST CSF v11 |
+| **Law Enforcement** | 1 | FBI CJIS Security Policy v5.9.4 |
+
+Four additional DoD/federal programs ship as dedicated assessors rather than registry entries: **CNSSI 1253**, **DoDI 5000.87 (DES)**, **cATO continuous monitoring**, and **FedRAMP 20x**.
+
+---
+
+## 12 AI Governance & Assurance Standards
+
+Distinct from the compliance frameworks above — these are AI-specific assurance capabilities rather than certifiable regimes with a formal assessor.
+
+| Category | Standards |
+|----------|-----------|
 | **AI/ML Security** | NIST AI RMF 1.0, MITRE ATLAS, OWASP LLM Top 10, OWASP Agentic AI, OWASP ASI, SAFE-AI |
-| **AI Transparency** | OMB M-25-21 (High-Impact AI), OMB M-26-04 (Unbiased AI), NIST AI 600-1 (GenAI), GAO-21-519SP (AI Accountability) |
-| **Architecture** | NIST 800-207 Zero Trust, CISA Secure by Design, IEEE 1012 IV&V |
+| **Regulatory** | EU AI Act (Annex III) |
 | **Explainability** | XAI Compliance, Model Cards, System Cards, Confabulation Detection, Fairness Assessment |
 
 ---

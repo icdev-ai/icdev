@@ -39,23 +39,27 @@ from tools.logging.icdev_logger import get_logger
 
 logger = get_logger("icdev.component_registry")
 
-def _find_repo_root() -> Path:
-    """Resolve the repository root by locating ``args/component_registry.yaml``.
+def _find_repo_root() -> tuple[Path, Path]:
+    """Locate ``component_registry.yaml`` and the base dir that contains it.
 
     Works whether this module is imported from the canonical ``icdev.tools.*
-    package (nested under ``icdev/``) or the legacy root ``tools.*`` shim.
+    package (nested under ``icdev/``), the legacy root ``tools.*`` shim, or a
+    ``pip install``ed wheel. In a wheel the registry is installed as package
+    data under ``icdev/data/args/`` rather than ``<root>/args/``, so both
+    layouts are probed at every level. Returns ``(base_dir, registry_path)``.
     """
     here = Path(__file__).resolve()
     for parent in here.parents:
-        candidate = parent / "args" / "component_registry.yaml"
-        if candidate.is_file():
-            return parent
+        for rel in (("args",), ("data", "args")):
+            candidate = parent.joinpath(*rel, "component_registry.yaml")
+            if candidate.is_file():
+                return parent, candidate
     # Fallback to the naive parent-of-parent heuristic.
-    return here.parent.parent.parent
+    base = here.parent.parent.parent
+    return base, base / "args" / "component_registry.yaml"
 
 
-BASE_DIR = _find_repo_root()
-DEFAULT_REGISTRY_PATH = BASE_DIR / "args" / "component_registry.yaml"
+BASE_DIR, DEFAULT_REGISTRY_PATH = _find_repo_root()
 
 
 # ---------------------------------------------------------------------------
