@@ -722,7 +722,17 @@ def test_validate_canvas_completeness_synthetic_canvas_passes(tmp_path, monkeypa
 
 # Canvas keys used by the detector that are registered in app.py rather than in
 # component_registry.yaml (app-only IQE adapters / ai-brief-only renderers).
-_PATH_CANVAS_APP_ONLY_KEYS = {"updates", "zta", "dat", "cpmp_deliverables"}
+# `canvas_compliance` is the Canvas Posture page: an @app.route in app.py with a
+# template but no blueprint and no IQE adapter — unlike `canvas_health`, which is
+# a full registered component. Added to PATH_CANVAS by cnr-cc-02 without a
+# matching entry here, which is what this guard is for.
+_PATH_CANVAS_APP_ONLY_KEYS = {
+    "updates",
+    "zta",
+    "dat",
+    "cpmp_deliverables",
+    "canvas_compliance",
+}
 
 # Previously missing from the hardcoded PATH_CANVAS arrays — the whole point of
 # cvx-nav-01. These must all appear in the registry-derived map.
