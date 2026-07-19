@@ -222,8 +222,44 @@
         });
     }
 
+    function escapeHtml(s) {
+        return String(s).replace(/[&<>"']/g, c => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+        }[c]));
+    }
+
+    // ── Degraded state (assessment engine unavailable) ─────────────────────────
+    function renderUnavailable(reason) {
+        document.getElementById('compositeScore').textContent = '—';
+        document.getElementById('compositeScore').style.color = 'var(--text-muted)';
+        document.getElementById('compositeBar').style.width = '0%';
+        document.getElementById('compositeTimestamp').textContent = 'Assessment engine unavailable';
+
+        const light = document.getElementById('iwLight');
+        const label = document.getElementById('iwLabel');
+        light.style.color = 'var(--text-muted)';
+        label.textContent = 'UNAVAILABLE';
+        label.style.color = 'var(--text-muted)';
+
+        document.getElementById('lensTableBody').innerHTML =
+            '<tr><td colspan="4" style="text-align:center;padding:1rem;color:var(--text-muted)">Assessment engine unavailable</td></tr>';
+
+        document.getElementById('narrativePanel').innerHTML =
+            '<div style="grid-column:1/-1;background:var(--bg-secondary);border-radius:6px;padding:.9rem;color:var(--text-muted);font-size:.875rem">' +
+            '<strong style="color:var(--text-secondary)">Assessment engine unavailable.</strong> ' +
+            'No live assessment is being displayed. ' + escapeHtml(reason || '') + '</div>';
+
+        // Never render radar/sparkline with fabricated data
+        if (radarChart) { radarChart.destroy(); radarChart = null; }
+        if (sparkChart) { sparkChart.destroy(); sparkChart = null; }
+    }
+
     // ── Render ────────────────────────────────────────────────────────────────
     function render(data) {
+        if (!data || data.available === false) {
+            renderUnavailable(data && data.reason);
+            return;
+        }
         // Composite score
         const cs = data.composite_score || 0;
         document.getElementById('compositeScore').textContent = cs.toFixed(1);

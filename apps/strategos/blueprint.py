@@ -1694,17 +1694,14 @@ def api_oracle():
             composite_score = latest["composite_score"]
             iw_triggered = latest["iw_triggered"]
             timestamp = latest["timestamp"]
-    except ImportError:
-        # SIOEngine not available — return mock data so the page still renders
-        lenses_raw = {
-            "threat_posture":    {"score": 5.0, "nato_reliability": "C3", "narrative": "Mock data — SIOEngine not available.", "confidence": 0.5},
-            "behavior_pattern":  {"score": 4.5, "nato_reliability": "C3", "narrative": "Mock data — SIOEngine not available.", "confidence": 0.5},
-            "intent_assessment": {"score": 5.5, "nato_reliability": "C3", "narrative": "Mock data — SIOEngine not available.", "confidence": 0.5},
-            "convergence":       {"score": 6.0, "nato_reliability": "C3", "narrative": "Mock data — SIOEngine not available.", "confidence": 0.5},
-        }
-        composite_score = 5.25
-        iw_triggered = False
-        timestamp = datetime.now(timezone.utc).isoformat()
+    except ImportError as exc:
+        # SIOEngine not available — return an explicit degraded state rather than
+        # fabricated scores. Emitting mock lens/composite numbers would render on
+        # /strategos/oracle as a real assessment, misleading the analyst.
+        return jsonify({
+            "available": False,
+            "reason": f"SIO assessment engine unavailable: {exc}",
+        }), 503
 
     # ── Build lean lenses dict for the API response ─────────────────────────
     lenses_out = {}
@@ -1737,6 +1734,7 @@ def api_oracle():
         sparkline = ([0.0] * (14 - len(sparkline))) + sparkline
 
     return jsonify({
+        "available": True,
         "composite_score": composite_score,
         "iw_triggered": iw_triggered,
         "lenses": lenses_out,
