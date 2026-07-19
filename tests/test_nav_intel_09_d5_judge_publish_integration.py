@@ -127,7 +127,20 @@ def _status_of(db_path, post_id):
 
 
 @pytest.fixture
-def db_path(tmp_path, monkeypatch):
+def handed_out_conns():
+    """Every raw sqlite connection the patched get_connection() handed to a route.
+
+    Tracked so a test can assert the route closed what it opened (see
+    ``test_judge_write_failure_does_not_leak_a_connection``) and so the fixture
+    teardown can reclaim anything a route leaked -- an unclosed SQLite handle
+    keeps a write lock on the tmp_path DB, which turns the *next* statement into
+    a 5s busy-timeout stall rather than an obvious failure.
+    """
+    return []
+
+
+@pytest.fixture
+def db_path(tmp_path, monkeypatch, handed_out_conns):
     """Isolated SQLite pulse DB, patched into get_connection() across shims."""
     path = tmp_path / "pulse_judge_publish.db"
     conn = sqlite3.connect(str(path))
@@ -140,6 +153,7 @@ def db_path(tmp_path, monkeypatch):
 
         raw = sqlite3.connect(str(path), check_same_thread=False)
         raw.row_factory = sqlite3.Row
+        handed_out_conns.append(raw)
         return StorageConnection(raw, "sqlite")
 
     for mod_name in _CONN_MODULES:
@@ -148,7 +162,16 @@ def db_path(tmp_path, monkeypatch):
         except ImportError:
             continue
         monkeypatch.setattr(mod, "get_connection", _get_connection, raising=False)
-    return path
+
+    yield path
+
+    # Explicit teardown: close anything still open so no DB lock (or, on
+    # Windows, no open file handle blocking tmp_path cleanup) survives the test.
+    for raw in handed_out_conns:
+        try:
+            raw.close()
+        except Exception:
+            pass
 
 
 @pytest.fixture
@@ -157,19 +180,38 @@ def sync_threads(monkeypatch):
 
     The route does `import threading` inside the function body, so it resolves
     ``threading.Thread`` at call time from the real module -- patching the
-    attribute there is what the route actually sees.
+    attribute there is what the route actually sees. That makes the patch
+    process-global for the duration of the test, so the stand-in accepts the
+    full Thread signature and answers the usual introspection rather than
+    breaking any unrelated caller that happens to spawn a thread. (``Timer`` and
+    other ``Thread`` subclasses bound their base at class-creation time and are
+    unaffected -- notably pytest-timeout's watchdog, which must keep working or
+    a hang here would never be reported.)
     """
 
     class _InlineThread:
-        def __init__(self, target=None, args=(), kwargs=None, daemon=None):
+        def __init__(
+            self, group=None, target=None, name=None, args=(), kwargs=None, *, daemon=None
+        ):
             self._target, self._args, self._kwargs = target, args, kwargs or {}
+            self.name = name or "inline-thread"
+            self.daemon = bool(daemon)
+            self._started = False
 
         def start(self):
+            self._started = True
+            if self._target:
+                self._target(*self._args, **self._kwargs)
+
+        def run(self):
             if self._target:
                 self._target(*self._args, **self._kwargs)
 
         def join(self, timeout=None):
             return None
+
+        def is_alive(self):
+            return False  # target already ran to completion inside start()
 
     monkeypatch.setattr(threading, "Thread", _InlineThread)
 
@@ -383,6 +425,56 @@ def test_force_publish_over_judge_error_is_audited(client, db_path, monkeypatch,
     assert reason == "time-sensitive advisory"
     assert tenant_id == "t1"
     assert _status_of(db_path, "p-force") == "published"
+
+
+# --- scenario 6: the judge worker must not leak its DB connection -------------
+
+def _is_closed(raw_conn) -> bool:
+    try:
+        raw_conn.execute("SELECT 1")
+        return False
+    except sqlite3.ProgrammingError:
+        return True
+
+
+def test_judge_write_failure_does_not_leak_a_connection(
+    client, db_path, monkeypatch, sync_threads, handed_out_conns
+):
+    """The judge worker opens a second connection to write the verdict. If the
+    write raises, the bare ``except Exception: pass`` swallows it -- so without a
+    ``finally`` the connection is never closed and nothing reports it.
+
+    Under SQLite that orphan holds a write lock and the next statement stalls on
+    the busy timeout; under PostgreSQL it is an idle-in-transaction backend that
+    is never reclaimed, so a repeatedly-failing judge drains the pool until every
+    pulse route times out. This asserts the worker closes what it opened even on
+    the failure path.
+
+    The stubbed judge reports ``evaluated`` (clearing the status check) but omits
+    ``composite_score``, so the UPDATE argument tuple raises KeyError *after* the
+    connection is open and before the close -- exactly the window that leaked.
+    """
+    mod = importlib.import_module("tools.writing.llm_judge")
+    monkeypatch.setattr(mod, "init_judge_db", lambda *_a, **_k: None, raising=False)
+    monkeypatch.setattr(
+        mod,
+        "evaluate_and_store",
+        lambda **_kw: {"status": "evaluated", "color_rating": {"color": "green"}},
+        raising=False,
+    )
+    _seed_post(db_path, "p-leak")
+    _login(client, "editor")
+
+    resp = _judge(client, "p-leak")
+    assert resp.status_code == 200  # failure stays invisible to the caller
+
+    assert handed_out_conns, "expected the judge route to open at least one connection"
+    open_conns = [c for c in handed_out_conns if not _is_closed(c)]
+    assert not open_conns, f"judge worker leaked {len(open_conns)} connection(s) on the write-failure path"
+
+    # The verdict never landed, so the publish gate must still fail closed.
+    assert _judge_color_of(db_path, "p-leak") is None
+    assert _publish(client, "p-leak").status_code == 409
 
 
 def test_cleared_publish_writes_no_override_audit_row(client, db_path, monkeypatch, sync_threads):
