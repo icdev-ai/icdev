@@ -712,6 +712,8 @@
     <script defer src="{{ url_for('static', filename='js/onboarding.js') }}"></script>
     {% if '/strategos' in request.path %}
     <!-- STRATEGOS Chat panel + JS (loaded only on Strategos pages) -->
+    <!-- nav-sec-07: DOMPurify vendored locally (air-gap, no CDN) to sanitize marked() chat output -->
+    <script defer src="{{ url_for('static', filename='vendor/dompurify/purify.min.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/strategos-chat.js') }}"></script>
     {% endif %}
     {% block scripts %}{% endblock %}
