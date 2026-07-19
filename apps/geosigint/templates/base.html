@@ -32,18 +32,16 @@
         </div>
     </nav>
     <main class="main">
-        {# nav-plat-03: persistent provenance badge for static reference pages.
-           Only rendered when a page sets `static_reference` — DB-backed pages
-           (dashboard, map, signals, patterns, graph, sea) leave it unset. #}
-        {% if static_reference %}
-        <div class="reference-badge" role="note" aria-label="Data provenance"
-             style="display:flex;align-items:center;gap:.5rem;margin:0 0 1rem;padding:.5rem .85rem;
-                    border:1px solid #b8860b;border-left:4px solid #b8860b;border-radius:4px;
-                    background:rgba(184,134,11,.12);color:#d8b64a;font-size:.82rem;font-weight:600;">
-            <span aria-hidden="true">&#9432;</span>
-            <span>Reference data (static) &mdash; as of {{ static_reference_as_of | default('2026-05') }}. Not a live feed.</span>
-        </div>
-        {% endif %}
+        {# nav-plat-06: the persistent static-reference provenance badge now lives
+           in the shared partial _geosigint_reference_badge.html, which the 7
+           static templates include at the top of their content block. It was
+           moved out of this base wrapper because when the geosigint blueprint
+           mounts under the main dashboard, `{% extends "base.html" %}` resolves to
+           tools/dashboard/templates/base.html (app folder wins over the blueprint
+           folder) and this base.html is shadowed — so a badge carried here never
+           rendered in dashboard mode. The include renders in both modes. Gating
+           stays on `static_reference`, so DB-backed pages (dashboard, map,
+           signals, patterns, graph, sea) still never show it. #}
         {% block content %}{% endblock %}
     </main>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>

@@ -48,22 +48,17 @@ test.describe('Honesty banner — GeoSIGINT static-data provenance', () => {
     }
   });
 
-  // KNOWN DEFECT (surfaced by this end-of-wave sweep; follow-up for a nav-plat fix).
-  // nav-plat-03 added a "Reference data (static)" provenance badge to
-  // apps/geosigint/templates/base.html and wires static_reference=True via
-  // _page_ctx(). It never renders: the geosigint templates' `{% extends
-  // "base.html" %}` resolves to the MAIN dashboard tools/dashboard/templates/
-  // base.html (registered earlier in the Jinja loader search path), shadowing
-  // the geosigint-local base.html that carries the badge. Verified against a
-  // fresh server: /geosigint/* pages render the main navbar/CUI chrome and
-  // contain neither `reference-badge` nor `nav__status`. Fix belongs to a
-  // nav-plat template-namespacing task (e.g. rename the geosigint base to
-  // geosigint_base.html or a blueprint-scoped template dir), not this QA spec.
-  // test.fail() keeps CI green while recording the defect; if the collision is
-  // fixed the badge appears, this test unexpectedly passes, and Playwright will
-  // flag it so this marker gets removed.
+  // FIXED (nav-plat-06). The badge used to never render: the geosigint
+  // templates' `{% extends "base.html" %}` resolves to the MAIN dashboard
+  // tools/dashboard/templates/base.html (the app template folder wins over the
+  // blueprint folder in the Jinja loader search path), shadowing the
+  // geosigint-local base.html that carried the badge. Fix: the badge markup was
+  // moved into a shared partial (apps/geosigint/templates/
+  // _geosigint_reference_badge.html) that the 7 static templates include at the
+  // top of their content block, so it renders regardless of which base.html
+  // wins — dashboard-mounted or standalone. Gating stays on static_reference,
+  // so DB-backed pages never show it.
   test('GeoSIGINT pages render the "Reference data (static)" provenance badge', async ({ request }) => {
-    test.fail(); // known base.html template-collision defect — see comment above
     const probe = await request.get(GEOSIGINT_STATIC_PAGES[0]);
     test.skip(probe.status() >= 400, `GeoSIGINT not available (HTTP ${probe.status()})`);
 
