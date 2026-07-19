@@ -845,6 +845,15 @@ def strategos_brief_detail(brief_id: str):
         content_html = md_mod.markdown(
             brief.get("content_md", ""), extensions=["tables", "fenced_code"]
         )
+        # nav-sec-08: brief content is analyst/LLM-authored — markdown passes raw
+        # HTML through, so sanitize the rendered output before it is emitted via
+        # {{ content_html | safe }} (fail closed on sanitizer error).
+        try:
+            from tools.docgen.workflow import _sanitize_html
+            content_html = _sanitize_html(content_html)
+        except Exception:
+            import html as _html
+            content_html = _html.escape(content_html or "")
     except ImportError:
         content_html = None
     return render_template(

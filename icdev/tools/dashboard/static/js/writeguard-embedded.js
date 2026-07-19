@@ -37,6 +37,11 @@
   }
 
   function renderMarkdown(text) {
+    // nav-sec-08: prefer the shared fail-closed sanitizer (marked + DOMPurify)
+    // so draft/LLM/shared-document content previewed here cannot inject markup.
+    if (typeof window.safeMarkdown === 'function') {
+      return window.safeMarkdown(text);
+    }
     if (typeof marked !== 'undefined' && marked.parse) {
       try {
         marked.setOptions({ gfm: true, breaks: true, sanitize: false });

@@ -238,7 +238,7 @@ window.CANVAS_CONFIG = {
   containerId: 'canvas-container',
   designId: '{{ design.id }}',
   apiBase: '/infra/api',
-  graphJson: {{ design.graph_json | safe }},
+  graphJson: {{ design.graph_json | json_script_safe }},
   accentColor: '#00bcd4',
 };
 // Parse graphJson if it's a string

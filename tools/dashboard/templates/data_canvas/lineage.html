@@ -129,7 +129,7 @@
 <script src="/static/js/vendor/joint.js"></script>
 <script>
 (function () {
-  var dagData = {{ dag_json | safe }};
+  var dagData = {{ dag_json | json_script_safe }};
   var classColors = {
     {% for cl in classification_levels %}
     "{{ cl.level }}": "{{ cl.color }}",
