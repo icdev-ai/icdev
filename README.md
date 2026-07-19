@@ -6,14 +6,14 @@
 <p align="center">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License">
   <img src="https://img.shields.io/badge/python-3.9%2B-brightgreen" alt="Python 3.9+">
-  <img src="https://img.shields.io/badge/version-1.2.37-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-1.2.38-blue" alt="Version">
   <a href="https://pypi.org/project/icdev/"><img src="https://img.shields.io/pypi/v/icdev?color=informational&label=PyPI" alt="PyPI Version"></a>
   <a href="https://pypi.org/project/icdev/"><img src="https://img.shields.io/pypi/dm/icdev?label=PyPI%20downloads" alt="PyPI Downloads"></a>
   <img src="https://img.shields.io/badge/compliance%20frameworks-42-orange" alt="Compliance Frameworks">
   <img src="https://img.shields.io/badge/tools-560%2B-blueviolet" alt="Tools">
   <img src="https://img.shields.io/badge/agents-16-red" alt="Agents">
   <img src="https://img.shields.io/badge/languages-6-green" alt="Languages">
-  <img src="https://img.shields.io/badge/canvases-13-00acc1" alt="Design Canvases">
+  <img src="https://img.shields.io/badge/canvases-35-00acc1" alt="Canvases">
   <img src="https://img.shields.io/badge/solution%20packs-7-ff6b35" alt="Solution Packs">
   <a href="https://github.com/icdev-ai/icdev/issues"><img src="https://img.shields.io/github/issues/icdev-ai/icdev" alt="Open Issues"></a>
   <a href="https://github.com/icdev-ai/icdev/actions"><img src="https://img.shields.io/github/actions/workflow/status/icdev-ai/icdev/icdev-ci.yml?label=CI" alt="CI Status"></a>
@@ -27,7 +27,7 @@
 
 ## Table of Contents
 
-- [What's New](#whats-new-in-1237--icdev-cortex-unified-governed-ai-facade--kanban-governed-delivery-pipeline)
+- [What's New](#whats-new-in-1238--platform-wide-production-hardening)
 - [What ICDEV™ Builds](#what-icdev-builds)
 - [13 Design Canvases](#13-design-canvases)
 - [Quick Start](#quick-start)
@@ -45,6 +45,20 @@
 - [Testing](#testing)
 - [Project Structure](#project-structure)
 - [License](#license)
+
+---
+
+## What's New in 1.2.38 — Platform-Wide Production Hardening
+
+1.2.38 is a hardening release, not a feature release: **170 fixes to 121 features across 338 merged PRs**. A series of canvas- and menu-level readiness sweeps audited the shipped surface one route at a time, and the recurring finding was the same everywhere — routes that *rendered* were not always routes that *authenticated*, *escaped*, or *told the truth about their own data*. This release closes that gap.
+
+- **Fail-closed authentication across the canvas surface.** Mutating and state-changing routes are now auth-gated by default rather than by omission: DSOC, QDC, OHC/NOCC, AADC, AIMC, AI-ify, GameDay, Strategos, ZIG, Migration Intelligence, `/canvas-compliance`, and Second Brain (`/me`). Three fail-open paths were removed outright — the Admin Console's conditional RBAC, the usage API's admin fallback, and the `'default'` user fallback on `/me` — along with no-credential auto-login, which now requires the env API key to actually be presented. Canvas access defaults to deny (`cnr-plat-03`).
+- **Systematic XSS sweep + CSRF, IDOR and upload hardening.** A repo-wide sweep replaced ad-hoc string interpolation with a shared `escapeHtml` helper and fixed confirmed stored/DOM injection sites in the dashboard, DSOC, QDC (`graph_json|safe`), AADC's canvas renderer, GameDay templates, and docgen's exported HTML. Added alongside: a CSRF guard for cookie-authed mutating JSON APIs, a global `MAX_CONTENT_LENGTH` upload cap with JSON 413s, upload allowlists, tenant-scoped IDOR guards on BI Studio and docgen, a path-traversal fix in `api_regen_download`, and Academy's `code_runner` sandbox hardened against secret exfiltration.
+- **Data authenticity — surfaces that no longer overstate what they know.** Fabricated and dead paths were retired rather than papered over: the PDC Studio trio that returned invented results, a hollow Info Ops canvas (removed by decision), a dead NDC health endpoint, a non-functional PDF button, and a broken raw-`sqlite3` fail-soft fallback in Strategos that silently masked failures. Compliance scoring binds attribution to the authenticated user, Strategos INTSUM prose is grounded in cited source evidence, GeoSIGINT reference data is labeled static, and save/scoring failures now fail loud instead of returning a plausible zero.
+- **TRUST extended to every drafting surface.** Citation grounding and the placeholder/citation publish gate now cover docgen, the Migration Canvas, and AI-ify's AI Boost; WriteGuard is fail-closed; PRD HTML is sanitized; and Second Brain masks PII at LLM egress. Pulse will not publish on a RED LLM-judge verdict — enforced both at the publish boundary and at the scheduler's auto-publish stage.
+- **PostgreSQL-primary runtime.** Continued migration off SQLite-dialect assumptions in live code: `%s`/`?` placeholder reconciliation, `sqlite_master`/`PRAGMA` introspection removed from runtime paths, SQLite migration connections wrapped in `StorageConnection`, dialect consolidation across DSOC/docgen/MDC, and the missing PDC, Data-canvas, and Security-canvas tables reconciled into `pg_consolidated.sql` (with a schema-parity test asserting `init_db` == migration == consolidated). Several canvases were silently dead on PostgreSQL — `dossier_advisor`, msgraph integration, Mission Control's DB wiring — and now aren't.
+- **Coverage and enforcement.** New coherence gates (`check_llm_router_api` for dead-API drift, canvas placeholder style), reflexes wired that had been registered but never run (`bgp_hijack_monitor`, `pdc_pipeline_stale`, `odc_coverage_refresh`, Academy's oracle bridge), plus route-level auth/IDOR tests, e2e specs, and repaired long-broken test modules.
+- **Content.** 10 new FORGE Academy platform-subsystem missions (Cortex, DIC, GraphRAG/KG, IQE, kanban, Foundry, Strategos, ZIG, TRUST, canvas trio) and 3 new AI GameDay TTX scenarios built on the current platform.
 
 ---
 
@@ -306,6 +320,8 @@ ICDEV™ ships 13 interactive design canvases — each a standalone visual build
 | **13** | **OHC** — Operations Hub | `/ops` | Unified LLMOps / MLOps / AIOps hub — model registry, SLOs, incidents, runbooks, topology |
 
 Ten of these canvases answer natural-language questions grounded in actual design data — see [Ask Any Canvas](#ask-any-canvas).
+
+> **Note:** The 13 above are the visual *design* canvases. `args/component_registry.yaml` declares **35** canvas components in total — the rest are operational and AI surfaces registered through the same component registry (Cortex, Document Intelligence, SIPA Software Integrity, Autonomous Capability Foundry, RFI Response Workbench, DSOC, NOC, Peering Management, Cloud Capacity & Circuits, Workflow & Forms, Slides, Doc Regeneration, Second Brain, and others). Run `icdev list` to see every registered component and `icdev status` for the ones enabled in your install.
 
 ---
 
