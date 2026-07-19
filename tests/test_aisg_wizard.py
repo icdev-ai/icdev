@@ -19,6 +19,14 @@ import pytest
 from tools.aisg.wizard import WizardEngine
 from tools.aisg.sprint_seeder import seed_for_maturity
 
+# Building the real dashboard app (create_app) imports ~50 blueprints and, on
+# import of tools.dashboard.app, runs a module-level ``app = create_app()`` that
+# probes local LLM servers for air-gap detection. Cold, that exceeds the
+# repo-wide 30s per-test timeout (pyproject ``timeout = 30``). The aisg_app
+# fixture pays this cost on first use, so relax the timeout for this file —
+# mirrors tests/test_nav_sec_06_mutation_rbac.py.
+pytestmark = pytest.mark.timeout(180)
+
 # ---------------------------------------------------------------------------
 # Minimal schemas
 # ---------------------------------------------------------------------------
@@ -126,7 +134,26 @@ def kanban_db():
 
 @pytest.fixture
 def aisg_app(tmp_path):
-    """Dashboard Flask test app with AISG blueprint — includes auth tables."""
+    """Dashboard Flask test app with the AISG blueprint registered.
+
+    The AISG canvas is registry-gated (``ICDEV_AISG_ENABLED``, default off) and
+    ``tools.dashboard.app._CANVAS_BLUEPRINTS`` is populated exactly once, at
+    module import. Whether ``create_app()`` picks up AISG therefore depends on
+    the env flag at that first import — which is fragile across test-collection
+    order (a prior test may import the module with the flag unset, after which
+    ``/ai-wizard`` 404s). To make the page deterministic we register the
+    singleton aisg blueprint directly when create_app did not already register
+    it. Flask permits the same blueprint object on distinct app instances; the
+    ``not in app.blueprints`` guard prevents a double-registration on one app.
+
+    Note: we deliberately do NOT flip ``ICDEV_AISG_ENABLED`` here. Doing so
+    before the first import of ``tools.dashboard.app`` sends AISG down the
+    registry-driven registration path, which attaches a ``guard_component_access``
+    ``before_request`` hook onto the shared ``bp`` singleton — polluting it for
+    every other test that reuses the same blueprint object (e.g.
+    ``tests/test_nav_sec_06_mutation_rbac.py``). Direct registration leaves the
+    singleton clean.
+    """
     db_path = str(tmp_path / "aisg_test.db")
     conn = sqlite3.connect(db_path)
     conn.executescript(_AUTH_SCHEMA)
@@ -135,14 +162,21 @@ def aisg_app(tmp_path):
 
     import tools.dashboard.app as _app_mod
     import tools.dashboard.auth as _auth_mod
+    import tools.dashboard.config as _cfg_mod
 
     with (
         patch.object(_app_mod, "DB_PATH", db_path),
         patch.object(_auth_mod, "DB_PATH", db_path),
+        patch.object(_cfg_mod, "DB_PATH", db_path),
     ):
         from tools.dashboard.app import create_app
         app = create_app()
         app.config["TESTING"] = True
+
+        if "aisg" not in app.blueprints:
+            from tools.aisg.blueprint import bp as _aisg_bp
+            app.register_blueprint(_aisg_bp)
+
         yield app
 
 
