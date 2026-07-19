@@ -17,6 +17,9 @@ from pathlib import Path
 from flask import Blueprint, jsonify, request
 
 from tools.dashboard.auth import require_role
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger(__name__)
 
 # Roles allowed to trigger a full-tree code-quality scan (heavy filesystem walk
 # + DB write). nav-intel-01: previously unauthenticated.
@@ -81,7 +84,13 @@ def metrics_summary():
                 "high_complexity_count": high_cc,
             }
         )
-    except sqlite3.Error as e:
+    except Exception as e:
+        # nav-intel-06: broadened from `sqlite3.Error` — under the PostgreSQL
+        # primary backend a psycopg error is NOT a sqlite3.Error, so it slipped
+        # this handler and bubbled up unlogged. Fail loud (degraded-state
+        # pattern): log once, then return an explicit error payload rather than
+        # a silent/unhandled 500.
+        logger.warning("code-quality query failed: %s", e)
         return jsonify({"error": str(e)}), 500
 
 
@@ -112,7 +121,13 @@ def top_complex():
         ).fetchall()
         conn.close()
         return jsonify({"functions": [dict(r) for r in rows]})
-    except sqlite3.Error as e:
+    except Exception as e:
+        # nav-intel-06: broadened from `sqlite3.Error` — under the PostgreSQL
+        # primary backend a psycopg error is NOT a sqlite3.Error, so it slipped
+        # this handler and bubbled up unlogged. Fail loud (degraded-state
+        # pattern): log once, then return an explicit error payload rather than
+        # a silent/unhandled 500.
+        logger.warning("code-quality query failed: %s", e)
         return jsonify({"error": str(e)}), 500
 
 
@@ -141,7 +156,13 @@ def smell_breakdown():
                 pass
 
         return jsonify({"smells": [{"name": k, "count": v} for k, v in sorted(counts.items(), key=lambda x: -x[1])]})
-    except sqlite3.Error as e:
+    except Exception as e:
+        # nav-intel-06: broadened from `sqlite3.Error` — under the PostgreSQL
+        # primary backend a psycopg error is NOT a sqlite3.Error, so it slipped
+        # this handler and bubbled up unlogged. Fail loud (degraded-state
+        # pattern): log once, then return an explicit error payload rather than
+        # a silent/unhandled 500.
+        logger.warning("code-quality query failed: %s", e)
         return jsonify({"error": str(e)}), 500
 
 
@@ -183,7 +204,13 @@ def trend_data():
             ).fetchall()
         conn.close()
         return jsonify({"trend": [dict(r) for r in rows]})
-    except sqlite3.Error as e:
+    except Exception as e:
+        # nav-intel-06: broadened from `sqlite3.Error` — under the PostgreSQL
+        # primary backend a psycopg error is NOT a sqlite3.Error, so it slipped
+        # this handler and bubbled up unlogged. Fail loud (degraded-state
+        # pattern): log once, then return an explicit error payload rather than
+        # a silent/unhandled 500.
+        logger.warning("code-quality query failed: %s", e)
         return jsonify({"error": str(e)}), 500
 
 
@@ -224,7 +251,13 @@ def feedback_stats():
                 }
             )
         return jsonify({"feedback": results})
-    except sqlite3.Error as e:
+    except Exception as e:
+        # nav-intel-06: broadened from `sqlite3.Error` — under the PostgreSQL
+        # primary backend a psycopg error is NOT a sqlite3.Error, so it slipped
+        # this handler and bubbled up unlogged. Fail loud (degraded-state
+        # pattern): log once, then return an explicit error payload rather than
+        # a silent/unhandled 500.
+        logger.warning("code-quality query failed: %s", e)
         return jsonify({"error": str(e)}), 500
 
 
