@@ -16,7 +16,8 @@ Integration:
     tools.db.storage.StorageCursor.set_security_context(ctx)
 
 Public API:
-    inject_row_predicate(sql, tenant_id, classification) -> (sql, params)
+    inject_row_predicate(sql, tenant_id, classification)
+        -> (sql, extra_params, n_params_before)
     generate_rls_policy(table, predicate_expr, roles) -> DDL string
     apply_tenant_rls(conn, table) -> None
 """
@@ -445,17 +446,19 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.test:
-        sql1, params1 = inject_row_predicate(
+        sql1, params1, n_before1 = inject_row_predicate(
             "SELECT * FROM projects WHERE status = ?", "tenant_a", "CUI"
         )
-        sql2, params2 = inject_row_predicate(
+        sql2, params2, n_before2 = inject_row_predicate(
             "SELECT * FROM projects", "tenant_a", classifications={"CUI", "SECRET"}
         )
         results = {
             "where_injected": sql1,
             "where_params": params1,
+            "where_n_before": n_before1,
             "no_where_injected": sql2,
             "no_where_params": params2,
+            "no_where_n_before": n_before2,
         }
         print(json.dumps(results, indent=2) if args.json else str(results))
 

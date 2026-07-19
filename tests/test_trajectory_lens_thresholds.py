@@ -21,7 +21,7 @@ from tools.oracle.lens_trajectory import (
     MIN_SNAPSHOTS,
     FORECAST_HORIZON_DAYS,
     HOTSPOT_MIN_FILES,
-    HOTSPOT_CRITICAL_CUTOFF,
+    HOTSPOT_CRITICAL_FALLBACK,
     DAYS_URGENT,
     DAYS_WARNING,
     VELOCITY_FALLBACK_SLOPE,
@@ -99,7 +99,7 @@ def test_default_hotspot_min_files():
     assert HOTSPOT_MIN_FILES == 2
 
 def test_default_hotspot_critical_cutoff():
-    assert HOTSPOT_CRITICAL_CUTOFF == 4
+    assert HOTSPOT_CRITICAL_FALLBACK == 4
 
 def test_default_days_urgent():
     assert DAYS_URGENT == 30
@@ -191,7 +191,7 @@ def _run_score(cc_threshold=None, maint_floor=None, days_urgent=None, days_warni
     if hotspot_min is not None:
         overrides["HOTSPOT_MIN_FILES"] = hotspot_min
     if hotspot_critical is not None:
-        overrides["HOTSPOT_CRITICAL_CUTOFF"] = hotspot_critical
+        overrides["HOTSPOT_CRITICAL_FALLBACK"] = hotspot_critical
     if vel_slope is not None:
         overrides["VELOCITY_FALLBACK_SLOPE"] = vel_slope
     if vel_avg is not None:
@@ -225,10 +225,18 @@ def _run_score(cc_threshold=None, maint_floor=None, days_urgent=None, days_warni
         "dir_activity": dir_activity or {},
         "dependents": dependents or {},
     }
-    if overrides:
-        with patch.multiple(_mod, **overrides):
-            return lens.score(analysis)
-    return lens.score(analysis)
+    # These fixtures are deliberately tiny (a handful of files in one directory),
+    # so score() always finds the fleet too sparse for percentile adaptation and
+    # takes the LLM calibration branch. Unmocked, that reaches a live
+    # LLMRouter.invoke — every test here would hit the network and hang.
+    # Returning {} is the documented "LLM unavailable" contract, which makes
+    # score() fall through to the module-level constants — precisely the
+    # behaviour these tests assert on.
+    with patch.object(_mod, "_llm_calibrate_thresholds", return_value={}):
+        if overrides:
+            with patch.multiple(_mod, **overrides):
+                return lens.score(analysis)
+        return lens.score(analysis)
 
 
 def test_cc_breach_flagged_below_threshold():
@@ -317,7 +325,7 @@ def test_min_snapshots_includes_exact_match():
 
 
 # ---------------------------------------------------------------------------
-# score() — hotspot detection respects HOTSPOT_MIN_FILES and HOTSPOT_CRITICAL_CUTOFF
+# score() — hotspot detection respects HOTSPOT_MIN_FILES and HOTSPOT_CRITICAL_FALLBACK
 # ---------------------------------------------------------------------------
 
 def _hotspot_trends(n_files: int, slope_per_week: float = 2.0) -> dict:
@@ -347,7 +355,7 @@ def test_hotspot_detected_at_min_files():
 
 
 def test_hotspot_critical_uses_cutoff_constant():
-    # 5 files trending up; with HOTSPOT_CRITICAL_CUTOFF=3 → critical
+    # 5 files trending up; with HOTSPOT_CRITICAL_FALLBACK=3 → critical
     preds = _run_score(hotspot_critical=3, file_trends=_hotspot_trends(5))
     hotspot = [p for p in preds if "trending_file_count" in p.data]
     assert hotspot
@@ -355,7 +363,7 @@ def test_hotspot_critical_uses_cutoff_constant():
 
 
 def test_hotspot_warning_when_below_cutoff():
-    # 3 files trending; with HOTSPOT_CRITICAL_CUTOFF=10 → warning
+    # 3 files trending; with HOTSPOT_CRITICAL_FALLBACK=10 → warning
     preds = _run_score(hotspot_critical=10, file_trends=_hotspot_trends(3))
     hotspot = [p for p in preds if "trending_file_count" in p.data]
     assert hotspot

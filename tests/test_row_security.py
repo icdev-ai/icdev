@@ -12,7 +12,7 @@ from tools.security.row_security import (
 
 class TestInjectRowPredicate:
     def test_with_where(self):
-        sql, params = inject_row_predicate(
+        sql, params, _ = inject_row_predicate(
             "SELECT * FROM projects WHERE status = ?", "tenant_a"
         )
         assert "tenant_id = ?" in sql
@@ -20,13 +20,13 @@ class TestInjectRowPredicate:
         assert "AND" in sql
 
     def test_without_where(self):
-        sql, params = inject_row_predicate("SELECT * FROM projects", "tenant_a")
+        sql, params, _ = inject_row_predicate("SELECT * FROM projects", "tenant_a")
         assert "WHERE" in sql
         assert "tenant_id = ?" in sql
         assert params == ("tenant_a",)
 
     def test_with_order_by(self):
-        sql, params = inject_row_predicate(
+        sql, params, _ = inject_row_predicate(
             "SELECT * FROM projects ORDER BY created_at DESC", "tenant_a"
         )
         assert "WHERE" in sql
@@ -34,7 +34,7 @@ class TestInjectRowPredicate:
         assert "tenant_id = ?" in sql
 
     def test_with_limit(self):
-        sql, params = inject_row_predicate(
+        sql, params, _ = inject_row_predicate(
             "SELECT * FROM projects LIMIT 10", "tenant_a"
         )
         assert "WHERE" in sql
@@ -59,40 +59,40 @@ class TestInjectRowPredicate:
         assert all(isinstance(p, str) for p in extra)
 
     def test_classification_predicate(self):
-        sql, params = inject_row_predicate(
+        sql, params, _ = inject_row_predicate(
             "SELECT * FROM docs", "tenant_a", classification="CUI"
         )
         assert "classification = ?" in sql
         assert params == ("tenant_a", "CUI")
 
     def test_classifications_set(self):
-        sql, params = inject_row_predicate(
+        sql, params, _ = inject_row_predicate(
             "SELECT * FROM docs", "tenant_a", classifications={"CUI", "SECRET"}
         )
         assert "classification IN" in sql
         assert len(params) == 3  # tenant + 2 classifications
 
     def test_insert_unchanged(self):
-        sql, params = inject_row_predicate(
+        sql, params, _ = inject_row_predicate(
             "INSERT INTO projects (id, name) VALUES (?, ?)", "tenant_a"
         )
         assert sql == "INSERT INTO projects (id, name) VALUES (?, ?)"
         assert params == ()
 
     def test_pragma_unchanged(self):
-        sql, params = inject_row_predicate("PRAGMA table_info(projects)", "tenant_a")
+        sql, params, _ = inject_row_predicate("PRAGMA table_info(projects)", "tenant_a")
         assert "PRAGMA" in sql
         assert params == ()
 
     def test_no_tenant_no_classification(self):
-        sql, params = inject_row_predicate("SELECT * FROM projects", None)
+        sql, params, _ = inject_row_predicate("SELECT * FROM projects", None)
         assert sql == "SELECT * FROM projects"
         assert params == ()
 
     def test_update_with_where(self):
         # UPDATE: predicate appended at END so caller can append params safely
         # (SET-slot params come before WHERE-slot params in SQLite binding)
-        sql, params = inject_row_predicate(
+        sql, params, _ = inject_row_predicate(
             "UPDATE projects SET name = ? WHERE id = ?", "tenant_a"
         )
         assert "tenant_id = ?" in sql
@@ -101,14 +101,14 @@ class TestInjectRowPredicate:
         assert sql.endswith("AND tenant_id = ?")
 
     def test_update_without_where(self):
-        sql, params = inject_row_predicate(
+        sql, params, _ = inject_row_predicate(
             "UPDATE projects SET status = ?", "tenant_a"
         )
         assert "WHERE tenant_id = ?" in sql
         assert params == ("tenant_a",)
 
     def test_delete_with_where(self):
-        sql, params = inject_row_predicate(
+        sql, params, _ = inject_row_predicate(
             "DELETE FROM projects WHERE id = ?", "tenant_a"
         )
         assert "tenant_id = ?" in sql
@@ -116,7 +116,7 @@ class TestInjectRowPredicate:
         assert sql.endswith("AND tenant_id = ?")
 
     def test_delete_without_where(self):
-        sql, params = inject_row_predicate(
+        sql, params, _ = inject_row_predicate(
             "DELETE FROM projects", "tenant_a"
         )
         assert "WHERE tenant_id = ?" in sql
@@ -124,7 +124,7 @@ class TestInjectRowPredicate:
 
     def test_subquery_where_injected_in_outer(self):
         """Predicate must be injected into the outermost WHERE, not a subquery's."""
-        sql, params = inject_row_predicate(
+        sql, params, _ = inject_row_predicate(
             "SELECT * FROM projects WHERE id IN (SELECT project_id FROM tasks WHERE status = ?)",
             "tenant_a",
         )
