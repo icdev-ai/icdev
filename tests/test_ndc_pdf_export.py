@@ -118,8 +118,6 @@ def test_export_phase_pdf_none_graph_raises_cleanly():
 
 @_needs_fpdf
 def test_export_to_pdf_writes_classified_file(tmp_path):
-    # NOTE: single-line content only — multi-line content currently crashes
-    # (see test_export_to_pdf_multiline_content_is_broken / PR follow-up bug #1).
     out = tmp_path / "report.pdf"
     export_to_pdf(
         "single line report body",
@@ -142,24 +140,18 @@ def test_export_to_pdf_creates_parent_dirs(tmp_path):
 
 
 @_needs_fpdf
-@pytest.mark.xfail(
-    reason="BUG (ndc-qa-02 follow-up #1): export_to_pdf crashes on any multi-line "
-    "content. The per-line `pdf.multi_cell(0, 5, ...)` loop leaves the x-cursor at "
-    "the right margin after the first line (fpdf2 multi_cell default new_x=RIGHT), so "
-    "the second call sees zero available width -> FPDFException 'Not enough "
-    "horizontal space to render a single character'. Fix: new_x=LMARGIN, new_y=NEXT "
-    "(or reset x each iteration).",
-    strict=True,
-    raises=Exception,
-)
-def test_export_to_pdf_multiline_content_is_broken(tmp_path):
-    """Documents a real defect: multi-line plain-text content should export fine.
+def test_export_to_pdf_multiline_content_exports_cleanly(tmp_path):
+    """Multi-line plain-text content exports to a valid PDF (ndc-fix-01).
 
-    When the bug is fixed this test XPASSes (strict) and must be converted to a
-    normal assertion.
+    Regression guard for the fixed defect where the per-line
+    ``pdf.multi_cell(0, 5, ...)`` loop left the x-cursor at the right margin
+    (fpdf2 default ``new_x=XPos.RIGHT``), so the second line saw zero available
+    width and raised ``FPDFException``. The loop now passes
+    ``new_x=XPos.LMARGIN, new_y=YPos.NEXT``.
     """
     out = tmp_path / "multiline.pdf"
     export_to_pdf("line one\nline two\nline three", str(out), title="ML", classification="CUI")
+    assert out.exists()
     assert out.read_bytes()[:5] == b"%PDF-"
 
 
