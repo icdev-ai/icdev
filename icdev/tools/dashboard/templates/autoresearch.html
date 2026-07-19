@@ -97,6 +97,12 @@
             .catch(() => {});
     }
 
+    function _esc(s) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g, function (ch) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch];
+        });
+    }
+
     function loadExperiments() {
         fetch('/api/autoresearch/experiments')
             .then(r => r.json())
@@ -107,15 +113,16 @@
                 data.experiments.forEach(exp => {
                     const tr = document.createElement('tr');
                     const decision_class = exp.decision === 'keep' ? 'color:#28a745;font-weight:600' : 'color:#dc3545';
+                    const hyp = String(exp.hypothesis || '');
                     tr.innerHTML = `
-                        <td>${(exp.id || '').substring(0, 12)}</td>
-                        <td>${exp.domain || ''}</td>
-                        <td>${exp.category || '-'}</td>
-                        <td title="${exp.hypothesis || ''}">${(exp.hypothesis || '').substring(0, 60)}${(exp.hypothesis || '').length > 60 ? '...' : ''}</td>
+                        <td>${_esc((exp.id || '').substring(0, 12))}</td>
+                        <td>${_esc(exp.domain || '')}</td>
+                        <td>${_esc(exp.category || '-')}</td>
+                        <td title="${_esc(hyp)}">${_esc(hyp.substring(0, 60))}${hyp.length > 60 ? '...' : ''}</td>
                         <td>${exp.pre_metric != null ? exp.pre_metric.toFixed(4) : '-'}</td>
                         <td>${exp.post_metric != null ? exp.post_metric.toFixed(4) : '-'}</td>
                         <td>${exp.metric_delta != null ? (exp.metric_delta >= 0 ? '+' : '') + exp.metric_delta.toFixed(4) : '-'}</td>
-                        <td style="${decision_class}">${exp.decision || '-'}</td>
+                        <td style="${decision_class}">${_esc(exp.decision || '-')}</td>
                         <td>${exp.created_at ? new Date(exp.created_at).toLocaleDateString() : '-'}</td>
                     `;
                     tbody.appendChild(tr);

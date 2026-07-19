@@ -65,7 +65,7 @@ def evaluate(project_id: str = None, **kwargs) -> Dict[str, Any]:
                 conn,
                 "SELECT composite_score, grammar_score, readability_score, "
                 "tone_score FROM pg_proposal_quality_scores "
-                "WHERE created_at >= ?",
+                "WHERE created_at >= %s",
                 (cutoff,),
             )
 
@@ -91,7 +91,7 @@ def evaluate(project_id: str = None, **kwargs) -> Dict[str, Any]:
             # ── Win/loss metrics ─────────────────────────────────────
             win_rows = _safe_query(
                 conn,
-                "SELECT outcome FROM pg_win_loss_records WHERE created_at >= ?",
+                "SELECT outcome FROM pg_win_loss_records WHERE created_at >= %s",
                 (cutoff,),
             )
 

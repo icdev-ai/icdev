@@ -6402,8 +6402,13 @@ def create_app(testing: bool = False) -> Flask:
         return jsonify({"cells": cells, "count": len(cells)})
 
     @app.route("/api/components-map/refresh", methods=["POST"])
+    @require_role("admin", "pm")
     def api_cmap_refresh():
-        """POST /api/components-map/refresh -- trigger component_indexer rescan."""
+        """POST /api/components-map/refresh -- trigger component_indexer rescan.
+
+        nav-intel-01: gated — previously any caller could spawn the
+        component_indexer subprocess (compute-triggering, unauthenticated).
+        """
         import subprocess  # noqa: S404 -- intentional controlled subprocess
         try:
             cmd = ["python", "tools/awareness/component_indexer.py", "--scan"]
@@ -7422,6 +7427,7 @@ def create_app(testing: bool = False) -> Flask:
 
     @app.route("/api/pulse/posts/<post_id>/judge", methods=["POST"])
     @require_installed("pulse")
+    @require_role(*_PULSE_EDITORIAL_ROLES)
     def api_pulse_judge_post(post_id):
         """Run LLM Judge (Prometheus-2) on a Pulse post."""
         import threading
@@ -7475,6 +7481,7 @@ def create_app(testing: bool = False) -> Flask:
 
     @app.route("/api/pulse/posts/<post_id>/undo-reject", methods=["POST"])
     @require_installed("pulse")
+    @require_role(*_PULSE_EDITORIAL_ROLES)
     def api_pulse_undo_reject(post_id):
         """Undo rejection — revert post to draft status."""
         try:

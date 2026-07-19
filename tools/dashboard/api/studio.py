@@ -16,6 +16,7 @@ _ROOT = Path(__file__).resolve().parents[3]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
+from tools.dashboard.auth import require_role  # noqa: E402
 from tools.studio.workflow_editor import (  # noqa: E402
     create_workflow,
     delete_workflow,
@@ -30,6 +31,11 @@ from tools.studio.workflow_editor import (  # noqa: E402
 )
 
 studio_api = Blueprint("studio_api", __name__, url_prefix="/api/studio")
+
+# Roles allowed to install/publish marketplace (SkillHub) assets. nav-intel-01:
+# the install endpoint was previously unauthenticated — any caller could pull
+# and install arbitrary marketplace assets into the environment.
+_MARKETPLACE_MUTATION_ROLES = ("admin", "pm")
 
 
 # ── Workflow CRUD ──────────────────────────────────────────
@@ -247,7 +253,11 @@ def api_marketplace_assets():
 
         query = request.args.get("q", "")
         category = request.args.get("category", "")
-        assets = list_assets()
+        # nav-intel-01: list_assets() returns {"assets": [...], "total": ...};
+        # unwrap to the list before filtering (previously iterated the dict keys
+        # and 500'd whenever q/category filters were supplied).
+        _res = list_assets()
+        assets = _res.get("assets", []) if isinstance(_res, dict) else (_res or [])
         # Client-side filtering if params provided
         if query:
             q_lower = query.lower()
@@ -267,7 +277,8 @@ def api_marketplace_categories():
     try:
         from tools.marketplace.catalog_manager import list_assets
 
-        assets = list_assets()
+        _res = list_assets()
+        assets = _res.get("assets", []) if isinstance(_res, dict) else (_res or [])
         cats = sorted({a.get("category", "uncategorized") for a in assets})
         return jsonify({"categories": cats})
     except ImportError:
@@ -289,6 +300,7 @@ def api_marketplace_asset_detail(asset_id: str):
 
 
 @studio_api.route("/marketplace/assets/<asset_id>/install", methods=["POST"])
+@require_role(*_MARKETPLACE_MUTATION_ROLES)
 def api_marketplace_install(asset_id: str):
     """Install a marketplace asset."""
     try:
