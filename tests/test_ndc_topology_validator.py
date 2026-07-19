@@ -158,6 +158,80 @@ def test_validate_malformed_topology_with_fix_applies_and_persists(canvas_db, mo
     assert all(e.get("target") != "ghost" for e in saved["edges"])
 
 
+# ── Malformed persisted data (fail-closed findings, not exceptions) ─────────────
+
+
+def test_validate_invalid_graph_json_is_reported_not_raised(canvas_db):
+    # Persist a topology row whose graph_json is not valid JSON.
+    canvas_db.execute(
+        "INSERT INTO topologies (id, name, graph_json, created_at) VALUES (?, ?, ?, ?)",
+        ("BAD1", "Corrupt", "{not valid json", "2026-01-01T00:00:00Z"),
+    )
+    canvas_db.commit()
+
+    # Must not raise JSONDecodeError.
+    result = tv.validate_topology("BAD1")
+
+    kinds = {i["type"] for i in result["issues"]}
+    assert "invalid_graph_json" in kinds
+    bad = next(i for i in result["issues"] if i["type"] == "invalid_graph_json")
+    assert bad["severity"] == "error"
+    assert "not valid JSON" in bad["message"]
+    assert result["issues_found"] == 1
+    assert result["passed"] is False
+
+
+def test_validate_graph_json_non_object_is_reported(canvas_db):
+    # Valid JSON, but decodes to a list rather than an object.
+    _insert_topology(canvas_db, "BAD2", "ListGraph", ["not", "an", "object"])
+    result = tv.validate_topology("BAD2")
+    kinds = {i["type"] for i in result["issues"]}
+    assert "invalid_graph_json" in kinds
+    assert result["passed"] is False
+
+
+def test_validate_node_missing_id_is_reported_not_raised(canvas_db):
+    graph = {
+        "nodes": [
+            {"id": "n1", "type": "router", "label": "R1"},
+            {"type": "switch", "label": "no-id-here"},   # missing "id"
+        ],
+        "edges": [],
+    }
+    _insert_topology(canvas_db, "BAD3", "MissingId", graph)
+
+    # Must not raise KeyError.
+    result = tv.validate_topology("BAD3")
+
+    malformed = [i for i in result["issues"] if i["type"] == "malformed_node"]
+    assert len(malformed) == 1
+    assert malformed[0]["severity"] == "error"
+    assert malformed[0]["node_index"] == 1
+    assert "missing 'id'" in malformed[0]["message"]
+    # The valid node is still counted; the malformed one is excluded.
+    assert result["total_nodes"] == 1
+
+
+def test_validate_non_dict_node_is_reported_not_raised(canvas_db):
+    graph = {
+        "nodes": [
+            {"id": "n1", "type": "router", "label": "R1"},
+            "i-am-a-string-not-a-node",   # non-dict node
+        ],
+        "edges": [],
+    }
+    _insert_topology(canvas_db, "BAD4", "NonDictNode", graph)
+
+    # Must not raise AttributeError/TypeError.
+    result = tv.validate_topology("BAD4")
+
+    malformed = [i for i in result["issues"] if i["type"] == "malformed_node"]
+    assert len(malformed) == 1
+    assert malformed[0]["node_index"] == 1
+    assert "not an object" in malformed[0]["message"]
+    assert result["total_nodes"] == 1
+
+
 # ── Empty topology ─────────────────────────────────────────────────────────────
 
 
