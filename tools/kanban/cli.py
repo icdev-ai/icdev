@@ -29,15 +29,72 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-# Allow running as `python tools/kanban/cli.py` from the repo root
-_repo_root = Path(__file__).resolve().parents[3]
+_REPO_MARKERS = ("args/projects.yaml", "goals/manifest.md")
+
+
+def _find_repo_root(start: Path) -> Path:
+    """Walk up from ``start`` until a repo marker is found.
+
+    A fixed ``parents[N]`` is fragile: from ``tools/kanban/cli.py`` the historic
+    ``parents[3]`` resolves to ``C:\\ai`` — one level ABOVE the repo — so
+    ``load_dotenv`` loaded nothing and ``from icdev.tools.*`` then bound to a
+    globally-installed editable ``icdev`` package belonging to a DIFFERENT repo,
+    making the CLI read/write the wrong database (silent "NOT FOUND" for real
+    tasks). Marker-walking finds the true repo root regardless of whether this
+    file is the canonical ``tools/kanban/`` copy, the ``icdev/tools/kanban/``
+    mirror, or a relocated invocation.
+    """
+    for candidate in (start, *start.parents):
+        if all((candidate / m).exists() for m in _REPO_MARKERS):
+            return candidate
+    # Fallback: canonical repo layout is two levels above tools/kanban/.
+    return start.parents[1] if len(start.parents) > 1 else start
+
+
+def _storage_shadow_error(storage_path, repo_root) -> str | None:
+    """Return an error message iff ``storage_path`` lives OUTSIDE ``repo_root``.
+
+    Guards against a globally-installed editable ``icdev``/``tools`` package
+    shadowing the repo-local ``tools.db.storage`` — which would silently point
+    the CLI at a DIFFERENT repo's database. Returns ``None`` when the resolved
+    storage module is repo-local (the safe case).
+    """
+    storage_path = Path(storage_path).resolve()
+    repo_root = Path(repo_root).resolve()
+    try:
+        is_local = storage_path.is_relative_to(repo_root)
+    except AttributeError:  # Python < 3.9: is_relative_to() unavailable
+        is_local = repo_root in storage_path.parents
+    if is_local:
+        return None
+    return (
+        "FATAL: tools.db.storage resolved OUTSIDE this repo — refusing to run.\n"
+        f"  storage module: {storage_path}\n"
+        f"  repo root:      {repo_root}\n"
+        "A globally-installed 'icdev'/'tools' package is shadowing the repo-local\n"
+        "module; the CLI would read/write the WRONG repo's database. Uninstall the\n"
+        "shadow (pip uninstall icdev) or run from the repo root."
+    )
+
+
+_repo_root = _find_repo_root(Path(__file__).resolve().parent)
 if str(_repo_root) not in sys.path:
     sys.path.insert(0, str(_repo_root))
 
-from dotenv import load_dotenv
+from dotenv import load_dotenv  # noqa: E402
 load_dotenv(_repo_root / ".env")
 
-from icdev.tools.db.storage import get_connection
+# Import the repo-local shim (``tools.db.storage``) — NEVER ``icdev.tools.*``,
+# which a globally-installed editable ``icdev`` package from a foreign repo can
+# capture, silently pointing the CLI at another repo's database.
+from tools.db import storage  # noqa: E402
+from tools.db.storage import get_connection  # noqa: E402
+
+# Fail-loud shadow guard: refuse to run against a foreign storage module.
+_shadow_err = _storage_shadow_error(storage.__file__, _repo_root)
+if _shadow_err:
+    print(_shadow_err, file=sys.stderr)
+    sys.exit(1)
 
 VALID_STATUSES = frozenset({
     "backlog", "scheduled", "in_progress", "done",
