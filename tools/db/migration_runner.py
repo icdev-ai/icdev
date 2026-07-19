@@ -33,7 +33,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from tools.db.storage import StorageConnection  # noqa: F401
+from tools.db.storage import StorageConnection
 
 logger = get_logger("icdev.db.migration")
 
@@ -93,7 +93,11 @@ class MigrationRunner:
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA foreign_keys=ON")
-        return conn
+        # Wrap so %s-authored SQL in this module (PG-primary house style) is
+        # translated to sqlite's ? placeholders. No security context is set,
+        # so StorageConnection injects no RLS predicate — schema_migrations
+        # has neither tenant_id nor classification.
+        return StorageConnection(conn, "sqlite")
 
     # ------------------------------------------------------------------
     # Schema migrations table
