@@ -152,21 +152,85 @@ def test_static_template_opts_into_badge(tpl):
     assert "static_reference = true" in src, f"{tpl} does not set static_reference flag"
 
 
-def test_base_template_contains_badge_markup():
+# nav-plat-06: the badge markup moved out of base.html into a shared partial so
+# it renders regardless of which base.html wins the Jinja search path (the
+# geosigint-local one standalone, or the main dashboard one when mounted). The
+# 7 static templates include the partial directly.
+_BADGE_PARTIAL = "_geosigint_reference_badge.html"
+
+
+def test_badge_partial_contains_markup():
+    src = (_TPL / _BADGE_PARTIAL).read_text(encoding="utf-8")
+    assert _BADGE_TEXT in src, f"{_BADGE_PARTIAL} missing badge markup"
+    assert "if static_reference" in src, f"{_BADGE_PARTIAL} badge not gated on static_reference"
+
+
+@pytest.mark.parametrize("tpl", _STATIC_TEMPLATES)
+def test_static_template_includes_badge_partial(tpl):
+    src = (_TPL / tpl).read_text(encoding="utf-8")
+    assert _BADGE_PARTIAL in src, f"{tpl} does not include the badge partial"
+
+
+def test_base_template_does_not_hardcode_badge():
+    # The badge must NOT live in base.html anymore — otherwise pages rendered via
+    # geosigint's own base.html AND the content-block include would show it twice.
     src = (_TPL / "base.html").read_text(encoding="utf-8")
-    assert _BADGE_TEXT in src, "base.html missing badge markup"
-    assert "if static_reference" in src, "base.html badge not gated on static_reference"
+    assert _BADGE_TEXT not in src, "base.html should no longer carry badge markup (moved to partial)"
 
 
 def test_dynamic_page_does_not_falsely_show_badge():
-    # A page that does NOT set static_reference (e.g. the DB-backed dashboard,
-    # rendered here with no flag) must not display the reference badge.
+    # A page that does NOT include the badge partial and does not set
+    # static_reference (e.g. the DB-backed dashboard) must not display the badge.
     from jinja2 import DictLoader, Environment
 
     base_src = (_TPL / "base.html").read_text(encoding="utf-8")
+    partial_src = (_TPL / _BADGE_PARTIAL).read_text(encoding="utf-8")
     env = Environment(loader=DictLoader({
         "base.html": base_src,
+        _BADGE_PARTIAL: partial_src,
+        # No include, no static_reference — mimics a DB-backed dynamic page.
         "child.html": '{% extends "base.html" %}{% block content %}live{% endblock %}',
     }))
     rendered = env.get_template("child.html").render()
     assert _BADGE_TEXT not in rendered
+
+
+def test_badge_renders_when_dashboard_base_shadows_geosigint_base():
+    # Regression for nav-plat-06 / the E2E honesty-banner defect: when the
+    # geosigint blueprint mounts under the main dashboard, `{% extends
+    # "base.html" %}` resolves to the app-level base.html (which has no badge),
+    # shadowing geosigint's own base.html. Because the badge now lives in a
+    # partial the static templates include directly, it must still render. This
+    # test simulates the collision with a competing app-level base.html.
+    app = Flask(__name__)
+
+    # A minimal main-dashboard-like base.html WITHOUT the badge, registered on
+    # the app loader so it wins over the blueprint's base.html.
+    from jinja2 import ChoiceLoader, DictLoader
+
+    app.jinja_loader = ChoiceLoader([
+        DictLoader({
+            "base.html": (
+                "<!doctype html><html><head><title>"
+                "{% block title %}Dash{% endblock %}</title>{% block head %}{% endblock %}"
+                "</head><body><nav>MAIN DASHBOARD NAV</nav><main>"
+                "{% block content %}{% endblock %}</main>{% block scripts %}{% endblock %}"
+                "</body></html>"
+            ),
+        }),
+        app.jinja_loader,  # falls through to the app's own 'templates' dir (empty)
+    ])
+    app.register_blueprint(create_geosigint_blueprint())
+    app.config["TESTING"] = True
+    client = app.test_client()
+
+    for route in _PAGE_ROUTES:
+        resp = client.get(route)
+        assert resp.status_code == 200, f"{route} -> {resp.status_code}"
+        html = resp.get_data(as_text=True)
+        # Confirm the app-level base actually shadowed geosigint's base...
+        assert "MAIN DASHBOARD NAV" in html, f"{route} did not render the shadowing base"
+        # ...and the badge STILL renders via the included partial.
+        assert _BADGE_TEXT in html, f"{route} badge lost under dashboard base collision"
+        # Exactly one badge — no double-render.
+        assert html.count(_BADGE_TEXT) == 1, f"{route} rendered the badge {html.count(_BADGE_TEXT)} times"

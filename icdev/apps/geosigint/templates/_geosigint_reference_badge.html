@@ -1,0 +1,23 @@
+{# nav-plat-06: persistent provenance badge for GeoSIGINT static-reference pages.
+
+   Included directly by the 7 static templates (index, a2ad, amphibious,
+   strait-crossing, island-chain, militia, semiconductor) at the top of their
+   content block. Rendered only when the route sets `static_reference` (via
+   blueprint._page_ctx / standalone context) — DB-backed pages (dashboard, map,
+   signals, patterns, graph, sea) never set it, so they never show the badge.
+
+   Why an include, not the base template: when the geosigint blueprint mounts
+   under the main dashboard, `{% extends "base.html" %}` resolves to
+   tools/dashboard/templates/base.html (app template folder wins over the
+   blueprint folder), shadowing the geosigint-local base.html. Carrying the
+   badge in this partial makes it render regardless of which base.html wins,
+   in both dashboard-mounted and standalone modes. #}
+{% if static_reference %}
+<div class="reference-badge" role="note" aria-label="Data provenance"
+     style="display:flex;align-items:center;gap:.5rem;margin:0 0 1rem;padding:.5rem .85rem;
+            border:1px solid #b8860b;border-left:4px solid #b8860b;border-radius:4px;
+            background:rgba(184,134,11,.12);color:#d8b64a;font-size:.82rem;font-weight:600;">
+    <span aria-hidden="true">&#9432;</span>
+    <span>Reference data (static) &mdash; as of {{ static_reference_as_of | default('2026-05') }}. Not a live feed.</span>
+</div>
+{% endif %}
