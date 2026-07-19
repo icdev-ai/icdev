@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import uuid
 import zipfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -16,7 +17,7 @@ from typing import Any
 
 import yaml
 
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection, table_exists
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ARGS_DIR = _REPO_ROOT / "args"
@@ -49,6 +50,143 @@ def export_package(user_email: str, output_path: Path) -> dict:
         "args_files": len(args_snapshot),
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
+
+
+# ---------------------------------------------------------------------------
+# Import (round-trip counterpart of export_package)
+# ---------------------------------------------------------------------------
+
+def import_package(zip_path: str | Path, new_user_email: str) -> dict:
+    """Import a knowledge_package.zip produced by :func:`export_package`.
+
+    Only the fine-tuning ``patterns.json`` payload is *restored* into the
+    database: it is re-materialised as a new ``ft_datasets`` row owned by
+    ``new_user_email`` plus its ``ft_training_pairs``. This is genuinely round-
+    trip compatible — a subsequent ``export_package(new_user_email)`` re-emits
+    the same pairs.
+
+    The other two members are intentionally NOT written back:
+
+    * ``audit_summary.json`` — the ``audit_trail`` is append-only / immutable
+      (NIST AU). Re-inserting historical rows under a different actor would
+      forge another user's audit history, so it is counted and reported only.
+    * ``args_snapshot.yaml`` — repository config, data-only. It is not persisted
+      to the DB; the count is reported so the caller sees what the package held.
+
+    Returns a summary dict. Raises ``FileNotFoundError`` if the zip is missing
+    and ``ValueError`` if it is not a readable knowledge package.
+    """
+    zip_path = Path(zip_path)
+    if not zip_path.exists() or not zip_path.is_file():
+        raise FileNotFoundError(f"Knowledge package not found: {zip_path}")
+    if not (new_user_email or "").strip():
+        raise ValueError("new_user_email is required")
+
+    try:
+        with zipfile.ZipFile(zip_path) as zf:
+            names = set(zf.namelist())
+            patterns = (
+                json.loads(zf.read("patterns.json").decode("utf-8"))
+                if "patterns.json" in names else []
+            )
+            audit = (
+                json.loads(zf.read("audit_summary.json").decode("utf-8"))
+                if "audit_summary.json" in names else []
+            )
+            args_snapshot = (
+                yaml.safe_load(zf.read("args_snapshot.yaml").decode("utf-8"))
+                if "args_snapshot.yaml" in names else {}
+            )
+    except zipfile.BadZipFile as exc:
+        raise ValueError(f"Not a valid knowledge package: {exc}") from exc
+
+    if not isinstance(patterns, list):
+        raise ValueError("patterns.json is malformed (expected a list)")
+
+    dataset_id = f"ds-handoff-{uuid.uuid4().hex[:12]}"
+    imported = _import_patterns(new_user_email, dataset_id, patterns)
+
+    return {
+        "status": "ok",
+        "new_user_email": new_user_email,
+        "dataset_id": dataset_id if imported else None,
+        "imported_patterns": imported,
+        # append-only audit trail is never re-written — reported, not imported
+        "skipped_audit_entries": len(audit) if isinstance(audit, list) else 0,
+        # config snapshot is data-only — not persisted to the DB
+        "args_files_in_package": len(args_snapshot) if isinstance(args_snapshot, dict) else 0,
+        "imported_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def _import_patterns(new_user_email: str, dataset_id: str, patterns: list) -> int:
+    """Persist exported training pairs under a new dataset owned by the user.
+
+    Returns the number of ``ft_training_pairs`` rows inserted.
+    """
+    if not patterns:
+        return 0
+    now = datetime.now(timezone.utc).isoformat()
+    conn = get_connection()
+    try:
+        if not table_exists(conn, "ft_training_pairs"):
+            return 0
+        _ensure_dataset(conn, dataset_id, new_user_email, len(patterns), now)
+        inserted = 0
+        for p in patterns:
+            if not isinstance(p, dict):
+                continue
+            conn.execute(
+                "INSERT INTO ft_training_pairs "
+                "(id, dataset_id, instruction, input_text, output_text, "
+                " purpose, approved, source, created_at) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                (
+                    f"ftp-{uuid.uuid4().hex[:12]}",
+                    dataset_id,
+                    p.get("instruction", "") or "",
+                    p.get("input_text", "") or "",
+                    p.get("output_text", "") or "",
+                    p.get("purpose", "general") or "general",
+                    int(p.get("approved") or 0),
+                    f"handoff:{new_user_email}",
+                    now,
+                ),
+            )
+            inserted += 1
+        conn.commit()
+        return inserted
+    finally:
+        conn.close()
+
+
+def _ensure_dataset(
+    conn: Any, dataset_id: str, new_user_email: str, count: int, now: str
+) -> None:
+    """Create the owning ft_datasets row so a re-export finds the pairs.
+
+    Best-effort: if the ft_datasets table is absent the pairs are still imported
+    (they simply won't be re-discoverable via ``created_by`` on re-export).
+    """
+    if not table_exists(conn, "ft_datasets"):
+        return
+    conn.execute(
+        "INSERT INTO ft_datasets "
+        "(id, name, description, purpose, created_by, example_count, "
+        " status, created_at, updated_at) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+        (
+            dataset_id,
+            f"Imported handoff for {new_user_email}",
+            "Fine-tuning patterns restored from a knowledge handoff package.",
+            "general",
+            new_user_email,
+            count,
+            "draft",
+            now,
+            now,
+        ),
+    )
 
 
 def _extract_audit(user_email: str) -> list[dict[str, Any]]:

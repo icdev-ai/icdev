@@ -176,7 +176,16 @@ function doImport(e) {
             detail.textContent = 'Error: ' + d.error;
             el.style.borderColor = 'var(--danger,#e94560)';
         } else {
-            detail.textContent = 'Imported for: ' + d.imported_for;
+            var parts = [];
+            parts.push('Imported for: ' + (d.imported_for || d.new_user_email || '—'));
+            parts.push('Fine-tuning patterns restored: ' + (d.imported_patterns != null ? d.imported_patterns : 0));
+            if (d.skipped_audit_entries) {
+                parts.push('Audit entries in package (not re-imported — audit trail is append-only): ' + d.skipped_audit_entries);
+            }
+            if (d.args_files_in_package) {
+                parts.push('Config files in package (reference only, not applied): ' + d.args_files_in_package);
+            }
+            detail.innerHTML = parts.map(function(p){ return '<div>' + p + '</div>'; }).join('');
         }
         el.style.display = 'block';
         btn.textContent = '🚀 Import Package'; btn.disabled = false;

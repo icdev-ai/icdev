@@ -6,7 +6,14 @@ Uses the existing aisg_patterns table schema:
   id, name, category, description, use_case, deploy_config (JSONB/text),
   created_at, tags (JSON text/array), is_builtin, updated_at
 
-Provides list_patterns(), get_pattern(), deploy_pattern(), _seed_builtins().
+Provides list_patterns(), get_pattern(), record_pattern_usage(), _seed_builtins().
+
+NOTE ON HONESTY (nav-bld-03): there is no real "deploy to GovCloud" action wired
+to a pattern. Selecting a pattern only records that a team looked at / used it as
+a starting blueprint. The counter is therefore ``usage_count`` (surfaced on the
+card) and the public function is ``record_pattern_usage`` — no code path here
+provisions infrastructure or generates kanban tasks, so the UI must not claim it
+does. ``deploy_pattern`` is kept only as a thin backward-compatible alias.
 """
 from __future__ import annotations
 
@@ -114,10 +121,14 @@ def _normalize(row: dict) -> dict:
         row["complexity"] = deploy.get("complexity", "intermediate")
         row["canvas_type"] = deploy.get("canvas_type", "")
         row["goal_template"] = deploy.get("goal_template", "")
+        # Surface the usage counter (migrating from the legacy ``deploy_count``
+        # key) so the card can honestly show "used N time(s)".
+        row["usage_count"] = deploy.get("usage_count", deploy.get("deploy_count", 0))
     else:
         row["complexity"] = "intermediate"
         row["canvas_type"] = ""
         row["goal_template"] = ""
+        row["usage_count"] = 0
     return row
 
 
@@ -153,8 +164,15 @@ def get_pattern(pattern_id: str) -> dict | None:
         conn.close()
 
 
-def deploy_pattern(pattern_id: str, deployed_by: str = "user") -> dict:
-    """Increment deploy count (stored in deploy_config) and return the updated pattern."""
+def record_pattern_usage(pattern_id: str, used_by: str = "user") -> dict:
+    """Record that a pattern was used as a starting blueprint.
+
+    This does NOT deploy anything — no infrastructure is provisioned and no
+    kanban tasks are generated (see the module docstring). It increments a plain
+    ``usage_count`` stored inside ``deploy_config`` and returns the updated
+    pattern. The response exposes ``usage_count`` (and ``action="usage_recorded"``)
+    so callers cannot mistake it for a real deployment.
+    """
     conn = get_connection()
     try:
         c = conn.cursor()
@@ -163,24 +181,34 @@ def deploy_pattern(pattern_id: str, deployed_by: str = "user") -> dict:
         if not row:
             return {"error": f"Pattern {pattern_id} not found"}
         p = _normalize(dict(row))
-        deploy_cfg = p.get("deploy_config") or {}
-        if isinstance(deploy_cfg, str):
+        cfg = p.get("deploy_config") or {}
+        if isinstance(cfg, str):
             try:
-                deploy_cfg = json.loads(deploy_cfg)
+                cfg = json.loads(cfg)
             except (json.JSONDecodeError, TypeError):
-                deploy_cfg = {}
-        deploy_cfg["deploy_count"] = deploy_cfg.get("deploy_count", 0) + 1
+                cfg = {}
+        # Migrate the legacy ``deploy_count`` key to ``usage_count``.
+        count = cfg.get("usage_count", cfg.get("deploy_count", 0)) + 1
+        cfg["usage_count"] = count
+        cfg.pop("deploy_count", None)
         now = datetime.now(timezone.utc).isoformat()
         c.execute(
             "UPDATE aisg_patterns SET deploy_config = %s, updated_at = %s WHERE id = %s",
-            (json.dumps(deploy_cfg), now, pattern_id),
+            (json.dumps(cfg), now, pattern_id),
         )
         conn.commit()
-        p["deploy_config"] = deploy_cfg
-        p["deploy_count"] = deploy_cfg["deploy_count"]
+        p["deploy_config"] = cfg
+        p["usage_count"] = count
+        p["action"] = "usage_recorded"
+        p["used_by"] = used_by
         return p
     finally:
         conn.close()
+
+
+# Backward-compatible alias. Prefer ``record_pattern_usage`` — this name is
+# retained only so any out-of-tree caller keeps working; it does not deploy.
+deploy_pattern = record_pattern_usage
 
 
 def _seed_builtins() -> int:
