@@ -49,15 +49,19 @@ def run(config: dict, state) -> dict:
         )
         result = DeckEngine().run(req)
 
-        if result.status == "completed":
+        # A degraded/template deck is still a real, downloadable artifact — it is
+        # honestly flagged, not a failure. Only a hard "failed" is a failure.
+        if result.status in ("completed", "degraded", "template", "auto"):
             logger.info(
-                "slides reflex: deck generated — %d slides, path: %s",
-                len(result.slides), result.pptx_path,
+                "slides reflex: deck generated (%s) — %d slides, path: %s",
+                result.status, len(result.slides), result.pptx_path,
             )
             # Emit genesis_outputs event for dashboard notification
             _emit_output_event(deck_id=result.deck_id, pptx_path=result.pptx_path, title=title)
             return {
                 "status": "ok",
+                "deck_status": result.status,
+                "degraded": result.status in ("degraded", "template"),
                 "deck_id": result.deck_id,
                 "slide_count": len(result.slides),
                 "pptx_path": result.pptx_path,

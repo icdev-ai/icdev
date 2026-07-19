@@ -31,6 +31,7 @@ from tools.slides.constants import (
     SOURCE_TYPES, DEFAULT_THEME, DEFAULT_DECK_TYPE, DEFAULT_TONE,
     DEFAULT_CITATION_STYLE, DEFAULT_OUTPUT_FORMATS,
     AUDIENCE_MODES, AUDIENCE_MODE_HINTS, PITCH_TEMPLATES,
+    DECK_READY_STATUSES,
 )
 from tools.slides.db.init_db import get_connection, init_db
 from tools.logging.icdev_logger import get_logger
@@ -378,11 +379,13 @@ def api_deck_status(deck_id: int):
         "graphics":   "Generating images…",
         "building":   "Building PPTX & exports…",
         "completed":  "Complete!",
+        "degraded":   "Complete — degraded (partial fallback content)",
+        "template":   "Complete — template (canned outline, LLM unavailable)",
         "failed":     "Generation failed",
         "auto":       "Complete (auto-generated)",
     }
     label = _PHASE_LABELS.get(status, status.replace("_", " ").title())
-    done = status in ("completed", "auto", "failed")
+    done = status in ("completed", "degraded", "template", "auto", "failed")
 
     return jsonify({
         "deck_id": deck_id,
@@ -390,6 +393,7 @@ def api_deck_status(deck_id: int):
         "phase_label": label,
         "done": done,
         "slide_count": slide_count,
+        "degraded": status in ("degraded", "template"),
         "error": status == "failed",
     })
 
@@ -458,8 +462,12 @@ def api_revise(deck_id: int):
 def _serve_file(deck_id: int, column: str, mime: str, ext: str) -> Any:
     conn = _conn()
     try:
+        # Degraded/template decks are honestly flagged but still downloadable —
+        # gate on any ready status, not just plain "completed".
+        ready = ", ".join(f"'{s}'" for s in DECK_READY_STATUSES)
         row = conn.execute(
-            f"SELECT title, {column} FROM slides_decks WHERE deck_id = {_ph(conn)} AND status = 'completed'",
+            f"SELECT title, {column} FROM slides_decks "
+            f"WHERE deck_id = {_ph(conn)} AND status IN ({ready})",
             (deck_id,),
         ).fetchone()
     finally:
