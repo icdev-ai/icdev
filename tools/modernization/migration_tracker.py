@@ -1024,7 +1024,7 @@ def check_pi_compliance_gate(plan_id, pi_number, db_path=None):
             "ssp_update",
             "cui_marking",
         )
-        placeholders = ",".join("?" * len(compliance_task_types))
+        placeholders = ",".join(["%s"] * len(compliance_task_types))
         incomplete_compliance = conn.execute(
             f"SELECT COUNT(*) as cnt FROM migration_tasks "  # nosec B608 -- table/column names are internal constants, not user input
             f"WHERE plan_id = %s AND pi_number = %s "

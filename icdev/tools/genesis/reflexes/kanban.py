@@ -2636,7 +2636,7 @@ def _close_orphaned_rca_children(parent_task_id: str, actor: str = "scheduler") 
             now = _utcnow_iso()
             prefix = f"diag-{parent_task_id}"
             open_statuses = ("suggested", "backlog", "scheduled", "in_progress")
-            placeholders = ",".join("?" * len(open_statuses))
+            placeholders = ",".join(["%s"] * len(open_statuses))
             rows = conn.execute(
                 f"SELECT id FROM kanban_tasks "  # nosec B608
                 f"WHERE (id LIKE %s OR (title LIKE %s AND task_type IN ('chore','research','fix'))) "
@@ -2645,7 +2645,7 @@ def _close_orphaned_rca_children(parent_task_id: str, actor: str = "scheduler") 
             ).fetchall()
             orphan_ids = [dict(r)["id"] for r in rows]
             if orphan_ids:
-                ph = ",".join("?" * len(orphan_ids))
+                ph = ",".join(["%s"] * len(orphan_ids))
                 conn.execute(
                     f"UPDATE kanban_tasks SET status='done', completed_at=%s, updated_at=%s, "  # nosec B608
                     f"last_failure_reason=%s WHERE id IN ({ph})",
@@ -2928,7 +2928,7 @@ def _move_task(task_id: str, new_status: str, actor: str = "scheduler",
             for r in desc_rows:
                 rolled_back.append(dict(r)["id"])
             if rolled_back:
-                placeholders = ",".join("?" * len(rolled_back))
+                placeholders = ",".join(["%s"] * len(rolled_back))
                 conn.execute(
                     "UPDATE kanban_tasks SET status='backlog', "
                     "scheduled_at=NULL, "

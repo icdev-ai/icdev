@@ -34,7 +34,7 @@ def _handle_pipeline_deployed(
                 (r[0] if isinstance(r, (list, tuple)) else r["design_id"]) for r in rows
             ]
             if design_ids:
-                placeholders = ",".join("?" * len(design_ids))
+                placeholders = ",".join(["%s"] * len(design_ids))
                 conn.execute(
                     f"UPDATE sc_threats SET is_stale = 1 WHERE design_id IN ({placeholders})",
                     design_ids,

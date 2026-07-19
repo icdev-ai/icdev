@@ -631,7 +631,7 @@ def delete_all_runs(workflow_id: str | None = None) -> int:
                 "SELECT run_id FROM studio_workflow_runs WHERE workflow_id = %s", (workflow_id,)
             ).fetchall()]
             if run_ids:
-                placeholders = ",".join("?" * len(run_ids))
+                placeholders = ",".join(["%s"] * len(run_ids))
                 conn.execute(f"DELETE FROM studio_workflow_run_steps WHERE run_id IN ({placeholders})", run_ids)
             cur = conn.execute(
                 "DELETE FROM studio_workflow_runs WHERE workflow_id = %s", (workflow_id,)
