@@ -46,7 +46,7 @@ def handle_ontology_build(arguments: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def handle_ontology_query(arguments: Dict[str, Any]) -> Dict[str, Any]:
-    """Query the unified ontology graph with a SPARQL-like natural language query."""
+    """Keyword/pattern search over the ontology graph (heuristic term matching, not SPARQL)."""
     query = arguments.get("query", "")
     db_path = arguments.get("db_path")
     if not query:
@@ -59,6 +59,8 @@ def handle_ontology_query(arguments: Dict[str, Any]) -> Dict[str, Any]:
         return {
             "classification": "CUI // SP-CTI",
             "query": query,
+            "engine": "heuristic_keyword_matcher",
+            "sparql": False,
             "results": results.get("results", []),
             "results_count": results.get("results_count", 0),
             "patterns_detected": results.get("patterns_detected", {}),
@@ -138,11 +140,11 @@ def build_server() -> MCPServer:
 
     server.register_tool(
         name="ontology_query",
-        description="Query the unified ontology graph with a SPARQL-like natural language query.",
+        description="Keyword/pattern search over the unified ontology graph. Heuristic term matching over a small set of hard-coded query shapes — NOT a SPARQL evaluator.",
         input_schema={
             "type": "object",
             "properties": {
-                "query": {"type": "string", "description": "Natural language SPARQL-like query"},
+                "query": {"type": "string", "description": "Natural-language query (keyword/pattern matched, not SPARQL)"},
                 "db_path": {"type": "string", "description": "Optional path to ICDEV database"},
             },
             "required": ["query"],
