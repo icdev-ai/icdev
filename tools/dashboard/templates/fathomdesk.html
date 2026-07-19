@@ -60,6 +60,29 @@
   }
   .fd-chart-wrap svg { display: block; }
 
+  /* SIMULATED DATA banner — persistent, unmissable warning when the chart is
+     rendering synthetic sample bars instead of real market data (nav-plat-01). */
+  .fd-sim-banner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px 16px;
+    background: #7a1e1e;
+    background: repeating-linear-gradient(45deg, #7a1e1e, #7a1e1e 14px, #611616 14px, #611616 28px);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    border-top: 2px solid #f5c518;
+    border-bottom: 2px solid #f5c518;
+  }
+  .fd-sim-banner[hidden] { display: none; }
+  .fd-sim-banner-icon { font-size: 16px; line-height: 1; }
+  .fd-sim-banner-text { text-transform: uppercase; }
+  .fd-sim-banner-src { text-transform: none; font-weight: 500; opacity: 0.9; }
+
   .fd-legend {
     display: flex;
     gap: 16px;
@@ -233,6 +256,11 @@
   <div class="fd-stats" id="fd-stats"></div>
 </div>
 
+<div class="fd-sim-banner" id="fd-sim-banner" role="alert" aria-live="assertive" hidden>
+  <span class="fd-sim-banner-icon" aria-hidden="true">&#9888;</span>
+  <span class="fd-sim-banner-text">Simulated data &mdash; synthetic sample bars, not real market data.<span class="fd-sim-banner-src" id="fd-sim-banner-src"></span></span>
+</div>
+
 <div class="fd-chart-wrap" id="fd-chart-wrap">
   <div class="fd-loading" id="fd-loading"><div class="fd-spinner"></div> Loading chart…</div>
 </div>
@@ -371,8 +399,28 @@
   };
 
   // ── Main render ──────────────────────────────────────────────────────────────
+  // Toggle the persistent "SIMULATED DATA" banner based on the chart
+  // response's top-level provenance flags (nav-plat-01).
+  function fdUpdateSimBanner(d) {
+    var banner = document.getElementById('fd-sim-banner');
+    if (!banner) return;
+    if (d && d.simulated) {
+      var srcEl = document.getElementById('fd-sim-banner-src');
+      if (srcEl) {
+        var parts = [];
+        if (d.data_source) parts.push('source: ' + d.data_source);
+        if (d.as_of) parts.push('as of ' + d.as_of);
+        srcEl.textContent = parts.length ? ' (' + parts.join(', ') + ')' : '';
+      }
+      banner.hidden = false;
+    } else {
+      banner.hidden = true;
+    }
+  }
+
   function render(ticker, tf) {
     var wrap = document.getElementById('fd-chart-wrap');
+    fdUpdateSimBanner(null);  // clear any stale banner while loading
     wrap.innerHTML = '<div class="fd-loading"><div class="fd-spinner"></div> Loading ' + ticker + '…</div>';
 
     fetch('/api/trading/chart/' + encodeURIComponent(ticker) + '?tf=' + tf + '&limit=120')
@@ -382,6 +430,7 @@
           wrap.innerHTML = '<div class="fd-loading" style="color:var(--status-red,#dc3545);">Error: ' + d.error + '</div>';
           return;
         }
+        fdUpdateSimBanner(d);
         drawChart(wrap, d.bars, d.volume_profile, d.patterns || [], d.sr_levels || [], ticker, tf);
         drawStats(d.bars);
         if (_highlightId) maybeAnnotateNews();
