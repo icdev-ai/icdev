@@ -289,6 +289,25 @@ def register_api_blueprints(app: "Flask") -> None:  # noqa: C901
     except Exception as exc:
         logger.warning("news_api skipped: %s", exc)
 
+    # Extracted from app.py inline routes (nav-misc-03) — paths unchanged.
+    try:
+        from tools.dashboard.api.pulse import pulse_api
+        _mount_inline(pulse_api)   # inline routes: /pulse, /api/pulse/*
+    except Exception as exc:
+        logger.warning("pulse_api skipped: %s", exc)
+
+    try:
+        from tools.dashboard.api.research import research_api
+        _mount_inline(research_api)   # inline routes: /api/research/*
+    except Exception as exc:
+        logger.warning("research_api skipped: %s", exc)
+
+    try:
+        from tools.dashboard.api.clawhub import clawhub_api
+        _mount_inline(clawhub_api)   # inline routes: /api/clawhub/*
+    except Exception as exc:
+        logger.warning("clawhub_api skipped: %s", exc)
+
     try:
         from tools.fathomdesk.blueprint import fathomdesk_api
         _mount_inline(fathomdesk_api)   # inline routes: /fathomdesk/api/*

@@ -195,21 +195,26 @@ def test_studio_marketplace_route_unwraps_asset_envelope():
 
 
 def test_app_py_pulse_and_cmap_routes_have_role_gate():
-    src = _read("tools/dashboard/app.py")
+    # nav-misc-03: the pulse routes were extracted from app.py into the
+    # pulse_api blueprint (tools/dashboard/api/pulse.py) with their
+    # @require_role gates preserved verbatim. The components-map routes remain
+    # inline in app.py.
+    pulse_src = _read("tools/dashboard/api/pulse.py")
+    app_src = _read("tools/dashboard/app.py")
 
-    def _decorators_above(route_marker: str) -> str:
+    def _decorators_above(src: str, route_marker: str) -> str:
         idx = src.index(route_marker)
         # Grab the ~4 lines between the route decorator and the def.
         window = src[idx: idx + 400]
         return window
 
-    judge = _decorators_above('"/api/pulse/posts/<post_id>/judge"')
+    judge = _decorators_above(pulse_src, '"/api/pulse/posts/<post_id>/judge"')
     assert "@require_role(*_PULSE_EDITORIAL_ROLES)" in judge
 
-    undo = _decorators_above('"/api/pulse/posts/<post_id>/undo-reject"')
+    undo = _decorators_above(pulse_src, '"/api/pulse/posts/<post_id>/undo-reject"')
     assert "@require_role(*_PULSE_EDITORIAL_ROLES)" in undo
 
-    refresh = _decorators_above('"/api/components-map/refresh"')
+    refresh = _decorators_above(app_src, '"/api/components-map/refresh"')
     assert '@require_role("admin", "pm")' in refresh
 
 
