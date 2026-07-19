@@ -33,9 +33,19 @@ import uuid
 
 from flask import Blueprint, jsonify, render_template, request
 
+from tools.dashboard.auth import require_role
 from tools.db.storage import get_connection
 
 bp = Blueprint("aisg", __name__)
+
+# nav-sec-06: state-changing AISG endpoints (wizard-completion, pattern
+# seed/deploy, knowledge-handoff export/import, visual-builder save/generate)
+# are restricted to admin/pm. Before this fix they were gated only on "is
+# authenticated", so any lowest-privilege ``developer`` could deploy patterns,
+# import an arbitrary knowledge package, or persist an agent design. Reads (GET
+# pages + list/get patterns + explain/autotune/iqe) stay open. Every role here
+# also appears in ``VALID_DASHBOARD_ROLES`` in tools/dashboard/auth.py.
+_AISG_MUTATION_ROLES = ("admin", "pm")
 
 
 # ---------------------------------------------------------------------------
@@ -212,6 +222,7 @@ def ai_wizard_page():
 
 
 @bp.route("/api/ai-wizard/submit", methods=["POST"])
+@require_role(*_AISG_MUTATION_ROLES)
 def wizard_submit():
     from tools.aisg.wizard import WizardEngine
     _engine = WizardEngine()
@@ -255,6 +266,7 @@ def api_list_patterns():
 
 
 @bp.route("/api/aisg/patterns/seed", methods=["POST"])
+@require_role(*_AISG_MUTATION_ROLES)
 def api_seed_patterns():
     from tools.aisg.pattern_registry import _seed_builtins
     try:
@@ -274,6 +286,7 @@ def api_get_pattern(pattern_id: str):
 
 
 @bp.route("/api/aisg/patterns/<pattern_id>/deploy", methods=["POST"])
+@require_role(*_AISG_MUTATION_ROLES)
 def api_deploy_pattern(pattern_id: str):
     from tools.aisg.pattern_registry import deploy_pattern
     result = deploy_pattern(pattern_id)
@@ -328,6 +341,7 @@ def ai_handoff_page():
 
 
 @bp.route("/api/ai-handoff/export", methods=["POST"])
+@require_role(*_AISG_MUTATION_ROLES)
 def api_handoff_export():
     from tools.aisg.knowledge_handoff import export_package
     import tempfile
@@ -343,6 +357,7 @@ def api_handoff_export():
 
 
 @bp.route("/api/ai-handoff/import", methods=["POST"])
+@require_role(*_AISG_MUTATION_ROLES)
 def api_handoff_import():
     data = request.get_json(silent=True) or {}
     zip_path = data.get("zip_path", "")
@@ -362,6 +377,7 @@ def ai_builder_page():
 
 
 @bp.route("/api/ai-builder/save", methods=["POST"])
+@require_role(*_AISG_MUTATION_ROLES)
 def api_builder_save():
     from tools.aisg.visual_agent_builder import save_design
     data = request.get_json(silent=True) or {}
@@ -377,6 +393,7 @@ def api_builder_save():
 
 
 @bp.route("/api/ai-builder/generate", methods=["POST"])
+@require_role(*_AISG_MUTATION_ROLES)
 def api_builder_generate():
     from tools.aisg.visual_agent_builder import generate_goal
     data = request.get_json(silent=True) or {}

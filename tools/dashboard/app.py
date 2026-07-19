@@ -71,6 +71,34 @@ try:
     from tools.usage_analytics.event_collector import track_request as _track_request
 except ImportError:
     _track_request = None
+
+
+def _session_actor(default: str = "dashboard") -> str:
+    """Resolved actor identity for audit fields (nav-sec-06).
+
+    Always sourced from the authenticated session user (``g.current_user``),
+    never from a spoofable request-body ``actor`` field. Falls back to
+    ``default`` only when no user is on the request context (which the
+    ``@require_role`` gate on the calling route already prevents).
+    """
+    user = getattr(g, "current_user", None)
+    if isinstance(user, dict):
+        return str(user.get("id") or user.get("email") or default)
+    if user is not None:
+        try:
+            return str(user["id"])
+        except Exception:
+            return default
+    return default
+
+
+# nav-sec-06: editorial (state-changing) Pulse blog actions — approve / reject /
+# publish / unpublish / delete — are restricted to an approver/editor-class role.
+# A lowest-privilege ``developer`` must not be able to approve or publish
+# externally visible content. Reads (GET) stay open to any authenticated user.
+# Every role here also appears in ``VALID_DASHBOARD_ROLES`` in
+# tools/dashboard/auth.py.
+_PULSE_EDITORIAL_ROLES = ("admin", "pm", "reviewer")
 # Air-gap mode: hide cloud-dependent pages (Pulse, ClawHub, Genesis, GovCon, etc.)
 _AIRGAP_MODE = os.environ.get("ICDEV_AIRGAP", "").lower() in ("true", "1", "yes")
 # Demo mode: read-only enforcement (POST/PUT/DELETE to /api/* blocked except onboarding + IQE)
@@ -1976,21 +2004,23 @@ def create_app(testing: bool = False) -> Flask:
         return jsonify(_sched_status())
 
     @app.route("/api/kanban/scheduler/pause", methods=["POST"])
+    @require_role("admin", "pm")
     def kanban_scheduler_pause():
         """POST — manually pause the kanban scheduler cycle."""
         from tools.kanban.scheduler_control import pause as _sched_pause  # noqa: PLC0415
         body = flask_request.get_json(silent=True) or {}
-        return jsonify(_sched_pause(actor=body.get("actor", "dashboard"),
+        return jsonify(_sched_pause(actor=_session_actor(),
                                     reason=body.get("reason", "manual (dashboard)")))
 
     @app.route("/api/kanban/scheduler/resume", methods=["POST"])
+    @require_role("admin", "pm")
     def kanban_scheduler_resume():
         """POST — resume the kanban scheduler cycle."""
         from tools.kanban.scheduler_control import resume as _sched_resume  # noqa: PLC0415
-        body = flask_request.get_json(silent=True) or {}
-        return jsonify(_sched_resume(actor=body.get("actor", "dashboard")))
+        return jsonify(_sched_resume(actor=_session_actor()))
 
     @app.route("/api/kanban/build-mode", methods=["GET", "POST"])
+    @require_role("admin", "pm")
     def kanban_build_mode():
         """Manual Build: promote and track as normal, but do not auto-dispatch.
 
@@ -2009,11 +2039,12 @@ def create_app(testing: bool = False) -> Flask:
         manual = bool(body.get("manual"))
         return jsonify(set_manual(
             manual,
-            actor=body.get("actor", "dashboard"),
+            actor=_session_actor(),
             reason=body.get("reason", ""),
         ))
 
     @app.route("/api/kanban/build-model", methods=["GET", "POST"])
+    @require_role("admin", "pm")
     def kanban_build_model():
         """Which model the runner builds with. Live — no scheduler restart.
 
@@ -2034,7 +2065,7 @@ def create_app(testing: bool = False) -> Flask:
 
         body = flask_request.get_json(silent=True) or {}
         try:
-            return jsonify(_set_model(body.get("model"), actor=body.get("actor", "dashboard")))
+            return jsonify(_set_model(body.get("model"), actor=_session_actor()))
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
 
@@ -7254,6 +7285,7 @@ def create_app(testing: bool = False) -> Flask:
 
     @app.route("/api/pulse/posts/<post_id>/approve", methods=["POST"])
     @require_installed("pulse")
+    @require_role(*_PULSE_EDITORIAL_ROLES)
     def api_pulse_approve(post_id):
         """Approve a Pulse post."""
         try:
@@ -7280,6 +7312,7 @@ def create_app(testing: bool = False) -> Flask:
 
     @app.route("/api/pulse/posts/<post_id>/reject", methods=["POST"])
     @require_installed("pulse")
+    @require_role(*_PULSE_EDITORIAL_ROLES)
     def api_pulse_reject(post_id):
         """Reject a Pulse post."""
         try:
@@ -7389,6 +7422,7 @@ def create_app(testing: bool = False) -> Flask:
 
     @app.route("/api/pulse/posts/<post_id>/publish", methods=["POST"])
     @require_installed("pulse")
+    @require_role(*_PULSE_EDITORIAL_ROLES)
     def api_pulse_publish(post_id):
         """Publish a Pulse post, export, and optionally push to Hostinger."""
         try:
@@ -7426,6 +7460,7 @@ def create_app(testing: bool = False) -> Flask:
 
     @app.route("/api/pulse/posts/<post_id>/unpublish", methods=["POST"])
     @require_installed("pulse")
+    @require_role(*_PULSE_EDITORIAL_ROLES)
     def api_pulse_unpublish(post_id):
         """Unpublish a post: revert to draft locally and set WP post to draft."""
         try:
@@ -7531,6 +7566,7 @@ def create_app(testing: bool = False) -> Flask:
 
     @app.route("/api/pulse/posts/<post_id>", methods=["DELETE"])
     @require_installed("pulse")
+    @require_role(*_PULSE_EDITORIAL_ROLES)
     def api_pulse_archive(post_id):
         """Archive or permanently delete a Pulse post."""
         try:
