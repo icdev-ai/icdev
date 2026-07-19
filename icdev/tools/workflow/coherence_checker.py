@@ -2625,6 +2625,182 @@ def check_direct_anthropic_import() -> CoherenceCheck:
 
 
 # ---------------------------------------------------------------------------
+# Check: Dead LLMRouter API — .complete()/.chat() (nav-llm-02)
+# ---------------------------------------------------------------------------
+
+
+def check_llm_router_api() -> CoherenceCheck:
+    """nav-llm-02 — ban dead LLMRouter API calls (``.complete()`` / ``.chat()``).
+
+    ``LLMRouter`` (tools/llm/router.py) exposes only ``invoke(fn, LLMRequest)``
+    and ``invoke_*`` variants — there is no ``complete()`` or ``chat()``.
+    A wave of shipped call sites invoked a nonexistent ``router.complete()``
+    inside ``try/except``, so their LLM paths were permanently dead — masked by
+    deterministic fallbacks (fixed in PR #569). This check prevents regression
+    of that whole class.
+
+    Detection (AST, binding-scoped): within each runtime file under
+    ``tools/``, ``apps/`` and ``icdev/tools/``:
+      1. Track every variable / ``self`` attribute bound to ``LLMRouter(...)``
+         or ``get_router(...)``.
+      2. Flag any ``.complete(`` / ``.chat(`` call whose receiver is one of
+         those router bindings — reported as ``file:line``.
+
+    False-positive guards (NOT flagged):
+      • ``cortex_api.complete(...)`` — valid Cortex facade (tools/cortex/api.py);
+        receiver is bound to Cortex, not the router.
+      • provider SDK ``.complete(`` / ``.chat(`` calls — receiver bound to a
+        provider object, not the router; ``tools/llm/providers/`` and
+        ``tools/llm/provider.py`` are skipped outright.
+      • ``.chat(`` on ollama / other non-router clients — receiver not
+        router-bound.
+      • string literals / comments — ignored (real AST parse, not text grep).
+
+    Tier: FAIL — the class is fixed on origin/main; any new occurrence is a
+    real dead-LLM-path bug. Blocks ``--gate``.
+    """
+    dead_methods = {"complete", "chat"}
+    ctor_names = {"LLMRouter", "get_router"}
+
+    def _receiver_key(node: ast.AST) -> Optional[str]:
+        """Return a stable key for a call/assign receiver, or None.
+
+        ``router``            -> "router"
+        ``self.router``       -> "self.router"
+        anything else         -> None (attribute chains we don't track)
+        """
+        if isinstance(node, ast.Name):
+            return node.id
+        if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
+            return f"{node.value.id}.{node.attr}"
+        return None
+
+    def _is_router_ctor(value: ast.AST) -> bool:
+        """True if an assignment value is LLMRouter(...) / get_router(...)."""
+        if not isinstance(value, ast.Call):
+            return False
+        func = value.func
+        if isinstance(func, ast.Name):
+            return func.id in ctor_names
+        if isinstance(func, ast.Attribute):
+            return func.attr in ctor_names
+        return False
+
+    def _scan_source(source: str) -> List[Tuple[int, str]]:
+        """Return (lineno, snippet) for every dead router .complete()/.chat()."""
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            return []
+
+        # Pass 1 — collect receiver keys bound to a router constructor.
+        router_bindings: Set[str] = set()
+        for node in ast.walk(tree):
+            targets: List[ast.AST] = []
+            if isinstance(node, ast.Assign) and _is_router_ctor(node.value):
+                targets = list(node.targets)
+            elif (
+                isinstance(node, ast.AnnAssign)
+                and node.value is not None
+                and _is_router_ctor(node.value)
+            ):
+                targets = [node.target]
+            for tgt in targets:
+                key = _receiver_key(tgt)
+                if key:
+                    router_bindings.add(key)
+
+        if not router_bindings:
+            return []
+
+        # Pass 2 — flag dead-API calls whose receiver is a router binding.
+        hits: List[Tuple[int, str]] = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            if not isinstance(func, ast.Attribute) or func.attr not in dead_methods:
+                continue
+            key = _receiver_key(func.value)
+            if key and key in router_bindings:
+                hits.append(
+                    (
+                        func.value.lineno if hasattr(func.value, "lineno") else node.lineno,
+                        f"{key}.{func.attr}() — LLMRouter has no {func.attr}(); "
+                        f"use invoke(fn, LLMRequest)",
+                    )
+                )
+        return hits
+
+    # Files/dirs where provider-SDK .complete()/.chat() legitimately live.
+    skip_rel = {
+        Path("tools") / "llm" / "provider.py",
+        Path("icdev") / "tools" / "llm" / "provider.py",
+    }
+    skip_dir_parts = (
+        (Path("tools") / "llm" / "providers"),
+        (Path("icdev") / "tools" / "llm" / "providers"),
+    )
+    exclude_segments = {"tests", ".tmp", "docs", "node_modules", "__pycache__"}
+
+    roots = [
+        PROJECT_ROOT / "tools",
+        PROJECT_ROOT / "apps",
+        PROJECT_ROOT / "icdev" / "tools",
+    ]
+
+    violations: List[str] = []
+    seen_files: Set[Path] = set()
+    for root in roots:
+        if not root.exists():
+            continue
+        for py_file in sorted(root.rglob("*.py")):
+            if py_file in seen_files:
+                continue
+            seen_files.add(py_file)
+            try:
+                rel = py_file.relative_to(PROJECT_ROOT)
+            except ValueError:
+                rel = py_file
+            parts = set(rel.parts)
+            if parts & exclude_segments:
+                continue
+            if rel in skip_rel:
+                continue
+            if any(str(rel).replace("\\", "/").startswith(str(d).replace("\\", "/") + "/") for d in skip_dir_parts):
+                continue
+            for lineno, snippet in _scan_source(_read_text(py_file)):
+                violations.append(f"{rel}:{lineno}: {snippet}")
+
+    if violations:
+        return CoherenceCheck(
+            check_id="llm_router_api",
+            check_name="Dead LLMRouter API (nav-llm-02)",
+            status="fail",
+            expected=["0 router.complete()/router.chat() call sites — use invoke(fn, LLMRequest)"],
+            actual=violations,
+            missing=[],
+            extra=violations,
+            message=(
+                f"{len(violations)} dead LLMRouter API call(s) found — LLMRouter "
+                "exposes only invoke(fn, LLMRequest); .complete()/.chat() are "
+                "permanently-dead paths masked by fallbacks. Replace with invoke()."
+            ),
+        )
+
+    return CoherenceCheck(
+        check_id="llm_router_api",
+        check_name="Dead LLMRouter API (nav-llm-02)",
+        status="pass",
+        expected=["0 router.complete()/router.chat() call sites — use invoke(fn, LLMRequest)"],
+        actual=["0 violations"],
+        missing=[],
+        extra=[],
+        message="No dead LLMRouter .complete()/.chat() call sites detected",
+    )
+
+
+# ---------------------------------------------------------------------------
 # OpenAPI ↔ Route Parity (B6 coherence gate)
 # ---------------------------------------------------------------------------
 
@@ -5300,6 +5476,7 @@ CHECK_REGISTRY = {
     "skill_standard": check_skill_standard,
     "sandbox_coverage": check_sandbox_coverage,
     "direct_anthropic_import": check_direct_anthropic_import,
+    "llm_router_api": check_llm_router_api,
     "karpathy_sync": check_karpathy_sync,
     "openapi_parity": check_openapi_parity,
     "hitl_workflow": check_hitl_workflow,
@@ -5349,6 +5526,7 @@ _FIX_REGISTRY: Dict[str, str] = {
     "skill_standard": "suggest",  # description rewrites need human judgment
     "sandbox_coverage": "skip",  # doc/decision — requires human judgment
     "direct_anthropic_import": "skip",  # violations require code routing fix
+    "llm_router_api": "skip",  # dead-API call sites require routing fix to invoke(fn, req)
     "karpathy_sync": "skip",  # add section to CLAUDE.md + companion sync, then re-run
     "openapi_parity": "skip",  # route drift requires human fix (add/remove route or update spec)
     "hitl_workflow": "skip",  # module fixes require human judgment
