@@ -4123,8 +4123,18 @@ def create_app(testing: bool = False) -> Flask:
             registered = list_registered()
             connectors = [{"name": k, "type": "registered", "status": "active"} for k in registered]
             return jsonify({"connectors": connectors, "total": len(connectors)})
-        except Exception:
-            return jsonify({"connectors": [], "total": 0})
+        except Exception as exc:
+            get_logger("icdev.dashboard").warning(
+                "api_connector_forge_list: failed to list connectors: %s", exc
+            )
+            return jsonify(
+                {
+                    "connectors": [],
+                    "total": 0,
+                    "error": True,
+                    "detail": "Connector registry is temporarily unavailable.",
+                }
+            ), 503
 
     @app.route("/diagrams")
     def diagrams_page():
@@ -6930,6 +6940,7 @@ def create_app(testing: bool = False) -> Flask:
         recent_jobs = []
         active_overrides = []
         promotions = []
+        error = False
         try:
             conn = _get_db()
             stats["datasets"] = conn.execute("SELECT COUNT(*) FROM ft_datasets").fetchone()[0]
@@ -6960,14 +6971,18 @@ def create_app(testing: bool = False) -> Flask:
                 for r in conn.execute("SELECT * FROM ft_promotion_log ORDER BY created_at DESC LIMIT 10").fetchall()
             ]
             conn.close()
-        except Exception:
-            pass
+        except Exception as exc:
+            error = True
+            get_logger("icdev.dashboard").warning(
+                "finetune_overview_page: DB error reading ft_* tables: %s", exc
+            )
         return render_template(
             "finetune/index.html",
             stats=stats,
             recent_jobs=recent_jobs,
             active_overrides=active_overrides,
             promotions=promotions,
+            error=error,
         )
 
     @app.route("/finetune/datasets")

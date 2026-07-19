@@ -12,6 +12,12 @@
     <h1>Connector Forge &mdash; Generate API Connectors from OpenAPI Specs</h1>
     <p class="text-muted">Upload an OpenAPI spec to auto-generate a DataBridge connector with sandbox validation.</p>
 
+    <!-- Degraded-state banner (shown when the connector registry is unreachable) -->
+    <div id="cf-error-banner" role="alert" style="display:none;margin:1rem 0;padding:0.75rem 1rem;border:1px solid #d32f2f;border-left-width:4px;border-radius:6px;background:#fdecea;color:#611a15;">
+        <strong>⚠ Connector registry is temporarily unavailable.</strong>
+        The list below could not be loaded from the backend. This is a service degradation, not an empty registry. Check the dashboard logs and try again shortly.
+    </div>
+
     <!-- Stats Grid -->
     <div class="stat-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem;margin:1.5rem 0;">
         <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
@@ -90,6 +96,17 @@ function loadConnectors() {
     fetch('/api/connector-forge/list')
         .then(function(r) { return r.json(); })
         .then(function(data) {
+            var banner = document.getElementById('cf-error-banner');
+            if (data && data.error) {
+                if (banner) { banner.style.display = 'block'; }
+                document.getElementById('stat-generated').textContent = '--';
+                document.getElementById('stat-active').textContent = '--';
+                document.getElementById('stat-validated').textContent = '--';
+                document.getElementById('stat-shared').textContent = '--';
+                document.getElementById('connectors-body').innerHTML = '<tr><td colspan="5" style="text-align:center;padding:1.5rem;color:#d32f2f;">' + (data.detail || 'Connector registry is temporarily unavailable.') + '</td></tr>';
+                return;
+            }
+            if (banner) { banner.style.display = 'none'; }
             var connectors = data.connectors || [];
             var total = data.total || 0;
             var active = connectors.filter(function(c) { return c.status === 'active'; }).length;
@@ -123,6 +140,8 @@ function loadConnectors() {
         })
         .catch(function(err) {
             console.error('Failed to load connectors:', err);
+            var banner = document.getElementById('cf-error-banner');
+            if (banner) { banner.style.display = 'block'; }
             document.getElementById('connectors-body').innerHTML = '<tr><td colspan="5" style="text-align:center;padding:1.5rem;color:#d32f2f;">Failed to load connectors.</td></tr>';
         });
 }
