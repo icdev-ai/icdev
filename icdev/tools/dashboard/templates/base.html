@@ -358,7 +358,7 @@
                     <li><a href="/security/" style="color:#e94560;">Security Canvas</a></li>
                     <li><a href="/security/demo" style="color:#27ae60;">SDC Demo Runner</a></li>
                     <li><a href="/security-scan">Security Scans</a></li>
-                    <li><a href="/integrity">Software Integrity (SIPA)</a></li>
+                    {% if integrity_enabled %}<li><a href="/integrity">Software Integrity (SIPA)</a></li>{% endif %}
                     <li><a href="/logs">Centralized Logs</a></li>
                     <li><a href="/stig-manager">STIG Manager</a></li>
                     <li><a href="/pr-intel">PR Intelligence</a></li>
@@ -445,7 +445,7 @@
                     <li><a href="/fathomdesk/trap-events" style="color:#f87171;">&#9888; Trap Events</a></li>
                     <li><a href="/genesis">Genesis</a></li>
                     <li><a href="/oracle">Oracle</a></li>
-                    <li><a href="/foundry" style="color:#b388ff;">Foundry (ACF)</a></li>
+                    {% if foundry_enabled %}<li><a href="/foundry" style="color:#b388ff;">Foundry (ACF)</a></li>{% endif %}
                     <li class="nav-dropdown-divider"></li>
                     {% endif %}
                     <li class="nav-section-label">Geospatial</li>

@@ -2371,6 +2371,8 @@ def create_app(testing: bool = False) -> Flask:
             "observability_canvas_enabled": _HAS_OBSERVABILITY_CANVAS,
             "canvas_kg_enabled": _HAS_CANVAS_KG,
             "qdc_enabled": _CANVAS_FLAGS.get("qdc", False),
+            "integrity_enabled": _CANVAS_FLAGS.get("integrity", False),
+            "foundry_enabled": _CANVAS_FLAGS.get("foundry", False),
             "migration_canvas_enabled": _CANVAS_FLAGS.get("mdc", False),
             "aadc_enabled": _CANVAS_FLAGS.get("aadc", False),
             "aimc_enabled": _CANVAS_FLAGS.get("aimc", False),
