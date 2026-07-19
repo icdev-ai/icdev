@@ -140,7 +140,7 @@ def generate_feasibility_study(idea: dict, scores: dict) -> str:
             messages=[{"role": "user", "content": prompt}],
             max_tokens=2500,
         )
-        result = router.complete(req)
+        result = router.invoke("feasibility_study", req)
         study_text = result.content if hasattr(result, "content") else str(result)
         if study_text and len(study_text) > 200:
             return study_text
