@@ -8,7 +8,7 @@ Routes:
   GET  /ai-patterns                          — AI Pattern Library page
   GET  /api/aisg/patterns                    — List all patterns (JSON)
   GET  /api/aisg/patterns/<id>               — Get a single pattern (JSON)
-  POST /api/aisg/patterns/<id>/deploy        — Increment deploy count (JSON)
+  POST /api/aisg/patterns/<id>/deploy        — Record pattern usage (JSON; tracks usage, does not deploy)
   POST /api/aisg/patterns/seed               — Seed built-in patterns (JSON)
   GET  /api/explain/<event_id>               — Explain an audit trail event
   GET  /api/explain/heal/<heal_id>           — Explain a self-healing event
@@ -19,7 +19,7 @@ Routes:
   GET  /ai-learning                          — AI Learning Paths
   GET  /ai-handoff                           — Knowledge Handoff (export/import)
   POST /api/ai-handoff/export                — Export knowledge package
-  POST /api/ai-handoff/import                — Import knowledge package
+  POST /api/ai-handoff/import                — Import knowledge package (restores fine-tuning patterns)
   GET  /ai-builder                           — Visual Agent Builder
   POST /api/ai-builder/save                  — Save canvas design
   POST /api/ai-builder/generate              — Generate goal from canvas
@@ -287,9 +287,14 @@ def api_get_pattern(pattern_id: str):
 
 @bp.route("/api/aisg/patterns/<pattern_id>/deploy", methods=["POST"])
 @require_role(*_AISG_MUTATION_ROLES)
-def api_deploy_pattern(pattern_id: str):
-    from tools.aisg.pattern_registry import deploy_pattern
-    result = deploy_pattern(pattern_id)
+def api_record_pattern_usage(pattern_id: str):
+    # NOTE: this records that a pattern was used as a starting blueprint — it
+    # does not provision infrastructure or generate tasks. The URL retains the
+    # legacy ``/deploy`` path for compatibility, but the response reports
+    # ``usage_count`` / ``action=usage_recorded`` so it cannot be mistaken for a
+    # real deployment.
+    from tools.aisg.pattern_registry import record_pattern_usage
+    result = record_pattern_usage(pattern_id)
     if "error" in result:
         return jsonify(result), 404
     return jsonify(result)
@@ -359,12 +364,23 @@ def api_handoff_export():
 @bp.route("/api/ai-handoff/import", methods=["POST"])
 @require_role(*_AISG_MUTATION_ROLES)
 def api_handoff_import():
+    from tools.aisg.knowledge_handoff import import_package
     data = request.get_json(silent=True) or {}
     zip_path = data.get("zip_path", "")
     new_user = data.get("new_user_email", "")
     if not zip_path or not new_user:
         return jsonify({"error": "zip_path and new_user_email are required"}), 400
-    return jsonify({"status": "ok", "imported_for": new_user, "source": zip_path})
+    try:
+        result = import_package(zip_path=zip_path, new_user_email=new_user)
+    except FileNotFoundError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except (ValueError, KeyError) as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    # Keep ``imported_for`` for the existing UI, but the real counts come from
+    # import_package (imported_patterns / skipped_audit_entries / …).
+    return jsonify({"imported_for": new_user, "source": zip_path, **result})
 
 
 # ---------------------------------------------------------------------------
