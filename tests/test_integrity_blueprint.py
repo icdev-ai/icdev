@@ -280,7 +280,16 @@ def test_api_promote_approves_and_records_authorization(client, shared_conn):
         (aid,),
     ).fetchone()
     assert auth["authorized"] in (1, True)
-    assert auth["reviewed_by"] == "isso@example.mil"
+
+    # nav-comp-06: the reviewer is bound to the AUTHENTICATED user, never the
+    # request body — a caller must not be able to attribute a quarantine
+    # decision to someone else on an append-only audit trail. The
+    # "isso@example.mil" posted above is a spoof attempt and must be ignored;
+    # with no authenticated request context the recorded actor is "dashboard".
+    assert auth["reviewed_by"] != "isso@example.mil", (
+        "body-supplied reviewed_by must not reach the audit row"
+    )
+    assert auth["reviewed_by"] == "dashboard"
 
 
 def test_api_reject_then_terminal_conflict(client, shared_conn):
