@@ -5035,9 +5035,10 @@ def create_app(testing: bool = False) -> Flask:
     @app.route("/evidence")
     def evidence_page():
         """Evidence Collection — universal evidence auto-collection across all frameworks (Phase 56, D347)."""
-        from tools.compliance.evidence_collector import FRAMEWORK_EVIDENCE_MAP, _get_connection, _table_exists
+        from tools.compliance.evidence_collector import FRAMEWORK_EVIDENCE_MAP, _get_connection, table_exists
 
         stats = {"total_frameworks": len(FRAMEWORK_EVIDENCE_MAP), "required_frameworks": 0, "frameworks": []}
+        degraded = False
         try:
             conn = _get_connection()
             for fw_id, fw_config in FRAMEWORK_EVIDENCE_MAP.items():
@@ -5045,7 +5046,7 @@ def create_app(testing: bool = False) -> Flask:
                     stats["required_frameworks"] += 1
                 total = 0
                 for table_name in fw_config["tables"]:
-                    if _table_exists(conn, table_name):
+                    if table_exists(conn, table_name):
                         row = conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()  # nosec B608 -- table/column names are internal constants, not user input
                         total += row[0]
                 stats["frameworks"].append(
@@ -5057,9 +5058,11 @@ def create_app(testing: bool = False) -> Flask:
                     }
                 )
             conn.close()
-        except Exception:
-            pass
-        return render_template("evidence.html", stats=stats)
+        except Exception as exc:
+            # nav-misc-05: surface an evidence DB outage instead of a silent empty page.
+            degraded = True
+            get_logger("icdev.dashboard").warning("evidence_page: DB read failed: %s", exc)
+        return render_template("evidence.html", stats=stats, degraded=degraded)
 
     @app.route("/lineage")
     def lineage_page():
