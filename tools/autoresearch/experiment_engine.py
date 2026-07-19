@@ -30,6 +30,7 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parent.parent.parent
 
 from tools.common.helpers import now_iso
+from tools.db.storage import sql_placeholder
 
 # Honesty flag: this engine does NOT apply real code modifications between the
 # pre- and post-metric measurements (that requires the Genesis reflex or manual
@@ -96,10 +97,11 @@ def _audit(event_type: str, action: str, details: dict = None, project_id: str =
     """Append to audit trail."""
     try:
         with _get_db() as conn:
+            ph = sql_placeholder(conn)
             conn.execute(
                 "INSERT INTO audit_trail (id, event_type, actor, action, "
                 "details, project_id, session_id, created_at) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                f"VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})",
                 (
                     f"at-{uuid.uuid4().hex[:12]}",
                     event_type,
@@ -157,11 +159,12 @@ def create_experiment(
 
     try:
         with _get_db() as conn:
+            ph = sql_placeholder(conn)
             conn.execute(
                 "INSERT INTO experiment_candidates "
                 "(id, domain, hypothesis, category, modifications, source, "
                 "signal_id, status, content_hash, created_at, updated_at) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                f"VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})",
                 (
                     exp_id,
                     domain,
@@ -205,8 +208,9 @@ def get_experiment(experiment_id: str) -> dict:
     """Get experiment by ID."""
     try:
         with _get_db() as conn:
+            ph = sql_placeholder(conn)
             row = conn.execute(
-                "SELECT * FROM experiment_candidates WHERE id = %s",
+                f"SELECT * FROM experiment_candidates WHERE id = {ph}",
                 (experiment_id,),
             ).fetchone()
             if row:
@@ -251,8 +255,9 @@ def run_experiment(
     # Update status to running
     try:
         with _get_db() as conn:
+            ph = sql_placeholder(conn)
             conn.execute(
-                "UPDATE experiment_candidates SET status = %s, updated_at = %s WHERE id = %s",
+                f"UPDATE experiment_candidates SET status = {ph}, updated_at = {ph} WHERE id = {ph}",
                 ("running", now_iso(), experiment_id),
             )
     except Exception:
@@ -307,8 +312,9 @@ def evaluate_experiment(experiment_id: str) -> dict:
     pre_metric = post_metric  # Placeholder — in real loop, pre-metric is cached
     try:
         with _get_db() as conn:
+            ph = sql_placeholder(conn)
             row = conn.execute(
-                "SELECT pre_metric FROM experiment_results WHERE experiment_id = %s ORDER BY created_at DESC LIMIT 1",
+                f"SELECT pre_metric FROM experiment_results WHERE experiment_id = {ph} ORDER BY created_at DESC LIMIT 1",
                 (experiment_id,),
             ).fetchone()
             if row:
@@ -405,13 +411,14 @@ def decide(
     result_id = _result_uuid()
     try:
         with _get_db() as conn:
+            ph = sql_placeholder(conn)
             conn.execute(
                 "INSERT INTO experiment_results "
                 "(id, experiment_id, domain, hypothesis, category, "
                 "pre_metric, post_metric, metric_delta, improvement_pct, "
                 "decision, decision_rationale, tests_passed, coherence_passed, "
                 "classification, created_at) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                f"VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})",
                 (
                     result_id,
                     experiment_id,
@@ -434,7 +441,7 @@ def decide(
             # Update candidate status
             new_status = "completed" if decision == "keep" else "discarded"
             conn.execute(
-                "UPDATE experiment_candidates SET status = %s, updated_at = %s WHERE id = %s",
+                f"UPDATE experiment_candidates SET status = {ph}, updated_at = {ph} WHERE id = {ph}",
                 (new_status, now, experiment_id),
             )
 
@@ -488,8 +495,9 @@ def decide(
 def _update_landscape(conn, domain: str, category: str, decision: str, metric_delta: float, now: str):
     """Update experiment landscape posterior (Thompson Sampling)."""
     try:
+        ph = sql_placeholder(conn)
         row = conn.execute(
-            "SELECT * FROM experiment_landscapes WHERE domain = %s AND category = %s",
+            f"SELECT * FROM experiment_landscapes WHERE domain = {ph} AND category = {ph}",
             (domain, category),
         ).fetchone()
 
@@ -512,11 +520,11 @@ def _update_landscape(conn, domain: str, category: str, decision: str, metric_de
                 discarded += 1
 
             conn.execute(
-                "UPDATE experiment_landscapes SET alpha = %s, beta_val = %s, "
-                "total_experiments = %s, total_kept = %s, total_discarded = %s, "
-                "best_improvement = %s, cumulative_improvement = %s, "
-                "last_experiment_at = %s, updated_at = %s "
-                "WHERE domain = %s AND category = %s",
+                f"UPDATE experiment_landscapes SET alpha = {ph}, beta_val = {ph}, "
+                f"total_experiments = {ph}, total_kept = {ph}, total_discarded = {ph}, "
+                f"best_improvement = {ph}, cumulative_improvement = {ph}, "
+                f"last_experiment_at = {ph}, updated_at = {ph} "
+                f"WHERE domain = {ph} AND category = {ph}",
                 (
                     alpha,
                     beta_val,
@@ -540,7 +548,7 @@ def _update_landscape(conn, domain: str, category: str, decision: str, metric_de
                 "(id, domain, category, alpha, beta_val, total_experiments, "
                 "total_kept, total_discarded, best_improvement, "
                 "cumulative_improvement, last_experiment_at, updated_at) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                f"VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})",
                 (
                     lid,
                     domain,
@@ -610,9 +618,10 @@ def run_loop(
     recent = []
     try:
         with _get_db() as conn:
+            ph = sql_placeholder(conn)
             rows = conn.execute(
                 "SELECT hypothesis, content_hash FROM experiment_candidates "
-                "WHERE domain = %s ORDER BY created_at DESC LIMIT 50",
+                f"WHERE domain = {ph} ORDER BY created_at DESC LIMIT 50",
                 (domain,),
             ).fetchall()
             recent = [dict(r) for r in rows]
@@ -672,11 +681,12 @@ def run_loop(
         # Store Bayesian score (append-only — D-AR-4)
         try:
             with _get_db() as conn:
+                ph = sql_placeholder(conn)
                 conn.execute(
                     "INSERT INTO bayesian_experiment_scores "
                     "(id, candidate_id, domain, info_gain_score, dimensions, "
                     "threshold_band, thompson_sample, scored_at) "
-                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                    f"VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})",
                     (
                         _score_uuid(),
                         exp_id,
