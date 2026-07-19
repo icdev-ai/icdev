@@ -274,7 +274,7 @@ def analyze_gate_failures(db_path=None, min_failures=None, days=None):
             "deployment_failed",
             "approval_denied",
         ]
-        ph = ",".join("?" * len(gate_evts))
+        ph = ",".join(["%s"] * len(gate_evts))
         rows = conn.execute(
             f"""SELECT event_type, project_id, COUNT(*) AS cnt,
                        MIN(created_at) AS first_f, MAX(created_at) AS last_f
@@ -374,8 +374,8 @@ def analyze_slow_pipelines(db_path=None, threshold_seconds=None):
         if not _table_exists(conn, "audit_trail"):
             return _skip(r, "audit_trail table not found")
         for stage, (starts, ends) in STAGE_EVENTS.items():
-            sph = ",".join("?" * len(starts))
-            eph = ",".join("?" * len(ends))
+            sph = ",".join(["%s"] * len(starts))
+            eph = ",".join(["%s"] * len(ends))
             try:
                 rows = conn.execute(
                     f"""SELECT s.project_id, s.event_type AS se, s.created_at AS st,

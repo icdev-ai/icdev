@@ -78,7 +78,7 @@ def verify_completeness(project_id: str, db_path: Path = None) -> dict:
     ]
 
     # Batch query — single round-trip instead of N+1 (PG optimization)
-    placeholders = ",".join(["?"] * len(required_events))
+    placeholders = ",".join(["%s"] * len(required_events))
     c.execute(
         f"SELECT event_type, COUNT(*) FROM audit_trail "  # nosec B608
         f"WHERE project_id = %s AND event_type IN ({placeholders}) "

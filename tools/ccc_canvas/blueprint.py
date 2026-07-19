@@ -187,7 +187,7 @@ def create_ccc_blueprint() -> Blueprint:
             }
             cols = ", ".join(fields.keys())
             try:
-                placeholders = ", ".join("?" * len(fields))
+                placeholders = ", ".join(["%s"] * len(fields))
                 conn.execute(f"INSERT INTO ccc_circuits ({cols}) VALUES ({placeholders})", tuple(fields.values()))
             except Exception:
                 placeholders = ", ".join("%s" * len(fields))
@@ -270,7 +270,7 @@ def create_ccc_blueprint() -> Blueprint:
             }
             cols = ", ".join(fields.keys())
             try:
-                placeholders = ", ".join("?" * len(fields))
+                placeholders = ", ".join(["%s"] * len(fields))
                 conn.execute(f"INSERT INTO ccc_cross_connects ({cols}) VALUES ({placeholders})", tuple(fields.values()))
             except Exception:
                 placeholders = ", ".join("%s" * len(fields))
@@ -468,7 +468,7 @@ def create_ccc_blueprint() -> Blueprint:
             }
             cols = ", ".join(fields.keys())
             try:
-                placeholders = ", ".join("?" * len(fields))
+                placeholders = ", ".join(["%s"] * len(fields))
                 conn.execute(f"INSERT INTO ccc_dwdm_spans ({cols}) VALUES ({placeholders})", tuple(fields.values()))
             except Exception:
                 placeholders = ", ".join("%s" * len(fields))

@@ -273,7 +273,7 @@ def auto_assign_waves(session_id: str) -> dict:
                 w["app_names"] = []
                 w["app_count"] = 0
                 continue
-            placeholders = ",".join("?" * len(wave_server_ids))
+            placeholders = ",".join(["%s"] * len(wave_server_ids))
             rows = conn.execute(
                 f"SELECT DISTINCT b.app_id, a.name FROM mc_app_server_bindings b"  # nosec B608
                 f" JOIN mc_app_inventory a ON a.id = b.app_id"

@@ -306,7 +306,7 @@ def _crud_list(conn, table, order_by="created_at DESC", limit=100):
 
 def _crud_create(conn, table, data):
     cols = ", ".join(data.keys())
-    placeholders = ", ".join(["?"] * len(data))
+    placeholders = ", ".join(["%s"] * len(data))
     conn.execute(f"INSERT INTO [{table}] ({cols}) VALUES ({placeholders})", list(data.values()))  # noqa: S608
     conn.commit()
     return data

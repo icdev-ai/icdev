@@ -170,7 +170,7 @@ def prune_stale(days=None, db_path=None):
     conn = get_connection()
     c = conn.cursor()
 
-    placeholders = ",".join("?" * len(prune_types))
+    placeholders = ",".join(["%s"] * len(prune_types))
     c.execute(
         f"""DELETE FROM memory_entries
            WHERE importance <= %s

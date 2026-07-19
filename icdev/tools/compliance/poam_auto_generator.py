@@ -131,7 +131,7 @@ def generate_poam_items(conn: Any) -> list[dict[str, Any]]:
     # _VIOLATION_STATUSES is a hardcoded frozenset — no user input ever flows here.
     # The IN-list is parameterized (? placeholders); bandit B608 is a false positive.
     statuses = list(_VIOLATION_STATUSES)
-    in_clause = ",".join("?" * len(statuses))
+    in_clause = ",".join(["%s"] * len(statuses))
     sql = f"SELECT snapshot_id, project_id, framework_id, control_id, status, evidence_ref, taken_at FROM compliance_snapshots WHERE status IN ({in_clause})"  # nosec B608 - placeholders only, no user input
     cursor = conn.execute(sql, statuses)
     cols = [d[0] for d in cursor.description]

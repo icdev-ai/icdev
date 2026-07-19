@@ -130,7 +130,7 @@ def _detail_of(row: Any) -> Dict[str, Any]:
 
 def _high_risk_signatures(conn: Any, assessment_id: int) -> Dict[str, Dict[str, Any]]:
     """Return ``{signature: finding-info}`` for the high-risk findings of one assessment."""
-    placeholders = ", ".join("?" * len(HIGH_RISK_FINDING_TYPES))
+    placeholders = ", ".join(["%s"] * len(HIGH_RISK_FINDING_TYPES))
     rows = conn.execute(
         f"SELECT finding_type, severity, file_path, line, detail "
         f"FROM integrity_findings "
@@ -178,7 +178,7 @@ def _card_title(info: Dict[str, Any]) -> str:
 
 
 def _open_card_exists(conn: Any, title: str) -> bool:
-    placeholders = ", ".join("?" * len(_OPEN_STATUSES))
+    placeholders = ", ".join(["%s"] * len(_OPEN_STATUSES))
     try:
         row = conn.execute(
             f"SELECT 1 FROM kanban_tasks WHERE title = %s AND status IN ({placeholders}) LIMIT 1",
