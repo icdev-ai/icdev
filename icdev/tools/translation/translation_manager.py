@@ -17,7 +17,10 @@ import json
 import time
 import uuid
 from tools.db.storage import get_connection
+from tools.logging.icdev_logger import get_logger
 from pathlib import Path
+
+logger = get_logger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
@@ -40,8 +43,8 @@ def _create_job(db_path, project_id, source_language, target_language, source_pa
         )
         conn.commit()
         conn.close()
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("translation _create_job persist failed for %s: %s", job_id, exc)
     return job_id
 
 
@@ -53,11 +56,16 @@ def _update_job_status(db_path, job_id, status, **kwargs):
         conn = get_connection(db_path=str(db_path))
         c = conn.cursor()
 
-        sets = ["status = ?"]
+        # Runtime SQL is authored for PostgreSQL (%s paramstyle); translate_sql
+        # rewrites %s -> ? for the SQLite init fallback. Mixing ? and %s in a
+        # single statement is invalid on PG (the ? placeholders raise), which
+        # previously left every status/metrics UPDATE swallowed and unpersisted
+        # on the primary backend. Keep the whole statement %s.
+        sets = ["status = %s"]
         values = [status]
         for key, value in kwargs.items():
             if value is not None:
-                sets.append(f"{key} = ?")
+                sets.append(f"{key} = %s")
                 values.append(value if not isinstance(value, (dict, list)) else json.dumps(value))
         values.append(job_id)
 
@@ -67,8 +75,8 @@ def _update_job_status(db_path, job_id, status, **kwargs):
         )
         conn.commit()
         conn.close()
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("translation _update_job_status(%s -> %s) failed: %s", job_id, status, exc)
 
 
 def run_pipeline(
@@ -269,10 +277,14 @@ def run_pipeline(
             mappings = load_mappings()
             imports = ir_data.get("imports", [])
             if imports:
-                resolutions = resolve_imports(src_lang, tgt_lang, imports, mappings)
+                # resolve_imports(import_list, source_lang, target_lang, mappings)
+                # — the import list is the FIRST arg. Passing languages first left
+                # _normalize_lang() calling .lower() on the imports list, raising
+                # AttributeError that was swallowed, so dep_mappings was always {}.
+                resolutions = resolve_imports(imports, src_lang, tgt_lang, mappings)
                 dep_mappings = {r["source_import"]: r for r in resolutions}
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("translation dependency resolution failed (%s->%s): %s", src_lang, tgt_lang, exc)
 
         # Load feature rules
         feature_rules = []

@@ -135,7 +135,13 @@ fetch('/api/charts/translations')
                               assembling: '#06b6d4', validating: '#14b8a6' }
                 });
             } else {
-                statusEl.innerHTML = '<pre>' + JSON.stringify(data.status_distribution, null, 2) + '</pre>';
+                // Fallback when the chart lib is absent. Use textContent — the
+                // language-pair / status keys are user-supplied (job source/target
+                // languages), so injecting them via innerHTML would be XSS.
+                statusEl.innerHTML = '';
+                var statusPre = document.createElement('pre');
+                statusPre.textContent = JSON.stringify(data.status_distribution, null, 2);
+                statusEl.appendChild(statusPre);
             }
         } else {
             statusEl.innerHTML = '<span class="text-muted">No data yet</span>';
@@ -148,7 +154,10 @@ fetch('/api/charts/translations')
                 pairsEl.innerHTML = '';
                 ICDEV.barChart(pairsEl, data.language_pair_frequency);
             } else {
-                pairsEl.innerHTML = '<pre>' + JSON.stringify(data.language_pair_frequency, null, 2) + '</pre>';
+                pairsEl.innerHTML = '';
+                var pairsPre = document.createElement('pre');
+                pairsPre.textContent = JSON.stringify(data.language_pair_frequency, null, 2);
+                pairsEl.appendChild(pairsPre);
             }
         } else {
             pairsEl.innerHTML = '<span class="text-muted">No data yet</span>';
