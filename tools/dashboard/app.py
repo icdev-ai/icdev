@@ -92,6 +92,19 @@ def _session_actor(default: str = "dashboard") -> str:
     return default
 
 
+def _current_user_id() -> "str | None":
+    """Return the authenticated user's id, or None for anonymous requests.
+
+    nav-misc-01: used to persist per-user preferences (e.g. the last-seen
+    release version) instead of relying on a per-browser cookie.
+    """
+    user = getattr(g, "current_user", None)
+    if isinstance(user, dict):
+        uid = user.get("id")
+        return str(uid) if uid else None
+    return None
+
+
 # nav-sec-06: editorial (state-changing) Pulse blog actions — approve / reject /
 # publish / unpublish / delete — are restricted to an approver/editor-class role.
 # A lowest-privilege ``developer`` must not be able to approve or publish
@@ -2248,13 +2261,22 @@ def create_app(testing: bool = False) -> Flask:
 
         theme_pref = flask_request.cookies.get("icdev_theme", "dark")
 
-        # ECR-CL-02: unseen-release badge — compare brand.version to cookie-stored last seen
+        # ECR-CL-02 / nav-misc-01: unseen-release badge. Logged-in users get a
+        # per-user last-seen version persisted in user_preferences (synced across
+        # devices, survives cookie clears); anonymous users fall back to the
+        # icdev_seen_version cookie.
         _unseen_release = False
         try:
             from tools.dashboard.brand import get_brand as _get_brand_ctx
             _bv = _get_brand_ctx().get("version", "")
-            _seen_ver = flask_request.cookies.get("icdev_seen_version", "")
-            _unseen_release = bool(_bv) and _seen_ver != _bv
+            if _bv:
+                _uid = _current_user_id()
+                if _uid:
+                    from tools.auth.onboarding import get_last_seen_version
+                    _seen_ver = get_last_seen_version(_uid) or ""
+                else:
+                    _seen_ver = flask_request.cookies.get("icdev_seen_version", "")
+                _unseen_release = _seen_ver != _bv
         except Exception:
             pass
 
@@ -2846,6 +2868,20 @@ def create_app(testing: bool = False) -> Flask:
 
         @app.route("/updates")
         def updates_page():
+            # nav-misc-01: record the current version as seen for logged-in users
+            # (server-side, so the badge clears in a fresh cookieless session and
+            # syncs across devices). Anonymous users rely on the cookie set by the
+            # PATCH endpoint fired from this page's JS.
+            try:
+                _uid = _current_user_id()
+                if _uid:
+                    from tools.dashboard.brand import get_brand as _gb_upd
+                    from tools.auth.onboarding import set_last_seen_version
+                    _uv = _gb_upd().get("version", "")
+                    if _uv:
+                        set_last_seen_version(_uid, _uv)
+            except Exception as _exc:
+                app.logger.warning("seen-version record on /updates failed: %s", _exc)
             _changelog_path = _os.path.join(_os.path.dirname(__file__), "..", "..", "CHANGELOG.md")
             try:
                 releases = _parse_changelog(_changelog_path)
@@ -2868,6 +2904,15 @@ def create_app(testing: bool = False) -> Flask:
         except Exception as _exc:
             app.logger.warning("seen-version PATCH failed: %s", _exc)
             return jsonify({"error": str(_exc)}), 500
+        # nav-misc-01: persist per-user when logged in; keep the cookie for
+        # anonymous visitors (and as a harmless redundant signal for users).
+        _uid = _current_user_id()
+        if _uid and _brand_ver:
+            try:
+                from tools.auth.onboarding import set_last_seen_version
+                set_last_seen_version(_uid, _brand_ver)
+            except Exception as _exc:
+                app.logger.warning("seen-version persist failed: %s", _exc)
         resp = jsonify({"ok": True, "seen_version": _brand_ver})
         resp.set_cookie("icdev_seen_version", _brand_ver, max_age=31536000, samesite="Lax")
         return resp
