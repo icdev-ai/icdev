@@ -69,12 +69,13 @@ the following regressions stay fixed:
 
 - **Traffic flows (Scenario 4):** a flow is created via the API in-scenario. This
   requires the `nc_traffic_flows` table to expose the `TrafficFlowEngine` column
-  names (`src_zone`, `dst_zone`, `app_type`). **Known drift caveat:** on a database
-  where `tools/network/db/init_db.py` created `nc_traffic_flows` with the columns
-  `source_zone` / `destination_zone` / `application_type`, `POST .../traffic-flows`
-  returns HTTP 500 (`column "src_zone" ... does not exist`) and Scenario 4's HTTP
-  path cannot run. The table must first be reconciled to the engine schema. See
-  the Scenario 4 note for the module-level fallback verification.
+  names (`src_zone`, `dst_zone`, `app_type`). **Drift FIXED (ndc-fix-04):**
+  `tools/network/db/init_db.py` now creates `nc_traffic_flows` with the engine's
+  column names, and migration `223_traffic_flow_zone_rename.sql` renames the legacy
+  `source_zone` / `destination_zone` / `application_type` columns on any pre-existing
+  PG table. The DDL, engine, and all readers (`traffic_flow.py`, `narrative_generator.py`,
+  `routes/twin_migration.py`, `routes/misc.py`) now agree, so `POST .../traffic-flows`
+  no longer 500s and the Scenario 4 HTTP path runs directly.
 
 > **Screenshot / outputDir lesson (repo rule):** save browser screenshots as
 > `playwright/screenshots/ndc-e2e-<n>-<slug>.png`. When driven by the native
@@ -187,16 +188,15 @@ runs the fail-closed evaluation.
     or the walkthrough result) as
     `playwright/screenshots/ndc-e2e-4-tfw-walkthrough.png`
 
-> **Known drift note (Scenario 4):** on databases where `nc_traffic_flows` was
-> created with the `source_zone` / `destination_zone` / `application_type` columns,
-> step 22 returns HTTP 500 (`column "src_zone" ... does not exist`) because
-> `TrafficFlowEngine` writes `src_zone` / `dst_zone` / `app_type`. When the HTTP
-> path is blocked by this drift, verify the deterministic-narrative contract at the
-> engine level instead: on a connection where `TrafficFlowEngine._ensure_tables`
-> owns the `nc_traffic_flows` schema, `narrative_generator.generate_all(flow_id,
-> conn, use_llm=False)` returns the same 7-persona narrative steps. Capture that
-> output as the Scenario 4 evidence and file the schema mismatch as a defect —
-> do NOT weaken this scenario to a vacuous check.
+> **Drift note (Scenario 4) — FIXED (ndc-fix-04):** the `nc_traffic_flows` schema
+> drift is resolved. `tools/network/db/init_db.py` now creates the table with the
+> engine's column names (`src_zone` / `dst_zone` / `app_type`), and migration
+> `223_traffic_flow_zone_rename.sql` renames the legacy
+> `source_zone` / `destination_zone` / `application_type` columns on any pre-existing
+> PG table. Step 22 (`POST .../traffic-flows`) therefore runs directly and must NOT
+> be substituted with an engine-level fallback. If step 22 still returns HTTP 500
+> with `column "src_zone" ... does not exist`, the migration has not been applied to
+> that database — run the NDC migrations before treating it as a regression.
 
 ## Scenario 5 — Demo runner persists a run into history (ndc-sql-02)
 

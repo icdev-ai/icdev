@@ -74,13 +74,15 @@ def register_misc_routes(bp):
             if topo_id and phase_ids:
                 placeholders = ",".join([_ph] * len(phase_ids))
                 flow_rows = conn.execute(
-                    f"SELECT id, name, source_zone, destination_zone, classification, phase_id "
+                    f"SELECT id, name, src_zone, dst_zone, classification, phase_id "
                     f"FROM nc_traffic_flows WHERE topology_id={_ph} AND phase_id IN ({placeholders})",
                     [topo_id] + phase_ids,
                 ).fetchall()
                 for r in flow_rows:
                     flows_by_phase.setdefault(r[5], []).append({
                         "id": r[0], "name": r[1],
+                        # response keys kept as source_zone/destination_zone for the
+                        # project_dashboard.html template contract; DB columns are src_zone/dst_zone.
                         "source_zone": r[2], "destination_zone": r[3],
                         "classification": r[4],
                     })
