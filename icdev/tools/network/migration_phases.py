@@ -712,11 +712,38 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def save_consolidation(topo_id: str, analysis: dict) -> None:
-    """Persist consolidation analysis to DB."""
+def _is_missing_relation(exc: Exception) -> bool:
+    """True when *exc* means the target table simply doesn't exist yet.
+
+    Distinguishes the benign early-boot "table not created yet" case (which the
+    best-effort consolidation cache tolerates) from a genuine failure such as a
+    missing UNIQUE constraint behind the ON CONFLICT clause, which MUST surface
+    (ndc-fix-03). Matches SQLite ("no such table") and PostgreSQL UndefinedTable
+    ("relation \"…\" does not exist", SQLSTATE 42P01).
+    """
+    msg = str(exc).lower()
+    if "no such table" in msg:  # sqlite
+        return True
+    if "relation" in msg and "does not exist" in msg:  # pg UndefinedTable
+        return True
+    return exc.__class__.__name__ == "UndefinedTable"
+
+
+def save_consolidation(topo_id: str, analysis: dict) -> str | None:
+    """Persist consolidation analysis to DB (upsert keyed on topo_id).
+
+    Returns the new row id on success, or None when the target table is not yet
+    created (benign — the cache is populated best-effort during early boot).
+
+    Raises on any genuine failure. In particular, the upsert relies on a UNIQUE
+    constraint on ``nc_consolidation_analysis.topo_id`` to back the
+    ``ON CONFLICT(topo_id)`` clause; if that constraint is missing the database
+    rejects the statement, and this surfaces the error instead of silently
+    no-op'ing (which previously masked a broken save behind a warning).
+    """
+    from tools.db.storage import get_connection
+    conn = get_connection()
     try:
-        from tools.db.storage import get_connection
-        conn = get_connection()
         aid = str(uuid.uuid4())
         conn.execute(
             """
@@ -755,9 +782,20 @@ def save_consolidation(topo_id: str, analysis: dict) -> None:
             ),
         )
         conn.commit()
+        return aid
+    except Exception as exc:
+        if _is_missing_relation(exc):
+            logger.warning(
+                "consolidation save skipped — nc_consolidation_analysis not ready",
+                exc_info=True,
+            )
+            return None
+        # Genuine failure (e.g. missing UNIQUE constraint behind ON CONFLICT,
+        # integrity violation). Surface it rather than silently discarding.
+        logger.error("consolidation save failed for topo_id=%s", topo_id, exc_info=True)
+        raise
+    finally:
         conn.close()
-    except Exception:
-        logger.warning("consolidation save skipped — DB not ready", exc_info=True)
 
 
 def load_consolidation(topo_id: str) -> dict:
