@@ -140,6 +140,15 @@ def get_stats():
             "system_card_count": _safe_count(conn, "system_cards", project_id),
             "confabulation_count": _safe_count(conn, "confabulation_checks", project_id),
             "transparency_score": None,
+            # nav-comp-06: the transparency score is an explicit heuristic, not a
+            # calibrated model. Label it as such in the payload so consumers never
+            # read it as an authoritative posture measurement.
+            "transparency_score_method": "heuristic",
+            "transparency_score_note": (
+                "Heuristic composite = 0.4 * framework coverage + 0.4 * artifact "
+                "presence + 0.2 * fairness. Not a calibrated risk model; absent "
+                "artifacts score 0 (no floor)."
+            ),
             "fairness_score": None,
             "telemetry_calls": 0,
             "telemetry_tokens": 0,
@@ -206,18 +215,22 @@ def get_stats():
                     pass
             if coverages:
                 framework_avg = round(sum(coverages) / len(coverages), 1)
-                # Transparency = 0.4 * framework + 0.4 * artifact + 0.2 * fairness
-                artifact_score = (
-                    100.0
-                    if all(
-                        [
-                            stats["inventory_count"] > 0,
-                            stats["model_card_count"] > 0,
-                            stats["system_card_count"] > 0,
-                            stats["confabulation_count"] > 0,
-                        ]
-                    )
-                    else 50.0
+                # Heuristic: transparency = 0.4 framework + 0.4 artifact + 0.2 fairness.
+                # nav-comp-06: artifact presence is scored proportionally — each of
+                # the four artifact types contributes an equal share and absent
+                # artifacts score 0. The old code applied an artificial 50/100 floor
+                # (any incomplete set still scored 50), which manufactured posture
+                # for systems with no transparency artifacts at all.
+                artifact_present = [
+                    stats["inventory_count"] > 0,
+                    stats["model_card_count"] > 0,
+                    stats["system_card_count"] > 0,
+                    stats["confabulation_count"] > 0,
+                ]
+                artifact_score = round(
+                    sum(1 for present in artifact_present if present)
+                    / len(artifact_present) * 100,
+                    1,
                 )
                 fairness = stats["fairness_score"] or 0
                 stats["transparency_score"] = round(0.4 * framework_avg + 0.4 * artifact_score + 0.2 * fairness, 1)

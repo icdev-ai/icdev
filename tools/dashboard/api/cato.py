@@ -120,7 +120,13 @@ def cato_health():
                 control_score = (implemented / total) * 100
 
         # --- POAM resolution score (% closed) ---
-        poam_score = 100.0  # perfect if no POAMs
+        # nav-comp-06: absent POAM data is "not assessed", NOT a perfect 100. A
+        # 100.0 default silently inflated overall health at 25% weight, making a
+        # system with no POAM tracking at all look healthier than one that tracks
+        # and has open items. Exclude an unassessed POAM from the weighted
+        # composite and re-normalize the remaining weights.
+        poam_score = 0.0
+        poam_assessed = False
         if _table_exists(conn, "poam_items"):
             where = " WHERE project_id = ?" if project_id else ""
             params = (project_id,) if project_id else ()
@@ -138,6 +144,7 @@ def cato_health():
                     params,
                 )
                 poam_score = (closed / total) * 100
+                poam_assessed = True
 
         # --- Certification status score ---
         cert_score = 0.0
@@ -159,9 +166,18 @@ def cato_health():
                 )
                 cert_score = (certified / total) * 100
 
-        # Weighted overall score
-        overall = evidence_score * 0.30 + control_score * 0.30 + poam_score * 0.25 + cert_score * 0.15
-        overall = round(overall, 1)
+        # Weighted composite over ASSESSED components only, with weights
+        # re-normalized so an unassessed component neither inflates nor deflates
+        # the score (nav-comp-06). POAM is excluded when its data is absent.
+        parts = [
+            (0.30, evidence_score),
+            (0.30, control_score),
+            (0.15, cert_score),
+        ]
+        if poam_assessed:
+            parts.append((0.25, poam_score))
+        weight_sum = sum(w for w, _ in parts)
+        overall = round(sum(w * s for w, s in parts) / weight_sum, 1) if weight_sum else 0.0
 
         if overall >= 80:
             category = "green"
@@ -177,9 +193,12 @@ def cato_health():
                 "components": {
                     "evidence_freshness": round(evidence_score, 1),
                     "control_implementation": round(control_score, 1),
-                    "poam_resolution": round(poam_score, 1),
+                    "poam_resolution": round(poam_score, 1) if poam_assessed else None,
                     "certification_status": round(cert_score, 1),
                 },
+                # Explicit assessment status so consumers can see that an absent
+                # POAM is excluded from health, not scored as perfect.
+                "poam": "assessed" if poam_assessed else "not_assessed",
             }
         )
     except Exception as exc:
