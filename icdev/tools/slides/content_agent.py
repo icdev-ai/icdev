@@ -25,6 +25,7 @@ from typing import Any
 from tools.slides.constants import (
     LLM_FN_CONTENT, LLM_FN_REVISION, LLM_FN_MERMAID, LLM_FN_THREE, LLM_FN_EXCALIDRAW,
     LLM_FN_TABLE, TONE_STYLE_HINTS,
+    PROVENANCE_LLM, PROVENANCE_FALLBACK, PROVENANCE_STRUCTURAL,
 )
 
 _ICDEV_ROOT = Path(__file__).resolve().parents[3]
@@ -199,8 +200,10 @@ def _generate_mermaid_slide(title: str, raw_content: dict[str, Any], tone: str) 
     except Exception:
         pass
 
+    provenance = PROVENANCE_LLM
     if not mermaid_code:
         mermaid_code = f"flowchart LR\n    A[{title[:20]}] --> B[Process] --> C[Result]"
+        provenance = PROVENANCE_FALLBACK
 
     return {
         "title": title,
@@ -212,6 +215,7 @@ def _generate_mermaid_slide(title: str, raw_content: dict[str, Any], tone: str) 
         "mermaid_code": mermaid_code,
         "three_scene_config": None,
         "excalidraw_elements": None,
+        "provenance": provenance,
     }
 
 
@@ -251,7 +255,9 @@ def _generate_three_scene_slide(
     except Exception:
         pass
 
+    provenance = PROVENANCE_LLM
     if not scene_config:
+        provenance = PROVENANCE_FALLBACK
         scene_config = {
             "background": "#0a1628",
             "camera": {"type": "perspective", "fov": 60, "position": [0, 4, 18]},
@@ -282,6 +288,7 @@ def _generate_three_scene_slide(
         "mermaid_code": None,
         "three_scene_config": scene_config,
         "excalidraw_elements": None,
+        "provenance": provenance,
     }
 
 
@@ -319,7 +326,9 @@ def _generate_excalidraw_slide(title: str, raw_content: dict[str, Any], tone: st
     except Exception:
         pass
 
+    provenance = PROVENANCE_LLM
     if not elements:
+        provenance = PROVENANCE_FALLBACK
         label = title[:20]
         elements = [
             {"type": "rectangle", "x": 80, "y": 120, "width": 180, "height": 70,
@@ -347,6 +356,7 @@ def _generate_excalidraw_slide(title: str, raw_content: dict[str, Any], tone: st
         "mermaid_code": None,
         "three_scene_config": None,
         "excalidraw_elements": elements,
+        "provenance": provenance,
     }
 
 
@@ -398,7 +408,9 @@ def _generate_table_slide(title: str, raw_content: dict[str, Any], tone: str) ->
     except Exception:
         pass
 
+    provenance = PROVENANCE_LLM
     if not table_data:
+        provenance = PROVENANCE_FALLBACK
         table_data = {
             "headers": ["Item", "Value", "Notes"],
             "rows": [[title[:30], "—", "See speaker notes"]],
@@ -415,6 +427,7 @@ def _generate_table_slide(title: str, raw_content: dict[str, Any], tone: str) ->
         "mermaid_code": None,
         "three_scene_config": None,
         "excalidraw_elements": None,
+        "provenance": provenance,
     }
 
 
@@ -452,6 +465,8 @@ def _generate_one(
             "visual_context": f"Bold {tone_hint['visual']} title slide with strong typography",
             "slide_type": "title",
             "citations": [],
+            # Title slides are intentionally templated, not a degradation.
+            "provenance": PROVENANCE_STRUCTURAL,
         }
     if is_outro:
         return {
@@ -465,6 +480,8 @@ def _generate_one(
             "visual_context": f"{tone_hint['visual'].capitalize()} closing slide with call-to-action",
             "slide_type": "outro",
             "citations": [],
+            # Outro slides are intentionally templated, not a degradation.
+            "provenance": PROVENANCE_STRUCTURAL,
         }
 
     # Build context excerpt for the LLM
@@ -518,12 +535,16 @@ def _generate_one(
                 for i in citation_indices
                 if isinstance(i, int) and 1 <= i <= len(research_sources)
             ]
+        # Real model output (even if parsed via heuristic) is genuine content.
+        parsed["provenance"] = PROVENANCE_LLM
         return parsed
     except Exception:
         pass
 
-    # Static fallback
-    return _parse_slide("", title)
+    # Static fallback — the LLM was unavailable, so this content is canned.
+    fallback = _parse_slide("", title)
+    fallback["provenance"] = PROVENANCE_FALLBACK
+    return fallback
 
 
 def _generate_one_with_lang(
@@ -587,7 +608,9 @@ def generate_all(
                 results[idx] = future.result()
             except Exception:
                 title = outline[idx]
-                results[idx] = _parse_slide("", title)
+                fallback = _parse_slide("", title)
+                fallback["provenance"] = PROVENANCE_FALLBACK
+                results[idx] = fallback
 
     return [r for r in results if r is not None]
 

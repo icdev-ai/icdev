@@ -91,6 +91,8 @@
                     <div style="flex-shrink:0;">
                         {% if deck.status == 'completed' or deck.status == 'auto' %}
                         <span style="display:inline-block; width:8px; height:8px; background:#51cf66; border-radius:50%; box-shadow:0 0 4px #51cf66;"></span>
+                        {% elif deck.status in ('degraded', 'template') %}
+                        <span title="{{ 'Template — canned outline, LLM unavailable' if deck.status == 'template' else 'Degraded — partial fallback content' }}" style="display:inline-block; width:8px; height:8px; background:#D4A017; border-radius:50%; box-shadow:0 0 4px #D4A017;"></span>
                         {% elif deck.status in ('running', 'gathering', 'planning', 'generating', 'graphics', 'building') %}
                         <span style="display:inline-block; width:8px; height:8px; background:#F59E0B; border-radius:50%; animation:pulse 1.5s infinite;" title="{{ deck.status | title }}"></span>
                         {% elif deck.status == 'failed' %}
@@ -125,7 +127,7 @@
             <!-- Card actions -->
             <div style="padding:10px 16px 14px; display:flex; gap:6px; flex-wrap:wrap; border-top:1px solid var(--border-color);">
                 <a href="/slides/{{ deck.deck_id }}" class="btn btn-sm btn-secondary" style="flex:1; text-align:center;">View</a>
-                {% if deck.status in ('completed', 'auto') %}
+                {% if deck.status in ('completed', 'auto', 'degraded', 'template') %}
                 <a href="/slides/{{ deck.deck_id }}/present" class="btn btn-sm" style="flex:1; text-align:center; background:{{ theme_accent }}; color:#000; font-weight:700;">▶ Present</a>
                 <a href="/slides/api/{{ deck.deck_id }}/download" class="btn btn-sm btn-secondary" title="Download PPTX">↓</a>
                 {% endif %}
