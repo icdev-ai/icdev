@@ -382,6 +382,8 @@ known_safe_dynamic_import_modules:
   - compliance/oscal_tools.py
   - tools/cortex/analyst.py  # registry-driven loader: _import_adapter() uses importlib.import_module(module) where module comes from get_registry().get_iqe_mapping() (args/component_registry.yaml — trusted FORGE config, not user input, network data, or decoded bytes) to load IQE adapter modules so they register their collections. Same pattern as component_registry.py / foundry/engine.py. Authorized by REQ-CORTEX-ANALYST-DYNAMIC-IMPORT-01 (assessment-145 review, 2026-07-11).
   - cortex/analyst.py
+  - tools/canvas_compliance/posture.py  # _open_canvas_connection(): importlib.import_module(mod_name) where mod_name comes only from _CANVAS_MODULES, a hardcoded literal dict of 11 first-party canvas init_db module paths. canvas_name is used as a dict KEY via .get(), so even an attacker-controlled canvas_name can only ever resolve to one of those literals — never to an arbitrary module. Authorized by REQ-CANVAS-COMPLIANCE-DYNAMIC-IMPORT-01 (assessment-162 review, 2026-07-19).
+  - canvas_compliance/posture.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
   - tools/creative/creative_engine.py  # optional-library probe: importlib.import_module inside try/except for optional creative-engine provider libraries (pillow, moviepy, etc.). Module names are string literals. Authorized by REQ-CREATIVE-ENGINE-DYNAMIC-IMPORT-01.
   - creative/creative_engine.py
   - tools/dashboard/app.py  # optional-library probe: importlib.import_module inside try/except at app startup to detect available optional dashboard feature libraries. Module names are string literals. Authorized by REQ-DASHBOARD-APP-DYNAMIC-IMPORT-01.

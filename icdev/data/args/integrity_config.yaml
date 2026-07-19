@@ -380,6 +380,8 @@ known_safe_dynamic_import_modules:
   - compliance/multi_regime_assessor.py
   - tools/compliance/oscal_tools.py  # optional-library probe: importlib.import_module inside try/except to detect available OSCAL parsing libraries (e.g. oscal_pydantic, paramiko). Module names are string literals. Authorized by REQ-COMPLIANCE-OSCAL-DYNAMIC-IMPORT-01.
   - compliance/oscal_tools.py
+  - tools/canvas_compliance/posture.py  # _open_canvas_connection(): importlib.import_module(mod_name) where mod_name comes only from _CANVAS_MODULES, a hardcoded literal dict of 11 first-party canvas init_db module paths. canvas_name is used as a dict KEY via .get(), so even an attacker-controlled canvas_name can only ever resolve to one of those literals — never to an arbitrary module. Authorized by REQ-CANVAS-COMPLIANCE-DYNAMIC-IMPORT-01 (assessment-162 review, 2026-07-19).
+  - canvas_compliance/posture.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
   - tools/creative/creative_engine.py  # optional-library probe: importlib.import_module inside try/except for optional creative-engine provider libraries (pillow, moviepy, etc.). Module names are string literals. Authorized by REQ-CREATIVE-ENGINE-DYNAMIC-IMPORT-01.
   - creative/creative_engine.py
   - tools/dashboard/app.py  # optional-library probe: importlib.import_module inside try/except at app startup to detect available optional dashboard feature libraries. Module names are string literals. Authorized by REQ-DASHBOARD-APP-DYNAMIC-IMPORT-01.
