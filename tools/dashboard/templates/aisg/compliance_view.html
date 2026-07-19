@@ -5,25 +5,37 @@
 {% block content %}
 <div class="page-header">
     <h1>Compliance Dashboard</h1>
-    <p class="page-subtitle">ATO status, NIST 800-53 control families, and POAM tracking — {{ impact_level }}.</p>
+    <p class="page-subtitle">ATO status, NIST 800-53 control families, and POAM tracking{% if impact_level %} — {{ impact_level }}{% endif %}.</p>
 </div>
+
+{% if data_source_error %}
+<div class="empty-state" style="border-color:var(--warning,#f59e0b);margin-bottom:16px;">
+    Live compliance data unavailable — connect the compliance engine. No sample posture is shown.
+</div>
+{% endif %}
 
 <!-- ATO Status Banner -->
 <div class="ato-banner" id="ato-status-banner">
     <div class="ato-banner-left">
-        <span class="ato-dot green"></span>
+        <span class="ato-dot {{ 'green' if ato_registered else 'gray' }}"></span>
         <div>
             <div class="ato-label">ATO Status</div>
-            <div class="ato-value">{{ ato_status }} — {{ impact_level }}</div>
+            <div class="ato-value">
+                {% if ato_registered %}{{ ato_status }}{% if impact_level %} — {{ impact_level }}{% endif %}
+                {% else %}No ATO registered{% endif %}
+            </div>
         </div>
     </div>
     <div class="ato-banner-center">
         <div class="ato-label">Compliance Score</div>
-        <div class="ato-value">{{ compliance_pct }}% <span style="font-size:0.85rem;color:var(--text-dim);">({{ total_implemented }}/{{ total_controls }} controls)</span></div>
+        <div class="ato-value">
+            {% if compliance_pct is not none %}{{ compliance_pct }}% <span style="font-size:0.85rem;color:var(--text-dim);">({{ total_implemented }}/{{ total_controls }} controls)</span>
+            {% else %}<span style="color:var(--text-dim);">No control data</span>{% endif %}
+        </div>
     </div>
     <div class="ato-banner-right">
         <div class="ato-label">ATO Expiry</div>
-        <div class="ato-value">{{ ato_expiry }}</div>
+        <div class="ato-value">{{ ato_expiry if ato_expiry else '—' }}</div>
     </div>
     <div class="ato-banner-actions">
         <a href="/dashboard/executive-view" class="btn btn-sm">Executive View</a>
@@ -69,6 +81,7 @@
         </thead>
         <tbody>
             {% for s in ato_sections %}
+            {% set coverage = (s.implemented / s.controls * 100)|round(0)|int if s.controls else 0 %}
             <tr>
                 <td>{{ s.name }}</td>
                 <td>{{ s.controls }}</td>
@@ -76,18 +89,22 @@
                 <td>
                     <div class="progress-bar-wrap">
                         <div class="progress-bar-fill {{ 'green' if s.status == 'green' else 'yellow' }}"
-                             style="width:{{ (s.implemented / s.controls * 100)|round(0)|int }}%"></div>
+                             style="width:{{ coverage }}%"></div>
                     </div>
-                    {{ (s.implemented / s.controls * 100)|round(0)|int }}%
+                    {{ coverage }}%
                 </td>
                 <td>
                     {% if s.status == 'green' %}
                     <span class="badge badge-success">Compliant</span>
-                    {% else %}
+                    {% elif s.status == 'yellow' %}
                     <span class="badge badge-warning">Partial</span>
+                    {% else %}
+                    <span class="badge">Not Started</span>
                     {% endif %}
                 </td>
             </tr>
+            {% else %}
+            <tr><td colspan="5" class="empty-cell">No data — connect compliance engine to populate control families.</td></tr>
             {% endfor %}
         </tbody>
     </table>
@@ -126,6 +143,8 @@
                     {% endif %}
                 </td>
             </tr>
+            {% else %}
+            <tr><td colspan="5" class="empty-cell">No POA&amp;M items — connect compliance engine to track weaknesses.</td></tr>
             {% endfor %}
         </tbody>
     </table>
@@ -147,6 +166,9 @@
 }
 .ato-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; margin-right: 8px; }
 .ato-dot.green { background: var(--success, #10b981); box-shadow: 0 0 8px var(--success, #10b981); }
+.ato-dot.gray { background: var(--text-dim, #64748b); }
+.empty-state { padding: 20px; text-align: center; color: var(--text-dim); font-size: 0.86rem; background: var(--bg-elevated, rgba(255,255,255,0.03)); border: 1px dashed var(--border); border-radius: 8px; }
+.empty-cell { padding: 24px 12px; text-align: center; color: var(--text-dim); font-size: 0.86rem; }
 .ato-banner-left { display: flex; align-items: center; }
 .ato-banner-actions { margin-left: auto; display: flex; gap: 8px; }
 .ato-label { font-size: 0.78rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; }
