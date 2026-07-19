@@ -9306,10 +9306,36 @@ def create_app(testing: bool = False) -> Flask:
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
 
+    def _audit_gkp_mutation(event_type, action, gkp_id, app_key, extra=None):
+        """Append a GKP promote/reject decision to the append-only audit_trail.
+
+        Best-effort (mirrors api_genesis_run_reflex): a missing/locked audit
+        table must never break the mutation itself. The acting user is the
+        resolved session user (g.current_user), never a request-body field.
+        """
+        try:
+            user = getattr(g, "current_user", None)
+            actor = (user.get("id") if isinstance(user, dict) else None) or "unknown"
+            details = {"app": app_key, "gkp_id": gkp_id, "actor": actor}
+            if extra:
+                details.update(extra)
+            conn = _get_db()
+            conn.execute(
+                "INSERT INTO audit_trail (event_type, action, details, created_at) "
+                "VALUES (%s, %s, %s, datetime('now'))",
+                (event_type, action, json.dumps(details)),
+            )
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass
+
     @app.route("/api/genesis/gkps/<gkp_id>/promote", methods=["POST"])
+    @require_role("admin", "pm")
     def api_genesis_promote_gkp(gkp_id):
-        """Promote a GKP to v1.x."""
+        """Promote a GKP to v1.x. State-changing — admin/pm only (nav-plat-05)."""
         app_key = flask_request.args.get("app", "icdev")
+        _audit_gkp_mutation("approval_granted", f"genesis_gkp_promote:{gkp_id}", gkp_id, app_key)
         cfg = _genesis_app(app_key)
         if not cfg.get("promoter"):
             # Manual DB update for apps without a promoter
@@ -9347,12 +9373,16 @@ def create_app(testing: bool = False) -> Flask:
             return jsonify({"error": str(exc)}), 500
 
     @app.route("/api/genesis/gkps/<gkp_id>/reject", methods=["POST"])
+    @require_role("admin", "pm")
     def api_genesis_reject_gkp(gkp_id):
-        """Reject a GKP."""
+        """Reject a GKP. State-changing — admin/pm only (nav-plat-05)."""
         app_key = flask_request.args.get("app", "icdev")
         cfg = _genesis_app(app_key)
         data = flask_request.get_json(silent=True) or {}
         reason = data.get("reason", "Rejected via dashboard")
+        _audit_gkp_mutation(
+            "approval_denied", f"genesis_gkp_reject:{gkp_id}", gkp_id, app_key, {"reason": reason}
+        )
         if not cfg.get("promoter"):
             try:
                 conn = _genesis_db(app_key)
@@ -9385,9 +9415,11 @@ def create_app(testing: bool = False) -> Flask:
             return jsonify({"error": str(exc)}), 500
 
     @app.route("/api/genesis/gkps/auto-promote", methods=["POST"])
+    @require_role("admin", "pm")
     def api_genesis_auto_promote():
-        """Auto-promote all eligible GKPs."""
+        """Auto-promote all eligible GKPs. State-changing — admin/pm only (nav-plat-05)."""
         app_key = flask_request.args.get("app", "icdev")
+        _audit_gkp_mutation("approval_granted", "genesis_gkp_auto_promote", "*", app_key)
         cfg = _genesis_app(app_key)
         if not cfg.get("promoter"):
             # DB fallback: check for pending GKPs directly
