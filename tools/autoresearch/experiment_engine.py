@@ -31,6 +31,19 @@ _ROOT = Path(__file__).resolve().parent.parent.parent
 
 from tools.common.helpers import now_iso
 
+# Honesty flag: this engine does NOT apply real code modifications between the
+# pre- and post-metric measurements (that requires the Genesis reflex or manual
+# invocation). As a result pre/post metrics are measured against an *identity*
+# baseline and the resulting deltas are placeholder/heuristic, not the product
+# of a real experiment evaluation. Every payload that exposes these metrics
+# carries these flags so downstream callers and the UI never mistake them for
+# real experiment results.
+_PLACEHOLDER_METRICS_NOTE = (
+    "Metrics are measured against an identity baseline — the engine does not "
+    "apply real code modifications between pre/post measurement, so deltas are "
+    "placeholder/heuristic, not real experiment evaluations."
+)
+
 
 def _uuid() -> str:
     return f"exp-{uuid.uuid4().hex[:12]}"
@@ -269,6 +282,9 @@ def run_experiment(
         "status": "running",
         "pre_metric": pre_metric,
         "time_budget_seconds": time_budget_seconds,
+        "placeholder_metrics": True,
+        "heuristic": True,
+        "placeholder_note": _PLACEHOLDER_METRICS_NOTE,
     }
 
 
@@ -323,6 +339,9 @@ def evaluate_experiment(experiment_id: str) -> dict:
         "improvement_pct": round(improvement_pct, 2),
         "meets_threshold": meets_threshold,
         "keep_threshold": keep_threshold,
+        "placeholder_metrics": True,
+        "heuristic": True,
+        "placeholder_note": _PLACEHOLDER_METRICS_NOTE,
     }
 
 
@@ -460,6 +479,9 @@ def decide(
         "post_metric": round(post_metric, 6),
         "metric_delta": round(metric_delta, 6),
         "improvement_pct": round(improvement_pct, 2),
+        "placeholder_metrics": True,
+        "heuristic": True,
+        "placeholder_note": _PLACEHOLDER_METRICS_NOTE,
     }
 
 
@@ -741,6 +763,9 @@ def run_loop(
         "baseline_metric": round(baseline_metric, 6),
         "results": results,
         "circuit_breaker_tripped": consecutive_failures >= max_failures,
+        "placeholder_metrics": True,
+        "heuristic": True,
+        "placeholder_note": _PLACEHOLDER_METRICS_NOTE,
         "timestamp": now_iso(),
     }
 
@@ -778,6 +803,9 @@ def get_status() -> dict:
                 "acceptance_rate": round(kept_count / max(total_count, 1), 4),
                 "domains": [dict(d) for d in domains],
                 "landscapes": [dict(row) for row in landscapes],
+                "placeholder_metrics": True,
+                "heuristic": True,
+                "placeholder_note": _PLACEHOLDER_METRICS_NOTE,
                 "timestamp": now_iso(),
             }
     except Exception as exc:

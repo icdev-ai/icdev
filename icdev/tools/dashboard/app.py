@@ -9880,6 +9880,12 @@ def create_app(testing: bool = False) -> Flask:
 
     # ── Bayesian Autoresearch Dashboard (Phase 67) ────────────────────────────
 
+    _AUTORESEARCH_PLACEHOLDER_NOTE = (
+        "Experiment metrics are measured against an identity baseline — the engine "
+        "does not apply real code modifications between pre/post measurement, so "
+        "deltas are placeholder/heuristic, not real experiment evaluations."
+    )
+
     @app.route("/autoresearch")
     def autoresearch_page():
         """Bayesian Autoresearch — autonomous experiment dashboard."""
@@ -9906,6 +9912,9 @@ def create_app(testing: bool = False) -> Flask:
                     "acceptance_rate": round(kept_count / max(total_count, 1) * 100, 1),
                     "active_domains": len(domains) if domains else 0,
                     "best_improvement": round(best["best"] or 0, 2) if best else 0,
+                    "placeholder_metrics": True,
+                    "heuristic": True,
+                    "placeholder_note": _AUTORESEARCH_PLACEHOLDER_NOTE,
                 }
             )
         except Exception:
@@ -9915,6 +9924,9 @@ def create_app(testing: bool = False) -> Flask:
                     "acceptance_rate": 0,
                     "active_domains": 0,
                     "best_improvement": 0,
+                    "placeholder_metrics": True,
+                    "heuristic": True,
+                    "placeholder_note": _AUTORESEARCH_PLACEHOLDER_NOTE,
                 }
             )
 
@@ -9925,9 +9937,19 @@ def create_app(testing: bool = False) -> Flask:
             conn = get_connection(db_path=str(DB_PATH))
             rows = conn.execute("SELECT * FROM experiment_results ORDER BY created_at DESC LIMIT 100").fetchall()
             conn.close()
-            return jsonify({"experiments": [dict(r) for r in rows]})
+            return jsonify({
+                "experiments": [dict(r) for r in rows],
+                "placeholder_metrics": True,
+                "heuristic": True,
+                "placeholder_note": _AUTORESEARCH_PLACEHOLDER_NOTE,
+            })
         except Exception:
-            return jsonify({"experiments": []})
+            return jsonify({
+                "experiments": [],
+                "placeholder_metrics": True,
+                "heuristic": True,
+                "placeholder_note": _AUTORESEARCH_PLACEHOLDER_NOTE,
+            })
 
     # ================================================================
     # Chat: /analyze command — URL fetch + LLM analysis

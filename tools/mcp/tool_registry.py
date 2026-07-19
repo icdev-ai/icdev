@@ -7480,11 +7480,11 @@ RESOURCE_REGISTRY = {
         "category": "ontology",
         "module": "tools.mcp.ontology_server",
         "handler": "handle_ontology_query",
-        "description": "Query the unified ontology graph with a SPARQL-like natural language query.",
+        "description": "Keyword/pattern search over the unified ontology graph. Heuristic term matching over a small set of hard-coded query shapes — NOT a SPARQL evaluator.",
         "input_schema": {
             "type": "object",
             "properties": {
-                "query": {"type": "string", "description": "Natural language SPARQL-like query"},
+                "query": {"type": "string", "description": "Natural-language query (keyword/pattern matched, not SPARQL)"},
                 "db_path": {"type": "string", "description": "Optional path to ICDEV database"},
             },
             "required": ["query"],
