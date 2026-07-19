@@ -719,6 +719,10 @@ def post_processing(
                 progress_callback("publish")
             except Exception:
                 pass
+        # The "publish" stage only exports artifacts — the post stays 'draft'.
+        # Going live (status='published' / WordPress push) happens through the
+        # publish endpoint or the publishers, which are hard-gated on the LLM
+        # judge verdict (tools/pulse/publish_gate.py, nav-intel-09).
         exports = export_both(post_id)
         if mark_used:
             mark_cluster_used(cluster.get("id", ""))

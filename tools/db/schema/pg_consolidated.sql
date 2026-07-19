@@ -63883,3 +63883,28 @@ CREATE INDEX IF NOT EXISTS idx_idr_publish_audit_session ON public.idr_publish_a
 -- ============================================================================
 -- END ICDEV ADDITIVE SECTION (IDR / DocGen core schema)
 -- ============================================================================
+
+-- ============================================================================
+-- Pulse publish-gate override audit — parity with
+-- tools/db/migrations/281_pulse_publish_audit.sql (nav-intel-09).
+-- APPEND-ONLY: one row per HITL force-override of the LLM-judge publish gate.
+-- PG-NATIVE dialect: applied RAW by tools/db/bootstrap_pg.py under
+-- search_path=''. Schema-qualified public.; all statements idempotent.
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS public.pulse_publish_audit (
+    id            TEXT PRIMARY KEY,
+    post_id       TEXT NOT NULL,
+    action        TEXT NOT NULL DEFAULT 'force_publish',
+    actor         TEXT,
+    reason        TEXT,
+    judge_verdict TEXT,
+    source        TEXT,
+    created_at    TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_pulse_publish_audit_post ON public.pulse_publish_audit(post_id);
+
+-- ============================================================================
+-- END ICDEV ADDITIVE SECTION (Pulse publish-gate audit)
+-- ============================================================================

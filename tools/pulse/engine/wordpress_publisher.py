@@ -313,11 +313,21 @@ def _pulse_to_wp(post: dict, status: str = "publish") -> dict:
 # ---------------------------------------------------------------------------
 
 
-def publish_post(post_id: str, as_draft: bool = False) -> dict:
-    """Publish a single Pulse post to WordPress."""
-    if not WP_PASSWORD:
-        return {"status": "error", "message": "WP_PASSWORD not set in .env"}
+def publish_post(
+    post_id: str,
+    as_draft: bool = False,
+    force: bool = False,
+    force_reason: str = "",
+    actor: str = "",
+    audited: bool = False,
+) -> dict:
+    """Publish a single Pulse post to WordPress.
 
+    nav-intel-09: publishing live (not as_draft) is hard-gated on the LLM judge
+    verdict — RED or judge-not-run blocks (fail closed). ``force`` requires a
+    ``force_reason`` and writes a pulse_publish_audit row, unless the caller
+    already audited the override (``audited=True``, dashboard API path).
+    """
     # 1. Fetch post from Pulse DB
     post = get_row("pulse_posts", post_id)
     if not post:
@@ -328,6 +338,37 @@ def publish_post(post_id: str, as_draft: bool = False) -> dict:
             "status": "error",
             "message": f"Post status is '{post.get('status')}' — must be 'approved' or 'published'.",
         }
+
+    # 1b. LLM judge publish gate (before any WP config/credential checks so a
+    #     RED post is blocked on every path, including scheduled batch runs).
+    if not as_draft:
+        from tools.pulse.publish_gate import check_publish_gate, log_publish_override
+
+        gate = check_publish_gate(post_id)
+        if not gate["cleared"]:
+            if not force:
+                return {
+                    "status": "blocked",
+                    "post_id": post_id,
+                    "judge_verdict": gate["verdict"],
+                    "message": gate["reason"],
+                }
+            if not audited:
+                if not force_reason.strip():
+                    return {
+                        "status": "error",
+                        "message": "force requires force_reason (audited HITL override)",
+                    }
+                log_publish_override(
+                    post_id,
+                    actor=actor or "cli",
+                    reason=force_reason.strip(),
+                    verdict=gate["verdict"],
+                    source="wordpress_publisher",
+                )
+
+    if not WP_PASSWORD:
+        return {"status": "error", "message": "WP_PASSWORD not set in .env"}
 
     _log(f"Publishing: {post.get('title', 'Untitled')}")
 

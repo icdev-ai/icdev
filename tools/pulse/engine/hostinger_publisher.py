@@ -451,8 +451,13 @@ def check_session() -> dict:
 # ---------------------------------------------------------------------------
 
 
-def publish_post(post_id: str) -> dict:
-    """Publish a single Pulse post to Hostinger builder blog."""
+def publish_post(post_id: str, force: bool = False, force_reason: str = "", actor: str = "") -> dict:
+    """Publish a single Pulse post to Hostinger builder blog.
+
+    nav-intel-09: hard-gated on the LLM judge verdict — RED or judge-not-run
+    blocks (fail closed). ``force`` requires a ``force_reason`` and writes a
+    pulse_publish_audit row.
+    """
     # 1. Fetch post from DB
     post = get_row("pulse_posts", post_id)
     if not post:
@@ -463,6 +468,31 @@ def publish_post(post_id: str) -> dict:
             "status": "error",
             "message": f"Post status is '{post.get('status')}' — must be 'approved' or 'published'.",
         }
+
+    # 1b. LLM judge publish gate
+    from tools.pulse.publish_gate import check_publish_gate, log_publish_override
+
+    gate = check_publish_gate(post_id)
+    if not gate["cleared"]:
+        if not force:
+            return {
+                "status": "blocked",
+                "post_id": post_id,
+                "judge_verdict": gate["verdict"],
+                "message": gate["reason"],
+            }
+        if not force_reason.strip():
+            return {
+                "status": "error",
+                "message": "force requires force_reason (audited HITL override)",
+            }
+        log_publish_override(
+            post_id,
+            actor=actor or "cli",
+            reason=force_reason.strip(),
+            verdict=gate["verdict"],
+            source="hostinger_publisher",
+        )
 
     _log(f"Publishing: {post.get('title', 'Untitled')}")
 

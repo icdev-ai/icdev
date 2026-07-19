@@ -560,10 +560,32 @@ async function rejectPost(id) {
     location.reload();
 }
 
-async function publishPost(id) {
-    if (!confirm('Publish this post? This will also push to WordPress/Hostinger.')) return;
-    const res = await fetch('/api/pulse/posts/' + id + '/publish', {method: 'POST'});
+async function publishPost(id, force, forceReason) {
+    if (!force && !confirm('Publish this post? This will also push to WordPress/Hostinger.')) return;
+    const body = force ? {force_publish: true, force_reason: forceReason} : {};
+    const res = await fetch('/api/pulse/posts/' + id + '/publish', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(body)
+    });
     const data = await res.json();
+    if (res.status === 409 && data.blocked) {
+        // LLM judge gate: RED verdict or judge-not-run blocks publish.
+        if (data.force_available) {
+            const reason = prompt('PUBLISH BLOCKED\n\n' + data.reason +
+                '\n\nAs an admin you may force-publish (audited). Enter an override reason, or Cancel:');
+            if (reason && reason.trim()) {
+                return publishPost(id, true, reason.trim());
+            }
+        } else {
+            alert('PUBLISH BLOCKED\n\n' + data.reason);
+        }
+        return;
+    }
+    if (!res.ok) {
+        alert('Publish failed: ' + (data.error || res.status));
+        return;
+    }
     if (data.hostinger && data.hostinger.status === 'error') {
         alert('Published locally but WordPress push failed: ' + data.hostinger.message);
     }

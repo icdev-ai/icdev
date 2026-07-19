@@ -404,26 +404,68 @@ def api_pulse_undo_reject(post_id):
 @require_installed("pulse")
 @require_role(*_PULSE_EDITORIAL_ROLES)
 def api_pulse_publish(post_id):
-    """Publish a Pulse post, export, and optionally push to Hostinger."""
+    """Publish a Pulse post, export, and optionally push to Hostinger.
+
+    nav-intel-09: hard-gated on the LLM judge verdict. A RED verdict — or a
+    judge that never ran / errored (fail closed) — returns 409. Admins may
+    override with force_publish + force_reason (audited in pulse_publish_audit).
+    """
     try:
+        from flask import g
+
         from tools.pulse.db import get_row, update_row
         from tools.pulse.engine.exporter import export_both
+        from tools.pulse.publish_gate import check_publish_gate, log_publish_override
 
         post = get_row("posts", post_id)
         if not post:
             return jsonify({"error": "Post not found"}), 404
+
+        body = flask_request.get_json(silent=True) or {}
+        gate = check_publish_gate(post_id)
+        forced = False
+        if not gate["cleared"]:
+            user = getattr(g, "current_user", None) or {}
+            role = user.get("role", "") if isinstance(user, dict) else ""
+            if not body.get("force_publish"):
+                return jsonify(
+                    {
+                        "error": "publish_blocked",
+                        "blocked": True,
+                        "post_id": post_id,
+                        "judge_verdict": gate["verdict"],
+                        "reason": gate["reason"],
+                        "force_available": role == "admin",
+                    }
+                ), 409
+            if role != "admin":
+                return jsonify({"error": "force_publish requires the admin role"}), 403
+            force_reason = (body.get("force_reason") or "").strip()
+            if not force_reason:
+                return jsonify({"error": "force_reason is required for force_publish"}), 400
+            log_publish_override(
+                post_id,
+                actor=str(user.get("id", "") or ""),
+                reason=force_reason,
+                verdict=gate["verdict"],
+                source="api_publish",
+            )
+            forced = True
+
         now = datetime.now(timezone.utc).isoformat()
         update_row("posts", post_id, {"status": "published", "published_at": now})
         exports = export_both(post_id)
 
         # Auto-push to WordPress (icdev.ai)
         wp_result = None
-        auto_push = flask_request.json.get("auto_push", True) if flask_request.is_json else True
+        auto_push = body.get("auto_push", True)
         if auto_push:
             try:
                 from tools.pulse.engine.wordpress_publisher import publish_post as wp_publish
 
-                wp_result = wp_publish(post_id)
+                # Gate already evaluated (and any override audited) above —
+                # pass force/audited so the publisher does not double-block.
+                wp_result = wp_publish(post_id, force=forced, audited=forced)
             except Exception as we:
                 wp_result = {"status": "error", "message": str(we)}
 
@@ -431,6 +473,8 @@ def api_pulse_publish(post_id):
             {
                 "status": "published",
                 "post_id": post_id,
+                "judge_verdict": gate["verdict"],
+                "forced": forced,
                 "exports": exports,
                 "hostinger": wp_result,
             }

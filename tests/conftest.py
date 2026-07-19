@@ -2215,6 +2215,18 @@ CREATE TABLE IF NOT EXISTS idr_publish_audit (
     created_at  TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Pulse: LLM-judge publish-gate override audit (migration 281, nav-intel-09)
+CREATE TABLE IF NOT EXISTS pulse_publish_audit (
+    id            TEXT PRIMARY KEY,
+    post_id       TEXT NOT NULL,
+    action        TEXT NOT NULL DEFAULT 'force_publish',
+    actor         TEXT,
+    reason        TEXT,
+    judge_verdict TEXT,
+    source        TEXT,
+    created_at    TEXT NOT NULL
+);
+
 -- PNA: Predictive Network Analytics (migration 222)
 CREATE TABLE IF NOT EXISTS nc_eol_predictions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

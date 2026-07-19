@@ -342,18 +342,40 @@ async function rejectPost(id) {
     location.reload();
 }
 
-async function publishPost(id) {
-    if (!confirm('Publish this post and push to WordPress (go live on icdev.ai)?')) return;
+async function publishPost(id, force, forceReason) {
+    if (!force && !confirm('Publish this post and push to WordPress (go live on icdev.ai)?')) return;
     const statusEl = document.getElementById('wp-status');
     statusEl.textContent = 'Publishing to WordPress...';
     statusEl.style.color = '#f59e0b';
     try {
+        const body = {auto_push: true};
+        if (force) { body.force_publish = true; body.force_reason = forceReason; }
         const res = await fetch('/api/pulse/posts/' + id + '/publish', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({auto_push: true})
+            body: JSON.stringify(body)
         });
         const data = await res.json();
+        if (res.status === 409 && data.blocked) {
+            // LLM judge gate: RED verdict or judge-not-run blocks publish.
+            statusEl.textContent = 'Publish blocked: ' + (data.judge_verdict ? 'judge verdict ' + data.judge_verdict.toUpperCase() : 'judge has not run');
+            statusEl.style.color = '#ef4444';
+            if (data.force_available) {
+                const reason = prompt('PUBLISH BLOCKED\n\n' + data.reason +
+                    '\n\nAs an admin you may force-publish (audited). Enter an override reason, or Cancel:');
+                if (reason && reason.trim()) {
+                    return publishPost(id, true, reason.trim());
+                }
+            } else {
+                alert('PUBLISH BLOCKED\n\n' + data.reason);
+            }
+            return;
+        }
+        if (!res.ok) {
+            statusEl.textContent = 'Publish failed: ' + (data.error || res.status);
+            statusEl.style.color = '#ef4444';
+            return;
+        }
         if (data.hostinger && data.hostinger.status === 'ok') {
             statusEl.textContent = 'Live on icdev.ai!';
             statusEl.style.color = '#22c55e';
