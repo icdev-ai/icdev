@@ -50,6 +50,15 @@ jobs:
           pip install -r requirements.txt
           pip install -e . 2>/dev/null || true
       - name: Run core unit tests
+        # NOTE: this list is a shell line-continuation chain -- do NOT put `#`
+        # comments between the entries. A comment after a trailing `\` swallows
+        # the remaining paths and silently shrinks the gate.
+        #
+        # test_component_registry.py guards the registry-derived PATH_CANVAS /
+        # IQE map against drift between args/component_registry.yaml and the
+        # pages registered directly in app.py. It earns a slot because it caught
+        # a real divergence that then sat red on main for a day while every
+        # gated check stayed green (#636). ~6s, pure Python, no DB/LLM/network.
         run: |
           _abort() {
             echo "CI: abort signal received — terminating pytest children"
@@ -72,6 +81,7 @@ jobs:
             tests/test_manifest_loader.py \
             tests/test_session_context_builder.py \
             tests/test_code_analyzer.py \
+            tests/test_component_registry.py \
             -v --tb=short -x
       - name: Verify /knowledge-search route (retry on slow endpoint)
         # The /knowledge-search page can be slow because it issues 60+ PG queries
