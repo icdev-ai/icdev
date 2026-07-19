@@ -188,8 +188,13 @@ def test_site6_pulse_template_renders_sanitized_body_inert():
 
 
 def test_site6_route_sanitizes_body_html_source():
-    """The pulse route must call the sanitizer before rendering."""
-    src = (REPO / "tools" / "dashboard" / "app.py").read_text(encoding="utf-8")
+    """The pulse route must call the sanitizer before rendering.
+
+    nav-misc-03: the pulse routes were extracted from app.py into the
+    pulse_api blueprint (tools/dashboard/api/pulse.py); the sanitize call
+    moved verbatim with the route.
+    """
+    src = (REPO / "tools" / "dashboard" / "api" / "pulse.py").read_text(encoding="utf-8")
     assert 'post["body_html"] = _sanitize_post_html' in src
 
 
