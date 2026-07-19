@@ -404,26 +404,84 @@ def api_pulse_undo_reject(post_id):
 @require_installed("pulse")
 @require_role(*_PULSE_EDITORIAL_ROLES)
 def api_pulse_publish(post_id):
-    """Publish a Pulse post, export, and optionally push to Hostinger."""
+    """Publish a Pulse post, export, and optionally push to Hostinger.
+
+    Hard-gated on the LLM-judge verdict (nav-intel-09, "block red"): a RED
+    verdict — or no verdict at all (judge never ran / errored) — refuses the
+    publish with 409 ``{blocked: true, reason, verdict}``. An admin may override
+    with ``force_publish=true`` + a non-empty ``force_reason``; the override is
+    recorded in the append-only ``pulse_publish_audit`` table (NIST AU).
+    """
     try:
+        from flask import g
+
         from tools.pulse.db import get_row, update_row
         from tools.pulse.engine.exporter import export_both
+        from tools.pulse.publish_gate import evaluate_publish_gate, record_publish_override
 
         post = get_row("posts", post_id)
         if not post:
             return jsonify({"error": "Post not found"}), 404
+
+        body = flask_request.get_json(silent=True) or {}
+        force_publish = bool(body.get("force_publish", False))
+        force_reason = (body.get("force_reason") or "").strip()
+
+        gate = evaluate_publish_gate(post)
+        forced = False
+        if gate["blocked"]:
+            if not force_publish:
+                return jsonify(
+                    {
+                        "blocked": True,
+                        "reason": gate["reason"],
+                        "verdict": gate["verdict"],
+                        "post_id": post_id,
+                    }
+                ), 409
+            # Audited HITL override — admin role only + documented reason.
+            user = getattr(g, "current_user", None) or {}
+            role = user.get("role") if isinstance(user, dict) else getattr(user, "role", None)
+            if role != "admin":
+                return jsonify(
+                    {
+                        "blocked": True,
+                        "reason": "Force-publishing over a blocked judge verdict requires the admin role.",
+                        "verdict": gate["verdict"],
+                        "post_id": post_id,
+                    }
+                ), 403
+            if not force_reason:
+                return jsonify(
+                    {
+                        "blocked": True,
+                        "reason": "force_publish requires a non-empty force_reason.",
+                        "verdict": gate["verdict"],
+                        "post_id": post_id,
+                    }
+                ), 409
+            record_publish_override(
+                post_id,
+                reviewer=(user.get("id") if isinstance(user, dict) else "admin"),
+                verdict=gate["verdict"],
+                reason=force_reason,
+                tenant_id=(user.get("tenant_id") if isinstance(user, dict) else None),
+            )
+            forced = True
+
         now = datetime.now(timezone.utc).isoformat()
         update_row("posts", post_id, {"status": "published", "published_at": now})
         exports = export_both(post_id)
 
-        # Auto-push to WordPress (icdev.ai)
+        # Auto-push to WordPress (icdev.ai). A forced local publish threads the
+        # override through so the WP-layer gate does not re-block it.
         wp_result = None
-        auto_push = flask_request.json.get("auto_push", True) if flask_request.is_json else True
+        auto_push = body.get("auto_push", True)
         if auto_push:
             try:
                 from tools.pulse.engine.wordpress_publisher import publish_post as wp_publish
 
-                wp_result = wp_publish(post_id)
+                wp_result = wp_publish(post_id, force=forced)
             except Exception as we:
                 wp_result = {"status": "error", "message": str(we)}
 
@@ -431,6 +489,8 @@ def api_pulse_publish(post_id):
             {
                 "status": "published",
                 "post_id": post_id,
+                "forced": forced,
+                "verdict": gate["verdict"],
                 "exports": exports,
                 "hostinger": wp_result,
             }
