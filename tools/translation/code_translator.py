@@ -360,6 +360,12 @@ def translate_units(
                     "source_file": unit.get("source_file", ""),
                     "translated_code": best_result,
                     "status": "translated",
+                    # Explicit provenance flags (nav-intel-05): a real translation
+                    # is never a mock and is only "repaired" once the Phase 5
+                    # compiler-feedback loop rewrites it. Downstream success
+                    # metrics count only mock=False units.
+                    "mock": False,
+                    "repaired": False,
                     "source_hash": unit.get("source_hash", ""),
                     "candidate_selected": k + 1,
                 }
@@ -380,6 +386,11 @@ def translate_units(
                         "source_file": unit.get("source_file", ""),
                         "translated_code": mock_code,
                         "status": "mocked",
+                        # nav-intel-05: an LLM failure degraded to a stub. Flag it
+                        # explicitly so it is NEVER counted as a real translation
+                        # and is surfaced in the job summary.
+                        "mock": True,
+                        "repaired": False,
                         "source_hash": unit.get("source_hash", ""),
                     }
                 )
