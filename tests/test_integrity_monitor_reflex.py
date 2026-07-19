@@ -18,6 +18,7 @@ import sqlite3
 
 import pytest
 
+from tools.db.storage import StorageConnection
 from tools.integrity import scanners, intent_reconciler
 from tools.integrity.db import init_db as init_db_mod
 from tools.genesis.reflexes import integrity_monitor
@@ -71,13 +72,25 @@ CREATE TABLE IF NOT EXISTS kanban_tasks (
 
 @pytest.fixture
 def conn():
-    c = sqlite3.connect(":memory:")
-    c.row_factory = sqlite3.Row
-    init_db_mod.init_db(c)          # SIPA integrity tables
-    c.execute(_KANBAN_DDL)         # board the reflex writes cards to
-    c.commit()
-    yield c
-    c.close()
+    """A SQLite connection wrapped exactly as production hands one to the reflex.
+
+    The reflex authors its SQL PostgreSQL-first (``%s`` placeholders), per
+    CLAUDE.md. A bare ``sqlite3.Connection`` rejects ``%s`` outright — the
+    reflex's queries died with ``near "%": syntax error``, the error was
+    swallowed into ``details["errors"]``, and every assertion downstream saw
+    zero cards. Production never hit this because ``get_connection()`` returns a
+    StorageConnection, whose translate_sql rewrites ``%s`` -> ``?`` for SQLite.
+
+    So the connection must be wrapped here too, or the test is exercising a
+    code path that does not exist in production.
+    """
+    raw = sqlite3.connect(":memory:")
+    raw.row_factory = sqlite3.Row
+    init_db_mod.init_db(raw)        # SIPA integrity tables
+    raw.execute(_KANBAN_DDL)        # board the reflex writes cards to
+    raw.commit()
+    yield StorageConnection(raw, "sqlite")
+    raw.close()
 
 
 @pytest.fixture
