@@ -173,6 +173,10 @@ def _is_mocked(unit):
 
     Mocked units are placeholders — they must never inflate a gate score.
     """
+    # nav-intel-05: an explicit ``mock: true`` flag (set by the mock-and-continue
+    # path when an LLM error degrades a unit to a stub) is authoritative.
+    if unit.get("mock") is True:
+        return True
     if unit.get("status") == "mocked":
         return True
     code = (unit.get("translated_code", "") or "").lower()
